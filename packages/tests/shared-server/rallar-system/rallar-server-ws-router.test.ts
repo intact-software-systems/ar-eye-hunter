@@ -19,14 +19,18 @@ import { createTestGroup } from '../../create-test-group.ts';
 
 describe('RallarServerWsRouter', () => {
     it('does not route a recognized state-sync payload on a user topic', async () => {
-        const { router, socket, service } = createRouter();
-        const handler = vi.fn();
-        const proxyTransform = vi.fn((message) => message.raw);
-        const enqueueOutbox = vi.spyOn(service, 'enqueueOutboxIfAbsent');
-        router.on({ topicId: 'app.todo' }, handler);
+        const { router, socket, outbox } = createRouter();
+        let handlerRan = false;
+        let proxyTransformRan = false;
+        router.on({ topicId: 'app.todo' }, () => {
+            handlerRan = true;
+        });
         router.proxy({
             from: { topicId: 'app.todo' },
-            transform: proxyTransform,
+            transform: (routedMessage) => {
+                proxyTransformRan = true;
+                return routedMessage.raw;
+            },
             fanout: 'outbox'
         });
         const message = newALBroadcastMessage(
@@ -39,20 +43,19 @@ describe('RallarServerWsRouter', () => {
 
         await router.route(message);
 
-        expect(handler).not.toHaveBeenCalled();
-        expect(proxyTransform).not.toHaveBeenCalled();
-        expect(enqueueOutbox).not.toHaveBeenCalled();
+        expect(handlerRan).toBe(false);
+        expect(proxyTransformRan).toBe(false);
+        expect(await outbox.getAllKeys()).toEqual([]);
         expect(socket.sent).toHaveLength(0);
     });
 
     it('rejects repeated router installation before callback replacement', () => {
         const { router, service } = createRouter();
-        const register = vi.spyOn(service, 'onAnyInboxMessageDo');
 
         router.install();
 
         expect(() => router.install()).toThrow(/already installed/i);
-        expect(register).toHaveBeenCalledTimes(1);
+        expect(service.registeredAnyInboxOwnerIds()).toHaveLength(1);
     });
 
     it('fans out implicit app topics to their declared targets', async () => {
@@ -152,12 +155,11 @@ describe('RallarServerWsRouter', () => {
 
     it('can route registered topics through the QueueBox outbox', async () => {
         let outboxWakeRequested = false;
-        const { router, service } = createRouter({
+        const { router, outbox } = createRouter({
             wakeOutbox: () => {
                 outboxWakeRequested = true;
             }
         });
-        const enqueue = vi.spyOn(service, 'enqueueOutboxIfAbsent');
         router.defineTopic({
             topicId: 'app.todo',
             typeId: 'todo.item.updated.v1',
@@ -177,7 +179,7 @@ describe('RallarServerWsRouter', () => {
 
         await router.route(message);
 
-        expect(enqueue).toHaveBeenCalledWith(message);
+        expect(await outbox.getAllKeys()).toHaveLength(1);
         expect(outboxWakeRequested).toBe(true);
     });
 
@@ -384,8 +386,7 @@ describe('RallarServer.ws.publish current behavior', () => {
     });
 
     it('returns queued-outbox metadata for durable outbox fanout', async () => {
-        const { server, service, socket, outbox, qboxEngine } = createServerFacade();
-        const enqueue = vi.spyOn(service, 'enqueueOutboxIfAbsent');
+        const { server, socket, outbox, qboxEngine } = createServerFacade();
         const groupRef = createGroupSnapshot('room-1', ['peer-1'], 1).group;
         const message = newALBroadcastMessage(
             'server-1',
@@ -401,18 +402,14 @@ describe('RallarServer.ws.publish current behavior', () => {
         );
 
         const result = await server.ws.publish(message, 'outbox');
-        const lowerResult = await enqueue.mock.results[0].value;
 
         expect(result).toMatchObject({
             fanout: 'outbox',
             status: 'queued-outbox',
             enqueueStatus: 'enqueued'
         });
-        expect(enqueue).toHaveBeenCalledWith(message);
-        expect(lowerResult.status).toBe('enqueued');
-        expect(lowerResult.entries).toHaveLength(1);
         expect(result.entries).toHaveLength(1);
-        expect((outbox as any).data.size).toBe(1);
+        expect(await outbox.getAllKeys()).toHaveLength(1);
         expect(socket.sent).toHaveLength(0);
         expect(qboxEngine.wakeRequested).toBe(true);
     });
@@ -459,7 +456,7 @@ describe('RallarServer.ws.publish current behavior', () => {
             entries: []
         });
         expect(socket.sent).toHaveLength(0);
-        expect((outbox as any).data.size).toBe(0);
+        expect(await outbox.getAllKeys()).toEqual([]);
     });
 
     it('reports minimal server websocket status from current connections', () => {
@@ -497,9 +494,11 @@ function createRouter(
     options?: ConstructorParameters<typeof RallarServerWsRouter>[1]
 ) {
     const socket = createFakeWsServer();
-    const service = new WsQueueBoxServerService(
-        new InMemoryQueueBox(new Map()),
-        new InMemoryQueueBox(new Map()),
+    const inbox = new InMemoryQueueBox(new Map());
+    const outbox = new InMemoryQueueBox(new Map());
+    const service = new RecordingWsQueueBoxServerService(
+        inbox,
+        outbox,
         socket as never,
         'server-1',
         {
@@ -511,8 +510,27 @@ function createRouter(
     return {
         router,
         service,
-        socket
+        socket,
+        inbox,
+        outbox
     };
+}
+
+class RecordingWsQueueBoxServerService extends WsQueueBoxServerService {
+    private readonly anyInboxOwners = new Set<string>();
+
+    override onAnyInboxMessageDo(
+        id: string,
+        callback: Parameters<WsQueueBoxServerService['onAnyInboxMessageDo']>[1]
+    ): this {
+        this.anyInboxOwners.add(id);
+        super.onAnyInboxMessageDo(id, callback);
+        return this;
+    }
+
+    registeredAnyInboxOwnerIds(): readonly string[] {
+        return [...this.anyInboxOwners];
+    }
 }
 
 function createServerFacade(

@@ -1,12 +1,15 @@
 import { installStateSyncWsTopics } from '@shared-server/rallar-system/state-sync/install-state-sync-ws-topics.ts';
 import { newALBroadcastMessage, newALEventRoute, newALRoute, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { AppTopics } from '@shared/api/api-config.ts';
+import type { ClientSnapshot } from '@shared/api/client-types.ts';
+import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import * as clientStateSnapshotsRepository from '@shared/repository/client-state-snapshots-repository.ts';
 import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
 import type { OnWebSocketServerMessageCallback } from '@shared/services/InboxOutboxContracts.ts';
-import { JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.ts';
-import { describe, expect, it, vi } from 'vitest';
+import { JsonWebSocketServer, type EncodedJsonWebSocketMessage } from '@shared/websocket/JsonWebSocketServer.ts';
+import { describe, expect, it } from 'vitest';
+import { configureTestCacheRepositories } from '../../cache-repository-config.ts';
 import { createGroupSnapshot } from '../group-state/snapshot/group-state-snapshot-test-fixtures.ts';
 import { createClientSnapshot } from '../rest-state-snapshot-read-test-fixtures.ts';
 
@@ -20,41 +23,42 @@ describe('state-sync websocket topic installation', () => {
     it.each(createInvalidStateSyncCases())(
         'rejects $name through inbox and outbox before observation, cache mutation, or publication',
         async ({ callbackTopicId, message }) => {
+            configureTestCacheRepositories();
             const service = new CapturingWsService();
-            const observeGroupSnapshot = vi.fn();
-            const observeClientSnapshot = vi.fn();
-            const setClientSnapshot = vi.spyOn(
-                clientStateSnapshotsRepository,
-                'setClientStateSnapshotByPrincipalId'
-            );
-            const setGroupSnapshot = vi.spyOn(
-                groupStateSnapshotsRepository,
-                'setGroupStateSnapshot'
-            );
+            const cacheService = new CapturingWsService();
+            const observedGroupSnapshots: GroupSnapshot[] = [];
+            const observedClientSnapshots: ClientSnapshot[] = [];
             installStateSyncWsTopics(service, {
-                observeGroupSnapshot,
-                observeClientSnapshot
+                observeGroupSnapshot: (snapshot) => {
+                    observedGroupSnapshots.push(snapshot);
+                },
+                observeClientSnapshot: (snapshot) => {
+                    observedClientSnapshots.push(snapshot);
+                }
             });
-            const webSocketServer = createWebSocketServer();
+            installStateSyncWsTopics(cacheService);
+            const webSocketServer = new RecordingJsonWebSocketServer();
 
-            await service.getInboxCallback(callbackTopicId).onMessage(
-                message,
-                {} as ResourceEntry,
-                webSocketServer
-            );
-            await service.getOutboxCallback(callbackTopicId).onMessage(
-                message,
-                {} as ResourceEntry,
-                webSocketServer
-            );
+            for (const installedService of [service, cacheService]) {
+                await installedService.getInboxCallback(callbackTopicId).onMessage(
+                    message,
+                    {} as ResourceEntry,
+                    webSocketServer
+                );
+                await installedService.getOutboxCallback(callbackTopicId).onMessage(
+                    message,
+                    {} as ResourceEntry,
+                    webSocketServer
+                );
+            }
 
-            expect(observeGroupSnapshot).not.toHaveBeenCalled();
-            expect(observeClientSnapshot).not.toHaveBeenCalled();
-            expect(setClientSnapshot).not.toHaveBeenCalled();
-            expect(setGroupSnapshot).not.toHaveBeenCalled();
-            expect(webSocketServer.broadcast).not.toHaveBeenCalled();
-            expect(webSocketServer.encode).not.toHaveBeenCalled();
-            expect(webSocketServer.sendEncoded).not.toHaveBeenCalled();
+            expect(observedGroupSnapshots).toEqual([]);
+            expect(observedClientSnapshots).toEqual([]);
+            expect(clientStateSnapshotsRepository.getAllClientStateSnapshots()).toEqual([]);
+            expect(groupStateSnapshotsRepository.getAllGroupStateSnapshots()).toEqual([]);
+            expect(webSocketServer.broadcastMessages).toEqual([]);
+            expect(webSocketServer.encodedMessages).toEqual([]);
+            expect(webSocketServer.sentMessages).toEqual([]);
         }
     );
 });
@@ -219,10 +223,28 @@ function requireCallback(
     return callback;
 }
 
-function createWebSocketServer(): JsonWebSocketServer {
-    const webSocketServer = new JsonWebSocketServer();
-    vi.spyOn(webSocketServer, 'broadcast');
-    vi.spyOn(webSocketServer, 'encode');
-    vi.spyOn(webSocketServer, 'sendEncoded');
-    return webSocketServer;
+class RecordingJsonWebSocketServer extends JsonWebSocketServer {
+    readonly broadcastMessages: ALMessage[] = [];
+    readonly encodedMessages: ALMessage[] = [];
+    readonly sentMessages: Array<{
+        connectionId: string;
+        encoded: EncodedJsonWebSocketMessage;
+    }> = [];
+
+    override broadcast(data: ALMessage): number {
+        this.broadcastMessages.push(data);
+        return 0;
+    }
+
+    override encode(data: ALMessage): EncodedJsonWebSocketMessage {
+        this.encodedMessages.push(data);
+        return super.encode(data);
+    }
+
+    override sendEncoded(
+        connectionId: string,
+        encoded: EncodedJsonWebSocketMessage
+    ): void {
+        this.sentMessages.push({ connectionId, encoded });
+    }
 }

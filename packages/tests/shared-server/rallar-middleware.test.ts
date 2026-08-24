@@ -20,7 +20,8 @@ import {
     newALEventRoute,
     newALMulticastMessage,
     newALRoute,
-    newALUntargetedMessage
+    newALUntargetedMessage,
+    type ALMessage
 } from '@shared/mod.ts';
 import { ResilienceDto } from '@shared/queuebox/DequeueResourceEntryController.ts';
 import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY, type ResourceInboxRetryPolicy } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
@@ -192,7 +193,7 @@ describe('createRallarMiddleware', () => {
             clientsRepository: {} as ClientStateRepository,
             groupsRepository: {} as GroupStateRepository
         });
-        const onMessage = vi.fn(async (_message: unknown) => undefined);
+        const receivedMessages: ALMessage[] = [];
         const message = newALUntargetedMessage(
             'api-v1',
             newALRoute('app-inbox.group-state', 'group-1', 'request-1'),
@@ -201,7 +202,9 @@ describe('createRallarMiddleware', () => {
         );
 
         runtime.inboxQueueReader.onInboxMessageDo('group-state.create.v1', {
-            onMessage
+            onMessage: async (receivedMessage) => {
+                receivedMessages.push(receivedMessage);
+            }
         });
         await runtime.inboxQueueReader.enqueueIfAbsent(message);
         const appInboxTask = readOnlyEngineTask(
@@ -213,8 +216,7 @@ describe('createRallarMiddleware', () => {
         expect(await appInboxTask?.isWork()).toBe(true);
         await appInboxTask?.runnable();
 
-        expect(onMessage).toHaveBeenCalledOnce();
-        expect(onMessage.mock.calls[0][0]).toEqual(message);
+        expect(receivedMessages).toEqual([message]);
     });
 
     it('uses one custom retry budget for app inbox advertisement and reservation', async () => {
@@ -238,9 +240,11 @@ describe('createRallarMiddleware', () => {
             clientsRepository: {} as ClientStateRepository,
             groupsRepository: {} as GroupStateRepository
         });
-        const onMessage = vi.fn(async (_message: unknown) => undefined);
+        const receivedMessages: ALMessage[] = [];
         runtime.inboxQueueReader.onInboxMessageDo('group-state.create.v1', {
-            onMessage
+            onMessage: async (receivedMessage) => {
+                receivedMessages.push(receivedMessage);
+            }
         });
         const enqueued = await runtime.inboxQueueReader.enqueueIfAbsent(
             newALUntargetedMessage(
@@ -262,7 +266,7 @@ describe('createRallarMiddleware', () => {
         expect(await appInboxTask?.isWork()).toBe(false);
         await appInboxTask?.runnable();
 
-        expect(onMessage).not.toHaveBeenCalled();
+        expect(receivedMessages).toEqual([]);
         expect(await inbox.getItem(enqueued.key)).toMatchObject({
             status: enqueued.status,
             dequeueAudit: { attempts: 2 }
@@ -287,7 +291,7 @@ describe('createRallarMiddleware', () => {
             clientsRepository: {} as ClientStateRepository,
             groupsRepository: {} as GroupStateRepository
         });
-        const onMessage = vi.fn(async (_message: unknown) => undefined);
+        const receivedMessages: ALMessage[] = [];
         const message = newALUntargetedMessage(
             'api-v1',
             newALRoute('app-outbox.rtc-topology', 'group-1', 'group-1'),
@@ -297,7 +301,11 @@ describe('createRallarMiddleware', () => {
 
         runtime.outboxQueueReader.onOutboxMessageDo(
             'RTC_TOPOLOGY_RECOMPUTE',
-            { onMessage }
+            {
+                onMessage: async (receivedMessage) => {
+                    receivedMessages.push(receivedMessage);
+                }
+            }
         );
         await runtime.outboxQueueReader.enqueueIfAbsent(message);
         const appOutboxTask = readOnlyEngineTask(
@@ -309,8 +317,7 @@ describe('createRallarMiddleware', () => {
         expect(await appOutboxTask?.isWork()).toBe(true);
         await appOutboxTask?.runnable();
 
-        expect(onMessage).toHaveBeenCalledOnce();
-        expect(onMessage.mock.calls[0][0]).toEqual(message);
+        expect(receivedMessages).toEqual([message]);
     });
 
     it('continues draining APP_INBOX while an APP_OUTBOX handler is blocked', async () => {
@@ -334,14 +341,21 @@ describe('createRallarMiddleware', () => {
         const outboxBlocked = new Promise<void>((resolve) => {
             releaseOutbox = resolve;
         });
-        const onInbox = vi.fn(async () => undefined);
-        const onOutbox = vi.fn(async () => await outboxBlocked);
+        const receivedInboxMessages: ALMessage[] = [];
+        const receivedOutboxMessages: ALMessage[] = [];
         runtime.inboxQueueReader.onInboxMessageDo('group-state.create.v1', {
-            onMessage: onInbox
+            onMessage: async (receivedMessage) => {
+                receivedInboxMessages.push(receivedMessage);
+            }
         });
         runtime.outboxQueueReader.onOutboxMessageDo(
             'RTC_TOPOLOGY_RECOMPUTE',
-            { onMessage: onOutbox }
+            {
+                onMessage: async (receivedMessage) => {
+                    receivedOutboxMessages.push(receivedMessage);
+                    await outboxBlocked;
+                }
+            }
         );
         await runtime.outboxQueueReader.enqueueIfAbsent(
             newALUntargetedMessage(
@@ -357,7 +371,7 @@ describe('createRallarMiddleware', () => {
         )!;
 
         await runtime.qboxEngine.executeOnce();
-        await vi.waitFor(() => expect(onOutbox).toHaveBeenCalledOnce());
+        await vi.waitFor(() => expect(receivedOutboxMessages).toHaveLength(1));
         await runtime.inboxQueueReader.enqueueIfAbsent(
             newALUntargetedMessage(
                 'api-v1',
@@ -368,7 +382,7 @@ describe('createRallarMiddleware', () => {
         );
         await runtime.qboxEngine.executeOnce();
 
-        await vi.waitFor(() => expect(onInbox).toHaveBeenCalledOnce());
+        await vi.waitFor(() => expect(receivedInboxMessages).toHaveLength(1));
         releaseOutbox();
         await vi.waitFor(async () => {
             expect(await appOutboxTask.isWork()).toBe(false);

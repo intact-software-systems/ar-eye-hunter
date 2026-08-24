@@ -4,7 +4,7 @@ import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { AppTopics, ConnectionContext, InMemoryQueueBox, JsonWebSocketServer, newALBroadcastMessage, newALEventRoute } from '@shared/mod.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { WsQueueBoxServerService } from '@shared/services/WsQueueBoxServerService.ts';
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
 const RTT = {
     sessionIdFrom: 'session-a',
@@ -16,12 +16,23 @@ const RTT = {
 
 describe('RTC RTT durable registration', () => {
     it('routes RTT through the registered AppInbox entry owner', async () => {
-        const enqueue = vi.fn(() => Promise.resolve({} as ResourceEntry));
-        const socket = createHarness({ enqueueMutation: enqueue });
+        const enqueuedMutations: Array<Parameters<NonNullable<InstallRtcRttSystemTopicOptions['enqueueMutation']>>[0]> = [];
+        const socket = createHarness({
+            enqueueMutation: async (mutation) => {
+                enqueuedMutations.push(mutation);
+                return {} as ResourceEntry;
+            }
+        });
 
         await socket.dispatchMessage(rttMessage());
 
-        expect(enqueue).toHaveBeenCalledOnce();
+        expect(enqueuedMutations).toEqual([
+            {
+                rtt: RTT,
+                alSenderId: 'session-a',
+                capturedAtEpochMs: expect.any(Number)
+            }
+        ]);
     });
 
     it('requires the AppInbox entry owner before registering persisted RTT state', () => {

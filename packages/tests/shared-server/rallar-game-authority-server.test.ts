@@ -82,13 +82,16 @@ describe('Rallar Game Authority server installer', () => {
 
     it('rejects invalid command envelopes before app handlers run', async () => {
         const fake = createFakeServerRallar();
-        const handleCommand = vi.fn(async () => ({ status: 'accepted' as const }));
+        let commandHandled = false;
         installRallarGameAuthorityServer<Command, Snapshot, Event>({
             rallar: fake.rallar,
             protocol: 'test.authority.v1',
             topicId: 'game.authority',
             authority,
-            handleCommand
+            handleCommand: async () => {
+                commandHandled = true;
+                return { status: 'accepted' as const };
+            }
         });
 
         await fake.emit(
@@ -100,7 +103,7 @@ describe('Rallar Game Authority server installer', () => {
             }
         );
 
-        expect(handleCommand).not.toHaveBeenCalled();
+        expect(commandHandled).toBe(false);
         expect(fake.published).toHaveLength(0);
     });
 
@@ -228,13 +231,16 @@ describe('Rallar Game Authority server installer', () => {
 
     it('unsubscribes handlers and prevents later command handling on stop', async () => {
         const fake = createFakeServerRallar();
-        const handleCommand = vi.fn(async () => ({ status: 'accepted' as const }));
+        let commandHandled = false;
         const server = installRallarGameAuthorityServer<Command, Snapshot, Event>({
             rallar: fake.rallar,
             protocol: 'test.authority.v1',
             topicId: 'game.authority',
             authority,
-            handleCommand
+            handleCommand: async () => {
+                commandHandled = true;
+                return { status: 'accepted' as const };
+            }
         });
 
         server.stop();
@@ -244,7 +250,7 @@ describe('Rallar Game Authority server installer', () => {
             envelope('command', 'peer-a', { action: 'late' }, 1)
         );
 
-        expect(handleCommand).not.toHaveBeenCalled();
+        expect(commandHandled).toBe(false);
         expect(fake.handlers).toHaveLength(0);
         expect(server.status().stopped).toBe(true);
     });

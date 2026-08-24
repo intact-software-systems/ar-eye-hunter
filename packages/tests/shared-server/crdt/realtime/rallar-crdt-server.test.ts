@@ -57,8 +57,6 @@ describe('installRallarCrdtWsTopics', () => {
         const { router, socket, outbox } = createRouter({
             authorizeRoomMessage: () => true
         });
-        const enqueueOutbox = vi.spyOn(outbox, 'enqueue');
-        const enqueueOutboxIfAbsent = vi.spyOn(outbox, 'enqueueIfAbsent');
         installRallarCrdtWsTopics(router, {
             allowedDocumentTypes: ['checklist'],
             onAcceptedEnvelope: accepted,
@@ -99,8 +97,7 @@ describe('installRallarCrdtWsTopics', () => {
             })
         );
         expect(socket.sent).toEqual([]);
-        expect(enqueueOutbox).not.toHaveBeenCalled();
-        expect(enqueueOutboxIfAbsent).not.toHaveBeenCalled();
+        expect(await outbox.getAllKeys()).toEqual([]);
     });
 
     it('rejects schema-invalid room updates before fanout', async () => {
