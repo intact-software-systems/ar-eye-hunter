@@ -1,4 +1,3 @@
-import { createRallarServerFacade } from '@shared-server/rallar-facade/rallar-server.ts';
 import { decodeJsonWireValue, type JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import { RallarServerWsRouter } from '@shared-server/rallar-system/websocket/router/rallar-server-ws-router.ts';
 import { createGroupRoomWsAuthorizer } from '@shared-server/rallar-system/websocket/ws-topic-room-authorizer.ts';
@@ -276,7 +275,7 @@ describe('RallarServerWsRouter', () => {
 
 describe('RallarServer.ws.publish current behavior', () => {
     it('returns the live-only send count and sends to resolved targets', async () => {
-        const { server, socket } = createServerFacade();
+        const { server, socket } = createPublicRouterFixture();
         const message = newALBroadcastMessage(
             'server-1',
             newALRoute('app.cursor', 'all', 'cursor-1'),
@@ -310,7 +309,7 @@ describe('RallarServer.ws.publish current behavior', () => {
     it('returns 0 for live-only fanout with zero recipients', async () => {
         const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
         try {
-            const { server, socket } = createServerFacade({
+            const { server, socket } = createPublicRouterFixture({
                 targetResolver: {
                     ...createTargetResolver(),
                     resolveBroadcastRecipients: () => []
@@ -347,7 +346,7 @@ describe('RallarServer.ws.publish current behavior', () => {
     it('returns partial-failure metadata for live-only send failures', async () => {
         const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
         try {
-            const { server, socket } = createServerFacade({
+            const { server, socket } = createPublicRouterFixture({
                 failingConnectionIds: ['conn-2']
             });
             const message = newALBroadcastMessage(
@@ -386,7 +385,7 @@ describe('RallarServer.ws.publish current behavior', () => {
     });
 
     it('returns queued-outbox metadata for durable outbox fanout', async () => {
-        const { server, socket, outbox, qboxEngine } = createServerFacade();
+        const { server, socket, outbox, qboxEngine } = createPublicRouterFixture();
         const groupRef = createGroupSnapshot('room-1', ['peer-1'], 1).group;
         const message = newALBroadcastMessage(
             'server-1',
@@ -415,7 +414,7 @@ describe('RallarServer.ws.publish current behavior', () => {
     });
 
     it('rejects a durable room broadcast before the router can queue an unscoped envelope', async () => {
-        const { server, socket, outbox, qboxEngine } = createServerFacade();
+        const { server, socket, outbox, qboxEngine } = createPublicRouterFixture();
         const message = newALBroadcastMessage(
             'server-1',
             newALRoute('app.todo', 'room-1', 'todo-invalid-room'),
@@ -438,7 +437,7 @@ describe('RallarServer.ws.publish current behavior', () => {
     });
 
     it('returns none metadata without sending or enqueueing', async () => {
-        const { server, socket, outbox } = createServerFacade();
+        const { server, socket, outbox } = createPublicRouterFixture();
         const message = newALBroadcastMessage(
             'server-1',
             newALRoute('app.todo', 'room-1', 'todo-1'),
@@ -460,7 +459,7 @@ describe('RallarServer.ws.publish current behavior', () => {
     });
 
     it('reports minimal server websocket status from current connections', () => {
-        const { server, socket } = createServerFacade();
+        const { server, socket } = createPublicRouterFixture();
         socket.connections.set('conn-1', {
             id: 'conn-1',
             isOpen: true
@@ -533,7 +532,7 @@ class RecordingWsQueueBoxServerService extends WsQueueBoxServerService {
     }
 }
 
-function createServerFacade(
+function createPublicRouterFixture(
     options: Readonly<{
         targetResolver?: WsServerTargetResolver;
         failingConnectionIds?: readonly string[];
@@ -560,12 +559,11 @@ function createServerFacade(
             this.wakeRequested = true;
         }
     };
-    const server = createRallarServerFacade({
-        runtime: {
-            wsQBoxServerService: service,
-            qboxEngine
-        }
-    });
+    const server = {
+        ws: new RallarServerWsRouter(service, {
+            wakeOutbox: () => qboxEngine.wake()
+        })
+    };
 
     return {
         server,

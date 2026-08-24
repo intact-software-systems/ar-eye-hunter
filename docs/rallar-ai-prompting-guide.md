@@ -259,7 +259,7 @@ Requirements:
 Implement a Rallar Server app data store.
 
 Requirements:
-- Use rallarServer.data.define/open.
+- Use rallarServer.appData.define/open with an explicit current value codec.
 - Define key structure and value schema.
 - Decide whether compareAndSet is sufficient for this workflow.
 - Add tests for set, updateOrCreate, compareAndSet, and persistence.

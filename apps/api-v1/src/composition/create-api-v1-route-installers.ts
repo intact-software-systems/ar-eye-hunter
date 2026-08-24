@@ -1,7 +1,7 @@
 import type { Hono } from 'jsr:@hono/hono@4.11.9';
 
 import { readGroupGraphDiagnostic, readScopedGlobalGraphDiagnostic } from '@shared-graph/graph-diagnostics-service.ts';
-import type { RallarServerRouteInstaller } from '@shared-server/rallar-facade/rallar-server-application.ts';
+import type { RallarServerRouteInstaller } from '@shared-server/rallar-server/rallar-server-application.ts';
 import type { IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
 import type { AuthUserRepository } from '@shared-server/rallar-system/auth/persistence/auth-user-repository.ts';
 import type { ApiConfig } from '@shared/api/api-config.ts';
@@ -101,7 +101,7 @@ export interface CreateApiV1RouteInstallersInput<
 }
 
 export interface ApiV1RouteInstallers {
-    readonly ws: RallarServerRouteInstaller<Hono>;
+    readonly webSocket: RallarServerRouteInstaller<Hono>;
     readonly rest: readonly RallarServerRouteInstaller<Hono>[];
 }
 
@@ -146,7 +146,7 @@ export function constructApiV1RouteInstallers<
 ): ApiV1RouteInstallers {
     const construction = createApiV1RouteConstruction(input, operations);
     return {
-        ws: createApiV1WsRouteInstaller(construction),
+        webSocket: createApiV1WsRouteInstaller(construction),
         rest: [
             ...createApiV1StateRouteInstallers(construction),
             ...createApiV1AdministrationRouteInstallers(construction)

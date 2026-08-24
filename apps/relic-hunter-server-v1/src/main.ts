@@ -158,11 +158,10 @@ app.post('/api/relic/games/:gameId/reset', async (c) => {
     }
 });
 
-rallar.system
-    .useDefaultMiddlewareTopics()
-    .useWebSocketLifecycle();
-rallar.ws.mount(app);
-rallar.rest.mount(app);
+rallar.installSystemTopics();
+rallar.installWebSocketLifecycle();
+rallar.mountWebSocket(app);
+rallar.mountRest(app);
 if (configuration.apiV1.topology.replay.queueWorkers === 'enabled') {
     rallar.start();
 }

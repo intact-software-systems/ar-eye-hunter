@@ -1,14 +1,18 @@
 # Server App Data
 
-Use `rallar.data.open(...)` on the server for app-owned durable state that does
+Use `rallar.appData.open(...)` on the server for app-owned durable state that does
 not belong in Rallar group/client snapshots. Examples include match state,
 leaderboards, scenario drafts, API-side feature flags, and per-room server
 diagnostics.
 
 ```ts
-import { isRallarServerAppDataConflictError } from '@shared-server/app-data/RallarServerAppData.ts';
-import type { RallarServerApplication } from '@shared-server/rallar-facade/rallar-server-application.ts';
-import type { RallarServerRuntime } from '@shared-server/rallar-facade/rallar-server.ts';
+import type { AppDataValueCodec } from '@shared-server/app-data/app-data-value-codec.ts';
+import { RallarServerAppDataConflictError } from '@shared-server/app-data/rallar-server-app-data-conflict-error.ts';
+import type {
+    RallarServerApplication,
+    RallarServerRuntime
+} from '@shared-server/rallar-server/rallar-server-application.ts';
+import type { JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 
 interface LeaderboardEntry {
     principalId: string;
@@ -16,14 +20,20 @@ interface LeaderboardEntry {
     updatedAtEpochMs: number;
 }
 
+const LEADERBOARD_CODEC: AppDataValueCodec<LeaderboardEntry> = {
+    schemaVersion: 1,
+    encode: (value) => ({ ...value }),
+    decode: decodeLeaderboardEntry
+};
+
 export async function installLeaderboard(
     rallar: RallarServerApplication<RallarServerRuntime, unknown>
 ) {
-    const leaderboard = await rallar.data.open<LeaderboardEntry>(
+    const leaderboard = await rallar.appData.open(
         'leaderboard',
         {
             namespace: 'demo-game',
-            schemaVersion: 1,
+            codec: LEADERBOARD_CODEC,
             readConsistency: 'fresh',
             maxConflictRetries: 8
         }
@@ -41,7 +51,7 @@ export async function installLeaderboard(
             }));
         }
         catch (error) {
-            if (isRallarServerAppDataConflictError(error)) {
+            if (error instanceof RallarServerAppDataConflictError) {
                 throw new Error('Leaderboard write conflicted. Retry the request.');
             }
 
@@ -58,6 +68,24 @@ export async function installLeaderboard(
     return {
         addScore,
         top
+    };
+}
+
+function decodeLeaderboardEntry(value: JsonWireValue): LeaderboardEntry {
+    if (
+        value === null ||
+        Array.isArray(value) ||
+        typeof value !== 'object' ||
+        typeof value.principalId !== 'string' ||
+        typeof value.score !== 'number' ||
+        typeof value.updatedAtEpochMs !== 'number'
+    ) {
+        throw new TypeError('Leaderboard entry is malformed.');
+    }
+    return {
+        principalId: value.principalId,
+        score: value.score,
+        updatedAtEpochMs: value.updatedAtEpochMs
     };
 }
 ```

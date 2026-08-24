@@ -5,8 +5,10 @@ import {
     createRallarAiDiagnosticEvent,
     emitRallarAiDiagnostic,
     RallarAiError,
-    type RallarAiJsonResult
+    type RallarAiJsonResult,
+    type RallarAiJsonValue
 } from '@shared/rallar-ai/mod.ts';
+import { RALLAR_AI_RESULT_APP_DATA_CODEC } from './rallar-ai-result-app-data-codec.ts';
 import {
     DEFAULT_AI_RESULT_STORE_NAME,
     DEFAULT_AI_RESULT_TOPIC_ID,
@@ -88,10 +90,10 @@ export function createRallarServerAiBroadcast(
 export function createRallarServerAiPersistence(
     options: CreateRallarServerAiOptions
 ): RallarServerAiFacade['persistJson'] {
-    return async <TValue = RallarServerAiValue>(
+    return async <TValue extends RallarAiJsonValue = RallarAiJsonValue>(
         input: RallarServerAiPersistInput<TValue>
     ): Promise<void> => {
-        if (!options.rallar.data) {
+        if (!options.rallar.appData) {
             throw new RallarAiError(
                 'invalid-configuration',
                 'RallarAI server persistence requires a Rallar data facade.'
@@ -112,11 +114,11 @@ export function createRallarServerAiPersistence(
         });
 
         try {
-            const store = await options.rallar.data.open<RallarAiJsonResult<TValue>>(
+            const store = await options.rallar.appData.open<RallarAiJsonResult<RallarAiJsonValue>>(
                 input.storeName ?? DEFAULT_AI_RESULT_STORE_NAME,
                 {
+                    codec: RALLAR_AI_RESULT_APP_DATA_CODEC,
                     namespace: input.namespace ?? 'server',
-                    schemaVersion: 1,
                     ttlMs: input.ttlMs
                 }
             );

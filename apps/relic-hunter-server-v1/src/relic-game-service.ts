@@ -1,4 +1,3 @@
-import type { ApiV1Runtime } from '@api-v1/src/composition/api-v1-runtime.ts';
 import {
     applyRelicCommand,
     isRelicCommand,
@@ -10,9 +9,18 @@ import {
     type RelicPublicSnapshot,
     type RelicServerEvent
 } from '@relic-hunters/mod.ts';
-import type { RallarServerApplication } from '@shared-server/rallar-facade/rallar-server-application.ts';
-import { newALBroadcastMessage, newALRoute } from '@shared/al-contracts/al-contract.ts';
-import type { Hono } from 'hono';
+import type { RallarServerAppDataStoreOptions } from '@shared-server/app-data/app-data-store-definition.ts';
+import type { AppDataValueCodec } from '@shared-server/app-data/app-data-value-codec.ts';
+import type { RallarServerAppDataStore } from '@shared-server/app-data/rallar-server-app-data-store.ts';
+import { decodeJsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
+import type {
+    RallarServerWsFanout,
+    RallarServerWsPublishResult,
+    RallarServerWsSelector,
+    RallarServerWsTopicDefinition
+} from '@shared-server/rallar-system/websocket/router/rallar-server-ws-router-contracts.ts';
+import { newALBroadcastMessage, newALRoute, type ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { decodeRelicGameStateAppData } from './decode-relic-game-state-app-data.ts';
 import type { RelicInitialStateFactory, RelicInitialStateReason } from './relic-expedition-ai.ts';
 
 export interface RelicHunterGameServiceOptions {
@@ -26,15 +34,44 @@ export interface RelicHunterGameService {
     reset(gameId: string): Promise<RelicPublicSnapshot>;
 }
 
+export interface RelicHunterServer {
+    readonly appData: Readonly<{
+        open(
+            name: string,
+            options: RallarServerAppDataStoreOptions<RelicGameState>
+        ): Promise<Pick<RallarServerAppDataStore<RelicGameState>, 'get' | 'set' | 'setIfAbsent'>>;
+    }>;
+    readonly ws: Readonly<{
+        defineTopic(definition: RallarServerWsTopicDefinition<RelicCommand>): void;
+        on(
+            selector: RallarServerWsSelector,
+            handler: (
+                message: Readonly<{ payload: RelicCommand; }>,
+                context: Readonly<{ senderId: string; }>
+            ) => void | Promise<void>
+        ): (() => boolean) | void;
+        publish(
+            message: ALMessage,
+            fanout?: RallarServerWsFanout
+        ): Promise<RallarServerWsPublishResult | void>;
+    }>;
+}
+
+const RELIC_GAME_STATE_CODEC: AppDataValueCodec<RelicGameState> = {
+    schemaVersion: 1,
+    encode: (value) => decodeJsonWireValue(value, 'Relic game state'),
+    decode: decodeRelicGameStateAppData
+};
+
 export async function installRelicHunterGame(
-    rallar: RallarServerApplication<ApiV1Runtime, Hono>,
+    rallar: RelicHunterServer,
     options: RelicHunterGameServiceOptions
 ): Promise<RelicHunterGameService> {
-    const games = await rallar.data.open<RelicGameState>(
+    const games = await rallar.appData.open(
         'relic-hunter-games',
         {
             namespace: 'relic-hunter-v1',
-            schemaVersion: 1
+            codec: RELIC_GAME_STATE_CODEC
         }
     );
 
@@ -99,7 +136,7 @@ export async function installRelicHunterGame(
 
     // The browser sends commands over REST and consumes snapshots over WebSocket.
     // Other clients may send the same validated room command over WebSocket.
-    rallar.ws.defineTopic<RelicCommand>({
+    rallar.ws.defineTopic({
         topicId: RELIC_TOPICS.command,
         typeId: RELIC_TYPES.command,
         scope: 'room',
@@ -111,7 +148,7 @@ export async function installRelicHunterGame(
             value.gameId === context.roomId
     });
 
-    rallar.ws.on<RelicCommand>(
+    rallar.ws.on(
         {
             topicId: RELIC_TOPICS.command,
             typeId: RELIC_TYPES.command

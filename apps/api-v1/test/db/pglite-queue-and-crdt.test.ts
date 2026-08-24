@@ -1,7 +1,7 @@
 import { Temporal } from '@js-temporal/polyfill';
 import assert from 'node:assert/strict';
 
-import { PSqlAppDataRepository } from '@shared-server/postgres/app-data/PSqlAppDataRepository.ts';
+import { PSqlAppDataRepository } from '@shared-server/app-data/postgres/p-sql-app-data-repository.ts';
 import {
     createPSqlResourceInboxRepository,
     ResourceInboxInvariantCorruptionError,
@@ -810,21 +810,29 @@ Deno.test('PSqlAppDataRepository runs against PGlite SQL adapter', async () => {
             expireAtTimestamp: PAST_MS
         });
 
-        const alpha = await repository.findEntry('app-smoke', 'store', 'alpha');
+        const alpha = await repository.findEntry({
+            namespace: 'app-smoke',
+            storeName: 'store',
+            key: 'alpha'
+        });
         assert.deepEqual(alpha?.value, { count: 2 });
         assert.equal(alpha?.schemaVersion, 2);
         assert.equal(alpha?.revision, 1);
 
-        const prefixed = await repository.findEntries('app-smoke', 'store', 'a');
-        assert.deepEqual(prefixed.map((entry) => entry.key), ['alpha']);
-        const firstPage = await repository.findEntriesPage('app-smoke', 'store', {
+        const firstPage = await repository.findEntriesPage({
+            namespace: 'app-smoke',
+            storeName: 'store',
             limit: 1
         });
-        const secondPage = await repository.findEntriesPage('app-smoke', 'store', {
+        const secondPage = await repository.findEntriesPage({
+            namespace: 'app-smoke',
+            storeName: 'store',
             afterKey: firstPage.at(-1)?.key,
             limit: 10
         });
-        const prefixedPage = await repository.findEntriesPage('app-smoke', 'store', {
+        const prefixedPage = await repository.findEntriesPage({
+            namespace: 'app-smoke',
+            storeName: 'store',
             keyPrefix: 'a',
             limit: 10
         });
@@ -833,9 +841,30 @@ Deno.test('PSqlAppDataRepository runs against PGlite SQL adapter', async () => {
         assert.deepEqual(secondPage.map((entry) => entry.key), ['beta', 'expired']);
         assert.deepEqual(prefixedPage.map((entry) => entry.key), ['alpha']);
 
-        assert.equal(await repository.deleteExpired('app-smoke', 'store'), 1);
-        assert.equal(await repository.deleteByKey('app-smoke', 'store', 'beta'), true);
-        assert.equal(await repository.findEntry('app-smoke', 'store', 'beta'), undefined);
+        assert.equal(
+            await repository.deleteExpired({
+                namespace: 'app-smoke',
+                storeName: 'store',
+                expireAtOrBeforeTimestamp: Date.now()
+            }),
+            1
+        );
+        assert.equal(
+            await repository.deleteByKey({
+                namespace: 'app-smoke',
+                storeName: 'store',
+                key: 'beta'
+            }),
+            true
+        );
+        assert.equal(
+            await repository.findEntry({
+                namespace: 'app-smoke',
+                storeName: 'store',
+                key: 'beta'
+            }),
+            undefined
+        );
     });
 });
 

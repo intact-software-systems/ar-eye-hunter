@@ -21,7 +21,7 @@ Deno.test('route installers mount representative API and websocket behavior in o
     const app = new Hono();
     const installers = constructApiV1RouteInstallers(createInput(), TEST_OPERATIONS);
 
-    installers.ws(app);
+    installers.webSocket(app);
     for (const install of installers.rest) {
         install(app);
     }

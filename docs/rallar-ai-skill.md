@@ -16,8 +16,7 @@ Read these files before changing behavior:
 - `packages/shared-web/browser/rallar-data.ts`
 - `packages/shared-server/rallar-system/middleware/create-rallar-middleware.ts`
 - `packages/shared-server/rallar-system/middleware/rallar-middleware-construction.ts`
-- `packages/shared-server/rallar-facade/rallar-server.ts`
-- `packages/shared-server/rallar-facade/rallar-server-application.ts`
+- `packages/shared-server/rallar-server/rallar-server-application.ts`
 - `packages/shared-server/rallar-system/websocket/router/rallar-server-ws-router.ts`
 
 ## When To Use Rallar
@@ -169,23 +168,26 @@ Choose:
 
 ## Server Workflow
 
-Prefer the server application facade:
+Prefer the server application owner:
 
 ```ts
 const rallar = createRallarServerApplication({
     runtime,
-    routes: {
-        ws: installWsRoutes,
+    repositories,
+    appDataRepository,
+    nowEpochMs: Date.now,
+    ws: {},
+    systemInstallers,
+    routeInstallers: {
+        webSocket: installWsRoutes,
         rest: [installAuthRoutes, installStateRoutes]
     }
 });
 
-rallar.system
-    .useDefaultMiddlewareTopics()
-    .useWebSocketLifecycle();
-
-rallar.ws.mount(app);
-rallar.rest.mount(app);
+rallar.installSystemTopics();
+rallar.installWebSocketLifecycle();
+rallar.mountWebSocket(app);
+rallar.mountRest(app);
 rallar.start();
 ```
 

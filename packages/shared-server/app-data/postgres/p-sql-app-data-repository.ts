@@ -1,39 +1,30 @@
+import type { PSqlSql } from '../../postgres/p-sql-sql.ts';
+import { serializeCanonicalMutationCommand } from '../../rallar-system/protocol/json-wire-identity.ts';
 import type {
     AppDataConditionalDeleteResult,
     AppDataConditionalInsertResult,
-    AppDataConditionalRepositoryLike,
     AppDataConditionalWriteResult,
+    AppDataDeleteExpiredInput,
+    AppDataDeleteIfRevisionInput,
     AppDataEntry,
-    AppDataEntryPageOptions,
+    AppDataEntryPageInput,
+    AppDataKey,
+    AppDataRepository,
     AppDataUpsertIfRevisionInput,
     AppDataUpsertInput
-} from '../../app-data/AppDataRepository.ts';
-import type { PSqlSql } from '../p-sql-sql.ts';
+} from '../app-data-repository.ts';
+import { decodePSqlAppDataRow } from './decode-p-sql-app-data-row.ts';
+import type { PSqlAppDataRow } from './p-sql-app-data-row.ts';
 
-type AppDataRow = Readonly<{
-    app_namespace: string;
-    store_name: string;
-    data_key: string;
-    data_value: string;
-    schema_version: number | string;
-    expire_at_ts: string;
-    updated_ts: string;
-    revision: number | string;
-}>;
-
-export class PSqlAppDataRepository implements AppDataConditionalRepositoryLike {
+export class PSqlAppDataRepository implements AppDataRepository {
     private readonly sql: PSqlSql;
 
     constructor(sql: PSqlSql) {
         this.sql = sql;
     }
 
-    async findEntry(
-        namespace: string,
-        storeName: string,
-        key: string
-    ): Promise<AppDataEntry | undefined> {
-        const rows = await this.sql<AppDataRow[]>`
+    async findEntry(input: AppDataKey): Promise<AppDataEntry | undefined> {
+        const rows = await this.sql<PSqlAppDataRow[]>`
             select app_namespace,
                    store_name,
                    data_key,
@@ -43,72 +34,27 @@ export class PSqlAppDataRepository implements AppDataConditionalRepositoryLike {
                    updated_ts,
                    revision
             from app_data_store
-            where app_namespace = ${namespace}
-              and store_name = ${storeName}
-              and data_key = ${key}
+            where app_namespace = ${input.namespace}
+              and store_name = ${input.storeName}
+              and data_key = ${input.key}
             limit 1
         `;
 
-        return rows[0] ? toEntry(rows[0]) : undefined;
+        return rows[0] ? decodePSqlAppDataRow(rows[0]) : undefined;
     }
 
-    async findEntries(
-        namespace: string,
-        storeName: string,
-        keyPrefix?: string
-    ): Promise<readonly AppDataEntry[]> {
-        const rows = keyPrefix
-            ? await this.sql<AppDataRow[]>`
-                select app_namespace,
-                       store_name,
-                       data_key,
-                       data_value,
-                       schema_version,
-                       expire_at_ts,
-                       updated_ts,
-                       revision
-                from app_data_store
-                where app_namespace = ${namespace}
-                  and store_name = ${storeName}
-                  and data_key like ${`${keyPrefix}%`}
-                order by data_key
-            `
-            : await this.sql<AppDataRow[]>`
-                select app_namespace,
-                       store_name,
-                       data_key,
-                       data_value,
-                       schema_version,
-                       expire_at_ts,
-                       updated_ts,
-                       revision
-                from app_data_store
-                where app_namespace = ${namespace}
-                  and store_name = ${storeName}
-                order by data_key
-            `;
-
-        return rows.map(toEntry);
-    }
-
-    async findEntriesPage(
-        namespace: string,
-        storeName: string,
-        options: AppDataEntryPageOptions
-    ): Promise<readonly AppDataEntry[]> {
-        const limit = Math.max(1, Math.floor(options.limit));
-        const rows = await this.findEntryPageRows(namespace, storeName, options, limit);
-        return rows.map(toEntry);
+    async findEntriesPage(input: AppDataEntryPageInput): Promise<readonly AppDataEntry[]> {
+        const limit = Math.max(1, Math.floor(input.limit));
+        const rows = await this.findEntryPageRows(input, limit);
+        return rows.map(decodePSqlAppDataRow);
     }
 
     private async findEntryPageRows(
-        namespace: string,
-        storeName: string,
-        options: AppDataEntryPageOptions,
+        input: AppDataEntryPageInput,
         limit: number
-    ): Promise<AppDataRow[]> {
-        if (options.keyPrefix && options.afterKey !== undefined) {
-            return await this.sql<AppDataRow[]>`
+    ): Promise<PSqlAppDataRow[]> {
+        if (input.keyPrefix && input.afterKey !== undefined) {
+            return await this.sql<PSqlAppDataRow[]>`
                 select app_namespace,
                        store_name,
                        data_key,
@@ -118,17 +64,17 @@ export class PSqlAppDataRepository implements AppDataConditionalRepositoryLike {
                        updated_ts,
                        revision
                 from app_data_store
-                where app_namespace = ${namespace}
-                  and store_name = ${storeName}
-                  and data_key like ${`${options.keyPrefix}%`}
-                  and data_key > ${options.afterKey}
+                where app_namespace = ${input.namespace}
+                  and store_name = ${input.storeName}
+                  and data_key like ${`${input.keyPrefix}%`}
+                  and data_key > ${input.afterKey}
                 order by data_key
                 limit ${limit}
             `;
         }
 
-        if (options.keyPrefix) {
-            return await this.sql<AppDataRow[]>`
+        if (input.keyPrefix) {
+            return await this.sql<PSqlAppDataRow[]>`
                 select app_namespace,
                        store_name,
                        data_key,
@@ -138,16 +84,16 @@ export class PSqlAppDataRepository implements AppDataConditionalRepositoryLike {
                        updated_ts,
                        revision
                 from app_data_store
-                where app_namespace = ${namespace}
-                  and store_name = ${storeName}
-                  and data_key like ${`${options.keyPrefix}%`}
+                where app_namespace = ${input.namespace}
+                  and store_name = ${input.storeName}
+                  and data_key like ${`${input.keyPrefix}%`}
                 order by data_key
                 limit ${limit}
             `;
         }
 
-        if (options.afterKey !== undefined) {
-            return await this.sql<AppDataRow[]>`
+        if (input.afterKey !== undefined) {
+            return await this.sql<PSqlAppDataRow[]>`
                 select app_namespace,
                        store_name,
                        data_key,
@@ -157,15 +103,15 @@ export class PSqlAppDataRepository implements AppDataConditionalRepositoryLike {
                        updated_ts,
                        revision
                 from app_data_store
-                where app_namespace = ${namespace}
-                  and store_name = ${storeName}
-                  and data_key > ${options.afterKey}
+                where app_namespace = ${input.namespace}
+                  and store_name = ${input.storeName}
+                  and data_key > ${input.afterKey}
                 order by data_key
                 limit ${limit}
             `;
         }
 
-        return await this.sql<AppDataRow[]>`
+        return await this.sql<PSqlAppDataRow[]>`
             select app_namespace,
                    store_name,
                    data_key,
@@ -175,8 +121,8 @@ export class PSqlAppDataRepository implements AppDataConditionalRepositoryLike {
                    updated_ts,
                    revision
             from app_data_store
-            where app_namespace = ${namespace}
-              and store_name = ${storeName}
+            where app_namespace = ${input.namespace}
+              and store_name = ${input.storeName}
             order by data_key
             limit ${limit}
         `;
@@ -209,10 +155,10 @@ export class PSqlAppDataRepository implements AppDataConditionalRepositoryLike {
         `;
     }
 
-    async insertIfAbsent<V = unknown>(
-        input: AppDataUpsertInput<V>
-    ): Promise<AppDataConditionalInsertResult<V>> {
-        const rows = await this.sql<AppDataRow[]>`
+    async insertIfAbsent(
+        input: AppDataUpsertInput
+    ): Promise<AppDataConditionalInsertResult> {
+        const rows = await this.sql<PSqlAppDataRow[]>`
             insert into app_data_store (app_namespace,
                                         store_name,
                                         data_key,
@@ -244,24 +190,20 @@ export class PSqlAppDataRepository implements AppDataConditionalRepositoryLike {
         if (rows[0]) {
             return {
                 status: 'inserted',
-                entry: toEntry(rows[0]) as AppDataEntry<V>
+                entry: decodePSqlAppDataRow(rows[0])
             };
         }
 
         return {
             status: 'exists',
-            current: await this.findEntry(
-                input.namespace,
-                input.storeName,
-                input.key
-            ) as AppDataEntry<V> | undefined
+            current: await this.findEntry(input)
         };
     }
 
-    async upsertIfRevision<V = unknown>(
-        input: AppDataUpsertIfRevisionInput<V>
-    ): Promise<AppDataConditionalWriteResult<V>> {
-        const rows = await this.sql<AppDataRow[]>`
+    async upsertIfRevision(
+        input: AppDataUpsertIfRevisionInput
+    ): Promise<AppDataConditionalWriteResult> {
+        const rows = await this.sql<PSqlAppDataRow[]>`
             update app_data_store
             set data_value     = ${serializeAppDataValue(input.value)},
                 schema_version = ${input.schemaVersion},
@@ -285,46 +227,37 @@ export class PSqlAppDataRepository implements AppDataConditionalRepositoryLike {
         if (rows[0]) {
             return {
                 status: 'written',
-                entry: toEntry(rows[0]) as AppDataEntry<V>
+                entry: decodePSqlAppDataRow(rows[0])
             };
         }
 
         return {
             status: 'conflict',
-            current: await this.findEntry(
-                input.namespace,
-                input.storeName,
-                input.key
-            ) as AppDataEntry<V> | undefined
+            current: await this.findEntry(input)
         };
     }
 
-    async deleteByKey(namespace: string, storeName: string, key: string): Promise<boolean> {
+    async deleteByKey(input: AppDataKey): Promise<boolean> {
         const rows = await this.sql<{ data_key: string; }[]>`
             delete
             from app_data_store
-            where app_namespace = ${namespace}
-              and store_name = ${storeName}
-              and data_key = ${key}
+            where app_namespace = ${input.namespace}
+              and store_name = ${input.storeName}
+              and data_key = ${input.key}
             returning data_key
         `;
 
         return rows.length > 0;
     }
 
-    async deleteIfRevision(
-        namespace: string,
-        storeName: string,
-        key: string,
-        expectedRevision: number
-    ): Promise<AppDataConditionalDeleteResult> {
-        const rows = await this.sql<AppDataRow[]>`
+    async deleteIfRevision(input: AppDataDeleteIfRevisionInput): Promise<AppDataConditionalDeleteResult> {
+        const rows = await this.sql<PSqlAppDataRow[]>`
             delete
             from app_data_store
-            where app_namespace = ${namespace}
-              and store_name = ${storeName}
-              and data_key = ${key}
-              and revision = ${expectedRevision}
+            where app_namespace = ${input.namespace}
+              and store_name = ${input.storeName}
+              and data_key = ${input.key}
+              and revision = ${input.expectedRevision}
             returning app_namespace,
                       store_name,
                       data_key,
@@ -338,56 +271,37 @@ export class PSqlAppDataRepository implements AppDataConditionalRepositoryLike {
         if (rows[0]) {
             return {
                 status: 'deleted',
-                entry: toEntry(rows[0])
+                entry: decodePSqlAppDataRow(rows[0])
             };
         }
 
         return {
             status: 'conflict',
-            current: await this.findEntry(namespace, storeName, key)
+            current: await this.findEntry(input)
         };
     }
 
-    async deleteExpired(namespace: string, storeName?: string): Promise<number> {
-        const rows = storeName
+    async deleteExpired(input: AppDataDeleteExpiredInput): Promise<number> {
+        const expireAtOrBefore = toPgDate(input.expireAtOrBeforeTimestamp);
+        const rows = input.storeName
             ? await this.sql<{ data_key: string; }[]>`
                 delete
                 from app_data_store
-                where app_namespace = ${namespace}
-                  and store_name = ${storeName}
-                  and expire_at_ts <= now()
+                where app_namespace = ${input.namespace}
+                  and store_name = ${input.storeName}
+                  and expire_at_ts <= ${expireAtOrBefore}
                 returning data_key
             `
             : await this.sql<{ data_key: string; }[]>`
                 delete
                 from app_data_store
-                where app_namespace = ${namespace}
-                  and expire_at_ts <= now()
+                where app_namespace = ${input.namespace}
+                  and expire_at_ts <= ${expireAtOrBefore}
                 returning data_key
             `;
 
         return rows.length;
     }
-}
-
-function toEntry(row: AppDataRow): AppDataEntry {
-    const expireAtTimestamp = Date.parse(row.expire_at_ts);
-    if (!Number.isFinite(expireAtTimestamp)) {
-        throw new Error(
-            `Invalid expire_at_ts for app_data_store row ${row.app_namespace}/${row.store_name}/${row.data_key}`
-        );
-    }
-
-    return {
-        namespace: row.app_namespace,
-        storeName: row.store_name,
-        key: row.data_key,
-        value: JSON.parse(row.data_value) as unknown,
-        schemaVersion: Number(row.schema_version),
-        expireAtTimestamp,
-        updatedTimestamp: row.updated_ts,
-        revision: Number(row.revision)
-    };
 }
 
 function toPgDate(timestamp: number): Date {
@@ -398,11 +312,6 @@ function toPgDate(timestamp: number): Date {
     return new Date(timestamp);
 }
 
-function serializeAppDataValue(value: unknown): string {
-    const serialized = JSON.stringify(value);
-    if (serialized === undefined) {
-        throw new Error('App data values must be JSON serializable.');
-    }
-
-    return serialized;
+function serializeAppDataValue(value: AppDataUpsertInput['value']): string {
+    return serializeCanonicalMutationCommand(value);
 }

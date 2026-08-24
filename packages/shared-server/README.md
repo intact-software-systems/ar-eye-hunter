@@ -9,14 +9,16 @@ For the current package map, active data flow, and validation commands, see
 
 ## Owns
 
-- Rallar server facade APIs in `rallar-facade/`.
+- Direct server application composition in `rallar-server/`.
+- Server app-data contracts, cache/hydration, optimistic writing, and PostgreSQL persistence in `app-data/`.
 - Rallar middleware construction in `rallar-system/middleware/`.
 - Server-side WebSocket topic routing, system topic installation, lifecycle wiring, and queue pub/sub bridge contracts.
 - Domain-owned client, group, auth, CRDT, topology, RTC-RTT, state-sync, presence, and AppInbox modules under
   `rallar-system/`.
 - Reusable observability contracts and state-service/AppInbox instrumentation hooks.
 - Runtime-state repository contracts plus JSON store helpers.
-- Current Postgres adapters under `postgres/`.
+- Feature-owned Postgres adapters beside their domain owners; `postgres/` retains only shared SQL infrastructure and
+  adapters awaiting their owning feature slice.
 
 ## Does Not Own
 
@@ -44,7 +46,9 @@ means api-v1 owns:
 - `createRallarMiddleware(...)` constructs the queuebox engine and websocket queue service. When an app supplies a
   queue pub/sub bridge, this builder also installs it and includes its actual subscription promise in runtime
   readiness.
-- `createRallarServerApplication(...)` composes facade, REST route installers, and WS route installer.
+- `createRallarServerApplication(...)` requires runtime, repositories, app-data persistence, clock, WebSocket options,
+  system installers, and route installers explicitly. Its `ws` and `appData` properties are the real owners, not
+  forwarding facades.
 - `installQueueBoxPubSubBridge(...)` wires queuebox inbox/outbox events to a generic pub/sub bridge and returns only
   when the transport listener subscription is active. Subscription failure rejects runtime readiness.
 - `rallar-system/topology/replay/**` owns the durable topology stream/log,
@@ -107,26 +111,27 @@ Durable client/group state-event logs are stored separately in `client_state_eve
 snapshot version for REST event replay.
 
 Application-specific durable data should not write directly into middleware namespaces. Server-side custom data uses
-the explicit app-data facade (`server.data.open(...)`) backed by `app_data_store`, with `app_namespace`, `store_name`,
+the explicit app-data owner (`server.appData.open(...)`) backed by `app_data_store`, with `app_namespace`, `store_name`,
 and `data_key` as the isolation boundary. Keeping app data separate avoids retention, backup, and schema-evolution
 coupling with middleware state.
 
 ## App Data Storage
 
 `app_data_store` is for server-side application data, not Rallar middleware state. The shared contract lives in
-`app-data/AppDataRepository.ts`, and the current Postgres adapter is
-`postgres/app-data/PSqlAppDataRepository.ts`. API apps can inject a different repository into
+`app-data/app-data-repository.ts`, and the current Postgres adapter is
+`app-data/postgres/p-sql-app-data-repository.ts`. API apps can inject a different repository into
 `createRallarServerApplication(...)`, or use the API-v1 default Postgres adapter.
 
-The facade keeps a process-local memory cache and persists JSON values in Postgres rows. Stores are opened
-by name, can be scoped with `namespace` and `keyPrefix`, and can configure `ttlMs`, `expireAtFor`, `schemaVersion`, and
-a lightweight `migrate` callback.
+The app-data owner keeps a process-local memory cache and persists `JsonWireValue` values in Postgres rows. Every store
+requires an `AppDataValueCodec<V>` with one current `schemaVersion`, `encode`, and `decode` implementation. Stores can
+also configure `namespace`, `keyPrefix`, `ttlMs`, `expireAtFor`, read consistency, and conflict retries. A stored schema
+mismatch or malformed current value fails through `AppDataCorruptionError`; there is no runtime migration, fallback,
+or dual-read path.
 
-## Deliberate Temporary Coupling
+## PostgreSQL Ownership
 
-The `postgres/` folder is still in `shared-server` because it is currently the shared server persistence implementation.
-If another server app or non-Postgres backend appears, the next split should be a `packages/shared-postgres` package
-that contains those concrete adapters behind interfaces already owned by `shared-server`.
+Concrete adapters live beside their feature contracts when the feature owns their row shape and corruption boundary.
+Shared SQL ports and transaction helpers remain under `postgres/`.
 
 No Deno KV QueueBox adapter is currently carried. The api-v1 middleware path is Postgres-backed through
 `PSqlQueueBox`, and any future non-Postgres queuebox backend should be introduced through a concrete adapter package

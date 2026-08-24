@@ -15,7 +15,7 @@ apps/api-v1/src/main.ts
   -> composition/create-api-v1-runtime.ts
   -> composition/create-api-v1-mutation-runtime.ts
   -> rallar-system/middleware/create-rallar-middleware.ts
-  -> rallar-facade/rallar-server-application.ts
+  -> rallar-server/rallar-server-application.ts
 ```
 
 The package entry is `packages/shared-server/mod.ts`. It exports selected

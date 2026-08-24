@@ -1,5 +1,6 @@
-import { PSqlAppDataRepository } from '@shared-server/postgres/app-data/PSqlAppDataRepository.ts';
-import { RallarServerDataFacade } from '@shared-server/rallar-facade/rallar-server.ts';
+import { PSqlAppDataRepository } from '@shared-server/app-data/postgres/p-sql-app-data-repository.ts';
+import { RallarServerAppData } from '@shared-server/app-data/rallar-server-app-data.ts';
+import type { JsonWireObject, JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import { RepositoryManager } from '@shared/cache/RepositoryManager.ts';
 import { describe, expect, it } from 'vitest';
 import { createRuntimeStatePostgresSql } from '../../postgres-runtime-state-client-fixtures.ts';
@@ -28,10 +29,8 @@ describe('Postgres app-data concurrency', () => {
             const namespace = `app-data-concurrency-${Date.now()}-${Math.random()}`;
 
             try {
-                const seed = await new RallarServerDataFacade(
-                    new RepositoryManager(),
-                    repository
-                ).open<{ count: number; }>('counters', {
+                const seed = await createAppData(repository).open('counters', {
+                    codec: COUNTER_CODEC,
                     namespace,
                     maxConflictRetries: 100
                 });
@@ -39,10 +38,8 @@ describe('Postgres app-data concurrency', () => {
 
                 const stores = await Promise.all(
                     Array.from({ length: 16 }, async () =>
-                        await new RallarServerDataFacade(
-                            new RepositoryManager(),
-                            repository
-                        ).open<{ count: number; }>('counters', {
+                        await createAppData(repository).open('counters', {
+                            codec: COUNTER_CODEC,
                             namespace,
                             maxConflictRetries: 100
                         }))
@@ -80,6 +77,33 @@ function requireDatabaseUrl(): string {
     }
 
     return databaseUrl;
+}
+
+const COUNTER_CODEC = {
+    schemaVersion: 1,
+    encode: (value: Counter) => ({ count: value.count }),
+    decode: (value: JsonWireValue): Counter => {
+        if (!isJsonWireObject(value) || typeof value.count !== 'number') {
+            throw new TypeError('Counter app data must contain a numeric count.');
+        }
+        return { count: value.count };
+    }
+};
+
+interface Counter {
+    readonly count: number;
+}
+
+function createAppData(repository: PSqlAppDataRepository): RallarServerAppData {
+    return new RallarServerAppData({
+        repositories: new RepositoryManager(),
+        repository,
+        nowEpochMs: Date.now
+    });
+}
+
+function isJsonWireObject(value: JsonWireValue): value is JsonWireObject {
+    return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
 function readEnv(key: string): string | undefined {

@@ -89,11 +89,10 @@ app.use(
     })
 );
 
-rallar.system
-    .useDefaultMiddlewareTopics()
-    .useWebSocketLifecycle();
-rallar.ws.mount(app);
-rallar.rest.mount(app);
+rallar.installSystemTopics();
+rallar.installWebSocketLifecycle();
+rallar.mountWebSocket(app);
+rallar.mountRest(app);
 
 const port = configuration.http.port;
 const apiProcess = await startApiProcess({

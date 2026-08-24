@@ -102,8 +102,8 @@ example: "Use the `rallar-realtime` and `rallar-testing` skills."
 - Browser data facade: `packages/shared-web/browser/rallar-data.ts`
 - Server middleware:
   `packages/shared-server/rallar-system/middleware/create-rallar-middleware.ts`
-- Server facade wrappers: `packages/shared-server/rallar-facade/rallar-server.ts`
-  and `packages/shared-server/rallar-facade/rallar-server-application.ts`
+- Server application owner:
+  `packages/shared-server/rallar-server/rallar-server-application.ts`
 
 ## Run Environment Notes
 

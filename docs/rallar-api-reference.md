@@ -1319,30 +1319,37 @@ It supports:
 
 Prefer `groupRef`-aware messages where possible. If only `groupId` is available, the resolver can fall back to `findGroupSnapshotById`, but scoped `GroupRef` avoids cross-workspace ambiguity.
 
-## Server Facade Wrappers
+## Server Application
 
-Most applications should use `createRallarServerApplication(...)` or `createRallarServerFacade(...)` around the middleware runtime.
+Applications use `createRallarServerApplication(...)` around the middleware runtime.
 
 ```ts
 const rallarServer = createRallarServerApplication({
     runtime,
-    routes: {
-        ws: (app) => installWsRoutes(app),
+    repositories,
+    appDataRepository,
+    nowEpochMs: Date.now,
+    ws: {},
+    systemInstallers,
+    routeInstallers: {
+        webSocket: (app) => installWsRoutes(app),
         rest: [installAuthRoutes, installStateRoutes]
     }
 });
 
-rallarServer.system.useDefaultMiddlewareTopics().useWebSocketLifecycle();
-
-rallarServer.ws.mount(app);
-rallarServer.rest.mount(app);
+rallarServer.installSystemTopics();
+rallarServer.installWebSocketLifecycle();
+rallarServer.mountWebSocket(app);
+rallarServer.mountRest(app);
 rallarServer.start();
 ```
 
-The server facade exposes:
+The server application exposes:
 
-- `system.useDefaultMiddlewareTopics()`
-- `system.useWebSocketLifecycle()`
+- `installSystemTopics()`
+- `installWebSocketLifecycle()`
+- the real WebSocket router as `ws`
+- the real app-data owner as `appData`
 - `ws.install()`
 - `ws.defineTopic(definition)`
 - `ws.removeTopic(selector)`

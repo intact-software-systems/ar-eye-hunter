@@ -15,7 +15,7 @@ composition, browser facade, tests, and the Rallar Black Box UI.
 Checks run:
 
 - `npm --workspace rallar-black-box run typecheck`: passed.
-- `npx vitest run packages/tests/shared-web/rallar-flow.test.ts packages/tests/shared-web/rallar-data.test.ts packages/tests/shared-test/rallar-bb-test.test.ts packages/tests/shared-server/rallar-server-app-data.test.ts`: passed, 4 files and 68 tests.
+- `npx vitest run packages/tests/shared-web/rallar-flow.test.ts packages/tests/shared-web/rallar-data.test.ts packages/tests/shared-test/rallar-bb-test.test.ts packages/tests/shared-server/app-data/rallar-server-app-data.test.ts`: passed, 4 files and 68 tests.
 - Ran `apps/rallar-black-box` at `http://127.0.0.1:5176/`.
 - Ran the memory-backed Rallar API and control server with `npm run start:rallar:servers:memory`.
 - Tested simulated mode, black-box-runner mode, browser-rallar login, and the live Quick Test path.
@@ -184,7 +184,7 @@ will blur unless the docs and UI give a very clear decision tree.
 
 The server facade is intentionally small: default topics, lifecycle hooks,
 user topics, publishing, status, and app data. Evidence:
-`packages/shared-server/rallar-facade/rallar-server.ts`.
+`packages/shared-server/rallar-server/rallar-server-application.ts`.
 
 The real API-v1 server is much heavier. `createRallarServer` wires middleware,
 room authorization, app data, CRDT topics, WS lifecycle, REST routes, Swagger,

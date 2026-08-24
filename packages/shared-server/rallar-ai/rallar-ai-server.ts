@@ -6,9 +6,10 @@ import type {
     RallarAiGenerationPolicy,
     RallarAiJsonProvider,
     RallarAiJsonRequest,
-    RallarAiJsonResult
+    RallarAiJsonResult,
+    RallarAiJsonValue
 } from '@shared/rallar-ai/mod.ts';
-import type { RallarServerAppDataStoreOptions } from '../app-data/RallarServerAppData.ts';
+import type { AppDataValueCodec } from '../app-data/app-data-value-codec.ts';
 import type {
     RallarServerWsFanout,
     RallarServerWsHandler,
@@ -42,13 +43,17 @@ interface RallarServerAiWebSocketFacade {
 interface RallarServerAiDataFacade {
     open<V>(
         input: string,
-        options?: RallarServerAppDataStoreOptions<V>
+        options: Readonly<{
+            codec: AppDataValueCodec<V>;
+            namespace?: string;
+            ttlMs?: number;
+        }>
     ): Promise<RallarServerAiDataStore<V>>;
 }
 
 export interface RallarServerAiRallar {
     readonly ws: RallarServerAiWebSocketFacade;
-    readonly data?: RallarServerAiDataFacade;
+    readonly appData?: RallarServerAiDataFacade;
 }
 
 export interface RallarServerAiRequestContext {
@@ -96,7 +101,7 @@ export type RallarServerAiBroadcastInput<TValue = RallarServerAiValue> =
         | Readonly<{ scope: 'world' | 'all'; roomRef?: never; }>
     );
 
-export interface RallarServerAiPersistInput<TValue = RallarServerAiValue> {
+export interface RallarServerAiPersistInput<TValue extends RallarAiJsonValue = RallarAiJsonValue> {
     readonly result: RallarAiJsonResult<TValue>;
     readonly actorId?: string;
     readonly roomId?: string;
@@ -161,7 +166,7 @@ export interface RallarServerAiFacade {
     broadcastJson<TValue = RallarServerAiValue>(
         input: RallarServerAiBroadcastInput<TValue>
     ): Promise<RallarServerWsPublishResult>;
-    persistJson<TValue = RallarServerAiValue>(
+    persistJson<TValue extends RallarAiJsonValue = RallarAiJsonValue>(
         input: RallarServerAiPersistInput<TValue>
     ): Promise<void>;
     handleRestGenerateJson<TValue = RallarServerAiValue>(

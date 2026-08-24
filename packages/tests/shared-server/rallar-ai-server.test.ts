@@ -273,9 +273,9 @@ describe('Rallar server AI facade', () => {
             fanout: 'outbox'
         });
 
-        expect(fake.rallar.data.open).toHaveBeenCalledWith('ai-results', {
+        expect(fake.rallar.appData.open).toHaveBeenCalledWith('ai-results', {
+            codec: expect.objectContaining({ schemaVersion: 1 }),
             namespace: 'server',
-            schemaVersion: 1,
             ttlMs: undefined
         });
         expect(fake.store.set).toHaveBeenCalledWith('result-1', result);
@@ -606,7 +606,7 @@ function createFakeRallar() {
     };
     const rallar = {
         ws,
-        data: {
+        appData: {
             open: vi.fn(async (storeName: string) => {
                 openedStoreNames.push(storeName);
                 return store;

@@ -1,11 +1,11 @@
 import type { Hono } from 'jsr:@hono/hono@4.11.9';
 
-import type { AppDataRepositoryLike } from '@shared-server/app-data/AppDataRepository.ts';
+import type { AppDataRepository } from '@shared-server/app-data/app-data-repository.ts';
 import {
     createRallarServerApplication,
-    type RallarServerApplication
-} from '@shared-server/rallar-facade/rallar-server-application.ts';
-import type { RallarServerSystemInstallers } from '@shared-server/rallar-facade/rallar-server.ts';
+    type RallarServerApplication,
+    type RallarServerApplicationSystemInstallers
+} from '@shared-server/rallar-server/rallar-server-application.ts';
 import type { RallarServerWsRouterOptions } from '@shared-server/rallar-system/websocket/router/rallar-server-ws-router-contracts.ts';
 import type { RepositoryManager } from '@shared/cache/RepositoryManager.ts';
 
@@ -15,9 +15,10 @@ import type { ApiV1RouteInstallers } from './create-api-v1-route-installers.ts';
 export interface CreateRallarServerInput {
     readonly runtime: ApiV1Runtime;
     readonly repositories: RepositoryManager;
-    readonly appDataRepository: AppDataRepositoryLike;
+    readonly appDataRepository: AppDataRepository;
+    readonly nowEpochMs: () => number;
     readonly ws: RallarServerWsRouterOptions;
-    readonly systemInstallers: RallarServerSystemInstallers<ApiV1Runtime>;
+    readonly systemInstallers: RallarServerApplicationSystemInstallers<ApiV1Runtime>;
     readonly routeInstallers: ApiV1RouteInstallers;
 }
 
@@ -27,9 +28,10 @@ export function createRallarServer(
     return createRallarServerApplication({
         runtime: input.runtime,
         repositories: input.repositories,
-        appData: { repository: input.appDataRepository },
+        appDataRepository: input.appDataRepository,
+        nowEpochMs: input.nowEpochMs,
         ws: input.ws,
-        system: input.systemInstallers,
-        routes: input.routeInstallers
+        systemInstallers: input.systemInstallers,
+        routeInstallers: input.routeInstallers
     });
 }
