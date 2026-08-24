@@ -213,6 +213,42 @@ sanitize_api_environment_file() {
 	rm -f "${tmp_file}"
 }
 
+update_env_value() {
+	local env_file="$1"
+	local key="$2"
+	local value="$3"
+	local tmp_file
+
+	if [[ ! -f "${env_file}" ]]; then
+		echo "Missing ${env_file}. Run 02-deploy-controller.sh first." >&2
+		exit 1
+	fi
+
+	tmp_file="$(mktemp)"
+	awk -v key="${key}" -v value="${value}" '
+    BEGIN { replaced = 0 }
+    $0 ~ "^" key "=" {
+      if (!replaced && value != "") {
+        print key "=" value
+        replaced = 1
+      }
+      next
+    }
+    { print }
+    END {
+      if (!replaced && value != "") {
+        print key "=" value
+      }
+    }
+  ' "${env_file}" >"${tmp_file}"
+	if [[ "$(id -u)" == "0" ]]; then
+		install -m 0600 -o root -g root "${tmp_file}" "${env_file}"
+	else
+		install -m 0600 "${tmp_file}" "${env_file}"
+	fi
+	rm -f "${tmp_file}"
+}
+
 run_rollout_self_test() {
 	case "${RALLAR_ROLLOUT_SCRIPT_SELF_TEST:-}" in
 	checkout-ref)
@@ -235,6 +271,21 @@ run_rollout_self_test() {
 	normalize-api-environment)
 		sanitize_api_environment_file "${RALLAR_API_ENV_FILE}"
 		echo "normalizedApiEnvironment=true"
+		;;
+	write-api-optional-environment)
+		local name
+		local names=(
+			RALLAR_BLACK_BOX_OPERATOR_CLIENT_IDS
+			RALLAR_RTC_TOPOLOGY_DEGREE_LIMIT
+			RALLAR_RTC_TOPOLOGY_TREE_MIN_SIZE
+			RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE
+			RALLAR_RTC_TOPOLOGY_MESH_PARAM_K
+			RALLAR_RTC_TOPOLOGY_RTT_REBUILD_DEBOUNCE_MS
+		)
+		for name in "${names[@]}"; do
+			update_env_value "${RALLAR_API_ENV_FILE}" "${name}" "${!name:-}"
+		done
+		echo "wroteApiOptionalEnvironment=true"
 		;;
 	*)
 		echo "Unknown RALLAR_ROLLOUT_SCRIPT_SELF_TEST: ${RALLAR_ROLLOUT_SCRIPT_SELF_TEST}" >&2
@@ -326,38 +377,6 @@ wait_for_url() {
 	return 1
 }
 
-update_env_value() {
-	local env_file="$1"
-	local key="$2"
-	local value="$3"
-	local tmp_file
-
-	if [[ ! -f "${env_file}" ]]; then
-		echo "Missing ${env_file}. Run 02-deploy-controller.sh first." >&2
-		exit 1
-	fi
-
-	tmp_file="$(mktemp)"
-	awk -v key="${key}" -v value="${key}=${value}" '
-    BEGIN { replaced = 0 }
-    $0 ~ "^" key "=" {
-      if (!replaced) {
-        print value
-        replaced = 1
-      }
-      next
-    }
-    { print }
-    END {
-      if (!replaced) {
-        print value
-      }
-    }
-  ' "${env_file}" >"${tmp_file}"
-	install -m 0600 -o root -g root "${tmp_file}" "${env_file}"
-	rm -f "${tmp_file}"
-}
-
 normalize_api_environment_allowlist() {
 	sanitize_api_environment_file "${RALLAR_API_ENV_FILE}"
 	chown root:root "${RALLAR_API_ENV_FILE}"
@@ -380,7 +399,7 @@ ensure_operator_token_secret() {
 	local secret="${RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET:-}"
 
 	if [[ -z "${secret}" ]]; then
-		secret="$(read_env_value "/etc/rallar/api-v1.env" "RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET")"
+		secret="$(read_env_value "${RALLAR_API_ENV_FILE}" "RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET")"
 	fi
 	if [[ -z "${secret}" ]]; then
 		secret="$(read_env_value "/etc/rallar/control-server.env" "RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET")"
@@ -389,9 +408,9 @@ ensure_operator_token_secret() {
 		secret="$(openssl rand -hex 32)"
 	fi
 
-	update_env_value "/etc/rallar/api-v1.env" "RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET" "${secret}"
-	update_env_value "/etc/rallar/api-v1.env" "RALLAR_BLACK_BOX_OPERATOR_TOKEN_TTL_MS" "${RALLAR_BLACK_BOX_OPERATOR_TOKEN_TTL_MS}"
-	update_env_value "/etc/rallar/api-v1.env" "RALLAR_BLACK_BOX_OPERATOR_CLIENT_IDS" "${RALLAR_BLACK_BOX_OPERATOR_CLIENT_IDS}"
+	update_env_value "${RALLAR_API_ENV_FILE}" "RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET" "${secret}"
+	update_env_value "${RALLAR_API_ENV_FILE}" "RALLAR_BLACK_BOX_OPERATOR_TOKEN_TTL_MS" "${RALLAR_BLACK_BOX_OPERATOR_TOKEN_TTL_MS}"
+	update_env_value "${RALLAR_API_ENV_FILE}" "RALLAR_BLACK_BOX_OPERATOR_CLIENT_IDS" "${RALLAR_BLACK_BOX_OPERATOR_CLIENT_IDS}"
 	update_env_value "/etc/rallar/control-server.env" "RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET" "${secret}"
 }
 
@@ -399,7 +418,7 @@ ensure_api_auth_credential_secret() {
 	local secret="${RALLAR_AUTH_CREDENTIAL_SECRET:-}"
 
 	if [[ -z "${secret}" ]]; then
-		secret="$(read_env_value "/etc/rallar/api-v1.env" "RALLAR_AUTH_CREDENTIAL_SECRET")"
+		secret="$(read_env_value "${RALLAR_API_ENV_FILE}" "RALLAR_AUTH_CREDENTIAL_SECRET")"
 	fi
 	if [[ -z "${secret}" ]]; then
 		secret="$(openssl rand -hex 32)"
@@ -409,12 +428,12 @@ ensure_api_auth_credential_secret() {
 		exit 1
 	fi
 
-	update_env_value "/etc/rallar/api-v1.env" "RALLAR_AUTH_CREDENTIAL_SECRET" "${secret}"
+	update_env_value "${RALLAR_API_ENV_FILE}" "RALLAR_AUTH_CREDENTIAL_SECRET" "${secret}"
 }
 
 update_api_cors_origins() {
 	apply_rallar_public_cors_defaults
-	update_env_value "/etc/rallar/api-v1.env" "CORS_ORIGINS" "${RALLAR_API_CORS_ORIGINS}"
+	update_env_value "${RALLAR_API_ENV_FILE}" "CORS_ORIGINS" "${RALLAR_API_CORS_ORIGINS}"
 }
 
 update_api_rtc_topology_env() {

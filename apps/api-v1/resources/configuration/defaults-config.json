@@ -130,6 +130,7 @@
   },
   "ice": {
     "mode": "local",
+    "region": "eu",
     "cacheTtlMs": 300000,
     "rateLimit": {
       "windowMs": 60000,
