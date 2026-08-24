@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 
 import type { AuthenticatedGroupMutationEnqueue } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-contracts.ts';
 
-import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-client.ts';
+import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import type { GroupStateInboxDurableResult } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-result.ts';
 
 import type { ProcessGroupAppInbox } from '../../src/group-state/group-state-route-contracts.ts';

@@ -28,7 +28,10 @@ import {
 } from '../../app-inbox/app-inbox-contracts.ts';
 import { toUnexpectedAppInboxFailure, type AppInboxFailure } from '../../app-inbox/app-inbox-failure.ts';
 import { AppInboxHandlerRegistry } from '../../app-inbox/app-inbox-handler-registry.ts';
-import { AppInboxQueueClient, type AppInboxOptions } from '../../app-inbox/app-inbox-queue-client.ts';
+import type { AppInboxOptions } from '../../app-inbox/app-inbox-options.ts';
+import type { AppInboxEntryRepository, AppInboxResultRepository } from '../../app-inbox/app-inbox-persistence-ports.ts';
+import { AppInboxQueueClient } from '../../app-inbox/app-inbox-queue-client.ts';
+import { encodeAppInboxResult } from '../../app-inbox/app-inbox-registration-codecs.ts';
 import type { RallarTimingSink } from '../../observability/timing.ts';
 import type { JsonWireValue } from '../../protocol/json-wire-identity.ts';
 import type { AuthMutationService } from '../auth-mutation-service.ts';
@@ -93,8 +96,8 @@ const AUTH_TYPES = [
 export namespace AppAuthInboxService {
     export interface Dependencies {
         readonly inboxQueueReader: InboxQueueReader;
-        readonly resourceInboxRepository: AppInboxQueueClient.InboxRepository & AuthInboxRepository;
-        readonly resourceInboxResultsRepository: AppInboxQueueClient.ResultRepository;
+        readonly resourceInboxRepository: AppInboxEntryRepository & AuthInboxRepository;
+        readonly resourceInboxResultsRepository: AppInboxResultRepository;
         readonly database: PSqlSql;
         readonly authMutationService: AuthMutationService;
         readonly credentialIssuer: AuthCredentialIssuer;
@@ -161,11 +164,14 @@ export class AppAuthInboxService {
             nowEpochMs: this.authFactNowEpochMs
         });
         for (const type of AUTH_TYPES) {
-            this.handlers.onStateMessage<Parameters<AuthInboxHandler['processAuthMutation']>[0]>(
+            this.handlers.registerHandler({
                 type,
-                async (command, context) => await this.authInboxHandler.processAuthMutation(command, context)
-            );
+                decodeCommand: decodeAuthMutationIntent,
+                encodeResult: (result) => encodeAppInboxResult(result, 'Auth AppInbox result'),
+                handle: async (command, context) => await this.authInboxHandler.processAuthMutation(command, context)
+            });
         }
+        this.handlers.assertRegistrationComplete(AUTH_TYPES);
     }
 
     async processAuthIntentUntilCompletion(

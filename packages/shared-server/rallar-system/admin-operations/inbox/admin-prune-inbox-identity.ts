@@ -2,8 +2,8 @@ import { ADMIN_PRUNE_EXPIRED_CATEGORIES, type AdminPruneExpiredCategory } from '
 import type { Key } from '@shared/queuebox/ResourceEntry.ts';
 
 import { toStrictAppInboxQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
-import { AppInboxType, type AppInboxMessageContext } from '../../app-inbox/app-inbox-contracts.ts';
-import { AppInboxIdempotencyConflictError } from '../../app-inbox/app-inbox-queue-client.ts';
+import { AppInboxType, type AppInboxExecutionMetadata } from '../../app-inbox/app-inbox-contracts.ts';
+import { AppInboxIdempotencyConflictError } from '../../app-inbox/app-inbox-contracts.ts';
 import { hashCanonicalCommand } from '../../app-inbox/hash-canonical-command.ts';
 import type { AdminPruneAppData, AdminPruneCommand } from './admin-prune-command-codec.ts';
 
@@ -122,7 +122,7 @@ export async function assertAdminPruneStoredIdentity(
 
 export async function assertAdminPruneQueueIdentity(
     command: AdminPruneCommand,
-    context: AppInboxMessageContext
+    context: AppInboxExecutionMetadata
 ): Promise<void> {
     const strictContextId = toStrictAppInboxQueueKey({
         topicId: ADMIN_APP_INBOX_TOPIC,

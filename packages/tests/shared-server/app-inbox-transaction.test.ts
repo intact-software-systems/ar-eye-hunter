@@ -1,4 +1,5 @@
-import { AppInboxReservationConflictError, AppInboxType, classifyAppInboxError } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-client.ts';
+import { AppInboxReservationConflictError, AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
+import { classifyAppInboxError } from '@shared-server/rallar-system/app-inbox/app-inbox-error-classification.ts';
 import { GroupPolicyDeniedError } from '@shared-server/rallar-system/group-state/policy/group-policy-result.ts';
 
 import type { RallarTimingEvent } from '@shared-server/rallar-system/observability/timing.ts';
@@ -171,6 +172,16 @@ describe('AppInboxHandlerRegistry transaction ownership', () => {
 });
 
 describe('AppInboxHandlerRegistry registered handler finalization', () => {
+    it('rejects startup when a configured handler has not been registered', () => {
+        const harness = createRegisteredHandlerHarness();
+
+        expect(() => harness.service.assertRegistrationComplete([AppInboxType.GROUP_CREATE])).toThrow('missing=GROUP_CREATE');
+
+        harness.service.onStateMessage(AppInboxType.GROUP_CREATE, async () => null);
+
+        expect(() => harness.service.assertRegistrationComplete([AppInboxType.GROUP_CREATE])).not.toThrow();
+    });
+
     it('skips duplicate result persistence after a transaction-owned commit', async () => {
         const timing: RallarTimingEvent[] = [];
         const harness = createRegisteredHandlerHarness({
@@ -226,10 +237,22 @@ describe('AppInboxHandlerRegistry registered handler finalization', () => {
 
     it('persists a non-transactional handler result exactly once', async () => {
         const harness = createRegisteredHandlerHarness();
-        harness.service.onStateMessage(AppInboxType.GROUP_CREATE, async () => ({
-            status: 'accepted',
-            source: 'handler'
-        }));
+        harness.service.registerHandler({
+            type: AppInboxType.GROUP_CREATE,
+            decodeCommand: (value) => {
+                if (
+                    value === null ||
+                    typeof value !== 'object' ||
+                    Array.isArray(value) ||
+                    typeof value.requestId !== 'string'
+                ) {
+                    throw new TypeError('Group create command is invalid');
+                }
+                return { requestId: value.requestId };
+            },
+            encodeResult: (result) => ({ status: result.outcome, source: 'handler' }),
+            handle: async () => ({ outcome: 'accepted' as const })
+        });
 
         const pending = harness.service.processEntryUntilCompletion(harness.enqueue);
         await harness.reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
@@ -237,6 +260,28 @@ describe('AppInboxHandlerRegistry registered handler finalization', () => {
         await expect(pending).resolves.toMatchObject({
             right: { status: 'accepted', source: 'handler' }
         });
+        expect(harness.results.replaceCalls).toBe(1);
+    });
+
+    it('rejects malformed domain commands before handler invocation', async () => {
+        const harness = createRegisteredHandlerHarness();
+        const handler = vi.fn(async () => ({ status: 'unexpected' as const }));
+        harness.service.registerHandler({
+            type: AppInboxType.GROUP_CREATE,
+            decodeCommand: () => {
+                throw new TypeError('Group create command is invalid');
+            },
+            encodeResult: (result) => result,
+            handle: handler
+        });
+
+        const pending = harness.service.processEntryUntilCompletion(harness.enqueue);
+        await harness.reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
+
+        await expect(pending).resolves.toMatchObject({
+            left: { code: 'app-inbox-malformed-command', status: 400 }
+        });
+        expect(handler).not.toHaveBeenCalled();
         expect(harness.results.replaceCalls).toBe(1);
     });
 

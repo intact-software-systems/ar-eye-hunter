@@ -4,11 +4,11 @@ import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 import { describe, expect, it, vi } from 'vitest';
 import { createAppInboxTestDatabase } from '../../app-inbox-test-database.ts';
 
-import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-client.ts';
+import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import type { AuthenticatedGroupMutationEnqueue } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-contracts.ts';
 import { GroupStateInboxService } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-service.ts';
 
-import { AppInboxIdempotencyConflictError } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-client.ts';
+import { AppInboxIdempotencyConflictError } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import { GroupMutationAuthorizationError } from '@shared-server/rallar-system/group-state/group-mutation-authority.ts';
 import { type GroupStateWritten } from '@shared-server/rallar-system/group-state/group-state-service-contracts.ts';
 

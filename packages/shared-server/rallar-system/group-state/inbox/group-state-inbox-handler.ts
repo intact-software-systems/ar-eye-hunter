@@ -1,4 +1,4 @@
-import type { AppInboxMessageContext } from '../../app-inbox/app-inbox-queue-client.ts';
+import { type AppInboxMessageContext } from '../../app-inbox/app-inbox-contracts.ts';
 import type { AppInboxMutationTransactionWriter } from '../../app-inbox/app-inbox-transaction-writer.ts';
 import type {
     GroupFormationGroupMutationSink,
@@ -34,13 +34,13 @@ export interface GroupStateInboxHandlerDependencies {
         authority: GroupMutationAuthority
     ) => Promise<GroupMutationPreparation>;
     readonly persistPreparation: (
-        context: AppInboxMessageContext,
+        context: AppInboxMessageContext<GroupStateInboxDurableResult>,
         preparation: GroupMutationPreparation
     ) => Promise<void>;
 }
 
 interface CommitGroupStateMutationInput {
-    readonly context: AppInboxMessageContext;
+    readonly context: AppInboxMessageContext<GroupStateInboxDurableResult>;
     readonly command: GroupStateMutationCommand;
     readonly computed: GroupMutationComputed;
     readonly lifecycleGuard?: WsSessionGenerationLifecycleComputed;
@@ -54,7 +54,7 @@ export class GroupStateInboxHandler {
     }
 
     async processGroupStateMutation(
-        context: AppInboxMessageContext
+        context: AppInboxMessageContext<GroupStateInboxDurableResult>
     ): Promise<GroupStateInboxDurableResult | InactiveGroupPresenceResult> {
         const prepared = await this.readOrPrepareGroupMutation(context);
         const command: GroupStateMutationCommand = {
@@ -94,7 +94,7 @@ export class GroupStateInboxHandler {
     }
 
     private async readOrPrepareGroupMutation(
-        context: AppInboxMessageContext
+        context: AppInboxMessageContext<GroupStateInboxDurableResult>
     ): Promise<GroupMutationPreparation> {
         const prepared = readGroupMutationPreparation(context.enqueue.authority);
         if (prepared) {

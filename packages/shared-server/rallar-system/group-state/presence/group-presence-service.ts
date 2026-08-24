@@ -1,7 +1,7 @@
 import { resourceInboxRetryExpiryAtEpochMs } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
-import type { AppInboxEnqueueInput } from '../../app-inbox/app-inbox-queue-client.ts';
-import { AppInboxType } from '../../app-inbox/app-inbox-queue-client.ts';
+import { type AppInboxEnqueueInput } from '../../app-inbox/app-inbox-contracts.ts';
+import { AppInboxType } from '../../app-inbox/app-inbox-contracts.ts';
 import type {
     WsSessionGenerationCloseFacts,
     WsSessionGenerationLifecycleComputed,

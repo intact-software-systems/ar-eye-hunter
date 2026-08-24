@@ -11,7 +11,7 @@ import type { ClientStateWritten } from '@shared-server/rallar-system/client-sta
 
 import { createClientStateService } from '@shared-server/rallar-system/client-state/client-state-service.ts';
 
-import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-client.ts';
+import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import {
     type ClientExpiredSessionsAppInboxPayload,
     type ClientSessionConnectAppInboxPayload

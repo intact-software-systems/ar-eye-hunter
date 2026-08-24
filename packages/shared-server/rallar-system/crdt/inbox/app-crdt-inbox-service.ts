@@ -15,7 +15,9 @@ import {
 } from '../../app-inbox/app-inbox-contracts.ts';
 import type { AppInboxFailure } from '../../app-inbox/app-inbox-failure.ts';
 import { AppInboxHandlerRegistry } from '../../app-inbox/app-inbox-handler-registry.ts';
-import { AppInboxQueueClient, type AppInboxOptions } from '../../app-inbox/app-inbox-queue-client.ts';
+import type { AppInboxOptions } from '../../app-inbox/app-inbox-options.ts';
+import { AppInboxQueueClient } from '../../app-inbox/app-inbox-queue-client.ts';
+import { encodeAppInboxResult } from '../../app-inbox/app-inbox-registration-codecs.ts';
 import type { RallarTimingSink } from '../../observability/timing.ts';
 import { createCrdtMutationCommand, decodeCrdtMutationCommand } from '../mutation/crdt-mutation-command-codec.ts';
 import {
@@ -125,11 +127,14 @@ export class AppCrdtInboxService {
             registerCrdtAuditDelivery(dependencies.auditDelivery);
         }
         for (const type of CRDT_MUTATION_INBOX_TYPES) {
-            this.handlers.onStateMessage<unknown>(
+            this.handlers.registerHandler({
                 type,
-                async (value, appInboxContext) => await this.processCommand(value, appInboxContext)
-            );
+                decodeCommand: decodeCrdtMutationCommand,
+                encodeResult: (result) => encodeAppInboxResult(result, 'CRDT AppInbox result'),
+                handle: async (command, context) => await this.processCommand(command, context)
+            });
         }
+        this.handlers.assertRegistrationComplete(CRDT_MUTATION_INBOX_TYPES);
     }
 
     async writeCrdtCommandUntilCompletion(
@@ -251,10 +256,9 @@ export class AppCrdtInboxService {
     }
 
     private async processCommand(
-        value: unknown,
-        appInboxContext: AppInboxMessageContext
+        command: CrdtMutationCommand,
+        appInboxContext: AppInboxMessageContext<CrdtMutationResult>
     ): Promise<CrdtMutationResult> {
-        const command = decodeCrdtMutationCommand(value);
         assertCrdtAppInboxIdentity({ command, appInboxContext });
 
         const read = await this.mutationService.read(command);
@@ -283,7 +287,7 @@ function toCrdtHttpAdminRejection(reasonCode: string): Error {
 
 interface AssertCrdtAppInboxIdentityInput {
     readonly command: CrdtMutationCommand;
-    readonly appInboxContext: AppInboxMessageContext;
+    readonly appInboxContext: AppInboxMessageContext<CrdtMutationResult>;
 }
 
 function assertCrdtAppInboxIdentity(input: AssertCrdtAppInboxIdentityInput): void {

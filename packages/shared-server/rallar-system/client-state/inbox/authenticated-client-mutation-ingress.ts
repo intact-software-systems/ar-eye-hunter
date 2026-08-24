@@ -1,7 +1,7 @@
 import { type IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import { NonRetryableException } from '@shared/queuebox/DequeueResourceEntryController.ts';
-import { AppInboxType, type AppInboxEnqueueInput } from '../../app-inbox/app-inbox-queue-client.ts';
+import { AppInboxType, type AppInboxEnqueueInput } from '../../app-inbox/app-inbox-contracts.ts';
 import type {
     ClientMutationAuthority,
     ClientMutationCommand,

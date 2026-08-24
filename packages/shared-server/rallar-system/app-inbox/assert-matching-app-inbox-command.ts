@@ -1,17 +1,19 @@
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
-import { readPersistedAppInboxEnqueue, serializeCanonicalJsonWire } from './app-inbox-command-wire.ts';
+import type { JsonWireValue } from '../protocol/json-wire-identity.ts';
+import { decodePersistedAppInboxEnqueue } from './app-inbox-command-decoding.ts';
+import { serializeCanonicalJsonWire } from './app-inbox-command-wire.ts';
 import { AppInboxIdempotencyConflictError, type AppInboxEnqueueInput } from './app-inbox-contracts.ts';
 import { hashCanonicalCommand } from './hash-canonical-command.ts';
 import { toLogicalAppInboxCommand } from './logical-app-inbox-command.ts';
 
 export async function assertMatchingAppInboxCommand(
     entry: ResourceEntry,
-    incoming: AppInboxEnqueueInput<unknown>,
+    incoming: AppInboxEnqueueInput<JsonWireValue, JsonWireValue>,
     receivedCommandIdentity: string
 ): Promise<void> {
-    let existing: AppInboxEnqueueInput<unknown>;
+    let existing: AppInboxEnqueueInput<JsonWireValue, JsonWireValue>;
     try {
-        existing = readPersistedAppInboxEnqueue(entry);
+        existing = decodePersistedAppInboxEnqueue(entry);
     }
     catch {
         const receivedCommandHash = await hashCanonicalCommand(toLogicalAppInboxCommand(incoming));

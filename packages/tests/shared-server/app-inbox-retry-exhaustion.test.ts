@@ -1,9 +1,8 @@
+import { AppInboxReservationConflictError, AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import {
-    AppInboxReservationConflictError,
-    AppInboxType,
     createAppInboxRetryExhaustionHandler,
     createAppInboxRetryExhaustionRecoveryHandler
-} from '@shared-server/rallar-system/app-inbox/app-inbox-queue-client.ts';
+} from '@shared-server/rallar-system/app-inbox/app-inbox-retry-finalization.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import { DequeueResourceEntryController, type ResourceInboxRetryExhaustion } from '@shared/queuebox/DequeueResourceEntryController.ts';
 import { EntityStatus, toKeyAsString, type Key } from '@shared/queuebox/ResourceEntry.ts';

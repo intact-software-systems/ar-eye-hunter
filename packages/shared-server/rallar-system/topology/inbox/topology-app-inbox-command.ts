@@ -5,8 +5,8 @@ import {
     toCanonicalGroupTopologyConfigPatch
 } from '@shared/api/group-topology-config-canonical.ts';
 
-import type { AppInboxEnqueueInput } from '../../app-inbox/app-inbox-queue-client.ts';
-import { AppInboxType } from '../../app-inbox/app-inbox-queue-client.ts';
+import { type AppInboxEnqueueInput } from '../../app-inbox/app-inbox-contracts.ts';
+import { AppInboxType } from '../../app-inbox/app-inbox-contracts.ts';
 import { hashCanonicalCommand } from '../../app-inbox/hash-canonical-command.ts';
 import type { IssuedAuthSession } from '../../auth/persistence/auth-session-types.ts';
 import { GroupMutationAuthorizationError } from '../../group-state/group-mutation-authority.ts';

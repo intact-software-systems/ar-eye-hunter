@@ -3,7 +3,7 @@ import type { GroupCreateAppInboxPayload, GroupUpdateAppInboxPayload } from '@sh
 import { decodeApiMutationFailure, type ApiMutationFailureJsonObject } from '@shared/api/mutation/api-mutation-failure.ts';
 import assert from 'node:assert/strict';
 
-import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-client.ts';
+import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import type { AuthenticatedGroupMutationEnqueue } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-contracts.ts';
 
 import { readGroupStateRouteRequest } from '../../src/group-state/read-group-state-route-request.ts';

@@ -18,17 +18,35 @@ import {
     type RallarTimingDetails,
     type RallarTimingSink
 } from '../observability/timing.ts';
+import type { JsonWireValue } from '../protocol/json-wire-identity.ts';
 import { AppInboxCommandIdentityError, validateAppInboxCommandIdentity } from './app-inbox-command-identity.ts';
-import { AppInboxType, type AppInboxEnqueueInput, type AppInboxMessageContext } from './app-inbox-contracts.ts';
+import {
+    AppInboxType,
+    type AppInboxEnqueueInput,
+    type AppInboxExecutionMetadata,
+    type AppInboxMessageContext
+} from './app-inbox-contracts.ts';
 import type { AppInboxErrorClassification } from './app-inbox-error-classification.ts';
 import { classifyAppInboxError } from './app-inbox-error-classification.ts';
-import type { AppInboxOptions, AppInboxQueueClient } from './app-inbox-queue-client.ts';
+import { encodeAppInboxFailure } from './app-inbox-failure.ts';
+import type { AppInboxOptions } from './app-inbox-options.ts';
+import type { AppInboxResultRepository } from './app-inbox-persistence-ports.ts';
 import { AppInboxTransactionWriter, toFinalizedResourceEntry } from './app-inbox-transaction-writer.ts';
 
 export namespace AppInboxHandlerRegistry {
+    export interface Registration<Command, Result> {
+        readonly type: AppInboxType;
+        readonly decodeCommand: (value: JsonWireValue) => Command;
+        readonly encodeResult: (result: Result) => JsonWireValue;
+        readonly handle: (
+            command: Command,
+            context: AppInboxMessageContext<Result>
+        ) => Promise<Result>;
+    }
+
     export interface Dependencies {
         readonly inboxQueueReader: InboxQueueReader;
-        readonly resourceInboxResultsRepository: AppInboxQueueClient.ResultRepository;
+        readonly resourceInboxResultsRepository: AppInboxResultRepository;
         readonly database: PSqlSql;
     }
 
@@ -43,10 +61,11 @@ export class AppInboxHandlerRegistry {
     readonly transactionWriter: AppInboxTransactionWriter;
 
     private readonly inbox: InboxQueueReader;
-    private readonly results: AppInboxQueueClient.ResultRepository;
+    private readonly results: AppInboxResultRepository;
     private readonly serviceId: string;
     private readonly timing: RallarTimingSink | undefined;
     private readonly options: AppInboxOptions;
+    private readonly registeredTypes = new Set<AppInboxType>();
 
     constructor(
         dependencies: AppInboxHandlerRegistry.Dependencies,
@@ -66,26 +85,29 @@ export class AppInboxHandlerRegistry {
         });
     }
 
-    async writeMutation<R>(
-        context: AppInboxMessageContext,
-        write: (transaction: PSqlSql) => Promise<R>
-    ): Promise<R> {
+    async writeMutation<Result>(
+        context: AppInboxMessageContext<Result>,
+        write: (transaction: PSqlSql) => Promise<Result>
+    ): Promise<Result> {
         return await this.transactionWriter.writeMutation(context, write);
     }
 
-    onStateMessage<V>(
-        type: AppInboxType,
-        handler: (data: V, context: AppInboxMessageContext) => Promise<unknown>
+    registerHandler<Command, Result>(
+        registration: AppInboxHandlerRegistry.Registration<Command, Result>
     ): void {
-        this.inbox.onInboxMessageDo(type, {
+        const type = registration.type;
+        if (this.registeredTypes.has(type)) {
+            throw new Error(`AppInbox handler ${type} is already registered by ${this.serviceId}`);
+        }
+        this.inbox.onInboxMessageDo(registration.type, {
             onMessage: async (message: ALMessage, entry: ResourceEntry) => {
-                const fallbackEnqueue: AppInboxEnqueueInput<unknown> = {
+                const fallbackEnqueue: AppInboxEnqueueInput<JsonWireValue, JsonWireValue> = {
                     type,
                     resourceId: entry.key.resourceId,
                     contextId: entry.key.contextId,
                     data: null
                 };
-                let context: AppInboxMessageContext | undefined;
+                let context: AppInboxMessageContext<Result> | undefined;
 
                 await timeRallarAsync(
                     this.timing,
@@ -109,15 +131,21 @@ export class AppInboxHandlerRegistry {
                                     identity.identity.operationSource
                                 );
                             }
-                            const enqueue = identity.command as AppInboxEnqueueInput<V>;
-                            const validatedContext = { enqueue, message, entry };
+                            const enqueue = identity.command;
+                            const command = registration.decodeCommand(enqueue.data);
+                            const validatedContext: AppInboxMessageContext<Result> = {
+                                enqueue,
+                                message,
+                                entry,
+                                encodeResult: registration.encodeResult
+                            };
                             context = validatedContext;
                             this.transactionWriter.begin(validatedContext);
                             const result = await this.timePhase(
                                 'handler-action',
                                 enqueue,
                                 entry.key,
-                                async () => await handler(enqueue.data, validatedContext)
+                                async () => await registration.handle(command, validatedContext)
                             );
                             const finalization = this.transactionWriter.read(validatedContext);
                             if (finalization.state === 'transaction-finalized') {
@@ -132,7 +160,7 @@ export class AppInboxHandlerRegistry {
                                         toResourceEntryWithUpdatedResource(
                                             entry,
                                             EntityStatus.COMPLETED,
-                                            result
+                                            registration.encodeResult(result)
                                         )
                                     );
                                 },
@@ -162,11 +190,12 @@ export class AppInboxHandlerRegistry {
                             const terminalContext = context ?? {
                                 enqueue: fallbackEnqueue,
                                 message,
-                                entry
+                                entry,
+                                encodeResult: registration.encodeResult
                             };
                             await this.transactionWriter.writeTerminalFailure(
                                 terminalContext,
-                                classification.result
+                                encodeAppInboxFailure(classification.result)
                             );
                             throw new ResourceInboxFinalizedByHandlerError(
                                 toFinalizedResourceEntry(
@@ -181,6 +210,21 @@ export class AppInboxHandlerRegistry {
                 );
             }
         });
+        this.registeredTypes.add(type);
+    }
+
+    assertRegistrationComplete(expectedTypes: readonly AppInboxType[]): void {
+        const missing = expectedTypes.filter((type) => !this.registeredTypes.has(type));
+        const unexpected = [...this.registeredTypes].filter(
+            (type) => !expectedTypes.includes(type)
+        );
+        if (missing.length > 0 || unexpected.length > 0) {
+            throw new Error(
+                `AppInbox handler registration for ${this.serviceId} is incomplete: ` +
+                    `missing=${missing.join(',') || 'none'}; ` +
+                    `unexpected=${unexpected.join(',') || 'none'}`
+            );
+        }
     }
 
     private recordQueueRetryTiming<V>(
@@ -249,7 +293,7 @@ export class AppInboxHandlerRegistry {
         };
     }
 
-    private toMutationTimingDetails(context: AppInboxMessageContext): RallarTimingDetails {
+    private toMutationTimingDetails(context: AppInboxExecutionMetadata): RallarTimingDetails {
         const nowEpochMs = this.timingNowEpochMs();
         const telemetry = readResourceInboxAttemptTelemetry(context.entry);
         return {

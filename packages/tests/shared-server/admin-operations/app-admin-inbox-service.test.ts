@@ -26,7 +26,7 @@ import {
     decodeAdminPruneAggregate,
     toAdminPruneAggregateKey
 } from '@shared-server/rallar-system/admin-operations/prune/admin-prune-progress.ts';
-import { AppInboxIdempotencyConflictError, AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-client.ts';
+import { AppInboxIdempotencyConflictError, AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import type { RallarTimingEvent } from '@shared-server/rallar-system/observability/timing.ts';
 import { createAppInboxTestDatabase } from '../app-inbox-test-database.ts';
 import { createResilience, TestResourceInbox, TestResourceInboxResults, waitForQueueEntry } from '../group-state/inbox/group-state-inbox-test-runtime.ts';

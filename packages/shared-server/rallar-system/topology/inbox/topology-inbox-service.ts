@@ -3,16 +3,17 @@ import { Either } from '@shared/resilience/Either.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 
 import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
-import { AppInboxHandlerRegistry } from '../../app-inbox/app-inbox-handler-registry.ts';
 import {
     AppInboxIdempotencyConflictError,
-    AppInboxQueueClient,
     AppInboxType,
-    SIMPLER_GROUP_STATE_APP_INBOX_TOPIC,
-    type AppInboxEnqueueInput,
-    type AppInboxFailure,
-    type AppInboxOptions
-} from '../../app-inbox/app-inbox-queue-client.ts';
+    type AppInboxEnqueueInput
+} from '../../app-inbox/app-inbox-contracts.ts';
+import { type AppInboxFailure } from '../../app-inbox/app-inbox-failure.ts';
+import { AppInboxHandlerRegistry } from '../../app-inbox/app-inbox-handler-registry.ts';
+import type { AppInboxOptions } from '../../app-inbox/app-inbox-options.ts';
+import type { AppInboxEntryRepository, AppInboxResultRepository } from '../../app-inbox/app-inbox-persistence-ports.ts';
+import { AppInboxQueueClient, SIMPLER_GROUP_STATE_APP_INBOX_TOPIC } from '../../app-inbox/app-inbox-queue-client.ts';
+import { decodeNullAppInboxCommand, encodeAppInboxResult } from '../../app-inbox/app-inbox-registration-codecs.ts';
 import type { IssuedAuthSession } from '../../auth/persistence/auth-session-types.ts';
 import type { GroupStateService } from '../../group-state/group-state-service-contracts.ts';
 import type { RallarTimingSink } from '../../observability/timing.ts';
@@ -45,8 +46,8 @@ function isTopologyConfigInboxType(type: AppInboxType): boolean {
 export namespace TopologyInboxService {
     export interface Dependencies {
         readonly inboxQueueReader: InboxQueueReader;
-        readonly resourceInboxRepository: AppInboxQueueClient.InboxRepository;
-        readonly resourceInboxResultsRepository: AppInboxQueueClient.ResultRepository;
+        readonly resourceInboxRepository: AppInboxEntryRepository;
+        readonly resourceInboxResultsRepository: AppInboxResultRepository;
         readonly database: PSqlSql;
         readonly groupStateService: GroupStateService;
         readonly mutationOwners: TopologyAppInboxMutationOwners;
@@ -110,11 +111,15 @@ export class TopologyInboxService {
             wakeQueue: config.wakeOwningQueue
         });
         for (const type of TOPOLOGY_CONFIG_INBOX_TYPES) {
-            handlers.onStateMessage(
+            handlers.registerHandler({
                 type,
-                async (_payload, context) => await this.handler.processMutation(context, dependencies.mutationOwners)
-            );
+                decodeCommand: decodeNullAppInboxCommand,
+                encodeResult: (result) => encodeAppInboxResult(result, 'Topology AppInbox result'),
+                handle: async (_command, context) =>
+                    await this.handler.processMutation(context, dependencies.mutationOwners)
+            });
         }
+        handlers.assertRegistrationComplete(TOPOLOGY_CONFIG_INBOX_TYPES);
     }
 
     async processAuthenticatedEntryUntilCompletion<V>(

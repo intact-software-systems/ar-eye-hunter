@@ -7,7 +7,7 @@ import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persist
 
 import { ClientStateRepository } from '@shared-server/rallar-system/client-state/persistence/client-state-repository.ts';
 
-import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-client.ts';
+import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import { AppAuthInboxService } from '@shared-server/rallar-system/auth/inbox/app-auth-inbox-service.ts';
 import { GroupStateInboxService, type GroupCreateAppInboxPayload } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-service.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';

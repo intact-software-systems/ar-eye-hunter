@@ -2,19 +2,16 @@ import { Either } from '@shared/resilience/Either.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 
 import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
+import { AppInboxType } from '../../app-inbox/app-inbox-contracts.ts';
+import { type AppInboxFailure } from '../../app-inbox/app-inbox-failure.ts';
 import { AppInboxHandlerRegistry } from '../../app-inbox/app-inbox-handler-registry.ts';
-import {
-    AppInboxQueueClient,
-    AppInboxType,
-    SIMPLER_GROUP_STATE_APP_INBOX_TOPIC,
-    type AppInboxFailure,
-    type AppInboxMessageContext,
-    type AppInboxOptions
-} from '../../app-inbox/app-inbox-queue-client.ts';
+import type { AppInboxOptions } from '../../app-inbox/app-inbox-options.ts';
+import type { AppInboxEntryRepository, AppInboxResultRepository } from '../../app-inbox/app-inbox-persistence-ports.ts';
+import { AppInboxQueueClient, SIMPLER_GROUP_STATE_APP_INBOX_TOPIC } from '../../app-inbox/app-inbox-queue-client.ts';
+import { encodeAppInboxResult } from '../../app-inbox/app-inbox-registration-codecs.ts';
 import type { IssuedAuthSession } from '../../auth/persistence/auth-session-types.ts';
 import type { GroupFormationGroupMutationSink } from '../../observability/formation-metrics.ts';
 import type { RallarTimingSink } from '../../observability/timing.ts';
-import type { JsonWireValue } from '../../protocol/json-wire-identity.ts';
 import { GroupMutationAuthorizationError } from '../group-mutation-authority.ts';
 import type { GroupStateService } from '../group-state-service-contracts.ts';
 import type { GroupMutationCommand } from '../mutation/group-mutation-contracts.ts';
@@ -26,6 +23,10 @@ import {
 import type {
     GroupPresenceSessionCleanupAppInboxPayload
 } from '../presence/group-presence-session-cleanup-app-inbox-payload.ts';
+import {
+    decodeGroupPresenceSessionCleanupAppInboxPayload
+} from '../presence/group-presence-session-cleanup-app-inbox-payload.ts';
+import { decodeGroupStateAppInboxCommand } from './decode-group-state-app-inbox-command.ts';
 import {
     GROUP_MUTATION_INBOX_TYPES,
     isAuthenticatedGroupMutationEnqueue,
@@ -68,8 +69,8 @@ export type {
 export namespace GroupStateInboxService {
     export interface Dependencies {
         readonly inboxQueueReader: InboxQueueReader;
-        readonly resourceInboxRepository: AppInboxQueueClient.InboxRepository;
-        readonly resourceInboxResultsRepository: AppInboxQueueClient.ResultRepository;
+        readonly resourceInboxRepository: AppInboxEntryRepository;
+        readonly resourceInboxResultsRepository: AppInboxResultRepository;
         readonly database: PSqlSql;
         readonly groupStateService: GroupStateService;
     }
@@ -138,6 +139,7 @@ export class GroupStateInboxService {
                 this.queueClient.persistReservedEntryAuthority(context, preparation)
         });
         this.registerMessageHandlers();
+        this.handlers.assertRegistrationComplete(GROUP_MUTATION_INBOX_TYPES);
     }
 
     async enqueueExpiredPresenceSessions(atEpochMs: number): Promise<number> {
@@ -206,18 +208,24 @@ export class GroupStateInboxService {
     }
 
     private registerMessageHandlers(): void {
-        const processGroupMutation = async (_payload: JsonWireValue, context: AppInboxMessageContext) =>
-            await this.groupStateInboxHandler.processGroupStateMutation(context);
         for (
             const type of GROUP_MUTATION_INBOX_TYPES.filter(
                 (candidate) => candidate !== AppInboxType.GROUP_PRESENCE_SESSION_CLEANUP
             )
         ) {
-            this.handlers.onStateMessage(type, processGroupMutation);
+            this.handlers.registerHandler({
+                type,
+                decodeCommand: (value) => decodeGroupStateAppInboxCommand(type, value),
+                encodeResult: (result) => encodeAppInboxResult(result, 'Group state AppInbox result'),
+                handle: async (_command, context) =>
+                    await this.groupStateInboxHandler.processGroupStateMutation(context)
+            });
         }
-        this.handlers.onStateMessage<GroupPresenceSessionCleanupAppInboxPayload>(
-            AppInboxType.GROUP_PRESENCE_SESSION_CLEANUP,
-            async (payload, context) =>
+        this.handlers.registerHandler({
+            type: AppInboxType.GROUP_PRESENCE_SESSION_CLEANUP,
+            decodeCommand: decodeGroupPresenceSessionCleanupAppInboxPayload,
+            encodeResult: (result) => encodeAppInboxResult(result, 'Group cleanup AppInbox result'),
+            handle: async (payload, context) =>
                 await processGroupSessionCleanup({
                     facts: payload,
                     attemptCount: context.entry.dequeueAudit.attempts,
@@ -225,6 +233,6 @@ export class GroupStateInboxService {
                     writeMutation: async (write) => await this.handlers.writeMutation(context, write),
                     wakeQueue: this.wakeQueue
                 })
-        );
+        });
     }
 }

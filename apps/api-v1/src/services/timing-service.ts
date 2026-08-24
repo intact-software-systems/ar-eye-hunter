@@ -1,4 +1,4 @@
-import type { AppInboxOptions } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-client.ts';
+import type { AppInboxOptions } from '@shared-server/rallar-system/app-inbox/app-inbox-options.ts';
 import {
     createConsoleRallarTimingSink,
     type RallarTimingSink

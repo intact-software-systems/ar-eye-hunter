@@ -28,7 +28,11 @@ import { resourceInboxRetryExpiryAtEpochMs } from '@shared/queuebox/ResourceInbo
 import type { Either } from '@shared/resilience/Either.ts';
 
 import { hashCanonicalCommand } from '@shared-server/rallar-system/app-inbox/hash-canonical-command.ts';
-import type { JsonWireObject, JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
+import {
+    decodeJsonWireValue,
+    type JsonWireObject,
+    type JsonWireValue
+} from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 
 export type CrdtAdminMutationOperation =
     | 'rebuild-projection'
@@ -113,7 +117,9 @@ export function createCrdtAdminMutations(
     return {
         writeCrdtAdminMutation: async (mutation) => {
             const normalized = normalizeCrdtAdminMutation(mutation);
-            const semanticHash = await hashCanonicalCommand(normalized.semantic);
+            const semanticHash = await hashCanonicalCommand(
+                decodeJsonWireValue(normalized.semantic, 'CRDT admin semantic command')
+            );
             const completed = await input.appCrdtInboxService.writeHttpAdminCommandUntilCompletion({
                 operation: mutation.operation,
                 requestId: mutation.requestId,
@@ -128,7 +134,12 @@ export function createCrdtAdminMutations(
                         serviceId: input.serviceId
                     }),
                 matches: async (command) =>
-                    await hashCanonicalCommand(toCrdtAdminSemanticCommand(command)) === semanticHash
+                    await hashCanonicalCommand(
+                        decodeJsonWireValue(
+                            toCrdtAdminSemanticCommand(command),
+                            'Stored CRDT admin semantic command'
+                        )
+                    ) === semanticHash
             });
             if (completed.left !== undefined) {
                 throw Object.assign(new Error(completed.left.message), completed.left);

@@ -9,7 +9,7 @@ import type {
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import { Hono, type Context } from 'jsr:@hono/hono@4.11.9';
 
-import { type AppInboxFailure } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-client.ts';
+import { type AppInboxFailure } from '@shared-server/rallar-system/app-inbox/app-inbox-failure.ts';
 import { type IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
 import type {
     GroupLifecyclePolicyRead

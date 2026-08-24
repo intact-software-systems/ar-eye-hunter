@@ -2,11 +2,9 @@ import type { AppInboxMutationTransactionWriter } from '@shared-server/rallar-sy
 
 import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 import type { AppInboxMessageContext } from '../../app-inbox/app-inbox-contracts.ts';
-import type { JsonWireValue } from '../../protocol/json-wire-identity.ts';
 import type { AuthMutationService } from '../auth-mutation-service.ts';
 import type { AuthCredentialIssuer } from '../credentials/auth-credential-issuer.ts';
-import type { AuthMutationResult } from '../mutation/auth-mutation-contracts.ts';
-import { decodeAuthMutationIntent } from '../mutation/decode-auth-mutation-intent.ts';
+import type { AuthMutationIntent, AuthMutationResult } from '../mutation/auth-mutation-contracts.ts';
 import { materializeAuthMutationIntent } from '../mutation/materialize-auth-mutation-intent.ts';
 import { toAuthAppInboxType, toAuthIntentContextId } from './auth-app-inbox-routing.ts';
 
@@ -25,10 +23,9 @@ export class AuthInboxHandler {
     }
 
     async processAuthMutation(
-        commandCandidate: unknown,
-        context: AppInboxMessageContext
+        intent: AuthMutationIntent,
+        context: AppInboxMessageContext<AuthMutationResult>
     ): Promise<AuthMutationResult> {
-        const intent = decodeAuthMutationIntent(commandCandidate as JsonWireValue);
         const expectedKey = toAppQueueKey({
             topicId: toAuthAppInboxType(intent),
             resourceId: intent.requestId,

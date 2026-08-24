@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-client.ts';
+import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import type { AppCrdtInboxService } from '@shared-server/rallar-system/crdt/inbox/app-crdt-inbox-service.ts';
 import { createCrdtMutationCommand, decodeCrdtMutationCommand } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-command-codec.ts';
 import { CRDT_MUTATION_INBOX_TYPES } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-contracts.ts';

@@ -1,6 +1,6 @@
 import { resourceInboxRetryExpiryAtEpochMs } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
-import type { AppInboxMessageContext } from '../../app-inbox/app-inbox-contracts.ts';
+import type { AppInboxExecutionMetadata, AppInboxMessageContext } from '../../app-inbox/app-inbox-contracts.ts';
 import type { AppInboxMutationTransactionWriter } from '../../app-inbox/app-inbox-transaction-writer.ts';
 import {
     type WsSessionGenerationFacts,
@@ -51,7 +51,7 @@ export interface ClientStateInboxAfterCommitResult {
 }
 
 interface WriteMissingSessionDisconnectInput {
-    readonly context: AppInboxMessageContext;
+    readonly context: AppInboxMessageContext<AuthorisedWsClientMutationResult>;
     readonly disconnect: ClientAuthorisedWsSessionDisconnectAppInboxPayload;
     readonly command: ClientMutationCommand;
     readonly read: Awaited<ReturnType<ClientStateMutationService['read']>>;
@@ -66,7 +66,7 @@ export class ClientStateInboxHandler {
     }
 
     async processCommand(
-        context: AppInboxMessageContext,
+        context: AppInboxMessageContext<ClientStateWritten>,
         input: ClientMutationCommandInput
     ): Promise<ClientStateWritten> {
         const command = await this.toCommand(context, input);
@@ -78,7 +78,7 @@ export class ClientStateInboxHandler {
 
     async processAuthorisedWsConnect(
         connection: ClientAuthorisedWsSessionConnectAppInboxPayload,
-        context: AppInboxMessageContext
+        context: AppInboxMessageContext<AuthorisedWsClientMutationResult>
     ): Promise<AuthorisedWsClientMutationResult> {
         const lifecycleFacts = toWsSessionGenerationFacts(connection);
         const lifecycleRead = await this.dependencies.sessionGenerationLifecycle.read(lifecycleFacts);
@@ -104,7 +104,7 @@ export class ClientStateInboxHandler {
 
     async processAuthorisedWsDisconnect(
         input: ClientAuthorisedWsSessionDisconnectAppInboxPayload,
-        context: AppInboxMessageContext
+        context: AppInboxMessageContext<AuthorisedWsClientMutationResult>
     ): Promise<AuthorisedWsClientMutationResult> {
         const lifecycleComputed = await this.computeAuthorisedWsDisconnectLifecycle(input);
         const command = await this.toAuthorisedWsDisconnectCommand(context, input);
@@ -124,7 +124,7 @@ export class ClientStateInboxHandler {
     }
 
     async processExpiredSessionCommands(
-        context: AppInboxMessageContext,
+        context: AppInboxMessageContext<readonly ClientStateWritten[]>,
         atEpochMs: number
     ): Promise<readonly ClientStateWritten[]> {
         const computed = await this.computeExpiredSessionMutations(context, atEpochMs);
@@ -158,7 +158,7 @@ export class ClientStateInboxHandler {
     }
 
     private async commitComputed(
-        context: AppInboxMessageContext,
+        context: AppInboxMessageContext<ClientStateWritten>,
         computed: ClientMutationComputed,
         lifecycleComputed?: WsSessionGenerationLifecycleComputed
     ): Promise<ClientStateWritten> {
@@ -202,7 +202,7 @@ export class ClientStateInboxHandler {
     }
 
     private async toCommand(
-        context: AppInboxMessageContext,
+        context: AppInboxExecutionMetadata,
         input: ClientMutationCommandInput
     ): Promise<ClientMutationCommand> {
         return await toClientMutationCommand(
@@ -213,7 +213,7 @@ export class ClientStateInboxHandler {
     }
 
     private async writeInactiveGeneration(
-        context: AppInboxMessageContext,
+        context: AppInboxMessageContext<InactiveAuthorisedWsSessionResult>,
         connection: ClientAuthorisedWsSessionConnectAppInboxPayload
     ): Promise<InactiveAuthorisedWsSessionResult> {
         return await this.dependencies.transactionWriter.writeMutation(context, async () => ({
@@ -261,7 +261,7 @@ export class ClientStateInboxHandler {
     }
 
     private async toAuthorisedWsConnectCommand(
-        context: AppInboxMessageContext,
+        context: AppInboxExecutionMetadata,
         connection: ClientAuthorisedWsSessionConnectAppInboxPayload
     ): Promise<ClientMutationCommand> {
         const requestId = toAuthorisedWsRequestId('connect', connection);
@@ -298,7 +298,7 @@ export class ClientStateInboxHandler {
     }
 
     private async toAuthorisedWsDisconnectCommand(
-        context: AppInboxMessageContext,
+        context: AppInboxExecutionMetadata,
         input: ClientAuthorisedWsSessionDisconnectAppInboxPayload
     ): Promise<ClientMutationCommand> {
         const connection = input.connection;
@@ -324,7 +324,7 @@ export class ClientStateInboxHandler {
     }
 
     private async computeExpiredSessionMutations(
-        context: AppInboxMessageContext,
+        context: AppInboxExecutionMetadata,
         atEpochMs: number
     ): Promise<readonly ClientMutationComputed[]> {
         const computed: ClientMutationComputed[] = [];
@@ -341,7 +341,7 @@ export class ClientStateInboxHandler {
 }
 
 function toClientMutationPersistedFacts(
-    context: AppInboxMessageContext,
+    context: AppInboxExecutionMetadata,
     commandId: string,
     dependencies: Pick<ClientStateInboxHandlerDependencies, 'serviceId'>
 ): Omit<ClientMutationPersistedFacts, 'commandHash'> {

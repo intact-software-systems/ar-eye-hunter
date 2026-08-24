@@ -1,4 +1,4 @@
-import type { JsonWireObject } from '../protocol/json-wire-identity.ts';
+import { decodeJsonWireValue, type JsonWireObject, type JsonWireValue } from '../protocol/json-wire-identity.ts';
 
 export interface AppInboxFailureIssue {
     readonly code: string;
@@ -37,6 +37,10 @@ export interface TerminalAppInboxFailureInput {
     readonly message: string;
     readonly issues?: readonly AppInboxFailureIssue[];
     readonly denial?: AppInboxFailureDenial;
+}
+
+export function encodeAppInboxFailure(failure: AppInboxFailure): JsonWireValue {
+    return decodeJsonWireValue(failure, 'AppInbox failure');
 }
 
 export function toTerminalAppInboxFailure(

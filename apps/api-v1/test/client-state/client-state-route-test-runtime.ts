@@ -1,7 +1,7 @@
 import { Hono } from 'jsr:@hono/hono@4.11.9';
 
+import { type AppInboxEnqueueInput } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import type { AppInboxFailure } from '@shared-server/rallar-system/app-inbox/app-inbox-failure.ts';
-import type { AppInboxEnqueueInput } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-client.ts';
 import type { ClientStateWritten } from '@shared-server/rallar-system/client-state/client-state-service-contracts.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { AuditStamp, ClientEvent, ClientSnapshot } from '@shared/api/client-types.ts';

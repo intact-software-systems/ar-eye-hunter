@@ -1,5 +1,6 @@
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import type { Key, ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import type { JsonWireValue } from '../protocol/json-wire-identity.ts';
 
 export const AppInboxType = {
     AUTH_USER_REGISTER: 'AUTH_USER_REGISTER',
@@ -58,21 +59,27 @@ export const AppInboxType = {
 
 export type AppInboxType = (typeof AppInboxType)[keyof typeof AppInboxType];
 
-export interface AppInboxEnqueueInput<V> {
+export interface AppInboxEnqueueInput<V, Authority = unknown> {
     readonly type: AppInboxType;
     readonly topicId?: string;
     readonly resourceId?: string;
     readonly contextId?: string;
     readonly senderId?: string;
-    readonly authority?: unknown;
+    readonly authority?: Authority;
     readonly data: V;
 }
 
-export type AppInboxMessageContext = Readonly<{
-    enqueue: AppInboxEnqueueInput<unknown>;
+export type AppInboxExecutionMetadata = Readonly<{
+    enqueue: AppInboxEnqueueInput<JsonWireValue, JsonWireValue>;
     message: ALMessage;
     entry: ResourceEntry;
 }>;
+
+export type AppInboxMessageContext<Result = JsonWireValue> =
+    & AppInboxExecutionMetadata
+    & Readonly<{
+        encodeResult: (result: Result) => JsonWireValue;
+    }>;
 
 export class AppInboxIdempotencyConflictError extends Error {
     readonly code = 'app-inbox-idempotency-conflict';
