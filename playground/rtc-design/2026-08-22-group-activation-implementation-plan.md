@@ -1,16 +1,19 @@
 # Group Activation — Implementation Plan (2026-08-22)
 
-Status: **planning — re-baselined against product decisions 1–42. The product and implementation
-decisions are settled, but the owner census must be refreshed against the actual delivery head before
-the first implementation PR.**
+Status: **planning — re-baselined against product decisions 1–42. The product decisions are settled;
+the implementation decisions record current reasoning, while ownership, decomposition, file and
+symbol inventories, dependencies and gates must be refreshed against the actual delivery head before
+the first implementation PR and whenever later changes to `main` materially affect the plan.**
 Implements `2026-08-22-group-activation-product-plan.md` (decisions 1–42). That document owns the
 product surface; this one owns how it lands.
 
 The earlier code census predates #323's state-event ownership, #324's QueueBox persistence ownership
 and #325's shared-server AppInbox protocol ownership. Those changes directly affect promotion,
-internal authority, transaction, retry, durable latch and after-commit paths. Slice 0 therefore
-re-recovers every current owner before any delivery work. Symbol names remain navigation hints;
-historical line numbers and commit hashes are not implementation authority.
+internal authority, transaction, retry, durable latch and after-commit paths. They demonstrate why a
+code census is evidence for one planning checkpoint, not permanent authority. Slice 0 initially
+re-recovers every current owner; decision I20 requires the same material-change review throughout
+delivery. Symbol names remain navigation hints; historical line numbers, counts and commit hashes are
+not implementation authority.
 
 ## The properties that make this shippable
 
@@ -82,13 +85,31 @@ a new mechanism instead of one of these should be challenged in review:
 | a non-lifecycle group field        | `appointDirector`, `rotateGroupJoinCode`                                                        |
 | per-group durable policy           | `GroupLifecyclePolicy` with its nested sub-policies, presets, issue codes and repository        |
 
-## Slice 0 — Re-baseline (prerequisite, not a delivery PR)
+## Slice 0 — Re-plan against current `main` (initial prerequisite and standing checkpoint)
 
-Do not rebase or merge merely because the branch is behind. Run `npm run pr:delivery -- status`; a
-real conflict is repaired, while `BEHIND` with a mergeable PR creates no work. Record the actual
-starting head in the first delivery PR rather than pinning another soon-stale hash in this plan.
+Git synchronisation and planning currency are separate decisions. Do not rebase or merge merely
+because the branch is behind. Run `npm run pr:delivery -- status`; a real conflict is repaired, while
+`BEHIND` with a mergeable PR creates no integration work. Independently, before selecting the first
+two delivery PRs and before selecting each later one or two, inspect the changes on the latest
+available `main` since the previous planning pass. Reading and reasoning from current `main` does not
+require moving the feature branch.
 
-The re-census must recover these current owners by symbol:
+A `main` change materially affects this plan when it changes or invalidates any product or protocol
+constraint; owner, entry point, dataflow, side-effect or failure boundary; public, persisted or queued
+contract; package or runtime composition; compatibility or migration assumption; acceptance
+scenario; or validation risk used by the affected work. A new commit id, line movement, unrelated
+change or base movement that leaves those facts intact is not material.
+
+When a material change exists, stop before implementing the affected work. Re-recover the affected
+owners and paths from current repository truth, then revise this plan's implementation decisions,
+capability decomposition, dependencies, risks, gates and next one or two concrete PRs before work
+continues. Update the semantic PR explanation as well. If new evidence invalidates a numbered
+implementation decision, supersede it with a numbered decision and its rejected alternatives rather
+than silently rewriting the reason. If it conflicts with a settled product decision, return that
+conflict for a product ruling.
+
+The initial re-census must recover these current owners by symbol. This table is a dated evidence
+snapshot, not a closed inventory for later checkpoints:
 
 | Changed ownership                      | Re-census consequence                                                                                                                            |
 | -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -96,20 +117,19 @@ The re-census must recover these current owners by symbol:
 | #324 — QueueBox persistence ownership  | locate durable timer, coalesced work, retry and wake owners before trigger, landing and status work                                              |
 | #325 — shared-server AppInbox protocol | locate command decode, preparation, narrow internal authority, transaction writer, result, completion and replay owners before every new command |
 
-Re-run the ten-surface census over the seven-stage registry; public and internal command inventories;
-GroupState read/compute/validate/write; accepted/planned topology slots and fingerprints; topology
-publication and replay; browser cache, inbound and outbound dialing; policy persistence; status
-timers; routes/OpenAPI/recipes; and both server compositions. Produce an owner map and concrete
-descriptions for only the next two independently reviewable PRs.
+For the initial pass, re-run the ten-surface census over the seven-stage registry; public and internal
+command inventories; GroupState read/compute/validate/write; accepted/planned topology slots and
+fingerprints; topology publication and replay; browser cache, inbound and outbound dialing; policy
+persistence; status timers; routes/OpenAPI/recipes; and both server compositions. At later checkpoints,
+re-run every affected surface rather than assuming the initial map still holds. Produce an owner map
+and concrete descriptions for only the next two independently reviewable PRs.
 
-**Lands:** no repository file and no governance ledger. Slice 0 is current evidence used to select
-the next two PRs.
+**Lands:** no implementation and no governance ledger. When evidence materially changes this plan,
+amend this document and the semantic PR explanation before implementation continues.
 
 **Gates:** current-main `format:check`, `typecheck`, `typecheck:tests`, `test:unit`, `test:deno`,
 `build`, `test:repo-governance`, repository structure, and a fresh state-write control when the
 selected work changes a mutation path.
-
-## Corrections — resolved
 
 ## Corrections — resolved
 
@@ -142,7 +162,7 @@ only so the reasoning survives; the product plan is now the authority.
 | I2  | **Exhaustiveness becomes compiler-enforced before any new stage is reachable.** There is not one exhaustive `switch` and not one `Record<GroupLifecycleState, …>` in the repository; every consumer is a negative or equality comparison, so _adding_ three stages produces zero compiler errors and silently routes them down whichever branch the predicate picks. Slice 1b introduces one stage registry, derives the three untyped runtime validator arrays and `EVERY_LIFECYCLE_STATE` from it, and converts every stage predicate into a stage-keyed pure function returning exactly what the comparison returns today.                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 | I3  | **Causal fences and narrow internal capabilities land early, not late.** Slice 3 adds required `expectedFormationEpoch` and `expectedLayout` to existing criterion commands and owns the new internal authority modes in I19, so `applyPlannedLayout`, triggers, status writes and internal `connect` are fenced and least-privileged from birth.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | I4  | **The status axes do not ride the aggregate's first field edit.** A condition pinned at `inactive` on a live group for eight slices is a lie on the wire. The key-list edit is paid twice; new fields go last and wire order stays stable, so the second edit is cheap.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| I5  | **Only the next two delivery PRs are concrete.** Slice 0 is an uncommitted prerequisite. PR 1 is the mechanical `establishing → connecting` rename (1a); PR 2 is dark contract closure (1b + 1c). Every later numbered or lettered label is a capability-analysis anchor whose owners, hazards and acceptance survive regrouping; it is not a PR count or merge-order commitment.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| I5  | **Only the next two delivery PRs selected from current evidence are concrete.** At this planning pass, PR 1 is the mechanical `establishing → connecting` rename (1a) and PR 2 is dark contract closure (1b + 1c); both must be revalidated at the initial Slice 0 checkpoint. Each later checkpoint selects the next one or two under I20. Every later numbered or lettered label is a capability-analysis anchor whose owners, hazards and acceptance survive regrouping; it is not a PR count or merge-order commitment.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
 | I6  | **Every slice's gates are named in its own section, not in an appendix.** Three gates are not in branch CI and are therefore invisible unless named per slice: `test:rallar:full-stack:memory:live-rtc-3`, the local medium-scale run, and **Run Hetzner Supported Distributed Manifests** (push-to-main only, required before the plan may be marked complete).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 | I7  | **A persisted field lands with its first reader.** The control-plane workstream recorded this as its own slice-1 lesson: _"Persisting a document nothing reads would put an AppInbox mutation-path change into a slice that otherwise carries no risk. It lands with its first reader."_ So slice 2's aggregate fields merge in the **same PR as slice 4a**, which is what first reads them. That pays medium-scale and state-write once instead of twice, and removes the only dark-plumbing hazard in the plan.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | I8  | **Route mounting is one atomic cutover and comes last.** Seven new public routes (`plan`, `connect`, `reconfigure`, `pause`, `resume`, `reset`, `start`) join the already-mounted `activate` route, producing eight application-facing commands; both legacy routes leave in the same PR. Until then new commands remain route-less and policy validation reports inert behavior-changing fields rather than storing them as though they worked.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
@@ -157,12 +177,14 @@ only so the reasoning survives; the product plan is now the authority.
 | I17 | **Member progress keeps the arrays and gains the accepted layout identity** (was Q10); no fraction on the public API. The arrays are strictly more informative than a ratio, and the identity lets a UI anchor its bar and re-baseline when the layout changes — product decision 40's stated trap is that an unanchored fraction runs backwards during formation. It also makes "no layout" an absent identity rather than a misleading 1. _Alternative rejected:_ shipping a computed fraction, which bakes the no-layout, edgeless-layout and layout-changed cases into the public surface.                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | I18 | **`reset` marks both topology slots obsolete inside the lifecycle transaction; it deletes nothing.** It clears `Group.acceptedLayoutIdentity`, tombstones accepted and planned with `state: 'removed'`, and retains both valid fingerprints. The planned tombstone disarms the change gate because it evaluates only an active planned snapshot. Physical delete, expiry and follow-up cleanup are rejected because they weaken traceability and atomicity.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
 | I19 | **Internal group mutations use narrow source capabilities, owned once in slice 3.** `topology-publication` may invoke only route-less `applyPlannedLayout`; `formation-automation` may invoke only automatic `plan`, `connect` and `reconfigure`; `activation-status` may invoke only the damped status update. Existing `formation-criterion` remains limited to criterion/retry transitions. Invocation site does not redefine authority: a post-publication hook completing a latched connect still uses `formation-automation`, never `topology-publication`. A single broad mode and widening `formation-criterion` are rejected because they combine independent producers and weaken least privilege.                                                                                                                                                                                                                                                                                                                                                              |
+| I20 | **Replanning from the latest `main` is mandatory whenever its changes materially affect this plan.** At every next-one-or-two-PR checkpoint, inspect `main` changes since the previous pass against the product constraints, ownership, contracts, dataflow, failure boundaries, acceptance and validation assumptions used by the affected work. Material evidence stops that work until the affected repository truth is re-recovered and the implementation decisions, decomposition, dependencies, risks, gates, next concrete PRs and semantic PR explanation are revised. Harmless commit or line movement requires no replan. Replanning is evidence work and does not itself require a merge or rebase. _Alternatives rejected:_ treating Slice 0 as a one-time census, which lets later work execute against stale authority; and synchronising the branch for every base movement, which confuses planning correctness with Git integration.                                                                                                                    |
 
-The held-layout capability remains the next milestone after PR 2, but slice 0 selects only its next
-two independently reviewable PRs. Later labels below are stable capability-analysis anchors used for
-dependencies and navigation; they may be regrouped after re-census and do not commit file lists, PR
-counts or merge order. The gate table is condition-based so those anchors cannot become a shadow
-delivery schedule.
+The held-layout capability is the next milestone under current evidence, but every checkpoint selects
+only its next two independently reviewable PRs. Later labels below are capability-analysis anchors used
+for dependencies and navigation; I20 permits their owners, boundaries, grouping, order and even their
+continued necessity to change when current `main` provides material evidence. They do not commit file
+lists, PR counts or merge order. The gate table is condition-based so those anchors cannot become a
+shadow delivery schedule.
 
 ## Slice 1 — Contract closure
 
@@ -210,7 +232,6 @@ transportState, preActivationAppData) → flows | blocked | halted`; total condi
 functions; `resolveCoverageBasisLayoutIdentity(stage, accepted, planned)` used by every status causal
 key; fingerprint staleness; the in-flight axis; trigger evaluation; expected fences; and the total
 admission × stage matrix, including `dormant` and product decision 38's preserved admission posture.
-policy's posture rather than re-opening a `closed` group.
 
 **Dark:** all of it. Adding union members is unobservable while no transition produces them.
 
@@ -460,7 +481,6 @@ builder; `GROUP_MUTATION_OPERATIONS` is an untyped `Set` of bare strings.
 
 Product decision 12 keeps one initiator policy for all eight application-facing commands, so the
 command predicate needs no per-command branch.
-Product decision 12 keeps one initiator policy, so the command predicate needs no per-command branch.
 Every new command inherits the slow sequential read path, and the read step and its validator apply
 that predicate independently — a one-sided edit throws at compute.
 
@@ -896,7 +916,7 @@ deliberately so the Hetzner run is paid once per foundation, not once per file t
 
 ## Questions remaining
 
-**None block a slice.** Q1–Q11 are all settled and recorded as decisions I3–I18 above, each with the
+**None block a slice.** Q1–Q11 are all settled and recorded as decisions I3–I20 above, each with the
 alternative that was rejected and why. Q5 and Q8 were closed by earlier passes: the status fields do
 not ride the first field edit (I4), and the `pending` name collision dissolved once the plan's
 "pending layout" became the _planned_ layout, freeing `pending` to mean "a replan is queued, due at
