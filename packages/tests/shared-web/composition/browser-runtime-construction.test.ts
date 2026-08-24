@@ -1,12 +1,9 @@
-import {
-    createBrowserRuntimeFoundation,
-    createBrowserStateEventComposition
-} from '@shared-web/browser/rallar-runtime/composition/browser-runtime-composition.ts';
+import { createBrowserRuntimeFoundation } from '@shared-web/browser/rallar-runtime/composition/browser-runtime-composition.ts';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { configureTestCacheRepositories } from '../../cache-repository-config.ts';
 
-type AppContextModule = typeof import('@shared-web/browser/app-context.ts');
+type MiddlewareModule = typeof import('@shared-web/browser/middleware.ts');
 type AuthModule = typeof import('@shared/api/auth.ts');
 
 const runtime = await vi.hoisted(async () => {
@@ -17,19 +14,16 @@ const runtime = await vi.hoisted(async () => {
 
     return {
         middleware,
-        initMiddleware: vi.fn<AppContextModule['initMiddleware']>(),
+        initialiseMiddleware: vi.fn<MiddlewareModule['initialiseMiddleware']>(),
         readSession: vi.fn<AuthModule['readSession']>()
     };
 });
 
 vi.mock(
-    import('@shared-web/browser/app-context.ts'),
-    async (importOriginal): Promise<Partial<AppContextModule>> => ({
+    import('@shared-web/browser/middleware.ts'),
+    async (importOriginal): Promise<Partial<MiddlewareModule>> => ({
         ...await importOriginal(),
-        clearMiddleware: vi.fn(),
-        getMiddleware: () => runtime.middleware,
-        initMiddleware: runtime.initMiddleware,
-        isMiddlewareReady: () => false
+        initialiseMiddleware: runtime.initialiseMiddleware
     })
 );
 
@@ -44,22 +38,14 @@ describe('browser runtime construction', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         configureTestCacheRepositories();
-        runtime.initMiddleware.mockResolvedValue(runtime.middleware);
+        runtime.initialiseMiddleware.mockResolvedValue(runtime.middleware.middleware);
         runtime.readSession.mockReturnValue(runtime.middleware.session);
     });
 
-    it('does not let a room-event subscription reach an incomplete session port', () => {
+    it('keeps browser runtime state isolated per completed facade foundation', () => {
         const foundation = createBrowserRuntimeFoundation();
-        const stateEvents = createBrowserStateEventComposition({
-            connectionRuntime: foundation.connectionRuntime,
-            readSessionController: () => {
-                throw new Error(
-                    'state-event session port was used before construction completed'
-                );
-            }
-        });
 
-        expect(() => stateEvents.roomEvents.onEvent(() => undefined, {})).not.toThrow();
+        expect(foundation.connectionRuntime.readMiddleware()).toBeUndefined();
     });
 
     it('completes facade creation before later setup and connect use the composed ports', async () => {

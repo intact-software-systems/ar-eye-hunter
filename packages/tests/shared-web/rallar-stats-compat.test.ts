@@ -40,14 +40,7 @@ vi.mock('@shared/api/auth.ts', () => ({
     writeSession: vi.fn()
 }));
 
-vi.mock('@shared-web/browser/app-context.ts', () => ({
-    clearMiddleware: vi.fn(),
-    getMiddleware: vi.fn(() => undefined),
-    initMiddleware: mocks.initMiddleware,
-    isMiddlewareReady: mocks.isMiddlewareReady
-}));
-
-describe('Rallar stats facade compatibility', () => {
+describe('Rallar stats facade', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.readSession.mockReturnValue(mocks.session);

@@ -3,6 +3,7 @@ import type * as ApiWorkflowsModule from '@shared-web/browser/api-workflows.ts';
 import type * as AppContextModule from '@shared-web/browser/app-context.ts';
 import type * as AuthApiModule from '@shared-web/browser/auth/session-http-api.ts';
 import type * as DataCachesModule from '@shared-web/browser/data-caches.ts';
+import type * as MiddlewareModule from '@shared-web/browser/middleware.ts';
 import { newALRoute, newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import type * as AuthModule from '@shared/api/auth.ts';
@@ -94,18 +95,10 @@ const webRtcConnectionService = vi.mocked(
 const webSocketQueueBox = vi.mocked(mocks.ctx.middleware.webSocketQueueBox);
 const webSocketClient = vi.mocked(mocks.ctx.middleware.webSocketQueueBox.socket);
 
-// The `Partial<typeof …Module>` return annotation is what makes these factories load-bearing: it
-// turns a renamed or removed production export into a compile error here instead of a silently
-// undefined mock member.
 vi.mock(
-    import('@shared-web/browser/app-context.ts'),
-    (): Partial<typeof AppContextModule> => ({
-        clearMiddleware: mocks.clearMiddleware,
-        getMiddleware: vi.fn<typeof AppContextModule.getMiddleware>(
-            () => mocks.ctx
-        ),
-        initMiddleware: mocks.initMiddleware,
-        isMiddlewareReady: mocks.isMiddlewareReady
+    import('@shared-web/browser/middleware.ts'),
+    (): Partial<typeof MiddlewareModule> => ({
+        initialiseMiddleware: async (_session, _topic, options) => (await mocks.initMiddleware(options)).middleware
     })
 );
 
@@ -174,25 +167,15 @@ vi.mock(
     })
 );
 
-describe('Rallar realtime send and listen compatibility', () => {
+describe('Rallar realtime send and listen', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         vi.useRealTimers();
-        mocks.findClientStateSnapshotByPrincipalId.mockImplementation(
-            mocks.readMissingClientStateSnapshotRepository
-        );
-        mocks.getAllClientStateSnapshots.mockImplementation(
-            mocks.readMissingClientStateSnapshotRepository
-        );
-        mocks.findFirstGroupStateSnapshotRefSessionIdIsIn.mockImplementation(
-            mocks.readMissingGroupStateSnapshotRepository
-        );
-        mocks.findGroupStateSnapshotByRef.mockImplementation(
-            mocks.readMissingGroupStateSnapshotRepository
-        );
-        mocks.getAllGroupStateSnapshots.mockImplementation(
-            mocks.readMissingGroupStateSnapshotRepository
-        );
+        mocks.findClientStateSnapshotByPrincipalId.mockReturnValue(undefined);
+        mocks.getAllClientStateSnapshots.mockReturnValue([]);
+        mocks.findFirstGroupStateSnapshotRefSessionIdIsIn.mockReturnValue(undefined);
+        mocks.findGroupStateSnapshotByRef.mockReturnValue(undefined);
+        mocks.getAllGroupStateSnapshots.mockReturnValue([]);
         mocks.refreshStateSnapshots.mockResolvedValue({ clients: [], groups: [] });
         mocks.initMiddleware.mockResolvedValue(mocks.ctx);
         mocks.isMiddlewareReady.mockReturnValue(false);

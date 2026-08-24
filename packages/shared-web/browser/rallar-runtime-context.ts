@@ -1,9 +1,8 @@
 import {
-    clearMiddleware as clearGlobalMiddleware,
-    getMiddleware as getGlobalMiddleware,
-    isMiddlewareReady as isGlobalMiddlewareReady,
-    type ApiMiddleware
-} from '@shared-web/browser/app-context.ts';
+    BrowserTransportRuntime,
+    type ApiMiddleware,
+    type BrowserTransportRuntimePort
+} from '@shared-web/browser/connection/browser-transport-runtime.ts';
 import type {
     RallarOperationOptions,
     RallarOperationRetryPredicate
@@ -46,21 +45,14 @@ export type RallarBrowserRuntimeDefaults = Readonly<{
 }>;
 
 export type RallarBrowserFacadeRuntimeContextOptions = Readonly<{
-    isMiddlewareReady?: () => boolean;
-    getMiddleware?: () => ApiMiddleware;
-    clearMiddleware?: () => void;
+    transportRuntime?: BrowserTransportRuntimePort;
 }>;
 
 export type RallarBrowserFacadeRuntimeContext = Readonly<{
     readConnectState(): RallarBrowserConnectStatus;
     setConnectState(state: RallarBrowserConnectStatus): void;
-    cachedMiddleware(): ApiMiddleware | undefined;
     readMiddleware(): ApiMiddleware | undefined;
-    setMiddleware(ctx: ApiMiddleware | undefined): void;
     requireMiddleware(): ApiMiddleware;
-    clearMiddleware(): void;
-    readConnectPromise(): Promise<ApiMiddleware> | undefined;
-    setConnectPromise(promise: Promise<ApiMiddleware> | undefined): void;
     readStateCacheUnsubscribe(): (() => void) | undefined;
     setStateCacheUnsubscribe(unsubscribe: (() => void) | undefined): void;
     currentRoomId(): string | undefined;
@@ -89,11 +81,7 @@ export type RallarConnectionRuntimePort = Pick<
     | 'readConnectState'
     | 'setConnectState'
     | 'readMiddleware'
-    | 'setMiddleware'
     | 'requireMiddleware'
-    | 'clearMiddleware'
-    | 'readConnectPromise'
-    | 'setConnectPromise'
     | 'setDefaults'
     | 'defaults'
     | 'readDefaults'
@@ -125,8 +113,6 @@ export type RallarAuthRuntimePort = Pick<
 
 type RallarBrowserFacadeRuntimeState = {
     connectState: RallarBrowserConnectStatus;
-    middleware?: ApiMiddleware;
-    connectPromise?: Promise<ApiMiddleware>;
     stateCacheUnsubscribe?: () => void;
     currentRoomId?: string;
     currentRoomRef?: GroupRef;
@@ -140,9 +126,7 @@ type RallarBrowserFacadeRuntimeState = {
 export function createRallarBrowserFacadeRuntimeContext(
     options: RallarBrowserFacadeRuntimeContextOptions = {}
 ): RallarBrowserFacadeRuntimeContext {
-    const isMiddlewareReady = options.isMiddlewareReady ?? isGlobalMiddlewareReady;
-    const getMiddleware = options.getMiddleware ?? getGlobalMiddleware;
-    const clearMiddleware = options.clearMiddleware ?? clearGlobalMiddleware;
+    const transportRuntime = options.transportRuntime ?? new BrowserTransportRuntime();
     const state: RallarBrowserFacadeRuntimeState = {
         connectState: 'idle',
         endedAuthSessionKeys: new Set<string>()
@@ -153,41 +137,8 @@ export function createRallarBrowserFacadeRuntimeContext(
         setConnectState: (connectState): void => {
             state.connectState = connectState;
         },
-        cachedMiddleware: () => state.middleware,
-        readMiddleware: (): ApiMiddleware | undefined => {
-            if (state.middleware) {
-                return state.middleware;
-            }
-
-            if (!isMiddlewareReady()) {
-                return undefined;
-            }
-
-            state.middleware = getMiddleware();
-            return state.middleware;
-        },
-        setMiddleware: (ctx): void => {
-            state.middleware = ctx;
-        },
-        requireMiddleware: (): ApiMiddleware => {
-            const ctx = state.middleware ?? (
-                isMiddlewareReady() ? getMiddleware() : undefined
-            );
-            if (!ctx) {
-                throw new Error('Rallar is not connected. Call rallar.connect() first.');
-            }
-
-            state.middleware = ctx;
-            return ctx;
-        },
-        clearMiddleware: (): void => {
-            state.middleware = undefined;
-            clearMiddleware();
-        },
-        readConnectPromise: () => state.connectPromise,
-        setConnectPromise: (promise): void => {
-            state.connectPromise = promise;
-        },
+        readMiddleware: () => transportRuntime.readMiddleware(),
+        requireMiddleware: () => transportRuntime.requireMiddleware(),
         readStateCacheUnsubscribe: () => state.stateCacheUnsubscribe,
         setStateCacheUnsubscribe: (unsubscribe): void => {
             state.stateCacheUnsubscribe = unsubscribe;

@@ -3,7 +3,7 @@ import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createGroupSnapshotFixture } from './authoritative-group-fixtures.ts';
 
-type AppContextModule = typeof import('@shared-web/browser/app-context.ts');
+type MiddlewareModule = typeof import('@shared-web/browser/middleware.ts');
 type ApiWorkflowsModule = typeof import('@shared-web/browser/api-workflows.ts');
 type DataCachesModule = typeof import('@shared-web/browser/data-caches.ts');
 type AuthModule = typeof import('@shared/api/auth.ts');
@@ -19,8 +19,7 @@ const mocks = await vi.hoisted(async () => {
         clearSession: vi.fn<AuthModule['clearSession']>(),
         ctx,
         hydrateStateCaches: vi.fn<DataCachesModule['hydrateStateCaches']>(() => Promise.resolve()),
-        initMiddleware: vi.fn<AppContextModule['initMiddleware']>(() => Promise.resolve(ctx)),
-        isMiddlewareReady: vi.fn<AppContextModule['isMiddlewareReady']>(() => false),
+        initialiseMiddleware: vi.fn<MiddlewareModule['initialiseMiddleware']>(() => Promise.resolve(ctx.middleware)),
         onStateCacheChange: vi.fn<DataCachesModule['onStateCacheChange']>(() => vi.fn()),
         readSession: vi.fn<AuthModule['readSession']>(() => ctx.session),
         refreshStateSnapshots: vi.fn<ApiWorkflowsModule['refreshStateSnapshots']>(() => Promise.resolve({ clients: [], groups: [] })),
@@ -37,12 +36,9 @@ const mocks = await vi.hoisted(async () => {
 });
 
 vi.mock(
-    import('@shared-web/browser/app-context.ts'),
-    (): Partial<AppContextModule> => ({
-        clearMiddleware: vi.fn(),
-        getMiddleware: vi.fn(() => mocks.ctx),
-        initMiddleware: mocks.initMiddleware,
-        isMiddlewareReady: mocks.isMiddlewareReady
+    import('@shared-web/browser/middleware.ts'),
+    (): Partial<MiddlewareModule> => ({
+        initialiseMiddleware: mocks.initialiseMiddleware
     })
 );
 
@@ -93,8 +89,7 @@ describe('Rallar startup lifecycle behavior', () => {
         mockGroupSnapshots([]);
         mocks.hydrateStateCaches.mockResolvedValue(undefined);
         mocks.clearSession.mockReset();
-        mocks.initMiddleware.mockResolvedValue(mocks.ctx);
-        mocks.isMiddlewareReady.mockReturnValue(false);
+        mocks.initialiseMiddleware.mockResolvedValue(mocks.ctx.middleware);
         mocks.readSession.mockReturnValue(mocks.ctx.session);
         mocks.refreshStateSnapshots.mockResolvedValue({ clients: [], groups: [] });
     });
@@ -112,7 +107,9 @@ describe('Rallar startup lifecycle behavior', () => {
 
         await facade.start({ refreshRooms: true });
 
-        expect(mocks.initMiddleware).toHaveBeenCalledWith(
+        expect(mocks.initialiseMiddleware).toHaveBeenCalledWith(
+            mocks.ctx.session,
+            expect.any(String),
             expect.objectContaining({
                 scope: {
                     applicationId: 'ar-eye-hunter',
@@ -152,19 +149,26 @@ describe('Rallar startup lifecycle behavior', () => {
 
         expect(result.session).toEqual(mocks.ctx.session);
         expect(result.connected).toBe(true);
-        expect(result.middleware).toBe(mocks.ctx);
+        expect(result.middleware).toMatchObject({
+            middleware: mocks.ctx.middleware,
+            session: mocks.ctx.session
+        });
         expect(result.roomState?.rooms.map((room) => room.roomId)).toEqual([
             'match-1'
         ]);
         expect(result.peopleState?.clients).toEqual([]);
-        expect(mocks.initMiddleware).toHaveBeenCalledWith({
-            onAuthInvalid: expect.any(Function),
-            scope: {
-                applicationId: 'default-app',
-                workspaceId: 'default'
-            },
-            timeoutMs: 123
-        });
+        expect(mocks.initialiseMiddleware).toHaveBeenCalledWith(
+            mocks.ctx.session,
+            expect.any(String),
+            {
+                onAuthInvalid: expect.any(Function),
+                scope: {
+                    applicationId: 'default-app',
+                    workspaceId: 'default'
+                },
+                timeoutMs: 123
+            }
+        );
         expect(mocks.refreshStateSnapshots).toHaveBeenCalledWith(
             {
                 applicationId: 'default-app',
@@ -191,7 +195,7 @@ describe('Rallar startup lifecycle behavior', () => {
             session: undefined,
             connected: false
         });
-        expect(mocks.initMiddleware).not.toHaveBeenCalled();
+        expect(mocks.initialiseMiddleware).not.toHaveBeenCalled();
         expect(mocks.refreshStateSnapshots).not.toHaveBeenCalled();
     });
 
@@ -199,7 +203,7 @@ describe('Rallar startup lifecycle behavior', () => {
         const { createRallarFacade } = await import(
             '@shared-web/browser/rallar.ts'
         );
-        mocks.initMiddleware.mockRejectedValueOnce(new Error('network unavailable'));
+        mocks.initialiseMiddleware.mockRejectedValueOnce(new Error('network unavailable'));
         const facade = createRallarFacade();
 
         await expect(facade.connect()).rejects.toThrow('network unavailable');
@@ -212,7 +216,7 @@ describe('Rallar startup lifecycle behavior', () => {
         const { createRallarFacade } = await import(
             '@shared-web/browser/rallar.ts'
         );
-        mocks.initMiddleware.mockRejectedValueOnce(
+        mocks.initialiseMiddleware.mockRejectedValueOnce(
             new ApiHttpError('GET', '/session', 401, 'expired')
         );
         const facade = createRallarFacade();

@@ -41,10 +41,13 @@ registration, invocation, and cleanup without consulting a historical plan.
    creates one [createRallarWsInbox](./rallar-runtime/ws-inbox.ts#L24)
    subscription capability from the completed connection runtime, then gives
    room events and people state events direct access to it.
-5. [createBrowserSessionComposition](./rallar-runtime/composition/browser-session-composition.ts#L48)
-   creates data, session, connection/auth, startup, and CRDT capabilities. Its
-   data/session/startup connections currently use late-bound controller values.
-6. The composer registers state and transport lifecycle participants through
+5. [createBrowserSessionCoreComposition](./rallar-runtime/composition/browser-session-composition.ts)
+   creates immutable session identity, Data, and completed connection/auth
+   capabilities before state-event, transport, or product consumers receive them.
+6. [createBrowserSessionProductComposition](./rallar-runtime/composition/browser-session-composition.ts)
+   constructs startup and CRDT only after the completed session, rooms, people,
+   and messaging capabilities exist.
+7. The composer registers state and transport lifecycle participants through
    [registerBrowserStateLifecycle](./rallar-runtime/composition/browser-lifecycle-composition.ts#L29)
    and
    [registerBrowserTransportLifecycle](./rallar-runtime/composition/browser-lifecycle-composition.ts#L45),
@@ -70,22 +73,18 @@ construction still has its own distinct lifecycle boundary.
 
 ## Runtime invocation and cleanup timeline
 
-1. [setup](./rallar-runtime/startup.ts#L76) configures
+1. [setup](./rallar-runtime/startup.ts) configures
    the API base URL and defaults, then starts restored-session work.
-2. [createRallarStartupController](./rallar-runtime/startup.ts#L30)
+2. [createRallarStartupController](./rallar-runtime/startup.ts)
    restores auth, connects when a session exists, and refreshes the requested
    room/people state.
-3. [createRallarSessionController](./rallar-runtime/session.ts#L82)
+3. [createRallarSessionController](./rallar-runtime/session.ts)
    owns connection state, auth expiry, 401 termination, and the public
    connection/auth operations.
-4. Its disconnect operation detaches lifecycle participants, clears room and
-   middleware runtime state, then emits disconnected lifecycle notification.
-5. Transport effects currently have two live shutdown owners:
-   [shutdownApiMiddleware](./rallar-runtime/session.ts#L545)
-   and [shutdownMiddleware](./app-context.ts#L103), reached again
-   when [clearMiddleware](./app-context.ts#L96) clears the global
-   middleware. Both keep best-effort teardown semantics for stale transports.
-
-The next owned correction gives transport teardown one stateful owner so WS,
-QueueBox, RTC, multicast, media, heartbeat, state-cache, and lifecycle effects
-remain observable exactly once while preserving the current public ordering.
+4. Its disconnect operation detaches lifecycle participants, asks the completed
+   [BrowserTransportRuntime](./connection/browser-transport-runtime.ts) to shut
+   down pending or active middleware exactly once, clears room state, then emits
+   disconnected lifecycle notification.
+5. The transport runtime keeps best-effort shutdown ordering for heartbeat, RTC,
+   multicast, QueueBox, and WebSocket resources while session ownership keeps
+   auth timing and lifecycle notification visible.

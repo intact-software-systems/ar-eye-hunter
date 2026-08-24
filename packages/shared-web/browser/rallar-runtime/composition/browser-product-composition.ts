@@ -35,7 +35,7 @@ export interface CreateBrowserRoomPeopleStatsCompositionInput {
     readonly stateEvents: BrowserStateEventComposition;
     readonly messaging: BrowserMessagingComposition;
     readonly realtime: BrowserRealtimeComposition;
-    readonly readSessionController: () => RallarSessionController;
+    readonly session: RallarSessionController;
 }
 
 export interface CreateBrowserCallsDirectorCompositionInput {
@@ -43,7 +43,7 @@ export interface CreateBrowserCallsDirectorCompositionInput {
     readonly messaging: BrowserMessagingComposition;
     readonly realtime: BrowserRealtimeComposition;
     readonly products: BrowserRoomPeopleStatsComposition;
-    readonly readSessionController: () => RallarSessionController;
+    readonly session: RallarSessionController;
 }
 
 export function createBrowserRoomPeopleStatsComposition(
@@ -55,14 +55,13 @@ export function createBrowserRoomPeopleStatsComposition(
             roomEvents: input.stateEvents.roomEvents,
             messages: input.messaging.messages,
             realtime: input.realtime.realtime,
-            connect: async (options) => await input.readSessionController().connect(options),
-            requireSession: () => input.readSessionController().requireSession(),
-            resolveOperationOptions: (options) => input.readSessionController().resolveOperationOptions(options),
-            resolveOperationScope: (scope) => input.readSessionController().resolveOperationScope(scope),
+            connect: async (options) => await input.session.connect(options),
+            requireSession: input.session.requireSession,
+            resolveOperationOptions: input.session.resolveOperationOptions,
+            resolveOperationScope: input.session.resolveOperationScope,
             resolveDefaultRoom: input.state.resolveDefaultRoom,
             resolveDefaultRoomRef: input.state.resolveDefaultRoomRef,
-            runAuthAwareOperation: async (operation) =>
-                await input.readSessionController().runAuthAwareOperation(operation),
+            runAuthAwareOperation: input.session.runAuthAwareOperation,
             acceptSnapshots: async (context, clients, groups, scope) =>
                 await input.state.stateStore.acceptSnapshots(context, clients, groups, scope)
         })
@@ -70,20 +69,19 @@ export function createBrowserRoomPeopleStatsComposition(
     const peopleController = createRallarPeopleController({
         stateStore: input.state.stateStore,
         stateEvents: input.stateEvents.stateEvents,
-        resolveOperationOptions: (options) => input.readSessionController().resolveOperationOptions(options),
-        resolveOperationScope: (scope) => input.readSessionController().resolveOperationScope(scope),
-        runAuthAwareOperation: async (operation) =>
-            await input.readSessionController().runAuthAwareOperation(operation),
-        connect: async (options) => await input.readSessionController().connect(options),
+        resolveOperationOptions: input.session.resolveOperationOptions,
+        resolveOperationScope: input.session.resolveOperationScope,
+        runAuthAwareOperation: input.session.runAuthAwareOperation,
+        connect: async (options) => await input.session.connect(options),
         acceptSnapshots: async (context, clients, groups, scope) =>
             await input.state.stateStore.acceptSnapshots(context, clients, groups, scope)
     });
     const people = createRallarPeopleFacade(peopleController.operations);
     const statsController = createRallarStatsController({
-        resolveOperationOptions: (options) => input.readSessionController().resolveOperationOptions(options),
-        resolveOperationScope: (scope) => input.readSessionController().resolveOperationScope(scope),
-        requireSession: () => input.readSessionController().requireSession(),
-        runAuthAwareOperation: async (operation) => await input.readSessionController().runAuthAwareOperation(operation)
+        resolveOperationOptions: input.session.resolveOperationOptions,
+        resolveOperationScope: input.session.resolveOperationScope,
+        requireSession: input.session.requireSession,
+        runAuthAwareOperation: input.session.runAuthAwareOperation
     });
     const stats = createRallarStatsFacade(statsController.operations);
     return {
@@ -97,10 +95,10 @@ export function createBrowserCallsDirectorComposition(
     input: CreateBrowserCallsDirectorCompositionInput
 ): BrowserCallsDirectorComposition {
     const callsController = createRallarCallsController({
-        connect: async () => await input.readSessionController().connect(),
-        readMiddleware: () => input.readSessionController().readMiddleware(),
+        connect: async () => await input.session.connect(),
+        readMiddleware: input.session.readMiddleware,
         readSession,
-        requireSession: () => input.readSessionController().requireSession(),
+        requireSession: input.session.requireSession,
         resolveRoomRef: (room) => input.state.roomStateStore.resolveRoomRef(room),
         resolveTargetPeerIds: (target) => input.realtime.realtimeController.resolveTargetPeerIds(target),
         createTargetedChannel: <T>(definition: RallarTargetedChannelDefinition) =>
@@ -119,13 +117,12 @@ export function createBrowserCallsDirectorComposition(
         messages: input.messaging.messages,
         realtime: input.realtime.realtime,
         readSession,
-        requireSession: () => input.readSessionController().requireSession(),
-        connect: async (options) => await input.readSessionController().connect(options),
-        resolveOperationOptions: (options) => input.readSessionController().resolveOperationOptions(options),
-        resolveOperationScope: (scope) => input.readSessionController().resolveOperationScope(scope),
+        requireSession: input.session.requireSession,
+        connect: async (options) => await input.session.connect(options),
+        resolveOperationOptions: input.session.resolveOperationOptions,
+        resolveOperationScope: input.session.resolveOperationScope,
         resolveDefaultRoom: input.state.resolveDefaultRoom,
-        runAuthAwareOperation: async (operation) =>
-            await input.readSessionController().runAuthAwareOperation(operation),
+        runAuthAwareOperation: input.session.runAuthAwareOperation,
         acceptSnapshots: async (context, groups, scope) =>
             await input.state.stateStore.acceptSnapshots(context, [], groups, scope),
         createTargetedChannel: <T>(definition: RallarTargetedChannelDefinition) =>

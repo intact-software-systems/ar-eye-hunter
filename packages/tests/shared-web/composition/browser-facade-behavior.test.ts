@@ -1,7 +1,7 @@
 import { readApiBaseUrl } from '@shared-web/browser/api-client-config.ts';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-type AppContextModule = typeof import('@shared-web/browser/app-context.ts');
+type MiddlewareModule = typeof import('@shared-web/browser/middleware.ts');
 type ApiWorkflowsModule = typeof import('@shared-web/browser/api-workflows.ts');
 type AuthModule = typeof import('@shared/api/auth.ts');
 type DataCachesModule = typeof import('@shared-web/browser/data-caches.ts');
@@ -15,7 +15,7 @@ const runtime = await vi.hoisted(async () => {
     const middleware = createApiMiddlewareTestDouble();
     return {
         middleware,
-        initMiddleware: vi.fn<AppContextModule['initMiddleware']>(),
+        initialiseMiddleware: vi.fn<MiddlewareModule['initialiseMiddleware']>(),
         readSession: vi.fn<AuthModule['readSession']>(),
         refreshStateSnapshots: vi.fn<ApiWorkflowsModule['refreshStateSnapshots']>(),
         hydrateStateCaches: vi.fn<DataCachesModule['hydrateStateCaches']>(),
@@ -29,12 +29,9 @@ const runtime = await vi.hoisted(async () => {
 });
 
 vi.mock(
-    import('@shared-web/browser/app-context.ts'),
-    (): Partial<AppContextModule> => ({
-        clearMiddleware: vi.fn(),
-        getMiddleware: () => runtime.middleware,
-        initMiddleware: runtime.initMiddleware,
-        isMiddlewareReady: () => false
+    import('@shared-web/browser/middleware.ts'),
+    (): Partial<MiddlewareModule> => ({
+        initialiseMiddleware: runtime.initialiseMiddleware
     })
 );
 
@@ -80,7 +77,7 @@ vi.mock(
 describe('browser facade behavior', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        runtime.initMiddleware.mockResolvedValue(runtime.middleware);
+        runtime.initialiseMiddleware.mockResolvedValue(runtime.middleware.middleware);
         runtime.readSession.mockReturnValue(runtime.middleware.session);
         runtime.refreshStateSnapshots.mockResolvedValue({ clients: [], groups: [] });
         runtime.hydrateStateCaches.mockResolvedValue(undefined);
@@ -134,18 +131,25 @@ describe('browser facade behavior', () => {
         });
         expect(result).toMatchObject({
             connected: true,
-            middleware: runtime.middleware,
+            middleware: expect.objectContaining({
+                middleware: runtime.middleware.middleware,
+                session: runtime.middleware.session
+            }),
             session: runtime.middleware.session
         });
-        expect(runtime.initMiddleware).toHaveBeenCalledWith({
-            onAuthInvalid: expect.any(Function),
-            scope: {
-                applicationId: 'arena',
-                workspaceId: 'match'
-            },
-            timeoutMs: 123,
-            maxPeerConnections: 10
-        });
+        expect(runtime.initialiseMiddleware).toHaveBeenCalledWith(
+            runtime.middleware.session,
+            expect.any(String),
+            {
+                onAuthInvalid: expect.any(Function),
+                scope: {
+                    applicationId: 'arena',
+                    workspaceId: 'match'
+                },
+                timeoutMs: 123,
+                maxPeerConnections: 10
+            }
+        );
         expect(runtime.refreshStateSnapshots).toHaveBeenCalledWith(
             {
                 applicationId: 'arena',

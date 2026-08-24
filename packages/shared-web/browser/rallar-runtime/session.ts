@@ -5,23 +5,24 @@ import {
     type RallarApiClientConfig
 } from '@shared-web/browser/api-client-config.ts';
 import { ApiHttpError } from '@shared-web/browser/api/http-error.ts';
-import { initMiddleware, isMiddlewareReady, type ApiMiddleware } from '@shared-web/browser/app-context.ts';
 import * as authApi from '@shared-web/browser/auth/session-http-api.ts';
 import { deleteBrowserALRuntimeEntriesForSession } from '@shared-web/browser/browser-al-runtime-stores.ts';
 import type {
-    CreateRallarAuthFacadeOptions,
+    ApiMiddleware,
+    BrowserTransportRuntimePort
+} from '@shared-web/browser/connection/browser-transport-runtime.ts';
+import type {
     RallarAuthChangeListener,
     RallarAuthChangeReason,
+    RallarAuthFacade,
     RallarAuthState,
     RallarRegisterOptions
 } from '@shared-web/browser/rallar-auth-facade.ts';
 import type {
-    CreateRallarConnectionFacadeOptions,
+    RallarConnectionOperations,
     RallarDefaults,
     RallarFlowPolicies,
-    RallarScopedOperationOptions,
-    RallarStartOptions,
-    RallarStartResult
+    RallarScopedOperationOptions
 } from '@shared-web/browser/rallar-connection-facade.ts';
 import {
     toRallarCommandOptions,
@@ -52,17 +53,17 @@ const MAX_AUTH_EXPIRY_TIMEOUT_MS = 2_147_483_647;
 
 export type CreateRallarSessionControllerOptions = Readonly<{
     connectionRuntime: RallarConnectionRuntimePort;
+    transportRuntime: BrowserTransportRuntimePort;
     authRuntime: RallarAuthRuntimePort;
     stateRuntime: Pick<RallarBrowserFacadeRuntimeContext, 'clearCurrentRoom'>;
     lifecycle: RallarLifecycleCoordinator;
-    start(options?: RallarStartOptions): Promise<RallarStartResult>;
     emitState(): void;
     closeDataScopes(session: AuthSession): Promise<void>;
 }>;
 
 export type RallarSessionController = Readonly<{
-    connectionOperations: CreateRallarConnectionFacadeOptions;
-    authOperations: CreateRallarAuthFacadeOptions;
+    connectionOperations: RallarConnectionOperations;
+    authOperations: RallarAuthFacade;
     connect(options?: RallarScopedOperationOptions): Promise<ApiMiddleware>;
     disconnect(): Promise<void>;
     readMiddleware(): ApiMiddleware | undefined;
@@ -76,7 +77,6 @@ export type RallarSessionController = Readonly<{
     resolveOperationScope(scope?: StateScope): StateScope | undefined;
     runAuthAwareOperation<T>(operation: () => T | Promise<T>): Promise<T>;
     waitForAuthEnd(): Promise<void>;
-    resolveDataScopeKey(scope: string): string;
 }>;
 
 export function createRallarSessionController(
@@ -84,6 +84,7 @@ export function createRallarSessionController(
 ): RallarSessionController {
     const authStateListeners = new Set<RallarAuthChangeListener>();
     let connectionGeneration = 0;
+    let connectionPromise: Promise<ApiMiddleware> | undefined;
 
     const resolveOperationOptions = <T extends RallarOperationOptions>(
         operationOptions: T
@@ -104,15 +105,6 @@ export function createRallarSessionController(
     const clearAuthExpiryTimer = (): void => {
         options.authRuntime.clearAuthExpiryTimer();
     };
-
-    let endAuthSession!: (
-        reason: Exclude<RallarAuthChangeReason, 'current' | 'login'>,
-        endOptions: Readonly<{
-            revoke: boolean;
-            operationOptions?: RallarOperationOptions;
-            session?: AuthSession;
-        }>
-    ) => Promise<void>;
 
     const scheduleAuthExpiry = (session: AuthSession | undefined): void => {
         clearAuthExpiryTimer();
@@ -173,12 +165,9 @@ export function createRallarSessionController(
         connectionGeneration += 1;
         const ctx = options.connectionRuntime.readMiddleware();
         options.lifecycle.detach(ctx);
-        if (ctx) {
-            shutdownApiMiddleware(ctx);
-        }
+        options.transportRuntime.shutdown();
         options.stateRuntime.clearCurrentRoom();
         options.connectionRuntime.setConnectState('idle');
-        options.connectionRuntime.clearMiddleware();
         options.lifecycle.disconnected();
     };
 
@@ -247,28 +236,25 @@ export function createRallarSessionController(
         if (cached) {
             return cached;
         }
-        const existingPromise = options.connectionRuntime.readConnectPromise();
-        if (existingPromise) {
-            return await waitForRallarOperation(existingPromise, connectOptions);
+        if (connectionPromise) {
+            return await waitForRallarOperation(connectionPromise, connectOptions);
         }
 
         const generation = connectionGeneration;
         options.connectionRuntime.setConnectState('connecting');
-        const promise = initMiddleware(connectOptions)
+        const promise = options.transportRuntime.init(connectOptions)
             .then((ctx) => {
                 if (
                     generation !== connectionGeneration ||
                     options.authRuntime.readAuthEndPromise() ||
                     readSession()?.sessionId !== ctx.session.sessionId
                 ) {
-                    shutdownApiMiddleware(ctx);
-                    options.connectionRuntime.clearMiddleware();
+                    options.transportRuntime.shutdown();
                     options.connectionRuntime.setConnectState('idle');
                     throw new Error(
                         'Rallar connection was cancelled because auth ended.'
                     );
                 }
-                options.connectionRuntime.setMiddleware(ctx);
                 options.connectionRuntime.setConnectState('connected');
                 scheduleAuthExpiry(ctx.session);
                 options.lifecycle.attach(ctx);
@@ -278,12 +264,17 @@ export function createRallarSessionController(
             .catch(async (error) => {
                 options.connectionRuntime.setConnectState('idle');
                 await handleAuthInvalidError(error);
+                if (options.authRuntime.readAuthEndPromise()) {
+                    throw new Error('Rallar connection was cancelled because auth ended.');
+                }
                 throw error;
             })
             .finally(() => {
-                options.connectionRuntime.setConnectPromise(undefined);
+                if (connectionPromise === promise) {
+                    connectionPromise = undefined;
+                }
             });
-        options.connectionRuntime.setConnectPromise(promise);
+        connectionPromise = promise;
         return await waitForRallarOperation(promise, connectOptions);
     };
 
@@ -358,7 +349,14 @@ export function createRallarSessionController(
         }
     };
 
-    endAuthSession = async (reason, endOptions): Promise<void> => {
+    async function endAuthSession(
+        reason: Exclude<RallarAuthChangeReason, 'current' | 'login'>,
+        endOptions: Readonly<{
+            revoke: boolean;
+            operationOptions?: RallarOperationOptions;
+            session?: AuthSession;
+        }>
+    ): Promise<void> {
         const session = endOptions.session ??
             options.connectionRuntime.readMiddleware()?.session ?? readSession();
         const sessionKey = session ? toAuthSessionKey(session) : undefined;
@@ -383,9 +381,9 @@ export function createRallarSessionController(
         });
         options.authRuntime.setAuthEndPromise(promise);
         return await promise;
-    };
+    }
 
-    const authOperations: CreateRallarAuthFacadeOptions = {
+    const authOperations: RallarAuthFacade = {
         login: async (
             request: LoginRequest,
             authOptions: RallarOperationOptions = {}
@@ -396,7 +394,7 @@ export function createRallarSessionController(
                 (signal) => authApi.loginToApi(request, { requestId, signal }),
                 operationOptions
             );
-            if (options.connectionRuntime.readMiddleware() || isMiddlewareReady()) {
+            if (options.connectionRuntime.readMiddleware() || options.transportRuntime.isReady()) {
                 await disconnect();
             }
             const previous = readSession();
@@ -465,14 +463,14 @@ export function createRallarSessionController(
         }
     };
 
-    const connectionOperations: CreateRallarConnectionFacadeOptions = {
+    const connectionOperations: RallarConnectionOperations = {
         configure: (config: RallarApiClientConfig) => {
             const nextApiBaseUrl = normalizeApiBaseUrl(config.apiBaseUrl ?? '');
             const isChanging = nextApiBaseUrl !== readApiBaseUrl();
             if (
                 isChanging &&
                 (options.connectionRuntime.readMiddleware() ||
-                    options.connectionRuntime.readConnectPromise() || isMiddlewareReady())
+                    options.transportRuntime.isReady())
             ) {
                 throw new Error('Rallar must be configured before connecting.');
             }
@@ -481,7 +479,6 @@ export function createRallarSessionController(
         setDefaults: (defaults?: RallarDefaults) => options.connectionRuntime.setDefaults(defaults),
         defaults: () => options.connectionRuntime.defaults(),
         connect,
-        start: async (startOptions: RallarStartOptions = {}) => await options.start(startOptions),
         disconnect,
         status: () => options.connectionRuntime.readConnectState(),
         isConnected: () =>
@@ -505,19 +502,7 @@ export function createRallarSessionController(
         resolveOperationOptions,
         resolveOperationScope,
         runAuthAwareOperation,
-        waitForAuthEnd,
-        resolveDataScopeKey: (scope) => {
-            if (scope === 'app') {
-                return 'app';
-            }
-            if (scope === 'principal') {
-                return `principal:${requireSession().clientId}`;
-            }
-            if (scope === 'session') {
-                return `session:${requireSession().sessionId}`;
-            }
-            return String(scope);
-        }
+        waitForAuthEnd
     };
 }
 
@@ -540,35 +525,6 @@ function waitForRallarOperation<T>(
 
 function isUnauthorizedApiError(error: unknown): boolean {
     return error instanceof ApiHttpError && error.status === 401;
-}
-
-function shutdownApiMiddleware(
-    ctx: ApiMiddleware | undefined,
-    reason = 'rallar-disconnect'
-): void {
-    if (!ctx) {
-        return;
-    }
-    runShutdownStep(() => ctx.middleware.heartbeat?.stop());
-    runShutdownStep(() => ctx.middleware.rtcRxStreamer.stopAllHeartbeats());
-    runShutdownStep(() => {
-        for (const peerId of ctx.middleware.webRtcConnectionService.knownPeerIds()) {
-            ctx.middleware.webRtcConnectionService.disconnectPeer(peerId);
-        }
-    });
-    runShutdownStep(() => ctx.middleware.rtcRxStreamer.stopLocalMedia('all'));
-    runShutdownStep(() => ctx.middleware.webRtcOverlayMulticastManager?.dispose?.());
-    runShutdownStep(() => ctx.middleware.qboxEngine.stop());
-    runShutdownStep(() => ctx.middleware.webSocketQueueBox.close(1000, reason));
-}
-
-function runShutdownStep(step: () => void): void {
-    try {
-        step();
-    }
-    catch {
-        // Auth teardown is best-effort and continues through stale transports.
-    }
 }
 
 function toAuthSessionKey(session: AuthSession): string {

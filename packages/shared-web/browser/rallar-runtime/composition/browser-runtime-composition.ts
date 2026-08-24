@@ -1,4 +1,8 @@
 import {
+    BrowserTransportRuntime,
+    type BrowserTransportRuntimePort
+} from '@shared-web/browser/connection/browser-transport-runtime.ts';
+import {
     createRallarBrowserFacadeRuntimeContext,
     type RallarAuthRuntimePort,
     type RallarBrowserFacadeRuntimeContext,
@@ -33,6 +37,7 @@ export interface BrowserRuntimeFoundation {
     readonly stateRuntime: RallarStateRuntimePort;
     readonly authRuntime: RallarAuthRuntimePort;
     readonly lifecycle: RallarLifecycleCoordinator;
+    readonly transportRuntime: BrowserTransportRuntimePort;
 }
 
 export interface BrowserStateComposition {
@@ -57,20 +62,17 @@ export interface CreateBrowserStateCompositionInput {
 
 export interface CreateBrowserStateEventCompositionInput {
     readonly connectionRuntime: RallarConnectionRuntimePort;
-    readonly readSessionController: () => RallarSessionController;
+    readonly session: RallarSessionController;
 }
 
 export function createBrowserRuntimeFoundation(): BrowserRuntimeFoundation {
-    const runtime = createRallarBrowserFacadeRuntimeContext();
+    const transportRuntime = new BrowserTransportRuntime();
+    const runtime = createRallarBrowserFacadeRuntimeContext({ transportRuntime });
     const connectionRuntime: RallarConnectionRuntimePort = {
         readConnectState: runtime.readConnectState,
         setConnectState: runtime.setConnectState,
         readMiddleware: runtime.readMiddleware,
-        setMiddleware: runtime.setMiddleware,
         requireMiddleware: runtime.requireMiddleware,
-        clearMiddleware: runtime.clearMiddleware,
-        readConnectPromise: runtime.readConnectPromise,
-        setConnectPromise: runtime.setConnectPromise,
         setDefaults: runtime.setDefaults,
         defaults: runtime.defaults,
         readDefaults: runtime.readDefaults,
@@ -100,7 +102,8 @@ export function createBrowserRuntimeFoundation(): BrowserRuntimeFoundation {
         connectionRuntime,
         stateRuntime,
         authRuntime,
-        lifecycle: createRallarLifecycleCoordinator()
+        lifecycle: createRallarLifecycleCoordinator(),
+        transportRuntime
     };
 }
 
@@ -152,17 +155,17 @@ export function createBrowserStateEventComposition(
     });
     const roomEvents = createRoomEvents({
         wsInbox,
-        readDefaultScope: () => input.readSessionController().readDefaultScope(),
-        resolveOperationOptions: (options) => input.readSessionController().resolveOperationOptions(options),
-        resolveOperationScope: (scope) => input.readSessionController().resolveOperationScope(scope),
-        runAuthAwareOperation: async (operation) => await input.readSessionController().runAuthAwareOperation(operation)
+        readDefaultScope: input.session.readDefaultScope,
+        resolveOperationOptions: input.session.resolveOperationOptions,
+        resolveOperationScope: input.session.resolveOperationScope,
+        runAuthAwareOperation: input.session.runAuthAwareOperation
     });
     const stateEvents = createRallarStateEvents({
         wsInbox,
-        readDefaultScope: () => input.readSessionController().readDefaultScope(),
-        resolveOperationOptions: (options) => input.readSessionController().resolveOperationOptions(options),
-        resolveOperationScope: (scope) => input.readSessionController().resolveOperationScope(scope),
-        runAuthAwareOperation: async (operation) => await input.readSessionController().runAuthAwareOperation(operation)
+        readDefaultScope: input.session.readDefaultScope,
+        resolveOperationOptions: input.session.resolveOperationOptions,
+        resolveOperationScope: input.session.resolveOperationScope,
+        runAuthAwareOperation: input.session.runAuthAwareOperation
     });
     return { wsInbox, roomEvents, stateEvents };
 }

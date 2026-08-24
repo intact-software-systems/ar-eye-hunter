@@ -1,5 +1,4 @@
 import type { RallarFacade } from '@shared-web/browser/rallar-facade-contract.ts';
-import type { RallarSessionController } from '@shared-web/browser/rallar-runtime/session.ts';
 
 import {
     createBrowserMessagingComposition,
@@ -19,43 +18,45 @@ import {
     createBrowserStateComposition,
     createBrowserStateEventComposition
 } from './composition/browser-runtime-composition.ts';
-import { createBrowserSessionComposition } from './composition/browser-session-composition.ts';
+import {
+    createBrowserSessionCoreComposition,
+    createBrowserSessionProductComposition
+} from './composition/browser-session-composition.ts';
 
 export function createBrowserRallarFacade(): RallarFacade {
     const foundation = createBrowserRuntimeFoundation();
-    let sessionController!: RallarSessionController;
-    const readSessionController = () => sessionController;
     const state = createBrowserStateComposition({
         runtime: foundation.runtime,
         stateRuntime: foundation.stateRuntime
     });
+    const session = createBrowserSessionCoreComposition({ foundation, state });
     const stateEvents = createBrowserStateEventComposition({
         connectionRuntime: foundation.connectionRuntime,
-        readSessionController
+        session: session.session
     });
     const messaging = createBrowserMessagingComposition({
         wsInbox: stateEvents.wsInbox,
         state,
-        readSessionController
+        session: session.session
     });
     const realtime = createBrowserRealtimeComposition({
         runtime: foundation.runtime,
         state,
-        readSessionController
+        session: session.session
     });
     const products = createBrowserRoomPeopleStatsComposition({
         state,
         stateEvents,
         messaging,
         realtime,
-        readSessionController
+        session: session.session
     });
     const callsDirector = createBrowserCallsDirectorComposition({
         state,
         messaging,
         realtime,
         products,
-        readSessionController
+        session: session.session
     });
     registerBrowserStateLifecycle({
         lifecycle: foundation.lifecycle,
@@ -71,15 +72,18 @@ export function createBrowserRallarFacade(): RallarFacade {
         rtcController: realtime.rtcController,
         mediaController: realtime.mediaController
     });
-    const session = createBrowserSessionComposition({
-        connectionRuntime: foundation.connectionRuntime,
-        authRuntime: foundation.authRuntime,
-        runtime: foundation.runtime,
-        lifecycle: foundation.lifecycle,
+    const sessionProducts = createBrowserSessionProductComposition({
+        session,
         state,
         messaging,
-        products,
-        bindSessionController: (controller) => (sessionController = controller)
+        products
     });
-    return createBrowserFacadeAssembly({ session, messaging, realtime, products, callsDirector });
+    return createBrowserFacadeAssembly({
+        session,
+        sessionProducts,
+        messaging,
+        realtime,
+        products,
+        callsDirector
+    });
 }

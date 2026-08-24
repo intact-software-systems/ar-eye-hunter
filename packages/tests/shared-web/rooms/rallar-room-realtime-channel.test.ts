@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { ApiMiddleware } from '@shared-web/browser/app-context.ts';
+import type { ApiMiddleware } from '@shared-web/browser/connection/browser-transport-runtime.ts';
+import type { Middleware } from '@shared-web/browser/middleware.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
@@ -45,11 +46,8 @@ const mocks = await vi.hoisted(async () => {
     };
 });
 
-vi.mock(import('@shared-web/browser/app-context.ts'), () => ({
-    clearMiddleware: vi.fn(),
-    getMiddleware: vi.fn(() => mocks.ctx),
-    initMiddleware: mocks.initMiddleware,
-    isMiddlewareReady: mocks.isMiddlewareReady
+vi.mock(import('@shared-web/browser/middleware.ts'), () => ({
+    initialiseMiddleware: async (): Promise<Middleware> => mocks.ctx.middleware
 }));
 
 vi.mock(import('@shared-web/browser/data-caches.ts'), () => ({
@@ -82,8 +80,11 @@ describe('Rallar room realtime channel', () => {
         mocks.initMiddleware.mockResolvedValue(mocks.ctx);
         mocks.isMiddlewareReady.mockReturnValue(false);
         mocks.readSession.mockReturnValue(mocks.ctx.session);
-        rejectGroupRepositoryReads();
-        rejectClientRepositoryReads();
+        mocks.findFirstGroupStateSnapshotRefSessionIdIsIn.mockReturnValue(undefined);
+        mocks.findGroupStateSnapshotByRef.mockReturnValue(undefined);
+        mocks.getAllGroupStateSnapshots.mockReturnValue([]);
+        mocks.findClientStateSnapshotByPrincipalId.mockReturnValue(undefined);
+        mocks.getAllClientStateSnapshots.mockReturnValue([]);
         vi.mocked(mocks.realtimeChannel.sendJson).mockReturnValue({
             status: 'sent',
             bufferedAmount: 0

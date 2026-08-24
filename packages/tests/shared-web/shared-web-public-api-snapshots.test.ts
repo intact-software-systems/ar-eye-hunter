@@ -243,8 +243,6 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
         expected: {
             values: [
                 'configureApiClient',
-                'createRallarAuthFacade',
-                'createRallarConnectionFacade',
                 'createRallarMessagesFacade',
                 'createRallarPeopleFacade',
                 'createRallarRoomsFacade',
@@ -255,8 +253,6 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
                 'readApiBaseUrl'
             ],
             types: [
-                'CreateRallarAuthFacadeOptions',
-                'CreateRallarConnectionFacadeOptions',
                 'CreateRallarMessagesFacadeOptions',
                 'CreateRallarPeopleFacadeOptions',
                 'CreateRallarRoomsFacadeOptions',
@@ -268,6 +264,7 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
                 'RallarAuthState',
                 'RallarConnectStatus',
                 'RallarConnectionFacade',
+                'RallarConnectionOperations',
                 'RallarCreateRoomInput',
                 'RallarDefaults',
                 'RallarFlow',

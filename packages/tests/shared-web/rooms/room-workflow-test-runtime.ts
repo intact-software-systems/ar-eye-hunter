@@ -1,6 +1,7 @@
 import { vi } from 'vitest';
 
-import type { ApiMiddleware } from '@shared-web/browser/app-context.ts';
+import type { ApiMiddleware } from '@shared-web/browser/connection/browser-transport-runtime.ts';
+import type { Middleware } from '@shared-web/browser/middleware.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 
 import { createGroupSnapshotFixture } from '../authoritative-group-fixtures.ts';
@@ -40,11 +41,8 @@ const roomWorkflowMocks = await vi.hoisted(async () => {
     };
 });
 
-vi.mock(import('@shared-web/browser/app-context.ts'), () => ({
-    clearMiddleware: roomWorkflowMocks.clearMiddleware,
-    getMiddleware: vi.fn(() => roomWorkflowMocks.ctx),
-    initMiddleware: roomWorkflowMocks.initMiddleware,
-    isMiddlewareReady: roomWorkflowMocks.isMiddlewareReady
+vi.mock(import('@shared-web/browser/middleware.ts'), () => ({
+    initialiseMiddleware: async (): Promise<Middleware> => roomWorkflowMocks.ctx.middleware
 }));
 
 vi.mock(import('@shared-web/browser/api-workflows.ts'), () => ({

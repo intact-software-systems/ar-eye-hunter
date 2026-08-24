@@ -1,7 +1,8 @@
 import { vi } from 'vitest';
 
 import type { StateSnapshots } from '@shared-web/browser/api-workflows.ts';
-import type { ApiMiddleware } from '@shared-web/browser/app-context.ts';
+import type { ApiMiddleware } from '@shared-web/browser/connection/browser-transport-runtime.ts';
+import type { Middleware } from '@shared-web/browser/middleware.ts';
 import { newALBroadcastMessage, newALEventRoute } from '@shared/al-contracts/al-contract.ts';
 import { AppTopics } from '@shared/api/api-config.ts';
 import type { ClientEvent, ClientSnapshot } from '@shared/api/client-types.ts';
@@ -39,11 +40,8 @@ const peopleEventMocks = await vi.hoisted(async () => {
     };
 });
 
-vi.mock(import('@shared-web/browser/app-context.ts'), () => ({
-    clearMiddleware: vi.fn(),
-    getMiddleware: vi.fn(() => peopleEventMocks.context),
-    initMiddleware: peopleEventMocks.initMiddleware,
-    isMiddlewareReady: peopleEventMocks.isMiddlewareReady
+vi.mock(import('@shared-web/browser/middleware.ts'), () => ({
+    initialiseMiddleware: async (): Promise<Middleware> => peopleEventMocks.context.middleware
 }));
 
 vi.mock(import('@shared-web/browser/api-integration.ts'), () => ({

@@ -1,9 +1,7 @@
-import type { ApiMiddleware } from '@shared-web/browser/app-context.ts';
 import { createRallarBrowserFacadeRuntimeContext, type RallarBrowserRuntimeDefaults } from '@shared-web/browser/rallar-runtime-context.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import type { RtcDataChannelLaneConfig } from '@shared/services/WebRtcConnectionService.ts';
 import { describe, expect, it, vi } from 'vitest';
-import { createApiMiddlewareTestDouble } from './api-middleware-test-double.ts';
 import { createGroupSnapshotFixture } from './authoritative-group-fixtures.ts';
 
 type RoomDefaults = NonNullable<RallarBrowserRuntimeDefaults['room']>;
@@ -109,23 +107,13 @@ describe('Rallar browser facade runtime context', () => {
         expect(second.readConnectState()).toBe('idle');
     });
 
-    it('reads middleware lazily and reports missing middleware through require', () => {
-        const middleware = createMiddleware('session-1');
-        let ready = false;
-        const context = createRallarBrowserFacadeRuntimeContext({
-            isMiddlewareReady: () => ready,
-            getMiddleware: () => middleware
-        });
+    it('reports missing middleware through its transport runtime', () => {
+        const context = createRallarBrowserFacadeRuntimeContext();
 
         expect(context.readMiddleware()).toBeUndefined();
         expect(() => context.requireMiddleware()).toThrow(
             'Rallar is not connected. Call rallar.connect() first.'
         );
-
-        ready = true;
-
-        expect(context.readMiddleware()).toBe(middleware);
-        expect(context.requireMiddleware()).toBe(middleware);
     });
 });
 
@@ -144,16 +132,4 @@ function createGroupSnapshot(groupId: string): GroupSnapshot {
             metadataVersion: 1
         }
     };
-}
-
-function createMiddleware(sessionId: string): ApiMiddleware {
-    return createApiMiddlewareTestDouble({
-        session: {
-            clientId: 'client-1',
-            sessionId,
-            username: 'user-1',
-            accessToken: 'token-1',
-            expiresAtEpochMs: Date.now() + 60_000
-        }
-    });
 }

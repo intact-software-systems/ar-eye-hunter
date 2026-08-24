@@ -1,24 +1,24 @@
-import { shutdownMiddleware } from '@shared-web/browser/app-context.ts';
-import { createRallarConnectionFacade } from '@shared-web/browser/rallar-connection-facade.ts';
+import { BrowserTransportRuntime } from '@shared-web/browser/connection/browser-transport-runtime.ts';
+import type { Middleware } from '@shared-web/browser/middleware.ts';
 import { createRallarBrowserFacadeRuntimeContext } from '@shared-web/browser/rallar-runtime-context.ts';
 import { createRallarLifecycleCoordinator } from '@shared-web/browser/rallar-runtime/lifecycle.ts';
 import { createRallarSessionController } from '@shared-web/browser/rallar-runtime/session.ts';
 import { describe, expect, it, vi } from 'vitest';
 import { createApiMiddlewareTestDouble } from '../api-middleware-test-double.ts';
 
-type AppContextModule = typeof import('@shared-web/browser/app-context.ts');
+type MiddlewareModule = typeof import('@shared-web/browser/middleware.ts');
 type AuthModule = typeof import('@shared/api/auth.ts');
 
 const mocks = vi.hoisted(() => ({
-    initMiddleware: vi.fn<AppContextModule['initMiddleware']>(),
+    initialiseMiddleware: vi.fn<MiddlewareModule['initialiseMiddleware']>(),
     readSession: vi.fn<AuthModule['readSession']>()
 }));
 
 vi.mock(
-    import('@shared-web/browser/app-context.ts'),
-    async (importOriginal): Promise<Partial<AppContextModule>> => ({
+    import('@shared-web/browser/middleware.ts'),
+    async (importOriginal): Promise<Partial<MiddlewareModule>> => ({
         ...await importOriginal(),
-        initMiddleware: mocks.initMiddleware
+        initialiseMiddleware: mocks.initialiseMiddleware
     })
 );
 
@@ -27,6 +27,30 @@ vi.mock(import('@shared/api/auth.ts'), (): Partial<AuthModule> => ({
 }));
 
 describe('browser connection cleanup', () => {
+    it('cancels pending middleware initialization and tears down its resolved transport once', async () => {
+        const middleware = createApiMiddlewareTestDouble();
+        let resolveMiddleware: ((middleware: Middleware) => void) | undefined;
+        mocks.readSession.mockReturnValue(middleware.session);
+        mocks.initialiseMiddleware.mockReturnValue(
+            new Promise((resolve) => {
+                resolveMiddleware = resolve;
+            })
+        );
+        const transportRuntime = new BrowserTransportRuntime();
+
+        const pending = transportRuntime.init();
+        transportRuntime.shutdown();
+        resolveMiddleware?.(middleware.middleware);
+
+        await expect(pending).rejects.toThrow(
+            'Rallar connection was cancelled because auth ended.'
+        );
+
+        expect(middleware.middleware.qboxEngine.stop).toHaveBeenCalledOnce();
+        expect(middleware.middleware.webSocketQueueBox.close).toHaveBeenCalledOnce();
+        expect(transportRuntime.readMiddleware()).toBeUndefined();
+    });
+
     it('cleans one connected runtime once, continues past a heartbeat failure, and notifies after runtime clearing', async () => {
         const middleware = createApiMiddlewareTestDouble({
             middleware: {
@@ -65,9 +89,10 @@ describe('browser connection cleanup', () => {
         });
 
         mocks.readSession.mockReturnValue(middleware.session);
-        mocks.initMiddleware.mockResolvedValue(middleware);
+        mocks.initialiseMiddleware.mockResolvedValue(middleware.middleware as Middleware);
+        const transportRuntime = new BrowserTransportRuntime();
         const runtime = createRallarBrowserFacadeRuntimeContext({
-            clearMiddleware: () => shutdownMiddleware(middleware.middleware)
+            transportRuntime
         });
         const lifecycle = createRallarLifecycleCoordinator();
         lifecycle.register({
@@ -84,19 +109,15 @@ describe('browser connection cleanup', () => {
 
         const sessionController = createRallarSessionController({
             connectionRuntime: runtime,
+            transportRuntime,
             authRuntime: runtime,
             stateRuntime: runtime,
             lifecycle,
-            start: async () => ({ connected: false }),
             emitState: () => undefined,
             closeDataScopes: async () => undefined
         });
-        const connection = createRallarConnectionFacade(
-            sessionController.connectionOperations
-        );
-
-        await connection.connect();
-        await connection.disconnect();
+        await sessionController.connect();
+        await sessionController.disconnect();
 
         expect(effects).toEqual([
             'state-cache-attached',

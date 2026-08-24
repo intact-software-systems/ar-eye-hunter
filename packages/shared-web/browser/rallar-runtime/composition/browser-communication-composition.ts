@@ -42,13 +42,13 @@ export interface BrowserRealtimeComposition {
 export interface CreateBrowserMessagingCompositionInput {
     readonly wsInbox: RallarWsInbox;
     readonly state: BrowserStateComposition;
-    readonly readSessionController: () => RallarSessionController;
+    readonly session: RallarSessionController;
 }
 
 export interface CreateBrowserRealtimeCompositionInput {
     readonly runtime: RallarBrowserFacadeRuntimeContext;
     readonly state: BrowserStateComposition;
-    readonly readSessionController: () => RallarSessionController;
+    readonly session: RallarSessionController;
 }
 
 export function createBrowserMessagingComposition(
@@ -56,9 +56,9 @@ export function createBrowserMessagingComposition(
 ): BrowserMessagingComposition {
     const messagesController = createRallarMessagesController({
         wsInbox: input.wsInbox,
-        connect: async () => await input.readSessionController().connect(),
-        readMiddleware: () => input.readSessionController().readMiddleware(),
-        requireSession: () => input.readSessionController().requireSession(),
+        connect: async () => await input.session.connect(),
+        readMiddleware: input.session.readMiddleware,
+        requireSession: input.session.requireSession,
         resolveDefaultRoom: input.state.resolveDefaultRoom,
         resolveCurrentRoomRef: () => input.state.roomStateStore.resolveCurrentRoomRef(),
         toRoomId: (room) => input.state.roomStateStore.toRoomId(room),
@@ -80,12 +80,12 @@ export function createBrowserRealtimeComposition(
     input: CreateBrowserRealtimeCompositionInput
 ): BrowserRealtimeComposition {
     const wsController = createRallarWsController({
-        readMiddleware: () => input.readSessionController().readMiddleware(),
+        readMiddleware: input.session.readMiddleware,
         readSession,
         readConnectState: () => input.runtime.readConnectState()
     });
     const rtcController = createRallarRtcController({
-        readMiddleware: () => input.readSessionController().readMiddleware(),
+        readMiddleware: input.session.readMiddleware,
         readSession,
         readWsStatus: () => wsController.facade.status(),
         resolveRoomPeerIds: input.state.resolveRoomPeerIds,
@@ -96,8 +96,8 @@ export function createBrowserRealtimeComposition(
     });
     const rtc = createRallarRtcFacade(rtcController.operations);
     const realtimeController = createRallarRealtimeController({
-        connect: async () => await input.readSessionController().connect(),
-        readMiddleware: () => input.readSessionController().readMiddleware(),
+        connect: async () => await input.session.connect(),
+        readMiddleware: input.session.readMiddleware,
         readSession,
         readDefaultRoom: input.state.resolveDefaultRoom,
         readCurrentRoomRef: () => input.state.roomStateStore.resolveCurrentRoomRef(),
@@ -114,8 +114,8 @@ export function createBrowserRealtimeComposition(
     });
     const realtime = createRallarRealtimeFacade(realtimeController.operations);
     const mediaController = createRallarMediaController({
-        connect: async () => await input.readSessionController().connect(),
-        readMiddleware: () => input.readSessionController().readMiddleware()
+        connect: async () => await input.session.connect(),
+        readMiddleware: input.session.readMiddleware
     });
     return {
         wsController,

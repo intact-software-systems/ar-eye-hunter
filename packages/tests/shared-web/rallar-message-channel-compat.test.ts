@@ -7,6 +7,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createGroupSnapshotFixture } from './authoritative-group-fixtures.ts';
 
 type AppContextModule = typeof import('@shared-web/browser/app-context.ts');
+type MiddlewareModule = typeof import('@shared-web/browser/middleware.ts');
 type DataCachesModule = typeof import('@shared-web/browser/data-caches.ts');
 type AuthModule = typeof import('@shared/api/auth.ts');
 type ClientStateSnapshotsRepositoryModule = typeof import('@shared/repository/client-state-snapshots-repository.ts');
@@ -56,11 +57,8 @@ const mocks = await vi.hoisted(async () => {
     };
 });
 
-vi.mock(import('@shared-web/browser/app-context.ts'), (): Partial<AppContextModule> => ({
-    clearMiddleware: vi.fn(),
-    getMiddleware: vi.fn(() => mocks.ctx),
-    initMiddleware: mocks.initMiddleware,
-    isMiddlewareReady: mocks.isMiddlewareReady
+vi.mock(import('@shared-web/browser/middleware.ts'), (): Partial<MiddlewareModule> => ({
+    initialiseMiddleware: async (_session, _topic, options) => (await mocks.initMiddleware(options)).middleware
 }));
 
 vi.mock(import('@shared-web/browser/data-caches.ts'), (): Partial<DataCachesModule> => ({
@@ -92,7 +90,7 @@ vi.mock(
     })
 );
 
-describe('Rallar typed message channel compatibility', () => {
+describe('Rallar typed message channel', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         resetRepositoryDoublesToMissing();
@@ -383,11 +381,11 @@ describe('Rallar typed message channel compatibility', () => {
 });
 
 function resetRepositoryDoublesToMissing(): void {
-    mocks.findClientStateSnapshotByPrincipalId.mockImplementation(() => mocks.clientRepositoryMissing());
-    mocks.getAllClientStateSnapshots.mockImplementation(() => mocks.clientRepositoryMissing());
-    mocks.findFirstGroupStateSnapshotRefSessionIdIsIn.mockImplementation(() => mocks.groupRepositoryMissing());
-    mocks.findGroupStateSnapshotByRef.mockImplementation(() => mocks.groupRepositoryMissing());
-    mocks.getAllGroupStateSnapshots.mockImplementation(() => mocks.groupRepositoryMissing());
+    mocks.findClientStateSnapshotByPrincipalId.mockReturnValue(undefined);
+    mocks.getAllClientStateSnapshots.mockReturnValue([]);
+    mocks.findFirstGroupStateSnapshotRefSessionIdIsIn.mockReturnValue(undefined);
+    mocks.findGroupStateSnapshotByRef.mockReturnValue(undefined);
+    mocks.getAllGroupStateSnapshots.mockReturnValue([]);
 }
 
 function resetMiddlewareDoublesToDefaults(): void {

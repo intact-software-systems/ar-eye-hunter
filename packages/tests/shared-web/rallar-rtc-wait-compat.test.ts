@@ -8,6 +8,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createGroupSnapshotFixture } from './authoritative-group-fixtures.ts';
 
 type AppContextModule = typeof import('@shared-web/browser/app-context.ts');
+type MiddlewareModule = typeof import('@shared-web/browser/middleware.ts');
 type ApiIntegrationModule = typeof import('@shared-web/browser/api-integration.ts');
 type AuthApiModule = typeof import('@shared-web/browser/auth/session-http-api.ts');
 type ApiWorkflowsModule = typeof import('@shared-web/browser/api-workflows.ts');
@@ -83,12 +84,9 @@ const mocks = await vi.hoisted(async () => {
 });
 
 vi.mock(
-    import('@shared-web/browser/app-context.ts'),
-    (): Partial<AppContextModule> => ({
-        clearMiddleware: mocks.clearMiddleware,
-        getMiddleware: vi.fn(() => mocks.ctx),
-        initMiddleware: mocks.initMiddleware,
-        isMiddlewareReady: mocks.isMiddlewareReady
+    import('@shared-web/browser/middleware.ts'),
+    (): Partial<MiddlewareModule> => ({
+        initialiseMiddleware: async (_session, _topic, options) => (await mocks.initMiddleware(options)).middleware
     })
 );
 
@@ -151,7 +149,7 @@ vi.mock(
     })
 );
 
-describe('Rallar RTC wait compatibility', () => {
+describe('Rallar RTC wait', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         vi.useRealTimers();
@@ -1164,20 +1162,14 @@ function createChannelHealth(
 }
 
 function mockClientRepositoryMissing(): void {
-    const throwMissing = (): never => {
-        throw new Error(CLIENT_REPOSITORY_MISSING_MESSAGE);
-    };
-    mocks.findClientStateSnapshotByPrincipalId.mockImplementation(throwMissing);
-    mocks.getAllClientStateSnapshots.mockImplementation(throwMissing);
+    mocks.findClientStateSnapshotByPrincipalId.mockReturnValue(undefined);
+    mocks.getAllClientStateSnapshots.mockReturnValue([]);
 }
 
 function mockGroupRepositoryMissing(): void {
-    const throwMissing = (): never => {
-        throw new Error(GROUP_REPOSITORY_MISSING_MESSAGE);
-    };
-    mocks.findFirstGroupStateSnapshotRefSessionIdIsIn.mockImplementation(throwMissing);
-    mocks.findGroupStateSnapshotByRef.mockImplementation(throwMissing);
-    mocks.getAllGroupStateSnapshots.mockImplementation(throwMissing);
+    mocks.findFirstGroupStateSnapshotRefSessionIdIsIn.mockReturnValue(undefined);
+    mocks.findGroupStateSnapshotByRef.mockReturnValue(undefined);
+    mocks.getAllGroupStateSnapshots.mockReturnValue([]);
 }
 
 function mockGroupSnapshot(snapshot: GroupSnapshot): void {

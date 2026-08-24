@@ -3,6 +3,7 @@ import type { QRtcDataChannel, RtcDataChannelSendResult, RtcRawMessageCallback }
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 type AppContextModule = typeof import('@shared-web/browser/app-context.ts');
+type MiddlewareModule = typeof import('@shared-web/browser/middleware.ts');
 type DataCachesModule = typeof import('@shared-web/browser/data-caches.ts');
 type AuthModule = typeof import('@shared/api/auth.ts');
 type ClientStateSnapshotsRepositoryModule = typeof import('@shared/repository/client-state-snapshots-repository.ts');
@@ -40,12 +41,9 @@ const mocks = await vi.hoisted(async () => {
 });
 
 vi.mock(
-    import('@shared-web/browser/app-context.ts'),
-    (): Partial<AppContextModule> => ({
-        clearMiddleware: vi.fn(),
-        getMiddleware: vi.fn(() => mocks.ctx),
-        initMiddleware: mocks.initMiddleware,
-        isMiddlewareReady: mocks.isMiddlewareReady
+    import('@shared-web/browser/middleware.ts'),
+    (): Partial<MiddlewareModule> => ({
+        initialiseMiddleware: async (_session, _topic, options) => (await mocks.initMiddleware(options)).middleware
     })
 );
 
@@ -81,15 +79,11 @@ vi.mock(
     })
 );
 
-describe('Rallar realtime JSON lane compatibility', () => {
+describe('Rallar realtime JSON lane', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        mocks.clientRepositoryMissing.mockImplementation(
-            mocks.throwClientRepositoryMissing
-        );
-        mocks.groupRepositoryMissing.mockImplementation(
-            mocks.throwGroupRepositoryMissing
-        );
+        mocks.clientRepositoryMissing.mockImplementation((principalId) => principalId === undefined ? [] : undefined);
+        mocks.groupRepositoryMissing.mockImplementation((value) => value === undefined ? [] : undefined);
         mocks.hydrateStateCaches.mockResolvedValue(undefined);
         mocks.initMiddleware.mockResolvedValue(mocks.ctx);
         mocks.isMiddlewareReady.mockReturnValue(false);

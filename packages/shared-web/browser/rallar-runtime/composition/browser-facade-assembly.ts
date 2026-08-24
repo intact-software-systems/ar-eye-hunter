@@ -1,4 +1,4 @@
-import type { ApiMiddleware } from '@shared-web/browser/app-context.ts';
+import type { ApiMiddleware } from '@shared-web/browser/connection/browser-transport-runtime.ts';
 import type { RallarFacade, RallarTargetedChannelDefinition } from '@shared-web/browser/rallar-facade-contract.ts';
 import type { RallarRealtimeController } from '@shared-web/browser/rallar-runtime/realtime.ts';
 
@@ -7,10 +7,11 @@ import type {
     BrowserCallsDirectorComposition,
     BrowserRoomPeopleStatsComposition
 } from './browser-product-composition.ts';
-import type { BrowserSessionComposition } from './browser-session-composition.ts';
+import type { BrowserSessionCoreComposition, BrowserSessionProductComposition } from './browser-session-composition.ts';
 
 export interface CreateBrowserFacadeAssemblyInput {
-    readonly session: BrowserSessionComposition;
+    readonly session: BrowserSessionCoreComposition;
+    readonly sessionProducts: BrowserSessionProductComposition;
     readonly messaging: BrowserMessagingComposition;
     readonly realtime: BrowserRealtimeComposition;
     readonly products: BrowserRoomPeopleStatsComposition;
@@ -19,22 +20,13 @@ export interface CreateBrowserFacadeAssemblyInput {
 
 export function createBrowserFacadeAssembly(input: CreateBrowserFacadeAssemblyInput): RallarFacade {
     const channels = createBrowserFacadeChannels(input.realtime.realtimeController);
-    const { sessionController, connection, startupController } = input.session;
+    const { connection, session } = input.session;
     return {
-        configure: (config) => connection.configure(config),
-        setDefaults: (defaults) => connection.setDefaults(defaults),
-        defaults: () => connection.defaults(),
-        setup: async (setupInput) => await startupController.setup(setupInput),
-        connect: async (options) => await connection.connect(options),
-        start: async (options) => await startupController.start(options),
-        disconnect: async () => await connection.disconnect(),
-        status: () => connection.status(),
-        isConnected: () => connection.isConnected(),
-        session: () => connection.session(),
-        subscriptions: () => connection.subscriptions(),
-        flow: <K, V>(policies = {}) => connection.flow<K, V>(policies),
+        ...connection,
+        setup: input.sessionProducts.startup.setup,
+        start: input.sessionProducts.startup.start,
         data: input.session.data,
-        crdt: input.session.crdt,
+        crdt: input.sessionProducts.crdt,
         auth: input.session.auth,
         rooms: input.products.rooms,
         people: input.products.people,
@@ -48,7 +40,7 @@ export function createBrowserFacadeAssembly(input: CreateBrowserFacadeAssemblyIn
         realtime: input.realtime.realtime,
         media: input.realtime.media,
         advanced: {
-            middleware: (): ApiMiddleware => sessionController.requireMiddleware()
+            middleware: (): ApiMiddleware => session.requireMiddleware()
         }
     };
 }

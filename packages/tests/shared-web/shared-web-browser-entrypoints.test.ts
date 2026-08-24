@@ -16,8 +16,6 @@ const BROWSER_ENTRYPOINTS: readonly BrowserEntrypoint[] = [
         sourcePath: 'packages/shared-web/browser/rallar-core.ts',
         expectedRuntimeExports: [
             'configureApiClient',
-            'createRallarAuthFacade',
-            'createRallarConnectionFacade',
             'createRallarMessagesFacade',
             'createRallarPeopleFacade',
             'createRallarRoomsFacade',
@@ -41,8 +39,6 @@ const BROWSER_ENTRYPOINTS: readonly BrowserEntrypoint[] = [
         sourcePath: 'packages/shared-web/browser/rallar-realtime.ts',
         expectedRuntimeExports: [
             'configureApiClient',
-            'createRallarAuthFacade',
-            'createRallarConnectionFacade',
             'createRallarMessagesFacade',
             'createRallarPeopleFacade',
             'createRallarRealtimeFacade',

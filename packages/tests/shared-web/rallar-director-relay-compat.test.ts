@@ -11,6 +11,7 @@ type ApiIntegrationModule = typeof import('@shared-web/browser/api-integration.t
 type AuthApiModule = typeof import('@shared-web/browser/auth/session-http-api.ts');
 type ApiWorkflowsModule = typeof import('@shared-web/browser/api-workflows.ts');
 type AppContextModule = typeof import('@shared-web/browser/app-context.ts');
+type MiddlewareModule = typeof import('@shared-web/browser/middleware.ts');
 type AuthModule = typeof import('@shared/api/auth.ts');
 type ClientStateSnapshotsRepositoryModule = typeof import('@shared/repository/client-state-snapshots-repository.ts');
 type DataCachesModule = typeof import('@shared-web/browser/data-caches.ts');
@@ -82,12 +83,9 @@ const mocks = await vi.hoisted(async () => {
 });
 
 vi.mock(
-    import('@shared-web/browser/app-context.ts'),
-    (): Partial<AppContextModule> => ({
-        clearMiddleware: mocks.clearMiddleware,
-        getMiddleware: vi.fn(() => mocks.ctx),
-        initMiddleware: mocks.initMiddleware,
-        isMiddlewareReady: mocks.isMiddlewareReady
+    import('@shared-web/browser/middleware.ts'),
+    (): Partial<MiddlewareModule> => ({
+        initialiseMiddleware: async (_session, _topic, options) => (await mocks.initMiddleware(options)).middleware
     })
 );
 
@@ -162,15 +160,11 @@ vi.mock(
     })
 );
 
-describe('Rallar director relay compatibility', () => {
+describe('Rallar director relay', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         vi.useRealTimers();
-        mocks.clientRepositoryMissing.mockImplementation(() => {
-            throw new Error(
-                'Repository not found: shared.repository.client-state-snapshots'
-            );
-        });
+        mocks.clientRepositoryMissing.mockImplementation((principalId) => principalId === undefined ? [] : undefined);
         mockGroupRepositoryMissing();
         mocks.refreshStateSnapshots.mockResolvedValue({ clients: [], groups: [] });
         mocks.initMiddleware.mockResolvedValue(mocks.ctx);
@@ -734,16 +728,9 @@ function mockGroupSnapshots(snapshots: readonly GroupSnapshot[]): void {
 }
 
 function mockGroupRepositoryMissing(): void {
-    const throwGroupRepositoryMissing = (): never => {
-        throw new Error(
-            'Repository not found: shared.repository.group-state-snapshots'
-        );
-    };
-    mocks.getAllGroupStateSnapshots.mockImplementation(throwGroupRepositoryMissing);
-    mocks.findGroupStateSnapshotByRef.mockImplementation(throwGroupRepositoryMissing);
-    mocks.findFirstGroupStateSnapshotRefSessionIdIsIn.mockImplementation(
-        throwGroupRepositoryMissing
-    );
+    mocks.getAllGroupStateSnapshots.mockReturnValue([]);
+    mocks.findGroupStateSnapshotByRef.mockReturnValue(undefined);
+    mocks.findFirstGroupStateSnapshotRefSessionIdIsIn.mockReturnValue(undefined);
 }
 
 function withSnapshotVersion(

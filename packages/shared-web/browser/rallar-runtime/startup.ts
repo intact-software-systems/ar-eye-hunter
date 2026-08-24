@@ -1,6 +1,6 @@
 import type { RallarAuthFacade } from '@shared-web/browser/rallar-auth-facade.ts';
 import type {
-    RallarConnectionFacade,
+    RallarConnectionOperations,
     RallarRefreshOptions,
     RallarSetupInput,
     RallarStartOptions,
@@ -12,7 +12,7 @@ import type { RallarRoomState } from '@shared-web/browser/rooms/rallar-room-cont
 import type { RallarRoomsFacade } from '@shared-web/browser/rooms/rallar-rooms-facade.ts';
 
 export type CreateRallarStartupControllerOptions = Readonly<{
-    connection: RallarConnectionFacade;
+    connection: RallarConnectionOperations;
     auth: RallarAuthFacade;
     rooms: RallarRoomsFacade;
     people: RallarPeopleFacade;

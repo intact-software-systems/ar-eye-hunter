@@ -1,3 +1,4 @@
+import type { RallarSessionIdentity } from '@shared-web/browser/session/session-identity.ts';
 import { defaultRepositoryManager } from '@shared/cache/defaultRepositoryManager.ts';
 import type { ValueEqualityChecker } from '@shared/cache/ObservableLatestValue.ts';
 import {
@@ -136,6 +137,7 @@ export type RallarDataFacade = Readonly<{
 export type RallarDataFacadeOptions = Readonly<{
     manager?: RepositoryManager;
     resolveScopeKey?: (scope: RallarDataScope) => string;
+    sessionIdentity?: RallarSessionIdentity;
 }>;
 
 type ManagedRallarDataRepository<V> = {
@@ -214,7 +216,9 @@ export function createRallarDataFacade(
     options: RallarDataFacadeOptions = {}
 ): RallarDataFacade {
     const manager = options.manager ?? defaultRepositoryManager;
-    const resolveScopeKey = options.resolveScopeKey ?? ((scope) => String(scope));
+    const resolveScopeKey = options.sessionIdentity
+        ? options.sessionIdentity.resolveDataScopeKey
+        : options.resolveScopeKey ?? ((scope) => String(scope));
     const activeTokens = new Map<string, RepositoryToken<unknown>>();
 
     const open = async <V>(

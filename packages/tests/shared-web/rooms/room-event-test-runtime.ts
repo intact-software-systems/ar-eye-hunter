@@ -1,6 +1,7 @@
 import { vi } from 'vitest';
 
-import type { ApiMiddleware } from '@shared-web/browser/app-context.ts';
+import type { ApiMiddleware } from '@shared-web/browser/connection/browser-transport-runtime.ts';
+import type { Middleware } from '@shared-web/browser/middleware.ts';
 import { newALBroadcastMessage, newALEventRoute } from '@shared/al-contracts/al-contract.ts';
 import { AppTopics } from '@shared/api/api-config.ts';
 import type { GroupStateDeltaEnvelope } from '@shared/api/group-state-delta.ts';
@@ -32,11 +33,8 @@ const roomEventMocks = await vi.hoisted(async () => {
     };
 });
 
-vi.mock(import('@shared-web/browser/app-context.ts'), () => ({
-    clearMiddleware: vi.fn(),
-    getMiddleware: vi.fn(() => roomEventMocks.ctx),
-    initMiddleware: roomEventMocks.initMiddleware,
-    isMiddlewareReady: roomEventMocks.isMiddlewareReady
+vi.mock(import('@shared-web/browser/middleware.ts'), () => ({
+    initialiseMiddleware: async (): Promise<Middleware> => roomEventMocks.ctx.middleware
 }));
 
 vi.mock(import('@shared-web/browser/api-integration.ts'), () => ({

@@ -3,7 +3,7 @@ import type { QRtcDataChannel, RtcDataChannelSendResult } from '@shared/webrtc/Q
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createGroupSnapshotFixture } from './authoritative-group-fixtures.ts';
 
-type AppContextModule = typeof import('@shared-web/browser/app-context.ts');
+type MiddlewareModule = typeof import('@shared-web/browser/middleware.ts');
 type ApiWorkflowsModule = typeof import('@shared-web/browser/api-workflows.ts');
 type DataCachesModule = typeof import('@shared-web/browser/data-caches.ts');
 type AuthModule = typeof import('@shared/api/auth.ts');
@@ -15,46 +15,32 @@ const mocks = await vi.hoisted(async () => {
         './api-middleware-test-double.ts'
     );
     const ctx = createApiMiddlewareTestDouble();
-    const throwClientRepositoryMissing = () => {
-        throw new Error(
-            'Repository not found: shared.repository.client-state-snapshots'
-        );
-    };
-    const throwGroupRepositoryMissing = () => {
-        throw new Error(
-            'Repository not found: shared.repository.group-state-snapshots'
-        );
-    };
-
     return {
         ctx,
         webRtcConnectionService: ctx.middleware.webRtcConnectionService,
-        throwClientRepositoryMissing,
-        throwGroupRepositoryMissing,
         hydrateStateCaches: vi.fn<DataCachesModule['hydrateStateCaches']>(() => Promise.resolve()),
-        initMiddleware: vi.fn<AppContextModule['initMiddleware']>(() => Promise.resolve(ctx)),
-        isMiddlewareReady: vi.fn<AppContextModule['isMiddlewareReady']>(() => false),
+        initialiseMiddleware: vi.fn<MiddlewareModule['initialiseMiddleware']>(
+            () => Promise.resolve(ctx.middleware)
+        ),
         onStateCacheChange: vi.fn<DataCachesModule['onStateCacheChange']>(() => vi.fn()),
         readSession: vi.fn<AuthModule['readSession']>(() => ctx.session),
         refreshStateSnapshots: vi.fn<ApiWorkflowsModule['refreshStateSnapshots']>(() => Promise.resolve({ clients: [], groups: [] })),
-        clientRepositoryMissing: vi.fn(throwClientRepositoryMissing),
+        clientRepositoryMissing: vi.fn(() => undefined),
+        getAllClientStateSnapshots: vi.fn<ClientStateSnapshotsRepositoryModule['getAllClientStateSnapshots']>(() => []),
         findFirstGroupStateSnapshotRefSessionIdIsIn: vi.fn<
             GroupStateSnapshotsRepositoryModule[
                 'findFirstGroupStateSnapshotRefSessionIdIsIn'
             ]
-        >(throwGroupRepositoryMissing),
-        findGroupStateSnapshotByRef: vi.fn<GroupStateSnapshotsRepositoryModule['findGroupStateSnapshotByRef']>(throwGroupRepositoryMissing),
-        getAllGroupStateSnapshots: vi.fn<GroupStateSnapshotsRepositoryModule['getAllGroupStateSnapshots']>(throwGroupRepositoryMissing)
+        >(() => undefined),
+        findGroupStateSnapshotByRef: vi.fn<GroupStateSnapshotsRepositoryModule['findGroupStateSnapshotByRef']>(() => undefined),
+        getAllGroupStateSnapshots: vi.fn<GroupStateSnapshotsRepositoryModule['getAllGroupStateSnapshots']>(() => [])
     };
 });
 
 vi.mock(
-    import('@shared-web/browser/app-context.ts'),
-    (): Partial<AppContextModule> => ({
-        clearMiddleware: vi.fn(),
-        getMiddleware: vi.fn(() => mocks.ctx),
-        initMiddleware: mocks.initMiddleware,
-        isMiddlewareReady: mocks.isMiddlewareReady
+    import('@shared-web/browser/middleware.ts'),
+    (): Partial<MiddlewareModule> => ({
+        initialiseMiddleware: mocks.initialiseMiddleware
     })
 );
 
@@ -84,7 +70,7 @@ vi.mock(
     import('@shared/repository/client-state-snapshots-repository.ts'),
     (): Partial<ClientStateSnapshotsRepositoryModule> => ({
         findClientStateSnapshotByPrincipalId: mocks.clientRepositoryMissing,
-        getAllClientStateSnapshots: mocks.clientRepositoryMissing
+        getAllClientStateSnapshots: mocks.getAllClientStateSnapshots
     })
 );
 
@@ -100,13 +86,11 @@ vi.mock(
 describe('Rallar facade defaults compatibility', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        mocks.clientRepositoryMissing.mockImplementation(
-            mocks.throwClientRepositoryMissing
-        );
+        mocks.clientRepositoryMissing.mockReturnValue(undefined);
+        mocks.getAllClientStateSnapshots.mockReturnValue([]);
         mockGroupRepositoryMissing();
         mocks.hydrateStateCaches.mockResolvedValue(undefined);
-        mocks.initMiddleware.mockResolvedValue(mocks.ctx);
-        mocks.isMiddlewareReady.mockReturnValue(false);
+        mocks.initialiseMiddleware.mockResolvedValue(mocks.ctx.middleware);
         mocks.readSession.mockReturnValue(mocks.ctx.session);
         mocks.refreshStateSnapshots.mockResolvedValue({ clients: [], groups: [] });
     });
@@ -249,17 +233,21 @@ describe('Rallar facade defaults compatibility', () => {
 
         await facade.people.refresh();
 
-        expect(mocks.initMiddleware).toHaveBeenCalledWith({
-            onAuthInvalid: expect.any(Function),
-            scope: {
-                applicationId: 'default-app',
-                workspaceId: 'default'
-            },
-            timeoutMs: 321,
-            dataChannelLanes: lanes,
-            maxPeerConnections: 12,
-            rttReportingDegreeLimit: 3
-        });
+        expect(mocks.initialiseMiddleware).toHaveBeenCalledWith(
+            mocks.ctx.session,
+            expect.any(String),
+            {
+                onAuthInvalid: expect.any(Function),
+                scope: {
+                    applicationId: 'default-app',
+                    workspaceId: 'default'
+                },
+                timeoutMs: 321,
+                dataChannelLanes: lanes,
+                maxPeerConnections: 12,
+                rttReportingDegreeLimit: 3
+            }
+        );
         expect(mocks.refreshStateSnapshots).toHaveBeenCalledWith(
             {
                 applicationId: 'default-app',
@@ -374,15 +362,9 @@ describe('Rallar facade defaults compatibility', () => {
 });
 
 function mockGroupRepositoryMissing(): void {
-    mocks.findFirstGroupStateSnapshotRefSessionIdIsIn.mockImplementation(
-        mocks.throwGroupRepositoryMissing
-    );
-    mocks.findGroupStateSnapshotByRef.mockImplementation(
-        mocks.throwGroupRepositoryMissing
-    );
-    mocks.getAllGroupStateSnapshots.mockImplementation(
-        mocks.throwGroupRepositoryMissing
-    );
+    mocks.findFirstGroupStateSnapshotRefSessionIdIsIn.mockReturnValue(undefined);
+    mocks.findGroupStateSnapshotByRef.mockReturnValue(undefined);
+    mocks.getAllGroupStateSnapshots.mockReturnValue([]);
 }
 
 function mockGroupSnapshot(snapshot: GroupSnapshot): void {

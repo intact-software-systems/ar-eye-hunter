@@ -5,14 +5,6 @@ export {
 } from '@shared-web/browser/api-client-config.ts';
 
 export {
-    createRallarConnectionFacade
-} from '@shared-web/browser/rallar-connection-facade.ts';
-
-export {
-    createRallarAuthFacade
-} from '@shared-web/browser/rallar-auth-facade.ts';
-
-export {
     createRallarRoomsFacade
 } from '@shared-web/browser/rooms/rallar-rooms-facade.ts';
 
@@ -36,12 +28,11 @@ export {
 export type { RallarApiClientConfig } from '@shared-web/browser/api-client-config.ts';
 
 export type {
-    CreateRallarConnectionFacadeOptions,
-    RallarConnectionFacade
+    RallarConnectionFacade,
+    RallarConnectionOperations
 } from '@shared-web/browser/rallar-connection-facade.ts';
 
 export type {
-    CreateRallarAuthFacadeOptions,
     RallarAuthFacade
 } from '@shared-web/browser/rallar-auth-facade.ts';
 
