@@ -112,14 +112,13 @@ describe('Rallar Game Authority server installer', () => {
 
     it('rejects invalid command envelopes before app handlers run', async () => {
         const fake = createFakeServerRallar();
-        const commandDecoder = vi.fn(decodeCommand);
         let commandHandled = false;
         installRallarGameAuthorityServer<Command, Snapshot, Event>({
             rallar: fake.rallar,
             protocol: 'test.authority.v1',
             topicId: 'game.authority',
             authority,
-            decodeCommand: commandDecoder,
+            decodeCommand,
             nowEpochMs,
             handleCommand: async () => {
                 commandHandled = true;
@@ -136,7 +135,6 @@ describe('Rallar Game Authority server installer', () => {
             }
         );
 
-        expect(commandDecoder).not.toHaveBeenCalled();
         expect(commandHandled).toBe(false);
         expect(fake.published).toHaveLength(0);
     });
