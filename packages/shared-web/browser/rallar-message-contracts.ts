@@ -133,35 +133,3 @@ export type RallarRoomMessageChannelDefinition =
         roomId?: string;
         roomRef?: GroupRef;
     }>;
-
-export type RallarMessagesFacade = Readonly<{
-    rtc: RallarMessageLane<RallarRtcSendInput<unknown>, RallarMessageSelectorInput>;
-    ws: RallarMessageLane<RallarWsSendInput<unknown>, RallarMessageSelectorInput>;
-    channel<T>(
-        definition: RallarTypedMessageChannelDefinition
-    ): RallarTypedMessageChannel<T>;
-    room<T>(
-        definition: RallarRoomMessageChannelDefinition
-    ): RallarTypedMessageChannel<T>;
-}>;
-
-export function createRallarMessagesFacade(
-    operations: RallarMessagesFacade
-): RallarMessagesFacade {
-    return {
-        rtc: {
-            send: async (input) => await operations.rtc.send(input),
-            onMessage: (selector, handler) => operations.rtc.onMessage(selector, handler)
-        },
-        ws: {
-            send: async (input) => await operations.ws.send(input),
-            onMessage: (selector, handler) => operations.ws.onMessage(selector, handler)
-        },
-        channel: <T>(
-            definition: RallarTypedMessageChannelDefinition
-        ): RallarTypedMessageChannel<T> => operations.channel<T>(definition),
-        room: <T>(
-            definition: RallarRoomMessageChannelDefinition
-        ): RallarTypedMessageChannel<T> => operations.room<T>(definition)
-    };
-}

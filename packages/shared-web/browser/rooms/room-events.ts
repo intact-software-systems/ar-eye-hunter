@@ -1,5 +1,5 @@
 import * as api from '@shared-web/browser/api-integration.ts';
-import type { RallarMessage } from '@shared-web/browser/rallar-messages-facade.ts';
+import type { RallarMessage } from '@shared-web/browser/rallar-message-contracts.ts';
 import type { RallarOperationOptions } from '@shared-web/browser/rallar-operation-options.ts';
 import { toRallarMessage } from '@shared-web/browser/rallar-runtime/message-conversion.ts';
 import {

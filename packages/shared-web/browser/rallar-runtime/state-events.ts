@@ -1,10 +1,10 @@
 import * as api from '@shared-web/browser/api-integration.ts';
-import type { RallarMessage, RallarStateEventListener } from '@shared-web/browser/rallar-messages-facade.ts';
+import type { RallarMessage, RallarStateEventListener } from '@shared-web/browser/rallar-message-contracts.ts';
 import type {
     RallarListPeopleEventsOptions,
     RallarPeopleEventOptions,
     RallarReplayPeopleEventsOptions
-} from '@shared-web/browser/rallar-people-facade.ts';
+} from '@shared-web/browser/rallar-people-contracts.ts';
 import { toRallarMessage } from '@shared-web/browser/rallar-runtime/message-conversion.ts';
 import { notifyStateEventListener } from '@shared-web/browser/rallar-runtime/subscriptions.ts';
 import type { RallarWsInbox } from '@shared-web/browser/rallar-runtime/ws-inbox.ts';

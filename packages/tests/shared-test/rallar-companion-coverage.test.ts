@@ -147,7 +147,6 @@ describe('Rallar companion coverage boundaries', () => {
             ])
         );
         expect(rooms?.testFiles).toEqual([
-            'packages/tests/shared-web/rallar-people-facade.test.ts',
             'packages/tests/shared-web/rooms/room-state-store.test.ts',
             'packages/tests/shared-web/rooms/room-state-store-current-room.test.ts',
             'packages/tests/shared-web/rooms/room-events-list-and-page.test.ts',

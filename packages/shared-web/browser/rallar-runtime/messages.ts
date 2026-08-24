@@ -1,14 +1,8 @@
 import type { ApiMiddleware } from '@shared-web/browser/app-context.ts';
 import type { RallarCrdtMessageTransport } from '@shared-web/browser/rallar-crdt-transport.ts';
-import {
-    matchesRallarMessageSelector,
-    normalizeRallarMessageSelector,
-    toRallarMessageSelectorKey,
-    type RallarMessageSelector,
-    type RallarMessageSelectorInput
-} from '@shared-web/browser/rallar-message-selectors.ts';
 import type {
     RallarMessageHandler,
+    RallarMessageLane,
     RallarMessageSendBase,
     RallarMessageSendResult,
     RallarMessageSendStatus,
@@ -21,8 +15,14 @@ import type {
     RallarTypedRtcSendOptions,
     RallarTypedWsSendOptions,
     RallarWsSendInput
-} from '@shared-web/browser/rallar-messages-facade.ts';
-import type { RallarMessagesFacade } from '@shared-web/browser/rallar-messages-facade.ts';
+} from '@shared-web/browser/rallar-message-contracts.ts';
+import {
+    matchesRallarMessageSelector,
+    normalizeRallarMessageSelector,
+    toRallarMessageSelectorKey,
+    type RallarMessageSelector,
+    type RallarMessageSelectorInput
+} from '@shared-web/browser/rallar-message-selectors.ts';
 import { toRallarMessage } from '@shared-web/browser/rallar-runtime/message-conversion.ts';
 import type { RallarWsInbox } from '@shared-web/browser/rallar-runtime/ws-inbox.ts';
 import type { RallarUnsubscribe } from '@shared-web/browser/rallar-shared-contracts.ts';
@@ -72,7 +72,16 @@ export type CreateRallarMessagesControllerOptions = Readonly<{
 }>;
 
 export type RallarMessagesController = Readonly<{
-    operations: RallarMessagesFacade;
+    operations: Readonly<{
+        rtc: RallarMessageLane<RallarRtcSendInput<unknown>, RallarMessageSelectorInput>;
+        ws: RallarMessageLane<RallarWsSendInput<unknown>, RallarMessageSelectorInput>;
+        channel<T>(
+            definition: RallarTypedMessageChannelDefinition
+        ): RallarTypedMessageChannel<T>;
+        room<T>(
+            definition: RallarRoomMessageChannelDefinition
+        ): RallarTypedMessageChannel<T>;
+    }>;
     sendWsUnicast<T>(
         peerId: string,
         payload: T,
@@ -106,7 +115,7 @@ class BrowserRallarMessagesController implements RallarMessagesController {
         this.options = options;
     }
 
-    readonly operations: RallarMessagesFacade = {
+    readonly operations: RallarMessagesController['operations'] = {
         rtc: {
             send: async <T>(input: RallarRtcSendInput<T>) => await this.sendRtcMessage(input),
             onMessage: <T = unknown>(

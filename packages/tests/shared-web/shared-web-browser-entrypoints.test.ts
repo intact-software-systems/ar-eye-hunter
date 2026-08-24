@@ -16,10 +16,6 @@ const BROWSER_ENTRYPOINTS: readonly BrowserEntrypoint[] = [
         sourcePath: 'packages/shared-web/browser/rallar-core.ts',
         expectedRuntimeExports: [
             'configureApiClient',
-            'createRallarMessagesFacade',
-            'createRallarPeopleFacade',
-            'createRallarRoomsFacade',
-            'createRallarStatsFacade',
             'matchesRallarMessageSelector',
             'normalizeRallarMessageSelector',
             'normalizeApiBaseUrl',
@@ -39,12 +35,8 @@ const BROWSER_ENTRYPOINTS: readonly BrowserEntrypoint[] = [
         sourcePath: 'packages/shared-web/browser/rallar-realtime.ts',
         expectedRuntimeExports: [
             'configureApiClient',
-            'createRallarMessagesFacade',
-            'createRallarPeopleFacade',
             'createRallarRealtimeFacade',
-            'createRallarRoomsFacade',
             'createRallarRtcFacade',
-            'createRallarStatsFacade',
             'matchesRallarMessageSelector',
             'normalizeRallarMessageSelector',
             'normalizeApiBaseUrl',
@@ -83,13 +75,9 @@ const PUBLIC_FACADE_MODULES = [
     'packages/shared-web/browser/rallar-connection-facade.ts',
     'packages/shared-web/browser/rallar-director-facade.ts',
     'packages/shared-web/browser/rallar-media-facade.ts',
-    'packages/shared-web/browser/rallar-messages-facade.ts',
-    'packages/shared-web/browser/rallar-people-facade.ts',
     'packages/shared-web/browser/rallar-realtime-facade.ts',
     'packages/shared-web/browser/rooms/rallar-room-contracts.ts',
-    'packages/shared-web/browser/rooms/rallar-rooms-facade.ts',
-    'packages/shared-web/browser/rallar-rtc-facade.ts',
-    'packages/shared-web/browser/rallar-stats-facade.ts'
+    'packages/shared-web/browser/rallar-rtc-facade.ts'
 ] as const;
 
 describe('shared-web browser entrypoints', () => {

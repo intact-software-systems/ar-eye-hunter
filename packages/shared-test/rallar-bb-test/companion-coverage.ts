@@ -96,7 +96,6 @@ export const RALLAR_COMPANION_COVERAGE_SURFACES: readonly RallarCompanionCoverag
         layer: 'shared-web-facade',
         intent: 'Direct facade room, people, state refresh, event history, replay, and subscription behavior.',
         testFiles: [
-            'packages/tests/shared-web/rallar-people-facade.test.ts',
             'packages/tests/shared-web/rooms/room-state-store.test.ts',
             'packages/tests/shared-web/rooms/room-state-store-current-room.test.ts',
             'packages/tests/shared-web/rooms/room-events-list-and-page.test.ts',

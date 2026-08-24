@@ -1,12 +1,27 @@
 import * as apiWorkflows from '@shared-web/browser/api-workflows.ts';
 import type { ApiMiddleware } from '@shared-web/browser/app-context.ts';
 import type { RallarScopedOperationOptions } from '@shared-web/browser/rallar-connection-facade.ts';
+import type { RallarStateEventListener } from '@shared-web/browser/rallar-message-contracts.ts';
 import { toRallarWorkflowPolicies, type RallarOperationOptions } from '@shared-web/browser/rallar-operation-options.ts';
-import type { RallarPeopleFacade, RallarPeopleState } from '@shared-web/browser/rallar-people-facade.ts';
+import type {
+    RallarListPeopleEventsOptions,
+    RallarPeopleEventOptions,
+    RallarPeopleState,
+    RallarPerson,
+    RallarReplayPeopleEventsOptions
+} from '@shared-web/browser/rallar-people-contracts.ts';
 import type { RallarStateEventsPort } from '@shared-web/browser/rallar-runtime/state-events.ts';
 import type { RallarStatePort } from '@shared-web/browser/rallar-runtime/state-store.ts';
+import type {
+    RallarOnChangeOptions,
+    RallarReplayEventsResult,
+    RallarStateListener,
+    RallarUnsubscribe
+} from '@shared-web/browser/rallar-shared-contracts.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
+import type { ClientEvent } from '@shared/api/client-types.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
+import type { StateEventPage } from '@shared/api/state-event-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 
 export type CreateRallarPeopleControllerOptions = Readonly<{
@@ -27,7 +42,33 @@ export type CreateRallarPeopleControllerOptions = Readonly<{
 }>;
 
 export type RallarPeopleController = Readonly<{
-    operations: RallarPeopleFacade;
+    operations: Readonly<{
+        state(): RallarPeopleState;
+        list(): readonly RallarPerson[];
+        refresh(input?: StateScope | RallarScopedOperationOptions): Promise<RallarPeopleState>;
+        listEvents(
+            principalId: string,
+            options?: RallarListPeopleEventsOptions
+        ): Promise<readonly ClientEvent[]>;
+        listEventPage(
+            principalId: string,
+            options?: RallarListPeopleEventsOptions
+        ): Promise<StateEventPage<ClientEvent>>;
+        replayEvents(
+            principalId: string,
+            options?: RallarReplayPeopleEventsOptions,
+            listener?: RallarStateEventListener<ClientEvent>
+        ): Promise<RallarReplayEventsResult<ClientEvent>>;
+        get(principalId: string): RallarPerson | undefined;
+        onChange(
+            listener: RallarStateListener<RallarPeopleState>,
+            options?: RallarOnChangeOptions
+        ): RallarUnsubscribe;
+        onEvent(
+            listener: RallarStateEventListener<ClientEvent>,
+            options?: RallarPeopleEventOptions
+        ): RallarUnsubscribe;
+    }>;
 }>;
 
 export function createRallarPeopleController(

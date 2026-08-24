@@ -1,17 +1,17 @@
 import { createRallarCallsFacade, type RallarCallsFacade } from '@shared-web/browser/rallar-calls-facade.ts';
 import { createRallarDirectorFacade, type RallarDirectorFacade } from '@shared-web/browser/rallar-director-facade.ts';
-import { createRallarPeopleFacade, type RallarPeopleFacade } from '@shared-web/browser/rallar-people-facade.ts';
 import { createRallarCallsController } from '@shared-web/browser/rallar-runtime/calls.ts';
 import {
     createRallarDirectorController,
     type RallarDirectorController
 } from '@shared-web/browser/rallar-runtime/director.ts';
-import { createRallarPeopleController } from '@shared-web/browser/rallar-runtime/people.ts';
+import {
+    createRallarPeopleController,
+    type RallarPeopleController
+} from '@shared-web/browser/rallar-runtime/people.ts';
 import type { RallarSessionController } from '@shared-web/browser/rallar-runtime/session.ts';
-import { createRallarStatsController } from '@shared-web/browser/rallar-runtime/stats.ts';
-import { createRallarStatsFacade, type RallarStatsFacade } from '@shared-web/browser/rallar-stats-facade.ts';
-import { createBrowserRallarRooms } from '@shared-web/browser/rooms/browser-rallar-rooms.ts';
-import { createRallarRoomsFacade, type RallarRoomsFacade } from '@shared-web/browser/rooms/rallar-rooms-facade.ts';
+import { createRallarStatsController, type RallarStatsController } from '@shared-web/browser/rallar-runtime/stats.ts';
+import { createBrowserRallarRooms, type BrowserRallarRooms } from '@shared-web/browser/rooms/browser-rallar-rooms.ts';
 import { readSession } from '@shared/api/auth.ts';
 import type { RallarTargetedChannelDefinition } from '../../rallar-facade-contract.ts';
 
@@ -19,9 +19,9 @@ import type { BrowserMessagingComposition, BrowserRealtimeComposition } from './
 import type { BrowserStateComposition, BrowserStateEventComposition } from './browser-runtime-composition.ts';
 
 export interface BrowserRoomPeopleStatsComposition {
-    readonly rooms: RallarRoomsFacade;
-    readonly people: RallarPeopleFacade;
-    readonly stats: RallarStatsFacade;
+    readonly rooms: BrowserRallarRooms;
+    readonly people: RallarPeopleController['operations'];
+    readonly stats: RallarStatsController['operations'];
 }
 
 export interface BrowserCallsDirectorComposition {
@@ -49,23 +49,21 @@ export interface CreateBrowserCallsDirectorCompositionInput {
 export function createBrowserRoomPeopleStatsComposition(
     input: CreateBrowserRoomPeopleStatsCompositionInput
 ): BrowserRoomPeopleStatsComposition {
-    const rooms = createRallarRoomsFacade(
-        createBrowserRallarRooms({
-            stateStore: input.state.roomStateStore,
-            roomEvents: input.stateEvents.roomEvents,
-            messages: input.messaging.messages,
-            realtime: input.realtime.realtime,
-            connect: async (options) => await input.session.connect(options),
-            requireSession: input.session.requireSession,
-            resolveOperationOptions: input.session.resolveOperationOptions,
-            resolveOperationScope: input.session.resolveOperationScope,
-            resolveDefaultRoom: input.state.resolveDefaultRoom,
-            resolveDefaultRoomRef: input.state.resolveDefaultRoomRef,
-            runAuthAwareOperation: input.session.runAuthAwareOperation,
-            acceptSnapshots: async (context, clients, groups, scope) =>
-                await input.state.stateStore.acceptSnapshots(context, clients, groups, scope)
-        })
-    );
+    const rooms = createBrowserRallarRooms({
+        stateStore: input.state.roomStateStore,
+        roomEvents: input.stateEvents.roomEvents,
+        messages: input.messaging.messages,
+        realtime: input.realtime.realtime,
+        connect: async (options) => await input.session.connect(options),
+        requireSession: input.session.requireSession,
+        resolveOperationOptions: input.session.resolveOperationOptions,
+        resolveOperationScope: input.session.resolveOperationScope,
+        resolveDefaultRoom: input.state.resolveDefaultRoom,
+        resolveDefaultRoomRef: input.state.resolveDefaultRoomRef,
+        runAuthAwareOperation: input.session.runAuthAwareOperation,
+        acceptSnapshots: async (context, clients, groups, scope) =>
+            await input.state.stateStore.acceptSnapshots(context, clients, groups, scope)
+    });
     const peopleController = createRallarPeopleController({
         stateStore: input.state.stateStore,
         stateEvents: input.stateEvents.stateEvents,
@@ -76,18 +74,16 @@ export function createBrowserRoomPeopleStatsComposition(
         acceptSnapshots: async (context, clients, groups, scope) =>
             await input.state.stateStore.acceptSnapshots(context, clients, groups, scope)
     });
-    const people = createRallarPeopleFacade(peopleController.operations);
     const statsController = createRallarStatsController({
         resolveOperationOptions: input.session.resolveOperationOptions,
         resolveOperationScope: input.session.resolveOperationScope,
         requireSession: input.session.requireSession,
         runAuthAwareOperation: input.session.runAuthAwareOperation
     });
-    const stats = createRallarStatsFacade(statsController.operations);
     return {
         rooms,
-        people,
-        stats
+        people: peopleController.operations,
+        stats: statsController.operations
     };
 }
 

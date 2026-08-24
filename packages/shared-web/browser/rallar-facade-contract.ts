@@ -10,8 +10,6 @@ import type { RallarCrdtFacade } from '@shared-web/browser/rallar-crdt.ts';
 import type { RallarDataFacade } from '@shared-web/browser/rallar-data.ts';
 import type { RallarDirectorFacade } from '@shared-web/browser/rallar-director-facade.ts';
 import type { RallarMediaFacade } from '@shared-web/browser/rallar-media-facade.ts';
-import type { RallarMessagesFacade } from '@shared-web/browser/rallar-messages-facade.ts';
-import type { RallarPeopleFacade } from '@shared-web/browser/rallar-people-facade.ts';
 import type {
     RallarRealtimeFacade,
     RallarTargetedChannel,
@@ -23,29 +21,30 @@ import type {
     RallarWsWaitForOpenResult
 } from '@shared-web/browser/rallar-realtime-facade.ts';
 import type { RallarRtcFacade, RallarWaitForOpenOptions } from '@shared-web/browser/rallar-rtc-facade.ts';
-import type { RallarStatsFacade } from '@shared-web/browser/rallar-stats-facade.ts';
-import type { RallarRoomsFacade } from '@shared-web/browser/rooms/rallar-rooms-facade.ts';
+import type { RallarMessagesController } from '@shared-web/browser/rallar-runtime/messages.ts';
+import type { RallarPeopleController } from '@shared-web/browser/rallar-runtime/people.ts';
+import type { RallarStatsController } from '@shared-web/browser/rallar-runtime/stats.ts';
+import type { BrowserRallarRooms } from '@shared-web/browser/rooms/browser-rallar-rooms.ts';
 
 export type * from '@shared-web/browser/rallar-auth-facade.ts';
 export type * from '@shared-web/browser/rallar-calls-facade.ts';
 export type * from '@shared-web/browser/rallar-connection-facade.ts';
 export type * from '@shared-web/browser/rallar-director-facade.ts';
 export type * from '@shared-web/browser/rallar-media-facade.ts';
+export type * from '@shared-web/browser/rallar-message-contracts.ts';
 export type {
     RallarMessageSelector,
     RallarMessageSelectorInput
 } from '@shared-web/browser/rallar-message-selectors.ts';
-export type * from '@shared-web/browser/rallar-messages-facade.ts';
 export type {
     RallarOperationOptions,
     RallarOperationRetryPredicate
 } from '@shared-web/browser/rallar-operation-options.ts';
-export type * from '@shared-web/browser/rallar-people-facade.ts';
+export type * from '@shared-web/browser/rallar-people-contracts.ts';
 export type * from '@shared-web/browser/rallar-realtime-facade.ts';
 export type * from '@shared-web/browser/rallar-rtc-facade.ts';
 export type * from '@shared-web/browser/rallar-shared-contracts.ts';
 export type * from '@shared-web/browser/rooms/rallar-room-contracts.ts';
-export type * from '@shared-web/browser/rooms/rallar-rooms-facade.ts';
 
 export type RallarFacade =
     & RallarConnectionFacade
@@ -54,11 +53,11 @@ export type RallarFacade =
         data: RallarDataFacade;
         crdt: RallarCrdtFacade;
         auth: RallarAuthFacade;
-        rooms: RallarRoomsFacade;
-        people: RallarPeopleFacade;
-        stats: RallarStatsFacade;
+        rooms: BrowserRallarRooms;
+        people: RallarPeopleController['operations'];
+        stats: RallarStatsController['operations'];
         director: RallarDirectorFacade;
-        messages: RallarMessagesFacade;
+        messages: RallarMessagesController['operations'];
         channels: Readonly<{
             targeted<T>(definition: RallarTargetedChannelDefinition): RallarTargetedChannel<T>;
             room<T>(definition: Omit<RallarTargetedChannelDefinition, 'peerId' | 'peerIds'>): RallarTargetedChannel<T>;

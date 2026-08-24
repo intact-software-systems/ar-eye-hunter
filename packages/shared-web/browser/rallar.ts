@@ -49,8 +49,6 @@ export type {
     RallarMessageSelectorInput
 } from '@shared-web/browser/rallar-message-selectors.ts';
 
-export type { RallarStatsFacade } from '@shared-web/browser/rallar-stats-facade.ts';
-
 export type {
     RallarOperationOptions,
     RallarOperationRetryPredicate

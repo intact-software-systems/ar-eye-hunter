@@ -20,11 +20,7 @@ import type {
     RallarIncomingCallInvite
 } from '@shared-web/browser/rallar-calls-facade.ts';
 import type { RallarMediaFacade } from '@shared-web/browser/rallar-media-facade.ts';
-import type {
-    RallarMessage,
-    RallarMessageSendResult,
-    RallarMessagesFacade
-} from '@shared-web/browser/rallar-messages-facade.ts';
+import type { RallarMessage, RallarMessageSendResult } from '@shared-web/browser/rallar-message-contracts.ts';
 import type {
     RallarTargetedChannel,
     RallarTargetedChannelDefinition,
@@ -36,6 +32,7 @@ import type {
     RallarRtcPeerStatus
 } from '@shared-web/browser/rallar-rtc-facade.ts';
 import type { RallarMediaPort } from '@shared-web/browser/rallar-runtime/media.ts';
+import type { RallarMessagesController } from '@shared-web/browser/rallar-runtime/messages.ts';
 import type { RallarUnsubscribe } from '@shared-web/browser/rallar-shared-contracts.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
@@ -57,7 +54,7 @@ export type CreateRallarCallsControllerOptions = Readonly<{
     createTargetedChannel<T>(
         definition: RallarTargetedChannelDefinition
     ): RallarTargetedChannel<T>;
-    messages: RallarMessagesFacade;
+    messages: RallarMessagesController['operations'];
     rtc: RallarRtcFacade;
     media: RallarMediaFacade;
     mediaController: RallarMediaPort;

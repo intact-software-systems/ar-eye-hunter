@@ -4,16 +4,17 @@ import * as apiWorkflows from '@shared-web/browser/api-workflows.ts';
 import { ApiHttpError } from '@shared-web/browser/api/http-error.ts';
 import type { ApiMiddleware } from '@shared-web/browser/app-context.ts';
 import type { RallarScopedOperationOptions } from '@shared-web/browser/rallar-connection-facade.ts';
-import type { RallarMessagesFacade } from '@shared-web/browser/rallar-messages-facade.ts';
 import {
     toRallarCommandOptions,
     toRallarWorkflowPolicies,
     type RallarOperationOptions
 } from '@shared-web/browser/rallar-operation-options.ts';
 import type { RallarRealtimeFacade } from '@shared-web/browser/rallar-realtime-facade.ts';
+import type { RallarMessagesController } from '@shared-web/browser/rallar-runtime/messages.ts';
 import { throwRallarValidationIssue } from '@shared-web/browser/rallar-runtime/validation.ts';
 import type {
     RallarOnChangeOptions,
+    RallarReplayEventsResult,
     RallarStateListener,
     RallarUnsubscribe
 } from '@shared-web/browser/rallar-shared-contracts.ts';
@@ -31,10 +32,35 @@ import {
 import { createAndJoinRoom, createAndSwitchRoom } from './create-and-join-room.ts';
 import { enterRoom, joinRoom } from './join-room.ts';
 import { leaveRoom } from './leave-room.ts';
-import type { RallarRoomSession, RallarRoomState } from './rallar-room-contracts.ts';
-import type { RallarRoomsFacade } from './rallar-rooms-facade.ts';
+import type {
+    RallarCreateRoomInput,
+    RallarJoinRoomInput,
+    RallarJoinRoomOptions,
+    RallarLeaveRoomOptions,
+    RallarListRoomEventsInput,
+    RallarReplayRoomEventsInput,
+    RallarRoomEventListener,
+    RallarRoomEventOptions,
+    RallarRoomGovernanceOptions,
+    RallarRoomInviteOptions,
+    RallarRoomLifecycleOptions,
+    RallarRoomPresenceWaitOptions,
+    RallarRoomPresenceWaitResult,
+    RallarRoomSession,
+    RallarRoomState,
+    RallarRoomSummary,
+    RallarRoomTargetInput,
+    RallarUpdateRoomInput
+} from './rallar-room-contracts.ts';
 import type { RallarRoomEventsPort } from './room-events.ts';
-import type { GroupRef, GroupSnapshot, StateScope } from './room-group-state-translation.ts';
+import type {
+    GroupEvent,
+    GroupRef,
+    GroupRole,
+    GroupSnapshot,
+    StateEventPage,
+    StateScope
+} from './room-group-state-translation.ts';
 import {
     acceptRoomInvite,
     banRoomMember,
@@ -52,7 +78,7 @@ import { archiveRoom, deleteRoom, updateRoom, updateRoomMetadata } from './updat
 export interface CreateBrowserRallarRoomsInput {
     readonly stateStore: RallarRoomStateStorePort;
     readonly roomEvents: RallarRoomEventsPort;
-    readonly messages: RallarMessagesFacade;
+    readonly messages: RallarMessagesController['operations'];
     readonly realtime: RallarRealtimeFacade;
     readonly connect: (
         options?: RallarOperationOptions
@@ -77,6 +103,92 @@ export interface CreateBrowserRallarRoomsInput {
     ) => Promise<void>;
 }
 
+export type BrowserRallarRooms = Readonly<{
+    state(): RallarRoomState;
+    list(): readonly RallarRoomSummary[];
+    refresh(input?: StateScope | RallarScopedOperationOptions): Promise<RallarRoomState>;
+    listEvents(input: RallarListRoomEventsInput): Promise<readonly GroupEvent[]>;
+    listEventPage(input: RallarListRoomEventsInput): Promise<StateEventPage<GroupEvent>>;
+    replayEvents(
+        input: RallarReplayRoomEventsInput,
+        listener?: RallarRoomEventListener
+    ): Promise<RallarReplayEventsResult<GroupEvent>>;
+    create(input: string | RallarCreateRoomInput): Promise<GroupSnapshot>;
+    createAndSwitch(input: string | RallarCreateRoomInput): Promise<GroupSnapshot>;
+    join(
+        room: string | GroupRef | RallarJoinRoomInput,
+        options?: RallarJoinRoomOptions
+    ): Promise<GroupSnapshot>;
+    enter(
+        room: string | GroupRef | RallarJoinRoomInput,
+        options?: RallarJoinRoomOptions
+    ): Promise<RallarRoomSession>;
+    session(room?: string | GroupRef): RallarRoomSession;
+    leave(input?: string | RallarLeaveRoomOptions): Promise<GroupSnapshot | undefined>;
+    update(input: RallarUpdateRoomInput): Promise<GroupSnapshot>;
+    archive(
+        room: string | GroupRef | RallarRoomTargetInput,
+        options?: RallarRoomLifecycleOptions
+    ): Promise<GroupSnapshot>;
+    delete(
+        room: string | GroupRef | RallarRoomTargetInput,
+        options?: RallarRoomLifecycleOptions
+    ): Promise<GroupSnapshot>;
+    invite(
+        room: string | GroupRef | RallarRoomTargetInput,
+        principalId: string,
+        options?: RallarRoomInviteOptions
+    ): Promise<GroupSnapshot>;
+    acceptInvite(
+        room: string | GroupRef | RallarRoomTargetInput,
+        options?: RallarScopedOperationOptions
+    ): Promise<GroupSnapshot>;
+    removeMember(
+        room: string | GroupRef | RallarRoomTargetInput,
+        principalId: string,
+        options?: RallarRoomGovernanceOptions
+    ): Promise<GroupSnapshot>;
+    banMember(
+        room: string | GroupRef | RallarRoomTargetInput,
+        principalId: string,
+        options?: RallarRoomGovernanceOptions
+    ): Promise<GroupSnapshot>;
+    unbanMember(
+        room: string | GroupRef | RallarRoomTargetInput,
+        principalId: string,
+        options?: RallarRoomGovernanceOptions
+    ): Promise<GroupSnapshot>;
+    setMemberRole(
+        room: string | GroupRef | RallarRoomTargetInput,
+        principalId: string,
+        role: GroupRole,
+        options?: RallarRoomGovernanceOptions
+    ): Promise<GroupSnapshot>;
+    transferOwnership(
+        room: string | GroupRef | RallarRoomTargetInput,
+        principalId: string,
+        options?: RallarRoomGovernanceOptions
+    ): Promise<GroupSnapshot>;
+    updateMetadata(
+        room: string | GroupRef,
+        patch: Readonly<Record<string, unknown>>,
+        options?: RallarScopedOperationOptions
+    ): Promise<GroupSnapshot>;
+    waitForPresence(
+        room: string | GroupRef,
+        options?: RallarRoomPresenceWaitOptions
+    ): Promise<RallarRoomPresenceWaitResult>;
+    current(): GroupSnapshot | undefined;
+    onChange(
+        listener: RallarStateListener<RallarRoomState>,
+        options?: RallarOnChangeOptions
+    ): RallarUnsubscribe;
+    onEvent(
+        listener: RallarRoomEventListener,
+        options?: RallarRoomEventOptions
+    ): RallarUnsubscribe;
+}>;
+
 interface CreateRoomEntryOperationsInput {
     readonly rooms: CreateBrowserRallarRoomsInput;
     readonly createSession: (roomRef: GroupRef) => RallarRoomSession;
@@ -91,7 +203,7 @@ interface CreateRoomEntryOperationsInput {
 
 export function createBrowserRallarRooms(
     input: CreateBrowserRallarRoomsInput
-): RallarRoomsFacade {
+): BrowserRallarRooms {
     const resolveRoomRef = (
         room: string | GroupRef,
         scope?: StateScope
@@ -135,7 +247,7 @@ function createRoomReadOperations(
         input?: StateScope | RallarScopedOperationOptions
     ) => Promise<RallarRoomState>
 ): Pick<
-    RallarRoomsFacade,
+    BrowserRallarRooms,
     | 'state'
     | 'list'
     | 'refresh'
@@ -165,7 +277,7 @@ function createRoomReadOperations(
 function createRoomEntryOperations(
     input: CreateRoomEntryOperationsInput
 ): Pick<
-    RallarRoomsFacade,
+    BrowserRallarRooms,
     | 'create'
     | 'createAndSwitch'
     | 'join'
@@ -211,7 +323,7 @@ function createRoomEntryOperations(
 function createRoomMembershipOperations(
     input: CreateBrowserRallarRoomsInput
 ): Pick<
-    RallarRoomsFacade,
+    BrowserRallarRooms,
     | 'invite'
     | 'acceptInvite'
     | 'removeMember'
@@ -239,7 +351,7 @@ function createRoomMembershipOperations(
 
 function createRoomUpdateOperations(
     input: CreateBrowserRallarRoomsInput
-): Pick<RallarRoomsFacade, 'update' | 'archive' | 'delete' | 'updateMetadata'> {
+): Pick<BrowserRallarRooms, 'update' | 'archive' | 'delete' | 'updateMetadata'> {
     return {
         update: async (updateInput) => await updateRoom({ ...input, input: updateInput }),
         archive: async (room, options = {}) => await archiveRoom({ ...input, room, options }),

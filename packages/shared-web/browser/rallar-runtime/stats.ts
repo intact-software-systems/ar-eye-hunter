@@ -1,9 +1,13 @@
 import * as api from '@shared-web/browser/api-integration.ts';
 import type { RallarScopedOperationOptions } from '@shared-web/browser/rallar-connection-facade.ts';
 import { toRallarCommandOptions, type RallarOperationOptions } from '@shared-web/browser/rallar-operation-options.ts';
-import type { RallarStatsFacade } from '@shared-web/browser/rallar-stats-facade.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
+import type {
+    GroupSpaStatisticsResponse,
+    MyRealtimeSpaStatisticsResponse,
+    WorkspaceSpaStatisticsResponse
+} from '@shared/api/spa-statistics-types.ts';
 import { DEFAULT_STATE_WORKSPACE_ID, type StateScope } from '@shared/api/state-types.ts';
 import { Command } from '@shared/cache/Command.ts';
 
@@ -17,7 +21,18 @@ export type CreateRallarStatsControllerOptions = Readonly<{
 }>;
 
 export type RallarStatsController = Readonly<{
-    operations: RallarStatsFacade;
+    operations: Readonly<{
+        summary(
+            options?: RallarScopedOperationOptions
+        ): Promise<WorkspaceSpaStatisticsResponse>;
+        group(
+            group: string | GroupRef,
+            options?: RallarScopedOperationOptions
+        ): Promise<GroupSpaStatisticsResponse>;
+        meRealtime(
+            options?: RallarScopedOperationOptions
+        ): Promise<MyRealtimeSpaStatisticsResponse>;
+    }>;
 }>;
 
 export function createRallarStatsController(
@@ -42,7 +57,7 @@ export function createRallarStatsController(
         };
     };
 
-    const operations: RallarStatsFacade = {
+    const operations: RallarStatsController['operations'] = {
         summary: async (readOptions: RallarScopedOperationOptions = {}) => {
             const operationOptions = options.resolveOperationOptions(readOptions);
             const session = options.requireSession();

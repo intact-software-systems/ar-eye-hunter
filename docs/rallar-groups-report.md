@@ -28,7 +28,7 @@ read visibility, and browser-safe group administration workflows.
 Primary browser files:
 
 - `packages/shared-web/browser/rallar.ts`
-- `packages/shared-web/browser/rooms/rallar-rooms-facade.ts`
+- `packages/shared-web/browser/rooms/browser-rallar-rooms.ts`
 - `packages/shared-web/browser/api-workflows.ts`
 - `packages/shared-web/browser/api-integration.ts`
 - `packages/shared-web/browser/rallar-operation-options.ts`

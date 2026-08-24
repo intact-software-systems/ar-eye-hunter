@@ -10,7 +10,7 @@ import {
     type RelicGameState,
     type RelicPublicSnapshot
 } from '@relic-hunters/mod.ts';
-import type { RallarWsSendInput } from '@shared-web/browser/rallar-messages-facade.ts';
+import type { RallarWsSendInput } from '@shared-web/browser/rallar-message-contracts.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { clearSession, writeSession } from '@shared/api/auth.ts';
 import { act, createElement, type ReactNode } from 'react';

@@ -1,6 +1,6 @@
 import type { ApiMiddleware } from '@shared-web/browser/app-context.ts';
 import * as stateCaches from '@shared-web/browser/data-caches.ts';
-import type { RallarPeopleState, RallarPerson } from '@shared-web/browser/rallar-people-facade.ts';
+import type { RallarPeopleState, RallarPerson } from '@shared-web/browser/rallar-people-contracts.ts';
 import type { RallarStateRuntimePort } from '@shared-web/browser/rallar-runtime-context.ts';
 import { notifyListener } from '@shared-web/browser/rallar-runtime/subscriptions.ts';
 import type {

@@ -1,5 +1,4 @@
 import { createRallarMediaFacade, type RallarMediaFacade } from '@shared-web/browser/rallar-media-facade.ts';
-import { createRallarMessagesFacade, type RallarMessagesFacade } from '@shared-web/browser/rallar-messages-facade.ts';
 import { createRallarRealtimeFacade, type RallarRealtimeFacade } from '@shared-web/browser/rallar-realtime-facade.ts';
 import { createRallarRtcFacade, type RallarRtcFacade } from '@shared-web/browser/rallar-rtc-facade.ts';
 import { createRallarMediaController, type RallarMediaPort } from '@shared-web/browser/rallar-runtime/media.ts';
@@ -26,7 +25,7 @@ const DEFAULT_RALLAR_REALTIME_OPEN_TIMEOUT_MS = 5_000;
 
 export interface BrowserMessagingComposition {
     readonly messagesController: RallarMessagesController;
-    readonly messages: RallarMessagesFacade;
+    readonly messages: RallarMessagesController['operations'];
 }
 
 export interface BrowserRealtimeComposition {
@@ -72,7 +71,7 @@ export function createBrowserMessagingComposition(
     });
     return {
         messagesController,
-        messages: createRallarMessagesFacade(messagesController.operations)
+        messages: messagesController.operations
     };
 }
 

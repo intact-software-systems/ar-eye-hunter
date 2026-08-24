@@ -3,7 +3,7 @@ import type {
     RallarRoomMessageChannelDefinition,
     RallarStateEventListener,
     RallarTypedMessageChannel
-} from '@shared-web/browser/rallar-messages-facade.ts';
+} from '@shared-web/browser/rallar-message-contracts.ts';
 import type {
     RallarRoomRealtimeJsonChannel,
     RallarRoomRealtimeJsonDefaults

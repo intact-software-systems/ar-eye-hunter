@@ -13,21 +13,18 @@ import type {
     RallarDirectorStatusListener,
     RallarDirectorStatusOptions
 } from '@shared-web/browser/rallar-director-facade.ts';
-import type {
-    RallarMessageSendResult,
-    RallarMessageSendStatus,
-    RallarMessagesFacade
-} from '@shared-web/browser/rallar-messages-facade.ts';
+import type { RallarMessageSendResult, RallarMessageSendStatus } from '@shared-web/browser/rallar-message-contracts.ts';
 import { toRallarWorkflowPolicies, type RallarOperationOptions } from '@shared-web/browser/rallar-operation-options.ts';
 import type {
     RallarRealtimeFacade,
     RallarTargetedChannel,
     RallarTargetedChannelDefinition
 } from '@shared-web/browser/rallar-realtime-facade.ts';
+import type { RallarMessagesController } from '@shared-web/browser/rallar-runtime/messages.ts';
 import type { RallarStatePort } from '@shared-web/browser/rallar-runtime/state-store.ts';
 import { createRallarSubscriptionScope, notifyListener } from '@shared-web/browser/rallar-runtime/subscriptions.ts';
 import type { RallarUnsubscribe } from '@shared-web/browser/rallar-shared-contracts.ts';
-import type { RallarRoomsFacade } from '@shared-web/browser/rooms/rallar-rooms-facade.ts';
+import type { BrowserRallarRooms } from '@shared-web/browser/rooms/browser-rallar-rooms.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { toStateScope } from '@shared/api/api-type-utils.ts';
 import {
@@ -48,8 +45,8 @@ const DEFAULT_RALLAR_REALTIME_LANE_ID = 'realtime';
 
 export type CreateRallarDirectorControllerOptions = Readonly<{
     stateStore: RallarStatePort;
-    rooms: RallarRoomsFacade;
-    messages: RallarMessagesFacade;
+    rooms: BrowserRallarRooms;
+    messages: RallarMessagesController['operations'];
     realtime: RallarRealtimeFacade;
     readSession(): AuthSession | undefined;
     requireSession(): AuthSession;
