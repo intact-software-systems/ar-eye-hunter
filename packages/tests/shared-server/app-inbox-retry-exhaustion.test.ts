@@ -69,7 +69,6 @@ describe('AppInbox retry exhaustion', () => {
         expect(stored?.status).toBe(EntityStatus.FAILED);
         expect(JSON.parse(stored!.resource)).toEqual({
             type: 'app-inbox-failure',
-            version: 'retry-exhausted.v1',
             code: 'app-inbox-retry-exhausted',
             status: 503,
             message: 'AppInbox processing exhausted its retry budget',
@@ -201,7 +200,6 @@ describe('AppInbox retry exhaustion', () => {
             expect(stored?.status).toBe(EntityStatus.FAILED);
             expect(JSON.parse(stored!.resource)).toMatchObject({
                 type: 'app-inbox-failure',
-                version: 'retry-exhausted.v1',
                 code: 'app-inbox-retry-exhausted',
                 retry: {
                     attempts: 20,
@@ -237,7 +235,6 @@ describe('AppInbox retry exhaustion', () => {
         );
         expect(JSON.parse(stored!.resource)).toMatchObject({
             type: 'app-inbox-failure',
-            version: 'retry-exhausted.v1',
             code: 'app-inbox-retry-exhausted',
             retry: {
                 attempts: 20,

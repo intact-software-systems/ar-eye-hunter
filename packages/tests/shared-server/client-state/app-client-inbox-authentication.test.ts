@@ -88,10 +88,9 @@ describe('AppClientInbox authentication', () => {
         expect(result.right).toBeUndefined();
         expect(result.left).toEqual({
             type: 'app-inbox-failure',
-            version: 'canonical.v2',
-            code: 'TypeError',
-            status: 400,
-            message: 'Client state result fields are invalid',
+            code: 'app-inbox-result-corrupt',
+            status: 500,
+            message: 'Persisted AppInbox result is corrupt',
             issues: null,
             denial: null,
             retry: null

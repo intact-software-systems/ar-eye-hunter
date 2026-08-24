@@ -4,6 +4,24 @@ export interface AdminPruneValidationIssue {
     readonly status: number;
 }
 
+export class AdminPruneValidationError extends Error {
+    readonly code: string;
+    readonly status: number;
+    readonly issues: readonly AdminPruneValidationIssue[];
+
+    constructor(issues: readonly AdminPruneValidationIssue[]) {
+        const firstIssue = issues[0];
+        if (firstIssue === undefined) {
+            throw new TypeError('Admin prune validation error requires at least one issue');
+        }
+        super(firstIssue.message);
+        this.code = firstIssue.code;
+        this.status = firstIssue.status;
+        this.issues = issues;
+        this.name = 'AdminPruneValidationError';
+    }
+}
+
 export function throwOnAdminPruneValidationIssues(
     issues: readonly AdminPruneValidationIssue[]
 ): void {
@@ -11,9 +29,5 @@ export function throwOnAdminPruneValidationIssues(
     if (issue === undefined) {
         return;
     }
-    throw Object.assign(new Error(issue.message), {
-        code: issue.code,
-        status: issue.status,
-        issues
-    });
+    throw new AdminPruneValidationError(issues);
 }

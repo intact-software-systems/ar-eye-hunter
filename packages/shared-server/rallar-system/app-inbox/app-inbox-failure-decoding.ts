@@ -1,12 +1,14 @@
-import type {
-    AppInboxFailure,
-    AppInboxFailureDenial,
-    AppInboxFailureIssue,
-    AppInboxFailureRetry
+import { decodeJsonWireValue, type JsonWireObject, type JsonWireValue } from '../protocol/json-wire-identity.ts';
+import {
+    toPersistedAppInboxFailureCorruption,
+    type AppInboxFailure,
+    type AppInboxFailureDenial,
+    type AppInboxFailureIssue,
+    type AppInboxFailureRetry
 } from './app-inbox-failure.ts';
-const CANONICAL_V2_FAILURE_KEYS = [
+
+const APP_INBOX_FAILURE_KEYS = [
     'type',
-    'version',
     'code',
     'status',
     'message',
@@ -15,66 +17,32 @@ const CANONICAL_V2_FAILURE_KEYS = [
     'retry'
 ] as const;
 
-export function readPersistedAppInboxFailure(resource: string): AppInboxFailure {
+export function decodePersistedAppInboxFailure(resource: string): AppInboxFailure {
     try {
-        const parsed = JSON.parse(resource) as unknown;
-        return readAppInboxFailure(parsed);
+        return decodeAppInboxFailure(JSON.parse(resource));
     }
     catch {
-        return malformedPersistedAppInboxFailure();
+        return toPersistedAppInboxFailureCorruption();
     }
 }
 
-export function readAppInboxFailure(value: unknown): AppInboxFailure {
-    const record = requireExactRecord(
-        value,
-        CANONICAL_V2_FAILURE_KEYS,
-        'AppInbox failure'
-    );
+export function decodeAppInboxFailure(value: unknown): AppInboxFailure {
+    const record = requireExactRecord(value, APP_INBOX_FAILURE_KEYS, 'AppInbox failure');
     if (record.type !== 'app-inbox-failure') {
         throw new TypeError('AppInbox failure type is invalid');
     }
-    if (record.version !== 'canonical.v2' && record.version !== 'retry-exhausted.v1') {
-        throw new TypeError('AppInbox failure version is invalid');
-    }
-    const code = requireNonEmptyString(record.code, 'AppInbox failure code');
-    const status = requireHttpFailureStatus(record.status);
-    const message = requireNonEmptyString(record.message, 'AppInbox failure message');
-    const issues = readIssues(record.issues);
-    const denial = readDenial(record.denial);
-    const retry = readRetry(record.retry);
-    if (
-        record.version === 'retry-exhausted.v1' &&
-        (code !== 'app-inbox-retry-exhausted' || status !== 503 || retry?.kind !== 'exhausted')
-    ) {
-        throw new TypeError('AppInbox retry exhaustion fields are inconsistent');
-    }
     return {
         type: 'app-inbox-failure',
-        version: record.version,
-        code,
-        status,
-        message,
-        issues,
-        denial,
-        retry
+        code: requireNonEmptyString(record.code, 'AppInbox failure code'),
+        status: requireHttpFailureStatus(record.status),
+        message: requireNonEmptyString(record.message, 'AppInbox failure message'),
+        issues: decodeFailureIssues(record.issues),
+        denial: decodeFailureDenial(record.denial),
+        retry: decodeFailureRetry(record.retry)
     };
 }
 
-function malformedPersistedAppInboxFailure(): AppInboxFailure {
-    return {
-        type: 'app-inbox-failure',
-        version: 'malformed.v0',
-        code: 'app-inbox-malformed-persisted-failure',
-        status: 500,
-        message: 'Persisted AppInbox failure is malformed',
-        issues: null,
-        denial: null,
-        retry: null
-    };
-}
-
-function readIssues(value: unknown): readonly AppInboxFailureIssue[] | null {
+function decodeFailureIssues(value: unknown): readonly AppInboxFailureIssue[] | null {
     if (value === null) {
         return null;
     }
@@ -89,14 +57,14 @@ function readIssues(value: unknown): readonly AppInboxFailureIssue[] | null {
         );
         return {
             code: requireNonEmptyString(record.code, 'AppInbox failure issue code'),
-            path: readPath(record.path),
+            path: decodeFailureIssuePath(record.path),
             message: requireNonEmptyString(record.message, 'AppInbox failure issue message'),
-            details: readNullableRecord(record.details, 'AppInbox failure issue details')
+            details: decodeNullableJsonWireObject(record.details, 'AppInbox failure issue details')
         };
     });
 }
 
-function readDenial(value: unknown): AppInboxFailureDenial | null {
+function decodeFailureDenial(value: unknown): AppInboxFailureDenial | null {
     if (value === null) {
         return null;
     }
@@ -108,11 +76,11 @@ function readDenial(value: unknown): AppInboxFailureDenial | null {
     return {
         code: requireNonEmptyString(record.code, 'AppInbox failure denial code'),
         message: requireNonEmptyString(record.message, 'AppInbox failure denial message'),
-        details: readNullableRecord(record.details, 'AppInbox failure denial details')
+        details: decodeNullableJsonWireObject(record.details, 'AppInbox failure denial details')
     };
 }
 
-function readRetry(value: unknown): AppInboxFailureRetry | null {
+function decodeFailureRetry(value: unknown): AppInboxFailureRetry | null {
     if (value === null) {
         return null;
     }
@@ -126,16 +94,16 @@ function readRetry(value: unknown): AppInboxFailureRetry | null {
     }
     return {
         kind: record.kind,
-        attempts: readNullableNonNegativeInteger(record.attempts, 'attempts'),
+        attempts: decodeNullableNonNegativeInteger(record.attempts, 'attempts'),
         lane: record.lane === null
             ? null
             : requireNonEmptyString(record.lane, 'AppInbox failure retry lane'),
-        queueAgeMs: readNullableNonNegativeNumber(record.queueAgeMs, 'queueAgeMs'),
-        dueAgeMs: readNullableNonNegativeNumber(record.dueAgeMs, 'dueAgeMs')
+        queueAgeMs: decodeNullableNonNegativeNumber(record.queueAgeMs, 'queueAgeMs'),
+        dueAgeMs: decodeNullableNonNegativeNumber(record.dueAgeMs, 'dueAgeMs')
     };
 }
 
-function readPath(value: unknown): readonly (string | number)[] | null {
+function decodeFailureIssuePath(value: unknown): readonly (string | number)[] | null {
     if (value === null) {
         return null;
     }
@@ -148,20 +116,21 @@ function readPath(value: unknown): readonly (string | number)[] | null {
     return value;
 }
 
-function readNullableRecord(
+function decodeNullableJsonWireObject(
     value: unknown,
     label: string
-): Readonly<Record<string, unknown>> | null {
+): JsonWireObject | null {
     if (value === null) {
         return null;
     }
-    if (!isRecord(value)) {
-        throw new TypeError(`${label} is invalid`);
+    const decoded = decodeJsonWireValue(value, label);
+    if (!isJsonWireObject(decoded)) {
+        throw new TypeError(`${label} must be a JSON object`);
     }
-    return value;
+    return decoded;
 }
 
-function readNullableNonNegativeInteger(value: unknown, label: string): number | null {
+function decodeNullableNonNegativeInteger(value: unknown, label: string): number | null {
     if (value === null) {
         return null;
     }
@@ -171,7 +140,7 @@ function readNullableNonNegativeInteger(value: unknown, label: string): number |
     return Number(value);
 }
 
-function readNullableNonNegativeNumber(value: unknown, label: string): number | null {
+function decodeNullableNonNegativeNumber(value: unknown, label: string): number | null {
     if (value === null) {
         return null;
     }
@@ -209,6 +178,10 @@ function requireExactRecord(
         throw new TypeError(`${label} fields are invalid`);
     }
     return value;
+}
+
+function isJsonWireObject(value: JsonWireValue): value is JsonWireObject {
+    return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

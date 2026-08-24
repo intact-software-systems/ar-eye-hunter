@@ -28,6 +28,7 @@ import {
 } from '../mutation/crdt-mutation-contracts.ts';
 import type { CrdtMutationService } from '../mutation/create-crdt-mutation-service.ts';
 import { decodeCrdtMutationResult } from '../mutation/decode-crdt-mutation-result.ts';
+import { CrdtHttpAdminRejectionError } from './crdt-http-admin-rejection-error.ts';
 import {
     createAndEnqueueAuthenticatedCrdtAppend,
     type AuthenticatedCrdtAppendInput,
@@ -277,18 +278,7 @@ export class AppCrdtInboxService {
 }
 
 function toCrdtHttpAdminRejection(reasonCode: string): Error {
-    const status = reasonCode.startsWith('authentication-')
-        ? 401
-        : reasonCode === 'document-not-found'
-        ? 404
-        : reasonCode.startsWith('authorization-') || reasonCode === 'feature-disabled'
-        ? 403
-        : 409;
-    return Object.assign(new Error(`CRDT admin mutation rejected: ${reasonCode}`), {
-        code: 'crdt-admin-mutation-rejected',
-        status,
-        details: { reasonCode }
-    });
+    return new CrdtHttpAdminRejectionError(reasonCode);
 }
 
 interface AssertCrdtAppInboxIdentityInput {

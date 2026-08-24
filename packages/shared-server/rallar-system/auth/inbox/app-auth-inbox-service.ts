@@ -26,8 +26,7 @@ import {
     AppInboxType,
     type AppInboxEnqueueInput
 } from '../../app-inbox/app-inbox-contracts.ts';
-import { toAppInboxErrorCode } from '../../app-inbox/app-inbox-error-classification.ts';
-import { toTerminalAppInboxFailure, type AppInboxFailure } from '../../app-inbox/app-inbox-failure.ts';
+import { toUnexpectedAppInboxFailure, type AppInboxFailure } from '../../app-inbox/app-inbox-failure.ts';
 import { AppInboxHandlerRegistry } from '../../app-inbox/app-inbox-handler-registry.ts';
 import { AppInboxQueueClient, type AppInboxOptions } from '../../app-inbox/app-inbox-queue-client.ts';
 import type { RallarTimingSink } from '../../observability/timing.ts';
@@ -214,8 +213,8 @@ export class AppAuthInboxService {
                 decodeAuthMutationResult
             );
         }
-        catch (error) {
-            return Either.ofLeft(toTerminalAppInboxFailure(error, toAppInboxErrorCode(error)));
+        catch {
+            return Either.ofLeft(toUnexpectedAppInboxFailure());
         }
         if (persisted.left !== undefined) {
             return Either.ofLeft(persisted.left);
@@ -613,8 +612,8 @@ export class AppAuthInboxService {
             }
             return Either.ofRight(intent as I);
         }
-        catch (error) {
-            return Either.ofLeft(toTerminalAppInboxFailure(error, toAppInboxErrorCode(error)));
+        catch {
+            return Either.ofLeft(toUnexpectedAppInboxFailure());
         }
     }
 }

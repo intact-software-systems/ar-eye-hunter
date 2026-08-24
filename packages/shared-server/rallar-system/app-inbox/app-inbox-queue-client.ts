@@ -20,11 +20,9 @@ import {
 } from '../app-inbox/app-inbox-contracts.ts';
 import {
     classifyAppInboxError,
-    toAppInboxErrorCode,
     type AppInboxErrorClassification
 } from '../app-inbox/app-inbox-error-classification.ts';
 import {
-    readPersistedAppInboxFailure,
     toTerminalAppInboxFailure,
     toUnavailableAppInboxFailure,
     type AppInboxFailure
@@ -35,8 +33,9 @@ import {
     type RallarTimingDetails,
     type RallarTimingSink
 } from '../observability/timing.ts';
-import type { JsonWireValue } from '../protocol/json-wire-identity.ts';
+import { decodeJsonWireValue, type JsonWireValue } from '../protocol/json-wire-identity.ts';
 import { serializeCanonicalJsonWire, toJsonWireAppInboxEnqueue } from './app-inbox-command-wire.ts';
+import { decodePersistedAppInboxFailure } from './app-inbox-failure-decoding.ts';
 import { assertMatchingAppInboxCommand } from './assert-matching-app-inbox-command.ts';
 import { toLogicalAppInboxCommand } from './logical-app-inbox-command.ts';
 
@@ -470,26 +469,34 @@ export class AppInboxQueueClient {
         if (result === undefined) {
             return Either.ofLeft(
                 toTerminalAppInboxFailure(
-                    Object.assign(new Error('App inbox entry result was not found'), {
-                        status: 500
-                    }),
-                    'app-inbox-result-not-found'
+                    {
+                        code: 'app-inbox-result-not-found',
+                        status: 500,
+                        message: 'App inbox entry result was not found'
+                    }
                 )
             );
         }
         if (result.status === EntityStatus.FAILED) {
-            return Either.ofLeft(readPersistedAppInboxFailure(result.resource));
+            return Either.ofLeft(decodePersistedAppInboxFailure(result.resource));
         }
         if (result.status !== EntityStatus.COMPLETED) {
             return Either.ofLeft(toUnavailableAppInboxFailure());
         }
 
         try {
-            const parsed: JsonWireValue = JSON.parse(result.resource);
+            const parsed = decodeJsonWireValue(
+                JSON.parse(result.resource),
+                'Persisted AppInbox result'
+            );
             return Either.ofRight(decodeResult(parsed));
         }
-        catch (error) {
-            return Either.ofLeft(toTerminalAppInboxFailure(error, toAppInboxErrorCode(error)));
+        catch {
+            return Either.ofLeft(toTerminalAppInboxFailure({
+                code: 'app-inbox-result-corrupt',
+                status: 500,
+                message: 'Persisted AppInbox result is corrupt'
+            }));
         }
     }
 

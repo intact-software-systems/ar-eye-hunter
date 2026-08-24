@@ -1,8 +1,8 @@
 import { Temporal } from '@js-temporal/polyfill';
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
+import { runInPSqlTransaction } from '@shared-server/postgres/run-in-p-sql-transaction.ts';
 import { PSqlResourceInboxFinalizationRepository } from '@shared-server/queuebox/postgres/p-sql-resource-inbox-finalization-repository.ts';
 import { ResourceInboxResultsRepository } from '@shared-server/queuebox/postgres/resource-inbox-results-repository.ts';
-import { runInPSqlTransaction } from '@shared-server/postgres/run-in-p-sql-transaction.ts';
 import type {
     ResourceInboxRetryExhaustion,
     ResourceInboxRetryExhaustionRecovery
@@ -120,7 +120,6 @@ function toDiagnostics(exhaustion: AppInboxRetryFinalization): AppInboxFailure {
     validateAppInboxCommandIdentity(exhaustion.entry);
     return {
         type: 'app-inbox-failure',
-        version: 'retry-exhausted.v1',
         code: 'app-inbox-retry-exhausted',
         status: 503,
         message: 'AppInbox processing exhausted its retry budget',

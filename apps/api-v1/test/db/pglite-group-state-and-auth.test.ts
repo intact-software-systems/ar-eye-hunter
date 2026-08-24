@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict';
 
+import {
+    createPSqlResourceInboxRepository,
+    type PSqlResourceInboxRepository
+} from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
-import { createPSqlResourceInboxRepository, type PSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 import { ResourceInboxResultsRepository } from '@shared-server/queuebox/postgres/resource-inbox-results-repository.ts';
 import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-client.ts';
 import { AppOutboxType } from '@shared-server/rallar-system/app-outbox/app-outbox-type.ts';
@@ -91,7 +94,6 @@ Deno.test(
             } as const;
             const canonicalFailure = {
                 type: 'app-inbox-failure',
-                version: 'canonical.v2',
                 code: 'client-mutation-rejected',
                 status: 422,
                 message: 'Canonical validation failed',
@@ -184,10 +186,9 @@ Deno.test(
                 );
                 assert.deepEqual(result.left, {
                     type: 'app-inbox-failure',
-                    version: 'malformed.v0',
-                    code: 'app-inbox-malformed-persisted-failure',
+                    code: 'app-inbox-persisted-failure-corrupt',
                     status: 500,
-                    message: 'Persisted AppInbox failure is malformed',
+                    message: 'Persisted AppInbox failure is corrupt',
                     issues: null,
                     denial: null,
                     retry: null
