@@ -7,11 +7,10 @@ import { createRallarCrdtFacade, type RallarCrdtFacade } from '@shared-web/brows
 import { createRallarDataFacade, type RallarDataFacade } from '@shared-web/browser/rallar-data.ts';
 import type {
     RallarAuthRuntimePort,
-    RallarConnectionRuntimePort,
-    RallarLifecycleCoordinator,
-    RallarStatePort,
-    RallarStateRuntimePort
-} from '@shared-web/browser/rallar-runtime/contracts.ts';
+    RallarBrowserFacadeRuntimeContext,
+    RallarConnectionRuntimePort
+} from '@shared-web/browser/rallar-runtime-context.ts';
+import type { RallarLifecycleCoordinator } from '@shared-web/browser/rallar-runtime/lifecycle.ts';
 import {
     createRallarSessionController,
     type RallarSessionController
@@ -37,7 +36,7 @@ export interface BrowserSessionComposition {
 export interface CreateBrowserSessionCompositionInput {
     readonly connectionRuntime: RallarConnectionRuntimePort;
     readonly authRuntime: RallarAuthRuntimePort;
-    readonly stateRuntime: RallarStateRuntimePort;
+    readonly runtime: Pick<RallarBrowserFacadeRuntimeContext, 'clearCurrentRoom'>;
     readonly lifecycle: RallarLifecycleCoordinator;
     readonly state: BrowserStateComposition;
     readonly messaging: BrowserMessagingComposition;
@@ -56,7 +55,7 @@ export function createBrowserSessionComposition(
     sessionController = createRallarSessionController({
         connectionRuntime: input.connectionRuntime,
         authRuntime: input.authRuntime,
-        stateRuntime: input.stateRuntime,
+        stateRuntime: input.runtime,
         lifecycle: input.lifecycle,
         start: async (options) => await startupController.start(options),
         emitState: () => input.state.stateStore.emit(),

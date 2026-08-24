@@ -84,6 +84,45 @@ export type RallarBrowserFacadeRuntimeContext = Readonly<{
     endedAuthSessionKeys(): Set<string>;
 }>;
 
+export type RallarConnectionRuntimePort = Pick<
+    RallarBrowserFacadeRuntimeContext,
+    | 'readConnectState'
+    | 'setConnectState'
+    | 'readMiddleware'
+    | 'setMiddleware'
+    | 'requireMiddleware'
+    | 'clearMiddleware'
+    | 'readConnectPromise'
+    | 'setConnectPromise'
+    | 'setDefaults'
+    | 'defaults'
+    | 'readDefaults'
+    | 'readDefaultScope'
+    | 'resolveOperationScope'
+    | 'resolveOperationOptions'
+>;
+
+export type RallarStateRuntimePort = Pick<
+    RallarBrowserFacadeRuntimeContext,
+    | 'readStateCacheUnsubscribe'
+    | 'setStateCacheUnsubscribe'
+    | 'currentRoomRef'
+    | 'setCurrentRoom'
+    | 'clearCurrentRoomIfMatches'
+    | 'readDefaultScope'
+    | 'resolveOperationScope'
+>;
+
+export type RallarAuthRuntimePort = Pick<
+    RallarBrowserFacadeRuntimeContext,
+    | 'readAuthExpiryTimer'
+    | 'setAuthExpiryTimer'
+    | 'clearAuthExpiryTimer'
+    | 'readAuthEndPromise'
+    | 'setAuthEndPromise'
+    | 'endedAuthSessionKeys'
+>;
+
 type RallarBrowserFacadeRuntimeState = {
     connectState: RallarBrowserConnectStatus;
     middleware?: ApiMiddleware;

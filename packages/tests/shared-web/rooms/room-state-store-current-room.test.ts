@@ -210,12 +210,10 @@ describe('room state store current-room projection', () => {
     it('selects the session room when the canonical current room ref is absent', () => {
         const runtime = createRallarBrowserFacadeRuntimeContext();
         const sessionRoom = createRoomSnapshot('session-room', 'Session Room');
-        const bareIdRoom = createRoomSnapshot('bare-id-room', 'Bare ID Room');
-        stateMocks.groups.push(sessionRoom, bareIdRoom);
+        stateMocks.groups.push(sessionRoom);
         stateMocks.repositoriesConfigured = true;
         const store = createRoomStateStore({
             runtime: {
-                currentRoomId: () => bareIdRoom.group.groupId,
                 currentRoomRef: () => undefined,
                 setCurrentRoom: runtime.setCurrentRoom,
                 clearCurrentRoomIfMatches: runtime.clearCurrentRoomIfMatches,

@@ -186,8 +186,12 @@ describe('shared-web browser entrypoints', () => {
         expect(references).toEqual([]);
     });
 
-    it('limits the full runtime context to the composer and port contracts', () => {
-        const allowedFiles = new Set(['composition.ts', 'contracts.ts']);
+    it('limits the full runtime context to the composer and its direct port owners', () => {
+        const allowedFiles = new Set([
+            'composition.ts',
+            'session.ts',
+            'state-store.ts'
+        ]);
         const runtimeFiles = readdirSync(
             path.resolve('packages/shared-web/browser/rallar-runtime')
         ).filter((fileName) => fileName.endsWith('.ts') && !allowedFiles.has(fileName));
@@ -203,14 +207,20 @@ describe('shared-web browser entrypoints', () => {
         expect(references).toEqual([]);
     });
 
-    it('keeps capability controllers behind injected ports', () => {
+    it('keeps capability controllers behind injected canonical ports', () => {
         const allowedRuntimeDependencies = new Set([
-            'contracts.ts',
             'message-conversion.ts',
             'subscriptions.ts',
             'validation.ts',
             'wait.ts',
             'ws-inbox.ts'
+        ]);
+        const canonicalPortDependencies = new Set([
+            'calls.ts:media.ts',
+            'director.ts:state-store.ts',
+            'people.ts:state-events.ts',
+            'people.ts:state-store.ts',
+            'session.ts:lifecycle.ts'
         ]);
         const runtimeDirectory = path.resolve(
             'packages/shared-web/browser/rallar-runtime'
@@ -224,19 +234,37 @@ describe('shared-web browser entrypoints', () => {
             const sourceFile = readSourceAnalysis(
                 `packages/shared-web/browser/rallar-runtime/${fileName}`
             );
-            return sourceFile.imports
+            const runtimeDependencies = sourceFile.imports
                 .map((entry) => entry.specifier)
                 .filter((specifier) =>
                     specifier.startsWith(
                         '@shared-web/browser/rallar-runtime/'
                     )
                 )
-                .map((specifier) => specifier.split('/').at(-1) ?? '')
-                .filter((dependency) => !allowedRuntimeDependencies.has(dependency))
+                .map((specifier) => specifier.split('/').at(-1) ?? '');
+            return runtimeDependencies
+                .filter((dependency) =>
+                    !allowedRuntimeDependencies.has(dependency) &&
+                    !canonicalPortDependencies.has(`${fileName}:${dependency}`)
+                )
                 .map((dependency) => `${fileName}: ${dependency}`);
         });
 
         expect(references).toEqual([]);
+
+        const runtimePortImports = runtimeFiles.flatMap((fileName) =>
+            readSourceAnalysis(
+                `packages/shared-web/browser/rallar-runtime/${fileName}`
+            ).imports
+                .filter((entry) =>
+                    canonicalPortDependencies.has(
+                        `${fileName}:${entry.specifier.split('/').at(-1) ?? ''}`
+                    ) && !entry.typeOnly
+                )
+                .map((entry) => `${fileName}: ${entry.specifier}`)
+        );
+
+        expect(runtimePortImports).toEqual([]);
     });
 
     it('does not publicly barrel-export internal runtime modules', () => {

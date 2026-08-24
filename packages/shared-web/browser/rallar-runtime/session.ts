@@ -30,10 +30,10 @@ import {
 } from '@shared-web/browser/rallar-operation-options.ts';
 import type {
     RallarAuthRuntimePort,
-    RallarConnectionRuntimePort,
-    RallarLifecycleCoordinator,
-    RallarStateRuntimePort
-} from '@shared-web/browser/rallar-runtime/contracts.ts';
+    RallarBrowserFacadeRuntimeContext,
+    RallarConnectionRuntimePort
+} from '@shared-web/browser/rallar-runtime-context.ts';
+import type { RallarLifecycleCoordinator } from '@shared-web/browser/rallar-runtime/lifecycle.ts';
 import { createRallarSubscriptionScope, notifyListener } from '@shared-web/browser/rallar-runtime/subscriptions.ts';
 import type { RallarOnChangeOptions, RallarUnsubscribe } from '@shared-web/browser/rallar-shared-contracts.ts';
 import type {
@@ -53,7 +53,7 @@ const MAX_AUTH_EXPIRY_TIMEOUT_MS = 2_147_483_647;
 export type CreateRallarSessionControllerOptions = Readonly<{
     connectionRuntime: RallarConnectionRuntimePort;
     authRuntime: RallarAuthRuntimePort;
-    stateRuntime: Pick<RallarStateRuntimePort, 'clearCurrentRoom'>;
+    stateRuntime: Pick<RallarBrowserFacadeRuntimeContext, 'clearCurrentRoom'>;
     lifecycle: RallarLifecycleCoordinator;
     start(options?: RallarStartOptions): Promise<RallarStartResult>;
     emitState(): void;

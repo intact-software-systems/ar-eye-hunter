@@ -6,7 +6,6 @@ import type {
     RallarPeopleEventOptions,
     RallarReplayPeopleEventsOptions
 } from '@shared-web/browser/rallar-people-facade.ts';
-import type { RallarStateEventsPort } from '@shared-web/browser/rallar-runtime/contracts.ts';
 import { toRallarMessage } from '@shared-web/browser/rallar-runtime/message-conversion.ts';
 import { notifyStateEventListener } from '@shared-web/browser/rallar-runtime/subscriptions.ts';
 import type { RallarWsInbox } from '@shared-web/browser/rallar-runtime/ws-inbox.ts';
@@ -46,6 +45,26 @@ export interface CreateRallarStateEventsInput {
     readonly resolveOperationScope: (scope?: StateScope) => StateScope | undefined;
     readonly runAuthAwareOperation: <T>(operation: () => Promise<T>) => Promise<T>;
 }
+
+export type RallarStateEventsPort = Readonly<{
+    listPeopleEvents(
+        principalId: string,
+        options?: RallarListPeopleEventsOptions
+    ): Promise<readonly ClientEvent[]>;
+    listPeopleEventPage(
+        principalId: string,
+        options?: RallarListPeopleEventsOptions
+    ): Promise<StateEventPage<ClientEvent>>;
+    replayPeopleEventsFromFacade(
+        principalId: string,
+        options?: RallarReplayPeopleEventsOptions,
+        listener?: RallarPeopleEventListener
+    ): Promise<RallarReplayEventsResult<ClientEvent>>;
+    onPeopleEvent(
+        listener: RallarPeopleEventListener,
+        options: RallarPeopleEventOptions
+    ): RallarUnsubscribe;
+}>;
 
 export const createRallarStateEvents = (
     input: CreateRallarStateEventsInput

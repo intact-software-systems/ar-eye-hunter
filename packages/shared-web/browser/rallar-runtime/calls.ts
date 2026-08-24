@@ -35,7 +35,7 @@ import type {
     RallarRtcLaneStatus,
     RallarRtcPeerStatus
 } from '@shared-web/browser/rallar-rtc-facade.ts';
-import type { RallarMediaPort } from '@shared-web/browser/rallar-runtime/contracts.ts';
+import type { RallarMediaPort } from '@shared-web/browser/rallar-runtime/media.ts';
 import type { RallarUnsubscribe } from '@shared-web/browser/rallar-shared-contracts.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';

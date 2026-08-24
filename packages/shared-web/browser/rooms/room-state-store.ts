@@ -42,7 +42,6 @@ export interface RallarRoomStateStorePort {
 }
 
 export interface RallarRoomStateRuntimePort {
-    currentRoomId(): string | undefined;
     currentRoomRef(): GroupRef | undefined;
     setCurrentRoom(snapshot: GroupSnapshot): void;
     clearCurrentRoomIfMatches(room: string | GroupRef, clearCurrent: boolean): void;

@@ -2,8 +2,7 @@ import { createRallarMediaFacade, type RallarMediaFacade } from '@shared-web/bro
 import { createRallarMessagesFacade, type RallarMessagesFacade } from '@shared-web/browser/rallar-messages-facade.ts';
 import { createRallarRealtimeFacade, type RallarRealtimeFacade } from '@shared-web/browser/rallar-realtime-facade.ts';
 import { createRallarRtcFacade, type RallarRtcFacade } from '@shared-web/browser/rallar-rtc-facade.ts';
-import type { RallarMediaPort } from '@shared-web/browser/rallar-runtime/contracts.ts';
-import { createRallarMediaController } from '@shared-web/browser/rallar-runtime/media.ts';
+import { createRallarMediaController, type RallarMediaPort } from '@shared-web/browser/rallar-runtime/media.ts';
 import {
     createRallarMessagesController,
     type RallarMessagesController

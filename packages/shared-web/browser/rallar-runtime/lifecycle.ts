@@ -1,12 +1,21 @@
-import type {
-    RallarLifecycleCoordinator,
-    RallarLifecycleParticipant
-} from '@shared-web/browser/rallar-runtime/contracts.ts';
+import type { ApiMiddleware } from '@shared-web/browser/app-context.ts';
 
-export type {
-    RallarLifecycleCoordinator,
-    RallarLifecycleParticipant
-} from '@shared-web/browser/rallar-runtime/contracts.ts';
+export type RallarLifecycleParticipant = Readonly<{
+    id: string;
+    order: number;
+    attach?(ctx: ApiMiddleware): void;
+    connected?(): void;
+    detach?(ctx?: ApiMiddleware): void;
+    disconnected?(): void;
+}>;
+
+export type RallarLifecycleCoordinator = Readonly<{
+    register(participant: RallarLifecycleParticipant): void;
+    attach(ctx: ApiMiddleware): void;
+    connected(): void;
+    detach(ctx?: ApiMiddleware): void;
+    disconnected(): void;
+}>;
 
 export function createRallarLifecycleCoordinator(): RallarLifecycleCoordinator {
     const participants = new Map<string, RallarLifecycleParticipant>();

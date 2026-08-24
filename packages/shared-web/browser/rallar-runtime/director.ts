@@ -24,7 +24,7 @@ import type {
     RallarTargetedChannel,
     RallarTargetedChannelDefinition
 } from '@shared-web/browser/rallar-realtime-facade.ts';
-import type { RallarStatePort } from '@shared-web/browser/rallar-runtime/contracts.ts';
+import type { RallarStatePort } from '@shared-web/browser/rallar-runtime/state-store.ts';
 import { createRallarSubscriptionScope, notifyListener } from '@shared-web/browser/rallar-runtime/subscriptions.ts';
 import type { RallarUnsubscribe } from '@shared-web/browser/rallar-shared-contracts.ts';
 import type { RallarRoomsFacade } from '@shared-web/browser/rooms/rallar-rooms-facade.ts';

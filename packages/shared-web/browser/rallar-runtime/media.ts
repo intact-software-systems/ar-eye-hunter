@@ -11,7 +11,6 @@ import type {
     RallarRemoteStream,
     RallarScreenSourceStartOptions
 } from '@shared-web/browser/rallar-media-facade.ts';
-import type { RallarMediaPort } from '@shared-web/browser/rallar-runtime/contracts.ts';
 import type { RallarUnsubscribe } from '@shared-web/browser/rallar-shared-contracts.ts';
 import type { QRtcMediaPolicy } from '@shared/webrtc/QRtcPeerConnection.ts';
 
@@ -27,6 +26,15 @@ type RallarMediaSourceRuntime = {
 export type CreateRallarMediaControllerOptions = Readonly<{
     connect(): Promise<ApiMiddleware>;
     readMiddleware(): ApiMiddleware | undefined;
+}>;
+
+export type RallarMediaPort = Readonly<{
+    operations: CreateRallarMediaFacadeOptions;
+    readSourceStatus(kind: RallarMediaSourceKind): RallarMediaSourceStatus | undefined;
+    readSourceStatuses(): readonly RallarMediaSourceStatus[];
+    attachRemoteStreamCallback(): void;
+    detachRemoteStreamCallback(ctx?: ApiMiddleware): void;
+    stopForDisconnect(ctx?: ApiMiddleware): void;
 }>;
 
 export function createRallarMediaController(

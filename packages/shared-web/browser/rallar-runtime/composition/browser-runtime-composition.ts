@@ -1,23 +1,25 @@
 import {
     createRallarBrowserFacadeRuntimeContext,
+    type RallarAuthRuntimePort,
     type RallarBrowserFacadeRuntimeContext,
-    type RallarBrowserRuntimeDefaults
+    type RallarBrowserRuntimeDefaults,
+    type RallarConnectionRuntimePort,
+    type RallarStateRuntimePort
 } from '@shared-web/browser/rallar-runtime-context.ts';
-import type {
-    RallarAuthRuntimePort,
-    RallarConnectionRuntimePort,
-    RallarLifecycleCoordinator,
-    RallarStateEventsPort,
-    RallarStatePort,
-    RallarStateRuntimePort
-} from '@shared-web/browser/rallar-runtime/contracts.ts';
-import { createRallarLifecycleCoordinator } from '@shared-web/browser/rallar-runtime/lifecycle.ts';
+import {
+    createRallarLifecycleCoordinator,
+    type RallarLifecycleCoordinator
+} from '@shared-web/browser/rallar-runtime/lifecycle.ts';
 import { resolveActiveRoomPeerIds } from '@shared-web/browser/rallar-runtime/realtime.ts';
 import type { RallarSessionController } from '@shared-web/browser/rallar-runtime/session.ts';
-import { createRallarStateEvents } from '@shared-web/browser/rallar-runtime/state-events.ts';
+import {
+    createRallarStateEvents,
+    type RallarStateEventsPort
+} from '@shared-web/browser/rallar-runtime/state-events.ts';
 import {
     createRallarStateCacheReadPort,
-    createRallarStateStore
+    createRallarStateStore,
+    type RallarStatePort
 } from '@shared-web/browser/rallar-runtime/state-store.ts';
 import { createRallarWsInbox, type RallarWsInbox } from '@shared-web/browser/rallar-runtime/ws-inbox.ts';
 import { createRoomEvents, type RallarRoomEventsPort } from '@shared-web/browser/rooms/room-events.ts';
@@ -79,10 +81,8 @@ export function createBrowserRuntimeFoundation(): BrowserRuntimeFoundation {
     const stateRuntime: RallarStateRuntimePort = {
         readStateCacheUnsubscribe: runtime.readStateCacheUnsubscribe,
         setStateCacheUnsubscribe: runtime.setStateCacheUnsubscribe,
-        currentRoomId: runtime.currentRoomId,
         currentRoomRef: runtime.currentRoomRef,
         setCurrentRoom: runtime.setCurrentRoom,
-        clearCurrentRoom: runtime.clearCurrentRoom,
         clearCurrentRoomIfMatches: runtime.clearCurrentRoomIfMatches,
         readDefaultScope: runtime.readDefaultScope,
         resolveOperationScope: runtime.resolveOperationScope

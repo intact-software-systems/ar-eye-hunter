@@ -74,7 +74,7 @@ export function createBrowserRallarFacade(): RallarFacade {
     const session = createBrowserSessionComposition({
         connectionRuntime: foundation.connectionRuntime,
         authRuntime: foundation.authRuntime,
-        stateRuntime: foundation.stateRuntime,
+        runtime: foundation.runtime,
         lifecycle: foundation.lifecycle,
         state,
         messaging,

@@ -1,9 +1,13 @@
 import type { ApiMiddleware } from '@shared-web/browser/app-context.ts';
 import * as stateCaches from '@shared-web/browser/data-caches.ts';
 import type { RallarPeopleState, RallarPerson } from '@shared-web/browser/rallar-people-facade.ts';
-import type { RallarStatePort, RallarStateRuntimePort } from '@shared-web/browser/rallar-runtime/contracts.ts';
+import type { RallarStateRuntimePort } from '@shared-web/browser/rallar-runtime-context.ts';
 import { notifyListener } from '@shared-web/browser/rallar-runtime/subscriptions.ts';
-import type { RallarStateListener, RallarUnsubscribe } from '@shared-web/browser/rallar-shared-contracts.ts';
+import type {
+    RallarOnChangeOptions,
+    RallarStateListener,
+    RallarUnsubscribe
+} from '@shared-web/browser/rallar-shared-contracts.ts';
 import type { RallarRoomStateStorePort } from '@shared-web/browser/rooms/room-state-store.ts';
 import type { AuthSession, ClientInfo } from '@shared/api/api-config.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
@@ -28,6 +32,46 @@ export interface RallarStateCacheReadPort {
     readClientSnapshots(): readonly ClientSnapshot[];
     findClientSnapshot(principalId: string): ClientSnapshot | undefined;
 }
+
+export type RallarStatePort =
+    & Readonly<{
+        attachCache(): void;
+        detachCache(): void;
+        onCacheChange(listener: () => void | Promise<void>): RallarUnsubscribe;
+        acceptSnapshots(
+            ctx: ApiMiddleware,
+            clients: readonly ClientSnapshot[],
+            groups: readonly GroupSnapshot[],
+            scope?: StateScope
+        ): Promise<void>;
+        emit(): void;
+        onAfterEmit(listener: () => void): RallarUnsubscribe;
+        roomState: RallarRoomStateStorePort['state'];
+        peopleState(): RallarPeopleState;
+        person(principalId: string): RallarPerson | undefined;
+        onRoomChange: RallarRoomStateStorePort['onChange'];
+        onPeopleChange(
+            listener: RallarStateListener<RallarPeopleState>,
+            options?: RallarOnChangeOptions
+        ): RallarUnsubscribe;
+        readCachedGroupSnapshots(): readonly GroupSnapshot[];
+        findCachedGroupSnapshotByRef(roomRef: GroupRef): GroupSnapshot | undefined;
+        findFirstCachedGroupRefForSession(sessionId: string): GroupRef | undefined;
+        readCachedClientSnapshots(): readonly ClientSnapshot[];
+        findCachedClientSnapshot(principalId: string): ClientSnapshot | undefined;
+    }>
+    & Pick<
+        RallarRoomStateStorePort,
+        | 'resolveCurrentRoomRef'
+        | 'readGroupSnapshots'
+        | 'findGroupSnapshot'
+        | 'resolveRoomMinSnapshotVersion'
+        | 'setCurrentRoom'
+        | 'clearCurrentRoomIfMatches'
+        | 'toRoomId'
+        | 'resolveRoomRef'
+        | 'resolveGroupRefFromRoomId'
+    >;
 
 export function createRallarStateCacheReadPort(): RallarStateCacheReadPort {
     return {

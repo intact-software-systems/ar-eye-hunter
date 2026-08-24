@@ -1,12 +1,10 @@
-import type {
-    RallarLifecycleCoordinator,
-    RallarMediaPort,
-    RallarStatePort
-} from '@shared-web/browser/rallar-runtime/contracts.ts';
 import type { RallarDirectorController } from '@shared-web/browser/rallar-runtime/director.ts';
+import type { RallarLifecycleCoordinator } from '@shared-web/browser/rallar-runtime/lifecycle.ts';
+import type { RallarMediaPort } from '@shared-web/browser/rallar-runtime/media.ts';
 import type { RallarMessagesController } from '@shared-web/browser/rallar-runtime/messages.ts';
 import type { RallarRealtimeController } from '@shared-web/browser/rallar-runtime/realtime.ts';
 import type { RallarRtcController } from '@shared-web/browser/rallar-runtime/rtc.ts';
+import type { RallarStatePort } from '@shared-web/browser/rallar-runtime/state-store.ts';
 import type { RallarWsInbox } from '@shared-web/browser/rallar-runtime/ws-inbox.ts';
 import type { RallarWsController } from '@shared-web/browser/rallar-runtime/ws.ts';
 
