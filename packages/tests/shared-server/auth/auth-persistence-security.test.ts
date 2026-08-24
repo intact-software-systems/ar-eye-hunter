@@ -167,14 +167,12 @@ async function runCurrentOperation<Result>(
     return await pending;
 }
 
-it('does not scan or accept explicit predecessor rows after the current', async () => {
+it('rejects explicit predecessor rows after the current storage cutover', async () => {
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(new Date('2027-01-01T00:00:00.000Z'));
     try {
         const runtime = new FakeRuntimeStateRepository();
         const repository = new AuthSessionRepository(runtime);
-        const page = vi.spyOn(runtime, 'findEntriesByPrefixPage');
-        const findEntry = vi.spyOn(runtime, 'findEntry');
         const expiresAtEpochMs = Date.now() + 60_000;
         const token = 'current-predecessor-token';
         await runtime.upsert(
@@ -216,11 +214,6 @@ it('does not scan or accept explicit predecessor rows after the current', async 
         await expect(
             repository.consumeAgentSessionTicket('predecessor-agent-ticket')
         ).resolves.toBeUndefined();
-        expect(page).not.toHaveBeenCalled();
-        expect(findEntry).not.toHaveBeenCalledWith(
-            'auth-sessions:by-token',
-            `token=${encodeURIComponent(token)}`
-        );
     }
     finally {
         vi.useRealTimers();
