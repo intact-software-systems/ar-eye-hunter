@@ -13,8 +13,8 @@ import type { ClientPrincipalRef } from '@shared/api/client-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 
+import { createAppInboxTestResilience } from '../app-inbox-resource-fixtures.ts';
 import { createAppInboxTestDatabase } from '../app-inbox-test-database.ts';
-import { createAuthInboxTestResilience } from '../auth/auth-app-inbox-test-runtime.ts';
 import { FakeRuntimeStateRepository } from '../fake-runtime-state-repository.ts';
 import {
     ClientExpiryTestResourceInbox,
@@ -340,7 +340,7 @@ async function processClientInbox<R>(
 async function dequeueClientInbox(reader: InboxQueueReader): Promise<void> {
     await reader.dequeueInbox(
         InboxQueueReader.INBOX_DEQUEUE_TYPES,
-        createAuthInboxTestResilience()
+        createAppInboxTestResilience()
     );
 }
 

@@ -13,14 +13,8 @@ import { createTestClientStateRepository, createTestGroupStateRepository } from 
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 
+import { createAppInboxTestResilience, TestResourceInbox, TestResourceInboxResults } from './app-inbox-resource-fixtures.ts';
 import { createAppInboxTestDatabase } from './app-inbox-test-database.ts';
-import {
-    createAuthInboxTestResilience,
-    readEntries,
-    TestResourceInbox,
-    TestResourceInboxResults,
-    waitForAuthInboxEntry
-} from './auth/auth-app-inbox-test-runtime.ts';
 import { createClientStatePhaseTestDriver, failNextClientStateTestOutboxWrite } from './client-state/client-state-test-runtime.ts';
 import { FakeRuntimeStateRepository } from './fake-runtime-state-repository.ts';
 
@@ -172,17 +166,17 @@ describe('AppInbox expired row replacement', () => {
                 normalizedUsername: 'alice'
             }
         });
-        await waitForAuthInboxEntry(queue);
+        await queue.waitForEntryCount();
         await reader.dequeueInbox(
             InboxQueueReader.INBOX_DEQUEUE_TYPES,
-            createAuthInboxTestResilience(1)
+            createAppInboxTestResilience(1)
         );
-        const [afterFirstDequeue] = await readEntries(queue);
+        const [afterFirstDequeue] = await queue.readEntries();
         if (afterFirstDequeue?.status === EntityStatus.RETRY) {
             await new Promise((resolve) => setTimeout(resolve, 2));
             await reader.dequeueInbox(
                 InboxQueueReader.INBOX_DEQUEUE_TYPES,
-                createAuthInboxTestResilience()
+                createAppInboxTestResilience()
             );
         }
         await expect(pending).resolves.toMatchObject({
@@ -196,7 +190,7 @@ describe('AppInbox expired row replacement', () => {
         expect(after[1][0]?.revision).toBe(1);
         expect(rollbackCount).toBe(1);
         expect(rollbackPreservedExpiredIndexes).toBe(true);
-        expect((await readEntries(queue))[0]).toMatchObject({
+        expect((await queue.readEntries())[0]).toMatchObject({
             status: EntityStatus.COMPLETED,
             dequeueAudit: { attempts: 2 }
         });
@@ -274,14 +268,14 @@ describe('AppInbox expired row replacement', () => {
                     },
                     owner
                 );
-                await waitForAuthInboxEntry(queue, minimumEntries);
+                await queue.waitForEntryCount(minimumEntries);
                 return { pending };
             };
 
             const seeded = await create('seed-group', 'Old room');
             await reader.dequeueInbox(
                 InboxQueueReader.INBOX_DEQUEUE_TYPES,
-                createAuthInboxTestResilience()
+                createAppInboxTestResilience()
             );
             await expect(seeded.pending).resolves.toMatchObject({
                 right: { status: 'created' }
@@ -333,16 +327,16 @@ describe('AppInbox expired row replacement', () => {
             const replacement = await create('replace-group', 'New room');
             await reader.dequeueInbox(
                 InboxQueueReader.INBOX_DEQUEUE_TYPES,
-                createAuthInboxTestResilience(1)
+                createAppInboxTestResilience(1)
             );
-            const afterFirst = (await readEntries(queue)).find(
+            const afterFirst = (await queue.readEntries()).find(
                 (entry) => entry.status === EntityStatus.RETRY || entry.dequeueAudit.attempts > 1
             );
             if (afterFirst?.status === EntityStatus.RETRY) {
                 await new Promise((resolve) => setTimeout(resolve, 2));
                 await reader.dequeueInbox(
                     InboxQueueReader.INBOX_DEQUEUE_TYPES,
-                    createAuthInboxTestResilience()
+                    createAppInboxTestResilience()
                 );
             }
             await expect(replacement.pending).resolves.toMatchObject({
@@ -395,7 +389,7 @@ describe('AppInbox expired row replacement', () => {
             expect(database.groupEventStore.events).toHaveLength(2);
             expect(database.outboxEntries.size).toBe(2);
             expect(
-                (await readEntries(queue)).some(
+                (await queue.readEntries()).some(
                     (entry) => entry.status === EntityStatus.COMPLETED && entry.dequeueAudit.attempts === 2
                 )
             ).toBe(true);

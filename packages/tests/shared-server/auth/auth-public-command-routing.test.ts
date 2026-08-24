@@ -1,4 +1,4 @@
-import { expect, it } from 'vitest';
+import { expect, it, vi } from 'vitest';
 
 import { createAuthMutationService } from '@shared-server/rallar-system/auth/auth-mutation-service.ts';
 import { createHmacAuthCredentialIssuer } from '@shared-server/rallar-system/auth/credentials/auth-credential-issuer.ts';
@@ -7,31 +7,17 @@ import { AppAuthInboxService } from '@shared-server/rallar-system/auth/inbox/app
 import type { IssueAuthWsTicketCommand } from '@shared-server/rallar-system/auth/mutation/auth-mutation-contracts.ts';
 import { captureAuthMutationFacts } from '@shared-server/rallar-system/auth/mutation/read/capture-auth-mutation-facts.ts';
 import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
+import type { IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 
+import { TestResourceInbox, TestResourceInboxResults } from '../app-inbox-resource-fixtures.ts';
 import { createAppInboxTestDatabase } from '../app-inbox-test-database.ts';
 import { FakeRuntimeStateRepository } from '../fake-runtime-state-repository.ts';
-import {
-    createAuthInboxTestRuntime,
-    readEntries,
-    runAuthInboxCommand,
-    TestResourceInbox,
-    TestResourceInboxResults,
-    type AuthInboxTestRuntime
-} from './auth-app-inbox-test-runtime.ts';
-
-interface RoutedSession {
-    readonly clientId: string;
-    readonly username: string;
-    readonly sessionId: string;
-    readonly accessToken: string;
-    readonly issuedAtEpochMs: number;
-    readonly expiresAtEpochMs: number;
-}
+import { createAuthInboxTestRuntime, runAuthInboxCommand, type AuthInboxTestRuntime } from './auth-app-inbox-test-runtime.ts';
 
 interface ConsumeExpiredTicketsInput {
     readonly auth: AuthInboxTestRuntime;
-    readonly session: RoutedSession;
+    readonly session: IssuedAuthSession;
     readonly wsTicket: string;
     readonly agentTickets: readonly string[];
 }
@@ -39,10 +25,10 @@ interface ConsumeExpiredTicketsInput {
 interface LogoutRoutedSessionInput {
     readonly auth: AuthInboxTestRuntime;
     readonly runtimeRepository: FakeRuntimeStateRepository;
-    readonly session: RoutedSession;
+    readonly session: IssuedAuthSession;
 }
 
-const DELAYED_AUTH_MATERIALIZATION_MS = 100;
+const LEGACY_AUTH_INBOX_POLLING_DEADLINE_MS = 50;
 
 it(
     'routes registration, ticket issuance, agent batches, and logout through durable commands',
@@ -55,9 +41,52 @@ it('waits for delayed auth intent materialization before dequeuing', async () =>
         serviceId: 'delayed-auth-test-service',
         credentialSecret: 'delayed-auth-secret-0123456789abcdef'
     });
-    auth.queue.delayNextMaterializationUntil(
-        new Promise((resolve) => setTimeout(resolve, DELAYED_AUTH_MATERIALIZATION_MS))
-    );
+    const materialization = Promise.withResolvers<void>();
+    auth.queue.delayNextMaterializationUntil(materialization.promise);
+    vi.useFakeTimers();
+    try {
+        let settled = false;
+        const registration = registerRoutedUser(auth);
+        void registration.then(
+            () => {
+                settled = true;
+            },
+            () => {
+                settled = true;
+            }
+        );
+
+        await vi.advanceTimersByTimeAsync(LEGACY_AUTH_INBOX_POLLING_DEADLINE_MS);
+        expect(settled).toBe(false);
+
+        materialization.resolve();
+        expect(await registration).toBeDefined();
+    }
+    finally {
+        materialization.resolve();
+        vi.useRealTimers();
+    }
+});
+
+it('cleans up a timed-out queue wait before later command processing', async () => {
+    const auth = createAuthInboxTestRuntime({
+        runtimeRepository: new FakeRuntimeStateRepository(),
+        serviceId: 'timed-out-wait-auth-test-service',
+        credentialSecret: 'timed-out-wait-auth-secret-0123456789abcdef'
+    });
+    vi.useFakeTimers();
+    try {
+        const timedOut = auth.queue.waitForEntryCount(1, 10);
+        const timeoutExpectation = expect(timedOut).rejects.toThrow(
+            'ResourceInbox test queue did not reach 1 entries'
+        );
+        await vi.advanceTimersByTimeAsync(10);
+
+        await timeoutExpectation;
+    }
+    finally {
+        vi.useRealTimers();
+    }
 
     expect(await registerRoutedUser(auth)).toBeDefined();
 });
@@ -109,7 +138,7 @@ async function issueRoutedSession(
     auth: AuthInboxTestRuntime,
     now: number,
     clientId: string
-): Promise<RoutedSession> {
+): Promise<IssuedAuthSession> {
     const login = await runAuthInboxCommand({
         pending: auth.service.issueSession({
             requestId: 'session-request',
@@ -136,7 +165,7 @@ async function issueRoutedSession(
 
 async function issueRoutedWebSocketTicket(
     auth: AuthInboxTestRuntime,
-    session: RoutedSession
+    session: IssuedAuthSession
 ): Promise<string> {
     const wsTicket = await runAuthInboxCommand({
         pending: auth.service.issueWebSocketTicket({
@@ -172,7 +201,7 @@ async function issueRoutedWebSocketTicket(
 
 async function issueRoutedAgentTickets(
     auth: AuthInboxTestRuntime,
-    session: RoutedSession
+    session: IssuedAuthSession
 ): Promise<readonly string[]> {
     const agentTickets = await runAuthInboxCommand({
         pending: auth.service.issueAgentSessionTickets({
@@ -269,7 +298,7 @@ async function expectNoPlaintextCredentials(
     plaintext: readonly string[]
 ): Promise<void> {
     const durableResources = [
-        ...(await readEntries(auth.queue)).map((entry) => entry.resource),
+        ...(await auth.queue.readEntries()).map((entry) => entry.resource),
         ...auth.results.allEntries().map((entry) => entry.resource)
     ].join('\n');
     for (const credential of plaintext) {

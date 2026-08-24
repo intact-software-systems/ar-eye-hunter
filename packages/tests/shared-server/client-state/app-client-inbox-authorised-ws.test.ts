@@ -1,27 +1,19 @@
-import { Temporal } from '@js-temporal/polyfill';
 import { expect, it, vi } from 'vitest';
 
+import type { AppInboxFailure } from '@shared-server/rallar-system/app-inbox/app-inbox-failure.ts';
 import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
-import { type IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
+import type { IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
+import type { ClientMutationWritten, ClientStateWritten } from '@shared-server/rallar-system/client-state/client-state-service-contracts.ts';
+import { createClientStateService } from '@shared-server/rallar-system/client-state/client-state-service.ts';
+import { AppClientInboxService } from '@shared-server/rallar-system/client-state/inbox/app-client-inbox-service.ts';
+import { toAuthorisedWsClientConnectEnqueue } from '@shared-server/rallar-system/client-state/inbox/authorised-ws-client-app-inbox.ts';
+import type { AuthorisedWsClientMutationResult } from '@shared-server/rallar-system/client-state/inbox/client-state-inbox-result-codec.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
-import { ResilienceDto } from '@shared/queuebox/DequeueResourceEntryController.ts';
-import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 
-import type { AppInboxFailure } from '@shared-server/rallar-system/app-inbox/app-inbox-failure.ts';
-import { AppClientInboxService } from '@shared-server/rallar-system/client-state/inbox/app-client-inbox-service.ts';
-
-import type { AuthorisedWsClientMutationResult } from '@shared-server/rallar-system/client-state/inbox/client-state-inbox-result-codec.ts';
-
-import { toAuthorisedWsClientConnectEnqueue } from '@shared-server/rallar-system/client-state/inbox/authorised-ws-client-app-inbox.ts';
-
-import { createClientStateService } from '@shared-server/rallar-system/client-state/client-state-service.ts';
-
-import type { ClientMutationWritten, ClientStateWritten } from '@shared-server/rallar-system/client-state/client-state-service-contracts.ts';
-
+import { createAppInboxTestResilience, TestResourceInbox, TestResourceInboxResults } from '../app-inbox-resource-fixtures.ts';
 import { createAppInboxTestDatabase } from '../app-inbox-test-database.ts';
-import { TestResourceInbox, TestResourceInboxResults } from '../auth/auth-app-inbox-test-runtime.ts';
 import { FakeRuntimeStateRepository } from '../fake-runtime-state-repository.ts';
 
 const SERVICE_ID = 'server-12345678';
@@ -51,9 +43,9 @@ it('rejects authorised websocket disconnect after durable auth revocation', asyn
             userAgent: 'Browser'
         }
     } as const;
-    const connected = await processAppInboxMethod(reader, () => service.processAuthorisedWsClientConnect(connectInput));
+    const connected = await processAppInboxMethod(queue, reader, () => service.processAuthorisedWsClientConnect(connectInput));
     await authSessions.deleteSession(authSession);
-    const disconnected = await processAppInboxMethod(reader, () =>
+    const disconnected = await processAppInboxMethod(queue, reader, () =>
         service.processAuthorisedWsClientDisconnect({
             connection: toAuthorisedWsClientConnectEnqueue(connectInput).data,
             disconnectedAtEpochMs: Date.now(),
@@ -89,7 +81,7 @@ it('processes authorised websocket connects in the requested state scope', async
         runtimeRepository
     });
 
-    const connected = await processAppInboxMethod(reader, () =>
+    const connected = await processAppInboxMethod(queue, reader, () =>
         service.processAuthorisedWsClientConnect({
             authSession,
             generationId: 'generation-admin',
@@ -139,7 +131,7 @@ it('processes authorised websocket connects independently per state scope', asyn
         runtimeRepository
     });
 
-    const defaultConnect = await processAppInboxMethod(reader, () =>
+    const defaultConnect = await processAppInboxMethod(queue, reader, () =>
         service.processAuthorisedWsClientConnect({
             authSession,
             generationId: 'generation-default',
@@ -148,7 +140,7 @@ it('processes authorised websocket connects independently per state scope', asyn
                 workspaceId: 'default'
             }
         }));
-    const scopedConnect = await processAppInboxMethod(reader, () =>
+    const scopedConnect = await processAppInboxMethod(queue, reader, () =>
         service.processAuthorisedWsClientConnect({
             authSession,
             generationId: 'generation-scoped',
@@ -198,8 +190,8 @@ it(
                 expiresAtEpochMs: Date.now() + 60_000
             }
         } as const;
-        await processAppInboxMethod(reader, () => service.processAuthorisedWsClientConnect(connectInput));
-        const disconnected = await processAppInboxMethod(reader, () =>
+        await processAppInboxMethod(queue, reader, () => service.processAuthorisedWsClientConnect(connectInput));
+        const disconnected = await processAppInboxMethod(queue, reader, () =>
             service.processAuthorisedWsClientDisconnect({
                 connection: toAuthorisedWsClientConnectEnqueue(connectInput).data,
                 disconnectedAtEpochMs: Date.now(),
@@ -281,23 +273,16 @@ function issuedSession(clientId: string, sessionId: string): IssuedAuthSession {
     };
 }
 
-async function processAppInboxMethod<R>(
+async function processAppInboxMethod<Result>(
+    queue: TestResourceInbox,
     reader: InboxQueueReader,
-    run: () => Promise<R>
-): Promise<R> {
+    run: () => Promise<Result>
+): Promise<Result> {
     const resultPromise = run();
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    await reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
-    return await resultPromise;
-}
-
-function createResilience(): ResilienceDto {
-    const duration = Temporal.Duration.from({ seconds: 10 });
-    return ResilienceDto.toResilienceDto(
-        new CircuitBreakerPolicy(10, duration, duration, duration),
-        1,
-        10,
-        1,
-        1
+    await queue.waitForEntryCount();
+    await reader.dequeueInbox(
+        InboxQueueReader.INBOX_DEQUEUE_TYPES,
+        createAppInboxTestResilience()
     );
+    return await resultPromise;
 }

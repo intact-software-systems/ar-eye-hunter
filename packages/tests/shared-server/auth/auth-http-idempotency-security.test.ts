@@ -7,15 +7,9 @@ import type { IssuedAuthSession } from '@shared-server/rallar-system/auth/persis
 import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 
+import { createAppInboxTestResilience } from '../app-inbox-resource-fixtures.ts';
 import { FakeRuntimeStateRepository } from '../fake-runtime-state-repository.ts';
-import {
-    createAuthInboxTestResilience,
-    createAuthInboxTestRuntime,
-    readEntries,
-    runAuthInboxCommand,
-    waitForAuthInboxEntry,
-    type AuthInboxTestRuntime
-} from './auth-app-inbox-test-runtime.ts';
+import { createAuthInboxTestRuntime, runAuthInboxCommand, type AuthInboxTestRuntime } from './auth-app-inbox-test-runtime.ts';
 
 interface AuthHttpIdempotencyRuntime {
     readonly auth: AuthInboxTestRuntime;
@@ -38,7 +32,7 @@ describe('auth HTTP AppInbox idempotency security', () => {
             reader: runtime.auth.reader
         });
 
-        const [entry] = await readEntries(runtime.auth.queue);
+        const [entry] = await runtime.auth.queue.readEntries();
         expect(entry.key).toEqual(toAppQueueKey({
             topicId: AppInboxType.AUTH_SESSION_LOGOUT,
             resourceId: SHARED_REQUEST_ID,
@@ -96,16 +90,16 @@ describe('auth HTTP AppInbox idempotency security', () => {
             ttlMs: 60_000
         });
 
-        await waitForAuthInboxEntry(runtime.auth.queue);
+        await runtime.auth.queue.waitForEntryCount();
         await runtime.auth.reader.dequeueInbox(
             InboxQueueReader.INBOX_DEQUEUE_TYPES,
-            createAuthInboxTestResilience()
+            createAppInboxTestResilience()
         );
         const [firstResult, secondResult] = await Promise.all([first, second]);
 
         expect(secondResult.left).toBeUndefined();
         expect(firstResult.right).toEqual(secondResult.right);
-        expect(await readEntries(runtime.auth.queue)).toHaveLength(1);
+        expect(await runtime.auth.queue.readEntries()).toHaveLength(1);
         expect(runtime.auth.results.allEntries()).toHaveLength(1);
     });
 
@@ -148,14 +142,14 @@ describe('auth HTTP AppInbox idempotency security', () => {
 
         const first = auth.service.issueSession(input);
         const second = auth.service.issueSession(input);
-        await waitForAuthInboxEntry(auth.queue);
+        await auth.queue.waitForEntryCount();
 
         expect(sampledTimes).toEqual([]);
         expect(issuedAccessTokenSessionIds).toEqual([]);
 
         await auth.reader.dequeueInbox(
             InboxQueueReader.INBOX_DEQUEUE_TYPES,
-            createAuthInboxTestResilience()
+            createAppInboxTestResilience()
         );
         const [firstResult, secondResult] = await Promise.all([first, second]);
 
@@ -195,8 +189,8 @@ describe('auth HTTP AppInbox idempotency security', () => {
             },
             ttlMs: 60_000
         });
-        await waitForAuthInboxEntry(auth.queue);
-        const [queued] = await readEntries(auth.queue);
+        await auth.queue.waitForEntryCount();
+        const [queued] = await auth.queue.readEntries();
         expect(sampledTimes).toEqual([]);
         expect(queued.resource).not.toContain('capturedAtEpochMs');
         expect(queued.resource).not.toContain('sessionId');
@@ -205,7 +199,7 @@ describe('auth HTTP AppInbox idempotency security', () => {
         currentTime = 9_000;
         await auth.reader.dequeueInbox(
             InboxQueueReader.INBOX_DEQUEUE_TYPES,
-            createAuthInboxTestResilience()
+            createAppInboxTestResilience()
         );
         const result = await pending;
 
@@ -235,8 +229,8 @@ describe('auth HTTP AppInbox idempotency security', () => {
             }
         };
         const pending = auth.service.registerUser(input);
-        await waitForAuthInboxEntry(auth.queue);
-        const [queued] = await readEntries(auth.queue);
+        await auth.queue.waitForEntryCount();
+        const [queued] = await auth.queue.readEntries();
 
         expect(sampledTimes).toEqual([]);
         expect(queued.resource).not.toContain(input.request.password);
@@ -247,7 +241,7 @@ describe('auth HTTP AppInbox idempotency security', () => {
         currentTime = 9_000;
         await auth.reader.dequeueInbox(
             InboxQueueReader.INBOX_DEQUEUE_TYPES,
-            createAuthInboxTestResilience()
+            createAppInboxTestResilience()
         );
         const result = await pending;
 
@@ -291,7 +285,7 @@ describe('auth HTTP AppInbox idempotency security', () => {
         const replayed = await runtime.auth.service.consumeAgentSessionTicket(consumeInput);
 
         expect(replayed.right).toEqual(consumed.right);
-        expect(await readEntries(runtime.auth.queue)).toHaveLength(2);
+        expect(await runtime.auth.queue.readEntries()).toHaveLength(2);
     });
 });
 

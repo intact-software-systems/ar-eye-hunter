@@ -8,9 +8,9 @@ import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persist
 import type { IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 
+import { createAppInboxTestResilience, TestResourceInbox, TestResourceInboxResults } from '../app-inbox-resource-fixtures.ts';
 import { createAppInboxTestDatabase } from '../app-inbox-test-database.ts';
 import { FakeRuntimeStateRepository } from '../fake-runtime-state-repository.ts';
-import { createAuthInboxTestResilience, TestResourceInbox, TestResourceInboxResults, waitForAuthInboxEntry } from './auth-app-inbox-test-runtime.ts';
 
 it('fails closed without consuming corrupt digest-key ticket rows', async () => {
     const cases = [
@@ -159,10 +159,10 @@ async function runCurrentOperation<Result>(
         }
     );
     const pending = operation(service);
-    await waitForAuthInboxEntry(queue);
+    await queue.waitForEntryCount();
     await reader.dequeueInbox(
         InboxQueueReader.INBOX_DEQUEUE_TYPES,
-        createAuthInboxTestResilience()
+        createAppInboxTestResilience()
     );
     return await pending;
 }

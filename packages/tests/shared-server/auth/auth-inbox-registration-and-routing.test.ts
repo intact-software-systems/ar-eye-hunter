@@ -7,16 +7,10 @@ import { AppAuthInboxService } from '@shared-server/rallar-system/auth/inbox/app
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 
+import { createAppInboxTestResilience, TestResourceInbox, TestResourceInboxResults } from '../app-inbox-resource-fixtures.ts';
 import { createAppInboxTestDatabase } from '../app-inbox-test-database.ts';
 import { FakeRuntimeStateRepository } from '../fake-runtime-state-repository.ts';
-import {
-    createAuthInboxTestResilience,
-    createAuthInboxTestRuntime,
-    TestResourceInbox,
-    TestResourceInboxResults,
-    waitForAuthInboxEntry,
-    type AuthInboxTestRuntime
-} from './auth-app-inbox-test-runtime.ts';
+import { createAuthInboxTestRuntime, type AuthInboxTestRuntime } from './auth-app-inbox-test-runtime.ts';
 
 const AUTH_INBOX_TYPES = [
     'AUTH_USER_REGISTER',
@@ -74,12 +68,12 @@ describe('AppAuthInboxService registration', () => {
                 expiresAtEpochMs: 2_000
             }
         });
-        await waitForAuthInboxEntry(queue);
+        await queue.waitForEntryCount();
         expect(readCommandKinds).toEqual([]);
 
         await reader.dequeueInbox(
             InboxQueueReader.INBOX_DEQUEUE_TYPES,
-            createAuthInboxTestResilience()
+            createAppInboxTestResilience()
         );
         await expect(pending).resolves.toMatchObject({ right: { loggedOut: true } });
         expect(readCommandKinds).toEqual(['logout-session']);

@@ -9,14 +9,9 @@ import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persist
 import type { IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 
+import { createAppInboxTestResilience } from '../app-inbox-resource-fixtures.ts';
 import { FakeRuntimeStateRepository } from '../fake-runtime-state-repository.ts';
-import {
-    createAuthInboxTestResilience,
-    createAuthInboxTestRuntime,
-    runAuthInboxCommand,
-    waitForAuthInboxEntry,
-    type AuthInboxTestRuntime
-} from './auth-app-inbox-test-runtime.ts';
+import { createAuthInboxTestRuntime, runAuthInboxCommand, type AuthInboxTestRuntime } from './auth-app-inbox-test-runtime.ts';
 
 interface ConsumeRaceTicketTwiceInput {
     readonly auth: AuthInboxTestRuntime;
@@ -121,7 +116,7 @@ async function expectSingleRegistrationWinner(
             request
         })
     ];
-    await waitForAuthInboxEntry(auth.queue, 2);
+    await auth.queue.waitForEntryCount(2);
     await dequeue(auth);
     await dequeue(auth);
     const registrationResults = await Promise.all(registrations);
@@ -194,7 +189,7 @@ async function consumeRaceTicketTwice({
             ticket
         })
     ];
-    await waitForAuthInboxEntry(auth.queue, 6);
+    await auth.queue.waitForEntryCount(6);
     await dequeue(auth);
     await dequeue(auth);
     return await Promise.all(consumes);
@@ -203,6 +198,6 @@ async function consumeRaceTicketTwice({
 async function dequeue(auth: AuthInboxTestRuntime): Promise<void> {
     await auth.reader.dequeueInbox(
         InboxQueueReader.INBOX_DEQUEUE_TYPES,
-        createAuthInboxTestResilience()
+        createAppInboxTestResilience()
     );
 }
