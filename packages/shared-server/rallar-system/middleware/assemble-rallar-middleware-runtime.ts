@@ -4,17 +4,17 @@ import type {
     RallarMiddlewareInfrastructure
 } from './rallar-middleware-construction.ts';
 import type {
-    RallarMiddlewareQueueConstruction,
-    RallarMiddlewareQueueTaskRegistration
-} from './rallar-middleware-queue-construction.ts';
+    RallarMiddlewareQueueRegistration,
+    RegisteredRallarMiddlewareQueueHandle
+} from './rallar-middleware-queue-registration.ts';
 import type { RallarMiddlewareRuntime } from './rallar-middleware-runtime.ts';
 
 export interface AssembleRallarMiddlewareRuntimeInput {
     readonly options: CreateRallarMiddlewareOptions;
-    readonly queueConstruction: RallarMiddlewareQueueConstruction;
+    readonly queueRegistration: RallarMiddlewareQueueRegistration;
     readonly infrastructure: RallarMiddlewareInfrastructure;
     readonly inboxServices: RallarMiddlewareInboxServices;
-    readonly queueTaskRegistration: RallarMiddlewareQueueTaskRegistration;
+    readonly registeredQueue: RegisteredRallarMiddlewareQueueHandle;
 }
 
 export function assembleRallarMiddlewareRuntime(
@@ -22,7 +22,7 @@ export function assembleRallarMiddlewareRuntime(
 ): RallarMiddlewareRuntime {
     const { options, infrastructure, inboxServices } = input;
     return {
-        qboxEngine: input.queueConstruction.finalise(input.queueTaskRegistration),
+        qboxEngine: input.queueRegistration.finalise(input.registeredQueue),
         wsQBoxServerService: infrastructure.wsQBoxServerService,
         inboxQueueReader: infrastructure.inboxQueueReader,
         outboxQueueReader: infrastructure.outboxQueueReader,

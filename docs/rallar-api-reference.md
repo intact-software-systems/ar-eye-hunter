@@ -4,7 +4,7 @@ This document describes the public facade APIs in:
 
 - `packages/shared-web/browser/rallar.ts`
 - `packages/shared-web/browser/rallar-data.ts`
-- `packages/shared-server/rallar-system/middleware/rallar-middleware.ts`
+- `packages/shared-server/rallar-system/middleware/create-rallar-middleware.ts`
 
 It also references the server facade wrappers where they are the normal way to consume the middleware runtime.
 
@@ -1040,7 +1040,9 @@ await drafts.whenIdle();
 
 ## Rallar Middleware
 
-`createRallarMiddleware(options)` builds the server-side runtime used by the Rallar server facade.
+`createRallarMiddleware(options)` builds the complete server-side runtime used by
+the Rallar server application. Import it from
+`@shared-server/rallar-system/middleware/create-rallar-middleware.ts`.
 
 ### Runtime
 
@@ -1052,8 +1054,11 @@ The returned `RallarMiddlewareRuntime` contains:
 - `outboxQueueReader`: app-outbox queue reader.
 - `appInboxResilience`: app-inbox resilience settings.
 - `appOutboxResilience`: independent app-outbox resilience settings.
-- `appGroupInboxService`: durable group mutation inbox.
+- `groupStateInboxService`: durable group mutation inbox.
+- `topologyInboxService`: durable topology mutation inbox.
+- `rtcRttInboxService`: durable RTC-RTT mutation inbox.
 - `appClientInboxService`: durable client mutation inbox.
+- Optional configured auth, admin, and CRDT inbox services.
 - `clientsRepository`: client snapshot repository.
 - `groupsRepository`: group snapshot repository.
 
@@ -1062,7 +1067,9 @@ The returned `RallarMiddlewareRuntime` contains:
 Required:
 
 - `inbox`: queuebox repository for inbound app/WS work.
-- `createAppGroupInboxService(input)`: factory for the group app inbox service.
+- `createGroupStateInboxService(input)`: factory for the group-state inbox service.
+- `createTopologyInboxService(input)`: factory for the topology inbox service.
+- `createRtcRttInboxService(input)`: factory for the RTC-RTT inbox service.
 - `createAppClientInboxService(input)`: factory for the client app inbox service.
 - `resilience.inbox`: resilience policy for inbox work.
 - `resilience.appOutbox`: independent resilience policy for app-outbox work.
@@ -1079,95 +1086,34 @@ Optional:
 - `inboundStores`, `outboundStores`: AL runtime stores.
 - `resilience.outbox`: defaults to `resilience.inbox`.
 - `resilience.appInbox`: defaults to `resilience.inbox`.
+- `createAppAuthInboxService`, `createAppAdminInboxService`, and
+  `createAppCrdtInboxService`: configured feature inbox factories.
 
-### Middleware Example
+### Construction And Queue Ownership
 
-```ts
-const runtime = createRallarMiddleware({
-    inbox: queueBox,
-    outbox: queueBox,
-    webSocketServer,
-    wsRuntimeName: 'api-v1',
-    findGroupSnapshotByRef: (ref) => groupSnapshotCache.findByRef(ref),
-    inboundStores,
-    outboundStores,
-    createAppGroupInboxService: ({
-        inboxQueueReader,
-        outboxQueueReader,
-        wsQBoxServerService,
-        wakeQueueEngine
-    }) => {
-        const topologyOutbox = createRtcTopologyOutboxPublisher({
-            outboxQueueReader,
-            senderId: serverId,
-            wake: wakeQueueEngine
-        });
-        return new AppGroupInboxService(
-            inboxQueueReader,
-            resourceInboxRepository,
-            resourceInboxResultsRepository,
-            groupStateService,
-            createWsStateSyncPublisher(wsQBoxServerService, { serverId }),
-            serverId,
-            undefined,
-            undefined,
-            topologyOutbox.publisher
-        );
-    },
-    createAppClientInboxService: ({ inboxQueueReader, wsQBoxServerService }) =>
-        new AppClientInboxService(
-            inboxQueueReader,
-            resourceInboxRepository,
-            resourceInboxResultsRepository,
-            clientStateService,
-            createWsStateSyncPublisher(wsQBoxServerService, { serverId }),
-            serverId
-        ),
-    resilience: {
-        inbox: resilienceInbox,
-        outbox: resilienceOutbox,
-        appOutbox: resilienceAppOutbox
-    },
-    clientsRepository,
-    groupsRepository
-});
+Construction is synchronous and ordered:
 
-runtime.qboxEngine.start();
-```
+1. `create-rallar-middleware-infrastructure.ts` creates the QueueBox/WebSocket
+   infrastructure and exposes only a queue wake capability.
+2. `create-rallar-middleware-inbox-services.ts` constructs and validates every
+   required and configured inbox service.
+3. `rallar-middleware-queue-registration.ts` internally creates the exact WS
+   inbox/outbox and application inbox/outbox task definitions. Callers cannot
+   supply task identities or definitions.
+4. `assemble-rallar-middleware-runtime.ts` consumes the owner-bound,
+   single-use registration handle and is the only phase that receives the full
+   queue engine.
 
-### Queue Engine Helpers
+Applications start only the final `runtime.qboxEngine`. There are no public
+include-inbox/include-outbox helpers and partial construction products expose
+neither `start` nor `stop`.
 
-`includeWsQueueBoxEngineTasks(engine, wsQBoxServerService, resilienceInbox, resilienceOutbox)` installs WS inbox/outbox dequeue tasks.
+### Feature Topic Installation
 
-`includeInboxQueueReaderEngineTasks(engine, inboxQueueReader, resilience)` installs app-inbox dequeue tasks.
-
-`includeOutboxQueueReaderEngineTasks(engine, outboxQueueReader, resilience)` installs app-outbox dequeue tasks.
-
-Use these only if you are composing your own engine instead of calling `createRallarMiddleware`.
-
-### Built-In System Topics
-
-`initRallarSystemWsTopics(wsQBoxServerService, options?)` installs the built-in
-state-sync, graph, RTT, overlay topology, chat, and RTC signaling topics.
-
-`options.rtcTopologyAppOutbox` routes inbound group snapshots and RTT-triggered
-overlay recomputes through the durable app outbox with one coalesced work row per
-scoped overlay. Local group mutations enqueue the same work beside state-sync
-publication through `AppGroupInboxService`. Provide `outboxQueueReader` and
-optionally `wake`, `topicId`,
-`senderId`, and `findGroupSnapshotByRef`. In production,
-`findGroupSnapshotByRef` should read through `GroupStateSnapshotReadThroughCache`
-or another durable group snapshot source. When this option is omitted,
-group-snapshot topology publication remains immediate and RTT-triggered topology
-recomputes use the local in-process debounce timer.
-
-`options.rtcTopologyRuntimeState` can provide a runtime-state repository for
-multi-worker topology continuity. Rallar stores published topology snapshots in
-`rtc-topology:snapshots` and latest accepted RTT measurements in
-`rtc-rtt:latest`. When combined with `rtcTopologyAppOutbox`, a worker can
-continue overlay versioning from the previous durable snapshot and compute with
-durable RTT inputs even if another worker accepted the triggering RTT message.
-`rttTtlMs` can override the durable RTT retention window.
+There is no aggregate system-topic initializer. The application composition
+installs state sync, topology publication/delivery, chat, signalling, RTC-RTT,
+CRDT, and the router explicitly before worker start. API-v1 owns that sequence
+in `apps/api-v1/src/composition/create-api-v1-system-installers.ts`.
 
 Accepted RTC RTT measurements are capped by the topology service
 `rttReportingDegreeLimit`, which falls back to the effective topology

@@ -602,7 +602,7 @@ predicate: `canSendGroupMessage` in `group-policy.ts` denies `group-data-blocked
 the resolved value is `blocked-until-active` and the group is not `active` — so `forming`,
 `establishing`, and `reconfiguring` all block, which is the meaning `reconfiguring` exists to carry.
 
-The room authorizer (`rallar-system/services/ws-topic-room-authorizer.ts`, composed in
+The room authorizer (`rallar-system/websocket/ws-topic-room-authorizer.ts`, composed in
 `apps/api-v1/src/services/ws-topic-room-authorizer.ts`) supplies the value lazily: it reads the
 policy only when the group is not `active`, so steady-state room traffic pays no policy read. An
 absent policy is `allowed` (main parity); a corrupt one is `blocked-until-active` (fail closed).

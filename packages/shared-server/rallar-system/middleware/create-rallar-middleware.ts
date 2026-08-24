@@ -2,30 +2,32 @@ import { assembleRallarMiddlewareRuntime } from './assemble-rallar-middleware-ru
 import { createRallarMiddlewareInboxServices } from './create-rallar-middleware-inbox-services.ts';
 import { createRallarMiddlewareInfrastructure } from './create-rallar-middleware-infrastructure.ts';
 import type { CreateRallarMiddlewareOptions } from './rallar-middleware-construction.ts';
-import { createRallarMiddlewareQueueConstruction } from './rallar-middleware-queue-construction.ts';
+import { createRallarMiddlewareQueueRegistration } from './rallar-middleware-queue-registration.ts';
 import type { RallarMiddlewareRuntime } from './rallar-middleware-runtime.ts';
-import { registerRallarMiddlewareQueueTasks } from './register-rallar-middleware-queue-tasks.ts';
 
 export function createRallarMiddleware(
     options: CreateRallarMiddlewareOptions
 ): RallarMiddlewareRuntime {
-    const queueConstruction = createRallarMiddlewareQueueConstruction();
+    const queueRegistration = createRallarMiddlewareQueueRegistration();
     const infrastructure = createRallarMiddlewareInfrastructure(
         options,
-        () => queueConstruction.wake()
+        () => queueRegistration.wake()
     );
     const inboxServices = createRallarMiddlewareInboxServices(options, infrastructure);
-    const queueTaskRegistration = registerRallarMiddlewareQueueTasks({
-        options,
-        queueTaskRegistration: queueConstruction.beginTaskRegistration(),
-        infrastructure,
-        inboxServices
+    const registeredQueue = queueRegistration.registerExactTasks({
+        wsQBoxServerService: infrastructure.wsQBoxServerService,
+        inboxQueueReader: infrastructure.inboxQueueReader,
+        outboxQueueReader: infrastructure.outboxQueueReader,
+        wsInboxResilience: options.resilience.inbox,
+        wsOutboxResilience: options.resilience.outbox ?? options.resilience.inbox,
+        appInboxResilience: infrastructure.appInboxResilience,
+        appOutboxResilience: infrastructure.appOutboxResilience
     });
     return assembleRallarMiddlewareRuntime({
         options,
-        queueConstruction,
+        queueRegistration,
         infrastructure,
         inboxServices,
-        queueTaskRegistration
+        registeredQueue
     });
 }

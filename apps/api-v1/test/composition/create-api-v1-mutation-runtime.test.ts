@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 
 import type { PSqlParameter, PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import { createRallarMiddleware } from '@shared-server/rallar-system/middleware/create-rallar-middleware.ts';
+import { RtcRttInboxService } from '@shared-server/rallar-system/rtc-rtt/inbox/rtc-rtt-inbox-service.ts';
+import { TopologyInboxService } from '@shared-server/rallar-system/topology/inbox/topology-inbox-service.ts';
 
 import { createApiV1MutationRuntime } from '../../src/composition/create-api-v1-mutation-runtime.ts';
 import { findCurrentClientSnapshot } from '../../src/crdt/create-api-crdt-document-authorizer.ts';
@@ -40,8 +42,8 @@ Deno.test('mutation runtime keeps one database identity and performs no construc
         findGroupSnapshotByRef: (ref) => mutation.groupSnapshotCache.findByRef(ref),
         findClientSnapshotByRef: (ref) => findCurrentClientSnapshot(mutation.clientSnapshotCache, ref),
         createGroupStateInboxService: mutation.createGroupStateInboxService,
-        createTopologyInboxService: () => ({}) as never,
-        createRtcRttInboxService: () => ({}) as never,
+        createTopologyInboxService: createUnusedTopologyInboxService,
+        createRtcRttInboxService: createUnusedRtcRttInboxService,
         createAppClientInboxService: mutation.createAppClientInboxService,
         createAppAuthInboxService: mutation.createAppAuthInboxService,
         createAppAdminInboxService: mutation.createAppAdminInboxService,
@@ -59,6 +61,16 @@ Deno.test('mutation runtime keeps one database identity and performs no construc
     assert.equal(databaseProbe.queryCount(), 0);
     assert.equal(databaseProbe.transactionCount(), 0);
 });
+
+function createUnusedTopologyInboxService(): TopologyInboxService {
+    const service: TopologyInboxService = Object.create(TopologyInboxService.prototype);
+    return service;
+}
+
+function createUnusedRtcRttInboxService(): RtcRttInboxService {
+    const service: RtcRttInboxService = Object.create(RtcRttInboxService.prototype);
+    return service;
+}
 
 interface DatabaseProbe {
     readonly database: PSqlSql;

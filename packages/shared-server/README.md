@@ -4,8 +4,8 @@
 runtime entrypoint, and one deployment configuration.
 
 For the current package map, active data flow, and validation commands, see
-`architecture.md`. For the deeper repository and transport map, see
-`rallar-server-repositories.md`.
+`architecture.md`. For live startup, call-entry, and owner navigation, see the
+[Rallar System navigation map](./rallar-system/README.md).
 
 ## Owns
 

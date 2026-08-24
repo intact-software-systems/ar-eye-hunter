@@ -1,8 +1,18 @@
-import { describe, expect, it, vi } from 'vitest';
+import { Temporal } from '@js-temporal/polyfill';
+import { describe, expect, it } from 'vitest';
 
+import type { PSqlParameter, PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
+import { toJsonWireAppInboxEnqueue } from '@shared-server/rallar-system/app-inbox/app-inbox-command-wire.ts';
+import { AppInboxType, type AppInboxMessageContext } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import { encodeAppInboxResult } from '@shared-server/rallar-system/app-inbox/app-inbox-registration-codecs.ts';
+import type { AppInboxMutationTransactionWriter } from '@shared-server/rallar-system/app-inbox/app-inbox-transaction-writer.ts';
+import type { GroupMutationPreparation } from '@shared-server/rallar-system/group-state/group-state-service-contracts.ts';
 import { GroupStateInboxHandler } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-handler.ts';
-import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
+import { decodeGroupStateWritten } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-result-codec.ts';
+import type { GroupStateInboxDurableResult } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-result.ts';
+import { decodeJsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
+import { newALRoute, newALUntargetedMessage } from '@shared/al-contracts/al-contract.ts';
+import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 
 import { createGroupStateTransactionBoundaryHarness } from './group-state-transaction-boundary-fixture.ts';
 
@@ -55,17 +65,21 @@ describe('group-state AppInbox transaction result boundary', () => {
         expect(persisted?.status).toBe(EntityStatus.COMPLETED);
         expect(persisted?.resource).toBe(EXPECTED_CREATE_GROUP_DURABLE_JSON);
         expect(persisted?.resource).not.toContain('committedSnapshot');
-        const rawDurableResult = JSON.parse(persisted!.resource) as Record<string, unknown>;
-        expect(Object.keys(rawDurableResult)).toEqual(['status', 'result']);
-        expect(Object.keys(rawDurableResult.result as Record<string, unknown>)).toEqual(['snapshot', 'event']);
-        expect(rawDurableResult).toEqual(created);
+        if (!persisted) {
+            throw new TypeError('Expected the completed group-state result entry.');
+        }
+        const decodedDurableResult = decodeGroupStateWritten(
+            decodeJsonWireValue(JSON.parse(persisted.resource), 'Persisted group-state result')
+        );
+        expect(decodedDurableResult).toEqual(created);
         expect(harness.transactionWriter.read(harness.context)).toEqual({
             state: 'transaction-finalized',
             status: EntityStatus.COMPLETED,
             result: created
         });
         expect(harness.observedSnapshots).toHaveLength(1);
-        expect(harness.observedSnapshots[0]).toEqual(created.result?.snapshot);
+        expect(harness.observedSnapshots[0]).toEqual(created.result.snapshot);
+        expect(harness.observedSnapshots[0]).toBe(created.result.snapshot);
         expect(harness.readWakeCount()).toBe(1);
         expect(harness.outboxEntries.size).toBe(1);
     });
@@ -81,13 +95,16 @@ describe('group-state AppInbox transaction result boundary', () => {
 
     it('persists an inactive presence result once without active mutation effects', async () => {
         const actions: string[] = [];
-        const writeMutation = vi.fn(async (_context, write) => {
-            actions.push('inactive-transaction');
-            return await write({} as never);
-        });
-        const writeMutationWithAfterCommitResult = vi.fn(async () => {
-            throw new Error('Inactive presence must not enter the active mutation transaction');
-        });
+        const transactionWriter: AppInboxMutationTransactionWriter = {
+            writeMutation: async (_context, write) => {
+                actions.push('inactive-transaction');
+                return await write(createUnusedTransaction());
+            },
+            writeMutationWithAfterCommitResult: () =>
+                Promise.reject(
+                    new Error('Inactive presence must not enter the active mutation transaction')
+                )
+        };
         const handler = new GroupStateInboxHandler({
             prepareMutation: async () => {
                 throw new Error('Inactive presence fixture must already be prepared.');
@@ -134,43 +151,12 @@ describe('group-state AppInbox transaction result boundary', () => {
                     throw new Error('Inactive presence must not observe a snapshot');
                 }
             },
-            transactionWriter: { writeMutation, writeMutationWithAfterCommitResult },
+            transactionWriter,
             wakeQueue: () => actions.push('wake')
         });
         const result = await handler.processGroupStateMutation(inactiveConnectContext());
         expect(JSON.stringify(result)).toBe('{"status":"inactive","sessionId":"inactive-session","generationId":"inactive-generation"}');
         expect(actions).toEqual(['inactive-transaction']);
-    });
-
-    it('passes the exact committed snapshot object to observation only after commit', async () => {
-        const committedSnapshot = { snapshot: 'exact-committed-object' };
-        const durableResult = { status: 'ok', result: { durable: true } };
-        const readResult = vi.fn().mockResolvedValue({ durableResult, committedSnapshot });
-        vi.resetModules();
-        vi.doMock('@shared-server/rallar-system/group-state/inbox/group-state-inbox-result.ts', () => ({
-            readGroupStateInboxResult: readResult
-        }));
-        const { actions, handler, observed } = await createCommittedSnapshotObservationFixture();
-
-        await expect(
-            handler.processGroupStateMutation({
-                enqueue: {
-                    authority: {
-                        authorityProof: null,
-                        descriptor: null,
-                        command: { operation: 'updateGroup', aggregateRef: {} },
-                        facts: {},
-                        causalToken: 'causal-token',
-                        queueResourceId: 'queue-resource'
-                    }
-                },
-                entry: { dequeueAudit: { attempts: 1 } }
-            } as never)
-        ).resolves.toBe(durableResult);
-        expect(observed).toEqual([committedSnapshot]);
-        expect(observed[0]).toBe(committedSnapshot);
-        expect(actions).toEqual(['write', 'commit', 'observe', 'wake']);
-        vi.doUnmock('@shared-server/rallar-system/group-state/inbox/group-state-inbox-result.ts');
     });
 
     it('keeps the existing durable-only writer result and serialization unchanged', async () => {
@@ -192,7 +178,6 @@ describe('group-state AppInbox transaction result boundary', () => {
 
         expect(returned).toBe(durableResult);
         expect(persisted?.resource).toBe('{"status":"durable-only","result":{"value":0,"omitted":null}}');
-        expect(Object.keys(JSON.parse(persisted!.resource) as Record<string, unknown>)).toEqual(['status', 'result']);
         expect(harness.transactionWriter.read(durableContext)).toEqual({
             state: 'transaction-finalized',
             status: EntityStatus.COMPLETED,
@@ -201,99 +186,99 @@ describe('group-state AppInbox transaction result boundary', () => {
     });
 });
 
-interface CommittedSnapshotFixture {
-    readonly actions: string[];
-    readonly handler: GroupStateInboxHandler;
-    readonly observed: unknown[];
-}
-
-async function createCommittedSnapshotObservationFixture(): Promise<CommittedSnapshotFixture> {
-    const { GroupStateInboxHandler: UncachedGroupStateInboxHandler } = await import(
-        '@shared-server/rallar-system/group-state/inbox/group-state-inbox-handler.ts'
-    );
-    const actions: string[] = [];
-    const observed: unknown[] = [];
-    const writeMutationWithAfterCommitResult = vi.fn(async (_context, write) => {
-        const result = await write({} as never);
-        actions.push('commit');
-        return result;
-    });
-    const handler = new UncachedGroupStateInboxHandler({
-        prepareMutation: async () => {
-            throw new Error('Committed-snapshot fixture must already be prepared.');
-        },
-        persistPreparation: async () => {
-            throw new Error('Committed-snapshot fixture must not persist preparation.');
-        },
-        mutationService: {
-            read: async () => ({}),
-            compute: () => ({ outcome: 'write', receipt: {} }),
-            validate: () => undefined,
-            write: async () => {
-                actions.push('write');
-                return {};
+function inactiveConnectContext(): AppInboxMessageContext<GroupStateInboxDurableResult> {
+    const authority: GroupMutationPreparation = {
+        authorityProof: null,
+        descriptor: null,
+        command: {
+            operation: 'connectPresence',
+            aggregateRef: {
+                applicationId: 'ar-eye-hunter',
+                workspaceId: 'default',
+                groupId: 'inactive-group'
+            },
+            commandId: 'inactive-command',
+            requestId: 'inactive-request',
+            sessionId: 'inactive-session',
+            input: {
+                principalId: 'owner',
+                generationId: 'inactive-generation',
+                connectedAtEpochMs: 1_000,
+                lastHeartbeatAtEpochMs: 1_000,
+                expiresAtEpochMs: 61_000,
+                actorPrincipalId: 'owner',
+                actorSessionId: 'inactive-session',
+                reason: null,
+                traceId: null
             }
-        } as never,
-        sessionGenerationLifecycle: {} as never,
-        snapshotObserver: {
-            observeSnapshot: async (snapshot: unknown) => {
-                actions.push('observe');
-                observed.push(snapshot);
-                return snapshot;
-            }
-        } as never,
-        transactionWriter: {
-            writeMutation: async (_context, write) => await write({} as never),
-            writeMutationWithAfterCommitResult
         },
-        wakeQueue: () => actions.push('wake')
+        facts: {
+            nowEpochMs: 2_000,
+            expireAtEpochMs: 604_802_000,
+            serviceId: 'server-1',
+            eventId: 'event-1',
+            commandHash: 'sha256:inactive',
+            resolvedJoinCode: null,
+            joinCodeVerifier: null,
+            internalAuthority: 'none',
+            authenticatedAuthority: { principalId: 'owner', sessionId: 'inactive-session' }
+        },
+        causalToken: 'causal-token',
+        queueResourceId: 'inactive-queue-resource'
+    };
+    const enqueue = toJsonWireAppInboxEnqueue({
+        type: AppInboxType.GROUP_PRESENCE_CONNECT,
+        resourceId: 'inactive-command',
+        contextId: 'inactive-group',
+        authority,
+        data: { requestId: 'inactive-request' }
     });
-    return { actions, handler, observed };
-}
-
-function inactiveConnectContext() {
+    const createdAt = Temporal.Instant.fromEpochMilliseconds(1_000);
+    const entry: ResourceEntry = {
+        key: {
+            topicId: 'app-inbox.group-state',
+            resourceId: 'inactive-command',
+            contextId: 'inactive-group'
+        },
+        resource: JSON.stringify(enqueue),
+        typeId: AppInboxType.GROUP_PRESENCE_CONNECT,
+        status: EntityStatus.RESERVED,
+        audit: {
+            date: createdAt.toZonedDateTimeISO('UTC').toPlainTime(),
+            createdBy: 'server-1',
+            createdTs: createdAt.toZonedDateTimeISO('UTC').toPlainDateTime(),
+            expiryTs: Temporal.Instant.fromEpochMilliseconds(604_802_000)
+        },
+        dequeueAudit: { attempts: 1, startTs: createdAt }
+    };
     return {
-        enqueue: {
-            authority: {
-                authorityProof: null,
-                descriptor: null,
-                command: {
-                    operation: 'connectPresence',
-                    aggregateRef: {
-                        applicationId: 'ar-eye-hunter',
-                        workspaceId: 'default',
-                        groupId: 'inactive-group'
-                    },
-                    commandId: 'inactive-command',
-                    requestId: 'inactive-request',
-                    sessionId: 'inactive-session',
-                    input: {
-                        principalId: 'owner',
-                        generationId: 'inactive-generation',
-                        connectedAtEpochMs: 1_000,
-                        lastHeartbeatAtEpochMs: 1_000,
-                        expiresAtEpochMs: 61_000,
-                        actorPrincipalId: 'owner',
-                        actorSessionId: 'inactive-session',
-                        reason: null,
-                        traceId: null
-                    }
-                },
-                facts: {
-                    nowEpochMs: 2_000,
-                    expireAtEpochMs: 604_802_000,
-                    serviceId: 'server-1',
-                    eventId: 'event-1',
-                    commandHash: 'sha256:inactive',
-                    resolvedJoinCode: null,
-                    joinCodeVerifier: null,
-                    internalAuthority: 'none',
-                    authenticatedAuthority: { principalId: 'owner', sessionId: 'inactive-session' }
-                },
-                causalToken: 'causal-token',
-                queueResourceId: 'inactive-queue-resource'
-            }
-        },
-        entry: { dequeueAudit: { attempts: 1 } }
-    } as never;
+        enqueue,
+        entry,
+        message: newALUntargetedMessage(
+            'server-1',
+            newALRoute(entry.key.topicId, entry.key.contextId, entry.key.resourceId),
+            entry.typeId,
+            enqueue
+        ),
+        encodeResult: (result) => encodeAppInboxResult(result, 'Inactive group presence result')
+    };
+}
+
+function createUnusedTransaction(): PSqlSql {
+    const transaction: PSqlSql = Object.assign(
+        <Result>(
+            _stringsOrValues: TemplateStringsArray | readonly PSqlParameter[],
+            ..._values: readonly PSqlParameter[]
+        ): Promise<Result> =>
+            Promise.reject(
+                new Error('Inactive presence must not execute SQL through its result callback')
+            ),
+        {
+            begin: <Result>(_run: (sql: PSqlSql) => Promise<Result>): Promise<Result> =>
+                Promise.reject(
+                    new Error('Inactive presence must not start a nested SQL transaction')
+                )
+        }
+    );
+    return transaction;
 }

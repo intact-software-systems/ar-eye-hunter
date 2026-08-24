@@ -16,7 +16,7 @@ export function createRallarMiddlewareInboxServices(
         appOutboxResilience,
         wakeQueueEngine
     } = infrastructure;
-    return {
+    const services: RallarMiddlewareInboxServices = {
         groupStateInboxService: options.createGroupStateInboxService({
             inboxQueueReader,
             outboxQueueReader,
@@ -59,4 +59,23 @@ export function createRallarMiddlewareInboxServices(
             wakeQueueEngine
         })
     };
+    requireCompleteInboxServices(options, services);
+    return services;
+}
+
+function requireCompleteInboxServices(
+    options: CreateRallarMiddlewareOptions,
+    services: RallarMiddlewareInboxServices
+): void {
+    if (
+        !services.groupStateInboxService ||
+        !services.topologyInboxService ||
+        !services.rtcRttInboxService ||
+        !services.appClientInboxService ||
+        (options.createAppAuthInboxService !== undefined && services.appAuthInboxService === undefined) ||
+        (options.createAppAdminInboxService !== undefined && services.appAdminInboxService === undefined) ||
+        (options.createAppCrdtInboxService !== undefined && services.appCrdtInboxService === undefined)
+    ) {
+        throw new Error('Rallar middleware inbox service construction is incomplete');
+    }
 }

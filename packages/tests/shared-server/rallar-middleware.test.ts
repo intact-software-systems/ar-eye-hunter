@@ -1,12 +1,12 @@
 import { Temporal } from '@js-temporal/polyfill';
-import { type AppClientInboxService } from '@shared-server/rallar-system/client-state/inbox/app-client-inbox-service.ts';
-import { type ClientStateRepository } from '@shared-server/rallar-system/client-state/persistence/client-state-repository.ts';
-import type { GroupStateInboxService } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-service.ts';
-import { type GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
+import { AppClientInboxService } from '@shared-server/rallar-system/client-state/inbox/app-client-inbox-service.ts';
+import { ClientStateRepository } from '@shared-server/rallar-system/client-state/persistence/client-state-repository.ts';
+import { GroupStateInboxService } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-service.ts';
+import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
 import { createRallarMiddleware } from '@shared-server/rallar-system/middleware/create-rallar-middleware.ts';
 import type { QueueBoxPubSubBridge } from '@shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-bridge.ts';
-import type { RtcRttInboxService } from '@shared-server/rallar-system/rtc-rtt/inbox/rtc-rtt-inbox-service.ts';
-import type { TopologyInboxService } from '@shared-server/rallar-system/topology/inbox/topology-inbox-service.ts';
+import { RtcRttInboxService } from '@shared-server/rallar-system/rtc-rtt/inbox/rtc-rtt-inbox-service.ts';
+import { TopologyInboxService } from '@shared-server/rallar-system/topology/inbox/topology-inbox-service.ts';
 import { createWsServerTargetResolver } from '@shared-server/rallar-system/websocket/targets/create-ws-server-target-resolver.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import type { GroupStateDeltaEnvelope } from '@shared/api/group-state-delta.ts';
@@ -24,6 +24,7 @@ import {
     type ALMessage
 } from '@shared/mod.ts';
 import { ResilienceDto } from '@shared/queuebox/DequeueResourceEntryController.ts';
+import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY, type ResourceInboxRetryPolicy } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 import * as clientStateSnapshotsRepository from '@shared/repository/client-state-snapshots-repository.ts';
 import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
@@ -39,14 +40,14 @@ describe('createRallarMiddleware', () => {
     it('constructs queuebox runtime services around supplied repositories', () => {
         const inbox = new InMemoryQueueBox();
         const outbox = new InMemoryQueueBox();
-        const clientsRepository = {} as ClientStateRepository;
-        const groupsRepository = {} as GroupStateRepository;
+        const clientsRepository = createUnusedClientStateRepository();
+        const groupsRepository = createUnusedGroupStateRepository();
         const appInboxResilience = createResilience();
         const appOutboxResilience = createResilience();
-        const groupStateInboxService = {} as GroupStateInboxService;
-        const topologyInboxService = {} as TopologyInboxService;
-        const rtcRttInboxService = {} as RtcRttInboxService;
-        const appClientInboxService = {} as AppClientInboxService;
+        const groupStateInboxService = createUnusedGroupStateInboxService();
+        const topologyInboxService = createUnusedTopologyInboxService();
+        const rtcRttInboxService = createUnusedRtcRttInboxService();
+        const appClientInboxService = createUnusedAppClientInboxService();
         const createGroupStateInboxService = vi.fn(() => groupStateInboxService);
         const createTopologyInboxService = vi.fn(() => topologyInboxService);
         const createRtcRttInboxService = vi.fn(() => rtcRttInboxService);
@@ -178,6 +179,24 @@ describe('createRallarMiddleware', () => {
         expect(runtime.healthFailure).toBe(healthFailure);
     });
 
+    it('rejects a configured inbox factory that does not construct its service', () => {
+        const options = createReadinessMiddlewareOptions(
+            Promise.resolve(),
+            {
+                publish: async () => undefined,
+                subscribe: async () => undefined
+            }
+        );
+        Object.defineProperty(options, 'createAppAuthInboxService', {
+            enumerable: true,
+            value: () => undefined
+        });
+
+        expect(() => createRallarMiddleware(options)).toThrow(
+            'Rallar middleware inbox service construction is incomplete'
+        );
+    });
+
     it('registers an app inbox engine task that drains inbox messages', async () => {
         const inbox = new InMemoryQueueBox();
         const runtime = createRallarMiddleware({
@@ -186,12 +205,12 @@ describe('createRallarMiddleware', () => {
                 inbox: createResilience(),
                 appOutbox: createResilience()
             },
-            createGroupStateInboxService: () => ({}) as GroupStateInboxService,
-            createTopologyInboxService: () => ({}) as TopologyInboxService,
-            createRtcRttInboxService: () => ({}) as RtcRttInboxService,
-            createAppClientInboxService: () => ({}) as AppClientInboxService,
-            clientsRepository: {} as ClientStateRepository,
-            groupsRepository: {} as GroupStateRepository
+            createGroupStateInboxService: createUnusedGroupStateInboxService,
+            createTopologyInboxService: createUnusedTopologyInboxService,
+            createRtcRttInboxService: createUnusedRtcRttInboxService,
+            createAppClientInboxService: createUnusedAppClientInboxService,
+            clientsRepository: createUnusedClientStateRepository(),
+            groupsRepository: createUnusedGroupStateRepository()
         });
         const receivedMessages: ALMessage[] = [];
         const message = newALUntargetedMessage(
@@ -207,16 +226,9 @@ describe('createRallarMiddleware', () => {
             }
         });
         await runtime.inboxQueueReader.enqueueIfAbsent(message);
-        const appInboxTask = readOnlyEngineTask(
-            runtime.qboxEngine,
-            InboxQueueReader.INBOX_ENQUEUE_TYPE
-        );
+        await runtime.qboxEngine.executeOnce();
 
-        expect(appInboxTask).toBeDefined();
-        expect(await appInboxTask?.isWork()).toBe(true);
-        await appInboxTask?.runnable();
-
-        expect(receivedMessages).toEqual([message]);
+        await vi.waitFor(() => expect(receivedMessages).toEqual([message]));
     });
 
     it('uses one custom retry budget for app inbox advertisement and reservation', async () => {
@@ -233,12 +245,12 @@ describe('createRallarMiddleware', () => {
                 appInbox: resilience,
                 appOutbox: createResilience()
             },
-            createGroupStateInboxService: () => ({}) as GroupStateInboxService,
-            createTopologyInboxService: () => ({}) as TopologyInboxService,
-            createRtcRttInboxService: () => ({}) as RtcRttInboxService,
-            createAppClientInboxService: () => ({}) as AppClientInboxService,
-            clientsRepository: {} as ClientStateRepository,
-            groupsRepository: {} as GroupStateRepository
+            createGroupStateInboxService: createUnusedGroupStateInboxService,
+            createTopologyInboxService: createUnusedTopologyInboxService,
+            createRtcRttInboxService: createUnusedRtcRttInboxService,
+            createAppClientInboxService: createUnusedAppClientInboxService,
+            clientsRepository: createUnusedClientStateRepository(),
+            groupsRepository: createUnusedGroupStateRepository()
         });
         const receivedMessages: ALMessage[] = [];
         runtime.inboxQueueReader.onInboxMessageDo('group-state.create.v1', {
@@ -258,13 +270,7 @@ describe('createRallarMiddleware', () => {
             ...enqueued,
             dequeueAudit: { ...enqueued.dequeueAudit, attempts: 2 }
         });
-        const appInboxTask = readOnlyEngineTask(
-            runtime.qboxEngine,
-            InboxQueueReader.INBOX_ENQUEUE_TYPE
-        );
-
-        expect(await appInboxTask?.isWork()).toBe(false);
-        await appInboxTask?.runnable();
+        await runtime.qboxEngine.executeOnce();
 
         expect(receivedMessages).toEqual([]);
         expect(await inbox.getItem(enqueued.key)).toMatchObject({
@@ -284,12 +290,12 @@ describe('createRallarMiddleware', () => {
                 appInbox: createResilience(),
                 appOutbox: createResilience()
             },
-            createGroupStateInboxService: () => ({}) as GroupStateInboxService,
-            createTopologyInboxService: () => ({}) as TopologyInboxService,
-            createRtcRttInboxService: () => ({}) as RtcRttInboxService,
-            createAppClientInboxService: () => ({}) as AppClientInboxService,
-            clientsRepository: {} as ClientStateRepository,
-            groupsRepository: {} as GroupStateRepository
+            createGroupStateInboxService: createUnusedGroupStateInboxService,
+            createTopologyInboxService: createUnusedTopologyInboxService,
+            createRtcRttInboxService: createUnusedRtcRttInboxService,
+            createAppClientInboxService: createUnusedAppClientInboxService,
+            clientsRepository: createUnusedClientStateRepository(),
+            groupsRepository: createUnusedGroupStateRepository()
         });
         const receivedMessages: ALMessage[] = [];
         const message = newALUntargetedMessage(
@@ -308,16 +314,9 @@ describe('createRallarMiddleware', () => {
             }
         );
         await runtime.outboxQueueReader.enqueueIfAbsent(message);
-        const appOutboxTask = readOnlyEngineTask(
-            runtime.qboxEngine,
-            OutboxQueueReader.OUTBOX_ENQUEUE_TYPE
-        );
+        await runtime.qboxEngine.executeOnce();
 
-        expect(appOutboxTask).toBeDefined();
-        expect(await appOutboxTask?.isWork()).toBe(true);
-        await appOutboxTask?.runnable();
-
-        expect(receivedMessages).toEqual([message]);
+        await vi.waitFor(() => expect(receivedMessages).toEqual([message]));
     });
 
     it('continues draining APP_INBOX while an APP_OUTBOX handler is blocked', async () => {
@@ -330,17 +329,14 @@ describe('createRallarMiddleware', () => {
                 appInbox: createResilience(),
                 appOutbox: createResilience()
             },
-            createGroupStateInboxService: () => ({}) as GroupStateInboxService,
-            createTopologyInboxService: () => ({}) as TopologyInboxService,
-            createRtcRttInboxService: () => ({}) as RtcRttInboxService,
-            createAppClientInboxService: () => ({}) as AppClientInboxService,
-            clientsRepository: {} as ClientStateRepository,
-            groupsRepository: {} as GroupStateRepository
+            createGroupStateInboxService: createUnusedGroupStateInboxService,
+            createTopologyInboxService: createUnusedTopologyInboxService,
+            createRtcRttInboxService: createUnusedRtcRttInboxService,
+            createAppClientInboxService: createUnusedAppClientInboxService,
+            clientsRepository: createUnusedClientStateRepository(),
+            groupsRepository: createUnusedGroupStateRepository()
         });
-        let releaseOutbox!: () => void;
-        const outboxBlocked = new Promise<void>((resolve) => {
-            releaseOutbox = resolve;
-        });
+        const outboxBlocked = createDeferred();
         const receivedInboxMessages: ALMessage[] = [];
         const receivedOutboxMessages: ALMessage[] = [];
         runtime.inboxQueueReader.onInboxMessageDo('group-state.create.v1', {
@@ -353,11 +349,11 @@ describe('createRallarMiddleware', () => {
             {
                 onMessage: async (receivedMessage) => {
                     receivedOutboxMessages.push(receivedMessage);
-                    await outboxBlocked;
+                    await outboxBlocked.promise;
                 }
             }
         );
-        await runtime.outboxQueueReader.enqueueIfAbsent(
+        const outboxEntry = await runtime.outboxQueueReader.enqueueIfAbsent(
             newALUntargetedMessage(
                 'api-v1',
                 newALRoute('app-outbox.rtc-topology', 'group-1', 'group-1'),
@@ -365,11 +361,6 @@ describe('createRallarMiddleware', () => {
                 { groupId: 'group-1' }
             )
         );
-        const appOutboxTask = readOnlyEngineTask(
-            runtime.qboxEngine,
-            OutboxQueueReader.OUTBOX_ENQUEUE_TYPE
-        )!;
-
         await runtime.qboxEngine.executeOnce();
         await vi.waitFor(() => expect(receivedOutboxMessages).toHaveLength(1));
         await runtime.inboxQueueReader.enqueueIfAbsent(
@@ -383,9 +374,9 @@ describe('createRallarMiddleware', () => {
         await runtime.qboxEngine.executeOnce();
 
         await vi.waitFor(() => expect(receivedInboxMessages).toHaveLength(1));
-        releaseOutbox();
+        outboxBlocked.resolve();
         await vi.waitFor(async () => {
-            expect(await appOutboxTask.isWork()).toBe(false);
+            expect((await queue.getItem(outboxEntry.key))?.status).toBe(EntityStatus.COMPLETED);
         });
     });
 });
@@ -546,20 +537,22 @@ describe('createWsServerTargetResolver state sync routing', () => {
             'workspace-a',
             2
         );
+        const aliceInstance = requireFirst(aliceSnapshot.instances, 'Alice client instance');
+        const aliceSession = requireFirst(aliceSnapshot.activeSessions, 'Alice client session');
         clientStateSnapshotsRepository.setClientStateSnapshots([
             {
                 ...aliceSnapshot,
                 instances: [
-                    aliceSnapshot.instances[0]!,
+                    aliceInstance,
                     {
-                        ...aliceSnapshot.instances[0]!,
+                        ...aliceInstance,
                         clientInstanceId: 'alice-instance-b'
                     }
                 ],
                 activeSessions: [
-                    aliceSnapshot.activeSessions[0]!,
+                    aliceSession,
                     {
-                        ...aliceSnapshot.activeSessions[0]!,
+                        ...aliceSession,
                         clientInstanceId: 'alice-instance-b',
                         sessionId: 'session-b'
                     }
@@ -579,12 +572,16 @@ describe('createWsServerTargetResolver state sync routing', () => {
             ],
             3
         );
+        const baseGroupSession = requireFirst(
+            baseSnapshot.activeSessions,
+            'Base group session'
+        );
         const snapshot: GroupSnapshot = {
             ...baseSnapshot,
             activeSessions: [
                 ...baseSnapshot.activeSessions,
                 {
-                    ...baseSnapshot.activeSessions[0]!,
+                    ...baseGroupSession,
                     sessionId: 'session-b',
                     generationId: 'session-b-generation'
                 }
@@ -1017,12 +1014,12 @@ function createReadinessMiddlewareOptions(
             inbox: createResilience(),
             appOutbox: createResilience()
         },
-        createGroupStateInboxService: () => ({}) as GroupStateInboxService,
-        createTopologyInboxService: () => ({}) as TopologyInboxService,
-        createRtcRttInboxService: () => ({}) as RtcRttInboxService,
-        createAppClientInboxService: () => ({}) as AppClientInboxService,
-        clientsRepository: {} as ClientStateRepository,
-        groupsRepository: {} as GroupStateRepository,
+        createGroupStateInboxService: createUnusedGroupStateInboxService,
+        createTopologyInboxService: createUnusedTopologyInboxService,
+        createRtcRttInboxService: createUnusedRtcRttInboxService,
+        createAppClientInboxService: createUnusedAppClientInboxService,
+        clientsRepository: createUnusedClientStateRepository(),
+        groupsRepository: createUnusedGroupStateRepository(),
         readiness,
         queuePubSubBridge: {
             bridge,
@@ -1030,6 +1027,36 @@ function createReadinessMiddlewareOptions(
             publisherId: 'publisher-1'
         }
     };
+}
+
+function createUnusedClientStateRepository(): ClientStateRepository {
+    const repository: ClientStateRepository = Object.create(ClientStateRepository.prototype);
+    return repository;
+}
+
+function createUnusedGroupStateRepository(): GroupStateRepository {
+    const repository: GroupStateRepository = Object.create(GroupStateRepository.prototype);
+    return repository;
+}
+
+function createUnusedGroupStateInboxService(): GroupStateInboxService {
+    const service: GroupStateInboxService = Object.create(GroupStateInboxService.prototype);
+    return service;
+}
+
+function createUnusedTopologyInboxService(): TopologyInboxService {
+    const service: TopologyInboxService = Object.create(TopologyInboxService.prototype);
+    return service;
+}
+
+function createUnusedRtcRttInboxService(): RtcRttInboxService {
+    const service: RtcRttInboxService = Object.create(RtcRttInboxService.prototype);
+    return service;
+}
+
+function createUnusedAppClientInboxService(): AppClientInboxService {
+    const service: AppClientInboxService = Object.create(AppClientInboxService.prototype);
+    return service;
 }
 
 function createDeferred(): Readonly<{
@@ -1047,38 +1074,19 @@ function createDeferred(): Readonly<{
     };
 }
 
-function readOnlyEngineTask(
-    engine: unknown,
-    id: string
-):
-    | {
-        isWork: () => Promise<boolean> | boolean;
-        runnable: () => Promise<void> | void;
-    }
-    | undefined {
-    const tasks = (
-        engine as {
-            tasks: Map<string, {
-                isWork: () => Promise<boolean> | boolean;
-                runnable: () => Promise<void> | void;
-            }>;
-        }
-    ).tasks;
-
-    return tasks.get(id);
-}
-
 function addOpenConnection(
     server: JsonWebSocketServer,
     connectionId: string
 ): void {
     server.addConnection(
-        new ConnectionContext(connectionId, {
-            readyState: WebSocket.OPEN,
-            addEventListener: () => undefined,
-            send: () => undefined
-        } as never)
+        new ConnectionContext(connectionId, createOpenWebSocket())
     );
+}
+
+function createOpenWebSocket(): WebSocket {
+    const socket: WebSocket = Object.create(WebSocket.prototype);
+    Object.defineProperty(socket, 'readyState', { value: WebSocket.OPEN });
+    return socket;
 }
 
 function createClientSnapshot(
@@ -1233,7 +1241,7 @@ function createGroupEventEnvelope(
     snapshot: GroupSnapshot,
     audienceSessionIds: readonly string[]
 ): GroupStateDeltaEnvelope {
-    const actorSession = snapshot.activeSessions[0]!;
+    const actorSession = requireFirst(snapshot.activeSessions, 'Group event actor session');
     return {
         event: {
             applicationId: snapshot.group.applicationId,
@@ -1269,6 +1277,14 @@ function createGroupEventEnvelope(
         onlineMemberCount: snapshot.onlineMemberCount,
         audienceSessionIds
     };
+}
+
+function requireFirst<Value>(values: readonly Value[], label: string): Value {
+    const first = values[0];
+    if (first === undefined) {
+        throw new TypeError(`${label} is required`);
+    }
+    return first;
 }
 
 function createGroupMember(

@@ -14,7 +14,8 @@ Read these files before changing behavior:
 
 - `packages/shared-web/browser/rallar.ts`
 - `packages/shared-web/browser/rallar-data.ts`
-- `packages/shared-server/rallar-system/middleware/rallar-middleware.ts`
+- `packages/shared-server/rallar-system/middleware/create-rallar-middleware.ts`
+- `packages/shared-server/rallar-system/middleware/rallar-middleware-construction.ts`
 - `packages/shared-server/rallar-facade/rallar-server.ts`
 - `packages/shared-server/rallar-facade/rallar-server-application.ts`
 - `packages/shared-server/rallar-system/websocket/router/rallar-server-ws-router.ts`

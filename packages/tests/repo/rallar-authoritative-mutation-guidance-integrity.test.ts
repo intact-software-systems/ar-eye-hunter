@@ -25,8 +25,6 @@ const appInboxGuidanceVocabulary = [
 const currentAppInboxGuidancePaths = [
     canonicalServiceWritingPath,
     'packages/shared-server/architecture.md',
-    'packages/shared-server/rallar-server-repositories.md',
-    'packages/shared-server/rallar-server-repositories-improvements.md',
     'apps/api-v1/README.md',
     'docs/rallar-api-reference.md',
     'docs/rallar-convergent-state-and-rtc-topology.md',
@@ -42,7 +40,6 @@ const canonicalSnapshotOrderingGuidancePaths = [
 const postCommitAudienceGuidancePaths = [
     'apps/api-v1/README.md',
     'packages/shared-server/architecture.md',
-    'packages/shared-server/rallar-server-repositories.md',
     'docs/rallar-api-reference.md',
     'docs/rallar-convergent-state-and-rtc-topology.md'
 ] as const;
@@ -55,8 +52,6 @@ const repositoryReadGuidancePaths = [
 ] as const;
 const downstreamQueueGuidancePaths = [
     'packages/shared-server/architecture.md',
-    'packages/shared-server/rallar-server-repositories.md',
-    'packages/shared-server/rallar-server-repositories-improvements.md',
     'docs/rallar-convergent-state-and-rtc-topology.md'
 ] as const;
 const mediumScaleRequirements = [

@@ -19,7 +19,8 @@ Template:
 Read these files first:
 - packages/shared-web/browser/rallar.ts
 - packages/shared-web/browser/rallar-data.ts
-- packages/shared-server/rallar-system/middleware/rallar-middleware.ts
+- packages/shared-server/rallar-system/middleware/create-rallar-middleware.ts
+- packages/shared-server/rallar-system/middleware/rallar-middleware-construction.ts
 
 Task:
 Implement [feature] using the Rallar facade.
@@ -226,8 +227,9 @@ Review or implement Rallar server middleware setup.
 Requirements:
 - Use createRallarMiddleware or createRallarServerApplication.
 - Wire queuebox inbox/outbox.
-- Wire AppGroupInboxService and AppClientInboxService.
-- Wire state sync publisher.
+- Construct group-state, topology, RTC-RTT, and client inbox services before
+  queue task registration; add configured auth, admin, and CRDT inbox services.
+- Let feature-owned state-sync and topic installers run before worker start.
 - Provide findGroupSnapshotByRef for scoped room routing.
 - Install default middleware topics and websocket lifecycle cleanup.
 - Start qboxEngine.

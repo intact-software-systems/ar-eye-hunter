@@ -44,7 +44,7 @@ export const authoritativeMutationRuntimeSourcePaths = [
     `${systemRoot}/topology/publication/rtc-topology-publication-repository.ts`,
     `${systemRoot}/middleware/create-rallar-middleware.ts`,
     `${systemRoot}/middleware/create-rallar-middleware-inbox-services.ts`,
-    `${systemRoot}/middleware/register-rallar-middleware-queue-tasks.ts`,
+    `${systemRoot}/middleware/rallar-middleware-queue-registration.ts`,
     'packages/shared-server/mod.ts',
     'apps/api-v1/src/composition/create-api-v1-mutation-runtime.ts'
 ] as const;

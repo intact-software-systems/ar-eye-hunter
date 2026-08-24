@@ -130,11 +130,6 @@ export * from './rallar-system/middleware/cache-repositories.ts';
 export { createRallarMiddleware } from './rallar-system/middleware/create-rallar-middleware.ts';
 export type { CreateRallarMiddlewareOptions } from './rallar-system/middleware/rallar-middleware-construction.ts';
 export type {
-    RallarAdminInboxServiceFactory,
-    RallarAuthInboxServiceFactory,
-    RallarCrdtInboxServiceFactory
-} from './rallar-system/middleware/rallar-middleware-inbox-service-factories.ts';
-export type {
     RallarMiddlewareRuntime,
     RtcTopologyReplayRuntime
 } from './rallar-system/middleware/rallar-middleware-runtime.ts';
