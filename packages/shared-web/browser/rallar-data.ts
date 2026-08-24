@@ -213,6 +213,30 @@ const RALLAR_DATA_ENVELOPE_KIND = 'rallar.custom-data';
 export function createRallarDataFacade(
     input: CreateRallarDataFacadeInput
 ): RallarDataFacade {
+    const operations = createRallarDataFacadeOperations(input);
+    return {
+        define: defineRallarDataStore,
+        ...operations,
+        destroyStore: operations.destroy,
+        estimateUsage: estimateBrowserStorage
+    };
+}
+
+export function createDefaultRallarDataFacade(): RallarDataFacade {
+    return createRallarDataFacade({
+        manager: defaultRepositoryManager,
+        resolveScopeKey: (scope) => String(scope)
+    });
+}
+
+type RallarDataFacadeOperations = Pick<
+    RallarDataFacade,
+    'open' | 'lookup' | 'close' | 'closeScope' | 'clearScope' | 'destroy' | 'destroyScope'
+>;
+
+function createRallarDataFacadeOperations(
+    input: CreateRallarDataFacadeInput
+): RallarDataFacadeOperations {
     const { manager, resolveScopeKey } = input;
     const activeTokens = new Map<string, RepositoryToken<unknown>>();
 
@@ -240,11 +264,7 @@ export function createRallarDataFacade(
         input: string | RallarDataStoreDefinition<V>,
         lookupOptions?: RallarDataStoreOptions<V>
     ): RallarDataStore<V> | undefined => {
-        const prepared = prepareRallarDataStore(
-            input,
-            lookupOptions,
-            resolveScopeKey
-        );
+        const prepared = prepareRallarDataStore(input, lookupOptions, resolveScopeKey);
         const managed = manager.get(prepared.token);
         if (!managed) {
             return undefined;
@@ -263,11 +283,7 @@ export function createRallarDataFacade(
         input: string | RallarDataStoreDefinition<V>,
         closeOptions?: RallarDataStoreOptions<V>
     ): Promise<boolean> => {
-        const prepared = prepareRallarDataStore(
-            input,
-            closeOptions,
-            resolveScopeKey
-        );
+        const prepared = prepareRallarDataStore(input, closeOptions, resolveScopeKey);
         return await closePreparedStore(manager, activeTokens, prepared);
     };
 
@@ -285,7 +301,7 @@ export function createRallarDataFacade(
             manager,
             activeTokens,
             resolveScopeKey(scope),
-            async (token, managed) => {
+            async (_token, managed) => {
                 await clearManagedRepository(managed);
                 broadcastManagedClear(managed);
                 return true;
@@ -298,44 +314,24 @@ export function createRallarDataFacade(
         input: string | RallarDataStoreDefinition<V>,
         destroyOptions?: RallarDataStoreOptions<V>
     ): Promise<boolean> => {
-        const prepared = prepareRallarDataStore(
-            input,
-            destroyOptions,
-            resolveScopeKey
-        );
+        const prepared = prepareRallarDataStore(input, destroyOptions, resolveScopeKey);
         return await destroyPreparedStore(manager, activeTokens, prepared);
     };
 
-    return {
-        define: defineRallarDataStore,
-        open,
-        lookup,
-        close,
-        closeScope,
-        clearScope,
-        destroy,
-        destroyStore: destroy,
-        destroyScope: async (scope: RallarDataScope): Promise<number> => {
-            return await forEachActiveScopeRepository(
-                manager,
-                activeTokens,
-                resolveScopeKey(scope),
-                async (token, managed) => {
-                    await clearManagedRepository(managed);
-                    broadcastManagedClear(managed);
-                    return await manager.delete(token);
-                }
-            );
-        },
-        estimateUsage: estimateBrowserStorage
+    const destroyScope = async (scope: RallarDataScope): Promise<number> => {
+        return await forEachActiveScopeRepository(
+            manager,
+            activeTokens,
+            resolveScopeKey(scope),
+            async (_token, managed) => {
+                await clearManagedRepository(managed);
+                broadcastManagedClear(managed);
+                return await manager.delete(_token);
+            }
+        );
     };
-}
 
-export function createDefaultRallarDataFacade(): RallarDataFacade {
-    return createRallarDataFacade({
-        manager: defaultRepositoryManager,
-        resolveScopeKey: (scope) => String(scope)
-    });
+    return { open, lookup, close, closeScope, clearScope, destroy, destroyScope };
 }
 
 export function defineRallarDataStore<V>(

@@ -23,11 +23,7 @@ import type {
     RallarDefaults,
     RallarScopedOperationOptions
 } from '@shared-web/browser/rallar-connection-facade.ts';
-import {
-    toRallarCommandOptions,
-    toRallarOperationOptions,
-    type RallarOperationOptions
-} from '@shared-web/browser/rallar-operation-options.ts';
+import { toRallarCommandOptions, type RallarOperationOptions } from '@shared-web/browser/rallar-operation-options.ts';
 import type {
     RallarAuthRuntimePort,
     RallarBrowserFacadeRuntimeContext,
@@ -36,6 +32,7 @@ import type {
 import type { RallarLifecycleCoordinator } from '@shared-web/browser/rallar-runtime/lifecycle.ts';
 import { createRallarSubscriptionScope, notifyListener } from '@shared-web/browser/rallar-runtime/subscriptions.ts';
 import type { RallarOnChangeOptions, RallarUnsubscribe } from '@shared-web/browser/rallar-shared-contracts.ts';
+import { createRallarSessionConnectionLifecycle } from '@shared-web/browser/session/session-connection-lifecycle.ts';
 import type {
     AuthSession,
     LoginRequest,
@@ -82,10 +79,6 @@ export function createRallarSessionController(
     options: CreateRallarSessionControllerOptions
 ): RallarSessionController {
     const authStateListeners = new Set<RallarAuthChangeListener>();
-    let connectionGeneration = 0;
-    let connectionPromise: Promise<ApiMiddleware> | undefined;
-    let disconnectPromise: Promise<void> | undefined;
-    let lifecycleIsDisconnected = false;
 
     const resolveOperationOptions = <T extends RallarOperationOptions>(
         operationOptions: T
@@ -162,35 +155,7 @@ export function createRallarSessionController(
         }
     };
 
-    const disconnect = (): Promise<void> => {
-        if (disconnectPromise) {
-            return disconnectPromise;
-        }
-        if (
-            options.connectionRuntime.readConnectState() === 'idle' &&
-            !options.connectionRuntime.readMiddleware() &&
-            !options.transportRuntime.isInitializing() &&
-            lifecycleIsDisconnected
-        ) {
-            return Promise.resolve();
-        }
-
-        const ctx = options.connectionRuntime.readMiddleware();
-        disconnectPromise = Promise.resolve().then(() => {
-            connectionGeneration += 1;
-            options.lifecycle.detach(ctx);
-            options.transportRuntime.shutdown();
-            options.stateRuntime.clearCurrentRoom();
-            options.connectionRuntime.setConnectState('idle');
-            options.lifecycle.disconnected();
-            lifecycleIsDisconnected = true;
-        }).finally(() => {
-            disconnectPromise = undefined;
-        });
-        return disconnectPromise;
-    };
-
-    const handleAuthInvalidError = async (error: unknown): Promise<void> => {
+    const handleAuthInvalidError = async (error: Error): Promise<void> => {
         if (!isUnauthorizedApiError(error)) {
             return;
         }
@@ -204,6 +169,21 @@ export function createRallarSessionController(
         });
     };
 
+    const connectionLifecycle = createRallarSessionConnectionLifecycle({
+        connectionRuntime: options.connectionRuntime,
+        transportRuntime: options.transportRuntime,
+        lifecycle: options.lifecycle,
+        clearCurrentRoom: options.stateRuntime.clearCurrentRoom,
+        waitForAuthEnd,
+        hasAuthEndInProgress: () => options.authRuntime.readAuthEndPromise() !== undefined,
+        scheduleAuthExpiry: (session) => scheduleAuthExpiry(session),
+        endExpiredSession: async (session) => {
+            await endAuthSession('expired', { revoke: false, session });
+        },
+        handleAuthInvalidError
+    });
+    const { connect, disconnect } = connectionLifecycle;
+
     const runAuthAwareOperation = async <T>(
         operation: () => T | Promise<T>
     ): Promise<T> => {
@@ -211,91 +191,10 @@ export function createRallarSessionController(
             return await operation();
         }
         catch (error) {
-            await handleAuthInvalidError(error);
-            throw error;
+            const operationError = toSessionError(error);
+            await handleAuthInvalidError(operationError);
+            throw operationError;
         }
-    };
-
-    const connect = async (
-        scopedOptions: RallarScopedOperationOptions = {}
-    ): Promise<ApiMiddleware> => {
-        await waitForAuthEnd();
-        const operationOptions = resolveOperationOptions(scopedOptions);
-        const middlewareScope = resolveOperationScope(operationOptions.scope);
-        const session = readSession();
-        const connectOptions = {
-            ...toRallarOperationOptions(operationOptions),
-            ...(middlewareScope ? { scope: middlewareScope } : {}),
-            onAuthInvalid: (_error: unknown) =>
-                endAuthSession('unauthorized', {
-                    revoke: false,
-                    session: options.connectionRuntime.readMiddleware()?.session ??
-                        session ?? undefined
-                })
-        };
-
-        const currentMiddleware = options.connectionRuntime.readMiddleware();
-        if (currentMiddleware && !session) {
-            await endAuthSession('expired', {
-                revoke: false,
-                session: currentMiddleware.session
-            });
-        }
-        else if (
-            currentMiddleware && session &&
-            currentMiddleware.session.sessionId !== session.sessionId
-        ) {
-            await disconnect();
-        }
-        if (session) {
-            scheduleAuthExpiry(session);
-        }
-
-        const cached = options.connectionRuntime.readMiddleware();
-        if (cached) {
-            return cached;
-        }
-        if (connectionPromise) {
-            return await waitForRallarOperation(connectionPromise, connectOptions);
-        }
-
-        const generation = connectionGeneration;
-        lifecycleIsDisconnected = false;
-        options.connectionRuntime.setConnectState('connecting');
-        const promise = options.transportRuntime.init(connectOptions)
-            .then((ctx) => {
-                if (
-                    generation !== connectionGeneration ||
-                    options.authRuntime.readAuthEndPromise() ||
-                    readSession()?.sessionId !== ctx.session.sessionId
-                ) {
-                    options.transportRuntime.shutdown();
-                    options.connectionRuntime.setConnectState('idle');
-                    throw new Error(
-                        'Rallar connection was cancelled because auth ended.'
-                    );
-                }
-                options.connectionRuntime.setConnectState('connected');
-                scheduleAuthExpiry(ctx.session);
-                options.lifecycle.attach(ctx);
-                options.lifecycle.connected();
-                return ctx;
-            })
-            .catch(async (error) => {
-                options.connectionRuntime.setConnectState('idle');
-                await handleAuthInvalidError(error);
-                if (options.authRuntime.readAuthEndPromise()) {
-                    throw new Error('Rallar connection was cancelled because auth ended.');
-                }
-                throw error;
-            })
-            .finally(() => {
-                if (connectionPromise === promise) {
-                    connectionPromise = undefined;
-                }
-            });
-        connectionPromise = promise;
-        return await waitForRallarOperation(promise, connectOptions);
     };
 
     const doEndAuthSession = async (
@@ -308,9 +207,9 @@ export function createRallarSessionController(
     ): Promise<void> => {
         const session = endOptions.session ??
             options.connectionRuntime.readMiddleware()?.session ?? readSession();
-        let disconnectError: unknown;
-        let revokeError: unknown;
-        let dataCleanupError: unknown;
+        let disconnectError: Error | undefined;
+        let revokeError: Error | undefined;
+        let dataCleanupError: Error | undefined;
         clearAuthExpiryTimer();
         clearSession();
         try {
@@ -318,7 +217,7 @@ export function createRallarSessionController(
                 await disconnect();
             }
             catch (error) {
-                disconnectError = error;
+                disconnectError = toSessionError(error);
             }
             if (endOptions.revoke && session) {
                 try {
@@ -334,7 +233,7 @@ export function createRallarSessionController(
                     );
                 }
                 catch (error) {
-                    revokeError = error;
+                    revokeError = toSessionError(error);
                 }
             }
         }
@@ -344,7 +243,7 @@ export function createRallarSessionController(
                     await options.closeDataScopes(session);
                 }
                 catch (error) {
-                    dataCleanupError = error;
+                    dataCleanupError = toSessionError(error);
                 }
                 try {
                     await deleteBrowserALRuntimeEntriesForSession(
@@ -534,18 +433,12 @@ function runRallarCommand<T>(
     return new Command<T>(supplier, toRallarCommandOptions(options)).run();
 }
 
-function waitForRallarOperation<T>(
-    promise: Promise<T>,
-    options: RallarOperationOptions
-): Promise<T> {
-    if (!options.signal && options.timeoutMs === undefined) {
-        return promise;
-    }
-    return runRallarCommand(() => promise, options);
+function isUnauthorizedApiError(error: Error): boolean {
+    return error instanceof ApiHttpError && error.status === 401;
 }
 
-function isUnauthorizedApiError(error: unknown): boolean {
-    return error instanceof ApiHttpError && error.status === 401;
+function toSessionError(error: unknown): Error {
+    return error instanceof Error ? error : new Error('Rallar session operation failed.');
 }
 
 function toAuthSessionKey(session: AuthSession): string {
