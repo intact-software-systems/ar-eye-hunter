@@ -1,14 +1,14 @@
 # Shared-Web Architecture Notes
 
-`packages/shared-web` is the browser-facing Rallar package. It currently has a
-broad compatibility facade at `browser/rallar.ts` plus focused modules for API
-workflows, data, CRDT, middleware, transport engines, RallarAI, and game helpers.
+`packages/shared-web` is the browser-facing Rallar package. It has the broad
+browser facade at `browser/rallar.ts` plus focused modules for API workflows,
+data, CRDT, middleware, transport engines, RallarAI, and game helpers.
 
 ## Current Public Surfaces
 
-- `browser/rallar.ts` is the full compatibility facade and the canonical
-  browser object. Existing apps import `rallar` from here. The beginner path is
-  `rallar.setup(...)`, then `rallar.rooms.enter(...)`, then room-bound
+- `browser/rallar.ts` is the full canonical browser facade and application
+  entry point. The beginner path is `rallar.setup(...)`, then
+  `rallar.rooms.enter(...)`, then room-bound
   `message(...)` or `realtime(...)` channels. New-room flows that should leave
   the previous room use `rallar.rooms.createAndSwitch(...)`.
 - `browser/api-integration.ts` is the low-level browser REST helper layer. It
@@ -28,28 +28,26 @@ workflows, data, CRDT, middleware, transport engines, RallarAI, and game helpers
 - `browser/rallar-media-calls.ts` is the narrow calls and media source entry
   point. It does not export the full `rallar` singleton.
 - `game/mod.ts` is the browser game helper barrel.
-- `mod.ts` remains the broad shared-web compatibility barrel.
+- `mod.ts` is the broad shared-web package barrel.
 
-New app code should prefer the smallest browser entry point that matches the
-feature area. Existing app imports from `browser/rallar.ts` and `mod.ts` remain
-compatible; migration is intentionally gradual.
+Use the smallest browser entry point that matches the feature area.
 
 ## Browser Facade Runtime
 
-`browser/rallar.ts` is a compatibility entry point. It re-exports the existing
-public contract and delegates construction to `browser/rallar-runtime/compose.ts`.
-The implementation lives in unexported capability controllers under
+`browser/rallar.ts` owns the full browser facade and delegates construction to
+[`createBrowserRallarFacade`](./browser/rallar-runtime/composition.ts#L24).
+The implementation lives in capability controllers under
 `browser/rallar-runtime/`; public barrels and narrow entry points must not
 export these modules.
 
 Public capability types are owned by their existing `rallar-*-facade.ts`
 modules. `rallar-shared-contracts.ts` contains only shared subscription and
 listener primitives, while `rallar-facade-contract.ts` composes the aggregate
-`RallarFacade` type and re-exports the compatibility type set.
+`RallarFacade` type.
 
 Runtime dependencies point inward from the composer to narrow controller
 ports. State, messages, WS inbox, WS, RTC, realtime, rooms/people/stats,
-media/calls, and director do not import the compatibility entry point or the
+media/calls, and director do not import the full browser facade or the
 composer. Higher-level controllers receive lower-level facade or state ports;
 state notifies director through an after-emit observer, and state events plus
 ordinary WS messages share the ordered WS inbox multiplexer.
@@ -121,7 +119,7 @@ been changed by this documentation checkpoint.
   Its runtime adapter now maps joins through `rallar.rooms.enter` and keeps the
   rest of the game on a small app-owned `roomId` abstraction.
 - `apps/rallar-black-box` intentionally imports the full facade dynamically as a
-  compatibility and conformance target. Its Rallar Server REST workbench now
+  conformance target. Its Rallar Server REST workbench now
   exposes only the scoped graph and topology endpoints.
 - `examples/**` now teach the golden path first: `rallar.setup(...)`,
   `rallar.rooms.enter(...)`, `room.message(...)`, and `room.realtime(...)`.
@@ -166,5 +164,5 @@ Current browser simplification measurement and budgets:
   runtime composer.
 - `@js-temporal/polyfill` remains declared by shared-web for now because shared
   queue/runtime modules consumed by the full facade still import Temporal
-  directly. Moving that dependency behind app-level compatibility policy is a
+  directly. Moving that dependency behind app-level dependency policy is a
   separate shared queuebox/resilience refactor.
