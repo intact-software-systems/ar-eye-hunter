@@ -112,6 +112,34 @@ Deno.test('committed profiles resolve their intended database, delivery, and ICE
     }
 });
 
+Deno.test('Metered ICE uses the mandatory default region when no override is provided', () => {
+    const input = validDecodeApiV1ConfigurationInput();
+    input.environmentSource = {
+        ice: {
+            mode: 'metered',
+            appName: 'rallar-production'
+        }
+    };
+    input.secretsSource = {
+        authenticationCredentialSecret: CONFIGURATION_SECRET_SENTINELS.authenticationCredentialSecret,
+        meteredApiKey: CONFIGURATION_SECRET_SENTINELS.meteredApiKey
+    };
+
+    const configuration = decodeApiV1Configuration(input);
+
+    assert.equal(configuration.ice.mode, 'metered');
+    assert.equal(configuration.ice.region, 'eu');
+});
+
+Deno.test('local ICE ignores Metered region overrides', () => {
+    const input = validDecodeApiV1ConfigurationInput();
+    input.environmentSource = { ice: { region: 'us' } };
+
+    const configuration = decodeApiV1Configuration(input);
+
+    assert.equal(configuration.ice.mode, 'local');
+});
+
 Deno.test('configuration decoder rejects unknown and missing fields at every owned source boundary', () => {
     const cases = [
         {
@@ -136,6 +164,21 @@ Deno.test('configuration decoder rejects unknown and missing fields at every own
                 delete (input.defaultsSource as MutableApiV1ConfigurationSourceObject).group;
             },
             expectedPath: 'group'
+        },
+        {
+            name: 'missing mandatory Metered ICE region',
+            mutate(input: MutableDecodeApiV1ConfigurationInput) {
+                const defaults = input.defaultsSource as MutableApiV1ConfigurationSourceObject;
+                const ice = defaults.ice as MutableApiV1ConfigurationSourceObject;
+                ice.mode = 'metered';
+                ice.appName = 'rallar';
+                delete ice.region;
+                input.secretsSource = {
+                    ...(input.secretsSource as MutableApiV1ConfigurationSourceObject),
+                    meteredApiKey: CONFIGURATION_SECRET_SENTINELS.meteredApiKey
+                };
+            },
+            expectedPath: 'ice.region'
         },
         {
             name: 'unknown profile field',

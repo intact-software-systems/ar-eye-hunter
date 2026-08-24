@@ -480,14 +480,12 @@ function decodeIce(
             rateLimit
         };
     }
-    for (const path of ['ice.appName', 'ice.region'] as const) {
-        if (decoder.hasValue(path)) {
-            decoder.invariant(
-                path,
-                'local-ice-field',
-                'Local ICE does not accept Metered provider fields.'
-            );
-        }
+    if (decoder.hasValue('ice.appName')) {
+        decoder.invariant(
+            'ice.appName',
+            'local-ice-field',
+            'Local ICE does not accept a Metered provider app name.'
+        );
     }
     if (secrets.meteredApiKey !== undefined) {
         decoder.invariant(

@@ -136,6 +136,7 @@ export function validConfigurationDefaultsSource(): MutableApiV1ConfigurationSou
         },
         ice: {
             mode: 'local',
+            region: 'eu',
             cacheTtlMs: 300_000,
             rateLimit: {
                 windowMs: 60_000,

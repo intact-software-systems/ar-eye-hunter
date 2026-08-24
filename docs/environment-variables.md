@@ -181,7 +181,7 @@ accepted. There are no aliases or transitional readers.
 | `RALLAR_RTC_RTT_REPORTING_DEGREE_LIMIT` | No                                                                         | RTC topology `degreeLimit`, `5` | Positive integer cap for accepted RTC RTT reporting edges per endpoint. Invalid values fall back to the topology degree.   |
 | `METERED_APP_NAME`                      | Required when `RALLAR_ICE_MODE=metered` and `/api/webrtc/ice` is requested | None                            | Metered TURN app name. Used in `https://<app>.metered.live/...`.                                                           |
 | `METERED_API_KEY`                       | Required when `RALLAR_ICE_MODE=metered` and `/api/webrtc/ice` is requested | None                            | Metered TURN API key. Server-only secret.                                                                                  |
-| `METERED_REGION`                        | No                                                                         | Empty string                    | Optional Metered TURN region query parameter.                                                                              |
+| `METERED_REGION`                        | No                                                                         | `eu`                            | Optional override for the mandatory Metered TURN region. Ignored when ICE mode is `local`.                                 |
 
 ### Timing And App Inbox Tuning
 
