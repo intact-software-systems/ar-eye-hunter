@@ -4,6 +4,7 @@ import {
     signRallarBlackBoxOperatorToken,
     verifyRallarBlackBoxOperatorToken
 } from '@shared-server/http/black-box-operator-token.ts';
+import type { JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import { describe, expect, it } from 'vitest';
 
 describe('black-box operator token', () => {
@@ -61,27 +62,31 @@ describe('black-box operator token', () => {
     });
 
     it('rejects wrong scope and audience claims', async () => {
-        const wrongScopeToken = await signRallarBlackBoxOperatorToken({
-            secret: 'shared-secret',
-            subject: 'alice',
-            sessionId: 'session-1',
-            issuedAtEpochMs,
-            expiresAtEpochMs,
-            tokenId: 'token-1',
+        const wrongScopeToken = await signTestOperatorToken({
+            header: { alg: 'HS256', typ: 'JWT' },
             claims: {
-                scope: 'wrong-scope' as never
-            }
+                aud: RALLAR_BLACK_BOX_OPERATOR_TOKEN_AUDIENCE,
+                scope: 'wrong-scope',
+                sub: 'alice',
+                sessionId: 'session-1',
+                iat: issuedAtEpochMs,
+                exp: expiresAtEpochMs,
+                jti: 'token-1'
+            },
+            secret: 'shared-secret'
         });
-        const wrongAudienceToken = await signRallarBlackBoxOperatorToken({
-            secret: 'shared-secret',
-            subject: 'alice',
-            sessionId: 'session-1',
-            issuedAtEpochMs,
-            expiresAtEpochMs,
-            tokenId: 'token-1',
+        const wrongAudienceToken = await signTestOperatorToken({
+            header: { alg: 'HS256', typ: 'JWT' },
             claims: {
-                aud: 'wrong-audience' as never
-            }
+                aud: 'wrong-audience',
+                scope: RALLAR_BLACK_BOX_OPERATOR_TOKEN_SCOPE,
+                sub: 'alice',
+                sessionId: 'session-1',
+                iat: issuedAtEpochMs,
+                exp: expiresAtEpochMs,
+                jti: 'token-1'
+            },
+            secret: 'shared-secret'
         });
 
         await expect(
@@ -118,4 +123,115 @@ describe('black-box operator token', () => {
             })
         ).resolves.toEqual({ ok: false, reason: 'bad-signature' });
     });
+
+    it('rejects signed claims outside the exact current token shape', async () => {
+        const token = await signTestOperatorToken({
+            header: { alg: 'HS256', typ: 'JWT' },
+            claims: {
+                aud: RALLAR_BLACK_BOX_OPERATOR_TOKEN_AUDIENCE,
+                scope: RALLAR_BLACK_BOX_OPERATOR_TOKEN_SCOPE,
+                sub: 'alice',
+                sessionId: 'session-1',
+                iat: issuedAtEpochMs,
+                exp: expiresAtEpochMs,
+                jti: 'token-1',
+                predecessorClaim: 'unsupported'
+            },
+            secret: 'shared-secret'
+        });
+
+        await expect(
+            verifyRallarBlackBoxOperatorToken({
+                token,
+                secret: 'shared-secret',
+                nowEpochMs: issuedAtEpochMs + 1_000
+            })
+        ).resolves.toEqual({ ok: false, reason: 'invalid-claims' });
+    });
+
+    it('rejects signed headers outside the exact current token shape', async () => {
+        const token = await signTestOperatorToken({
+            header: {
+                alg: 'HS256',
+                typ: 'JWT',
+                predecessorHeader: 'unsupported'
+            },
+            claims: {
+                aud: RALLAR_BLACK_BOX_OPERATOR_TOKEN_AUDIENCE,
+                scope: RALLAR_BLACK_BOX_OPERATOR_TOKEN_SCOPE,
+                sub: 'alice',
+                sessionId: 'session-1',
+                iat: issuedAtEpochMs,
+                exp: expiresAtEpochMs,
+                jti: 'token-1'
+            },
+            secret: 'shared-secret'
+        });
+
+        await expect(
+            verifyRallarBlackBoxOperatorToken({
+                token,
+                secret: 'shared-secret',
+                nowEpochMs: issuedAtEpochMs + 1_000
+            })
+        ).resolves.toEqual({ ok: false, reason: 'malformed' });
+    });
+
+    it('refuses to sign invalid current claims', async () => {
+        await expect(
+            signRallarBlackBoxOperatorToken({
+                secret: 'shared-secret',
+                subject: ' ',
+                sessionId: 'session-1',
+                issuedAtEpochMs,
+                expiresAtEpochMs,
+                tokenId: 'token-1'
+            })
+        ).rejects.toThrow('Operator token subject is required');
+    });
 });
+
+interface SignTestOperatorTokenInput {
+    readonly header: JsonWireValue;
+    readonly claims: JsonWireValue;
+    readonly secret: string;
+}
+
+async function signTestOperatorToken(
+    input: SignTestOperatorTokenInput
+): Promise<string> {
+    const encodedHeader = encodeTestTokenJson(input.header);
+    const encodedClaims = encodeTestTokenJson(input.claims);
+    const unsignedToken = `${encodedHeader}.${encodedClaims}`;
+    const key = await crypto.subtle.importKey(
+        'raw',
+        new TextEncoder().encode(input.secret),
+        { name: 'HMAC', hash: 'SHA-256' },
+        false,
+        ['sign']
+    );
+    const signature = await crypto.subtle.sign(
+        'HMAC',
+        key,
+        new TextEncoder().encode(unsignedToken)
+    );
+
+    return `${unsignedToken}.${encodeTestTokenBytes(new Uint8Array(signature))}`;
+}
+
+function encodeTestTokenJson(value: JsonWireValue): string {
+    return encodeTestTokenBytes(
+        new TextEncoder().encode(JSON.stringify(value))
+    );
+}
+
+function encodeTestTokenBytes(bytes: Uint8Array): string {
+    let binary = '';
+    for (const byte of bytes) {
+        binary += String.fromCharCode(byte);
+    }
+    return btoa(binary)
+        .replaceAll('+', '-')
+        .replaceAll('/', '_')
+        .replace(/=+$/u, '');
+}

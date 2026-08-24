@@ -1,36 +1,37 @@
+import {
+    decodeJsonWireValue,
+    type JsonWireObject,
+    type JsonWireValue
+} from '../rallar-system/protocol/json-wire-identity.ts';
+
 export const RALLAR_BLACK_BOX_OPERATOR_TOKEN_AUDIENCE = 'rallar-black-box-control-server' as const;
 export const RALLAR_BLACK_BOX_OPERATOR_TOKEN_SCOPE = 'rallar-black-box:distributed-operator' as const;
 
-type TokenHeader = Readonly<{
-    alg: 'HS256';
-    typ: 'JWT';
-}>;
+export interface RallarBlackBoxOperatorTokenClaims {
+    readonly aud: typeof RALLAR_BLACK_BOX_OPERATOR_TOKEN_AUDIENCE;
+    readonly scope: typeof RALLAR_BLACK_BOX_OPERATOR_TOKEN_SCOPE;
+    readonly sub: string;
+    readonly sessionId: string;
+    readonly iat: number;
+    readonly exp: number;
+    readonly jti: string;
+}
 
-export type RallarBlackBoxOperatorTokenClaims = Readonly<{
-    aud: typeof RALLAR_BLACK_BOX_OPERATOR_TOKEN_AUDIENCE;
-    scope: typeof RALLAR_BLACK_BOX_OPERATOR_TOKEN_SCOPE;
-    sub: string;
-    sessionId: string;
-    iat: number;
-    exp: number;
-    jti: string;
-}>;
+export interface SignRallarBlackBoxOperatorTokenInput {
+    readonly secret: string;
+    readonly subject: string;
+    readonly sessionId: string;
+    readonly issuedAtEpochMs: number;
+    readonly expiresAtEpochMs: number;
+    readonly tokenId?: string;
+    readonly claims?: Partial<RallarBlackBoxOperatorTokenClaims>;
+}
 
-export type SignRallarBlackBoxOperatorTokenInput = Readonly<{
-    secret: string;
-    subject: string;
-    sessionId: string;
-    issuedAtEpochMs: number;
-    expiresAtEpochMs: number;
-    tokenId?: string;
-    claims?: Partial<RallarBlackBoxOperatorTokenClaims>;
-}>;
-
-export type VerifyRallarBlackBoxOperatorTokenInput = Readonly<{
-    token?: string;
-    secret?: string;
-    nowEpochMs?: number;
-}>;
+export interface VerifyRallarBlackBoxOperatorTokenInput {
+    readonly token?: string;
+    readonly secret?: string;
+    readonly nowEpochMs?: number;
+}
 
 export type RallarBlackBoxOperatorTokenVerifyResult =
     | Readonly<{ ok: true; claims: RallarBlackBoxOperatorTokenClaims; }>
@@ -47,6 +48,29 @@ export type RallarBlackBoxOperatorTokenVerifyResult =
             | 'invalid-claims';
     }>;
 
+interface TokenHeader {
+    readonly alg: 'HS256';
+    readonly typ: 'JWT';
+}
+
+interface DecodedOperatorTokenClaims {
+    readonly aud: string;
+    readonly scope: string;
+    readonly sub: string;
+    readonly sessionId: string;
+    readonly iat: number;
+    readonly exp: number;
+    readonly jti: string;
+}
+
+interface DecodedSignedOperatorToken {
+    readonly encodedHeader: string;
+    readonly encodedClaims: string;
+    readonly header: JsonWireValue;
+    readonly claims: JsonWireValue;
+    readonly signature: Uint8Array;
+}
+
 const HEADER: TokenHeader = {
     alg: 'HS256',
     typ: 'JWT'
@@ -56,9 +80,11 @@ export async function signRallarBlackBoxOperatorToken(
     input: SignRallarBlackBoxOperatorTokenInput
 ): Promise<string> {
     const secret = input.secret.trim();
-    if (!secret) {
-        throw new Error('RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET is required');
+    const issues = validateOperatorTokenSigningInput(input, secret);
+    if (issues.length > 0) {
+        throw new TypeError(issues[0]);
     }
+
     const claims: RallarBlackBoxOperatorTokenClaims = {
         aud: RALLAR_BLACK_BOX_OPERATOR_TOKEN_AUDIENCE,
         scope: RALLAR_BLACK_BOX_OPERATOR_TOKEN_SCOPE,
@@ -89,38 +115,82 @@ export async function verifyRallarBlackBoxOperatorToken(
         return { ok: false, reason: 'missing-secret' };
     }
 
-    const parts = token.split('.');
-    if (parts.length !== 3 || parts.some((part) => part.length === 0)) {
-        return { ok: false, reason: 'malformed' };
-    }
-
-    const [encodedHeader, encodedClaims, encodedSignature] = parts;
-    let header: unknown;
-    let claims: unknown;
-    let signature: Uint8Array;
-    try {
-        header = decodeBase64UrlJson(encodedHeader);
-        claims = decodeBase64UrlJson(encodedClaims);
-        signature = base64UrlDecodeBytes(encodedSignature);
-    }
-    catch (_error) {
-        return { ok: false, reason: 'malformed' };
-    }
-
-    if (!isRecord(header) || header.alg !== 'HS256' || header.typ !== 'JWT') {
+    const decodedToken = decodeSignedOperatorToken(token);
+    if (decodedToken === undefined || !isTokenHeader(decodedToken.header)) {
         return { ok: false, reason: 'malformed' };
     }
 
     const verified = await verifyHmacSha256(
         secret,
-        `${encodedHeader}.${encodedClaims}`,
-        signature
+        `${decodedToken.encodedHeader}.${decodedToken.encodedClaims}`,
+        decodedToken.signature
     );
     if (!verified) {
         return { ok: false, reason: 'bad-signature' };
     }
 
-    const parsed = parseClaims(claims);
+    return toOperatorTokenClaimsVerifyResult(
+        decodedToken.claims,
+        input.nowEpochMs ?? Date.now()
+    );
+}
+
+function validateOperatorTokenSigningInput(
+    input: SignRallarBlackBoxOperatorTokenInput,
+    secret: string
+): readonly string[] {
+    const issues: string[] = [];
+    if (secret.length === 0) {
+        issues.push('RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET is required');
+    }
+    if (input.subject.trim().length === 0) {
+        issues.push('Operator token subject is required');
+    }
+    if (input.sessionId.trim().length === 0) {
+        issues.push('Operator token session ID is required');
+    }
+    if (
+        !Number.isFinite(input.issuedAtEpochMs) ||
+        !Number.isFinite(input.expiresAtEpochMs) ||
+        input.issuedAtEpochMs < 0 ||
+        input.expiresAtEpochMs <= input.issuedAtEpochMs
+    ) {
+        issues.push('Operator token validity interval is invalid');
+    }
+    if (input.tokenId !== undefined && input.tokenId.trim().length === 0) {
+        issues.push('Operator token ID must not be empty');
+    }
+    return issues;
+}
+
+function decodeSignedOperatorToken(
+    token: string
+): DecodedSignedOperatorToken | undefined {
+    const parts = token.split('.');
+    if (parts.length !== 3 || parts.some((part) => part.length === 0)) {
+        return undefined;
+    }
+
+    const [encodedHeader, encodedClaims, encodedSignature] = parts;
+    try {
+        return {
+            encodedHeader,
+            encodedClaims,
+            header: decodeBase64UrlJson(encodedHeader),
+            claims: decodeBase64UrlJson(encodedClaims),
+            signature: base64UrlDecodeBytes(encodedSignature)
+        };
+    }
+    catch (_error) {
+        return undefined;
+    }
+}
+
+function toOperatorTokenClaimsVerifyResult(
+    claims: JsonWireValue,
+    nowEpochMs: number
+): RallarBlackBoxOperatorTokenVerifyResult {
+    const parsed = decodeOperatorTokenClaims(claims);
     if (!parsed) {
         return { ok: false, reason: 'invalid-claims' };
     }
@@ -130,18 +200,35 @@ export async function verifyRallarBlackBoxOperatorToken(
     if (parsed.scope !== RALLAR_BLACK_BOX_OPERATOR_TOKEN_SCOPE) {
         return { ok: false, reason: 'wrong-scope' };
     }
-    const nowEpochMs = input.nowEpochMs ?? Date.now();
     if (parsed.exp <= nowEpochMs) {
         return { ok: false, reason: 'expired' };
     }
 
-    return { ok: true, claims: parsed };
+    return {
+        ok: true,
+        claims: {
+            ...parsed,
+            aud: RALLAR_BLACK_BOX_OPERATOR_TOKEN_AUDIENCE,
+            scope: RALLAR_BLACK_BOX_OPERATOR_TOKEN_SCOPE
+        }
+    };
 }
 
-function parseClaims(
-    claims: unknown
-): RallarBlackBoxOperatorTokenClaims | undefined {
-    if (!isRecord(claims)) {
+function decodeOperatorTokenClaims(
+    claims: JsonWireValue
+): DecodedOperatorTokenClaims | undefined {
+    if (
+        !isJsonWireObject(claims) ||
+        !hasExactKeys(claims, [
+            'aud',
+            'scope',
+            'sub',
+            'sessionId',
+            'iat',
+            'exp',
+            'jti'
+        ])
+    ) {
         return undefined;
     }
     if (
@@ -167,7 +254,15 @@ function parseClaims(
         return undefined;
     }
 
-    return claims as RallarBlackBoxOperatorTokenClaims;
+    return {
+        aud: claims.aud,
+        scope: claims.scope,
+        sub: claims.sub,
+        sessionId: claims.sessionId,
+        iat: claims.iat,
+        exp: claims.exp,
+        jti: claims.jti
+    };
 }
 
 async function hmacSha256(secret: string, value: string): Promise<Uint8Array> {
@@ -214,12 +309,17 @@ async function importHmacKey(
     );
 }
 
-function base64UrlEncodeJson(value: unknown): string {
+function base64UrlEncodeJson(
+    value: TokenHeader | RallarBlackBoxOperatorTokenClaims
+): string {
     return base64UrlEncodeBytes(new TextEncoder().encode(JSON.stringify(value)));
 }
 
-function decodeBase64UrlJson(value: string): unknown {
-    return JSON.parse(new TextDecoder().decode(base64UrlDecodeBytes(value)));
+function decodeBase64UrlJson(value: string): JsonWireValue {
+    return decodeJsonWireValue(
+        JSON.parse(new TextDecoder().decode(base64UrlDecodeBytes(value))),
+        'Black-box operator token JSON'
+    );
 }
 
 function base64UrlEncodeBytes(bytes: Uint8Array): string {
@@ -261,6 +361,22 @@ function randomTokenId(): string {
     return base64UrlEncodeBytes(bytes);
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
+function isJsonWireObject(value: JsonWireValue): value is JsonWireObject {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function hasExactKeys(
+    value: JsonWireObject,
+    expectedKeys: readonly string[]
+): boolean {
+    const keys = Object.keys(value);
+    return keys.length === expectedKeys.length &&
+        expectedKeys.every((key) => Object.hasOwn(value, key));
+}
+
+function isTokenHeader(value: JsonWireValue): boolean {
+    return isJsonWireObject(value) &&
+        hasExactKeys(value, ['alg', 'typ']) &&
+        value.alg === 'HS256' &&
+        value.typ === 'JWT';
 }
