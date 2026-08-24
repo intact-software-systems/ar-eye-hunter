@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { computeClientStateSyncEntries } from '@shared-server/rallar-system/state-sync/state-sync-entry-computation.ts';
 import { resolveStateSyncRecipients } from '@shared-server/rallar-system/state-sync/state-sync-routing.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
-import type { ClientSnapshot } from '@shared/api/client-types.ts';
+import type { ClientEvent, ClientSnapshot } from '@shared/api/client-types.ts';
 import type { AuditStamp, GroupSnapshot } from '@shared/api/group-types.ts';
 import type { JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.ts';
 import { createTestGroup } from '../create-test-group.ts';
@@ -79,6 +79,24 @@ describe('principal state-sync audience', () => {
         expect(recipients!.map((recipient) => recipient.connectionId)).toEqual(['alice-session-1']);
     });
 
+    it('routes client event rows only to the targeted principal sessions', () => {
+        const message = toPrincipalStampedEventMessage('alice');
+        const webSocketServer = createOpenConnections(['alice-session', 'bob-session']);
+
+        const recipients = resolveStateSyncRecipients(webSocketServer, message, {
+            readClientSnapshots: () => [
+                createClientSnapshot('alice', ['alice-session']),
+                createClientSnapshot('bob', ['bob-session'])
+            ],
+            readGroupSnapshots: () => [],
+            now: () => NOW_EPOCH_MS
+        });
+
+        expect(recipients?.map((recipient) => recipient.connectionId)).toEqual([
+            'alice-session'
+        ]);
+    });
+
     it('ignores a payload snapshot whose principal differs from the stamped target', () => {
         const message = toPrincipalStampedMessage('alice', ['alice-session-1']);
         const forged: ALMessage = {
@@ -145,6 +163,14 @@ function toPrincipalStampedMessage(principalId: string, sessionIds: readonly str
     return JSON.parse(entry!.resource) as ALMessage;
 }
 
+function toPrincipalStampedEventMessage(principalId: string): ALMessage {
+    const [entry] = computeClientStateSyncEntries(
+        createComputedClientEventStateSync(createClientEvent(principalId)),
+        'server-1'
+    );
+    return JSON.parse(entry!.resource) as ALMessage;
+}
+
 function createOpenConnections(connectionIds: readonly string[]): JsonWebSocketServer {
     return {
         connections: new Map(connectionIds.map((id) => [id, { id, isOpen: true }]))
@@ -171,6 +197,48 @@ function createComputedClientSnapshotStateSync(snapshot: ClientSnapshot) {
                 payload: snapshot
             }
         ]
+    };
+}
+
+function createComputedClientEventStateSync(event: ClientEvent) {
+    return {
+        commandId: `command-${event.principalId}`,
+        aggregateRef: event,
+        acceptedCausalRevision: event.snapshotVersion,
+        audience: {
+            kind: 'principal' as const,
+            applicationId: event.applicationId,
+            workspaceId: event.workspaceId,
+            resourceId: event.principalId
+        },
+        createdAtEpochMs: NOW_EPOCH_MS,
+        expireAtEpochMs: NOW_EPOCH_MS + 60_000,
+        effects: [
+            {
+                effectKind: 'principal-state' as const,
+                payloadKind: 'event' as const,
+                payload: event
+            }
+        ]
+    };
+}
+
+function createClientEvent(principalId: string): ClientEvent {
+    return {
+        applicationId: 'app-1',
+        workspaceId: 'workspace-1',
+        principalId,
+        eventId: `client-event-${principalId}`,
+        eventType: 'session-connected',
+        snapshotVersion: 5,
+        clientInstanceId: `${principalId}-instance`,
+        sessionId: `${principalId}-session`,
+        occurredAtEpochMs: NOW_EPOCH_MS,
+        actor: { kind: 'service', serviceId: 'test' },
+        reason: null,
+        traceId: null,
+        requestId: `command-${principalId}`,
+        payload: {}
     };
 }
 

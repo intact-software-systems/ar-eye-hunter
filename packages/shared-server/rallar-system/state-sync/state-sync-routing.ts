@@ -15,8 +15,7 @@ import {
     decodeStateSyncMessage,
     sameScope,
     type StateSyncDecodeResult,
-    type StateSyncPayload,
-    type StateSyncScope
+    type StateSyncPayload
 } from './state-sync-payload.ts';
 
 export interface StateSyncRoutingOptions {
@@ -70,11 +69,14 @@ function resolveStateSyncPayloadRecipients(
                 options
             );
         case 'client-event':
-            return resolveScopeRecipients({
+            return resolvePrincipalRecipients(
                 webSocketServer,
-                scope: payload.scope,
+                {
+                    principalRef: payload.event,
+                    payloadSnapshots: []
+                },
                 options
-            });
+            );
         case 'group-snapshot':
             return resolveGroupRecipients(webSocketServer, payload.snapshot, options);
         case 'group-directory-snapshot':
@@ -131,24 +133,6 @@ function resolvePrincipalRecipients(
         )
         .flatMap((snapshot) => resolveGroupRecipients(webSocketServer, snapshot, options));
     return dedupRecipients([...ownRecipients, ...coGroupRecipients]);
-}
-
-interface ResolveScopeRecipientsInput {
-    readonly webSocketServer: JsonWebSocketServer;
-    readonly scope: StateSyncScope;
-    readonly options: StateSyncRoutingOptions;
-}
-
-function resolveScopeRecipients(input: ResolveScopeRecipientsInput): readonly WsServerResolvedRecipient[] {
-    const { webSocketServer, scope, options } = input;
-    const snapshots = options.readClientSnapshots?.() ??
-        clientStateSnapshotsRepository.getAllClientStateSnapshots();
-
-    return dedupRecipients(
-        snapshots
-            .filter((snapshot) => sameScope(snapshot.principal, scope))
-            .flatMap((snapshot) => toOpenClientSessionRecipients(webSocketServer, snapshot, options))
-    );
 }
 
 function resolveGroupRecipients(
