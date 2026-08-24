@@ -123,7 +123,16 @@ describe('API-v1 fairness-proof artifact lifecycle', () => {
 async function runApiV1BlackBoxRunner(
     invocation: ApiV1RunnerInvocation
 ): Promise<ApiV1RunnerResult> {
-    const child = spawn('deno', ['run', '-A', managedRunnerPath, ...invocation.args], {
+    // The package and app typechecks run independently. This subprocess owns
+    // artifact/startup lifecycle behavior, so avoid contending for Deno's
+    // checker cache with the full parallel Vitest suite.
+    const child = spawn('deno', [
+        'run',
+        '--no-check',
+        '-A',
+        managedRunnerPath,
+        ...invocation.args
+    ], {
         cwd: repoRoot,
         env: invocation.environment ?? process.env,
         stdio: ['ignore', 'pipe', 'pipe']
