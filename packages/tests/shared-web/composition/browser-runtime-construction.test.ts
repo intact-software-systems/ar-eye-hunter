@@ -4,6 +4,8 @@ import {
 } from '@shared-web/browser/rallar-runtime/composition/browser-runtime-composition.ts';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { configureTestCacheRepositories } from '../../cache-repository-config.ts';
+
 type AppContextModule = typeof import('@shared-web/browser/app-context.ts');
 type AuthModule = typeof import('@shared/api/auth.ts');
 
@@ -41,6 +43,7 @@ vi.mock(import('@shared/api/auth.ts'), (): Partial<AuthModule> => ({
 describe('browser runtime construction', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        configureTestCacheRepositories();
         runtime.initMiddleware.mockResolvedValue(runtime.middleware);
         runtime.readSession.mockReturnValue(runtime.middleware.session);
     });

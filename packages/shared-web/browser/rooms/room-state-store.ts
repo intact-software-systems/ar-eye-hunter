@@ -118,16 +118,6 @@ class RoomStateStore implements RallarRoomStateStorePort {
             return currentRoomSnapshot.group;
         }
 
-        const currentRoomId = this.#input.runtime.currentRoomId();
-        const legacyCurrentRoomSnapshot = this.findGroupSnapshot(currentRoomId);
-        if (
-            legacyCurrentRoomSnapshot &&
-            isGroupActive(legacyCurrentRoomSnapshot) &&
-            isSessionInGroup(legacyCurrentRoomSnapshot, session.sessionId)
-        ) {
-            return legacyCurrentRoomSnapshot.group;
-        }
-
         return this.findFirstGroupSnapshotRefForSession(session.sessionId);
     }
 

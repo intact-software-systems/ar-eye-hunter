@@ -15,36 +15,24 @@ const mocks = await vi.hoisted(async () => {
         './api-middleware-test-double.ts'
     );
     const ctx = createApiMiddlewareTestDouble();
-    const throwClientRepositoryMissing = () => {
-        throw new Error(
-            'Repository not found: shared.repository.client-state-snapshots'
-        );
-    };
-    const throwGroupRepositoryMissing = () => {
-        throw new Error(
-            'Repository not found: shared.repository.group-state-snapshots'
-        );
-    };
-
     return {
         clearSession: vi.fn<AuthModule['clearSession']>(),
         ctx,
-        throwClientRepositoryMissing,
-        throwGroupRepositoryMissing,
         hydrateStateCaches: vi.fn<DataCachesModule['hydrateStateCaches']>(() => Promise.resolve()),
         initMiddleware: vi.fn<AppContextModule['initMiddleware']>(() => Promise.resolve(ctx)),
         isMiddlewareReady: vi.fn<AppContextModule['isMiddlewareReady']>(() => false),
         onStateCacheChange: vi.fn<DataCachesModule['onStateCacheChange']>(() => vi.fn()),
         readSession: vi.fn<AuthModule['readSession']>(() => ctx.session),
         refreshStateSnapshots: vi.fn<ApiWorkflowsModule['refreshStateSnapshots']>(() => Promise.resolve({ clients: [], groups: [] })),
-        clientRepositoryMissing: vi.fn(throwClientRepositoryMissing),
+        findClientStateSnapshotByPrincipalId: vi.fn<ClientStateSnapshotsRepositoryModule['findClientStateSnapshotByPrincipalId']>(() => undefined),
+        getAllClientStateSnapshots: vi.fn<ClientStateSnapshotsRepositoryModule['getAllClientStateSnapshots']>(() => []),
         findFirstGroupStateSnapshotRefSessionIdIsIn: vi.fn<
             GroupStateSnapshotsRepositoryModule[
                 'findFirstGroupStateSnapshotRefSessionIdIsIn'
             ]
-        >(throwGroupRepositoryMissing),
-        findGroupStateSnapshotByRef: vi.fn<GroupStateSnapshotsRepositoryModule['findGroupStateSnapshotByRef']>(throwGroupRepositoryMissing),
-        getAllGroupStateSnapshots: vi.fn<GroupStateSnapshotsRepositoryModule['getAllGroupStateSnapshots']>(throwGroupRepositoryMissing)
+        >(() => undefined),
+        findGroupStateSnapshotByRef: vi.fn<GroupStateSnapshotsRepositoryModule['findGroupStateSnapshotByRef']>(() => undefined),
+        getAllGroupStateSnapshots: vi.fn<GroupStateSnapshotsRepositoryModule['getAllGroupStateSnapshots']>(() => [])
     };
 });
 
@@ -83,8 +71,8 @@ vi.mock(import('@shared/api/auth.ts'), (): Partial<AuthModule> => ({
 vi.mock(
     import('@shared/repository/client-state-snapshots-repository.ts'),
     (): Partial<ClientStateSnapshotsRepositoryModule> => ({
-        findClientStateSnapshotByPrincipalId: mocks.clientRepositoryMissing,
-        getAllClientStateSnapshots: mocks.clientRepositoryMissing
+        findClientStateSnapshotByPrincipalId: mocks.findClientStateSnapshotByPrincipalId,
+        getAllClientStateSnapshots: mocks.getAllClientStateSnapshots
     })
 );
 
@@ -100,10 +88,9 @@ vi.mock(
 describe('Rallar startup lifecycle behavior', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        mocks.clientRepositoryMissing.mockImplementation(
-            mocks.throwClientRepositoryMissing
-        );
-        mockGroupRepositoryMissing();
+        mocks.findClientStateSnapshotByPrincipalId.mockReturnValue(undefined);
+        mocks.getAllClientStateSnapshots.mockReturnValue([]);
+        mockGroupSnapshots([]);
         mocks.hydrateStateCaches.mockResolvedValue(undefined);
         mocks.clearSession.mockReset();
         mocks.initMiddleware.mockResolvedValue(mocks.ctx);
@@ -241,18 +228,6 @@ describe('Rallar startup lifecycle behavior', () => {
         expect(facade.status()).toBe('idle');
     });
 });
-
-function mockGroupRepositoryMissing(): void {
-    mocks.findFirstGroupStateSnapshotRefSessionIdIsIn.mockImplementation(
-        mocks.throwGroupRepositoryMissing
-    );
-    mocks.findGroupStateSnapshotByRef.mockImplementation(
-        mocks.throwGroupRepositoryMissing
-    );
-    mocks.getAllGroupStateSnapshots.mockImplementation(
-        mocks.throwGroupRepositoryMissing
-    );
-}
 
 function mockGroupSnapshot(snapshot: GroupSnapshot): void {
     mockGroupSnapshots([snapshot]);

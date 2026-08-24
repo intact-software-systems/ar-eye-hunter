@@ -13,17 +13,6 @@ const runtime = await vi.hoisted(async () => {
         '../api-middleware-test-double.ts'
     );
     const middleware = createApiMiddlewareTestDouble();
-    const missingClientRepository = (): never => {
-        throw new Error(
-            'Repository not found: shared.repository.client-state-snapshots'
-        );
-    };
-    const missingGroupRepository = (): never => {
-        throw new Error(
-            'Repository not found: shared.repository.group-state-snapshots'
-        );
-    };
-
     return {
         middleware,
         initMiddleware: vi.fn<AppContextModule['initMiddleware']>(),
@@ -31,13 +20,11 @@ const runtime = await vi.hoisted(async () => {
         refreshStateSnapshots: vi.fn<ApiWorkflowsModule['refreshStateSnapshots']>(),
         hydrateStateCaches: vi.fn<DataCachesModule['hydrateStateCaches']>(),
         onStateCacheChange: vi.fn<DataCachesModule['onStateCacheChange']>(),
-        findClientStateSnapshotByPrincipalId: vi.fn<ClientStateSnapshotsRepositoryModule['findClientStateSnapshotByPrincipalId']>(missingClientRepository),
-        getAllClientStateSnapshots: vi.fn<ClientStateSnapshotsRepositoryModule['getAllClientStateSnapshots']>(missingClientRepository),
-        findFirstGroupStateSnapshotRefSessionIdIsIn: vi.fn<GroupStateSnapshotsRepositoryModule['findFirstGroupStateSnapshotRefSessionIdIsIn']>(
-            missingGroupRepository
-        ),
-        findGroupStateSnapshotByRef: vi.fn<GroupStateSnapshotsRepositoryModule['findGroupStateSnapshotByRef']>(missingGroupRepository),
-        getAllGroupStateSnapshots: vi.fn<GroupStateSnapshotsRepositoryModule['getAllGroupStateSnapshots']>(missingGroupRepository)
+        findClientStateSnapshotByPrincipalId: vi.fn<ClientStateSnapshotsRepositoryModule['findClientStateSnapshotByPrincipalId']>(() => undefined),
+        getAllClientStateSnapshots: vi.fn<ClientStateSnapshotsRepositoryModule['getAllClientStateSnapshots']>(() => []),
+        findFirstGroupStateSnapshotRefSessionIdIsIn: vi.fn<GroupStateSnapshotsRepositoryModule['findFirstGroupStateSnapshotRefSessionIdIsIn']>(() => undefined),
+        findGroupStateSnapshotByRef: vi.fn<GroupStateSnapshotsRepositoryModule['findGroupStateSnapshotByRef']>(() => undefined),
+        getAllGroupStateSnapshots: vi.fn<GroupStateSnapshotsRepositoryModule['getAllGroupStateSnapshots']>(() => [])
     };
 });
 

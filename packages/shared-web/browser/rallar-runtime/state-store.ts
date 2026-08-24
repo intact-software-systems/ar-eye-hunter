@@ -32,31 +32,13 @@ export interface RallarStateCacheReadPort {
 export function createRallarStateCacheReadPort(): RallarStateCacheReadPort {
     return {
         onCacheChange: (listener) => stateCaches.onStateCacheChange(listener),
-        readGroupSnapshots: () =>
-            readRallarCacheOrDefault(
-                () => groupStateSnapshotsRepository.getAllGroupStateSnapshots(),
-                []
-            ),
-        findGroupSnapshotByRef: (roomRef) =>
-            readRallarCacheOrDefault(
-                () => groupStateSnapshotsRepository.findGroupStateSnapshotByRef(roomRef),
-                undefined
-            ),
+        readGroupSnapshots: () => groupStateSnapshotsRepository.getAllGroupStateSnapshots(),
+        findGroupSnapshotByRef: (roomRef) => groupStateSnapshotsRepository.findGroupStateSnapshotByRef(roomRef),
         findFirstGroupRefForSession: (sessionId) =>
-            readRallarCacheOrDefault(
-                () => groupStateSnapshotsRepository.findFirstGroupStateSnapshotRefSessionIdIsIn(sessionId),
-                undefined
-            ),
-        readClientSnapshots: () =>
-            readRallarCacheOrDefault(
-                () => clientStateSnapshotsRepository.getAllClientStateSnapshots(),
-                []
-            ),
+            groupStateSnapshotsRepository.findFirstGroupStateSnapshotRefSessionIdIsIn(sessionId),
+        readClientSnapshots: () => clientStateSnapshotsRepository.getAllClientStateSnapshots(),
         findClientSnapshot: (principalId) =>
-            readRallarCacheOrDefault(
-                () => clientStateSnapshotsRepository.findClientStateSnapshotByPrincipalId(principalId),
-                undefined
-            )
+            clientStateSnapshotsRepository.findClientStateSnapshotByPrincipalId(principalId)
     };
 }
 
@@ -235,26 +217,6 @@ function toPerson(snapshot: ClientSnapshot): RallarPerson {
 function toPersonName(snapshot: ClientSnapshot): string {
     return (
         snapshot.principal.displayName ?? snapshot.principal.username ?? snapshot.principal.principalId
-    );
-}
-
-function readRallarCacheOrDefault<T>(supplier: () => T, fallback: T): T {
-    try {
-        return supplier();
-    }
-    catch (error) {
-        if (isUnconfiguredRallarCacheError(error)) {
-            return fallback;
-        }
-        throw error;
-    }
-}
-
-function isUnconfiguredRallarCacheError(error: unknown): boolean {
-    const message = error instanceof Error ? error.message : String(error);
-    return (
-        message.includes('Repository not found: shared.repository.') ||
-        message.includes('snapshot repository is not configured')
     );
 }
 

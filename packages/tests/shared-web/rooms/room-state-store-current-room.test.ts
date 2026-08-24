@@ -206,6 +206,30 @@ describe('room state store current-room projection', () => {
         expect(after.currentRoom).toBe(before.currentRoom);
         expect(after.members).toEqual(before.members);
     });
+
+    it('selects the session room when the canonical current room ref is absent', () => {
+        const runtime = createRallarBrowserFacadeRuntimeContext();
+        const sessionRoom = createRoomSnapshot('session-room', 'Session Room');
+        const bareIdRoom = createRoomSnapshot('bare-id-room', 'Bare ID Room');
+        stateMocks.groups.push(sessionRoom, bareIdRoom);
+        stateMocks.repositoriesConfigured = true;
+        const store = createRoomStateStore({
+            runtime: {
+                currentRoomId: () => bareIdRoom.group.groupId,
+                currentRoomRef: () => undefined,
+                setCurrentRoom: runtime.setCurrentRoom,
+                clearCurrentRoomIfMatches: runtime.clearCurrentRoomIfMatches,
+                readDefaultScope: runtime.readDefaultScope,
+                resolveOperationScope: runtime.resolveOperationScope
+            },
+            readSession: () => stateMocks.session,
+            stateCache: createRallarStateCacheReadPort()
+        });
+
+        runtime.setDefaults({ applicationId: 'app-1', workspaceId: 'workspace-1' });
+
+        expect(store.resolveCurrentRoomRef()).toEqual(sessionRoom.group);
+    });
 });
 
 function requireConfiguredRepositories(): void {

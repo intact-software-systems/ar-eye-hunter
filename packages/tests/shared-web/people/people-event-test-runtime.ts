@@ -5,7 +5,7 @@ import type { ApiMiddleware } from '@shared-web/browser/app-context.ts';
 import { newALBroadcastMessage, newALEventRoute } from '@shared/al-contracts/al-contract.ts';
 import { AppTopics } from '@shared/api/api-config.ts';
 import type { ClientEvent, ClientSnapshot } from '@shared/api/client-types.ts';
-import type { GroupEvent, GroupSnapshot } from '@shared/api/group-types.ts';
+import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import type { StateEventPage } from '@shared/api/state-event-types.ts';
 
 import { createActiveClientSessionFixture, createClientSnapshotFixture, createGroupSnapshotFixture } from '../authoritative-group-fixtures.ts';
@@ -31,12 +31,11 @@ const peopleEventMocks = await vi.hoisted(async () => {
             clients: [],
             groups: []
         })),
-        clientRepositoryMissing: vi.fn((): never => {
-            throw new Error('Repository not found: shared.repository.client-state-snapshots');
-        }),
-        groupRepositoryMissing: vi.fn((): never => {
-            throw new Error('Repository not found: shared.repository.group-state-snapshots');
-        })
+        findClientStateSnapshotByPrincipalId: vi.fn(() => undefined),
+        getAllClientStateSnapshots: vi.fn(() => []),
+        findFirstGroupStateSnapshotRefSessionIdIsIn: vi.fn(() => undefined),
+        findGroupStateSnapshotByRef: vi.fn(() => undefined),
+        getAllGroupStateSnapshots: vi.fn(() => [])
     };
 });
 
@@ -71,14 +70,14 @@ vi.mock(import('@shared/api/auth.ts'), () => ({
 }));
 
 vi.mock(import('@shared/repository/client-state-snapshots-repository.ts'), () => ({
-    findClientStateSnapshotByPrincipalId: peopleEventMocks.clientRepositoryMissing,
-    getAllClientStateSnapshots: peopleEventMocks.clientRepositoryMissing
+    findClientStateSnapshotByPrincipalId: peopleEventMocks.findClientStateSnapshotByPrincipalId,
+    getAllClientStateSnapshots: peopleEventMocks.getAllClientStateSnapshots
 }));
 
 vi.mock(import('@shared/repository/group-state-snapshots-repository.ts'), () => ({
-    findFirstGroupStateSnapshotRefSessionIdIsIn: peopleEventMocks.groupRepositoryMissing,
-    findGroupStateSnapshotByRef: peopleEventMocks.groupRepositoryMissing,
-    getAllGroupStateSnapshots: peopleEventMocks.groupRepositoryMissing
+    findFirstGroupStateSnapshotRefSessionIdIsIn: peopleEventMocks.findFirstGroupStateSnapshotRefSessionIdIsIn,
+    findGroupStateSnapshotByRef: peopleEventMocks.findGroupStateSnapshotByRef,
+    getAllGroupStateSnapshots: peopleEventMocks.getAllGroupStateSnapshots
 }));
 
 export function readPeopleEventMocks(): typeof peopleEventMocks {
@@ -95,12 +94,6 @@ export function resetPeopleEventTestRuntime(): void {
         new Error('client event page not mocked')
     );
     peopleEventMocks.refreshStateSnapshots.mockResolvedValue({ clients: [], groups: [] });
-    peopleEventMocks.clientRepositoryMissing.mockImplementation(() => {
-        throw new Error('Repository not found: shared.repository.client-state-snapshots');
-    });
-    peopleEventMocks.groupRepositoryMissing.mockImplementation(() => {
-        throw new Error('Repository not found: shared.repository.group-state-snapshots');
-    });
     const { webSocketQueueBox, webRtcConnectionService } = peopleEventMocks.context.middleware;
     vi.mocked(webSocketQueueBox.close).mockImplementation((code, reason) => {
         webSocketQueueBox.socket.close(code, reason);
@@ -214,14 +207,4 @@ export function createPeopleRoomSnapshot(
         groupId,
         sessionIds
     });
-}
-
-export function toRoomEventMessage(event: GroupEvent) {
-    return newALBroadcastMessage(
-        'server-1',
-        newALEventRoute(AppTopics.groupStateEvent, event.groupId, event.eventId),
-        'all',
-        AppTopics.groupStateEvent,
-        event
-    );
 }

@@ -14,6 +14,7 @@ import type { RallarReplayEventsResult, RallarUnsubscribe } from '@shared-web/br
 import { newALBroadcastMessage, newALRoute } from '@shared/al-contracts/al-contract.ts';
 import { AppTopics } from '@shared/api/api-config.ts';
 import { validateAuthoritativeGroupEvent } from '@shared/api/authoritative-state-validation.ts';
+import { validateGroupStateDeltaEnvelope } from '@shared/api/group-state-delta.ts';
 import { DEFAULT_STATE_WORKSPACE_ID } from '@shared/api/state-types.ts';
 
 import type {
@@ -286,25 +287,14 @@ function isGroupEventPayload(value: unknown): value is GroupEvent {
     }
 }
 
-// Under dual-emit/delta-primary the `group-state.event` payload is a
-// GroupStateDeltaEnvelope wrapping the GroupEvent; legacy rows carry the bare
-// event. The envelope's wrapper keys are disjoint from GroupEvent's, so a
-// light structural check routes both forms to the same validated GroupEvent.
 function resolveDispatchedGroupEvent(value: unknown): GroupEvent | undefined {
-    if (isGroupEventPayload(value)) {
-        return value;
+    try {
+        validateGroupStateDeltaEnvelope(value);
+        return value.event;
     }
-    if (
-        typeof value !== 'object' ||
-        value === null ||
-        Array.isArray(value) ||
-        !('event' in value) ||
-        !('predecessorCausalRevision' in value) ||
-        !('resultingCausalRevision' in value)
-    ) {
+    catch {
         return undefined;
     }
-    return isGroupEventPayload(value.event) ? value.event : undefined;
 }
 
 function isSameStateGroupRef(

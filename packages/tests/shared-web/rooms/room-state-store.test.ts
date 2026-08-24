@@ -67,32 +67,13 @@ describe('room state store summaries', () => {
         stateMocks.repositoriesConfigured = false;
     });
 
-    it('returns empty room state before cache repositories are configured', async () => {
+    it('requires configured cache repositories for room state reads', async () => {
         const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
         const facade = createRallarFacade();
-        const listener = vi.fn();
 
-        expect(facade.rooms.state().rooms).toEqual([]);
-        expect(facade.rooms.state().members).toEqual([]);
-        expect(facade.rooms.state()).toEqual({
-            rooms: [],
-            currentRoomId: undefined,
-            currentRoomRef: undefined,
-            currentRoom: undefined,
-            members: []
-        });
-
-        facade.rooms.onChange(listener);
-
-        expect(listener).toHaveBeenCalledWith(expect.objectContaining({ rooms: [], members: [] }));
-        expect(listener).toHaveBeenCalledOnce();
-        expect(listener).toHaveBeenCalledWith({
-            rooms: [],
-            currentRoomId: undefined,
-            currentRoomRef: undefined,
-            currentRoom: undefined,
-            members: []
-        });
+        expect(() => facade.rooms.state()).toThrow(
+            'Repository not found: shared.repository.test-snapshots'
+        );
     });
 
     it('filters room state by application and workspace scope', async () => {

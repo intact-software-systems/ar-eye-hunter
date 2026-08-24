@@ -8,10 +8,10 @@ import {
     findRoomWsCallback,
     readRoomEventMocks,
     resetRoomEventTestRuntime,
-    toRoomEventMessage
+    toRoomEventEnvelopeMessage
 } from './room-event-test-runtime.ts';
 
-describe('room event replay compatibility', () => {
+describe('room event replay', () => {
     beforeEach(resetRoomEventTestRuntime);
 
     it('replays explicitly and deduplicates overlap with live room events', async () => {
@@ -29,7 +29,7 @@ describe('room event replay compatibility', () => {
         facade.rooms.onEvent(liveListener, { roomId: 'room-1' });
         mocks.listStateGroupEventPage.mockResolvedValue(createRoomEventPage([live, replayed], false));
         await facade.connect();
-        await findRoomWsCallback(true)?.onMessage?.(toRoomEventMessage(live));
+        await findRoomWsCallback(true)?.onMessage?.(toRoomEventEnvelopeMessage(live));
 
         const result = await facade.rooms.replayEvents(
             {
@@ -39,7 +39,7 @@ describe('room event replay compatibility', () => {
             },
             replayListener
         );
-        await findRoomWsCallback(true)?.onMessage?.(toRoomEventMessage(replayed));
+        await findRoomWsCallback(true)?.onMessage?.(toRoomEventEnvelopeMessage(replayed));
 
         expect(liveListener).toHaveBeenCalledOnce();
         expect(liveListener.mock.calls.map((call) => call[0].eventId)).toEqual(['event-1']);

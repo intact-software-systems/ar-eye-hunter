@@ -13,7 +13,7 @@ import {
     toPeopleEventMessage
 } from './people-event-test-runtime.ts';
 
-describe('people event compatibility', () => {
+describe('people events', () => {
     beforeEach(resetPeopleEventTestRuntime);
 
     it('delivers client state events through people.onEvent with filtering and unsubscribe', async () => {

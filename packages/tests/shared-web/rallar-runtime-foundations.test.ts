@@ -8,6 +8,8 @@ import { createRoomStateStore } from '@shared-web/browser/rooms/room-state-store
 import { describe, expect, it } from 'vitest';
 import { vi } from 'vitest';
 
+import { configureTestCacheRepositories } from '../cache-repository-config.ts';
+
 describe('Rallar browser runtime foundations', () => {
     it('isolates composed facade defaults between instances', () => {
         const first = createRallarFacade();
@@ -159,6 +161,7 @@ describe('Rallar browser runtime foundations', () => {
 });
 
 function createFoundationStateStore() {
+    configureTestCacheRepositories();
     const runtime = createRallarBrowserFacadeRuntimeContext({
         isMiddlewareReady: () => false
     });
