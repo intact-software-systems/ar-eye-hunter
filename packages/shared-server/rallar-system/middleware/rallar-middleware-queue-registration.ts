@@ -23,15 +23,30 @@ export interface RegisterApplicationQueueReaderTasksInput {
 }
 
 class RegisteredRallarMiddlewareQueue {
-    readonly #nominalIdentity = true;
-}
+    readonly #owner: RallarMiddlewareQueueRegistrationOwner;
+    #consumed = false;
 
-interface RegisteredQueueState {
-    readonly owner: RallarMiddlewareQueueRegistrationOwner;
-    consumed: boolean;
-}
+    constructor(owner: RallarMiddlewareQueueRegistrationOwner) {
+        this.#owner = owner;
+    }
 
-const registeredQueueStates = new WeakMap<RegisteredRallarMiddlewareQueue, RegisteredQueueState>();
+    static consume(
+        registeredQueue: RegisteredRallarMiddlewareQueue,
+        owner: RallarMiddlewareQueueRegistrationOwner
+    ): void {
+        if (!(#owner in registeredQueue) || registeredQueue.#owner !== owner) {
+            throw new Error(
+                'Rallar middleware queue task registration belongs to another queue runtime'
+            );
+        }
+        if (registeredQueue.#consumed) {
+            throw new Error(
+                'Rallar middleware queue task registration has already been consumed'
+            );
+        }
+        registeredQueue.#consumed = true;
+    }
+}
 
 class RallarMiddlewareQueueRegistrationOwner {
     readonly #engine = new InboxOutboxEngine();
@@ -56,33 +71,17 @@ class RallarMiddlewareQueueRegistrationOwner {
             appOutboxResilience: input.appOutboxResilience
         });
         this.#state = 'registered';
-        const registeredQueue = new RegisteredRallarMiddlewareQueue();
-        registeredQueueStates.set(registeredQueue, { owner: this, consumed: false });
-        return registeredQueue;
+        return new RegisteredRallarMiddlewareQueue(this);
     }
 
     finalise(registration: RegisteredRallarMiddlewareQueue): InboxOutboxEngine {
-        consumeRegisteredQueue(registration, this);
+        RegisteredRallarMiddlewareQueue.consume(registration, this);
         if (this.#state !== 'registered') {
             throw new Error('Rallar middleware queue task registration is incomplete');
         }
         this.#state = 'finalised';
         return this.#engine;
     }
-}
-
-function consumeRegisteredQueue(
-    registeredQueue: RegisteredRallarMiddlewareQueue,
-    owner: RallarMiddlewareQueueRegistrationOwner
-): void {
-    const state = registeredQueueStates.get(registeredQueue);
-    if (!state || state.owner !== owner) {
-        throw new Error('Rallar middleware queue task registration belongs to another queue runtime');
-    }
-    if (state.consumed) {
-        throw new Error('Rallar middleware queue task registration has already been consumed');
-    }
-    state.consumed = true;
 }
 
 export function createRallarMiddlewareQueueRegistration(): RallarMiddlewareQueueRegistrationOwner {

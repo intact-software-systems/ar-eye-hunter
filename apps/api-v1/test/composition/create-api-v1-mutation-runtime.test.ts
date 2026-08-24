@@ -1,12 +1,8 @@
 import assert from 'node:assert/strict';
 
 import type { PSqlParameter, PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
-import { createRallarMiddleware } from '@shared-server/rallar-system/middleware/create-rallar-middleware.ts';
-import { RtcRttInboxService } from '@shared-server/rallar-system/rtc-rtt/inbox/rtc-rtt-inbox-service.ts';
-import { TopologyInboxService } from '@shared-server/rallar-system/topology/inbox/topology-inbox-service.ts';
 
 import { createApiV1MutationRuntime } from '../../src/composition/create-api-v1-mutation-runtime.ts';
-import { findCurrentClientSnapshot } from '../../src/crdt/create-api-crdt-document-authorizer.ts';
 import { toResilienceDto } from '../api-v1-test-queue-resilience.ts';
 
 Deno.test('mutation runtime keeps one database identity and performs no construction query', () => {
@@ -33,44 +29,7 @@ Deno.test('mutation runtime keeps one database identity and performs no construc
     assert.equal(mutation.queueBox.resourceInbox, mutation.resourceInboxRepository);
     assert.equal(databaseProbe.queryCount(), 0);
     assert.equal(databaseProbe.transactionCount(), 0);
-
-    const runtime = createRallarMiddleware({
-        inbox: mutation.queueBox,
-        outbox: mutation.queueBox,
-        appInboxDequeueOptions: mutation.appInboxDequeueOptions,
-        webSocketServer: mutation.webSocketServer,
-        findGroupSnapshotByRef: (ref) => mutation.groupSnapshotCache.findByRef(ref),
-        findClientSnapshotByRef: (ref) => findCurrentClientSnapshot(mutation.clientSnapshotCache, ref),
-        createGroupStateInboxService: mutation.createGroupStateInboxService,
-        createTopologyInboxService: createUnusedTopologyInboxService,
-        createRtcRttInboxService: createUnusedRtcRttInboxService,
-        createAppClientInboxService: mutation.createAppClientInboxService,
-        createAppAuthInboxService: mutation.createAppAuthInboxService,
-        createAppAdminInboxService: mutation.createAppAdminInboxService,
-        createAppCrdtInboxService: mutation.createAppCrdtInboxService,
-        resilience: mutation.resilience,
-        clientsRepository: mutation.clientsRepository,
-        groupsRepository: mutation.groupsRepository
-    });
-
-    assert.equal(runtime.clientsRepository, mutation.clientsRepository);
-    assert.equal(runtime.groupsRepository, mutation.groupsRepository);
-    assert.ok(runtime.groupStateInboxService);
-    assert.ok(runtime.appClientInboxService);
-    assert.ok(runtime.appAuthInboxService);
-    assert.equal(databaseProbe.queryCount(), 0);
-    assert.equal(databaseProbe.transactionCount(), 0);
 });
-
-function createUnusedTopologyInboxService(): TopologyInboxService {
-    const service: TopologyInboxService = Object.create(TopologyInboxService.prototype);
-    return service;
-}
-
-function createUnusedRtcRttInboxService(): RtcRttInboxService {
-    const service: RtcRttInboxService = Object.create(RtcRttInboxService.prototype);
-    return service;
-}
 
 interface DatabaseProbe {
     readonly database: PSqlSql;
