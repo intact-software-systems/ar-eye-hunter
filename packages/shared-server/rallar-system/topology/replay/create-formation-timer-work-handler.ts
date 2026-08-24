@@ -33,7 +33,9 @@ export interface FormationTimerWorkHandlerOptions {
  * the retry release walks the entry forward until this clock agrees. Once
  * due, the only checks left are staleness -- the group moved on (epoch or
  * state mismatch) is a cheap drop -- and the criterion itself, evaluated by
- * the same function the evidence leg uses.
+ * the same function the evidence leg uses. A missing plan is transient: the
+ * durable deadline must be retried instead of acknowledged before topology
+ * publication catches up.
  */
 export function createFormationTimerWorkHandler(
     options: FormationTimerWorkHandlerOptions
@@ -83,7 +85,7 @@ async function processFormationTimerWork(
         options.readPlannedTopology(work.groupRef)
     ]);
     if (planned === null) {
-        return;
+        throw new Error('Formation topology plan is not available; retry the deadline evaluation');
     }
     const command = await computeFormationCriterionCommand({
         group: authority.group,
