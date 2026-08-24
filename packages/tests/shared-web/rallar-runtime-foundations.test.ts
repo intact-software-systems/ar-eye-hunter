@@ -1,6 +1,6 @@
 import { createRallarBrowserFacadeRuntimeContext } from '@shared-web/browser/rallar-runtime-context.ts';
 import { createRallarLifecycleCoordinator, type RallarLifecycleParticipant } from '@shared-web/browser/rallar-runtime/lifecycle.ts';
-import { createRallarStateStore } from '@shared-web/browser/rallar-runtime/state-store.ts';
+import { createRallarStateCacheReadPort, createRallarStateStore } from '@shared-web/browser/rallar-runtime/state-store.ts';
 import { createRallarSubscriptionScope } from '@shared-web/browser/rallar-runtime/subscriptions.ts';
 import { createRallarWsInbox } from '@shared-web/browser/rallar-runtime/ws-inbox.ts';
 import { createRallarFacade } from '@shared-web/browser/rallar.ts';
@@ -165,17 +165,12 @@ function createFoundationStateStore() {
     const roomStateStore = createRoomStateStore({
         runtime,
         readSession: () => undefined,
-        readCachedGroupSnapshots: () => [],
-        findCachedGroupSnapshotByRef: () => undefined,
-        findFirstCachedGroupRefForSession: () => undefined,
-        findCachedClientSnapshot: () => undefined,
-        onCacheChange: () => () => undefined
+        stateCache: createRallarStateCacheReadPort()
     });
     return createRallarStateStore({
         runtime,
         roomStateStore,
         readSession: () => undefined,
-        readGroupSnapshots: () => [],
-        readClientSnapshots: () => []
+        stateCache: createRallarStateCacheReadPort()
     });
 }

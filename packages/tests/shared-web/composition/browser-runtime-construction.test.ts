@@ -1,4 +1,7 @@
-import { createBrowserStateEventComposition } from '@shared-web/browser/rallar-runtime/composition/browser-runtime-composition.ts';
+import {
+    createBrowserRuntimeFoundation,
+    createBrowserStateEventComposition
+} from '@shared-web/browser/rallar-runtime/composition/browser-runtime-composition.ts';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 type AppContextModule = typeof import('@shared-web/browser/app-context.ts');
@@ -42,8 +45,10 @@ describe('browser runtime construction', () => {
         runtime.readSession.mockReturnValue(runtime.middleware.session);
     });
 
-    it('does not let a state-event operation reach an incomplete session port', async () => {
+    it('does not let a room-event subscription reach an incomplete session port', () => {
+        const foundation = createBrowserRuntimeFoundation();
         const stateEvents = createBrowserStateEventComposition({
+            connectionRuntime: foundation.connectionRuntime,
             readSessionController: () => {
                 throw new Error(
                     'state-event session port was used before construction completed'
@@ -51,8 +56,7 @@ describe('browser runtime construction', () => {
             }
         });
 
-        await expect(stateEvents.roomEvents.list({ roomId: 'construction-room' }))
-            .resolves.toEqual([]);
+        expect(() => stateEvents.roomEvents.onEvent(() => undefined, {})).not.toThrow();
     });
 
     it('completes facade creation before later setup and connect use the composed ports', async () => {

@@ -10,7 +10,6 @@ import type { RallarStateEventsPort } from '@shared-web/browser/rallar-runtime/c
 import { toRallarMessage } from '@shared-web/browser/rallar-runtime/message-conversion.ts';
 import { notifyStateEventListener } from '@shared-web/browser/rallar-runtime/subscriptions.ts';
 import type { RallarWsInbox } from '@shared-web/browser/rallar-runtime/ws-inbox.ts';
-import type { RallarRoomEventsPort } from '@shared-web/browser/rooms/room-events.ts';
 import { newALBroadcastMessage, newALRoute } from '@shared/al-contracts/al-contract.ts';
 import { AppTopics } from '@shared/api/api-config.ts';
 import { validateAuthoritativeClientEvent } from '@shared/api/authoritative-state-validation.ts';
@@ -40,7 +39,6 @@ interface ReplayStateEventPagesInput<TEvent> {
 
 export interface CreateRallarStateEventsInput {
     readonly wsInbox: RallarWsInbox;
-    readonly roomEvents: RallarRoomEventsPort;
     readonly readDefaultScope: () => StateScope | undefined;
     readonly resolveOperationOptions: <T extends RallarOperationOptions>(
         options: T
@@ -57,7 +55,6 @@ class RallarStateEvents implements RallarStateEventsPort {
     readonly #subscriptions = new Set<RallarPeopleEventSubscription>();
     readonly #seenEventKeys = new Set<string>();
     readonly #input: CreateRallarStateEventsInput;
-    #roomSubscriptionCount = 0;
     #stopWsInbox: RallarUnsubscribe | undefined;
 
     constructor(input: CreateRallarStateEventsInput) {
@@ -145,20 +142,6 @@ class RallarStateEvents implements RallarStateEventsPort {
         };
     }
 
-    retainRoomEventSubscription(): RallarUnsubscribe {
-        this.#roomSubscriptionCount += 1;
-        this.registerStateEventCallbacks();
-        let retained = true;
-        return () => {
-            if (!retained) {
-                return;
-            }
-            retained = false;
-            this.#roomSubscriptionCount -= 1;
-            this.unregisterStateEventCallbacksIfUnused();
-        };
-    }
-
     private async replayPeopleEvent(
         event: ClientEvent,
         listener?: RallarPeopleEventListener
@@ -190,10 +173,6 @@ class RallarStateEvents implements RallarStateEventsPort {
     }
 
     private async dispatchStateEventMessage(message: RallarMessage<unknown>): Promise<void> {
-        if (message.typeId === AppTopics.groupStateEvent) {
-            await this.#input.roomEvents.dispatch(message);
-            return;
-        }
         if (message.typeId === AppTopics.clientStateEvent && isClientEventPayload(message.payload)) {
             await this.dispatchPeopleStateEvent(message as RallarMessage<ClientEvent>);
         }
@@ -240,7 +219,7 @@ class RallarStateEvents implements RallarStateEventsPort {
     }
 
     private hasStateEventSubscriptions(): boolean {
-        return this.#roomSubscriptionCount > 0 || this.#subscriptions.size > 0;
+        return this.#subscriptions.size > 0;
     }
 
     private resolveScope(scope?: StateScope): StateScope {

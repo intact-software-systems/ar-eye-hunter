@@ -17,11 +17,47 @@ export interface CreateRallarStateStoreInput {
     readonly runtime: RallarStateRuntimePort;
     readonly roomStateStore: RallarRoomStateStorePort;
     readonly readSession: () => AuthSession | undefined;
-    readonly readGroupSnapshots?: () => readonly GroupSnapshot[];
-    readonly findGroupSnapshotByRef?: (roomRef: GroupRef) => GroupSnapshot | undefined;
-    readonly findFirstGroupRefForSession?: (sessionId: string) => GroupRef | undefined;
-    readonly readClientSnapshots?: () => readonly ClientSnapshot[];
-    readonly findClientSnapshot?: (principalId: string) => ClientSnapshot | undefined;
+    readonly stateCache: RallarStateCacheReadPort;
+}
+
+export interface RallarStateCacheReadPort {
+    onCacheChange(listener: () => void | Promise<void>): RallarUnsubscribe;
+    readGroupSnapshots(): readonly GroupSnapshot[];
+    findGroupSnapshotByRef(roomRef: GroupRef): GroupSnapshot | undefined;
+    findFirstGroupRefForSession(sessionId: string): GroupRef | undefined;
+    readClientSnapshots(): readonly ClientSnapshot[];
+    findClientSnapshot(principalId: string): ClientSnapshot | undefined;
+}
+
+export function createRallarStateCacheReadPort(): RallarStateCacheReadPort {
+    return {
+        onCacheChange: (listener) => stateCaches.onStateCacheChange(listener),
+        readGroupSnapshots: () =>
+            readRallarCacheOrDefault(
+                () => groupStateSnapshotsRepository.getAllGroupStateSnapshots(),
+                []
+            ),
+        findGroupSnapshotByRef: (roomRef) =>
+            readRallarCacheOrDefault(
+                () => groupStateSnapshotsRepository.findGroupStateSnapshotByRef(roomRef),
+                undefined
+            ),
+        findFirstGroupRefForSession: (sessionId) =>
+            readRallarCacheOrDefault(
+                () => groupStateSnapshotsRepository.findFirstGroupStateSnapshotRefSessionIdIsIn(sessionId),
+                undefined
+            ),
+        readClientSnapshots: () =>
+            readRallarCacheOrDefault(
+                () => clientStateSnapshotsRepository.getAllClientStateSnapshots(),
+                []
+            ),
+        findClientSnapshot: (principalId) =>
+            readRallarCacheOrDefault(
+                () => clientStateSnapshotsRepository.findClientStateSnapshotByPrincipalId(principalId),
+                undefined
+            )
+    };
 }
 
 export function createRallarStateStore(input: CreateRallarStateStoreInput): RallarStatePort {
@@ -51,7 +87,7 @@ class RallarStateStore implements RallarStatePort {
     }
 
     onCacheChange(listener: () => void | Promise<void>): RallarUnsubscribe {
-        return stateCaches.onStateCacheChange(listener);
+        return this.#input.stateCache.onCacheChange(listener);
     }
 
     async acceptSnapshots(
@@ -141,48 +177,23 @@ class RallarStateStore implements RallarStatePort {
         this.#input.roomStateStore.resolveGroupRefFromRoomId(roomId, scope);
 
     readCachedGroupSnapshots(): readonly GroupSnapshot[] {
-        return this.#input.readGroupSnapshots
-            ? this.#input.readGroupSnapshots()
-            : readRallarCacheOrDefault(
-                () => groupStateSnapshotsRepository.getAllGroupStateSnapshots(),
-                []
-            );
+        return this.#input.stateCache.readGroupSnapshots();
     }
 
     findCachedGroupSnapshotByRef(roomRef: GroupRef): GroupSnapshot | undefined {
-        return this.#input.findGroupSnapshotByRef
-            ? this.#input.findGroupSnapshotByRef(roomRef)
-            : readRallarCacheOrDefault(
-                () => groupStateSnapshotsRepository.findGroupStateSnapshotByRef(roomRef),
-                undefined
-            );
+        return this.#input.stateCache.findGroupSnapshotByRef(roomRef);
     }
 
     findFirstCachedGroupRefForSession(sessionId: string): GroupRef | undefined {
-        return this.#input.findFirstGroupRefForSession
-            ? this.#input.findFirstGroupRefForSession(sessionId)
-            : readRallarCacheOrDefault(
-                () => groupStateSnapshotsRepository.findFirstGroupStateSnapshotRefSessionIdIsIn(sessionId),
-                undefined
-            );
+        return this.#input.stateCache.findFirstGroupRefForSession(sessionId);
     }
 
     readCachedClientSnapshots(): readonly ClientSnapshot[] {
-        return this.#input.readClientSnapshots
-            ? this.#input.readClientSnapshots()
-            : readRallarCacheOrDefault(
-                () => clientStateSnapshotsRepository.getAllClientStateSnapshots(),
-                []
-            );
+        return this.#input.stateCache.readClientSnapshots();
     }
 
     findCachedClientSnapshot(principalId: string): ClientSnapshot | undefined {
-        return this.#input.findClientSnapshot
-            ? this.#input.findClientSnapshot(principalId)
-            : readRallarCacheOrDefault(
-                () => clientStateSnapshotsRepository.findClientStateSnapshotByPrincipalId(principalId),
-                undefined
-            );
+        return this.#input.stateCache.findClientSnapshot(principalId);
     }
 
     private readClientSnapshots(): ClientSnapshot[] {

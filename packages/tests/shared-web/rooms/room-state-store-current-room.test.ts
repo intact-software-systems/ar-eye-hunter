@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createRallarBrowserFacadeRuntimeContext } from '@shared-web/browser/rallar-runtime-context.ts';
+import { createRallarStateCacheReadPort } from '@shared-web/browser/rallar-runtime/state-store.ts';
 import { createRoomStateStore } from '@shared-web/browser/rooms/room-state-store.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import type { GroupMember, GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
@@ -136,26 +137,18 @@ describe('room state store current-room projection', () => {
             workspaceId: 'workspace-2',
             stateRevision: 2
         });
-        const clients = [
-            lowerRevisionDefaultAlice,
+        stateMocks.groups.push(current);
+        stateMocks.clients.push(
             higherRevisionOtherScopeAlice,
             higherRevisionDefaultBob,
+            lowerRevisionDefaultAlice,
             lowerRevisionOtherScopeBob
-        ];
-        const findCachedClientSnapshot = vi.fn((principalId: string) =>
-            clients
-                .filter((snapshot) => snapshot.principal.principalId === principalId)
-                .toSorted((left, right) => right.stateRevision - left.stateRevision)
-                .at(0)
         );
+        stateMocks.repositoriesConfigured = true;
         const store = createRoomStateStore({
             runtime,
             readSession: () => stateMocks.session,
-            readCachedGroupSnapshots: () => [current],
-            findCachedGroupSnapshotByRef: (roomRef: GroupRef) => roomRef === current.group ? current : undefined,
-            findFirstCachedGroupRefForSession: () => current.group,
-            findCachedClientSnapshot,
-            onCacheChange: () => () => undefined
+            stateCache: createRallarStateCacheReadPort()
         });
 
         runtime.setDefaults({ applicationId: 'app-1', workspaceId: 'workspace-1' });
@@ -180,8 +173,6 @@ describe('room state store current-room projection', () => {
                 client: higherRevisionDefaultBob
             })
         ]);
-        expect(findCachedClientSnapshot).toHaveBeenCalledWith('alice');
-        expect(findCachedClientSnapshot).toHaveBeenCalledWith('bob');
     });
 
     it('preserves the selected current room when defaults move to another scope', () => {
@@ -193,15 +184,12 @@ describe('room state store current-room projection', () => {
             { applicationId: 'app-2', workspaceId: 'workspace-2' },
             []
         );
-        const groups = [current, visible];
+        stateMocks.groups.push(current, visible);
+        stateMocks.repositoriesConfigured = true;
         const store = createRoomStateStore({
             runtime,
             readSession: () => stateMocks.session,
-            readCachedGroupSnapshots: () => groups,
-            findCachedGroupSnapshotByRef: (roomRef) => groups.find((snapshot) => snapshot.group === roomRef),
-            findFirstCachedGroupRefForSession: () => current.group,
-            findCachedClientSnapshot: () => undefined,
-            onCacheChange: () => () => undefined
+            stateCache: createRallarStateCacheReadPort()
         });
         runtime.setDefaults({ applicationId: 'app-1', workspaceId: 'workspace-1' });
         runtime.setCurrentRoom(current);

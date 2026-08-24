@@ -31,14 +31,16 @@ registration, invocation, and cleanup without consulting a historical plan.
 
 1. [createRallarFacade](./rallar.ts#L246) delegates to
    [createBrowserRallarFacade](./rallar-runtime/composition.ts#L24).
-2. [createBrowserRuntimeFoundation](./rallar-runtime/composition/browser-runtime-composition.ts#L57)
+2. [createBrowserRuntimeFoundation](./rallar-runtime/composition/browser-runtime-composition.ts#L61)
    creates the per-facade runtime ports and lifecycle coordinator.
-3. [createBrowserStateComposition](./rallar-runtime/composition/browser-runtime-composition.ts#L103)
-   creates the room-state and state-store pair; its room-state consumers
-   currently receive late-bound state-store reads.
-4. [createBrowserStateEventComposition](./rallar-runtime/composition/browser-runtime-composition.ts#L146)
-   creates the WS inbox, room events, and state events; room-event consumers
-   currently receive late-bound state-event reads.
+3. [createBrowserStateComposition](./rallar-runtime/composition/browser-runtime-composition.ts#L107)
+   creates [createRallarStateCacheReadPort](./rallar-runtime/state-store.ts#L32)
+   before constructing both the room-state store and aggregate state store from
+   that completed cache-read/observation port.
+4. [createBrowserStateEventComposition](./rallar-runtime/composition/browser-runtime-composition.ts#L147)
+   creates one [createRallarWsInbox](./rallar-runtime/ws-inbox.ts#L24)
+   subscription capability from the completed connection runtime, then gives
+   room events and people state events direct access to it.
 5. [createBrowserSessionComposition](./rallar-runtime/composition/browser-session-composition.ts#L48)
    creates data, session, connection/auth, startup, and CRDT capabilities. Its
    data/session/startup connections currently use late-bound controller values.
@@ -49,9 +51,22 @@ registration, invocation, and cleanup without consulting a historical plan.
    then returns the aggregate facade from
    [createBrowserFacadeAssembly](./rallar-runtime/composition/browser-facade-assembly.ts#L20).
 
-The next owned correction is to construct completed state/event and
-session/startup ports before a consumer receives them. The current late binding
-is intentionally documented here; it is not yet repaired.
+State and state-event construction is complete-value construction: neither
+room state nor room events reads a later-created state owner. Session/startup
+construction still has its own distinct lifecycle boundary.
+
+## State and event invocation timeline
+
+1. [RoomEvents.onEvent](./rooms/room-events.ts#L137) registers a room-event
+   listener and registers the room-event owner with the completed WS inbox.
+2. [createRallarWsInbox](./rallar-runtime/ws-inbox.ts#L24) provides the WS inbox that receives
+   messages, orders subscribed owners, and invokes the room-event handler.
+3. [RoomEvents.dispatch](./rooms/room-events.ts#L152) validates a group event,
+   filters it by room and scope, deduplicates it, then notifies matching room
+   listeners.
+4. [RallarStateEvents.onPeopleEvent](./rallar-runtime/state-events.ts#L132)
+   registers the separate people-event owner; its WS handler validates,
+   filters, deduplicates, and notifies client-event listeners.
 
 ## Runtime invocation and cleanup timeline
 

@@ -9,6 +9,7 @@ import {
     toStateEventListRequestOptions
 } from '@shared-web/browser/rallar-runtime/state-events.ts';
 import { notifyStateEventListener } from '@shared-web/browser/rallar-runtime/subscriptions.ts';
+import type { RallarWsInbox } from '@shared-web/browser/rallar-runtime/ws-inbox.ts';
 import type { RallarReplayEventsResult, RallarUnsubscribe } from '@shared-web/browser/rallar-shared-contracts.ts';
 import { newALBroadcastMessage, newALRoute } from '@shared/al-contracts/al-contract.ts';
 import { AppTopics } from '@shared/api/api-config.ts';
@@ -44,7 +45,7 @@ export interface RallarRoomEventsPort {
 }
 
 export interface CreateRoomEventsInput {
-    readonly retainWsInboxSubscription: () => RallarUnsubscribe;
+    readonly wsInbox: RallarWsInbox;
     readonly readDefaultScope: () => StateScope | undefined;
     readonly resolveOperationOptions: <T extends RallarOperationOptions>(
         options: T
@@ -61,6 +62,7 @@ class RoomEvents implements RallarRoomEventsPort {
     readonly #subscriptions = new Set<RallarRoomEventSubscription>();
     readonly #seenEventKeys = new Set<string>();
     readonly #input: CreateRoomEventsInput;
+    #stopWsInbox: RallarUnsubscribe | undefined;
 
     constructor(input: CreateRoomEventsInput) {
         this.#input = input;
@@ -135,7 +137,7 @@ class RoomEvents implements RallarRoomEventsPort {
     onEvent(listener: RallarRoomEventListener, options: RallarRoomEventOptions): RallarUnsubscribe {
         const subscription = { listener, options };
         this.#subscriptions.add(subscription);
-        const releaseWsInbox = this.#input.retainWsInboxSubscription();
+        this.registerWsInboxSubscription();
         let active = true;
         return () => {
             if (!active) {
@@ -143,7 +145,7 @@ class RoomEvents implements RallarRoomEventsPort {
             }
             active = false;
             this.#subscriptions.delete(subscription);
-            releaseWsInbox();
+            this.unregisterWsInboxSubscriptionIfUnused();
         };
     }
 
@@ -199,6 +201,30 @@ class RoomEvents implements RallarRoomEventsPort {
         return [...this.#subscriptions].filter((subscription) =>
             matchesRoomEventSubscription(subscription, event, this.#input.readDefaultScope())
         );
+    }
+
+    private registerWsInboxSubscription(): void {
+        if (this.#stopWsInbox) {
+            return;
+        }
+        this.#stopWsInbox = this.#input.wsInbox.subscribe({
+            id: 'room-events',
+            order: 10,
+            onMessage: async (message) => {
+                const rallarMessage = toRallarMessage('ws', message);
+                if (rallarMessage.typeId === AppTopics.groupStateEvent) {
+                    await this.dispatch(rallarMessage);
+                }
+            }
+        });
+    }
+
+    private unregisterWsInboxSubscriptionIfUnused(): void {
+        if (this.#subscriptions.size > 0) {
+            return;
+        }
+        this.#stopWsInbox?.();
+        this.#stopWsInbox = undefined;
     }
 
     private hasSeen(event: GroupEvent): boolean {

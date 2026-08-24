@@ -29,7 +29,10 @@ export function createBrowserRallarFacade(): RallarFacade {
         runtime: foundation.runtime,
         stateRuntime: foundation.stateRuntime
     });
-    const stateEvents = createBrowserStateEventComposition({ readSessionController });
+    const stateEvents = createBrowserStateEventComposition({
+        connectionRuntime: foundation.connectionRuntime,
+        readSessionController
+    });
     const messaging = createBrowserMessagingComposition({
         wsInbox: stateEvents.wsInbox,
         state,

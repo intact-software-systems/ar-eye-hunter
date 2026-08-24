@@ -15,7 +15,10 @@ import { createRallarLifecycleCoordinator } from '@shared-web/browser/rallar-run
 import { resolveActiveRoomPeerIds } from '@shared-web/browser/rallar-runtime/realtime.ts';
 import type { RallarSessionController } from '@shared-web/browser/rallar-runtime/session.ts';
 import { createRallarStateEvents } from '@shared-web/browser/rallar-runtime/state-events.ts';
-import { createRallarStateStore } from '@shared-web/browser/rallar-runtime/state-store.ts';
+import {
+    createRallarStateCacheReadPort,
+    createRallarStateStore
+} from '@shared-web/browser/rallar-runtime/state-store.ts';
 import { createRallarWsInbox, type RallarWsInbox } from '@shared-web/browser/rallar-runtime/ws-inbox.ts';
 import { createRoomEvents, type RallarRoomEventsPort } from '@shared-web/browser/rooms/room-events.ts';
 import { createRoomStateStore, type RallarRoomStateStorePort } from '@shared-web/browser/rooms/room-state-store.ts';
@@ -51,6 +54,7 @@ export interface CreateBrowserStateCompositionInput {
 }
 
 export interface CreateBrowserStateEventCompositionInput {
+    readonly connectionRuntime: RallarConnectionRuntimePort;
     readonly readSessionController: () => RallarSessionController;
 }
 
@@ -103,22 +107,19 @@ export function createBrowserRuntimeFoundation(): BrowserRuntimeFoundation {
 export function createBrowserStateComposition(
     input: CreateBrowserStateCompositionInput
 ): BrowserStateComposition {
-    let stateStore!: RallarStatePort;
+    const stateCache = createRallarStateCacheReadPort();
     const roomStateStore = createRoomStateStore({
         runtime: input.stateRuntime,
         readSession,
-        readCachedGroupSnapshots: () => stateStore.readCachedGroupSnapshots(),
-        findCachedGroupSnapshotByRef: (roomRef) => stateStore.findCachedGroupSnapshotByRef(roomRef),
-        findFirstCachedGroupRefForSession: (sessionId) => stateStore.findFirstCachedGroupRefForSession(sessionId),
-        findCachedClientSnapshot: (principalId) => stateStore.findCachedClientSnapshot(principalId),
-        onCacheChange: (listener) => stateStore.onCacheChange(listener)
+        stateCache
     });
-    stateStore = createRallarStateStore({
+    const stateStore = createRallarStateStore({
         runtime: input.stateRuntime,
         roomStateStore,
-        readSession
+        readSession,
+        stateCache
     });
-    const readDefaults = () => input.runtime.readDefaults();
+    const readDefaults = input.runtime.readDefaults;
     const resolveDefaultRoomRef = (): GroupRef | undefined => {
         const defaultRoom = readDefaults()?.room;
         if (!defaultRoom) {
@@ -147,19 +148,17 @@ export function createBrowserStateEventComposition(
     input: CreateBrowserStateEventCompositionInput
 ): BrowserStateEventComposition {
     const wsInbox = createRallarWsInbox({
-        readMiddleware: () => input.readSessionController().readMiddleware()
+        readMiddleware: input.connectionRuntime.readMiddleware
     });
-    let stateEvents!: RallarStateEventsPort;
     const roomEvents = createRoomEvents({
-        retainWsInboxSubscription: () => stateEvents.retainRoomEventSubscription(),
+        wsInbox,
         readDefaultScope: () => input.readSessionController().readDefaultScope(),
         resolveOperationOptions: (options) => input.readSessionController().resolveOperationOptions(options),
         resolveOperationScope: (scope) => input.readSessionController().resolveOperationScope(scope),
         runAuthAwareOperation: async (operation) => await input.readSessionController().runAuthAwareOperation(operation)
     });
-    stateEvents = createRallarStateEvents({
+    const stateEvents = createRallarStateEvents({
         wsInbox,
-        roomEvents,
         readDefaultScope: () => input.readSessionController().readDefaultScope(),
         resolveOperationOptions: (options) => input.readSessionController().resolveOperationOptions(options),
         resolveOperationScope: (scope) => input.readSessionController().resolveOperationScope(scope),

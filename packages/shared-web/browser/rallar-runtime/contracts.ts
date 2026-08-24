@@ -124,7 +124,6 @@ export type RallarStateEventsPort = Readonly<{
         listener: RallarPeopleEventListener,
         options: RallarPeopleEventOptions
     ): RallarUnsubscribe;
-    retainRoomEventSubscription(): RallarUnsubscribe;
 }>;
 
 export type RallarMediaPort = Readonly<{
