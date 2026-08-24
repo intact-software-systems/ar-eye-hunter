@@ -6,11 +6,12 @@ import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.t
 import type { ResourceInboxAttemptReleaseTelemetry } from '@shared/queuebox/ResourceInboxAttemptTelemetry.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 
-import { createPSqlResourceInboxRepository, type PSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
-
 import {
-    ResourceInboxResultsRepository
-} from '@shared-server/queuebox/postgres/resource-inbox-results-repository.ts';
+    createPSqlResourceInboxRepository,
+    type PSqlResourceInboxRepository
+} from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
+
+import { ResourceInboxResultsRepository } from '@shared-server/queuebox/postgres/resource-inbox-results-repository.ts';
 
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 

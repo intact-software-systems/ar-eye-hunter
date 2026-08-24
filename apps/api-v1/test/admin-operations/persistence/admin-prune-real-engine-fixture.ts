@@ -1,5 +1,8 @@
+import {
+    createPSqlResourceInboxRepository,
+    type PSqlResourceInboxRepository
+} from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
-import { createPSqlResourceInboxRepository, type PSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 import { ResourceInboxResultsRepository } from '@shared-server/queuebox/postgres/resource-inbox-results-repository.ts';
 import {
     includeInboxQueueReaderEngineTasks,

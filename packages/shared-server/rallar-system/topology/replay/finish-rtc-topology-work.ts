@@ -1,8 +1,8 @@
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 
 import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
-import { PSqlResourceInboxFinalizationRepository } from '../../../queuebox/postgres/p-sql-resource-inbox-finalization-repository.ts';
 import { runInPSqlTransaction } from '../../../postgres/run-in-p-sql-transaction.ts';
+import { PSqlResourceInboxFinalizationRepository } from '../../../queuebox/postgres/p-sql-resource-inbox-finalization-repository.ts';
 import { RuntimeStateWriteConflictError } from '../../../runtime-state/optimistic-runtime-state-write.ts';
 
 export async function finishRtcTopologyWork(

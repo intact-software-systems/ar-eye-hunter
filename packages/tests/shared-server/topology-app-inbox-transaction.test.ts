@@ -3,7 +3,10 @@ import { describe, expect, it, vi } from 'vitest';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 
-import { createPSqlResourceInboxRepository, type PSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
+import {
+    createPSqlResourceInboxRepository,
+    type PSqlResourceInboxRepository
+} from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 
 import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/topology/config/persistence/group-topology-config-repository.ts';
 

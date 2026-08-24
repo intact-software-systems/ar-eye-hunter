@@ -8,7 +8,10 @@ import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { resourceInboxRetryExpiryAtEpochMs } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 
-import { createPSqlResourceInboxRepository, type PSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
+import {
+    createPSqlResourceInboxRepository,
+    type PSqlResourceInboxRepository
+} from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 
 import { ResourceInboxResultsRepository } from '@shared-server/queuebox/postgres/resource-inbox-results-repository.ts';
 

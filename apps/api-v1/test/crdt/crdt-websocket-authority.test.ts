@@ -19,7 +19,10 @@ import { WsQueueBoxServerService } from '@shared/services/WsQueueBoxServerServic
 import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
 import { installRallarCrdtWsTopics } from '@shared-server/rallar-system/crdt/realtime/install-rallar-crdt-ws-topics.ts';
 
-import { createPSqlResourceInboxRepository, type PSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
+import {
+    createPSqlResourceInboxRepository,
+    type PSqlResourceInboxRepository
+} from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 
 import { ResourceInboxResultsRepository } from '@shared-server/queuebox/postgres/resource-inbox-results-repository.ts';
 import { RallarServerWsFacade } from '@shared-server/rallar-facade/ws-topic-router.ts';

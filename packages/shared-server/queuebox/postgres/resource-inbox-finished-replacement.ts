@@ -1,7 +1,7 @@
 import { COMPLETED_STATUSES, EntityStatus, isFailed, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import type { PSqlSql } from '../../postgres/p-sql-sql.ts';
-import { toDomain, toPgTimestamp, type ResourceInboxRow } from './resource-inbox-row-codec.ts';
 import { ResourceInboxInvariantCorruptionError } from './p-sql-resource-inbox-entry-repository.ts';
+import { toDomain, toPgTimestamp, type ResourceInboxRow } from './resource-inbox-row-codec.ts';
 
 export interface ReplaceFinishedResourceEntryInput {
     readonly expected: ResourceEntry;

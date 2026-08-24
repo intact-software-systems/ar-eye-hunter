@@ -5,7 +5,10 @@ import { RALLAR_CRDT_PROTOCOL_VERSION, toRallarCrdtDocumentKey, type RallarCrdtD
 import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
 import { PSqlCrdtLogRepository } from '@shared-server/rallar-system/crdt/persistence/psql-crdt-log-repository.ts';
 
-import { createPSqlResourceInboxRepository, type PSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
+import {
+    createPSqlResourceInboxRepository,
+    type PSqlResourceInboxRepository
+} from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 
 import { ResourceInboxResultsRepository } from '@shared-server/queuebox/postgres/resource-inbox-results-repository.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';

@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
-import { createPSqlResourceInboxRepository, type PSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
+import {
+    createPSqlResourceInboxRepository,
+    type PSqlResourceInboxRepository
+} from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 import { ResourceInboxResultsRepository } from '@shared-server/queuebox/postgres/resource-inbox-results-repository.ts';
 import { AppCrdtInboxService } from '@shared-server/rallar-system/crdt/inbox/app-crdt-inbox-service.ts';
 import { computeCrdtMutation } from '@shared-server/rallar-system/crdt/mutation/compute-crdt-mutation.ts';

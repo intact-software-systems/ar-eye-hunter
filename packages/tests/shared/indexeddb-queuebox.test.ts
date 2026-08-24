@@ -711,7 +711,7 @@ describe('IndexedDbQueueBox', () => {
         });
         let cursorOpened = false;
         const openCursorImplementation = IDBIndex.prototype.openCursor;
-        const openCursor = vi.spyOn(IDBIndex.prototype, 'openCursor').mockImplementation(function(
+        const openCursor = vi.spyOn(IDBIndex.prototype, 'openCursor').mockImplementation(function (
             this: IDBIndex,
             ...args: Parameters<IDBIndex['openCursor']>
         ) {

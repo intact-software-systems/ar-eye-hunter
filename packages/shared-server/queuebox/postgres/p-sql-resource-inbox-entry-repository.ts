@@ -608,7 +608,6 @@ export class PSqlResourceInboxEntryRepository {
 
         return rows.length === 1;
     }
-
 }
 
 function hasReservedIdentity(

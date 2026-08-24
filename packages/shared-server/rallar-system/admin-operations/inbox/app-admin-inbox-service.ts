@@ -13,9 +13,7 @@ import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 
 import { PSqlResourceInboxEntryRepository } from '@shared-server/queuebox/postgres/p-sql-resource-inbox-entry-repository.ts';
 
-import {
-    ResourceInboxResultsRepository
-} from '@shared-server/queuebox/postgres/resource-inbox-results-repository.ts';
+import { ResourceInboxResultsRepository } from '@shared-server/queuebox/postgres/resource-inbox-results-repository.ts';
 import type { AppInboxFailure } from '../../app-inbox/app-inbox-failure.ts';
 import { toUnavailableAppInboxFailure } from '../../app-inbox/app-inbox-failure.ts';
 import { AppInboxHandlerRegistry } from '../../app-inbox/app-inbox-handler-registry.ts';

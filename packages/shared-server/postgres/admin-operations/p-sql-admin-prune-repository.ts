@@ -1,4 +1,7 @@
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import { PSqlResourceInboxEntryRepository } from '../../queuebox/postgres/p-sql-resource-inbox-entry-repository.ts';
+import { PSqlResourceInboxFinalizationRepository } from '../../queuebox/postgres/p-sql-resource-inbox-finalization-repository.ts';
+import { ResourceInboxResultsRepository } from '../../queuebox/postgres/resource-inbox-results-repository.ts';
 import type { AdminPrunePageWork } from '../../rallar-system/admin-operations/prune/admin-prune-page-codec.ts';
 import type {
     AdminPruneCandidatePage,
@@ -10,9 +13,6 @@ import {
     toAdminPruneAggregateKey
 } from '../../rallar-system/admin-operations/prune/admin-prune-progress.ts';
 import type { PSqlSql } from '../p-sql-sql.ts';
-import { PSqlResourceInboxEntryRepository } from '../../queuebox/postgres/p-sql-resource-inbox-entry-repository.ts';
-import { PSqlResourceInboxFinalizationRepository } from '../../queuebox/postgres/p-sql-resource-inbox-finalization-repository.ts';
-import { ResourceInboxResultsRepository } from '../../queuebox/postgres/resource-inbox-results-repository.ts';
 
 type RuntimeRow = Readonly<{ store_namespace: string; store_key: string; }>;
 type ResourceRow = Readonly<{ ri_row_id: number | string; }>;

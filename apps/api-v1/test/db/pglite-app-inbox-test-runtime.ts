@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict';
 
-import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
-import { createPSqlResourceInboxRepository, type PSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 import {
-    ResourceInboxResultsRepository
-} from '@shared-server/queuebox/postgres/resource-inbox-results-repository.ts';
+    createPSqlResourceInboxRepository,
+    type PSqlResourceInboxRepository
+} from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
+import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
+import { ResourceInboxResultsRepository } from '@shared-server/queuebox/postgres/resource-inbox-results-repository.ts';
 import { AppInboxQueueClient, AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-client.ts';
 import type { JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import { EntityStatus, toResourceEntryWithUpdatedResource } from '@shared/queuebox/ResourceEntry.ts';

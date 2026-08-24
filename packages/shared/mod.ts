@@ -32,8 +32,8 @@ export * from './rtc/rtt-reporting-policy.ts';
 
 export * from './queuebox/DequeueController.ts';
 export * from './queuebox/DequeueResourceEntryController.ts';
-export * from './queuebox/indexed-db-queue-box.ts';
 export * from './queuebox/in-memory-queue-box.ts';
+export * from './queuebox/indexed-db-queue-box.ts';
 export * from './queuebox/queue-box-types.ts';
 export * from './queuebox/ResourceEntry.ts';
 

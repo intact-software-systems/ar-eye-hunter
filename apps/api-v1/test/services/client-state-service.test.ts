@@ -7,9 +7,9 @@ import type {
     RuntimeStateEntry,
     RuntimeStateOptimisticTransactionalRepositoryLike
 } from '@shared-server/runtime-state/runtime-state-repository.ts';
+import { TestClientStateEventStore } from '@shared-test/shared-server/test-client-state-event-store.ts';
 import type { ClientEvent, ClientSnapshot } from '@shared/api/client-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
-import { TestClientStateEventStore } from '@shared-test/shared-server/test-client-state-event-store.ts';
 import assert from 'node:assert/strict';
 import { createClientStateTestDriver as createClientStateService } from '../../../../packages/tests/shared-server/client-state/client-state-test-runtime.ts';
 

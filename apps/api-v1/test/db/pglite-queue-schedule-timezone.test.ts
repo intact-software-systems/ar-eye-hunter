@@ -1,6 +1,9 @@
 import { Temporal } from '@js-temporal/polyfill';
+import {
+    createPSqlResourceInboxRepository,
+    type PSqlResourceInboxRepository
+} from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
-import { createPSqlResourceInboxRepository, type PSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import assert from 'node:assert/strict';
 import { createResourceEntry, readPGliteDatabaseEpochMs, withPGliteSql } from './pglite-auth-test-harness.ts';
