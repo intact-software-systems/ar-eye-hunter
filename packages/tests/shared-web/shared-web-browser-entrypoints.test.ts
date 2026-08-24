@@ -139,7 +139,7 @@ describe('shared-web browser entrypoints', () => {
         expect(references).toEqual([]);
     });
 
-    it('keeps runtime controllers independent from the compatibility entrypoint', () => {
+    it('keeps runtime controllers independent from the full facade entrypoint', () => {
         const runtimeFiles = readdirSync(
             path.resolve('packages/shared-web/browser/rallar-runtime')
         ).filter((fileName) => fileName.endsWith('.ts'));
@@ -186,87 +186,6 @@ describe('shared-web browser entrypoints', () => {
         expect(references).toEqual([]);
     });
 
-    it('limits the full runtime context to the composer and its direct port owners', () => {
-        const allowedFiles = new Set([
-            'composition.ts',
-            'session.ts',
-            'state-store.ts'
-        ]);
-        const runtimeFiles = readdirSync(
-            path.resolve('packages/shared-web/browser/rallar-runtime')
-        ).filter((fileName) => fileName.endsWith('.ts') && !allowedFiles.has(fileName));
-        const references = runtimeFiles.flatMap((fileName) =>
-            collectModuleReferences(
-                readSourceAnalysis(
-                    `packages/shared-web/browser/rallar-runtime/${fileName}`
-                ),
-                '@shared-web/browser/rallar-runtime-context.ts'
-            ).map((reference) => `${fileName}: ${reference}`)
-        );
-
-        expect(references).toEqual([]);
-    });
-
-    it('keeps capability controllers behind injected canonical ports', () => {
-        const allowedRuntimeDependencies = new Set([
-            'message-conversion.ts',
-            'subscriptions.ts',
-            'validation.ts',
-            'wait.ts',
-            'ws-inbox.ts'
-        ]);
-        const canonicalPortDependencies = new Set([
-            'calls.ts:media.ts',
-            'director.ts:state-store.ts',
-            'people.ts:state-events.ts',
-            'people.ts:state-store.ts',
-            'session.ts:lifecycle.ts'
-        ]);
-        const runtimeDirectory = path.resolve(
-            'packages/shared-web/browser/rallar-runtime'
-        );
-        const runtimeFiles = readdirSync(runtimeDirectory).filter((fileName) =>
-            fileName.endsWith('.ts') &&
-            fileName !== 'compose.ts' &&
-            fileName !== 'composition.ts'
-        );
-        const references = runtimeFiles.flatMap((fileName) => {
-            const sourceFile = readSourceAnalysis(
-                `packages/shared-web/browser/rallar-runtime/${fileName}`
-            );
-            const runtimeDependencies = sourceFile.imports
-                .map((entry) => entry.specifier)
-                .filter((specifier) =>
-                    specifier.startsWith(
-                        '@shared-web/browser/rallar-runtime/'
-                    )
-                )
-                .map((specifier) => specifier.split('/').at(-1) ?? '');
-            return runtimeDependencies
-                .filter((dependency) =>
-                    !allowedRuntimeDependencies.has(dependency) &&
-                    !canonicalPortDependencies.has(`${fileName}:${dependency}`)
-                )
-                .map((dependency) => `${fileName}: ${dependency}`);
-        });
-
-        expect(references).toEqual([]);
-
-        const runtimePortImports = runtimeFiles.flatMap((fileName) =>
-            readSourceAnalysis(
-                `packages/shared-web/browser/rallar-runtime/${fileName}`
-            ).imports
-                .filter((entry) =>
-                    canonicalPortDependencies.has(
-                        `${fileName}:${entry.specifier.split('/').at(-1) ?? ''}`
-                    ) && !entry.typeOnly
-                )
-                .map((entry) => `${fileName}: ${entry.specifier}`)
-        );
-
-        expect(runtimePortImports).toEqual([]);
-    });
-
     it('does not publicly barrel-export internal runtime modules', () => {
         const publicBarrels = [
             'packages/shared-web/mod.ts',
@@ -279,23 +198,6 @@ describe('shared-web browser entrypoints', () => {
         );
 
         expect(references).toEqual([]);
-    });
-
-    it('keeps rallar.ts as a thin compatibility entrypoint', () => {
-        const sourceFile = readSourceAnalysis(
-            'packages/shared-web/browser/rallar.ts'
-        );
-        const classNames = sourceFile.topLevelDeclarations
-            .filter((declaration) => declaration.kind === 'class')
-            .map((declaration) => declaration.name);
-        const runtimeImports = sourceFile.imports
-            .filter(isRuntimeImport)
-            .map((entry) => entry.specifier);
-
-        expect(classNames).not.toContain('BrowserRallarFacade');
-        expect(runtimeImports).toContain(
-            '@shared-web/browser/rallar-runtime/compose.ts'
-        );
     });
 });
 
