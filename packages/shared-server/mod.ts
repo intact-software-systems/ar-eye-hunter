@@ -157,7 +157,6 @@ export * from './rallar-system/rtc-rtt/persistence/rtc-rtt-storage-keys.ts';
 export * from './rallar-system/state-sync/state-sync-cache-hydration.ts';
 export * from './rallar-system/state-sync/state-sync-entry-computation.ts';
 export * from './rallar-system/state-sync/state-sync-transaction-writer.ts';
-export * from './rallar-system/state-sync/state-sync-websocket-publication.ts';
 export * from './rallar-system/topology/config/group-topology-config.ts';
 export { GroupTopologyConfigRepositoryInvariantCorruptionError } from './rallar-system/topology/config/persistence/group-topology-config-repository-contracts.ts';
 export type {

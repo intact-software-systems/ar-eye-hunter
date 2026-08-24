@@ -116,6 +116,19 @@ describe('GroupTopologyPlanningService', () => {
             expect(result.snapshot.activeSessionIds).toEqual(['session-a', 'session-b']);
         }
     });
+
+    it('does not report a topology publication when the delivery owner reaches no session', async () => {
+        const group = groupWithSessionsIn('active');
+        const service = createPlanningService({ group });
+
+        const response = await service.reconfigureGroupTopology({
+            groupRef: group.group,
+            groupSnapshot: group,
+            publisher: () => 0
+        });
+
+        expect(response.published).toBe(false);
+    });
 });
 
 function groupWithSessionsIn(

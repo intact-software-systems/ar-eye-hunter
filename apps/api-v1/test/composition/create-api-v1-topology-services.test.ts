@@ -12,7 +12,6 @@ import type { RuntimeStateReadBatchSelection, RuntimeStateReadBatchSelector } fr
 import { selectRuntimeStateReadBatch } from '@shared-server/runtime-state/read-batch/select-runtime-state-read-batch.ts';
 import type { RuntimeStateEntry, RuntimeStateRepositoryLike } from '@shared-server/runtime-state/runtime-state-repository.ts';
 import type { GroupPresenceSession, GroupSnapshot } from '@shared/api/group-types.ts';
-import { JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.ts';
 
 import { createTestGroup } from '../../../../packages/tests/create-test-group.ts';
 import { createApiV1TopologyServices, type CreateApiV1TopologyServicesInput } from '../../src/composition/create-api-v1-topology-services.ts';
@@ -33,7 +32,6 @@ Deno.test('topology composition installs canonical owners and RTT policy inputs'
             readSnapshotAtLeast: () => Promise.resolve(snapshot)
         },
         groupFormationRttMutation: (event) => formationEvents.push(event),
-        webSocketServer: new JsonWebSocketServer(),
         topologyReplayMetrics: {
             readMetrics: () => ({ replayWakeCount: 2 }),
             resetMetrics: () => {}
@@ -106,7 +104,6 @@ function createMinimalInput(): CreateApiV1TopologyServicesInput {
         ),
         groupStateService: { readSnapshotAtLeast: () => Promise.resolve(undefined) },
         groupFormationRttMutation: () => {},
-        webSocketServer: new JsonWebSocketServer(),
         topologyReplayMetrics: {
             readMetrics: () => ({}),
             resetMetrics: () => {}

@@ -1,5 +1,4 @@
 import { installRtcRttSystemTopic } from '@shared-server/rallar-system/rtc-rtt/topic/install-rtc-rtt-system-topic.ts';
-import { installStateSyncWsTopics } from '@shared-server/rallar-system/state-sync/install-state-sync-ws-topics.ts';
 import { RallarRtcTopologyService } from '@shared-server/rallar-system/topology/runtime/rallar-rtc-topology-service.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
@@ -278,7 +277,6 @@ const service = new WsQueueBoxServerService(
     'perf-server'
 );
 const group = createGroupSnapshot('room-1', sessionIds);
-installStateSyncWsTopics(service);
 installRtcRttSystemTopic(service, {
     service: topologyService,
     findGroupSnapshotByRef: () => group

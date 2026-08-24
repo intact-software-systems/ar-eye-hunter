@@ -4,6 +4,7 @@ import { WsQueueBoxServerService } from '@shared/services/WsQueueBoxServerServic
 import { JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.ts';
 
 import { installQueueBoxPubSubBridge } from '../queue-pubsub/queue-box-pub-sub-bridge.ts';
+import { decodeStateSyncMessage } from '../state-sync/state-sync-payload.ts';
 import { createWsServerTargetResolver } from '../websocket/targets/create-ws-server-target-resolver.ts';
 import { initialiseServerCacheRepositories } from './cache-repositories.ts';
 import type {
@@ -35,6 +36,7 @@ export function createRallarMiddlewareInfrastructure(
             inboundStores: options.inboundStores,
             outboundStores: options.outboundStores,
             deliveryDiagnostics: options.wsDeliveryDiagnostics,
+            admitInboundMessage: (message) => decodeStateSyncMessage(message).kind === 'unsupported',
             forwardsRoomScopedMessages: false
         }
     );

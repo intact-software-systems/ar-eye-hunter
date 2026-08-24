@@ -1,13 +1,14 @@
 import { Temporal } from '@js-temporal/polyfill';
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
-import { installStateSyncWsTopics } from '@shared-server/rallar-system/state-sync/install-state-sync-ws-topics.ts';
 import type { GroupTopologyGroupSnapshotReader } from '@shared-server/rallar-system/topology/group-topology-management-contracts.ts';
 import { createRtcTopologyOutboxPublisher } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-work.ts';
 import { RtcTopologyExecutionRepository } from '@shared-server/rallar-system/topology/persistence/rtc-topology-execution-repository.ts';
-import { installTopologyWsTopics } from '@shared-server/rallar-system/topology/publication/install-topology-ws-topics.ts';
+import { RtcTopologyReplayEntryHandlerService } from '@shared-server/rallar-system/topology/replay/rtc-topology-replay-entry-handler.ts';
 import { createGroupTopologyOwners, type GroupTopologyOwners } from '@shared-server/rallar-system/topology/runtime/create-group-topology-owners.ts';
 import { installTopologyAppOutbox, type InstallTopologyAppOutboxOptions } from '@shared-server/rallar-system/topology/runtime/install-topology-app-outbox.ts';
 import { RallarRtcTopologyService } from '@shared-server/rallar-system/topology/runtime/rallar-rtc-topology-service.ts';
+import { createWsServerTargetResolver } from '@shared-server/rallar-system/websocket/targets/create-ws-server-target-resolver.ts';
+import { validatePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import type { AuditStamp, GroupSnapshot } from '@shared/api/group-types.ts';
 import {
@@ -29,8 +30,47 @@ import { describe, expect, it, vi } from 'vitest';
 import { configureTestCacheRepositories } from '../../../cache-repository-config.ts';
 import { createTestGroup } from '../../../create-test-group.ts';
 import { FakeRuntimeStateRepository } from '../../fake-runtime-state-repository.ts';
+import { createRtcTopologyReplayFixture } from '../../rtc-topology-replay-fixture.ts';
 
 describe('RTC topology websocket publication', () => {
+    it('replays a durable topology publication only to its recorded sessions', async () => {
+        const fixture = createRtcTopologyReplayFixture();
+        const server = new JsonWebSocketServer();
+        const recordedSocket = new FakeSocket();
+        const outsideSocket = new FakeSocket();
+        server.addConnection(new ConnectionContext('session-1', recordedSocket));
+        server.addConnection(new ConnectionContext('session-2', outsideSocket));
+        const service = new WsQueueBoxServerService(
+            new InMemoryQueueBox(new Map()),
+            new InMemoryQueueBox(new Map()),
+            server,
+            'server-1',
+            { targetResolver: createWsServerTargetResolver(server) }
+        );
+        const replay = new RtcTopologyReplayEntryHandlerService({
+            publications: {
+                findPublication: async () => fixture.publication
+            },
+            outbox: {
+                getItem: async () => fixture.outbox
+            },
+            snapshots: {
+                findSnapshot: async () => fixture.currentSnapshot
+            },
+            sender: service
+        });
+
+        await expect(
+            replay.handle(
+                fixture.entry,
+                fixture.databaseNowEpochMs,
+                new AbortController().signal
+            )
+        ).resolves.toEqual({ status: 'delivered' });
+        expect(recordedSocket.sent).toEqual([parsePersistedMessage(fixture.outbox.resource)]);
+        expect(outsideSocket.sent).toEqual([]);
+    });
+
     it('does not run a process-local topology fallback for inbound group snapshots', async () => {
         configureTestCacheRepositories();
 
@@ -39,9 +79,9 @@ describe('RTC topology websocket publication', () => {
         const peerSocket = new FakeSocket();
         const outsideSocket = new FakeSocket();
 
-        server.addConnection(new ConnectionContext('session-a', senderSocket as never));
-        server.addConnection(new ConnectionContext('session-b', peerSocket as never));
-        server.addConnection(new ConnectionContext('session-c', outsideSocket as never));
+        server.addConnection(new ConnectionContext('session-a', senderSocket));
+        server.addConnection(new ConnectionContext('session-b', peerSocket));
+        server.addConnection(new ConnectionContext('session-c', outsideSocket));
 
         const service = new WsQueueBoxServerService(
             new InMemoryQueueBox(new Map()),
@@ -90,7 +130,7 @@ describe('RTC topology websocket publication', () => {
         ]);
 
         for (const [sessionId, socket] of sockets) {
-            server.addConnection(new ConnectionContext(sessionId, socket as never));
+            server.addConnection(new ConnectionContext(sessionId, socket));
         }
 
         const service = new WsQueueBoxServerService(
@@ -143,7 +183,7 @@ describe('RTC topology websocket publication', () => {
             resourceId: expect.any(String)
         });
         const activeEntry = await appOutbox.getItem(activeKey!);
-        const activeMessage = JSON.parse(activeEntry!.resource) as ALMessage;
+        const activeMessage = parsePersistedMessage(activeEntry!.resource);
         const activeEnvelope = JSON.parse(activeMessage.payload.resource) as {
             resourceId: string;
             contextId: string;
@@ -199,7 +239,7 @@ describe('RTC topology websocket publication', () => {
 
         const server = new JsonWebSocketServer();
         const senderSocket = new FakeSocket();
-        server.addConnection(new ConnectionContext('session-a', senderSocket as never));
+        server.addConnection(new ConnectionContext('session-a', senderSocket));
 
         const appOutbox = new InMemoryQueueBox(new Map());
         const runtimeRepository = new FakeRuntimeStateRepository();
@@ -245,8 +285,8 @@ describe('RTC topology websocket publication', () => {
         const server = new JsonWebSocketServer();
         const senderSocket = new FakeSocket();
         const peerSocket = new FakeSocket();
-        server.addConnection(new ConnectionContext('session-a', senderSocket as never));
-        server.addConnection(new ConnectionContext('session-b', peerSocket as never));
+        server.addConnection(new ConnectionContext('session-a', senderSocket));
+        server.addConnection(new ConnectionContext('session-b', peerSocket));
 
         const wsOutbox = new InMemoryQueueBox(new Map());
         const appOutbox = new InMemoryQueueBox(new Map());
@@ -320,7 +360,7 @@ describe('RTC topology websocket publication', () => {
         expect(key?.resourceId).toEqual(expect.any(String));
         expect(await appOutboxQueue.getAllKeys()).toHaveLength(1);
         const entry = await appOutboxQueue.getItem(key!);
-        const message = JSON.parse(entry!.resource) as ALMessage;
+        const message = parsePersistedMessage(entry!.resource);
         const envelope = JSON.parse(message.payload.resource) as {
             resourceId: string;
             senderId: string;
@@ -343,30 +383,62 @@ describe('RTC topology websocket publication', () => {
     });
 });
 
-class FakeSocket {
+class FakeSocket extends EventTarget implements WebSocket {
+    readonly CONNECTING = WebSocket.CONNECTING;
+    readonly OPEN = WebSocket.OPEN;
+    readonly CLOSING = WebSocket.CLOSING;
+    readonly CLOSED = WebSocket.CLOSED;
+    readonly binaryType: BinaryType = 'blob';
+    readonly bufferedAmount = 0;
+    readonly extensions = '';
+    readonly protocol = '';
     readonly readyState = WebSocket.OPEN;
+    readonly url = 'ws://rtc-topology-publication-test';
     readonly sent: ALMessage[] = [];
-    private readonly listeners = new Map<string, Array<(event: MessageEvent) => void>>();
+    onclose = null;
+    onerror = null;
+    onmessage = null;
+    onopen = null;
+    private readonly messageListeners: EventListenerOrEventListenerObject[] = [];
 
-    addEventListener(type: string, listener: (event: MessageEvent) => void): void {
-        const listeners = this.listeners.get(type) ?? [];
-        listeners.push(listener);
-        this.listeners.set(type, listeners);
+    override addEventListener(
+        type: string,
+        callback: EventListenerOrEventListenerObject | null,
+        options?: boolean | AddEventListenerOptions
+    ): void {
+        super.addEventListener(type, callback, options);
+        if (type === 'message' && callback !== null) {
+            this.messageListeners.push(callback);
+        }
     }
 
-    send(data: string): void {
-        this.sent.push(JSON.parse(data) as ALMessage);
+    close(): void {}
+
+    send(data: string | ArrayBufferLike | Blob | ArrayBufferView): void {
+        if (typeof data !== 'string') {
+            throw new TypeError('RTC topology publication tests require JSON text messages');
+        }
+        this.sent.push(parsePersistedMessage(data));
     }
 
     async dispatchMessage(message: ALMessage): Promise<void> {
-        const event = {
-            data: JSON.stringify(message)
-        } as MessageEvent;
+        const event = new MessageEvent('message', { data: JSON.stringify(message) });
 
-        for (const listener of this.listeners.get('message') ?? []) {
-            await listener(event);
+        for (const listener of this.messageListeners) {
+            if (typeof listener === 'function') {
+                await listener.call(this, event);
+            }
+            else {
+                await listener.handleEvent(event);
+            }
         }
     }
+}
+
+function parsePersistedMessage(serialized: string): ALMessage {
+    const message = JSON.parse(serialized);
+    validatePersistedALMessage(message);
+    return message;
 }
 function createSockets(sessionIds: readonly string[]): Map<string, FakeSocket> {
     return new Map(sessionIds.map((sessionId) => [sessionId, new FakeSocket()]));
@@ -420,8 +492,6 @@ function installTopologyTestTopics(
     service: WsQueueBoxServerService,
     options: InstallTopologyTestTopicsOptions = {}
 ): void {
-    installStateSyncWsTopics(service);
-    installTopologyWsTopics(service);
     if (!options.rtcTopologyAppOutbox) {
         return;
     }

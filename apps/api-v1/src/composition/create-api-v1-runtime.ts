@@ -161,7 +161,6 @@ export function constructApiV1Runtime(
         groupStateRepository: mutation.groupsRepository,
         groupStateService: mutation.groupStateService,
         groupFormationRttMutation: mutation.groupFormationMetrics.rttMutation,
-        webSocketServer: mutation.webSocketServer,
         topologyReplayMetrics: rtcTopology.topologyReplay,
         serviceId: mutation.serviceId,
         adminClientIds: input.adminClientIds,

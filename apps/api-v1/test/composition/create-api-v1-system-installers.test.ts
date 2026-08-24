@@ -32,9 +32,7 @@ Deno.test('system topic installation rejects a second start before mutating inst
 
     installers.installDefaultMiddlewareTopics?.(runtime, ws);
     const installedEvents = [
-        'state-sync',
         'topology-app-outbox',
-        'topology-topics',
         'chat',
         'signaling',
         'rtc-rtt',
@@ -230,10 +228,8 @@ function createRuntime(
             }
         },
         groupStateService: {
-            observeSnapshot: (snapshot) => Promise.resolve(snapshot),
             readSnapshotAtLeast: () => Promise.resolve(undefined)
         },
-        clientStateService: { observeSnapshot: (snapshot) => Promise.resolve(snapshot) },
         outboxQueueReader: {},
         qboxEngine: { wake: () => {} },
         rtcTopologyReplay: { wake: () => {} },
@@ -247,15 +243,9 @@ function createOperations(
     useProductionCrdtAndRouter = false
 ): ApiV1SystemInstallerOperations<ApiV1SystemInstallerRuntime, ApiV1SystemInstallerTopology> {
     return {
-        installStateSyncTopics: () => {
-            events.push('state-sync');
-        },
         installTopologyAppOutbox: () => {
             events.push('topology-app-outbox');
             return {} as never;
-        },
-        installTopologyTopics: () => {
-            events.push('topology-topics');
         },
         installChatTopic: () => {
             events.push('chat');

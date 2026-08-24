@@ -11,12 +11,7 @@ import {
     installRtcRttSystemTopic,
     type InstallRtcRttSystemTopicOptions
 } from '@shared-server/rallar-system/rtc-rtt/topic/install-rtc-rtt-system-topic.ts';
-import {
-    installStateSyncWsTopics,
-    type InstallStateSyncWsTopicsOptions
-} from '@shared-server/rallar-system/state-sync/install-state-sync-ws-topics.ts';
 import type { RtcTopologyWorkPublisher } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-work.ts';
-import { installTopologyWsTopics } from '@shared-server/rallar-system/topology/publication/install-topology-ws-topics.ts';
 import {
     installTopologyAppOutbox,
     type InstallTopologyAppOutboxOptions
@@ -68,8 +63,7 @@ export interface ApiV1SystemInstallerRuntime {
     readonly rtcRttInboxService: Pick<ApiV1Runtime['rtcRttInboxService'], 'enqueue'>;
     readonly appCrdtInboxService?: object;
     readonly backgroundTasks: Pick<ApiV1Runtime['backgroundTasks'], 'register'>;
-    readonly groupStateService: Pick<ApiV1Runtime['groupStateService'], 'observeSnapshot' | 'readSnapshotAtLeast'>;
-    readonly clientStateService: Pick<ApiV1Runtime['clientStateService'], 'observeSnapshot'>;
+    readonly groupStateService: Pick<ApiV1Runtime['groupStateService'], 'readSnapshotAtLeast'>;
     readonly outboxQueueReader: object;
     readonly qboxEngine: Pick<ApiV1Runtime['qboxEngine'], 'wake'>;
     readonly rtcTopologyReplay: Pick<ApiV1Runtime['rtcTopologyReplay'], 'wake'>;
@@ -96,16 +90,9 @@ export interface ApiV1SystemInstallerOperations<
     Runtime extends ApiV1SystemInstallerRuntime = ApiV1Runtime,
     Topology extends ApiV1SystemInstallerTopology = ApiV1TopologyServices,
 > {
-    readonly installStateSyncTopics: (
-        service: Runtime['wsQBoxServerService'],
-        options: ApiV1SystemTopicOptions<Runtime, Topology>
-    ) => void;
     readonly installTopologyAppOutbox: (
         options: ApiV1SystemTopicOptions<Runtime, Topology>
     ) => RtcTopologyWorkPublisher;
-    readonly installTopologyTopics: (
-        service: Runtime['wsQBoxServerService']
-    ) => void;
     readonly installChatTopic: (
         service: Runtime['wsQBoxServerService']
     ) => void;
@@ -159,9 +146,7 @@ export function constructApiV1SystemInstallers<
             const wsService = runtime.wsQBoxServerService;
             const topicOptions = createSystemTopicOptions(input, runtime);
 
-            operations.installStateSyncTopics(wsService, topicOptions);
             const topologyWorkPublisher = operations.installTopologyAppOutbox(topicOptions);
-            operations.installTopologyTopics(wsService);
             operations.installChatTopic(wsService);
             operations.installRtcSignalingTopic(wsService);
             const rtcRttRuntime = operations.installRtcRttTopic(
@@ -232,12 +217,6 @@ function createSystemTopicOptions<
         topologyPlanning: topology.topologyPlanning,
         rttRefinementGate: topology.rttRefinementGate,
         rttRefinementService: topology.rttRefinementService,
-        observeGroupSnapshot: async (snapshot) => {
-            await runtime.groupStateService.observeSnapshot(snapshot);
-        },
-        observeClientSnapshot: async (snapshot) => {
-            await runtime.clientStateService.observeSnapshot(snapshot);
-        },
         rtcRttRuntimeState: {
             topologyConfig: topology.topologyConfigRepository,
             groupState: topology.groupStateRepository,
@@ -267,7 +246,7 @@ function createSystemTopicOptions<
 export interface ApiV1SystemTopicOptions<
     Runtime extends ApiV1SystemInstallerRuntime,
     Topology extends ApiV1SystemInstallerTopology,
-> extends InstallStateSyncWsTopicsOptions {
+> {
     readonly rtcTopologyService: Topology['rtcTopologyService'];
     readonly rtcTopologyOptions: Topology['rtcTopologyOptions'];
     readonly topologyQuery: Topology['topologyQuery'];
@@ -305,9 +284,6 @@ export interface ApiV1RtcTopologyAppOutboxOptions<Runtime extends ApiV1SystemIns
 }
 
 const PRODUCTION_OPERATIONS: ApiV1SystemInstallerOperations<ApiV1Runtime, ApiV1TopologyServices> = {
-    installStateSyncTopics: (service, options) => {
-        installStateSyncWsTopics(service, options);
-    },
     installTopologyAppOutbox: (options) =>
         installTopologyAppOutbox({
             ...options.rtcTopologyAppOutbox,
@@ -316,7 +292,6 @@ const PRODUCTION_OPERATIONS: ApiV1SystemInstallerOperations<ApiV1Runtime, ApiV1T
             rttRefinementService: options.rttRefinementService,
             nowEpochMs: options.rtcTopologyOptions.now ?? Date.now
         }),
-    installTopologyTopics: installTopologyWsTopics,
     installChatTopic: installChatWsTopic,
     installRtcSignalingTopic: installRtcSignalingWsTopic,
     installRtcRttTopic: (service, options, topologyWorkPublisher) =>

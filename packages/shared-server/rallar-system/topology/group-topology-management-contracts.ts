@@ -20,7 +20,7 @@ import type { RallarRtcTopologyService } from './runtime/rallar-rtc-topology-ser
 export type GroupTopologyPublisher = (
     message: ALMessage,
     snapshot: RallarOverlayTopologySnapshot
-) => void | Promise<void>;
+) => number | Promise<number>;
 
 export type GroupTopologyGroupSnapshotReader = (
     ref: GroupRef,
