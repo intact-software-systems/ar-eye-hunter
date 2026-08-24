@@ -157,6 +157,8 @@
       "expect": {
         "status": 409,
         "body": {
+          "type": "api-mutation-failure",
+          "version": "canonical.v2",
           "code": "group-already-exists",
           "status": 409
         }
