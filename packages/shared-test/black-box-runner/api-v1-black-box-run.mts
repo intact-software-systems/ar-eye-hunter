@@ -1,3 +1,5 @@
+import { mkdir } from 'node:fs/promises';
+
 import { managedApiDiagnosticSecrets, waitForManagedApiReady } from './managed-api/api-v1-managed-api-readiness.mts';
 import {
     requiresManagedPostgresRunDatabase,
@@ -355,12 +357,28 @@ async function runManagedProofOrRecipeMatrix(
     });
 }
 
+export interface WithPreparedApiV1BlackBoxArtifactsInput<Result> {
+    readonly artifactDir: string;
+    readonly run: () => Promise<Result>;
+}
+
+/**
+ * Establishes the artifact boundary before any managed backend, migration,
+ * server, or recipe work begins. A failed run may retain current diagnostics,
+ * but it can never leave an earlier fairness proof looking current.
+ */
+export async function withPreparedApiV1BlackBoxArtifacts<Result>(
+    input: WithPreparedApiV1BlackBoxArtifactsInput<Result>
+): Promise<Result> {
+    await mkdir(input.artifactDir, { recursive: true });
+    await removeApiV1FairnessProofArtifact(input.artifactDir);
+    return await input.run();
+}
+
 async function main(): Promise<void> {
     const options = parseApiV1BlackBoxArgs(Deno.args);
     const env = toApiV1BlackBoxEnvironment(options, Deno.env.toObject());
     const artifactDir = resolveArtifactDir(options.artifactDir);
-    await Deno.mkdir(artifactDir, { recursive: true });
-    await removeApiV1FairnessProofArtifact(artifactDir);
     const runWithStorage = async (
         pgliteStorage: ManagedPGliteRunStorage | undefined
     ): Promise<void> => {
@@ -398,7 +416,10 @@ async function main(): Promise<void> {
             }
         );
     };
-    await runManagedBlackBoxBackend(options, env, runWithStorage);
+    await withPreparedApiV1BlackBoxArtifacts({
+        artifactDir,
+        run: async () => await runManagedBlackBoxBackend(options, env, runWithStorage)
+    });
 }
 
 async function runManagedBlackBoxBackend(

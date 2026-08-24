@@ -86,6 +86,15 @@ describe('managed API-v1 PostgreSQL run database', () => {
         );
     });
 
+    it('rejects a non-PostgreSQL base URL before database isolation starts', () => {
+        expect(() =>
+            toManagedPostgresDatabaseUrl(
+                'mysql://localhost/not-a-postgres-database',
+                'rallar_bb_invalid_protocol_0123456789abcdef'
+            )
+        ).toThrow('Managed PostgreSQL isolation requires a PostgreSQL DATABASE_URL.');
+    });
+
     it('drops the isolated database after the managed callback rejects', async () => {
         const queries: string[] = [];
         const endOptions: Array<Readonly<{ timeout: number; }>> = [];
