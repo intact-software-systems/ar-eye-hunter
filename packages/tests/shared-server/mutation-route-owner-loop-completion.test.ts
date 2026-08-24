@@ -1,4 +1,3 @@
-import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
 import { findMutationBoundaryViolationsFromRoots } from './mutation-boundary-analysis.ts';
@@ -9,7 +8,13 @@ import { MUTATION_ROUTE_INVENTORY, validateMutationRouteInventory } from './muta
 
 const FIXTURES = 'packages/tests/shared-server/fixtures/mutation-boundary-capability-receivers';
 const GROUP_OWNER = 'packages/shared-server/rallar-system/group-state/inbox/group-state-inbox-service.ts';
-const { collection: LIVE_GROUP_COLLECTION, loopStart: LOOP_START, loopEnd: LOOP_END, classStart: CLASS_START } = readGroupOwnerAnchors();
+const {
+    source: GROUP_OWNER_SOURCE,
+    collection: LIVE_GROUP_COLLECTION,
+    loopStart: LOOP_START,
+    loopEnd: LOOP_END,
+    classStart: CLASS_START
+} = readGroupOwnerAnchors();
 const TYPE_MAP = `const C16_TYPE_MAP = new Map([
     [AppInboxType.GROUP_CREATE, AppInboxType.GROUP_UPDATE],
 ]);`;
@@ -187,7 +192,7 @@ function validateInvocations(
     invocation: string,
     topLevel = ''
 ): readonly string[] {
-    const source = readFileSync(GROUP_OWNER, 'utf8');
+    const source = GROUP_OWNER_SOURCE;
     let mutated = source.replace(
         CLASS_START,
         `${TYPE_MAP}\n${topLevel}\n\n${CLASS_START}`

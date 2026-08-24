@@ -1,4 +1,3 @@
-import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
 import { findMutationBoundaryViolationsFromRoots } from './mutation-boundary-analysis.ts';
@@ -7,7 +6,10 @@ import { MUTATION_ROUTE_INVENTORY, validateMutationRouteInventory } from './muta
 
 const FIXTURES = 'packages/tests/shared-server/fixtures/mutation-boundary-capability-receivers';
 const GROUP_OWNER = 'packages/shared-server/rallar-system/group-state/inbox/group-state-inbox-service.ts';
-const { collection: LIVE_GROUP_COLLECTION } = readGroupOwnerAnchors();
+const {
+    source: GROUP_OWNER_SOURCE,
+    collection: LIVE_GROUP_COLLECTION
+} = readGroupOwnerAnchors();
 const UNKNOWN_TYPES = 'function unknownTypes(): readonly AppInboxType[] { return []; }';
 
 describe('Mutation route owner call effects contracts', () => {
@@ -77,7 +79,7 @@ describe('Mutation route owner call effects contracts', () => {
 });
 
 function validateWithGroupCollection(collection: string): readonly string[] {
-    const source = readFileSync(GROUP_OWNER, 'utf8');
+    const source = GROUP_OWNER_SOURCE;
     const mutated = source.replace(LIVE_GROUP_COLLECTION, collection) + `\n${UNKNOWN_TYPES}\n`;
     expect(mutated).not.toBe(source);
     return validateMutationRouteInventory(MUTATION_ROUTE_INVENTORY, {

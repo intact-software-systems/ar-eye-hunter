@@ -1,4 +1,3 @@
-import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
 import { findMutationBoundaryViolationsFromRoots } from './mutation-boundary-analysis.ts';
@@ -7,7 +6,10 @@ import { MUTATION_ROUTE_INVENTORY, validateMutationRouteInventory } from './muta
 
 const FIXTURES = 'packages/tests/shared-server/fixtures/mutation-boundary-capability-receivers';
 const GROUP_OWNER = 'packages/shared-server/rallar-system/group-state/inbox/group-state-inbox-service.ts';
-const { collection: LIVE_GROUP_COLLECTION } = readGroupOwnerAnchors();
+const {
+    source: GROUP_OWNER_SOURCE,
+    collection: LIVE_GROUP_COLLECTION
+} = readGroupOwnerAnchors();
 
 describe('Mutation route owner map projections contracts', () => {
     it.each([
@@ -162,7 +164,7 @@ function expectMutation(name: string): void {
 }
 
 function validateWithGroupCollection(collection: string, appendedSource = ''): readonly string[] {
-    const source = readFileSync(GROUP_OWNER, 'utf8');
+    const source = GROUP_OWNER_SOURCE;
     const mutated = source.replace(LIVE_GROUP_COLLECTION, collection) + `\n${appendedSource}\n`;
     expect(mutated).not.toBe(source);
     return validateMutationRouteInventory(MUTATION_ROUTE_INVENTORY, {
