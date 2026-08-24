@@ -13,7 +13,7 @@ import { AppInboxHandlerRegistry } from '../../app-inbox/app-inbox-handler-regis
 import type { AppInboxOptions } from '../../app-inbox/app-inbox-options.ts';
 import type { AppInboxEntryRepository, AppInboxResultRepository } from '../../app-inbox/app-inbox-persistence-ports.ts';
 import { AppInboxQueueClient, SIMPLER_GROUP_STATE_APP_INBOX_TOPIC } from '../../app-inbox/app-inbox-queue-client.ts';
-import { decodeNullAppInboxCommand, encodeAppInboxResult } from '../../app-inbox/app-inbox-registration-codecs.ts';
+import { encodeAppInboxResult } from '../../app-inbox/app-inbox-registration-codecs.ts';
 import type { IssuedAuthSession } from '../../auth/persistence/auth-session-types.ts';
 import type { GroupStateService } from '../../group-state/group-state-service-contracts.ts';
 import type { RallarTimingSink } from '../../observability/timing.ts';
@@ -113,7 +113,7 @@ export class TopologyInboxService {
         for (const type of TOPOLOGY_CONFIG_INBOX_TYPES) {
             handlers.registerHandler({
                 type,
-                decodeCommand: decodeNullAppInboxCommand,
+                decodeCommand: readDurableTopologyAppInboxCommand,
                 encodeResult: (result) => encodeAppInboxResult(result, 'Topology AppInbox result'),
                 handle: async (_command, context) =>
                     await this.handler.processMutation(context, dependencies.mutationOwners)

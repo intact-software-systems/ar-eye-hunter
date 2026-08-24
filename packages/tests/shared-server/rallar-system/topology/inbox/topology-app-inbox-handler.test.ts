@@ -19,6 +19,7 @@ import type { GroupStateService } from '@shared-server/rallar-system/group-state
 import type { GroupStateAuthorityGuard } from '@shared-server/rallar-system/group-state/persistence/group-state-persistence-contracts.ts';
 
 import { AppInboxType, type AppInboxMessageContext } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
+import { encodeAppInboxResult } from '@shared-server/rallar-system/app-inbox/app-inbox-registration-codecs.ts';
 import type { ComputedRtcTopologyOutbox } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-entry.ts';
 
 import { createAuthenticatedTopologyEnqueue } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-authority.ts';
@@ -328,6 +329,7 @@ function createMessageContext(enqueue: AppInboxMessageContext['enqueue']): AppIn
     return {
         enqueue,
         message,
+        encodeResult: (result) => encodeAppInboxResult(result, 'Topology handler test result'),
         entry: {
             ...entry,
             dequeueAudit: { ...entry.dequeueAudit, attempts: 7 }

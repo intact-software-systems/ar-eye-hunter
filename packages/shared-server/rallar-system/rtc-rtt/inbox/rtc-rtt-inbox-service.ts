@@ -8,9 +8,10 @@ import { AppInboxHandlerRegistry } from '../../app-inbox/app-inbox-handler-regis
 import type { AppInboxOptions } from '../../app-inbox/app-inbox-options.ts';
 import type { AppInboxEntryRepository, AppInboxResultRepository } from '../../app-inbox/app-inbox-persistence-ports.ts';
 import { AppInboxQueueClient, SIMPLER_GROUP_STATE_APP_INBOX_TOPIC } from '../../app-inbox/app-inbox-queue-client.ts';
-import { decodeNullAppInboxCommand, encodeAppInboxResult } from '../../app-inbox/app-inbox-registration-codecs.ts';
+import { encodeAppInboxResult } from '../../app-inbox/app-inbox-registration-codecs.ts';
 import type { GroupStateService } from '../../group-state/group-state-service-contracts.ts';
 import type { RallarTimingSink } from '../../observability/timing.ts';
+import { readRtcRttAppInboxCommand } from './rtc-rtt-app-inbox-authority.ts';
 import type { RtcRttAppInboxDependencies } from './rtc-rtt-app-inbox-contracts.ts';
 import { RtcRttAppInboxHandler } from './rtc-rtt-app-inbox-handler.ts';
 
@@ -74,7 +75,7 @@ export class RtcRttInboxService {
         });
         handlers.registerHandler({
             type: AppInboxType.RTC_RTT_SUBMIT,
-            decodeCommand: decodeNullAppInboxCommand,
+            decodeCommand: readRtcRttAppInboxCommand,
             encodeResult: (result) => encodeAppInboxResult(result, 'RTC RTT AppInbox result'),
             handle: async (_command, context) =>
                 await this.handler.processMutation(context, dependencies.mutationDependencies)

@@ -16,8 +16,10 @@ import type {
     AuthMutationRead,
     AuthMutationResult
 } from '@shared-server/rallar-system/auth/mutation/auth-mutation-contracts.ts';
+import { decodeAuthMutationIntent } from '@shared-server/rallar-system/auth/mutation/decode-auth-mutation-intent.ts';
 
 import type { AppInboxMessageContext } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
+import { encodeAppInboxResult } from '@shared-server/rallar-system/app-inbox/app-inbox-registration-codecs.ts';
 import type {
     AppInboxMutationTransactionResult,
     AppInboxMutationTransactionWriter
@@ -101,7 +103,7 @@ describe('auth inbox routing rejection', () => {
             }
         });
 
-        await expect(handler.processAuthMutation({}, context)).rejects.toThrow(
+        expect(() => decodeAuthMutationIntent({})).toThrow(
             'Auth mutation intent version is invalid'
         );
         await expect(handler.processAuthMutation(intent, context)).rejects.toThrow(
@@ -239,5 +241,10 @@ function createContext(
         status: EntityStatus.RESERVED,
         dequeueAudit: { attempts: 1 }
     };
-    return { enqueue, message: { id: { ts: 1_000 } } as never, entry };
+    return {
+        enqueue,
+        message: { id: { ts: 1_000 } } as never,
+        entry,
+        encodeResult: (result) => encodeAppInboxResult(result, 'Auth handler test result')
+    };
 }

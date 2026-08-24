@@ -15,6 +15,7 @@ import { createGroupTopologyOwners, type GroupTopologyOwners } from '@shared-ser
 import { RallarRtcTopologyService } from '@shared-server/rallar-system/topology/runtime/rallar-rtc-topology-service.ts';
 
 import { AppInboxType, type AppInboxMessageContext } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
+import { encodeAppInboxResult } from '@shared-server/rallar-system/app-inbox/app-inbox-registration-codecs.ts';
 import { computeRtcTopologyEntry } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-entry.ts';
 
 import { createAuthenticatedTopologyEnqueue } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-authority.ts';
@@ -380,7 +381,8 @@ describe('topology AppInbox transaction and idempotency', () => {
             handler.processMutation(
                 {
                     enqueue,
-                    entry: { dequeueAudit: { attempts: 1 } }
+                    entry: { dequeueAudit: { attempts: 1 } },
+                    encodeResult: (result) => encodeAppInboxResult(result, 'Topology transaction test result')
                 } as AppInboxMessageContext,
                 topologyMutationOwners(management)
             )

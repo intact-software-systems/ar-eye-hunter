@@ -3,6 +3,7 @@ import { AppInboxType } from '../../app-inbox/app-inbox-contracts.ts';
 import { hashCanonicalCommand } from '../../app-inbox/hash-canonical-command.ts';
 import { GroupMutationAuthorizationError } from '../../group-state/group-mutation-authority.ts';
 import type { GroupStateService } from '../../group-state/group-state-service-contracts.ts';
+import type { JsonWireValue } from '../../protocol/json-wire-identity.ts';
 import {
     constantTimeTopologyProofEqual,
     readTopologyMutationAuthorityProof
@@ -100,6 +101,46 @@ export function readRtcRttAppInboxAuthority(value: unknown): RtcRttAppInboxAutho
     catch {
         throw new GroupMutationAuthorizationError('RTC RTT AppInbox durable authority is malformed.');
     }
+}
+
+export function readRtcRttAppInboxCommand(
+    value: JsonWireValue
+): RtcRttAppInboxCommand {
+    if (!isTopologyRecord(value)) {
+        throw new TypeError('RTC RTT AppInbox command is invalid');
+    }
+    requireExactTopologyKeys(value, [
+        'actor',
+        'requestId',
+        'commandHash',
+        'mutationCommandHash',
+        'capturedAtEpochMs',
+        'rtt'
+    ]);
+    const actor = isTopologyRecord(value.actor) ? value.actor : null;
+    if (!actor) {
+        throw new TypeError('RTC RTT AppInbox actor is invalid');
+    }
+    requireExactTopologyKeys(actor, ['principalId', 'sessionId']);
+    for (const field of ['principalId', 'sessionId'] as const) {
+        if (typeof actor[field] !== 'string' || actor[field].length === 0) {
+            throw new TypeError(`RTC RTT AppInbox actor ${field} is invalid`);
+        }
+    }
+    for (const field of ['requestId', 'commandHash', 'mutationCommandHash'] as const) {
+        if (typeof value[field] !== 'string' || value[field].length === 0) {
+            throw new TypeError(`RTC RTT AppInbox ${field} is invalid`);
+        }
+    }
+    if (
+        typeof value.capturedAtEpochMs !== 'number' ||
+        !Number.isSafeInteger(value.capturedAtEpochMs) ||
+        value.capturedAtEpochMs < 0
+    ) {
+        throw new TypeError('RTC RTT AppInbox captured time is invalid');
+    }
+    validateRtcRttMeasurement(value.rtt);
+    return value as RtcRttAppInboxCommand;
 }
 
 export async function verifyRtcRttAppInboxAuthority(

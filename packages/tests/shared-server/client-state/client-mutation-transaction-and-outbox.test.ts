@@ -138,7 +138,7 @@ describe('client mutation AppInbox retry and rollback', () => {
 
         expect(result.left).toMatchObject({
             code: 'resource-inbox-invariant-corruption',
-            status: 409
+            status: 500
         });
         expect(harness.rollbackAssertions()).toBe(1);
         expect((await harness.queue.getItem(harness.key))?.status).toBe(EntityStatus.FAILED);

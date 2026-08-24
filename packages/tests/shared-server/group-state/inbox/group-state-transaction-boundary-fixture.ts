@@ -8,6 +8,7 @@ import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 
 import { AppInboxType, type AppInboxMessageContext } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import { SIMPLER_GROUP_STATE_APP_INBOX_TOPIC } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-client.ts';
+import { encodeAppInboxResult } from '@shared-server/rallar-system/app-inbox/app-inbox-registration-codecs.ts';
 import { AppInboxTransactionWriter } from '@shared-server/rallar-system/app-inbox/app-inbox-transaction-writer.ts';
 import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
 import { type IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
@@ -218,5 +219,10 @@ async function createReservedContext(
         dequeueAudit: { attempts: 1, startTs: createdAt }
     };
     await queue.enqueue(entry);
-    return { enqueue, entry, message: {} as never };
+    return {
+        enqueue,
+        entry,
+        message: {} as never,
+        encodeResult: (result) => encodeAppInboxResult(result, 'Group transaction test result')
+    };
 }

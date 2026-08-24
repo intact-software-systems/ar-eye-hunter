@@ -58,7 +58,6 @@ interface AdminPruneUnavailableCase {
 interface MalformedAdminPruneResultCase {
     readonly name: string;
     readonly createResult: (result: AdminPruneEnqueueResult) => RallarCrdtJsonValue;
-    readonly expectedMessage: string;
 }
 
 interface AdminPruneRequestFixture extends AdminPruneExpiredRequest {
@@ -634,18 +633,15 @@ describe('AppAdminInboxService initial prune command', () => {
     it.each<MalformedAdminPruneResultCase>([
         {
             name: 'an extra top-level field',
-            createResult: (result) => ({ ...result, unexpected: true }),
-            expectedMessage: 'Admin prune result fields are invalid'
+            createResult: (result) => ({ ...result, unexpected: true })
         },
         {
             name: 'an empty durable identity',
-            createResult: (result) => ({ ...result, jobId: '' }),
-            expectedMessage: 'Admin prune result fields are invalid'
+            createResult: (result) => ({ ...result, jobId: '' })
         },
         {
             name: 'duplicate categories',
-            createResult: (result) => ({ ...result, results: [result.results[0]!, result.results[0]!] }),
-            expectedMessage: 'Admin prune result has duplicate categories'
+            createResult: (result) => ({ ...result, results: [result.results[0]!, result.results[0]!] })
         },
         {
             name: 'more deleted rows than expired rows',
@@ -653,21 +649,18 @@ describe('AppAdminInboxService initial prune command', () => {
                 ...result,
                 changed: true,
                 results: [{ ...result.results[0], deletedRows: result.results[0]!.expiredRows + 1 }]
-            }),
-            expectedMessage: 'Admin prune deleted rows exceed expired rows'
+            })
         },
         {
             name: 'an inconsistent changed flag',
-            createResult: (result) => ({ ...result, changed: true }),
-            expectedMessage: 'Admin prune result changed status is invalid'
+            createResult: (result) => ({ ...result, changed: true })
         },
         {
             name: 'an inconsistent dry-run flag',
             createResult: (result) => ({
                 ...result,
                 results: result.results.map((categoryResult) => ({ ...categoryResult, dryRun: false }))
-            }),
-            expectedMessage: 'Admin prune result dry-run status is invalid'
+            })
         },
         {
             name: 'dry-run deletions',
@@ -675,29 +668,25 @@ describe('AppAdminInboxService initial prune command', () => {
                 ...result,
                 changed: true,
                 results: [{ ...result.results[0], expiredRows: 1, deletedRows: 1 }]
-            }),
-            expectedMessage: 'Admin prune dry-run result has deleted rows'
+            })
         },
         {
             name: 'another command job identity',
-            createResult: (result) => ({ ...result, jobId: 'another-admin-prune-job' }),
-            expectedMessage: 'Admin prune durable result differs from command'
+            createResult: (result) => ({ ...result, jobId: 'another-admin-prune-job' })
         },
         {
             name: 'another command generation time',
             createResult: (result) => ({
                 ...result,
                 generatedAtEpochMs: result.generatedAtEpochMs + 1
-            }),
-            expectedMessage: 'Admin prune durable result differs from command'
+            })
         },
         {
             name: 'another command category',
             createResult: (result) => ({
                 ...result,
                 results: [{ ...result.results[0], category: 'resource-inbox' }]
-            }),
-            expectedMessage: 'Admin prune durable result differs from command'
+            })
         },
         {
             name: 'another command execution status',
@@ -705,15 +694,13 @@ describe('AppAdminInboxService initial prune command', () => {
                 ...result,
                 status: 'queued',
                 results: result.results.map((categoryResult) => ({ ...categoryResult, dryRun: false }))
-            }),
-            expectedMessage: 'Admin prune durable result differs from command'
+            })
         },
         {
             name: 'no category results',
-            createResult: (result) => ({ ...result, results: [] }),
-            expectedMessage: 'Admin prune result fields are invalid'
+            createResult: (result) => ({ ...result, results: [] })
         }
-    ])('rejects durable replay containing $name', async ({ createResult, expectedMessage }) => {
+    ])('rejects durable replay containing $name', async ({ createResult }) => {
         const harness = createAdminInboxHarness();
         const request = {
             requestId: 'malformed-durable-replay',
@@ -751,9 +738,9 @@ describe('AppAdminInboxService initial prune command', () => {
 
         expect(replay.left).toMatchObject({
             type: 'app-inbox-failure',
-            code: 'TypeError',
-            status: 400,
-            message: expectedMessage
+            code: 'app-inbox-result-corrupt',
+            status: 500,
+            message: 'Persisted AppInbox result is corrupt'
         });
         expect(harness.readWorkCounts()).toEqual(beforeReplay);
     });

@@ -26,6 +26,10 @@ import {
     AppInboxType,
     type AppInboxEnqueueInput
 } from '../../app-inbox/app-inbox-contracts.ts';
+import {
+    classifyAppInboxError,
+    type AppInboxErrorClassification
+} from '../../app-inbox/app-inbox-error-classification.ts';
 import { toUnexpectedAppInboxFailure, type AppInboxFailure } from '../../app-inbox/app-inbox-failure.ts';
 import { AppInboxHandlerRegistry } from '../../app-inbox/app-inbox-handler-registry.ts';
 import type { AppInboxOptions } from '../../app-inbox/app-inbox-options.ts';
@@ -219,8 +223,8 @@ export class AppAuthInboxService {
                 decodeAuthMutationResult
             );
         }
-        catch {
-            return Either.ofLeft(toUnexpectedAppInboxFailure());
+        catch (error) {
+            return Either.ofLeft(toAuthBoundaryFailure(classifyAppInboxError(error)));
         }
         if (persisted.left !== undefined) {
             return Either.ofLeft(persisted.left);
@@ -618,10 +622,18 @@ export class AppAuthInboxService {
             }
             return Either.ofRight(intent as I);
         }
-        catch {
-            return Either.ofLeft(toUnexpectedAppInboxFailure());
+        catch (error) {
+            return Either.ofLeft(toAuthBoundaryFailure(classifyAppInboxError(error)));
         }
     }
+}
+
+function toAuthBoundaryFailure(
+    classification: AppInboxErrorClassification
+): AppInboxFailure {
+    return classification.kind === 'terminal'
+        ? classification.result
+        : toUnexpectedAppInboxFailure();
 }
 
 interface AuthCommandReservation {
