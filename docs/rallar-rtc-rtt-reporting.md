@@ -34,7 +34,7 @@ group's effective topology configuration (server defaults, durable per-group
 config, temporary override) under the server reporting option. The in-memory
 topic branch in `init-rtc-rtt-topic.ts` resolves the limit the same way through
 the `readGroupRttReportingDegreeLimit` hook in
-`packages/shared-server/rallar-system/ws-system-topics.ts`, for compositions
+`packages/shared-server/rallar-system/rtc-rtt/topic/init-rtc-rtt-topic.ts`, for compositions
 without durable topology repositories. An explicitly configured
 `RALLAR_RTC_RTT_REPORTING_DEGREE_LIMIT` therefore still wins; otherwise a
 group's effective `degreeLimit` is its reporting limit, and raising it through
@@ -299,8 +299,8 @@ diagnostics before treating it as a production shape.
 - `packages/shared-server/rallar-system/rtc-rtt/topic/init-rtc-rtt-topic.ts`:
   server RTT decoding, durable-versus-in-memory handoff, Vivaldi update, and
   topology refresh scheduling.
-- `packages/shared-server/rallar-system/ws-system-topics.ts`: server topic
-  composition and RTC RTT topic registration.
+- `packages/shared-server/rallar-system/rtc-rtt/topic/install-rtc-rtt-system-topic.ts`:
+  RTC RTT topic registration.
 - `packages/shared-server/rallar-system/services/rallar-rtc-topology-service.ts`:
   supported topology API and process-lifecycle coordination.
 - `packages/shared-server/rallar-system/topology/planning/rtc-topology-planner.ts`:

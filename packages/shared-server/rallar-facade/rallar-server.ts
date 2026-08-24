@@ -63,29 +63,26 @@ export class RallarServer<TRuntime extends RallarServerRuntime = RallarServerRun
 
     readonly runtime: TRuntime;
 
-    constructor(
-        runtime: TRuntime,
-        repositories: RepositoryManager = defaultRepositoryManager,
-        wsOptions: RallarServerWsRouterOptions = {},
-        systemInstallers: RallarServerSystemInstallers<TRuntime> = {},
-        appDataRepository?: AppDataRepositoryLike
-    ) {
-        this.runtime = runtime;
+    constructor(options: CreateRallarServerFacadeOptions<TRuntime>) {
+        this.runtime = options.runtime;
         const wsRouter = new RallarServerWsRouter(
-            runtime.wsQBoxServerService,
+            options.runtime.wsQBoxServerService,
             {
-                ...wsOptions,
-                wakeOutbox: () => runtime.qboxEngine?.wake?.()
+                ...options.ws,
+                wakeOutbox: () => options.runtime.qboxEngine?.wake?.()
             }
         );
 
         this.ws = new RallarServerWebSocketFacade(wsRouter);
         this.system = new RallarServerSystemFacade(
-            runtime,
+            options.runtime,
             wsRouter,
-            systemInstallers
+            options.system ?? {}
         );
-        this.data = new RallarServerDataFacade(repositories, appDataRepository);
+        this.data = new RallarServerDataFacade(
+            options.repositories ?? defaultRepositoryManager,
+            options.appData?.repository
+        );
     }
 
     start(): void {
@@ -96,13 +93,7 @@ export class RallarServer<TRuntime extends RallarServerRuntime = RallarServerRun
 export function createRallarServerFacade<TRuntime extends RallarServerRuntime>(
     options: CreateRallarServerFacadeOptions<TRuntime>
 ): RallarServer<TRuntime> {
-    return new RallarServer(
-        options.runtime,
-        options.repositories ?? defaultRepositoryManager,
-        options.ws,
-        options.system,
-        options.appData?.repository
-    );
+    return new RallarServer(options);
 }
 
 export class RallarServerSystemFacade<TRuntime extends RallarServerRuntime = RallarServerRuntime> {
@@ -129,7 +120,6 @@ export class RallarServerSystemFacade<TRuntime extends RallarServerRuntime = Ral
         }
 
         this.installers.installDefaultMiddlewareTopics?.(this.runtime, this.ws);
-        this.ws.install();
         this.defaultTopicsInstalled = true;
         return this;
     }
@@ -235,10 +225,12 @@ export class RallarServerDataFacade {
         return this.appData.close(input, options);
     }
 
-    has(token: RepositoryToken<unknown>): boolean;
+    has<R>(token: RepositoryToken<R>): boolean;
     has(id: string): boolean;
-    has(tokenOrId: RepositoryToken<unknown> | string): boolean {
-        return this.repositories.has(tokenOrId as RepositoryToken<unknown>);
+    has<R>(tokenOrId: RepositoryToken<R> | string): boolean {
+        return typeof tokenOrId === 'string'
+            ? this.repositories.has(tokenOrId)
+            : this.repositories.has(tokenOrId);
     }
 
     ids(): readonly string[] {
@@ -269,10 +261,12 @@ export class RallarServerDataFacade {
         return this.repositories.replace(token, repository);
     }
 
-    delete(token: RepositoryToken<unknown>): Promise<boolean>;
+    delete<R>(token: RepositoryToken<R>): Promise<boolean>;
     delete(id: string): Promise<boolean>;
-    delete(tokenOrId: RepositoryToken<unknown> | string): Promise<boolean> {
-        return this.repositories.delete(tokenOrId as RepositoryToken<unknown>);
+    delete<R>(tokenOrId: RepositoryToken<R> | string): Promise<boolean> {
+        return typeof tokenOrId === 'string'
+            ? this.repositories.delete(tokenOrId)
+            : this.repositories.delete(tokenOrId);
     }
 
     clear(): Promise<void> {

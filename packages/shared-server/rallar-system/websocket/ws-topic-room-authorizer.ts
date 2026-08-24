@@ -15,7 +15,7 @@ import type {
 
 type MaybePromise<T> = T | Promise<T>;
 
-export type CreateGroupRoomWsAuthorizerOptions = Readonly<{
+export interface CreateGroupRoomWsAuthorizerOptions {
     findGroupSnapshotByRef?: (
         ref: GroupRef,
         input: Parameters<RallarServerWsRoomAuthorizer>[0]
@@ -35,7 +35,7 @@ export type CreateGroupRoomWsAuthorizerOptions = Readonly<{
         ref: GroupRef
     ) => MaybePromise<GroupPreActivationAppData>;
     now?: RallarSnapshotPresenceClock;
-}>;
+}
 
 export function createGroupRoomWsAuthorizer(
     options: CreateGroupRoomWsAuthorizerOptions

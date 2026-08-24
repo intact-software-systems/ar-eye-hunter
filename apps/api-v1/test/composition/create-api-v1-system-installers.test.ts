@@ -1,10 +1,13 @@
 import assert from 'node:assert/strict';
 
+import { installRallarCrdtWsTopics } from '@shared-server/rallar-system/crdt/realtime/install-rallar-crdt-ws-topics.ts';
 import { RallarServerWsRouter } from '@shared-server/rallar-system/websocket/router/rallar-server-ws-router.ts';
 import type { RallarWsLifecycleHandlers } from '@shared-server/rallar-system/websocket/ws-lifecycle-service.ts';
+import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { toResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
+import type { OnWebSocketServerMessageCallback } from '@shared/services/InboxOutboxContracts.ts';
 import { WsQueueBoxServerService } from '@shared/services/WsQueueBoxServerService.ts';
 import { JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.ts';
 
@@ -18,31 +21,17 @@ import {
 import * as wsRoutes from '../../src/routes/ws-routes.ts';
 import { rememberAuthorisedWsConnection } from '../../src/runtime/rtc-topology/authorised-ws-connection-registry.ts';
 
-Deno.test('system topic reinstall unregisters and stops the prior owner', () => {
+Deno.test('system topic installation rejects a second start before mutating installed owners', () => {
     const events: string[] = [];
     const runtime = createRuntime(events);
     const installers = constructApiV1SystemInstallers(
         createInput(),
-        createOperations(events)
+        createOperations(events, true)
     );
     const ws = new RallarServerWsRouter(runtime.wsQBoxServerService);
 
     installers.installDefaultMiddlewareTopics?.(runtime, ws);
-    installers.installDefaultMiddlewareTopics?.(runtime, ws);
-
-    assert.deepEqual(events, [
-        'state-sync',
-        'topology-app-outbox',
-        'topology-topics',
-        'chat',
-        'signaling',
-        'rtc-rtt',
-        'crdt-ingress',
-        'crdt-topics',
-        'router',
-        'register-stop',
-        'unregister-stop',
-        'stop-rtc-rtt',
+    const installedEvents = [
         'state-sync',
         'topology-app-outbox',
         'topology-topics',
@@ -53,7 +42,16 @@ Deno.test('system topic reinstall unregisters and stops the prior owner', () => 
         'crdt-topics',
         'router',
         'register-stop'
-    ]);
+    ];
+    assert.deepEqual(events, installedEvents);
+    assert.equal(runtime.wsQBoxServerService.anyInboxRegistrationCount, 1);
+
+    assert.throws(
+        () => installers.installDefaultMiddlewareTopics?.(runtime, ws),
+        /system topics already installed/i
+    );
+    assert.deepEqual(events, installedEvents);
+    assert.equal(runtime.wsQBoxServerService.anyInboxRegistrationCount, 1);
 });
 
 Deno.test('system topics fail before installation when CRDT ingress is absent', () => {
@@ -151,6 +149,10 @@ class RuntimeCalls {
     groupCleanup?: unknown;
 }
 
+interface TestRuntime extends ApiV1SystemInstallerRuntime {
+    readonly wsQBoxServerService: CountingWsQueueBoxServerService;
+}
+
 function createInput(): CreateApiV1SystemInstallersInput<ApiV1SystemInstallerTopology> {
     return {
         database: Object.assign(() => Promise.resolve([]), {
@@ -194,9 +196,9 @@ function createRuntime(
     events: string[],
     includeCrdt = true,
     calls: RuntimeCalls = new RuntimeCalls()
-): ApiV1SystemInstallerRuntime {
+): TestRuntime {
     return {
-        wsQBoxServerService: new WsQueueBoxServerService(
+        wsQBoxServerService: new CountingWsQueueBoxServerService(
             new InMemoryQueueBox(new Map()),
             new InMemoryQueueBox(new Map()),
             new JsonWebSocketServer(),
@@ -241,7 +243,8 @@ function createRuntime(
 }
 
 function createOperations(
-    events: string[]
+    events: string[],
+    useProductionCrdtAndRouter = false
 ): ApiV1SystemInstallerOperations<ApiV1SystemInstallerRuntime, ApiV1SystemInstallerTopology> {
     return {
         installStateSyncTopics: () => {
@@ -272,16 +275,21 @@ function createOperations(
             events.push('crdt-ingress');
             return { enqueueUpdate: () => Promise.resolve() };
         },
-        installCrdtTopics: () => {
+        installCrdtTopics: (ws, options) => {
             events.push('crdt-topics');
-            return {
-                topicIds: [],
-                definitions: [],
-                unsubscribeHandlers: () => {}
-            };
+            return useProductionCrdtAndRouter
+                ? installRallarCrdtWsTopics(ws, options)
+                : {
+                    topicIds: [],
+                    definitions: [],
+                    unsubscribeHandlers: () => {}
+                };
         },
-        installRouter: () => {
+        installRouter: (router) => {
             events.push('router');
+            if (useProductionCrdtAndRouter) {
+                router.install();
+            }
         },
         initWebSocketLifecycle: () => ({
             getPendingCloseCount: () => 0,
@@ -290,4 +298,16 @@ function createOperations(
         }),
         scheduleWebSocketLifecycleRetry: () => () => {}
     };
+}
+
+class CountingWsQueueBoxServerService extends WsQueueBoxServerService {
+    anyInboxRegistrationCount = 0;
+
+    override onAnyInboxMessageDo(
+        id: string,
+        callback: OnWebSocketServerMessageCallback<ALMessage>
+    ): WsQueueBoxServerService {
+        this.anyInboxRegistrationCount += 1;
+        return super.onAnyInboxMessageDo(id, callback);
+    }
 }

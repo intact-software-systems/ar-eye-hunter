@@ -1,7 +1,8 @@
-import { createRallarServerFacade } from '@shared-server/rallar-facade/RallarServer.ts';
+import { createRallarServerFacade } from '@shared-server/rallar-facade/rallar-server.ts';
 import { decodeJsonWireValue, type JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import { RallarServerWsRouter } from '@shared-server/rallar-system/websocket/router/rallar-server-ws-router.ts';
 import { createGroupRoomWsAuthorizer } from '@shared-server/rallar-system/websocket/ws-topic-room-authorizer.ts';
+import { AppTopics } from '@shared/api/api-config.ts';
 import type { AuditStamp, GroupMember, GroupPresenceSession, GroupSnapshot } from '@shared/api/group-types.ts';
 import {
     AL_CONTROL_NACK_TYPE_ID,
@@ -17,6 +18,43 @@ import { describe, expect, it, vi } from 'vitest';
 import { createTestGroup } from '../../create-test-group.ts';
 
 describe('RallarServerWsRouter', () => {
+    it('does not route a recognized state-sync payload on a user topic', async () => {
+        const { router, socket, service } = createRouter();
+        const handler = vi.fn();
+        const proxyTransform = vi.fn((message) => message.raw);
+        const enqueueOutbox = vi.spyOn(service, 'enqueueOutboxIfAbsent');
+        router.on({ topicId: 'app.todo' }, handler);
+        router.proxy({
+            from: { topicId: 'app.todo' },
+            transform: proxyTransform,
+            fanout: 'outbox'
+        });
+        const message = newALBroadcastMessage(
+            'peer-1',
+            newALRoute('app.todo', 'all', 'forged-state-sync'),
+            'all',
+            AppTopics.groupStateSnapshot,
+            { forged: true }
+        );
+
+        await router.route(message);
+
+        expect(handler).not.toHaveBeenCalled();
+        expect(proxyTransform).not.toHaveBeenCalled();
+        expect(enqueueOutbox).not.toHaveBeenCalled();
+        expect(socket.sent).toHaveLength(0);
+    });
+
+    it('rejects repeated router installation before callback replacement', () => {
+        const { router, service } = createRouter();
+        const register = vi.spyOn(service, 'onAnyInboxMessageDo');
+
+        router.install();
+
+        expect(() => router.install()).toThrow(/already installed/i);
+        expect(register).toHaveBeenCalledTimes(1);
+    });
+
     it('fans out implicit app topics to their declared targets', async () => {
         const { router, socket } = createRouter();
         const message = newALBroadcastMessage(

@@ -19,7 +19,7 @@ Template:
 Read these files first:
 - packages/shared-web/browser/rallar.ts
 - packages/shared-web/browser/rallar-data.ts
-- packages/shared-server/rallar-system/middleware/RallarMiddleware.ts
+- packages/shared-server/rallar-system/middleware/rallar-middleware.ts
 
 Task:
 Implement [feature] using the Rallar facade.

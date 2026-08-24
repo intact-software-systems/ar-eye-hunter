@@ -111,13 +111,8 @@ export type RallarServerWsHandler<T extends RallarServerWsPayload = JsonWireValu
 
 export interface RallarServerWsTopicDefinition<T extends RallarServerWsPayload = JsonWireValue>
     extends RallarServerWsTopicMetadata {
-    readonly topicId: string;
-    readonly typeId?: string;
-    readonly scope?: RallarServerWsTopicScope;
     readonly validate?: RallarServerWsValidator;
     readonly authorize?: RallarServerWsAuthorizer<T>;
-    readonly maxPayloadBytes?: number;
-    readonly fanout?: RallarServerWsFanout;
 }
 
 export interface RallarServerWsProxyRule<T extends RallarServerWsPayload = JsonWireValue> {

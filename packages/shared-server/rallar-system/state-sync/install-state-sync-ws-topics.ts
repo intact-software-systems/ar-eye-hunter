@@ -5,7 +5,7 @@ import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import * as clientStateSnapshotsRepository from '@shared/repository/client-state-snapshots-repository.ts';
 import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
-import type { WsQueueBoxServerService } from '@shared/services/WsQueueBoxServerService.ts';
+import type { OnWebSocketServerMessageCallback } from '@shared/services/InboxOutboxContracts.ts';
 import type { JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.ts';
 import { decodeStateSyncMessage, type StateSyncPayload } from './state-sync-payload.ts';
 import { sendDecodedStateSyncMessage } from './state-sync-websocket-publication.ts';
@@ -15,8 +15,19 @@ export interface InstallStateSyncWsTopicsOptions {
     readonly observeClientSnapshot?: (snapshot: ClientSnapshot) => void | Promise<void>;
 }
 
+interface StateSyncWsTopicService {
+    onInboxMessageDo(
+        topicId: string,
+        callback: OnWebSocketServerMessageCallback<ALMessage>
+    ): void;
+    onOutboxMessageDo(
+        topicId: string,
+        callback: OnWebSocketServerMessageCallback<ALMessage>
+    ): void;
+}
+
 export function installStateSyncWsTopics(
-    service: Pick<WsQueueBoxServerService, 'onInboxMessageDo' | 'onOutboxMessageDo'>,
+    service: StateSyncWsTopicService,
     options: InstallStateSyncWsTopicsOptions = {}
 ): void {
     const onMessage = async (

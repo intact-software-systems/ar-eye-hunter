@@ -1,5 +1,5 @@
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
-import type { RallarServerSystemInstallers } from '@shared-server/rallar-facade/RallarServer.ts';
+import type { RallarServerSystemInstallers } from '@shared-server/rallar-facade/rallar-server.ts';
 import { installChatWsTopic } from '@shared-server/rallar-system/communication/install-chat-ws-topic.ts';
 import { installRtcSignalingWsTopic } from '@shared-server/rallar-system/communication/install-rtc-signaling-ws-topic.ts';
 import { createCrdtWsMutationIngress } from '@shared-server/rallar-system/crdt/inbox/create-crdt-ws-mutation-ingress.ts';
@@ -145,14 +145,17 @@ export function constructApiV1SystemInstallers<
     input: CreateApiV1SystemInstallersInput<Topology>,
     operations: ApiV1SystemInstallerOperations<Runtime, Topology>
 ): ApiV1SystemInstallers<Runtime> {
-    let stopSystemTopics: (() => void) | undefined;
+    let systemTopicsInstalled = false;
     return {
         installDefaultMiddlewareTopics: (runtime, ws) => {
-            stopSystemTopics?.();
+            if (systemTopicsInstalled) {
+                throw new Error('API-v1 system topics already installed.');
+            }
             const appCrdtInboxService = runtime.appCrdtInboxService;
             if (!appCrdtInboxService) {
                 throw new Error('CRDT websocket topics require AppInbox mutation ingress');
             }
+            systemTopicsInstalled = true;
             const wsService = runtime.wsQBoxServerService;
             const topicOptions = createSystemTopicOptions(input, runtime);
 
@@ -175,11 +178,7 @@ export function constructApiV1SystemInstallers<
             });
             operations.installRouter(ws);
 
-            const unregister = runtime.backgroundTasks.register(rtcRttRuntime.stop);
-            stopSystemTopics = () => {
-                unregister();
-                rtcRttRuntime.stop();
-            };
+            runtime.backgroundTasks.register(rtcRttRuntime.stop);
         },
         installWebSocketLifecycle: (runtime) => {
             const lifecycle = operations.initWebSocketLifecycle(

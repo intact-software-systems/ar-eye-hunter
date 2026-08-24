@@ -39,7 +39,7 @@ and authoritative persisted/shared contracts use mandatory fields by default.
   Human-approved persistent exceptions for materially touched files and
   functions that remain above the hard size tiers.
 - [Rallar API Reference](./rallar-api-reference.md) Complete public API
-  description for `rallar.ts`, `rallar-data.ts`, and `RallarMiddleware.ts`, with
+  description for `rallar.ts`, `rallar-data.ts`, and `rallar-middleware.ts`, with
   usage examples.
 - [Rallar AI Skill Guide](./rallar-ai-skill.md) A skill-style operating guide
   for AI agents implementing or reviewing Rallar usage.
@@ -100,9 +100,9 @@ example: "Use the `rallar-realtime` and `rallar-testing` skills."
 - Browser facade: `packages/shared-web/browser/rallar.ts`
 - Browser data facade: `packages/shared-web/browser/rallar-data.ts`
 - Server middleware:
-  `packages/shared-server/rallar-system/middleware/RallarMiddleware.ts`
-- Server facade wrappers: `packages/shared-server/rallar-facade/RallarServer.ts`
-  and `packages/shared-server/rallar-facade/RallarServerApplication.ts`
+  `packages/shared-server/rallar-system/middleware/rallar-middleware.ts`
+- Server facade wrappers: `packages/shared-server/rallar-facade/rallar-server.ts`
+  and `packages/shared-server/rallar-facade/rallar-server-application.ts`
 
 ## Run Environment Notes
 

@@ -183,12 +183,12 @@ will blur unless the docs and UI give a very clear decision tree.
 ### Rallar Server
 
 The server facade is intentionally small: default topics, lifecycle hooks,
-dynamic topics, publishing, status, and app data. Evidence:
-`packages/shared-server/rallar-facade/RallarServer.ts` lines 91-205.
+user topics, publishing, status, and app data. Evidence:
+`packages/shared-server/rallar-facade/rallar-server.ts`.
 
 The real API-v1 server is much heavier. `createRallarServer` wires middleware,
 room authorization, app data, CRDT topics, WS lifecycle, REST routes, Swagger,
-and state routes. Evidence: `apps/api-v1/src/create-rallar-server.ts` lines
+and state routes. Evidence: `apps/api-v1/src/composition/create-rallar-server.ts` lines
 49-133. `initialise()` wires Postgres/PGlite repositories, QueueBox, WebSocket
 server, AL runtime stores, state sync publishers, inbox services, pub/sub, and
 presence expiry. Evidence: `apps/api-v1/src/middleware.ts` lines 60-164.

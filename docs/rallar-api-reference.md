@@ -4,7 +4,7 @@ This document describes the public facade APIs in:
 
 - `packages/shared-web/browser/rallar.ts`
 - `packages/shared-web/browser/rallar-data.ts`
-- `packages/shared-server/rallar-system/middleware/RallarMiddleware.ts`
+- `packages/shared-server/rallar-system/middleware/rallar-middleware.ts`
 
 It also references the server facade wrappers where they are the normal way to consume the middleware runtime.
 
@@ -886,7 +886,7 @@ development/live-repair fallback. Deployments can also wire
 
 ### Server
 
-API-v1 installs `room.crdt` topics through the Rallar server dynamic WS topic
+API-v1 installs `room.crdt` topics through the Rallar server user-topic
 router. The server validates envelopes, authorizes room messages, appends
 accepted updates to `crdt_updates`, sends append responses, and fans out
 accepted updates.

@@ -40,54 +40,54 @@ import type {
     RallarGroupSnapshotResolverOptions
 } from './rallar-middleware-options.ts';
 export type { RallarGroupSnapshotResolverOptions } from './rallar-middleware-options.ts';
-export type RtcTopologyReplayRuntime = Readonly<{
+export interface RtcTopologyReplayRuntime {
     wake(source: RtcTopologyReplayWakeSource): void;
     readMetrics(): RtcTopologyReplayMetrics;
     resetMetrics(): void;
-}>;
-export type RallarMiddlewareRuntime = Readonly<{
-    qboxEngine: InboxOutboxEngine;
-    wsQBoxServerService: WsQueueBoxServerService;
-    inboxQueueReader: InboxQueueReader;
-    outboxQueueReader: OutboxQueueReader;
-    appInboxResilience: ResilienceDto;
-    appOutboxResilience: ResilienceDto;
-    groupStateInboxService: GroupStateInboxService;
-    topologyInboxService: TopologyInboxService;
-    rtcRttInboxService: RtcRttInboxService;
-    appClientInboxService: AppClientInboxService;
-    appAuthInboxService?: ReturnType<RallarAuthInboxServiceFactory>;
-    appAdminInboxService?: ReturnType<RallarAdminInboxServiceFactory>;
-    appCrdtInboxService?: ReturnType<RallarCrdtInboxServiceFactory>;
-    clientStateService: ClientStateService;
-    groupStateService: GroupStateService;
-    clientsRepository: ClientStateRepository;
-    groupsRepository: GroupStateRepository;
-    rtcTopologyPublicationRepository?: RtcTopologyPublicationRepository;
-    rtcTopologyExecutionRepository?: RtcTopologyExecutionRepository;
-    rtcTopologyDelivery?: Readonly<{
+}
+export interface RallarMiddlewareRuntime {
+    readonly qboxEngine: InboxOutboxEngine;
+    readonly wsQBoxServerService: WsQueueBoxServerService;
+    readonly inboxQueueReader: InboxQueueReader;
+    readonly outboxQueueReader: OutboxQueueReader;
+    readonly appInboxResilience: ResilienceDto;
+    readonly appOutboxResilience: ResilienceDto;
+    readonly groupStateInboxService: GroupStateInboxService;
+    readonly topologyInboxService: TopologyInboxService;
+    readonly rtcRttInboxService: RtcRttInboxService;
+    readonly appClientInboxService: AppClientInboxService;
+    readonly appAuthInboxService?: ReturnType<RallarAuthInboxServiceFactory>;
+    readonly appAdminInboxService?: ReturnType<RallarAdminInboxServiceFactory>;
+    readonly appCrdtInboxService?: ReturnType<RallarCrdtInboxServiceFactory>;
+    readonly clientStateService: ClientStateService;
+    readonly groupStateService: GroupStateService;
+    readonly clientsRepository: ClientStateRepository;
+    readonly groupsRepository: GroupStateRepository;
+    readonly rtcTopologyPublicationRepository?: RtcTopologyPublicationRepository;
+    readonly rtcTopologyExecutionRepository?: RtcTopologyExecutionRepository;
+    readonly rtcTopologyDelivery?: Readonly<{
         publisherStreamId: string;
         append: RtcTopologyDeliveryAppendPort;
     }>;
-    rtcTopologyReplay?: RtcTopologyReplayRuntime;
-    readiness: Promise<void>;
-    healthFailure?: Promise<never>;
-}>;
-export type CreateRallarMiddlewareOptions = Readonly<{
-    inbox: QueueBoxResourceEntryRepository;
-    outbox?: QueueBoxResourceEntryRepository;
-    appInboxDequeueOptions?: DequeueResourceEntryOptions;
-    webSocketServer?: JsonWebSocketServer;
-    wsRuntimeName?: string;
-    targetResolver?: WsServerTargetResolver;
-    findGroupSnapshotByRef?: RallarGroupSnapshotResolverOptions['findGroupSnapshotByRef'];
-    findClientSnapshotByRef?: RallarGroupSnapshotResolverOptions['findClientSnapshotByRef'];
-    findGroupSnapshotById?: RallarGroupSnapshotResolverOptions['findGroupSnapshotById'];
-    resolveGroupRef?: RallarGroupSnapshotResolverOptions['resolveGroupRef'];
-    now?: RallarSnapshotPresenceClock;
-    inboundStores?: ALInboundRuntimeStores;
-    outboundStores?: ALOutboundRuntimeStores;
-    wsDeliveryDiagnostics?: WsDeliveryDiagnosticsSink;
+    readonly rtcTopologyReplay?: RtcTopologyReplayRuntime;
+    readonly readiness: Promise<void>;
+    readonly healthFailure?: Promise<never>;
+}
+export interface CreateRallarMiddlewareOptions {
+    readonly inbox: QueueBoxResourceEntryRepository;
+    readonly outbox?: QueueBoxResourceEntryRepository;
+    readonly appInboxDequeueOptions?: DequeueResourceEntryOptions;
+    readonly webSocketServer?: JsonWebSocketServer;
+    readonly wsRuntimeName?: string;
+    readonly targetResolver?: WsServerTargetResolver;
+    readonly findGroupSnapshotByRef?: RallarGroupSnapshotResolverOptions['findGroupSnapshotByRef'];
+    readonly findClientSnapshotByRef?: RallarGroupSnapshotResolverOptions['findClientSnapshotByRef'];
+    readonly findGroupSnapshotById?: RallarGroupSnapshotResolverOptions['findGroupSnapshotById'];
+    readonly resolveGroupRef?: RallarGroupSnapshotResolverOptions['resolveGroupRef'];
+    readonly now?: RallarSnapshotPresenceClock;
+    readonly inboundStores?: ALInboundRuntimeStores;
+    readonly outboundStores?: ALOutboundRuntimeStores;
+    readonly wsDeliveryDiagnostics?: WsDeliveryDiagnosticsSink;
     createGroupStateInboxService: (
         input: Readonly<{
             inboxQueueReader: InboxQueueReader;
@@ -141,7 +141,7 @@ export type CreateRallarMiddlewareOptions = Readonly<{
     queuePubSubBridge?: Omit<InstallQueueBoxPubSubBridgeOptions, 'wsQBoxServerService'>;
     readiness?: Promise<void>;
     healthFailure?: Promise<never>;
-}>;
+}
 
 interface RallarMiddlewareInfrastructure {
     readonly qboxEngine: InboxOutboxEngine;

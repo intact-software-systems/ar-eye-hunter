@@ -11,9 +11,17 @@ import type { GroupRef } from '@shared/api/group-types.ts';
 import { createRallarGameAuthorityEnvelope, type RallarGameAuthorityEnvelope, type RallarGameAuthorityRef } from '@shared/rallar-game/mod.ts';
 import { describe, expect, it, vi } from 'vitest';
 
-type Command = Readonly<{ action: string; }>;
-type Snapshot = Readonly<{ tick: number; }>;
-type Event = Readonly<{ kind: string; }>;
+interface Command {
+    readonly action: string;
+}
+
+interface Snapshot {
+    readonly tick: number;
+}
+
+interface Event {
+    readonly kind: string;
+}
 
 const roomRef: GroupRef = {
     applicationId: 'app-1',
@@ -340,13 +348,13 @@ function createFakeServerRallar() {
     };
 }
 
-type HandlerSubscription = Readonly<{
+interface HandlerSubscription {
     selector: RallarServerWsSelector;
     handler: (
         message: RallarServerWsMessage<RallarServerWsPayload>,
         context: RallarServerWsMessageContext
     ) => void | Promise<void>;
-}>;
+}
 
 function parseEnvelope(message: ALMessage): RallarGameAuthorityEnvelope<unknown> {
     return JSON.parse(message.payload.resource) as RallarGameAuthorityEnvelope<unknown>;

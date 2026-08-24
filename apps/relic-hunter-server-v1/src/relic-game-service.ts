@@ -10,7 +10,7 @@ import {
     type RelicPublicSnapshot,
     type RelicServerEvent
 } from '@relic-hunters/mod.ts';
-import type { RallarServerApplication } from '@shared-server/rallar-facade/RallarServerApplication.ts';
+import type { RallarServerApplication } from '@shared-server/rallar-facade/rallar-server-application.ts';
 import { newALBroadcastMessage, newALRoute } from '@shared/al-contracts/al-contract.ts';
 import type { Hono } from 'hono';
 import type { RelicInitialStateFactory, RelicInitialStateReason } from './relic-expedition-ai.ts';

@@ -1,11 +1,11 @@
-import { createRallarServerApplication } from '@shared-server/rallar-facade/RallarServerApplication.ts';
+import { createRallarServerApplication } from '@shared-server/rallar-facade/rallar-server-application.ts';
 import type { WsQueueBoxServerService } from '@shared/services/WsQueueBoxServerService.ts';
 import { describe, expect, it, vi } from 'vitest';
 
-type App = {
+interface App {
     wsMounted: number;
     restMounted: number;
-};
+}
 
 describe('RallarServerApplication', () => {
     it('mounts websocket and rest route installers idempotently and starts the engine', () => {
@@ -42,7 +42,7 @@ describe('RallarServerApplication', () => {
         server.rest.mount(app).mount(app);
         server.start();
 
-        expect(onAnyInboxMessageDo).toHaveBeenCalledTimes(1);
+        expect(onAnyInboxMessageDo).not.toHaveBeenCalled();
         expect(app).toEqual({
             wsMounted: 1,
             restMounted: 1

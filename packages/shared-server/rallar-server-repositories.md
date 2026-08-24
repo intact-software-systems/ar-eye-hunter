@@ -85,13 +85,13 @@ The current API runtime is composed in `apps/api-v1/src/main.ts`.
 - `createDefaultRallarServer()` reads production configuration and constructs the complete API-v1
   runtime, topology/admin services, and system/route installers.
 - Required-input `createRallarServer(input)` performs only the final shared application assembly.
-- `rallar.system.useDefaultMiddlewareTopics()` installs built-in WS topics, then installs the dynamic WS router.
+- `rallar.system.useDefaultMiddlewareTopics()` installs each built-in WS feature, then installs `RallarServerWsRouter` once.
 - `rallar.system.useWebSocketLifecycle()` installs close handling for client/group presence cleanup.
-- `rallar.ws.mount(app)` mounts the WS route and installs the server WS facade.
+- `rallar.ws.mount(app)` mounts the WS route; API-v1 system composition already owns router installation.
 - `rallar.rest.mount(app)` mounts auth, state, ICE, graph, and docs routes.
 - `rallar.start()` starts the `InboxOutboxEngine`.
 
-The reusable facade is `packages/shared-server/rallar-facade/RallarServer.ts`.
+The reusable facade is `packages/shared-server/rallar-facade/rallar-server.ts`.
 
 The code-derived API construction and shutdown trace is
 `apps/api-v1/src/composition/README.md`.
@@ -622,7 +622,7 @@ state sync and presence-summary convergence after commit.
 3. `JsonWebSocketServer` parses the JSON message and hands it to `WsQueueBoxServerService`.
 4. `ALInboundMessageRuntime` applies QoS policy: admission, dedup, ordering, supersedence, forwarding, and control message handling.
 5. The server QueueBox stores or dispatches the message through inbox callbacks.
-6. System topics are handled by `ws-system-topics.ts`; user topics are handled by the dynamic WS topic router.
+6. Each built-in feature handles its own topic callbacks; `RallarServerWsRouter` handles `app.*` and `room.*` user topics.
 
 ### Outgoing Server WS Message
 
@@ -637,18 +637,18 @@ State sync path:
 3. `StateSyncPublisher` updates the process snapshot cache and enqueues the AL
    snapshot/event message into durable WS QueueBox.
 4. `InboxOutboxEngine` dequeues the WS outbox entry.
-5. `ws-system-topics.ts` delivers the scoped message.
+5. `install-state-sync-ws-topics.ts` validates the exact state-sync envelope and delivers it to its resolved audience.
 6. Browser `WsQueueBoxClientService` receives the AL message.
 7. `packages/shared-web/browser/data-caches.ts` stores snapshot messages in browser state caches.
 8. `BrowserRallarFacade` observes cache changes and emits `rooms.onChange(...)` and `people.onChange(...)`.
 9. Live state-event subscribers registered through `rooms.onEvent(...)` and `people.onEvent(...)` observe matching
    state event messages without mutating the snapshot caches.
 
-Dynamic user-topic path:
+User-topic router path:
 
 1. Server code defines topics with `rallar.ws.defineTopic(...)`, adds handlers with `rallar.ws.on(...)`, adds proxies with `rallar.ws.proxy(...)`, or publishes with `rallar.ws.publish(...)`.
-2. The dynamic router accepts only user topics starting with `app.` or `room.` unless implicit topics are disabled.
-3. Reserved built-in topics and `rallar.*` topics are rejected from the dynamic path.
+2. `RallarServerWsRouter` accepts only user topics starting with `app.` or `room.` unless implicit topics are disabled.
+3. Reserved built-in topics and `rallar.*` topics are rejected from the user-topic path.
 4. Room-scoped messages call `authorizeRoomMessage`, which API-v1 implements with the group snapshot cache.
 5. Fanout is `live-only`, `outbox`, or `none`.
 
@@ -701,7 +701,7 @@ event callbacks or lower-level WS subscriptions instead.
 Server code can interact with WS through the Rallar Server facade:
 
 - `rallar.ws.defineTopic(...)` registers a user topic definition.
-- `rallar.ws.on(selector, handler)` observes dynamic WS messages.
+- `rallar.ws.on(selector, handler)` observes user-topic WS messages.
 - `rallar.ws.proxy(rule)` can authorize, transform, retarget, and fan out messages.
 - `rallar.ws.publish(message, fanout?)` sends an AL message through `live-only`, `outbox`, or `none`.
 - `rallar.ws.status()` reports current server WS connections.

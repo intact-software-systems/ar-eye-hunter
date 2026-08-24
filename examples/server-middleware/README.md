@@ -5,8 +5,8 @@ Most server apps should compose `createRallarMiddleware(...)` through
 app-inbox services, state-sync publication, repositories, and lifecycle topics.
 
 ```ts
-import { createRallarServerApplication } from '@shared-server/rallar-facade/RallarServerApplication.ts';
-import { createRallarMiddleware } from '@shared-server/rallar-system/middleware/RallarMiddleware.ts';
+import { createRallarServerApplication } from '@shared-server/rallar-facade/rallar-server-application.ts';
+import { createRallarMiddleware } from '@shared-server/rallar-system/middleware/rallar-middleware.ts';
 import { AppClientInboxService } from '@shared-server/rallar-system/services/AppClientInboxService.ts';
 import { AppGroupInboxService } from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
 import { createWsStateSyncPublisher } from '@shared-server/rallar-system/state-sync-publisher.ts';

@@ -12,6 +12,7 @@ import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import type { WsQueueBoxServerService } from '@shared/services/WsQueueBoxServerService.ts';
 import type { JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.ts';
 import type { JsonWireValue } from '../../protocol/json-wire-identity.ts';
+import { decodeStateSyncMessage } from '../../state-sync/state-sync-payload.ts';
 import {
     authorizeRallarServerWsIngress,
     decodeRallarServerWsIngress,
@@ -65,7 +66,7 @@ export class RallarServerWsRouter {
 
     install(): this {
         if (this.installed) {
-            return this;
+            throw new Error('Rallar server websocket router is already installed.');
         }
         this.service.onAnyInboxMessageDo(ROUTER_CALLBACK_ID, {
             onMessage: async (
@@ -76,11 +77,6 @@ export class RallarServerWsRouter {
         });
         this.installed = true;
         return this;
-    }
-
-    uninstall(): boolean {
-        this.installed = false;
-        return this.service.removeAnyInboxMessageCallback(ROUTER_CALLBACK_ID);
     }
 
     defineTopic<T extends RallarServerWsPayload>(
@@ -121,6 +117,9 @@ export class RallarServerWsRouter {
         _entry?: ResourceEntry,
         _webSocketServer?: JsonWebSocketServer
     ): Promise<void> {
+        if (decodeStateSyncMessage(message).kind !== 'unsupported') {
+            return;
+        }
         if (this.isSystemMessage(message)) {
             return;
         }

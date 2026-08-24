@@ -16,11 +16,11 @@ import {
 import * as clientStateSnapshotsRepository from '@shared/repository/client-state-snapshots-repository.ts';
 import { configureRtcRttTrafficCacheRepositories } from './configure-rtc-rtt-traffic-cache-repositories.ts';
 
-type Args = Readonly<{
-    sessions: number;
-    debounceMs: number;
-    out: string;
-}>;
+interface Args {
+    readonly sessions: number;
+    readonly debounceMs: number;
+    readonly out: string;
+}
 
 class FakeSocket {
     readonly readyState = WebSocket.OPEN;

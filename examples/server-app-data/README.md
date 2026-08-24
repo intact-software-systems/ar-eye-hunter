@@ -7,14 +7,14 @@ diagnostics.
 
 ```ts
 import { isRallarServerAppDataConflictError } from '@shared-server/app-data/RallarServerAppData.ts';
-import type { RallarServerRuntime } from '@shared-server/rallar-facade/RallarServer.ts';
-import type { RallarServerApplication } from '@shared-server/rallar-facade/RallarServerApplication.ts';
+import type { RallarServerApplication } from '@shared-server/rallar-facade/rallar-server-application.ts';
+import type { RallarServerRuntime } from '@shared-server/rallar-facade/rallar-server.ts';
 
-type LeaderboardEntry = {
+interface LeaderboardEntry {
     principalId: string;
     score: number;
     updatedAtEpochMs: number;
-};
+}
 
 export async function installLeaderboard(
     rallar: RallarServerApplication<RallarServerRuntime, unknown>
