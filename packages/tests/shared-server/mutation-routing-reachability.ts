@@ -289,12 +289,15 @@ function hasOwnerDispatch({
 }: HasOwnerDispatchInput): boolean {
     const calls = findAll(
         program,
-        (node) => node.type === 'CallExpression' && readMemberName(asNode(node.callee)) === 'onStateMessage'
+        (node) => node.type === 'CallExpression' && readMemberName(asNode(node.callee)) === 'registerHandler'
     );
     return calls.some((call) => {
-        const arguments_ = asNodes(call.arguments);
-        const typeArgument = arguments_[0];
-        const handler = arguments_.at(-1);
+        const registration = asNodes(call.arguments)[0];
+        if (registration?.type !== 'ObjectExpression') {
+            return false;
+        }
+        const typeArgument = readObjectPropertyValue(registration, 'type');
+        const handler = readObjectCallback(registration, 'handle');
         const exactType = matchesMarker(typeArgument ?? call, `AppInboxType.${type}`);
         const loopType = !!typeArgument &&
             hasLiveAppInboxRegistration(program, filePath, call, typeArgument, type, loadProgram);
@@ -401,11 +404,25 @@ function readObjectCallback(
     object: MutationRoutingAstNode,
     name: string
 ): MutationRoutingAstNode | undefined {
-    const property = asNodes(object.properties).find((candidate) => readName(candidate.key) === name);
+    const properties = asNodes(object.properties).filter((candidate) => readName(candidate.key) === name);
+    if (properties.length !== 1) {
+        return undefined;
+    }
+    const property = properties[0];
     if (!property) {
         return undefined;
     }
     return property.type === 'ObjectMethod' ? property : asNode(property.value);
+}
+
+function readObjectPropertyValue(
+    object: MutationRoutingAstNode,
+    name: string
+): MutationRoutingAstNode | undefined {
+    const properties = asNodes(object.properties).filter(
+        (candidate) => candidate.type === 'ObjectProperty' && readName(candidate.key) === name
+    );
+    return properties.length === 1 ? asNode(properties[0]?.value) : undefined;
 }
 
 function findCall(

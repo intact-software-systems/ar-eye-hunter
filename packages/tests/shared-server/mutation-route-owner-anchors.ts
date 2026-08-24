@@ -35,7 +35,7 @@ export function readGroupOwnerAnchors(): GroupOwnerAnchors {
         ),
         loopEnd: matchAnchor(
             source,
-            /[^\S\r\n]*this\.handlers\.onStateMessage<GroupPresenceSessionCleanupAppInboxPayload>\(/u,
+            /[^\S\r\n]*this\.handlers\.registerHandler\(\{\r?\n\s*type:\s*AppInboxType\.GROUP_PRESENCE_SESSION_CLEANUP,/u,
             'group presence cleanup registration'
         ),
         classStart: matchAnchor(
