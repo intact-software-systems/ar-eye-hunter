@@ -1221,6 +1221,13 @@ Review every facade/controller pair. Keep a facade when it is a real product or
 package boundary; collapse wrappers that only forward calls without owning a
 decision, lifecycle, state, translation, or compatibility boundary.
 
+The current implementable Wave 4 child is the
+[shared-web human traceability plan](../docs/superpowers/plans/2026-08-24-shared-web-human-traceability.md).
+Its active horizon first removes forward-captured construction and duplicate
+transport shutdown ownership, then moves broad browser HTTP/workflow behavior
+to feature owners. Later browser families remain ordered outcomes and are not
+authorized until the first two slices refresh their evidence.
+
 ### Wave 5: Test and black-box tooling structure
 
 Mirror production feature folders under `packages/tests`. Move mutation-boundary
@@ -1243,6 +1250,13 @@ RallarAI, Rallar Game, Rallar Match, Rallar Motion, and remaining apps.
 
 The work is prioritized by active change frequency, navigation pain, file size,
 and boundary risk rather than alphabetically.
+
+The current implementable shared-package child is the
+[shared human traceability plan](../docs/superpowers/plans/2026-08-24-shared-human-traceability.md).
+Its active horizon first recovers QueueBox read/dequeue ownership, then divides
+the mixed API contract junction by authoritative feature. AL, remaining
+transports, cache/repository composition, CRDT, and product-feature closure stay
+as later evidence-gated outcomes.
 
 ### Wave 7: Broader enforcement decision
 

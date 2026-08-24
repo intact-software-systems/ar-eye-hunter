@@ -3,8 +3,11 @@ import { createTestGroupStateRepository } from '@shared-test/shared-server/creat
 import postgres from 'postgres';
 
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
+import {
+    createPSqlResourceInboxRepository,
+    type PSqlResourceInboxRepository
+} from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
-import { createPSqlResourceInboxRepository, type PSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
 import { PSqlGroupStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-group-state-event-repository.ts';
 import { createRtcTopologyOutboxPublisher, createRtcTopologyWorkHandler } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-work.ts';

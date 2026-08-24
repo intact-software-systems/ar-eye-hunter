@@ -15,8 +15,8 @@ import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
 import { QueueBoxUtilities } from '@shared/services/QueueBoxUtilities.ts';
-import { WsQueueBoxServerService } from '@shared/services/WsQueueBoxServerService.ts';
 import type { WsOutboxDeliveryOutcome } from '@shared/services/ws-queue-box-server-contracts.ts';
+import { WsQueueBoxServerService } from '@shared/services/WsQueueBoxServerService.ts';
 import { ConnectionContext, JsonWebSocketServer, type EncodedJsonWebSocketMessage } from '@shared/websocket/JsonWebSocketServer.ts';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 

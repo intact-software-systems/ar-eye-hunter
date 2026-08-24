@@ -1,13 +1,7 @@
 import type { PSqlSql } from '../../postgres/p-sql-sql.ts';
-import {
-    PSqlResourceInboxEntryRepository
-} from './p-sql-resource-inbox-entry-repository.ts';
-import {
-    PSqlResourceInboxFinalizationRepository
-} from './p-sql-resource-inbox-finalization-repository.ts';
-import {
-    PSqlResourceInboxReservationRepository
-} from './p-sql-resource-inbox-reservation-repository.ts';
+import { PSqlResourceInboxEntryRepository } from './p-sql-resource-inbox-entry-repository.ts';
+import { PSqlResourceInboxFinalizationRepository } from './p-sql-resource-inbox-finalization-repository.ts';
+import { PSqlResourceInboxReservationRepository } from './p-sql-resource-inbox-reservation-repository.ts';
 import { PSqlResourceInboxMaintenance } from './resource-inbox-maintenance.ts';
 
 export {
@@ -43,10 +37,12 @@ export function createPSqlResourceInboxRepository(
         maintenance: new PSqlResourceInboxMaintenance(sql),
         transaction: async <T>(
             work: (transaction: PSqlResourceInboxRepository) => Promise<T>
-        ): Promise<T> => await sql.begin(
-            async (transactionSql) => await work(
-                createPSqlResourceInboxRepository(transactionSql)
+        ): Promise<T> =>
+            await sql.begin(
+                async (transactionSql) =>
+                    await work(
+                        createPSqlResourceInboxRepository(transactionSql)
+                    )
             )
-        )
     };
 }

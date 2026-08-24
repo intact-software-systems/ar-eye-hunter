@@ -2,8 +2,12 @@ import { Temporal } from '@js-temporal/polyfill';
 import assert from 'node:assert/strict';
 
 import { PSqlAppDataRepository } from '@shared-server/postgres/app-data/PSqlAppDataRepository.ts';
+import {
+    createPSqlResourceInboxRepository,
+    ResourceInboxInvariantCorruptionError,
+    type PSqlResourceInboxRepository
+} from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
-import { createPSqlResourceInboxRepository, ResourceInboxInvariantCorruptionError, type PSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 import { ResourceInboxResultsRepository } from '@shared-server/queuebox/postgres/resource-inbox-results-repository.ts';
 import { AppOutboxType } from '@shared-server/rallar-system/app-outbox/app-outbox-type.ts';
 import { CoalescedAppOutboxWorkService } from '@shared-server/rallar-system/app-outbox/coalesced-app-outbox-work-service.ts';

@@ -247,9 +247,11 @@ describe('enqueue and dequeue', () => {
 
 describe('resource inbox retry and fairness lanes', () => {
     it('rejects an incomplete work advertisement before checking queue state', () => {
-        expect(() => toResourceInboxWorkAdvertisementOptions(
-            RateLimiter.init(60_000, 1)
-        )).toThrow('maxAttempts must be a positive safe integer');
+        expect(() =>
+            toResourceInboxWorkAdvertisementOptions(
+                RateLimiter.init(60_000, 1)
+            )
+        ).toThrow('maxAttempts must be a positive safe integer');
     });
 
     it('uses the configured retry budget for engine work advertisement', () => {

@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 
-import { newALRoute, newALUntargetedMessage } from '@shared/al-contracts/al-contract.ts';
 import { AppOutboxType } from '@shared-server/rallar-system/app-outbox/app-outbox-type.ts';
 import {
     computeFormationTimerEntry,
@@ -9,6 +8,7 @@ import {
 import type { GroupMutationCommand } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
 import { resolveGroupTopologyConfig } from '@shared-server/rallar-system/topology/config/group-topology-config.ts';
 import { createFormationTimerWorkHandler } from '@shared-server/rallar-system/topology/replay/create-formation-timer-work-handler.ts';
+import { newALRoute, newALUntargetedMessage } from '@shared/al-contracts/al-contract.ts';
 
 import { createTestGroup } from '../../../../create-test-group.ts';
 import { createTopologyTestGroupSnapshot } from '../config/mutation/group-topology-config-mutation-test-fixtures.ts';

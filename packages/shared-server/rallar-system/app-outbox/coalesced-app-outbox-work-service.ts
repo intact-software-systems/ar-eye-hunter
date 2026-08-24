@@ -15,10 +15,8 @@ import { EntityStatus, type Key, type ResourceEntry } from '@shared/queuebox/Res
 import type { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
 import { QueueBoxUtilities } from '@shared/services/QueueBoxUtilities.ts';
 import type { PSqlSql } from '../../postgres/p-sql-sql.ts';
-import {
-    replaceFinishedResourceEntryIfMatch
-} from '../../queuebox/postgres/resource-inbox-finished-replacement.ts';
 import { PSqlResourceInboxEntryRepository } from '../../queuebox/postgres/p-sql-resource-inbox-entry-repository.ts';
+import { replaceFinishedResourceEntryIfMatch } from '../../queuebox/postgres/resource-inbox-finished-replacement.ts';
 
 export {
     COALESCED_APP_OUTBOX_WORK_FIELD,

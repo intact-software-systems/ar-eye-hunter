@@ -899,10 +899,7 @@ class FakeWebSocket {
     readonly sent: string[] = [];
     readyState = FakeWebSocket.CONNECTING;
 
-    private readonly listeners = new Map<
-        string,
-        Array<(event: FakeWebSocketEvent) => void | Promise<void>>
-    >();
+    private readonly listeners = new Map<string, Array<(event: FakeWebSocketEvent) => void | Promise<void>>>();
 
     public readonly url: string;
 

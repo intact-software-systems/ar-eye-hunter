@@ -1,6 +1,4 @@
-import {
-    ResourceInboxResultsRepository
-} from '@shared-server/queuebox/postgres/resource-inbox-results-repository.ts';
+import { ResourceInboxResultsRepository } from '@shared-server/queuebox/postgres/resource-inbox-results-repository.ts';
 import { EnqueueBoxResourceEntryRepository } from '@shared/queuebox/queue-box-types.ts';
 import { isExpiredResourceEntry, Key, ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 

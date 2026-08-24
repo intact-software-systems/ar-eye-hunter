@@ -7,8 +7,8 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
-import { IndexedDbQueueBox } from '@shared/queuebox/indexed-db-queue-box.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
+import { IndexedDbQueueBox } from '@shared/queuebox/indexed-db-queue-box.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 
 type ReleaseAdapter = Readonly<{
@@ -61,8 +61,7 @@ const ADAPTERS: readonly ReleaseAdapter[] = [
             };
             const repository = {
                 transaction: vi.fn(
-                    async (work: (value: unknown) => Promise<unknown>) =>
-                        await work(transactionOwners)
+                    async (work: (value: unknown) => Promise<unknown>) => await work(transactionOwners)
                 )
             };
             const queue = new PSqlQueueBox(repository as never);

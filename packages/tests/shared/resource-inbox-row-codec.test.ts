@@ -1,8 +1,4 @@
-import {
-    ResourceInboxRowCorruptionError,
-    toDomain,
-    type ResourceInboxRow
-} from '@shared-server/queuebox/postgres/resource-inbox-row-codec.ts';
+import { ResourceInboxRowCorruptionError, toDomain, type ResourceInboxRow } from '@shared-server/queuebox/postgres/resource-inbox-row-codec.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { describe, expect, it } from 'vitest';
 
