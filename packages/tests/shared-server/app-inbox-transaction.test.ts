@@ -7,7 +7,7 @@ import type { JsonWireValue } from '@shared-server/rallar-system/protocol/json-w
 
 import { EntityStatus, toKeyAsString } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
 const NOW_EPOCH_MS = Date.parse('2026-07-22T12:00:00.000Z');
 
@@ -95,7 +95,7 @@ describe('AppInboxHandlerRegistry transaction ownership', () => {
             })
         ).rejects.toBeInstanceOf(AppInboxReservationConflictError);
         await expect(
-            harness.service.commit(harness.context, async () => undefined)
+            harness.service.commit(harness.context, async () => null)
         ).rejects.toMatchObject({ code: 'app-inbox-reservation-conflict' });
 
         expect(harness.database.state.mutations.size).toBe(0);
@@ -240,12 +240,7 @@ describe('AppInboxHandlerRegistry registered handler finalization', () => {
         harness.service.registerHandler({
             type: AppInboxType.GROUP_CREATE,
             decodeCommand: (value) => {
-                if (
-                    value === null ||
-                    typeof value !== 'object' ||
-                    Array.isArray(value) ||
-                    typeof value.requestId !== 'string'
-                ) {
+                if (!isJsonWireObject(value) || typeof value.requestId !== 'string') {
                     throw new TypeError('Group create command is invalid');
                 }
                 return { requestId: value.requestId };
@@ -265,14 +260,17 @@ describe('AppInboxHandlerRegistry registered handler finalization', () => {
 
     it('rejects malformed domain commands before handler invocation', async () => {
         const harness = createRegisteredHandlerHarness();
-        const handler = vi.fn(async () => ({ status: 'unexpected' as const }));
+        let domainMutationStarted = false;
         harness.service.registerHandler({
             type: AppInboxType.GROUP_CREATE,
             decodeCommand: () => {
                 throw new TypeError('Group create command is invalid');
             },
             encodeResult: (result) => result,
-            handle: handler
+            handle: async () => {
+                domainMutationStarted = true;
+                return { status: 'unexpected' as const };
+            }
         });
 
         const pending = harness.service.processEntryUntilCompletion(harness.enqueue);
@@ -281,13 +279,17 @@ describe('AppInboxHandlerRegistry registered handler finalization', () => {
         await expect(pending).resolves.toMatchObject({
             left: { code: 'app-inbox-malformed-command', status: 400 }
         });
-        expect(handler).not.toHaveBeenCalled();
+        expect(domainMutationStarted).toBe(false);
         expect(harness.results.replaceCalls).toBe(1);
     });
 
     it('classifies malformed handler JSON as terminal before handler invocation', async () => {
         const harness = createRegisteredHandlerHarness();
-        const handler = vi.fn(async () => ({ status: 'unexpected' }));
+        let domainMutationStarted = false;
+        const handler = async () => {
+            domainMutationStarted = true;
+            return { status: 'unexpected' };
+        };
         harness.service.onStateMessage(AppInboxType.GROUP_CREATE, handler);
         harness.service.processEntryNoWaiting(harness.enqueue);
         const entry = await waitForRegisteredHandlerEntry(harness.queue);
@@ -302,7 +304,7 @@ describe('AppInboxHandlerRegistry registered handler finalization', () => {
 
         await harness.reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
 
-        expect(handler).not.toHaveBeenCalled();
+        expect(domainMutationStarted).toBe(false);
         expect((await harness.readEntry())?.status).toBe(EntityStatus.FAILED);
         expect([...harness.results.entries.values()]).toEqual([
             expect.objectContaining({ status: EntityStatus.FAILED })
@@ -399,14 +401,12 @@ describe('AppInboxHandlerRegistry registered handler finalization', () => {
                 timing: (event) => timing.push(event),
                 topicId
             });
-            let mutationCommitted = false;
-            const handler = vi.fn(
-                async (_data, context) =>
-                    await harness.service.commit(context, async () => {
-                        mutationCommitted = true;
-                        return { status: 'accepted' };
-                    })
-            );
+            let acceptedMutationExecutions = 0;
+            const handler = async (_data: JsonWireValue, context: Parameters<typeof harness.service.commit>[0]) =>
+                await harness.service.commit(context, async () => {
+                    acceptedMutationExecutions += 1;
+                    return { status: 'accepted' };
+                });
             harness.service.onStateMessage(outerType as AppInboxType, handler);
             harness.service.processEntryNoWaiting(harness.enqueue);
             const entry = await waitForRegisteredHandlerEntry(harness.queue);
@@ -428,14 +428,12 @@ describe('AppInboxHandlerRegistry registered handler finalization', () => {
             expect(finalized.dequeueAudit.attempts).toBe(attempt);
             expect(finalized.dequeueAudit.nextTs).toBeUndefined();
             if (valid) {
-                expect(handler).toHaveBeenCalledTimes(1);
-                expect(mutationCommitted).toBe(true);
+                expect(acceptedMutationExecutions).toBe(1);
                 expect(finalized.status).toBe(EntityStatus.COMPLETED);
                 expect(result?.status).toBe(EntityStatus.COMPLETED);
             }
             else {
-                expect(handler).not.toHaveBeenCalled();
-                expect(mutationCommitted).toBe(false);
+                expect(acceptedMutationExecutions).toBe(0);
                 expect(finalized.status).toBe(EntityStatus.FAILED);
                 expect(result?.status).toBe(EntityStatus.FAILED);
                 expect(JSON.parse(result!.resource)).toMatchObject({
@@ -450,20 +448,18 @@ describe('AppInboxHandlerRegistry registered handler finalization', () => {
 
             await harness.reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
             expect((await harness.readEntry())?.dequeueAudit.attempts).toBe(attempt);
-            expect(handler).toHaveBeenCalledTimes(valid ? 1 : 0);
+            expect(acceptedMutationExecutions).toBe(valid ? 1 : 0);
         }
     );
 
     it('keeps mismatched identity out of the transaction mutation callback', async () => {
         const harness = createRegisteredHandlerHarness();
         let mutationCommitted = false;
-        const handler = vi.fn(
-            async (_data, context) =>
-                await harness.service.commit(context, async () => {
-                    mutationCommitted = true;
-                    return { status: 'accepted' };
-                })
-        );
+        const handler = async (_data: JsonWireValue, context: Parameters<typeof harness.service.commit>[0]) =>
+            await harness.service.commit(context, async () => {
+                mutationCommitted = true;
+                return { status: 'accepted' };
+            });
         harness.service.onStateMessage(AppInboxType.GROUP_UPDATE, handler);
         harness.service.processEntryNoWaiting(harness.enqueue);
         const entry = await waitForRegisteredHandlerEntry(harness.queue);
@@ -480,9 +476,14 @@ describe('AppInboxHandlerRegistry registered handler finalization', () => {
 
         await harness.reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
 
-        expect(handler).not.toHaveBeenCalled();
         expect(mutationCommitted).toBe(false);
         expect((await harness.readEntry())?.status).toBe(EntityStatus.FAILED);
         expect((await harness.readEntry())?.dequeueAudit.attempts).toBe(1);
     });
 });
+
+function isJsonWireObject(value: JsonWireValue): value is Readonly<{
+    readonly [key: string]: JsonWireValue;
+}> {
+    return value !== null && typeof value === 'object' && !Array.isArray(value);
+}

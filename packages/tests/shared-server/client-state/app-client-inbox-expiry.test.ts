@@ -1,5 +1,5 @@
 import { createTestClientStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
-import { expect, it, vi } from 'vitest';
+import { expect, it } from 'vitest';
 
 import type { ClientPrincipalRef } from '@shared/api/client-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
@@ -87,7 +87,11 @@ it('keeps at most one active waiting client expiry entry across timestamps', asy
     const queue = new ClientExpiryTestResourceInbox();
     const reader = new InboxQueueReader(queue);
     const results = new ClientExpiryTestResourceInboxResults();
-    const listExpiredSessionCandidates = vi.fn(async () => []);
+    const expiryCandidateReads: number[] = [];
+    const listExpiredSessionCandidates = async (atEpochMs: number) => {
+        expiryCandidateReads.push(atEpochMs);
+        return [];
+    };
     const service = new AppClientInboxService(
         {
             inboxQueueReader: reader,
@@ -117,15 +121,18 @@ it('keeps at most one active waiting client expiry entry across timestamps', asy
 
     await expect(first).resolves.toMatchObject({ right: [] });
     await expect(second).resolves.toMatchObject({ right: [] });
-    expect(listExpiredSessionCandidates).toHaveBeenCalledTimes(1);
-    expect(listExpiredSessionCandidates).toHaveBeenLastCalledWith(60_000);
+    expect(expiryCandidateReads).toEqual([60_000]);
 });
 
 it('durably enqueues each client expiry reconciliation tick', async () => {
     const queue = new ClientExpiryTestResourceInbox();
     const reader = new InboxQueueReader(queue);
     const results = new ClientExpiryTestResourceInboxResults();
-    const listExpiredSessionCandidates = vi.fn(async () => []);
+    const expiryCandidateReads: number[] = [];
+    const listExpiredSessionCandidates = async (atEpochMs: number) => {
+        expiryCandidateReads.push(atEpochMs);
+        return [];
+    };
     const service = new AppClientInboxService(
         {
             inboxQueueReader: reader,
@@ -144,7 +151,7 @@ it('durably enqueues each client expiry reconciliation tick', async () => {
     expect(first.key.resourceId).toBe('expire-client-sessions-60000');
     expect(second.key.resourceId).toBe('expire-client-sessions-120000');
     expect(await readClientExpiryTestEntries(queue)).toHaveLength(2);
-    expect(listExpiredSessionCandidates).not.toHaveBeenCalled();
+    expect(expiryCandidateReads).toEqual([]);
 });
 
 it('expires stale sessions once and leaves publication to the app inbox', async () => {

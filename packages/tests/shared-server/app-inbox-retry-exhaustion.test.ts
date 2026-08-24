@@ -6,7 +6,7 @@ import {
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import { DequeueResourceEntryController, type ResourceInboxRetryExhaustion } from '@shared/queuebox/DequeueResourceEntryController.ts';
 import { EntityStatus, toKeyAsString, type Key } from '@shared/queuebox/ResourceEntry.ts';
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
 const NOW_EPOCH_MS = Date.parse('2026-07-22T12:00:00.000Z');
 
@@ -16,7 +16,7 @@ describe('AppInbox retry exhaustion', () => {
     it('persists attempt-20 diagnostics and FAILED completion in one transaction', async () => {
         const harness = createAtomicHarness({ attempts: 20 });
         const telemetry: ResourceInboxRetryExhaustion[] = [];
-        const releaseEntries = vi.fn();
+        const releasedEntryKeys: Key[] = [];
         const onRetryExhausted = createAppInboxRetryExhaustionHandler({
             database: harness.database.sql
         });
@@ -34,7 +34,10 @@ describe('AppInbox retry exhaustion', () => {
                 reserveTimeoutEntries: async () => new Map(),
                 reserveOverdueRetryEntries: async () => new Map(),
                 reserveRetryExhaustionFinalizations: async () => new Map(),
-                releaseEntries
+                releaseEntries: async (resources) => {
+                    releasedEntryKeys.push(...resources.map((resource) => resource.key));
+                    return new Map();
+                }
             },
             () => new Set([EnqueuedType.APP_INBOX]),
             () => 1,
@@ -59,7 +62,7 @@ describe('AppInbox retry exhaustion', () => {
             });
         });
 
-        expect(releaseEntries).not.toHaveBeenCalled();
+        expect(releasedEntryKeys).toEqual([]);
         expect(harness.database.beginCalls).toBe(1);
         expect(harness.database.state.inbox.get(toKeyAsString(harness.entry.key))?.status).toBe(
             EntityStatus.FAILED

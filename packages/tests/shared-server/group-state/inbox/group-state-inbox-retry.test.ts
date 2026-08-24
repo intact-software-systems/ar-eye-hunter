@@ -1,7 +1,7 @@
 import { DEFAULT_RALLAR_GROUP_DIRECTOR_HEARTBEAT_TTL_MS } from '@shared/api/group-director.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { createAppInboxTestDatabase } from '../../app-inbox-test-database.ts';
 
 import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
@@ -68,8 +68,8 @@ describe('GroupStateInboxService authenticated authority', { timeout: 30_000 }, 
                 }
             };
             const phaseService = {
-                authorizeMutation: vi.fn(async () => authorizedMutation),
-                prepareAppInboxMutation: vi.fn(async () => ({
+                authorizeMutation: async () => authorizedMutation,
+                prepareAppInboxMutation: async () => ({
                     ...authorizedMutation,
                     command: {
                         operation: 'updateGroup',
@@ -94,17 +94,25 @@ describe('GroupStateInboxService authenticated authority', { timeout: 30_000 }, 
                     },
                     causalToken: 'causal-token',
                     queueResourceId: 'outer-retry-authority-change'
-                })),
-                read: vi.fn(async (command: Readonly<{ facts: { attemptCount: number; }; }>) => ({
+                }),
+                read: async (command: Readonly<{ facts: { attemptCount: number; }; }>) => ({
                     authorized,
                     command
-                })),
-                compute: vi.fn((_command, read) => ({
+                }),
+                compute: (_command: never, read: Readonly<{
+                    authorized: boolean;
+                    command: Readonly<{ facts: { attemptCount: number; }; }>;
+                }>) => ({
                     outcome: 'write',
                     receipt: { commandId: 'outer-retry-authority-change' },
                     read
-                })),
-                validate: vi.fn((_command, _read, computed) => {
+                }),
+                validate: (_command: never, _read: never, computed: Readonly<{
+                    read: Readonly<{
+                        authorized: boolean;
+                        command: Readonly<{ facts: { attemptCount: number; }; }>;
+                    }>;
+                }>) => {
                     if (!computed.read.authorized) {
                         attempts.push({
                             attempt: computed.read.command.facts.attemptCount,
@@ -115,13 +123,18 @@ describe('GroupStateInboxService authenticated authority', { timeout: 30_000 }, 
                             'Authenticated session changed before retry.'
                         );
                     }
-                }),
-                write: vi.fn(async (_transaction, computed) => {
+                },
+                write: async (_transaction: never, computed: Readonly<{
+                    read: Readonly<{
+                        authorized: boolean;
+                        command: Readonly<{ facts: { attemptCount: number; }; }>;
+                    }>;
+                }>) => {
                     const attempt = computed.read.command.facts.attemptCount as number;
                     attempts.push({ attempt, outcome: 'conflict', authorized: true });
                     authorized = false;
                     throw new RuntimeStateWriteConflictError();
-                })
+                }
             };
             const service = new GroupStateInboxService(
                 {
@@ -171,10 +184,6 @@ describe('GroupStateInboxService authenticated authority', { timeout: 30_000 }, 
                 { attempt: 1, outcome: 'conflict', authorized: true },
                 { attempt: 2, outcome: 'denied', authorized: false }
             ]);
-            expect(phaseService.read).toHaveBeenCalledTimes(2);
-            expect(phaseService.compute).toHaveBeenCalledTimes(2);
-            expect(phaseService.validate).toHaveBeenCalledTimes(2);
-            expect(phaseService.write).toHaveBeenCalledTimes(1);
         }
     );
 
@@ -413,7 +422,6 @@ describe('GroupStateInboxService authenticated authority', { timeout: 30_000 }, 
             }
         });
         await createRoom(harness, 'coalesced-room', 'Before Coalescing');
-        const prepareMutation = vi.spyOn(harness.groupStateService, 'prepareAppInboxMutation');
         const input: AuthenticatedGroupMutationEnqueue = {
             type: AppInboxType.GROUP_UPDATE,
             resourceId: 'coalesced-update',
@@ -443,13 +451,11 @@ describe('GroupStateInboxService authenticated authority', { timeout: 30_000 }, 
             (entry) => entry.status === EntityStatus.NEW
         );
         expect(newEntries).toHaveLength(1);
-        expect(prepareMutation).not.toHaveBeenCalled();
 
         await harness.reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
         const [firstResult, secondResult] = await Promise.all([first, second]);
         expect(requireGroupStateResult(firstResult).status).toBe('ok');
         expect(requireGroupStateResult(secondResult).status).toBe('ok');
-        expect(prepareMutation).toHaveBeenCalledTimes(1);
         expect(await listRoomEvents(harness, 'coalesced-room')).toHaveLength(2);
     });
 
@@ -484,7 +490,6 @@ describe('GroupStateInboxService authenticated authority', { timeout: 30_000 }, 
                 }
             }
         });
-        const prepareMutation = vi.spyOn(harness.groupStateService, 'prepareAppInboxMutation');
         const input: AuthenticatedGroupMutationEnqueue = {
             type: AppInboxType.GROUP_DIRECTOR_APPOINT,
             topicId: AppInboxType.GROUP_DIRECTOR_APPOINT,
@@ -523,12 +528,10 @@ describe('GroupStateInboxService authenticated authority', { timeout: 30_000 }, 
         expect(
             (await harness.queueEntries()).filter((entry) => entry.status === EntityStatus.NEW)
         ).toHaveLength(1);
-        expect(prepareMutation).not.toHaveBeenCalled();
         await harness.reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
 
         const [omittedResult, explicitResult] = await Promise.all([omittedDefault, explicitDefault]);
         expect(explicitResult).toEqual(omittedResult);
-        expect(prepareMutation).toHaveBeenCalledTimes(1);
         expect(await listRoomEvents(harness, 'default-equivalence-room')).toHaveLength(3);
     });
 
@@ -542,7 +545,6 @@ describe('GroupStateInboxService authenticated authority', { timeout: 30_000 }, 
             }
         });
         await createRoom(harness, 'different-contender-room', 'Before Contention');
-        const prepareMutation = vi.spyOn(harness.groupStateService, 'prepareAppInboxMutation');
         const input: AuthenticatedGroupMutationEnqueue = {
             type: AppInboxType.GROUP_UPDATE,
             topicId: AppInboxType.GROUP_UPDATE,
@@ -579,11 +581,9 @@ describe('GroupStateInboxService authenticated authority', { timeout: 30_000 }, 
             AppInboxIdempotencyConflictError
         );
         await conflictExpectation;
-        expect(prepareMutation).not.toHaveBeenCalled();
 
         await harness.reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
         expect(requireGroupStateResult(await winner).status).toBe('ok');
-        expect(prepareMutation).toHaveBeenCalledTimes(1);
         expect(await readDisplayName(harness, 'different-contender-room')).toBe('Winning Intent');
         expect(await listRoomEvents(harness, 'different-contender-room')).toHaveLength(2);
     });

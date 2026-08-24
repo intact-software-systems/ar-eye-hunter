@@ -1,7 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
 
+import { newALRoute, newALUntargetedMessage } from '@shared/al-contracts/al-contract.ts';
+import { EnqueuedType } from '@shared/api/api-config.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
+import { QueueBoxUtilities } from '@shared/services/QueueBoxUtilities.ts';
 
 import {
     createPSqlResourceInboxRepository,
@@ -15,6 +18,7 @@ import { createGroupTopologyOwners, type GroupTopologyOwners } from '@shared-ser
 import { RallarRtcTopologyService } from '@shared-server/rallar-system/topology/runtime/rallar-rtc-topology-service.ts';
 
 import { AppInboxType, type AppInboxMessageContext } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
+import { toJsonWireAppInboxEnqueue } from '@shared-server/rallar-system/app-inbox/app-inbox-command-wire.ts';
 import { encodeAppInboxResult } from '@shared-server/rallar-system/app-inbox/app-inbox-registration-codecs.ts';
 import { computeRtcTopologyEntry } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-entry.ts';
 
@@ -24,7 +28,11 @@ import {
     toTopologyConfigMutationCommand,
     toTopologyHttpMutationSemanticHash
 } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-command.ts';
-import { TopologyAppInboxHandler, type TopologyAppInboxMutationOwners } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-handler.ts';
+import {
+    TopologyAppInboxHandler,
+    type TopologyAppInboxMutationOwners,
+    type TopologyAppInboxResult
+} from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-handler.ts';
 import { TopologyInboxService } from '@shared-server/rallar-system/topology/inbox/topology-inbox-service.ts';
 import { authSession } from './group-state/group-state-test-runtime.ts';
 import {
@@ -368,6 +376,21 @@ describe('topology AppInbox transaction and idempotency', () => {
             groupStateService: harness.groupStateService,
             nowEpochMs: () => harness.nowEpochMs
         });
+        const wireEnqueue = toJsonWireAppInboxEnqueue(enqueue);
+        const message = newALUntargetedMessage(
+            'topology-transaction-test',
+            newALRoute(
+                requireTopologyIdentity(wireEnqueue.topicId, 'topicId'),
+                requireTopologyIdentity(wireEnqueue.contextId, 'contextId'),
+                requireTopologyIdentity(wireEnqueue.resourceId, 'resourceId')
+            ),
+            wireEnqueue.type,
+            wireEnqueue
+        );
+        const entry = QueueBoxUtilities.toResourceEntryFromMsg(
+            message,
+            EnqueuedType.APP_INBOX
+        );
         const handler = new TopologyAppInboxHandler({
             groupStateService: harness.groupStateService,
             nowEpochMs: () => harness.nowEpochMs,
@@ -380,10 +403,11 @@ describe('topology AppInbox transaction and idempotency', () => {
         await expect(
             handler.processMutation(
                 {
-                    enqueue,
-                    entry: { dequeueAudit: { attempts: 1 } },
+                    enqueue: wireEnqueue,
+                    message,
+                    entry: { ...entry, dequeueAudit: { ...entry.dequeueAudit, attempts: 1 } },
                     encodeResult: (result) => encodeAppInboxResult(result, 'Topology transaction test result')
-                } as AppInboxMessageContext,
+                } satisfies AppInboxMessageContext<TopologyAppInboxResult>,
                 topologyMutationOwners(management)
             )
         ).rejects.toMatchObject({ code: 'resource-inbox-invariant-corruption' });
@@ -556,4 +580,11 @@ function topologyEnqueue(command: Awaited<ReturnType<typeof topologyCommand>>) {
         senderId: command.actor.principalId,
         data: command
     };
+}
+
+function requireTopologyIdentity(value: string | undefined, field: string): string {
+    if (value === undefined || value.length === 0) {
+        throw new TypeError(`Topology transaction ${field} is required`);
+    }
+    return value;
 }

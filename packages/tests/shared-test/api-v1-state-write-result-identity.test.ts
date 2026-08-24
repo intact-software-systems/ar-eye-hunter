@@ -2,6 +2,35 @@ import { describe, expect, it } from 'vitest';
 import { validatePersistedAppInboxResult } from '../../shared-test/black-box-runner/state-write-evidence/api-v1-state-write-result-evidence.ts';
 
 describe('API-v1 persisted black-box result identity', () => {
+    it('accepts only the current typed AppInbox failure contract', () => {
+        const currentFailure = {
+            type: 'app-inbox-failure',
+            code: 'group-mutation-rejected',
+            status: 409,
+            message: 'Group mutation was rejected',
+            issues: null,
+            denial: null,
+            retry: null
+        };
+
+        expect(
+            validatePersistedAppInboxResult({
+                commandType: 'GROUP_UPDATE',
+                commandIds: ['group-update'],
+                resultStatus: 'FAILED',
+                resultResource: JSON.stringify(currentFailure)
+            }).valid
+        ).toBe(true);
+        expect(
+            validatePersistedAppInboxResult({
+                commandType: 'GROUP_UPDATE',
+                commandIds: ['group-update'],
+                resultStatus: 'FAILED',
+                resultResource: JSON.stringify({ message: 'old failure' })
+            })
+        ).toMatchObject({ valid: false, failure: 'malformed-failure-result' });
+    });
+
     it('rejects a valid same-type auth result swapped across commands', () => {
         const swapped = {
             requestId: 'auth-second',

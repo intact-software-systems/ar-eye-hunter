@@ -7,15 +7,20 @@ import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 
 import { AppInboxType, type AppInboxMessageContext } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
+import { toJsonWireAppInboxEnqueue } from '@shared-server/rallar-system/app-inbox/app-inbox-command-wire.ts';
 import { SIMPLER_GROUP_STATE_APP_INBOX_TOPIC } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-client.ts';
 import { encodeAppInboxResult } from '@shared-server/rallar-system/app-inbox/app-inbox-registration-codecs.ts';
 import { AppInboxTransactionWriter } from '@shared-server/rallar-system/app-inbox/app-inbox-transaction-writer.ts';
 import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
 import { type IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
 import { mutationDescriptor } from '@shared-server/rallar-system/group-state/group-mutation-authority.ts';
-import type { GroupStateService } from '@shared-server/rallar-system/group-state/group-state-service-contracts.ts';
+import type {
+    GroupMutationPreparation,
+    GroupStateService
+} from '@shared-server/rallar-system/group-state/group-state-service-contracts.ts';
 import { createGroupStateService } from '@shared-server/rallar-system/group-state/group-state-service.ts';
 import { GroupStateInboxHandler } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-handler.ts';
+import type { GroupStateInboxDurableResult } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-result.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
 import { createAppInboxTestDatabase, type AppInboxTestDatabaseStage } from '../../app-inbox-test-database.ts';
 import { FakeRuntimeStateRepository } from '../../fake-runtime-state-repository.ts';
@@ -30,7 +35,7 @@ const SCOPE = { applicationId: 'ar-eye-hunter', workspaceId: 'default' };
 export type GroupTransactionFailurePhase = 'domain-write' | AppInboxTestDatabaseStage;
 
 export interface GroupStateTransactionBoundaryHarness {
-    readonly context: AppInboxMessageContext;
+    readonly context: AppInboxMessageContext<GroupStateInboxDurableResult>;
     readonly handler: GroupStateInboxHandler;
     readonly queue: TestResourceInbox;
     readonly results: TestResourceInboxResults;
@@ -191,21 +196,21 @@ function createGroupRequest(): CreateGroupRequest {
 
 async function createReservedContext(
     queue: TestResourceInbox,
-    authority: unknown
-): Promise<AppInboxMessageContext> {
-    const enqueue = {
+    authority: GroupMutationPreparation
+): Promise<AppInboxMessageContext<GroupStateInboxDurableResult>> {
+    const enqueue = toJsonWireAppInboxEnqueue({
         type: AppInboxType.GROUP_CREATE,
         resourceId: REQUEST_ID,
         contextId: `${SCOPE.applicationId}:${SCOPE.workspaceId}:${GROUP_ID}`,
         authority,
         data: { scope: SCOPE, request: createGroupRequest() }
-    };
+    });
     const createdAt = Temporal.Instant.fromEpochMilliseconds(NOW_EPOCH_MS);
     const entry: ResourceEntry = {
         key: {
             topicId: SIMPLER_GROUP_STATE_APP_INBOX_TOPIC,
             resourceId: REQUEST_ID,
-            contextId: enqueue.contextId
+            contextId: requireContextId(enqueue.contextId)
         },
         resource: JSON.stringify(enqueue),
         typeId: AppInboxType.GROUP_CREATE,
@@ -225,4 +230,11 @@ async function createReservedContext(
         message: {} as never,
         encodeResult: (result) => encodeAppInboxResult(result, 'Group transaction test result')
     };
+}
+
+function requireContextId(value: string | undefined): string {
+    if (value === undefined || value.length === 0) {
+        throw new TypeError('Group transaction contextId is required');
+    }
+    return value;
 }

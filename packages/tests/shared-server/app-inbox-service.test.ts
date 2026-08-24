@@ -414,7 +414,7 @@ describe('AppInboxQueueClient', () => {
             }
         );
         service.onStateMessage(AppInboxType.CLIENT_PRINCIPAL_UPSERT, async (data) => {
-            const payload = data as ProtoPayload;
+            const payload = decodeProtoPayload(data);
             handledPayloads.push(payload);
             return { accepted: payload };
         });
@@ -942,4 +942,30 @@ interface ProtoPayload {
         requestId: string;
         metadata: JsonWireObject;
     }>;
+}
+
+function decodeProtoPayload(value: JsonWireValue): ProtoPayload {
+    if (!isJsonWireObject(value)) {
+        throw new TypeError('Proto payload must be an object');
+    }
+    const request = value.request;
+    if (
+        typeof value.principalId !== 'string' ||
+        !isJsonWireObject(request) ||
+        typeof request.requestId !== 'string' ||
+        !isJsonWireObject(request.metadata)
+    ) {
+        throw new TypeError('Proto payload fields are invalid');
+    }
+    return {
+        principalId: value.principalId,
+        request: {
+            requestId: request.requestId,
+            metadata: request.metadata
+        }
+    };
+}
+
+function isJsonWireObject(value: JsonWireValue): value is JsonWireObject {
+    return value !== null && typeof value === 'object' && !Array.isArray(value);
 }

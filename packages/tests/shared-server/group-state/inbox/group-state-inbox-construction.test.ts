@@ -17,6 +17,7 @@ import type {
 import { createGroupStateService as createDurableGroupStateService } from '@shared-server/rallar-system/group-state/group-state-service.ts';
 import type { AuthenticatedGroupMutationEnqueue } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-contracts.ts';
 import { GroupStateInboxHandler, type GroupStateInboxHandlerDependencies } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-handler.ts';
+import type { GroupStateInboxDurableResult } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-result.ts';
 import { toGroupMutationDescriptor } from '@shared-server/rallar-system/group-state/inbox/to-group-mutation-descriptor.ts';
 import type { GroupMutationComputed } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
 import { computeGroupMutationWriteResult, type GroupMutationWriteInput } from '@shared-server/rallar-system/group-state/mutation/group-mutation-result.ts';
@@ -31,11 +32,11 @@ type AfterCommitResult = Readonly<{ committedSnapshot: GroupSnapshot | undefined
 type TransactionResult = AppInboxMutationTransactionResult<DurableResult, AfterCommitResult>;
 type ExpectedTransactionWriter = {
     writeMutation<Result>(
-        context: AppInboxMessageContext,
+        context: AppInboxMessageContext<Result>,
         write: (transaction: PSqlSql) => Promise<Result>
     ): Promise<Result>;
     writeMutationWithAfterCommitResult<Durable, AfterCommit>(
-        context: AppInboxMessageContext,
+        context: AppInboxMessageContext<Durable>,
         write: (
             transaction: PSqlSql
         ) => Promise<AppInboxMutationTransactionResult<Durable, AfterCommit>>
@@ -53,7 +54,7 @@ type ExpectedHandlerDependencies = {
         authority: GroupMutationAuthority
     ) => Promise<GroupMutationPreparation>;
     readonly persistPreparation: (
-        context: AppInboxMessageContext,
+        context: AppInboxMessageContext<GroupStateInboxDurableResult>,
         preparation: GroupMutationPreparation
     ) => Promise<void>;
 };
@@ -91,7 +92,7 @@ describe('convergent group and presence state', () => {
     it('routes authenticated protocol enqueues through the discriminated descriptor contract', () => {
         expectTypeOf<InstanceType<typeof GroupStateInboxHandler>['processGroupStateMutation']>()
             .parameter(0)
-            .toEqualTypeOf<AppInboxMessageContext>();
+            .toEqualTypeOf<AppInboxMessageContext<GroupStateInboxDurableResult>>();
         expectTypeOf<Parameters<typeof toGroupMutationDescriptor>[0]>().toEqualTypeOf<AuthenticatedGroupMutationEnqueue>();
         expectTypeOf<ReturnType<typeof toGroupMutationDescriptor>>().toEqualTypeOf<GroupMutationDescriptor>();
     });

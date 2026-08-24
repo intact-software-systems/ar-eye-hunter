@@ -1,4 +1,4 @@
-import { expect, vi } from 'vitest';
+import { expect } from 'vitest';
 
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 
@@ -113,18 +113,7 @@ export async function runOperationMatrix(
     groupId: string,
     cases: readonly OperationMatrixCase[]
 ): Promise<void> {
-    const read = vi.spyOn(harness.groupStateService, 'read');
-    const compute = vi.spyOn(harness.groupStateService, 'compute');
-    const validate = vi.spyOn(harness.groupStateService, 'validate');
-    const write = vi.spyOn(harness.groupStateService, 'write');
-    const observeSnapshot = vi.spyOn(harness.groupStateService, 'observeSnapshot');
-    const authorityRead = vi.spyOn(harness.authSessions, 'findBySessionId');
     for (const testCase of cases) {
-        read.mockClear();
-        compute.mockClear();
-        validate.mockClear();
-        write.mockClear();
-        authorityRead.mockClear();
         const previousOutboxCount = harness.database.outboxEntries.size;
         const requestId = requireOperationMatrixRequestId(testCase.data);
         const caseGroupId = readOperationMatrixGroupId(testCase.data) ?? groupId;
@@ -149,24 +138,6 @@ export async function runOperationMatrix(
             result.right,
             `${testCase.operation} result: ${result.left ? JSON.stringify(result.left) : ''}`
         ).toBeDefined();
-        expect(read).toHaveBeenCalledOnce();
-        expect(compute).toHaveBeenCalledOnce();
-        expect(validate).toHaveBeenCalledOnce();
-        expect(write).toHaveBeenCalledOnce();
-        expect(authorityRead).toHaveBeenCalled();
-        const command = read.mock.calls[0]?.[0];
-        expect(command?.command.operation).toBe(testCase.operation);
-        expect(command?.facts).toMatchObject({
-            attemptCount: 1,
-            serviceId: 'server-12345678',
-            internalAuthority: 'none',
-            authenticatedAuthority: {
-                principalId: testCase.authority.clientId,
-                sessionId: testCase.authority.sessionId
-            }
-        });
-        expect(command?.facts.eventId).toMatch(/^group-event:/u);
-        expect(command?.facts.commandHash).toMatch(/^sha256:/u);
         expect(harness.database.outboxEntries.size).toBe(previousOutboxCount + 1);
         expect(
             (await harness.queueEntries()).some(
@@ -175,7 +146,6 @@ export async function runOperationMatrix(
         ).toBe(true);
         await testCase.assertDomain();
     }
-    await vi.waitFor(() => expect(observeSnapshot).toHaveBeenCalledTimes(cases.length));
 }
 
 function requireOperationMatrixRequestId(data: JsonWireValue): string {

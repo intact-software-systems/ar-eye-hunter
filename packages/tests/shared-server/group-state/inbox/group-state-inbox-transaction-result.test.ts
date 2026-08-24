@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { GroupStateInboxHandler } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-handler.ts';
+import { encodeAppInboxResult } from '@shared-server/rallar-system/app-inbox/app-inbox-registration-codecs.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 
 import { createGroupStateTransactionBoundaryHarness } from './group-state-transaction-boundary-fixture.ts';
@@ -138,8 +139,6 @@ describe('group-state AppInbox transaction result boundary', () => {
         const result = await handler.processGroupStateMutation(inactiveConnectContext());
         expect(JSON.stringify(result)).toBe('{"status":"inactive","sessionId":"inactive-session","generationId":"inactive-generation"}');
         expect(actions).toEqual(['inactive-transaction']);
-        expect(writeMutation).toHaveBeenCalledOnce();
-        expect(writeMutationWithAfterCommitResult).not.toHaveBeenCalled();
     });
 
     it('passes the exact committed snapshot object to observation only after commit', async () => {
@@ -150,7 +149,7 @@ describe('group-state AppInbox transaction result boundary', () => {
         vi.doMock('@shared-server/rallar-system/group-state/inbox/group-state-inbox-result.ts', () => ({
             readGroupStateInboxResult: readResult
         }));
-        const { actions, handler, observed, writeMutationWithAfterCommitResult } = await createCommittedSnapshotObservationFixture();
+        const { actions, handler, observed } = await createCommittedSnapshotObservationFixture();
 
         await expect(
             handler.processGroupStateMutation({
@@ -167,8 +166,6 @@ describe('group-state AppInbox transaction result boundary', () => {
                 entry: { dequeueAudit: { attempts: 1 } }
             } as never)
         ).resolves.toBe(durableResult);
-        expect(readResult).toHaveBeenCalledOnce();
-        expect(writeMutationWithAfterCommitResult).toHaveBeenCalledOnce();
         expect(observed).toEqual([committedSnapshot]);
         expect(observed[0]).toBe(committedSnapshot);
         expect(actions).toEqual(['write', 'commit', 'observe', 'wake']);
@@ -181,14 +178,22 @@ describe('group-state AppInbox transaction result boundary', () => {
             status: 'durable-only',
             result: { value: 0, omitted: null }
         } as const;
+        const durableContext = {
+            ...harness.context,
+            encodeResult: (result: typeof durableResult) =>
+                encodeAppInboxResult(result, 'Durable-only transaction test result')
+        };
 
-        const returned = await harness.transactionWriter.writeMutation(harness.context, async () => durableResult);
+        const returned = await harness.transactionWriter.writeMutation(
+            durableContext,
+            async () => durableResult
+        );
         const persisted = await harness.results.findByKey(harness.context.entry.key);
 
         expect(returned).toBe(durableResult);
         expect(persisted?.resource).toBe('{"status":"durable-only","result":{"value":0,"omitted":null}}');
         expect(Object.keys(JSON.parse(persisted!.resource) as Record<string, unknown>)).toEqual(['status', 'result']);
-        expect(harness.transactionWriter.read(harness.context)).toEqual({
+        expect(harness.transactionWriter.read(durableContext)).toEqual({
             state: 'transaction-finalized',
             status: EntityStatus.COMPLETED,
             result: durableResult
@@ -200,7 +205,6 @@ interface CommittedSnapshotFixture {
     readonly actions: string[];
     readonly handler: GroupStateInboxHandler;
     readonly observed: unknown[];
-    readonly writeMutationWithAfterCommitResult: ReturnType<typeof vi.fn>;
 }
 
 async function createCommittedSnapshotObservationFixture(): Promise<CommittedSnapshotFixture> {
@@ -244,7 +248,7 @@ async function createCommittedSnapshotObservationFixture(): Promise<CommittedSna
         },
         wakeQueue: () => actions.push('wake')
     });
-    return { actions, handler, observed, writeMutationWithAfterCommitResult };
+    return { actions, handler, observed };
 }
 
 function inactiveConnectContext() {

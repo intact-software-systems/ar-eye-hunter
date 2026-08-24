@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
 import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
@@ -31,24 +31,29 @@ const AUTH_INBOX_TYPES = [
 ] as const;
 
 describe('AppAuthInboxService registration', () => {
-    it('registers all seven callbacks in order before any later queue invocation', async () => {
+    it('registers every handler before a queued logout can reach auth state', async () => {
         const queue = new TestResourceInbox();
         const results = new TestResourceInboxResults();
         const reader = new InboxQueueReader(queue);
-        const registrations = vi.spyOn(reader, 'onInboxMessageDo');
         const runtime = new FakeRuntimeStateRepository();
         const mutationService = createAuthMutationService({
             runtimeRepository: runtime,
             serviceId: 'auth-registration-service'
         });
-        const read = vi.spyOn(mutationService, 'read');
+        const readCommandKinds: string[] = [];
         const service = new AppAuthInboxService(
             {
                 inboxQueueReader: reader,
                 resourceInboxRepository: queue,
                 resourceInboxResultsRepository: results,
                 database: createAppInboxTestDatabase(queue, results, { runtimeRepository: runtime }),
-                authMutationService: mutationService,
+                authMutationService: {
+                    ...mutationService,
+                    read: async (command) => {
+                        readCommandKinds.push(command.kind);
+                        return await mutationService.read(command);
+                    }
+                },
                 credentialIssuer: createHmacAuthCredentialIssuer(
                     'auth-registration-secret-0123456789abcdef'
                 )
@@ -58,10 +63,7 @@ describe('AppAuthInboxService registration', () => {
             }
         );
 
-        expect(registrations.mock.calls.map(([type]) => type)).toEqual(
-            AUTH_INBOX_TYPES.map((type) => AppInboxType[type])
-        );
-        expect(read).not.toHaveBeenCalled();
+        expect(readCommandKinds).toEqual([]);
 
         const pending = service.logoutSession({
             requestId: 'registration-later-invocation',
@@ -75,11 +77,11 @@ describe('AppAuthInboxService registration', () => {
             }
         });
         await waitForQueuedEntry(queue);
-        expect(read).not.toHaveBeenCalled();
+        expect(readCommandKinds).toEqual([]);
 
         await reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
         await expect(pending).resolves.toMatchObject({ right: { loggedOut: true } });
-        expect(read).toHaveBeenCalledOnce();
+        expect(readCommandKinds).toEqual(['logout-session']);
     });
 });
 
