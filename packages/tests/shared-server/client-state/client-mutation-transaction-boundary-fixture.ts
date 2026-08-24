@@ -6,8 +6,8 @@ import { type AppInboxMessageContext } from '@shared-server/rallar-system/app-in
 import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import { encodeAppInboxResult } from '@shared-server/rallar-system/app-inbox/app-inbox-registration-codecs.ts';
 import { AppInboxTransactionWriter } from '@shared-server/rallar-system/app-inbox/app-inbox-transaction-writer.ts';
-import { ClientStateInboxHandler } from '@shared-server/rallar-system/client-state/inbox/client-state-inbox-handler.ts';
 import type { ClientStateWritten } from '@shared-server/rallar-system/client-state/client-state-service-contracts.ts';
+import { ClientStateInboxHandler } from '@shared-server/rallar-system/client-state/inbox/client-state-inbox-handler.ts';
 import { toClientMutationIssuedSessionAuthority } from '@shared-server/rallar-system/client-state/mutation/client-mutation-authority.ts';
 import { toUpsertPrincipalCommandInput } from '@shared-server/rallar-system/client-state/mutation/client-mutation-command.ts';
 import { ClientStateRepository } from '@shared-server/rallar-system/client-state/persistence/client-state-repository.ts';

@@ -17,8 +17,8 @@ import { createGroupTopologyOwners, type GroupTopologyOwners } from '@shared-ser
 
 import { RallarRtcTopologyService } from '@shared-server/rallar-system/topology/runtime/rallar-rtc-topology-service.ts';
 
-import { AppInboxType, type AppInboxMessageContext } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import { toJsonWireAppInboxEnqueue } from '@shared-server/rallar-system/app-inbox/app-inbox-command-wire.ts';
+import { AppInboxType, type AppInboxMessageContext } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import { encodeAppInboxResult } from '@shared-server/rallar-system/app-inbox/app-inbox-registration-codecs.ts';
 import { computeRtcTopologyEntry } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-entry.ts';
 

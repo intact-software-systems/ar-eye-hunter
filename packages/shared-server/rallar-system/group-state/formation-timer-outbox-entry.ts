@@ -8,11 +8,7 @@ import type { Group, GroupRef } from '@shared/api/group-types.ts';
 import { fnv1a64, toAppQueueCreatedBy, toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { AppOutboxType } from '../app-outbox/app-outbox-type.ts';
-import {
-    decodeJsonWireValue,
-    type JsonWireObject,
-    type JsonWireValue
-} from '../protocol/json-wire-identity.ts';
+import { decodeJsonWireValue, type JsonWireObject, type JsonWireValue } from '../protocol/json-wire-identity.ts';
 import type {
     GroupLifecycleTransitionOperation,
     GroupMutationCommand,

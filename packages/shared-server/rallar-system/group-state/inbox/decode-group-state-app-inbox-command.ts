@@ -1,8 +1,8 @@
-import type { GroupMutationCommand } from '../mutation/group-mutation-contracts.ts';
-import { validateGroupMutationRequest } from '../mutation/command-validation/group-mutation-request-validation.ts';
+import { AppInboxType } from '../../app-inbox/app-inbox-contracts.ts';
 import { requireExactKeys, requireString } from '../../protocol/exact-object-decoding.ts';
 import type { JsonWireObject, JsonWireValue } from '../../protocol/json-wire-identity.ts';
-import { AppInboxType } from '../../app-inbox/app-inbox-contracts.ts';
+import { validateGroupMutationRequest } from '../mutation/command-validation/group-mutation-request-validation.ts';
+import type { GroupMutationCommand } from '../mutation/group-mutation-contracts.ts';
 import type { AuthenticatedGroupMutationInboxType } from './group-state-inbox-contracts.ts';
 
 const TARGET_PRINCIPAL_TYPES = new Set<AuthenticatedGroupMutationInboxType>([
@@ -24,10 +24,7 @@ const PRESENCE_TYPES = new Set<AuthenticatedGroupMutationInboxType>([
 ]);
 
 export function decodeGroupStateAppInboxCommand(
-    type: Exclude<
-        AppInboxType,
-        typeof AppInboxType.GROUP_PRESENCE_SESSION_CLEANUP
-    >,
+    type: Exclude<AppInboxType, typeof AppInboxType.GROUP_PRESENCE_SESSION_CLEANUP>,
     value: JsonWireValue
 ): JsonWireValue {
     if (

@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { GroupStateInboxHandler } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-handler.ts';
 import { encodeAppInboxResult } from '@shared-server/rallar-system/app-inbox/app-inbox-registration-codecs.ts';
+import { GroupStateInboxHandler } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-handler.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 
 import { createGroupStateTransactionBoundaryHarness } from './group-state-transaction-boundary-fixture.ts';
@@ -180,8 +180,7 @@ describe('group-state AppInbox transaction result boundary', () => {
         } as const;
         const durableContext = {
             ...harness.context,
-            encodeResult: (result: typeof durableResult) =>
-                encodeAppInboxResult(result, 'Durable-only transaction test result')
+            encodeResult: (result: typeof durableResult) => encodeAppInboxResult(result, 'Durable-only transaction test result')
         };
 
         const returned = await harness.transactionWriter.writeMutation(

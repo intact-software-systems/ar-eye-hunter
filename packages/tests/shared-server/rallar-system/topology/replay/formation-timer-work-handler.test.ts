@@ -1,10 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { AppOutboxType } from '@shared-server/rallar-system/app-outbox/app-outbox-type.ts';
-import {
-    computeFormationTimerEntry,
-    decodeFormationTimerWork
-} from '@shared-server/rallar-system/group-state/formation-timer-outbox-entry.ts';
+import { computeFormationTimerEntry, decodeFormationTimerWork } from '@shared-server/rallar-system/group-state/formation-timer-outbox-entry.ts';
 import type { GroupMutationCommand } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
 import { resolveGroupTopologyConfig } from '@shared-server/rallar-system/topology/config/group-topology-config.ts';
 import { createFormationTimerWorkHandler } from '@shared-server/rallar-system/topology/replay/create-formation-timer-work-handler.ts';

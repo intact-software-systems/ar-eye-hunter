@@ -99,20 +99,27 @@ describe('GroupStateInboxService authenticated authority', { timeout: 30_000 }, 
                     authorized,
                     command
                 }),
-                compute: (_command: never, read: Readonly<{
-                    authorized: boolean;
-                    command: Readonly<{ facts: { attemptCount: number; }; }>;
-                }>) => ({
+                compute: (
+                    _command: never,
+                    read: Readonly<{
+                        authorized: boolean;
+                        command: Readonly<{ facts: { attemptCount: number; }; }>;
+                    }>
+                ) => ({
                     outcome: 'write',
                     receipt: { commandId: 'outer-retry-authority-change' },
                     read
                 }),
-                validate: (_command: never, _read: never, computed: Readonly<{
-                    read: Readonly<{
-                        authorized: boolean;
-                        command: Readonly<{ facts: { attemptCount: number; }; }>;
-                    }>;
-                }>) => {
+                validate: (
+                    _command: never,
+                    _read: never,
+                    computed: Readonly<{
+                        read: Readonly<{
+                            authorized: boolean;
+                            command: Readonly<{ facts: { attemptCount: number; }; }>;
+                        }>;
+                    }>
+                ) => {
                     if (!computed.read.authorized) {
                         attempts.push({
                             attempt: computed.read.command.facts.attemptCount,
@@ -124,12 +131,15 @@ describe('GroupStateInboxService authenticated authority', { timeout: 30_000 }, 
                         );
                     }
                 },
-                write: async (_transaction: never, computed: Readonly<{
-                    read: Readonly<{
-                        authorized: boolean;
-                        command: Readonly<{ facts: { attemptCount: number; }; }>;
-                    }>;
-                }>) => {
+                write: async (
+                    _transaction: never,
+                    computed: Readonly<{
+                        read: Readonly<{
+                            authorized: boolean;
+                            command: Readonly<{ facts: { attemptCount: number; }; }>;
+                        }>;
+                    }>
+                ) => {
                     const attempt = computed.read.command.facts.attemptCount as number;
                     attempts.push({ attempt, outcome: 'conflict', authorized: true });
                     authorized = false;

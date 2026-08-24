@@ -1,8 +1,4 @@
-import {
-    AppInboxQueueClient,
-    AppInboxType,
-    classifyAppInboxError
-} from '@shared-server/mod.ts';
+import { AppInboxQueueClient, AppInboxType, classifyAppInboxError } from '@shared-server/mod.ts';
 import { describe, expect, it } from 'vitest';
 
 describe('shared-server AppInbox public surface', () => {

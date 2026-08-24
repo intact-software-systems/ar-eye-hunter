@@ -18,12 +18,8 @@ import type { GroupStateService } from '@shared-server/rallar-system/group-state
 
 import type { GroupStateAuthorityGuard } from '@shared-server/rallar-system/group-state/persistence/group-state-persistence-contracts.ts';
 
-import {
-    AppInboxType,
-    type AppInboxEnqueueInput,
-    type AppInboxMessageContext
-} from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import { toJsonWireAppInboxEnqueue } from '@shared-server/rallar-system/app-inbox/app-inbox-command-wire.ts';
+import { AppInboxType, type AppInboxEnqueueInput, type AppInboxMessageContext } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import { encodeAppInboxResult } from '@shared-server/rallar-system/app-inbox/app-inbox-registration-codecs.ts';
 import type { ComputedRtcTopologyOutbox } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-entry.ts';
 
@@ -34,13 +30,13 @@ import { toTopologyAppInboxCommand } from '@shared-server/rallar-system/topology
 import { toTopologyConfigMutationResult } from '@shared-server/rallar-system/topology/config/mutation/to-topology-config-mutation-result.ts';
 
 import { writeTopologyConfigMutation } from '@shared-server/rallar-system/topology/config/mutation/write-topology-config-mutation.ts';
+import type { TopologyAppInboxCommand } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-contracts.ts';
 import {
     decodeTopologyAppInboxResult,
     TopologyAppInboxHandler,
     type TopologyAppInboxMutationOwners,
     type TopologyAppInboxResult
 } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-handler.ts';
-import type { TopologyAppInboxCommand } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-contracts.ts';
 
 import type {
     GroupTopologyConfigMutationComputed,

@@ -6,18 +6,15 @@ import type { CreateGroupRequest } from '@shared/api/state-types.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 
-import { AppInboxType, type AppInboxMessageContext } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import { toJsonWireAppInboxEnqueue } from '@shared-server/rallar-system/app-inbox/app-inbox-command-wire.ts';
+import { AppInboxType, type AppInboxMessageContext } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import { SIMPLER_GROUP_STATE_APP_INBOX_TOPIC } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-client.ts';
 import { encodeAppInboxResult } from '@shared-server/rallar-system/app-inbox/app-inbox-registration-codecs.ts';
 import { AppInboxTransactionWriter } from '@shared-server/rallar-system/app-inbox/app-inbox-transaction-writer.ts';
 import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
 import { type IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
 import { mutationDescriptor } from '@shared-server/rallar-system/group-state/group-mutation-authority.ts';
-import type {
-    GroupMutationPreparation,
-    GroupStateService
-} from '@shared-server/rallar-system/group-state/group-state-service-contracts.ts';
+import type { GroupMutationPreparation, GroupStateService } from '@shared-server/rallar-system/group-state/group-state-service-contracts.ts';
 import { createGroupStateService } from '@shared-server/rallar-system/group-state/group-state-service.ts';
 import { GroupStateInboxHandler } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-handler.ts';
 import type { GroupStateInboxDurableResult } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-result.ts';

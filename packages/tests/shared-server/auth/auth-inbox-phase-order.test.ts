@@ -18,8 +18,8 @@ import type {
 } from '@shared-server/rallar-system/auth/mutation/auth-mutation-contracts.ts';
 import { decodeAuthMutationIntent } from '@shared-server/rallar-system/auth/mutation/decode-auth-mutation-intent.ts';
 
-import type { AppInboxMessageContext } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import { toJsonWireAppInboxEnqueue } from '@shared-server/rallar-system/app-inbox/app-inbox-command-wire.ts';
+import type { AppInboxMessageContext } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import { encodeAppInboxResult } from '@shared-server/rallar-system/app-inbox/app-inbox-registration-codecs.ts';
 import type {
     AppInboxMutationTransactionResult,
