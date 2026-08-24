@@ -22,6 +22,20 @@ describe('Rallar browser runtime foundations', () => {
         expect(second.defaults()).toBeUndefined();
     });
 
+    it('clears each runtime context without retaining its middleware value', () => {
+        const clearMiddleware = vi.fn();
+        const runtime = createRallarBrowserFacadeRuntimeContext({ clearMiddleware });
+        runtime.setMiddleware({} as never);
+        runtime.setConnectState('connected');
+
+        runtime.clearMiddleware();
+        runtime.setConnectState('idle');
+
+        expect(clearMiddleware).toHaveBeenCalledOnce();
+        expect(runtime.cachedMiddleware()).toBeUndefined();
+        expect(runtime.readConnectState()).toBe('idle');
+    });
+
     it('runs every lifecycle phase in ascending participant order', () => {
         const events: string[] = [];
         const lifecycle = createRallarLifecycleCoordinator();

@@ -1,3 +1,4 @@
+import { ApiHttpError } from '@shared-web/browser/api/http-error.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createGroupSnapshotFixture } from './authoritative-group-fixtures.ts';
@@ -26,6 +27,7 @@ const mocks = await vi.hoisted(async () => {
     };
 
     return {
+        clearSession: vi.fn<AuthModule['clearSession']>(),
         ctx,
         throwClientRepositoryMissing,
         throwGroupRepositoryMissing,
@@ -72,7 +74,7 @@ vi.mock(
 );
 
 vi.mock(import('@shared/api/auth.ts'), (): Partial<AuthModule> => ({
-    clearSession: vi.fn(),
+    clearSession: mocks.clearSession,
     isLoggedIn: vi.fn(() => true),
     readSession: mocks.readSession,
     writeSession: vi.fn()
@@ -103,6 +105,7 @@ describe('Rallar startup lifecycle compatibility', () => {
         );
         mockGroupRepositoryMissing();
         mocks.hydrateStateCaches.mockResolvedValue(undefined);
+        mocks.clearSession.mockReset();
         mocks.initMiddleware.mockResolvedValue(mocks.ctx);
         mocks.isMiddlewareReady.mockReturnValue(false);
         mocks.readSession.mockReturnValue(mocks.ctx.session);
@@ -203,6 +206,39 @@ describe('Rallar startup lifecycle compatibility', () => {
         });
         expect(mocks.initMiddleware).not.toHaveBeenCalled();
         expect(mocks.refreshStateSnapshots).not.toHaveBeenCalled();
+    });
+
+    it('leaves the facade idle when middleware initialization fails', async () => {
+        const { createRallarFacade } = await import(
+            '@shared-web/browser/rallar.ts'
+        );
+        mocks.initMiddleware.mockRejectedValueOnce(new Error('network unavailable'));
+        const facade = createRallarFacade();
+
+        await expect(facade.connect()).rejects.toThrow('network unavailable');
+
+        expect(facade.status()).toBe('idle');
+        expect(facade.isConnected()).toBe(false);
+    });
+
+    it('ends the restored auth session when connection initialization reports 401', async () => {
+        const { createRallarFacade } = await import(
+            '@shared-web/browser/rallar.ts'
+        );
+        mocks.initMiddleware.mockRejectedValueOnce(
+            new ApiHttpError('GET', '/session', 401, 'expired')
+        );
+        const facade = createRallarFacade();
+        const authChanges: string[] = [];
+        facade.auth.onChange((state) => authChanges.push(state.reason), {
+            emitCurrent: false
+        });
+
+        await expect(facade.connect()).rejects.toThrow('expired');
+
+        expect(mocks.clearSession).toHaveBeenCalledOnce();
+        expect(authChanges).toEqual(['unauthorized']);
+        expect(facade.status()).toBe('idle');
     });
 });
 

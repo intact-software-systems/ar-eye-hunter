@@ -61,6 +61,12 @@ status, realtime lanes, and media. Detach is deliberately not reversed.
 Connected notification remains state, then WS, then RTC; disconnected
 notification runs only after middleware shutdown and runtime clearing.
 
+The production-symbol construction, registration, invocation, and cleanup map
+is maintained in [browser/README.md](./browser/README.md). It records the
+currently late-bound state/event/session/startup consumers and the overlapping
+session/app-context shutdown ownership as pending corrections; neither has
+been changed by this documentation checkpoint.
+
 ## Room Transport Product Helpers
 
 - `rallar.setup(input)` is the browser golden-path bootstrap. It combines
