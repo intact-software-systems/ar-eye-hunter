@@ -1,4 +1,4 @@
-import { RallarAiError, type RallarAiJsonResult } from '@shared/rallar-ai/mod.ts';
+import { RallarAiError, type RallarAiJsonResult, type RallarAiJsonValue } from '@shared/rallar-ai/mod.ts';
 import { createRallarServerAiTopicInstaller } from './create-rallar-server-ai-topic-installer.ts';
 import { DEFAULT_AI_REST_PATH } from './rallar-ai-server-config.ts';
 import { isRallarAiJsonRequest } from './rallar-ai-server-generation.ts';
@@ -10,7 +10,7 @@ import type {
     RallarServerAiRestPostApp,
     RallarServerAiRestRouteOptions
 } from './rallar-ai-server.ts';
-import type { RallarServerAiBoundaryValue, RallarServerAiValue } from './rallar-server-ai-boundary-value.ts';
+import type { RallarServerAiBoundaryValue } from './rallar-server-ai-boundary-value.ts';
 
 interface CreateRallarServerAiIngressInput {
     readonly options: CreateRallarServerAiOptions;
@@ -27,7 +27,9 @@ export interface RallarServerAiIngress {
 export function createRallarServerAiIngress(
     input: CreateRallarServerAiIngressInput
 ): RallarServerAiIngress {
-    const handleRestGenerateJson: RallarServerAiFacade['handleRestGenerateJson'] = async <TValue = RallarServerAiValue>(
+    const handleRestGenerateJson: RallarServerAiFacade['handleRestGenerateJson'] = async <
+        TValue extends RallarAiJsonValue = RallarAiJsonValue,
+    >(
         restInput: RallarServerAiRestGenerateInput
     ): Promise<RallarServerAiRestGenerateResponse<TValue>> => {
         if (!isRallarAiJsonRequest(restInput.body)) {
@@ -114,7 +116,7 @@ async function handleRestInvocation(
     }
 }
 
-function toRestSuccess<TValue>(
+function toRestSuccess<TValue extends RallarAiJsonValue>(
     result: RallarAiJsonResult<TValue>
 ): RallarServerAiRestGenerateResponse<TValue> {
     return {
@@ -124,7 +126,7 @@ function toRestSuccess<TValue>(
     };
 }
 
-function toRestError<TValue = RallarServerAiValue>(
+function toRestError<TValue extends RallarAiJsonValue = RallarAiJsonValue>(
     error: Error
 ): RallarServerAiRestGenerateResponse<TValue> {
     const aiError = error instanceof RallarAiError

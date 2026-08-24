@@ -21,13 +21,13 @@ import type {
     RallarServerAiFacade,
     RallarServerAiPersistInput
 } from './rallar-ai-server.ts';
-import type { RallarServerAiBoundaryValue, RallarServerAiValue } from './rallar-server-ai-boundary-value.ts';
+import type { RallarServerAiBoundaryValue } from './rallar-server-ai-boundary-value.ts';
 
 export type RallarServerAiBroadcastTarget =
     | Readonly<{ scope: 'room'; groupRef: GroupRef; }>
     | Readonly<{ scope: 'world' | 'all'; }>;
 
-interface EmitPublicationDiagnosticInput<TValue> {
+interface EmitPublicationDiagnosticInput<TValue extends RallarAiJsonValue> {
     readonly options: CreateRallarServerAiOptions;
     readonly result: RallarAiJsonResult<TValue>;
     readonly kind:
@@ -43,7 +43,7 @@ interface EmitPublicationDiagnosticInput<TValue> {
 export function createRallarServerAiBroadcast(
     options: CreateRallarServerAiOptions
 ): RallarServerAiFacade['broadcastJson'] {
-    return async <TValue = RallarServerAiValue>(
+    return async <TValue extends RallarAiJsonValue = RallarAiJsonValue>(
         input: RallarServerAiBroadcastInput<TValue>
     ) => {
         const target = normalizeBroadcastTarget(input);
@@ -141,7 +141,7 @@ export function createRallarServerAiPersistence(
     };
 }
 
-export function toResultBroadcastMessage<TValue>(
+export function toResultBroadcastMessage<TValue extends RallarAiJsonValue>(
     input: RallarServerAiBroadcastInput<TValue>,
     senderId: string,
     target: RallarServerAiBroadcastTarget
@@ -165,7 +165,7 @@ export function toResultBroadcastMessage<TValue>(
     );
 }
 
-function normalizeBroadcastTarget<TValue>(
+function normalizeBroadcastTarget<TValue extends RallarAiJsonValue>(
     input: RallarServerAiBroadcastInput<TValue>
 ): RallarServerAiBroadcastTarget {
     const scope = normalizeBroadcastScope(input.scope);
@@ -209,7 +209,7 @@ export function requireCompleteGroupRef(value: RallarServerAiBoundaryValue): Gro
     };
 }
 
-async function emitPublicationDiagnostic<TValue>(
+async function emitPublicationDiagnostic<TValue extends RallarAiJsonValue>(
     input: EmitPublicationDiagnosticInput<TValue>
 ): Promise<void> {
     const { options, result, kind, error } = input;
