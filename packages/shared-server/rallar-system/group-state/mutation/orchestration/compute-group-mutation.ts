@@ -53,7 +53,9 @@ export function computeGroupMutation(
     validateTrustedAuthorityMode(command, facts);
     const idempotency = probeGroupMutationIdempotency(command, read, facts.commandHash);
     if (idempotency.outcome !== 'miss') {
-        return idempotency;
+        return idempotency.outcome === 'replay'
+            ? { ...idempotency, rejectionCode: null }
+            : idempotency;
     }
 
     switch (command.operation) {

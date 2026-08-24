@@ -617,7 +617,8 @@ paths:
       description: |
         Creates a group and automatically inserts the authenticated client as an
         active `owner` member. `createdByPrincipalId` and actor fields are
-        derived from the authenticated session.
+        derived from the authenticated session. If the scoped `groupId` already
+        exists, the API returns `409` with code `group-already-exists`.
       security:
         - bearerAuth: []
           clientIdHeader: []

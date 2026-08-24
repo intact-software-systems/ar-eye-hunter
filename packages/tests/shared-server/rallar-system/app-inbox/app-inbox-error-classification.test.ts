@@ -1,7 +1,7 @@
 import { AppInboxIdempotencyConflictError, AppInboxReservationConflictError } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import { classifyAppInboxError } from '@shared-server/rallar-system/app-inbox/app-inbox-error-classification.ts';
 import { AuthMutationRejectedError } from '@shared-server/rallar-system/auth/mutation/auth-mutation-rejected-error.ts';
-import { GroupMutationRejectedError } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
+import { GroupAlreadyExistsError, GroupMutationRejectedError } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
 import { GroupPolicyDeniedError } from '@shared-server/rallar-system/group-state/policy/group-policy-result.ts';
 import { GroupTopologyConfigValidationError } from '@shared-server/rallar-system/topology/config/group-topology-config.ts';
 import { describe, expect, it } from 'vitest';
@@ -77,6 +77,39 @@ describe('AppInbox error classification', () => {
             result: {
                 code: 'app-inbox-failure-metadata-invalid',
                 status: 500
+            }
+        });
+    });
+
+    it('classifies an existing group as a terminal conflict', () => {
+        const classification = classifyAppInboxError(
+            new GroupAlreadyExistsError('Group already exists: room-1')
+        );
+
+        expect(classification).toEqual({
+            kind: 'terminal',
+            code: 'group-already-exists',
+            result: {
+                type: 'app-inbox-failure',
+                code: 'group-already-exists',
+                status: 409,
+                message: 'Group already exists: room-1',
+                issues: null,
+                denial: null,
+                retry: null
+            }
+        });
+    });
+
+    it('keeps generic group mutation rejections as bad requests', () => {
+        expect(
+            classifyAppInboxError(new GroupMutationRejectedError('The mutation is invalid'))
+        ).toMatchObject({
+            kind: 'terminal',
+            code: 'group-mutation-rejected',
+            result: {
+                code: 'group-mutation-rejected',
+                status: 400
             }
         });
     });

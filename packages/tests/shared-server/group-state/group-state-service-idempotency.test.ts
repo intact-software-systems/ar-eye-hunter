@@ -1,5 +1,5 @@
 import { groupStateMaintenanceRequestId } from '@shared-server/rallar-system/group-state/group-presence-mutation-command.ts';
-import { GroupMutationRejectedError } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
+import { GroupAlreadyExistsError } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
 import type { RallarTimingEvent } from '@shared-server/rallar-system/observability/timing.ts';
 import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
@@ -93,7 +93,7 @@ describe('GroupStateService command idempotency', () => {
         expect((await repository.readSnapshot(groupRef))?.group.snapshotVersion).toBe(1);
     });
 
-    it('returns a group-exists result when createGroup uses a different requestId for an existing group', async () => {
+    it('returns a group-already-exists conflict when createGroup uses a different requestId', async () => {
         const runtimeRepository = new FakeRuntimeStateRepository();
         const runtime = createTestGroupStateRuntime({
             runtimeRepository,
@@ -124,10 +124,12 @@ describe('GroupStateService command idempotency', () => {
             throw new TypeError('Expected duplicate group creation to be rejected');
         }
         catch (error) {
-            expect(error).toBeInstanceOf(GroupMutationRejectedError);
-            if (!(error instanceof GroupMutationRejectedError)) {
+            expect(error).toBeInstanceOf(GroupAlreadyExistsError);
+            if (!(error instanceof GroupAlreadyExistsError)) {
                 throw error;
             }
+            expect(error.code).toBe('group-already-exists');
+            expect(error.status).toBe(409);
             expect(error.message).toBe('Group already exists: room-6');
         }
 

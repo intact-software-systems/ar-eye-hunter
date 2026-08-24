@@ -57,6 +57,7 @@ export function computeCreate(
             command,
             read,
             facts,
+            rejectionCode: 'group-mutation-rejected',
             message: 'Creator authority does not match createdByPrincipalId'
         });
     }
@@ -65,6 +66,7 @@ export function computeCreate(
             command,
             read,
             facts,
+            rejectionCode: 'group-already-exists',
             message: `Group already exists: ${command.aggregateRef.groupId}`
         });
     }
@@ -76,6 +78,7 @@ export function computeCreate(
             command,
             read,
             facts,
+            rejectionCode: 'group-mutation-rejected',
             message: `Group lifecycle policy is not coherent: ${
                 policyIssues
                     .map((issue) => `${issue.field} ${issue.code}`)

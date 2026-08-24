@@ -365,14 +365,19 @@ export type PresenceAdmissionCandidate =
     }>;
 
 export type GroupMutationComputed =
-    | Readonly<{ outcome: 'replay'; receipt: GroupMutationReceipt; }>
+    | Readonly<{
+        outcome: 'replay' | 'no-op';
+        rejectionCode: null;
+        receipt: GroupMutationReceipt;
+    }>
     | Readonly<{
         outcome: 'idempotency-conflict';
         existingCommandHash: string;
         receivedCommandHash: string;
     }>
     | Readonly<{
-        outcome: 'no-op' | 'rejected';
+        outcome: 'rejected';
+        rejectionCode: GroupMutationRejectionCode;
         receipt: GroupMutationReceipt;
     }>
     | Readonly<{
@@ -389,6 +394,10 @@ export type GroupMutationComputed =
     }>;
 
 export type GroupMutationComputedWrite = Extract<GroupMutationComputed, { outcome: 'write'; }>;
+
+export type GroupMutationRejectionCode =
+    | 'group-already-exists'
+    | 'group-mutation-rejected';
 
 export type GroupLifecycleTransitionOperation = Extract<
     GroupMutationCommand['operation'],
@@ -450,5 +459,15 @@ export class GroupMutationRejectedError extends Error {
     constructor(message: string) {
         super(message);
         this.name = 'GroupMutationRejectedError';
+    }
+}
+
+export class GroupAlreadyExistsError extends Error {
+    readonly status = 409;
+    readonly code = 'group-already-exists';
+
+    constructor(message: string) {
+        super(message);
+        this.name = 'GroupAlreadyExistsError';
     }
 }

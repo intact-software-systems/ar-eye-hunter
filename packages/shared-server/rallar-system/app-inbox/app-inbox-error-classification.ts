@@ -50,6 +50,7 @@ const TERMINAL_STATUS_BY_CODE = new Map<string, number>([
     ['admin-prune-authority-denied', 403],
     ['crdt-authority-denied', 403],
     ['group-mutation-authority-denied', 403],
+    ['group-already-exists', 409],
     ['group-mutation-idempotency-conflict', 409],
     ['group-mutation-rejected', 400],
     ['group-state-event-collision', 409],

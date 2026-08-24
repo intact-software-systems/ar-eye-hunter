@@ -6,12 +6,12 @@ import {
     type GroupStateServiceDependencies
 } from '@shared-server/rallar-system/group-state/group-state-service-contracts.ts';
 import {
-    GroupMutationRejectedError,
     type GroupMutationComputed,
     type GroupMutationComputedWrite,
     type GroupMutationFacts,
     type GroupMutationReceipt
 } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
+import { toGroupMutationRejectionError } from '@shared-server/rallar-system/group-state/mutation/group-mutation-result.ts';
 import { computeGroupMutation } from '@shared-server/rallar-system/group-state/mutation/orchestration/compute-group-mutation.ts';
 import { validateGroupMutation } from '@shared-server/rallar-system/group-state/mutation/state-validation/validate-group-mutation.ts';
 import { materializeGroupStateGuardedBatch } from '@shared-server/rallar-system/group-state/mutation/write/write-group-mutation.ts';
@@ -140,8 +140,8 @@ export class GroupStateTestMutationExecutor {
             throw new TypeError(`Group snapshot not found: ${receipt.aggregateRef.groupId}`);
         }
         const event = await this.receiptEvent(repository, receipt);
-        if (receipt.outcome === 'rejected') {
-            throw new GroupMutationRejectedError(receipt.rejection ?? 'Group mutation rejected');
+        if (computed.outcome === 'rejected') {
+            throw toGroupMutationRejectionError(computed);
         }
         if (operation === 'rotateGroupJoinCode') {
             return {

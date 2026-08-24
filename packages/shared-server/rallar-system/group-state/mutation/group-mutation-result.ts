@@ -21,10 +21,11 @@ import type {
     GroupMutationIdempotencyRecord,
     GroupMutationRead,
     GroupMutationReceipt,
+    GroupMutationRejectionCode,
     PresenceAdmissionCandidate,
     PresenceGuardCandidate
 } from './group-mutation-contracts.ts';
-import { GroupMutationRejectedError } from './group-mutation-contracts.ts';
+import { GroupAlreadyExistsError, GroupMutationRejectedError } from './group-mutation-contracts.ts';
 import { groupMutationIdempotencyKey } from './group-mutation-idempotency-key.ts';
 
 const DEFAULT_GROUP_JOIN_CODE_TTL_MS = 7 * 24 * 60 * 60 * 1_000;
@@ -47,6 +48,7 @@ export interface RejectedGroupMutationInput {
     readonly command: GroupMutationCommand;
     readonly read: GroupMutationRead;
     readonly facts: GroupMutationFacts;
+    readonly rejectionCode: GroupMutationRejectionCode;
     readonly message: string;
 }
 
@@ -153,6 +155,7 @@ export function noOp(
     const causalRevision = currentCausalRevision(read);
     return {
         outcome: 'no-op',
+        rejectionCode: null,
         receipt: receiptFor(command, facts, {
             outcome: 'no-op',
             causalRevision,
@@ -166,10 +169,11 @@ export function noOp(
 }
 
 export function rejected(input: RejectedGroupMutationInput): GroupMutationComputed {
-    const { command, facts, message, read } = input;
+    const { command, facts, message, read, rejectionCode } = input;
     const causalRevision = currentCausalRevision(read);
     return {
         outcome: 'rejected',
+        rejectionCode,
         receipt: receiptFor(command, facts, {
             outcome: 'rejected',
             causalRevision,
@@ -180,6 +184,18 @@ export function rejected(input: RejectedGroupMutationInput): GroupMutationComput
             rejection: message
         })
     };
+}
+
+export function toGroupMutationRejectionError(
+    computed: Extract<GroupMutationComputed, { outcome: 'rejected'; }>
+): GroupAlreadyExistsError | GroupMutationRejectedError {
+    const message = computed.receipt.rejection ?? 'Group mutation rejected';
+    switch (computed.rejectionCode) {
+        case 'group-already-exists':
+            return new GroupAlreadyExistsError(message);
+        case 'group-mutation-rejected':
+            return new GroupMutationRejectedError(message);
+    }
 }
 
 export function receiptFor(

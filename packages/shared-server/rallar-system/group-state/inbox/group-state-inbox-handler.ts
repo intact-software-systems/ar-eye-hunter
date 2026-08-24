@@ -17,7 +17,8 @@ import type {
     GroupStateMutationService,
     GroupStateService
 } from '../group-state-service-contracts.ts';
-import { GroupMutationRejectedError, type GroupMutationComputed } from '../mutation/group-mutation-contracts.ts';
+import type { GroupMutationComputed } from '../mutation/group-mutation-contracts.ts';
+import { toGroupMutationRejectionError } from '../mutation/group-mutation-result.ts';
 import { createTransactionBoundGroupStateRepository } from '../persistence/group-state-repository.ts';
 import { processGroupPresenceConnect, type InactiveGroupPresenceResult } from '../presence/group-presence-service.ts';
 import { readGroupStateInboxResult, type GroupStateInboxDurableResult } from './group-state-inbox-result.ts';
@@ -113,9 +114,7 @@ export class GroupStateInboxHandler {
         input: CommitGroupStateMutationInput
     ): Promise<GroupStateInboxDurableResult> {
         if (input.computed.outcome === 'rejected') {
-            throw new GroupMutationRejectedError(
-                input.computed.receipt.rejection ?? 'Group mutation rejected'
-            );
+            throw toGroupMutationRejectionError(input.computed);
         }
         const { durableResult, afterCommitResult } = await this.dependencies.transactionWriter
             .writeMutationWithAfterCommitResult(

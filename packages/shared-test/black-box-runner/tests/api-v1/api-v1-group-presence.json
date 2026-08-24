@@ -136,6 +136,33 @@
       }
     },
     {
+      "name": "rejectDuplicateGroupCreate",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/requests/create-duplicate-{runId}-group-presence",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "groupId": "{groupId}",
+          "displayName": "{groupName}",
+          "kind": "room",
+          "joinMode": "open",
+          "createdByPrincipalId": "{aliceClientId}"
+        }
+      },
+      "expect": {
+        "status": 409,
+        "body": {
+          "code": "group-already-exists",
+          "status": 409
+        }
+      }
+    },
+    {
       "name": "joinAliceToGroup",
       "type": "http",
       "connection": "api",

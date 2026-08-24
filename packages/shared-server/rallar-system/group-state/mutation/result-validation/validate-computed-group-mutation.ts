@@ -51,8 +51,10 @@ function validateReceiptOutcome({
     computed,
     value
 }: ValidateReceiptOutcomeInput): void {
-    assertExactKeys(value, ['outcome', 'receipt'], 'Group mutation computed result');
-    assertRequiredKeys(value, ['outcome', 'receipt'], 'Group mutation computed result');
+    const keys = ['outcome', 'rejectionCode', 'receipt'];
+    assertExactKeys(value, keys, 'Group mutation computed result');
+    assertRequiredKeys(value, keys, 'Group mutation computed result');
+    validateComputedRejectionCode(computed);
     validateMutationReceipt(
         computed.receipt,
         command.aggregateRef,
@@ -63,6 +65,23 @@ function validateReceiptOutcome({
     }
     if (computed.outcome !== 'replay' && computed.receipt.outcome !== computed.outcome) {
         throw new TypeError('Group mutation computed receipt outcome differs');
+    }
+}
+
+function validateComputedRejectionCode(
+    computed: Extract<GroupMutationComputed, { outcome: 'replay' | 'no-op' | 'rejected'; }>
+): void {
+    if (computed.outcome !== 'rejected') {
+        if (computed.rejectionCode !== null) {
+            throw new TypeError('Non-rejected group mutation computed result has a rejection code');
+        }
+        return;
+    }
+    if (
+        computed.rejectionCode !== 'group-already-exists' &&
+        computed.rejectionCode !== 'group-mutation-rejected'
+    ) {
+        throw new TypeError('Group mutation computed rejection code is invalid');
     }
 }
 

@@ -66,6 +66,7 @@ export function computeLifecycleTransition(
             command,
             read,
             facts,
+            rejectionCode: 'group-mutation-rejected',
             message: `Group lifecycle policy is unreadable: ${read.lifecyclePolicy.reason}`
         });
     }
