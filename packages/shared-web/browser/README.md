@@ -1,9 +1,9 @@
 # Browser Runtime Navigation
 
-The browser facade has one public compatibility entry and a capability-oriented
-runtime composition. This map starts at production symbols so a reader can
-trace construction, registration, invocation, and cleanup without consulting a
-historical plan.
+`browser/rallar.ts` is the canonical full browser-facade entry, alongside
+narrow capability entrypoints and a capability-oriented runtime composition.
+This map starts at production symbols so a reader can trace construction,
+registration, invocation, and cleanup without consulting a historical plan.
 
 ```repository-navigation-v1
 {
