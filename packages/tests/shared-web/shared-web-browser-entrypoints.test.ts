@@ -3,12 +3,12 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { analyzeSourceFile, type SourceAnalysis, type SourceImport } from '../helpers/source-analysis';
 
-type BrowserEntrypoint = Readonly<{
-    moduleId: string;
-    sourcePath: string;
-    expectedRuntimeExports: readonly string[];
-    forbiddenRuntimeExports: readonly string[];
-}>;
+interface BrowserEntrypoint {
+    readonly moduleId: string;
+    readonly sourcePath: string;
+    readonly expectedRuntimeExports: readonly string[];
+    readonly forbiddenRuntimeExports: readonly string[];
+}
 
 const BROWSER_ENTRYPOINTS: readonly BrowserEntrypoint[] = [
     {

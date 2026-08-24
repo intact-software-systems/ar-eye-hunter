@@ -9,18 +9,18 @@ export type RallarTypedMessageSendStrategy = 'ws' | 'rtc' | 'realtime' | 'ws-the
 
 export type RallarMessageTransport = 'rtc' | 'ws' | 'replay';
 
-export type RallarMessage<T = unknown> = Readonly<{
-    transport: RallarMessageTransport;
-    typeId: string;
-    topicId: string;
-    contextId: string;
-    resourceId: string;
-    roomId?: string;
-    senderId: string;
-    payload: T;
-    raw: ALMessage;
-    receivedAtEpochMs: number;
-}>;
+export interface RallarMessage<T = unknown> {
+    readonly transport: RallarMessageTransport;
+    readonly typeId: string;
+    readonly topicId: string;
+    readonly contextId: string;
+    readonly resourceId: string;
+    readonly roomId?: string;
+    readonly senderId: string;
+    readonly payload: T;
+    readonly raw: ALMessage;
+    readonly receivedAtEpochMs: number;
+}
 
 export type RallarMessageHandler<T = unknown> = (
     message: RallarMessage<T>
@@ -31,18 +31,18 @@ export type RallarStateEventListener<TEvent> = (
     message: RallarMessage<TEvent>
 ) => void | Promise<void>;
 
-export type RallarMessageSendBase<T> = Readonly<{
-    typeId: string;
-    payload: T;
-    topicId?: string;
-    contextId?: string;
-    resourceId?: string;
-    ttlHops?: number;
-    ttlMs?: number;
-    reliability?: 'best-effort' | 'at-least-once';
-    ack?: ALAckMode;
-    ownership?: 'shared' | 'exclusive';
-}>;
+export interface RallarMessageSendBase<T> {
+    readonly typeId: string;
+    readonly payload: T;
+    readonly topicId?: string;
+    readonly contextId?: string;
+    readonly resourceId?: string;
+    readonly ttlHops?: number;
+    readonly ttlMs?: number;
+    readonly reliability?: 'best-effort' | 'at-least-once';
+    readonly ack?: ALAckMode;
+    readonly ownership?: 'shared' | 'exclusive';
+}
 
 export type RallarRtcSendInput<T> =
     & RallarMessageSendBase<T>
@@ -68,29 +68,24 @@ export type RallarWsSendInput<T> =
         exceptPeerIds?: readonly string[];
     }>;
 
-export type RallarMessageSendResult = Readonly<{
-    transport: RallarMessageTransport;
-    status: ALOutboundEnqueueStatus;
-    message: ALMessage;
-    entry?: ResourceEntry;
-    entries: readonly ResourceEntry[];
-    reason?: string;
-}>;
+export interface RallarMessageSendResult {
+    readonly transport: RallarMessageTransport;
+    readonly status: ALOutboundEnqueueStatus;
+    readonly message: ALMessage;
+    readonly entry?: ResourceEntry;
+    readonly entries: readonly ResourceEntry[];
+    readonly reason?: string;
+}
 
-export type RallarMessageLane<TSendInput, TSelector = string> = Readonly<{
-    send<T>(
-        input: TSendInput & RallarMessageSendBase<T>
-    ): Promise<RallarMessageSendResult>;
-    onMessage<T = unknown>(
-        selector: TSelector,
-        handler: RallarMessageHandler<T>
-    ): RallarUnsubscribe;
-}>;
+export interface RallarMessageLane<TSendInput, TSelector = string> {
+    send<T>(input: TSendInput & RallarMessageSendBase<T>): Promise<RallarMessageSendResult>;
+    onMessage<T = unknown>(selector: TSelector, handler: RallarMessageHandler<T>): RallarUnsubscribe;
+}
 
-export type RallarTypedMessageChannelDefinition = Readonly<{
-    topicId?: string;
-    typeId: string;
-}>;
+export interface RallarTypedMessageChannelDefinition {
+    readonly topicId?: string;
+    readonly typeId: string;
+}
 
 export type RallarTypedPayloadHandler<T> = (
     payload: T,
@@ -108,22 +103,13 @@ export type RallarTypedMessageSendOptions<T> =
         strategy?: RallarTypedMessageSendStrategy;
     }>;
 
-export type RallarTypedMessageChannel<T> = Readonly<{
-    send(
-        payload: T,
-        options?: RallarTypedMessageSendOptions<T>
-    ): Promise<RallarMessageSendResult>;
-    sendRtc(
-        payload: T,
-        options?: RallarTypedRtcSendOptions<T>
-    ): Promise<RallarMessageSendResult>;
-    sendWs(
-        payload: T,
-        options?: RallarTypedWsSendOptions<T>
-    ): Promise<RallarMessageSendResult>;
+export interface RallarTypedMessageChannel<T> {
+    send(payload: T, options?: RallarTypedMessageSendOptions<T>): Promise<RallarMessageSendResult>;
+    sendRtc(payload: T, options?: RallarTypedRtcSendOptions<T>): Promise<RallarMessageSendResult>;
+    sendWs(payload: T, options?: RallarTypedWsSendOptions<T>): Promise<RallarMessageSendResult>;
     onRtc(handler: RallarTypedPayloadHandler<T>): RallarUnsubscribe;
     onWs(handler: RallarTypedPayloadHandler<T>): RallarUnsubscribe;
-}>;
+}
 
 export type RallarRoomMessageChannelDefinition =
     & RallarTypedMessageChannelDefinition

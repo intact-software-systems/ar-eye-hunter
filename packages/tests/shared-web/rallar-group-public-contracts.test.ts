@@ -22,7 +22,7 @@ describe('Rallar group public contracts', () => {
             '`rooms.removeMember(room, principalId, options?)`',
             '`rooms.banMember(room, principalId, options?)`',
             '`rooms.unbanMember(room, principalId, options?)`',
-            '`rooms.setMemberRole(room, principalId, role, options?)`',
+            '`rooms.setMemberRole({ room, principalId, role, options? })`',
             '`rooms.transferOwnership(room, principalId, options?)`',
             '`joinMode`',
             '`inviteToken`',
@@ -371,23 +371,29 @@ describe('Rallar group public contracts', () => {
     });
 });
 
-type OpenApiSchema = Readonly<{
-    $ref?: string;
-    type?: string;
-    required?: readonly string[];
-    properties?: Readonly<Record<string, OpenApiSchema>>;
-    nullable?: boolean;
-    enum?: readonly unknown[];
-    allOf?: readonly OpenApiSchema[];
-    oneOf?: readonly OpenApiSchema[];
-    discriminator?: Readonly<{ propertyName?: string; }>;
-}>;
+interface OpenApiSchema {
+    readonly $ref?: string;
+    readonly type?: string;
+    readonly required?: readonly string[];
+    readonly properties?: Readonly<Record<string, OpenApiSchema>>;
+    readonly nullable?: boolean;
+    readonly enum?: readonly unknown[];
+    readonly allOf?: readonly OpenApiSchema[];
+    readonly oneOf?: readonly OpenApiSchema[];
+    readonly discriminator?: OpenApiDiscriminator;
+}
 
-type OpenApiDocument = Readonly<{
-    components: Readonly<{
-        schemas: Readonly<Record<string, OpenApiSchema>>;
-    }>;
-}>;
+interface OpenApiDiscriminator {
+    readonly propertyName?: string;
+}
+
+interface OpenApiDocument {
+    readonly components: OpenApiComponents;
+}
+
+interface OpenApiComponents {
+    readonly schemas: Readonly<Record<string, OpenApiSchema>>;
+}
 
 function schema(name: string): OpenApiSchema {
     const value = openApiDocument.components.schemas[name];

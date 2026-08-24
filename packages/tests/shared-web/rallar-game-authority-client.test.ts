@@ -9,7 +9,7 @@ import type {
     RallarTypedWsSendOptions,
     RallarWsSendInput
 } from '@shared-web/browser/rallar.ts';
-import { createRallarGameAuthorityClient, type RallarGameAuthorityClientConfig, type RallarGameAuthorityClientRallarFacade } from '@shared-web/game/mod.ts';
+import { RallarGameAuthorityClient, type RallarGameAuthorityClientConfig, type RallarGameAuthorityClientRallarFacade } from '@shared-web/game/mod.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import {
     createRallarGameAuthorityEnvelope,
@@ -251,7 +251,7 @@ function createClient(
     fake: ReturnType<typeof createFakeRallar>,
     overrides: Partial<RallarGameAuthorityClientConfig<Command, Snapshot, Event, Presence>> = {}
 ) {
-    return createRallarGameAuthorityClient<Command, Snapshot, Event, Presence>({
+    return new RallarGameAuthorityClient<Command, Snapshot, Event, Presence>({
         rallar: fake.rallar,
         protocol: 'test.authority.v1',
         topicId: 'game.authority',

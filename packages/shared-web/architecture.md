@@ -38,9 +38,12 @@ Use the smallest browser entry point that matches the feature area.
 `browser/rallar.ts` owns the full browser facade and delegates construction to
 [`createBrowserRallarFacade`](./browser/rallar-runtime/composition.ts#L43).
 Implementation lives in capability controllers under `browser/rallar-runtime/`
-and in feature-owned `browser/session/`, `browser/connection/`, and
-`browser/rooms/` modules; public barrels and narrow entry points do not export
-those private runtime owners.
+and in feature-owned `browser/calls/`, `browser/connection/`,
+`browser/realtime/`, `browser/rooms/`, `browser/rtc-diagnostics/`,
+`browser/rtc/`, and `browser/session/` modules. Game match lifecycle, egress,
+director, relay, and
+status owners live under `game/`. Public barrels and narrow entry points do not
+export those private runtime owners.
 
 Public capability contracts stay beside their canonical browser capability:
 message, people, room, auth, connection, calls, director, realtime, media, and
@@ -151,17 +154,17 @@ The command bundles `browser/rallar.ts`, the narrow browser entry points, and
 sizes. The measurement command is reporting-only; the check command fails when
 an entry exceeds its Brotli budget.
 
-Current browser simplification measurement and budgets:
+Current measured sizes and budgets:
 
 | Entry                           |  Minified |      Gzip |    Brotli |      Budget |
 | ------------------------------- | --------: | --------: | --------: | ----------: |
-| `browser/rallar.ts`             | 749.7 KiB | 192.8 KiB | 158.3 KiB | < 160.0 KiB |
+| `browser/rallar.ts`             | 757.9 KiB | 193.9 KiB | 159.2 KiB | < 160.0 KiB |
 | `browser/rallar-core.ts`        |   0.5 KiB |   0.3 KiB |   0.3 KiB | < 100.0 KiB |
 | `browser/rallar-realtime.ts`    |   0.5 KiB |   0.3 KiB |   0.3 KiB | < 100.0 KiB |
 | `browser/rallar-data.ts`        |  31.1 KiB |   7.3 KiB |   6.6 KiB |  < 20.0 KiB |
 | `browser/rallar-crdt.ts`        |  74.1 KiB |  17.5 KiB |  15.7 KiB |  < 30.0 KiB |
 | `browser/rallar-media-calls.ts` |   0.0 KiB |   0.0 KiB |   0.0 KiB |  < 10.0 KiB |
-| `shared-web/mod.ts`             | 801.5 KiB | 205.1 KiB | 169.2 KiB |           - |
+| `shared-web/mod.ts`             | 817.1 KiB | 207.7 KiB | 171.0 KiB |           - |
 
 ## Dependency Boundaries
 

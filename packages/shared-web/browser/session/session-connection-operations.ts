@@ -7,7 +7,7 @@ import {
 import type { BrowserTransportRuntimePort } from '@shared-web/browser/connection/browser-transport-runtime.ts';
 import type { RallarConnectionOperations, RallarDefaults } from '@shared-web/browser/rallar-connection-facade.ts';
 import type { RallarConnectionRuntimePort } from '@shared-web/browser/rallar-runtime-context.ts';
-import { createRallarSubscriptionScope } from '@shared-web/browser/rallar-runtime/subscriptions.ts';
+import { BrowserRallarSubscriptionScope } from '@shared-web/browser/rallar-runtime/subscriptions.ts';
 import { readSession } from '@shared/api/auth.ts';
 import { CommandsOrchestrator } from '@shared/cache/CommandsOrchestrator.ts';
 
@@ -33,7 +33,7 @@ export function createRallarSessionConnectionOperations(
             input.connectionRuntime.readConnectState() === 'connected' &&
             input.connectionRuntime.readMiddleware() !== undefined,
         session: readSession,
-        subscriptions: createRallarSubscriptionScope,
+        subscriptions: () => new BrowserRallarSubscriptionScope(),
         flow: <K, V>(policies = {}) => CommandsOrchestrator.withPolicies<K, V>(policies)
     };
 }

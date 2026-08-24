@@ -11,11 +11,7 @@ import { DEFAULT_STATE_WORKSPACE_ID, type StateScope } from '@shared/api/state-t
 
 export type RallarBrowserConnectStatus = 'idle' | 'connecting' | 'connected';
 
-export type RallarBrowserFacadeRuntimeContextOptions = Readonly<{
-    transportRuntime: BrowserTransportRuntimePort;
-}>;
-
-export type RallarBrowserFacadeRuntimeContext = Readonly<{
+export interface RallarBrowserFacadeRuntimeContext {
     readConnectState(): RallarBrowserConnectStatus;
     setConnectState(state: RallarBrowserConnectStatus): void;
     readMiddleware(): ApiMiddleware | undefined;
@@ -32,16 +28,14 @@ export type RallarBrowserFacadeRuntimeContext = Readonly<{
     readDefaults(): RallarDefaults | undefined;
     readDefaultScope(): StateScope | undefined;
     resolveOperationScope(scope?: StateScope): StateScope | undefined;
-    resolveOperationOptions<T extends RallarOperationOptions>(
-        options: T
-    ): T & RallarOperationOptions;
+    resolveOperationOptions<T extends RallarOperationOptions>(options: T): T & RallarOperationOptions;
     readAuthExpiryTimer(): ReturnType<typeof setTimeout> | undefined;
     setAuthExpiryTimer(timer: ReturnType<typeof setTimeout> | undefined): void;
     clearAuthExpiryTimer(): void;
     readAuthEndPromise(): Promise<void> | undefined;
     setAuthEndPromise(promise: Promise<void> | undefined): void;
     endedAuthSessionKeys(): Set<string>;
-}>;
+}
 
 export type RallarConnectionRuntimePort = Pick<
     RallarBrowserFacadeRuntimeContext,
@@ -78,7 +72,7 @@ export type RallarAuthRuntimePort = Pick<
     | 'endedAuthSessionKeys'
 >;
 
-class BrowserFacadeRuntimeState implements RallarBrowserFacadeRuntimeContext {
+export class BrowserFacadeRuntimeState implements RallarBrowserFacadeRuntimeContext {
     private connectState: RallarBrowserConnectStatus = 'idle';
     private stateCacheUnsubscribe: (() => void) | undefined;
     private currentRoom: Readonly<{ id: string; ref: GroupRef; }> | undefined;
@@ -246,12 +240,6 @@ class BrowserFacadeRuntimeState implements RallarBrowserFacadeRuntimeContext {
     public readonly endedAuthSessionKeys = (): Set<string> => {
         return this.endedSessionKeys;
     };
-}
-
-export function createRallarBrowserFacadeRuntimeContext(
-    options: RallarBrowserFacadeRuntimeContextOptions
-): RallarBrowserFacadeRuntimeContext {
-    return new BrowserFacadeRuntimeState(options.transportRuntime);
 }
 
 export function cloneRallarRuntimeDefaults(

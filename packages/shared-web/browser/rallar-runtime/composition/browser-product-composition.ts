@@ -1,16 +1,16 @@
+import { BrowserRallarCallsController } from '@shared-web/browser/calls/browser-rallar-calls-controller.ts';
+import {
+    BrowserRallarDirectorController,
+    type RallarDirectorController
+} from '@shared-web/browser/director/browser-rallar-director-controller.ts';
 import type { RallarCallsFacade } from '@shared-web/browser/rallar-calls-facade.ts';
 import type { RallarDirectorFacade } from '@shared-web/browser/rallar-director-facade.ts';
-import { createRallarCallsController } from '@shared-web/browser/rallar-runtime/calls.ts';
-import {
-    createRallarDirectorController,
-    type RallarDirectorController
-} from '@shared-web/browser/rallar-runtime/director.ts';
 import {
     createRallarPeopleController,
     type RallarPeopleController
 } from '@shared-web/browser/rallar-runtime/people.ts';
 import type { RallarSessionController } from '@shared-web/browser/rallar-runtime/session.ts';
-import { createRallarStatsController, type RallarStatsController } from '@shared-web/browser/rallar-runtime/stats.ts';
+import { BrowserRallarStatsController, type RallarStatsController } from '@shared-web/browser/rallar-runtime/stats.ts';
 import { createBrowserRallarRooms, type BrowserRallarRooms } from '@shared-web/browser/rooms/browser-rallar-rooms.ts';
 import { readSession } from '@shared/api/auth.ts';
 import type { RallarTargetedChannelDefinition } from '../../rallar-facade-contract.ts';
@@ -61,8 +61,7 @@ export function createBrowserRoomPeopleStatsComposition(
         resolveDefaultRoom: input.state.resolveDefaultRoom,
         resolveDefaultRoomRef: input.state.resolveDefaultRoomRef,
         runAuthAwareOperation: input.session.runAuthAwareOperation,
-        acceptSnapshots: async (context, clients, groups, scope) =>
-            await input.state.stateStore.acceptSnapshots(context, clients, groups, scope)
+        acceptSnapshots: async (snapshotInput) => await input.state.stateStore.acceptSnapshots(snapshotInput)
     });
     const peopleController = createRallarPeopleController({
         stateStore: input.state.stateStore,
@@ -71,10 +70,9 @@ export function createBrowserRoomPeopleStatsComposition(
         resolveOperationScope: input.session.resolveOperationScope,
         runAuthAwareOperation: input.session.runAuthAwareOperation,
         connect: async (options) => await input.session.connect(options),
-        acceptSnapshots: async (context, clients, groups, scope) =>
-            await input.state.stateStore.acceptSnapshots(context, clients, groups, scope)
+        acceptSnapshots: async (snapshotInput) => await input.state.stateStore.acceptSnapshots(snapshotInput)
     });
-    const statsController = createRallarStatsController({
+    const statsController = new BrowserRallarStatsController({
         resolveOperationOptions: input.session.resolveOperationOptions,
         resolveOperationScope: input.session.resolveOperationScope,
         requireSession: input.session.requireSession,
@@ -90,25 +88,25 @@ export function createBrowserRoomPeopleStatsComposition(
 export function createBrowserCallsDirectorComposition(
     input: CreateBrowserCallsDirectorCompositionInput
 ): BrowserCallsDirectorComposition {
-    const callsController = createRallarCallsController({
+    const callsController = new BrowserRallarCallsController({
         connect: async () => await input.session.connect(),
         readMiddleware: input.session.readMiddleware,
         readSession,
         requireSession: input.session.requireSession,
         resolveRoomRef: (room) => input.state.roomStateStore.resolveRoomRef(room),
-        resolveTargetPeerIds: (target) => input.realtime.realtimeController.resolveTargetPeerIds(target),
+        resolveTargetPeerIds: (target) => input.realtime.realtimeTargeted.resolvePeerIds(target),
         createTargetedChannel: <T>(definition: RallarTargetedChannelDefinition) =>
-            input.realtime.realtimeController.createTargetedChannel<T>(definition),
+            input.realtime.realtimeTargeted.create<T>(definition),
         messages: input.messaging.messages,
         rtc: input.realtime.rtc,
         media: input.realtime.media,
         mediaController: input.realtime.mediaController,
-        sendWsUnicast: async (peerId, payload, typeId, route) =>
-            await input.messaging.messagesController.sendWsUnicast(peerId, payload, typeId, route)
+        sendWsUnicast: async ({ peerId, payload, typeId, route }) =>
+            await input.messaging.messagesController.sendWsUnicast({ peerId, payload, typeId, route })
     });
     const calls = callsController.operations;
-    const directorController = createRallarDirectorController({
-        stateStore: input.state.stateStore,
+    const directorController = new BrowserRallarDirectorController({
+        roomStateStore: input.state.roomStateStore,
         rooms: input.products.rooms,
         messages: input.messaging.messages,
         realtime: input.realtime.realtime,
@@ -116,15 +114,12 @@ export function createBrowserCallsDirectorComposition(
         requireSession: input.session.requireSession,
         connect: async (options) => await input.session.connect(options),
         resolveOperationOptions: input.session.resolveOperationOptions,
-        resolveOperationScope: input.session.resolveOperationScope,
         resolveDefaultRoom: input.state.resolveDefaultRoom,
         runAuthAwareOperation: input.session.runAuthAwareOperation,
-        acceptSnapshots: async (context, groups, scope) =>
-            await input.state.stateStore.acceptSnapshots(context, [], groups, scope),
+        acceptSnapshots: async (snapshotInput) => await input.state.stateStore.acceptSnapshots(snapshotInput),
         createTargetedChannel: <T>(definition: RallarTargetedChannelDefinition) =>
-            input.realtime.realtimeController.createTargetedChannel<T>(definition),
-        sendWsUnicast: async (peerId, payload, typeId, route) =>
-            await input.messaging.messagesController.sendWsUnicast(peerId, payload, typeId, route)
+            input.realtime.realtimeTargeted.create<T>(definition),
+        sendWsUnicast: async (sendInput) => await input.messaging.messagesController.sendWsUnicast(sendInput)
     });
     const director = directorController.operations;
     input.state.stateStore.onAfterEmit(() => directorController.onStateChanged());

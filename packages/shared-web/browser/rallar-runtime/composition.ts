@@ -31,14 +31,14 @@ import {
     type BrowserSessionCoreComposition
 } from './composition/browser-session-composition.ts';
 
-type BrowserFacadeCompositions = Readonly<{
-    session: BrowserSessionCoreComposition;
-    stateEvents: BrowserStateEventComposition;
-    messaging: BrowserMessagingComposition;
-    realtime: BrowserRealtimeComposition;
-    products: BrowserRoomPeopleStatsComposition;
-    callsDirector: BrowserCallsDirectorComposition;
-}>;
+interface BrowserFacadeCompositions {
+    readonly session: BrowserSessionCoreComposition;
+    readonly stateEvents: BrowserStateEventComposition;
+    readonly messaging: BrowserMessagingComposition;
+    readonly realtime: BrowserRealtimeComposition;
+    readonly products: BrowserRoomPeopleStatsComposition;
+    readonly callsDirector: BrowserCallsDirectorComposition;
+}
 
 export function createBrowserRallarFacade(): RallarFacade {
     const foundation = createBrowserRuntimeFoundation();
@@ -123,7 +123,7 @@ function registerBrowserFacadeLifecycle(
         messagesController: compositions.messaging.messagesController,
         wsInbox: compositions.stateEvents.wsInbox,
         wsController: compositions.realtime.wsController,
-        realtimeController: compositions.realtime.realtimeController,
+        realtimeReceive: compositions.realtime.realtimeReceive,
         rtcController: compositions.realtime.rtcController,
         mediaController: compositions.realtime.mediaController
     });

@@ -50,7 +50,23 @@ registration, invocation, and cleanup without consulting a historical plan.
 6. [createBrowserSessionProductComposition](./rallar-runtime/composition/browser-session-composition.ts)
    constructs startup and CRDT only after the completed session, rooms, people,
    and messaging capabilities exist.
-7. The composer registers state and transport lifecycle participants through
+7. [createBrowserMessagingComposition](./rallar-runtime/composition/browser-communication-composition.ts),
+   [createBrowserRealtimeComposition](./rallar-runtime/composition/browser-communication-composition.ts),
+   and the product compositions construct completed message, RTC, realtime,
+   media, room, people, stats, call, and director capabilities. Call signal
+   routing lives in
+   [BrowserRallarCallsController](./calls/browser-rallar-calls-controller.ts),
+   while each accepted or started call creates one
+   [BrowserCallSessionRuntime](./calls/browser-call-session-runtime.ts).
+   Realtime composition delegates inbound subscriptions, sending, room
+   readiness, and targeted channels to the four owners under
+   [`realtime/`](./realtime/). RTC composition delegates connection and status
+   operations to
+   [BrowserRallarRtcController](./rtc/browser-rallar-rtc-controller.ts), lane
+   waiting to [BrowserRtcWaitRuntime](./rtc/browser-rtc-wait-runtime.ts), and
+   observation/diagnostics to the owners under
+   [`rtc-diagnostics/`](./rtc-diagnostics/).
+8. The composer registers state and transport lifecycle participants through
    [registerBrowserStateLifecycle](./rallar-runtime/composition/browser-lifecycle-composition.ts#L27)
    and
    [registerBrowserTransportLifecycle](./rallar-runtime/composition/browser-lifecycle-composition.ts#L43),
@@ -82,15 +98,20 @@ than a callback to a future controller.
 2. [createRallarStartupController](./rallar-runtime/startup.ts)
    restores auth, connects when a session exists, and refreshes the requested
    room/people state.
-3. [BrowserSessionAuthLifecycle](./session/session-auth-lifecycle.ts) owns auth
+3. [BrowserTransportRuntime.init](./connection/browser-transport-runtime.ts)
+   starts [initialiseMiddleware](./middleware.ts), whose visible phases create
+   runtime stores, WebSocket/QueueBox transport, RTC services/group ownership,
+   initial state and topology hydration plus reopen resync, and heartbeat in
+   that order.
+4. [BrowserSessionAuthLifecycle](./session/session-auth-lifecycle.ts) owns auth
    expiry, 401 termination, login activation, logout/revoke, browser-local data
    cleanup, and auth notifications. It delegates transport work to the completed
    [BrowserSessionConnectionLifecycle](./session/session-connection-lifecycle.ts).
-4. Connection disconnect detaches lifecycle participants, asks the canonical
+5. Connection disconnect detaches lifecycle participants, asks the canonical
    [BrowserTransportRuntime](./connection/browser-transport-runtime.ts) to shut
    down pending or active middleware exactly once, clears room state, then emits
    disconnected lifecycle notification.
-5. The transport runtime keeps best-effort shutdown ordering for heartbeat, RTC,
+6. The transport runtime keeps best-effort shutdown ordering for heartbeat, RTC,
    multicast, QueueBox, and WebSocket resources while session ownership keeps
    auth timing and lifecycle notification visible.
 

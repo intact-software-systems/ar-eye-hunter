@@ -3,9 +3,10 @@ import type {
     RallarRoomTransportStatus,
     RallarRtcRoomLaneWaitResult,
     RallarRtcRoomTransportOptions,
+    RallarWaitForOpenOptions,
     RallarWaitForOpenStatus
 } from '@shared-web/browser/rallar-rtc-facade.ts';
-import type { RallarUnsubscribe } from '@shared-web/browser/rallar-shared-contracts.ts';
+import type { RallarOnChangeOptions, RallarUnsubscribe } from '@shared-web/browser/rallar-shared-contracts.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import type {
     RtcDataChannelHealth,
@@ -35,21 +36,18 @@ export type RallarRealtimeBinarySendInput =
         data: ArrayBuffer | ArrayBufferView<ArrayBuffer>;
     }>;
 
-export type RallarRealtimeSendResult = Readonly<{
-    peerId: string;
-    laneId: string;
-    result: RtcDataChannelSendResult;
-}>;
+export interface RallarRealtimeSendResult {
+    readonly peerId: string;
+    readonly laneId: string;
+    readonly result: RtcDataChannelSendResult;
+}
 
 export type RallarRealtimeJsonLaneSendOptions<T> = Omit<RallarRealtimeJsonSendInput<T>, 'data'>;
 
-export type RallarRealtimeJsonLane<T> = Readonly<{
-    send(
-        data: T,
-        options?: RallarRealtimeJsonLaneSendOptions<T>
-    ): Promise<readonly RallarRealtimeSendResult[]>;
+export interface RallarRealtimeJsonLane<T> {
+    send(data: T, options?: RallarRealtimeJsonLaneSendOptions<T>): Promise<readonly RallarRealtimeSendResult[]>;
     on(handler: RallarRealtimeHandler<T>): RallarUnsubscribe;
-}>;
+}
 
 export type RallarRoomRealtimeSendStatus =
     | 'sent'
@@ -84,39 +82,36 @@ export type RallarRoomRealtimeTransportOptions =
         roomRef?: GroupRef;
     }>;
 
-export type RallarRoomRealtimeSendResult = Readonly<{
-    transport: 'rtc';
-    status: RallarRoomRealtimeSendStatus;
-    laneId: string;
-    roomId?: string;
-    roomRef?: GroupRef;
-    peerIds: readonly string[];
-    desiredPeerIds: readonly string[];
-    readiness?: RallarRtcRoomLaneWaitResult;
-    transportStatus?: RallarRoomTransportStatus;
-    results: readonly RallarRealtimeSendResult[];
-    reason?: string;
-}>;
+export interface RallarRoomRealtimeSendResult {
+    readonly transport: 'rtc';
+    readonly status: RallarRoomRealtimeSendStatus;
+    readonly laneId: string;
+    readonly roomId?: string;
+    readonly roomRef?: GroupRef;
+    readonly peerIds: readonly string[];
+    readonly desiredPeerIds: readonly string[];
+    readonly readiness?: RallarRtcRoomLaneWaitResult;
+    readonly transportStatus?: RallarRoomTransportStatus;
+    readonly results: readonly RallarRealtimeSendResult[];
+    readonly reason?: string;
+}
 
-export type RallarRoomRealtimeJsonChannel<T> = Readonly<{
-    send(
-        data: T,
-        options?: RallarRoomRealtimeJsonSendOptions<T>
-    ): Promise<RallarRoomRealtimeSendResult>;
+export interface RallarRoomRealtimeJsonChannel<T> {
+    send(data: T, options?: RallarRoomRealtimeJsonSendOptions<T>): Promise<RallarRoomRealtimeSendResult>;
     on(handler: RallarRealtimeHandler<T>): RallarUnsubscribe;
     status(options?: RallarRoomRealtimeTransportOptions): RallarRoomTransportStatus;
     wait(options?: RallarRoomRealtimeTransportOptions): Promise<RallarRoomTransportStatus>;
-}>;
+}
 
 export type RallarTargetMembership = 'fixed' | 'live';
 
-export type RallarTargetSelector = Readonly<{
-    peerId?: string;
-    peerIds?: readonly string[];
-    roomId?: string;
-    roomRef?: GroupRef;
-    membership?: RallarTargetMembership;
-}>;
+export interface RallarTargetSelector {
+    readonly peerId?: string;
+    readonly peerIds?: readonly string[];
+    readonly roomId?: string;
+    readonly roomRef?: GroupRef;
+    readonly membership?: RallarTargetMembership;
+}
 
 export type RallarTargetedChannelDefinition =
     & RallarTargetSelector
@@ -135,46 +130,43 @@ export type RallarTargetedSendStatus =
     | 'no-targets'
     | 'failed';
 
-export type RallarTargetedSendResult = Readonly<{
-    transport: 'rtc';
-    status: RallarTargetedSendStatus;
-    laneId: string;
-    peerIds: readonly string[];
-    results: readonly RallarRealtimeSendResult[];
-    reason?: string;
-}>;
+export interface RallarTargetedSendResult {
+    readonly transport: 'rtc';
+    readonly status: RallarTargetedSendStatus;
+    readonly laneId: string;
+    readonly peerIds: readonly string[];
+    readonly results: readonly RallarRealtimeSendResult[];
+    readonly reason?: string;
+}
 
-export type RallarTargetedChannel<T> = Readonly<{
-    send(
-        data: T,
-        options?: RallarTargetedChannelSendOptions<T>
-    ): Promise<RallarTargetedSendResult>;
+export interface RallarTargetedChannel<T> {
+    send(data: T, options?: RallarTargetedChannelSendOptions<T>): Promise<RallarTargetedSendResult>;
     on(handler: RallarRealtimeHandler<T>): RallarUnsubscribe;
     peerIds(options?: RallarTargetSelector): readonly string[];
-}>;
+}
 
-export type RallarRealtimeMessage<T> = Readonly<{
-    peerId: string;
-    laneId: string;
-    data: T;
-    event: MessageEvent;
-    receivedAtEpochMs: number;
-}>;
+export interface RallarRealtimeMessage<T> {
+    readonly peerId: string;
+    readonly laneId: string;
+    readonly data: T;
+    readonly event: MessageEvent;
+    readonly receivedAtEpochMs: number;
+}
 
 export type RallarRealtimeHandler<T> = (
     message: RallarRealtimeMessage<T>
 ) => void | Promise<void>;
 
-export type RallarRealtimeHealthOptions = Readonly<{
-    peerIds?: readonly string[];
-    laneIds?: readonly string[];
-}>;
+export interface RallarRealtimeHealthOptions {
+    readonly peerIds?: readonly string[];
+    readonly laneIds?: readonly string[];
+}
 
-export type RallarRealtimeLaneHealth = Readonly<{
-    peerId: string;
-    laneId: string;
-    channel?: RtcDataChannelHealth;
-}>;
+export interface RallarRealtimeLaneHealth {
+    readonly peerId: string;
+    readonly laneId: string;
+    readonly channel?: RtcDataChannelHealth;
+}
 
 export type RallarWsReadyState =
     | 'missing'
@@ -184,25 +176,32 @@ export type RallarWsReadyState =
     | 'closed'
     | 'unknown';
 
-export type RallarWsStatus = Readonly<{
-    sessionId?: string;
-    url?: string;
-    connectState: RallarConnectStatus;
-    readyState: RallarWsReadyState;
-    readyStateCode?: number;
-    isOpen: boolean;
-    reconnecting: boolean;
-    reconnectEnabled: boolean;
-    reconnectAttempts: number;
-    maxReconnectAttempts: number;
-    reconnectExhausted: boolean;
-}>;
+export interface RallarWsStatus {
+    readonly sessionId?: string;
+    readonly url?: string;
+    readonly connectState: RallarConnectStatus;
+    readonly readyState: RallarWsReadyState;
+    readonly readyStateCode?: number;
+    readonly isOpen: boolean;
+    readonly reconnecting: boolean;
+    readonly reconnectEnabled: boolean;
+    readonly reconnectAttempts: number;
+    readonly maxReconnectAttempts: number;
+    readonly reconnectExhausted: boolean;
+}
 
-export type RallarWsWaitForOpenResult = Readonly<{
-    transport: 'ws';
-    status: RallarWaitForOpenStatus;
-    wsStatus: RallarWsStatus;
-}>;
+export interface RallarWsWaitForOpenResult {
+    readonly transport: 'ws';
+    readonly status: RallarWaitForOpenStatus;
+    readonly wsStatus: RallarWsStatus;
+}
+
+export interface RallarWsFacade {
+    status(): RallarWsStatus;
+    onStatus(listener: RallarWsStatusListener, options?: RallarOnChangeOptions): RallarUnsubscribe;
+    onLifecycle(listener: RallarWsLifecycleListener, options?: RallarOnChangeOptions): RallarUnsubscribe;
+    waitForOpen(options?: RallarWaitForOpenOptions): Promise<RallarWsWaitForOpenResult>;
+}
 
 export type RallarWsStatusListener = (
     status: RallarWsStatus
@@ -216,43 +215,27 @@ export type RallarWsLifecycleKind =
     | 'close'
     | 'error';
 
-export type RallarWsLifecycleEvent = Readonly<{
-    kind: RallarWsLifecycleKind;
-    atEpochMs: number;
-    status: RallarWsStatus;
-    code?: number;
-    reason?: string;
-    wasClean?: boolean;
-    eventType?: string;
-    intentional?: boolean;
-}>;
+export interface RallarWsLifecycleEvent {
+    readonly kind: RallarWsLifecycleKind;
+    readonly atEpochMs: number;
+    readonly status: RallarWsStatus;
+    readonly code?: number;
+    readonly reason?: string;
+    readonly wasClean?: boolean;
+    readonly eventType?: string;
+    readonly intentional?: boolean;
+}
 
 export type RallarWsLifecycleListener = (
     event: RallarWsLifecycleEvent
 ) => void | Promise<void>;
 
-export type RallarRealtimeFacade = Readonly<{
-    sendJson<T>(
-        input: RallarRealtimeJsonSendInput<T>
-    ): Promise<readonly RallarRealtimeSendResult[]>;
-    sendBinary(
-        input: RallarRealtimeBinarySendInput
-    ): Promise<readonly RallarRealtimeSendResult[]>;
-    onJson<T = unknown>(
-        laneId: string,
-        handler: RallarRealtimeHandler<T>
-    ): RallarUnsubscribe;
-    onBinary(
-        laneId: string,
-        handler: RallarRealtimeHandler<ArrayBuffer>
-    ): RallarUnsubscribe;
-    json<T>(
-        defaults?: RallarRealtimeSendOptions
-    ): RallarRealtimeJsonLane<T>;
-    room<T>(
-        defaults?: RallarRoomRealtimeJsonDefaults
-    ): RallarRoomRealtimeJsonChannel<T>;
-    health(
-        options?: RallarRealtimeHealthOptions
-    ): readonly RallarRealtimeLaneHealth[];
-}>;
+export interface RallarRealtimeFacade {
+    sendJson<T>(input: RallarRealtimeJsonSendInput<T>): Promise<readonly RallarRealtimeSendResult[]>;
+    sendBinary(input: RallarRealtimeBinarySendInput): Promise<readonly RallarRealtimeSendResult[]>;
+    onJson<T = unknown>(laneId: string, handler: RallarRealtimeHandler<T>): RallarUnsubscribe;
+    onBinary(laneId: string, handler: RallarRealtimeHandler<ArrayBuffer>): RallarUnsubscribe;
+    json<T>(defaults?: RallarRealtimeSendOptions): RallarRealtimeJsonLane<T>;
+    room<T>(defaults?: RallarRoomRealtimeJsonDefaults): RallarRoomRealtimeJsonChannel<T>;
+    health(options?: RallarRealtimeHealthOptions): readonly RallarRealtimeLaneHealth[];
+}

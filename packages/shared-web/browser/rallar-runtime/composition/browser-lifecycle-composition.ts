@@ -1,12 +1,12 @@
-import type { RallarDirectorController } from '@shared-web/browser/rallar-runtime/director.ts';
+import type { RallarDirectorController } from '@shared-web/browser/director/browser-rallar-director-controller.ts';
+import type { RallarMediaPort } from '@shared-web/browser/media/browser-rallar-media-controller.ts';
+import type { RallarMessagesController } from '@shared-web/browser/messages/browser-rallar-messages-controller.ts';
 import type { RallarLifecycleCoordinator } from '@shared-web/browser/rallar-runtime/lifecycle.ts';
-import type { RallarMediaPort } from '@shared-web/browser/rallar-runtime/media.ts';
-import type { RallarMessagesController } from '@shared-web/browser/rallar-runtime/messages.ts';
-import type { RallarRealtimeController } from '@shared-web/browser/rallar-runtime/realtime.ts';
-import type { RallarRtcController } from '@shared-web/browser/rallar-runtime/rtc.ts';
 import type { RallarStatePort } from '@shared-web/browser/rallar-runtime/state-store.ts';
 import type { RallarWsInbox } from '@shared-web/browser/rallar-runtime/ws-inbox.ts';
 import type { RallarWsController } from '@shared-web/browser/rallar-runtime/ws.ts';
+import type { BrowserRealtimeReceiveRuntime } from '@shared-web/browser/realtime/browser-realtime-receive-runtime.ts';
+import type { BrowserRallarRtcController } from '@shared-web/browser/rtc/browser-rallar-rtc-controller.ts';
 
 export interface RegisterBrowserStateLifecycleInput {
     readonly lifecycle: RallarLifecycleCoordinator;
@@ -19,8 +19,8 @@ export interface RegisterBrowserTransportLifecycleInput {
     readonly messagesController: RallarMessagesController;
     readonly wsInbox: RallarWsInbox;
     readonly wsController: RallarWsController;
-    readonly realtimeController: RallarRealtimeController;
-    readonly rtcController: RallarRtcController;
+    readonly realtimeReceive: BrowserRealtimeReceiveRuntime;
+    readonly rtcController: BrowserRallarRtcController;
     readonly mediaController: RallarMediaPort;
 }
 
@@ -66,8 +66,8 @@ export function registerBrowserTransportLifecycle(
     input.lifecycle.register({
         id: 'realtime-peer-lifecycle',
         order: 60,
-        attach: (context) => input.realtimeController.attachPeerLifecycle(context),
-        detach: (context) => input.realtimeController.detachPeerLifecycle(context)
+        attach: (context) => input.realtimeReceive.attachPeerLifecycle(context),
+        detach: (context) => input.realtimeReceive.detachPeerLifecycle(context)
     });
     input.lifecycle.register({
         id: 'rtc-status',
@@ -80,8 +80,8 @@ export function registerBrowserTransportLifecycle(
     input.lifecycle.register({
         id: 'realtime-lanes',
         order: 80,
-        attach: () => input.realtimeController.attachLaneCallbacks(),
-        detach: (context) => input.realtimeController.detachLaneCallbacks(context)
+        attach: () => input.realtimeReceive.attachLaneCallbacks(),
+        detach: (context) => input.realtimeReceive.detachLaneCallbacks(context)
     });
     input.lifecycle.register({
         id: 'media',

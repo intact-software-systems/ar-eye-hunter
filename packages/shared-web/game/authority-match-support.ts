@@ -1,11 +1,11 @@
 import type { RallarGameAuthorityRef } from '@shared/rallar-game/mod.ts';
 import type { RallarMatchStandingComparator, RallarMatchStandingRow } from '@shared/rallar-match/mod.ts';
 import { deriveRallarMatchStandings } from '@shared/rallar-match/mod.ts';
-import {
-    createRallarGameAuthorityClient,
-    type RallarGameAuthorityClientConfig,
-    type RallarGameAuthorityClientHandle
-} from './authority-client.ts';
+import type {
+    RallarGameAuthorityClientConfig,
+    RallarGameAuthorityClientHandle
+} from './rallar-game-authority-client-contracts.ts';
+import { RallarGameAuthorityClient } from './rallar-game-authority-client.ts';
 
 export type RallarAuthorityBrowserMatchConfig<TCommand, TSnapshot, TEvent, TPresence = unknown> =
     & Omit<RallarGameAuthorityClientConfig<TCommand, TSnapshot, TEvent, TPresence>, 'authority'>
@@ -44,9 +44,8 @@ export function createRallarAuthorityBrowserMatch<TCommand, TSnapshot, TEvent, T
         );
     }
 
-    const createAuthorityClient = dependencies.createAuthorityClient ??
-        createRallarGameAuthorityClient;
-    const client = createAuthorityClient(config);
+    const client = dependencies.createAuthorityClient?.(config) ??
+        new RallarGameAuthorityClient(config);
     const deriveStandings = () =>
         deriveRallarMatchStandings({
             rows: config.readStandingRows?.() ?? [],

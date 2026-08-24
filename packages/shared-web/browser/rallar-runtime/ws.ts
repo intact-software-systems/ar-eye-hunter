@@ -1,6 +1,7 @@
 import type { ApiMiddleware } from '@shared-web/browser/app-context.ts';
 import type { RallarConnectStatus } from '@shared-web/browser/rallar-connection-facade.ts';
 import type {
+    RallarWsFacade,
     RallarWsLifecycleKind,
     RallarWsLifecycleListener,
     RallarWsStatus,
@@ -16,56 +17,45 @@ import type { WebSocketClientCallbacks } from '@shared/websocket/JsonWebSocketCl
 
 const RALLAR_WS_STATUS_CALLBACK_ID = 'rallar:ws:status';
 
-type RallarWsStatusSubscription = Readonly<{
-    listener: RallarWsStatusListener;
-    options: RallarOnChangeOptions;
-}>;
+interface RallarWsStatusSubscription {
+    readonly listener: RallarWsStatusListener;
+    readonly options: RallarOnChangeOptions;
+}
 
-type RallarWsLifecycleSubscription = Readonly<{
-    listener: RallarWsLifecycleListener;
-    options: RallarOnChangeOptions;
-}>;
+interface RallarWsLifecycleSubscription {
+    readonly listener: RallarWsLifecycleListener;
+    readonly options: RallarOnChangeOptions;
+}
 
-export type RallarWsFacade = Readonly<{
-    status(): RallarWsStatus;
-    onStatus(
-        listener: RallarWsStatusListener,
-        options?: RallarOnChangeOptions
-    ): RallarUnsubscribe;
-    onLifecycle(
-        listener: RallarWsLifecycleListener,
-        options?: RallarOnChangeOptions
-    ): RallarUnsubscribe;
-    waitForOpen(options?: RallarWaitForOpenOptions): Promise<RallarWsWaitForOpenResult>;
-}>;
+interface RallarWsLifecycleEventDetails {
+    readonly code?: number;
+    readonly reason?: string;
+    readonly wasClean?: boolean;
+    readonly eventType?: string;
+    readonly intentional?: boolean;
+}
 
-export type CreateRallarWsControllerOptions = Readonly<{
+export interface BrowserRallarWsControllerInput {
     readMiddleware(): ApiMiddleware | undefined;
     readSession(): AuthSession | undefined;
     readConnectState(): RallarConnectStatus;
-}>;
+}
 
-export type RallarWsController = Readonly<{
-    facade: RallarWsFacade;
+export interface RallarWsController {
+    readonly facade: RallarWsFacade;
     attach(ctx?: ApiMiddleware): void;
     connected(): void;
     detach(ctx?: ApiMiddleware): void;
     disconnected(): void;
-}>;
-
-export function createRallarWsController(
-    options: CreateRallarWsControllerOptions
-): RallarWsController {
-    return new BrowserRallarWsController(options);
 }
 
-class BrowserRallarWsController implements RallarWsController {
+export class BrowserRallarWsController implements RallarWsController {
     private readonly wsStatusListeners = new Set<RallarWsStatusSubscription>();
     private readonly wsLifecycleListeners = new Set<RallarWsLifecycleSubscription>();
 
-    private readonly options: CreateRallarWsControllerOptions;
+    private readonly options: BrowserRallarWsControllerInput;
 
-    constructor(options: CreateRallarWsControllerOptions) {
+    constructor(options: BrowserRallarWsControllerInput) {
         this.options = options;
     }
 
@@ -109,7 +99,7 @@ class BrowserRallarWsController implements RallarWsController {
         ): Promise<RallarWsWaitForOpenResult> => await this.waitForWsOpen(options)
     };
 
-    attach(ctx = this.readMiddleware()): void {
+    attach(ctx = this.options.readMiddleware()): void {
         this.registerWsStatusCallbacks(ctx);
     }
 
@@ -117,7 +107,7 @@ class BrowserRallarWsController implements RallarWsController {
         this.emitWsLifecycle('connected');
     }
 
-    detach(ctx = this.readMiddleware()): void {
+    detach(ctx = this.options.readMiddleware()): void {
         this.unregisterWsStatusCallbacks(ctx);
     }
 
@@ -130,11 +120,11 @@ class BrowserRallarWsController implements RallarWsController {
     }
 
     private toWsStatus(): RallarWsStatus {
-        const ctx = this.readMiddleware();
+        const ctx = this.options.readMiddleware();
         if (!ctx) {
             return {
                 sessionId: this.options.readSession()?.sessionId,
-                connectState: this.connectState,
+                connectState: this.options.readConnectState(),
                 readyState: 'missing',
                 isOpen: false,
                 reconnecting: false,
@@ -149,7 +139,7 @@ class BrowserRallarWsController implements RallarWsController {
         return {
             sessionId: health.sessionId,
             url: toPublicWsStatusUrl(health.url),
-            connectState: this.connectState,
+            connectState: this.options.readConnectState(),
             readyState: health.readyState,
             readyStateCode: health.readyStateCode,
             isOpen: health.isOpen,
@@ -165,29 +155,41 @@ class BrowserRallarWsController implements RallarWsController {
         options: RallarWaitForOpenOptions = {}
     ): Promise<RallarWsWaitForOpenResult> {
         const current = this.toWsStatus();
+        const immediate = this.readImmediateWaitResult(current, options);
+        if (immediate) {
+            return Promise.resolve(immediate);
+        }
+        return this.waitForWsLifecycle(current, options);
+    }
+
+    private readImmediateWaitResult(
+        current: RallarWsStatus,
+        options: RallarWaitForOpenOptions
+    ): RallarWsWaitForOpenResult | undefined {
         if (current.isOpen) {
-            return Promise.resolve(toWsWaitForOpenResult('open', current));
+            return toWsWaitForOpenResult('open', current);
         }
-
         if (options.signal?.aborted) {
-            return Promise.resolve(toWsWaitForOpenResult('aborted', current));
+            return toWsWaitForOpenResult('aborted', current);
         }
-
-        if (!this.readMiddleware()) {
-            return Promise.resolve(
-                toWsWaitForOpenResult('not-connected', current)
-            );
+        if (!this.options.readMiddleware()) {
+            return toWsWaitForOpenResult('not-connected', current);
         }
-
         if (isTerminalClosedWsStatus(current)) {
-            return Promise.resolve(toWsWaitForOpenResult('closed', current));
+            return toWsWaitForOpenResult('closed', current);
         }
-
         const timeoutMs = normalizeWaitTimeoutMs(options.timeoutMs);
         if (timeoutMs <= 0) {
-            return Promise.resolve(toWsWaitForOpenResult('timeout', current));
+            return toWsWaitForOpenResult('timeout', current);
         }
+        return undefined;
+    }
 
+    private waitForWsLifecycle(
+        current: RallarWsStatus,
+        options: RallarWaitForOpenOptions
+    ): Promise<RallarWsWaitForOpenResult> {
+        const timeoutMs = normalizeWaitTimeoutMs(options.timeoutMs);
         return new Promise<RallarWsWaitForOpenResult>((resolve) => {
             let settled = false;
             let latest = current;
@@ -214,7 +216,7 @@ class BrowserRallarWsController implements RallarWsController {
 
             const onAbort = (): void => finish('aborted');
 
-            unsubscribe = this.ws.onStatus(
+            unsubscribe = this.facade.onStatus(
                 (status) => {
                     latest = status;
                     if (status.isOpen) {
@@ -236,7 +238,7 @@ class BrowserRallarWsController implements RallarWsController {
     }
 
     private registerWsStatusCallbacks(
-        ctx: ApiMiddleware | undefined = this.readMiddleware()
+        ctx: ApiMiddleware | undefined = this.options.readMiddleware()
     ): void {
         if (!ctx || !this.hasWsStatusSubscriptions()) {
             return;
@@ -282,7 +284,7 @@ class BrowserRallarWsController implements RallarWsController {
     }
 
     private unregisterWsStatusCallbacks(
-        ctx: ApiMiddleware | undefined = this.readMiddleware()
+        ctx: ApiMiddleware | undefined = this.options.readMiddleware()
     ): void {
         ctx?.middleware.webSocketQueueBox.socket.removeWebsocketCallbackById(
             RALLAR_WS_STATUS_CALLBACK_ID
@@ -296,13 +298,7 @@ class BrowserRallarWsController implements RallarWsController {
 
     private emitWsLifecycle(
         kind: RallarWsLifecycleKind,
-        input: Readonly<{
-            code?: number;
-            reason?: string;
-            wasClean?: boolean;
-            eventType?: string;
-            intentional?: boolean;
-        }> = {}
+        input: RallarWsLifecycleEventDetails = {}
     ): void {
         this.emitWsStatus();
         for (const subscription of this.wsLifecycleListeners) {
@@ -319,13 +315,7 @@ class BrowserRallarWsController implements RallarWsController {
     private notifyWsLifecycleSubscription(
         subscription: RallarWsLifecycleSubscription,
         kind: RallarWsLifecycleKind,
-        input: Readonly<{
-            code?: number;
-            reason?: string;
-            wasClean?: boolean;
-            eventType?: string;
-            intentional?: boolean;
-        }> = {}
+        input: RallarWsLifecycleEventDetails = {}
     ): void {
         notifyListener(subscription.listener, {
             kind,
@@ -337,18 +327,6 @@ class BrowserRallarWsController implements RallarWsController {
             eventType: input.eventType,
             intentional: input.intentional
         });
-    }
-
-    private readMiddleware(): ApiMiddleware | undefined {
-        return this.options.readMiddleware();
-    }
-
-    private get connectState(): RallarConnectStatus {
-        return this.options.readConnectState();
-    }
-
-    private get ws(): RallarWsFacade {
-        return this.facade;
     }
 }
 

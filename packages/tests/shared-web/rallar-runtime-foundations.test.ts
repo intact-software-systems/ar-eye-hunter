@@ -1,8 +1,8 @@
 import { BrowserTransportRuntime } from '@shared-web/browser/connection/browser-transport-runtime.ts';
-import { createRallarBrowserFacadeRuntimeContext } from '@shared-web/browser/rallar-runtime-context.ts';
+import { BrowserFacadeRuntimeState } from '@shared-web/browser/rallar-runtime-context.ts';
 import { createRallarLifecycleCoordinator, type RallarLifecycleParticipant } from '@shared-web/browser/rallar-runtime/lifecycle.ts';
-import { createRallarStateCacheReadPort, createRallarStateStore } from '@shared-web/browser/rallar-runtime/state-store.ts';
-import { createRallarSubscriptionScope } from '@shared-web/browser/rallar-runtime/subscriptions.ts';
+import { createRallarStateCacheReadPort, RallarStateStore } from '@shared-web/browser/rallar-runtime/state-store.ts';
+import { BrowserRallarSubscriptionScope } from '@shared-web/browser/rallar-runtime/subscriptions.ts';
 import { createRallarWsInbox } from '@shared-web/browser/rallar-runtime/ws-inbox.ts';
 import { createRallarFacade } from '@shared-web/browser/rallar.ts';
 import { createRoomStateStore } from '@shared-web/browser/rooms/room-state-store.ts';
@@ -70,7 +70,7 @@ describe('Rallar browser runtime foundations', () => {
 
     it('cleans subscription scopes once and immediately cleans late additions', () => {
         const calls: string[] = [];
-        const subscriptions = createRallarSubscriptionScope();
+        const subscriptions = new BrowserRallarSubscriptionScope();
         subscriptions.add(() => calls.push('first'));
         subscriptions.add(undefined);
         subscriptions.add(() => calls.push('second'));
@@ -86,25 +86,24 @@ describe('Rallar browser runtime foundations', () => {
 
     it('emits room, people, then derived state observers', () => {
         const events: string[] = [];
-        const state = createFoundationStateStore();
-        state.onRoomChange(() => {
+        const { roomStateStore, stateStore } = createFoundationStateStore();
+        roomStateStore.onChange(() => {
             events.push('rooms');
         }, { emitCurrent: false });
-        state.onPeopleChange(() => {
+        stateStore.onPeopleChange(() => {
             events.push('people');
         }, { emitCurrent: false });
-        state.onAfterEmit(() => events.push('derived'));
+        stateStore.onAfterEmit(() => events.push('derived'));
 
-        state.emit();
+        stateStore.emit();
 
         expect(events).toEqual(['rooms', 'people', 'derived']);
     });
 
-    it('exposes cache observation through the state port', () => {
-        const state = createFoundationStateStore();
+    it('exposes cache observation through the cache port', () => {
+        const { stateCache } = createFoundationStateStore();
 
-        expect(state).toHaveProperty('onCacheChange', expect.any(Function));
-        const unsubscribe = state.onCacheChange(() => undefined);
+        const unsubscribe = stateCache.onCacheChange(() => undefined);
         expect(unsubscribe).toBeTypeOf('function');
         unsubscribe();
     });
@@ -149,18 +148,18 @@ describe('Rallar browser runtime foundations', () => {
 
 function createFoundationStateStore() {
     configureTestCacheRepositories();
-    const runtime = createRallarBrowserFacadeRuntimeContext({
-        transportRuntime: new BrowserTransportRuntime()
-    });
+    const runtime = new BrowserFacadeRuntimeState(new BrowserTransportRuntime());
+    const stateCache = createRallarStateCacheReadPort();
     const roomStateStore = createRoomStateStore({
         runtime,
         readSession: () => undefined,
-        stateCache: createRallarStateCacheReadPort()
+        stateCache
     });
-    return createRallarStateStore({
+    const stateStore = new RallarStateStore({
         runtime,
         roomStateStore,
         readSession: () => undefined,
-        stateCache: createRallarStateCacheReadPort()
+        stateCache
     });
+    return { roomStateStore, stateCache, stateStore };
 }

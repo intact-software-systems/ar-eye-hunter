@@ -1,20 +1,24 @@
+import {
+    BrowserRallarMediaController,
+    type RallarMediaPort
+} from '@shared-web/browser/media/browser-rallar-media-controller.ts';
+import {
+    BrowserRallarMessagesController,
+    type RallarMessagesController
+} from '@shared-web/browser/messages/browser-rallar-messages-controller.ts';
 import type { RallarMediaFacade } from '@shared-web/browser/rallar-media-facade.ts';
 import type { RallarRealtimeFacade } from '@shared-web/browser/rallar-realtime-facade.ts';
 import type { RallarRtcFacade } from '@shared-web/browser/rallar-rtc-facade.ts';
-import { createRallarMediaController, type RallarMediaPort } from '@shared-web/browser/rallar-runtime/media.ts';
-import {
-    createRallarMessagesController,
-    type RallarMessagesController
-} from '@shared-web/browser/rallar-runtime/messages.ts';
-import {
-    createRallarRealtimeController,
-    type RallarRealtimeController
-} from '@shared-web/browser/rallar-runtime/realtime.ts';
-import { createRallarRtcController, type RallarRtcController } from '@shared-web/browser/rallar-runtime/rtc.ts';
 import type { RallarSessionController } from '@shared-web/browser/rallar-runtime/session.ts';
 import type { RallarWsInbox } from '@shared-web/browser/rallar-runtime/ws-inbox.ts';
-import { createRallarWsController, type RallarWsController } from '@shared-web/browser/rallar-runtime/ws.ts';
+import { BrowserRallarWsController, type RallarWsController } from '@shared-web/browser/rallar-runtime/ws.ts';
+import { BrowserRealtimeReceiveRuntime } from '@shared-web/browser/realtime/browser-realtime-receive-runtime.ts';
+import { BrowserRealtimeSendRuntime } from '@shared-web/browser/realtime/browser-realtime-send-runtime.ts';
+import { BrowserRoomRealtimeRuntime } from '@shared-web/browser/realtime/browser-room-realtime-runtime.ts';
+import { BrowserTargetedRealtimeRuntime } from '@shared-web/browser/realtime/browser-targeted-realtime-runtime.ts';
+import { BrowserRallarRtcController } from '@shared-web/browser/rtc/browser-rallar-rtc-controller.ts';
 import { readSession } from '@shared/api/auth.ts';
+import type { GroupRef } from '@shared/api/group-types.ts';
 import { RALLAR_DEFAULT_MAX_MESSAGE_PAYLOAD_BYTES } from '@shared/api/rallar-validation.ts';
 import type { RallarBrowserFacadeRuntimeContext } from '../../rallar-runtime-context.ts';
 
@@ -30,9 +34,10 @@ export interface BrowserMessagingComposition {
 
 export interface BrowserRealtimeComposition {
     readonly wsController: RallarWsController;
-    readonly rtcController: RallarRtcController;
+    readonly rtcController: BrowserRallarRtcController;
     readonly rtc: RallarRtcFacade;
-    readonly realtimeController: RallarRealtimeController;
+    readonly realtimeReceive: BrowserRealtimeReceiveRuntime;
+    readonly realtimeTargeted: BrowserTargetedRealtimeRuntime;
     readonly realtime: RallarRealtimeFacade;
     readonly mediaController: RallarMediaPort;
     readonly media: RallarMediaFacade;
@@ -53,7 +58,7 @@ export interface CreateBrowserRealtimeCompositionInput {
 export function createBrowserMessagingComposition(
     input: CreateBrowserMessagingCompositionInput
 ): BrowserMessagingComposition {
-    const messagesController = createRallarMessagesController({
+    const messagesController = new BrowserRallarMessagesController({
         wsInbox: input.wsInbox,
         connect: async () => await input.session.connect(),
         readMiddleware: input.session.readMiddleware,
@@ -78,12 +83,38 @@ export function createBrowserMessagingComposition(
 export function createBrowserRealtimeComposition(
     input: CreateBrowserRealtimeCompositionInput
 ): BrowserRealtimeComposition {
-    const wsController = createRallarWsController({
+    const rtcComposition = createBrowserRtcComposition(input);
+    const realtimeComposition = createBrowserRealtimeChannelComposition({
+        ...input,
+        rtc: rtcComposition.rtc
+    });
+    const mediaController = new BrowserRallarMediaController({
+        connect: async () => await input.session.connect(),
+        readMiddleware: input.session.readMiddleware
+    });
+    return {
+        ...rtcComposition,
+        ...realtimeComposition,
+        mediaController,
+        media: mediaController.operations
+    };
+}
+
+interface BrowserRtcComposition {
+    readonly wsController: RallarWsController;
+    readonly rtcController: BrowserRallarRtcController;
+    readonly rtc: RallarRtcFacade;
+}
+
+function createBrowserRtcComposition(
+    input: CreateBrowserRealtimeCompositionInput
+): BrowserRtcComposition {
+    const wsController = new BrowserRallarWsController({
         readMiddleware: input.session.readMiddleware,
         readSession,
         readConnectState: () => input.runtime.readConnectState()
     });
-    const rtcController = createRallarRtcController({
+    const rtcController = new BrowserRallarRtcController({
         readMiddleware: input.session.readMiddleware,
         readSession,
         readWsStatus: () => wsController.facade.status(),
@@ -93,36 +124,66 @@ export function createBrowserRealtimeComposition(
         resolveRtcWaitTimeoutMs: (timeoutMs) => timeoutMs ?? input.state.readDefaults()?.rtc?.waitTimeoutMs,
         resolveRtcConnectOnWait: (connect) => connect ?? input.state.readDefaults()?.rtc?.connectOnWait ?? false
     });
-    const rtc = rtcController.operations;
-    const realtimeController = createRallarRealtimeController({
+    return { wsController, rtcController, rtc: rtcController.operations };
+}
+
+interface BrowserRealtimeChannelComposition {
+    readonly realtimeReceive: BrowserRealtimeReceiveRuntime;
+    readonly realtimeTargeted: BrowserTargetedRealtimeRuntime;
+    readonly realtime: RallarRealtimeFacade;
+}
+
+interface CreateBrowserRealtimeChannelCompositionInput extends CreateBrowserRealtimeCompositionInput {
+    readonly rtc: RallarRtcFacade;
+}
+
+function createBrowserRealtimeChannelComposition(
+    input: CreateBrowserRealtimeChannelCompositionInput
+): BrowserRealtimeChannelComposition {
+    const ownerInput = {
         connect: async () => await input.session.connect(),
         readMiddleware: input.session.readMiddleware,
         readSession,
         readDefaultRoom: input.state.resolveDefaultRoom,
         readCurrentRoomRef: () => input.state.roomStateStore.resolveCurrentRoomRef(),
         readCurrentRoomSnapshot: () => input.state.roomStateStore.state().currentRoom,
-        findGroupSnapshot: (room) => input.state.roomStateStore.findGroupSnapshot(room),
+        findGroupSnapshot: (room: string | GroupRef) => input.state.roomStateStore.findGroupSnapshot(room),
         resolveRoomPeerIds: input.state.resolveRoomPeerIds,
-        resolveLaneId: (laneId) =>
+        resolveLaneId: (laneId?: string) =>
             laneId ?? input.state.readDefaults()?.realtime?.laneId ?? DEFAULT_RALLAR_REALTIME_LANE_ID,
-        resolveOpenTimeoutMs: (openTimeoutMs) =>
+        resolveOpenTimeoutMs: (openTimeoutMs?: number) =>
             openTimeoutMs ??
                 input.state.readDefaults()?.realtime?.openTimeoutMs ??
                 DEFAULT_RALLAR_REALTIME_OPEN_TIMEOUT_MS,
-        rtc
+        rtc: input.rtc
+    };
+    const realtimeReceive = new BrowserRealtimeReceiveRuntime(ownerInput);
+    const realtimeSend = new BrowserRealtimeSendRuntime({
+        ...ownerInput,
+        onJson: (laneId, handler) => realtimeReceive.onJson(laneId, handler)
     });
-    const realtime = realtimeController.operations;
-    const mediaController = createRallarMediaController({
-        connect: async () => await input.session.connect(),
-        readMiddleware: input.session.readMiddleware
+    const realtimeRoom = new BrowserRoomRealtimeRuntime({
+        ...ownerInput,
+        sendJson: async (sendInput) => await realtimeSend.sendJson(sendInput),
+        onJson: (laneId, handler) => realtimeReceive.onJson(laneId, handler)
     });
+    const realtimeTargeted = new BrowserTargetedRealtimeRuntime({
+        ...ownerInput,
+        sendJson: async (sendInput) => await realtimeSend.sendJson(sendInput),
+        onJson: (laneId, handler) => realtimeReceive.onJson(laneId, handler)
+    });
+    const realtime: RallarRealtimeFacade = {
+        sendJson: async (sendInput) => await realtimeSend.sendJson(sendInput),
+        sendBinary: async (sendInput) => await realtimeSend.sendBinary(sendInput),
+        onJson: (laneId, handler) => realtimeReceive.onJson(laneId, handler),
+        onBinary: (laneId, handler) => realtimeReceive.onBinary(laneId, handler),
+        json: (defaults = {}) => realtimeSend.createJsonLane(defaults),
+        room: (defaults = {}) => realtimeRoom.create(defaults),
+        health: (options = {}) => realtimeSend.health(options)
+    };
     return {
-        wsController,
-        rtcController,
-        rtc,
-        realtimeController,
-        realtime,
-        mediaController,
-        media: mediaController.operations
+        realtimeReceive,
+        realtimeTargeted,
+        realtime
     };
 }

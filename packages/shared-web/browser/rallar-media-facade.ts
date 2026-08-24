@@ -1,40 +1,40 @@
 import type { RallarUnsubscribe } from '@shared-web/browser/rallar-shared-contracts.ts';
 import type { QRtcMediaPolicy } from '@shared/webrtc/QRtcPeerConnection.ts';
 
-export type RallarRemoteStream = Readonly<{
-    peerId: string;
-    stream: MediaStream;
-    event: RTCTrackEvent;
-}>;
+export interface RallarRemoteStream {
+    readonly peerId: string;
+    readonly stream: MediaStream;
+    readonly event: RTCTrackEvent;
+}
 
 export type RallarMediaSourceKind = 'microphone' | 'camera' | 'screen';
 
 export type RallarMediaSourceState = 'open' | 'ended' | 'failed';
 
-export type RallarMediaSourceStatus = Readonly<{
-    kind: RallarMediaSourceKind;
-    state: RallarMediaSourceState;
-    streamId?: string;
-    trackIds: readonly string[];
-    audioTrackIds: readonly string[];
-    videoTrackIds: readonly string[];
-    enabledTrackIds: readonly string[];
-    endedTrackIds: readonly string[];
-    error?: string;
-}>;
+export interface RallarMediaSourceStatus {
+    readonly kind: RallarMediaSourceKind;
+    readonly state: RallarMediaSourceState;
+    readonly streamId?: string;
+    readonly trackIds: readonly string[];
+    readonly audioTrackIds: readonly string[];
+    readonly videoTrackIds: readonly string[];
+    readonly enabledTrackIds: readonly string[];
+    readonly endedTrackIds: readonly string[];
+    readonly error?: string;
+}
 
-export type RallarMediaSourceHandle = Readonly<{
-    kind: RallarMediaSourceKind;
-    stream: MediaStream;
+export interface RallarMediaSourceHandle {
+    readonly kind: RallarMediaSourceKind;
+    readonly stream: MediaStream;
     status(): RallarMediaSourceStatus;
     attach(): Promise<RallarMediaSourceStatus>;
     setEnabled(enabled: boolean): Promise<RallarMediaSourceStatus>;
     stop(): Promise<RallarMediaSourceStatus>;
-}>;
+}
 
-export type RallarMediaSourceAttachOptions = Readonly<{
-    attach?: boolean;
-}>;
+export interface RallarMediaSourceAttachOptions {
+    readonly attach?: boolean;
+}
 
 export type RallarMicrophoneSourceStartOptions =
     & RallarMediaSourceAttachOptions
@@ -58,28 +58,26 @@ export type RallarScreenSourceStartOptions =
         audio?: boolean | MediaTrackConstraints;
     }>;
 
-export type RallarMediaSourceController<TOptions> = Readonly<{
+export interface RallarMediaSourceController<TOptions> {
     start(options?: TOptions): Promise<RallarMediaSourceHandle>;
     status(): RallarMediaSourceStatus | undefined;
     stop(): Promise<RallarMediaSourceStatus | undefined>;
-}>;
+}
 
-export type RallarMediaSourcesFacade = Readonly<{
-    microphone: RallarMediaSourceController<RallarMicrophoneSourceStartOptions>;
-    camera: RallarMediaSourceController<RallarCameraSourceStartOptions>;
-    screen: RallarMediaSourceController<RallarScreenSourceStartOptions>;
-}>;
+export interface RallarMediaSourcesFacade {
+    readonly microphone: RallarMediaSourceController<RallarMicrophoneSourceStartOptions>;
+    readonly camera: RallarMediaSourceController<RallarCameraSourceStartOptions>;
+    readonly screen: RallarMediaSourceController<RallarScreenSourceStartOptions>;
+}
 
-export type RallarMediaFacade = Readonly<{
-    microphone: RallarMediaSourceController<RallarMicrophoneSourceStartOptions>;
-    camera: RallarMediaSourceController<RallarCameraSourceStartOptions>;
-    screen: RallarMediaSourceController<RallarScreenSourceStartOptions>;
+export interface RallarMediaFacade {
+    readonly microphone: RallarMediaSourceController<RallarMicrophoneSourceStartOptions>;
+    readonly camera: RallarMediaSourceController<RallarCameraSourceStartOptions>;
+    readonly screen: RallarMediaSourceController<RallarScreenSourceStartOptions>;
     setLocalStream(stream: MediaStream): Promise<void>;
     setAudioEnabled(enabled: boolean): Promise<void>;
     setVideoEnabled(enabled: boolean): Promise<void>;
     stopLocal(kind: 'audio' | 'video' | 'all'): Promise<void>;
     setPolicy(policy: QRtcMediaPolicy): Promise<void>;
-    onRemoteStream(
-        handler: (remote: RallarRemoteStream) => void | Promise<void>
-    ): RallarUnsubscribe;
-}>;
+    onRemoteStream(handler: (remote: RallarRemoteStream) => void | Promise<void>): RallarUnsubscribe;
+}

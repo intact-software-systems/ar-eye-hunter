@@ -15,9 +15,9 @@ import type {
     RallarConnectionRuntimePort
 } from '@shared-web/browser/rallar-runtime-context.ts';
 import type { RallarLifecycleCoordinator } from '@shared-web/browser/rallar-runtime/lifecycle.ts';
-import { createRallarSessionAuthLifecycle } from '@shared-web/browser/session/session-auth-lifecycle.ts';
+import { BrowserSessionAuthLifecycle } from '@shared-web/browser/session/session-auth-lifecycle.ts';
 import { createRallarSessionAuthOperations } from '@shared-web/browser/session/session-auth-operations.ts';
-import { createRallarSessionConnectionLifecycle } from '@shared-web/browser/session/session-connection-lifecycle.ts';
+import { BrowserSessionConnectionLifecycle } from '@shared-web/browser/session/session-connection-lifecycle.ts';
 import { createRallarSessionConnectionOperations } from '@shared-web/browser/session/session-connection-operations.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
@@ -53,13 +53,13 @@ export interface RallarSessionController {
 export function createRallarSessionController(
     options: CreateRallarSessionControllerOptions
 ): RallarSessionController {
-    const connectionLifecycle = createRallarSessionConnectionLifecycle({
+    const connectionLifecycle = new BrowserSessionConnectionLifecycle({
         connectionRuntime: options.connectionRuntime,
         transportRuntime: options.transportRuntime,
         lifecycle: options.lifecycle,
         clearCurrentRoom: options.stateRuntime.clearCurrentRoom
     });
-    const authLifecycle = createRallarSessionAuthLifecycle({
+    const authLifecycle = new BrowserSessionAuthLifecycle({
         connectionRuntime: options.connectionRuntime,
         transportRuntime: options.transportRuntime,
         authRuntime: options.authRuntime,

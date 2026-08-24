@@ -82,8 +82,12 @@ vi.mock(
 describe('Rallar realtime JSON lane', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        mocks.clientRepositoryMissing.mockImplementation((principalId) => principalId === undefined ? [] : undefined);
-        mocks.groupRepositoryMissing.mockImplementation((value) => value === undefined ? [] : undefined);
+        mocks.clientRepositoryMissing.mockImplementation(
+            (principalId?: string): never => (principalId === undefined ? [] : undefined) as never
+        );
+        mocks.groupRepositoryMissing.mockImplementation(
+            (value?: string): never => (value === undefined ? [] : undefined) as never
+        );
         mocks.hydrateStateCaches.mockResolvedValue(undefined);
         mocks.initMiddleware.mockResolvedValue(mocks.ctx);
         mocks.isMiddlewareReady.mockReturnValue(false);

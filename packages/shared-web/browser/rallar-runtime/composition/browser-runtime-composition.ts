@@ -4,7 +4,7 @@ import {
 } from '@shared-web/browser/connection/browser-transport-runtime.ts';
 import type { RallarDefaults } from '@shared-web/browser/rallar-connection-facade.ts';
 import {
-    createRallarBrowserFacadeRuntimeContext,
+    BrowserFacadeRuntimeState,
     type RallarAuthRuntimePort,
     type RallarBrowserFacadeRuntimeContext,
     type RallarConnectionRuntimePort,
@@ -14,7 +14,6 @@ import {
     createRallarLifecycleCoordinator,
     type RallarLifecycleCoordinator
 } from '@shared-web/browser/rallar-runtime/lifecycle.ts';
-import { resolveActiveRoomPeerIds } from '@shared-web/browser/rallar-runtime/realtime.ts';
 import type { RallarSessionController } from '@shared-web/browser/rallar-runtime/session.ts';
 import {
     createRallarStateEvents,
@@ -22,11 +21,12 @@ import {
 } from '@shared-web/browser/rallar-runtime/state-events.ts';
 import {
     createRallarStateCacheReadPort,
-    createRallarStateStore,
+    RallarStateStore,
     type RallarStatePort
 } from '@shared-web/browser/rallar-runtime/state-store.ts';
 import { createRallarWsInbox, type RallarWsInbox } from '@shared-web/browser/rallar-runtime/ws-inbox.ts';
 import { createRoomEvents, type RallarRoomEventsPort } from '@shared-web/browser/rooms/room-events.ts';
+import { resolveActiveRoomPeerIds } from '@shared-web/browser/rooms/room-group-state-translation.ts';
 import { createRoomStateStore, type RallarRoomStateStorePort } from '@shared-web/browser/rooms/room-state-store.ts';
 import { readSession } from '@shared/api/auth.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
@@ -67,7 +67,7 @@ export interface CreateBrowserStateEventCompositionInput {
 
 export function createBrowserRuntimeFoundation(): BrowserRuntimeFoundation {
     const transportRuntime = browserTransportRuntime;
-    const runtime = createRallarBrowserFacadeRuntimeContext({ transportRuntime });
+    const runtime = new BrowserFacadeRuntimeState(transportRuntime);
     const connectionRuntime: RallarConnectionRuntimePort = {
         readConnectState: runtime.readConnectState,
         setConnectState: runtime.setConnectState,
@@ -116,7 +116,7 @@ export function createBrowserStateComposition(
         readSession,
         stateCache
     });
-    const stateStore = createRallarStateStore({
+    const stateStore = new RallarStateStore({
         runtime: input.stateRuntime,
         roomStateStore,
         readSession,
@@ -143,7 +143,8 @@ export function createBrowserStateComposition(
         readDefaults,
         resolveDefaultRoomRef,
         resolveDefaultRoom,
-        resolveRoomPeerIds: (room) => resolveActiveRoomPeerIds(readSession(), roomStateStore.findGroupSnapshot(room))
+        resolveRoomPeerIds: (room) =>
+            resolveActiveRoomPeerIds(readSession()?.sessionId, roomStateStore.findGroupSnapshot(room))
     };
 }
 

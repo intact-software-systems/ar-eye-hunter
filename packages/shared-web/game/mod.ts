@@ -1,4 +1,3 @@
-export * from './authority-client.ts';
 export * from './authority-match-support.ts';
 export * from './diagnostics.ts';
 export * from './election.ts';
@@ -6,4 +5,6 @@ export * from './envelopes.ts';
 export * from './lanes.ts';
 export * from './match-support.ts';
 export * from './match.ts';
+export * from './rallar-game-authority-client-contracts.ts';
+export * from './rallar-game-authority-client.ts';
 export * from './types.ts';

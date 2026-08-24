@@ -139,6 +139,13 @@ export type RallarRoomGovernanceOptions =
         reason?: string;
     }>;
 
+export interface RallarSetRoomMemberRoleInput {
+    readonly room: string | GroupRef | RallarRoomTargetInput;
+    readonly principalId: string;
+    readonly role: GroupRole;
+    readonly options?: RallarRoomGovernanceOptions;
+}
+
 export type RallarJoinRoomOptions =
     & RallarScopedOperationOptions
     & Readonly<{
@@ -208,9 +215,9 @@ export type RallarRoomSessionRealtimeInput = string | RallarRoomRealtimeJsonDefa
 
 export type RallarRoomSessionMessageDefinition = string | RallarRoomMessageChannelDefinition;
 
-export type RallarRoomSession = Readonly<{
-    roomId: string;
-    roomRef: GroupRef;
+export interface RallarRoomSession {
+    readonly roomId: string;
+    readonly roomRef: GroupRef;
     snapshot(): GroupSnapshot | undefined;
     summary(): RallarRoomSummary | undefined;
     leave(
@@ -223,4 +230,4 @@ export type RallarRoomSession = Readonly<{
     message<T>(
         nameOrDefinition: RallarRoomSessionMessageDefinition
     ): RallarTypedMessageChannel<T>;
-}>;
+}

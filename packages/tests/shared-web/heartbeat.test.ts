@@ -16,11 +16,11 @@ import {
     createGroupSnapshotFixture
 } from './authoritative-group-fixtures.ts';
 
-type FetchCall = Readonly<{
-    url: string;
-    method: string;
-    body?: unknown;
-}>;
+interface FetchCall {
+    readonly url: string;
+    readonly method: string;
+    readonly body?: unknown;
+}
 
 describe('browser heartbeat', () => {
     const fetchCalls: FetchCall[] = [];
@@ -49,21 +49,21 @@ describe('browser heartbeat', () => {
     });
 
     it('threads the active state scope into the websocket connection URL', () => {
-        const url = toCreateWsUrl(
-            {
+        const url = toCreateWsUrl({
+            apiConfig: {
                 apiBaseUrl: 'https://api.example.test',
                 wsBaseUrl: 'wss://api.example.test',
                 endpoints: {
                     createWs: '/api/ws/:id'
                 }
             },
-            authSession,
-            'ticket-1',
-            {
+            session: authSession,
+            ticket: 'ticket-1',
+            scope: {
                 applicationId: 'ar-eye-hunter',
                 workspaceId: 'default'
             }
-        );
+        });
 
         expect(url).toBe(
             'wss://api.example.test/api/ws/session-1?ticket=ticket-1&applicationId=ar-eye-hunter&workspaceId=default'
@@ -71,13 +71,13 @@ describe('browser heartbeat', () => {
     });
 
     it('uses the active scope and prunes a cached group after an authoritative heartbeat 404', async () => {
-        const staleGroup = groupSnapshot(
-            'stale-room',
-            'ar-eye-hunter',
-            'default',
-            authSession.clientId,
-            authSession.sessionId
-        );
+        const staleGroup = groupSnapshot({
+            groupId: 'stale-room',
+            applicationId: 'ar-eye-hunter',
+            workspaceId: 'default',
+            principalId: authSession.clientId,
+            sessionId: authSession.sessionId
+        });
         groupStateSnapshotsRepository.setGroupStateSnapshots([staleGroup]);
         stubFetch(({ url, method }) => {
             if (
@@ -138,13 +138,13 @@ describe('browser heartbeat', () => {
     });
 
     it('preserves a newer group publication that races an authoritative heartbeat 404', async () => {
-        const observed = groupSnapshot(
-            'stale-room',
-            'ar-eye-hunter',
-            'default',
-            authSession.clientId,
-            authSession.sessionId
-        );
+        const observed = groupSnapshot({
+            groupId: 'stale-room',
+            applicationId: 'ar-eye-hunter',
+            workspaceId: 'default',
+            principalId: authSession.clientId,
+            sessionId: authSession.sessionId
+        });
         const newer = {
             ...observed,
             causalRevision: {
@@ -304,13 +304,16 @@ function clientSnapshot(principalId: string): ClientSnapshot {
     };
 }
 
-function groupSnapshot(
-    groupId: string,
-    applicationId: string,
-    workspaceId: string,
-    principalId: string,
-    sessionId: string
-): GroupSnapshot {
+interface GroupSnapshotFixtureInput {
+    readonly groupId: string;
+    readonly applicationId: string;
+    readonly workspaceId: string;
+    readonly principalId: string;
+    readonly sessionId: string;
+}
+
+function groupSnapshot(input: GroupSnapshotFixtureInput): GroupSnapshot {
+    const { applicationId, groupId, principalId, sessionId, workspaceId } = input;
     const snapshot = createGroupSnapshotFixture({
         applicationId,
         workspaceId,

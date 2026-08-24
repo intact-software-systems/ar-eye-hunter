@@ -3,6 +3,7 @@ import type { StateGroupSnapshotRead } from '@shared-web/browser/api-integration
 import * as apiWorkflows from '@shared-web/browser/api-workflows.ts';
 import { ApiHttpError } from '@shared-web/browser/api/http-error.ts';
 import type { ApiMiddleware } from '@shared-web/browser/app-context.ts';
+import type { RallarMessagesController } from '@shared-web/browser/messages/browser-rallar-messages-controller.ts';
 import type { RallarScopedOperationOptions } from '@shared-web/browser/rallar-connection-facade.ts';
 import {
     toRallarCommandOptions,
@@ -10,7 +11,7 @@ import {
     type RallarOperationOptions
 } from '@shared-web/browser/rallar-operation-options.ts';
 import type { RallarRealtimeFacade } from '@shared-web/browser/rallar-realtime-facade.ts';
-import type { RallarMessagesController } from '@shared-web/browser/rallar-runtime/messages.ts';
+import type { RallarStateSnapshotAcceptanceInput } from '@shared-web/browser/rallar-runtime/state-store.ts';
 import { throwRallarValidationIssue } from '@shared-web/browser/rallar-runtime/validation.ts';
 import type {
     RallarOnChangeOptions,
@@ -50,13 +51,13 @@ import type {
     RallarRoomState,
     RallarRoomSummary,
     RallarRoomTargetInput,
+    RallarSetRoomMemberRoleInput,
     RallarUpdateRoomInput
 } from './rallar-room-contracts.ts';
 import type { RallarRoomEventsPort } from './room-events.ts';
 import type {
     GroupEvent,
     GroupRef,
-    GroupRole,
     GroupSnapshot,
     StateEventPage,
     StateScope
@@ -80,30 +81,17 @@ export interface CreateBrowserRallarRoomsInput {
     readonly roomEvents: RallarRoomEventsPort;
     readonly messages: RallarMessagesController['operations'];
     readonly realtime: RallarRealtimeFacade;
-    readonly connect: (
-        options?: RallarOperationOptions
-    ) => Promise<ApiMiddleware>;
+    readonly connect: (options?: RallarOperationOptions) => Promise<ApiMiddleware>;
     readonly requireSession: () => AuthSession;
-    readonly resolveOperationOptions: <T extends RallarOperationOptions>(
-        options: T
-    ) => T & RallarOperationOptions;
-    readonly resolveOperationScope: (
-        scope?: StateScope
-    ) => StateScope | undefined;
+    readonly resolveOperationOptions: <T extends RallarOperationOptions>(options: T) => T & RallarOperationOptions;
+    readonly resolveOperationScope: (scope?: StateScope) => StateScope | undefined;
     readonly resolveDefaultRoom: () => string | GroupRef | undefined;
     readonly resolveDefaultRoomRef: () => GroupRef | undefined;
-    readonly runAuthAwareOperation: <T>(
-        operation: () => Promise<T>
-    ) => Promise<T>;
-    readonly acceptSnapshots: (
-        context: ApiMiddleware,
-        clients: readonly ClientSnapshot[],
-        groups: readonly GroupSnapshot[],
-        scope?: StateScope
-    ) => Promise<void>;
+    readonly runAuthAwareOperation: <T>(operation: () => Promise<T>) => Promise<T>;
+    readonly acceptSnapshots: (input: RallarStateSnapshotAcceptanceInput) => Promise<void>;
 }
 
-export type BrowserRallarRooms = Readonly<{
+export interface BrowserRallarRooms {
     state(): RallarRoomState;
     list(): readonly RallarRoomSummary[];
     refresh(input?: StateScope | RallarScopedOperationOptions): Promise<RallarRoomState>;
@@ -115,14 +103,8 @@ export type BrowserRallarRooms = Readonly<{
     ): Promise<RallarReplayEventsResult<GroupEvent>>;
     create(input: string | RallarCreateRoomInput): Promise<GroupSnapshot>;
     createAndSwitch(input: string | RallarCreateRoomInput): Promise<GroupSnapshot>;
-    join(
-        room: string | GroupRef | RallarJoinRoomInput,
-        options?: RallarJoinRoomOptions
-    ): Promise<GroupSnapshot>;
-    enter(
-        room: string | GroupRef | RallarJoinRoomInput,
-        options?: RallarJoinRoomOptions
-    ): Promise<RallarRoomSession>;
+    join(room: string | GroupRef | RallarJoinRoomInput, options?: RallarJoinRoomOptions): Promise<GroupSnapshot>;
+    enter(room: string | GroupRef | RallarJoinRoomInput, options?: RallarJoinRoomOptions): Promise<RallarRoomSession>;
     session(room?: string | GroupRef): RallarRoomSession;
     leave(input?: string | RallarLeaveRoomOptions): Promise<GroupSnapshot | undefined>;
     update(input: RallarUpdateRoomInput): Promise<GroupSnapshot>;
@@ -158,12 +140,7 @@ export type BrowserRallarRooms = Readonly<{
         principalId: string,
         options?: RallarRoomGovernanceOptions
     ): Promise<GroupSnapshot>;
-    setMemberRole(
-        room: string | GroupRef | RallarRoomTargetInput,
-        principalId: string,
-        role: GroupRole,
-        options?: RallarRoomGovernanceOptions
-    ): Promise<GroupSnapshot>;
+    setMemberRole(input: RallarSetRoomMemberRoleInput): Promise<GroupSnapshot>;
     transferOwnership(
         room: string | GroupRef | RallarRoomTargetInput,
         principalId: string,
@@ -179,26 +156,15 @@ export type BrowserRallarRooms = Readonly<{
         options?: RallarRoomPresenceWaitOptions
     ): Promise<RallarRoomPresenceWaitResult>;
     current(): GroupSnapshot | undefined;
-    onChange(
-        listener: RallarStateListener<RallarRoomState>,
-        options?: RallarOnChangeOptions
-    ): RallarUnsubscribe;
-    onEvent(
-        listener: RallarRoomEventListener,
-        options?: RallarRoomEventOptions
-    ): RallarUnsubscribe;
-}>;
+    onChange(listener: RallarStateListener<RallarRoomState>, options?: RallarOnChangeOptions): RallarUnsubscribe;
+    onEvent(listener: RallarRoomEventListener, options?: RallarRoomEventOptions): RallarUnsubscribe;
+}
 
 interface CreateRoomEntryOperationsInput {
     readonly rooms: CreateBrowserRallarRoomsInput;
     readonly createSession: (roomRef: GroupRef) => RallarRoomSession;
-    readonly resolveRoomRef: (
-        room: string | GroupRef,
-        scope?: StateScope
-    ) => GroupRef | undefined;
-    readonly onCacheChange: (
-        listener: () => void | Promise<void>
-    ) => RallarUnsubscribe;
+    readonly resolveRoomRef: (room: string | GroupRef, scope?: StateScope) => GroupRef | undefined;
+    readonly onCacheChange: (listener: () => void | Promise<void>) => RallarUnsubscribe;
 }
 
 export function createBrowserRallarRooms(
@@ -342,8 +308,14 @@ function createRoomMembershipOperations(
             await banRoomMember({ ...input, room, principalId, options }),
         unbanMember: async (room, principalId, options = {}) =>
             await unbanRoomMember({ ...input, room, principalId, options }),
-        setMemberRole: async (room, principalId, role, options = {}) =>
-            await setRoomMemberRole({ ...input, room, principalId, role, options }),
+        setMemberRole: async (memberRoleInput) =>
+            await setRoomMemberRole({
+                ...input,
+                room: memberRoleInput.room,
+                principalId: memberRoleInput.principalId,
+                role: memberRoleInput.role,
+                options: memberRoleInput.options ?? {}
+            }),
         transferOwnership: async (room, principalId, options = {}) =>
             await transferRoomOwnership({ ...input, room, principalId, options })
     };
@@ -374,7 +346,7 @@ async function refreshRooms(
             scope,
             toRallarWorkflowPolicies(operationOptions)
         );
-        await input.acceptSnapshots(context, clients, groups, scope);
+        await input.acceptSnapshots({ context, clients, groups, scope });
         return input.stateStore.state();
     });
 }
@@ -401,7 +373,7 @@ async function refreshRoom(
                     }),
                 toRallarCommandOptions(operationOptions)
             ).run();
-            await input.acceptSnapshots(context, [], [response.snapshot], scope);
+            await input.acceptSnapshots({ context, clients: [], groups: [response.snapshot], scope });
         }
         catch (error) {
             if (error instanceof ApiHttpError && error.status === 404 && observed) {

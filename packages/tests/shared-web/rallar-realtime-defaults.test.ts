@@ -1,0 +1,19 @@
+import { createBrowserRallarFacade } from '@shared-web/browser/rallar-runtime/composition.ts';
+import { describe, expect, it } from 'vitest';
+
+describe('Rallar realtime default channels', () => {
+    it('creates JSON and room channels without explicit defaults', () => {
+        const realtime = createBrowserRallarFacade().realtime;
+
+        expect(realtime.json()).toMatchObject({
+            send: expect.any(Function),
+            on: expect.any(Function)
+        });
+        expect(realtime.room()).toMatchObject({
+            send: expect.any(Function),
+            on: expect.any(Function),
+            status: expect.any(Function),
+            wait: expect.any(Function)
+        });
+    });
+});

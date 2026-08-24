@@ -9,7 +9,7 @@ callbacks remain topic/type listeners, so validate each inbound target.
 import {
     rallar,
     type RallarMessage,
-    type RallarMessageSendStatus
+    type RallarMessageSendResult
 } from '@shared-web/browser/rallar.ts';
 import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
@@ -20,7 +20,7 @@ type ReadyMessage = {
     changedAtEpochMs: number;
 };
 
-const acceptedMessageStatuses: ReadonlySet<RallarMessageSendStatus> = new Set([
+const acceptedMessageStatuses: ReadonlySet<RallarMessageSendResult['status']> = new Set([
     'enqueued',
     'sent-immediate',
     'duplicate',

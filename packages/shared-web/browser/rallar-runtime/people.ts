@@ -11,7 +11,10 @@ import type {
     RallarReplayPeopleEventsOptions
 } from '@shared-web/browser/rallar-people-contracts.ts';
 import type { RallarStateEventsPort } from '@shared-web/browser/rallar-runtime/state-events.ts';
-import type { RallarStatePort } from '@shared-web/browser/rallar-runtime/state-store.ts';
+import type {
+    RallarStatePort,
+    RallarStateSnapshotAcceptanceInput
+} from '@shared-web/browser/rallar-runtime/state-store.ts';
 import type {
     RallarOnChangeOptions,
     RallarReplayEventsResult,
@@ -24,25 +27,18 @@ import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import type { StateEventPage } from '@shared/api/state-event-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 
-export type CreateRallarPeopleControllerOptions = Readonly<{
-    stateStore: RallarStatePort;
-    stateEvents: RallarStateEventsPort;
-    resolveOperationOptions<T extends RallarOperationOptions>(
-        options: T
-    ): T & RallarOperationOptions;
+export interface CreateRallarPeopleControllerOptions {
+    readonly stateStore: RallarStatePort;
+    readonly stateEvents: RallarStateEventsPort;
+    resolveOperationOptions<T extends RallarOperationOptions>(options: T): T & RallarOperationOptions;
     resolveOperationScope(scope?: StateScope): StateScope | undefined;
     runAuthAwareOperation<T>(operation: () => Promise<T>): Promise<T>;
     connect(options?: RallarOperationOptions): Promise<ApiMiddleware>;
-    acceptSnapshots(
-        ctx: ApiMiddleware,
-        clients: readonly ClientSnapshot[],
-        groups: readonly GroupSnapshot[],
-        scope?: StateScope
-    ): Promise<void>;
-}>;
+    acceptSnapshots(input: RallarStateSnapshotAcceptanceInput): Promise<void>;
+}
 
-export type RallarPeopleController = Readonly<{
-    operations: Readonly<{
+export interface RallarPeopleController {
+    readonly operations: Readonly<{
         state(): RallarPeopleState;
         list(): readonly RallarPerson[];
         refresh(input?: StateScope | RallarScopedOperationOptions): Promise<RallarPeopleState>;
@@ -69,7 +65,7 @@ export type RallarPeopleController = Readonly<{
             options?: RallarPeopleEventOptions
         ): RallarUnsubscribe;
     }>;
-}>;
+}
 
 export function createRallarPeopleController(
     options: CreateRallarPeopleControllerOptions
@@ -88,7 +84,7 @@ export function createRallarPeopleController(
                 operationScope,
                 toRallarWorkflowPolicies(operationOptions)
             );
-            await options.acceptSnapshots(ctx, clients, groups, operationScope);
+            await options.acceptSnapshots({ context: ctx, clients, groups, scope: operationScope });
             return options.stateStore.peopleState();
         });
 
@@ -133,6 +129,7 @@ function isStateScope(
         typeof input === 'object' &&
         input !== null &&
         !Array.isArray(input) &&
-        typeof (input as { applicationId?: unknown; }).applicationId === 'string'
+        'applicationId' in input &&
+        typeof input.applicationId === 'string'
     );
 }

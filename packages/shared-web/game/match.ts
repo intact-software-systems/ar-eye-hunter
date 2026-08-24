@@ -1,6 +1,8 @@
 import type {
     RallarDirectorRelayMessage,
     RallarDirectorStatus,
+    RallarMessage,
+    RallarRealtimeMessage,
     RallarRealtimeSendResult,
     RallarRoomRealtimeSendResult,
     RallarRtcRoomLaneWaitResult,
@@ -8,7 +10,6 @@ import type {
     RallarRtcStatus,
     RallarSubscriptionScope
 } from '@shared-web/browser/rallar.ts';
-import type { ALOutboundEnqueueStatus } from '@shared/alm/ALOutboundMessageRuntime.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import { deriveRallarGameDiagnostics } from './diagnostics.ts';
 import {
@@ -18,14 +19,21 @@ import {
 } from './election.ts';
 import { createRallarGameEnvelope, createRallarGameSequenceTracker, isRallarGameEnvelope } from './envelopes.ts';
 import { resolveRallarGameLaneIds } from './lanes.ts';
+import {
+    decodeRallarGameHostCapability,
+    publishRallarGameHostCapability,
+    resolveDefaultRallarGamePeerIds
+} from './match-capability.ts';
+import { RallarGameDirectorAppointmentRuntime } from './rallar-game-director-appointment-runtime.ts';
+import { RallarGameDirectorRelayRuntime } from './rallar-game-director-relay-runtime.ts';
+import type { RallarGameFreshDirectorStatus } from './rallar-game-fresh-director-status.ts';
+import { RallarGameMatchEgressRuntime, toRallarGameReliableEgressState } from './rallar-game-match-egress-runtime.ts';
+import { RallarGamePresenceEgressRuntime } from './rallar-game-presence-egress-runtime.ts';
 import type {
-    RallarGameDirectorAppointmentEligibility,
-    RallarGameDirectorAppointmentPolicy,
     RallarGameEgressState,
     RallarGameEnvelope,
     RallarGameEnvelopeHandler,
     RallarGameEnvelopeKind,
-    RallarGameHostAppointResult,
     RallarGameHostCapability,
     RallarGameHostElectionResult,
     RallarGameLaneIds,
@@ -37,8 +45,8 @@ import type {
     RallarGamePeerReadiness,
     RallarGamePresenceSendOptions,
     RallarGameRecoveryState,
-    RallarGameRuntimeRelay,
     RallarGameSendResult,
+    RallarGameSequenceTracker,
     RallarGameStatusHandler,
     RallarGameTypeIds
 } from './types.ts';
@@ -63,140 +71,245 @@ export function resolveRallarGameTypeIds(
 export function createRallarGameMatch<TInput, TIntent, TSnapshot, TEvent, TPresence = TInput>(
     config: RallarGameMatchConfig<TInput, TIntent, TSnapshot, TEvent, TPresence>
 ): RallarGameMatchHandle<TInput, TIntent, TSnapshot, TEvent, TPresence> {
-    const laneIds = resolveRallarGameLaneIds(config.laneIds);
-    const typeIds = resolveRallarGameTypeIds(config.topicId, config.typeIds);
-    const capabilityTtlMs = config.capabilityTtlMs ??
-        DEFAULT_RALLAR_GAME_CAPABILITY_TTL_MS;
-    const heartbeatTtlMs = config.heartbeatTtlMs ??
-        DEFAULT_RALLAR_GAME_HEARTBEAT_TTL_MS;
-    const sequenceTracker = createRallarGameSequenceTracker();
-    const capabilities = new Map<string, RallarGameHostCapability>();
-    const statusHandlers = new Set<RallarGameStatusHandler>();
-    const presenceHandlers = new Set<RallarGameEnvelopeHandler<TPresence>>();
+    return new RallarGameMatchRuntime(config).handle;
+}
 
-    let subscriptions: RallarSubscriptionScope | undefined;
-    let relay:
-        | RallarGameRuntimeRelay<TIntent, TSnapshot, TEvent>
-        | undefined;
-    let started = false;
-    let stopped = false;
-    let nextSeq = 1;
-    let lastPeerReadiness: RallarGamePeerReadiness | undefined;
-    let lastAppointmentResult: RallarGameHostAppointResult | undefined;
-    let reliableEgress: RallarGameEgressState = 'empty';
-    let realtimeEgress: RallarGameEgressState = 'empty';
-    let recovery: RallarGameRecoveryState = { status: 'idle' };
-    let currentStatus = createStatus('idle');
+interface RallarGameEnvelopeAcceptanceOptions {
+    readonly senderId?: string;
+    readonly checkDirectorEpoch?: boolean;
+    readonly requireFreshDirectorSender?: boolean;
+}
 
-    const handle: RallarGameMatchHandle<TInput, TIntent, TSnapshot, TEvent, TPresence> = {
-        start,
-        stop,
-        status: () => currentStatus,
-        diagnostics: () =>
-            deriveRallarGameDiagnostics({
-                status: currentStatus,
-                election: handle.election(),
-                appointment: handle.canAppointDirector(),
-                lastAppointment: lastAppointmentResult,
-                peerReadiness: lastPeerReadiness,
-                rtcStatus: safeReadRtcStatus(laneIds.input),
-                wsStatus: safeReadWsStatus(),
-                realtimeHealth: safeReadRealtimeHealth(laneIds),
-                capabilities: [...capabilities.values()]
-            }),
-        canAppointDirector,
-        reportCapability,
-        election,
-        appointIfElected,
-        waitForReadyLanes,
-        sendPresence,
-        sendInput,
-        sendIntent,
-        publishSnapshot,
-        publishEvent,
-        requestSync,
-        onPresence(handler): () => void {
-            presenceHandlers.add(handler);
-            return () => {
-                presenceHandlers.delete(handler);
-            };
-        },
-        onStatus(handler): () => void {
-            statusHandlers.add(handler);
-            void notifyStatusHandler(handler, currentStatus);
-            return () => {
-                statusHandlers.delete(handler);
-            };
-        }
-    };
+interface RallarGameMatchRoomTarget {
+    readonly roomId?: string;
+    readonly roomRef?: GroupRef;
+}
 
-    return handle;
+class RallarGameMatchRuntime<TInput, TIntent, TSnapshot, TEvent, TPresence> {
+    readonly handle: RallarGameMatchHandle<TInput, TIntent, TSnapshot, TEvent, TPresence>;
 
-    async function start(): Promise<RallarGameMatchStatus> {
-        if (started && !stopped) {
-            return currentStatus;
-        }
+    private readonly config: RallarGameMatchConfig<TInput, TIntent, TSnapshot, TEvent, TPresence>;
+    private readonly laneIds: RallarGameLaneIds;
+    private readonly typeIds: RallarGameTypeIds;
+    private readonly capabilityTtlMs: number;
+    private readonly heartbeatTtlMs: number;
+    private readonly sequenceTracker: RallarGameSequenceTracker;
+    private readonly capabilities = new Map<string, RallarGameHostCapability>();
+    private readonly statusHandlers = new Set<RallarGameStatusHandler>();
+    private readonly presenceHandlers = new Set<RallarGameEnvelopeHandler<TPresence>>();
+    private readonly directorRelay: RallarGameDirectorRelayRuntime<TInput, TIntent, TSnapshot, TEvent, TPresence>;
+    private readonly egress: RallarGameMatchEgressRuntime<TInput, TIntent, TSnapshot, TEvent, TPresence>;
+    private readonly presenceEgress: RallarGamePresenceEgressRuntime<TInput, TIntent, TSnapshot, TEvent, TPresence>;
+    private readonly appointment: RallarGameDirectorAppointmentRuntime<TInput, TIntent, TSnapshot, TEvent, TPresence>;
 
-        started = true;
-        stopped = false;
-        sequenceTracker.reset();
-        subscriptions = config.rallar.subscriptions();
-        relay = createRelay();
-        subscriptions
-            .add(config.rallar.rooms.onChange(() => refreshStatus()))
-            .add(config.rallar.people.onChange(() => refreshStatus()))
-            .add(config.rallar.director.onStatus(() => refreshStatus()))
-            .add(config.rallar.rtc.onStatus((status) => {
-                refreshStatus();
-                if (!status.readyPeerIds.includes(currentStatus.directorPeerId ?? '')) {
-                    return;
-                }
-            }))
-            .add(config.rallar.messages.ws.onMessage<RallarGameEnvelope<unknown>>(
-                { topicId: config.topicId, typeId: typeIds.capability },
-                handleCapabilityMessage
-            ))
-            .add(config.rallar.realtime.onJson<RallarGameEnvelope<TInput | TPresence>>(
-                laneIds.input,
-                handleRealtimeInputOrPresence
-            ))
-            .add(config.rallar.realtime.onJson<RallarGameEnvelope<TSnapshot>>(
-                laneIds.snapshot,
-                handleRealtimeSnapshot
-            ))
-            .add(() => relay?.stop());
+    private subscriptions: RallarSubscriptionScope | undefined;
+    private started = false;
+    private stopped = false;
+    private nextSeq = 1;
+    private reliableEgress: RallarGameEgressState = 'empty';
+    private recovery: RallarGameRecoveryState = { status: 'idle' };
+    private currentStatus: RallarGameMatchStatus;
 
-        await refreshReliableEgress();
-        refreshStatus();
-        return currentStatus;
+    constructor(config: RallarGameMatchConfig<TInput, TIntent, TSnapshot, TEvent, TPresence>) {
+        this.config = config;
+        this.laneIds = resolveRallarGameLaneIds(config.laneIds);
+        this.typeIds = resolveRallarGameTypeIds(config.topicId, config.typeIds);
+        this.capabilityTtlMs = config.capabilityTtlMs ?? DEFAULT_RALLAR_GAME_CAPABILITY_TTL_MS;
+        this.heartbeatTtlMs = config.heartbeatTtlMs ?? DEFAULT_RALLAR_GAME_HEARTBEAT_TTL_MS;
+        this.sequenceTracker = createRallarGameSequenceTracker();
+        this.directorRelay = this.createDirectorRelayRuntime();
+        this.egress = this.createEgressRuntime();
+        this.presenceEgress = this.createPresenceEgressRuntime();
+        this.appointment = this.createAppointmentRuntime();
+        this.currentStatus = this.createStatus('idle');
+        this.handle = this.createHandle();
     }
 
-    function stop(): void {
-        if (stopped) {
+    private createEgressRuntime(): RallarGameMatchEgressRuntime<TInput, TIntent, TSnapshot, TEvent, TPresence> {
+        return new RallarGameMatchEgressRuntime({
+            config: this.config,
+            laneIds: this.laneIds,
+            isStopped: () => this.stopped,
+            readRoomTarget: () => this.readRoomTarget(),
+            readFreshDirectorStatus: () => this.readFreshDirectorStatus(),
+            createEnvelope: (kind, payload, options) => this.createEnvelope(kind, payload, options),
+            routeEnvelope: async (envelope, kind, handler) => await this.routeEnvelope(envelope, kind, handler),
+            sendReliableSnapshot: async (envelope) => await this.directorRelay.sendSnapshot(envelope),
+            refreshStatus: () => this.refreshStatus()
+        });
+    }
+
+    private createDirectorRelayRuntime(): RallarGameDirectorRelayRuntime<
+        TInput,
+        TIntent,
+        TSnapshot,
+        TEvent,
+        TPresence
+    > {
+        return new RallarGameDirectorRelayRuntime({
+            config: this.config,
+            laneIds: this.laneIds,
+            typeIds: this.typeIds,
+            heartbeatTtlMs: this.heartbeatTtlMs,
+            isStopped: () => this.stopped,
+            readFreshDirectorStatus: () => this.readFreshDirectorStatus(),
+            createEnvelope: (kind, payload, options) => this.createEnvelope(kind, payload, options),
+            routeEnvelope: async (envelope, kind, handler) => await this.routeEnvelope(envelope, kind, handler),
+            handleEnvelope: async (input) => await this.handleRelayEnvelope(input),
+            syncRequested: (atEpochMs) => this.recordSyncRequest(atEpochMs)
+        });
+    }
+
+    private createPresenceEgressRuntime(): RallarGamePresenceEgressRuntime<
+        TInput,
+        TIntent,
+        TSnapshot,
+        TEvent,
+        TPresence
+    > {
+        return new RallarGamePresenceEgressRuntime({
+            config: this.config,
+            laneIds: this.laneIds,
+            isStopped: () => this.stopped,
+            readStatus: () => this.currentStatus,
+            readRoomTarget: () => this.readRoomTarget(),
+            readLocalPeerId: () => this.readLocalPeerId(),
+            readPeerReadiness: () => this.egress.peerReadiness,
+            createEnvelope: (kind, payload, options) => this.createEnvelope(kind, payload, options)
+        });
+    }
+
+    private createAppointmentRuntime(): RallarGameDirectorAppointmentRuntime<
+        TInput,
+        TIntent,
+        TSnapshot,
+        TEvent,
+        TPresence
+    > {
+        return new RallarGameDirectorAppointmentRuntime({
+            config: this.config,
+            heartbeatTtlMs: this.heartbeatTtlMs,
+            election: () => this.election(),
+            readRoomTarget: () => this.readRoomTarget(),
+            readDirectorStatus: () => this.readDirectorStatus(),
+            refreshStatus: (status) => this.refreshStatus(status)
+        });
+    }
+
+    private createHandle(): RallarGameMatchHandle<TInput, TIntent, TSnapshot, TEvent, TPresence> {
+        return {
+            start: async () => await this.start(),
+            stop: () => this.stop(),
+            status: () => this.currentStatus,
+            diagnostics: () => this.diagnostics(),
+            canAppointDirector: () => this.appointment.eligibility(),
+            reportCapability: (capability) => this.reportCapability(capability),
+            election: () => this.election(),
+            appointIfElected: () => this.appointment.appointIfElected(),
+            waitForReadyLanes: (options) => this.egress.waitForReadyLanes(options),
+            sendPresence: (presence, options) => this.presenceEgress.send(presence, options),
+            sendInput: (input) => this.egress.sendInput(input),
+            sendIntent: (intent) => this.directorRelay.sendIntent(intent),
+            publishSnapshot: (snapshot, options) => this.egress.publishSnapshot(snapshot, options),
+            publishEvent: (event) => this.directorRelay.publishEvent(event),
+            requestSync: (payload) => this.directorRelay.requestSync(payload),
+            onPresence: (handler) => this.onPresence(handler),
+            onStatus: (handler) => this.onStatus(handler)
+        };
+    }
+
+    private diagnostics() {
+        return deriveRallarGameDiagnostics({
+            status: this.currentStatus,
+            election: this.election(),
+            appointment: this.appointment.eligibility(),
+            lastAppointment: this.appointment.lastResult,
+            peerReadiness: this.egress.peerReadiness,
+            rtcStatus: this.safeReadRtcStatus(this.laneIds.input),
+            wsStatus: this.safeReadWsStatus(),
+            realtimeHealth: this.safeReadRealtimeHealth(this.laneIds),
+            capabilities: [...this.capabilities.values()]
+        });
+    }
+
+    private onPresence(handler: RallarGameEnvelopeHandler<TPresence>): () => void {
+        this.presenceHandlers.add(handler);
+        return () => this.presenceHandlers.delete(handler);
+    }
+
+    private onStatus(handler: RallarGameStatusHandler): () => void {
+        this.statusHandlers.add(handler);
+        void notifyRallarGameStatusHandler(handler, this.currentStatus);
+        return () => this.statusHandlers.delete(handler);
+    }
+
+    private recordSyncRequest(atEpochMs: number): void {
+        this.recovery = {
+            ...this.recovery,
+            lastSyncRequestedAtEpochMs: atEpochMs
+        };
+        this.refreshStatus();
+    }
+
+    private async start(): Promise<RallarGameMatchStatus> {
+        if (this.started && !this.stopped) {
+            return this.currentStatus;
+        }
+
+        this.started = true;
+        this.stopped = false;
+        this.sequenceTracker.reset();
+        this.subscriptions = this.config.rallar.subscriptions();
+        this.directorRelay.start();
+        this.subscriptions
+            .add(this.config.rallar.rooms.onChange(() => this.refreshStatus()))
+            .add(this.config.rallar.people.onChange(() => this.refreshStatus()))
+            .add(this.config.rallar.director.onStatus(() => this.refreshStatus()))
+            .add(this.config.rallar.rtc.onStatus(() => this.refreshStatus()))
+            .add(this.config.rallar.messages.ws.onMessage<RallarMessage['payload']>(
+                { topicId: this.config.topicId, typeId: this.typeIds.capability },
+                async (message) => await this.handleCapabilityMessage(message)
+            ))
+            .add(this.config.rallar.realtime.onJson<RallarMessage['payload']>(
+                this.laneIds.input,
+                async (message) => await this.handleRealtimeInputOrPresence(message)
+            ))
+            .add(this.config.rallar.realtime.onJson<RallarMessage['payload']>(
+                this.laneIds.snapshot,
+                async (message) => await this.handleRealtimeSnapshot(message)
+            ))
+            .add(() => this.directorRelay.stop());
+
+        await this.refreshReliableEgress();
+        this.refreshStatus();
+        return this.currentStatus;
+    }
+
+    private stop(): void {
+        if (this.stopped) {
             return;
         }
 
-        stopped = true;
-        started = false;
-        subscriptions?.unsubscribe();
-        subscriptions = undefined;
-        relay?.stop();
-        relay = undefined;
-        setStatus('stopped');
+        this.stopped = true;
+        this.started = false;
+        this.subscriptions?.unsubscribe();
+        this.subscriptions = undefined;
+        this.directorRelay.stop();
+        this.setStatus('stopped');
     }
 
-    function stoppedResult(): RallarGameSendResult {
+    private stoppedResult(): RallarGameSendResult {
         return { status: 'stopped', reason: 'Rallar Game match is stopped.' };
     }
 
-    async function reportCapability(
+    private async reportCapability(
         capability: Partial<RallarGameHostCapability> = {}
     ): Promise<RallarGameSendResult> {
-        if (stopped) {
-            return stoppedResult();
+        if (this.stopped) {
+            return this.stoppedResult();
         }
 
-        const localPeerId = readLocalPeerId();
+        const localPeerId = this.readLocalPeerId();
         if (!localPeerId) {
             return {
                 status: 'failed',
@@ -204,7 +317,7 @@ export function createRallarGameMatch<TInput, TIntent, TSnapshot, TEvent, TPrese
             };
         }
 
-        const room = readRoomTarget();
+        const room = this.readRoomTarget();
         if (!room.roomId) {
             return {
                 status: 'failed',
@@ -212,58 +325,48 @@ export function createRallarGameMatch<TInput, TIntent, TSnapshot, TEvent, TPrese
             };
         }
 
-        const read = config.readCapability?.() ?? {};
-        const appointment = canAppointDirector();
+        const read = this.config.readCapability?.() ?? {};
+        const appointmentEligibility = this.appointment.eligibility();
         const reportedAtEpochMs = Date.now();
         const report: RallarGameHostCapability = {
             ...read,
             ...capability,
-            canHost: appointment.allowed
+            canHost: appointmentEligibility.allowed
                 ? (capability.canHost ?? read.canHost)
                 : false,
             peerId: localPeerId,
             reportedAtEpochMs
         };
-        capabilities.set(localPeerId, report);
+        this.capabilities.set(localPeerId, report);
 
-        const envelope = createEnvelope('capability', report, {
-            directorEpoch: currentStatus.directorEpoch ?? 0,
+        const envelope = this.createEnvelope('capability', report, {
+            directorEpoch: this.currentStatus.directorEpoch ?? 0,
             roomId: room.roomId,
             senderId: localPeerId,
             sentAtEpochMs: reportedAtEpochMs
         });
-        const ws = await config.rallar.messages.ws.send({
-            topicId: config.topicId,
-            typeId: typeIds.capability,
-            payload: envelope,
-            scope: 'room',
-            roomId: room.roomRef ? undefined : room.roomId,
-            roomRef: room.roomRef,
-            reliability: 'best-effort',
-            ack: 'none'
+        const result = await publishRallarGameHostCapability({
+            config: this.config,
+            typeId: this.typeIds.capability,
+            room: { roomId: room.roomId, roomRef: room.roomRef },
+            envelope
         });
-        refreshStatus();
-
-        return {
-            status: isSuccessfulMessageStatus(ws.status) ? 'sent' : 'failed',
-            transport: 'ws',
-            ws,
-            reason: isSuccessfulMessageStatus(ws.status) ? undefined : ws.reason
-        };
+        this.refreshStatus();
+        return result;
     }
 
-    function election(): RallarGameHostElectionResult {
-        const roomState = config.rallar.rooms.state();
-        const peerIds = config.resolvePeerIds
-            ? config.resolvePeerIds(roomState)
-            : resolveDefaultPeerIds(roomState, readLocalPeerId());
-        const appointment = canAppointDirector();
-        const capabilityValues = [...capabilities.values()];
-        if (!appointment.allowed && appointment.localPeerId) {
-            const previous = capabilities.get(appointment.localPeerId);
+    private election(): RallarGameHostElectionResult {
+        const roomState = this.config.rallar.rooms.state();
+        const peerIds = this.config.resolvePeerIds
+            ? this.config.resolvePeerIds(roomState)
+            : resolveDefaultRallarGamePeerIds(roomState, this.readLocalPeerId());
+        const appointmentEligibility = this.appointment.eligibility();
+        const capabilityValues = [...this.capabilities.values()];
+        if (!appointmentEligibility.allowed && appointmentEligibility.localPeerId) {
+            const previous = this.capabilities.get(appointmentEligibility.localPeerId);
             capabilityValues.push({
                 ...previous,
-                peerId: appointment.localPeerId,
+                peerId: appointmentEligibility.localPeerId,
                 reportedAtEpochMs: Date.now(),
                 canHost: false
             });
@@ -272,521 +375,19 @@ export function createRallarGameMatch<TInput, TIntent, TSnapshot, TEvent, TPrese
         return electRallarGameHost({
             peerIds,
             capabilities: capabilityValues,
-            capabilityTtlMs,
-            scoreHost: config.scoreHost ?? scoreRallarGameHostCapability
+            capabilityTtlMs: this.capabilityTtlMs,
+            scoreHost: this.config.scoreHost ?? scoreRallarGameHostCapability
         });
     }
 
-    function canAppointDirector(): RallarGameDirectorAppointmentEligibility {
-        const room = readRoomTarget();
-        const roomState = config.rallar.rooms.state();
-        const session = config.rallar.session();
-        const localPeerId = session?.sessionId;
-        const localPrincipalId = session?.clientId;
-        const directorStatus = readDirectorStatus();
-        const policy = config.directorAppointmentPolicy ??
-            'metadata-owner-admin-or-member-fallback';
-        const context = {
-            policy,
-            roomId: room.roomId,
-            roomRef: room.roomRef,
-            roomState,
-            directorStatus,
-            localPeerId,
-            localPrincipalId
-        };
-
-        if (config.canAppointDirector) {
-            return config.canAppointDirector(context);
-        }
-
-        if (policy === 'none') {
-            return {
-                allowed: true,
-                status: 'allowed',
-                policy,
-                localPeerId,
-                localPrincipalId
-            };
-        }
-
-        return resolveMetadataOwnerAdminAppointmentEligibility(context);
-    }
-
-    async function appointIfElected(): Promise<RallarGameHostAppointResult> {
-        const appointment = canAppointDirector();
-        const result = election();
-        const localPeerId = readLocalPeerId();
-        if (!localPeerId) {
-            lastAppointmentResult = {
-                status: 'no-local-peer',
-                election: result,
-                reason: 'Cannot appoint a director without a local session.'
-            };
-            return lastAppointmentResult;
-        }
-
-        if (!appointment.allowed) {
-            lastAppointmentResult = {
-                status: appointment.status === 'not-ready'
-                    ? 'not-ready'
-                    : appointment.status === 'no-local-peer'
-                    ? 'no-local-peer'
-                    : 'not-authorized',
-                election: result,
-                reason: appointment.reason
-            };
-            refreshStatus();
-            return lastAppointmentResult;
-        }
-
-        if (result.host?.peerId !== localPeerId) {
-            lastAppointmentResult = {
-                status: 'not-elected',
-                election: result,
-                reason: 'The local peer is not the elected host.'
-            };
-            return lastAppointmentResult;
-        }
-
-        try {
-            const room = readRoomTarget();
-            const directorStatus = await config.rallar.director.appoint(
-                room.roomRef ?? room.roomId,
-                { heartbeatTtlMs }
-            );
-            refreshStatus(directorStatus);
-            lastAppointmentResult = {
-                status: 'appointed',
-                election: result,
-                directorStatus
-            };
-            return lastAppointmentResult;
-        }
-        catch (error) {
-            lastAppointmentResult = {
-                status: 'failed',
-                election: result,
-                reason: error instanceof Error ? error.message : String(error)
-            };
-            return lastAppointmentResult;
-        }
-    }
-
-    async function waitForReadyLanes(
-        options: RallarGameLaneReadyOptions = {}
-    ): Promise<RallarGamePeerReadiness> {
-        const selectedLaneIds = options.laneIds ?? [
-            laneIds.input,
-            laneIds.intent,
-            laneIds.snapshot,
-            laneIds.metrics,
-            laneIds.replication
-        ];
-        if (stopped) {
-            lastPeerReadiness = {
-                status: 'aborted',
-                laneIds: selectedLaneIds,
-                readyPeerIds: [],
-                notReadyPeerIds: [],
-                missingPeerIds: [],
-                extraPeerIds: [],
-                observedCount: 0,
-                lanes: [],
-                reason: 'Rallar Game match is stopped.'
-            };
-            realtimeEgress = toRealtimeEgressState(lastPeerReadiness.status);
-            refreshStatus();
-            return lastPeerReadiness;
-        }
-
-        const room = readRoomTarget();
-        if (!room.roomId) {
-            lastPeerReadiness = {
-                status: 'no-room',
-                laneIds: selectedLaneIds,
-                readyPeerIds: [],
-                notReadyPeerIds: [],
-                missingPeerIds: [],
-                extraPeerIds: [],
-                observedCount: 0,
-                lanes: [],
-                reason: 'Cannot wait for lanes without a room.'
-            };
-            realtimeEgress = toRealtimeEgressState(lastPeerReadiness.status);
-            refreshStatus();
-            return lastPeerReadiness;
-        }
-
-        const roomTarget = room.roomRef ?? room.roomId;
-        const lanes = await Promise.all(
-            selectedLaneIds.map((laneId) =>
-                config.rallar.rtc.waitForRoomLane(
-                    roomTarget,
-                    laneId,
-                    {
-                        connect: options.connect ?? true,
-                        timeoutMs: options.timeoutMs,
-                        signal: options.signal,
-                        expect: options.expect
-                    }
-                )
-            )
-        );
-        const readyPeerIds = uniqueSorted(
-            lanes.flatMap((lane) =>
-                lane.readyPeerIds.length > 0
-                    ? lane.readyPeerIds
-                    : lane.ready.map((entry) => entry.peerId)
-            )
-        );
-        const notReadyPeerIds = uniqueSorted(
-            lanes.flatMap((lane) =>
-                lane.notReadyPeerIds.length > 0
-                    ? lane.notReadyPeerIds
-                    : lane.notReady.map((entry) => entry.peerId)
-            )
-        );
-        const missingPeerIds = uniqueSorted(
-            lanes.flatMap((lane) => lane.missingPeerIds)
-        );
-        const extraPeerIds = uniqueSorted(
-            lanes.flatMap((lane) => lane.extraPeerIds)
-        );
-        const expectedCounts = lanes
-            .map((lane) => lane.expectedCount)
-            .filter((count): count is number => count !== undefined);
-
-        lastPeerReadiness = {
-            status: combineLaneStatuses(lanes),
-            roomId: room.roomId,
-            laneIds: selectedLaneIds,
-            readyPeerIds,
-            notReadyPeerIds,
-            missingPeerIds,
-            extraPeerIds,
-            observedCount: readyPeerIds.length,
-            expectedCount: expectedCounts.length > 0
-                ? Math.max(...expectedCounts)
-                : undefined,
-            lanes
-        };
-        realtimeEgress = toRealtimeEgressState(lastPeerReadiness.status);
-        refreshStatus();
-        return lastPeerReadiness;
-    }
-
-    async function sendPresence(
-        presence: TPresence,
-        options: RallarGamePresenceSendOptions = {}
-    ): Promise<RallarGameSendResult> {
-        if (stopped) {
-            return stoppedResult();
-        }
-
-        const room = readRoomTarget();
-        if (!room.roomId) {
-            return {
-                status: 'not-ready',
-                transport: 'realtime',
-                reason: 'Cannot send presence without a room.'
-            };
-        }
-
-        const envelope = createEnvelope('presence', presence, {
-            directorEpoch: currentStatus.directorEpoch ?? 0
-        });
-        const laneId = options.laneId ?? laneIds.input;
-        const key = options.key ?? `presence:${envelope.senderId}`;
-        const maxAgeMs = options.maxAgeMs ?? 250;
-        const openTimeoutMs = options.openTimeoutMs ?? 500;
-        const realtime = await config.rallar.realtime.room({
-            laneId,
-            roomId: room.roomRef ? undefined : room.roomId,
-            roomRef: room.roomRef,
-            openTimeoutMs
-        }).send(envelope, {
-            key,
-            maxAgeMs
-        });
-
-        const roomResult = toRoomRealtimeSendResult(realtime);
-        if (roomResult.status === 'sent' || roomResult.status === 'partial') {
-            return roomResult;
-        }
-        if (realtime.status !== 'no-targets' && realtime.status !== 'not-ready') {
-            return roomResult;
-        }
-
-        const roomScopedPeerIds = uniqueSorted([
-            ...realtime.desiredPeerIds,
-            ...config.rallar.rooms.state().members
-                .filter((member) => member.isOnline)
-                .flatMap((member) => member.sessionIds)
-        ]);
-        if (roomScopedPeerIds.length === 0) {
-            return roomResult;
-        }
-
-        const localPeerId = readLocalPeerId();
-        const roomScopedPeerIdSet = new Set(roomScopedPeerIds);
-        const readinessReadyPeerIds = lastPeerReadiness?.laneIds.includes(laneId)
-            ? lastPeerReadiness.readyPeerIds
-            : [];
-        const rtcReadyPeerIds = safeReadRtcStatus(laneId)?.readyPeerIds ?? [];
-        const readyPeerIds = uniqueSorted([
-            ...readinessReadyPeerIds,
-            ...rtcReadyPeerIds
-        ])
-            .filter((peerId) => peerId !== localPeerId)
-            .filter((peerId) => roomScopedPeerIdSet.has(peerId));
-        if (readyPeerIds.length === 0) {
-            return roomResult;
-        }
-
-        const fallbackRealtime = await config.rallar.realtime.sendJson({
-            laneId,
-            roomId: room.roomRef ? undefined : room.roomId,
-            roomRef: room.roomRef,
-            peerIds: readyPeerIds,
-            data: envelope,
-            key,
-            maxAgeMs,
-            openTimeoutMs
-        });
-        const fallbackResult = toRealtimeSendResult(fallbackRealtime);
-        if (
-            fallbackResult.status === 'sent' ||
-            fallbackResult.status === 'partial'
-        ) {
-            return fallbackResult;
-        }
-
-        return roomResult;
-    }
-
-    async function sendInput(input: TInput): Promise<RallarGameSendResult> {
-        if (stopped) {
-            return stoppedResult();
-        }
-
-        const director = readFreshDirectorStatus();
-        if (!director) {
-            return noDirectorResult();
-        }
-
-        const envelope = createEnvelope('input', input, {
-            directorEpoch: director.appointment.epoch
-        });
-        if (director.isDirector) {
-            await routeEnvelope(envelope, 'input', config.onInput);
-            return { status: 'sent', transport: 'local' };
-        }
-
-        const realtime = await config.rallar.realtime.sendJson({
-            laneId: laneIds.input,
-            peerIds: [director.appointment.sessionId],
-            data: envelope,
-            key: `input:${envelope.senderId}`,
-            maxAgeMs: 250
-        });
-
-        return toRealtimeSendResult(realtime);
-    }
-
-    async function sendIntent(intent: TIntent): Promise<RallarGameSendResult> {
-        if (stopped) {
-            return stoppedResult();
-        }
-
-        const director = readFreshDirectorStatus();
-        if (!director) {
-            return noDirectorResult();
-        }
-
-        const envelope = createEnvelope('intent', intent, {
-            directorEpoch: director.appointment.epoch
-        });
-        if (director.isDirector) {
-            await routeEnvelope(envelope, 'intent', config.onIntent);
-            return { status: 'sent', transport: 'local' };
-        }
-
-        const result = await ensureRelay().sendIntent(envelope);
-        return toRelaySendResult(result);
-    }
-
-    async function publishSnapshot(
-        snapshot: TSnapshot,
-        options: { reliable?: boolean; } = {}
-    ): Promise<RallarGameSendResult> {
-        if (stopped) {
-            return stoppedResult();
-        }
-
-        const director = readFreshDirectorStatus();
-        if (!director) {
-            return noDirectorResult();
-        }
-
-        if (!director.isDirector) {
-            return {
-                status: 'not-director',
-                reason: 'Only the fresh local director can publish snapshots.'
-            };
-        }
-
-        const envelope = createEnvelope('snapshot', snapshot, {
-            directorEpoch: director.appointment.epoch
-        });
-        if (options.reliable) {
-            return toRelaySendResult(await ensureRelay().sendSnapshot(envelope));
-        }
-
-        const room = readRoomTarget();
-        const realtime = await config.rallar.realtime.room({
-            laneId: laneIds.snapshot,
-            roomId: room.roomRef ? undefined : room.roomId,
-            roomRef: room.roomRef
-        }).send(envelope, {
-            key: `snapshot:${envelope.senderId}`,
-            maxAgeMs: 500
-        });
-        return toRoomRealtimeSendResult(realtime);
-    }
-
-    async function publishEvent(event: TEvent): Promise<RallarGameSendResult> {
-        if (stopped) {
-            return stoppedResult();
-        }
-
-        const director = readFreshDirectorStatus();
-        if (!director) {
-            return noDirectorResult();
-        }
-
-        if (!director.isDirector) {
-            return {
-                status: 'not-director',
-                reason: 'Only the fresh local director can publish events.'
-            };
-        }
-
-        const envelope = createEnvelope('event', event, {
-            directorEpoch: director.appointment.epoch
-        });
-        return toRelaySendResult(await ensureRelay().sendOutput(envelope));
-    }
-
-    async function requestSync(
-        payload: unknown = {}
-    ): Promise<RallarGameSendResult> {
-        if (stopped) {
-            return stoppedResult();
-        }
-
-        const director = readFreshDirectorStatus();
-        if (!director) {
-            return noDirectorResult();
-        }
-
-        const envelope = createEnvelope('sync-request', payload, {
-            directorEpoch: director.appointment.epoch
-        });
-        recovery = {
-            ...recovery,
-            lastSyncRequestedAtEpochMs: envelope.sentAtEpochMs
-        };
-        refreshStatus();
-
-        if (director.isDirector) {
-            await routeEnvelope(envelope, 'sync-request', config.onSyncRequest);
-            const snapshot = await config.readSnapshot?.();
-            if (snapshot !== undefined) {
-                await publishSnapshot(snapshot, { reliable: true });
-            }
-            return { status: 'sent', transport: 'local' };
-        }
-
-        return toRelaySendResult(await ensureRelay().requestSync(envelope));
-    }
-
-    function createRelay(): RallarGameRuntimeRelay<TIntent, TSnapshot, TEvent> {
-        return config.rallar.director.createRelay<
-            RallarGameEnvelope<TIntent>,
-            RallarGameEnvelope<TEvent>,
-            RallarGameEnvelope<TSnapshot>
-        >({
-            roomId: config.roomRef ? undefined : config.roomId,
-            roomRef: config.roomRef,
-            laneId: laneIds.intent,
-            topicId: config.topicId,
-            intentTypeId: typeIds.intent,
-            outputTypeId: typeIds.event,
-            heartbeatTypeId: typeIds.heartbeat,
-            snapshotTypeId: typeIds.snapshot,
-            syncRequestTypeId: typeIds.syncRequest,
-            heartbeatIntervalMs: Math.max(500, heartbeatTtlMs / 2),
-            snapshotIntervalMs: config.autoSnapshotIntervalMs,
-            readSnapshot: config.readSnapshot
-                ? async () => {
-                    const snapshot = await config.readSnapshot?.();
-                    if (snapshot === undefined) {
-                        return undefined;
-                    }
-                    const director = readFreshDirectorStatus();
-                    if (!director?.isDirector) {
-                        return undefined;
-                    }
-                    return createEnvelope('snapshot', snapshot, {
-                        directorEpoch: director.appointment.epoch
-                    });
-                }
-                : undefined,
-            onIntent: async (message) => {
-                await handleRelayEnvelope(
-                    message,
-                    'intent',
-                    config.onIntent
-                );
-            },
-            onOutput: async (message) => {
-                await handleRelayEnvelope(
-                    message,
-                    'event',
-                    config.onEvent,
-                    { requireFreshDirectorSender: true }
-                );
-            },
-            onSnapshot: async (message) => {
-                await handleRelayEnvelope(
-                    message,
-                    'snapshot',
-                    config.onSnapshot,
-                    { requireFreshDirectorSender: true }
-                );
-            },
-            onSyncRequest: async (message) => {
-                await handleRelayEnvelope(
-                    message as RallarDirectorRelayMessage<RallarGameEnvelope<unknown>>,
-                    'sync-request',
-                    config.onSyncRequest
-                );
-            }
-        });
-    }
-
-    async function handleCapabilityMessage(
-        message: {
-            senderId: string;
-            payload: RallarGameEnvelope<unknown>;
-        }
+    private async handleCapabilityMessage(
+        message: RallarMessage
     ): Promise<void> {
-        if (stopped || !isRallarGameEnvelope(message.payload, config.protocol)) {
+        if (this.stopped || !isRallarGameEnvelope(message.payload, this.config.protocol)) {
             return;
         }
 
-        const accepted = acceptEnvelope(message.payload, 'capability', {
+        const accepted = this.acceptEnvelope(message.payload, 'capability', {
             senderId: message.senderId,
             checkDirectorEpoch: false
         });
@@ -794,60 +395,57 @@ export function createRallarGameMatch<TInput, TIntent, TSnapshot, TEvent, TPrese
             return;
         }
 
-        const capability = toHostCapability(message.payload);
+        const capability = decodeRallarGameHostCapability(message.payload);
         if (!capability) {
             return;
         }
 
-        capabilities.set(capability.peerId, capability);
-        refreshStatus();
+        this.capabilities.set(capability.peerId, capability);
+        this.refreshStatus();
     }
 
-    async function handleRealtimeInputOrPresence(
-        message: {
-            peerId: string;
-            data: RallarGameEnvelope<TInput | TPresence>;
-        }
+    private async handleRealtimeInputOrPresence(
+        message: RallarRealtimeMessage<RallarMessage['payload']>
     ): Promise<void> {
         const envelope = message.data;
-        if (!isRallarGameEnvelope(envelope, config.protocol)) {
+        if (!isRallarGameEnvelope(envelope, this.config.protocol)) {
             return;
         }
 
         if (envelope.kind === 'presence') {
-            await handleRealtimePresence(
+            await this.handleRealtimePresence(
                 message.peerId,
                 envelope as RallarGameEnvelope<TPresence>
             );
             return;
         }
 
-        if (stopped || !currentStatus.directorIsFresh) {
+        if (this.stopped || !this.currentStatus.directorIsFresh) {
             return;
         }
 
-        const director = readFreshDirectorStatus();
+        const director = this.readFreshDirectorStatus();
         if (!director?.isDirector) {
             return;
         }
 
         if (
             envelope.kind !== 'input' ||
-            !acceptEnvelope(envelope, 'input', { senderId: message.peerId })
+            !this.acceptEnvelope(envelope, 'input', { senderId: message.peerId })
         ) {
             return;
         }
 
-        await config.onInput?.(envelope as RallarGameEnvelope<TInput>);
+        await this.config.onInput?.(envelope as RallarGameEnvelope<TInput>);
     }
 
-    async function handleRealtimePresence(
+    private async handleRealtimePresence(
         peerId: string,
         envelope: RallarGameEnvelope<TPresence>
     ): Promise<void> {
         if (
-            stopped ||
-            !acceptEnvelope(envelope, 'presence', {
+            this.stopped ||
+            !this.acceptEnvelope(envelope, 'presence', {
                 senderId: peerId,
                 checkDirectorEpoch: false
             })
@@ -855,31 +453,28 @@ export function createRallarGameMatch<TInput, TIntent, TSnapshot, TEvent, TPrese
             return;
         }
 
-        await config.onPresence?.(envelope);
-        for (const handler of presenceHandlers) {
+        await this.config.onPresence?.(envelope);
+        for (const handler of this.presenceHandlers) {
             await handler(envelope);
         }
     }
 
-    async function handleRealtimeSnapshot(
-        message: {
-            peerId: string;
-            data: RallarGameEnvelope<TSnapshot>;
-        }
+    private async handleRealtimeSnapshot(
+        message: RallarRealtimeMessage<RallarMessage['payload']>
     ): Promise<void> {
-        if (stopped || !currentStatus.directorIsFresh) {
+        if (this.stopped || !this.currentStatus.directorIsFresh) {
             return;
         }
 
-        const directorPeerId = currentStatus.directorPeerId;
+        const directorPeerId = this.currentStatus.directorPeerId;
         if (!directorPeerId || message.peerId !== directorPeerId) {
             return;
         }
 
         const envelope = message.data;
         if (
-            !isRallarGameEnvelope(envelope, config.protocol) ||
-            !acceptEnvelope(envelope, 'snapshot', {
+            !isRallarGameEnvelope(envelope, this.config.protocol) ||
+            !this.acceptEnvelope(envelope, 'snapshot', {
                 senderId: directorPeerId,
                 requireFreshDirectorSender: true
             })
@@ -887,66 +482,57 @@ export function createRallarGameMatch<TInput, TIntent, TSnapshot, TEvent, TPrese
             return;
         }
 
-        recovery = {
-            status: recovery.status === 'recovering' ? 'synced' : recovery.status,
+        this.recovery = {
+            status: this.recovery.status === 'recovering' ? 'synced' : this.recovery.status,
             lastSnapshotAtEpochMs: envelope.sentAtEpochMs
         };
-        refreshStatus();
-        await config.onSnapshot?.(envelope);
+        this.refreshStatus();
+        await this.config.onSnapshot?.(envelope as RallarGameEnvelope<TSnapshot>);
     }
 
-    async function handleRelayEnvelope<T>(
-        message: RallarDirectorRelayMessage<RallarGameEnvelope<T>>,
-        kind: RallarGameEnvelopeKind,
-        handler: RallarGameEnvelopeHandler<T> | undefined,
-        options: Readonly<{
-            requireFreshDirectorSender?: boolean;
-        }> = {}
+    private async handleRelayEnvelope<T>(
+        input: RallarGameDirectorRelayRuntime.EnvelopeInput<T>
     ): Promise<void> {
-        if (stopped || !isRallarGameEnvelope(message.data, config.protocol)) {
+        if (this.stopped || !isRallarGameEnvelope(input.message.data, this.config.protocol)) {
             return;
         }
 
         if (
-            !acceptEnvelope(message.data, kind, {
-                senderId: message.senderId,
-                requireFreshDirectorSender: options.requireFreshDirectorSender
+            !this.acceptEnvelope(input.message.data, input.kind, {
+                senderId: input.message.senderId,
+                requireFreshDirectorSender: input.requireFreshDirectorSender
             })
         ) {
             return;
         }
 
-        if (kind === 'snapshot') {
-            recovery = {
-                status: recovery.status === 'recovering' ? 'synced' : recovery.status,
-                lastSnapshotAtEpochMs: message.data.sentAtEpochMs
+        if (input.kind === 'snapshot') {
+            this.recovery = {
+                status: this.recovery.status === 'recovering' ? 'synced' : this.recovery.status,
+                lastSnapshotAtEpochMs: input.message.data.sentAtEpochMs
             };
-            refreshStatus();
+            this.refreshStatus();
         }
 
-        await handler?.(message.data);
+        await input.handler?.(input.message.data);
     }
 
-    function acceptEnvelope(
+    private acceptEnvelope(
         envelope: RallarGameEnvelope<unknown>,
         kind: RallarGameEnvelopeKind,
-        options: Readonly<{
-            senderId?: string;
-            checkDirectorEpoch?: boolean;
-            requireFreshDirectorSender?: boolean;
-        }> = {}
+        options: RallarGameEnvelopeAcceptanceOptions = {}
     ): boolean {
-        const room = readRoomTarget();
+        const room = this.readRoomTarget();
         const directorEpoch = options.checkDirectorEpoch === false
             ? undefined
-            : currentStatus.directorEpoch;
+            : this.currentStatus.directorEpoch;
         const senderId = options.requireFreshDirectorSender
-            ? currentStatus.directorPeerId
+            ? this.currentStatus.directorPeerId
             : options.senderId;
-        const accepted = sequenceTracker.accept(envelope, {
-            protocol: config.protocol,
+        const accepted = this.sequenceTracker.accept(envelope, {
+            protocol: this.config.protocol,
             roomId: room.roomId,
-            matchId: config.matchId,
+            matchId: this.config.matchId,
             senderId,
             minDirectorEpoch: directorEpoch,
             kinds: [kind]
@@ -955,14 +541,14 @@ export function createRallarGameMatch<TInput, TIntent, TSnapshot, TEvent, TPrese
         return accepted.accepted;
     }
 
-    async function routeEnvelope<T>(
+    private async routeEnvelope<T>(
         envelope: RallarGameEnvelope<T>,
         kind: RallarGameEnvelopeKind,
         handler: RallarGameEnvelopeHandler<T> | undefined
     ): Promise<void> {
         if (
-            !stopped &&
-            acceptEnvelope(envelope, kind, {
+            !this.stopped &&
+            this.acceptEnvelope(envelope, kind, {
                 senderId: envelope.senderId
             })
         ) {
@@ -970,103 +556,103 @@ export function createRallarGameMatch<TInput, TIntent, TSnapshot, TEvent, TPrese
         }
     }
 
-    function refreshStatus(
-        directorStatus: RallarDirectorStatus = readDirectorStatus()
+    private refreshStatus(
+        directorStatus: RallarDirectorStatus = this.readDirectorStatus()
     ): void {
-        if (stopped) {
+        if (this.stopped) {
             return;
         }
 
-        const nextPhase: RallarGameMatchPhase = !started
+        const nextPhase: RallarGameMatchPhase = !this.started
             ? 'idle'
             : directorStatus.isFresh
             ? 'active'
             : 'recovering';
-        if (started && !directorStatus.isFresh) {
-            recovery = {
+        if (this.started && !directorStatus.isFresh) {
+            this.recovery = {
                 status: 'recovering',
                 reason: 'No fresh director is available.',
-                sinceEpochMs: recovery.status === 'recovering'
-                    ? recovery.sinceEpochMs
+                sinceEpochMs: this.recovery.status === 'recovering'
+                    ? this.recovery.sinceEpochMs
                     : Date.now(),
-                lastSyncRequestedAtEpochMs: recovery.lastSyncRequestedAtEpochMs,
-                lastSnapshotAtEpochMs: recovery.lastSnapshotAtEpochMs
+                lastSyncRequestedAtEpochMs: this.recovery.lastSyncRequestedAtEpochMs,
+                lastSnapshotAtEpochMs: this.recovery.lastSnapshotAtEpochMs
             };
         }
-        else if (directorStatus.isFresh && recovery.status === 'recovering') {
-            recovery = {
+        else if (directorStatus.isFresh && this.recovery.status === 'recovering') {
+            this.recovery = {
                 status: 'idle',
-                lastSnapshotAtEpochMs: recovery.lastSnapshotAtEpochMs
+                lastSnapshotAtEpochMs: this.recovery.lastSnapshotAtEpochMs
             };
         }
 
-        setStatus(nextPhase, directorStatus);
+        this.setStatus(nextPhase, directorStatus);
     }
 
-    async function refreshReliableEgress(): Promise<void> {
-        const room = readRoomTarget();
+    private async refreshReliableEgress(): Promise<void> {
+        const room = this.readRoomTarget();
         if (!room.roomId) {
-            reliableEgress = 'empty';
+            this.reliableEgress = 'empty';
             return;
         }
 
         try {
-            const presence = await config.rallar.rooms.waitForPresence(
+            const presence = await this.config.rallar.rooms.waitForPresence(
                 room.roomRef ?? room.roomId,
                 {
                     expect: { min: 1 },
                     timeoutMs: 0
                 }
             );
-            reliableEgress = toReliableEgressState(presence.status);
+            this.reliableEgress = toRallarGameReliableEgressState(presence.status);
         }
         catch {
-            reliableEgress = 'failed';
+            this.reliableEgress = 'failed';
         }
     }
 
-    function setStatus(
+    private setStatus(
         phase: RallarGameMatchPhase,
-        directorStatus: RallarDirectorStatus = readDirectorStatus(),
+        directorStatus: RallarDirectorStatus = this.readDirectorStatus(),
         reason?: string
     ): void {
-        currentStatus = createStatus(phase, directorStatus, reason);
-        emitStatus(currentStatus);
+        this.currentStatus = this.createStatus(phase, directorStatus, reason);
+        this.emitStatus(this.currentStatus);
     }
 
-    function createStatus(
+    private createStatus(
         phase: RallarGameMatchPhase,
-        directorStatus: RallarDirectorStatus = readDirectorStatus(),
+        directorStatus: RallarDirectorStatus = this.readDirectorStatus(),
         reason?: string
     ): RallarGameMatchStatus {
-        const room = readRoomTarget(directorStatus);
+        const room = this.readRoomTarget(directorStatus);
         return {
             phase,
-            protocol: config.protocol,
-            topicId: config.topicId,
+            protocol: this.config.protocol,
+            topicId: this.config.topicId,
             roomId: room.roomId,
             roomRef: room.roomRef,
-            localPeerId: readLocalPeerId(),
+            localPeerId: this.readLocalPeerId(),
             directorPeerId: directorStatus.appointment?.sessionId,
             directorEpoch: directorStatus.appointment?.epoch,
             directorIsFresh: directorStatus.isFresh,
-            directorAuthority: toDirectorAuthority(directorStatus),
+            directorAuthority: this.toDirectorAuthority(directorStatus),
             egress: {
-                reliable: reliableEgress,
-                realtime: realtimeEgress
+                reliable: this.reliableEgress,
+                realtime: this.egress.realtimeState
             },
-            recovery,
-            started,
-            stopped,
+            recovery: this.recovery,
+            started: this.started,
+            stopped: this.stopped,
             updatedAtEpochMs: Date.now(),
             reason
         };
     }
 
-    function toDirectorAuthority(
+    private toDirectorAuthority(
         directorStatus: RallarDirectorStatus
     ): RallarGameMatchStatus['directorAuthority'] {
-        const localPeerId = readLocalPeerId();
+        const localPeerId = this.readLocalPeerId();
         if (
             localPeerId &&
             directorStatus.appointment?.sessionId === localPeerId
@@ -1074,68 +660,54 @@ export function createRallarGameMatch<TInput, TIntent, TSnapshot, TEvent, TPrese
             return directorStatus.isFresh ? 'active' : 'stale';
         }
 
-        if (!directorStatus.appointment && canAppointDirector().allowed) {
+        if (!directorStatus.appointment && this.appointment.eligibility().allowed) {
             return 'candidate';
         }
 
         return 'none';
     }
 
-    function readFreshDirectorStatus():
-        | (RallarDirectorStatus & {
-            appointment: NonNullable<RallarDirectorStatus['appointment']>;
-        })
-        | undefined {
-        const status = readDirectorStatus();
+    private readFreshDirectorStatus(): RallarGameFreshDirectorStatus | undefined {
+        const status = this.readDirectorStatus();
         if (!status.isFresh || !status.appointment) {
-            refreshStatus(status);
+            this.refreshStatus(status);
             return undefined;
         }
-        refreshStatus(status);
-        return status as RallarDirectorStatus & {
-            appointment: NonNullable<RallarDirectorStatus['appointment']>;
-        };
+        this.refreshStatus(status);
+        return status as RallarGameFreshDirectorStatus;
     }
 
-    function readDirectorStatus(): RallarDirectorStatus {
-        const room = readRoomTarget();
-        return config.rallar.director.status(room.roomRef ?? room.roomId);
+    private readDirectorStatus(): RallarDirectorStatus {
+        const room = this.readRoomTarget();
+        return this.config.rallar.director.status(room.roomRef ?? room.roomId);
     }
 
-    function readRoomTarget(
+    private readRoomTarget(
         directorStatus?: RallarDirectorStatus
-    ): Readonly<{
-        roomId?: string;
-        roomRef?: GroupRef;
-    }> {
-        const roomState = config.rallar.rooms.state();
-        const roomRef = config.roomRef ??
+    ): RallarGameMatchRoomTarget {
+        const roomState = this.config.rallar.rooms.state();
+        const roomRef = this.config.roomRef ??
             directorStatus?.roomRef ??
             roomState.currentRoomRef;
-        const roomId = config.roomId ??
+        const roomId = this.config.roomId ??
             roomRef?.groupId ??
             directorStatus?.roomId ??
             roomState.currentRoomId;
         return { roomId, roomRef };
     }
 
-    function readLocalPeerId(): string | undefined {
-        return config.rallar.session()?.sessionId;
+    private readLocalPeerId(): string | undefined {
+        return this.config.rallar.session()?.sessionId;
     }
 
-    function createEnvelope<T>(
+    private createEnvelope<T>(
         kind: RallarGameEnvelopeKind,
         payload: T,
-        options: Readonly<{
-            directorEpoch: number;
-            roomId?: string;
-            senderId?: string;
-            sentAtEpochMs?: number;
-        }>
+        options: RallarGameMatchEgressRuntime.EnvelopeOptions
     ): RallarGameEnvelope<T> {
-        const room = readRoomTarget();
+        const room = this.readRoomTarget();
         const roomId = options.roomId ?? room.roomId;
-        const senderId = options.senderId ?? readLocalPeerId();
+        const senderId = options.senderId ?? this.readLocalPeerId();
         if (!roomId) {
             throw new Error('Cannot create Rallar Game envelope without a room.');
         }
@@ -1146,52 +718,39 @@ export function createRallarGameMatch<TInput, TIntent, TSnapshot, TEvent, TPrese
         }
 
         return createRallarGameEnvelope({
-            protocol: config.protocol,
+            protocol: this.config.protocol,
             kind,
             roomId,
-            matchId: config.matchId,
+            matchId: this.config.matchId,
             senderId,
-            seq: nextSeq++,
+            seq: this.nextSeq++,
             directorEpoch: options.directorEpoch,
             sentAtEpochMs: options.sentAtEpochMs,
             payload
         });
     }
 
-    function ensureRelay(): RallarGameRuntimeRelay<TIntent, TSnapshot, TEvent> {
-        if (stopped) {
-            throw new Error('Cannot create Rallar Game relay after match stop.');
-        }
-
-        if (relay) {
-            return relay;
-        }
-
-        relay = createRelay();
-        return relay;
-    }
-
-    function safeReadRtcStatus(laneId: string): RallarRtcStatus | undefined {
+    private safeReadRtcStatus(laneId: string): RallarRtcStatus | undefined {
         try {
-            return config.rallar.rtc.status({ laneId });
+            return this.config.rallar.rtc.status({ laneId });
         }
         catch {
             return undefined;
         }
     }
 
-    function safeReadWsStatus() {
+    private safeReadWsStatus() {
         try {
-            return config.rallar.ws.status();
+            return this.config.rallar.ws.status();
         }
         catch {
             return undefined;
         }
     }
 
-    function safeReadRealtimeHealth(lanes: RallarGameLaneIds) {
+    private safeReadRealtimeHealth(lanes: RallarGameLaneIds) {
         try {
-            return config.rallar.realtime.health({
+            return this.config.rallar.realtime.health({
                 laneIds: [
                     lanes.input,
                     lanes.intent,
@@ -1206,480 +765,14 @@ export function createRallarGameMatch<TInput, TIntent, TSnapshot, TEvent, TPrese
         }
     }
 
-    function emitStatus(status: RallarGameMatchStatus): void {
-        for (const handler of statusHandlers) {
-            void notifyStatusHandler(handler, status);
+    private emitStatus(status: RallarGameMatchStatus): void {
+        for (const handler of this.statusHandlers) {
+            void notifyRallarGameStatusHandler(handler, status);
         }
     }
 }
 
-function resolveDefaultPeerIds(
-    roomState: { members: readonly { isOnline: boolean; sessionIds: readonly string[]; }[]; },
-    localPeerId: string | undefined
-): readonly string[] {
-    return uniqueSorted([
-        ...roomState.members
-            .filter((member) => member.isOnline)
-            .flatMap((member) => member.sessionIds),
-        ...(localPeerId ? [localPeerId] : [])
-    ]);
-}
-
-function resolveMetadataOwnerAdminAppointmentEligibility(
-    context: Readonly<{
-        policy: RallarGameDirectorAppointmentPolicy;
-        roomState: {
-            members: readonly {
-                principalId: string;
-                role: string;
-                status: string;
-                isOnline?: boolean;
-                sessionIds?: readonly string[];
-            }[];
-            currentRoom?: {
-                members: readonly {
-                    principalId: string;
-                    role: string;
-                    status: string;
-                }[];
-                activeSessions?: readonly {
-                    principalId: string;
-                    sessionId: string;
-                }[];
-            };
-        };
-        directorStatus: RallarDirectorStatus;
-        localPeerId?: string;
-        localPrincipalId?: string;
-    }>
-): RallarGameDirectorAppointmentEligibility {
-    if (!context.localPeerId || !context.localPrincipalId) {
-        return {
-            allowed: false,
-            status: 'no-local-peer',
-            policy: context.policy,
-            reason: 'Cannot appoint a director without a local session.',
-            localPeerId: context.localPeerId,
-            localPrincipalId: context.localPrincipalId
-        };
-    }
-
-    const member = context.roomState.members.find((entry) => entry.principalId === context.localPrincipalId) ??
-        context.roomState.currentRoom?.members.find((entry) => entry.principalId === context.localPrincipalId);
-
-    if (!member) {
-        return {
-            allowed: false,
-            status: 'not-ready',
-            policy: context.policy,
-            reason: 'Cannot confirm local room membership yet.',
-            localPeerId: context.localPeerId,
-            localPrincipalId: context.localPrincipalId
-        };
-    }
-
-    const localSessionActive = hasActiveLocalRoomSession(
-        context.roomState,
-        context.localPrincipalId,
-        context.localPeerId
-    );
-    if (member.status !== 'active' || !localSessionActive) {
-        return {
-            allowed: false,
-            status: 'not-authorized',
-            policy: context.policy,
-            reason: 'Only active room members can appoint the browser director.',
-            localPeerId: context.localPeerId,
-            localPrincipalId: context.localPrincipalId,
-            localRole: member.role,
-            localMemberStatus: member.status
-        };
-    }
-
-    if (member.role === 'owner' || member.role === 'admin') {
-        return {
-            allowed: true,
-            status: 'allowed',
-            policy: context.policy,
-            localPeerId: context.localPeerId,
-            localPrincipalId: context.localPrincipalId,
-            localRole: member.role,
-            localMemberStatus: member.status
-        };
-    }
-
-    if (context.policy !== 'metadata-owner-admin-or-member-fallback') {
-        return {
-            allowed: false,
-            status: 'not-authorized',
-            policy: context.policy,
-            reason: 'Only active room owners/admins can appoint the browser director.',
-            localPeerId: context.localPeerId,
-            localPrincipalId: context.localPrincipalId,
-            localRole: member.role,
-            localMemberStatus: member.status
-        };
-    }
-
-    if (hasOnlineOwnerOrAdmin(context.roomState)) {
-        return {
-            allowed: false,
-            status: 'not-authorized',
-            policy: context.policy,
-            reason: 'Only owners/admins can appoint while an owner/admin is online.',
-            localPeerId: context.localPeerId,
-            localPrincipalId: context.localPrincipalId,
-            localRole: member.role,
-            localMemberStatus: member.status
-        };
-    }
-
-    if (context.directorStatus.active) {
-        return {
-            allowed: false,
-            status: 'not-authorized',
-            policy: context.policy,
-            reason: 'Cannot appoint a fallback director while another director is active.',
-            localPeerId: context.localPeerId,
-            localPrincipalId: context.localPrincipalId,
-            localRole: member.role,
-            localMemberStatus: member.status
-        };
-    }
-
-    return {
-        allowed: true,
-        status: 'allowed',
-        policy: context.policy,
-        localPeerId: context.localPeerId,
-        localPrincipalId: context.localPrincipalId,
-        localRole: member.role,
-        localMemberStatus: member.status
-    };
-}
-
-function hasActiveLocalRoomSession(
-    roomState: Readonly<{
-        members: readonly {
-            principalId: string;
-            sessionIds?: readonly string[];
-        }[];
-        currentRoom?: {
-            activeSessions?: readonly {
-                principalId: string;
-                sessionId: string;
-            }[];
-        };
-    }>,
-    principalId: string,
-    sessionId: string
-): boolean {
-    return roomState.members.some((member) =>
-        member.principalId === principalId &&
-        (member.sessionIds ?? []).includes(sessionId)
-    ) ||
-        (roomState.currentRoom?.activeSessions ?? []).some((session) =>
-            session.principalId === principalId &&
-            session.sessionId === sessionId
-        );
-}
-
-function hasOnlineOwnerOrAdmin(
-    roomState: Readonly<{
-        members: readonly {
-            principalId: string;
-            role: string;
-            status: string;
-            isOnline?: boolean;
-            sessionIds?: readonly string[];
-        }[];
-        currentRoom?: {
-            members: readonly {
-                principalId: string;
-                role: string;
-                status: string;
-            }[];
-            activeSessions?: readonly {
-                principalId: string;
-                sessionId: string;
-            }[];
-        };
-    }>
-): boolean {
-    const ownerAdminIds = new Set(
-        [
-            ...roomState.members,
-            ...(roomState.currentRoom?.members ?? [])
-        ]
-            .filter((member) =>
-                member.status === 'active' &&
-                (member.role === 'owner' || member.role === 'admin')
-            )
-            .map((member) => member.principalId)
-    );
-
-    return roomState.members.some((member) =>
-        ownerAdminIds.has(member.principalId) &&
-        (member.isOnline === true || (member.sessionIds?.length ?? 0) > 0)
-    ) ||
-        (roomState.currentRoom?.activeSessions ?? []).some((session) => ownerAdminIds.has(session.principalId));
-}
-
-function toHostCapability(
-    envelope: RallarGameEnvelope<unknown>
-): RallarGameHostCapability | undefined {
-    if (
-        typeof envelope.payload !== 'object' ||
-        envelope.payload === null ||
-        Array.isArray(envelope.payload)
-    ) {
-        return undefined;
-    }
-
-    const payload = envelope.payload as Partial<RallarGameHostCapability>;
-    return {
-        ...payload,
-        peerId: envelope.senderId,
-        reportedAtEpochMs: typeof payload.reportedAtEpochMs === 'number'
-            ? payload.reportedAtEpochMs
-            : envelope.sentAtEpochMs
-    };
-}
-
-function combineLaneStatuses(
-    lanes: readonly RallarRtcRoomLaneWaitResult[]
-): RallarGamePeerReadiness['status'] {
-    if (lanes.length === 0) {
-        return 'empty';
-    }
-
-    const statuses = lanes.map((lane) => lane.status);
-    if (statuses.every((status) => status === 'open')) {
-        return 'open';
-    }
-
-    if (statuses.every((status) => status === 'empty')) {
-        return 'empty';
-    }
-
-    if (statuses.some((status) => status === 'failed')) {
-        return 'failed';
-    }
-
-    if (statuses.some((status) => status === 'aborted')) {
-        return 'aborted';
-    }
-
-    if (statuses.some((status) => status === 'timeout')) {
-        return 'timeout';
-    }
-
-    if (statuses.some((status) => status === 'not-connected')) {
-        return 'not-connected';
-    }
-
-    if (statuses.some((status) => status === 'over-capacity')) {
-        return 'over-capacity';
-    }
-
-    if (statuses.some(isPartiallyReadyLaneStatus)) {
-        return 'partial';
-    }
-
-    return 'not-ready';
-}
-
-function isPartiallyReadyLaneStatus(status: RallarRtcRoomLaneWaitStatus): boolean {
-    return status === 'open' ||
-        status === 'partial' ||
-        status === 'empty' ||
-        status === 'over-capacity';
-}
-
-function toReliableEgressState(status: string): RallarGameEgressState {
-    switch (status) {
-        case 'ready':
-            return 'ready';
-        case 'partial':
-        case 'over-capacity':
-            return 'partial';
-        case 'timeout':
-            return 'timeout';
-        case 'empty':
-            return 'empty';
-        case 'aborted':
-        case 'not-connected':
-        case 'not-found':
-            return 'failed';
-        default:
-            return 'warming';
-    }
-}
-
-function toRealtimeEgressState(
-    status: RallarGamePeerReadiness['status']
-): RallarGameEgressState {
-    switch (status) {
-        case 'open':
-            return 'ready';
-        case 'empty':
-        case 'no-room':
-            return 'empty';
-        case 'partial':
-        case 'over-capacity':
-            return 'partial';
-        case 'not-ready':
-        case 'not-connected':
-            return 'warming';
-        case 'timeout':
-            return 'timeout';
-        case 'aborted':
-        case 'failed':
-            return 'failed';
-    }
-}
-
-function toRelaySendResult(
-    relay: {
-        status: 'sent' | 'partial' | 'no-director' | 'not-director' | 'stale-director' | 'failed';
-        reason?: string;
-    }
-): RallarGameSendResult {
-    if (relay.status === 'sent') {
-        return { status: 'sent', transport: 'director-relay', relay };
-    }
-
-    if (relay.status === 'partial') {
-        return {
-            status: 'partial',
-            transport: 'director-relay',
-            relay,
-            reason: relay.reason
-        };
-    }
-
-    if (relay.status === 'no-director' || relay.status === 'stale-director') {
-        return {
-            status: 'no-director',
-            transport: 'director-relay',
-            relay,
-            reason: relay.reason
-        };
-    }
-
-    if (relay.status === 'not-director') {
-        return {
-            status: 'not-director',
-            transport: 'director-relay',
-            relay,
-            reason: relay.reason
-        };
-    }
-
-    return {
-        status: 'failed',
-        transport: 'director-relay',
-        relay,
-        reason: relay.reason
-    };
-}
-
-function toRealtimeSendResult(
-    realtime: readonly RallarRealtimeSendResult[]
-): RallarGameSendResult {
-    if (realtime.length === 0) {
-        return {
-            status: 'not-ready',
-            transport: 'realtime',
-            realtime,
-            reason: 'No realtime peers were targeted.'
-        };
-    }
-
-    const sent = realtime.filter((entry) => entry.result.status === 'sent');
-    const queued = realtime.filter((entry) => entry.result.status === 'queued');
-    const replaced = realtime.filter((entry) => entry.result.status === 'replaced');
-    const successfulCount = sent.length + queued.length + replaced.length;
-    if (successfulCount === realtime.length) {
-        return { status: 'sent', transport: 'realtime', realtime };
-    }
-
-    if (successfulCount > 0) {
-        return {
-            status: 'partial',
-            transport: 'realtime',
-            realtime,
-            reason: 'Some realtime sends did not succeed.'
-        };
-    }
-
-    return {
-        status: 'not-ready',
-        transport: 'realtime',
-        realtime,
-        reason: 'Realtime lane is not ready.'
-    };
-}
-
-function toRoomRealtimeSendResult(
-    realtime: RallarRoomRealtimeSendResult
-): RallarGameSendResult {
-    if (realtime.status === 'sent') {
-        return {
-            status: 'sent',
-            transport: 'realtime',
-            realtime: realtime.results
-        };
-    }
-
-    if (realtime.status === 'partial') {
-        return {
-            status: 'partial',
-            transport: 'realtime',
-            realtime: realtime.results,
-            reason: realtime.reason ?? 'Some room realtime sends did not succeed.'
-        };
-    }
-
-    if (
-        realtime.status === 'not-ready' ||
-        realtime.status === 'no-targets'
-    ) {
-        return {
-            status: 'not-ready',
-            transport: 'realtime',
-            realtime: realtime.results,
-            reason: realtime.reason ?? 'Room realtime transport is not ready.'
-        };
-    }
-
-    return {
-        status: 'failed',
-        transport: 'realtime',
-        realtime: realtime.results,
-        reason: realtime.reason ?? 'Room realtime send failed.'
-    };
-}
-
-function noDirectorResult(): RallarGameSendResult {
-    return {
-        status: 'no-director',
-        reason: 'No fresh director is available.'
-    };
-}
-
-function isSuccessfulMessageStatus(status: ALOutboundEnqueueStatus): boolean {
-    return status === 'enqueued' ||
-        status === 'sent-immediate' ||
-        status === 'skipped' ||
-        status === 'duplicate';
-}
-
-function uniqueSorted(values: readonly string[]): readonly string[] {
-    return [...new Set(values)].sort((left, right) => left.localeCompare(right));
-}
-
-async function notifyStatusHandler(
+async function notifyRallarGameStatusHandler(
     handler: RallarGameStatusHandler,
     status: RallarGameMatchStatus
 ): Promise<void> {

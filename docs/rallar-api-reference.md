@@ -227,7 +227,7 @@ principal activate that membership.
 `rooms.removeMember(room, principalId, options?)`,
 `rooms.banMember(room, principalId, options?)`,
 `rooms.unbanMember(room, principalId, options?)`,
-`rooms.setMemberRole(room, principalId, role, options?)`, and
+`rooms.setMemberRole({ room, principalId, role, options? })`, and
 `rooms.transferOwnership(room, principalId, options?)` are the browser-safe
 membership governance workflows. They call server-side policy endpoints instead
 of exposing raw membership mutation. The legacy self-upsert route remains

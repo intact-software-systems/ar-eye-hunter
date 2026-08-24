@@ -1,4 +1,5 @@
 import type { ApiMiddleware } from '@shared-web/browser/app-context.ts';
+import type { RallarMessagesController } from '@shared-web/browser/messages/browser-rallar-messages-controller.ts';
 import type { RallarAuthFacade } from '@shared-web/browser/rallar-auth-facade.ts';
 import type { RallarCallsFacade } from '@shared-web/browser/rallar-calls-facade.ts';
 import type {
@@ -14,16 +15,11 @@ import type {
     RallarRealtimeFacade,
     RallarTargetedChannel,
     RallarTargetedChannelDefinition,
-    RallarWsLifecycleListener,
-    RallarWsStatus,
-    RallarWsStatusListener,
-    RallarWsWaitForOpenResult
+    RallarWsFacade
 } from '@shared-web/browser/rallar-realtime-facade.ts';
-import type { RallarRtcFacade, RallarWaitForOpenOptions } from '@shared-web/browser/rallar-rtc-facade.ts';
-import type { RallarMessagesController } from '@shared-web/browser/rallar-runtime/messages.ts';
+import type { RallarRtcFacade } from '@shared-web/browser/rallar-rtc-facade.ts';
 import type { RallarPeopleController } from '@shared-web/browser/rallar-runtime/people.ts';
 import type { RallarStatsController } from '@shared-web/browser/rallar-runtime/stats.ts';
-import type { RallarOnChangeOptions } from '@shared-web/browser/rallar-shared-contracts.ts';
 import type { BrowserRallarRooms } from '@shared-web/browser/rooms/browser-rallar-rooms.ts';
 
 export type * from '@shared-web/browser/rallar-auth-facade.ts';
@@ -46,37 +42,36 @@ export type * from '@shared-web/browser/rallar-rtc-facade.ts';
 export type * from '@shared-web/browser/rallar-shared-contracts.ts';
 export type * from '@shared-web/browser/rooms/rallar-room-contracts.ts';
 
-export type RallarFacade =
-    & RallarConnectionFacade
-    & Readonly<{
-        setup(input: RallarSetupInput): Promise<RallarStartResult>;
-        data: RallarDataFacade;
-        crdt: RallarCrdtFacade;
-        auth: RallarAuthFacade;
-        rooms: BrowserRallarRooms;
-        people: RallarPeopleController['operations'];
-        stats: RallarStatsController['operations'];
-        director: RallarDirectorFacade;
-        messages: RallarMessagesController['operations'];
-        channels: Readonly<{
-            targeted<T>(definition: RallarTargetedChannelDefinition): RallarTargetedChannel<T>;
-            room<T>(definition: Omit<RallarTargetedChannelDefinition, 'peerId' | 'peerIds'>): RallarTargetedChannel<T>;
-        }>;
-        rtc: RallarRtcFacade;
-        calls: RallarCallsFacade;
-        ws: Readonly<{
-            status(): RallarWsStatus;
-            onStatus(
-                listener: RallarWsStatusListener,
-                options?: RallarOnChangeOptions
-            ): import('@shared-web/browser/rallar-shared-contracts.ts').RallarUnsubscribe;
-            onLifecycle(
-                listener: RallarWsLifecycleListener,
-                options?: RallarOnChangeOptions
-            ): import('@shared-web/browser/rallar-shared-contracts.ts').RallarUnsubscribe;
-            waitForOpen(options?: RallarWaitForOpenOptions): Promise<RallarWsWaitForOpenResult>;
-        }>;
-        realtime: RallarRealtimeFacade;
-        media: RallarMediaFacade;
-        advanced: Readonly<{ middleware(): ApiMiddleware; }>;
-    }>;
+export interface RallarChannelsFacade {
+    targeted<T>(
+        definition: RallarTargetedChannelDefinition
+    ): RallarTargetedChannel<T>;
+    room<T>(
+        definition: Omit<RallarTargetedChannelDefinition, 'peerId' | 'peerIds'>
+    ): RallarTargetedChannel<T>;
+}
+
+export interface RallarAdvancedFacade {
+    middleware(): ApiMiddleware;
+}
+
+export interface RallarProductFacade {
+    setup(input: RallarSetupInput): Promise<RallarStartResult>;
+    readonly data: RallarDataFacade;
+    readonly crdt: RallarCrdtFacade;
+    readonly auth: RallarAuthFacade;
+    readonly rooms: BrowserRallarRooms;
+    readonly people: RallarPeopleController['operations'];
+    readonly stats: RallarStatsController['operations'];
+    readonly director: RallarDirectorFacade;
+    readonly messages: RallarMessagesController['operations'];
+    readonly channels: RallarChannelsFacade;
+    readonly rtc: RallarRtcFacade;
+    readonly calls: RallarCallsFacade;
+    readonly ws: RallarWsFacade;
+    readonly realtime: RallarRealtimeFacade;
+    readonly media: RallarMediaFacade;
+    readonly advanced: RallarAdvancedFacade;
+}
+
+export type RallarFacade = RallarConnectionFacade & RallarProductFacade;

@@ -1,19 +1,11 @@
-import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { analyzeSourceFile, type SourceAnalysis } from '../helpers/source-analysis';
+import { collectExportSnapshot, type ExportSnapshot } from './public-api-snapshot-collector.ts';
 
-type ExportSnapshot = Readonly<{
-    values: readonly string[];
-    types: readonly string[];
-    starExports: readonly string[];
-    namespaceExports: readonly string[];
-}>;
-
-type PublicSurfaceSnapshot = Readonly<{
-    filePath: string;
-    resolveStarExports?: boolean;
-    expected: ExportSnapshot;
-}>;
+interface PublicSurfaceSnapshot {
+    readonly filePath: string;
+    readonly resolveStarExports?: boolean;
+    readonly expected: ExportSnapshot;
+}
 
 const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
     {
@@ -35,6 +27,7 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
                 'CommandsOrchestrator',
                 'CommandsOrchestratorPolicies',
                 'CreateRallarDataFacadeInput',
+                'RallarAdvancedFacade',
                 'RallarAuthChangeListener',
                 'RallarAuthChangeReason',
                 'RallarAuthState',
@@ -56,6 +49,7 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
                 'RallarCallState',
                 'RallarCallStatus',
                 'RallarCameraSourceStartOptions',
+                'RallarChannelsFacade',
                 'RallarConnectStatus',
                 'RallarCrdtDocument',
                 'RallarCrdtFacade',
@@ -120,6 +114,7 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
                 'RallarPeopleEventOptions',
                 'RallarPeopleState',
                 'RallarPerson',
+                'RallarProductFacade',
                 'RallarReadinessEvaluation',
                 'RallarReadinessExpectation',
                 'RallarReadinessStatus',
@@ -192,6 +187,7 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
                 'RallarRtcWaitForOpenResult',
                 'RallarScopedOperationOptions',
                 'RallarScreenSourceStartOptions',
+                'RallarSetRoomMemberRoleInput',
                 'RallarSetupInput',
                 'RallarStartOptions',
                 'RallarStartResult',
@@ -216,6 +212,7 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
                 'RallarUpdateRoomInput',
                 'RallarWaitForOpenOptions',
                 'RallarWaitForOpenStatus',
+                'RallarWsFacade',
                 'RallarWsLifecycleEvent',
                 'RallarWsLifecycleKind',
                 'RallarWsLifecycleListener',
@@ -473,7 +470,7 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
                 'RALLAR_GAME_MISSING_CAPABILITY_SCORE',
                 'createRallarAuthorityBrowserMatch',
                 'createRallarBrowserMatch',
-                'createRallarGameAuthorityClient',
+                'RallarGameAuthorityClient',
                 'createRallarGameEnvelope',
                 'createRallarGameLanePresets',
                 'createRallarGameMatch',
@@ -495,6 +492,7 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
                 'RallarGameAuthorityClientConfig',
                 'RallarGameAuthorityClientHandle',
                 'RallarGameAuthorityClientRallarFacade',
+                'RallarGameAuthorityCommandOptions',
                 'RallarGameAuthorityPeerAssistOptions',
                 'RallarGameCapabilityMessage',
                 'RallarGameDiagnostics',
@@ -540,7 +538,8 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
                 'RallarGameTypeIds'
             ],
             starExports: [
-                './authority-client.ts',
+                './rallar-game-authority-client-contracts.ts',
+                './rallar-game-authority-client.ts',
                 './authority-match-support.ts',
                 './diagnostics.ts',
                 './election.ts',
@@ -690,112 +689,3 @@ describe('shared-web public API snapshots', () => {
         });
     }
 });
-
-function collectExportSnapshot(
-    filePath: string,
-    options: Readonly<{ resolveStarExports: boolean; }>
-): ExportSnapshot {
-    const analysis = readSourceAnalysis(filePath);
-    const direct = collectDirectExports(analysis);
-    if (!options.resolveStarExports) {
-        return direct;
-    }
-
-    const resolved = collectResolvedExports(filePath, new Set([filePath]));
-    return {
-        values: sortUnique([...direct.values, ...resolved.values]),
-        types: sortUnique([...direct.types, ...resolved.types]),
-        starExports: direct.starExports,
-        namespaceExports: direct.namespaceExports
-    };
-}
-
-function collectResolvedExports(
-    filePath: string,
-    seen: Set<string>
-): Pick<ExportSnapshot, 'values' | 'types'> {
-    const analysis = readSourceAnalysis(filePath);
-    const direct = collectDirectExports(analysis);
-    const values = [...direct.values];
-    const types = [...direct.types];
-
-    for (const specifier of direct.starExports) {
-        const resolved = resolveLocalModule(filePath, specifier);
-        if (!resolved || seen.has(resolved)) {
-            continue;
-        }
-
-        seen.add(resolved);
-        const child = collectResolvedExports(resolved, seen);
-        values.push(...child.values);
-        types.push(...child.types);
-    }
-
-    return {
-        values: sortUnique(values),
-        types: sortUnique(types)
-    };
-}
-
-function collectDirectExports(analysis: SourceAnalysis): ExportSnapshot {
-    const values: string[] = [];
-    const types: string[] = [];
-    const starExports: string[] = [];
-    const namespaceExports: string[] = [];
-
-    for (const entry of analysis.exports) {
-        if (entry.kind === 'star' && entry.specifier) {
-            starExports.push(entry.specifier);
-            continue;
-        }
-
-        if (entry.kind === 'namespace' && entry.exportedName && entry.specifier) {
-            namespaceExports.push(`${entry.exportedName} from ${entry.specifier}`);
-            continue;
-        }
-
-        const exportName = entry.kind === 'default' ? entry.localName : entry.exportedName;
-        if (!exportName) {
-            continue;
-        }
-
-        if (entry.typeOnly) {
-            types.push(exportName);
-        }
-        else {
-            values.push(exportName);
-        }
-    }
-
-    return {
-        values: sortUnique(values),
-        types: sortUnique(types),
-        starExports: sortUnique(starExports),
-        namespaceExports: sortUnique(namespaceExports)
-    };
-}
-
-function readSourceAnalysis(filePath: string): SourceAnalysis {
-    return analyzeSourceFile(toAbsolutePath(filePath));
-}
-
-function resolveLocalModule(
-    filePath: string,
-    specifier: string
-): string | undefined {
-    if (!specifier.startsWith('.')) {
-        return undefined;
-    }
-    return path.relative(
-        process.cwd(),
-        path.resolve(path.dirname(toAbsolutePath(filePath)), specifier)
-    );
-}
-
-function toAbsolutePath(filePath: string): string {
-    return path.resolve(process.cwd(), filePath);
-}
-
-function sortUnique(values: readonly string[]): readonly string[] {
-    return [...new Set(values)].sort();
-}

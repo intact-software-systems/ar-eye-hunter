@@ -58,7 +58,7 @@ const mocks = await vi.hoisted(async () => {
 });
 
 vi.mock(import('@shared-web/browser/middleware.ts'), (): Partial<MiddlewareModule> => ({
-    initialiseMiddleware: async (_session, _topic, options) => (await mocks.initMiddleware(options)).middleware
+    initialiseMiddleware: async () => (await mocks.initMiddleware()).middleware
 }));
 
 vi.mock(import('@shared-web/browser/data-caches.ts'), (): Partial<DataCachesModule> => ({

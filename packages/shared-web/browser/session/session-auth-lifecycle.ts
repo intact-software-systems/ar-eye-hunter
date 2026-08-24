@@ -24,15 +24,6 @@ import type { RallarSessionConnectionLifecycle } from './session-connection-life
 
 const MAX_AUTH_EXPIRY_TIMEOUT_MS = 2_147_483_647;
 
-export interface CreateRallarSessionAuthLifecycleInput {
-    readonly connectionRuntime: RallarConnectionRuntimePort;
-    readonly transportRuntime: BrowserTransportRuntimePort;
-    readonly authRuntime: RallarAuthRuntimePort;
-    readonly connectionLifecycle: RallarSessionConnectionLifecycle;
-    readonly emitState: () => void;
-    readonly closeDataScopes: (session: AuthSession) => Promise<void>;
-}
-
 export interface RallarAuthSessionEndOptions {
     readonly revoke: boolean;
     readonly operationOptions?: RallarOperationOptions;
@@ -58,17 +49,22 @@ export interface RallarSessionAuthLifecycle {
     ): RallarUnsubscribe;
 }
 
-export function createRallarSessionAuthLifecycle(
-    input: CreateRallarSessionAuthLifecycleInput
-): RallarSessionAuthLifecycle {
-    return new BrowserSessionAuthLifecycle(input);
+export namespace BrowserSessionAuthLifecycle {
+    export interface Input {
+        readonly connectionRuntime: RallarConnectionRuntimePort;
+        readonly transportRuntime: BrowserTransportRuntimePort;
+        readonly authRuntime: RallarAuthRuntimePort;
+        readonly connectionLifecycle: RallarSessionConnectionLifecycle;
+        readonly emitState: () => void;
+        readonly closeDataScopes: (session: AuthSession) => Promise<void>;
+    }
 }
 
-class BrowserSessionAuthLifecycle implements RallarSessionAuthLifecycle {
+export class BrowserSessionAuthLifecycle implements RallarSessionAuthLifecycle {
     private readonly authStateListeners = new Set<RallarAuthChangeListener>();
-    private readonly input: CreateRallarSessionAuthLifecycleInput;
+    private readonly input: BrowserSessionAuthLifecycle.Input;
 
-    public constructor(input: CreateRallarSessionAuthLifecycleInput) {
+    public constructor(input: BrowserSessionAuthLifecycle.Input) {
         this.input = input;
     }
 

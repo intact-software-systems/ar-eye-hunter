@@ -1,14 +1,12 @@
 import { newALRoute, newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
-import type { AuthSession } from '@shared/api/api-config.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
-import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import { DEFAULT_RTC_DATA_CHANNEL_LANE_ID } from '@shared/services/WebRtcConnectionService.ts';
 import type { QRtcDataChannel, RtcDataChannelSendOptions, RtcDataChannelSendResult } from '@shared/webrtc/QRtcDataChannel.ts';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { createActiveGroupMemberFixture, createActiveGroupPresenceSessionFixture, createGroupSnapshotFixture } from './authoritative-group-fixtures.ts';
+import { createGroupSnapshotFixture } from './authoritative-group-fixtures.ts';
+import { createDirectorGroupSnapshot } from './director-group-snapshot-fixture.ts';
 
-type AppContextModule = typeof import('@shared-web/browser/app-context.ts');
 type MiddlewareModule = typeof import('@shared-web/browser/middleware.ts');
 type ApiIntegrationModule = typeof import('@shared-web/browser/api-integration.ts');
 type AuthApiModule = typeof import('@shared-web/browser/auth/session-http-api.ts');
@@ -19,108 +17,14 @@ type ClientStateSnapshotsRepositoryModule = typeof import('@shared/repository/cl
 type GroupStateSnapshotsRepositoryModule = typeof import('@shared/repository/group-state-snapshots-repository.ts');
 
 const mocks = await vi.hoisted(async () => {
-    const { createApiMiddlewareTestDouble } = await import(
-        './api-middleware-test-double.ts'
+    const { createLightweightBrowserFacadeTestMocks } = await import(
+        './lightweight-browser-facade-test-mocks.ts'
     );
-    const ctx = createApiMiddlewareTestDouble();
-    const clientRepositoryMissing = (): never => {
-        throw new Error(
-            'Repository not found: shared.repository.client-state-snapshots'
-        );
-    };
-    const groupRepositoryMissing = (): never => {
-        throw new Error(
-            'Repository not found: shared.repository.group-state-snapshots'
-        );
-    };
-
-    return {
-        ctx,
-        clientRepositoryMissing,
-        groupRepositoryMissing,
-        clearSession: vi.fn(),
-        clearMiddleware: vi.fn(),
-        hydrateStateCaches: vi.fn((): Promise<void> => Promise.resolve()),
-        initMiddleware: vi.fn(() => Promise.resolve(ctx)),
-        isMiddlewareReady: vi.fn(() => false),
-        createAndJoinStateGroup: vi.fn(
-            (
-                _displayName?: unknown,
-                _principalId?: unknown,
-                _sessionId?: unknown,
-                _scope?: unknown,
-                _policies?: unknown
-            ) => Promise.reject(new Error('create not mocked'))
-        ),
-        joinStateGroup: vi.fn(
-            (
-                _roomId?: unknown,
-                _principalId?: unknown,
-                _sessionId?: unknown,
-                _scope?: unknown,
-                _policies?: unknown
-            ) => Promise.reject(new Error('join not mocked'))
-        ),
-        leaveStateGroup: vi.fn(
-            (
-                _roomId?: unknown,
-                _principalId?: unknown,
-                _sessionId?: unknown,
-                _scope?: unknown,
-                _policies?: unknown
-            ) => Promise.reject(new Error('leave not mocked'))
-        ),
-        updateStateGroupMetadata: vi.fn(
-            (
-                _roomId?: unknown,
-                _patch?: unknown,
-                _principalId?: unknown,
-                _sessionId?: unknown,
-                _scope?: unknown,
-                _policies?: unknown
-            ) => Promise.reject(new Error('metadata update not mocked'))
-        ),
-        loginToApi: vi.fn<AuthApiModule['loginToApi']>(() => Promise.resolve(ctx.session)),
-        listStateClientEvents: vi.fn((_principalId?: unknown, _scope?: unknown, _options?: unknown) => Promise.reject(new Error('client events not mocked'))),
-        listStateClientEventPage: vi.fn((_principalId?: unknown, _scope?: unknown, _options?: unknown) =>
-            Promise.reject(new Error('client event page not mocked'))
-        ),
-        listStateGroupEvents: vi.fn((_groupId?: unknown, _scope?: unknown, _options?: unknown) => Promise.reject(new Error('group events not mocked'))),
-        listStateGroupEventPage: vi.fn((_groupId?: unknown, _scope?: unknown, _options?: unknown) => Promise.reject(new Error('group event page not mocked'))),
-        logoutFromApi: vi.fn<AuthApiModule['logoutFromApi']>(() => Promise.resolve({ loggedOut: true })),
-        registerWithApi: vi.fn<AuthApiModule['registerWithApi']>(() =>
-            Promise.resolve({
-                clientId: 'client-new',
-                username: 'new-user',
-                displayName: null,
-                registeredAtEpochMs: 1_000
-            })
-        ),
-        onStateCacheChange: vi.fn((): () => void => vi.fn()),
-        readSession: vi.fn((): AuthSession | undefined => ctx.session),
-        refreshStateSnapshots: vi.fn((_scope?: unknown, _policies?: unknown) => Promise.resolve({ clients: [], groups: [] })),
-        findClientStateSnapshotByPrincipalId: vi.fn(
-            (_principalId: string): ClientSnapshot | undefined => clientRepositoryMissing()
-        ),
-        getAllClientStateSnapshots: vi.fn(
-            (): ClientSnapshot[] => clientRepositoryMissing()
-        ),
-        findFirstGroupStateSnapshotRefSessionIdIsIn: vi.fn(
-            (_sessionId: string): GroupRef | undefined => groupRepositoryMissing()
-        ),
-        findGroupStateSnapshotByRef: vi.fn(
-            (_ref: GroupRef): GroupSnapshot | undefined => groupRepositoryMissing()
-        ),
-        getAllGroupStateSnapshots: vi.fn(
-            (): GroupSnapshot[] => groupRepositoryMissing()
-        ),
-        webRtcConnectionService: ctx.middleware.webRtcConnectionService,
-        writeSession: vi.fn()
-    };
+    return createLightweightBrowserFacadeTestMocks();
 });
 
 vi.mock(import('@shared-web/browser/middleware.ts'), (): Partial<MiddlewareModule> => ({
-    initialiseMiddleware: async (_session, _topic, options) => (await mocks.initMiddleware(options)).middleware
+    initialiseMiddleware: async () => (await mocks.initMiddleware()).middleware
 }));
 
 vi.mock(
@@ -487,85 +391,6 @@ function createGroupSnapshot(
         groupId,
         sessionIds
     });
-}
-
-function createDirectorGroupSnapshot(
-    appointment?: Readonly<{
-        sessionId: string;
-        principalId: string;
-        epoch: number;
-        appointedAtEpochMs: number;
-        heartbeatTtlMs: number;
-    }>
-): GroupSnapshot {
-    const snapshot = createGroupSnapshot('room-1', ['session-1']);
-    const activeSessions: GroupSnapshot['activeSessions'][number][] = [{
-        ...snapshot.activeSessions[0],
-        principalId: 'principal-1',
-        sessionId: 'session-1'
-    }];
-    const members: GroupSnapshot['members'][number][] = [{
-        ...snapshot.members[0],
-        principalId: 'principal-1',
-        role: 'owner'
-    }];
-
-    if (appointment) {
-        activeSessions.push(createActiveGroupPresenceSessionFixture({
-            applicationId: 'app-1',
-            workspaceId: 'workspace-1',
-            groupId: 'room-1',
-            principalId: appointment.principalId,
-            sessionId: appointment.sessionId
-        }));
-        members.push(createActiveGroupMemberFixture({
-            applicationId: 'app-1',
-            workspaceId: 'workspace-1',
-            groupId: 'room-1',
-            principalId: appointment.principalId,
-            role: 'member',
-            actorPrincipalId: 'principal-1'
-        }));
-    }
-
-    return {
-        ...snapshot,
-        group: {
-            ...snapshot.group,
-            created: {
-                ...snapshot.group.created,
-                actor: { kind: 'principal', principalId: 'principal-1' }
-            },
-            metadata: appointment
-                ? {
-                    rallarDirector: {
-                        version: 1,
-                        mode: 'appointed-spa',
-                        ...appointment
-                    }
-                }
-                : {}
-        },
-        members,
-        activeSessions,
-        memberCount: members.length,
-        onlineMemberCount: activeSessions.length
-    };
-}
-
-function createDeferred<T>(): {
-    promise: Promise<T>;
-    resolve: (value: T) => void;
-    reject: (error: unknown) => void;
-} {
-    let resolve!: (value: T) => void;
-    let reject!: (error: unknown) => void;
-    const promise = new Promise<T>((resolvePromise, rejectPromise) => {
-        resolve = resolvePromise;
-        reject = rejectPromise;
-    });
-
-    return { promise, resolve, reject };
 }
 
 function createMediaTrack(

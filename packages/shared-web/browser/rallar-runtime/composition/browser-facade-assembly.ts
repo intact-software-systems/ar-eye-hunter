@@ -1,6 +1,6 @@
 import type { ApiMiddleware } from '@shared-web/browser/connection/browser-transport-runtime.ts';
 import type { RallarFacade, RallarTargetedChannelDefinition } from '@shared-web/browser/rallar-facade-contract.ts';
-import type { RallarRealtimeController } from '@shared-web/browser/rallar-runtime/realtime.ts';
+import type { BrowserTargetedRealtimeRuntime } from '@shared-web/browser/realtime/browser-targeted-realtime-runtime.ts';
 
 import type { BrowserMessagingComposition, BrowserRealtimeComposition } from './browser-communication-composition.ts';
 import type {
@@ -19,7 +19,7 @@ export interface CreateBrowserFacadeAssemblyInput {
 }
 
 export function createBrowserFacadeAssembly(input: CreateBrowserFacadeAssemblyInput): RallarFacade {
-    const channels = createBrowserFacadeChannels(input.realtime.realtimeController);
+    const channels = createBrowserFacadeChannels(input.realtime.realtimeTargeted);
     const { connection, session } = input.session;
     return {
         ...connection,
@@ -46,13 +46,12 @@ export function createBrowserFacadeAssembly(input: CreateBrowserFacadeAssemblyIn
 }
 
 function createBrowserFacadeChannels(
-    realtimeController: RallarRealtimeController
+    realtimeTargeted: BrowserTargetedRealtimeRuntime
 ): RallarFacade['channels'] {
     return {
-        targeted: <T>(definition: RallarTargetedChannelDefinition) =>
-            realtimeController.createTargetedChannel<T>(definition),
+        targeted: <T>(definition: RallarTargetedChannelDefinition) => realtimeTargeted.create<T>(definition),
         room: <T>(definition: Omit<RallarTargetedChannelDefinition, 'peerId' | 'peerIds'>) =>
-            realtimeController.createTargetedChannel<T>({
+            realtimeTargeted.create<T>({
                 ...definition,
                 membership: definition.membership ?? 'live'
             })

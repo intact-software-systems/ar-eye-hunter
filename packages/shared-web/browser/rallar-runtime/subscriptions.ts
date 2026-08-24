@@ -5,11 +5,7 @@ import type {
     RallarUnsubscribe
 } from '@shared-web/browser/rallar-shared-contracts.ts';
 
-export function createRallarSubscriptionScope(): RallarSubscriptionScope {
-    return new BrowserRallarSubscriptionScope();
-}
-
-class BrowserRallarSubscriptionScope implements RallarSubscriptionScope {
+export class BrowserRallarSubscriptionScope implements RallarSubscriptionScope {
     private readonly unsubscribers = new Set<RallarUnsubscribe>();
     private closed = false;
 

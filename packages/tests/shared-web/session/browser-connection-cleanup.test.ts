@@ -1,6 +1,6 @@
 import { BrowserTransportRuntime } from '@shared-web/browser/connection/browser-transport-runtime.ts';
 import type { Middleware } from '@shared-web/browser/middleware.ts';
-import { createRallarBrowserFacadeRuntimeContext } from '@shared-web/browser/rallar-runtime-context.ts';
+import { BrowserFacadeRuntimeState } from '@shared-web/browser/rallar-runtime-context.ts';
 import { createRallarLifecycleCoordinator } from '@shared-web/browser/rallar-runtime/lifecycle.ts';
 import { createRallarSessionController } from '@shared-web/browser/rallar-runtime/session.ts';
 import { describe, expect, it, vi } from 'vitest';
@@ -60,30 +60,31 @@ describe('browser connection cleanup', () => {
             }
         });
         const effects: string[] = [];
-        middleware.middleware.heartbeat?.stop.mockImplementation(() => {
+        vi.mocked(middleware.middleware.heartbeat!.stop).mockImplementation(() => {
             effects.push('heartbeat');
             throw new Error('heartbeat already stopped');
         });
-        middleware.middleware.rtcRxStreamer.stopAllHeartbeats.mockImplementation(() => {
+        vi.mocked(middleware.middleware.rtcRxStreamer.stopAllHeartbeats).mockImplementation(() => {
             effects.push('rtc-heartbeats');
         });
-        middleware.middleware.webRtcConnectionService.knownPeerIds.mockReturnValue(['peer-1']);
-        middleware.middleware.webRtcConnectionService.disconnectPeer.mockImplementation(() => {
+        vi.mocked(middleware.middleware.webRtcConnectionService.knownPeerIds).mockReturnValue(['peer-1']);
+        vi.mocked(middleware.middleware.webRtcConnectionService.disconnectPeer).mockImplementation(() => {
             effects.push('rtc-peer');
+            return true;
         });
-        middleware.middleware.rtcRxStreamer.stopLocalMedia.mockImplementation(() => {
+        vi.mocked(middleware.middleware.rtcRxStreamer.stopLocalMedia).mockImplementation(() => {
             effects.push('media');
         });
-        middleware.middleware.webRtcOverlayMulticastManager?.dispose?.mockImplementation(() => {
+        vi.mocked(middleware.middleware.webRtcOverlayMulticastManager!.dispose!).mockImplementation(() => {
             effects.push('multicast');
         });
-        middleware.middleware.qboxEngine.stop.mockImplementation(() => {
+        vi.mocked(middleware.middleware.qboxEngine.stop).mockImplementation(() => {
             effects.push('queue');
         });
-        middleware.middleware.webSocketQueueBox.socket.close.mockImplementation(() => {
+        vi.mocked(middleware.middleware.webSocketQueueBox.socket.close).mockImplementation(() => {
             effects.push('websocket');
         });
-        middleware.middleware.webSocketQueueBox.close.mockImplementation(() => {
+        vi.mocked(middleware.middleware.webSocketQueueBox.close).mockImplementation(() => {
             effects.push('queuebox');
             middleware.middleware.webSocketQueueBox.socket.close(1000, 'rallar-disconnect');
         });
@@ -91,9 +92,7 @@ describe('browser connection cleanup', () => {
         mocks.readSession.mockReturnValue(middleware.session);
         mocks.initialiseMiddleware.mockResolvedValue(middleware.middleware as Middleware);
         const transportRuntime = new BrowserTransportRuntime();
-        const runtime = createRallarBrowserFacadeRuntimeContext({
-            transportRuntime
-        });
+        const runtime = new BrowserFacadeRuntimeState(transportRuntime);
         const lifecycle = createRallarLifecycleCoordinator();
         lifecycle.register({
             id: 'state-cache',
@@ -150,7 +149,7 @@ describe('browser connection cleanup', () => {
             })
         );
         const transportRuntime = new BrowserTransportRuntime();
-        const runtime = createRallarBrowserFacadeRuntimeContext({ transportRuntime });
+        const runtime = new BrowserFacadeRuntimeState(transportRuntime);
         const lifecycle = createRallarLifecycleCoordinator();
         lifecycle.register({
             id: 'test-lifecycle',

@@ -5,7 +5,7 @@ import {
     type RelicServerEvent
 } from '@relic-hunters/mod.ts';
 import {
-    createRallarGameAuthorityClient,
+    RallarGameAuthorityClient,
     type RallarGameAuthorityClientHandle,
     type RallarGameAuthorityClientRallarFacade
 } from '@shared-web/game/mod.ts';
@@ -121,7 +121,7 @@ export function createRelicAuthorityClientBridge(
         RelicServerEvent,
         RelicAuthorityPresence
     > {
-        client ??= createRallarGameAuthorityClient<
+        client ??= new RallarGameAuthorityClient<
             RelicCommand,
             RelicPublicSnapshot,
             RelicServerEvent,

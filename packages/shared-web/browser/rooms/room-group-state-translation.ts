@@ -43,6 +43,25 @@ export type {
     UpdateStateGroupBody
 } from '../api/state-mutation-http-contracts.ts';
 
+export function resolveActiveRoomPeerIds(
+    sessionId: string | undefined,
+    snapshot: GroupSnapshot | undefined
+): readonly string[] {
+    if (
+        !sessionId || !snapshot || !isGroupActive(snapshot) ||
+        !isSessionInGroup(snapshot, sessionId)
+    ) {
+        return [];
+    }
+    return [
+        ...new Set(
+            snapshot.activeSessions
+                .map((activeSession) => activeSession.sessionId)
+                .filter((activeSessionId) => activeSessionId !== sessionId)
+        )
+    ];
+}
+
 export type RoomCreateGroupStateFields = Pick<
     RallarCreateRoomInput,
     | 'displayName'
@@ -89,13 +108,6 @@ interface RoomGroupStateMutationAuditFields {
     readonly reason?: string;
     readonly traceId?: string;
 }
-export type ToCreateRoomInviteGroupStateRequestInput = RoomGroupStateRequestInput<CreateStateGroupInviteBody>;
-export type ToRemoveRoomMemberGroupStateRequestInput = RoomGroupStateRequestInput<RemoveStateGroupMemberBody>;
-export type ToBanRoomMemberGroupStateRequestInput = RoomGroupStateRequestInput<BanStateGroupMemberBody>;
-export type ToUnbanRoomMemberGroupStateRequestInput = RoomGroupStateRequestInput<UnbanStateGroupMemberBody>;
-export type ToSetRoomMemberRoleGroupStateRequestInput = RoomGroupStateRequestInput<SetStateGroupMemberRoleBody>;
-export type ToTransferRoomOwnershipGroupStateRequestInput = RoomGroupStateRequestInput<TransferStateGroupOwnershipBody>;
-
 export interface ToConnectRoomPresenceGroupStateRequestInput extends RoomGroupStateMutationActorInput {
     readonly principalId: string;
     readonly generationId: string;
@@ -181,7 +193,7 @@ export function toRoomMetadataGroupStateRequest(
 }
 
 export function toCreateRoomInviteGroupStateRequest(
-    input: ToCreateRoomInviteGroupStateRequestInput
+    input: RoomGroupStateRequestInput<CreateStateGroupInviteBody>
 ): CreateStateGroupInviteBody {
     return {
         ...(input.request.invitationExpiresAtEpochMs === undefined
@@ -199,7 +211,7 @@ export function toAcceptRoomInviteGroupStateRequest(
 }
 
 export function toRemoveRoomMemberGroupStateRequest(
-    input: ToRemoveRoomMemberGroupStateRequestInput
+    input: RoomGroupStateRequestInput<RemoveStateGroupMemberBody>
 ): RemoveStateGroupMemberBody {
     return {
         ...toMutationAuditFields(input.request),
@@ -208,7 +220,7 @@ export function toRemoveRoomMemberGroupStateRequest(
 }
 
 export function toBanRoomMemberGroupStateRequest(
-    input: ToBanRoomMemberGroupStateRequestInput
+    input: RoomGroupStateRequestInput<BanStateGroupMemberBody>
 ): BanStateGroupMemberBody {
     return {
         ...toMutationAuditFields(input.request),
@@ -217,7 +229,7 @@ export function toBanRoomMemberGroupStateRequest(
 }
 
 export function toUnbanRoomMemberGroupStateRequest(
-    input: ToUnbanRoomMemberGroupStateRequestInput
+    input: RoomGroupStateRequestInput<UnbanStateGroupMemberBody>
 ): UnbanStateGroupMemberBody {
     return {
         ...toMutationAuditFields(input.request),
@@ -226,7 +238,7 @@ export function toUnbanRoomMemberGroupStateRequest(
 }
 
 export function toSetRoomMemberRoleGroupStateRequest(
-    input: ToSetRoomMemberRoleGroupStateRequestInput
+    input: RoomGroupStateRequestInput<SetStateGroupMemberRoleBody>
 ): SetStateGroupMemberRoleBody {
     return {
         role: input.request.role,
@@ -236,7 +248,7 @@ export function toSetRoomMemberRoleGroupStateRequest(
 }
 
 export function toTransferRoomOwnershipGroupStateRequest(
-    input: ToTransferRoomOwnershipGroupStateRequestInput
+    input: RoomGroupStateRequestInput<TransferStateGroupOwnershipBody>
 ): TransferStateGroupOwnershipBody {
     return {
         newOwnerPrincipalId: input.request.newOwnerPrincipalId,

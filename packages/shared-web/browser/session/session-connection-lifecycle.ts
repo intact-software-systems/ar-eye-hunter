@@ -13,13 +13,6 @@ import type { RallarLifecycleCoordinator } from '@shared-web/browser/rallar-runt
 import type { StateScope } from '@shared/api/state-types.ts';
 import { Command } from '@shared/cache/Command.ts';
 
-export interface CreateRallarSessionConnectionLifecycleInput {
-    readonly connectionRuntime: RallarConnectionRuntimePort;
-    readonly transportRuntime: BrowserTransportRuntimePort;
-    readonly lifecycle: RallarLifecycleCoordinator;
-    readonly clearCurrentRoom: () => void;
-}
-
 export interface RallarSessionConnectionInput {
     readonly sessionId: string;
     readonly scope: StateScope | undefined;
@@ -34,20 +27,23 @@ export interface RallarSessionConnectionLifecycle {
     disconnect(): Promise<void>;
 }
 
-export function createRallarSessionConnectionLifecycle(
-    input: CreateRallarSessionConnectionLifecycleInput
-): RallarSessionConnectionLifecycle {
-    return new BrowserSessionConnectionLifecycle(input);
+export namespace BrowserSessionConnectionLifecycle {
+    export interface Input {
+        readonly connectionRuntime: RallarConnectionRuntimePort;
+        readonly transportRuntime: BrowserTransportRuntimePort;
+        readonly lifecycle: RallarLifecycleCoordinator;
+        readonly clearCurrentRoom: () => void;
+    }
 }
 
-class BrowserSessionConnectionLifecycle implements RallarSessionConnectionLifecycle {
+export class BrowserSessionConnectionLifecycle implements RallarSessionConnectionLifecycle {
     private connectionGeneration = 0;
     private connectionPromise: Promise<ApiMiddleware> | undefined;
     private disconnectPromise: Promise<void> | undefined;
     private lifecycleIsDisconnected = false;
-    private readonly input: CreateRallarSessionConnectionLifecycleInput;
+    private readonly input: BrowserSessionConnectionLifecycle.Input;
 
-    public constructor(input: CreateRallarSessionConnectionLifecycleInput) {
+    public constructor(input: BrowserSessionConnectionLifecycle.Input) {
         this.input = input;
     }
 

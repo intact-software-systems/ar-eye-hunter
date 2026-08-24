@@ -223,7 +223,9 @@ describe('Rallar startup lifecycle behavior', () => {
         );
         const facade = createRallarFacade();
         const authChanges: string[] = [];
-        facade.auth.onChange((state) => authChanges.push(state.reason), {
+        facade.auth.onChange((state) => {
+            authChanges.push(state.reason);
+        }, {
             emitCurrent: false
         });
 

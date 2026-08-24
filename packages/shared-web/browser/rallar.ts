@@ -67,6 +67,7 @@ export type {
 } from '@shared-web/browser/readiness.ts';
 
 export type {
+    RallarAdvancedFacade,
     RallarAuthChangeListener,
     RallarAuthChangeReason,
     RallarAuthState,
@@ -88,6 +89,7 @@ export type {
     RallarCallState,
     RallarCallStatus,
     RallarCameraSourceStartOptions,
+    RallarChannelsFacade,
     RallarConnectStatus,
     RallarCreateRoomInput,
     RallarDefaults,
@@ -129,6 +131,7 @@ export type {
     RallarPeopleEventOptions,
     RallarPeopleState,
     RallarPerson,
+    RallarProductFacade,
     RallarRealtimeBinarySendInput,
     RallarRealtimeHandler,
     RallarRealtimeHealthOptions,
@@ -198,6 +201,7 @@ export type {
     RallarRtcWaitForOpenResult,
     RallarScopedOperationOptions,
     RallarScreenSourceStartOptions,
+    RallarSetRoomMemberRoleInput,
     RallarSetupInput,
     RallarStartOptions,
     RallarStartResult,
@@ -222,6 +226,7 @@ export type {
     RallarUpdateRoomInput,
     RallarWaitForOpenOptions,
     RallarWaitForOpenStatus,
+    RallarWsFacade,
     RallarWsLifecycleEvent,
     RallarWsLifecycleKind,
     RallarWsLifecycleListener,

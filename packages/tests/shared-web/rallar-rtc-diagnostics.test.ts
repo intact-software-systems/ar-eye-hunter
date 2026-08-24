@@ -44,7 +44,7 @@ const mocks = await vi.hoisted(async () => {
 vi.mock(
     import('@shared-web/browser/middleware.ts'),
     (): Partial<MiddlewareModule> => ({
-        initialiseMiddleware: async (_session, _topic, options) => (await mocks.initMiddleware(options)).middleware
+        initialiseMiddleware: async () => (await mocks.initMiddleware()).middleware
     })
 );
 
@@ -86,8 +86,12 @@ vi.mock(
 describe('Rallar RTC diagnostics', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        mocks.clientRepositoryMissing.mockImplementation((principalId) => principalId === undefined ? [] : undefined);
-        mocks.groupRepositoryMissing.mockImplementation((value) => value === undefined ? [] : undefined);
+        mocks.clientRepositoryMissing.mockImplementation(
+            (principalId?: string): never => (principalId === undefined ? [] : undefined) as never
+        );
+        mocks.groupRepositoryMissing.mockImplementation(
+            (value?: string): never => (value === undefined ? [] : undefined) as never
+        );
         mocks.hydrateStateCaches.mockResolvedValue(undefined);
         mocks.initMiddleware.mockResolvedValue(mocks.ctx);
         mocks.isMiddlewareReady.mockReturnValue(false);
@@ -447,12 +451,12 @@ type RtcPeerStatusTestDouble =
         remoteStreams?: ReadonlyMap<string, unknown>;
     }>;
 
-type RtcPeerTestDoubleInput = Readonly<{
-    peerId: QRtcPeerDto['peerId'];
-    status: RtcPeerStatusTestDouble;
-    readDiagnostics?: () => QRtcPeerConnectionDiagnostics;
-    lanes: ReadonlyMap<string, () => RtcDataChannelHealth>;
-}>;
+interface RtcPeerTestDoubleInput {
+    readonly peerId: QRtcPeerDto['peerId'];
+    readonly status: RtcPeerStatusTestDouble;
+    readonly readDiagnostics?: () => QRtcPeerConnectionDiagnostics;
+    readonly lanes: ReadonlyMap<string, () => RtcDataChannelHealth>;
+}
 
 // A QRtcPeerDto hangs off concrete classes (QRtcPeerConnection, QRtcDataChannel) and live DOM
 // objects (RTCPeerConnection, MediaStream) that a unit test cannot construct. The RTC diagnostics
