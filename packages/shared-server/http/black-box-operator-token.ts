@@ -24,7 +24,6 @@ export interface SignRallarBlackBoxOperatorTokenInput {
     readonly issuedAtEpochMs: number;
     readonly expiresAtEpochMs: number;
     readonly tokenId?: string;
-    readonly claims?: Partial<RallarBlackBoxOperatorTokenClaims>;
 }
 
 export interface VerifyRallarBlackBoxOperatorTokenInput {
@@ -92,8 +91,7 @@ export async function signRallarBlackBoxOperatorToken(
         sessionId: input.sessionId,
         iat: input.issuedAtEpochMs,
         exp: input.expiresAtEpochMs,
-        jti: input.tokenId ?? randomTokenId(),
-        ...input.claims
+        jti: input.tokenId ?? randomTokenId()
     };
     const encodedHeader = base64UrlEncodeJson(HEADER);
     const encodedClaims = base64UrlEncodeJson(claims);

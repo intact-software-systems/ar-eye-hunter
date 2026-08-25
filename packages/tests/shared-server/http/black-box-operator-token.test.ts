@@ -1,3 +1,5 @@
+import { describe, expect, it } from 'vitest';
+
 import {
     RALLAR_BLACK_BOX_OPERATOR_TOKEN_AUDIENCE,
     RALLAR_BLACK_BOX_OPERATOR_TOKEN_SCOPE,
@@ -5,7 +7,6 @@ import {
     verifyRallarBlackBoxOperatorToken
 } from '@shared-server/http/black-box-operator-token.ts';
 import type { JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
-import { describe, expect, it } from 'vitest';
 
 describe('black-box operator token', () => {
     const issuedAtEpochMs = 1_700_000_000_000;
