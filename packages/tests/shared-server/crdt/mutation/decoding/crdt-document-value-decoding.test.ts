@@ -66,11 +66,16 @@ describe('CRDT document value decoding', () => {
 
         expect(decodeExactDocumentMetadata(wireMetadata)).toEqual(metadata);
         expect(() =>
-            decodeExactDocumentMetadata({
-                ...wireMetadata,
-                documentKey: 'different-document',
-                retention: { mode: 'retain', unexpected: true }
-            })
+            decodeExactDocumentMetadata(
+                decodeJsonWireValue(
+                    {
+                        ...metadata,
+                        documentKey: 'different-document',
+                        retention: { mode: 'retain', unexpected: true }
+                    },
+                    'invalid CRDT document metadata fixture'
+                )
+            )
         ).toThrow(/document key|retention/i);
     });
 });
