@@ -1,16 +1,19 @@
+import { decodeJsonWireValue, type JsonWireObject, type JsonWireValue } from '../../protocol/json-wire-identity.ts';
 import { decodePersistedAuthSession } from '../persistence/persisted-auth-session.ts';
 import {
     decodePersistedAgentSessionTicket,
     decodePersistedWebSocketTicket
 } from '../persistence/persisted-auth-ticket.ts';
+import { decodePersistedAuthUser } from '../persistence/persisted-auth-user.ts';
 import { requireIssueSessionLifecycle } from '../sessions/require-issue-session-lifecycle.ts';
 
 import type { AuthMutationCommand } from './auth-mutation-contracts.ts';
 
-type AuthMutationRecord = ReturnType<typeof requireRecord>;
-
 export function decodeAuthMutationCommand(input: unknown): AuthMutationCommand {
-    const command = requireRecord(input, 'Auth mutation command');
+    const command = requireRecord(
+        decodeJsonWireValue(input, 'Auth mutation command'),
+        'Auth mutation command'
+    );
     if (command.version !== 1) {
         throw new TypeError('Auth mutation command version is invalid');
     }
@@ -21,7 +24,7 @@ export function decodeAuthMutationCommand(input: unknown): AuthMutationCommand {
     return structuredClone(command) as AuthMutationCommand;
 }
 
-function validateAuthMutationCommand(command: AuthMutationRecord): void {
+function validateAuthMutationCommand(command: JsonWireObject): void {
     switch (command.kind) {
         case 'register-user':
             validateRegisterAuthUserCommand(command);
@@ -49,12 +52,12 @@ function validateAuthMutationCommand(command: AuthMutationRecord): void {
     }
 }
 
-function validateRegisterAuthUserCommand(command: AuthMutationRecord): void {
+function validateRegisterAuthUserCommand(command: JsonWireObject): void {
     requireExactKeys(command, ['version', 'kind', 'requestId', 'capturedAtEpochMs', 'user']);
-    validateAuthUserContract(command.user);
+    decodePersistedAuthUser(command.user);
 }
 
-function validateIssueAuthSessionCommand(command: AuthMutationRecord): void {
+function validateIssueAuthSessionCommand(command: JsonWireObject): void {
     requireExactKeys(command, [
         'version',
         'kind',
@@ -70,17 +73,17 @@ function validateIssueAuthSessionCommand(command: AuthMutationRecord): void {
     );
 }
 
-function validateLogoutAuthSessionCommand(command: AuthMutationRecord): void {
+function validateLogoutAuthSessionCommand(command: JsonWireObject): void {
     requireExactKeys(command, ['version', 'kind', 'requestId', 'capturedAtEpochMs', 'expected']);
     decodePersistedAuthSession(command.expected);
 }
 
-function validateIssueAuthWebSocketTicketCommand(command: AuthMutationRecord): void {
+function validateIssueAuthWebSocketTicketCommand(command: JsonWireObject): void {
     requireExactKeys(command, ['version', 'kind', 'requestId', 'capturedAtEpochMs', 'ticketRecord']);
     decodePersistedWebSocketTicket(command.ticketRecord);
 }
 
-function validateConsumeAuthWebSocketTicketCommand(command: AuthMutationRecord): void {
+function validateConsumeAuthWebSocketTicketCommand(command: JsonWireObject): void {
     requireExactKeys(command, [
         'version',
         'kind',
@@ -93,7 +96,7 @@ function validateConsumeAuthWebSocketTicketCommand(command: AuthMutationRecord):
     requireString(command.expectedSessionId, 'Auth websocket expected sessionId');
 }
 
-function validateIssueAuthAgentTicketsCommand(command: AuthMutationRecord): void {
+function validateIssueAuthAgentTicketsCommand(command: JsonWireObject): void {
     requireExactKeys(command, [
         'version',
         'kind',
@@ -106,12 +109,12 @@ function validateIssueAuthAgentTicketsCommand(command: AuthMutationRecord): void
     validateAgentTicketCommands(command.tickets);
 }
 
-function validateConsumeAuthAgentTicketCommand(command: AuthMutationRecord): void {
+function validateConsumeAuthAgentTicketCommand(command: JsonWireObject): void {
     requireExactKeys(command, ['version', 'kind', 'requestId', 'capturedAtEpochMs', 'ticketDigest']);
     requireString(command.ticketDigest, 'Auth agent ticket digest');
 }
 
-function validateSessionAuthority(input: unknown): void {
+function validateSessionAuthority(input: JsonWireValue): void {
     const authority = requireRecord(input, 'Auth session authority');
     requireString(authority.clientId, 'Auth session authority clientId');
     requireString(authority.normalizedUsername, 'Auth session authority normalizedUsername');
@@ -127,7 +130,7 @@ function validateSessionAuthority(input: unknown): void {
     }
 }
 
-function validateAgentTicketCommands(input: unknown): void {
+function validateAgentTicketCommands(input: JsonWireValue): void {
     if (!Array.isArray(input) || input.length === 0) {
         throw new TypeError('Auth agent tickets must be a non-empty array');
     }
@@ -136,7 +139,7 @@ function validateAgentTicketCommands(input: unknown): void {
     }
 }
 
-function validateAgentTicketCommand(ticket: AuthMutationRecord): void {
+function validateAgentTicketCommand(ticket: JsonWireObject): void {
     requireExactKeys(ticket, [
         'agentId',
         'sessionId',
@@ -151,7 +154,7 @@ function validateAgentTicketCommand(ticket: AuthMutationRecord): void {
     validateAgentTicketCommandFields(ticket);
 }
 
-function validateAgentTicketCommandFields(ticket: AuthMutationRecord): void {
+function validateAgentTicketCommandFields(ticket: JsonWireObject): void {
     for (
         const field of [
             'agentId',
@@ -176,7 +179,7 @@ function validateAgentTicketCommandFields(ticket: AuthMutationRecord): void {
     validateAgentTicketCommandLifecycle(ticket);
 }
 
-function validateAgentTicketCommandLifecycle(ticket: AuthMutationRecord): void {
+function validateAgentTicketCommandLifecycle(ticket: JsonWireObject): void {
     const issuedAtEpochMs = ticket.issuedAtEpochMs as number;
     const sessionExpiresAtEpochMs = ticket.sessionExpiresAtEpochMs as number;
     decodePersistedAgentSessionTicket({
@@ -193,62 +196,7 @@ function validateAgentTicketCommandLifecycle(ticket: AuthMutationRecord): void {
     }
 }
 
-function validateAuthUserContract(input: unknown): void {
-    const user = requireRecord(input, 'Auth user');
-    requireExactKeys(user, [
-        'clientId',
-        'username',
-        'normalizedUsername',
-        'displayName',
-        'passwordHash',
-        'passwordSalt',
-        'passwordAlgorithm',
-        'passwordIterations',
-        'roles',
-        'status',
-        'createdAtEpochMs',
-        'updatedAtEpochMs'
-    ]);
-    validateAuthUserFields(user);
-}
-
-function validateAuthUserFields(user: AuthMutationRecord): void {
-    for (
-        const field of [
-            'clientId',
-            'username',
-            'normalizedUsername',
-            'passwordHash',
-            'passwordSalt'
-        ] as const
-    ) {
-        requireString(user[field], `Auth user ${field}`);
-    }
-    if (user.displayName !== null) {
-        requireString(user.displayName, 'Auth user displayName');
-    }
-    if (user.passwordAlgorithm !== 'pbkdf2-sha256') {
-        throw new TypeError('Auth user passwordAlgorithm is invalid');
-    }
-    validateAuthUserMetadata(user);
-}
-
-function validateAuthUserMetadata(user: AuthMutationRecord): void {
-    requireTimestamp(user.passwordIterations, 'Auth user passwordIterations');
-    requireTimestamp(user.createdAtEpochMs, 'Auth user createdAtEpochMs');
-    requireTimestamp(user.updatedAtEpochMs, 'Auth user updatedAtEpochMs');
-    if (
-        !Array.isArray(user.roles) ||
-        user.roles.some((role) => typeof role !== 'string' || role.length === 0)
-    ) {
-        throw new TypeError('Auth user roles are invalid');
-    }
-    if (user.status !== 'active' && user.status !== 'disabled') {
-        throw new TypeError('Auth user status is invalid');
-    }
-}
-
-function assertNoPlaintextAuthFields(value: unknown): void {
+function assertNoPlaintextAuthFields(value: JsonWireValue): void {
     if (Array.isArray(value)) {
         for (const item of value) {
             assertNoPlaintextAuthFields(item);
@@ -266,7 +214,7 @@ function assertNoPlaintextAuthFields(value: unknown): void {
     }
 }
 
-function requireRecord(value: unknown, label: string): Readonly<Record<string, unknown>> {
+function requireRecord(value: JsonWireValue, label: string): JsonWireObject {
     if (
         typeof value !== 'object' ||
         value === null ||
@@ -275,10 +223,10 @@ function requireRecord(value: unknown, label: string): Readonly<Record<string, u
     ) {
         throw new TypeError(`${label} must be a plain JSON object`);
     }
-    return value as Readonly<Record<string, unknown>>;
+    return value as JsonWireObject;
 }
 
-function requireExactKeys(value: AuthMutationRecord, keys: readonly string[]): void {
+function requireExactKeys(value: JsonWireObject, keys: readonly string[]): void {
     const actual = Object.keys(value).sort();
     const expected = [...keys].sort();
     if (JSON.stringify(actual) !== JSON.stringify(expected)) {
@@ -286,14 +234,14 @@ function requireExactKeys(value: AuthMutationRecord, keys: readonly string[]): v
     }
 }
 
-function requireString(value: unknown, label: string): asserts value is string {
+function requireString(value: JsonWireValue, label: string): asserts value is string {
     if (typeof value !== 'string' || value.length === 0) {
         throw new TypeError(`${label} is required`);
     }
 }
 
-function requireTimestamp(value: unknown, label: string): asserts value is number {
-    if (!Number.isSafeInteger(value) || (value as number) < 0) {
+function requireTimestamp(value: JsonWireValue, label: string): asserts value is number {
+    if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) {
         throw new TypeError(`${label} is invalid`);
     }
 }

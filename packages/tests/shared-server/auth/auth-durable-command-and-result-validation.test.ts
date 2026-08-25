@@ -109,32 +109,22 @@ it('strictly rejects every malformed durable auth result variant', () => {
     }
 });
 
-it('captures agent-session lifecycle values before persisted-ticket decoding', () => {
-    let ticketDigestReadCount = 0;
-    let persistedTicketReadStarted = false;
+it('requires current agent session and ticket lifecycles to outlive issuance', () => {
     const ticket = {
         agentId: 'agent-1',
         sessionId: 'agent-session-1',
         accessTokenDigest: 'agent-access-token-digest',
-        get ticketDigest() {
-            ticketDigestReadCount += 1;
-            if (ticketDigestReadCount === 2) {
-                persistedTicketReadStarted = true;
-            }
-            return 'agent-ticket-digest';
-        },
+        ticketDigest: 'agent-ticket-digest',
         clientId: 'client-1',
         username: 'alice',
         issuedAtEpochMs: 1_000,
-        get sessionExpiresAtEpochMs() {
-            return persistedTicketReadStarted ? 1_000 : 2_000;
-        },
+        sessionExpiresAtEpochMs: 2_000,
         ticketExpiresAtEpochMs: 1_500
     };
     const command = {
         version: 1,
         kind: 'issue-agent-tickets',
-        requestId: 'accessor-agent-ticket-command',
+        requestId: 'agent-ticket-command',
         capturedAtEpochMs: 1_000,
         authority: {
             clientId: 'client-1',
@@ -147,15 +137,17 @@ it('captures agent-session lifecycle values before persisted-ticket decoding', (
         tickets: [ticket]
     };
 
-    expect(decodeAuthMutationCommand(command)).toEqual({
-        ...command,
-        tickets: [
-            {
-                ...ticket,
-                sessionExpiresAtEpochMs: 1_000
-            }
+    expect(decodeAuthMutationCommand(command)).toEqual(command);
+    for (
+        const invalidTicket of [
+            { ...ticket, sessionExpiresAtEpochMs: ticket.issuedAtEpochMs },
+            { ...ticket, ticketExpiresAtEpochMs: ticket.issuedAtEpochMs }
         ]
-    });
+    ) {
+        expect(() => decodeAuthMutationCommand({ ...command, tickets: [invalidTicket] })).toThrow(
+            /lifecycle/u
+        );
+    }
 });
 
 it('requires an exact registered-user authority on session issuance commands', () => {
