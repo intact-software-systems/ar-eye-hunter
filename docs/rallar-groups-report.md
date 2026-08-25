@@ -48,7 +48,8 @@ Primary shared/server files:
 
 Relevant tests and docs:
 
-- `packages/tests/shared-web/api-workflows.test.ts`
+- `packages/tests/shared-web/rooms/room-group-state-http-workflows.test.ts`
+- `packages/tests/shared-web/rooms/room-membership-group-state-http.test.ts`
 - `packages/tests/shared-web/rallar-operation-options.test.ts`
 - `packages/tests/shared-web/rooms/room-group-state-workflows.test.ts`
 - `packages/tests/shared-server/group-state-service-idempotency.test.ts`

@@ -24,7 +24,7 @@ const SERVER_UNAVAILABLE_ERROR = new RegExp(
         'failed: 503 server unavailable'
 );
 
-describe('createWebSocketTicket backoff', () => {
+describe('WebSocket ticket HTTP backoff', () => {
     beforeEach(() => {
         vi.useFakeTimers();
         vi.setSystemTime(1_000);
