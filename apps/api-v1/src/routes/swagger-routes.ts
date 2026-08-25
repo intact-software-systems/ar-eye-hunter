@@ -1,14 +1,17 @@
 import { decodeOpenApiDocument, withPublicOpenApiServer } from '@shared-server/http/public-open-api-server.ts';
-import type { JsonWireObject } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
+import { decodeJsonWireValue, type JsonWireObject } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import { Hono } from 'jsr:@hono/hono@4.11.9';
 import { parse } from 'jsr:@std/yaml@1.0.12';
 
 async function loadOpenApiYaml(): Promise<JsonWireObject> {
     return decodeOpenApiDocument(
-        parse(
-            await Deno.readTextFile(
-                new URL('../../resources/api-v1-openapi.yaml', import.meta.url)
-            )
+        decodeJsonWireValue(
+            parse(
+                await Deno.readTextFile(
+                    new URL('../../resources/api-v1-openapi.yaml', import.meta.url)
+                )
+            ),
+            'API-v1 OpenAPI resource'
         ),
         'API-v1 OpenAPI resource'
     );

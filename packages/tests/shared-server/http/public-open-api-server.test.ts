@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { decodeOpenApiDocument, withPublicOpenApiServer } from '@shared-server/http/public-open-api-server.ts';
+import { decodeJsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 
 describe('public OpenAPI server publication', () => {
     it('rejects a scalar OpenAPI document', () => {
@@ -10,9 +11,14 @@ describe('public OpenAPI server publication', () => {
     });
 
     it('rejects non-JSON-safe configuration values', () => {
-        expect(() => decodeOpenApiDocument({ openapi: '3.1.0', invalid: undefined })).toThrow(
-            'OpenAPI document must be JSON-safe'
-        );
+        expect(() =>
+            decodeOpenApiDocument(
+                decodeJsonWireValue(
+                    { openapi: '3.1.0', invalid: undefined },
+                    'OpenAPI document'
+                )
+            )
+        ).toThrow('OpenAPI document must be JSON-safe');
     });
 
     it('publishes the request-facing server without mutating the decoded document', () => {

@@ -1,4 +1,4 @@
-import { resolvePublicServerUrl } from '@shared-server/http/public-server-url.ts';
+import { resolvePublicServerUrl } from '@shared-server/http/resolve-public-server-url.ts';
 import type { JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import { Hono } from 'jsr:@hono/hono@4.11.9';
 import assert from 'node:assert/strict';

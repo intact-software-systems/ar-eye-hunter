@@ -1,19 +1,14 @@
-import {
-    decodeJsonWireValue,
-    type JsonWireObject,
-    type JsonWireValue
-} from '../rallar-system/protocol/json-wire-identity.ts';
-import { resolvePublicServerUrl } from './public-server-url.ts';
+import { type JsonWireObject, type JsonWireValue } from '../rallar-system/protocol/json-wire-identity.ts';
+import { resolvePublicServerUrl } from './resolve-public-server-url.ts';
 
 export function decodeOpenApiDocument(
-    value: unknown,
+    value: JsonWireValue,
     label = 'OpenAPI document'
 ): JsonWireObject {
-    const document = decodeJsonWireValue(value, label);
-    if (!isJsonWireObject(document)) {
+    if (!isJsonWireObject(value)) {
         throw new TypeError(`${label} must decode to an object.`);
     }
-    return document;
+    return value;
 }
 
 export function withPublicOpenApiServer(

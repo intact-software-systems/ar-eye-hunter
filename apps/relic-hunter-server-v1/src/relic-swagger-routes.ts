@@ -1,5 +1,5 @@
 import { decodeOpenApiDocument, withPublicOpenApiServer } from '@shared-server/http/public-open-api-server.ts';
-import type { JsonWireObject } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
+import { decodeJsonWireValue, type JsonWireObject } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import { parse } from '@std/yaml';
 import type { Hono } from 'hono';
 
@@ -13,7 +13,7 @@ async function loadRelicOpenApiYaml(): Promise<JsonWireObject> {
         )
     );
     return decodeOpenApiDocument(
-        parse(yamlText),
+        decodeJsonWireValue(parse(yamlText), 'Relic Hunter OpenAPI resource'),
         'Relic Hunter OpenAPI resource'
     );
 }
