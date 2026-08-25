@@ -24,6 +24,13 @@ interface FetchObservation {
     readonly signal: AbortSignal | null;
 }
 
+interface RefreshAndHeartbeatResponseInput {
+    readonly call: FetchObservation;
+    readonly client: ReturnType<typeof clientSnapshot>;
+    readonly group: ReturnType<typeof groupSnapshot>;
+    readonly readClientAttempt: () => number;
+}
+
 const observations: FetchObservation[] = [];
 const scope = { applicationId: 'app 1', workspaceId: 'workspace/1' } as const;
 const authSession: AuthSession = {
@@ -162,9 +169,14 @@ describe('browser HTTP feature ownership characterization', () => {
             .mockReturnValueOnce('client-repair-request-id' as `${string}-${string}-${string}-${string}-${string}`)
             .mockReturnValueOnce('group-heartbeat-request-id' as `${string}-${string}-${string}-${string}-${string}`);
         stubFetch((call) =>
-            refreshAndHeartbeatResponse(call, client, group, () => {
-                clientHeartbeatAttempts += 1;
-                return clientHeartbeatAttempts;
+            refreshAndHeartbeatResponse({
+                call,
+                client,
+                group,
+                readClientAttempt: () => {
+                    clientHeartbeatAttempts += 1;
+                    return clientHeartbeatAttempts;
+                }
             })
         );
 
@@ -272,11 +284,9 @@ function connectionAndCrdtResponse(url: string): Response {
 }
 
 function refreshAndHeartbeatResponse(
-    call: FetchObservation,
-    client: ReturnType<typeof clientSnapshot>,
-    group: ReturnType<typeof groupSnapshot>,
-    readClientAttempt: () => number
+    input: RefreshAndHeartbeatResponseInput
 ): Response {
+    const { call, client, group, readClientAttempt } = input;
     if (call.url.endsWith('/clients')) {
         return jsonResponse([client]);
     }

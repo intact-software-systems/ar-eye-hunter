@@ -1,3 +1,24 @@
+import {
+    createBrowserMessagingComposition,
+    createBrowserRealtimeCoreComposition
+} from '@shared-web/browser/composition/browser-communication-composition.ts';
+import {
+    registerBrowserStateLifecycle,
+    registerBrowserTransportLifecycle
+} from '@shared-web/browser/composition/browser-lifecycle-composition.ts';
+import {
+    createBrowserDirectorComposition,
+    createBrowserRoomsComposition
+} from '@shared-web/browser/composition/browser-product-composition.ts';
+import {
+    createBrowserRuntimeFoundation,
+    createBrowserStateComposition,
+    createBrowserStateEventComposition
+} from '@shared-web/browser/composition/browser-runtime-composition.ts';
+import {
+    createBrowserCrdtComposition,
+    createBrowserSessionCoreComposition
+} from '@shared-web/browser/composition/browser-session-composition.ts';
 import type {
     RallarDirectorFacade,
     RallarDirectorRelayConfig,
@@ -9,27 +30,6 @@ import type { RallarAuthFacade } from '@shared-web/browser/rallar-core.ts';
 import type { RallarCrdtFacade } from '@shared-web/browser/rallar-crdt.ts';
 import type { RallarRealtimeFacade, RallarWsFacade } from '@shared-web/browser/rallar-realtime-facade.ts';
 import type { RallarRtcFacade } from '@shared-web/browser/rallar-rtc-facade.ts';
-import {
-    createBrowserMessagingComposition,
-    createBrowserRealtimeCoreComposition
-} from '@shared-web/browser/rallar-runtime/composition/browser-communication-composition.ts';
-import {
-    registerBrowserStateLifecycle,
-    registerBrowserTransportLifecycle
-} from '@shared-web/browser/rallar-runtime/composition/browser-lifecycle-composition.ts';
-import {
-    createBrowserDirectorComposition,
-    createBrowserRoomsComposition
-} from '@shared-web/browser/rallar-runtime/composition/browser-product-composition.ts';
-import {
-    createBrowserRuntimeFoundation,
-    createBrowserStateComposition,
-    createBrowserStateEventComposition
-} from '@shared-web/browser/rallar-runtime/composition/browser-runtime-composition.ts';
-import {
-    createBrowserCrdtComposition,
-    createBrowserSessionCoreComposition
-} from '@shared-web/browser/rallar-runtime/composition/browser-session-composition.ts';
 import type { BrowserRallarRooms } from '@shared-web/browser/rooms/browser-rallar-rooms.ts';
 import type { RallarRoomSession } from '@shared-web/browser/rooms/rallar-room-contracts.ts';
 import type { BlackBoxRallarDirectorOutputRecord, BlackBoxRallarEvent } from './contracts.ts';

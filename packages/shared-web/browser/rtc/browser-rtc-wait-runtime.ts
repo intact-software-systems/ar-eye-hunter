@@ -1,5 +1,5 @@
 import type { ApiMiddleware } from '@shared-web/browser/app-context.ts';
-import { normalizeWaitTimeoutMs } from '@shared-web/browser/connection/rallar-wait-timeout.ts';
+import { normalizeWaitTimeoutMs } from '@shared-web/browser/connection/normalize-wait-timeout-ms.ts';
 import type {
     RallarRtcRoomLaneWaitOptions,
     RallarRtcRoomLaneWaitResult,

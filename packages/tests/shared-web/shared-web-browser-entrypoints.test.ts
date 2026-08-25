@@ -110,7 +110,7 @@ const AGGREGATE_FACADE_OWNERS = new Set([
 const PRIVATE_RUNTIME_MODULE_SEGMENTS = [
     '/composition/',
     '/connection/browser-transport-runtime.ts',
-    '/connection/rallar-wait-timeout.ts',
+    '/connection/normalize-wait-timeout-ms.ts',
     '/messages/rallar-listener-delivery.ts',
     '/people/browser-rallar-people-events.ts',
     '/rooms/rallar-room-validation.ts',

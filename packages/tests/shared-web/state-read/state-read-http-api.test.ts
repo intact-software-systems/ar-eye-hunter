@@ -11,6 +11,25 @@ import type { GroupEvent } from '@shared/api/group-types.ts';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createClientSnapshotFixture, createGroupSnapshotFixture } from '../authoritative-group-fixtures.ts';
 
+interface StateEventFixtureScope {
+    readonly applicationId: string;
+    readonly workspaceId: string;
+}
+
+interface GroupEventFixtureInput {
+    readonly eventId: string;
+    readonly eventType: GroupEvent['eventType'];
+    readonly groupId: string;
+    readonly scope: StateEventFixtureScope;
+}
+
+interface ClientEventFixtureInput {
+    readonly eventId: string;
+    readonly eventType: ClientEvent['eventType'];
+    readonly principalId: string;
+    readonly scope: StateEventFixtureScope;
+}
+
 describe('state-read HTTP API', () => {
     beforeEach(installEmptyLocalStorage);
 
@@ -47,13 +66,18 @@ describe('state-read HTTP API', () => {
     it('encodes entity IDs and event-list filters', async () => {
         const urls: string[] = [];
         const scope = { applicationId: 'app 1', workspaceId: 'workspace/1' };
-        const groupEvents = [groupEvent('group-event-1', 'member-joined', 'room /1', scope)];
-        const clientEvents = [clientEvent(
-            'client-event-1',
-            'session-connected',
-            'alice@example.test',
-            scope
-        )];
+        const groupEvents = [groupEvent({
+            eventId: 'group-event-1',
+            eventType: 'member-joined',
+            groupId: 'room /1',
+            scope: scope
+        })];
+        const clientEvents = [clientEvent({
+            eventId: 'client-event-1',
+            eventType: 'session-connected',
+            principalId: 'alice@example.test',
+            scope: scope
+        })];
         stubFetch(urls, (url) => jsonResponse(url.includes('/groups/') ? groupEvents : clientEvents));
 
         await expect(listStateGroupEvents('room /1', scope, {
@@ -77,17 +101,22 @@ describe('state-read HTTP API', () => {
         const urls: string[] = [];
         const scope = { applicationId: 'app 1', workspaceId: 'workspace/1' };
         const groupPage = {
-            events: [groupEvent('group-event-2', 'member-left', 'room /1', scope)],
+            events: [groupEvent({
+                eventId: 'group-event-2',
+                eventType: 'member-left',
+                groupId: 'room /1',
+                scope: scope
+            })],
             nextCursor: { snapshotVersion: 2, occurredAtEpochMs: 2_000, eventId: 'group-event-2' },
             hasMore: false
         };
         const clientPage = {
-            events: [clientEvent(
-                'client-event-2',
-                'session-disconnected',
-                'alice@example.test',
-                scope
-            )],
+            events: [clientEvent({
+                eventId: 'client-event-2',
+                eventType: 'session-disconnected',
+                principalId: 'alice@example.test',
+                scope: scope
+            })],
             nextCursor: { snapshotVersion: 3, occurredAtEpochMs: 3_000, eventId: 'client-event-2' },
             hasMore: true
         };
@@ -119,13 +148,23 @@ describe('state-read HTTP API', () => {
         stubFetch([], (url) => {
             if (url.includes('/groups/')) {
                 return jsonResponse([{
-                    ...groupEvent('group-event-1', 'member-joined', 'room-1', scope),
+                    ...groupEvent({
+                        eventId: 'group-event-1',
+                        eventType: 'member-joined',
+                        groupId: 'room-1',
+                        scope: scope
+                    }),
                     actor: { kind: 'service', serviceId: '' }
                 }]);
             }
             return jsonResponse({
                 events: [{
-                    ...clientEvent('client-event-1', 'session-connected', 'alice', scope),
+                    ...clientEvent({
+                        eventId: 'client-event-1',
+                        eventType: 'session-connected',
+                        principalId: 'alice',
+                        scope: scope
+                    }),
                     snapshotVersion: 1.5
                 }],
                 nextCursor: { snapshotVersion: 1, occurredAtEpochMs: 1, eventId: 'client-event-1' },
@@ -232,12 +271,8 @@ function jsonResponse(body: object): Response {
     });
 }
 
-function groupEvent(
-    eventId: string,
-    eventType: GroupEvent['eventType'],
-    groupId: string,
-    scope: Readonly<{ applicationId: string; workspaceId: string; }>
-): GroupEvent {
+function groupEvent(input: GroupEventFixtureInput): GroupEvent {
+    const { eventId, eventType, groupId, scope } = input;
     return {
         ...scope,
         groupId,
@@ -254,12 +289,8 @@ function groupEvent(
     };
 }
 
-function clientEvent(
-    eventId: string,
-    eventType: ClientEvent['eventType'],
-    principalId: string,
-    scope: Readonly<{ applicationId: string; workspaceId: string; }>
-): ClientEvent {
+function clientEvent(input: ClientEventFixtureInput): ClientEvent {
+    const { eventId, eventType, principalId, scope } = input;
     return {
         ...scope,
         principalId,

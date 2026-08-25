@@ -1,5 +1,5 @@
 import type { ApiMiddleware } from '@shared-web/browser/app-context.ts';
-import { normalizeWaitTimeoutMs } from '@shared-web/browser/connection/rallar-wait-timeout.ts';
+import { normalizeWaitTimeoutMs } from '@shared-web/browser/connection/normalize-wait-timeout-ms.ts';
 import { notifyListener } from '@shared-web/browser/messages/rallar-listener-delivery.ts';
 import type { RallarConnectStatus } from '@shared-web/browser/rallar-connection-facade.ts';
 import type {
