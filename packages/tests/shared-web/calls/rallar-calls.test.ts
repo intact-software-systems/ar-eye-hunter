@@ -7,9 +7,13 @@ import { QueueBoxUtilities } from '@shared/services/QueueBoxUtilities.ts';
 import { DEFAULT_RTC_DATA_CHANNEL_LANE_ID, type QRtcPeerDto, type WebRtcPeerConnectionLeft } from '@shared/services/WebRtcConnectionService.ts';
 import type { QRtcDataChannel, RtcDataChannelHealth } from '@shared/webrtc/QRtcDataChannel.ts';
 import type { QRtcPeerConnection } from '@shared/webrtc/QRtcPeerConnection.ts';
+import type {
+    RallarCallSignalEvent,
+    RallarIncomingCallInvite
+} from '@shared-web/browser/rallar-calls-facade.ts';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { createGroupSnapshotFixture } from './authoritative-group-fixtures.ts';
-import { createDirectorGroupSnapshot } from './director-group-snapshot-fixture.ts';
+import { createGroupSnapshotFixture } from '../authoritative-group-fixtures.ts';
+import { createDirectorGroupSnapshot } from '../director-group-snapshot-fixture.ts';
 
 type StateEventHttpApiModule = typeof import('@shared-web/browser/state-read/state-event-http-api.ts');
 type AuthApiModule = typeof import('@shared-web/browser/auth/session-http-api.ts');
@@ -21,10 +25,6 @@ type AuthModule = typeof import('@shared/api/auth.ts');
 type ClientStateSnapshotsRepositoryModule = typeof import('@shared/repository/client-state-snapshots-repository.ts');
 type StateCacheLifecycleModule = typeof import('@shared-web/browser/state-cache/browser-state-cache-lifecycle.ts');
 type GroupStateSnapshotsRepositoryModule = typeof import('@shared/repository/group-state-snapshots-repository.ts');
-
-interface CallAcceptResult {
-    readonly id: string;
-}
 
 interface CallTextMessage {
     readonly text: string;
@@ -42,14 +42,9 @@ interface GroupSnapshotFixtureScope {
     readonly workspaceId?: string;
 }
 
-interface CallInviteTestDouble {
-    accept(): Promise<CallAcceptResult>;
-    decline(reason?: string): Promise<readonly unknown[]>;
-}
-
 const mocks = await vi.hoisted(async () => {
     const { createLightweightBrowserFacadeTestMocks } = await import(
-        './lightweight-browser-facade-test-mocks.ts'
+        '../lightweight-browser-facade-test-mocks.ts'
     );
     return createLightweightBrowserFacadeTestMocks();
 });
@@ -288,8 +283,8 @@ describe('Rallar calls', () => {
             laneId: 'reliable'
         });
         const facade = createRallarFacade();
-        const invites: unknown[] = [];
-        const signals: unknown[] = [];
+        const invites: RallarIncomingCallInvite[] = [];
+        const signals: RallarCallSignalEvent[] = [];
 
         facade.calls.onInvite((invite) => {
             invites.push(invite);
@@ -338,7 +333,10 @@ describe('Rallar calls', () => {
             message: 'voice?'
         });
 
-        const invite = invites[0] as CallInviteTestDouble;
+        const invite = invites[0];
+        if (!invite) {
+            throw new Error('Expected the incoming call invite listener to run.');
+        }
         const call = await invite.accept();
         const declined = await invite.decline('busy');
 
@@ -594,11 +592,14 @@ function createMediaTrack(
     kind: 'audio' | 'video'
 ): MediaStreamTrack {
     const listeners = new Set<EventListenerOrEventListenerObject>();
-    const track = {
+    let readyState: MediaStreamTrackState = 'live';
+    const track = toRtcTestDouble<MediaStreamTrack>({
         id,
         kind,
         enabled: true,
-        readyState: 'live',
+        get readyState() {
+            return readyState;
+        },
         addEventListener: vi.fn((
             type: string,
             listener: EventListenerOrEventListenerObject
@@ -616,8 +617,8 @@ function createMediaTrack(
             }
         }),
         stop: vi.fn(() => {
-            track.readyState = 'ended';
-            const event = { type: 'ended' } as Event;
+            readyState = 'ended';
+            const event = new Event('ended');
             for (const listener of listeners) {
                 if (typeof listener === 'function') {
                     listener(event);
@@ -627,20 +628,20 @@ function createMediaTrack(
                 }
             }
         })
-    };
+    });
 
-    return track as unknown as MediaStreamTrack;
+    return track;
 }
 
 function createMediaStream(
     id: string,
     tracks: readonly MediaStreamTrack[]
 ): MediaStream {
-    return {
+    return toRtcTestDouble<MediaStream>({
         id,
         active: tracks.some((track) => track.readyState !== 'ended'),
         getTracks: vi.fn(() => [...tracks]),
         getAudioTracks: vi.fn(() => tracks.filter((track) => track.kind === 'audio')),
         getVideoTracks: vi.fn(() => tracks.filter((track) => track.kind === 'video'))
-    } as unknown as MediaStream;
+    });
 }

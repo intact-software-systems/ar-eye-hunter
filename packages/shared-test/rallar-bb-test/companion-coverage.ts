@@ -117,8 +117,8 @@ export const RALLAR_COMPANION_COVERAGE_SURFACES: readonly RallarCompanionCoverag
             'packages/tests/shared-web/realtime/browser-realtime-json-lane.test.ts',
             'packages/tests/shared-web/rtc/browser-rtc-wait-runtime.test.ts',
             'packages/tests/shared-web/realtime/browser-targeted-realtime-runtime.test.ts',
-            'packages/tests/shared-web/rallar-calls.test.ts',
-            'packages/tests/shared-web/rallar-media-sources.test.ts',
+            'packages/tests/shared-web/calls/rallar-calls.test.ts',
+            'packages/tests/shared-web/media/browser-media-sources.test.ts',
             'packages/tests/shared-web/rallar-flow.test.ts'
         ],
         runnerBoundary:

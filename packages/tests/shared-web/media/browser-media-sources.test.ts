@@ -2,8 +2,8 @@ import { newALRoute, newALUnicastMessage } from '@shared/al-contracts/al-contrac
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { createGroupSnapshotFixture } from './authoritative-group-fixtures.ts';
-import { createDirectorGroupSnapshot } from './director-group-snapshot-fixture.ts';
+import { createGroupSnapshotFixture } from '../authoritative-group-fixtures.ts';
+import { createDirectorGroupSnapshot } from '../director-group-snapshot-fixture.ts';
 
 type MiddlewareModule = typeof import('@shared-web/browser/middleware.ts');
 type StateEventHttpApiModule = typeof import('@shared-web/browser/state-read/state-event-http-api.ts');
@@ -30,7 +30,7 @@ interface GroupSnapshotFixtureScope {
 
 const mocks = await vi.hoisted(async () => {
     const { createLightweightBrowserFacadeTestMocks } = await import(
-        './lightweight-browser-facade-test-mocks.ts'
+        '../lightweight-browser-facade-test-mocks.ts'
     );
     return createLightweightBrowserFacadeTestMocks();
 });
@@ -405,11 +405,14 @@ function createMediaTrack(
     kind: 'audio' | 'video'
 ): MediaStreamTrack {
     const listeners = new Set<EventListenerOrEventListenerObject>();
-    const track = {
+    let readyState: MediaStreamTrackState = 'live';
+    const track = toTestDouble<MediaStreamTrack>({
         id,
         kind,
         enabled: true,
-        readyState: 'live',
+        get readyState() {
+            return readyState;
+        },
         addEventListener: vi.fn((
             type: string,
             listener: EventListenerOrEventListenerObject
@@ -427,8 +430,8 @@ function createMediaTrack(
             }
         }),
         stop: vi.fn(() => {
-            track.readyState = 'ended';
-            const event = { type: 'ended' } as Event;
+            readyState = 'ended';
+            const event = new Event('ended');
             for (const listener of listeners) {
                 if (typeof listener === 'function') {
                     listener(event);
@@ -438,20 +441,24 @@ function createMediaTrack(
                 }
             }
         })
-    };
+    });
 
-    return track as unknown as MediaStreamTrack;
+    return track;
 }
 
 function createMediaStream(
     id: string,
     tracks: readonly MediaStreamTrack[]
 ): MediaStream {
-    return {
+    return toTestDouble<MediaStream>({
         id,
         active: tracks.some((track) => track.readyState !== 'ended'),
         getTracks: vi.fn(() => [...tracks]),
         getAudioTracks: vi.fn(() => tracks.filter((track) => track.kind === 'audio')),
         getVideoTracks: vi.fn(() => tracks.filter((track) => track.kind === 'video'))
-    } as unknown as MediaStream;
+    });
+}
+
+function toTestDouble<T>(members: Partial<T>): T {
+    return members as T;
 }

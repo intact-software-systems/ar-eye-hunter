@@ -160,8 +160,8 @@ describe('Rallar companion coverage boundaries', () => {
                 'packages/tests/shared-web/messages/browser-typed-message-channels.test.ts',
                 'packages/tests/shared-web/realtime/browser-realtime-send-receive.test.ts',
                 'packages/tests/shared-web/realtime/browser-room-realtime-runtime.test.ts',
-                'packages/tests/shared-web/rallar-calls.test.ts',
-                'packages/tests/shared-web/rallar-media-sources.test.ts'
+                'packages/tests/shared-web/calls/rallar-calls.test.ts',
+                'packages/tests/shared-web/media/browser-media-sources.test.ts'
             ])
         );
 
