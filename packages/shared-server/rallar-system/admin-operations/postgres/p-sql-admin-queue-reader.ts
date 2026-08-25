@@ -1,7 +1,4 @@
-import type {
-    AdminCountByTypeStatus,
-    AdminOperationsQueuesResponse
-} from '@shared/api/admin-operations-types.ts';
+import type { AdminCountByTypeStatus, AdminOperationsQueuesResponse } from '@shared/api/admin-operations-types.ts';
 
 import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
 import type { AdminOperationReadRequest } from '../admin-operation-request.ts';
@@ -32,15 +29,14 @@ export class PSqlAdminQueueReader {
     }
 
     async execute(_input: AdminOperationReadRequest): Promise<AdminOperationsQueuesResponse> {
-        const [queueTotal, queueExpired, queueGroups, resultTotal, resultExpired, resultGroups] =
-            await Promise.all([
-                this.countQueueRows(),
-                this.countExpiredQueueRows(),
-                this.readQueueGroups(),
-                this.countResultRows(),
-                this.countExpiredResultRows(),
-                this.readResultGroups()
-            ]);
+        const [queueTotal, queueExpired, queueGroups, resultTotal, resultExpired, resultGroups] = await Promise.all([
+            this.countQueueRows(),
+            this.countExpiredQueueRows(),
+            this.readQueueGroups(),
+            this.countResultRows(),
+            this.countExpiredResultRows(),
+            this.readResultGroups()
+        ]);
 
         return {
             ...createAdminOperationBaseResponse(this.options),

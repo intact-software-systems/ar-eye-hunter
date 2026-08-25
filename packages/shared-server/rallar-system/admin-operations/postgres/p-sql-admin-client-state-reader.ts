@@ -1,6 +1,7 @@
 import type { ClientPrincipalRef, ClientSessionRef } from '@shared/api/client-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 
+import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
 import { isClientJsonObject } from '../../client-state/client-state-semantic-equality.ts';
 import type { ClientValidationRecord } from '../../client-state/client-state-validation-primitives.ts';
 import {
@@ -8,7 +9,6 @@ import {
     decodeClientPrincipalStorageKey,
     decodeClientSessionStorageKey
 } from '../../client-state/persistence/client-state-storage-keys.ts';
-import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
 
 import { decodePSqlAdminCount, type PSqlAdminCountRow } from './decode-p-sql-admin-count.ts';
 

@@ -1,9 +1,4 @@
-import type {
-    Group,
-    GroupMember,
-    GroupPresenceSession,
-    GroupRef
-} from '@shared/api/group-types.ts';
+import type { Group, GroupMember, GroupPresenceSession, GroupRef } from '@shared/api/group-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 
 import {
@@ -32,13 +27,13 @@ export interface AdminGroupStateRuntimeRow {
 
 export interface AdminGroupMemberRuntimeRow {
     readonly kind: 'member';
-    readonly ref: GroupRef & { readonly principalId: string };
+    readonly ref: GroupRef & { readonly principalId: string; };
     readonly value: GroupMember;
 }
 
 export interface AdminGroupSessionRuntimeRow {
     readonly kind: 'session';
-    readonly ref: GroupRef & { readonly sessionId: string };
+    readonly ref: GroupRef & { readonly sessionId: string; };
     readonly value: GroupPresenceSession;
 }
 

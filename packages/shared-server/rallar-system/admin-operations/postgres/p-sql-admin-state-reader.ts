@@ -1,17 +1,17 @@
 import type { AdminOperationsStateResponse } from '@shared/api/admin-operations-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 
+import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
 import { groupStateScopeStorageKey } from '../../group-state/persistence/group-state-storage-keys.ts';
 import { groupStateEventWorkspaceKey } from '../../state-events/postgres/group-state-event-workspace-key.ts';
-import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
 import type { AdminOperationReadRequest } from '../admin-operation-request.ts';
 import { createAdminOperationBaseResponse } from '../admin-operation-response.ts';
 
 import {
+    decodeAdminGroupRuntimeRow,
     type AdminGroupMemberRuntimeRow,
     type AdminGroupSessionRuntimeRow,
     type AdminGroupStateRuntimeRow,
-    decodeAdminGroupRuntimeRow,
     type PSqlAdminRuntimeStateRow
 } from './decode-admin-group-runtime-row.ts';
 import { decodePSqlAdminCount, type PSqlAdminCountRow } from './decode-p-sql-admin-count.ts';
@@ -59,8 +59,8 @@ export class PSqlAdminStateReader {
     }
 
     private async readScoped(scope: StateScope): Promise<AdminOperationsStateResponse> {
-        const [clientFacts, groupRows, memberRows, sessionRows, recentClientEvents, recentGroupEvents] =
-            await Promise.all([
+        const [clientFacts, groupRows, memberRows, sessionRows, recentClientEvents, recentGroupEvents] = await Promise
+            .all([
                 this.clientState.readScopedFacts(scope),
                 this.readLiveRuntimeRows('group-state:groups', scope),
                 this.readLiveRuntimeRows('group-state:members', scope),
@@ -83,15 +83,14 @@ export class PSqlAdminStateReader {
     }
 
     private async readGlobal(): Promise<AdminOperationsStateResponse> {
-        const [clients, groupRows, memberRows, sessionRows, recentClientEvents, recentGroupEvents] =
-            await Promise.all([
-                this.clientState.readGlobal(),
-                this.readLiveRuntimeRows('group-state:groups'),
-                this.readLiveRuntimeRows('group-state:members'),
-                this.readLiveRuntimeRows('group-state:sessions'),
-                this.clientState.countRecentEvents(),
-                this.countRecentGroupEvents()
-            ]);
+        const [clients, groupRows, memberRows, sessionRows, recentClientEvents, recentGroupEvents] = await Promise.all([
+            this.clientState.readGlobal(),
+            this.readLiveRuntimeRows('group-state:groups'),
+            this.readLiveRuntimeRows('group-state:members'),
+            this.readLiveRuntimeRows('group-state:sessions'),
+            this.clientState.countRecentEvents(),
+            this.countRecentGroupEvents()
+        ]);
         return this.toResponse({
             clients,
             groupRows: decodeGroupStateRuntimeRows(groupRows),
@@ -115,13 +114,10 @@ export class PSqlAdminStateReader {
             ...createAdminOperationBaseResponse({ ...this.options, scope: input.scope }),
             clients: input.clients,
             groups: {
-                activeGroups: input.groupRows.filter((row) =>
-                    isActiveGroup(row, input.nowEpochMs)
-                ).length,
+                activeGroups: input.groupRows.filter((row) => isActiveGroup(row, input.nowEpochMs)).length,
                 totalActiveMembers: activeMembers.length,
-                onlineMembers: activeMembers.filter((row) =>
-                    onlineMemberIdentities.has(toGroupMemberIdentity(row))
-                ).length
+                onlineMembers:
+                    activeMembers.filter((row) => onlineMemberIdentities.has(toGroupMemberIdentity(row))).length
             },
             events: {
                 recentClientEvents: input.recentClientEvents,
