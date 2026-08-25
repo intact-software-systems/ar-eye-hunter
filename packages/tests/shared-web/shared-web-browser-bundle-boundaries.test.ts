@@ -64,7 +64,7 @@ const budgetedEntries: readonly BundleBoundary[] = [
     }
 ];
 
-describe('shared-web browser bundle boundaries', () => {
+describe('shared-web browser package boundary', () => {
     it('keeps shared-web from declaring graphology directly', () => {
         const manifest = JSON.parse(
             readFileSync(
@@ -83,7 +83,9 @@ describe('shared-web browser bundle boundaries', () => {
             'node scripts/measure-browser-bundles.mjs --check'
         );
     });
+});
 
+describe('shared-web browser bundle boundaries', () => {
     it('keeps narrow core and realtime entry points free of graph, Temporal polyfill, and full facade runtime imports', () => {
         const core = bundleForBoundary(budgetedEntries[1]);
         const realtime = bundleForBoundary(budgetedEntries[2]);

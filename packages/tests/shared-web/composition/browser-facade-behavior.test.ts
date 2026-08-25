@@ -81,17 +81,17 @@ vi.mock(
     })
 );
 
-describe('browser facade behavior', () => {
-    beforeEach(() => {
-        browserTransportRuntime.shutdown('test-reset');
-        vi.clearAllMocks();
-        runtime.initialiseMiddleware.mockResolvedValue(runtime.middleware.middleware);
-        runtime.readSession.mockReturnValue(runtime.middleware.session);
-        runtime.refreshStateSnapshots.mockResolvedValue({ clients: [], groups: [] });
-        runtime.hydrateStateCaches.mockResolvedValue(undefined);
-        runtime.onStateCacheChange.mockReturnValue(() => undefined);
-    });
+beforeEach(() => {
+    browserTransportRuntime.shutdown('test-reset');
+    vi.clearAllMocks();
+    runtime.initialiseMiddleware.mockResolvedValue(runtime.middleware.middleware);
+    runtime.readSession.mockReturnValue(runtime.middleware.session);
+    runtime.refreshStateSnapshots.mockResolvedValue({ clients: [], groups: [] });
+    runtime.hydrateStateCaches.mockResolvedValue(undefined);
+    runtime.onStateCacheChange.mockReturnValue(() => undefined);
+});
 
+describe('browser facade transport ownership', () => {
     it('connects the facade and public root routers through one transport owner', async () => {
         const wsHandler = vi.fn();
         const rtcHandler = vi.fn();
@@ -146,7 +146,9 @@ describe('browser facade behavior', () => {
         ]);
         expect(browserTransportRuntime.readMiddleware()).toBeUndefined();
     });
+});
 
+describe('browser facade setup without startup work', () => {
     it('configures defaults and honors explicitly disabled setup startup work', async () => {
         const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
         const facade = createRallarFacade();
@@ -173,7 +175,9 @@ describe('browser facade behavior', () => {
             connected: false
         });
     });
+});
 
+describe('browser facade restored-session setup', () => {
     it('restores, connects, refreshes rooms, and returns the connected setup result by default', async () => {
         const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
         const facade = createRallarFacade();
@@ -223,7 +227,9 @@ describe('browser facade behavior', () => {
             }
         );
     });
+});
 
+describe('browser facade subscriptions', () => {
     it('starts disconnected and owns idempotent subscription cleanup', async () => {
         const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
         const facade = createRallarFacade();

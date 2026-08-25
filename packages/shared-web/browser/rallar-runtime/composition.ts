@@ -82,52 +82,45 @@ function createBrowserFacadeCompositions(
     state: BrowserStateComposition
 ): BrowserFacadeCompositions {
     const session = createBrowserSessionCoreComposition({ foundation, state });
+    const sessionPort = session.session;
     const stateEvents = createBrowserStateEventComposition({
         connectionRuntime: foundation.connectionRuntime,
-        session: session.session
+        session: sessionPort
     });
     const messaging = createBrowserMessagingComposition({
         wsInbox: stateEvents.wsInbox,
         state,
-        session: session.session
+        session: sessionPort
     });
-    const realtime = createBrowserRealtimeCoreComposition({
-        runtime: foundation.runtime,
-        state,
-        session: session.session
-    });
-    const media = createBrowserMediaComposition({ session: session.session });
+    const realtime = createBrowserRealtimeCoreComposition({ runtime: foundation.runtime, state, session: sessionPort });
+    const media = createBrowserMediaComposition({ session: sessionPort });
     const rooms = createBrowserRoomsComposition({
         state,
         stateEvents,
         messaging,
         realtime,
-        session: session.session
+        session: sessionPort
     });
     const peopleStats = createBrowserPeopleStatsComposition({
         state,
         stateEvents,
-        session: session.session
+        session: sessionPort
     });
     const calls = createBrowserCallsComposition({
         state,
         messaging,
         realtime,
         media,
-        session: session.session
+        session: sessionPort
     });
     const director = createBrowserDirectorComposition({
         state,
         messaging,
         realtime,
         rooms,
-        session: session.session
+        session: sessionPort
     });
-    const startup = createBrowserStartupComposition({
-        session,
-        rooms,
-        peopleStats
-    });
+    const startup = createBrowserStartupComposition({ session, rooms, peopleStats });
     const crdt = createBrowserCrdtComposition({ session, state, messaging });
 
     return {

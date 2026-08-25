@@ -42,7 +42,10 @@ registration, invocation, and cleanup without consulting a historical plan.
    subscription capability from the completed connection runtime, then gives
    room events and people state events direct access to it.
 5. [createBrowserSessionCoreComposition](./rallar-runtime/composition/browser-session-composition.ts)
-   creates immutable session identity and Data, then
+   creates immutable session identity and Data. The public Data entry owns
+   facade and scope lifecycle, while
+   [RepositoryBackedRallarDataStore](./data/repository-backed-rallar-data-store.ts)
+   owns repository reads, writes, clearing, and disposal. The session composer then
    [createRallarSessionController](./rallar-runtime/session.ts) constructs the
    completed transport-connection lifecycle, auth-session lifecycle, and public
    connection/auth operations in that order before any product consumer receives

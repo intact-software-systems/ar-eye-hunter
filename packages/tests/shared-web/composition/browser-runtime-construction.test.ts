@@ -49,8 +49,22 @@ describe('browser runtime construction', () => {
     });
 
     it('completes facade creation before later setup and connect use the composed ports', async () => {
+        let facadeConstructionCompleted = false;
+        runtime.readSession.mockImplementation(() => {
+            if (!facadeConstructionCompleted) {
+                throw new Error('Session dependency was used before facade construction completed.');
+            }
+            return runtime.middleware.session;
+        });
+        runtime.initialiseMiddleware.mockImplementation(async () => {
+            if (!facadeConstructionCompleted) {
+                throw new Error('Transport dependency was used before facade construction completed.');
+            }
+            return runtime.middleware.middleware;
+        });
         const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
         const facade = createRallarFacade();
+        facadeConstructionCompleted = true;
 
         await facade.setup({
             apiBaseUrl: 'https://api.example.test',
