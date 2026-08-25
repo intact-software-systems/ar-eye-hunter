@@ -288,8 +288,8 @@ export class BrowserStateCacheLifecycle implements BrowserStateCacheLifecyclePor
         );
     }
 
-    private readActiveStateCacheScope(fallback: StateScope): StateScope {
-        return this.#observerContext?.scope ?? fallback;
+    private readActiveStateCacheScope(initialScope: StateScope): StateScope {
+        return this.#observerContext?.scope ?? initialScope;
     }
 }
 
