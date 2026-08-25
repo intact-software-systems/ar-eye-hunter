@@ -33,8 +33,8 @@ export function resolveDefaultRallarGamePeerIds(
     ].sort((left, right) => left.localeCompare(right));
 }
 
-export function decodeRallarGameHostCapability(
-    envelope: RallarGameEnvelope<RallarMessagePayload>
+export function decodeRallarGameHostCapability<T>(
+    envelope: RallarGameEnvelope<T>
 ): RallarGameHostCapability | undefined {
     if (
         typeof envelope.payload !== 'object' ||

@@ -16,24 +16,30 @@ are grouped by the owner that makes each runtime decision:
 
 ## Match lifecycle
 
-1. `createRallarGameMatch` constructs the match state and the director,
-   egress, presence, and sequence owners.
-2. `start` subscribes to room state and game messages, publishes this peer's
-   capability, and evaluates director ownership.
-3. Room state and capability messages update the election inputs. The director
-   appointment runtime applies the resulting appointment when this peer is the
-   eligible host.
-4. `stop` releases subscriptions, timers, relay state, and the published
-   capability through the match lifecycle owner.
+1. `createRallarGameMatch` constructs each completed owner in `match.ts`; the
+   returned handle delegates directly to those owners.
+2. `match/rallar-game-match-lifecycle-runtime.ts` starts the director relay and
+   registers room, people, director, RTC, capability, input, and snapshot
+   subscriptions.
+3. `director/rallar-game-host-election-runtime.ts` records explicit capability
+   reports and admitted remote reports. `election()` derives the current host
+   from that owned state.
+4. `appointIfElected()` passes that election to the completed appointment
+   runtime, then refreshes status from the appointment result.
+5. `stop` marks the status stopped, releases the subscription scope, and stops
+   the relay once through the lifecycle owner.
 
 ## Message and egress routing
 
-1. `envelopes.ts` validates incoming envelopes and rejects stale or
-   duplicate sequence numbers.
-2. The match routes presence, input, intent, snapshot, event, and sync-request
-   envelopes to their configured handlers.
+1. `envelopes.ts` defines and validates the public envelope contract.
+   `match/rallar-game-match-routing-runtime.ts` owns sequence admission and
+   routes accepted presence, input, snapshot, and relay envelopes.
+2. `match/rallar-game-match-status-runtime.ts` owns lifecycle flags, director
+   freshness recovery, egress state, and status observers.
 3. Director-owned input is handled locally or relayed by
    `director/rallar-game-director-relay-runtime.ts`.
-4. Match and presence egress select the required RTC lane, wait for peer or
-   director readiness, and return `RallarGameSendResult` without hiding a
-   fallback transport.
+4. Match and presence egress select the required RTC lane, make any explicit
+   recovery send, and return the canonical `RallarGameSendResult`.
+5. `match/rallar-game-diagnostics-runtime.ts` reads the completed status,
+   election, appointment, readiness, and transport owners to assemble the
+   public diagnostics value.

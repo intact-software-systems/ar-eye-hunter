@@ -42,7 +42,7 @@ export namespace RallarGameMatchEgressRuntime {
             handler: RallarGameEnvelopeHandler<T> | undefined
         ): Promise<void>;
         sendReliableSnapshot(envelope: RallarGameEnvelope<TSnapshot>): Promise<RallarGameSendResult>;
-        refreshStatus(): void;
+        realtimeEgressChanged(state: RallarGameEgressState): void;
     }
 }
 
@@ -226,7 +226,7 @@ export class RallarGameMatchEgressRuntime<TInput, TIntent, TSnapshot, TEvent, TP
     private recordReadiness(readiness: RallarGamePeerReadiness): RallarGamePeerReadiness {
         this.lastReadiness = readiness;
         this.realtimeEgress = toRealtimeEgressState(readiness.status);
-        this.input.refreshStatus();
+        this.input.realtimeEgressChanged(this.realtimeEgress);
         return readiness;
     }
 }

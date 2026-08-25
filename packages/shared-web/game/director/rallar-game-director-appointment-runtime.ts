@@ -17,10 +17,8 @@ export namespace RallarGameDirectorAppointmentRuntime {
     export interface Input<TInput, TIntent, TSnapshot, TEvent, TPresence> {
         readonly config: RallarGameMatchConfig<TInput, TIntent, TSnapshot, TEvent, TPresence>;
         readonly heartbeatTtlMs: number;
-        election(): RallarGameHostElectionResult;
         readRoomTarget(): RoomTarget;
         readDirectorStatus(): RallarDirectorStatus;
-        refreshStatus(directorStatus?: RallarDirectorStatus): void;
     }
 }
 
@@ -75,9 +73,10 @@ export class RallarGameDirectorAppointmentRuntime<TInput, TIntent, TSnapshot, TE
         return resolveMetadataOwnerAdminAppointmentEligibility(context);
     }
 
-    async appointIfElected(): Promise<RallarGameHostAppointResult> {
+    async appointIfElected(
+        election: RallarGameHostElectionResult
+    ): Promise<RallarGameHostAppointResult> {
         const appointment = this.eligibility();
-        const election = this.input.election();
         const localPeerId = this.input.config.rallar.session()?.sessionId;
         if (!localPeerId) {
             return this.record({
@@ -88,7 +87,7 @@ export class RallarGameDirectorAppointmentRuntime<TInput, TIntent, TSnapshot, TE
         }
 
         if (!appointment.allowed) {
-            const result = this.record({
+            return this.record({
                 status: appointment.status === 'not-ready'
                     ? 'not-ready'
                     : appointment.status === 'no-local-peer'
@@ -97,8 +96,6 @@ export class RallarGameDirectorAppointmentRuntime<TInput, TIntent, TSnapshot, TE
                 election,
                 reason: appointment.reason
             });
-            this.input.refreshStatus();
-            return result;
         }
 
         if (election.host?.peerId !== localPeerId) {
@@ -115,7 +112,6 @@ export class RallarGameDirectorAppointmentRuntime<TInput, TIntent, TSnapshot, TE
                 room.roomRef ?? room.roomId,
                 { heartbeatTtlMs: this.input.heartbeatTtlMs }
             );
-            this.input.refreshStatus(directorStatus);
             return this.record({
                 status: 'appointed',
                 election,
