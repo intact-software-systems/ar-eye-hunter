@@ -19,15 +19,17 @@ import type {
     RallarMediaSourceStatus
 } from '@shared-web/browser/rallar-media-facade.ts';
 
-export interface BrowserLocalMediaSourceRuntimeInput {
-    readonly connect: () => Promise<ApiMiddleware>;
+export namespace BrowserLocalMediaSourceRuntime {
+    export interface Input {
+        connect(): Promise<ApiMiddleware>;
+    }
 }
 
 export class BrowserLocalMediaSourceRuntime {
     private readonly sources = new Map<RallarMediaSourceKind, BrowserLocalMediaSourceState>();
-    private readonly input: BrowserLocalMediaSourceRuntimeInput;
+    private readonly input: BrowserLocalMediaSourceRuntime.Input;
 
-    public constructor(input: BrowserLocalMediaSourceRuntimeInput) {
+    public constructor(input: BrowserLocalMediaSourceRuntime.Input) {
         this.input = input;
     }
 

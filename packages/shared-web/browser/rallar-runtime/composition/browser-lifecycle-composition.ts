@@ -1,5 +1,6 @@
 import type { RallarDirectorController } from '@shared-web/browser/director/browser-rallar-director-controller.ts';
-import type { RallarMediaPort } from '@shared-web/browser/media/browser-rallar-media-controller.ts';
+import type { BrowserLocalMediaSourceRuntime } from '@shared-web/browser/media/browser-local-media-source-runtime.ts';
+import type { BrowserRemoteMediaStreamRuntime } from '@shared-web/browser/media/browser-remote-media-stream-runtime.ts';
 import type { BrowserRallarMessageSubscriptions } from '@shared-web/browser/messages/browser-rallar-message-subscriptions.ts';
 import type { RallarLifecycleCoordinator } from '@shared-web/browser/rallar-runtime/lifecycle.ts';
 import type { RallarStatePort } from '@shared-web/browser/rallar-runtime/state-store.ts';
@@ -25,7 +26,8 @@ export interface RegisterBrowserTransportLifecycleInput {
 
 export interface RegisterBrowserMediaLifecycleInput {
     readonly lifecycle: RallarLifecycleCoordinator;
-    readonly mediaController: RallarMediaPort;
+    readonly localMediaSources: BrowserLocalMediaSourceRuntime;
+    readonly remoteMediaStreams: BrowserRemoteMediaStreamRuntime;
 }
 
 export function registerBrowserStateLifecycle(input: RegisterBrowserStateLifecycleInput): void {
@@ -95,7 +97,10 @@ export function registerBrowserMediaLifecycle(
     input.lifecycle.register({
         id: 'media',
         order: 90,
-        attach: () => input.mediaController.attachRemoteStreamCallback(),
-        detach: (context) => input.mediaController.stopForDisconnect(context)
+        attach: () => input.remoteMediaStreams.attach(),
+        detach: (context) => {
+            input.remoteMediaStreams.stopForDisconnect(context);
+            input.localMediaSources.stopForDisconnect();
+        }
     });
 }

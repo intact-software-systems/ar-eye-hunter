@@ -158,6 +158,7 @@ function registerBrowserFacadeLifecycle(
     });
     registerBrowserMediaLifecycle({
         lifecycle: foundation.lifecycle,
-        mediaController: compositions.media.mediaController
+        localMediaSources: compositions.media.localMediaSources,
+        remoteMediaStreams: compositions.media.remoteMediaStreams
     });
 }

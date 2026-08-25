@@ -1,7 +1,9 @@
 import {
-    BrowserRallarMediaController,
-    type RallarMediaPort
-} from '@shared-web/browser/media/browser-rallar-media-controller.ts';
+    BrowserLocalMediaSourceRuntime
+} from '@shared-web/browser/media/browser-local-media-source-runtime.ts';
+import {
+    BrowserRemoteMediaStreamRuntime
+} from '@shared-web/browser/media/browser-remote-media-stream-runtime.ts';
 import {
     BrowserRallarMessagesController
 } from '@shared-web/browser/messages/browser-rallar-messages-controller.ts';
@@ -46,7 +48,8 @@ export interface BrowserRealtimeCoreComposition {
 }
 
 export interface BrowserMediaComposition {
-    readonly mediaController: RallarMediaPort;
+    readonly localMediaSources: BrowserLocalMediaSourceRuntime;
+    readonly remoteMediaStreams: BrowserRemoteMediaStreamRuntime;
     readonly media: RallarMediaFacade;
 }
 
@@ -108,13 +111,30 @@ export function createBrowserRealtimeCoreComposition(
 export function createBrowserMediaComposition(
     input: CreateBrowserMediaCompositionInput
 ): BrowserMediaComposition {
-    const mediaController = new BrowserRallarMediaController({
-        connect: async () => await input.session.connect(),
+    const localMediaSources = new BrowserLocalMediaSourceRuntime({
+        connect: async () => await input.session.connect()
+    });
+    const remoteMediaStreams = new BrowserRemoteMediaStreamRuntime({
         readMiddleware: input.session.readMiddleware
     });
+    const media: RallarMediaFacade = {
+        microphone: localMediaSources.createController('microphone'),
+        camera: localMediaSources.createController('camera'),
+        screen: localMediaSources.createController('screen'),
+        setLocalStream: async (stream) => await localMediaSources.setLocalStream(stream),
+        setAudioEnabled: async (enabled) => await localMediaSources.setAudioEnabled(enabled),
+        setVideoEnabled: async (enabled) => await localMediaSources.setVideoEnabled(enabled),
+        stopLocal: async (kind) => await localMediaSources.stopLocal(kind),
+        setPolicy: async (policy) => {
+            const context = await input.session.connect();
+            context.middleware.rtcRxStreamer.setMediaPolicy(policy);
+        },
+        onRemoteStream: (listener) => remoteMediaStreams.onRemoteStream(listener)
+    };
     return {
-        mediaController,
-        media: mediaController.operations
+        localMediaSources,
+        remoteMediaStreams,
+        media
     };
 }
 

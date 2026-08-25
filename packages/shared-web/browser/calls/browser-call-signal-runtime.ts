@@ -1,11 +1,9 @@
 import type { ApiMiddleware } from '@shared-web/browser/app-context.ts';
-import { BrowserCallSessionRuntime } from '@shared-web/browser/calls/browser-call-session-runtime.ts';
 import type {
     RallarCallHandle,
     RallarCallInviteInput,
     RallarCallInviteListener,
     RallarCallInviteResult,
-    RallarCallsFacade,
     RallarCallSignalEvent,
     RallarCallSignalKind,
     RallarCallSignalListener,
@@ -14,6 +12,10 @@ import type {
     RallarCallStartInput,
     RallarIncomingCallInvite
 } from '@shared-web/browser/rallar-calls-facade.ts';
+import type {
+    RallarMediaSourceKind,
+    RallarMediaSourceStatus
+} from '@shared-web/browser/rallar-media-facade.ts';
 import type {
     RallarMessage,
     RallarMessageSendResult
@@ -29,7 +31,7 @@ const RALLAR_CALL_ACCEPT_TYPE_ID = 'app.rallar.calls.accept.v1';
 const RALLAR_CALL_DECLINE_TYPE_ID = 'app.rallar.calls.decline.v1';
 const RALLAR_CALL_CANCEL_TYPE_ID = 'app.rallar.calls.cancel.v1';
 
-export namespace BrowserRallarCallsController {
+export namespace BrowserCallSignalRuntime {
     export interface SignalRoute {
         readonly topicId: string;
         readonly contextId: string;
@@ -43,13 +45,16 @@ export namespace BrowserRallarCallsController {
         readonly route: SignalRoute;
     }
 
-    export interface Input extends BrowserCallSessionRuntime.Input {
+    export interface Input {
         connect(): Promise<ApiMiddleware>;
         readSession(): AuthSession | undefined;
         requireSession(): AuthSession;
         resolveRoomRef(room?: string | GroupRef): GroupRef | undefined;
+        resolveTargetPeerIds(input?: RallarCallInviteInput): readonly string[];
         readonly messages: RallarMessagesOperations;
+        readSourceStatus(kind: RallarMediaSourceKind): RallarMediaSourceStatus | undefined;
         sendWsUnicast<T>(input: SignalSendInput<T>): Promise<RallarMessageSendResult>;
+        startCall(input: RallarCallStartInput): Promise<RallarCallHandle>;
     }
 
     export interface SignalPayloadInput {
@@ -62,26 +67,14 @@ export namespace BrowserRallarCallsController {
 }
 
 /** Owns call invitations and the translation between WS signals and call sessions. */
-export class BrowserRallarCallsController {
-    readonly operations: RallarCallsFacade;
-    private readonly input: BrowserRallarCallsController.Input;
+export class BrowserCallSignalRuntime {
+    private readonly input: BrowserCallSignalRuntime.Input;
 
-    constructor(input: BrowserRallarCallsController.Input) {
+    public constructor(input: BrowserCallSignalRuntime.Input) {
         this.input = input;
-        this.operations = {
-            start: async (startInput) => await this.startCall(startInput),
-            invite: async (inviteInput) => await this.invite(inviteInput),
-            onSignal: (listener) => this.onSignal(listener),
-            onInvite: (listener) => this.onInvite(listener)
-        };
     }
 
-    private async startCall(input: RallarCallStartInput): Promise<RallarCallHandle> {
-        await this.input.connect();
-        return await new BrowserCallSessionRuntime(this.input, input).start();
-    }
-
-    private async invite(input: RallarCallInviteInput): Promise<RallarCallInviteResult> {
+    public async invite(input: RallarCallInviteInput): Promise<RallarCallInviteResult> {
         await this.input.connect();
         const callId = input.callId ?? crypto.randomUUID();
         const peerIds = this.input.resolveTargetPeerIds(input);
@@ -98,7 +91,7 @@ export class BrowserRallarCallsController {
         };
     }
 
-    private onSignal(listener: RallarCallSignalListener): RallarUnsubscribe {
+    public onSignal(listener: RallarCallSignalListener): RallarUnsubscribe {
         return this.input.messages.ws.onMessage<RallarMessage['payload']>(
             { topicId: RALLAR_CALL_SIGNAL_TOPIC_ID },
             async (message) => {
@@ -110,7 +103,7 @@ export class BrowserRallarCallsController {
         );
     }
 
-    private onInvite(listener: RallarCallInviteListener): RallarUnsubscribe {
+    public onInvite(listener: RallarCallInviteListener): RallarUnsubscribe {
         return this.input.messages.ws.onMessage<RallarMessage['payload']>(
             {
                 topicId: RALLAR_CALL_SIGNAL_TOPIC_ID,
@@ -126,7 +119,7 @@ export class BrowserRallarCallsController {
     }
 
     private toSignalPayload(
-        input: BrowserRallarCallsController.SignalPayloadInput
+        input: BrowserCallSignalRuntime.SignalPayloadInput
     ): RallarCallSignalPayload {
         const session = this.input.requireSession();
         return {
@@ -147,7 +140,7 @@ export class BrowserRallarCallsController {
             media: {
                 audio: input.invite.media?.audio,
                 video: input.invite.media?.video,
-                screen: this.input.mediaController.readSourceStatus('screen')
+                screen: this.input.readSourceStatus('screen')
                     ?.state === 'open'
             },
             message: input.invite.message,
@@ -241,7 +234,7 @@ export class BrowserRallarCallsController {
                 invite: toAcceptedSignalInput(event, startInput)
             })
         );
-        return await this.startCall(startInput);
+        return await this.input.startCall(startInput);
     }
 
     private async declineInvite(

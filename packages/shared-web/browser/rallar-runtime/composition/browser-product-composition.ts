@@ -1,4 +1,5 @@
-import { BrowserRallarCallsController } from '@shared-web/browser/calls/browser-rallar-calls-controller.ts';
+import { BrowserCallLifecycleRuntime } from '@shared-web/browser/calls/browser-call-lifecycle-runtime.ts';
+import { BrowserCallSignalRuntime } from '@shared-web/browser/calls/browser-call-signal-runtime.ts';
 import {
     BrowserRallarDirectorController,
     type RallarDirectorController
@@ -117,23 +118,34 @@ export function createBrowserPeopleStatsComposition(
 export function createBrowserCallsComposition(
     input: CreateBrowserCallsCompositionInput
 ): BrowserCallsComposition {
-    const callsController = new BrowserRallarCallsController({
+    const callLifecycle = new BrowserCallLifecycleRuntime({
         connect: async () => await input.session.connect(),
         readMiddleware: input.session.readMiddleware,
+        resolveTargetPeerIds: (target) => input.realtime.realtimeTargeted.resolvePeerIds(target),
+        createTargetedChannel: <T>(definition: RallarTargetedChannelDefinition) =>
+            input.realtime.realtimeTargeted.create<T>(definition),
+        rtc: input.realtime.rtc,
+        media: input.media.media,
+        readSourceStatuses: () => input.media.localMediaSources.readStatuses()
+    });
+    const callSignals = new BrowserCallSignalRuntime({
+        connect: async () => await input.session.connect(),
         readSession,
         requireSession: input.session.requireSession,
         resolveRoomRef: (room) => input.state.roomStateStore.resolveRoomRef(room),
         resolveTargetPeerIds: (target) => input.realtime.realtimeTargeted.resolvePeerIds(target),
-        createTargetedChannel: <T>(definition: RallarTargetedChannelDefinition) =>
-            input.realtime.realtimeTargeted.create<T>(definition),
         messages: input.messaging.messages,
-        rtc: input.realtime.rtc,
-        media: input.media.media,
-        mediaController: input.media.mediaController,
+        readSourceStatus: (kind) => input.media.localMediaSources.readStatus(kind),
         sendWsUnicast: async ({ peerId, payload, typeId, route }) =>
-            await input.messaging.messagesController.sender.sendWsUnicast({ peerId, payload, typeId, route })
+            await input.messaging.messagesController.sender.sendWsUnicast({ peerId, payload, typeId, route }),
+        startCall: async (startInput) => await callLifecycle.start(startInput)
     });
-    const calls = callsController.operations;
+    const calls: RallarCallsFacade = {
+        start: async (startInput) => await callLifecycle.start(startInput),
+        invite: async (inviteInput) => await callSignals.invite(inviteInput),
+        onInvite: (listener) => callSignals.onInvite(listener),
+        onSignal: (listener) => callSignals.onSignal(listener)
+    };
     return { calls };
 }
 
