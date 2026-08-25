@@ -6,7 +6,12 @@ import {
 import type { RallarServerWsRouter } from '@shared-server/rallar-system/websocket/router/rallar-server-ws-router.ts';
 import { createRallarAiMockProvider } from '@shared/rallar-ai/mod.ts';
 import { describe, expect, expectTypeOf, it } from 'vitest';
-import { createRallarServerAiTestRequest, createRallarServerAiTestService, createRallarServerAiTestWebSocket } from './rallar-server-ai-test-fixtures.ts';
+import {
+    createRallarServerAiTestRequest,
+    createRallarServerAiTestRequestJson,
+    createRallarServerAiTestService,
+    createRallarServerAiTestWebSocket
+} from './rallar-server-ai-test-fixtures.ts';
 
 const TEST_WEBSOCKET_CONFIG: RallarServerAiWebSocketConfig = {
     requestTopicId: 'room.ai.generate',
@@ -78,7 +83,7 @@ describe('Rallar server AI WebSocket topic', () => {
             throw new Error('RallarAI topic was not registered.');
         }
 
-        expect(topic.validate(createRallarServerAiTestRequest())).toBe(true);
+        expect(topic.validate(createRallarServerAiTestRequestJson())).toBe(true);
         expect(topic.validate({ prompt: 'missing schema' })).toBe(false);
     });
 

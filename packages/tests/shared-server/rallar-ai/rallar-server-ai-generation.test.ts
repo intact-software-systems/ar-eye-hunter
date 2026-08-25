@@ -18,7 +18,9 @@ describe('Rallar server AI generation', () => {
                 createdAtEpochMs: 10
             }),
             authorize,
-            diagnostics: (event) => diagnostics.push(event)
+            diagnostics: (event) => {
+                diagnostics.push(event);
+            }
         });
         const request = {
             ...createRallarServerAiTestRequest(),
@@ -147,12 +149,7 @@ describe('Rallar server AI generation', () => {
     });
 
     it('rejects a provider result whose value is not JSON-safe', async () => {
-        const request: RallarAiJsonRequest = {
-            schemaId: 'json-result',
-            schemaVersion: '1',
-            schema: {},
-            prompt: 'Return JSON.'
-        };
+        const request = createRallarServerAiTestRequest();
         const provider = {
             ...createRallarAiMockProvider(),
             async generateJson(providerRequest: RallarAiJsonRequest) {
@@ -196,7 +193,9 @@ describe('Rallar server AI generation', () => {
         };
         const ai = createRallarServerAiTestService({
             provider,
-            diagnostics: (event) => diagnostics.push(event)
+            diagnostics: (event) => {
+                diagnostics.push(event);
+            }
         });
         const request = {
             ...createRallarServerAiTestRequest(),
@@ -219,7 +218,7 @@ interface Deferred {
 }
 
 function createDeferred(): Deferred {
-    let resolve = () => undefined;
+    let resolve: () => void = () => undefined;
     const promise = new Promise<void>((complete) => {
         resolve = complete;
     });

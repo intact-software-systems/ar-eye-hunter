@@ -5,7 +5,7 @@ import {
 } from '@shared-server/rallar-ai/install-rallar-server-ai-http-route.ts';
 import { createRallarAiMockProvider } from '@shared/rallar-ai/mod.ts';
 import { describe, expect, it, vi } from 'vitest';
-import { createRallarServerAiTestRequest, createRallarServerAiTestService } from './rallar-server-ai-test-fixtures.ts';
+import { createRallarServerAiTestRequestJson, createRallarServerAiTestService } from './rallar-server-ai-test-fixtures.ts';
 
 describe('Rallar server AI HTTP route', () => {
     it('registers a typed route and passes explicit request identity to generation', async () => {
@@ -22,7 +22,7 @@ describe('Rallar server AI HTTP route', () => {
             path: '/ai/json'
         });
         const response = await registration.invoke({
-            body: createRallarServerAiTestRequest(),
+            body: createRallarServerAiTestRequestJson(),
             actorId: 'host-1',
             roomId: 'room-1'
         });
@@ -64,7 +64,7 @@ describe('Rallar server AI HTTP route', () => {
         });
     });
 
-    it('rejects predecessor request fields instead of ignoring them', async () => {
+    it('rejects unexpected request fields instead of ignoring them', async () => {
         const registration = createHttpRegistration();
         installRallarServerAiHttpRoute({
             router: registration.router,
@@ -76,8 +76,8 @@ describe('Rallar server AI HTTP route', () => {
 
         const response = await registration.invoke({
             body: {
-                ...createRallarServerAiTestRequest(),
-                oldContext: { roomId: 'room-1' }
+                ...createRallarServerAiTestRequestJson(),
+                unexpectedContext: { roomId: 'room-1' }
             }
         });
 
@@ -87,7 +87,7 @@ describe('Rallar server AI HTTP route', () => {
                 ok: false,
                 error: {
                     code: 'invalid-json',
-                    message: 'RallarAI generation request contains unexpected field oldContext.'
+                    message: 'RallarAI generation request contains unexpected field unexpectedContext.'
                 }
             }
         });

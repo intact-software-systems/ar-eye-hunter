@@ -1,5 +1,5 @@
 import { createRallarServerAi } from '@shared-server/rallar-ai/create-rallar-server-ai.ts';
-import type { RallarServerAiJsonRequest } from '@shared-server/rallar-ai/decode-rallar-server-ai-json-request.ts';
+import { decodeRallarServerAiJsonRequest, type RallarServerAiJsonRequest } from '@shared-server/rallar-ai/decode-rallar-server-ai-json-request.ts';
 import type {
     RallarServerAiWebSocketHandler,
     RallarServerAiWebSocketMessageContext,
@@ -9,6 +9,7 @@ import type {
 } from '@shared-server/rallar-ai/install-rallar-server-ai-websocket-topic.ts';
 import type { RallarServerAi, RallarServerAiLimits } from '@shared-server/rallar-ai/rallar-server-ai-contracts.ts';
 import type { RallarServerAiResultPublicationPort } from '@shared-server/rallar-ai/rallar-server-ai-result-publication.ts';
+import type { JsonWireObject } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import type { RallarServerWsFanout, RallarServerWsPublishResult } from '@shared-server/rallar-system/websocket/router/rallar-server-ws-router-contracts.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
@@ -60,6 +61,14 @@ export const RALLAR_SERVER_AI_TEST_ROOM_REF: GroupRef = {
 export function createRallarServerAiTestRequest(
     requestId = 'request-1'
 ): RallarServerAiJsonRequest {
+    return decodeRallarServerAiJsonRequest(
+        createRallarServerAiTestRequestJson(requestId)
+    );
+}
+
+export function createRallarServerAiTestRequestJson(
+    requestId = 'request-1'
+): JsonWireObject {
     return {
         requestId,
         schemaId: 'game-event',

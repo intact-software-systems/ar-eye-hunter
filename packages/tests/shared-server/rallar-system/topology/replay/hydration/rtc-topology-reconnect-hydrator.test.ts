@@ -506,7 +506,7 @@ class FakeWebSocket extends EventTarget implements WebSocket {
     onerror: ((this: WebSocket, event: Event) => void) | null = null;
     onmessage: ((this: WebSocket, event: MessageEvent) => void) | null = null;
     onopen: ((this: WebSocket, event: Event) => void) | null = null;
-    readyState = FakeWebSocket.OPEN;
+    readyState: WebSocket['readyState'] = FakeWebSocket.OPEN;
     readonly sent: string[] = [];
 
     send(data: string | ArrayBufferLike | Blob | ArrayBufferView): void {

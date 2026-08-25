@@ -865,10 +865,14 @@ function readJsonObject(serialized: string, label: string): JsonWireObject {
 }
 
 function requireJsonObject(value: JsonWireValue, label: string): JsonWireObject {
-    if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    if (!isJsonObject(value)) {
         throw new TypeError(`Expected ${label}`);
     }
     return value;
+}
+
+function isJsonObject(value: JsonWireValue): value is JsonWireObject {
+    return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
 function rtt(sessionIdFrom: string, sessionIdTo: string, version: number) {
