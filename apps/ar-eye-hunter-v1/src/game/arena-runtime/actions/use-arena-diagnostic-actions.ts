@@ -1,5 +1,5 @@
-import { readApiConfig, readIceCandidates } from '@shared-web/browser/api-integration.ts';
 import { readWebSocketTicketBackoffState } from '@shared-web/browser/auth/websocket-ticket-http-api.ts';
+import { readApiConfig, readIceCandidates } from '@shared-web/browser/connection/connection-http-api.ts';
 import { rallar } from '@shared-web/browser/rallar.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { useCallback } from 'react';

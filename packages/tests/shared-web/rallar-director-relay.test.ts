@@ -6,9 +6,11 @@ import { DEFAULT_RTC_DATA_CHANNEL_LANE_ID, type QRtcPeerDto, type WebRtcPeerConn
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createDirectorGroupSnapshot } from './director-group-snapshot-fixture.ts';
 
-type ApiIntegrationModule = typeof import('@shared-web/browser/api-integration.ts');
+type StateEventHttpApiModule = typeof import('@shared-web/browser/state-read/state-event-http-api.ts');
 type AuthApiModule = typeof import('@shared-web/browser/auth/session-http-api.ts');
-type ApiWorkflowsModule = typeof import('@shared-web/browser/api-workflows.ts');
+type AppointRoomDirectorModule = typeof import('@shared-web/browser/director/appoint-room-director.ts');
+type RoomMutationWorkflowsModule = typeof import('@shared-web/browser/rooms/room-group-state-mutation-workflows.ts');
+type RefreshStateSnapshotsModule = typeof import('@shared-web/browser/state-read/refresh-state-snapshots.ts');
 type MiddlewareModule = typeof import('@shared-web/browser/middleware.ts');
 type AuthModule = typeof import('@shared/api/auth.ts');
 type ClientStateSnapshotsRepositoryModule = typeof import('@shared/repository/client-state-snapshots-repository.ts');
@@ -43,8 +45,8 @@ vi.mock(
 );
 
 vi.mock(
-    import('@shared-web/browser/api-integration.ts'),
-    (): Partial<ApiIntegrationModule> => ({
+    import('@shared-web/browser/state-read/state-event-http-api.ts'),
+    (): Partial<StateEventHttpApiModule> => ({
         listStateClientEventPage: mocks.listStateClientEventPage,
         listStateClientEvents: mocks.listStateClientEvents,
         listStateGroupEventPage: mocks.listStateGroupEventPage,
@@ -58,23 +60,22 @@ vi.mock(import('@shared-web/browser/auth/session-http-api.ts'), (): Partial<Auth
     registerWithApi: mocks.registerWithApi
 }));
 
-vi.mock(
-    import('@shared-web/browser/api-workflows.ts'),
-    (): Partial<ApiWorkflowsModule> => ({
-        appointStateGroupDirector: mocks.appointStateGroupDirector,
-        createAndJoinStateGroup: mocks.createAndJoinStateGroup,
-        joinStateGroup: mocks.joinStateGroup,
-        leaveStateGroup: mocks.leaveStateGroup,
-        refreshStateSnapshots: mocks.refreshStateSnapshots,
-        updateStateGroupMetadata: mocks.updateStateGroupMetadata
-    })
-);
+vi.mock(import('@shared-web/browser/director/appoint-room-director.ts'), (): Partial<AppointRoomDirectorModule> => ({
+    appointStateGroupDirector: mocks.appointStateGroupDirector
+}));
+vi.mock(import('@shared-web/browser/state-read/refresh-state-snapshots.ts'), (): Partial<RefreshStateSnapshotsModule> => ({
+    refreshStateSnapshots: mocks.refreshStateSnapshots
+}));
+vi.mock(import('@shared-web/browser/rooms/room-group-state-mutation-workflows.ts'), (): Partial<RoomMutationWorkflowsModule> => ({
+    updateStateGroupMetadata: mocks.updateStateGroupMetadata
+}));
 
 vi.mock(
     import('@shared-web/browser/rooms/room-group-state-workflows.ts'),
     (): Partial<RoomGroupStateWorkflowsModule> => ({
         createAndJoinStateGroup: mocks.createAndJoinStateGroup,
-        joinStateGroup: mocks.joinStateGroup
+        joinStateGroup: mocks.joinStateGroup,
+        leaveStateGroup: mocks.leaveStateGroup
     })
 );
 
@@ -127,8 +128,7 @@ describe('Rallar director relay', () => {
         const snapshot = createDirectorGroupSnapshot();
         mockGroupSnapshot(snapshot);
         mocks.appointStateGroupDirector.mockImplementation(
-            async (...input) => {
-                const [, request] = input;
+            async (input) => {
                 const appointment = {
                     version: 1,
                     mode: 'appointed-spa',
@@ -136,7 +136,7 @@ describe('Rallar director relay', () => {
                     principalId: 'principal-1',
                     epoch: 1,
                     appointedAtEpochMs: Date.now(),
-                    heartbeatTtlMs: request.heartbeatTtlMs ?? 5_000
+                    heartbeatTtlMs: input.request.heartbeatTtlMs ?? 5_000
                 };
                 const updated = {
                     ...snapshot,
@@ -212,16 +212,15 @@ describe('Rallar director relay', () => {
             return rejoined;
         });
         mocks.appointStateGroupDirector.mockImplementationOnce(
-            async (...input) => {
-                const [, request, principalId, sessionId] = input;
+            async (input) => {
                 const appointment = {
                     version: 1,
                     mode: 'appointed-spa',
-                    sessionId,
-                    principalId,
+                    sessionId: input.sessionId,
+                    principalId: input.principalId,
                     epoch: 1,
                     appointedAtEpochMs: Date.now(),
-                    heartbeatTtlMs: request.heartbeatTtlMs ?? 5_000
+                    heartbeatTtlMs: input.request.heartbeatTtlMs ?? 5_000
                 };
                 const updated = {
                     ...rejoined,
@@ -234,8 +233,8 @@ describe('Rallar director relay', () => {
                     }
                 };
                 mockGroupSnapshot(updated);
-                expect(principalId).toBe(rejoinSession.clientId);
-                expect(sessionId).toBe(rejoinSession.sessionId);
+                expect(input.principalId).toBe(rejoinSession.clientId);
+                expect(input.sessionId).toBe(rejoinSession.sessionId);
                 return updated;
             }
         );

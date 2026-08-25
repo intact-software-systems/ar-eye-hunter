@@ -5,7 +5,7 @@ import { addWebSocketInboxCallback } from '@shared-web/browser/ws-message-router
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 type MiddlewareModule = typeof import('@shared-web/browser/middleware.ts');
-type ApiWorkflowsModule = typeof import('@shared-web/browser/api-workflows.ts');
+type RefreshStateSnapshotsModule = typeof import('@shared-web/browser/state-read/refresh-state-snapshots.ts');
 type AuthModule = typeof import('@shared/api/auth.ts');
 type DataCachesModule = typeof import('@shared-web/browser/data-caches.ts');
 type ClientStateSnapshotsRepositoryModule = typeof import('@shared/repository/client-state-snapshots-repository.ts');
@@ -24,7 +24,7 @@ const runtime = await vi.hoisted(async () => {
         middleware,
         initialiseMiddleware: vi.fn<MiddlewareModule['initialiseMiddleware']>(),
         readSession: vi.fn<AuthModule['readSession']>(),
-        refreshStateSnapshots: vi.fn<ApiWorkflowsModule['refreshStateSnapshots']>(),
+        refreshStateSnapshots: vi.fn<RefreshStateSnapshotsModule['refreshStateSnapshots']>(),
         hydrateStateCaches: vi.fn<DataCachesModule['hydrateStateCaches']>(),
         onStateCacheChange: vi.fn<DataCachesModule['onStateCacheChange']>(),
         findClientStateSnapshotByPrincipalId: vi.fn<ClientStateSnapshotsRepositoryModule['findClientStateSnapshotByPrincipalId']>(() => undefined),
@@ -43,8 +43,8 @@ vi.mock(
 );
 
 vi.mock(
-    import('@shared-web/browser/api-workflows.ts'),
-    (): Partial<ApiWorkflowsModule> => ({
+    import('@shared-web/browser/state-read/refresh-state-snapshots.ts'),
+    (): Partial<RefreshStateSnapshotsModule> => ({
         refreshStateSnapshots: runtime.refreshStateSnapshots
     })
 );

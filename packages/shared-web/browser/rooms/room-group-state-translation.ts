@@ -11,6 +11,8 @@ import type {
     DisconnectStateGroupPresenceSessionBody,
     JoinStateGroupBody,
     RemoveStateGroupMemberBody,
+    RevokeStateGroupInviteBody,
+    RotateStateGroupJoinCodeBody,
     SetStateGroupMemberRoleBody,
     TransferStateGroupOwnershipBody,
     UnbanStateGroupMemberBody,
@@ -31,12 +33,14 @@ export type {
     GroupStatus
 } from '@shared/api/group-types.ts';
 export type { StateEventCursor, StateEventPage } from '@shared/api/state-event-types.ts';
-export type { StateScope } from '@shared/api/state-types.ts';
+export type { GroupJoinCodeResponse, StateScope } from '@shared/api/state-types.ts';
 export type {
     BanStateGroupMemberBody,
     CreateStateGroupBody,
     CreateStateGroupInviteBody,
     RemoveStateGroupMemberBody,
+    RevokeStateGroupInviteBody,
+    RotateStateGroupJoinCodeBody,
     SetStateGroupMemberRoleBody,
     TransferStateGroupOwnershipBody,
     UnbanStateGroupMemberBody,
@@ -208,6 +212,28 @@ export function toAcceptRoomInviteGroupStateRequest(
     input: RoomGroupStateMutationActorInput
 ): AcceptStateGroupInviteBody {
     return toActorRequest(input);
+}
+
+export function toRevokeRoomInviteGroupStateRequest(
+    input: RoomGroupStateRequestInput<RevokeStateGroupInviteBody>
+): RevokeStateGroupInviteBody {
+    return {
+        ...toMutationAuditFields(input.request),
+        ...toActorRequest(input)
+    };
+}
+
+export function toRotateRoomJoinCodeGroupStateRequest(
+    input: RoomGroupStateRequestInput<RotateStateGroupJoinCodeBody>
+): RotateStateGroupJoinCodeBody {
+    return {
+        ...(input.request.joinCode === undefined ? {} : { joinCode: input.request.joinCode }),
+        ...(input.request.expiresAtEpochMs === undefined
+            ? {}
+            : { expiresAtEpochMs: input.request.expiresAtEpochMs }),
+        ...toMutationAuditFields(input.request),
+        ...toActorRequest(input)
+    };
 }
 
 export function toRemoveRoomMemberGroupStateRequest(

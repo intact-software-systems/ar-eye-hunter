@@ -1,8 +1,9 @@
 # Shared-Web Architecture Notes
 
 `packages/shared-web` is the browser-facing Rallar package. It has the broad
-browser facade at `browser/rallar.ts` plus focused modules for API workflows,
-data, CRDT, middleware, transport engines, RallarAI, and game helpers.
+browser facade at `browser/rallar.ts` plus feature-owned HTTP and workflow
+modules for rooms, state reads, sessions, connection, RTC, CRDT, statistics,
+data, middleware, transport engines, RallarAI, and game helpers.
 
 ## Current Public Surfaces
 
@@ -11,11 +12,13 @@ data, CRDT, middleware, transport engines, RallarAI, and game helpers.
   `rallar.rooms.enter(...)`, then room-bound
   `message(...)` or `realtime(...)` channels. New-room flows that should leave
   the previous room use `rallar.rooms.createAndSwitch(...)`.
-- `browser/api-integration.ts` is the low-level browser REST helper layer. It
-  exposes scoped graph diagnostics and topology management helpers for
-  `/api/state/apps/{applicationId}/workspaces/{workspaceId}/...`, returning the
-  serialized DTO contracts from `@shared/api` and supporting authenticated
-  `GET`, `PUT`, `POST`, and bodyless `DELETE` calls.
+- Product HTTP operations live with their feature: connection config and ICE
+  under `browser/connection/`, CRDT catch-up under `browser/crdt/`, room and
+  presence mutations under `browser/rooms/`, topology and graph reads under
+  `browser/rtc/`, client sessions under `browser/session/`, collections and
+  events under `browser/state-read/`, and statistics under `browser/stats/`.
+  Generic request execution, typed HTTP errors, state paths, and mutation
+  contracts remain under `browser/api/`.
 - `browser/rallar-core.ts` is the narrow core entry point for browser config,
   selectors, and the connection/startup, auth, room, people, and message
   contracts. It exports the room-session/setup types but does not export the

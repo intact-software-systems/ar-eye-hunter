@@ -1,4 +1,4 @@
-import { catchUpRallarCrdtDocument } from '@shared-web/browser/api-integration.ts';
+import { crdtCatchUpHttpApi } from '@shared-web/browser/crdt/crdt-catch-up-http-api.ts';
 import type { RallarCrdtDocument, RallarCrdtOpenOptions, RallarFacade } from '@shared-web/browser/rallar.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import type {
@@ -456,7 +456,9 @@ export function createBlackBoxRallarCrdtController(
             ...(input.encryption ? { encryption: input.encryption as any } : {}),
             ...(input.actor ? { actorId: input.actor } : {}),
             ...(input.sessionId ? { sessionId: input.sessionId } : {}),
-            ...(input.durableCatchUp === 'http' ? { durableCatchUp: catchUpRallarCrdtDocument } : {})
+            ...(input.durableCatchUp === 'http'
+                ? { durableCatchUp: crdtCatchUpHttpApi.catchUpDocument }
+                : {})
         };
     }
 

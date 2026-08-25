@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createGroupSnapshotFixture } from './authoritative-group-fixtures.ts';
 
 type MiddlewareModule = typeof import('@shared-web/browser/middleware.ts');
-type ApiWorkflowsModule = typeof import('@shared-web/browser/api-workflows.ts');
+type RefreshStateSnapshotsModule = typeof import('@shared-web/browser/state-read/refresh-state-snapshots.ts');
 type DataCachesModule = typeof import('@shared-web/browser/data-caches.ts');
 type AuthModule = typeof import('@shared/api/auth.ts');
 type ClientStateSnapshotsRepositoryModule = typeof import('@shared/repository/client-state-snapshots-repository.ts');
@@ -27,7 +27,7 @@ const mocks = await vi.hoisted(async () => {
         initialiseMiddleware: vi.fn<MiddlewareModule['initialiseMiddleware']>(() => Promise.resolve(ctx.middleware)),
         onStateCacheChange: vi.fn<DataCachesModule['onStateCacheChange']>(() => vi.fn()),
         readSession: vi.fn<AuthModule['readSession']>(() => ctx.session),
-        refreshStateSnapshots: vi.fn<ApiWorkflowsModule['refreshStateSnapshots']>(() => Promise.resolve({ clients: [], groups: [] })),
+        refreshStateSnapshots: vi.fn<RefreshStateSnapshotsModule['refreshStateSnapshots']>(() => Promise.resolve({ clients: [], groups: [] })),
         findClientStateSnapshotByPrincipalId: vi.fn<ClientStateSnapshotsRepositoryModule['findClientStateSnapshotByPrincipalId']>(() => undefined),
         getAllClientStateSnapshots: vi.fn<ClientStateSnapshotsRepositoryModule['getAllClientStateSnapshots']>(() => []),
         findFirstGroupStateSnapshotRefSessionIdIsIn: vi.fn<
@@ -48,8 +48,8 @@ vi.mock(
 );
 
 vi.mock(
-    import('@shared-web/browser/api-workflows.ts'),
-    (): Partial<ApiWorkflowsModule> => ({
+    import('@shared-web/browser/state-read/refresh-state-snapshots.ts'),
+    (): Partial<RefreshStateSnapshotsModule> => ({
         refreshStateSnapshots: mocks.refreshStateSnapshots
     })
 );

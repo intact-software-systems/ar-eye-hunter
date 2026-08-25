@@ -49,15 +49,18 @@ export async function joinRoom(input: JoinRoomInput): Promise<GroupSnapshot> {
         if (!roomId) {
             throw new Error('Cannot join room: room is required.');
         }
-        const snapshot = await joinStateGroup(
-            roomId,
-            session.clientId,
-            session.sessionId,
-            context.middleware.heartbeat.generationId,
+        const snapshot = await joinStateGroup({
+            groupId: roomId,
+            principalId: session.clientId,
+            sessionId: session.sessionId,
+            generationId: context.middleware.heartbeat.generationId,
             scope,
-            toRallarWorkflowPolicies<StateGroupWorkflowValue>(operationOptions),
-            { inviteToken: joinInput.options.inviteToken, joinCode: joinInput.options.joinCode }
-        );
+            policies: toRallarWorkflowPolicies<StateGroupWorkflowValue>(operationOptions),
+            intent: {
+                inviteToken: joinInput.options.inviteToken,
+                joinCode: joinInput.options.joinCode
+            }
+        });
         input.stateStore.setCurrentRoom(snapshot);
         await input.acceptSnapshots({ context, clients: [], groups: [snapshot], scope });
         await leavePreviousRoomAfterJoin({

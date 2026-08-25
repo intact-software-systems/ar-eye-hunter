@@ -34,11 +34,12 @@ import { JsonWebSocketClient } from '@shared/websocket/JsonWebSocketClient.ts';
 import { readSession } from '@shared/api/auth.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 
-import { defaultStateScope, readApiConfig, readIceCandidates } from '@shared-web/browser/api-integration.ts';
-import { refreshStateSnapshots } from '@shared-web/browser/api-workflows.ts';
+import { defaultStateScope } from '@shared-web/browser/api/state-http-path.ts';
 import { createWebSocketTicket } from '@shared-web/browser/auth/websocket-ticket-http-api.ts';
+import { readApiConfig, readIceCandidates } from '@shared-web/browser/connection/connection-http-api.ts';
 import { initGroupStateResyncOnReopen } from '@shared-web/browser/state-read/group-state-resync-on-reopen.ts';
 import { hydrateGroupTopologyOverlays } from '@shared-web/browser/state-read/hydrate-group-topology-overlays.ts';
+import { refreshStateSnapshots } from '@shared-web/browser/state-read/refresh-state-snapshots.ts';
 import { toResilienceDto } from './resilience-config.ts';
 
 import {

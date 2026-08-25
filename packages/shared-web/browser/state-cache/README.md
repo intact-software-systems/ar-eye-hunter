@@ -21,12 +21,12 @@ targeting, and overlay adoption all hang off cache writes.
 3. [isRtcTopologyCurrentStateMessage](./is-rtc-topology-current-state-message.ts#isRtcTopologyCurrentStateMessage)
    gates which `overlay.topology` messages count as fresh durable current
    state (server-push hydration/repair identities).
-4. [refreshStateSnapshots](../api-workflows.ts#refreshStateSnapshots) performs
+4. [refreshStateSnapshots](../state-read/refresh-state-snapshots.ts#refreshStateSnapshots) performs
    the connect-time collection reads that feed
    [hydrateStateCaches](../data-caches.ts#hydrateStateCaches);
    [readStateGroupSnapshot](../state-read/point-read.ts#readStateGroupSnapshot)
    is the floored point read (`minCausalRevision`) for resync pulls, and
-   [readStateGroupTopology](../api-integration.ts#readStateGroupTopology) is
+   [readStateGroupTopology](../rtc/rtc-topology-http-api.ts#readStateGroupTopology) is
    the overlay read-through endpoint client.
 5. [initHeartbeat](../heartbeat.ts#initHeartbeat) refreshes full snapshots for
    joined groups every 20 s — the standing self-heal loop that must keep

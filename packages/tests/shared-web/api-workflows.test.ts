@@ -1,20 +1,22 @@
 import { configureApiClient } from '@shared-web/browser/api-client-config.ts';
+import { consumeAgentSessionTicketAt, issueAgentSessionTicketsAt } from '@shared-web/browser/auth/agent-session-ticket-http-api.ts';
+import { createAndJoinStateGroup, joinStateGroup } from '@shared-web/browser/rooms/room-group-state-workflows.ts';
+import {
+    readStateGroupGraph,
+    readStateGroupTopology,
+    readStateGroupTopologyConfig,
+    readStateGroupTopologyOverride,
+    readStateScopedGlobalGraph
+} from '@shared-web/browser/rtc/rtc-topology-http-api.ts';
+import { refreshStateHeartbeat } from '@shared-web/browser/session/refresh-state-heartbeat.ts';
+import { refreshStateSnapshots } from '@shared-web/browser/state-read/refresh-state-snapshots.ts';
 import {
     listStateClientEventPage,
     listStateClientEvents,
     listStateGroupEventPage,
-    listStateGroupEvents,
-    readStateGroupGraph,
-    readStateGroupStats,
-    readStateGroupTopology,
-    readStateGroupTopologyConfig,
-    readStateGroupTopologyOverride,
-    readStateMyRealtimeStatus,
-    readStateScopedGlobalGraph,
-    readStateWorkspaceStatsSummary
-} from '@shared-web/browser/api-integration.ts';
-import { createAndJoinStateGroup, joinStateGroup, refreshStateHeartbeat, refreshStateSnapshots } from '@shared-web/browser/api-workflows.ts';
-import { consumeAgentSessionTicketAt, issueAgentSessionTicketsAt } from '@shared-web/browser/auth/agent-session-ticket-http-api.ts';
+    listStateGroupEvents
+} from '@shared-web/browser/state-read/state-event-http-api.ts';
+import { readStateGroupStats, readStateMyRealtimeStatus, readStateWorkspaceStatsSummary } from '@shared-web/browser/stats/rallar-stats-http-api.ts';
 import type { ClientInfo } from '@shared/api/api-config.ts';
 import type { ClientEvent, ClientSnapshot } from '@shared/api/client-types.ts';
 import type { GroupEvent, GroupSnapshot } from '@shared/api/group-types.ts';
@@ -588,15 +590,13 @@ describe('state API workflows', () => {
             });
 
             await expect(
-                createAndJoinStateGroup(
-                    'Room 1',
-                    'principal-1',
-                    'session-1',
-                    'generation-1',
-                    undefined,
-                    undefined,
-                    'group-1'
-                )
+                createAndJoinStateGroup({
+                    displayName: 'Room 1',
+                    principalId: 'principal-1',
+                    sessionId: 'session-1',
+                    generationId: 'generation-1',
+                    requestedGroupId: 'group-1'
+                })
             ).rejects.toThrow('403');
 
             expect(connectUrls).toHaveLength(1);
@@ -629,7 +629,12 @@ describe('state API workflows', () => {
         });
 
         await expect(
-            joinStateGroup('group-1', 'principal-1', 'session-1', 'generation-1')
+            joinStateGroup({
+                groupId: 'group-1',
+                principalId: 'principal-1',
+                sessionId: 'session-1',
+                generationId: 'generation-1'
+            })
         ).rejects.toThrow('403');
 
         expect(connectUrls).toHaveLength(1);
@@ -661,15 +666,13 @@ describe('state API workflows', () => {
         });
 
         await expect(
-            createAndJoinStateGroup(
-                'Room 1',
-                'principal-1',
-                'session-1',
-                'generation-1',
-                undefined,
-                undefined,
-                'group-1'
-            )
+            createAndJoinStateGroup({
+                displayName: 'Room 1',
+                principalId: 'principal-1',
+                sessionId: 'session-1',
+                generationId: 'generation-1',
+                requestedGroupId: 'group-1'
+            })
         ).rejects.toThrow('403');
 
         expect(connectUrls).toHaveLength(1);

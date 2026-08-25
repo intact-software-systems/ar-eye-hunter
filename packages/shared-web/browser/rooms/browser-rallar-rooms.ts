@@ -1,6 +1,3 @@
-import { readStateGroupSnapshot } from '@shared-web/browser/api-integration.ts';
-import type { StateGroupSnapshotRead } from '@shared-web/browser/api-integration.ts';
-import * as apiWorkflows from '@shared-web/browser/api-workflows.ts';
 import { ApiHttpError } from '@shared-web/browser/api/http-error.ts';
 import type { ApiMiddleware } from '@shared-web/browser/app-context.ts';
 import type { RallarMessagesController } from '@shared-web/browser/messages/browser-rallar-messages-controller.ts';
@@ -21,6 +18,8 @@ import type {
     RallarUnsubscribe
 } from '@shared-web/browser/rallar-shared-contracts.ts';
 import { emitBrowserStateReadDiagnostic } from '@shared-web/browser/state-read/diagnostics.ts';
+import { readStateGroupSnapshot, type StateGroupSnapshotRead } from '@shared-web/browser/state-read/point-read.ts';
+import { refreshStateSnapshots } from '@shared-web/browser/state-read/refresh-state-snapshots.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { toGroupRefFromScope, toStateScope } from '@shared/api/api-type-utils.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
@@ -342,7 +341,7 @@ async function refreshRooms(
         const operationOptions = input.resolveOperationOptions(options);
         const context = await input.connect(operationOptions);
         const scope = input.resolveOperationScope(options.scope);
-        const { clients, groups } = await apiWorkflows.refreshStateSnapshots(
+        const { clients, groups } = await refreshStateSnapshots(
             scope,
             toRallarWorkflowPolicies(operationOptions)
         );

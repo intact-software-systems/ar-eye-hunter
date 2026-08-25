@@ -3,9 +3,12 @@ import type { MiddlewareInitOptions } from '@shared-web/browser/middleware.ts';
 import { vi } from 'vitest';
 import { createApiMiddlewareTestDouble } from './api-middleware-test-double.ts';
 
-type ApiIntegrationModule = typeof import('@shared-web/browser/api-integration.ts');
+type StateEventHttpApiModule = typeof import('@shared-web/browser/state-read/state-event-http-api.ts');
 type AuthApiModule = typeof import('@shared-web/browser/auth/session-http-api.ts');
-type ApiWorkflowsModule = typeof import('@shared-web/browser/api-workflows.ts');
+type AppointRoomDirectorModule = typeof import('@shared-web/browser/director/appoint-room-director.ts');
+type RoomGroupStateWorkflowsModule = typeof import('@shared-web/browser/rooms/room-group-state-workflows.ts');
+type RoomMutationWorkflowsModule = typeof import('@shared-web/browser/rooms/room-group-state-mutation-workflows.ts');
+type RefreshStateSnapshotsModule = typeof import('@shared-web/browser/state-read/refresh-state-snapshots.ts');
 type ClientRepositoryModule = typeof import('@shared/repository/client-state-snapshots-repository.ts');
 type GroupRepositoryModule = typeof import('@shared/repository/group-state-snapshots-repository.ts');
 
@@ -20,7 +23,7 @@ export function createLightweightBrowserFacadeTestMocks() {
         webSocketQueueBox: vi.mocked(ctx.middleware.webSocketQueueBox),
         webSocket: vi.mocked(ctx.middleware.webSocketQueueBox.socket),
         clientRepositoryMissing: vi.fn((): never => missingRepository('shared.repository.client-state-snapshots')),
-        appointStateGroupDirector: rejectedWorkflow<ApiWorkflowsModule['appointStateGroupDirector']>('director appointment not mocked'),
+        appointStateGroupDirector: rejectedWorkflow<AppointRoomDirectorModule['appointStateGroupDirector']>('director appointment not mocked'),
         ...createLifecycleMocks(ctx),
         ...createWorkflowMocks(),
         ...createRepositoryMocks()
@@ -52,23 +55,23 @@ function createLifecycleMocks(ctx: ApiMiddleware) {
 
 function createWorkflowMocks() {
     return {
-        createAndJoinStateGroup: rejectedWorkflow<ApiWorkflowsModule['createAndJoinStateGroup']>(
+        createAndJoinStateGroup: rejectedWorkflow<RoomGroupStateWorkflowsModule['createAndJoinStateGroup']>(
             'create not mocked'
         ),
-        joinStateGroup: rejectedWorkflow<ApiWorkflowsModule['joinStateGroup']>(
+        joinStateGroup: rejectedWorkflow<RoomGroupStateWorkflowsModule['joinStateGroup']>(
             'join not mocked'
         ),
-        leaveStateGroup: rejectedWorkflow<ApiWorkflowsModule['leaveStateGroup']>(
+        leaveStateGroup: rejectedWorkflow<RoomGroupStateWorkflowsModule['leaveStateGroup']>(
             'leave not mocked'
         ),
-        updateStateGroupMetadata: rejectedWorkflow<ApiWorkflowsModule['updateStateGroupMetadata']>('metadata update not mocked'),
-        refreshStateSnapshots: vi.fn<ApiWorkflowsModule['refreshStateSnapshots']>(
+        updateStateGroupMetadata: rejectedWorkflow<RoomMutationWorkflowsModule['updateStateGroupMetadata']>('metadata update not mocked'),
+        refreshStateSnapshots: vi.fn<RefreshStateSnapshotsModule['refreshStateSnapshots']>(
             () => Promise.resolve({ clients: [], groups: [] })
         ),
-        listStateClientEvents: rejectedWorkflow<ApiIntegrationModule['listStateClientEvents']>('client events not mocked'),
-        listStateClientEventPage: rejectedWorkflow<ApiIntegrationModule['listStateClientEventPage']>('client event page not mocked'),
-        listStateGroupEvents: rejectedWorkflow<ApiIntegrationModule['listStateGroupEvents']>('group events not mocked'),
-        listStateGroupEventPage: rejectedWorkflow<ApiIntegrationModule['listStateGroupEventPage']>('group event page not mocked')
+        listStateClientEvents: rejectedWorkflow<StateEventHttpApiModule['listStateClientEvents']>('client events not mocked'),
+        listStateClientEventPage: rejectedWorkflow<StateEventHttpApiModule['listStateClientEventPage']>('client event page not mocked'),
+        listStateGroupEvents: rejectedWorkflow<StateEventHttpApiModule['listStateGroupEvents']>('group events not mocked'),
+        listStateGroupEventPage: rejectedWorkflow<StateEventHttpApiModule['listStateGroupEventPage']>('group event page not mocked')
     };
 }
 

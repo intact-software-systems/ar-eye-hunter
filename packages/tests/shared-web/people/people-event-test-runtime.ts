@@ -1,8 +1,8 @@
 import { vi } from 'vitest';
 
-import type { StateSnapshots } from '@shared-web/browser/api-workflows.ts';
 import type { ApiMiddleware } from '@shared-web/browser/connection/browser-transport-runtime.ts';
 import type { Middleware } from '@shared-web/browser/middleware.ts';
+import type { StateSnapshots } from '@shared-web/browser/state-read/refresh-state-snapshots.ts';
 import { newALBroadcastMessage, newALEventRoute } from '@shared/al-contracts/al-contract.ts';
 import { AppTopics } from '@shared/api/api-config.ts';
 import type { ClientEvent, ClientSnapshot } from '@shared/api/client-types.ts';
@@ -54,14 +54,14 @@ vi.mock(import('@shared-web/browser/middleware.ts'), () => ({
     initialiseMiddleware: async (): Promise<Middleware> => peopleEventMocks.context.middleware
 }));
 
-vi.mock(import('@shared-web/browser/api-integration.ts'), () => ({
+vi.mock(import('@shared-web/browser/state-read/state-event-http-api.ts'), () => ({
     listStateClientEventPage: peopleEventMocks.listStateClientEventPage,
     listStateClientEvents: peopleEventMocks.listStateClientEvents,
     listStateGroupEventPage: vi.fn(),
     listStateGroupEvents: vi.fn()
 }));
 
-vi.mock(import('@shared-web/browser/api-workflows.ts'), () => ({
+vi.mock(import('@shared-web/browser/state-read/refresh-state-snapshots.ts'), () => ({
     refreshStateSnapshots: peopleEventMocks.refreshStateSnapshots
 }));
 

@@ -1,7 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { configureApiClient } from '@shared-web/browser/api-client-config.ts';
-import * as legacyWorkflows from '@shared-web/browser/api-workflows.ts';
 import * as roomWorkflows from '@shared-web/browser/rooms/room-group-state-workflows.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 
@@ -15,12 +14,7 @@ interface FetchCall {
     readonly body?: Record<string, unknown>;
 }
 
-const workflowPaths = [
-    { path: 'legacy', workflows: legacyWorkflows },
-    { path: 'owning', workflows: roomWorkflows }
-] as const;
-
-describe.each(workflowPaths)('$path room group-state workflow compatibility', ({ workflows }) => {
+describe('room group-state workflows', () => {
     const fetchCalls: FetchCall[] = [];
 
     beforeEach(() => {
@@ -43,7 +37,12 @@ describe.each(workflowPaths)('$path room group-state workflow compatibility', ({
         stubUuids('generated-room', 'create-request-00000001', 'presence-request-000001');
         stubSuccessfulGroupFetch(fetchCalls);
 
-        await workflows.createAndJoinStateGroup('My Room', 'principal-1', 'session-1', 'generation-1');
+        await roomWorkflows.createAndJoinStateGroup({
+            displayName: 'My Room',
+            principalId: 'principal-1',
+            sessionId: 'session-1',
+            generationId: 'generation-1'
+        });
 
         expect(fetchCalls).toEqual([
             {
@@ -85,15 +84,14 @@ describe.each(workflowPaths)('$path room group-state workflow compatibility', ({
         stubUuids('create-request-00000001', 'presence-request-000001');
         stubSuccessfulGroupFetch(fetchCalls);
 
-        await workflows.createAndJoinStateGroup(
-            'Rallar',
-            'principal-1',
-            'session-1',
-            'generation-1',
-            { applicationId: 'app-1', workspaceId: 'workspace-1' },
-            {},
-            'rallar',
-            {
+        await roomWorkflows.createAndJoinStateGroup({
+            displayName: 'Rallar',
+            principalId: 'principal-1',
+            sessionId: 'session-1',
+            generationId: 'generation-1',
+            scope: { applicationId: 'app-1', workspaceId: 'workspace-1' },
+            requestedGroupId: 'rallar',
+            options: {
                 description: 'Mission room',
                 joinMode: 'open',
                 maxMembers: 8,
@@ -102,7 +100,7 @@ describe.each(workflowPaths)('$path room group-state workflow compatibility', ({
                 expiresAtEpochMs: 2_000,
                 purgeAfterEpochMs: 3_000
             }
-        );
+        });
 
         expect(fetchCalls).toEqual([
             {
@@ -157,14 +155,13 @@ describe.each(workflowPaths)('$path room group-state workflow compatibility', ({
         );
         stubTransientGroupFetch(fetchCalls, '/groups', '/sessions/session-1');
 
-        await workflows.createAndJoinStateGroup(
-            'Retry Room',
-            'principal-1',
-            'session-1',
-            'generation-1',
-            undefined,
-            { command: { maxAttempts: 2 } }
-        );
+        await roomWorkflows.createAndJoinStateGroup({
+            displayName: 'Retry Room',
+            principalId: 'principal-1',
+            sessionId: 'session-1',
+            generationId: 'generation-1',
+            policies: { command: { maxAttempts: 2 } }
+        });
 
         expect(readRequestIds(fetchCalls, 'POST', '/groups')).toEqual([
             'create-request-00000001',
@@ -180,15 +177,13 @@ describe.each(workflowPaths)('$path room group-state workflow compatibility', ({
         stubUuids('join-request-00000001', 'presence-request-000001');
         stubSuccessfulGroupFetch(fetchCalls);
 
-        await workflows.joinStateGroup(
-            'group-1',
-            'principal-1',
-            'session-1',
-            'generation-1',
-            undefined,
-            {},
-            { inviteToken: 'invite-1', joinCode: 'code-1' }
-        );
+        await roomWorkflows.joinStateGroup({
+            groupId: 'group-1',
+            principalId: 'principal-1',
+            sessionId: 'session-1',
+            generationId: 'generation-1',
+            intent: { inviteToken: 'invite-1', joinCode: 'code-1' }
+        });
 
         expect(fetchCalls).toEqual([
             {
@@ -224,14 +219,13 @@ describe.each(workflowPaths)('$path room group-state workflow compatibility', ({
         stubUuids('join-request-00000001', 'presence-request-000001', 'unused-request-0000001');
         stubTransientGroupFetch(fetchCalls, '/join', '/sessions/session-1');
 
-        await workflows.joinStateGroup(
-            'group-1',
-            'principal-1',
-            'session-1',
-            'generation-1',
-            undefined,
-            { command: { maxAttempts: 2 } }
-        );
+        await roomWorkflows.joinStateGroup({
+            groupId: 'group-1',
+            principalId: 'principal-1',
+            sessionId: 'session-1',
+            generationId: 'generation-1',
+            policies: { command: { maxAttempts: 2 } }
+        });
 
         expect(readRequestIds(fetchCalls, 'POST', '/join')).toEqual([
             'join-request-00000001',
@@ -247,7 +241,12 @@ describe.each(workflowPaths)('$path room group-state workflow compatibility', ({
         stubUuids('disconnect-request-0001', 'member-request-0000001');
         stubLeaveFetch(fetchCalls, true);
 
-        await workflows.leaveStateGroup('group-1', 'principal-1', 'session-1', 'generation-1');
+        await roomWorkflows.leaveStateGroup({
+            groupId: 'group-1',
+            principalId: 'principal-1',
+            sessionId: 'session-1',
+            generationId: 'generation-1'
+        });
 
         expect(fetchCalls).toEqual([
             {
@@ -285,14 +284,13 @@ describe.each(workflowPaths)('$path room group-state workflow compatibility', ({
         stubUuids('disconnect-request-0001', 'member-request-0000001', 'unused-request-0000001');
         stubTransientGroupFetch(fetchCalls, '/disconnect', '/members/principal-1');
 
-        await workflows.leaveStateGroup(
-            'group-1',
-            'principal-1',
-            'session-1',
-            'generation-1',
-            undefined,
-            { command: { maxAttempts: 2 } }
-        );
+        await roomWorkflows.leaveStateGroup({
+            groupId: 'group-1',
+            principalId: 'principal-1',
+            sessionId: 'session-1',
+            generationId: 'generation-1',
+            policies: { command: { maxAttempts: 2 } }
+        });
 
         expect(readRequestIds(fetchCalls, 'POST', '/disconnect')).toEqual([
             'disconnect-request-0001',

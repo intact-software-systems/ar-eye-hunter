@@ -1,6 +1,11 @@
-import * as api from '@shared-web/browser/api-integration.ts';
+import { defaultStateScope } from '@shared-web/browser/api/state-http-path.ts';
 import type { RallarScopedOperationOptions } from '@shared-web/browser/rallar-connection-facade.ts';
 import { toRallarCommandOptions, type RallarOperationOptions } from '@shared-web/browser/rallar-operation-options.ts';
+import {
+    readStateGroupStats,
+    readStateMyRealtimeStatus,
+    readStateWorkspaceStatsSummary
+} from '@shared-web/browser/stats/rallar-stats-http-api.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import type {
@@ -57,12 +62,12 @@ export class BrowserRallarStatsController implements RallarStatsController {
         const operationOptions = this.options.resolveOperationOptions(readOptions);
         const session = this.options.requireSession();
         const scope = this.options.resolveOperationScope(readOptions.scope) ??
-            api.defaultStateScope();
+            defaultStateScope();
         return await this.options.runAuthAwareOperation(
             async () =>
                 await runRallarCommand(
                     async (signal) =>
-                        await api.readStateWorkspaceStatsSummary(scope, {
+                        await readStateWorkspaceStatsSummary(scope, {
                             authSession: session,
                             signal
                         }),
@@ -82,7 +87,7 @@ export class BrowserRallarStatsController implements RallarStatsController {
             async () =>
                 await runRallarCommand(
                     async (signal) =>
-                        await api.readStateGroupStats(target.groupId, target.scope, {
+                        await readStateGroupStats(target.groupId, target.scope, {
                             authSession: session,
                             signal
                         }),
@@ -97,12 +102,12 @@ export class BrowserRallarStatsController implements RallarStatsController {
         const operationOptions = this.options.resolveOperationOptions(readOptions);
         const session = this.options.requireSession();
         const scope = this.options.resolveOperationScope(readOptions.scope) ??
-            api.defaultStateScope();
+            defaultStateScope();
         return await this.options.runAuthAwareOperation(
             async () =>
                 await runRallarCommand(
                     async (signal) =>
-                        await api.readStateMyRealtimeStatus(scope, {
+                        await readStateMyRealtimeStatus(scope, {
                             authSession: session,
                             signal
                         }),
@@ -118,7 +123,7 @@ export class BrowserRallarStatsController implements RallarStatsController {
         if (typeof group === 'string') {
             return {
                 groupId: group,
-                scope: this.options.resolveOperationScope(scope) ?? api.defaultStateScope()
+                scope: this.options.resolveOperationScope(scope) ?? defaultStateScope()
             };
         }
         return {

@@ -1,10 +1,12 @@
-import type * as ApiIntegrationModule from '@shared-web/browser/api-integration.ts';
-import type * as ApiWorkflowsModule from '@shared-web/browser/api-workflows.ts';
 import type * as AppContextModule from '@shared-web/browser/app-context.ts';
 import type * as AuthApiModule from '@shared-web/browser/auth/session-http-api.ts';
 import type * as DataCachesModule from '@shared-web/browser/data-caches.ts';
 import type * as MiddlewareModule from '@shared-web/browser/middleware.ts';
 import type { RallarRealtimeMessage } from '@shared-web/browser/rallar-realtime-facade.ts';
+import type * as RoomMutationWorkflowsModule from '@shared-web/browser/rooms/room-group-state-mutation-workflows.ts';
+import type * as RoomGroupStateWorkflowsModule from '@shared-web/browser/rooms/room-group-state-workflows.ts';
+import type * as RefreshStateSnapshotsModule from '@shared-web/browser/state-read/refresh-state-snapshots.ts';
+import type * as StateEventHttpApiModule from '@shared-web/browser/state-read/state-event-http-api.ts';
 import { newALRoute, newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import type * as AuthModule from '@shared/api/auth.ts';
@@ -45,7 +47,7 @@ const mocks = await vi.hoisted(async () => {
         readMissingGroupStateSnapshotRepository,
         clearMiddleware: vi.fn<typeof AppContextModule.clearMiddleware>(),
         clearSession: vi.fn<typeof AuthModule.clearSession>(),
-        createAndJoinStateGroup: vi.fn<typeof ApiWorkflowsModule.createAndJoinStateGroup>(() => Promise.reject(new Error('create not mocked'))),
+        createAndJoinStateGroup: vi.fn<typeof RoomGroupStateWorkflowsModule.createAndJoinStateGroup>(() => Promise.reject(new Error('create not mocked'))),
         findClientStateSnapshotByPrincipalId: vi.fn<typeof ClientStateSnapshotsRepositoryModule.findClientStateSnapshotByPrincipalId>(
             readMissingClientStateSnapshotRepository
         ),
@@ -62,19 +64,21 @@ const mocks = await vi.hoisted(async () => {
         isMiddlewareReady: vi.fn<typeof AppContextModule.isMiddlewareReady>(
             () => false
         ),
-        joinStateGroup: vi.fn<typeof ApiWorkflowsModule.joinStateGroup>(() => Promise.reject(new Error('join not mocked'))),
-        leaveStateGroup: vi.fn<typeof ApiWorkflowsModule.leaveStateGroup>(() => Promise.reject(new Error('leave not mocked'))),
-        listStateClientEventPage: vi.fn<typeof ApiIntegrationModule.listStateClientEventPage>(() => Promise.reject(new Error('client event page not mocked'))),
-        listStateClientEvents: vi.fn<typeof ApiIntegrationModule.listStateClientEvents>(() => Promise.reject(new Error('client events not mocked'))),
-        listStateGroupEventPage: vi.fn<typeof ApiIntegrationModule.listStateGroupEventPage>(() => Promise.reject(new Error('group event page not mocked'))),
-        listStateGroupEvents: vi.fn<typeof ApiIntegrationModule.listStateGroupEvents>(() => Promise.reject(new Error('group events not mocked'))),
+        joinStateGroup: vi.fn<typeof RoomGroupStateWorkflowsModule.joinStateGroup>(() => Promise.reject(new Error('join not mocked'))),
+        leaveStateGroup: vi.fn<typeof RoomGroupStateWorkflowsModule.leaveStateGroup>(() => Promise.reject(new Error('leave not mocked'))),
+        listStateClientEventPage: vi.fn<typeof StateEventHttpApiModule.listStateClientEventPage>(() =>
+            Promise.reject(new Error('client event page not mocked'))
+        ),
+        listStateClientEvents: vi.fn<typeof StateEventHttpApiModule.listStateClientEvents>(() => Promise.reject(new Error('client events not mocked'))),
+        listStateGroupEventPage: vi.fn<typeof StateEventHttpApiModule.listStateGroupEventPage>(() => Promise.reject(new Error('group event page not mocked'))),
+        listStateGroupEvents: vi.fn<typeof StateEventHttpApiModule.listStateGroupEvents>(() => Promise.reject(new Error('group events not mocked'))),
         loginToApi: vi.fn<typeof AuthApiModule.loginToApi>(() => Promise.resolve(session)),
         logoutFromApi: vi.fn<typeof AuthApiModule.logoutFromApi>(() => Promise.resolve({ loggedOut: true })),
         onStateCacheChange: vi.fn<typeof DataCachesModule.onStateCacheChange>(
             () => vi.fn()
         ),
         readSession: vi.fn<typeof AuthModule.readSession>(() => session),
-        refreshStateSnapshots: vi.fn<typeof ApiWorkflowsModule.refreshStateSnapshots>(() => Promise.resolve({ clients: [], groups: [] })),
+        refreshStateSnapshots: vi.fn<typeof RefreshStateSnapshotsModule.refreshStateSnapshots>(() => Promise.resolve({ clients: [], groups: [] })),
         registerWithApi: vi.fn<typeof AuthApiModule.registerWithApi>(
             () =>
                 Promise.resolve({
@@ -84,7 +88,9 @@ const mocks = await vi.hoisted(async () => {
                     registeredAtEpochMs: 1_000
                 })
         ),
-        updateStateGroupMetadata: vi.fn<typeof ApiWorkflowsModule.updateStateGroupMetadata>(() => Promise.reject(new Error('metadata update not mocked'))),
+        updateStateGroupMetadata: vi.fn<typeof RoomMutationWorkflowsModule.updateStateGroupMetadata>(() =>
+            Promise.reject(new Error('metadata update not mocked'))
+        ),
         writeSession: vi.fn<typeof AuthModule.writeSession>()
     };
 });
@@ -105,8 +111,8 @@ vi.mock(
 );
 
 vi.mock(
-    import('@shared-web/browser/api-integration.ts'),
-    (): Partial<typeof ApiIntegrationModule> => ({
+    import('@shared-web/browser/state-read/state-event-http-api.ts'),
+    (): Partial<typeof StateEventHttpApiModule> => ({
         listStateClientEventPage: mocks.listStateClientEventPage,
         listStateClientEvents: mocks.listStateClientEvents,
         listStateGroupEventPage: mocks.listStateGroupEventPage,
@@ -124,15 +130,19 @@ vi.mock(
 );
 
 vi.mock(
-    import('@shared-web/browser/api-workflows.ts'),
-    (): Partial<typeof ApiWorkflowsModule> => ({
+    import('@shared-web/browser/rooms/room-group-state-workflows.ts'),
+    (): Partial<typeof RoomGroupStateWorkflowsModule> => ({
         createAndJoinStateGroup: mocks.createAndJoinStateGroup,
         joinStateGroup: mocks.joinStateGroup,
-        leaveStateGroup: mocks.leaveStateGroup,
-        refreshStateSnapshots: mocks.refreshStateSnapshots,
-        updateStateGroupMetadata: mocks.updateStateGroupMetadata
+        leaveStateGroup: mocks.leaveStateGroup
     })
 );
+vi.mock(import('@shared-web/browser/state-read/refresh-state-snapshots.ts'), (): Partial<typeof RefreshStateSnapshotsModule> => ({
+    refreshStateSnapshots: mocks.refreshStateSnapshots
+}));
+vi.mock(import('@shared-web/browser/rooms/room-group-state-mutation-workflows.ts'), (): Partial<typeof RoomMutationWorkflowsModule> => ({
+    updateStateGroupMetadata: mocks.updateStateGroupMetadata
+}));
 
 vi.mock(
     import('@shared-web/browser/data-caches.ts'),

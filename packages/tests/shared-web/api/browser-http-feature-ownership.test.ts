@@ -1,37 +1,26 @@
 import { configureApiClient } from '@shared-web/browser/api-client-config.ts';
-import {
-    appointStateGroupDirector as appointStateGroupDirectorRequest,
-    catchUpRallarCrdtDocument,
-    connectStateClientSession,
-    connectStateGroupPresenceSession,
-    createStateGroup,
-    listStateGroupEventPage,
-    listStateGroups,
-    readApiConfig,
-    readIceCandidates,
-    readStateGroupStats,
-    readStateGroupTopology,
-    readStateScopedGlobalGraph
-} from '@shared-web/browser/api-integration.ts';
-import {
-    appointStateGroupDirector,
-    refreshStateHeartbeat,
-    refreshStateSnapshots,
-    rotateStateGroupJoinCode
-} from '@shared-web/browser/api-workflows.ts';
+import { readApiConfig, readIceCandidates } from '@shared-web/browser/connection/connection-http-api.ts';
+import { crdtCatchUpHttpApi } from '@shared-web/browser/crdt/crdt-catch-up-http-api.ts';
+import { appointStateGroupDirector } from '@shared-web/browser/director/appoint-room-director.ts';
+import { roomGroupStateHttpApi } from '@shared-web/browser/rooms/room-group-state-http-api.ts';
+import { rotateStateGroupJoinCode } from '@shared-web/browser/rooms/room-membership-group-state-workflows.ts';
+import { readStateGroupTopology, readStateScopedGlobalGraph } from '@shared-web/browser/rtc/rtc-topology-http-api.ts';
+import { connectStateClientSession } from '@shared-web/browser/session/client-session-http-api.ts';
+import { refreshStateHeartbeat } from '@shared-web/browser/session/refresh-state-heartbeat.ts';
+import { refreshStateSnapshots } from '@shared-web/browser/state-read/refresh-state-snapshots.ts';
+import { listStateGroupEventPage } from '@shared-web/browser/state-read/state-event-http-api.ts';
+import { listStateGroups } from '@shared-web/browser/state-read/state-snapshot-http-api.ts';
+import { readStateGroupStats } from '@shared-web/browser/stats/rallar-stats-http-api.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { GroupEvent } from '@shared/api/group-types.ts';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import {
-    createClientSnapshotFixture,
-    createGroupSnapshotFixture
-} from '../authoritative-group-fixtures.ts';
+import { createClientSnapshotFixture, createGroupSnapshotFixture } from '../authoritative-group-fixtures.ts';
 
 interface FetchObservation {
     readonly url: string;
     readonly method: string;
     readonly headers: Headers;
-    readonly body: unknown;
+    readonly body: object | undefined;
     readonly signal: AbortSignal | null;
 }
 
@@ -70,7 +59,7 @@ describe('browser HTTP feature ownership characterization', () => {
             iceServers: [],
             expiresAtEpochMs: 20_000
         });
-        await expect(catchUpRallarCrdtDocument(crdtCatchUpRequest())).resolves.toEqual({
+        await expect(crdtCatchUpHttpApi.catchUpDocument(crdtCatchUpRequest())).resolves.toEqual({
             marker: 'catch-up-result'
         });
 
@@ -86,17 +75,19 @@ describe('browser HTTP feature ownership characterization', () => {
     it('preserves state collection and validated event-page requests', async () => {
         const snapshot = groupSnapshot();
         const event = groupEvent();
-        stubFetch((call) => call.url.includes('/events/page')
-            ? jsonResponse({
-                events: [event],
-                nextCursor: {
-                    snapshotVersion: 1,
-                    occurredAtEpochMs: 1,
-                    eventId: 'event-1'
-                },
-                hasMore: false
-            })
-            : jsonResponse([snapshot]));
+        stubFetch((call) =>
+            call.url.includes('/events/page')
+                ? jsonResponse({
+                    events: [event],
+                    nextCursor: {
+                        snapshotVersion: 1,
+                        occurredAtEpochMs: 1,
+                        eventId: 'event-1'
+                    },
+                    hasMore: false
+                })
+                : jsonResponse([snapshot])
+        );
 
         await expect(listStateGroups(scope, { authSession })).resolves.toEqual([snapshot]);
         await expect(listStateGroupEventPage('room /1', scope, {
@@ -107,7 +98,7 @@ describe('browser HTTP feature ownership characterization', () => {
         expect(observations.map(toMethodAndPath)).toEqual([
             'GET /api/state/apps/app%201/workspaces/workspace%2F1/groups',
             'GET /api/state/apps/app%201/workspaces/workspace%2F1/groups/room%20%2F1/events/page' +
-                '?eventType=member-joined&limit=5'
+            '?eventType=member-joined&limit=5'
         ]);
         expect(observations[0]?.headers.get('authorization')).toBe('Bearer token-1');
     });
@@ -121,7 +112,7 @@ describe('browser HTTP feature ownership characterization', () => {
 
         expect(observations.map(toMethodAndPath)).toEqual([
             'GET /api/state/apps/app%201/workspaces/workspace%2F1/graphs/global' +
-                '?includeMeasured=true&refresh=always',
+            '?includeMeasured=true&refresh=always',
             'GET /api/state/apps/app%201/workspaces/workspace%2F1/groups/room%20%2F1/topology',
             'GET /api/state/apps/app%201/workspaces/workspace%2F1/groups/room%20%2F1/stats'
         ]);
@@ -131,28 +122,32 @@ describe('browser HTTP feature ownership characterization', () => {
     it('preserves group, presence, client-session, and director mutation requests', async () => {
         stubFetch((call) => mutationResponse(call.url));
 
-        await createStateGroup(createGroupBody(), { requestId: 'create-request-000001' }, scope);
-        await connectStateGroupPresenceSession(
-            'room-1',
-            'session-1',
-            connectGroupPresenceBody(),
-            { requestId: 'presence-request-0001' },
+        await roomGroupStateHttpApi.createGroup({
+            request: createGroupBody(),
+            options: { requestId: 'create-request-000001' },
             scope
-        );
-        await connectStateClientSession(
-            'owner-1',
-            'browser-1',
-            'session-1',
-            connectClientSessionBody(),
-            { requestId: 'client-request-000001' },
+        });
+        await roomGroupStateHttpApi.connectPresence({
+            groupId: 'room-1',
+            sessionId: 'session-1',
+            request: connectGroupPresenceBody(),
+            options: { requestId: 'presence-request-0001' },
             scope
-        );
-        await appointStateGroupDirectorRequest(
-            'room-1',
-            { heartbeatTtlMs: 30_000, actorPrincipalId: 'owner-1', actorSessionId: 'session-1' },
-            { requestId: 'director-request-0001' },
+        });
+        await connectStateClientSession({
+            principalId: 'owner-1',
+            clientInstanceId: 'browser-1',
+            sessionId: 'session-1',
+            request: connectClientSessionBody(),
+            options: { requestId: 'client-request-000001' },
             scope
-        );
+        });
+        await roomGroupStateHttpApi.appointDirector({
+            groupId: 'room-1',
+            request: { heartbeatTtlMs: 30_000, actorPrincipalId: 'owner-1', actorSessionId: 'session-1' },
+            options: { requestId: 'director-request-0001' },
+            scope
+        });
 
         expect(observations.map(toMethodAndPath)).toEqual(expectedMutationPaths());
         expect(observations.every((call) => !hasRequestId(call.body))).toBe(true);
@@ -166,10 +161,12 @@ describe('browser HTTP feature ownership characterization', () => {
             .mockReturnValueOnce('client-heartbeat-request-id' as `${string}-${string}-${string}-${string}-${string}`)
             .mockReturnValueOnce('client-repair-request-id' as `${string}-${string}-${string}-${string}-${string}`)
             .mockReturnValueOnce('group-heartbeat-request-id' as `${string}-${string}-${string}-${string}-${string}`);
-        stubFetch((call) => refreshAndHeartbeatResponse(call, client, group, () => {
-            clientHeartbeatAttempts += 1;
-            return clientHeartbeatAttempts;
-        }));
+        stubFetch((call) =>
+            refreshAndHeartbeatResponse(call, client, group, () => {
+                clientHeartbeatAttempts += 1;
+                return clientHeartbeatAttempts;
+            })
+        );
 
         await expect(refreshStateSnapshots(scope)).resolves.toEqual({
             clients: [client],
@@ -194,24 +191,26 @@ describe('browser HTTP feature ownership characterization', () => {
         vi.spyOn(crypto, 'randomUUID')
             .mockReturnValueOnce('director-workflow-request' as `${string}-${string}-${string}-${string}-${string}`)
             .mockReturnValueOnce('join-code-workflow-request' as `${string}-${string}-${string}-${string}-${string}`);
-        stubFetch((call) => call.url.includes('/join-code/rotate')
-            ? jsonResponse({ joinCode: 'join-1', expiresAtEpochMs: 20_000, snapshot: groupSnapshot() })
-            : jsonResponse(groupSnapshot()));
+        stubFetch((call) =>
+            call.url.includes('/join-code/rotate')
+                ? jsonResponse({ joinCode: 'join-1', expiresAtEpochMs: 20_000, snapshot: groupSnapshot() })
+                : jsonResponse(groupSnapshot())
+        );
 
-        await appointStateGroupDirector(
-            'room-1',
-            { heartbeatTtlMs: 30_000 },
-            'owner-1',
-            'session-1',
+        await appointStateGroupDirector({
+            groupId: 'room-1',
+            request: { heartbeatTtlMs: 30_000 },
+            principalId: 'owner-1',
+            sessionId: 'session-1',
             scope
-        );
-        await rotateStateGroupJoinCode(
-            'room-1',
-            { joinCode: 'join-1', expiresAtEpochMs: 20_000 },
-            'owner-1',
-            'session-1',
+        });
+        await rotateStateGroupJoinCode({
+            groupId: 'room-1',
+            request: { joinCode: 'join-1', expiresAtEpochMs: 20_000 },
+            actorPrincipalId: 'owner-1',
+            sessionId: 'session-1',
             scope
-        );
+        });
 
         expect(observations.map((call) => call.body)).toEqual([
             { heartbeatTtlMs: 30_000, actorPrincipalId: 'owner-1', actorSessionId: 'session-1' },
@@ -237,11 +236,14 @@ describe('browser HTTP feature ownership characterization', () => {
 });
 
 function stubFetch(response: (call: FetchObservation) => Response): void {
-    vi.stubGlobal('fetch', vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
-        const call = observeFetch(url, init);
-        observations.push(call);
-        return response(call);
-    }));
+    vi.stubGlobal(
+        'fetch',
+        vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
+            const call = observeFetch(url, init);
+            observations.push(call);
+            return response(call);
+        })
+    );
 }
 
 function observeFetch(url: string | URL | Request, init?: RequestInit): FetchObservation {
@@ -316,6 +318,7 @@ function expectedMutationPaths(): string[] {
 
 function createGroupBody() {
     return {
+        kind: 'room' as const,
         groupId: 'room-1',
         slug: 'room-1',
         displayName: 'Room 1',
@@ -403,11 +406,11 @@ function groupEvent(): GroupEvent {
     };
 }
 
-function hasRequestId(body: unknown): boolean {
-    return typeof body === 'object' && body !== null && 'requestId' in body;
+function hasRequestId(body: object | undefined): boolean {
+    return body !== undefined && 'requestId' in body;
 }
 
-function jsonResponse(body: unknown): Response {
+function jsonResponse(body: object): Response {
     return new Response(JSON.stringify(body), {
         status: 200,
         headers: { 'content-type': 'application/json' }

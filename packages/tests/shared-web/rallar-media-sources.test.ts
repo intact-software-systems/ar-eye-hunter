@@ -6,9 +6,11 @@ import { createGroupSnapshotFixture } from './authoritative-group-fixtures.ts';
 import { createDirectorGroupSnapshot } from './director-group-snapshot-fixture.ts';
 
 type MiddlewareModule = typeof import('@shared-web/browser/middleware.ts');
-type ApiIntegrationModule = typeof import('@shared-web/browser/api-integration.ts');
+type StateEventHttpApiModule = typeof import('@shared-web/browser/state-read/state-event-http-api.ts');
 type AuthApiModule = typeof import('@shared-web/browser/auth/session-http-api.ts');
-type ApiWorkflowsModule = typeof import('@shared-web/browser/api-workflows.ts');
+type RoomGroupStateWorkflowsModule = typeof import('@shared-web/browser/rooms/room-group-state-workflows.ts');
+type RoomMutationWorkflowsModule = typeof import('@shared-web/browser/rooms/room-group-state-mutation-workflows.ts');
+type RefreshStateSnapshotsModule = typeof import('@shared-web/browser/state-read/refresh-state-snapshots.ts');
 type DataCachesModule = typeof import('@shared-web/browser/data-caches.ts');
 type AuthModule = typeof import('@shared/api/auth.ts');
 type ClientStateSnapshotsRepositoryModule = typeof import('@shared/repository/client-state-snapshots-repository.ts');
@@ -38,8 +40,8 @@ vi.mock(import('@shared-web/browser/middleware.ts'), (): Partial<MiddlewareModul
 }));
 
 vi.mock(
-    import('@shared-web/browser/api-integration.ts'),
-    (): Partial<ApiIntegrationModule> => ({
+    import('@shared-web/browser/state-read/state-event-http-api.ts'),
+    (): Partial<StateEventHttpApiModule> => ({
         listStateClientEventPage: mocks.listStateClientEventPage,
         listStateClientEvents: mocks.listStateClientEvents,
         listStateGroupEventPage: mocks.listStateGroupEventPage,
@@ -53,11 +55,15 @@ vi.mock(import('@shared-web/browser/auth/session-http-api.ts'), (): Partial<Auth
     registerWithApi: mocks.registerWithApi
 }));
 
-vi.mock(import('@shared-web/browser/api-workflows.ts'), (): Partial<ApiWorkflowsModule> => ({
+vi.mock(import('@shared-web/browser/rooms/room-group-state-workflows.ts'), (): Partial<RoomGroupStateWorkflowsModule> => ({
     createAndJoinStateGroup: mocks.createAndJoinStateGroup,
     joinStateGroup: mocks.joinStateGroup,
-    leaveStateGroup: mocks.leaveStateGroup,
-    refreshStateSnapshots: mocks.refreshStateSnapshots,
+    leaveStateGroup: mocks.leaveStateGroup
+}));
+vi.mock(import('@shared-web/browser/state-read/refresh-state-snapshots.ts'), (): Partial<RefreshStateSnapshotsModule> => ({
+    refreshStateSnapshots: mocks.refreshStateSnapshots
+}));
+vi.mock(import('@shared-web/browser/rooms/room-group-state-mutation-workflows.ts'), (): Partial<RoomMutationWorkflowsModule> => ({
     updateStateGroupMetadata: mocks.updateStateGroupMetadata
 }));
 

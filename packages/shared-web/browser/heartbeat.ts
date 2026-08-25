@@ -1,5 +1,8 @@
-import { refreshStateHeartbeat, type StateHeartbeatWorkflowValue } from '@shared-web/browser/api-workflows.ts';
 import { ApiHttpError } from '@shared-web/browser/api/http-error.ts';
+import {
+    refreshStateHeartbeat,
+    type StateHeartbeatWorkflowValue
+} from '@shared-web/browser/session/refresh-state-heartbeat.ts';
 import { emitBrowserStateReadDiagnostic } from '@shared-web/browser/state-read/diagnostics.ts';
 import { ClientInfo, type AuthSession } from '@shared/api/api-config.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';

@@ -27,7 +27,7 @@ const mocks = vi.hoisted(() => {
     };
 });
 
-vi.mock('@shared-web/browser/api-integration.ts', () => ({
+vi.mock('@shared-web/browser/stats/rallar-stats-http-api.ts', () => ({
     readStateWorkspaceStatsSummary: mocks.readStateWorkspaceStatsSummary,
     readStateGroupStats: mocks.readStateGroupStats,
     readStateMyRealtimeStatus: mocks.readStateMyRealtimeStatus

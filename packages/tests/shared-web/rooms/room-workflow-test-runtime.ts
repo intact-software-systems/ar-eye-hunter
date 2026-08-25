@@ -50,12 +50,6 @@ vi.mock(import('@shared-web/browser/middleware.ts'), () => ({
     initialiseMiddleware: async (): Promise<Middleware> => roomWorkflowMocks.ctx.middleware
 }));
 
-vi.mock(import('@shared-web/browser/api-workflows.ts'), () => ({
-    createAndJoinStateGroup: roomWorkflowMocks.createAndJoinStateGroup,
-    joinStateGroup: roomWorkflowMocks.joinStateGroup,
-    leaveStateGroup: roomWorkflowMocks.leaveStateGroup
-}));
-
 vi.mock(import('@shared-web/browser/rooms/room-group-state-workflows.ts'), () => ({
     createAndJoinStateGroup: roomWorkflowMocks.createAndJoinStateGroup,
     joinStateGroup: roomWorkflowMocks.joinStateGroup,

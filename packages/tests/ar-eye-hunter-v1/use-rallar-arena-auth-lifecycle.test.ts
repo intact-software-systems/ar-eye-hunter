@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { readApiConfig, readIceCandidates } from '@shared-web/browser/api-integration.ts';
+import { readApiConfig, readIceCandidates } from '@shared-web/browser/connection/connection-http-api.ts';
 import type { RallarAuthState, RallarDirectorStatus } from '@shared-web/browser/rallar.ts';
 import type { RallarGameMatchStatus, RallarGamePeerReadiness } from '@shared-web/game/mod.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
@@ -124,7 +124,7 @@ vi.mock('@shared-web/browser/rallar.ts', () => ({
     rallar: mockRallar
 }));
 
-vi.mock('@shared-web/browser/api-integration.ts', () => ({
+vi.mock('@shared-web/browser/connection/connection-http-api.ts', () => ({
     readApiConfig: vi.fn(() =>
         Promise.resolve({
             apiBaseUrl: 'https://api.test',

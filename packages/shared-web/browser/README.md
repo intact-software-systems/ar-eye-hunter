@@ -97,6 +97,39 @@ than a callback to a future controller.
    registers the separate people-event owner; its WS handler validates,
    filters, deduplicates, and notifies client-event listeners.
 
+## Feature-owned HTTP and workflow paths
+
+Browser HTTP starts from the operation's product owner. Generic request
+execution and typed HTTP failures remain under [`api/`](./api/), but that
+directory does not own product workflows.
+
+- [createAndJoinStateGroup](./rooms/room-group-state-workflows.ts) translates
+  room intent, then calls
+  [createStateGroup](./rooms/room-group-state-http-api.ts) and
+  [connectStateGroupPresenceSession](./rooms/room-group-state-http-api.ts).
+  Both operations return an authoritative `GroupSnapshot`; rejected HTTP
+  responses surface as `ApiHttpError` from
+  [executeHttpRequest](./api/http-request.ts).
+- [refreshStateSnapshots](./state-read/refresh-state-snapshots.ts) coordinates
+  the client and group collection reads in
+  [state-snapshot-http-api.ts](./state-read/state-snapshot-http-api.ts), then
+  returns the validated `StateSnapshots` result.
+- [refreshStateHeartbeat](./session/refresh-state-heartbeat.ts) owns heartbeat
+  retry and missing-presence repair. Client-session HTTP lives in
+  [client-session-http-api.ts](./session/client-session-http-api.ts), while
+  room presence HTTP remains with the room group-state owner.
+- [appointStateGroupDirector](./director/appoint-room-director.ts) owns director
+  command policy and calls the dedicated appointment operation in
+  [room-group-state-http-api.ts](./rooms/room-group-state-http-api.ts).
+- Connection config and ICE reads live in
+  [connection-http-api.ts](./connection/connection-http-api.ts), CRDT catch-up
+  in [crdt-catch-up-http-api.ts](./crdt/crdt-catch-up-http-api.ts), topology and
+  graph reads in [rtc-topology-http-api.ts](./rtc/rtc-topology-http-api.ts), and
+  statistics reads in [rallar-stats-http-api.ts](./stats/rallar-stats-http-api.ts).
+
+These paths keep request construction, the HTTP side effect, validation, and
+the typed result or failure visible without crossing a feature-blind module.
+
 ## Runtime invocation and cleanup timeline
 
 1. [setup](./rallar-runtime/startup.ts) configures

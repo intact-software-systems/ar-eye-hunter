@@ -1,4 +1,3 @@
-import * as apiWorkflows from '@shared-web/browser/api-workflows.ts';
 import type { ApiMiddleware } from '@shared-web/browser/app-context.ts';
 import type { RallarScopedOperationOptions } from '@shared-web/browser/rallar-connection-facade.ts';
 import type { RallarStateEventListener } from '@shared-web/browser/rallar-message-contracts.ts';
@@ -21,6 +20,7 @@ import type {
     RallarStateListener,
     RallarUnsubscribe
 } from '@shared-web/browser/rallar-shared-contracts.ts';
+import { refreshStateSnapshots } from '@shared-web/browser/state-read/refresh-state-snapshots.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import type { ClientEvent } from '@shared/api/client-types.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
@@ -82,7 +82,7 @@ export function createRallarPeopleController(
             const operationScope = options.resolveOperationScope(
                 refreshOptions.scope
             );
-            const { clients, groups } = await apiWorkflows.refreshStateSnapshots(
+            const { clients, groups } = await refreshStateSnapshots(
                 operationScope,
                 toRallarWorkflowPolicies(operationOptions)
             );

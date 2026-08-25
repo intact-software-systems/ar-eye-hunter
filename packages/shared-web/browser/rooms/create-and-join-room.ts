@@ -36,26 +36,16 @@ export async function createAndJoinRoom(input: CreateAndJoinRoomInput): Promise<
         const session = input.requireSession();
         const scope = input.resolveOperationScope(createInput.scope);
         const options = toCreateOptions(createInput);
-        const snapshot = options
-            ? await createAndJoinStateGroup(
-                createInput.displayName,
-                session.clientId,
-                session.sessionId,
-                context.middleware.heartbeat.generationId,
-                scope,
-                toRallarWorkflowPolicies<StateGroupWorkflowValue>(operationOptions),
-                createInput.groupId,
-                options
-            )
-            : await createAndJoinStateGroup(
-                createInput.displayName,
-                session.clientId,
-                session.sessionId,
-                context.middleware.heartbeat.generationId,
-                scope,
-                toRallarWorkflowPolicies<StateGroupWorkflowValue>(operationOptions),
-                createInput.groupId
-            );
+        const snapshot = await createAndJoinStateGroup({
+            displayName: createInput.displayName,
+            principalId: session.clientId,
+            sessionId: session.sessionId,
+            generationId: context.middleware.heartbeat.generationId,
+            scope,
+            policies: toRallarWorkflowPolicies<StateGroupWorkflowValue>(operationOptions),
+            requestedGroupId: createInput.groupId,
+            options
+        });
         input.stateStore.setCurrentRoom(snapshot);
         await input.acceptSnapshots({ context, clients: [], groups: [snapshot], scope });
         return snapshot;

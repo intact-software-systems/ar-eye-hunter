@@ -1,4 +1,4 @@
-import * as api from '@shared-web/browser/api-integration.ts';
+import { defaultStateScope } from '@shared-web/browser/api/state-http-path.ts';
 import type { RallarMessage, RallarStateEventListener } from '@shared-web/browser/rallar-message-contracts.ts';
 import type { RallarOperationOptions } from '@shared-web/browser/rallar-operation-options.ts';
 import { toRallarMessage } from '@shared-web/browser/rallar-runtime/message-conversion.ts';
@@ -11,6 +11,7 @@ import {
 import { notifyStateEventListener } from '@shared-web/browser/rallar-runtime/subscriptions.ts';
 import type { RallarWsInbox } from '@shared-web/browser/rallar-runtime/ws-inbox.ts';
 import type { RallarReplayEventsResult, RallarUnsubscribe } from '@shared-web/browser/rallar-shared-contracts.ts';
+import * as stateEventHttpApi from '@shared-web/browser/state-read/state-event-http-api.ts';
 import { newALBroadcastMessage, newALRoute } from '@shared/al-contracts/al-contract.ts';
 import { AppTopics } from '@shared/api/api-config.ts';
 import { validateAuthoritativeGroupEvent } from '@shared/api/authoritative-state-validation.ts';
@@ -77,7 +78,7 @@ class RoomEvents implements RallarRoomEventsPort {
             async () =>
                 await runRallarStateEventCommand(
                     async (signal) =>
-                        await api.listStateGroupEvents(
+                        await stateEventHttpApi.listStateGroupEvents(
                             roomId,
                             scope,
                             toStateEventListRequestOptions(options, signal)
@@ -96,7 +97,7 @@ class RoomEvents implements RallarRoomEventsPort {
             async () =>
                 await runRallarStateEventCommand(
                     async (signal) =>
-                        await api.listStateGroupEventPage(
+                        await stateEventHttpApi.listStateGroupEventPage(
                             roomId,
                             scope,
                             toStateEventListRequestOptions(options, signal)
@@ -122,7 +123,7 @@ class RoomEvents implements RallarRoomEventsPort {
                             after: options.after,
                             maxPages: options.maxPages,
                             readPage: async (after) =>
-                                await api.listStateGroupEventPage(
+                                await stateEventHttpApi.listStateGroupEventPage(
                                     roomId,
                                     scope,
                                     toStateEventListRequestOptions({ ...options, after }, signal)
@@ -242,7 +243,7 @@ class RoomEvents implements RallarRoomEventsPort {
                 workspaceId: options.roomRef.workspaceId ?? DEFAULT_STATE_WORKSPACE_ID
             };
         }
-        return this.#input.resolveOperationScope(options.scope) ?? api.defaultStateScope();
+        return this.#input.resolveOperationScope(options.scope) ?? defaultStateScope();
     }
 }
 

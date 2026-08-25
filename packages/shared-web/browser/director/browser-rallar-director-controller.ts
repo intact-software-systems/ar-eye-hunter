@@ -1,5 +1,5 @@
-import * as apiWorkflows from '@shared-web/browser/api-workflows.ts';
 import type { ApiMiddleware } from '@shared-web/browser/app-context.ts';
+import { appointStateGroupDirector } from '@shared-web/browser/director/appoint-room-director.ts';
 import type {
     RallarMessagesController,
     RallarWsUnicastSendInput
@@ -113,14 +113,14 @@ export class BrowserRallarDirectorController implements RallarDirectorController
             }
             const session = this.input.requireSession();
             const scope = options.scope ?? toStateScope(roomRef);
-            const updated = await apiWorkflows.appointStateGroupDirector(
-                roomId,
-                { heartbeatTtlMs: options.heartbeatTtlMs },
-                session.clientId,
-                session.sessionId,
+            const updated = await appointStateGroupDirector({
+                groupId: roomId,
+                request: { heartbeatTtlMs: options.heartbeatTtlMs },
+                principalId: session.clientId,
+                sessionId: session.sessionId,
                 scope,
-                toRallarWorkflowPolicies(operationOptions)
-            );
+                policies: toRallarWorkflowPolicies(operationOptions)
+            });
             await this.input.acceptSnapshots({
                 context,
                 clients: [],

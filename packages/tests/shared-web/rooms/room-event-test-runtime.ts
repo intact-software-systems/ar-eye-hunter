@@ -10,7 +10,7 @@ import type { StateEventPage } from '@shared/api/state-event-types.ts';
 
 import { createGroupSnapshotFixture } from '../authoritative-group-fixtures.ts';
 
-type ApiIntegrationModule = typeof import('@shared-web/browser/api-integration.ts');
+type StateEventHttpApiModule = typeof import('@shared-web/browser/state-read/state-event-http-api.ts');
 
 export interface RoomEventFixtureInput {
     readonly groupId: string;
@@ -33,7 +33,7 @@ const roomEventMocks = await vi.hoisted(async () => {
         initMiddleware: vi.fn(async (): Promise<ApiMiddleware> => ctx),
         isMiddlewareReady: vi.fn(() => false),
         listStateGroupEvents: vi.fn(async (_groupId: string): Promise<GroupEvent[]> => []),
-        listStateGroupEventPage: vi.fn<ApiIntegrationModule['listStateGroupEventPage']>(
+        listStateGroupEventPage: vi.fn<StateEventHttpApiModule['listStateGroupEventPage']>(
             async (): Promise<StateEventPage<GroupEvent>> => ({
                 events: [],
                 hasMore: false
@@ -49,14 +49,14 @@ vi.mock(import('@shared-web/browser/middleware.ts'), () => ({
     initialiseMiddleware: async (): Promise<Middleware> => roomEventMocks.ctx.middleware
 }));
 
-vi.mock(import('@shared-web/browser/api-integration.ts'), () => ({
+vi.mock(import('@shared-web/browser/state-read/state-event-http-api.ts'), (): Partial<StateEventHttpApiModule> => ({
     listStateClientEventPage: vi.fn(),
     listStateClientEvents: vi.fn(),
     listStateGroupEventPage: roomEventMocks.listStateGroupEventPage,
     listStateGroupEvents: roomEventMocks.listStateGroupEvents
 }));
 
-vi.mock(import('@shared-web/browser/api-workflows.ts'), () => ({
+vi.mock(import('@shared-web/browser/state-read/refresh-state-snapshots.ts'), () => ({
     refreshStateSnapshots: vi.fn(async () => ({ clients: [], groups: [] }))
 }));
 

@@ -1,30 +1,30 @@
 import { configureApiClient } from '@shared-web/browser/api-client-config.ts';
+import { appointStateGroupDirector } from '@shared-web/browser/director/appoint-room-director.ts';
+import {
+    archiveStateGroup,
+    deleteStateGroup,
+    updateStateGroupDetails,
+    updateStateGroupMetadata
+} from '@shared-web/browser/rooms/room-group-state-mutation-workflows.ts';
+import { createAndJoinStateGroup, joinStateGroup, leaveStateGroup } from '@shared-web/browser/rooms/room-group-state-workflows.ts';
+import {
+    acceptStateGroupInvite,
+    banStateGroupMember,
+    createStateGroupInvite,
+    removeStateGroupMember,
+    revokeStateGroupInvite,
+    rotateStateGroupJoinCode,
+    setStateGroupMemberRole,
+    transferStateGroupOwnership,
+    unbanStateGroupMember
+} from '@shared-web/browser/rooms/room-membership-group-state-workflows.ts';
 import {
     deleteStateGroupTopologyConfig,
     deleteStateGroupTopologyOverride,
     putStateGroupTopologyConfig,
     putStateGroupTopologyOverride,
     reconfigureStateGroupTopology
-} from '@shared-web/browser/api-integration.ts';
-import {
-    acceptStateGroupInvite,
-    appointStateGroupDirector,
-    archiveStateGroup,
-    banStateGroupMember,
-    createAndJoinStateGroup,
-    createStateGroupInvite,
-    deleteStateGroup,
-    joinStateGroup,
-    leaveStateGroup,
-    removeStateGroupMember,
-    revokeStateGroupInvite,
-    rotateStateGroupJoinCode,
-    setStateGroupMemberRole,
-    transferStateGroupOwnership,
-    unbanStateGroupMember,
-    updateStateGroupDetails,
-    updateStateGroupMetadata
-} from '@shared-web/browser/api-workflows.ts';
+} from '@shared-web/browser/rtc/rtc-topology-http-api.ts';
 import type {
     GroupTopologyConfigAcceptedCausalRevision,
     PutGroupTopologyConfigRequest,
@@ -83,48 +83,48 @@ describe('state API group and topology mutation workflows', () => {
         };
         stubFetch(() => jsonResponse({ ok: true }));
 
-        await putStateGroupTopologyConfig(
-            'room /1',
-            {
+        await putStateGroupTopologyConfig({
+            groupId: 'room /1',
+            request: {
                 config: { topologyKind: 'mesh', degreeLimit: 3 }
             },
-            { authSession, requestId: 'topology-config-put-request-1' },
+            options: { authSession, requestId: 'topology-config-put-request-1' },
             scope
-        );
-        await putStateGroupTopologyOverride(
-            'room /1',
-            {
+        });
+        await putStateGroupTopologyOverride({
+            groupId: 'room /1',
+            request: {
                 config: { topologyKind: 'star' },
                 ttlMs: 60_000
             },
-            { authSession, requestId: 'topology-override-put-request-1' },
+            options: { authSession, requestId: 'topology-override-put-request-1' },
             scope
-        );
-        await reconfigureStateGroupTopology(
-            'room /1',
-            {
+        });
+        await reconfigureStateGroupTopology({
+            groupId: 'room /1',
+            request: {
                 options: { topologyKind: 'tree' },
                 publish: false
             },
-            { authSession, requestId: 'topology-reconfigure-request-1' },
+            options: { authSession, requestId: 'topology-reconfigure-request-1' },
             scope
-        );
-        await deleteStateGroupTopologyConfig(
-            'room /1',
-            {
+        });
+        await deleteStateGroupTopologyConfig({
+            groupId: 'room /1',
+            options: {
                 authSession,
                 requestId: 'topology-config-delete-request-1'
             },
             scope
-        );
-        await deleteStateGroupTopologyOverride(
-            'room /1',
-            {
+        });
+        await deleteStateGroupTopologyOverride({
+            groupId: 'room /1',
+            options: {
                 authSession,
                 requestId: 'topology-override-delete-request-1'
             },
             scope
-        );
+        });
 
         const topologyPath = '/api/state/apps/app%201/workspaces/workspace%2F1/groups/room%20%2F1/topology';
         expect(fetchCalls.map((call) => `${call.method} ${call.physicalUrl}`)).toEqual([
@@ -155,11 +155,39 @@ describe('state API group and topology mutation workflows', () => {
     it('rejects empty topology mutation request ids before issuing HTTP', async () => {
         const scope = { applicationId: 'app', workspaceId: 'workspace' };
         const cases = [
-            () => putStateGroupTopologyConfig('room', { config: {} }, { requestId: '' }, scope),
-            () => putStateGroupTopologyOverride('room', { config: {}, ttlMs: 1 }, { requestId: '' }, scope),
-            () => reconfigureStateGroupTopology('room', {}, { requestId: '' }, scope),
-            () => deleteStateGroupTopologyConfig('room', { requestId: '' }, scope),
-            () => deleteStateGroupTopologyOverride('room', { requestId: '' }, scope)
+            () =>
+                putStateGroupTopologyConfig({
+                    groupId: 'room',
+                    request: { config: {} },
+                    options: { requestId: '' },
+                    scope
+                }),
+            () =>
+                putStateGroupTopologyOverride({
+                    groupId: 'room',
+                    request: { config: {}, ttlMs: 1 },
+                    options: { requestId: '' },
+                    scope
+                }),
+            () =>
+                reconfigureStateGroupTopology({
+                    groupId: 'room',
+                    request: {},
+                    options: { requestId: '' },
+                    scope
+                }),
+            () =>
+                deleteStateGroupTopologyConfig({
+                    groupId: 'room',
+                    options: { requestId: '' },
+                    scope
+                }),
+            () =>
+                deleteStateGroupTopologyOverride({
+                    groupId: 'room',
+                    options: { requestId: '' },
+                    scope
+                })
         ];
 
         for (const call of cases) {
@@ -186,12 +214,12 @@ describe('state API group and topology mutation workflows', () => {
             return notFoundResponse();
         });
 
-        const result = await createAndJoinStateGroup(
-            'My Room',
-            'principal-1',
-            'session-1',
-            'generation-1'
-        );
+        const result = await createAndJoinStateGroup({
+            displayName: 'My Room',
+            principalId: 'principal-1',
+            sessionId: 'session-1',
+            generationId: 'generation-1'
+        });
 
         expect(result.group.groupId).toBe('group-created');
         expect(fetchCalls.map((call) => call.method)).toEqual(['POST', 'PUT']);
@@ -220,15 +248,13 @@ describe('state API group and topology mutation workflows', () => {
             return notFoundResponse();
         });
 
-        const result = await createAndJoinStateGroup(
-            'Rallar',
-            'principal-1',
-            'session-1',
-            'generation-1',
-            undefined,
-            {},
-            'rallar'
-        );
+        const result = await createAndJoinStateGroup({
+            displayName: 'Rallar',
+            principalId: 'principal-1',
+            sessionId: 'session-1',
+            generationId: 'generation-1',
+            requestedGroupId: 'rallar'
+        });
 
         expect(result.group.groupId).toBe('rallar');
         expect(fetchCalls.map((call) => call.method)).toEqual(['POST', 'PUT']);
@@ -254,22 +280,20 @@ describe('state API group and topology mutation workflows', () => {
             return notFoundResponse();
         });
 
-        await createAndJoinStateGroup(
-            'Rallar',
-            'principal-1',
-            'session-1',
-            'generation-1',
-            undefined,
-            {},
-            'rallar',
-            {
+        await createAndJoinStateGroup({
+            displayName: 'Rallar',
+            principalId: 'principal-1',
+            sessionId: 'session-1',
+            generationId: 'generation-1',
+            requestedGroupId: 'rallar',
+            options: {
                 description: 'Mission room',
                 joinMode: 'open',
                 maxMembers: 8,
                 maxSessionsPerMember: 2,
                 metadata: { map: 'fjord' }
             }
-        );
+        });
 
         expect(fetchCalls[0].body).toMatchObject({
             description: 'Mission room',
@@ -314,12 +338,12 @@ describe('state API group and topology mutation workflows', () => {
             return notFoundResponse();
         });
 
-        const result = await updateStateGroupMetadata(
-            'group-1',
-            { rallarDirector: { next: true } },
-            'principal-1',
-            'session-1'
-        );
+        const result = await updateStateGroupMetadata({
+            groupId: 'group-1',
+            patch: { rallarDirector: { next: true } },
+            principalId: 'principal-1',
+            sessionId: 'session-1'
+        });
 
         expect(result).toEqual(updated);
         expect(fetchCalls.map((call) => call.method)).toEqual(['GET', 'PUT']);
@@ -342,9 +366,9 @@ describe('state API group and topology mutation workflows', () => {
             return notFoundResponse();
         });
 
-        await updateStateGroupDetails(
-            'group-1',
-            {
+        await updateStateGroupDetails({
+            groupId: 'group-1',
+            request: {
                 displayName: 'Renamed',
                 description: 'Mission room',
                 joinMode: 'open',
@@ -352,11 +376,21 @@ describe('state API group and topology mutation workflows', () => {
                 maxSessionsPerMember: 2,
                 metadata: { map: 'fjord' }
             },
-            'owner-1',
-            'owner-session'
-        );
-        await archiveStateGroup('group-1', {}, 'owner-1', 'owner-session');
-        await deleteStateGroup('group-1', {}, 'owner-1', 'owner-session');
+            principalId: 'owner-1',
+            sessionId: 'owner-session'
+        });
+        await archiveStateGroup({
+            groupId: 'group-1',
+            request: {},
+            principalId: 'owner-1',
+            sessionId: 'owner-session'
+        });
+        await deleteStateGroup({
+            groupId: 'group-1',
+            request: {},
+            principalId: 'owner-1',
+            sessionId: 'owner-session'
+        });
 
         expect(fetchCalls.map((call) => `${call.method} ${call.url}`)).toEqual([
             'PUT /api/state/apps/rallar-server/workspaces/default/groups/group-1',
@@ -415,14 +449,13 @@ describe('state API group and topology mutation workflows', () => {
             return notFoundResponse();
         });
 
-        await createAndJoinStateGroup(
-            'Retry Room',
-            'principal-1',
-            'session-1',
-            'generation-1',
-            undefined,
-            { command: { maxAttempts: 2 } }
-        );
+        await createAndJoinStateGroup({
+            displayName: 'Retry Room',
+            principalId: 'principal-1',
+            sessionId: 'session-1',
+            generationId: 'generation-1',
+            policies: { command: { maxAttempts: 2 } }
+        });
 
         const createRequestIds = fetchCalls
             .filter((call) => call.method === 'POST' && call.url.endsWith('/groups'))
@@ -463,15 +496,13 @@ describe('state API group and topology mutation workflows', () => {
             return notFoundResponse();
         });
 
-        await createAndJoinStateGroup(
-            'Private Room',
-            'private-principal-id',
-            'private-session-id',
-            'private-generation-id',
-            undefined,
-            {},
-            'private-target-group'
-        );
+        await createAndJoinStateGroup({
+            displayName: 'Private Room',
+            principalId: 'private-principal-id',
+            sessionId: 'private-session-id',
+            generationId: 'private-generation-id',
+            requestedGroupId: 'private-target-group'
+        });
 
         const requestIds = fetchCalls.map((call) => readMutationRequestId(call.physicalUrl));
         expect(requestIds).toEqual(generatedIds);
@@ -500,18 +531,16 @@ describe('state API group and topology mutation workflows', () => {
         });
 
         await expect(
-            joinStateGroup(
-                'group-1',
-                'principal-1',
-                'session-1',
-                'generation-1',
-                undefined,
-                {},
-                {
+            joinStateGroup({
+                groupId: 'group-1',
+                principalId: 'principal-1',
+                sessionId: 'session-1',
+                generationId: 'generation-1',
+                intent: {
                     inviteToken: 'invite-1',
                     joinCode: 'code-1'
                 }
-            )
+            })
         ).resolves.toMatchObject({
             group: { groupId: 'group-1' }
         });
@@ -550,7 +579,12 @@ describe('state API group and topology mutation workflows', () => {
             });
 
             await expect(
-                joinStateGroup('group-1', 'principal-1', 'session-1', 'generation-1')
+                joinStateGroup({
+                    groupId: 'group-1',
+                    principalId: 'principal-1',
+                    sessionId: 'session-1',
+                    generationId: 'generation-1'
+                })
             ).rejects.toMatchObject({
                 status: 403,
                 policyError: {
@@ -586,7 +620,12 @@ describe('state API group and topology mutation workflows', () => {
         });
 
         await expect(
-            joinStateGroup('group-1', 'principal-1', 'session-1', 'generation-1')
+            joinStateGroup({
+                groupId: 'group-1',
+                principalId: 'principal-1',
+                sessionId: 'session-1',
+                generationId: 'generation-1'
+            })
         ).rejects.toMatchObject({
             status: 403,
             policyError: {
@@ -614,14 +653,20 @@ describe('state API group and topology mutation workflows', () => {
             return notFoundResponse();
         });
 
-        await createStateGroupInvite(
-            'group-1',
-            'member-1',
-            { invitationExpiresAtEpochMs: 2_000 },
-            'owner-1',
-            'owner-session'
-        );
-        await revokeStateGroupInvite('group-1', 'member-1', {}, 'owner-1', 'owner-session');
+        await createStateGroupInvite({
+            groupId: 'group-1',
+            targetPrincipalId: 'member-1',
+            request: { invitationExpiresAtEpochMs: 2_000 },
+            actorPrincipalId: 'owner-1',
+            sessionId: 'owner-session'
+        });
+        await revokeStateGroupInvite({
+            groupId: 'group-1',
+            targetPrincipalId: 'member-1',
+            request: {},
+            actorPrincipalId: 'owner-1',
+            sessionId: 'owner-session'
+        });
 
         expect(fetchCalls.map((call) => `${call.method} ${call.url}`)).toEqual([
             'POST /api/state/apps/rallar-server/workspaces/default/groups/group-1/invites/member-1',
@@ -648,17 +693,17 @@ describe('state API group and topology mutation workflows', () => {
                 ? jsonResponse(groupSnapshot('group-1'))
                 : notFoundResponse()
         );
-        const requestWithLegacyIdentity = {
+        const requestWithCallerIdentity = {
             heartbeatTtlMs: 30_000,
             requestId: 'caller-supplied-body-id'
-        } as Parameters<typeof appointStateGroupDirector>[1];
+        } as Parameters<typeof appointStateGroupDirector>[0]['request'];
 
-        await appointStateGroupDirector(
-            'group-1',
-            requestWithLegacyIdentity,
-            'owner-1',
-            'owner-session'
-        );
+        await appointStateGroupDirector({
+            groupId: 'group-1',
+            request: requestWithCallerIdentity,
+            principalId: 'owner-1',
+            sessionId: 'owner-session'
+        });
 
         expect(readMutationRequestId(fetchCalls[0].physicalUrl)).toBe('generated-appoint-request-id');
         expect(fetchCalls[0].body).not.toHaveProperty('requestId');
@@ -678,7 +723,12 @@ describe('state API group and topology mutation workflows', () => {
         });
 
         await expect(
-            acceptStateGroupInvite('group-1', 'member-1', 'member-session', 'generation-1')
+            acceptStateGroupInvite({
+                groupId: 'group-1',
+                actorPrincipalId: 'member-1',
+                sessionId: 'member-session',
+                generationId: 'generation-1'
+            })
         ).resolves.toMatchObject({
             group: { groupId: 'group-1' }
         });
@@ -714,15 +764,15 @@ describe('state API group and topology mutation workflows', () => {
         });
 
         await expect(
-            rotateStateGroupJoinCode(
-                'group-1',
-                {
+            rotateStateGroupJoinCode({
+                groupId: 'group-1',
+                request: {
                     joinCode: 'code-1',
                     expiresAtEpochMs: 2_000
                 },
-                'owner-1',
-                'owner-session'
-            )
+                actorPrincipalId: 'owner-1',
+                sessionId: 'owner-session'
+            })
         ).resolves.toEqual(response);
 
         expect(fetchCalls.map((call) => `${call.method} ${call.url}`)).toEqual([
@@ -761,22 +811,22 @@ describe('state API group and topology mutation workflows', () => {
             return notFoundResponse();
         });
 
-        await removeStateGroupMember('group-1', 'member-1', {}, 'owner-1', 'owner-session');
-        await banStateGroupMember('group-1', 'member-1', {}, 'owner-1', 'owner-session');
-        await unbanStateGroupMember('group-1', 'member-1', {}, 'owner-1', 'owner-session');
-        await setStateGroupMemberRole(
-            'group-1',
-            'member-1',
-            { role: 'admin' },
-            'owner-1',
-            'owner-session'
-        );
-        await transferStateGroupOwnership(
-            'group-1',
-            { newOwnerPrincipalId: 'member-1' },
-            'owner-1',
-            'owner-session'
-        );
+        const memberAction = {
+            groupId: 'group-1',
+            targetPrincipalId: 'member-1',
+            actorPrincipalId: 'owner-1',
+            sessionId: 'owner-session'
+        };
+        await removeStateGroupMember({ ...memberAction, request: {} });
+        await banStateGroupMember({ ...memberAction, request: {} });
+        await unbanStateGroupMember({ ...memberAction, request: {} });
+        await setStateGroupMemberRole({ ...memberAction, request: { role: 'admin' } });
+        await transferStateGroupOwnership({
+            groupId: 'group-1',
+            request: { newOwnerPrincipalId: 'member-1' },
+            actorPrincipalId: 'owner-1',
+            sessionId: 'owner-session'
+        });
 
         expect(fetchCalls.map((call) => `${call.method} ${call.url}`)).toEqual([
             'POST /api/state/apps/rallar-server/workspaces/default/groups/group-1' +
@@ -827,8 +877,12 @@ describe('state API group and topology mutation workflows', () => {
             return notFoundResponse();
         });
 
-        await joinStateGroup('group-1', 'principal-1', 'session-1', 'generation-1', undefined, {
-            command: { maxAttempts: 2 }
+        await joinStateGroup({
+            groupId: 'group-1',
+            principalId: 'principal-1',
+            sessionId: 'session-1',
+            generationId: 'generation-1',
+            policies: { command: { maxAttempts: 2 } }
         });
 
         const joinRequestIds = fetchCalls
@@ -862,7 +916,12 @@ describe('state API group and topology mutation workflows', () => {
             return notFoundResponse();
         });
 
-        const result = await leaveStateGroup('group-1', 'principal-1', 'session-1', 'generation-1');
+        const result = await leaveStateGroup({
+            groupId: 'group-1',
+            principalId: 'principal-1',
+            sessionId: 'session-1',
+            generationId: 'generation-1'
+        });
 
         expect(result.group.groupId).toBe('group-1');
         expect(fetchCalls.map((call) => call.method)).toEqual(['POST', 'PUT']);
@@ -905,8 +964,12 @@ describe('state API group and topology mutation workflows', () => {
             return notFoundResponse();
         });
 
-        await leaveStateGroup('group-1', 'principal-1', 'session-1', 'generation-1', undefined, {
-            command: { maxAttempts: 2 }
+        await leaveStateGroup({
+            groupId: 'group-1',
+            principalId: 'principal-1',
+            sessionId: 'session-1',
+            generationId: 'generation-1',
+            policies: { command: { maxAttempts: 2 } }
         });
 
         const disconnectRequestIds = fetchCalls

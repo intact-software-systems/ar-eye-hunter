@@ -43,14 +43,14 @@ export async function leaveRoom(input: LeaveRoomInput): Promise<GroupSnapshot | 
         if (!roomId) {
             return undefined;
         }
-        const snapshot = await leaveStateGroup(
-            roomId,
-            session.clientId,
-            session.sessionId,
-            context.middleware.heartbeat.generationId,
+        const snapshot = await leaveStateGroup({
+            groupId: roomId,
+            principalId: session.clientId,
+            sessionId: session.sessionId,
+            generationId: context.middleware.heartbeat.generationId,
             scope,
-            toRallarWorkflowPolicies<StateGroupWorkflowValue>(operationOptions)
-        );
+            policies: toRallarWorkflowPolicies<StateGroupWorkflowValue>(operationOptions)
+        });
         input.stateStore.clearCurrentRoomIfMatches(
             roomRef ?? roomId,
             leaveOptions.clearCurrent ?? true

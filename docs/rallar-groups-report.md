@@ -29,8 +29,10 @@ Primary browser files:
 
 - `packages/shared-web/browser/rallar.ts`
 - `packages/shared-web/browser/rooms/browser-rallar-rooms.ts`
-- `packages/shared-web/browser/api-workflows.ts`
-- `packages/shared-web/browser/api-integration.ts`
+- `packages/shared-web/browser/rooms/room-group-state-workflows.ts`
+- `packages/shared-web/browser/rooms/room-group-state-mutation-workflows.ts`
+- `packages/shared-web/browser/rooms/room-membership-group-state-workflows.ts`
+- `packages/shared-web/browser/rooms/room-group-state-http-api.ts`
 - `packages/shared-web/browser/rallar-operation-options.ts`
 
 Primary shared/server files:
