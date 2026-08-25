@@ -1,6 +1,6 @@
 import { BrowserFacadeRuntimeState } from '@shared-web/browser/composition/browser-facade-runtime-state.ts';
 import { BrowserTransportRuntime } from '@shared-web/browser/connection/browser-transport-runtime.ts';
-import type { Middleware } from '@shared-web/browser/connection/initialise-browser-middleware.ts';
+import type { RallarBrowserMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
 import { createRallarLifecycleCoordinator } from '@shared-web/browser/session/rallar-lifecycle-coordinator.ts';
 import { createRallarSessionController } from '@shared-web/browser/session/rallar-session-controller.ts';
 import { BrowserSessionConnectionLifecycle, type RallarSessionConnectionInput } from '@shared-web/browser/session/session-connection-lifecycle.ts';
@@ -176,8 +176,8 @@ describe('Browser transport cleanup', () => {
             session: { sessionId: 'session-new', accessToken: 'token-new' }
         });
         const initializationSessions: string[] = [];
-        let resolveFirst: ((middleware: Middleware) => void) | undefined;
-        let resolveSecond: ((middleware: Middleware) => void) | undefined;
+        let resolveFirst: ((middleware: RallarBrowserMiddleware) => void) | undefined;
+        let resolveSecond: ((middleware: RallarBrowserMiddleware) => void) | undefined;
         mocks.initialiseMiddleware.mockImplementation((session) => {
             initializationSessions.push(session.sessionId);
             return new Promise((resolve) => {
@@ -235,7 +235,7 @@ describe('Browser transport cleanup', () => {
         vi.mocked(middleware.middleware.webSocketQueueBox.close).mockImplementation(() => {
             cleanupEffects.push('websocket-closed');
         });
-        let resolveMiddleware: ((middleware: Middleware) => void) | undefined;
+        let resolveMiddleware: ((middleware: RallarBrowserMiddleware) => void) | undefined;
         mocks.readSession.mockReturnValue(middleware.session);
         mocks.initialiseMiddleware.mockReturnValue(
             new Promise((resolve) => {
@@ -295,7 +295,7 @@ describe('Browser transport cleanup', () => {
         });
 
         mocks.readSession.mockReturnValue(middleware.session);
-        mocks.initialiseMiddleware.mockResolvedValue(middleware.middleware as Middleware);
+        mocks.initialiseMiddleware.mockResolvedValue(middleware.middleware as RallarBrowserMiddleware);
         const transportRuntime = new BrowserTransportRuntime();
         const runtime = new BrowserFacadeRuntimeState(transportRuntime);
         const lifecycle = createRallarLifecycleCoordinator();
@@ -347,7 +347,7 @@ describe('Browser transport cleanup', () => {
         vi.mocked(middleware.middleware.webSocketQueueBox.close).mockImplementation(() => {
             cleanupEffects.push('websocket-closed');
         });
-        let resolveMiddleware: ((value: Middleware) => void) | undefined;
+        let resolveMiddleware: ((value: RallarBrowserMiddleware) => void) | undefined;
         mocks.readSession.mockReturnValue(middleware.session);
         mocks.initialiseMiddleware.mockReturnValue(
             new Promise((resolve) => {

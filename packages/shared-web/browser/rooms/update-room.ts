@@ -1,5 +1,5 @@
 import { defaultStateScope } from '@shared-web/browser/api/state-http-path.ts';
-import type { ApiMiddleware } from '@shared-web/browser/connection/browser-transport-runtime.ts';
+import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
 import type { RallarScopedOperationOptions } from '@shared-web/browser/rallar-connection-facade.ts';
 import { toRallarWorkflowPolicies, type RallarOperationOptions } from '@shared-web/browser/rallar-operation-options.ts';
 import type { RallarStateSnapshotAcceptanceInput } from '@shared-web/browser/state-cache/rallar-state-store.ts';

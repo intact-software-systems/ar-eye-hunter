@@ -99,7 +99,7 @@ const mocks = await vi.hoisted(async () => {
 
 vi.mock(
     import('@shared-web/browser/connection/initialise-browser-middleware.ts'),
-    (): Partial<ContractModules.Middleware> => ({
+    (): Partial<ContractModules.BrowserMiddlewareModule> => ({
         initialiseMiddleware: async (_session, _topic, options) => (await mocks.initialiseApiMiddleware(options)).middleware
     })
 );

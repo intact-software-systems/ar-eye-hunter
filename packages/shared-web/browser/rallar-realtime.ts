@@ -1,5 +1,7 @@
 export * from '@shared-web/browser/rallar-core.ts';
 
+export { DEFAULT_REALTIME_DATA_CHANNEL_LANE } from '@shared-web/browser/rallar-realtime-facade.ts';
+
 export type {
     RallarRealtimeFacade
 } from '@shared-web/browser/rallar-realtime-facade.ts';

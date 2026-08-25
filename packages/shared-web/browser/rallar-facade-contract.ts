@@ -1,8 +1,8 @@
-import type { ApiMiddleware } from '@shared-web/browser/connection/browser-transport-runtime.ts';
 import type { RallarDirectorFacade } from '@shared-web/browser/director/rallar-director-facade.ts';
 import type { RallarMessagesOperations } from '@shared-web/browser/messages/rallar-message-operations.ts';
 import type { RallarPeopleOperations } from '@shared-web/browser/people/rallar-people-contracts.ts';
 import type { RallarCallsFacade } from '@shared-web/browser/rallar-calls-facade.ts';
+import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
 import type {
     RallarConnectionFacade,
     RallarSetupInput,

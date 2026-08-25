@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { ApiMiddleware } from '@shared-web/browser/connection/browser-transport-runtime.ts';
-import type { Middleware } from '@shared-web/browser/connection/initialise-browser-middleware.ts';
+import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
+import type { RallarBrowserMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
@@ -46,7 +46,7 @@ const mocks = await vi.hoisted(async () => {
 });
 
 vi.mock(import('@shared-web/browser/connection/initialise-browser-middleware.ts'), () => ({
-    initialiseMiddleware: async (): Promise<Middleware> => mocks.ctx.middleware
+    initialiseMiddleware: async (): Promise<RallarBrowserMiddleware> => mocks.ctx.middleware
 }));
 
 vi.mock(import('@shared-web/browser/state-cache/browser-state-cache-lifecycle.ts'), () => ({

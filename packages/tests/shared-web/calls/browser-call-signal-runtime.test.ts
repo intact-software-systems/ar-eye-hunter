@@ -1,8 +1,8 @@
 import { BrowserCallSignalRuntime } from '@shared-web/browser/calls/browser-call-signal-runtime.ts';
-import type { ApiMiddleware } from '@shared-web/browser/connection/browser-transport-runtime.ts';
 import type { RallarMessage, RallarMessageHandler, RallarMessageSendResult } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type { RallarMessagesOperations } from '@shared-web/browser/messages/rallar-message-operations.ts';
 import type { RallarCallHandle, RallarCallSignalPayload, RallarIncomingCallInvite } from '@shared-web/browser/rallar-calls-facade.ts';
+import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
 import type { RallarTargetSelector } from '@shared-web/browser/rallar-realtime-facade.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { describe, expect, it } from 'vitest';

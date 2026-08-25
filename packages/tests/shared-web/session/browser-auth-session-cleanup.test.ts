@@ -1,4 +1,4 @@
-import type { Middleware } from '@shared-web/browser/connection/initialise-browser-middleware.ts';
+import type { RallarBrowserMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
 import type { RallarWsLifecycleEvent } from '@shared-web/browser/rallar-realtime-facade.ts';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createAuthSessionApiHttpError } from '../auth-session-contract-fixtures.ts';
@@ -135,7 +135,7 @@ describe('Rallar auth logout and transport cleanup contract', () => {
 
     it('shuts down middleware that resolves after logout during connect', async () => {
         const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
-        const deferred = createDeferred<Middleware>();
+        const deferred = createDeferred<RallarBrowserMiddleware>();
         const cleanupState = {
             heartbeatStopped: false,
             rtcHeartbeatsStopped: false,
@@ -190,7 +190,7 @@ describe('Rallar auth logout and transport cleanup contract', () => {
 
     it('cancels a pending connection before replacing credentials and reconnects with the replacement', async () => {
         const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
-        const pendingMiddleware = createDeferred<Middleware>();
+        const pendingMiddleware = createDeferred<RallarBrowserMiddleware>();
         const replacementSession = {
             ...mocks.ctx.session,
             sessionId: 'session-2',

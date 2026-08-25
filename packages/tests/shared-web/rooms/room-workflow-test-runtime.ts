@@ -1,7 +1,7 @@
 import { vi } from 'vitest';
 
-import type { ApiMiddleware } from '@shared-web/browser/connection/browser-transport-runtime.ts';
-import type { Middleware } from '@shared-web/browser/connection/initialise-browser-middleware.ts';
+import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
+import type { RallarBrowserMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 
 import { createGroupSnapshotFixture } from '../authoritative-group-fixtures.ts';
@@ -50,7 +50,7 @@ const roomWorkflowMocks = await vi.hoisted(async () => {
 });
 
 vi.mock(import('@shared-web/browser/connection/initialise-browser-middleware.ts'), () => ({
-    initialiseMiddleware: async (): Promise<Middleware> => roomWorkflowMocks.ctx.middleware
+    initialiseMiddleware: async (): Promise<RallarBrowserMiddleware> => roomWorkflowMocks.ctx.middleware
 }));
 
 vi.mock(import('@shared-web/browser/rooms/room-group-state-workflows.ts'), () => ({

@@ -1,4 +1,3 @@
-import type { ApiMiddleware } from '@shared-web/browser/connection/browser-transport-runtime.ts';
 import {
     browserLocalMediaSourceKinds,
     captureBrowserLocalMediaSource,
@@ -12,6 +11,7 @@ import {
     type BrowserLocalMediaSourceStartOptions,
     type BrowserLocalMediaSourceState
 } from '@shared-web/browser/media/browser-local-media-source-support.ts';
+import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
 import type {
     RallarMediaSourceController,
     RallarMediaSourceHandle,

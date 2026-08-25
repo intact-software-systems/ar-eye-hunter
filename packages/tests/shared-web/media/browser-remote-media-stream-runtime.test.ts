@@ -1,5 +1,5 @@
-import type { ApiMiddleware } from '@shared-web/browser/connection/browser-transport-runtime.ts';
 import { BrowserRemoteMediaStreamRuntime } from '@shared-web/browser/media/browser-remote-media-stream-runtime.ts';
+import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
 import type { WebRtcRxStreamerService } from '@shared/services/WebRtcRxStreamerService.ts';
 import { describe, expect, it, vi } from 'vitest';
 

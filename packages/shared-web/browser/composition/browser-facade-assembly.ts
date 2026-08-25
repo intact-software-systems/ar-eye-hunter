@@ -1,4 +1,4 @@
-import type { ApiMiddleware } from '@shared-web/browser/connection/browser-transport-runtime.ts';
+import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
 import type { RallarFacade, RallarTargetedChannelDefinition } from '@shared-web/browser/rallar-facade-contract.ts';
 import type { BrowserTargetedRealtimeRuntime } from '@shared-web/browser/realtime/browser-targeted-realtime-runtime.ts';
 

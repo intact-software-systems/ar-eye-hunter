@@ -1,6 +1,6 @@
 import { BrowserCallLifecycleRuntime } from '@shared-web/browser/calls/browser-call-lifecycle-runtime.ts';
 import type { BrowserCallSessionRuntime } from '@shared-web/browser/calls/browser-call-session-runtime.ts';
-import type { ApiMiddleware } from '@shared-web/browser/connection/browser-transport-runtime.ts';
+import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
 import type { RallarMediaFacade } from '@shared-web/browser/rallar-media-facade.ts';
 import type { RallarTargetedChannel } from '@shared-web/browser/rallar-realtime-facade.ts';
 import type { RallarRtcFacade, RallarRtcStatus, RallarRtcWaitForOpenResult } from '@shared-web/browser/rallar-rtc-facade.ts';

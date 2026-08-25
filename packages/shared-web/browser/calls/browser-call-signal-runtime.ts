@@ -1,4 +1,3 @@
-import type { ApiMiddleware } from '@shared-web/browser/connection/browser-transport-runtime.ts';
 import type { RallarMessage, RallarMessageSendResult } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type { RallarMessagesOperations } from '@shared-web/browser/messages/rallar-message-operations.ts';
 import type {
@@ -14,6 +13,7 @@ import type {
     RallarCallStartInput,
     RallarIncomingCallInvite
 } from '@shared-web/browser/rallar-calls-facade.ts';
+import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
 import type { RallarMediaSourceKind, RallarMediaSourceStatus } from '@shared-web/browser/rallar-media-facade.ts';
 import type { RallarUnsubscribe } from '@shared-web/browser/rallar-shared-contracts.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';

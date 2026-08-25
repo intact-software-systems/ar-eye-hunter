@@ -1,5 +1,5 @@
-import type { ApiMiddleware } from '@shared-web/browser/connection/browser-transport-runtime.ts';
 import { notifyListener } from '@shared-web/browser/messages/rallar-listener-delivery.ts';
+import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
 import type {
     RallarRtcLifecycleKind,
     RallarRtcLifecycleListener,

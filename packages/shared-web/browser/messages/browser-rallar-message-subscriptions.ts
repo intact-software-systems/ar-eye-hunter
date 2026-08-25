@@ -1,4 +1,3 @@
-import type { ApiMiddleware } from '@shared-web/browser/connection/browser-transport-runtime.ts';
 import type {
     RallarMessageHandler,
     RallarMessageTransport
@@ -11,6 +10,7 @@ import {
     type RallarMessageSelectorInput
 } from '@shared-web/browser/messages/rallar-message-selectors.ts';
 import { toRallarMessage } from '@shared-web/browser/messages/to-rallar-message.ts';
+import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
 import type { RallarUnsubscribe } from '@shared-web/browser/rallar-shared-contracts.ts';
 import type { BrowserWebSocketInbox } from '@shared-web/browser/websocket/browser-websocket-inbox.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';

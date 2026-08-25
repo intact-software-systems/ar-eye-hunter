@@ -1,7 +1,7 @@
 import { vi } from 'vitest';
 
-import type { ApiMiddleware } from '@shared-web/browser/connection/browser-transport-runtime.ts';
-import type { Middleware } from '@shared-web/browser/connection/initialise-browser-middleware.ts';
+import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
+import type { RallarBrowserMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
 import { newALBroadcastMessage, newALEventRoute } from '@shared/al-contracts/al-contract.ts';
 import { AppTopics } from '@shared/api/api-config.ts';
 import type { GroupStateDeltaEnvelope } from '@shared/api/group-state-delta.ts';
@@ -45,7 +45,7 @@ const roomEventMocks = await vi.hoisted(async () => {
 });
 
 vi.mock(import('@shared-web/browser/connection/initialise-browser-middleware.ts'), () => ({
-    initialiseMiddleware: async (): Promise<Middleware> => roomEventMocks.ctx.middleware
+    initialiseMiddleware: async (): Promise<RallarBrowserMiddleware> => roomEventMocks.ctx.middleware
 }));
 
 vi.mock(import('@shared-web/browser/state-read/state-event-http-api.ts'), (): Partial<StateEventHttpApiModule> => ({

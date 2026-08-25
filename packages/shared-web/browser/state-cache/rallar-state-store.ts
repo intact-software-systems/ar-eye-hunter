@@ -1,7 +1,7 @@
 import type { RallarStateRuntimePort } from '@shared-web/browser/composition/browser-facade-runtime-state.ts';
-import type { ApiMiddleware } from '@shared-web/browser/connection/browser-transport-runtime.ts';
 import { notifyListener } from '@shared-web/browser/messages/rallar-listener-delivery.ts';
 import type { RallarPeopleState, RallarPerson } from '@shared-web/browser/people/rallar-people-contracts.ts';
+import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
 import type {
     RallarOnChangeOptions,
     RallarStateListener,

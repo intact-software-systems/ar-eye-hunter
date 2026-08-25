@@ -1,4 +1,4 @@
-import type { ApiMiddleware } from '@shared-web/browser/connection/browser-transport-runtime.ts';
+import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
 import type {
     RallarRtcLaneStatus,
     RallarRtcPeerConnectionStatus,

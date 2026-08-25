@@ -1,4 +1,5 @@
 import { ApiHttpError } from '@shared-web/browser/api/http-error.ts';
+import type { RallarSessionHeartbeat } from '@shared-web/browser/rallar-connection-facade.ts';
 import {
     refreshStateHeartbeat,
     type StateHeartbeatWorkflowValue
@@ -14,13 +15,6 @@ import * as groupStateSnapshotsRepository from '@shared/repository/group-state-s
 const intervalMsecs = 20000;
 const retryIntervalMsecs = 5000;
 
-/** Handle for the single active browser session heartbeat. */
-export type HeartbeatHandle = Readonly<{
-    sessionId: string;
-    generationId: string;
-    stop(): void;
-}>;
-
 export type InitHeartbeatOptions = Readonly<{
     authSession?: AuthSession;
     scope?: StateScope;
@@ -28,10 +22,10 @@ export type InitHeartbeatOptions = Readonly<{
     onAuthInvalid?: (error: unknown) => void | Promise<void>;
 }>;
 
-let activeHeartbeat: HeartbeatHandle | undefined;
+let activeHeartbeat: RallarSessionHeartbeat | undefined;
 
 class BrowserStateHeartbeatRuntime {
-    public readonly handle: HeartbeatHandle;
+    public readonly handle: RallarSessionHeartbeat;
     readonly #clientData: ClientInfo;
     readonly #options: InitHeartbeatOptions;
     #stopped = false;
@@ -98,7 +92,7 @@ class BrowserStateHeartbeatRuntime {
 export async function initHeartbeat(
     clientData: ClientInfo,
     options: InitHeartbeatOptions = {}
-): Promise<HeartbeatHandle> {
+): Promise<RallarSessionHeartbeat> {
     activeHeartbeat?.stop();
     const runtime = new BrowserStateHeartbeatRuntime(clientData, options);
     activeHeartbeat = runtime.handle;
@@ -106,7 +100,9 @@ export async function initHeartbeat(
     return runtime.handle;
 }
 
-export function stopHeartbeat(handle: HeartbeatHandle | undefined = activeHeartbeat): void {
+export function stopHeartbeat(
+    handle: RallarSessionHeartbeat | undefined = activeHeartbeat
+): void {
     handle?.stop();
 }
 

@@ -12,8 +12,11 @@ export {
 export type { RallarApiClientConfig } from '@shared-web/browser/api-client-config.ts';
 
 export type {
+    ApiMiddleware,
+    RallarBrowserMiddleware,
     RallarConnectionFacade,
-    RallarConnectionOperations
+    RallarConnectionOperations,
+    RallarSessionHeartbeat
 } from '@shared-web/browser/rallar-connection-facade.ts';
 
 export type { RallarAuthFacade } from '@shared-web/browser/session/rallar-auth-facade.ts';

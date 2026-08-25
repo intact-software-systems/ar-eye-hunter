@@ -37,6 +37,8 @@ import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { defaultStateScope } from '@shared-web/browser/api/state-http-path.ts';
 import { createWebSocketTicket } from '@shared-web/browser/auth/websocket-ticket-http-api.ts';
 import { readApiConfig, readIceCandidates } from '@shared-web/browser/connection/connection-http-api.ts';
+import type { RallarBrowserMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
+import { DEFAULT_REALTIME_DATA_CHANNEL_LANE } from '@shared-web/browser/rallar-realtime-facade.ts';
 import { initGroupStateResyncOnReopen } from '@shared-web/browser/state-read/group-state-resync-on-reopen.ts';
 import { hydrateGroupTopologyOverlays } from '@shared-web/browser/state-read/hydrate-group-topology-overlays.ts';
 import { refreshStateSnapshots } from '@shared-web/browser/state-read/refresh-state-snapshots.ts';
@@ -47,7 +49,6 @@ import { configureBrowserALRuntimeStores } from '@shared-web/browser/al-runtime/
 import { initBrowserQueueBoxExpiryEviction } from '@shared-web/browser/queuebox/browser-queuebox-persistence.ts';
 import { createBrowserQueueBoxEngine } from '@shared-web/browser/queuebox/create-browser-queue-box-engine.ts';
 import * as rtcEngine from '@shared-web/browser/rtc/initialise-browser-rtc-runtime.ts';
-import type { HeartbeatHandle } from '@shared-web/browser/session/browser-session-heartbeat.ts';
 import * as heartbeat from '@shared-web/browser/session/browser-session-heartbeat.ts';
 import { initialiseBrowserCacheRepositories } from '@shared-web/browser/state-cache/initialise-browser-cache-repositories.ts';
 import { createBrowserWebSocketQueueBox } from '@shared-web/browser/websocket/create-browser-web-socket-queue-box.ts';
@@ -55,16 +56,6 @@ import {
     browserStateCacheLifecycle,
     type StateCacheScopeOptions
 } from '../state-cache/browser-state-cache-lifecycle.ts';
-
-export interface Middleware {
-    readonly qboxEngine: InboxOutboxEngine;
-    readonly webSocketQueueBox: WsQueueBoxClientService;
-    readonly webRtcConnectionService: WebRtcConnectionService;
-    readonly rtcRxStreamer: WebRtcRxStreamerService;
-    readonly webRtcGroupManager: WebRtcGroupManager;
-    readonly webRtcOverlayMulticastManager: WebRtcOverlayMulticastManager;
-    readonly heartbeat: HeartbeatHandle;
-}
 
 export interface MiddlewareInitOptions {
     readonly signal?: AbortSignal;
@@ -86,22 +77,6 @@ export interface ToCreateWsUrlInput {
 }
 
 export const BROWSER_RTT_HEARTBEAT_TTL_MS = 15_000;
-
-export const DEFAULT_REALTIME_DATA_CHANNEL_LANE: RtcDataChannelLaneConfig = {
-    id: 'realtime',
-    label: 'rtc-realtime',
-    init: {
-        ordered: false,
-        maxRetransmits: 0
-    },
-    binaryType: 'arraybuffer',
-    flowControl: {
-        highWatermarkBytes: 64 * 1024,
-        lowWatermarkBytes: 16 * 1024,
-        overflow: 'replace-by-key',
-        maxQueueItems: 64
-    }
-};
 
 export function toCreateWsUrl(
     input: ToCreateWsUrlInput
@@ -180,7 +155,7 @@ export async function initialiseMiddleware(
     session: AuthSession,
     rtcSignalingTopicId: string,
     options: MiddlewareInitOptions = {}
-): Promise<Middleware> {
+): Promise<RallarBrowserMiddleware> {
     const clientData: ClientInfo = {
         clientId: session.clientId,
         sessionId: session.sessionId,

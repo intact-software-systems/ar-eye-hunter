@@ -20,6 +20,8 @@ export {
     normalizeRallarReadinessExpectation
 } from '@shared-web/browser/readiness.ts';
 
+export { DEFAULT_REALTIME_DATA_CHANNEL_LANE } from '@shared-web/browser/rallar-realtime-facade.ts';
+
 export type {
     RallarCrdtDocument,
     RallarCrdtFacade,
@@ -68,10 +70,12 @@ export type {
 } from '@shared-web/browser/readiness.ts';
 
 export type {
+    ApiMiddleware,
     RallarAdvancedFacade,
     RallarAuthChangeListener,
     RallarAuthChangeReason,
     RallarAuthState,
+    RallarBrowserMiddleware,
     RallarCallDataInput,
     RallarCallEndOptions,
     RallarCallHandle,
@@ -201,6 +205,7 @@ export type {
     RallarRtcWaitForOpenResult,
     RallarScopedOperationOptions,
     RallarScreenSourceStartOptions,
+    RallarSessionHeartbeat,
     RallarSetRoomMemberRoleInput,
     RallarSetupInput,
     RallarStartOptions,

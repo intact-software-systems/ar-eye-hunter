@@ -1,5 +1,5 @@
-import type { ApiMiddleware } from '@shared-web/browser/connection/browser-transport-runtime.ts';
 import type { MiddlewareInitOptions } from '@shared-web/browser/connection/initialise-browser-middleware.ts';
+import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
 import { vi } from 'vitest';
 import { createApiMiddlewareTestDouble } from './api-middleware-test-double.ts';
 

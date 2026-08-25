@@ -17,7 +17,7 @@ const mocks = await vi.hoisted(async () => {
         webRtcConnectionService: vi.mocked(ctx.middleware.webRtcConnectionService),
         webSocketQueueBox: vi.mocked(ctx.middleware.webSocketQueueBox),
         webSocket: vi.mocked(ctx.middleware.webSocketQueueBox.socket),
-        initialiseMiddleware: vi.fn<ContractModules.Middleware['initialiseMiddleware']>(() => Promise.resolve(ctx.middleware)),
+        initialiseMiddleware: vi.fn<ContractModules.BrowserMiddlewareModule['initialiseMiddleware']>(() => Promise.resolve(ctx.middleware)),
         clearSession: vi.fn<ContractModules.Auth['clearSession']>(),
         readSession: vi.fn<ContractModules.Auth['readSession']>(() => session),
         writeSession: vi.fn<ContractModules.Auth['writeSession']>(),
@@ -79,7 +79,7 @@ export function readAuthSessionContractMocks(): typeof mocks {
 
 vi.mock(
     import('@shared-web/browser/connection/initialise-browser-middleware.ts'),
-    (): Partial<ContractModules.Middleware> => ({
+    (): Partial<ContractModules.BrowserMiddlewareModule> => ({
         initialiseMiddleware: mocks.initialiseMiddleware
     })
 );

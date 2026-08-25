@@ -1,7 +1,5 @@
-import type {
-    ApiMiddleware,
-    BrowserTransportRuntimePort
-} from '@shared-web/browser/connection/browser-transport-runtime.ts';
+import type { BrowserTransportRuntimePort } from '@shared-web/browser/connection/browser-transport-runtime.ts';
+import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
 import type { RallarDefaults } from '@shared-web/browser/rallar-connection-facade.ts';
 import type { RallarOperationOptions } from '@shared-web/browser/rallar-operation-options.ts';
 import { isSameGroupRef } from '@shared/api/api-type-utils.ts';

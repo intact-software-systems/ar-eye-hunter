@@ -12,6 +12,7 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
         filePath: 'packages/shared-web/browser/rallar.ts',
         expected: {
             values: [
+                'DEFAULT_REALTIME_DATA_CHANNEL_LANE',
                 'createRallarCrdtFacade',
                 'createRallarDataFacade',
                 'createRallarFacade',
@@ -23,6 +24,7 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
                 'rallar'
             ],
             types: [
+                'ApiMiddleware',
                 'CommandsOrchestrator',
                 'CommandsOrchestratorPolicies',
                 'CreateRallarDataFacadeInput',
@@ -30,6 +32,7 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
                 'RallarAuthChangeListener',
                 'RallarAuthChangeReason',
                 'RallarAuthState',
+                'RallarBrowserMiddleware',
                 'RallarCallDataInput',
                 'RallarCallEndOptions',
                 'RallarCallHandle',
@@ -185,6 +188,7 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
                 'RallarRtcWaitForOpenResult',
                 'RallarScopedOperationOptions',
                 'RallarScreenSourceStartOptions',
+                'RallarSessionHeartbeat',
                 'RallarSetRoomMemberRoleInput',
                 'RallarSetupInput',
                 'RallarStartOptions',
@@ -235,6 +239,7 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
                 'readApiBaseUrl'
             ],
             types: [
+                'ApiMiddleware',
                 'CommandsOrchestrator',
                 'CommandsOrchestratorPolicies',
                 'RallarApiClientConfig',
@@ -242,6 +247,7 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
                 'RallarAuthChangeReason',
                 'RallarAuthFacade',
                 'RallarAuthState',
+                'RallarBrowserMiddleware',
                 'RallarConnectStatus',
                 'RallarConnectionFacade',
                 'RallarConnectionOperations',
@@ -283,6 +289,7 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
                 'RallarRoomSwitchPartialFailureError',
                 'RallarRtcSendInput',
                 'RallarScopedOperationOptions',
+                'RallarSessionHeartbeat',
                 'RallarSetupInput',
                 'RallarStartOptions',
                 'RallarStartResult',
@@ -306,7 +313,7 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
     {
         filePath: 'packages/shared-web/browser/rallar-realtime.ts',
         expected: {
-            values: [],
+            values: ['DEFAULT_REALTIME_DATA_CHANNEL_LANE'],
             types: [
                 'RallarRealtimeBinarySendInput',
                 'RallarRealtimeFacade',

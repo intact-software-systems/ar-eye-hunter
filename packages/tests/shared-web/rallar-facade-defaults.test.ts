@@ -95,6 +95,17 @@ describe('Rallar facade default scope behavior', () => {
         mocks.refreshStateSnapshots.mockResolvedValue({ clients: [], groups: [] });
     });
 
+    it('keeps defaults isolated between facade instances', async () => {
+        const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
+        const first = createRallarFacade();
+        const second = createRallarFacade();
+
+        first.setDefaults({ applicationId: 'isolated-app' });
+
+        expect(first.defaults()?.applicationId).toBe('isolated-app');
+        expect(second.defaults()).toBeUndefined();
+    });
+
     it('uses facade defaults as the operation scope when no explicit scope is passed', async () => {
         const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
         const facade = createRallarFacade();

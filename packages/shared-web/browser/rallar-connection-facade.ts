@@ -1,5 +1,4 @@
 import type { RallarApiClientConfig } from '@shared-web/browser/api-client-config.ts';
-import type { ApiMiddleware } from '@shared-web/browser/connection/browser-transport-runtime.ts';
 import type { RallarPeopleState } from '@shared-web/browser/people/rallar-people-contracts.ts';
 import type {
     RallarOperationOptions,
@@ -11,7 +10,40 @@ import type { AuthSession } from '@shared/api/api-config.ts';
 import type { ApplicationId, GroupRef, WorkspaceId } from '@shared/api/group-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import type { CommandsOrchestrator, CommandsOrchestratorPolicies } from '@shared/cache/CommandsOrchestrator.ts';
-import type { RtcDataChannelLaneConfig } from '@shared/services/WebRtcConnectionService.ts';
+import type { WebRtcOverlayMulticastManager } from '@shared/multicast/WebRtcOverlayMulticastManager.ts';
+import type { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
+import type { RtcDataChannelLaneConfig, WebRtcConnectionService } from '@shared/services/WebRtcConnectionService.ts';
+import type { WebRtcGroupManager } from '@shared/services/WebRtcGroupManager.ts';
+import type { WebRtcRxStreamerService } from '@shared/services/WebRtcRxStreamerService.ts';
+import type { WsQueueBoxClientService } from '@shared/services/WsQueueBoxClientService.ts';
+
+/** Controls the single active heartbeat for a connected browser session. */
+export interface RallarSessionHeartbeat {
+    readonly sessionId: string;
+    readonly generationId: string;
+    stop(): void;
+}
+
+/** Connected browser transport resources exposed through the advanced facade. */
+export interface RallarBrowserMiddleware {
+    readonly qboxEngine: InboxOutboxEngine;
+    readonly webSocketQueueBox: WsQueueBoxClientService;
+    readonly webRtcConnectionService: WebRtcConnectionService;
+    readonly rtcRxStreamer: WebRtcRxStreamerService;
+    readonly webRtcGroupManager: WebRtcGroupManager;
+    readonly webRtcOverlayMulticastManager: WebRtcOverlayMulticastManager;
+    readonly heartbeat: RallarSessionHeartbeat;
+}
+
+/** Authenticated browser connection returned by setup and connect operations. */
+export interface ApiMiddleware {
+    readonly session: AuthSession;
+    readonly authFetch: (
+        input: RequestInfo | URL,
+        init?: RequestInit
+    ) => Promise<Response>;
+    readonly middleware: RallarBrowserMiddleware;
+}
 
 export type RallarConnectStatus = 'idle' | 'connecting' | 'connected';
 

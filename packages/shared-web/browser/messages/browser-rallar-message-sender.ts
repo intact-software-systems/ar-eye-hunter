@@ -1,4 +1,3 @@
-import type { ApiMiddleware } from '@shared-web/browser/connection/browser-transport-runtime.ts';
 import type { BrowserMessageInputValidator } from '@shared-web/browser/messages/browser-message-input-validator.ts';
 import type {
     RallarMessageSendResult,
@@ -6,6 +5,7 @@ import type {
     RallarRtcSendInput,
     RallarWsSendInput
 } from '@shared-web/browser/messages/rallar-message-contracts.ts';
+import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
 import {
     newALBroadcastMessage,
     newALMulticastMessage,
