@@ -1,30 +1,19 @@
+import type { AdminOperationUseCases } from '@shared-server/rallar-system/admin-operations/admin-operation-use-cases.ts';
 import type { Hono } from 'jsr:@hono/hono@4.11.9';
 
 import {
     registerAdminOperationMutationRoutes,
-    type AdminOperationMutationRouteDependencies,
-    type AdminOperationMutationRouteService
+    type AdminOperationMutationRouteDependencies
 } from './register-admin-operation-mutation-routes.ts';
 import {
     registerAdminOperationReadRoutes,
-    type AdminOperationReadRouteDependencies,
-    type AdminOperationReadRouteService
+    type AdminOperationReadRouteDependencies
 } from './register-admin-operation-read-routes.ts';
-
-export type { AdminOperationMutationWriteInput } from './register-admin-operation-mutation-routes.ts';
-export type {
-    AdminOperationReadInput,
-    AdminOperationWriteInput
-} from './register-admin-operation-read-routes.ts';
-
-export type AdminOperationsRouteService =
-    & AdminOperationReadRouteService
-    & AdminOperationMutationRouteService;
 
 export type AdminOperationsRouteDependencies =
     & AdminOperationReadRouteDependencies
     & AdminOperationMutationRouteDependencies
-    & Readonly<{ operations: AdminOperationsRouteService; }>;
+    & Readonly<{ operations: AdminOperationUseCases; }>;
 
 export function registerAdminOperationsRoutes(
     app: Hono,

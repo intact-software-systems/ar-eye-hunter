@@ -28,7 +28,9 @@ Deno.test('admin services read current websocket status after construction', asy
         new ConnectionContext('connection-open', createSocket(WebSocket.OPEN))
     );
 
-    const realtime = await services.operations.readRealtime({ adminSession: ADMIN_SESSION });
+    const realtime = await services.operations.realtime.execute({
+        adminSession: ADMIN_SESSION
+    });
     const support = await services.support.explainClient({
         adminSession: ADMIN_SESSION,
         request: {
@@ -72,7 +74,7 @@ Deno.test(
         );
 
         assert.throws(
-            () => services.operations.readRealtime({ adminSession: ADMIN_SESSION }),
+            () => services.operations.realtime.execute({ adminSession: ADMIN_SESSION }),
             (error) => error === failure
         );
         await assert.rejects(

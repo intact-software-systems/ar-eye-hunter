@@ -1,3 +1,5 @@
+import type { AdminOperationUseCases } from '@shared-server/rallar-system/admin-operations/admin-operation-use-cases.ts';
+import type { IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
 import { decodeJsonWireValue, type JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import type {
     AdminMetricsResetCategory,
@@ -17,57 +19,35 @@ import type { RallarCrdtDebugBundle, RallarCrdtIntegrityReport } from '@shared/c
 import { type Context, type Hono } from 'jsr:@hono/hono@4.11.9';
 
 import {
+    decodeCrdtAdminJsonObject,
+    decodeCrdtDebugExportRequest,
+    decodeCrdtDocumentRequest
+} from '../crdt/crdt-admin-route-request-codec.ts';
+import {
     requireApiAdminSession as defaultRequireApiAdminSession,
     type ApiAdminAuthDependencies
 } from '../services/admin-auth-service.ts';
 
-export interface AdminOperationReadInput {
-    readonly adminSession: AuthSession;
-    readonly scope?: StateScope;
-}
-
-export interface AdminOperationWriteInput<TRequest> {
-    readonly adminSession: AuthSession;
-    readonly request: TRequest;
-}
-
-export interface AdminOperationReadRouteService {
-    readonly readOverview: (
-        input: AdminOperationReadInput
-    ) => Promise<AdminOperationsOverviewResponse>;
-    readonly readQueues: (
-        input: AdminOperationReadInput
-    ) => Promise<AdminOperationsQueuesResponse>;
-    readonly readRealtime: (
-        input: AdminOperationReadInput
-    ) => Promise<AdminOperationsRealtimeResponse>;
-    readonly readState: (
-        input: AdminOperationReadInput
-    ) => Promise<AdminOperationsStateResponse>;
-    readonly readCrdt: (
-        input: AdminOperationReadInput
-    ) => Promise<AdminOperationsCrdtResponse>;
-    readonly readSystem: (
-        input: AdminOperationReadInput
-    ) => Promise<AdminOperationsSystemResponse>;
-    readonly resetMetrics: (
-        input: AdminOperationWriteInput<AdminMetricsResetRequest>
-    ) => Promise<AdminOperationResultResponse>;
-    readonly verifyCrdtIntegrity: (
-        input: AdminOperationWriteInput<JsonWireValue>
-    ) => Promise<RallarCrdtIntegrityReport>;
-    readonly exportCrdtDebug: (
-        input: AdminOperationWriteInput<JsonWireValue>
-    ) => Promise<RallarCrdtDebugBundle>;
-}
+type AdminOperationReadRouteUseCases = Pick<
+    AdminOperationUseCases,
+    | 'overview'
+    | 'queues'
+    | 'realtime'
+    | 'state'
+    | 'crdt'
+    | 'system'
+    | 'metricsReset'
+    | 'crdtIntegrity'
+    | 'crdtDebugExport'
+>;
 
 export type AdminOperationReadRouteDependencies = Readonly<
     ApiAdminAuthDependencies & {
-        operations: AdminOperationReadRouteService;
+        operations: AdminOperationReadRouteUseCases;
         requireApiAdminSession?: (
             request: { header(name: string): string | undefined; },
             dependencies: ApiAdminAuthDependencies
-        ) => Promise<AuthSession>;
+        ) => Promise<IssuedAuthSession>;
     }
 >;
 
@@ -81,13 +61,17 @@ export function registerAdminOperationReadRoutes(
             withAdminRead(
                 context,
                 dependencies,
-                (adminSession) => dependencies.operations.readOverview({ adminSession })
+                (adminSession) => dependencies.operations.overview.execute({ adminSession })
             )
     );
     app.get(
         '/api/admin/operations/queues',
         (context) =>
-            withAdminRead(context, dependencies, (adminSession) => dependencies.operations.readQueues({ adminSession }))
+            withAdminRead(
+                context,
+                dependencies,
+                (adminSession) => dependencies.operations.queues.execute({ adminSession })
+            )
     );
     app.get(
         '/api/admin/operations/realtime',
@@ -95,19 +79,23 @@ export function registerAdminOperationReadRoutes(
             withAdminRead(
                 context,
                 dependencies,
-                (adminSession) => dependencies.operations.readRealtime({ adminSession })
+                (adminSession) => dependencies.operations.realtime.execute({ adminSession })
             )
     );
     app.get(
         '/api/admin/operations/state',
         (context) =>
-            withAdminRead(context, dependencies, (adminSession) => dependencies.operations.readState({ adminSession }))
+            withAdminRead(
+                context,
+                dependencies,
+                (adminSession) => dependencies.operations.state.execute({ adminSession })
+            )
     );
     app.get(
         '/api/admin/operations/state/apps/:applicationId/workspaces/:workspaceId',
         (context) =>
             withAdminRead(context, dependencies, (adminSession) =>
-                dependencies.operations.readState({
+                dependencies.operations.state.execute({
                     adminSession,
                     scope: readStateScope(context)
                 }))
@@ -115,13 +103,17 @@ export function registerAdminOperationReadRoutes(
     app.get(
         '/api/admin/operations/crdt',
         (context) =>
-            withAdminRead(context, dependencies, (adminSession) => dependencies.operations.readCrdt({ adminSession }))
+            withAdminRead(
+                context,
+                dependencies,
+                (adminSession) => dependencies.operations.crdt.execute({ adminSession })
+            )
     );
     app.get(
         '/api/admin/operations/crdt/apps/:applicationId/workspaces/:workspaceId',
         (context) =>
             withAdminRead(context, dependencies, (adminSession) =>
-                dependencies.operations.readCrdt({
+                dependencies.operations.crdt.execute({
                     adminSession,
                     scope: readStateScope(context)
                 }))
@@ -129,16 +121,24 @@ export function registerAdminOperationReadRoutes(
     app.get(
         '/api/admin/operations/system',
         (context) =>
-            withAdminRead(context, dependencies, (adminSession) => dependencies.operations.readSystem({ adminSession }))
+            withAdminRead(
+                context,
+                dependencies,
+                (adminSession) => dependencies.operations.system.execute({ adminSession })
+            )
     );
     app.post(
         '/api/admin/operations/metrics/reset',
         (context) =>
-            withAdminReadJson(context, dependencies, (adminSession, request) =>
-                dependencies.operations.resetMetrics({
-                    adminSession,
-                    request: readMetricsResetRequest(request)
-                }))
+            withAdminReadJson(
+                context,
+                dependencies,
+                (adminSession, request) =>
+                    dependencies.operations.metricsReset.execute({
+                        adminSession,
+                        request: readMetricsResetRequest(request)
+                    })
+            )
     );
     app.post(
         '/api/admin/operations/crdt/integrity',
@@ -146,7 +146,18 @@ export function registerAdminOperationReadRoutes(
             withAdminReadJson(
                 context,
                 dependencies,
-                (adminSession, request) => dependencies.operations.verifyCrdtIntegrity({ adminSession, request })
+                (adminSession, request) =>
+                    dependencies.operations.crdtIntegrity.execute({
+                        adminSession,
+                        request: {
+                            document: decodeCrdtDocumentRequest(
+                                decodeCrdtAdminJsonObject(
+                                    request,
+                                    'Admin CRDT integrity request'
+                                )
+                            )
+                        }
+                    })
             )
     );
     app.post(
@@ -155,7 +166,16 @@ export function registerAdminOperationReadRoutes(
             withAdminReadJson(
                 context,
                 dependencies,
-                (adminSession, request) => dependencies.operations.exportCrdtDebug({ adminSession, request })
+                (adminSession, request) =>
+                    dependencies.operations.crdtDebugExport.execute({
+                        adminSession,
+                        request: decodeCrdtDebugExportRequest(
+                            decodeCrdtAdminJsonObject(
+                                request,
+                                'Admin CRDT debug export request'
+                            )
+                        )
+                    })
             )
     );
 }

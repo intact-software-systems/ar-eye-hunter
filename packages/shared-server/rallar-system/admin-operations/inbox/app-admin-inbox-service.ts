@@ -27,7 +27,7 @@ import {
 import type { AppInboxEntryRepository, AppInboxResultRepository } from '../../app-inbox/app-inbox-persistence-ports.ts';
 import { AppInboxQueueClient } from '../../app-inbox/app-inbox-queue-client.ts';
 import { encodeAppInboxResult } from '../../app-inbox/app-inbox-registration-codecs.ts';
-import type { AdminOperationsPruner } from '../admin-operations-service.ts';
+import type { AdminExpiredDataPruner } from '../admin-expired-data-pruner.ts';
 import { toAdminPruneExpiredOptions } from '../admin-prune-options.ts';
 import { toAdminPruneOutbox } from '../prune/admin-prune-page-codec.ts';
 import {
@@ -95,7 +95,7 @@ export interface AppAdminInboxServiceDependencies {
     readonly resourceInboxRepository: AppInboxEntryRepository;
     readonly resourceInboxResultsRepository: AppInboxResultRepository;
     readonly database: PSqlSql;
-    readonly pruner: Pick<AdminOperationsPruner, 'countExpired'>;
+    readonly pruner: Pick<AdminExpiredDataPruner, 'countExpired'>;
     readonly readAuthority: AdminPruneAuthorityReader;
     readonly wakeQueueEngine: () => void;
     readonly computeRetryExpiryAtEpochMs: (capturedAtEpochMs: number) => number;

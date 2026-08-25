@@ -1,5 +1,5 @@
-import { PSqlAdminOperationsStatsReader } from '@shared-server/postgres/admin-operations/PSqlAdminOperationsStatsReader.ts';
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
+import { PSqlAdminStateReader } from '@shared-server/rallar-system/admin-operations/postgres/p-sql-admin-state-reader.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import { describe, expect, it } from 'vitest';
 
@@ -54,9 +54,9 @@ describe('Postgres runtime-state prefix collation', () => {
 
     it('uses bytewise ordering for scoped admin runtime-state reads', async () => {
         const captured = captureQueries();
-        const reader = new PSqlAdminOperationsStatsReader(captured.sql, { now: () => 1_000 });
+        const reader = new PSqlAdminStateReader(captured.sql, { nowEpochMs: () => 1_000 });
 
-        await reader.readState({
+        await reader.execute({
             adminSession: {
                 clientId: 'admin',
                 username: 'admin',

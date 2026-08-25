@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 
-import { PSqlAdminOperationsStatsReader } from '@shared-server/postgres/admin-operations/PSqlAdminOperationsStatsReader.ts';
+import { PSqlAdminStateReader } from '@shared-server/rallar-system/admin-operations/postgres/p-sql-admin-state-reader.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 
 import type { PGliteSql } from '../../src/db/pglite-sql-adapter.ts';
@@ -37,10 +37,10 @@ Deno.test('PGlite scoped admin client metrics exclude noncanonical and mismatche
 });
 
 async function readAdminState(sql: PGliteSql, scope?: StateScope) {
-    const reader = new PSqlAdminOperationsStatsReader(sql, {
-        now: () => 1_700_000_000_000
+    const reader = new PSqlAdminStateReader(sql, {
+        nowEpochMs: () => 1_700_000_000_000
     });
-    return await reader.readState({ adminSession: createAdminSession(), scope });
+    return await reader.execute({ adminSession: createAdminSession(), scope });
 }
 
 async function insertCorruptAdminClientRows(

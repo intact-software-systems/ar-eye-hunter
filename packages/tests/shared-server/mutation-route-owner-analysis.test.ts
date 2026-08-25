@@ -6,7 +6,6 @@ import * as boundaryAnalysis from './mutation-boundary-analysis.ts';
 import * as routingContract from './mutation-routing-inventory.ts';
 
 const AUTHORISED_WS_HELPER = 'packages/shared-server/rallar-system/client-state/inbox/authorised-ws-client-app-inbox.ts';
-const ADMIN_OPERATIONS = 'packages/shared-server/rallar-system/admin-operations/admin-operations-service.ts';
 
 describe('Mutation route owner analysis contracts', () => {
     it('uses one named readonly input object for each authorised websocket enqueue helper', () => {
@@ -42,25 +41,6 @@ describe('Mutation route owner analysis contracts', () => {
         expect(read(AUTHORISED_WS_HELPER)).toContain(
             'interface ToAuthorisedWsClientDisconnectEnqueueInput'
         );
-    });
-
-    it('requires the admin mutation gateway and contains no direct-write fallback', () => {
-        const source = read(ADMIN_OPERATIONS);
-
-        expect(source).toContain('mutationGateway: AdminOperationsMutationGateway;');
-        expect(source).not.toContain('mutationGateway?:');
-        expect(source).not.toContain('if (this.options.mutationGateway)');
-        for (
-            const directFallback of [
-                'this.options.topologyManagement?.reconfigureGroupTopology(',
-                'this.options.pruner.pruneExpired(',
-                'this.options.crdtAdminRepository?.writeSnapshot',
-                'this.options.crdtAdminRepository?.updateDocumentLifecycle(',
-                'createRallarCrdtErasureAuditEvent('
-            ]
-        ) {
-            expect(source, directFallback).not.toContain(directFallback);
-        }
     });
 
     it('exports a syntax-aware analyzer for named, default, namespace, dynamic, and alias evasions', () => {

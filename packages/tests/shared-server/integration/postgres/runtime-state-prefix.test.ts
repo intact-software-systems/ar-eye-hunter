@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { PSqlAdminOperationsStatsReader } from '@shared-server/postgres/admin-operations/PSqlAdminOperationsStatsReader.ts';
+import { PSqlAdminStateReader } from '@shared-server/rallar-system/admin-operations/postgres/p-sql-admin-state-reader.ts';
 import { clientStateWorkspaceStorageKey } from '@shared-server/rallar-system/client-state/persistence/client-state-storage-keys.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import type { AuditStamp, Group, GroupMember, GroupPresenceSession, GroupRef } from '@shared/api/group-types.ts';
@@ -194,9 +194,9 @@ describe('Postgres runtime-state prefix selection', () => {
                 FUTURE_MS
             );
 
-            const state = await new PSqlAdminOperationsStatsReader(sql, {
-                now: () => nowEpochMs
-            }).readState({
+            const state = await new PSqlAdminStateReader(sql, {
+                nowEpochMs: () => nowEpochMs
+            }).execute({
                 adminSession: {
                     clientId: 'platform-admin',
                     username: 'admin',

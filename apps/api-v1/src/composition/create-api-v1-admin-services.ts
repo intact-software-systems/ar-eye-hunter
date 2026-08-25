@@ -1,7 +1,6 @@
-import { PSqlAdminOperationsStatsReader } from '@shared-server/postgres/admin-operations/PSqlAdminOperationsStatsReader.ts';
 import { PSqlAdminSupportReader } from '@shared-server/postgres/admin-support/PSqlAdminSupportReader.ts';
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
-import { AdminOperationsService } from '@shared-server/rallar-system/admin-operations/admin-operations-service.ts';
+import type { AdminOperationUseCases } from '@shared-server/rallar-system/admin-operations/admin-operation-use-cases.ts';
 import type {
     AdminSupportTopologyQuery,
     AdminSupportUseCases
@@ -24,26 +23,13 @@ import type { RallarCrdtAdminReadRepository } from '@shared/crdt/mod.ts';
 import type { JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.ts';
 
 import {
-    createApiAdminMutationGateway,
-    type ApiAdminPruneMutationPort,
-    type ApiTopologyRecomputeMutationPort
-} from '../admin-operations/create-api-admin-mutation-gateway.ts';
+    createApiV1AdminOperationUseCases,
+    type CreateApiV1AdminOperationUseCasesInput
+} from '../admin-operations/create-api-v1-admin-operation-use-cases.ts';
 import type { ApiV1DatabaseConfiguration } from '../configuration/api-v1-configuration.ts';
 import type { CrdtAdminMutations } from '../crdt/create-crdt-admin-mutations.ts';
 
-export interface CreateApiV1AdminServicesInput {
-    readonly database: PSqlSql;
-    readonly databaseMode: ApiV1DatabaseConfiguration['mode'];
-    readonly databasePubSubMode: ApiV1DatabaseConfiguration['pubSub'];
-    readonly nowEpochMs: () => number;
-    readonly serviceId: string;
-    readonly timing: RallarTimingSink;
-    readonly readWebSocketStatus: () => RallarServerWsStatus;
-    readonly readRtcTopologyMetrics: () => object;
-    readonly resetRtcTopologyMetrics: () => void;
-    readonly readGroupFormationMetrics: RallarGroupFormationMetricsRecorder['readMetrics'];
-    readonly resetGroupFormationMetrics: RallarGroupFormationMetricsRecorder['resetMetrics'];
-    readonly crdtAdminRepository: RallarCrdtAdminReadRepository;
+export interface CreateApiV1AdminServicesInput extends CreateApiV1AdminOperationUseCasesInput {
     readonly topologyQuery: AdminSupportTopologyQuery;
     readonly clientStateService: Pick<ClientStateService, 'readSnapshot' | 'readPresenceSnapshot' | 'listRecentEvents'>;
     readonly groupStateService: Pick<
@@ -55,13 +41,10 @@ export interface CreateApiV1AdminServicesInput {
         | 'listSnapshotsPage'
         | 'listEvents'
     >;
-    readonly appAdminInboxService: ApiAdminPruneMutationPort;
-    readonly crdtAdminMutations: CrdtAdminMutations;
-    readonly topologyInboxService: ApiTopologyRecomputeMutationPort;
 }
 
 export interface ApiV1AdminServices {
-    readonly operations: AdminOperationsService;
+    readonly operations: AdminOperationUseCases;
     readonly support: AdminSupportUseCases;
     readonly statistics: SpaStatisticsUseCases;
 }
@@ -71,29 +54,7 @@ export function createApiV1AdminServices(
 ): ApiV1AdminServices {
     const readWebSocketStatus = input.readWebSocketStatus;
     return {
-        operations: new AdminOperationsService({
-            now: input.nowEpochMs,
-            serverId: input.serviceId,
-            statsReader: new PSqlAdminOperationsStatsReader(input.database, {
-                now: input.nowEpochMs,
-                serverId: input.serviceId,
-                sqlBackend: input.databaseMode,
-                dbPubSub: input.databasePubSubMode
-            }),
-            wsStatus: readWebSocketStatus,
-            readRtcTopologyMetrics: input.readRtcTopologyMetrics,
-            resetRtcTopologyMetrics: input.resetRtcTopologyMetrics,
-            readGroupFormationMetrics: input.readGroupFormationMetrics,
-            resetGroupFormationMetrics: input.resetGroupFormationMetrics,
-            crdtAdminRepository: input.crdtAdminRepository,
-            mutationGateway: createApiAdminMutationGateway({
-                appAdmin: input.appAdminInboxService,
-                crdtAdminMutations: input.crdtAdminMutations,
-                topologyInbox: input.topologyInboxService,
-                now: input.nowEpochMs
-            }),
-            timing: input.timing
-        }),
+        operations: createApiV1AdminOperationUseCases(input),
         support: createAdminSupportUseCases({
             now: input.nowEpochMs,
             serverId: input.serviceId,

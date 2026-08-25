@@ -1,13 +1,13 @@
-import { PSqlAdminOperationsPruner } from '@shared-server/postgres/admin-operations/p-sql-admin-operations-pruner.ts';
+import { PSqlAdminExpiredDataPruner } from '@shared-server/rallar-system/admin-operations/postgres/p-sql-admin-expired-data-pruner.ts';
 import assert from 'node:assert/strict';
 
 import type { PGliteSql } from '../../src/db/pglite-sql-adapter.ts';
 import { createApiV1TestPGliteDatabaseLifecycle } from './api-v1-test-pglite-database.ts';
 
-Deno.test('PSqlAdminOperationsPruner counts only expired supported rows', async () => {
+Deno.test('PostgreSQL admin expiry reader counts only expired supported rows', async () => {
     await withPGliteSql(async (sql) => {
         await seedSupportedPruneRows(sql);
-        const pruner = new PSqlAdminOperationsPruner(sql);
+        const pruner = new PSqlAdminExpiredDataPruner(sql);
         const cutoff = { cutoffEpochMs: Date.now() };
 
         assert.equal(await pruner.countExpired('runtime-state', cutoff), 1);

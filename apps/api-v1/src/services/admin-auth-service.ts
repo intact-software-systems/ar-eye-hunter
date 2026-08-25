@@ -1,16 +1,16 @@
-import type { AuthSession } from '@shared/api/api-config.ts';
+import type { IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
 
 export type ApiAdminAuthDependencies = Readonly<{
     adminClientIds: readonly string[];
     requireApiAuthSession: (
         req: { header(name: string): string | undefined; }
-    ) => Promise<AuthSession>;
+    ) => Promise<IssuedAuthSession>;
 }>;
 
 export async function requireApiAdminSession(
     req: { header(name: string): string | undefined; },
     dependencies: ApiAdminAuthDependencies
-): Promise<AuthSession> {
+): Promise<IssuedAuthSession> {
     const session = await dependencies.requireApiAuthSession(req);
 
     if (!dependencies.adminClientIds.includes(session.clientId)) {
