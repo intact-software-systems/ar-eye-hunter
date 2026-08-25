@@ -290,16 +290,20 @@ async function initialiseBrowserRtcTransport(
         iceCandidates
     );
     const webRtcOverlayMulticastManager = rtcEngine.initialiseRtcOverlayMulticastManager(
-        webRtcConnectionService,
-        input.webSocketTransport.qboxEngine,
-        toResilienceDto(),
-        { outboundDiagnostics: input.options.outboundDiagnostics }
+        {
+            webRtcConnectionService,
+            qboxEngine: input.webSocketTransport.qboxEngine,
+            resilience: toResilienceDto(),
+            outboundDiagnostics: input.options.outboundDiagnostics
+        }
     );
     const rtcRxStreamer = rtcEngine.initialiseRtcRxStreamer(
-        webRtcOverlayMulticastManager,
-        input.webSocketTransport.qboxEngine,
-        input.clientData,
-        toResilienceDto()
+        {
+            webRtcOverlayMulticastManager,
+            qboxEngine: input.webSocketTransport.qboxEngine,
+            clientData: input.clientData,
+            resilience: toResilienceDto()
+        }
     );
     registerBrowserRttEgress(input, rtcRxStreamer);
     registerBrowserRtcPeerStreaming(webRtcConnectionService, rtcRxStreamer);
@@ -320,19 +324,17 @@ function initialiseBrowserRtcConnection(
     input: InitialiseBrowserRtcTransportInput,
     iceCandidates: IceConfig
 ): Promise<WebRtcConnectionService> {
-    return rtcEngine.initialiseRtcConnectionService(
-        input.webSocketTransport.webSocketQueueBox,
-        input.webSocketTransport.qboxEngine,
-        input.clientData,
+    return rtcEngine.initialiseRtcConnectionService({
+        webSocketQueueBox: input.webSocketTransport.webSocketQueueBox,
+        qboxEngine: input.webSocketTransport.qboxEngine,
+        clientData: input.clientData,
         iceCandidates,
-        'rtc-data-channel',
-        input.rtcSignalingTopicId,
-        {
-            dataChannelLanes: input.options.dataChannelLanes ??
-                [DEFAULT_REALTIME_DATA_CHANNEL_LANE],
-            maxPeerConnections: input.options.maxPeerConnections
-        }
-    );
+        dataChannelName: 'rtc-data-channel',
+        rtcSignalingTopicId: input.rtcSignalingTopicId,
+        dataChannelLanes: input.options.dataChannelLanes ??
+            [DEFAULT_REALTIME_DATA_CHANNEL_LANE],
+        maxPeerConnections: input.options.maxPeerConnections
+    });
 }
 
 function registerBrowserRttEgress(
