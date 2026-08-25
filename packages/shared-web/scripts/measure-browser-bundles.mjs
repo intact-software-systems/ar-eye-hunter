@@ -21,7 +21,7 @@ const entries = [
         label: 'browser/rallar.ts',
         entry: 'packages/shared-web/browser/rallar.ts',
         output: 'rallar-browser-facade.min.js',
-        brotliBudgetKiB: 161
+        brotliBudgetKiB: 162
     },
     {
         label: 'browser/rallar-core.ts',

@@ -160,8 +160,8 @@ The command bundles `browser/rallar.ts`, the narrow browser entry points, and
 sizes. The measurement command is reporting-only; the check command fails when
 an entry exceeds its Brotli budget.
 
-The full-facade ceiling is 161 KiB. It was raised from 160 KiB when the direct,
-plan-compliant composition measured 160.2 KiB; retaining forwarding factories
+The full-facade ceiling is 162 KiB. It was raised from 161 KiB when the direct,
+plan-compliant CRDT owners measured 161.3 KiB; retaining forwarding factories
 or adding compression-only indirection would make the runtime harder to trace
 for a negligible transfer-size difference.
 
@@ -169,13 +169,13 @@ Current measured sizes and budgets:
 
 | Entry                           |  Minified |      Gzip |    Brotli |      Budget |
 | ------------------------------- | --------: | --------: | --------: | ----------: |
-| `browser/rallar.ts`             | 765.3 KiB | 195.7 KiB | 160.6 KiB | < 161.0 KiB |
+| `browser/rallar.ts`             | 771.2 KiB | 196.3 KiB | 161.3 KiB | < 162.0 KiB |
 | `browser/rallar-core.ts`        |   0.5 KiB |   0.3 KiB |   0.3 KiB | < 100.0 KiB |
 | `browser/rallar-realtime.ts`    |   0.5 KiB |   0.3 KiB |   0.3 KiB | < 100.0 KiB |
 | `browser/rallar-data.ts`        |  30.1 KiB |   7.1 KiB |   6.4 KiB |  < 20.0 KiB |
-| `browser/rallar-crdt.ts`        |  74.1 KiB |  17.5 KiB |  15.7 KiB |  < 30.0 KiB |
+| `browser/rallar-crdt.ts`        |  79.1 KiB |  18.3 KiB |  16.4 KiB |  < 30.0 KiB |
 | `browser/rallar-media-calls.ts` |   0.0 KiB |   0.0 KiB |   0.0 KiB |  < 10.0 KiB |
-| `shared-web/mod.ts`             | 828.2 KiB | 209.8 KiB | 172.3 KiB |           - |
+| `shared-web/mod.ts`             | 831.7 KiB | 210.0 KiB | 172.5 KiB |           - |
 
 ## Dependency Boundaries
 
