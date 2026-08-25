@@ -1,4 +1,4 @@
-import { notifyListener } from '@shared-web/browser/rallar-runtime/subscriptions.ts';
+import { notifyListener } from '@shared-web/browser/messages/rallar-listener-delivery.ts';
 import type {
     RallarOnChangeOptions,
     RallarStateListener,
@@ -10,7 +10,7 @@ import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import { isGroupActive, isSessionInGroup, readGroupVersion } from '@shared/api/group-client-views.ts';
 import { DEFAULT_STATE_WORKSPACE_ID } from '@shared/api/state-types.ts';
 
-import type { RallarStateCacheReadPort } from '../rallar-runtime/state-store.ts';
+import type { RallarStateCacheReadPort } from '../state-cache/rallar-state-store.ts';
 import type { RallarRoomState } from './rallar-room-contracts.ts';
 import {
     toRallarRoomState,

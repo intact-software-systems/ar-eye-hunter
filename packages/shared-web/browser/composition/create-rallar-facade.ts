@@ -7,13 +7,13 @@ import {
     type BrowserMediaComposition,
     type BrowserMessagingComposition,
     type BrowserRealtimeCoreComposition
-} from './composition/browser-communication-composition.ts';
-import { createBrowserFacadeAssembly } from './composition/browser-facade-assembly.ts';
+} from './browser-communication-composition.ts';
+import { createBrowserFacadeAssembly } from './browser-facade-assembly.ts';
 import {
     registerBrowserMediaLifecycle,
     registerBrowserStateLifecycle,
     registerBrowserTransportLifecycle
-} from './composition/browser-lifecycle-composition.ts';
+} from './browser-lifecycle-composition.ts';
 import {
     createBrowserCallsComposition,
     createBrowserDirectorComposition,
@@ -23,7 +23,7 @@ import {
     type BrowserDirectorComposition,
     type BrowserPeopleStatsComposition,
     type BrowserRoomsComposition
-} from './composition/browser-product-composition.ts';
+} from './browser-product-composition.ts';
 import {
     createBrowserRuntimeFoundation,
     createBrowserStateComposition,
@@ -31,7 +31,7 @@ import {
     type BrowserRuntimeFoundation,
     type BrowserStateComposition,
     type BrowserStateEventComposition
-} from './composition/browser-runtime-composition.ts';
+} from './browser-runtime-composition.ts';
 import {
     createBrowserCrdtComposition,
     createBrowserSessionCoreComposition,
@@ -39,7 +39,7 @@ import {
     type BrowserCrdtComposition,
     type BrowserSessionCoreComposition,
     type BrowserStartupComposition
-} from './composition/browser-session-composition.ts';
+} from './browser-session-composition.ts';
 
 interface BrowserFacadeCompositions {
     readonly session: BrowserSessionCoreComposition;

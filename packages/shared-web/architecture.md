@@ -41,15 +41,16 @@ Use the smallest browser entry point that matches the feature area.
 ## Browser Facade Runtime
 
 `browser/rallar.ts` owns the full browser facade and delegates construction to
-[`createRallarFacade`](./browser/rallar-runtime/composition.ts#L58).
-Implementation lives in capability controllers under `browser/rallar-runtime/`
-and in feature-owned `browser/calls/`, `browser/connection/`,
+[`createRallarFacade`](./browser/composition/create-rallar-facade.ts).
+Top-to-bottom construction and facade assembly live under
+`browser/composition/`. Runtime behavior stays with the feature-owned
+`browser/calls/`, `browser/connection/`,
 `browser/director/`, `browser/media/`, `browser/messages/`,
-`browser/realtime/`, `browser/rooms/`, `browser/rtc-diagnostics/`,
-`browser/rtc/`, and `browser/session/` modules. Game match lifecycle, egress,
-director, relay, and
-status owners live under `game/`. Public barrels and narrow entry points do not
-export those private runtime owners.
+`browser/people/`, `browser/realtime/`, `browser/rooms/`,
+`browser/rtc-diagnostics/`, `browser/rtc/`, `browser/session/`, and
+`browser/state-cache/` modules. Game match lifecycle, egress, director, relay,
+and status owners live under `game/`. Public barrels and narrow entry points do
+not export those private runtime owners.
 
 Public capability contracts stay beside their canonical browser capability:
 message, people, room, auth, connection, calls, director, realtime, media, and

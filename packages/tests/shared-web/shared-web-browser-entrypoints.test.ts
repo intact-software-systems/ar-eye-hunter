@@ -79,6 +79,47 @@ const PUBLIC_FACADE_MODULES = [
     'packages/shared-web/browser/rallar-rtc-facade.ts'
 ] as const;
 
+const PRIVATE_BROWSER_OWNER_DIRECTORIES = [
+    'api',
+    'auth',
+    'calls',
+    'composition',
+    'connection',
+    'crdt',
+    'data',
+    'director',
+    'media',
+    'messages',
+    'people',
+    'realtime',
+    'rooms',
+    'rtc',
+    'rtc-diagnostics',
+    'session',
+    'state-cache',
+    'state-read',
+    'stats',
+    'websocket'
+] as const;
+
+const AGGREGATE_FACADE_OWNERS = new Set([
+    'packages/shared-web/browser/composition/browser-facade-assembly.ts',
+    'packages/shared-web/browser/composition/create-rallar-facade.ts'
+]);
+
+const PRIVATE_RUNTIME_MODULE_SEGMENTS = [
+    '/composition/',
+    '/connection/browser-transport-runtime.ts',
+    '/connection/rallar-wait-timeout.ts',
+    '/messages/rallar-listener-delivery.ts',
+    '/people/browser-rallar-people-events.ts',
+    '/rooms/rallar-room-validation.ts',
+    '/session/rallar-lifecycle-coordinator.ts',
+    '/session/rallar-session-controller.ts',
+    '/session/rallar-startup-controller.ts',
+    '/state-cache/rallar-state-store.ts'
+] as const;
+
 describe('shared-web browser entrypoints', () => {
     for (const entrypoint of BROWSER_ENTRYPOINTS) {
         it(`exposes the intended runtime exports from ${entrypoint.moduleId}`, async () => {
@@ -121,55 +162,39 @@ describe('shared-web browser entrypoints', () => {
         expect(references).toEqual([]);
     });
 
-    it('keeps runtime controllers independent from the full facade entrypoint', () => {
-        const runtimeFiles = readdirSync(
-            path.resolve('packages/shared-web/browser/rallar-runtime')
-        ).filter((fileName) => fileName.endsWith('.ts'));
-        const references = runtimeFiles.flatMap((fileName) =>
+    it('keeps feature owners independent from the full facade entrypoint', () => {
+        const references = collectPrivateBrowserOwnerFiles().flatMap((filePath) =>
             collectFullFacadeReferences(
-                readSourceAnalysis(
-                    `packages/shared-web/browser/rallar-runtime/${fileName}`
-                )
-            ).map((reference) => `${fileName}: ${reference}`)
+                readSourceAnalysis(filePath)
+            ).map((reference) => `${filePath}: ${reference}`)
         );
 
         expect(references).toEqual([]);
     });
 
-    it('keeps runtime controllers independent from the aggregate contract', () => {
-        const allowedFiles = new Set(['composition.ts']);
-        const runtimeFiles = readdirSync(
-            path.resolve('packages/shared-web/browser/rallar-runtime')
-        ).filter(
-            (fileName) => fileName.endsWith('.ts') && !allowedFiles.has(fileName)
-        );
-        const references = runtimeFiles.flatMap((fileName) =>
-            collectModuleReferences(
-                readSourceAnalysis(
-                    `packages/shared-web/browser/rallar-runtime/${fileName}`
-                ),
-                '@shared-web/browser/rallar-facade-contract.ts'
-            ).map((reference) => `${fileName}: ${reference}`)
-        );
+    it('keeps feature owners independent from the aggregate contract', () => {
+        const references = collectPrivateBrowserOwnerFiles()
+            .filter((filePath) => !AGGREGATE_FACADE_OWNERS.has(filePath))
+            .flatMap((filePath) =>
+                collectModuleReferences(
+                    readSourceAnalysis(filePath),
+                    '@shared-web/browser/rallar-facade-contract.ts'
+                ).map((reference) => `${filePath}: ${reference}`)
+            );
 
         expect(references).toEqual([]);
     });
 
     it('keeps mutable state-cache access inside the state store', () => {
-        const allowedFiles = new Set(['state-store.ts']);
-        const runtimeFiles = readdirSync(
-            path.resolve('packages/shared-web/browser/rallar-runtime')
-        ).filter(
-            (fileName) => fileName.endsWith('.ts') && !allowedFiles.has(fileName)
-        );
-        const references = runtimeFiles.flatMap((fileName) =>
-            collectModuleReferences(
-                readSourceAnalysis(
-                    `packages/shared-web/browser/rallar-runtime/${fileName}`
-                ),
-                '@shared-web/browser/state-cache/browser-state-cache-lifecycle.ts'
-            ).map((reference) => `${fileName}: ${reference}`)
-        );
+        const stateStorePath = 'packages/shared-web/browser/state-cache/rallar-state-store.ts';
+        const references = collectPrivateBrowserOwnerFiles()
+            .filter((filePath) => filePath !== stateStorePath)
+            .flatMap((filePath) =>
+                collectModuleReferences(
+                    readSourceAnalysis(filePath),
+                    '@shared-web/browser/state-cache/browser-state-cache-lifecycle.ts'
+                ).map((reference) => `${filePath}: ${reference}`)
+            );
 
         expect(references).toEqual([]);
     });
@@ -209,7 +234,28 @@ function collectInternalRuntimeExports(
 ): readonly string[] {
     return sourceFile.exports
         .flatMap((entry) => (entry.specifier ? [entry.specifier] : []))
-        .filter((moduleSpecifier) => moduleSpecifier.includes('/rallar-runtime/'));
+        .filter((moduleSpecifier) => PRIVATE_RUNTIME_MODULE_SEGMENTS.some((segment) => moduleSpecifier.includes(segment)));
+}
+
+function collectPrivateBrowserOwnerFiles(): readonly string[] {
+    return PRIVATE_BROWSER_OWNER_DIRECTORIES.flatMap((directoryName) =>
+        collectTypeScriptSourceFiles(
+            `packages/shared-web/browser/${directoryName}`
+        )
+    );
+}
+
+function collectTypeScriptSourceFiles(directoryPath: string): readonly string[] {
+    return readdirSync(path.resolve(directoryPath), { withFileTypes: true })
+        .flatMap((entry) => {
+            const entryPath = path.join(directoryPath, entry.name);
+            if (entry.isDirectory()) {
+                return collectTypeScriptSourceFiles(entryPath);
+            }
+            return entry.isFile() && entry.name.endsWith('.ts')
+                ? [entryPath]
+                : [];
+        });
 }
 
 function collectModuleReferences(

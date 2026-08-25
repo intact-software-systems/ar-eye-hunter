@@ -1,8 +1,8 @@
 import { BrowserTransportRuntime } from '@shared-web/browser/connection/browser-transport-runtime.ts';
 import type { Middleware } from '@shared-web/browser/middleware.ts';
 import { BrowserFacadeRuntimeState } from '@shared-web/browser/rallar-runtime-context.ts';
-import { createRallarLifecycleCoordinator } from '@shared-web/browser/rallar-runtime/lifecycle.ts';
-import { createRallarSessionController } from '@shared-web/browser/rallar-runtime/session.ts';
+import { createRallarLifecycleCoordinator } from '@shared-web/browser/session/rallar-lifecycle-coordinator.ts';
+import { createRallarSessionController } from '@shared-web/browser/session/rallar-session-controller.ts';
 import { BrowserSessionConnectionLifecycle, type RallarSessionConnectionInput } from '@shared-web/browser/session/session-connection-lifecycle.ts';
 import { describe, expect, it, vi } from 'vitest';
 import { createApiMiddlewareTestDouble } from '../api-middleware-test-double.ts';

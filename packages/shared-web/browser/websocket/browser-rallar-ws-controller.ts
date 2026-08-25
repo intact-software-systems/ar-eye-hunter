@@ -1,4 +1,6 @@
 import type { ApiMiddleware } from '@shared-web/browser/app-context.ts';
+import { normalizeWaitTimeoutMs } from '@shared-web/browser/connection/rallar-wait-timeout.ts';
+import { notifyListener } from '@shared-web/browser/messages/rallar-listener-delivery.ts';
 import type { RallarConnectStatus } from '@shared-web/browser/rallar-connection-facade.ts';
 import type {
     RallarWsFacade,
@@ -9,8 +11,6 @@ import type {
     RallarWsWaitForOpenResult
 } from '@shared-web/browser/rallar-realtime-facade.ts';
 import type { RallarWaitForOpenOptions, RallarWaitForOpenStatus } from '@shared-web/browser/rallar-rtc-facade.ts';
-import { notifyListener } from '@shared-web/browser/rallar-runtime/subscriptions.ts';
-import { normalizeWaitTimeoutMs } from '@shared-web/browser/rallar-runtime/wait.ts';
 import type { RallarOnChangeOptions, RallarUnsubscribe } from '@shared-web/browser/rallar-shared-contracts.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { WebSocketClientCallbacks } from '@shared/websocket/JsonWebSocketClient.ts';

@@ -6,16 +6,16 @@ import type {
     RallarBrowserFacadeRuntimeContext,
     RallarConnectionRuntimePort
 } from '@shared-web/browser/rallar-runtime-context.ts';
-import type { RallarLifecycleCoordinator } from '@shared-web/browser/rallar-runtime/lifecycle.ts';
+import type { RallarAuthFacade } from '@shared-web/browser/session/rallar-auth-facade.ts';
+import type { RallarLifecycleCoordinator } from '@shared-web/browser/session/rallar-lifecycle-coordinator.ts';
 import {
     createRallarSessionController,
     type RallarSessionController
-} from '@shared-web/browser/rallar-runtime/session.ts';
+} from '@shared-web/browser/session/rallar-session-controller.ts';
 import {
     createRallarStartupController,
     type RallarStartupController
-} from '@shared-web/browser/rallar-runtime/startup.ts';
-import type { RallarAuthFacade } from '@shared-web/browser/session/rallar-auth-facade.ts';
+} from '@shared-web/browser/session/rallar-startup-controller.ts';
 import {
     createRallarSessionIdentity,
     type RallarSessionIdentity

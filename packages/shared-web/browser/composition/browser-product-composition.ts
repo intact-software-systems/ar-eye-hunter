@@ -8,12 +8,12 @@ import type { RallarDirectorFacade } from '@shared-web/browser/director/rallar-d
 import { BrowserRallarPeopleRuntime } from '@shared-web/browser/people/browser-rallar-people-runtime.ts';
 import type { RallarPeopleOperations } from '@shared-web/browser/people/rallar-people-contracts.ts';
 import type { RallarCallsFacade } from '@shared-web/browser/rallar-calls-facade.ts';
-import type { RallarSessionController } from '@shared-web/browser/rallar-runtime/session.ts';
 import { createBrowserRallarRooms, type BrowserRallarRooms } from '@shared-web/browser/rooms/browser-rallar-rooms.ts';
+import type { RallarSessionController } from '@shared-web/browser/session/rallar-session-controller.ts';
 import { BrowserRallarStatsRuntime } from '@shared-web/browser/stats/browser-rallar-stats-runtime.ts';
 import type { RallarStatsOperations } from '@shared-web/browser/stats/rallar-stats-operations.ts';
 import { readSession } from '@shared/api/auth.ts';
-import type { RallarTargetedChannelDefinition } from '../../rallar-facade-contract.ts';
+import type { RallarTargetedChannelDefinition } from '../rallar-facade-contract.ts';
 
 import type {
     BrowserMediaComposition,

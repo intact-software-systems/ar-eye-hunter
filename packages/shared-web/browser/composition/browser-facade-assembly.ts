@@ -19,6 +19,7 @@ import type {
     BrowserStartupComposition
 } from './browser-session-composition.ts';
 
+/** Completed feature capabilities needed to expose the aggregate browser facade. */
 export interface CreateBrowserFacadeAssemblyInput {
     readonly session: BrowserSessionCoreComposition;
     readonly startup: BrowserStartupComposition;

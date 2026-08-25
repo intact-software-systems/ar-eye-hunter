@@ -1,5 +1,6 @@
 import type { ApiMiddleware } from '@shared-web/browser/app-context.ts';
 import type { RallarStateEventListener } from '@shared-web/browser/messages/rallar-message-contracts.ts';
+import type { RallarStateEventsPort } from '@shared-web/browser/people/browser-rallar-people-events.ts';
 import type {
     RallarListPeopleEventsOptions,
     RallarPeopleEventOptions,
@@ -10,17 +11,16 @@ import type {
 } from '@shared-web/browser/people/rallar-people-contracts.ts';
 import type { RallarScopedOperationOptions } from '@shared-web/browser/rallar-connection-facade.ts';
 import { toRallarWorkflowPolicies, type RallarOperationOptions } from '@shared-web/browser/rallar-operation-options.ts';
-import type { RallarStateEventsPort } from '@shared-web/browser/rallar-runtime/state-events.ts';
-import type {
-    RallarStatePort,
-    RallarStateSnapshotAcceptanceInput
-} from '@shared-web/browser/rallar-runtime/state-store.ts';
 import type {
     RallarOnChangeOptions,
     RallarReplayEventsResult,
     RallarStateListener,
     RallarUnsubscribe
 } from '@shared-web/browser/rallar-shared-contracts.ts';
+import type {
+    RallarStatePort,
+    RallarStateSnapshotAcceptanceInput
+} from '@shared-web/browser/state-cache/rallar-state-store.ts';
 import { refreshStateSnapshots } from '@shared-web/browser/state-read/refresh-state-snapshots.ts';
 import type { ClientEvent } from '@shared/api/client-types.ts';
 import type { StateEventPage } from '@shared/api/state-event-types.ts';

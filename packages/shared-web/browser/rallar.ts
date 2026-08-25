@@ -1,7 +1,7 @@
+import { createRallarFacade } from '@shared-web/browser/composition/create-rallar-facade.ts';
 import type { RallarFacade } from '@shared-web/browser/rallar-facade-contract.ts';
-import { createRallarFacade } from '@shared-web/browser/rallar-runtime/composition.ts';
 
-export { createRallarFacade } from '@shared-web/browser/rallar-runtime/composition.ts';
+export { createRallarFacade } from '@shared-web/browser/composition/create-rallar-facade.ts';
 
 export {
     createRallarDataFacade,

@@ -1,7 +1,7 @@
 import type { ApiMiddleware } from '@shared-web/browser/app-context.ts';
+import { notifyListener } from '@shared-web/browser/messages/rallar-listener-delivery.ts';
 import type { RallarPeopleState, RallarPerson } from '@shared-web/browser/people/rallar-people-contracts.ts';
 import type { RallarStateRuntimePort } from '@shared-web/browser/rallar-runtime-context.ts';
-import { notifyListener } from '@shared-web/browser/rallar-runtime/subscriptions.ts';
 import type {
     RallarOnChangeOptions,
     RallarStateListener,

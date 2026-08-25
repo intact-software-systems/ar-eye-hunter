@@ -6,6 +6,7 @@ import {
     type RallarValidationIssue
 } from '@shared/api/rallar-validation.ts';
 
+/** Adds route validation failures for an optional room identifier. */
 export function pushOptionalRouteIdIssue(
     value: string | undefined,
     path: string,

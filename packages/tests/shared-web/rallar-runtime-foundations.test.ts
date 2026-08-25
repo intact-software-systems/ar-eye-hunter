@@ -1,10 +1,10 @@
 import { BrowserTransportRuntime } from '@shared-web/browser/connection/browser-transport-runtime.ts';
+import { BrowserRallarSubscriptionScope } from '@shared-web/browser/messages/rallar-listener-delivery.ts';
 import { BrowserFacadeRuntimeState } from '@shared-web/browser/rallar-runtime-context.ts';
-import { createRallarLifecycleCoordinator, type RallarLifecycleParticipant } from '@shared-web/browser/rallar-runtime/lifecycle.ts';
-import { createRallarStateCacheReadPort, RallarStateStore } from '@shared-web/browser/rallar-runtime/state-store.ts';
-import { BrowserRallarSubscriptionScope } from '@shared-web/browser/rallar-runtime/subscriptions.ts';
 import { createRallarFacade } from '@shared-web/browser/rallar.ts';
 import { createRoomStateStore } from '@shared-web/browser/rooms/room-state-store.ts';
+import { createRallarLifecycleCoordinator, type RallarLifecycleParticipant } from '@shared-web/browser/session/rallar-lifecycle-coordinator.ts';
+import { createRallarStateCacheReadPort, RallarStateStore } from '@shared-web/browser/state-cache/rallar-state-store.ts';
 import { createBrowserWebSocketInbox } from '@shared-web/browser/websocket/browser-websocket-inbox.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { describe, expect, it } from 'vitest';

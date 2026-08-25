@@ -3,7 +3,7 @@ import type {
     RallarDirectorStatusListener,
     RallarDirectorStatusOptions
 } from '@shared-web/browser/director/rallar-director-facade.ts';
-import { notifyListener } from '@shared-web/browser/rallar-runtime/subscriptions.ts';
+import { notifyListener } from '@shared-web/browser/messages/rallar-listener-delivery.ts';
 import type { RallarUnsubscribe } from '@shared-web/browser/rallar-shared-contracts.ts';
 import type { RallarRoomStateStorePort } from '@shared-web/browser/rooms/room-state-store.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';

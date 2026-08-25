@@ -5,13 +5,13 @@ import type { RallarMessagesOperations } from '@shared-web/browser/messages/rall
 import type { RallarMediaFacade } from '@shared-web/browser/rallar-media-facade.ts';
 import type { RallarRealtimeFacade } from '@shared-web/browser/rallar-realtime-facade.ts';
 import type { RallarRtcFacade } from '@shared-web/browser/rallar-rtc-facade.ts';
-import type { RallarSessionController } from '@shared-web/browser/rallar-runtime/session.ts';
 import { BrowserRealtimeHealthRuntime } from '@shared-web/browser/realtime/browser-realtime-health-runtime.ts';
 import { BrowserRealtimeReceiveRuntime } from '@shared-web/browser/realtime/browser-realtime-receive-runtime.ts';
 import { BrowserRealtimeSendRuntime } from '@shared-web/browser/realtime/browser-realtime-send-runtime.ts';
 import { BrowserRoomRealtimeRuntime } from '@shared-web/browser/realtime/browser-room-realtime-runtime.ts';
 import { BrowserTargetedRealtimeRuntime } from '@shared-web/browser/realtime/browser-targeted-realtime-runtime.ts';
 import { BrowserRallarRtcController } from '@shared-web/browser/rtc/browser-rallar-rtc-controller.ts';
+import type { RallarSessionController } from '@shared-web/browser/session/rallar-session-controller.ts';
 import {
     BrowserRallarWsController,
     type RallarWsController
@@ -20,7 +20,7 @@ import type { BrowserWebSocketInbox } from '@shared-web/browser/websocket/browse
 import { readSession } from '@shared/api/auth.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import { RALLAR_DEFAULT_MAX_MESSAGE_PAYLOAD_BYTES } from '@shared/api/rallar-validation.ts';
-import type { RallarBrowserFacadeRuntimeContext } from '../../rallar-runtime-context.ts';
+import type { RallarBrowserFacadeRuntimeContext } from '../rallar-runtime-context.ts';
 
 import type { BrowserStateComposition } from './browser-runtime-composition.ts';
 

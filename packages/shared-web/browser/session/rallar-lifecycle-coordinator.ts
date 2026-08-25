@@ -1,5 +1,6 @@
 import type { ApiMiddleware } from '@shared-web/browser/app-context.ts';
 
+/** One ordered participant in the browser session connect/disconnect lifecycle. */
 export interface RallarLifecycleParticipant {
     readonly id: string;
     readonly order: number;

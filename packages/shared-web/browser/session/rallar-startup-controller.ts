@@ -11,6 +11,7 @@ import type { BrowserRallarRooms } from '@shared-web/browser/rooms/browser-ralla
 import type { RallarRoomState } from '@shared-web/browser/rooms/rallar-room-contracts.ts';
 import type { RallarAuthFacade } from '@shared-web/browser/session/rallar-auth-facade.ts';
 
+/** Dependencies for restored-session startup and the setup golden path. */
 export type CreateRallarStartupControllerOptions = Readonly<{
     connection: RallarConnectionOperations;
     auth: RallarAuthFacade;

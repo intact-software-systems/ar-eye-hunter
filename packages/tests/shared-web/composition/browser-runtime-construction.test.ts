@@ -1,4 +1,4 @@
-import { createBrowserRuntimeFoundation } from '@shared-web/browser/rallar-runtime/composition/browser-runtime-composition.ts';
+import { createBrowserRuntimeFoundation } from '@shared-web/browser/composition/browser-runtime-composition.ts';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { configureTestCacheRepositories } from '../../cache-repository-config.ts';

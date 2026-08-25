@@ -5,6 +5,7 @@ import type {
     RallarUnsubscribe
 } from '@shared-web/browser/rallar-shared-contracts.ts';
 
+/** Owns teardown for an application-defined collection of Rallar listeners. */
 export class BrowserRallarSubscriptionScope implements RallarSubscriptionScope {
     private readonly unsubscribers = new Set<RallarUnsubscribe>();
     private closed = false;

@@ -2,6 +2,10 @@ import {
     browserTransportRuntime,
     type BrowserTransportRuntimePort
 } from '@shared-web/browser/connection/browser-transport-runtime.ts';
+import {
+    createRallarStateEvents,
+    type RallarStateEventsPort
+} from '@shared-web/browser/people/browser-rallar-people-events.ts';
 import type { RallarDefaults } from '@shared-web/browser/rallar-connection-facade.ts';
 import {
     BrowserFacadeRuntimeState,
@@ -10,23 +14,19 @@ import {
     type RallarConnectionRuntimePort,
     type RallarStateRuntimePort
 } from '@shared-web/browser/rallar-runtime-context.ts';
+import { createRoomEvents, type RallarRoomEventsPort } from '@shared-web/browser/rooms/room-events.ts';
+import { resolveActiveRoomPeerIds } from '@shared-web/browser/rooms/room-group-state-translation.ts';
+import { createRoomStateStore, type RallarRoomStateStorePort } from '@shared-web/browser/rooms/room-state-store.ts';
 import {
     createRallarLifecycleCoordinator,
     type RallarLifecycleCoordinator
-} from '@shared-web/browser/rallar-runtime/lifecycle.ts';
-import type { RallarSessionController } from '@shared-web/browser/rallar-runtime/session.ts';
-import {
-    createRallarStateEvents,
-    type RallarStateEventsPort
-} from '@shared-web/browser/rallar-runtime/state-events.ts';
+} from '@shared-web/browser/session/rallar-lifecycle-coordinator.ts';
+import type { RallarSessionController } from '@shared-web/browser/session/rallar-session-controller.ts';
 import {
     createRallarStateCacheReadPort,
     RallarStateStore,
     type RallarStatePort
-} from '@shared-web/browser/rallar-runtime/state-store.ts';
-import { createRoomEvents, type RallarRoomEventsPort } from '@shared-web/browser/rooms/room-events.ts';
-import { resolveActiveRoomPeerIds } from '@shared-web/browser/rooms/room-group-state-translation.ts';
-import { createRoomStateStore, type RallarRoomStateStorePort } from '@shared-web/browser/rooms/room-state-store.ts';
+} from '@shared-web/browser/state-cache/rallar-state-store.ts';
 import {
     createBrowserWebSocketInbox,
     type BrowserWebSocketInbox

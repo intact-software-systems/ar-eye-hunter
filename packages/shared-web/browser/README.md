@@ -14,13 +14,13 @@ registration, invocation, and cleanup without consulting a historical plan.
   },
   "results": [
     {
-      "path": "packages/shared-web/browser/rallar-runtime/composition/browser-facade-assembly.ts",
+      "path": "packages/shared-web/browser/composition/browser-facade-assembly.ts",
       "symbol": "createBrowserFacadeAssembly"
     }
   ],
   "failures": [
     {
-      "path": "packages/shared-web/browser/rallar-runtime/session.ts",
+      "path": "packages/shared-web/browser/session/rallar-session-controller.ts",
       "symbol": "createRallarSessionController"
     }
   ]
@@ -29,34 +29,34 @@ registration, invocation, and cleanup without consulting a historical plan.
 
 ## Construction and registration timeline
 
-1. [createRallarFacade](./rallar.ts#L238) delegates to
-   [createRallarFacade](./rallar-runtime/composition.ts#L58).
-2. [createBrowserRuntimeFoundation](./rallar-runtime/composition/browser-runtime-composition.ts#L68)
+1. [createRallarFacade](./rallar.ts) delegates to
+   [createRallarFacade](./composition/create-rallar-facade.ts).
+2. [createBrowserRuntimeFoundation](./composition/browser-runtime-composition.ts)
    creates the per-facade runtime ports and lifecycle coordinator.
-3. [createBrowserStateComposition](./rallar-runtime/composition/browser-runtime-composition.ts#L110)
-   creates [createRallarStateCacheReadPort](./rallar-runtime/state-store.ts#L54)
+3. [createBrowserStateComposition](./composition/browser-runtime-composition.ts)
+   creates [createRallarStateCacheReadPort](./state-cache/rallar-state-store.ts)
    before constructing both the room-state store and aggregate state store from
    that completed cache-read/observation port.
-4. [createBrowserStateEventComposition](./rallar-runtime/composition/browser-runtime-composition.ts#L151)
+4. [createBrowserStateEventComposition](./composition/browser-runtime-composition.ts)
    creates one [createBrowserWebSocketInbox](./websocket/browser-websocket-inbox.ts)
    subscription capability from the completed connection runtime, then gives
    room events and people state events direct access to it.
-5. [createBrowserSessionCoreComposition](./rallar-runtime/composition/browser-session-composition.ts)
+5. [createBrowserSessionCoreComposition](./composition/browser-session-composition.ts)
    creates immutable session identity and Data. The public Data entry owns
    facade and scope lifecycle, while
    [RepositoryBackedRallarDataStore](./data/repository-backed-rallar-data-store.ts)
    owns repository reads, writes, clearing, and disposal. The session composer then
-   [createRallarSessionController](./rallar-runtime/session.ts) constructs the
+   [createRallarSessionController](./session/rallar-session-controller.ts) constructs the
    completed transport-connection lifecycle, auth-session lifecycle, and public
    connection/auth operations in that order before any product consumer receives
    them.
-6. [createBrowserMessagingComposition](./rallar-runtime/composition/browser-communication-composition.ts),
-   [createBrowserRealtimeCoreComposition](./rallar-runtime/composition/browser-communication-composition.ts),
+6. [createBrowserMessagingComposition](./composition/browser-communication-composition.ts),
+   [createBrowserRealtimeCoreComposition](./composition/browser-communication-composition.ts),
    and the granular feature compositions construct completed message, RTC,
    realtime, media, room, people, stats, call, and director capabilities
    directly. No grouping factory sits between a feature owner and the composer.
    Call signal routing lives in
-   [BrowserRallarCallsController](./calls/browser-rallar-calls-controller.ts),
+   [BrowserCallSignalRuntime](./calls/browser-call-signal-runtime.ts),
    while each accepted or started call creates one
    [BrowserCallSessionRuntime](./calls/browser-call-session-runtime.ts).
    Realtime composition delegates inbound subscriptions, sending/target
@@ -66,17 +66,17 @@ registration, invocation, and cleanup without consulting a historical plan.
    construct the public capability from the status, lifecycle, wait/readiness,
    room transport, and recovery owners under [`rtc/`](./rtc/), plus diagnostic
    collection under [`rtc-diagnostics/`](./rtc-diagnostics/).
-7. [createBrowserStartupComposition](./rallar-runtime/composition/browser-session-composition.ts)
-   and [createBrowserCrdtComposition](./rallar-runtime/composition/browser-session-composition.ts)
+7. [createBrowserStartupComposition](./composition/browser-session-composition.ts)
+   and [createBrowserCrdtComposition](./composition/browser-session-composition.ts)
    run only after their completed session, rooms, people, state, and messaging
    dependencies exist.
 8. The composer registers state, transport, and media lifecycle participants through
-   [registerBrowserStateLifecycle](./rallar-runtime/composition/browser-lifecycle-composition.ts#L31),
-   [registerBrowserTransportLifecycle](./rallar-runtime/composition/browser-lifecycle-composition.ts#L47),
+   [registerBrowserStateLifecycle](./composition/browser-lifecycle-composition.ts),
+   [registerBrowserTransportLifecycle](./composition/browser-lifecycle-composition.ts),
    and
-   [registerBrowserMediaLifecycle](./rallar-runtime/composition/browser-lifecycle-composition.ts#L92),
+   [registerBrowserMediaLifecycle](./composition/browser-lifecycle-composition.ts),
    then returns the aggregate facade from
-   [createBrowserFacadeAssembly](./rallar-runtime/composition/browser-facade-assembly.ts#L35).
+   [createBrowserFacadeAssembly](./composition/browser-facade-assembly.ts).
 
 State, state-event, session, and startup construction use completed values:
 neither room state nor room events reads a later-created owner, and the auth
@@ -85,14 +85,14 @@ than a callback to a future controller.
 
 ## State and event invocation timeline
 
-1. [RoomEvents.onEvent](./rooms/room-events.ts#L137) registers a room-event
+1. [RoomEvents.onEvent](./rooms/room-events.ts) registers a room-event
    listener and registers the room-event owner with the completed WS inbox.
 2. [createBrowserWebSocketInbox](./websocket/browser-websocket-inbox.ts) provides the WS inbox that receives
    messages, orders subscribed owners, and invokes the room-event handler.
-3. [RoomEvents.dispatch](./rooms/room-events.ts#L152) validates a group event,
+3. [RoomEvents.dispatch](./rooms/room-events.ts) validates a group event,
    filters it by room and scope, deduplicates it, then notifies matching room
    listeners.
-4. [RallarStateEvents.onPeopleEvent](./rallar-runtime/state-events.ts#L161)
+4. [RallarStateEvents.onPeopleEvent](./people/browser-rallar-people-events.ts)
    registers the separate people-event owner; its WS handler validates,
    filters, deduplicates, and notifies client-event listeners.
 
@@ -131,9 +131,9 @@ the typed result or failure visible without crossing a feature-blind module.
 
 ## Runtime invocation and cleanup timeline
 
-1. [setup](./rallar-runtime/startup.ts) configures
+1. [setup](./session/rallar-startup-controller.ts) configures
    the API base URL and defaults, then starts restored-session work.
-2. [createRallarStartupController](./rallar-runtime/startup.ts)
+2. [createRallarStartupController](./session/rallar-startup-controller.ts)
    restores auth, connects when a session exists, and refreshes the requested
    room/people state.
 3. [BrowserTransportRuntime.init](./connection/browser-transport-runtime.ts)
@@ -193,9 +193,8 @@ Message ownership is concentrated under [`messages/`](./messages/):
   [`to-rallar-message.ts`](./messages/to-rallar-message.ts) keep the public
   contracts and wire-to-facade translation beside those runtime owners.
 
-The former root contract/selector paths and `rallar-runtime/message-conversion`
-path were deleted after every verified consumer moved; no old-path re-export or
-forwarder remains.
+Obsolete contract, selector, and message-conversion paths were deleted after
+every verified consumer moved; no old-path re-export or forwarder remains.
 
 Connection initialization failures leave connection state idle and propagate an
 `Error` to the caller. A 401 additionally ends the captured auth session once.
@@ -208,10 +207,9 @@ or people state through `RallarStartResult`.
 
 The current public browser surface is `rallar.ts`, the five narrow
 `rallar-*` entrypoints, `game/mod.ts`, and package `mod.ts`. Runtime consumers
-follow the feature owners above. The deleted `rallar-runtime/compose.ts`,
-`rallar-runtime/contracts.ts`, room/people/stats forwarding facade modules,
-late-binding `read*`/`bind*` construction hooks, duplicate app-context shutdown
-algorithm, forwarding factories, rename-only aliases, predecessor-only fallback
-modes, and compatibility-only tests for those predecessor paths are not
-navigation paths and have no replacement shim. RTC-with-WS fallback remains
-current message delivery policy; it is not predecessor compatibility behavior.
+follow the feature owners above. Obsolete forwarding facade modules,
+late-binding construction hooks, duplicate shutdown ownership, forwarding
+factories, rename-only aliases, predecessor-only fallback modes, and
+compatibility-only tests are not navigation paths and have no replacement
+shim. RTC-with-WS fallback remains current message delivery policy; it is not
+predecessor compatibility behavior.

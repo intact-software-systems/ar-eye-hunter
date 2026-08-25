@@ -1,4 +1,4 @@
-import { createRallarFacade } from '@shared-web/browser/rallar-runtime/composition.ts';
+import { createRallarFacade } from '@shared-web/browser/composition/create-rallar-facade.ts';
 import { describe, expect, it } from 'vitest';
 
 describe('Rallar realtime default channels', () => {

@@ -1,4 +1,5 @@
 import type { ApiMiddleware } from '@shared-web/browser/app-context.ts';
+import { notifyListener } from '@shared-web/browser/messages/rallar-listener-delivery.ts';
 import type {
     RallarRtcLifecycleKind,
     RallarRtcLifecycleListener,
@@ -7,7 +8,6 @@ import type {
     RallarRtcStatusOptions,
     RallarRtcStatusSubscriptionOptions
 } from '@shared-web/browser/rallar-rtc-facade.ts';
-import { notifyListener } from '@shared-web/browser/rallar-runtime/subscriptions.ts';
 import type { RallarUnsubscribe } from '@shared-web/browser/rallar-shared-contracts.ts';
 import type { QRtcPeerDto } from '@shared/services/WebRtcConnectionService.ts';
 import type { QRtcClientCallbacks } from '@shared/webrtc/QRtcClientCallbacks.ts';
