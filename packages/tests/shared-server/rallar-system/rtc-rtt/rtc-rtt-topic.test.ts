@@ -1,8 +1,11 @@
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import { installRtcRttSystemTopic, type InstallRtcRttSystemTopicOptions } from '@shared-server/rallar-system/rtc-rtt/topic/install-rtc-rtt-system-topic.ts';
-import type { GroupTopologyGroupSnapshotReader } from '@shared-server/rallar-system/topology/group-topology-management-contracts.ts';
 import { RtcTopologyExecutionRepository } from '@shared-server/rallar-system/topology/persistence/rtc-topology-execution-repository.ts';
-import { createGroupTopologyOwners, type GroupTopologyOwners } from '@shared-server/rallar-system/topology/runtime/create-group-topology-owners.ts';
+import type { GroupTopologyGroupSnapshotReader } from '@shared-server/rallar-system/topology/planning/group-topology-planning-contracts.ts';
+import {
+    createGroupTopologyRuntimeOwners,
+    type GroupTopologyRuntimeOwners
+} from '@shared-server/rallar-system/topology/runtime/create-group-topology-runtime-owners.ts';
 import { installTopologyAppOutbox } from '@shared-server/rallar-system/topology/runtime/install-topology-app-outbox.ts';
 import { RallarRtcTopologyService } from '@shared-server/rallar-system/topology/runtime/rallar-rtc-topology-service.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
@@ -547,14 +550,16 @@ function createTopologyExecutionDependencies(runtimeRepository: FakeRuntimeState
 function createTopologyOwners(
     topologyService = new RallarRtcTopologyService(),
     findGroupSnapshotByRef: GroupTopologyGroupSnapshotReader = () => undefined
-): GroupTopologyOwners {
-    return createGroupTopologyOwners({
+): GroupTopologyRuntimeOwners {
+    return createGroupTopologyRuntimeOwners({
         findGroupSnapshotByRef,
+        readCurrentGroupSnapshot: async (ref, knownGroup) => knownGroup ?? await findGroupSnapshotByRef(ref),
+        readRttMeasurements: () => [],
         topologyService
     });
 }
 
-function topologyOptions(owners: GroupTopologyOwners) {
+function topologyOptions(owners: GroupTopologyRuntimeOwners) {
     return {
         topologyQuery: owners.query,
         topologyPlanning: owners.planning

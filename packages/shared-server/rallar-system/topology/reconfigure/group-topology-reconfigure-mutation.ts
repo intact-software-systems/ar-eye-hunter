@@ -10,7 +10,7 @@ import type { GroupStateRepository } from '../../group-state/persistence/group-s
 import { canUpdateGroupSnapshot } from '../../group-state/policy/group-governance-policy.ts';
 import { canMutateActiveGroup } from '../../group-state/policy/group-lifecycle-policy.ts';
 import { GroupPolicyDeniedError } from '../../group-state/policy/group-policy-result.ts';
-import { writeRtcTopologyOutbox } from '../mutation/rtc-topology-outbox-entry.ts';
+import type { RtcTopologyOutboxWriter } from '../mutation/rtc-topology-outbox-writer.ts';
 import type {
     GroupTopologyPlanningAuthority,
     ReadGroupTopologyPlanningAuthorityInput
@@ -27,6 +27,7 @@ export interface GroupTopologyReconfigureMutationDependencies {
         input: ReadGroupTopologyPlanningAuthorityInput
     ) => Promise<GroupTopologyPlanningAuthority>;
     readonly isPlatformAdmin: (principalId: string) => boolean;
+    readonly outboxWriter: RtcTopologyOutboxWriter;
 }
 
 export class GroupTopologyReconfigureMutation {
@@ -112,7 +113,7 @@ export class GroupTopologyReconfigureMutation {
         ) {
             throw new RuntimeStateWriteConflictError();
         }
-        await writeRtcTopologyOutbox(transaction, computed);
+        await this.dependencies.outboxWriter.write(transaction, computed);
     }
 
     private validateActor(

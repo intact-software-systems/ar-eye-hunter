@@ -4,11 +4,12 @@ import type {
     RtcTopologyReplayConsumerInput,
     RtcTopologyReplayCursorCasInput,
     RtcTopologyReplayCursorCasResult,
+    RtcTopologyReplayEntryHandler,
     RtcTopologyReplayPageInput,
-    RtcTopologyReplayPageResult
-} from '@shared-server/rallar-system/topology/replay/rtc-topology-replay-contracts.ts';
-import type { RtcTopologyReplayDiagnosticsEvent } from '@shared-server/rallar-system/topology/replay/rtc-topology-replay-diagnostics.ts';
-import type { RtcTopologyReplayEntryHandler, RtcTopologyReplayPort } from '@shared-server/rallar-system/topology/replay/rtc-topology-replay-service.ts';
+    RtcTopologyReplayPageResult,
+    RtcTopologyReplayPort
+} from '@shared-server/rallar-system/topology/replay/consumer/rtc-topology-replay-contracts.ts';
+import type { RtcTopologyReplayDiagnosticsEvent } from '@shared-server/rallar-system/topology/replay/consumer/rtc-topology-replay-diagnostics.ts';
 import { startApiRtcTopologyReplay } from '../../../apps/api-v1/src/runtime/rtc-topology/rtc-topology-replay-startup.ts';
 
 const STREAM_ID = '00000000-0000-4000-8000-000000000001';

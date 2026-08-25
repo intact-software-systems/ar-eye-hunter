@@ -6,7 +6,6 @@ import type { GroupMutationCommand } from '../../group-state/mutation/group-muta
 import type { GroupLifecyclePolicyRead } from '../../group-state/persistence/group-lifecycle-policy-repository.ts';
 import type { RtcRttRefinementService } from '../../rtc-rtt/topic/rtc-rtt-refinement-service.ts';
 import type { GroupTopologyConfigQueryService } from '../config/group-topology-config-query-service.ts';
-import type { GroupTopologyGroupSnapshotReader } from '../group-topology-management-contracts.ts';
 import {
     createRtcTopologyOutboxPublisher,
     createRtcTopologyWorkHandler,
@@ -14,8 +13,9 @@ import {
     type RtcTopologyWorkPublisher
 } from '../mutation/rtc-topology-outbox-work.ts';
 import type { RtcTopologyExecutionRepository } from '../persistence/rtc-topology-execution-repository.ts';
+import type { GroupTopologyGroupSnapshotReader } from '../planning/group-topology-planning-contracts.ts';
 import type { GroupTopologyPlanningService } from '../planning/group-topology-planning-service.ts';
-import { createFormationTimerWorkHandler } from '../replay/create-formation-timer-work-handler.ts';
+import { createFormationTimerWorkHandler } from '../replay/work/create-formation-timer-work-handler.ts';
 
 export interface InstallTopologyAppOutboxOptions {
     readonly database: PSqlSql;

@@ -29,7 +29,6 @@ import { toTopologyAppInboxCommand } from '@shared-server/rallar-system/topology
 
 import { toTopologyConfigMutationResult } from '@shared-server/rallar-system/topology/config/mutation/to-topology-config-mutation-result.ts';
 
-import { writeTopologyConfigMutation } from '@shared-server/rallar-system/topology/config/mutation/write-topology-config-mutation.ts';
 import type { TopologyAppInboxCommand } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-contracts.ts';
 import {
     decodeTopologyAppInboxResult,
@@ -54,10 +53,6 @@ import type {
 } from '@shared-server/rallar-system/topology/reconfigure/group-topology-reconfigure-contracts.ts';
 import { createTestGroup } from '../../../../create-test-group.ts';
 
-vi.mock(
-    '@shared-server/rallar-system/topology/config/mutation/write-topology-config-mutation.ts',
-    () => ({ writeTopologyConfigMutation: vi.fn() })
-);
 vi.mock(
     '@shared-server/rallar-system/topology/config/mutation/to-topology-config-mutation-result.ts',
     () => ({ toTopologyConfigMutationResult: vi.fn() })
@@ -121,13 +116,14 @@ describe('TopologyAppInboxHandler', () => {
                 }),
                 validate: vi.fn(() => {
                     phases.push('validate');
+                }),
+                write: vi.fn(async () => {
+                    phases.push('write');
+                    return computed.receipt;
                 })
             },
             reconfigureMutation: unusedReconfigureMutation()
         } satisfies TopologyAppInboxMutationOwners;
-        vi.mocked(writeTopologyConfigMutation).mockImplementationOnce(
-            async () => (phases.push('write'), computed.receipt)
-        );
         vi.mocked(toTopologyConfigMutationResult).mockImplementationOnce(
             () => (phases.push('result'), expected)
         );
@@ -182,7 +178,8 @@ describe('TopologyAppInboxHandler', () => {
                             receivedCommandHash: 'sha256:received'
                         }) as const
                 ),
-                validate: vi.fn()
+                validate: vi.fn(),
+                write: vi.fn(async () => await Promise.reject(new Error('Unexpected config write')))
             },
             reconfigureMutation: unusedReconfigureMutation()
         } satisfies TopologyAppInboxMutationOwners;
@@ -466,7 +463,8 @@ function unusedConfigMutationService(): TopologyAppInboxMutationOwners['configMu
         },
         validate: () => {
             throw new Error('Unexpected config validation');
-        }
+        },
+        write: async () => await Promise.reject(new Error('Unexpected config write'))
     };
 }
 

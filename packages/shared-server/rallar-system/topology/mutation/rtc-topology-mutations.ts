@@ -1,13 +1,11 @@
 import { type RtcTopologyPublicationWorkClaim } from '@shared-server/rallar-system/topology/publication/rtc-topology-publication-repository-contracts.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import type { RuntimeStateEntryValue } from '../../../runtime-state/runtime-state-json-store.ts';
+import { decodeJsonWireValue } from '../../protocol/json-wire-identity.ts';
+import { decodeRtcTopologySnapshot } from '../persistence/decode-rtc-topology-snapshot.ts';
 import { RtcTopologyRepositoryInvariantCorruptionError } from '../persistence/rtc-topology-errors.ts';
 import { rtcTopologySemanticEqual } from '../persistence/rtc-topology-semantic-equal.ts';
-import {
-    compareTopologyTuple,
-    decideTopologySnapshot,
-    validateTopologySnapshot
-} from '../persistence/rtc-topology-snapshot-contract.ts';
+import { compareTopologyTuple, decideTopologySnapshot } from '../persistence/rtc-topology-snapshot-contract.ts';
 import type { RtcTopologyPublication } from '../publication/rtc-topology-publication.ts';
 import { validateRtcTopologyPublication } from '../publication/validate-rtc-topology-publication.ts';
 import { computeStaleTopologyPublication } from './rtc-topology-stale-publication.ts';
@@ -172,14 +170,19 @@ function assertPublicationSelfConsistent(
     publication: RtcTopologyPublication
 ): RallarOverlayTopologySnapshot {
     validateRtcTopologyPublication(publication, publication.groupRef);
-    let payload: unknown;
+    let payload: RallarOverlayTopologySnapshot;
     try {
-        payload = JSON.parse(publication.message.payload.resource);
+        payload = decodeRtcTopologySnapshot(
+            decodeJsonWireValue(
+                JSON.parse(publication.message.payload.resource),
+                'RTC topology publication snapshot'
+            ),
+            publication.groupRef
+        );
     }
     catch {
         throw new TypeError('RTC topology publication payload snapshot is invalid');
     }
-    validateTopologySnapshot(payload, publication.groupRef);
     const snapshot = payload;
     if (
         !snapshot.groupRef ||

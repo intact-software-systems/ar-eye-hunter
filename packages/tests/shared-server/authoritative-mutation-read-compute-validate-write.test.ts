@@ -179,7 +179,7 @@ it.each([
             'owners.configMutationService.compute(',
             'owners.configMutationService.validate(',
             'this.dependencies.transactionWriter.writeMutation(',
-            'writeTopologyConfigMutation('
+            'owners.configMutationService.write('
         ]
     },
     {
@@ -206,16 +206,24 @@ it.each([
 });
 
 it('keeps every authoritative service write bound to the caller transaction', () => {
-    const seams = [
+    expect(sources.topologyConfig).toMatch(/readonly transaction:\s*PSqlSql/);
+    expect(sources.rtt).toMatch(/readonly transaction:\s*PSqlSql/);
+    const positionalTransactionSeams = [
         readFunctionBody(sources.client, 'writeClientMutation'),
         readFunctionBody(sources.group, 'writeGroupMutation'),
-        readFunctionBody(sources.topologyConfig, 'writeTopologyConfigMutation'),
         readMethodBody(sources.topologyReconfigure, 'write'),
-        readFunctionBody(sources.rtt, 'writeRtcRttMutation'),
         readMethodBody(sources.topologyRepository, 'writeTopologyMutation')
     ];
-    for (const seam of seams) {
+    for (const seam of positionalTransactionSeams) {
         expect(seam).toMatch(/transaction:\s*PSqlSql/);
+    }
+    for (
+        const seam of [
+            ...positionalTransactionSeams,
+            readFunctionBody(sources.topologyConfig, 'writeTopologyConfigMutation'),
+            readFunctionBody(sources.rtt, 'writeRtcRttMutation')
+        ]
+    ) {
         expect(seam).not.toMatch(/\.begin\s*\(/);
         expect(seam).not.toMatch(/waitForRuntimeStateWriteRetry/);
     }
@@ -250,7 +258,7 @@ it('writes topology config state, receipt, authority fence, and APP_OUTBOX atomi
         'writeTopologyConfigAuthorityFence(',
         'writeTopologyConfigState(',
         'insertMutationRecord(',
-        'writeRtcTopologyOutbox(transaction, computed.outbox)'
+        'input.outboxWriter.write(transaction, computed.outbox)'
     ]);
     expectInOrder(readFunctionBody(sources.topologyConfig, 'writeTopologyConfigAuthorityFence'), [
         'advanceGroupStateAuthorityFence(',
@@ -266,13 +274,18 @@ it('fences explicit reconfigure authority before inserting APP_OUTBOX', () => {
         'advanceGroupStateAuthorityFence(',
         'computed.authorityGuard',
         'throw new RuntimeStateWriteConflictError()',
-        'writeRtcTopologyOutbox(transaction, computed)'
+        'this.dependencies.outboxWriter.write(transaction, computed)'
     ]);
 });
 
 it('writes RTT admission, measurement, receipt, and direct APP_OUTBOX rows atomically', () => {
     const seam = readFunctionBody(sources.rtt, 'writeRtcRttMutation');
-    expectInOrder(seam, ['commitEndpointAdmission(', 'commitMeasurement(', 'insertMutationReceipt(', 'writeRtcTopologyOutbox(transaction,']);
+    expectInOrder(seam, [
+        'commitEndpointAdmission(',
+        'commitMeasurement(',
+        'insertMutationReceipt(',
+        'input.outboxWriter.write(transaction,'
+    ]);
     expect(seam).not.toContain('insertRecomputeIntent');
     expect(seam).not.toContain('StateMutation' + 'Outbox');
 });

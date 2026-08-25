@@ -1,7 +1,6 @@
 import { PSqlGroupStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-group-state-event-repository.ts';
 import assert from 'node:assert/strict';
 
-import { PSqlRtcTopologyDeliveryRepository } from '@shared-server/postgres/rtc-topology/p-sql-rtc-topology-delivery-repository.ts';
 import {
     createPSqlResourceInboxRepository,
     type PSqlResourceInboxRepository
@@ -17,20 +16,21 @@ import {
 } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-contracts.ts';
 import type { TopologyAppInboxMutationOwners } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-handler.ts';
 import type { TopologyInboxService } from '@shared-server/rallar-system/topology/inbox/topology-inbox-service.ts';
+import type { GroupTopologyMutationOwners } from '@shared-server/rallar-system/topology/mutation/create-group-topology-mutation-owners.ts';
 import {
     createRtcTopologyOutboxPublisher,
-    createRtcTopologyWorkHandler,
-    writeRtcTopologyOutbox
+    createRtcTopologyWorkHandler
 } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-work.ts';
+import { RtcTopologyOutboxWriter } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-writer.ts';
 import { RtcTopologyExecutionRepository } from '@shared-server/rallar-system/topology/persistence/rtc-topology-execution-repository.ts';
 import { toRtcTopologyPublicationId } from '@shared-server/rallar-system/topology/persistence/rtc-topology-identifiers.ts';
 import { RtcTopologySnapshotRepository } from '@shared-server/rallar-system/topology/persistence/rtc-topology-snapshot-repository.ts';
 import { materializeRtcOverlayTopologyBroadcastMessage } from '@shared-server/rallar-system/topology/planning/materialize-rtc-overlay-topology-broadcast-message.ts';
 import { computeRtcTopologyPublicationOutbox } from '@shared-server/rallar-system/topology/publication/rtc-topology-ws-outbox-entry.ts';
+import { PSqlRtcTopologyDeliveryRepository } from '@shared-server/rallar-system/topology/replay/postgres/p-sql-rtc-topology-delivery-repository.ts';
 import {
-    createGroupTopologyOwners,
-    type GroupTopologyOwners
-} from '@shared-server/rallar-system/topology/runtime/create-group-topology-owners.ts';
+    createGroupTopologyRuntimeOwners
+} from '@shared-server/rallar-system/topology/runtime/create-group-topology-runtime-owners.ts';
 import { RallarRtcTopologyService } from '@shared-server/rallar-system/topology/runtime/rallar-rtc-topology-service.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
@@ -103,11 +103,8 @@ export function submitPGliteTopologyCommand(
 }
 
 export function requireTopologyMutationOwners(
-    owners: GroupTopologyOwners
+    owners: GroupTopologyMutationOwners
 ): TopologyAppInboxMutationOwners {
-    if (!owners.configMutation || !owners.reconfigureMutation) {
-        throw new TypeError('Complete topology mutation owners are required');
-    }
     return {
         configMutationService: owners.configMutation,
         reconfigureMutation: owners.reconfigureMutation
@@ -167,12 +164,12 @@ export async function createPGliteTopologyWorkFixture(
     const topologySnapshotRepository = new RtcTopologySnapshotRepository(
         runtimeRepository
     );
-    const topologyManagement = createGroupTopologyOwners({
+    const topologyManagement = createGroupTopologyRuntimeOwners({
         findGroupSnapshotByRef: () => groupSnapshot,
+        readCurrentGroupSnapshot: async () => groupSnapshot,
+        readRttMeasurements: () => [],
         topologyService: new RallarRtcTopologyService({ now: () => nowEpochMs }),
-        topologySnapshotRepository,
-        processRttReader: () => [],
-        now: () => nowEpochMs
+        topologySnapshotRepository
     });
     const executionRepository = new RtcTopologyExecutionRepository(
         runtimeRepository,
@@ -181,7 +178,7 @@ export async function createPGliteTopologyWorkFixture(
     );
     const resourceInbox = createPSqlResourceInboxRepository(sql);
     const workEntry = await sql.begin((transaction) =>
-        writeRtcTopologyOutbox(transaction, {
+        new RtcTopologyOutboxWriter({ recordWrite: () => undefined }).write(transaction, {
             commandId,
             resourceId: `${commandId}:rtc-topology-recompute:explicit`,
             aggregateRef: groupRef,
@@ -540,14 +537,13 @@ export async function createPGliteRemovalPlanningScenario(
         nextHopsBySessionId: {}
     });
     assert.equal(await snapshots.observeSnapshot(previous), 'inserted');
-    const service = createGroupTopologyOwners({
+    const service = createGroupTopologyRuntimeOwners({
         findGroupSnapshotByRef: (ref) => groups.readSnapshot(ref),
-        groupStateRepository: groups,
+        readCurrentGroupSnapshot: async (ref) => await groups.readSnapshot(ref),
+        readRttMeasurements: () => [],
         configRepository: new GroupTopologyConfigRepository(runtime),
         topologyService: new RallarRtcTopologyService({ now: () => nowEpochMs }),
-        topologySnapshotRepository: snapshots,
-        processRttReader: () => [],
-        now: () => nowEpochMs
+        topologySnapshotRepository: snapshots
     });
     const authority = await service.planning.readTopologyPlanningAuthority({
         groupRef,

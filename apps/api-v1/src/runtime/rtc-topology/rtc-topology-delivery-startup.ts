@@ -2,7 +2,7 @@ import {
     RtcTopologyDeliveryStreamService,
     type RtcTopologyDeliveryStreamMaintenancePort,
     type RtcTopologyDeliveryStreamScheduler
-} from '@shared-server/rallar-system/topology/replay/rtc-topology-delivery-stream-service.ts';
+} from '@shared-server/rallar-system/topology/replay/delivery/rtc-topology-delivery-stream-service.ts';
 import type { ApiV1TopologyDeliveryConfiguration } from '../../configuration/api-v1-configuration.ts';
 
 interface ApiRtcTopologyDeliveryStartupOptions {

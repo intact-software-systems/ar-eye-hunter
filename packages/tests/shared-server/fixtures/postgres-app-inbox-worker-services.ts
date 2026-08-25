@@ -24,6 +24,8 @@ import { AppClientInboxService } from '@shared-server/rallar-system/client-state
 
 import { GroupStateInboxService } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-service.ts';
 import { TopologyInboxService } from '@shared-server/rallar-system/topology/inbox/topology-inbox-service.ts';
+import { createGroupTopologyMutationOwners } from '@shared-server/rallar-system/topology/mutation/create-group-topology-mutation-owners.ts';
+import { RtcTopologyOutboxWriter } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-writer.ts';
 
 import { createClientStateService } from '@shared-server/rallar-system/client-state/client-state-service.ts';
 
@@ -31,7 +33,7 @@ import { createGroupStateService } from '@shared-server/rallar-system/group-stat
 import { PSqlClientStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-client-state-event-repository.ts';
 import { PSqlGroupStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-group-state-event-repository.ts';
 
-import { createGroupTopologyOwners } from '@shared-server/rallar-system/topology/runtime/create-group-topology-owners.ts';
+import { createGroupTopologyRuntimeOwners } from '@shared-server/rallar-system/topology/runtime/create-group-topology-runtime-owners.ts';
 
 import { RallarRtcTopologyService } from '@shared-server/rallar-system/topology/runtime/rallar-rtc-topology-service.ts';
 import type { RuntimeStateReadBatchSelection, RuntimeStateReadBatchSelector } from '@shared-server/runtime-state/read-batch/runtime-state-read-batch.ts';
@@ -107,20 +109,26 @@ export function createPostgresAppInboxWorkerServices(
             options: waitOptions
         }
     );
-    const topologyOwners = createGroupTopologyOwners({
+    const topologyGroupStateRepository = createTestGroupStateRepository(
+        runtimeRepository,
+        new PSqlGroupStateEventRepository(input.sql)
+    );
+    const topologyConfigRepository = new GroupTopologyConfigRepository(topologyRuntimeRepository);
+    const topologyRuntimeOwners = createGroupTopologyRuntimeOwners({
         findGroupSnapshotByRef: (ref) => groupState.readSnapshot(ref),
-        groupStateRepository: createTestGroupStateRepository(
-            runtimeRepository,
-            new PSqlGroupStateEventRepository(input.sql)
-        ),
-        configRepository: new GroupTopologyConfigRepository(topologyRuntimeRepository),
-        topologyService: new RallarRtcTopologyService(),
-        now: () => input.atEpochMs,
-        serviceId: input.serviceId
+        readCurrentGroupSnapshot: async (ref) => await topologyGroupStateRepository.readSnapshot(ref),
+        readRttMeasurements: () => [],
+        configRepository: topologyConfigRepository,
+        topologyService: new RallarRtcTopologyService()
     });
-    if (!topologyOwners.configMutation || !topologyOwners.reconfigureMutation) {
-        throw new TypeError('PostgreSQL worker topology mutation owners are required');
-    }
+    const topologyMutationOwners = createGroupTopologyMutationOwners({
+        groupStateRepository: topologyGroupStateRepository,
+        configRepository: topologyConfigRepository,
+        planning: topologyRuntimeOwners.planning,
+        nowEpochMs: () => input.atEpochMs,
+        isPlatformAdmin: () => false,
+        outboxWriter: new RtcTopologyOutboxWriter({ recordWrite: () => undefined })
+    });
     const topology = new TopologyInboxService(
         {
             inboxQueueReader: inbox,
@@ -129,8 +137,8 @@ export function createPostgresAppInboxWorkerServices(
             database: input.transactionSql,
             groupStateService: groupState,
             mutationOwners: {
-                configMutationService: topologyOwners.configMutation,
-                reconfigureMutation: topologyOwners.reconfigureMutation
+                configMutationService: topologyMutationOwners.configMutation,
+                reconfigureMutation: topologyMutationOwners.reconfigureMutation
             }
         },
         {

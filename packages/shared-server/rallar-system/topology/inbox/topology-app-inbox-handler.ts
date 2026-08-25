@@ -9,7 +9,6 @@ import { requireExactKeys, requireString } from '../../protocol/exact-object-dec
 import type { JsonWireValue } from '../../protocol/json-wire-identity.ts';
 import type { GroupTopologyConfigMutationService } from '../config/group-topology-config-mutation-service.ts';
 import { toTopologyConfigMutationResult } from '../config/mutation/to-topology-config-mutation-result.ts';
-import { writeTopologyConfigMutation } from '../config/mutation/write-topology-config-mutation.ts';
 
 import { readTopologyConfigReceiptBoundary } from '../config/mutation/topology-config-mutation-boundary.ts';
 import {
@@ -39,7 +38,7 @@ export interface TopologyAppInboxHandlerDependencies {
 export interface TopologyAppInboxMutationOwners {
     readonly configMutationService: Pick<
         GroupTopologyConfigMutationService,
-        'prepare' | 'read' | 'compute' | 'validate'
+        'prepare' | 'read' | 'compute' | 'validate' | 'write'
     >;
     readonly reconfigureMutation: Pick<GroupTopologyReconfigureMutation, 'read' | 'compute' | 'validate' | 'write'>;
 }
@@ -199,7 +198,7 @@ export class TopologyAppInboxHandler {
             context,
             async (transaction) => {
                 if (computed.outcome === 'write' || computed.outcome === 'claim') {
-                    await writeTopologyConfigMutation(transaction, computed);
+                    await owners.configMutationService.write(transaction, computed);
                 }
                 return toTopologyConfigMutationResult(computed);
             }

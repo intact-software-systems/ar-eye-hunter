@@ -126,7 +126,9 @@ export async function verifyTopologyAppInboxAuthority(
     }
 }
 
-export function validateTopologyMutationAuthorityProof(value: unknown): void {
+export function validateTopologyMutationAuthorityProof(
+    value: unknown
+): asserts value is TopologyMutationAuthorityProof {
     if (!isTopologyRecord(value)) {
         throw new TypeError('authority proof is invalid');
     }

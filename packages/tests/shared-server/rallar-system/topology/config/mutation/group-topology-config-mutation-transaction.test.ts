@@ -6,6 +6,7 @@ import { GroupStateRepository } from '@shared-server/rallar-system/group-state/p
 import { GroupTopologyConfigMutationService } from '@shared-server/rallar-system/topology/config/group-topology-config-mutation-service.ts';
 import type { GroupTopologyConfigMutationCommand } from '@shared-server/rallar-system/topology/config/mutation/group-topology-config-mutation-contracts.ts';
 import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/topology/config/persistence/group-topology-config-repository.ts';
+import { RtcTopologyOutboxWriter } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-writer.ts';
 
 import { FakeRuntimeStateRepository } from '../../../../fake-runtime-state-repository.ts';
 
@@ -83,7 +84,8 @@ function createService(): GroupTopologyConfigMutationService {
         configRepository: new GroupTopologyConfigRepository(runtimeRepository),
         groupStateRepository: createTestGroupStateRepository(runtimeRepository),
         nowEpochMs: () => 20_000,
-        isPlatformAdmin: () => false
+        isPlatformAdmin: () => false,
+        outboxWriter: new RtcTopologyOutboxWriter({ recordWrite: () => undefined })
     });
 }
 

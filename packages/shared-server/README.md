@@ -54,7 +54,7 @@ means api-v1 owns:
 - `rallar-system/topology/replay/**` owns the durable topology stream/log,
   per-consumer/per-publisher cursor drain, current-state repair, bounded
   reconnect/gap hydration, and closed diagnostics contract. PostgreSQL adapters
-  live under `postgres/rtc-topology/**`.
+  live beside their replay owner under `rallar-system/topology/replay/postgres/**`.
 - `registerAuthUser(...)` and `loginAuthUser(...)` implement auth domain rules without app-local JSON loading.
 - `rallar-system/observability/timing.ts` defines timing events and no-op-safe instrumentation helpers. API apps decide
   whether those events go to console, metrics, traces, or tests.

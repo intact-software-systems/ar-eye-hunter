@@ -3,12 +3,13 @@ import { validatePersistedALMessage } from '@shared/al-contracts/al-message-pers
 import { AppTopics } from '@shared/api/api-config.ts';
 import type { GroupRef, GroupStateCausalRevision } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
+import { decodeJsonWireValue } from '../../protocol/json-wire-identity.ts';
+import { decodeRtcTopologySnapshot } from '../persistence/decode-rtc-topology-snapshot.ts';
 import {
     toRtcTopologyPublicationId,
     toRtcTopologyPublicationMessageId
 } from '../persistence/rtc-topology-identifiers.ts';
 import { rtcTopologySemanticEqual } from '../persistence/rtc-topology-semantic-equal.ts';
-import { validateTopologySnapshot } from '../persistence/rtc-topology-snapshot-contract.ts';
 import type { RtcTopologyPublication } from './rtc-topology-publication.ts';
 
 /** Strict synchronous validation for an authoritative persisted publication. */
@@ -55,14 +56,19 @@ export function validateRtcTopologyPublication(
     }
     validatePersistedALMessage(publication.message);
     const message = publication.message;
-    let snapshot: unknown;
+    let snapshot: RallarOverlayTopologySnapshot;
     try {
-        snapshot = JSON.parse(message.payload.resource);
+        snapshot = decodeRtcTopologySnapshot(
+            decodeJsonWireValue(
+                JSON.parse(message.payload.resource),
+                'RTC topology publication snapshot'
+            ),
+            expectedRef
+        );
     }
     catch {
         throw new TypeError('RTC topology publication message snapshot is invalid');
     }
-    validateTopologySnapshot(snapshot, expectedRef);
     validateEnvelope({
         message,
         expectedRef,

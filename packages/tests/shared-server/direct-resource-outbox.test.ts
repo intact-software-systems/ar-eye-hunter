@@ -15,7 +15,7 @@ import {
 import { writeClientStateSync, writeGroupStateSync } from '@shared-server/rallar-system/state-sync/state-sync-transaction-writer.ts';
 import {
     computeRtcTopologyEntry,
-    writeRtcTopologyOutbox,
+    RtcTopologyOutboxWriter,
     type ComputedRtcTopologyOutbox
 } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-work.ts';
 import type { ClientEvent, ClientSnapshot } from '@shared/api/client-types.ts';
@@ -36,6 +36,8 @@ const CREATED_AT_EPOCH_MS = 1_800_000_000_000;
 const EXPIRE_AT_EPOCH_MS = 1_800_000_060_000;
 
 describe('direct resource outbox writes', () => {
+    const topologyOutboxWriter = new RtcTopologyOutboxWriter({ recordWrite: () => undefined });
+
     it('rejects an incomplete canonical client event payload', async () => {
         const incomplete = {
             ...createClientEvent(),
@@ -382,7 +384,7 @@ describe('direct resource outbox writes', () => {
         expect(message.id.msgId).toContain('group-command-1');
         const database = createResourceInboxDatabase();
         await runInPSqlTransaction(database.sql, async (transaction) => {
-            await writeRtcTopologyOutbox(transaction, computed);
+            await topologyOutboxWriter.write(transaction, computed);
         });
         expect(database.rows.get(toRowKey(first))?.ri_resource).toBe(first.resource);
         expect(database.nestedBeginCalls).toBe(0);
@@ -405,7 +407,7 @@ describe('direct resource outbox writes', () => {
         const database = createResourceInboxDatabase();
         await expect(
             runInPSqlTransaction(database.sql, async (transaction) => {
-                await writeRtcTopologyOutbox(transaction, computed);
+                await topologyOutboxWriter.write(transaction, computed);
             })
         ).rejects.toThrow('Computed RTC topology outbox facts are invalid');
         expect(database.rows.size).toBe(0);
@@ -444,7 +446,7 @@ describe('direct resource outbox writes', () => {
 
         await expect(
             runInPSqlTransaction(database.sql, async (transaction) => {
-                await writeRtcTopologyOutbox(transaction, forged);
+                await topologyOutboxWriter.write(transaction, forged);
             })
         ).rejects.toThrow('Computed RTC topology outbox facts are invalid');
         expect(database.rows.size).toBe(0);
@@ -456,7 +458,7 @@ describe('direct resource outbox writes', () => {
 
         const entry = await runInPSqlTransaction(
             database.sql,
-            async (transaction) => await writeRtcTopologyOutbox(transaction, computed)
+            async (transaction) => await topologyOutboxWriter.write(transaction, computed)
         );
 
         expect(entry).toEqual(computeRtcTopologyEntry(computed));

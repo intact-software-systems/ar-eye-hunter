@@ -1,25 +1,23 @@
 import { dirname } from 'node:path';
 
-import type { RtcTopologyDeliveryLogEntry } from '@shared-server/rallar-system/topology/replay/rtc-topology-delivery-contracts.ts';
 import type {
     RtcTopologyReplayConsumerInput,
     RtcTopologyReplayCursorCasInput,
     RtcTopologyReplayCursorSnapshot,
+    RtcTopologyReplayEntryHandlingResult,
     RtcTopologyReplayPageInput,
-    RtcTopologyReplayPageResult
-} from '@shared-server/rallar-system/topology/replay/rtc-topology-replay-contracts.ts';
+    RtcTopologyReplayPageResult,
+    RtcTopologyReplayPort
+} from '@shared-server/rallar-system/topology/replay/consumer/rtc-topology-replay-contracts.ts';
 import {
     RTC_TOPOLOGY_REPLAY_ANTI_ENTROPY_INTERVAL_MS,
     RTC_TOPOLOGY_REPLAY_MAX_ENTRIES_PER_TURN,
     RTC_TOPOLOGY_REPLAY_MAX_PAGES_PER_TURN,
     RTC_TOPOLOGY_REPLAY_PAGE_SIZE
-} from '@shared-server/rallar-system/topology/replay/rtc-topology-replay-policy.ts';
-import {
-    RtcTopologyReplayService,
-    type RtcTopologyReplayEntryHandlingResult,
-    type RtcTopologyReplayPort,
-    type RtcTopologyReplayServiceScheduler
-} from '@shared-server/rallar-system/topology/replay/rtc-topology-replay-service.ts';
+} from '@shared-server/rallar-system/topology/replay/consumer/rtc-topology-replay-policy.ts';
+import type { RtcTopologyReplayServiceScheduler } from '@shared-server/rallar-system/topology/replay/consumer/rtc-topology-replay-scheduler.ts';
+import { RtcTopologyReplayService } from '@shared-server/rallar-system/topology/replay/consumer/rtc-topology-replay-service.ts';
+import type { RtcTopologyDeliveryLogEntry } from '@shared-server/rallar-system/topology/replay/delivery/rtc-topology-delivery-contracts.ts';
 
 export const RTC_TOPOLOGY_REPLAY_DRAIN_WORKLOAD_POLICY = {
     pageSize: RTC_TOPOLOGY_REPLAY_PAGE_SIZE,

@@ -20,7 +20,6 @@ import {
     RTC_RTT_PROTECTED_RUNTIME_STATE_NAMESPACES
 } from '@shared-server/rallar-system/rtc-rtt/persistence/rtc-rtt-runtime-namespaces.ts';
 import { TopologyInboxService } from '@shared-server/rallar-system/topology/inbox/topology-inbox-service.ts';
-import { setRtcTopologyOutboxWriteSink } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-entry.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import { RuntimeStateExpiryWorker } from '@shared-server/runtime-state/postgres/runtime-state-expiry-worker.ts';
 import type { RallarCrdtDocumentTypePolicy } from '@shared/crdt/mod.ts';
@@ -161,13 +160,12 @@ export function constructApiV1Runtime(
         groupStateRepository: mutation.groupsRepository,
         groupStateService: mutation.groupStateService,
         groupFormationRttMutation: mutation.groupFormationMetrics.rttMutation,
+        topologyOutboxWritten: mutation.groupFormationMetrics.topologyOutboxWritten,
         topologyReplayMetrics: rtcTopology.topologyReplay,
-        serviceId: mutation.serviceId,
         adminClientIds: input.adminClientIds,
         rtcTopologyOptions: input.rtcTopologyOptions,
         rttRefinementGateConfig: input.rttRefinementGateConfig,
-        nowEpochMs: input.nowEpochMs,
-        timing: input.timing
+        nowEpochMs: input.nowEpochMs
     });
     input.backgroundTasks.register(rtcTopology.stop);
     operations.configureWsRuntimeStores(
@@ -227,11 +225,7 @@ function toMutationRuntimeInput(
 }
 
 const PRODUCTION_OPERATIONS: ApiV1RuntimeConstructionOperations = {
-    createMutationRuntime: (input) => {
-        const mutation = createApiV1MutationRuntime(input);
-        setRtcTopologyOutboxWriteSink(mutation.groupFormationMetrics.topologyOutboxWritten);
-        return mutation;
-    },
+    createMutationRuntime: createApiV1MutationRuntime,
     createRtcTopologyRuntime: createApiRtcTopologyRuntime,
     createTopologyServices: createApiV1TopologyServices,
     configureWsRuntimeStores: (name, repository) => {

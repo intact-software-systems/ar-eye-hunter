@@ -2,7 +2,7 @@ import type { PSqlSql } from '../../../../postgres/p-sql-sql.ts';
 import { RuntimeStateWriteConflictError } from '../../../../runtime-state/optimistic-runtime-state-write.ts';
 import { PSqlRuntimeStateRepository } from '../../../../runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import { advanceGroupStateAuthorityFence } from '../../../group-state/persistence/group-aggregate-repository.ts';
-import { writeRtcTopologyOutbox } from '../../mutation/rtc-topology-outbox-entry.ts';
+import type { RtcTopologyOutboxWriter } from '../../mutation/rtc-topology-outbox-writer.ts';
 import { GroupTopologyConfigRepository } from '../persistence/group-topology-config-repository.ts';
 import type * as mutationContracts from './group-topology-config-mutation-contracts.ts';
 
@@ -11,10 +11,16 @@ type WritableTopologyConfigMutation = Extract<
     { outcome: 'write' | 'claim'; }
 >;
 
+export interface WriteTopologyConfigMutationInput {
+    readonly transaction: PSqlSql;
+    readonly computed: WritableTopologyConfigMutation;
+    readonly outboxWriter: RtcTopologyOutboxWriter;
+}
+
 export async function writeTopologyConfigMutation(
-    transaction: PSqlSql,
-    computed: WritableTopologyConfigMutation
+    input: WriteTopologyConfigMutationInput
 ): Promise<mutationContracts.GroupTopologyConfigMutationReceipt> {
+    const { transaction, computed } = input;
     const runtime = new PSqlRuntimeStateRepository(transaction);
     const repository = new GroupTopologyConfigRepository(runtime);
     await writeTopologyConfigAuthorityFence(runtime, computed);
@@ -26,7 +32,7 @@ export async function writeTopologyConfigMutation(
         requireAcceptedTopologyConfigWrite(await repository.insertMutationRecord(computed.idempotency));
     }
     if (computed.outcome === 'write') {
-        await writeRtcTopologyOutbox(transaction, computed.outbox);
+        await input.outboxWriter.write(transaction, computed.outbox);
     }
     return computed.receipt;
 }

@@ -1,9 +1,9 @@
-import { PSqlRtcTopologyDeliveryRepository } from '@shared-server/postgres/rtc-topology/p-sql-rtc-topology-delivery-repository.ts';
 import type {
     RtcTopologyDeliveryAppendInput,
     RtcTopologyDeliveryAppendResult
-} from '@shared-server/rallar-system/topology/replay/rtc-topology-delivery-contracts.ts';
-import { isRtcTopologyDeliveryRetryableConflict } from '@shared-server/rallar-system/topology/replay/rtc-topology-delivery-validation.ts';
+} from '@shared-server/rallar-system/topology/replay/delivery/rtc-topology-delivery-contracts.ts';
+import { isRtcTopologyDeliveryRetryableConflict } from '@shared-server/rallar-system/topology/replay/delivery/rtc-topology-delivery-validation.ts';
+import { PSqlRtcTopologyDeliveryRepository } from '@shared-server/rallar-system/topology/replay/postgres/p-sql-rtc-topology-delivery-repository.ts';
 import {
     RTC_TOPOLOGY_DELIVERY_LOG_BENCHMARK_POLICY,
     summarizeRtcTopologyDeliveryLatencies,

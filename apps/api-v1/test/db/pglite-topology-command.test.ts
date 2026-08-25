@@ -17,8 +17,8 @@ import {
 } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-work.ts';
 import { RtcTopologyExecutionRepository } from '@shared-server/rallar-system/topology/persistence/rtc-topology-execution-repository.ts';
 import { RtcTopologySnapshotRepository } from '@shared-server/rallar-system/topology/persistence/rtc-topology-snapshot-repository.ts';
-import { RtcTopologyDeliveryLeaseLostError } from '@shared-server/rallar-system/topology/replay/rtc-topology-delivery-stream-service.ts';
-import { createGroupTopologyOwners } from '@shared-server/rallar-system/topology/runtime/create-group-topology-owners.ts';
+import { RtcTopologyDeliveryLeaseLostError } from '@shared-server/rallar-system/topology/replay/delivery/rtc-topology-delivery-stream-service.ts';
+import { createGroupTopologyRuntimeOwners } from '@shared-server/rallar-system/topology/runtime/create-group-topology-runtime-owners.ts';
 import { RallarRtcTopologyService } from '@shared-server/rallar-system/topology/runtime/rallar-rtc-topology-service.ts';
 import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
@@ -199,18 +199,20 @@ Deno.test(
                 degreeLimit: 2,
                 rttReportingDegreeLimit: 1
             });
-            const service = createGroupTopologyOwners({
+            const service = createGroupTopologyRuntimeOwners({
                 findGroupSnapshotByRef: () => group,
-                groupStateRepository: groups,
+                readCurrentGroupSnapshot: async (ref) => await groups.readSnapshot(ref),
+                readRttMeasurements: async (snapshot) =>
+                    await rttRepository.listMeasurementsForSessionIds(
+                        snapshot.activeSessions.map((session) => session.sessionId)
+                    ),
                 configRepository: new GroupTopologyConfigRepository(runtime),
                 topologyService,
-                rttRepository,
                 serverDefaults: {
                     topologyKind: 'tree',
                     degreeLimit: 2,
                     rttReportingDegreeLimit: 1
-                },
-                now: () => nowEpochMs
+                }
             });
             const previous = activeTopologySnapshot({
                 groupRef,
@@ -274,14 +276,13 @@ Deno.test(
             assert.equal(await snapshots.observeSnapshot(predecessor), 'inserted');
             const movedPredecessor = { ...predecessor, version: 1, updatedAtEpochMs: 2 };
             let authorityReadCount = 0;
-            const topologyManagement = createGroupTopologyOwners({
+            const topologyManagement = createGroupTopologyRuntimeOwners({
                 findGroupSnapshotByRef: (ref) => groups.readSnapshot(ref),
-                groupStateRepository: groups,
+                readCurrentGroupSnapshot: async (ref) => await groups.readSnapshot(ref),
+                readRttMeasurements: () => [],
                 configRepository: new GroupTopologyConfigRepository(runtimeRepository),
                 topologyService: new RallarRtcTopologyService({ now: () => nowEpochMs }),
-                topologySnapshotRepository: snapshots,
-                processRttReader: () => [],
-                now: () => nowEpochMs
+                topologySnapshotRepository: snapshots
             });
             const readTopologyPlanningAuthority = topologyManagement.planning
                 .readTopologyPlanningAuthority.bind(

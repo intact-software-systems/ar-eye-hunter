@@ -17,7 +17,7 @@ import {
 } from '../../state-sync/state-sync-entry-computation.ts';
 import {
     computeCoalescedRtcTopologyGroupRevisionWork
-} from '../../topology/replay/rtc-topology-coalesced-group-revision-work.ts';
+} from '../../topology/replay/work/rtc-topology-coalesced-group-revision-work.ts';
 import { assembleGroupStateSnapshot } from '../persistence/assemble-group-state-snapshot.ts';
 import {
     computeGroupPresenceSummary,

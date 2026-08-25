@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { resolveGroupTopologyConfig } from '@shared-server/rallar-system/topology/config/group-topology-config.ts';
+import { RtcTopologyOutboxWriter } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-writer.ts';
 import { GroupTopologyReconfigureMutation } from '@shared-server/rallar-system/topology/reconfigure/group-topology-reconfigure-mutation.ts';
 
 import {
@@ -90,7 +91,8 @@ function createMutation(
     return new GroupTopologyReconfigureMutation({
         groupStateRepository: {} as never,
         readPlanningAuthority: async () => createRead().authority,
-        isPlatformAdmin
+        isPlatformAdmin,
+        outboxWriter: new RtcTopologyOutboxWriter({ recordWrite: () => undefined })
     });
 }
 

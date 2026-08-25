@@ -14,8 +14,8 @@ import type { JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.
 
 import type { RtcRttRefinementGate } from './rtc-rtt-refinement-gate.ts';
 
-import type { GroupTopologyGroupSnapshotReader } from '../../topology/group-topology-management-contracts.ts';
 import type { RtcTopologyWorkPublisher } from '../../topology/mutation/rtc-topology-outbox-work.ts';
+import type { GroupTopologyGroupSnapshotReader } from '../../topology/planning/group-topology-planning-contracts.ts';
 import type { RallarRtcTopologyService } from '../../topology/runtime/rallar-rtc-topology-service.ts';
 import { evaluateRtcRttMeasurement, type RtcRttAcceptanceResult } from '../policy/rtc-rtt-measurement-policy.ts';
 import type { RtcRttRuntimeState } from '../rtc-rtt-runtime-state.ts';

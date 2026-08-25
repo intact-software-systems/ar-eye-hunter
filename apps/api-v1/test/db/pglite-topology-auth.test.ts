@@ -20,7 +20,9 @@ import { toTopologyAppInboxCommand } from '@shared-server/rallar-system/topology
 import { type TopologyAppInboxCommand, type TopologyAppInboxRequestPayload } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-contracts.ts';
 import type { TopologyAppInboxResult } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-handler.ts';
 import { TopologyInboxService } from '@shared-server/rallar-system/topology/inbox/topology-inbox-service.ts';
-import { createGroupTopologyOwners } from '@shared-server/rallar-system/topology/runtime/create-group-topology-owners.ts';
+import { createGroupTopologyMutationOwners } from '@shared-server/rallar-system/topology/mutation/create-group-topology-mutation-owners.ts';
+import { RtcTopologyOutboxWriter } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-writer.ts';
+import { createGroupTopologyRuntimeOwners } from '@shared-server/rallar-system/topology/runtime/create-group-topology-runtime-owners.ts';
 import { RallarRtcTopologyService } from '@shared-server/rallar-system/topology/runtime/rallar-rtc-topology-service.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
@@ -119,13 +121,24 @@ Deno.test(
                 serviceId: 'pglite-app-inbox-topology',
                 now: () => nowEpochMs
             });
-            const topology = createGroupTopologyOwners({
+            const topologyOutboxWriter = new RtcTopologyOutboxWriter({
+                recordWrite: () => undefined
+            });
+            const topologyConfigRepository = new GroupTopologyConfigRepository(runtime);
+            const topologyRuntimeOwners = createGroupTopologyRuntimeOwners({
                 findGroupSnapshotByRef: (ref) => groupRepository.readSnapshot(ref),
+                readCurrentGroupSnapshot: async (ref) => await groupRepository.readSnapshot(ref),
+                readRttMeasurements: () => [],
+                configRepository: topologyConfigRepository,
+                topologyService: new RallarRtcTopologyService({ now: () => nowEpochMs })
+            });
+            const topologyMutationOwners = createGroupTopologyMutationOwners({
                 groupStateRepository: groupRepository,
-                configRepository: new GroupTopologyConfigRepository(runtime),
-                topologyService: new RallarRtcTopologyService({ now: () => nowEpochMs }),
-                processRttReader: () => [],
-                now: () => nowEpochMs
+                configRepository: topologyConfigRepository,
+                planning: topologyRuntimeOwners.planning,
+                nowEpochMs: () => nowEpochMs,
+                isPlatformAdmin: () => false,
+                outboxWriter: topologyOutboxWriter
             });
             const appGroup = new TopologyInboxService(
                 {
@@ -134,7 +147,7 @@ Deno.test(
                     resourceInboxResultsRepository: resourceResults,
                     database: sql,
                     groupStateService: groupState,
-                    mutationOwners: requireTopologyMutationOwners(topology)
+                    mutationOwners: requireTopologyMutationOwners(topologyMutationOwners)
                 },
                 {
                     serviceId: 'pglite-app-inbox-topology',
@@ -402,7 +415,7 @@ Deno.test(
                 { operation: 'putConfig', config: { degreeLimit: 3 } }
             );
             assert.ok(durableUpdateUnderOverride.result.right);
-            const underOverride = await topology.query.readConfig(groupRef);
+            const underOverride = await topologyRuntimeOwners.query.readConfig(groupRef);
             assert.equal(underOverride.durable?.config.degreeLimit, 3);
             assert.equal(underOverride.temporary?.config.degreeLimit, 4);
             assert.equal(underOverride.temporary?.expiresAtEpochMs, nowEpochMs + 60_000);
@@ -413,7 +426,7 @@ Deno.test(
                 { operation: 'putConfig', config: { degreeLimit: null } }
             );
             assert.ok(cleared.result.right);
-            const afterClear = await topology.query.readConfig(groupRef);
+            const afterClear = await topologyRuntimeOwners.query.readConfig(groupRef);
             assert.equal(afterClear.durable?.config.degreeLimit, 5);
             assert.equal(afterClear.effective.degreeLimit, 4);
             assert.equal(afterClear.effective.meshParamK, 4);
@@ -429,7 +442,7 @@ Deno.test(
                     }
                 )).result.right
             );
-            assert.equal((await topology.query.readConfig(groupRef)).effective.degreeLimit, 5);
+            assert.equal((await topologyRuntimeOwners.query.readConfig(groupRef)).effective.degreeLimit, 5);
 
             assert.ok(
                 (await processCommand(
@@ -448,7 +461,7 @@ Deno.test(
                 (await submitPGliteTopologyCommand(appGroup, authority, clearReplay)).right,
                 cleared.result.right
             );
-            assert.equal((await topology.query.readConfig(groupRef)).durable?.config.degreeLimit, 7);
+            assert.equal((await topologyRuntimeOwners.query.readConfig(groupRef)).durable?.config.degreeLimit, 7);
             const clearDivergent = await toTopologyAppInboxCommand({
                 actor: first.actor,
                 groupRef,
@@ -478,6 +491,7 @@ Deno.test(
                     groupStateService: groupState,
                     mutationDependencies: {
                         repository: new RtcRttRepository(runtime, { now: () => nowEpochMs }),
+                        outboxWriter: topologyOutboxWriter,
                         readPolicyInputs: () =>
                             Promise.resolve({
                                 candidateGroups: [rttGroup],

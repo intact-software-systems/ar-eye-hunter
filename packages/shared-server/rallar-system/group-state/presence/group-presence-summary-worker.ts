@@ -16,7 +16,7 @@ import type { GroupFormationPresenceSummarySink } from '../../observability/form
 import { APP_OUTBOX_RTC_TOPOLOGY_TOPIC } from '../../topology/mutation/rtc-topology-outbox-entry.ts';
 import {
     toRtcTopologyCoalescedGroupRevisionResourceId
-} from '../../topology/replay/rtc-topology-coalesced-group-revision-work.ts';
+} from '../../topology/replay/work/rtc-topology-coalesced-group-revision-work.ts';
 import { GroupStateRepositoryReads } from '../persistence/group-state-repository-reads.ts';
 import { createTransactionBoundGroupStateRepository } from '../persistence/group-state-repository.ts';
 import { groupStateGroupStorageKey } from '../persistence/group-state-storage-keys.ts';

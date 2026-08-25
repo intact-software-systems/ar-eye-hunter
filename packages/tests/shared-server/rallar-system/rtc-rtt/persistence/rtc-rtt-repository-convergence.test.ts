@@ -9,6 +9,7 @@ import {
     RTC_RTT_ENDPOINT_ADMISSION_NAMESPACE,
     RTC_RTT_RECEIPTS_NAMESPACE
 } from '@shared-server/rallar-system/rtc-rtt/persistence/rtc-rtt-runtime-namespaces.ts';
+import { RtcTopologyOutboxWriter } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-writer.ts';
 import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
@@ -109,11 +110,12 @@ describe('RTC RTT repository convergence', () => {
             );
 
             await expect(
-                writeRtcRttMutation(
+                writeRtcRttMutation({
                     transaction,
-                    { now: () => 2 },
-                    malformed as unknown as Extract<RtcRttMutationComputed, { outcome: 'write'; }>
-                )
+                    repositoryOptions: { now: () => 2 },
+                    computed: malformed as unknown as Extract<RtcRttMutationComputed, { outcome: 'write'; }>,
+                    outboxWriter: new RtcTopologyOutboxWriter({ recordWrite: () => undefined })
+                })
             ).rejects.toBeInstanceOf(TypeError);
         }
     );
