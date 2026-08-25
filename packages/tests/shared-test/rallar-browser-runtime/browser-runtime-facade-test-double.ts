@@ -10,8 +10,18 @@ import type {
     BlackBoxBrowserRtcDependency,
     BlackBoxBrowserWsDependency
 } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/browser-rallar-runtime-composition.ts';
-import type { RallarMessageSendResult } from '@shared-web/browser/rallar-message-contracts.ts';
+import type {
+    RallarMessageHandler,
+    RallarMessagePayload,
+    RallarMessageSendResult
+} from '@shared-web/browser/rallar-message-contracts.ts';
+import type {
+    RallarCrdtDocument,
+    RallarCrdtOpenOptions
+} from '@shared-web/browser/rallar-crdt.ts';
+import type { RallarRealtimeHandler } from '@shared-web/browser/rallar-realtime-facade.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
+import type { RallarCrdtOperationBatch } from '@shared/crdt/mod.ts';
 import { vi } from 'vitest';
 
 export interface BrowserRuntimeFacadeRecords {
@@ -28,13 +38,22 @@ export interface BrowserRuntimeFacadeRecords {
     readonly roomRefreshes: Array<Parameters<BlackBoxBrowserRoomsDependency['refresh']>>;
     readonly roomSessions: Array<Parameters<BlackBoxBrowserRoomsDependency['session']>>;
     readonly currentRoomRefreshes: Array<Parameters<BlackBoxBrowserRoomSessionDependency['refresh']>>;
-    readonly realtimeSubscriptions: Array<Parameters<BlackBoxBrowserRealtimeDependency['onJson']>>;
+    readonly realtimeSubscriptions: Array<[
+        Parameters<BlackBoxBrowserRealtimeDependency['onJson']>[0],
+        RallarRealtimeHandler<never>,
+    ]>;
     realtimeUnsubscribeCount: number;
     readonly realtimeSends: Array<Parameters<BlackBoxBrowserRealtimeDependency['sendJson']>>;
-    readonly rtcMessageSubscriptions: Array<Parameters<BlackBoxBrowserMessagesDependency['rtc']['onMessage']>>;
+    readonly rtcMessageSubscriptions: Array<[
+        Parameters<BlackBoxBrowserMessagesDependency['rtc']['onMessage']>[0],
+        RallarMessageHandler<RallarMessagePayload>,
+    ]>;
     rtcMessageUnsubscribeCount: number;
     readonly rtcMessageSends: Array<Parameters<BlackBoxBrowserMessagesDependency['rtc']['send']>>;
-    readonly wsMessageSubscriptions: Array<Parameters<BlackBoxBrowserMessagesDependency['ws']['onMessage']>>;
+    readonly wsMessageSubscriptions: Array<[
+        Parameters<BlackBoxBrowserMessagesDependency['ws']['onMessage']>[0],
+        RallarMessageHandler<RallarMessagePayload>,
+    ]>;
     wsMessageUnsubscribeCount: number;
     readonly wsMessageSends: Array<Parameters<BlackBoxBrowserMessagesDependency['ws']['send']>>;
     readonly rtcDiagnosticsReads: Array<Parameters<BlackBoxBrowserRtcDependency['diagnostics']>>;
@@ -93,13 +112,22 @@ export const facadeBehavior = {
     currentRoomRefresh: vi.fn<BlackBoxBrowserRoomSessionDependency['refresh']>(),
     realtimeHealth: vi.fn<BlackBoxBrowserRealtimeDependency['health']>(),
     realtimeSend: vi.fn<BlackBoxBrowserRealtimeDependency['sendJson']>(),
-    realtimeOnJson: vi.fn<BlackBoxBrowserRealtimeDependency['onJson']>(),
+    realtimeOnJson: vi.fn<(
+        laneId: Parameters<BlackBoxBrowserRealtimeDependency['onJson']>[0],
+        handler: RallarRealtimeHandler<never>
+    ) => () => void>(),
     rtcStatus: vi.fn<BlackBoxBrowserRtcDependency['status']>(),
     rtcDiagnostics: vi.fn<BlackBoxBrowserRtcDependency['diagnostics']>(),
     rtcMessageSend: vi.fn<BlackBoxBrowserMessagesDependency['rtc']['send']>(),
-    rtcMessageOnMessage: vi.fn<BlackBoxBrowserMessagesDependency['rtc']['onMessage']>(),
+    rtcMessageOnMessage: vi.fn<(
+        selector: Parameters<BlackBoxBrowserMessagesDependency['rtc']['onMessage']>[0],
+        handler: RallarMessageHandler<RallarMessagePayload>
+    ) => () => void>(),
     wsMessageSend: vi.fn<BlackBoxBrowserMessagesDependency['ws']['send']>(),
-    wsMessageOnMessage: vi.fn<BlackBoxBrowserMessagesDependency['ws']['onMessage']>(),
+    wsMessageOnMessage: vi.fn<(
+        selector: Parameters<BlackBoxBrowserMessagesDependency['ws']['onMessage']>[0],
+        handler: RallarMessageHandler<RallarMessagePayload>
+    ) => () => void>(),
     crdtOpen: vi.fn<BlackBoxBrowserCrdtDependency['open']>(),
     directorAppoint: vi.fn<BlackBoxBrowserDirectorDependency['appoint']>(),
     directorResign: vi.fn<BlackBoxBrowserDirectorDependency['resign']>(),
@@ -174,8 +202,9 @@ const realtime: BlackBoxBrowserRealtimeDependency = {
         return await facadeBehavior.realtimeSend(input);
     },
     onJson: (laneId, handler) => {
-        records.realtimeSubscriptions.push([laneId, handler]);
-        const unsubscribe = facadeBehavior.realtimeOnJson(laneId, handler);
+        const recordedHandler = toRecordedRealtimeHandler(handler);
+        records.realtimeSubscriptions.push([laneId, recordedHandler]);
+        const unsubscribe = facadeBehavior.realtimeOnJson(laneId, recordedHandler);
         return () => {
             records.realtimeUnsubscribeCount += 1;
             unsubscribe();
@@ -191,8 +220,9 @@ const messages: BlackBoxBrowserMessagesDependency = {
             return await facadeBehavior.rtcMessageSend(input);
         },
         onMessage: (selector, handler) => {
-            records.rtcMessageSubscriptions.push([selector, handler]);
-            const unsubscribe = facadeBehavior.rtcMessageOnMessage(selector, handler);
+            const recordedHandler = toRecordedMessageHandler(handler);
+            records.rtcMessageSubscriptions.push([selector, recordedHandler]);
+            const unsubscribe = facadeBehavior.rtcMessageOnMessage(selector, recordedHandler);
             return () => {
                 records.rtcMessageUnsubscribeCount += 1;
                 unsubscribe();
@@ -205,8 +235,9 @@ const messages: BlackBoxBrowserMessagesDependency = {
             return await facadeBehavior.wsMessageSend(input);
         },
         onMessage: (selector, handler) => {
-            records.wsMessageSubscriptions.push([selector, handler]);
-            const unsubscribe = facadeBehavior.wsMessageOnMessage(selector, handler);
+            const recordedHandler = toRecordedMessageHandler(handler);
+            records.wsMessageSubscriptions.push([selector, recordedHandler]);
+            const unsubscribe = facadeBehavior.wsMessageOnMessage(selector, recordedHandler);
             return () => {
                 records.wsMessageUnsubscribeCount += 1;
                 unsubscribe();
@@ -225,17 +256,19 @@ const rtc: BlackBoxBrowserRtcDependency = {
 
 const ws: BlackBoxBrowserWsDependency = {
     status: () => ({
-        state: 'idle',
+        connectState: 'idle',
         readyState: 'closed',
-        connected: false
+        isOpen: false,
+        reconnecting: false,
+        reconnectEnabled: false,
+        reconnectAttempts: 0,
+        maxReconnectAttempts: 0,
+        reconnectExhausted: false
     })
 };
 
 const crdt: BlackBoxBrowserCrdtDependency = {
-    open: async (name, options) => {
-        records.crdtOpens.push([name, options]);
-        return await facadeBehavior.crdtOpen(name, options);
-    }
+    open: openCrdtDocument
 };
 
 const director: BlackBoxBrowserDirectorDependency = {
@@ -245,7 +278,7 @@ const director: BlackBoxBrowserDirectorDependency = {
     },
     resign: async (room, options) => await facadeBehavior.directorResign(room, options),
     status: (room, options) => facadeBehavior.directorStatus(room, options),
-    createRelay: (config) => facadeBehavior.directorCreateRelay(config)
+    createRelay: facadeBehavior.directorCreateRelay
 };
 
 export const rallarFacadeTestDouble: BlackBoxBrowserRallarRuntimeDependency = {
@@ -265,7 +298,7 @@ export const rallarFacadeTestDouble: BlackBoxBrowserRallarRuntimeDependency = {
         records.disconnectCount += 1;
         await facadeBehavior.disconnect();
     },
-    status: () => ({ connected: true, connecting: false }),
+    status: () => 'connected',
     isConnected: () => true,
     session: () => facadeSession,
     auth,
@@ -335,3 +368,27 @@ function clearRecords(): void {
 }
 
 export { records as facadeRecords };
+
+async function openCrdtDocument<
+    TValue,
+    TPayload extends RallarCrdtOperationBatch = RallarCrdtOperationBatch,
+>(
+    name: string,
+    options?: RallarCrdtOpenOptions<TValue, TPayload>
+): Promise<RallarCrdtDocument<TValue, TPayload>> {
+    records.crdtOpens.push([name, options]);
+    const document = await facadeBehavior.crdtOpen(name, options);
+    return document as RallarCrdtDocument<TValue, TPayload>;
+}
+
+function toRecordedRealtimeHandler<T>(
+    handler: RallarRealtimeHandler<T>
+): RallarRealtimeHandler<never> {
+    return handler as RallarRealtimeHandler<never>;
+}
+
+function toRecordedMessageHandler<T>(
+    handler: RallarMessageHandler<T>
+): RallarMessageHandler<RallarMessagePayload> {
+    return handler as RallarMessageHandler<RallarMessagePayload>;
+}

@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 
-import { ClientMutationRejectedError } from '@shared-server/rallar-system/client-state/client-state-validation-primitives.ts';
 import { computeClientMutation } from '@shared-server/rallar-system/client-state/mutation/compute/compute-client-mutation.ts';
 import { validateClientMutationAuthorityPolicy } from '@shared-server/rallar-system/client-state/mutation/result-validation/validate-client-mutation-authority-policy.ts';
 import { validateClientMutationRead } from '@shared-server/rallar-system/client-state/mutation/result-validation/validate-client-mutation-read.ts';
@@ -9,6 +8,7 @@ import {
     ClientMutationIdempotencyConflictError,
     validateClientMutation
 } from '@shared-server/rallar-system/client-state/mutation/result-validation/validate-client-mutation.ts';
+import { ClientMutationRejectedError } from '@shared-server/rallar-system/client-state/validation/client-mutation-rejection.ts';
 
 import { emptyRead, entryValue, principalCommand, readAfterWrite, requireWrite } from './client-mutation-compute-test-fixtures.ts';
 

@@ -1,6 +1,6 @@
 import type { ClientEvent, ClientPrincipalRef } from '@shared/api/client-types.ts';
 import { decodePersistedClientEvent } from '../../client-state/persistence/client-state-persistence-codec.ts';
-import { clientStateWorkspaceStorageKey } from '../../client-state/persistence/client-state-storage-keys.ts';
+import { clientStateWorkspaceStorageKey } from '../../client-state/persistence/client-state-workspace-storage-key.ts';
 import { validatePersistedClientEvent } from '../../client-state/persistence/validate-persisted-client-state.ts';
 
 export interface ClientStateEventRow {

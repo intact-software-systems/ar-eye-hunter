@@ -162,8 +162,12 @@ export default function App() {
         try {
             const facade = await loadBrowserRallarFacade();
             facade.configure({ apiBaseUrl: bootstrap.apiBaseUrl });
-            await facade.disconnect();
-            await facade.auth.logout();
+            try {
+                await facade.disconnect();
+            }
+            finally {
+                await facade.auth.logout();
+            }
         }
         catch (error) {
             setAuthError(authErrorMessage(error));

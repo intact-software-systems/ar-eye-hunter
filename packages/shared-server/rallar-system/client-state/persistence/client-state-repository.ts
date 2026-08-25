@@ -19,7 +19,10 @@ import type {
 import { toSessionPurgeAfterEpochMs } from '../../presence/session-expiry.ts';
 import type { ClientStateEventStore } from '../../state-events/client-state-event-store.ts';
 import { PSqlClientStateEventRepository } from '../../state-events/postgres/p-sql-client-state-event-repository.ts';
+import { clientStateIdempotencyStorageKey } from './client-state-idempotency-storage-key.ts';
+import { clientStateInstanceStorageKey } from './client-state-instance-storage-key.ts';
 import { type ClientMutationIdempotencyRecord } from './client-state-persistence-contracts.ts';
+import { clientStatePrincipalStorageKey } from './client-state-principal-storage-key.ts';
 import { assertCanonicalClientStateIdempotencyRecord } from './client-state-repository-reads.ts';
 import {
     CLIENT_STATE_IDEMPOTENT_NAMESPACE,
@@ -27,13 +30,8 @@ import {
     CLIENT_STATE_PRINCIPALS_NAMESPACE,
     CLIENT_STATE_SESSIONS_NAMESPACE
 } from './client-state-runtime-namespaces.ts';
+import { clientStateSessionStorageKey } from './client-state-session-storage-key.ts';
 import { ClientStateSnapshotRepository } from './client-state-snapshot-repository.ts';
-import {
-    clientStateIdempotencyStorageKey,
-    clientStateInstanceStorageKey,
-    clientStatePrincipalStorageKey,
-    clientStateSessionStorageKey
-} from './client-state-storage-keys.ts';
 import {
     validatePersistedClientEvent,
     validatePersistedClientInstance,

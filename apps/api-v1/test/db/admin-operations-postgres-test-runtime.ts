@@ -1,9 +1,7 @@
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 
-import {
-    decodeClientPrincipalStorageKey,
-    decodeClientSessionStorageKey
-} from '@shared-server/rallar-system/client-state/persistence/client-state-storage-keys.ts';
+import { decodeClientPrincipalStorageKey } from '@shared-server/rallar-system/client-state/persistence/client-state-principal-storage-key.ts';
+import { decodeClientSessionStorageKey } from '@shared-server/rallar-system/client-state/persistence/client-state-session-storage-key.ts';
 import {
     decodeGroupStateGroupStorageKey,
     decodeGroupStateMemberStorageKey,

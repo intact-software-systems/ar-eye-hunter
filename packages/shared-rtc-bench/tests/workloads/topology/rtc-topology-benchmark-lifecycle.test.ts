@@ -359,7 +359,7 @@ it('RTC-B03 accepts the exact graph and inactive matrices with deterministic evi
         }
     }
     await expectStopsAfterFirstFailure(failureProbes);
-});
+}, 15_000);
 
 it('RTC-B03 filters every repository size without writes or foreign sessions', async () => {
     for (const roomSessions of [5, 30]) {

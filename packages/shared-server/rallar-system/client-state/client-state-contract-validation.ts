@@ -8,23 +8,6 @@ import type {
 import type { MutationActor } from '@shared/api/mutation-actor.ts';
 
 import {
-    rejectClientMutation as reject,
-    requireAllowedKeys,
-    requireEnum,
-    requireExactKeys,
-    requireJsonRecord,
-    requireNonEmptyString,
-    requireNullableNonEmptyString,
-    requireNullableString,
-    requireNullableTimestamp,
-    requirePlainRecord,
-    requirePositiveSafeInteger,
-    requireString,
-    requireStringArray,
-    requireTimestamp,
-    validateClientPrincipalRef
-} from './client-state-validation-primitives.ts';
-import {
     CLIENT_EVENT_TYPES,
     CLIENT_INSTANCE_STATUSES,
     CLIENT_PLATFORMS,
@@ -33,9 +16,31 @@ import {
     CLIENT_SESSION_STATUSES,
     CLIENT_TRANSPORTS
 } from './mutation/client-mutation-contracts.ts';
+import { requireEnum } from './validation/client-enum-validation.ts';
+import { requireJsonRecord } from './validation/client-json-validation.ts';
+import { rejectClientMutation as reject } from './validation/client-mutation-rejection.ts';
+import {
+    decodeClientValidationRecord,
+    requireAllowedKeys,
+    requireExactKeys,
+    type ClientValidationRecord
+} from './validation/client-record-validation.ts';
+import {
+    requireNonEmptyString,
+    requireNullableNonEmptyString,
+    requireNullableString,
+    requireString,
+    requireStringArray
+} from './validation/client-string-validation.ts';
+import {
+    requireNullableTimestamp,
+    requirePositiveSafeInteger,
+    requireTimestamp
+} from './validation/client-timestamp-validation.ts';
+import { validateClientPrincipalRef } from './validation/validate-client-principal-ref.ts';
 
 export function validateClientAudit(value: unknown, label: string): asserts value is AuditStamp {
-    const audit = requirePlainRecord(value, label);
+    const audit = decodeClientValidationRecord(value, label);
     requireExactKeys(audit, ['atEpochMs', 'actor', 'reason', 'traceId', 'requestId'], label);
     requireTimestamp(audit.atEpochMs, `${label}.atEpochMs`);
     validateClientMutationActor(audit.actor, `${label}.actor`);
@@ -48,7 +53,7 @@ export function validateClientPrincipal(
     value: unknown,
     label: string
 ): asserts value is ClientPrincipal {
-    const principal = requirePlainRecord(value, label);
+    const principal = decodeClientValidationRecord(value, label);
     const keys = [
         'applicationId',
         'workspaceId',
@@ -95,7 +100,7 @@ export function validateClientPrincipal(
 }
 
 function validateClientPrincipalLifecycle(
-    principal: Readonly<Record<string, unknown>>,
+    principal: ClientValidationRecord,
     label: string
 ): void {
     if (
@@ -119,7 +124,7 @@ export function validateClientInstance(
     value: unknown,
     label: string
 ): asserts value is ClientInstance {
-    const instance = requirePlainRecord(value, label);
+    const instance = decodeClientValidationRecord(value, label);
     const keys = [
         'applicationId',
         'workspaceId',
@@ -158,7 +163,7 @@ export function validateClientSession(
     value: unknown,
     label: string
 ): asserts value is ClientSession {
-    const session = requirePlainRecord(value, label);
+    const session = decodeClientValidationRecord(value, label);
     const keys = [
         'applicationId',
         'workspaceId',
@@ -188,30 +193,45 @@ export function validateClientSession(
     requireEnum(session.presenceState, CLIENT_PRESENCE_STATES, `${label}.presenceState`);
     requireEnum(session.transport, CLIENT_TRANSPORTS, `${label}.transport`);
     requireNullableNonEmptyString(session.connectionId, `${label}.connectionId`);
-    validateClientSessionTimestamps(session, label);
-    validateClientSessionLifecycle(session, label);
+    const timestamps = validateClientSessionTimestamps(session, label);
+    validateClientSessionLifecycle(session, timestamps, label);
+}
+
+interface ClientSessionTimestamps {
+    readonly authenticatedAtEpochMs: number;
+    readonly connectedAtEpochMs: number;
+    readonly lastHeartbeatAtEpochMs: number;
+    readonly expiresAtEpochMs: number;
+    readonly disconnectedAtEpochMs: number | null;
 }
 
 function validateClientSessionTimestamps(
-    session: Readonly<Record<string, unknown>>,
+    session: ClientValidationRecord,
     label: string
-): void {
-    for (
-        const field of [
-            'authenticatedAtEpochMs',
-            'connectedAtEpochMs',
-            'lastHeartbeatAtEpochMs',
-            'expiresAtEpochMs'
-        ] as const
-    ) {
-        requireTimestamp(session[field], `${label}.${field}`);
-    }
-    requireNullableTimestamp(session.disconnectedAtEpochMs, `${label}.disconnectedAtEpochMs`);
+): ClientSessionTimestamps {
+    const authenticatedAtEpochMs = session.authenticatedAtEpochMs;
+    const connectedAtEpochMs = session.connectedAtEpochMs;
+    const lastHeartbeatAtEpochMs = session.lastHeartbeatAtEpochMs;
+    const expiresAtEpochMs = session.expiresAtEpochMs;
+    const disconnectedAtEpochMs = session.disconnectedAtEpochMs;
+    requireTimestamp(authenticatedAtEpochMs, `${label}.authenticatedAtEpochMs`);
+    requireTimestamp(connectedAtEpochMs, `${label}.connectedAtEpochMs`);
+    requireTimestamp(lastHeartbeatAtEpochMs, `${label}.lastHeartbeatAtEpochMs`);
+    requireTimestamp(expiresAtEpochMs, `${label}.expiresAtEpochMs`);
+    requireNullableTimestamp(disconnectedAtEpochMs, `${label}.disconnectedAtEpochMs`);
     requireNullableNonEmptyString(session.disconnectReason, `${label}.disconnectReason`);
+    return {
+        authenticatedAtEpochMs,
+        connectedAtEpochMs,
+        lastHeartbeatAtEpochMs,
+        expiresAtEpochMs,
+        disconnectedAtEpochMs
+    };
 }
 
 function validateClientSessionLifecycle(
-    session: Readonly<Record<string, unknown>>,
+    session: ClientValidationRecord,
+    timestamps: ClientSessionTimestamps,
     label: string
 ): void {
     if (
@@ -226,27 +246,25 @@ function validateClientSessionLifecycle(
     ) {
         reject(`${label} terminal status requires disconnect fields`);
     }
-    const authenticatedAt = session.authenticatedAtEpochMs as number;
-    const connectedAt = session.connectedAtEpochMs as number;
-    const heartbeatAt = session.lastHeartbeatAtEpochMs as number;
-    const expiresAt = session.expiresAtEpochMs as number;
-    const disconnectedAt = session.disconnectedAtEpochMs;
-    if (authenticatedAt > connectedAt) {
+    if (timestamps.authenticatedAtEpochMs > timestamps.connectedAtEpochMs) {
         reject(`${label}.authenticatedAtEpochMs must not follow connectedAtEpochMs`);
     }
-    if (connectedAt > heartbeatAt) {
+    if (timestamps.connectedAtEpochMs > timestamps.lastHeartbeatAtEpochMs) {
         reject(`${label}.lastHeartbeatAtEpochMs must not predate connectedAtEpochMs`);
     }
-    if (heartbeatAt > expiresAt) {
+    if (timestamps.lastHeartbeatAtEpochMs > timestamps.expiresAtEpochMs) {
         reject(`${label}.expiresAtEpochMs must not predate lastHeartbeatAtEpochMs`);
     }
-    if (disconnectedAt !== null && (disconnectedAt as number) < heartbeatAt) {
+    if (
+        timestamps.disconnectedAtEpochMs !== null &&
+        timestamps.disconnectedAtEpochMs < timestamps.lastHeartbeatAtEpochMs
+    ) {
         reject(`${label}.disconnectedAtEpochMs must not predate lastHeartbeatAtEpochMs`);
     }
 }
 
 export function validateClientRuntimeStateEntry(value: unknown, label: string): void {
-    const entry = requirePlainRecord(value, label);
+    const entry = decodeClientValidationRecord(value, label);
     requireExactKeys(
         entry,
         ['key', 'value', 'expireAtTimestamp', 'updatedTimestamp', 'revision'],
@@ -260,7 +278,7 @@ export function validateClientRuntimeStateEntry(value: unknown, label: string): 
 }
 
 export function validateClientEvent(value: unknown, label: string): asserts value is ClientEvent {
-    const event = requirePlainRecord(value, label);
+    const event = decodeClientValidationRecord(value, label);
     requireExactKeys(
         event,
         [
@@ -299,7 +317,7 @@ export function validateClientMutationActor(
     value: unknown,
     label: string
 ): asserts value is MutationActor {
-    const actor = requirePlainRecord(value, label);
+    const actor = decodeClientValidationRecord(value, label);
     if (actor.kind === 'principal') {
         requireExactKeys(actor, ['kind', 'principalId'], label);
         requireNonEmptyString(actor.principalId, `${label}.principalId`);

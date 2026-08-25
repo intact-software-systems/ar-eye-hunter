@@ -1,5 +1,7 @@
 import type { ClientInstance, ClientPrincipal, ClientPrincipalRef, ClientSession } from '@shared/api/client-types.ts';
 
+import { decodeJsonWireValue, type JsonWireObject, type JsonWireValue } from '../protocol/json-wire-identity.ts';
+
 export function sameClientPrincipalState(left: ClientPrincipal, right: ClientPrincipal): boolean {
     return (
         left.username === right.username &&
@@ -57,7 +59,17 @@ function arrayEquals<T>(left: readonly T[], right: readonly T[]): boolean {
     return left.length === right.length && left.every((value, index) => value === right[index]);
 }
 
-function jsonEquals(left: unknown, right: unknown): boolean {
+function jsonEquals(
+    left: ClientPrincipal['metadata'],
+    right: ClientPrincipal['metadata']
+): boolean {
+    return jsonWireEquals(
+        decodeJsonWireValue(left, 'Client principal metadata'),
+        decodeJsonWireValue(right, 'Client principal metadata')
+    );
+}
+
+function jsonWireEquals(left: JsonWireValue, right: JsonWireValue): boolean {
     if (Object.is(left, right)) {
         return true;
     }
@@ -66,7 +78,7 @@ function jsonEquals(left: unknown, right: unknown): boolean {
             Array.isArray(left) &&
             Array.isArray(right) &&
             left.length === right.length &&
-            left.every((value, index) => jsonEquals(value, right[index]))
+            left.every((value, index) => jsonWireEquals(value, right[index]))
         );
     }
     if (!isClientJsonObject(left) || !isClientJsonObject(right)) {
@@ -75,10 +87,11 @@ function jsonEquals(left: unknown, right: unknown): boolean {
     const leftKeys = Object.keys(left).sort();
     const rightKeys = Object.keys(right).sort();
     return (
-        arrayEquals(leftKeys, rightKeys) && leftKeys.every((key) => jsonEquals(left[key], right[key]))
+        arrayEquals(leftKeys, rightKeys) &&
+        leftKeys.every((key) => jsonWireEquals(left[key]!, right[key]!))
     );
 }
 
-export function isClientJsonObject(value: unknown): value is Readonly<Record<string, unknown>> {
+export function isClientJsonObject(value: JsonWireValue): value is JsonWireObject {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
 }

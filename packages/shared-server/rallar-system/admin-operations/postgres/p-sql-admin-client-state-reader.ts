@@ -2,13 +2,14 @@ import type { ClientPrincipalRef, ClientSessionRef } from '@shared/api/client-ty
 import type { StateScope } from '@shared/api/state-types.ts';
 
 import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
-import { isClientJsonObject } from '../../client-state/client-state-semantic-equality.ts';
-import type { ClientValidationRecord } from '../../client-state/client-state-validation-primitives.ts';
+import { decodeClientPrincipalStorageKey } from '../../client-state/persistence/client-state-principal-storage-key.ts';
+import { clientStateScopeStorageKeyPrefix } from '../../client-state/persistence/client-state-scope-storage-key.ts';
+import { decodeClientSessionStorageKey } from '../../client-state/persistence/client-state-session-storage-key.ts';
+import { clientStateWorkspaceStorageKey } from '../../client-state/persistence/client-state-workspace-storage-key.ts';
 import {
-    clientStateWorkspaceStorageKey,
-    decodeClientPrincipalStorageKey,
-    decodeClientSessionStorageKey
-} from '../../client-state/persistence/client-state-storage-keys.ts';
+    decodeClientValidationRecord,
+    type ClientValidationRecord
+} from '../../client-state/validation/client-record-validation.ts';
 
 import { decodePSqlAdminCount, type PSqlAdminCountRow } from './decode-p-sql-admin-count.ts';
 
@@ -118,7 +119,7 @@ export class PSqlAdminClientStateReader {
                 order by store_key collate "C"
             `;
         }
-        const prefix = clientStateScopePrefix(scope);
+        const prefix = clientStateScopeStorageKeyPrefix(scope);
         const prefixEnd = toExclusivePrefixEnd(prefix);
         return await this.sql<RuntimeStateRow[]>`
             select store_key, store_value
@@ -147,14 +148,6 @@ export class PSqlAdminClientStateReader {
         const rows = await this.readLiveRuntimeRows('client-state:sessions');
         return readActiveClientSessionRefs(rows, activityCutoffEpochMs).length;
     }
-}
-
-function clientStateScopePrefix(scope: StateScope): string {
-    return [
-        `app=${encodeURIComponent(scope.applicationId)}`,
-        `ws=${clientStateWorkspaceStorageKey(scope.workspaceId)}`,
-        ''
-    ].join(':');
 }
 
 function toExclusivePrefixEnd(prefix: string): string {
@@ -240,14 +233,12 @@ function toClientPrincipalIdentity(ref: ClientPrincipalRef): string {
 }
 
 function isFutureEpochMs(value: ClientValidationRecord[string], nowEpochMs: number): boolean {
-    const epochMs = typeof value === 'number' ? value : Number(value);
-    return Number.isFinite(epochMs) && epochMs > nowEpochMs;
+    return typeof value === 'number' && Number.isFinite(value) && value > nowEpochMs;
 }
 
 function decodeClientRuntimeStateValue(storeValue: string): ClientValidationRecord | undefined {
     try {
-        const value = JSON.parse(storeValue);
-        return isClientJsonObject(value) ? value : undefined;
+        return decodeClientValidationRecord(JSON.parse(storeValue), 'Admin client runtime state');
     }
     catch {
         return undefined;

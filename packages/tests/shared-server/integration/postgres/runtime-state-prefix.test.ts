@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { PSqlAdminStateReader } from '@shared-server/rallar-system/admin-operations/postgres/p-sql-admin-state-reader.ts';
-import { clientStateWorkspaceStorageKey } from '@shared-server/rallar-system/client-state/persistence/client-state-storage-keys.ts';
+import { clientStateWorkspaceStorageKey } from '@shared-server/rallar-system/client-state/persistence/client-state-workspace-storage-key.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import type { AuditStamp, Group, GroupMember, GroupPresenceSession, GroupRef } from '@shared/api/group-types.ts';
 import { createTestGroup } from '../../../create-test-group.ts';

@@ -18,13 +18,11 @@ import postgres from 'postgres';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 
 import { toClientMutationIssuedSessionAuthority } from '@shared-server/rallar-system/client-state/mutation/client-mutation-authority.ts';
-import {
-    toClientMutationCommand,
-    toConnectCommandInput,
-    toDisconnectCommandInput,
-    toHeartbeatCommandInput
-} from '@shared-server/rallar-system/client-state/mutation/client-mutation-command.ts';
+import { toClientMutationCommand } from '@shared-server/rallar-system/client-state/mutation/client-mutation-command.ts';
 import type { ClientMutationCommandInput } from '@shared-server/rallar-system/client-state/mutation/client-mutation-contracts.ts';
+import { toConnectClientSessionMutationInput } from '@shared-server/rallar-system/client-state/mutation/command-input/to-connect-client-session-mutation-input.ts';
+import { toDisconnectClientSessionMutationInput } from '@shared-server/rallar-system/client-state/mutation/command-input/to-disconnect-client-session-mutation-input.ts';
+import { toHeartbeatClientSessionMutationInput } from '@shared-server/rallar-system/client-state/mutation/command-input/to-heartbeat-client-session-mutation-input.ts';
 import { type ClientMutationReceipt } from '@shared-server/rallar-system/client-state/persistence/client-state-persistence-contracts.ts';
 import { ClientStateRepository } from '@shared-server/rallar-system/client-state/persistence/client-state-repository.ts';
 import { GroupStateRepositoryReads } from '@shared-server/rallar-system/group-state/persistence/group-state-repository-reads.ts';
@@ -333,44 +331,44 @@ function toClientWorkerCommandInput(
     input: ClientWorkerInput
 ): Exclude<ClientMutationCommandInput, { readonly operation: 'expireSession'; }> {
     if (input.command === 'client-heartbeat') {
-        const commandInput = toHeartbeatCommandInput(
-            input.scope,
-            input.principalId,
-            input.clientInstanceId,
-            input.sessionId,
-            input.request,
-            input.request.requestId
-        );
+        const commandInput = toHeartbeatClientSessionMutationInput({
+            scope: input.scope,
+            principalId: input.principalId,
+            clientInstanceId: input.clientInstanceId,
+            sessionId: input.sessionId,
+            request: input.request,
+            defaultCommandId: input.request.requestId
+        });
         if (commandInput.operation !== 'heartbeatSession') {
             throw new TypeError(`Expected heartbeatSession, received ${commandInput.operation}`);
         }
         return commandInput;
     }
     if (input.command === 'client-disconnect') {
-        const commandInput = toDisconnectCommandInput(
-            'disconnectSession',
-            input.scope,
-            input.principalId,
-            input.clientInstanceId,
-            input.sessionId,
-            input.request,
-            input.request.requestId
-        );
+        const commandInput = toDisconnectClientSessionMutationInput({
+            operation: 'disconnectSession',
+            scope: input.scope,
+            principalId: input.principalId,
+            clientInstanceId: input.clientInstanceId,
+            sessionId: input.sessionId,
+            request: input.request,
+            defaultCommandId: input.request.requestId
+        });
         if (commandInput.operation !== 'disconnectSession') {
             throw new TypeError(`Expected disconnectSession, received ${commandInput.operation}`);
         }
         return commandInput;
     }
-    const commandInput = toConnectCommandInput(
-        'connectSession',
-        input.scope,
-        input.principalId,
-        input.clientInstanceId,
-        input.sessionId,
-        input.request,
-        input.request.requestId,
-        {}
-    );
+    const commandInput = toConnectClientSessionMutationInput({
+        operation: 'connectSession',
+        scope: input.scope,
+        principalId: input.principalId,
+        clientInstanceId: input.clientInstanceId,
+        sessionId: input.sessionId,
+        request: input.request,
+        defaultCommandId: input.request.requestId,
+        identityDefaults: {}
+    });
     if (commandInput.operation !== 'connectSession') {
         throw new TypeError(`Expected connectSession, received ${commandInput.operation}`);
     }

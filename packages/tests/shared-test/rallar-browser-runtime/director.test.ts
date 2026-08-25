@@ -1,8 +1,7 @@
 import type { BlackBoxRallarRuntime } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-runtime-contract.ts';
+import type { BlackBoxBrowserDirectorDependency } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/browser-rallar-runtime-composition.ts';
 import type { BlackBoxRallarDirectorOutputRecord } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/contracts.ts';
 import type {
-    RallarDirectorRelayConfig,
-    RallarDirectorRelayHandle,
     RallarDirectorRelayMessage,
     RallarDirectorStatus
 } from '@shared-web/browser/rallar-director-facade.ts';
@@ -39,8 +38,8 @@ const directorStatus: RallarDirectorStatus = {
 };
 
 interface DirectorRelayScenario {
-    readonly relay: RallarDirectorRelayHandle<RallarMessagePayload, BlackBoxRallarDirectorOutputRecord, RallarMessagePayload>;
-    config(): RallarDirectorRelayConfig<RallarMessagePayload, BlackBoxRallarDirectorOutputRecord, RallarMessagePayload>;
+    readonly relay: ReturnType<BlackBoxBrowserDirectorDependency['createRelay']>;
+    config(): Parameters<BlackBoxBrowserDirectorDependency['createRelay']>[0];
 }
 
 beforeEach(() => {
@@ -146,8 +145,8 @@ it('sends relay intent and sync requests before releasing the handle', async () 
 });
 
 function configureDirectorRelayScenario(): DirectorRelayScenario {
-    let config: RallarDirectorRelayConfig<RallarMessagePayload, BlackBoxRallarDirectorOutputRecord, RallarMessagePayload> | undefined;
-    const relay: RallarDirectorRelayHandle<RallarMessagePayload, BlackBoxRallarDirectorOutputRecord, RallarMessagePayload> = {
+    let config: Parameters<BlackBoxBrowserDirectorDependency['createRelay']>[0] | undefined;
+    const relay: ReturnType<BlackBoxBrowserDirectorDependency['createRelay']> = {
         status: () => directorStatus,
         sendIntent: async () => ({ status: 'sent' }),
         sendOutput: async () => ({ status: 'sent' }),
@@ -232,7 +231,11 @@ async function receiveDirectorObservations(
 ): Promise<void> {
     const config = scenario.config();
     await config.onOutput?.(relayMessage(output, 'session-1', 1_150));
-    await config.onSnapshot?.(relayMessage(await config.readSnapshot?.(), 'session-1', 1_200));
+    const snapshot = await config.readSnapshot?.();
+    if (snapshot === undefined) {
+        throw new Error('The director relay did not expose a snapshot.');
+    }
+    await config.onSnapshot?.(relayMessage(snapshot, 'session-1', 1_200));
     await config.onSyncRequest?.(
         relayMessage({ reason: 'unit-test' }, 'session-b', 1_250),
         scenario.relay

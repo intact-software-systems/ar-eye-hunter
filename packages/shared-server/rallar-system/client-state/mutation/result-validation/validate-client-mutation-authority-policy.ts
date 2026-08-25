@@ -1,4 +1,4 @@
-import { ClientMutationRejectedError } from '../../client-state-validation-primitives.ts';
+import { ClientMutationRejectedError } from '../../validation/client-mutation-rejection.ts';
 import type { ClientMutationCommand, ClientMutationRead } from '../client-mutation-contracts.ts';
 
 export function validateClientMutationAuthorityPolicy(

@@ -1,13 +1,11 @@
 import type { ClientStateService, ClientStateWritten } from '@shared-server/rallar-system/client-state/client-state-service-contracts.ts';
-import {
-    toClientMutationCommand,
-    toConnectCommandInput,
-    toDisconnectCommandInput,
-    toExpiryCommandInput,
-    toHeartbeatCommandInput,
-    toUpsertInstanceCommandInput,
-    toUpsertPrincipalCommandInput
-} from '@shared-server/rallar-system/client-state/mutation/client-mutation-command.ts';
+import { toClientMutationCommand } from '@shared-server/rallar-system/client-state/mutation/client-mutation-command.ts';
+import { toConnectClientSessionMutationInput } from '@shared-server/rallar-system/client-state/mutation/command-input/to-connect-client-session-mutation-input.ts';
+import { toDisconnectClientSessionMutationInput } from '@shared-server/rallar-system/client-state/mutation/command-input/to-disconnect-client-session-mutation-input.ts';
+import { toExpireClientSessionMutationInput } from '@shared-server/rallar-system/client-state/mutation/command-input/to-expire-client-session-mutation-input.ts';
+import { toHeartbeatClientSessionMutationInput } from '@shared-server/rallar-system/client-state/mutation/command-input/to-heartbeat-client-session-mutation-input.ts';
+import { toUpsertClientInstanceMutationInput } from '@shared-server/rallar-system/client-state/mutation/command-input/to-upsert-client-instance-mutation-input.ts';
+import { toUpsertClientPrincipalMutationInput } from '@shared-server/rallar-system/client-state/mutation/command-input/to-upsert-client-principal-mutation-input.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { ConnectClientSessionRequest, DisconnectClientSessionRequest, HeartbeatClientSessionRequest, StateScope } from '@shared/api/state-types.ts';
 
@@ -38,7 +36,7 @@ export function createClientStateTestDriverOperations(
         expireExpiredSessions: async (atEpochMs) =>
             await Promise.all(
                 (await context.service.listExpiredSessionCandidates(atEpochMs)).map(
-                    async (candidate) => await context.execute(() => toExpiryCommandInput(candidate))
+                    async (candidate) => await context.execute(() => toExpireClientSessionMutationInput(candidate))
                 )
             )
     };
@@ -49,16 +47,23 @@ function createPrincipalAndInstanceOperations(
 ): Pick<ClientStatePhaseTestDriver, 'upsertPrincipal' | 'upsertInstance'> {
     return {
         upsertPrincipal: async (scope, principalId, request) =>
-            await context.execute(() => toUpsertPrincipalCommandInput(scope, principalId, request, context.nextId())),
+            await context.execute(() =>
+                toUpsertClientPrincipalMutationInput({
+                    scope,
+                    principalId,
+                    request,
+                    defaultCommandId: context.nextId()
+                })
+            ),
         upsertInstance: async (scope, principalId, clientInstanceId, request) =>
             await context.execute(() =>
-                toUpsertInstanceCommandInput(
+                toUpsertClientInstanceMutationInput({
                     scope,
                     principalId,
                     clientInstanceId,
                     request,
-                    context.nextId()
-                )
+                    defaultCommandId: context.nextId()
+                })
             )
     };
 }
@@ -106,16 +111,16 @@ async function executeConnectSession(
     request: ConnectClientSessionRequest
 ): Promise<ClientStateWritten> {
     return await context.execute(() =>
-        toConnectCommandInput(
-            'connectSession',
+        toConnectClientSessionMutationInput({
+            operation: 'connectSession',
             scope,
             principalId,
             clientInstanceId,
             sessionId,
             request,
-            context.nextId(),
-            {}
-        )
+            defaultCommandId: context.nextId(),
+            identityDefaults: {}
+        })
     );
 }
 
@@ -128,14 +133,14 @@ async function executeHeartbeatSession(
     request: HeartbeatClientSessionRequest
 ): Promise<ClientStateWritten> {
     return await context.execute(() =>
-        toHeartbeatCommandInput(
+        toHeartbeatClientSessionMutationInput({
             scope,
             principalId,
             clientInstanceId,
             sessionId,
             request,
-            context.nextId()
-        )
+            defaultCommandId: context.nextId()
+        })
     );
 }
 
@@ -148,15 +153,15 @@ async function executeDisconnectSession(
     request: DisconnectClientSessionRequest
 ): Promise<ClientStateWritten> {
     return await context.execute(() =>
-        toDisconnectCommandInput(
-            'disconnectSession',
+        toDisconnectClientSessionMutationInput({
+            operation: 'disconnectSession',
             scope,
             principalId,
             clientInstanceId,
             sessionId,
             request,
-            context.nextId()
-        )
+            defaultCommandId: context.nextId()
+        })
     );
 }
 
@@ -182,15 +187,15 @@ async function executeAuthorisedWsConnect(
     };
     const principalId = input.principalId ?? auth.clientId;
     return await context.execute(() =>
-        toConnectCommandInput(
-            'connectAuthorisedWsSession',
+        toConnectClientSessionMutationInput({
+            operation: 'connectAuthorisedWsSession',
             scope,
             principalId,
-            input.clientInstanceId ?? auth.clientId,
-            auth.sessionId,
-            toAuthorisedWsConnectRequest(auth, generationId, principalId, input),
-            context.nextId(),
-            {
+            clientInstanceId: input.clientInstanceId ?? auth.clientId,
+            sessionId: auth.sessionId,
+            request: toAuthorisedWsConnectRequest(auth, generationId, principalId, input),
+            defaultCommandId: context.nextId(),
+            identityDefaults: {
                 platform: input.platform,
                 userAgent: input.userAgent,
                 capabilities: input.capabilities,
@@ -198,7 +203,7 @@ async function executeAuthorisedWsConnect(
                 principalDisplayName: input.displayName ?? auth.username,
                 principalRoles: ['member']
             }
-        )
+        })
     );
 }
 
@@ -231,20 +236,20 @@ async function executeAuthorisedWsDisconnect(
         throw new Error(`Durable client connection generation not found: ${sessionId}`);
     }
     return await context.execute(() =>
-        toDisconnectCommandInput(
-            'disconnectAuthorisedWsSession',
-            { applicationId: session.applicationId, workspaceId: session.workspaceId },
-            session.principalId,
-            session.clientInstanceId,
+        toDisconnectClientSessionMutationInput({
+            operation: 'disconnectAuthorisedWsSession',
+            scope: { applicationId: session.applicationId, workspaceId: session.workspaceId },
+            principalId: session.principalId,
+            clientInstanceId: session.clientInstanceId,
             sessionId,
-            {
+            request: {
                 generationId,
                 reason,
                 actorPrincipalId: session.principalId,
                 actorSessionId: sessionId,
                 requestId: `authorised-ws:disconnect:${sessionId}:${generationId}`
             },
-            context.nextId()
-        )
+            defaultCommandId: context.nextId()
+        })
     );
 }

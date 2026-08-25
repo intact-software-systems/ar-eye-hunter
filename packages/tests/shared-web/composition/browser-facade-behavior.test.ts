@@ -96,10 +96,10 @@ describe('browser facade behavior', () => {
         const wsHandler = vi.fn();
         const rtcHandler = vi.fn();
         const shutdownEvents: string[] = [];
-        runtime.middleware.middleware.qboxEngine.stop.mockImplementation(() => {
+        vi.spyOn(runtime.middleware.middleware.qboxEngine, 'stop').mockImplementation(() => {
             shutdownEvents.push('queue-engine-stopped');
         });
-        runtime.middleware.middleware.webSocketQueueBox.close.mockImplementation(() => {
+        vi.spyOn(runtime.middleware.middleware.webSocketQueueBox, 'close').mockImplementation(() => {
             shutdownEvents.push('websocket-closed');
         });
         const wsCallbacks = new Map<string, { onMessage(data: { payload: RouterPayload; }): Promise<void>; }>();

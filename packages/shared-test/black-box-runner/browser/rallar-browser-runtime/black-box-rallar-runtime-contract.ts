@@ -42,7 +42,7 @@ export interface BlackBoxRallarWsSendInput {
 }
 
 export interface BlackBoxRallarRuntime {
-    authenticate?(
+    authenticate(
         config: BlackBoxRallarConnectionConfig
     ): Promise<BlackBoxRallarAuthenticateDiagnostics>;
     connect(config: BlackBoxRallarConnectionConfig): Promise<BlackBoxRallarConnectDiagnostics>;

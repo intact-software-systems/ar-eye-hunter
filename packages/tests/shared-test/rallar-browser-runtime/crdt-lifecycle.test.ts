@@ -38,7 +38,7 @@ afterEach(() => {
 });
 
 it('revalidates queued live CRDT bootstrap before mutating the facade', async () => {
-    const firstConnect = createCrdtTestDeferred<void>();
+    const firstConnect = createCrdtTestDeferred<object>();
     facade.behavior.connect.mockReturnValueOnce(firstConnect.promise);
     facade.behavior.crdtOpen.mockResolvedValueOnce(
         new CrdtDocumentTestDouble({
@@ -74,7 +74,7 @@ it('revalidates queued live CRDT bootstrap before mutating the facade', async ()
         'Connected Rallar identity, scope, or room changes require close first.'
     );
 
-    firstConnect.resolve(undefined);
+    firstConnect.resolve({});
     await connecting;
     await openingFailure;
     expect(facade.records.configurationWrites).not.toContainEqual({

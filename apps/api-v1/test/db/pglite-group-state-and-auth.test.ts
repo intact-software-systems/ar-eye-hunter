@@ -12,7 +12,8 @@ import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persist
 import { requiresClientWrite } from '@shared-server/rallar-system/client-state/client-state-service-contracts.ts';
 import { createClientStateService } from '@shared-server/rallar-system/client-state/client-state-service.ts';
 import { toClientMutationIssuedSessionAuthority } from '@shared-server/rallar-system/client-state/mutation/client-mutation-authority.ts';
-import { toClientMutationCommand, toUpsertPrincipalCommandInput } from '@shared-server/rallar-system/client-state/mutation/client-mutation-command.ts';
+import { toClientMutationCommand } from '@shared-server/rallar-system/client-state/mutation/client-mutation-command.ts';
+import { toUpsertClientPrincipalMutationInput } from '@shared-server/rallar-system/client-state/mutation/command-input/to-upsert-client-principal-mutation-input.ts';
 import { ClientStateRepository } from '@shared-server/rallar-system/client-state/persistence/client-state-repository.ts';
 import { createGroupStateService } from '@shared-server/rallar-system/group-state/group-state-service.ts';
 import { GroupStateInboxService } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-service.ts';
@@ -616,18 +617,18 @@ Deno.test(
                     expiresAtEpochMs: FUTURE_MS
                 } as const;
                 await authSessions.putSession(authority);
-                const input = toUpsertPrincipalCommandInput(
+                const input = toUpsertClientPrincipalMutationInput({
                     scope,
                     principalId,
-                    {
+                    request: {
                         username: principalId,
                         displayName: principalId,
                         actorPrincipalId: principalId,
                         actorSessionId: authority.sessionId,
                         requestId: commandId
                     },
-                    commandId
-                );
+                    defaultCommandId: commandId
+                });
                 const command = await toClientMutationCommand(
                     input,
                     {
