@@ -74,7 +74,6 @@ export type {
     RegisterAuthorisedWsClientInput
 } from './rallar-system/client-state/client-state-service-contracts.ts';
 export { createClientStateService } from './rallar-system/client-state/client-state-service.ts';
-export { ClientMutationRejectedError } from './rallar-system/client-state/client-state-validation-primitives.ts';
 export type {
     ClientAuthorisedWsSessionConnectAppInboxPayload,
     ClientAuthorisedWsSessionDisconnectAppInboxPayload,
@@ -91,21 +90,38 @@ export {
     toClientMutationSystemAuthority
 } from './rallar-system/client-state/mutation/client-mutation-authority.ts';
 export {
-    toClientMutationCommand,
-    toConnectCommandInput,
-    toDisconnectCommandInput,
-    toExpiryCommandInput,
-    toHeartbeatCommandInput,
-    toUpsertInstanceCommandInput,
-    toUpsertPrincipalCommandInput
+    toClientMutationCommand
 } from './rallar-system/client-state/mutation/client-mutation-command.ts';
 export type { ClientMutationPersistedFacts } from './rallar-system/client-state/mutation/client-mutation-command.ts';
 export type { ClientMutationReceipt } from './rallar-system/client-state/mutation/client-mutation-contracts.ts';
+export {
+    type ClientSessionIdentityDefaults,
+    type ToConnectClientSessionMutationInput,
+    toConnectClientSessionMutationInput
+} from './rallar-system/client-state/mutation/command-input/to-connect-client-session-mutation-input.ts';
+export {
+    type ToDisconnectClientSessionMutationInput,
+    toDisconnectClientSessionMutationInput
+} from './rallar-system/client-state/mutation/command-input/to-disconnect-client-session-mutation-input.ts';
+export { toExpireClientSessionMutationInput } from './rallar-system/client-state/mutation/command-input/to-expire-client-session-mutation-input.ts';
+export {
+    type ToHeartbeatClientSessionMutationInput,
+    toHeartbeatClientSessionMutationInput
+} from './rallar-system/client-state/mutation/command-input/to-heartbeat-client-session-mutation-input.ts';
+export {
+    type ToUpsertClientInstanceMutationInput,
+    toUpsertClientInstanceMutationInput
+} from './rallar-system/client-state/mutation/command-input/to-upsert-client-instance-mutation-input.ts';
+export {
+    type ToUpsertClientPrincipalMutationInput,
+    toUpsertClientPrincipalMutationInput
+} from './rallar-system/client-state/mutation/command-input/to-upsert-client-principal-mutation-input.ts';
 export { ClientMutationIdempotencyConflictError } from './rallar-system/client-state/mutation/result-validation/validate-client-mutation.ts';
 export * from './rallar-system/client-state/persistence/client-state-repository.ts';
 export * from './rallar-system/client-state/snapshot/cached-client-state-service.ts';
 export * from './rallar-system/client-state/snapshot/client-rest-snapshot-read-selector.ts';
 export * from './rallar-system/client-state/snapshot/client-state-snapshot-read-through-cache.ts';
+export { ClientMutationRejectedError } from './rallar-system/client-state/validation/client-mutation-rejection.ts';
 export * from './rallar-system/crdt/persistence/in-memory-crdt-log-repository.ts';
 export * from './rallar-system/crdt/persistence/psql-crdt-log-repository.ts';
 export * from './rallar-system/crdt/realtime/install-rallar-crdt-ws-topics.ts';

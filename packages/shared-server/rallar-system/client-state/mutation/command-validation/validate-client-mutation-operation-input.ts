@@ -1,17 +1,22 @@
+import { requireNullableEnum } from '../../validation/client-enum-validation.ts';
+import { requireNullableJsonRecord } from '../../validation/client-json-validation.ts';
+import { rejectClientMutation } from '../../validation/client-mutation-rejection.ts';
 import {
-    rejectClientMutation,
     requireExactKeys,
+    type ClientValidationRecord,
+    type ClientValidationValue
+} from '../../validation/client-record-validation.ts';
+import {
     requireNonEmptyString,
-    requireNullableEnum,
-    requireNullableJsonRecord,
     requireNullableNonEmptyString,
     requireNullableString,
-    requireNullableStringArray,
+    requireNullableStringArray
+} from '../../validation/client-string-validation.ts';
+import {
     requireNullableTimestamp,
     requirePositiveSafeInteger,
     requireTimestamp
-} from '../../client-state-validation-primitives.ts';
-import type { ClientValidationRecord } from '../../client-state-validation-primitives.ts';
+} from '../../validation/client-timestamp-validation.ts';
 import {
     CLIENT_INSTANCE_STATUSES,
     CLIENT_PLATFORMS,
@@ -172,7 +177,7 @@ function validateActorInput(input: ClientValidationRecord): void {
     requireNullableString(input.traceId, 'Client mutation traceId');
 }
 
-function validateGenerationId(value: unknown): void {
+function validateGenerationId(value: ClientValidationValue): void {
     requireNonEmptyString(value, 'Client session generationId');
 }
 
@@ -222,7 +227,7 @@ function validateDisconnectTimestampOrder(input: ClientValidationRecord): void {
     }
 }
 
-function timestampValue(value: unknown): number | undefined {
+function timestampValue(value: ClientValidationValue): number | undefined {
     return typeof value === 'number' ? value : undefined;
 }
 

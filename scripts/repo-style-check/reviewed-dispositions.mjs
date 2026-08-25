@@ -60,6 +60,16 @@ export const reviewedDispositions = Object.freeze([
         rule: 'boundary.unknown',
         symbol: 'decodeAppInboxEnqueue'
     }),
+    // Client-state record decoding is the single raw-object boundary for the
+    // operation-specific command, persisted-state, and result validators. It
+    // immediately rejects non-plain objects and returns the narrowed record
+    // vocabulary consumed by every downstream scalar validator.
+    Object.freeze({
+        path: 'packages/shared-server/rallar-system/client-state/validation/' +
+            'client-record-validation.ts',
+        rule: 'boundary.unknown',
+        symbol: 'decodeClientValidationRecord'
+    }),
     // Group mutation operation-input validation narrows raw request fields at
     // the HTTP/WS boundary. Both listed owners validate their unknown input
     // before any domain use, mirroring the persisted-JSON decoder entries below.

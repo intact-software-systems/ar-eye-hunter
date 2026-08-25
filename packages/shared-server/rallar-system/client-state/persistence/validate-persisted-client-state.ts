@@ -16,7 +16,7 @@ import {
     validateClientSession
 } from '../client-state-contract-validation.ts';
 import { sameClientPrincipalRef } from '../client-state-semantic-equality.ts';
-import { rejectClientMutation } from '../client-state-validation-primitives.ts';
+import { rejectClientMutation } from '../validation/client-mutation-rejection.ts';
 import type { ClientMutationIdempotencyRecord } from './client-state-persistence-contracts.ts';
 
 export function validatePersistedClientPrincipal(

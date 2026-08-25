@@ -2,21 +2,19 @@ import {
     toClientMutationIssuedSessionAuthority,
     toClientMutationSystemAuthority
 } from '@shared-server/rallar-system/client-state/mutation/client-mutation-authority.ts';
-import {
-    toClientMutationCommand,
-    toConnectCommandInput,
-    toDisconnectCommandInput,
-    toExpiryCommandInput,
-    toHeartbeatCommandInput,
-    toUpsertInstanceCommandInput,
-    toUpsertPrincipalCommandInput
-} from '@shared-server/rallar-system/client-state/mutation/client-mutation-command.ts';
+import { toClientMutationCommand } from '@shared-server/rallar-system/client-state/mutation/client-mutation-command.ts';
 import type {
     ClientMutationCommand,
     ClientMutationCommandInput,
     ClientMutationComputedAppliedWrite,
     ClientMutationRead
 } from '@shared-server/rallar-system/client-state/mutation/client-mutation-contracts.ts';
+import { toConnectClientSessionMutationInput } from '@shared-server/rallar-system/client-state/mutation/command-input/to-connect-client-session-mutation-input.ts';
+import { toDisconnectClientSessionMutationInput } from '@shared-server/rallar-system/client-state/mutation/command-input/to-disconnect-client-session-mutation-input.ts';
+import { toExpireClientSessionMutationInput } from '@shared-server/rallar-system/client-state/mutation/command-input/to-expire-client-session-mutation-input.ts';
+import { toHeartbeatClientSessionMutationInput } from '@shared-server/rallar-system/client-state/mutation/command-input/to-heartbeat-client-session-mutation-input.ts';
+import { toUpsertClientInstanceMutationInput } from '@shared-server/rallar-system/client-state/mutation/command-input/to-upsert-client-instance-mutation-input.ts';
+import { toUpsertClientPrincipalMutationInput } from '@shared-server/rallar-system/client-state/mutation/command-input/to-upsert-client-principal-mutation-input.ts';
 import type { RuntimeStateEntryValue } from '@shared-server/runtime-state/runtime-state-json-store.ts';
 import type { ClientInstance, ClientPrincipal, ClientSession } from '@shared/api/client-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
@@ -31,35 +29,35 @@ export async function principalCommand(
     displayName: string | undefined = 'Alice'
 ): Promise<ClientMutationCommand> {
     return await command(
-        toUpsertPrincipalCommandInput(
-            TEST_SCOPE,
-            'alice',
-            {
+        toUpsertClientPrincipalMutationInput({
+            scope: TEST_SCOPE,
+            principalId: 'alice',
+            request: {
                 username: 'alice',
                 displayName,
                 roles: ['member'],
                 metadata: { theme: 'dark' },
                 requestId: commandId
             },
-            commandId
-        )
+            defaultCommandId: commandId
+        })
     );
 }
 
 export async function instanceCommand(commandId = 'instance-1'): Promise<ClientMutationCommand> {
     return await command(
-        toUpsertInstanceCommandInput(
-            TEST_SCOPE,
-            'alice',
-            'browser',
-            {
+        toUpsertClientInstanceMutationInput({
+            scope: TEST_SCOPE,
+            principalId: 'alice',
+            clientInstanceId: 'browser',
+            request: {
                 platform: 'web',
                 deviceLabel: 'Laptop',
                 capabilities: ['rtc'],
                 requestId: commandId
             },
-            commandId
-        )
+            defaultCommandId: commandId
+        })
     );
 }
 
@@ -69,21 +67,21 @@ export async function connectCommand(
     connectedAtEpochMs = 2_000
 ): Promise<ClientMutationCommand> {
     return await command(
-        toConnectCommandInput(
-            'connectSession',
-            TEST_SCOPE,
-            'alice',
-            'browser',
-            'session-1',
-            {
+        toConnectClientSessionMutationInput({
+            operation: 'connectSession',
+            scope: TEST_SCOPE,
+            principalId: 'alice',
+            clientInstanceId: 'browser',
+            sessionId: 'session-1',
+            request: {
                 generationId,
                 connectedAtEpochMs,
                 expiresAtEpochMs: 8_000,
                 requestId: commandId
             },
-            commandId,
-            { platform: 'web', principalUsername: 'alice' }
-        )
+            defaultCommandId: commandId,
+            identityDefaults: { platform: 'web', principalUsername: 'alice' }
+        })
     );
 }
 
@@ -92,20 +90,20 @@ export async function heartbeatCommand(
     generationId = 'generation-1'
 ): Promise<ClientMutationCommand> {
     return await command(
-        toHeartbeatCommandInput(
-            TEST_SCOPE,
-            'alice',
-            'browser',
-            'session-1',
-            {
+        toHeartbeatClientSessionMutationInput({
+            scope: TEST_SCOPE,
+            principalId: 'alice',
+            clientInstanceId: 'browser',
+            sessionId: 'session-1',
+            request: {
                 generationId,
                 presenceState: 'away',
                 lastHeartbeatAtEpochMs: 3_000,
                 expiresAtEpochMs: 9_000,
                 requestId: commandId
             },
-            commandId
-        ),
+            defaultCommandId: commandId
+        }),
         3_000
     );
 }
@@ -115,20 +113,20 @@ export async function disconnectCommand(
     generationId = 'generation-1'
 ): Promise<ClientMutationCommand> {
     return await command(
-        toDisconnectCommandInput(
-            'disconnectSession',
-            TEST_SCOPE,
-            'alice',
-            'browser',
-            'session-1',
-            {
+        toDisconnectClientSessionMutationInput({
+            operation: 'disconnectSession',
+            scope: TEST_SCOPE,
+            principalId: 'alice',
+            clientInstanceId: 'browser',
+            sessionId: 'session-1',
+            request: {
                 generationId,
                 disconnectedAtEpochMs: 4_000,
                 reason: 'closed',
                 requestId: commandId
             },
-            commandId
-        ),
+            defaultCommandId: commandId
+        }),
         4_000
     );
 }
@@ -136,7 +134,7 @@ export async function disconnectCommand(
 export async function expiryCommand(
     commandId = 'expire-client-session:session-1:generation-1:1:8000'
 ): Promise<ClientMutationCommand> {
-    const input = toExpiryCommandInput({
+    const input = toExpireClientSessionMutationInput({
         ...TEST_SCOPE,
         principalId: 'alice',
         clientInstanceId: 'browser',

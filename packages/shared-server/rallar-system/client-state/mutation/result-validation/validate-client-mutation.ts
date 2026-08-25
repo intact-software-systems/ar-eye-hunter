@@ -1,5 +1,5 @@
 import { computeClientStateSyncEntries } from '../../../state-sync/state-sync-entry-computation.ts';
-import { ClientMutationRejectedError } from '../../client-state-validation-primitives.ts';
+import { ClientMutationRejectedError } from '../../validation/client-mutation-rejection.ts';
 import type {
     ClientMutationCommand,
     ClientMutationComputed,

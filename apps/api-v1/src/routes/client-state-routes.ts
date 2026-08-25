@@ -3,7 +3,6 @@ import type { AppInboxFailure } from '@shared-server/rallar-system/app-inbox/app
 import { type IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
 import type { ClientStateService } from '@shared-server/rallar-system/client-state/client-state-service-contracts.ts';
 import type { ClientStateWritten } from '@shared-server/rallar-system/client-state/client-state-service-contracts.ts';
-import { ClientMutationRejectedError } from '@shared-server/rallar-system/client-state/client-state-validation-primitives.ts';
 import {
     type ClientInstanceUpsertAppInboxPayload,
     type ClientPrincipalUpsertAppInboxPayload,
@@ -15,6 +14,12 @@ import {
     toAuthenticatedClientMutationContextId
 } from '@shared-server/rallar-system/client-state/inbox/authenticated-client-mutation-ingress.ts';
 import { validateClientMutationRequest } from '@shared-server/rallar-system/client-state/mutation/command-validation/validate-client-mutation-request.ts';
+import { ClientMutationRejectedError } from '@shared-server/rallar-system/client-state/validation/client-mutation-rejection.ts';
+import {
+    decodeJsonWireValue,
+    type JsonWireObject,
+    type JsonWireValue
+} from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import {
     readStateEventListQuery,
     type StateEventListQuery
@@ -24,11 +29,7 @@ import {
     type StateSyncCacheHydrationResult
 } from '@shared-server/rallar-system/state-sync/state-sync-cache-hydration.ts';
 import type { ClientEvent, ClientPrincipalRef, ClientSnapshot } from '@shared/api/client-types.ts';
-import type {
-    ApiMutationFailureJsonObject,
-    ApiMutationFailureJsonValue
-} from '@shared/api/mutation/api-mutation-failure.ts';
-import type { StateScope, UpsertClientInstanceRequest } from '@shared/api/state-types.ts';
+import type { StateScope } from '@shared/api/state-types.ts';
 import type { Either } from '@shared/resilience/Either.ts';
 import { Hono, type Context } from 'jsr:@hono/hono@4.11.9';
 import { authorizationDenied } from '../services/request-auth-service.ts';
@@ -283,10 +284,7 @@ async function handleClientInstanceUpsert(
         assertSelfPrincipal(authSession.clientId, principalId);
         const requestBody = await readRequestWithRequestId(context);
         validateClientMutationRequest('upsertInstance', requestBody);
-        const request = withActor(
-            requestBody as UpsertClientInstanceRequest & { requestId: string; },
-            authSession
-        );
+        const request = withActor(requestBody, authSession);
         const snapshot = await processClientAppInbox<ClientInstanceUpsertAppInboxPayload>(
             dependencies,
             {
@@ -530,31 +528,29 @@ function requireClientStateWrittenSnapshot(
     return written.result.snapshot;
 }
 
-async function readRequestWithRequestId(c: {
-    req: {
-        json(): Promise<unknown>;
-        header(name: string): string | undefined;
-        param(name: string): string;
-    };
-}): Promise<Record<string, unknown> & { requestId: string; }> {
-    const requestBody = await c.req.json();
-    if (
-        typeof requestBody !== 'object' || requestBody === null ||
-        Array.isArray(requestBody)
-    ) {
+interface ClientMutationRequestBody extends JsonWireObject {
+    readonly requestId: string;
+}
+
+async function readRequestWithRequestId(c: Context): Promise<ClientMutationRequestBody> {
+    const requestBody = decodeJsonWireValue(await c.req.json(), 'Client request');
+    if (!isClientMutationRequestBody(requestBody)) {
         throw new ClientMutationRejectedError('Client request must be a plain object');
     }
-    const body = requestBody as Record<string, unknown> & ApiMutationFailureJsonObject;
     const requestId = readApiMutationRouteRequestId({
         requestId: c.req.param('requestId'),
         idempotencyKey: c.req.header('idempotency-key'),
-        mutationBody: body as ApiMutationFailureJsonValue
+        mutationBody: requestBody
     });
 
     return {
-        ...body,
+        ...requestBody,
         requestId: String(requestId)
     };
+}
+
+function isClientMutationRequestBody(value: JsonWireValue): value is JsonWireObject {
+    return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
 function toScope(c: {
@@ -568,18 +564,20 @@ function toScope(c: {
     };
 }
 
-function withActor<
-    T extends {
-        actorPrincipalId?: string;
-        actorSessionId?: string;
-    },
->(
+type AuthenticatedClientMutationRequest<T extends JsonWireObject> =
+    & T
+    & Readonly<{
+        actorPrincipalId: string;
+        actorSessionId: string;
+    }>;
+
+function withActor<T extends JsonWireObject>(
     request: T,
     authSession: {
         clientId: string;
         sessionId: string;
     }
-): T {
+): AuthenticatedClientMutationRequest<T> {
     return {
         ...request,
         actorPrincipalId: authSession.clientId,

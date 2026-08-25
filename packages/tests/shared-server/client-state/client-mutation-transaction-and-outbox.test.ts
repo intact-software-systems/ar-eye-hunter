@@ -6,7 +6,7 @@ import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 import { AppClientInboxService } from '@shared-server/rallar-system/client-state/inbox/app-client-inbox-service.ts';
 
 import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
-import { toUpsertPrincipalCommandInput } from '@shared-server/rallar-system/client-state/mutation/client-mutation-command.ts';
+import { toUpsertClientPrincipalMutationInput } from '@shared-server/rallar-system/client-state/mutation/command-input/to-upsert-client-principal-mutation-input.ts';
 
 import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
 
@@ -35,17 +35,17 @@ describe('client mutation transaction and outbox', () => {
 
         const result = await harness.handler.processCommand(
             harness.context,
-            toUpsertPrincipalCommandInput(
-                SCOPE,
-                'alice',
-                {
+            toUpsertClientPrincipalMutationInput({
+                scope: SCOPE,
+                principalId: 'alice',
+                request: {
                     username: 'alice',
                     actorPrincipalId: 'alice',
                     actorSessionId: 'alice-session',
                     requestId: 'client-transaction-result'
                 },
-                'client-transaction-result'
-            )
+                defaultCommandId: 'client-transaction-result'
+            })
         );
 
         const persisted = await harness.results.findByKey(harness.context.entry.key);
@@ -67,17 +67,17 @@ describe('client mutation transaction and outbox', () => {
         await expect(
             harness.handler.processCommand(
                 harness.context,
-                toUpsertPrincipalCommandInput(
-                    SCOPE,
-                    'alice',
-                    {
+                toUpsertClientPrincipalMutationInput({
+                    scope: SCOPE,
+                    principalId: 'alice',
+                    request: {
                         username: 'alice',
                         actorPrincipalId: 'alice',
                         actorSessionId: 'alice-session',
                         requestId: 'client-transaction-failure'
                     },
-                    'client-transaction-failure'
-                )
+                    defaultCommandId: 'client-transaction-failure'
+                })
             )
         ).rejects.toThrow('injected transaction failure');
 

@@ -1,11 +1,7 @@
 import type { BlackBoxRallarRuntime } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-runtime-contract.ts';
+import type { BlackBoxBrowserDirectorDependency } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/browser-rallar-runtime-composition.ts';
 import type { BlackBoxRallarDirectorOutputRecord } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/contracts.ts';
-import type {
-    RallarDirectorRelayConfig,
-    RallarDirectorRelayHandle,
-    RallarDirectorRelayMessage,
-    RallarDirectorStatus
-} from '@shared-web/browser/director/rallar-director-facade.ts';
+import type { RallarDirectorRelayMessage, RallarDirectorStatus } from '@shared-web/browser/director/rallar-director-facade.ts';
 import type { RallarMessagePayload } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
@@ -39,8 +35,8 @@ const directorStatus: RallarDirectorStatus = {
 };
 
 interface DirectorRelayScenario {
-    readonly relay: RallarDirectorRelayHandle<RallarMessagePayload, BlackBoxRallarDirectorOutputRecord, RallarMessagePayload>;
-    config(): RallarDirectorRelayConfig<RallarMessagePayload, BlackBoxRallarDirectorOutputRecord, RallarMessagePayload>;
+    readonly relay: ReturnType<BlackBoxBrowserDirectorDependency['createRelay']>;
+    config(): Parameters<BlackBoxBrowserDirectorDependency['createRelay']>[0];
 }
 
 beforeEach(() => {
@@ -146,8 +142,8 @@ it('sends relay intent and sync requests before releasing the handle', async () 
 });
 
 function configureDirectorRelayScenario(): DirectorRelayScenario {
-    let config: RallarDirectorRelayConfig<RallarMessagePayload, BlackBoxRallarDirectorOutputRecord, RallarMessagePayload> | undefined;
-    const relay: RallarDirectorRelayHandle<RallarMessagePayload, BlackBoxRallarDirectorOutputRecord, RallarMessagePayload> = {
+    let config: Parameters<BlackBoxBrowserDirectorDependency['createRelay']>[0] | undefined;
+    const relay: ReturnType<BlackBoxBrowserDirectorDependency['createRelay']> = {
         status: () => directorStatus,
         sendIntent: async () => ({ status: 'sent' }),
         sendOutput: async () => ({ status: 'sent' }),
@@ -216,11 +212,7 @@ async function startDirectorRelay(runtime: BlackBoxRallarRuntime) {
 async function receiveDirectorIntent(
     scenario: DirectorRelayScenario
 ): Promise<BlackBoxRallarDirectorOutputRecord> {
-    const onIntent = scenario.config().onIntent;
-    if (onIntent === undefined) {
-        throw new Error('The director relay did not register its intent handler.');
-    }
-    const output = await onIntent(
+    const output = await scenario.config().onIntent?.(
         relayMessage({ intentId: 'intent-b-1', action: 'move' }, 'session-b', 1_100),
         scenario.relay
     );
@@ -274,7 +266,7 @@ function relayMessage<T>(data: T, senderId: string, receivedAtEpochMs: number): 
 }
 
 function isDirectorOutput(
-    value: void | BlackBoxRallarDirectorOutputRecord | readonly BlackBoxRallarDirectorOutputRecord[]
+    value: void | RallarMessagePayload | readonly BlackBoxRallarDirectorOutputRecord[]
 ): value is BlackBoxRallarDirectorOutputRecord {
     return typeof value === 'object' && value !== null && 'kind' in value &&
         value.kind === 'black-box-director-output';

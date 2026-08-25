@@ -12,11 +12,8 @@ import {
     validateClientSession
 } from '../../client-state-contract-validation.ts';
 import { sameClientPrincipalRef } from '../../client-state-semantic-equality.ts';
-import {
-    ClientMutationRejectedError,
-    requireExactKeys,
-    requirePlainRecord
-} from '../../client-state-validation-primitives.ts';
+import { ClientMutationRejectedError } from '../../validation/client-mutation-rejection.ts';
+import { decodeClientValidationRecord, requireExactKeys } from '../../validation/client-record-validation.ts';
 import type { ClientMutationCommand, ClientMutationRead } from '../client-mutation-contracts.ts';
 import { validateClientExpiredSessionAuthority } from '../validate-client-expired-session-authority.ts';
 
@@ -24,7 +21,7 @@ export function validateClientMutationRead(
     command: ClientMutationCommand,
     read: ClientMutationRead
 ): void {
-    const root = requirePlainRecord(read, 'Client mutation read');
+    const root = decodeClientValidationRecord(read, 'Client mutation read');
     requireExactKeys(
         root,
         [
@@ -147,7 +144,7 @@ function validateNullableEntryValue(
     if (value === null) {
         return;
     }
-    const wrapped = requirePlainRecord(value, label);
+    const wrapped = decodeClientValidationRecord(value, label);
     requireExactKeys(wrapped, ['entry', 'value'], label);
     validateClientRuntimeStateEntry(wrapped.entry, `${label}.entry`);
     validateValue(wrapped.value, `${label}.value`);

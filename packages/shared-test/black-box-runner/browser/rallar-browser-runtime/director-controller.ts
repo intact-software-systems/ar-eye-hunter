@@ -398,7 +398,7 @@ export function createBlackBoxRallarDirectorController(
                 throw new Error('Director relay handle is already open: ' + normalized.handle);
             }
             let entry!: DirectorRelayState;
-            const relay = rallar.director.createRelay<unknown, BlackBoxRallarDirectorOutputRecord, unknown>({
+            const relay = rallar.director.createRelay({
                 roomId: normalized.roomId ?? config.roomId,
                 roomRef: toRoomRef(normalized, config) as any,
                 laneId: normalized.laneId,

@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 
-import { ClientMutationRejectedError } from '@shared-server/rallar-system/client-state/client-state-validation-primitives.ts';
 import type {
     ClientMutationCommand,
     ClientMutationFacts,
@@ -10,6 +9,7 @@ import { validateClientMutationCommand } from '@shared-server/rallar-system/clie
 import { validateClientMutationRequest } from '@shared-server/rallar-system/client-state/mutation/command-validation/validate-client-mutation-request.ts';
 import { computeClientMutation } from '@shared-server/rallar-system/client-state/mutation/compute/compute-client-mutation.ts';
 import { validateClientMutation } from '@shared-server/rallar-system/client-state/mutation/result-validation/validate-client-mutation.ts';
+import { ClientMutationRejectedError } from '@shared-server/rallar-system/client-state/validation/client-mutation-rejection.ts';
 
 import { deepFreeze } from './client-mutation-concurrency-test-runtime.ts';
 import {

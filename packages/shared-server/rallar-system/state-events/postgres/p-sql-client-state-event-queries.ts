@@ -1,7 +1,7 @@
 import type { ClientEvent, ClientPrincipalRef } from '@shared/api/client-types.ts';
 
 import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
-import { clientStateWorkspaceStorageKey } from '../../client-state/persistence/client-state-storage-keys.ts';
+import { clientStateWorkspaceStorageKey } from '../../client-state/persistence/client-state-workspace-storage-key.ts';
 import type { StateEventListQuery } from '../state-event-listing.ts';
 import type { ClientStateEventCollisionRow, ClientStateEventRow } from './client-state-event-row-codec.ts';
 

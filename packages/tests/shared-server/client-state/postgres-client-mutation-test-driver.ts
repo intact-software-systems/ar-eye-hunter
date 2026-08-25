@@ -7,12 +7,10 @@ import {
     toClientMutationIssuedSessionAuthority,
     toClientMutationSystemAuthority
 } from '@shared-server/rallar-system/client-state/mutation/client-mutation-authority.ts';
-import {
-    toClientMutationCommand,
-    toConnectCommandInput,
-    toExpiryCommandInput
-} from '@shared-server/rallar-system/client-state/mutation/client-mutation-command.ts';
+import { toClientMutationCommand } from '@shared-server/rallar-system/client-state/mutation/client-mutation-command.ts';
 import type { ClientMutationCommandInput, ClientMutationComputed } from '@shared-server/rallar-system/client-state/mutation/client-mutation-contracts.ts';
+import { toConnectClientSessionMutationInput } from '@shared-server/rallar-system/client-state/mutation/command-input/to-connect-client-session-mutation-input.ts';
+import { toExpireClientSessionMutationInput } from '@shared-server/rallar-system/client-state/mutation/command-input/to-expire-client-session-mutation-input.ts';
 import type { ClientStateEventStore } from '@shared-server/rallar-system/state-events/client-state-event-store.ts';
 import { PSqlClientStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-client-state-event-repository.ts';
 import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
@@ -77,7 +75,7 @@ export function createPostgresClientPhaseDriver(
         expireExpiredSessions: async (atEpochMs) => {
             const written: ClientMutationComputed[] = [];
             for (const candidate of await service.listExpiredSessionCandidates(atEpochMs)) {
-                const computed = await execute(toExpiryCommandInput(candidate), null);
+                const computed = await execute(toExpireClientSessionMutationInput(candidate), null);
                 if (computed.outcome === 'write') {
                     written.push(computed);
                 }
@@ -158,16 +156,16 @@ async function connectPostgresClientSession(
     };
     await new AuthSessionRepository(input.options.runtimeRepository).putSession(authority);
     return await input.execute(
-        toConnectCommandInput(
-            'connectSession',
-            input.scope,
-            input.principalId,
-            input.clientInstanceId,
-            input.sessionId,
-            input.request,
-            input.request.requestId ?? `postgres-connect:${input.sessionId}`,
-            {}
-        ),
+        toConnectClientSessionMutationInput({
+            operation: 'connectSession',
+            scope: input.scope,
+            principalId: input.principalId,
+            clientInstanceId: input.clientInstanceId,
+            sessionId: input.sessionId,
+            request: input.request,
+            defaultCommandId: input.request.requestId ?? `postgres-connect:${input.sessionId}`,
+            identityDefaults: {}
+        }),
         authority
     );
 }

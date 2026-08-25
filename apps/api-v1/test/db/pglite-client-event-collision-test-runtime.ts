@@ -3,11 +3,9 @@ import assert from 'node:assert/strict';
 import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
 import { createClientStateService } from '@shared-server/rallar-system/client-state/client-state-service.ts';
 import { toClientMutationIssuedSessionAuthority } from '@shared-server/rallar-system/client-state/mutation/client-mutation-authority.ts';
-import {
-    toClientMutationCommand,
-    toUpsertInstanceCommandInput,
-    toUpsertPrincipalCommandInput
-} from '@shared-server/rallar-system/client-state/mutation/client-mutation-command.ts';
+import { toClientMutationCommand } from '@shared-server/rallar-system/client-state/mutation/client-mutation-command.ts';
+import { toUpsertClientInstanceMutationInput } from '@shared-server/rallar-system/client-state/mutation/command-input/to-upsert-client-instance-mutation-input.ts';
+import { toUpsertClientPrincipalMutationInput } from '@shared-server/rallar-system/client-state/mutation/command-input/to-upsert-client-principal-mutation-input.ts';
 import { ClientStateRepository } from '@shared-server/rallar-system/client-state/persistence/client-state-repository.ts';
 import { PSqlClientStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-client-state-event-repository.ts';
 import type { TopologyAppInboxCommand } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-contracts.ts';
@@ -160,7 +158,7 @@ export async function createPGliteClientEventCollisionFixture(
     await authSessions.putSession(authority);
 
     interface ComputeInput {
-        readonly commandInput: ReturnType<typeof toUpsertPrincipalCommandInput>;
+        readonly commandInput: ReturnType<typeof toUpsertClientPrincipalMutationInput>;
         readonly operation: 'upsertPrincipal' | 'upsertInstance';
         readonly eventId: string;
         readonly nowEpochMs: number;
@@ -190,18 +188,18 @@ export async function createPGliteClientEventCollisionFixture(
 
     const seedRequestId = `${prefix}-seed`;
     const seed = await compute({
-        commandInput: toUpsertPrincipalCommandInput(
+        commandInput: toUpsertClientPrincipalMutationInput({
             scope,
             principalId,
-            {
+            request: {
                 username: principalId,
                 displayName: `Before ${prefix}`,
                 actorPrincipalId: principalId,
                 actorSessionId: authority.sessionId,
                 requestId: seedRequestId
             },
-            seedRequestId
-        ),
+            defaultCommandId: seedRequestId
+        }),
         operation: 'upsertPrincipal',
         eventId: `${seedRequestId}-event`,
         nowEpochMs: 2_000
@@ -215,19 +213,19 @@ export async function createPGliteClientEventCollisionFixture(
     const requestId = `${prefix}-instance`;
     const clientInstanceId = `${prefix}-browser`;
     const computed = await compute({
-        commandInput: toUpsertInstanceCommandInput(
+        commandInput: toUpsertClientInstanceMutationInput({
             scope,
             principalId,
             clientInstanceId,
-            {
+            request: {
                 platform: 'web',
                 deviceLabel: prefix,
                 actorPrincipalId: principalId,
                 actorSessionId: authority.sessionId,
                 requestId
             },
-            requestId
-        ),
+            defaultCommandId: requestId
+        }),
         operation: 'upsertInstance',
         eventId: `${requestId}-event`,
         nowEpochMs: 3_000

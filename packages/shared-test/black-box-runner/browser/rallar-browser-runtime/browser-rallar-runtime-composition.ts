@@ -1,8 +1,12 @@
+import type {
+    RallarDirectorFacade,
+    RallarDirectorRelayConfig,
+    RallarDirectorRelayHandle
+} from '@shared-web/browser/director/rallar-director-facade.ts';
 import type { RallarMessagesOperations } from '@shared-web/browser/messages/rallar-message-operations.ts';
-import type { RallarAuthFacade } from '@shared-web/browser/rallar-core.ts';
 import type { RallarConnectionOperations } from '@shared-web/browser/rallar-connection-facade.ts';
+import type { RallarAuthFacade } from '@shared-web/browser/rallar-core.ts';
 import type { RallarCrdtFacade } from '@shared-web/browser/rallar-crdt.ts';
-import type { RallarDirectorFacade } from '@shared-web/browser/director/rallar-director-facade.ts';
 import type { RallarRealtimeFacade, RallarWsFacade } from '@shared-web/browser/rallar-realtime-facade.ts';
 import type { RallarRtcFacade } from '@shared-web/browser/rallar-rtc-facade.ts';
 import {
@@ -28,6 +32,7 @@ import {
 } from '@shared-web/browser/rallar-runtime/composition/browser-session-composition.ts';
 import type { BrowserRallarRooms } from '@shared-web/browser/rooms/browser-rallar-rooms.ts';
 import type { RallarRoomSession } from '@shared-web/browser/rooms/rallar-room-contracts.ts';
+import type { BlackBoxRallarDirectorOutputRecord, BlackBoxRallarEvent } from './contracts.ts';
 
 export interface BlackBoxBrowserRallarRuntimeDependency extends
     Pick<
@@ -78,8 +83,19 @@ export interface BlackBoxBrowserRtcDependency extends Pick<RallarRtcFacade, 'sta
 
 export interface BlackBoxBrowserCrdtDependency extends Pick<RallarCrdtFacade, 'open'> {}
 
-export interface BlackBoxBrowserDirectorDependency
-    extends Pick<RallarDirectorFacade, 'appoint' | 'resign' | 'status' | 'createRelay'> {}
+export interface BlackBoxBrowserDirectorDependency extends Pick<RallarDirectorFacade, 'appoint' | 'resign' | 'status'> {
+    createRelay(
+        config: RallarDirectorRelayConfig<
+            BlackBoxRallarEvent['data'],
+            BlackBoxRallarDirectorOutputRecord,
+            BlackBoxRallarEvent['data']
+        >
+    ): RallarDirectorRelayHandle<
+        BlackBoxRallarEvent['data'],
+        BlackBoxRallarDirectorOutputRecord,
+        BlackBoxRallarEvent['data']
+    >;
+}
 
 export function createBlackBoxBrowserRallarRuntimeDependency(): BlackBoxBrowserRallarRuntimeDependency {
     const foundation = createBrowserRuntimeFoundation();
