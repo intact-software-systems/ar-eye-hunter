@@ -15,8 +15,8 @@ export interface RallarWsLifecycleRetryConfig {
 
 export interface RallarWsLifecycleHandlers {
     now(): number;
-    enqueueClientSessionDisconnect(input: RallarWsLifecycleCloseInput): Promise<unknown>;
-    enqueueGroupSessionCleanup(input: RallarWsLifecycleCloseInput): Promise<unknown>;
+    enqueueClientSessionDisconnect(input: RallarWsLifecycleCloseInput): Promise<void>;
+    enqueueGroupSessionCleanup(input: RallarWsLifecycleCloseInput): Promise<void>;
     hasCloseFacts(input: RallarWsLifecycleCloseInput): boolean;
     releaseCloseFacts(input: RallarWsLifecycleCloseInput): void;
     readonly retry: RallarWsLifecycleRetryConfig;

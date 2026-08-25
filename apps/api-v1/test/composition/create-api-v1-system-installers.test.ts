@@ -38,8 +38,7 @@ Deno.test('system topic installation rejects a second start before mutating inst
         'rtc-rtt',
         'crdt-ingress',
         'crdt-topics',
-        'router',
-        'register-stop'
+        'router'
     ];
     assert.deepEqual(events, installedEvents);
     assert.equal(runtime.wsQBoxServerService.anyInboxRegistrationCount, 1);
@@ -143,8 +142,8 @@ Deno.test(
 );
 
 class RuntimeCalls {
-    clientDisconnect?: unknown;
-    groupCleanup?: unknown;
+    clientDisconnect?: Parameters<ApiV1SystemInstallerRuntime['appClientInboxService']['enqueueAuthorisedWsClientDisconnect']>[0];
+    groupCleanup?: Parameters<ApiV1SystemInstallerRuntime['groupStateInboxService']['enqueueGroupSessionCleanup']>[0];
 }
 
 interface TestRuntime extends ApiV1SystemInstallerRuntime {
@@ -159,17 +158,12 @@ function createInput(): CreateApiV1SystemInstallersInput<ApiV1SystemInstallerTop
         serviceId: 'api-test',
         nowEpochMs: () => 1_000,
         topology: {
-            rtcTopologyService: {},
             rtcTopologyOptions: {},
             topologyQuery: {},
             topologyPlanning: {},
-            topologyConfigRepository: {},
             groupStateRepository: {
                 readLifecyclePolicy: rejectUnusedCrdtRead
             },
-            topologySnapshotRepository: {},
-            rttRepository: {},
-            rttRefinementGate: {},
             rttRefinementService: {}
         },
         crdtLogRepository: {
@@ -181,8 +175,7 @@ function createInput(): CreateApiV1SystemInstallersInput<ApiV1SystemInstallerTop
             exportBackupBundle: rejectUnusedCrdtRead,
             verifyIntegrity: rejectUnusedCrdtRead
         },
-        crdtPolicies: [{ documentType: '*', rollout: 'disabled' }],
-        globalGraphRecomputeLimit: undefined
+        crdtPolicies: [{ documentType: '*', rollout: 'disabled' }]
     };
 }
 
@@ -245,7 +238,6 @@ function createOperations(
     return {
         installTopologyAppOutbox: () => {
             events.push('topology-app-outbox');
-            return {} as never;
         },
         installChatTopic: () => {
             events.push('chat');
@@ -255,11 +247,6 @@ function createOperations(
         },
         installRtcRttTopic: () => {
             events.push('rtc-rtt');
-            return {
-                stop: () => {
-                    events.push('stop-rtc-rtt');
-                }
-            };
         },
         createCrdtMutationIngress: () => {
             events.push('crdt-ingress');

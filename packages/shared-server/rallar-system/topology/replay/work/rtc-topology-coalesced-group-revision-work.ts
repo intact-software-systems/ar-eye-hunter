@@ -1,6 +1,7 @@
 import { Temporal } from '@js-temporal/polyfill';
 
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import { validateAuthoritativeGroupSnapshot } from '@shared/api/authoritative-state-validation.ts';
@@ -127,7 +128,7 @@ export function computeCoalescedRtcTopologyGroupRevisionWork(
  * and due times live in the coalesced metadata, not the message identity.
  */
 function readPreviousMessageIdentity(previousEntry: ResourceEntry): CoalescedMessageIdentity {
-    const message = JSON.parse(previousEntry.resource) as ALMessage;
+    const message = decodePersistedALMessage(previousEntry.resource);
     return {
         tsEpochMs: message.id.ts,
         expiresAtEpochMs: message.constraints?.expiresAtMs ?? null

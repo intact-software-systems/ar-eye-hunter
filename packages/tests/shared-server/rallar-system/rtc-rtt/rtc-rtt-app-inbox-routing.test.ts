@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { installRtcRttSystemTopic, type InstallRtcRttSystemTopicOptions } from '@shared-server/rallar-system/rtc-rtt/topic/install-rtc-rtt-system-topic.ts';
+import type { RttMeasurementInfo } from '@shared/api/api-config.ts';
 import {
     AppTopics,
     ConnectionContext,
@@ -11,49 +12,15 @@ import {
     WsQueueBoxServerService,
     type ALMessage
 } from '@shared/mod.ts';
-import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
-
-import { FakeRuntimeStateRepository } from '../../fake-runtime-state-repository.ts';
-
-interface DurableRtcRttOptions extends Omit<InstallRtcRttSystemTopicOptions, 'findGroupSnapshotByRef'> {
-    readonly enqueueMutation: (
-        input: Readonly<{
-            rtt: RttMeasurement;
-            alSenderId: string;
-            capturedAtEpochMs: number;
-        }>
-    ) => Promise<ResourceEntry>;
-}
-
-interface RttMeasurement {
-    readonly sessionIdFrom: string;
-    readonly sessionIdTo: string;
-    readonly rttMs: number;
-    readonly createdAtEpochMs: number;
-    readonly version: number;
-}
+import { toResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 
 describe('RTC RTT websocket AppInbox routing', () => {
     it('acknowledges persisted RTT ingress after durable enqueue without result effects', async () => {
-        const server = new JsonWebSocketServer();
-        const socket = new FakeSocket();
-        server.addConnection(new ConnectionContext('session-a', socket as never));
-        const service = new WsQueueBoxServerService(
-            new InMemoryQueueBox(new Map()),
-            new InMemoryQueueBox(new Map()),
-            server,
-            'server-1'
-        );
-        const durableRow = { key: { resourceId: 'rtt-1' } } as ResourceEntry;
-        const enqueueRtcRttMutation = vi.fn(() => Promise.resolve(durableRow));
-        const options: DurableRtcRttOptions = {
+        const enqueueRtcRttMutation = vi.fn(() => Promise.resolve(toResourceEntry('APP_INBOX', { commandId: 'rtt-1' })));
+        const socket = createHarness({
             enqueueMutation: enqueueRtcRttMutation
-        };
-        installRtcRttSystemTopic(service, {
-            ...options,
-            findGroupSnapshotByRef: () => undefined
         });
-        const rtt: RttMeasurement = {
+        const rtt: RttMeasurementInfo = {
             sessionIdFrom: 'session-a',
             sessionIdTo: 'session-b',
             rttMs: 12,
@@ -75,7 +42,50 @@ describe('RTC RTT websocket AppInbox routing', () => {
             capturedAtEpochMs: expect.any(Number)
         });
     });
+
+    it('rejects malformed current RTT payloads before durable enqueue', async () => {
+        const enqueueMutation = vi.fn(() => Promise.resolve(toResourceEntry('APP_INBOX', { commandId: 'rtt-1' })));
+        const socket = createHarness({ enqueueMutation });
+        const reportFailure = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+        await socket.dispatchMessage(newALBroadcastMessage(
+            'session-a',
+            newALEventRoute(AppTopics.rtt, 'room-1', 'rtt-1'),
+            'room',
+            AppTopics.rtt,
+            {
+                sessionIdFrom: 'session-a',
+                sessionIdTo: 'session-b',
+                rttMs: 12,
+                createdAtEpochMs: 1,
+                version: 1,
+                unexpected: true
+            }
+        ));
+        expect(enqueueMutation).not.toHaveBeenCalled();
+        expect(reportFailure).toHaveBeenCalledWith(
+            'Error calling onMessage callback',
+            expect.any(TypeError)
+        );
+        reportFailure.mockRestore();
+    });
 });
+
+function createHarness(options: InstallRtcRttSystemTopicOptions): FakeSocket {
+    const server = new JsonWebSocketServer();
+    const socket = new FakeSocket();
+    server.addConnection(new ConnectionContext('session-a', socket as never));
+    installRtcRttSystemTopic(
+        new WsQueueBoxServerService(
+            new InMemoryQueueBox(new Map()),
+            new InMemoryQueueBox(new Map()),
+            server,
+            'server-1'
+        ),
+        options
+    );
+    return socket;
+}
 
 class FakeSocket {
     readonly readyState = WebSocket.OPEN;

@@ -59,7 +59,9 @@ export const AppInboxType = {
 
 export type AppInboxType = (typeof AppInboxType)[keyof typeof AppInboxType];
 
-export interface AppInboxEnqueueInput<V, Authority = unknown> {
+export type AppInboxAuthorityInput = JsonWireValue | object;
+
+export interface AppInboxEnqueueInput<V, Authority = AppInboxAuthorityInput> {
     readonly type: AppInboxType;
     readonly topicId?: string;
     readonly resourceId?: string;

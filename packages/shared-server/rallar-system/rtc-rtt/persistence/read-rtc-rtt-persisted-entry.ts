@@ -1,7 +1,7 @@
 import type { RttMeasurementInfo } from '@shared/api/api-config.ts';
 import type { RuntimeStateEntryValue } from '../../../runtime-state/runtime-state-json-store.ts';
 import type { RuntimeStateEntry } from '../../../runtime-state/runtime-state-repository.ts';
-import type { JsonWireValue } from '../../protocol/json-wire-identity.ts';
+import { decodeJsonWireValue, type JsonWireValue } from '../../protocol/json-wire-identity.ts';
 import { RtcTopologyRepositoryInvariantCorruptionError } from '../../topology/persistence/rtc-topology-errors.ts';
 import type { RtcRttEndpointAdmission, RtcRttMutationReceipt } from './rtc-rtt-persistence-contracts.ts';
 import {
@@ -34,7 +34,7 @@ export function readLiveRtcRttMeasurementEntry(
             throw rttCorruption(entry.key, 'RTC RTT key differs from requested pair');
         }
     }
-    const value = parseValue(entry) as RttMeasurementInfo;
+    const value = parseValue(entry);
     try {
         validateRtcRttMeasurement(value);
     }
@@ -60,7 +60,7 @@ export function readLiveRtcRttEndpointAdmissionEntry(
     if (trustedEndpointId !== undefined && endpointId !== trustedEndpointId) {
         throw rttCorruption(entry.key, 'RTC RTT endpoint differs from requested slot');
     }
-    const value = parseValue(entry) as RtcRttEndpointAdmission;
+    const value = parseValue(entry);
     try {
         validateRtcRttEndpointAdmission(value, endpointId, entry.expireAtTimestamp);
         validateRtcRttEndpointAdmissionPersistedVersion(value.version, entry.revision);
@@ -92,8 +92,9 @@ export function readRtcRttReceiptEntry(
     }
     let value: RtcRttMutationReceipt;
     try {
-        value = parseValue(entry) as RtcRttMutationReceipt;
-        validateRtcRttMutationReceipt(value, entry.expireAtTimestamp);
+        const parsed = parseValue(entry);
+        validateRtcRttMutationReceipt(parsed, entry.expireAtTimestamp);
+        value = parsed;
     }
     catch (error) {
         throw rttCorruption(entry.key, error instanceof Error ? error.message : 'Invalid RTT receipt');
@@ -114,7 +115,7 @@ function liveEntry<T>(
 
 function parseValue(entry: RuntimeStateEntry): JsonWireValue {
     try {
-        return JSON.parse(entry.value) as JsonWireValue;
+        return decodeJsonWireValue(JSON.parse(entry.value), 'Stored RTC RTT value');
     }
     catch (error) {
         throw rttCorruption(

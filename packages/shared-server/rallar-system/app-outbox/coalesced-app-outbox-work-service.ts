@@ -1,5 +1,6 @@
 import { Temporal } from '@js-temporal/polyfill';
 import { newALRoute, newALUntargetedMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import { toAppQueueCreatedBy, toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 import {
@@ -253,7 +254,7 @@ export class CoalescedAppOutboxWorkService {
     }
 
     readMessage(entry: ResourceEntry): ALMessage {
-        return JSON.parse(entry.resource) as ALMessage;
+        return decodePersistedALMessage(entry.resource);
     }
 
     readGeneration(entry: ResourceEntry): number {
@@ -317,8 +318,8 @@ export class CoalescedAppOutboxWorkService {
         entry: ResourceEntry,
         previous: ResourceEntry
     ): ResourceEntry {
-        const message = JSON.parse(entry.resource) as ALMessage;
-        const previousMessage = JSON.parse(previous.resource) as ALMessage;
+        const message = decodePersistedALMessage(entry.resource);
+        const previousMessage = decodePersistedALMessage(previous.resource);
         const identityPreserved: ALMessage = {
             ...message,
             id: { ...message.id, ts: previousMessage.id.ts },

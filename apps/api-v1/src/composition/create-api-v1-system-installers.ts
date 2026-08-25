@@ -10,7 +10,6 @@ import {
     installRtcRttSystemTopic,
     type InstallRtcRttSystemTopicOptions
 } from '@shared-server/rallar-system/rtc-rtt/topic/install-rtc-rtt-system-topic.ts';
-import type { RtcTopologyWorkPublisher } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-work.ts';
 import {
     installTopologyAppOutbox,
     type InstallTopologyAppOutboxOptions
@@ -28,15 +27,10 @@ import type { ApiV1Runtime } from './api-v1-runtime.ts';
 import type { ApiV1TopologyServices } from './create-api-v1-topology-services.ts';
 
 export interface ApiV1SystemInstallerTopology {
-    readonly rtcTopologyService: object;
     readonly rtcTopologyOptions: ApiV1TopologyServices['rtcTopologyOptions'];
     readonly topologyQuery: object;
     readonly topologyPlanning: object;
-    readonly topologyConfigRepository: object;
     readonly groupStateRepository: Pick<ApiV1TopologyServices['groupStateRepository'], 'readLifecyclePolicy'>;
-    readonly topologySnapshotRepository: object;
-    readonly rttRepository: object;
-    readonly rttRefinementGate: object;
     readonly rttRefinementService: object;
 }
 
@@ -49,7 +43,6 @@ export interface CreateApiV1SystemInstallersInput<
     readonly topology: Topology;
     readonly crdtLogRepository: RallarCrdtAdminReadRepository;
     readonly crdtPolicies: readonly RallarCrdtDocumentTypePolicy[];
-    readonly globalGraphRecomputeLimit: InstallRtcRttSystemTopicOptions['globalGraphRecomputeLimit'];
 }
 
 export interface ApiV1SystemInstallerRuntime {
@@ -81,17 +74,13 @@ export interface ApiV1SystemInstallers<Runtime extends ApiV1SystemInstallerRunti
     ) => void;
 }
 
-export interface ApiV1RtcRttTopicLifecycle {
-    stop(): void;
-}
-
 export interface ApiV1SystemInstallerOperations<
     Runtime extends ApiV1SystemInstallerRuntime = ApiV1Runtime,
     Topology extends ApiV1SystemInstallerTopology = ApiV1TopologyServices,
 > {
     readonly installTopologyAppOutbox: (
         options: ApiV1SystemTopicOptions<Runtime, Topology>
-    ) => RtcTopologyWorkPublisher;
+    ) => void;
     readonly installChatTopic: (
         service: Runtime['wsQBoxServerService']
     ) => void;
@@ -100,9 +89,8 @@ export interface ApiV1SystemInstallerOperations<
     ) => void;
     readonly installRtcRttTopic: (
         service: Runtime['wsQBoxServerService'],
-        options: ApiV1SystemTopicOptions<Runtime, Topology>,
-        topologyWorkPublisher: RtcTopologyWorkPublisher
-    ) => ApiV1RtcRttTopicLifecycle;
+        options: InstallRtcRttSystemTopicOptions
+    ) => void;
     readonly createCrdtMutationIngress: (
         appCrdt: NonNullable<Runtime['appCrdtInboxService']>
     ) => RallarCrdtServerMutationIngress;
@@ -145,14 +133,12 @@ export function constructApiV1SystemInstallers<
             const wsService = runtime.wsQBoxServerService;
             const topicOptions = createSystemTopicOptions(input, runtime);
 
-            const topologyWorkPublisher = operations.installTopologyAppOutbox(topicOptions);
+            operations.installTopologyAppOutbox(topicOptions);
             operations.installChatTopic(wsService);
             operations.installRtcSignalingTopic(wsService);
-            const rtcRttRuntime = operations.installRtcRttTopic(
-                wsService,
-                topicOptions,
-                topologyWorkPublisher
-            );
+            operations.installRtcRttTopic(wsService, {
+                enqueueMutation: topicOptions.enqueueRtcRttMutation
+            });
             operations.installCrdtTopics(ws, {
                 logRepository: input.crdtLogRepository,
                 mutationIngress: operations.createCrdtMutationIngress(appCrdtInboxService),
@@ -161,22 +147,22 @@ export function constructApiV1SystemInstallers<
                 policies: input.crdtPolicies
             });
             operations.installRouter(ws);
-
-            runtime.backgroundTasks.register(rtcRttRuntime.stop);
         },
         installWebSocketLifecycle: (runtime) => {
             const lifecycle = operations.initWebSocketLifecycle(
                 runtime.wsQBoxServerService,
                 {
                     now: input.nowEpochMs,
-                    enqueueClientSessionDisconnect: (close) =>
-                        runtime.appClientInboxService.enqueueAuthorisedWsClientDisconnect(
+                    enqueueClientSessionDisconnect: async (close) => {
+                        await runtime.appClientInboxService.enqueueAuthorisedWsClientDisconnect(
                             wsRoutes.toAuthorisedWsClientDisconnectInput(close)
-                        ),
-                    enqueueGroupSessionCleanup: (close) =>
-                        runtime.groupStateInboxService.enqueueGroupSessionCleanup(
+                        );
+                    },
+                    enqueueGroupSessionCleanup: async (close) => {
+                        await runtime.groupStateInboxService.enqueueGroupSessionCleanup(
                             wsRoutes.toGroupPresenceSessionCleanupInput(close)
-                        ),
+                        );
+                    },
                     hasCloseFacts: wsRoutes.hasAuthorisedWsCloseFacts,
                     releaseCloseFacts: wsRoutes.releaseAuthorisedWsCloseFacts,
                     retry: {
@@ -210,19 +196,10 @@ function createSystemTopicOptions<
 ): ApiV1SystemTopicOptions<Runtime, Topology> {
     const topology = input.topology;
     return {
-        rtcTopologyService: topology.rtcTopologyService,
         rtcTopologyOptions: topology.rtcTopologyOptions,
         topologyQuery: topology.topologyQuery,
         topologyPlanning: topology.topologyPlanning,
-        rttRefinementGate: topology.rttRefinementGate,
         rttRefinementService: topology.rttRefinementService,
-        rtcRttRuntimeState: {
-            topologyConfig: topology.topologyConfigRepository,
-            groupState: topology.groupStateRepository,
-            topologySnapshots: topology.topologySnapshotRepository,
-            rtts: topology.rttRepository
-        },
-        globalGraphRecomputeLimit: input.globalGraphRecomputeLimit,
         rtcTopologyAppOutbox: {
             database: input.database,
             outboxQueueReader: runtime.outboxQueueReader,
@@ -246,23 +223,12 @@ export interface ApiV1SystemTopicOptions<
     Runtime extends ApiV1SystemInstallerRuntime,
     Topology extends ApiV1SystemInstallerTopology,
 > {
-    readonly rtcTopologyService: Topology['rtcTopologyService'];
     readonly rtcTopologyOptions: Topology['rtcTopologyOptions'];
     readonly topologyQuery: Topology['topologyQuery'];
     readonly topologyPlanning: Topology['topologyPlanning'];
-    readonly rttRefinementGate: Topology['rttRefinementGate'];
     readonly rttRefinementService: Topology['rttRefinementService'];
-    readonly rtcRttRuntimeState: ApiV1SystemTopologyRepositories<Topology>;
     readonly rtcTopologyAppOutbox: ApiV1RtcTopologyAppOutboxOptions<Runtime>;
-    readonly globalGraphRecomputeLimit: InstallRtcRttSystemTopicOptions['globalGraphRecomputeLimit'];
     readonly enqueueRtcRttMutation: InstallRtcRttSystemTopicOptions['enqueueMutation'];
-}
-
-export interface ApiV1SystemTopologyRepositories<Topology extends ApiV1SystemInstallerTopology> {
-    readonly topologyConfig: Topology['topologyConfigRepository'];
-    readonly groupState: Topology['groupStateRepository'];
-    readonly topologySnapshots: Topology['topologySnapshotRepository'];
-    readonly rtts: Topology['rttRepository'];
 }
 
 export interface ApiV1RtcTopologyAppOutboxOptions<Runtime extends ApiV1SystemInstallerRuntime>
@@ -293,18 +259,7 @@ const PRODUCTION_OPERATIONS: ApiV1SystemInstallerOperations<ApiV1Runtime, ApiV1T
         }),
     installChatTopic: installChatWsTopic,
     installRtcSignalingTopic: installRtcSignalingWsTopic,
-    installRtcRttTopic: (service, options, topologyWorkPublisher) =>
-        installRtcRttSystemTopic(service, {
-            service: options.rtcTopologyService,
-            serviceOptions: options.rtcTopologyOptions,
-            topologyQuery: options.topologyQuery,
-            refinementGate: options.rttRefinementGate,
-            topologyWorkPublisher,
-            runtimeState: options.rtcRttRuntimeState,
-            findGroupSnapshotByRef: options.rtcTopologyAppOutbox.findGroupSnapshotByRef,
-            globalGraphRecomputeLimit: options.globalGraphRecomputeLimit,
-            enqueueMutation: options.enqueueRtcRttMutation
-        }),
+    installRtcRttTopic: installRtcRttSystemTopic,
     createCrdtMutationIngress: createCrdtWsMutationIngress,
     installCrdtTopics: installRallarCrdtWsTopics,
     installRouter: (router) => router.install(),

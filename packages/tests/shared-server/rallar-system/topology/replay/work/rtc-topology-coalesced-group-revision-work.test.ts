@@ -14,11 +14,11 @@ import {
 } from '@shared-server/rallar-system/topology/replay/work/rtc-topology-coalesced-group-revision-work.ts';
 import { computeRtcTopologyInputFingerprint } from '@shared-server/rallar-system/topology/replay/work/rtc-topology-input-fingerprint.ts';
 import {
-    parsePersistedRtcTopologyALMessage,
     readRtcTopologyWorkEnvelope,
     toRtcTopologyExecutionId,
     type PersistedRtcTopologyWork
 } from '@shared-server/rallar-system/topology/replay/work/rtc-topology-work-codec.ts';
+import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import { toCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topology-config-canonical.ts';
 import type { AuditStamp, GroupSnapshot } from '@shared/api/group-types.ts';
@@ -322,7 +322,7 @@ describe('computeCoalescedRtcTopologyGroupRevisionWork', () => {
 
 function readPersistedEnvelope(entry: ResourceEntry) {
     return readRtcTopologyWorkEnvelope(
-        parsePersistedRtcTopologyALMessage(entry.resource),
+        decodePersistedALMessage(entry.resource),
         AppOutboxType.RTC_TOPOLOGY_RECOMPUTE
     );
 }

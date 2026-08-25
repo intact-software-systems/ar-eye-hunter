@@ -1,4 +1,5 @@
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import { isKeysEqual, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 
@@ -81,7 +82,7 @@ export function decideRtcTopologyReplayEntry(
         }
         return {
             status: 'deliver-publication',
-            message: JSON.parse(outbox.resource) as ALMessage
+            message: decodePersistedALMessage(outbox.resource)
         };
     }
     if (comparison === 'dominates' || comparison === 'incomparable') {

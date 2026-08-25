@@ -1,10 +1,14 @@
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
+import { EnqueuedType } from '@shared/api/api-config.ts';
+import type { QueueBoxResourceEntryRepository } from '@shared/queuebox/queue-box-types.ts';
 import { isKeysEqual, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import {
     DEFAULT_RESOURCE_INBOX_RETRY_POLICY,
     type ResourceInboxRetryPolicy
 } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
-import { WsQueueBoxServerService } from '@shared/services/WsQueueBoxServerService.ts';
+import type { OnWebSocketServerMessageCallback } from '@shared/services/InboxOutboxContracts.ts';
+import type { WsServerLiveSendResult } from '@shared/services/ws-queue-box-server-contracts.ts';
 import {
     recordRallarTiming,
     timeRallarAsync,
@@ -31,8 +35,20 @@ export {
 } from './queue-box-pub-sub-contracts.ts';
 export { toResourceEntryFromPubSubMessage } from './to-resource-entry-from-pub-sub-message.ts';
 
+export interface QueueBoxPubSubWsService {
+    readonly inbox: QueueBoxResourceEntryRepository;
+    readonly outbox: QueueBoxResourceEntryRepository;
+    onAllInboxMessagesDo(
+        callback: OnWebSocketServerMessageCallback<ALMessage>
+    ): QueueBoxPubSubWsService;
+    onOutboxClusterPublishDo(
+        publisher: (message: ALMessage, entry: ResourceEntry) => Promise<void>
+    ): QueueBoxPubSubWsService;
+    sendToTargetsWithResult(message: ALMessage): WsServerLiveSendResult;
+}
+
 export type InstallQueueBoxPubSubBridgeOptions = Readonly<{
-    wsQBoxServerService: WsQueueBoxServerService;
+    wsQBoxServerService: QueueBoxPubSubWsService;
     bridge: QueueBoxPubSubBridge;
     channel: string;
     publisherId: string;
@@ -101,7 +117,7 @@ export function installQueueBoxPubSubBridge(
 
 function registerQueueBoxInboxPublisher(
     options: Readonly<{
-        wsQBoxServerService: WsQueueBoxServerService;
+        wsQBoxServerService: QueueBoxPubSubWsService;
         bridge: QueueBoxPubSubBridge;
         channel: string;
         publisherId: string;
@@ -125,7 +141,7 @@ function registerQueueBoxInboxPublisher(
 
 function registerQueueBoxOutboxPublisher(
     options: Readonly<{
-        wsQBoxServerService: WsQueueBoxServerService;
+        wsQBoxServerService: QueueBoxPubSubWsService;
         bridge: QueueBoxPubSubBridge;
         channel: string;
         publisherId: string;
@@ -170,7 +186,7 @@ function registerQueueBoxOutboxPublisher(
 async function receiveQueueBoxPubSubMessage(
     message: QueueBoxPubSubMessage,
     options: Readonly<{
-        wsQBoxServerService: WsQueueBoxServerService;
+        wsQBoxServerService: QueueBoxPubSubWsService;
         channel: string;
         publisherId: string;
         timing?: RallarTimingSink;
@@ -180,7 +196,7 @@ async function receiveQueueBoxPubSubMessage(
     }>
 ): Promise<void> {
     if (
-        message.typeId === WsQueueBoxServerService.OUTBOX_ENQUEUE_TYPE &&
+        message.typeId === EnqueuedType.WS_OUTBOX &&
         message.publisherId === options.publisherId
     ) {
         return;
@@ -203,7 +219,7 @@ async function receiveQueueBoxPubSubMessage(
         expectedChannel: options.channel,
         loadByKey: async (key) =>
             await (
-                message.typeId === WsQueueBoxServerService.OUTBOX_ENQUEUE_TYPE
+                message.typeId === EnqueuedType.WS_OUTBOX
                     ? options.wsQBoxServerService.outbox
                     : options.wsQBoxServerService.inbox
             ).getItem(key),
@@ -212,7 +228,7 @@ async function receiveQueueBoxPubSubMessage(
     if (!entry) {
         return;
     }
-    if (entry.typeId === WsQueueBoxServerService.OUTBOX_ENQUEUE_TYPE) {
+    if (entry.typeId === EnqueuedType.WS_OUTBOX) {
         if (message.delivery === 'key') {
             notifyValidatedOutboxKey(
                 entry,
@@ -248,7 +264,7 @@ async function sendRemoteQueueBoxOutboxEntry(
     message: QueueBoxPubSubMessage,
     entry: ResourceEntry,
     options: Readonly<{
-        wsQBoxServerService: WsQueueBoxServerService;
+        wsQBoxServerService: QueueBoxPubSubWsService;
         publisherId: string;
         timing?: RallarTimingSink;
         retryPolicy: ResourceInboxRetryPolicy;
@@ -256,7 +272,7 @@ async function sendRemoteQueueBoxOutboxEntry(
     }>
 ): Promise<void> {
     const result = options.wsQBoxServerService.sendToTargetsWithResult(
-        JSON.parse(entry.resource) as ALMessage
+        decodePersistedALMessage(entry.resource)
     );
     recordPubSubTiming({
         timing: options.timing,
@@ -297,10 +313,10 @@ async function sendRemoteQueueBoxOutboxEntry(
 }
 
 function toQueueBoxPubSubEntryKind(typeId: string): string {
-    if (typeId === WsQueueBoxServerService.OUTBOX_ENQUEUE_TYPE) {
+    if (typeId === EnqueuedType.WS_OUTBOX) {
         return 'ws-outbox';
     }
-    if (typeId === WsQueueBoxServerService.INBOX_ENQUEUE_TYPE) {
+    if (typeId === EnqueuedType.WS_INBOX) {
         return 'ws-inbox';
     }
 

@@ -24,10 +24,10 @@ const executablePaths = [
     'workloads/group-coordination/webrtc-heartbeat-callback-churn-bench.ts',
     'workloads/browser-lifecycle/rtc-data-channel-browser-soak.mjs',
     'topology-delivery/delivery-log-bench.ts',
-    'topology-replay/replay-drain-operation-counts.ts',
+    'diagnostics/rtc-topology-replay-drain-operation-counts.ts',
     'diagnostics/rtc-room-graph-no-rtt-bench.ts',
     'diagnostics/rtc-rtt-group-scan-bench.ts',
-    'diagnostics/rtt-traffic/rtc-rtt-traffic-metrics.ts'
+    'diagnostics/rtc-rtt-traffic-metrics.ts'
 ] as const;
 
 describe('shared RTC benchmark navigation contract', () => {
@@ -76,7 +76,7 @@ describe('shared RTC benchmark navigation contract', () => {
             const diagnostic of [
                 'diagnostics/rtc-room-graph-no-rtt-bench.ts',
                 'diagnostics/rtc-rtt-group-scan-bench.ts',
-                'diagnostics/rtt-traffic/rtc-rtt-traffic-metrics.ts'
+                'diagnostics/rtc-rtt-traffic-metrics.ts'
             ]
         ) {
             expect(catalog).not.toContain(diagnostic);

@@ -1,6 +1,6 @@
 import type { RttMeasurementInfo } from '@shared/api/api-config.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
-import type { JsonWireValue } from '../../protocol/json-wire-identity.ts';
+import { decodeJsonWireValue, type JsonWireValue } from '../../protocol/json-wire-identity.ts';
 
 import {
     toCanonicalRtcTopologyGroupIdentity,
@@ -54,7 +54,10 @@ export function readRtcRttTopologyOutboxIdentity(
         const version = Number(versionText);
         const pairMatch = /^pair=([^:]+):version=([1-9][0-9]*)$/u.exec(receiptId);
         const pair: JsonWireValue = pairMatch
-            ? (JSON.parse(decodeURIComponent(pairMatch[1]!)) as JsonWireValue)
+            ? decodeJsonWireValue(
+                JSON.parse(decodeURIComponent(pairMatch[1]!)),
+                'RTC RTT topology outbox pair'
+            )
             : null;
         if (
             !/^sha256:[0-9a-f]{64}$/u.test(commandHash) ||

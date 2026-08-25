@@ -151,11 +151,7 @@ function constructDefaultRallarServer(
         nowEpochMs,
         topology,
         crdtLogRepository,
-        crdtPolicies: configuration.crdt.documentTypePolicies,
-        globalGraphRecomputeLimit: {
-            windowMs: configuration.topology.recompute.globalWindowMs,
-            maxPerWindow: configuration.topology.recompute.globalMaxPerWindow
-        }
+        crdtPolicies: configuration.crdt.documentTypePolicies
     });
     const routeInstallers = createApiV1RouteInstallers({
         runtime,

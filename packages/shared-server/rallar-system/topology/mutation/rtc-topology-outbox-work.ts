@@ -1,4 +1,5 @@
 import { newALRoute, newALUntargetedMessage } from '@shared/al-contracts/al-contract.ts';
+import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import type { RttMeasurementInfo } from '@shared/api/api-config.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import type { CanonicalGroupTopologyConfigPatch } from '@shared/api/graph-topology-management-types.ts';
@@ -16,7 +17,6 @@ import {
 import { toRtcRttMutationReceiptId } from '../../rtc-rtt/mutation/rtc-rtt-mutation-identifiers.ts';
 import { toCanonicalRtcTopologyPairIdentity } from '../persistence/rtc-topology-identifiers.ts';
 import {
-    parsePersistedRtcTopologyALMessage,
     readRtcTopologyWorkEnvelope,
     toRtcTopologyQueueContextId,
     type RtcTopologyWorkEnvelope
@@ -222,7 +222,7 @@ function createRtcTopologyWorkRuntime(
             )
         );
         options.wake?.();
-        const winnerMessage = parsePersistedRtcTopologyALMessage(winner.resource);
+        const winnerMessage = decodePersistedALMessage(winner.resource);
         const winnerEnvelope = readRtcTopologyWorkEnvelope(winnerMessage, options.workType);
         if (winnerEnvelope.data.kind !== 'group-revision') {
             throw new TypeError('RTC topology group enqueue resolved non-group work');

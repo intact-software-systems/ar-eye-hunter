@@ -10,10 +10,9 @@ import {
     WsQueueBoxServerService,
     type ALMessage
 } from '@shared/mod.ts';
-import * as rttRepository from '@shared/repository/rtt-repository.ts';
+import { toResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 
-import { createDeterministicRtcTopologyGroupSnapshot } from '../../workloads/topology/create-deterministic-rtc-topology-group-snapshot.ts';
-import { configureRtcRttTrafficCacheRepositories } from './configure-rtc-rtt-traffic-cache-repositories.ts';
+import { createDeterministicRtcTopologyGroupSnapshot } from '../workloads/topology/create-deterministic-rtc-topology-group-snapshot.ts';
 
 interface RtcRttTrafficArgs {
     readonly sessions: number;
@@ -27,8 +26,8 @@ interface RtcRttTrafficMetricsArtifact {
         readonly submittedRttCount: number;
     };
     readonly measurements: {
-        readonly storedRttCount: number;
-        readonly storedVersions: readonly number[];
+        readonly durableEnqueueCount: number;
+        readonly enqueuedVersions: readonly number[];
     };
 }
 
@@ -119,9 +118,9 @@ function createCentralRttMeasurements(
 
 function createArtifact(
     sessionCount: number,
-    submittedRttCount: number
+    submittedRttCount: number,
+    enqueuedMeasurements: readonly RttMeasurementInfo[]
 ): RtcRttTrafficMetricsArtifact {
-    const storedMeasurements = rttRepository.getAllRtt();
     return {
         createdAt: new Date().toISOString(),
         input: {
@@ -129,14 +128,15 @@ function createArtifact(
             submittedRttCount
         },
         measurements: {
-            storedRttCount: storedMeasurements.length,
-            storedVersions: storedMeasurements.map((measurement) => measurement.version).toSorted((a, b) => a - b)
+            durableEnqueueCount: enqueuedMeasurements.length,
+            enqueuedVersions: enqueuedMeasurements
+                .map((measurement) => measurement.version)
+                .toSorted((left, right) => left - right)
         }
     };
 }
 
 const args = parseArgs();
-configureRtcRttTrafficCacheRepositories();
 
 const sessionIds = Array.from(
     { length: args.sessions },
@@ -154,31 +154,36 @@ const service = new WsQueueBoxServerService(
     'rtc-rtt-traffic-diagnostic'
 );
 const group = createDeterministicRtcTopologyGroupSnapshot('room-1', sessionIds, Date.now());
-const runtime = installRtcRttSystemTopic(service, {
-    findGroupSnapshotByRef: () => group
+const enqueuedMeasurements: RttMeasurementInfo[] = [];
+installRtcRttSystemTopic(service, {
+    enqueueMutation: (input) => {
+        enqueuedMeasurements.push(input.rtt);
+        return Promise.resolve(toResourceEntry('APP_INBOX', input));
+    }
 });
 
 const measurements = createCentralRttMeasurements(sessionIds, senderSessionId);
-try {
-    for (const measurement of measurements) {
-        await senderSocket.receive(
-            newALBroadcastMessage(
-                senderSessionId,
-                newALEventRoute(AppTopics.rtt, group.group.groupId, `rtt-${measurement.version}`),
-                'room',
-                AppTopics.rtt,
-                measurement,
-                { groupRef: group.group }
-            )
-        );
-    }
-
-    await Deno.writeTextFile(
-        args.out,
-        `${JSON.stringify(createArtifact(args.sessions, measurements.length), null, 2)}\n`
+for (const measurement of measurements) {
+    await senderSocket.receive(
+        newALBroadcastMessage(
+            senderSessionId,
+            newALEventRoute(AppTopics.rtt, group.group.groupId, `rtt-${measurement.version}`),
+            'room',
+            AppTopics.rtt,
+            measurement,
+            { groupRef: group.group }
+        )
     );
-    console.log(`Wrote ${args.out}`);
 }
-finally {
-    runtime.stop();
-}
+
+await Deno.writeTextFile(
+    args.out,
+    `${
+        JSON.stringify(
+            createArtifact(args.sessions, measurements.length, enqueuedMeasurements),
+            null,
+            2
+        )
+    }\n`
+);
+console.log(`Wrote ${args.out}`);

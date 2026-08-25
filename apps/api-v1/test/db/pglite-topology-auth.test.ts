@@ -520,9 +520,7 @@ Deno.test(
                 'pglite-ws-ingress'
             );
             const wsIngressCapturedAt: number[] = [];
-            const wsTopics = installRtcRttSystemTopic(wsService, {
-                service: new RallarRtcTopologyService({ now: () => nowEpochMs }),
-                findGroupSnapshotByRef: () => rttGroup,
+            installRtcRttSystemTopic(wsService, {
                 enqueueMutation: async (input) => {
                     wsIngressCapturedAt.push(input.capturedAtEpochMs);
                     return await rtcRttInbox.enqueue(input);
@@ -553,7 +551,6 @@ Deno.test(
             await rttPending;
             await new Promise((resolve) => setTimeout(resolve, 2));
             await dispatchRtt();
-            wsTopics.stop();
             assert.equal(wsIngressCapturedAt.length, 2);
             assert.ok(wsIngressCapturedAt[1]! > wsIngressCapturedAt[0]!);
 

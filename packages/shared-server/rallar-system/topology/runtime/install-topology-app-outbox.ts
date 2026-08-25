@@ -9,8 +9,7 @@ import type { GroupTopologyConfigQueryService } from '../config/group-topology-c
 import {
     createRtcTopologyOutboxPublisher,
     createRtcTopologyWorkHandler,
-    type RtcTopologyDeliveryOptions,
-    type RtcTopologyWorkPublisher
+    type RtcTopologyDeliveryOptions
 } from '../mutation/rtc-topology-outbox-work.ts';
 import type { RtcTopologyExecutionRepository } from '../persistence/rtc-topology-execution-repository.ts';
 import type { GroupTopologyGroupSnapshotReader } from '../planning/group-topology-planning-contracts.ts';
@@ -39,7 +38,7 @@ export interface InstallTopologyAppOutboxOptions {
 
 export function installTopologyAppOutbox(
     options: InstallTopologyAppOutboxOptions
-): RtcTopologyWorkPublisher {
+): void {
     const runtime = createRtcTopologyOutboxPublisher({
         outboxQueueReader: options.outboxQueueReader,
         senderId: options.senderId,
@@ -78,5 +77,4 @@ export function installTopologyAppOutbox(
             wakeReplay: options.wakeReplay
         })
     );
-    return runtime.publisher;
 }

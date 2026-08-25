@@ -5,7 +5,7 @@ import type {
 } from '@shared/rallar-match/mod.ts';
 import { createRallarMatchResultIdempotencyKey } from '@shared/rallar-match/mod.ts';
 
-export type RallarServerValidatedMatchResultInput<TSummary = unknown> =
+export type RallarServerValidatedMatchResultInput<TSummary> =
     & Omit<RallarServerValidatedMatchResult<TSummary>, 'authority' | 'trust' | 'idempotencyKey'>
     & Readonly<{
         authority: RallarGameAuthorityRef & Readonly<{ kind: 'server'; }>;
