@@ -6,7 +6,7 @@ export * from './al-contracts/al-validation.ts';
 export * from './api/authoritative-state-validation.ts';
 
 export * from './api/admin-operations-types.ts';
-export * from './api/admin-support-types.ts';
+export * from './api/admin-support/admin-support-types.ts';
 export * from './api/api-config.ts';
 export * from './api/api-type-utils.ts';
 export * from './api/graph-topology-management-types.ts';

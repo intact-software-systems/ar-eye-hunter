@@ -1,4 +1,4 @@
-import type { AdminSupportTimelineItem } from '@shared/api/admin-support-types.ts';
+import type { AdminSupportTimelineItem } from '@shared/api/admin-support/admin-support-types.ts';
 
 export interface AdminSupportTimelineInput {
     readonly atEpochMs: number | undefined;

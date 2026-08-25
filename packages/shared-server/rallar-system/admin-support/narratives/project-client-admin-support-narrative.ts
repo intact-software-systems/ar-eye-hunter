@@ -5,7 +5,7 @@ import type {
     AdminSupportSuggestedAction,
     AdminSupportTimelineItem,
     AdminSupportWarning
-} from '@shared/api/admin-support-types.ts';
+} from '@shared/api/admin-support/admin-support-types.ts';
 import type {
     ClientEvent,
     ClientPresenceSnapshot,
@@ -13,7 +13,7 @@ import type {
     ClientSession,
     ClientSnapshot
 } from '@shared/api/client-types.ts';
-import type { AdminSupportWsStatus } from '../admin-support-contracts.ts';
+import type { RallarServerWsStatus } from '../../websocket/router/rallar-server-ws-status.ts';
 import { adminSupportNarrativeBase, type AdminSupportNarrativeBase } from './admin-support-narrative-base.ts';
 
 interface ProjectClientAdminSupportInput extends AdminSupportNarrativeBase {
@@ -22,7 +22,7 @@ interface ProjectClientAdminSupportInput extends AdminSupportNarrativeBase {
     readonly snapshot: ClientSnapshot | undefined;
     readonly presence: ClientPresenceSnapshot | undefined;
     readonly recentEvents: readonly ClientEvent[];
-    readonly wsStatus: AdminSupportWsStatus | undefined;
+    readonly wsStatus: RallarServerWsStatus | undefined;
 }
 
 export function projectClientAdminSupportNarrative(
@@ -86,7 +86,7 @@ interface ClientFactsInput {
     readonly session: ClientSession | undefined;
     readonly sessionId: string | undefined;
     readonly clientInstanceId: string | undefined;
-    readonly wsStatus: AdminSupportWsStatus | undefined;
+    readonly wsStatus: RallarServerWsStatus | undefined;
 }
 
 interface ClientWarningsInput {
@@ -94,7 +94,7 @@ interface ClientWarningsInput {
     readonly snapshot: ClientSnapshot | undefined;
     readonly session: ClientSession | undefined;
     readonly sessionId: string | undefined;
-    readonly wsStatus: AdminSupportWsStatus | undefined;
+    readonly wsStatus: RallarServerWsStatus | undefined;
 }
 
 function clientFacts(input: ClientFactsInput): readonly AdminSupportFact[] {
@@ -254,7 +254,7 @@ interface ClientLikelyCausesInput {
     readonly snapshot: ClientSnapshot | undefined;
     readonly session: ClientSession | undefined;
     readonly sessionId: string | undefined;
-    readonly wsStatus: AdminSupportWsStatus | undefined;
+    readonly wsStatus: RallarServerWsStatus | undefined;
 }
 
 function clientLikelyCauses(input: ClientLikelyCausesInput): readonly string[] {

@@ -13,7 +13,6 @@ export * from './game/install-rallar-game-authority-server.ts';
 export * from './game/match-result.ts';
 export * from './http/rate-limit-service.ts';
 export * from './http/request-auth-service.ts';
-export * from './postgres/admin-support/PSqlAdminSupportReader.ts';
 export * from './postgres/p-sql-sql.ts';
 export * from './postgres/run-in-p-sql-transaction.ts';
 export * from './queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
@@ -39,6 +38,7 @@ export type {
 } from './rallar-system/admin-operations/admin-operation-use-cases.ts';
 export * from './rallar-system/admin-support/admin-support-contracts.ts';
 export * from './rallar-system/admin-support/create-admin-support-use-cases.ts';
+export * from './rallar-system/admin-support/postgres/p-sql-admin-support-reader.ts';
 export * from './rallar-system/admin-support/statistics/create-spa-statistics-use-cases.ts';
 export * from './rallar-system/admin-support/statistics/spa-statistics-contracts.ts';
 export * from './rallar-system/app-inbox/app-inbox-contracts.ts';

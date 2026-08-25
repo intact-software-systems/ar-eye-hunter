@@ -1,9 +1,7 @@
 import type { Key } from '@shared/queuebox/ResourceEntry.ts';
-import type {
-    AdminSupportQueueEntryRead,
-    AdminSupportReader
-} from '../../rallar-system/admin-support/admin-support-contracts.ts';
-import type { PSqlSql } from '../p-sql-sql.ts';
+
+import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
+import type { AdminSupportQueueEntryRead, AdminSupportReader } from '../admin-support-contracts.ts';
 import {
     toAdminSupportInboxRead,
     toAdminSupportResultRead,

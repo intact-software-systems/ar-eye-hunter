@@ -1,4 +1,3 @@
-import { PSqlAdminSupportReader } from '@shared-server/postgres/admin-support/PSqlAdminSupportReader.ts';
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import type { AdminOperationUseCases } from '@shared-server/rallar-system/admin-operations/admin-operation-use-cases.ts';
 import type {
@@ -8,6 +7,7 @@ import type {
 import {
     createAdminSupportUseCases
 } from '@shared-server/rallar-system/admin-support/create-admin-support-use-cases.ts';
+import { PSqlAdminSupportReader } from '@shared-server/rallar-system/admin-support/postgres/p-sql-admin-support-reader.ts';
 import {
     createSpaStatisticsUseCases
 } from '@shared-server/rallar-system/admin-support/statistics/create-spa-statistics-use-cases.ts';

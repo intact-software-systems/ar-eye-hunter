@@ -5,14 +5,16 @@ import type {
     AdminSupportExplainQueueItemRequest,
     AdminSupportExplainRequestRequest,
     AdminSupportNarrativeResponse
-} from '@shared/api/admin-support-types.ts';
+} from '@shared/api/admin-support/admin-support-types.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
+import type { GroupTopologyManagementView } from '@shared/api/graph-topology-management-types.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import type { RallarCrdtAdminReadRepository } from '@shared/crdt/mod.ts';
 import type { Key } from '@shared/queuebox/ResourceEntry.ts';
 import type { ClientStateService } from '../client-state/client-state-service-contracts.ts';
 import type { GroupStateService } from '../group-state/group-state-service-contracts.ts';
 import type { RallarTimingSink } from '../observability/timing.ts';
+import type { RallarServerWsStatus } from '../websocket/router/rallar-server-ws-status.ts';
 
 export interface AdminSupportWriteInput<TRequest> {
     readonly adminSession: AuthSession;
@@ -54,15 +56,7 @@ export type AdminSupportClientStateService = Pick<
 export type AdminSupportGroupStateService = Pick<GroupStateService, 'readSnapshot' | 'listRecentEvents'>;
 
 export interface AdminSupportTopologyQuery {
-    readonly readTopologyView: (groupRef: GroupRef) => Promise<unknown>;
-}
-
-export interface AdminSupportWsStatus {
-    readonly connectionCount: number;
-    readonly openConnectionCount: number;
-    readonly connectionIds: readonly string[];
-    readonly openConnectionIds: readonly string[];
-    readonly connections?: readonly unknown[];
+    readonly readTopologyView: (groupRef: GroupRef) => Promise<GroupTopologyManagementView>;
 }
 
 export interface AdminSupportExecutionDependencies {
@@ -73,7 +67,7 @@ export interface AdminSupportExecutionDependencies {
 
 export interface ClientAdminSupportDependencies extends AdminSupportExecutionDependencies {
     readonly clientStateService?: AdminSupportClientStateService;
-    readonly wsStatus?: () => AdminSupportWsStatus;
+    readonly wsStatus?: () => RallarServerWsStatus;
 }
 
 export interface GroupAdminSupportDependencies extends AdminSupportExecutionDependencies {

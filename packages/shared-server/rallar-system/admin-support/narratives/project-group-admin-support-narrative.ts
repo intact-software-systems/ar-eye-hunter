@@ -5,7 +5,8 @@ import type {
     AdminSupportSuggestedAction,
     AdminSupportTimelineItem,
     AdminSupportWarning
-} from '@shared/api/admin-support-types.ts';
+} from '@shared/api/admin-support/admin-support-types.ts';
+import type { GroupTopologyManagementView } from '@shared/api/graph-topology-management-types.ts';
 import type { GroupEvent, GroupPresenceSession, GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import { adminSupportNarrativeBase, type AdminSupportNarrativeBase } from './admin-support-narrative-base.ts';
 
@@ -15,7 +16,7 @@ interface ProjectGroupAdminSupportInput extends AdminSupportNarrativeBase {
     readonly hasTopologyQuery: boolean;
     readonly snapshot: GroupSnapshot | undefined;
     readonly recentEvents: readonly GroupEvent[];
-    readonly topologyView: unknown;
+    readonly topologyView: GroupTopologyManagementView | undefined;
 }
 
 export function projectGroupAdminSupportNarrative(
@@ -70,7 +71,7 @@ export function projectGroupAdminSupportNarrative(
 interface GroupFactsInput {
     readonly snapshot: GroupSnapshot | undefined;
     readonly recentEvents: readonly GroupEvent[];
-    readonly topologyView: unknown;
+    readonly topologyView: GroupTopologyManagementView | undefined;
     readonly principalId: string | undefined;
     readonly sessionId: string | undefined;
     readonly session: GroupPresenceSession | undefined;
@@ -83,7 +84,7 @@ interface GroupWarningsInput {
     readonly principalId: string | undefined;
     readonly sessionId: string | undefined;
     readonly session: GroupPresenceSession | undefined;
-    readonly topologyView: unknown;
+    readonly topologyView: GroupTopologyManagementView | undefined;
 }
 
 function groupFacts(input: GroupFactsInput): readonly AdminSupportFact[] {
@@ -266,38 +267,21 @@ function findGroupSession(
     );
 }
 
-function summarizeTopologyView(input: unknown): Readonly<Record<string, unknown>> {
-    const view = readRecord(input);
-    const snapshot = readRecord(view?.snapshot);
-    const config = readRecord(view?.config);
-    const effective = readRecord(config?.effective);
-    const activeSessionIds = Array.isArray(snapshot?.activeSessionIds)
-        ? snapshot.activeSessionIds
-        : undefined;
-    const participantCount = typeof snapshot?.participantCount === 'number'
-        ? snapshot.participantCount
-        : activeSessionIds?.length;
+function summarizeTopologyView(
+    topologyView: GroupTopologyManagementView | undefined
+): Readonly<{ present: boolean; topologyKind?: string; participantCount?: number; }> {
+    if (!topologyView) {
+        return { present: false };
+    }
     return {
-        present: Boolean(view),
-        topologyKind: readTimingString(effective?.topologyKind) ??
-            readTimingString(snapshot?.topology) ??
-            readTimingString(snapshot?.kind),
-        ...(participantCount !== undefined ? { participantCount } : {})
+        present: true,
+        topologyKind: topologyView.config.effective.topologyKind,
+        ...(topologyView.snapshot
+            ? { participantCount: topologyView.snapshot.activeSessionIds.length }
+            : {})
     };
 }
 
 function toGroupRef(ref: GroupRef): string {
     return `${ref.applicationId}/${ref.workspaceId}/${ref.groupId}`;
-}
-
-function readRecord(input: unknown): Record<string, unknown> | undefined {
-    return input && typeof input === 'object' ? input as Record<string, unknown> : undefined;
-}
-
-function readTimingString(value: unknown): string | undefined {
-    if (typeof value !== 'string') {
-        return undefined;
-    }
-    const trimmed = value.trim();
-    return trimmed.length > 0 ? trimmed : undefined;
 }

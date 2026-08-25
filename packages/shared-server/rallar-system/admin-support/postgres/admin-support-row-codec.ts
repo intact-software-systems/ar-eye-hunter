@@ -1,30 +1,30 @@
-import type { AdminSupportQueueEntryRead } from '../../rallar-system/admin-support/admin-support-contracts.ts';
+import type { AdminSupportQueueEntryRead } from '../admin-support-contracts.ts';
 
-export type AdminSupportInboxRow = Readonly<{
-    ri_resource_id: string;
-    ri_topic_id: string;
-    ri_resource: string;
-    ri_type_id: string;
-    ri_status: string;
-    fk_ext_bank_id: string;
-    created_ts: Date | string | null;
-    start_ts: Date | string | null;
-    end_ts: Date | string | null;
-    next_ts: Date | string | null;
-    expire_ts: Date | string | null;
-    ri_attempts: number | string | null;
-}>;
+export interface AdminSupportInboxRow {
+    readonly ri_resource_id: string;
+    readonly ri_topic_id: string;
+    readonly ri_resource: string;
+    readonly ri_type_id: string;
+    readonly ri_status: string;
+    readonly fk_ext_bank_id: string;
+    readonly created_ts: Date | string | null;
+    readonly start_ts: Date | string | null;
+    readonly end_ts: Date | string | null;
+    readonly next_ts: Date | string | null;
+    readonly expire_ts: Date | string | null;
+    readonly ri_attempts: number | string | null;
+}
 
-export type AdminSupportResultRow = Readonly<{
-    ris_resource_id: string;
-    ris_topic_id: string;
-    ris_resource: string;
-    ris_type_id: string;
-    ris_status: string;
-    fk_ext_bank_id: string;
-    created_ts: Date | string | null;
-    expire_ts: Date | string | null;
-}>;
+export interface AdminSupportResultRow {
+    readonly ris_resource_id: string;
+    readonly ris_topic_id: string;
+    readonly ris_resource: string;
+    readonly ris_type_id: string;
+    readonly ris_status: string;
+    readonly fk_ext_bank_id: string;
+    readonly created_ts: Date | string | null;
+    readonly expire_ts: Date | string | null;
+}
 
 export function toAdminSupportInboxRead(
     row: AdminSupportInboxRow
@@ -71,14 +71,14 @@ function toEpochMs(value: Date | string | null): number | undefined {
     if (value === null) {
         return undefined;
     }
-    const ms = value instanceof Date ? value.getTime() : Date.parse(value);
-    return Number.isFinite(ms) ? ms : undefined;
+    const epochMs = value instanceof Date ? value.getTime() : Date.parse(value);
+    return Number.isFinite(epochMs) ? epochMs : undefined;
 }
 
 function toNumber(value: number | string | null): number {
     if (value === null) {
         return 0;
     }
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : 0;
+    const number = Number(value);
+    return Number.isFinite(number) ? number : 0;
 }

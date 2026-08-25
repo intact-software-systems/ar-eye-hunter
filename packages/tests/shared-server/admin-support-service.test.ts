@@ -5,9 +5,10 @@ import type {
 } from '@shared-server/rallar-system/admin-support/admin-support-contracts.ts';
 import { createAdminSupportUseCases } from '@shared-server/rallar-system/admin-support/create-admin-support-use-cases.ts';
 import type { RallarTimingEvent } from '@shared-server/rallar-system/observability/timing.ts';
-import type { AdminSupportExplainRequestRequest } from '@shared/api/admin-support-types.ts';
+import type { AdminSupportExplainRequestRequest } from '@shared/api/admin-support/admin-support-types.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { ClientEvent, ClientSnapshot } from '@shared/api/client-types.ts';
+import type { GroupTopologyManagementView } from '@shared/api/graph-topology-management-types.ts';
 import type { AuditStamp, GroupEvent, GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import type { RallarCrdtDocumentMetadata, RallarCrdtDocumentRef } from '@shared/crdt/mod.ts';
 import type { Key } from '@shared/queuebox/ResourceEntry.ts';
@@ -25,8 +26,11 @@ const QUEUE_KEY: Key = {
     contextId: 'room-1'
 };
 
+type AdminSupportTestCall = readonly (string | number | boolean | object | null | undefined)[];
+
 describe('admin support use cases', () => {
     it('explains queue items with redacted payload metadata from inbox and result rows', async () => {
+        const timingEvents: RallarTimingEvent[] = [];
         const reader = new FakeSupportReader({
             queueEntry: {
                 source: 'resource_inbox',
@@ -56,7 +60,10 @@ describe('admin support use cases', () => {
                 })
             }
         });
-        const service = createService({ reader });
+        const service = createService({
+            reader,
+            timing: (event) => timingEvents.push(event)
+        });
 
         const result = await service.explainQueueItem({
             adminSession: createAdminSession(),
@@ -106,6 +113,20 @@ describe('admin support use cases', () => {
             },
             certainty: 'exact',
             redacted: true
+        });
+        expect(timingEvents).toHaveLength(1);
+        expect(timingEvents[0]).toMatchObject({
+            operation: 'explain.queue-item',
+            principalId: 'platform-admin',
+            sessionId: 'admin-session',
+            details: {
+                adminClientId: 'platform-admin',
+                queueTopicId: QUEUE_KEY.topicId,
+                queueResourceId: QUEUE_KEY.resourceId,
+                queueContextId: QUEUE_KEY.contextId,
+                warningCount: 0,
+                factCount: result.facts.length
+            }
         });
     });
 
@@ -177,7 +198,7 @@ describe('admin support use cases', () => {
     });
 
     it('explains client state, bounded events, and process-local websocket matches', async () => {
-        const calls: unknown[] = [];
+        const calls: AdminSupportTestCall[] = [];
         const clientSnapshot = createClientSnapshot();
         const recentEvents: ClientEvent[] = [{
             ...SCOPE,
@@ -200,11 +221,11 @@ describe('admin support use cases', () => {
         }];
         const service = createService({
             clientStateService: {
-                readSnapshot: async (ref: unknown) => {
+                readSnapshot: async (ref) => {
                     calls.push(['readClientSnapshot', ref]);
                     return clientSnapshot;
                 },
-                readPresenceSnapshot: async (ref: unknown) => {
+                readPresenceSnapshot: async (ref) => {
                     calls.push(['readClientPresenceSnapshot', ref]);
                     return {
                         ...SCOPE,
@@ -216,16 +237,21 @@ describe('admin support use cases', () => {
                         lastSeenAtEpochMs: NOW_EPOCH_MS - 500
                     };
                 },
-                listRecentEvents: async (ref: unknown, query: unknown) => {
+                listRecentEvents: async (ref, query) => {
                     calls.push(['listRecentClientEvents', ref, query]);
                     return recentEvents;
                 }
             },
             wsStatus: () => ({
+                transport: 'ws-server',
                 connectionCount: 2,
                 openConnectionCount: 1,
                 connectionIds: ['connection-1', 'connection-closed'],
-                openConnectionIds: ['connection-1']
+                openConnectionIds: ['connection-1'],
+                connections: [
+                    { connectionId: 'connection-1', isOpen: true },
+                    { connectionId: 'connection-closed', isOpen: false }
+                ]
             })
         });
 
@@ -294,7 +320,7 @@ describe('admin support use cases', () => {
     });
 
     it('explains group snapshots, topology views, and bounded group events', async () => {
-        const calls: unknown[] = [];
+        const calls: AdminSupportTestCall[] = [];
         const groupRef: GroupRef = {
             ...SCOPE,
             groupId: 'room-1'
@@ -317,32 +343,59 @@ describe('admin support use cases', () => {
             requestId: null,
             payload: { accessToken: 'group-secret' }
         }];
-        const topologyView = {
+        const effectiveTopologyConfig = {
+            topologyKind: 'mesh' as const,
+            degreeLimit: 4,
+            treeMinSize: 4,
+            meshMinSize: 2,
+            meshParamK: 2
+        };
+        const topologyView: GroupTopologyManagementView = {
             groupRef,
+            overlayId: 'overlay-1',
             config: {
-                effective: {
-                    topologyKind: 'mesh'
-                }
+                serverDefaults: effectiveTopologyConfig,
+                durable: null,
+                temporary: null,
+                requestOptions: null,
+                effective: effectiveTopologyConfig
             },
             snapshot: {
-                kind: 'mesh',
-                participantCount: 2,
-                nextHops: {}
-            }
+                sourceGroupStateCausalRevision: {
+                    groupRevision: 7,
+                    presenceRevision: 3
+                },
+                state: 'active',
+                overlayId: 'overlay-1',
+                groupRef,
+                name: 'mesh room',
+                topology: 'mesh',
+                activeSessionIds: ['group-session-1', 'group-session-2'],
+                nextHopsBySessionId: {
+                    'group-session-1': ['group-session-2'],
+                    'group-session-2': ['group-session-1']
+                },
+                degreeLimit: 4,
+                version: 1,
+                createdByClientId: 'test-server',
+                createdAtEpochMs: NOW_EPOCH_MS - 2_000,
+                updatedAtEpochMs: NOW_EPOCH_MS - 1_000
+            },
+            pending: null
         };
         const service = createService({
             groupStateService: {
-                readSnapshot: async (ref: unknown) => {
+                readSnapshot: async (ref) => {
                     calls.push(['readGroupSnapshot', ref]);
                     return groupSnapshot;
                 },
-                listRecentEvents: async (ref: unknown, query: unknown) => {
+                listRecentEvents: async (ref, query) => {
                     calls.push(['listRecentGroupEvents', ref, query]);
                     return recentEvents;
                 }
             },
             topologyQuery: {
-                readTopologyView: async (ref: unknown) => {
+                readTopologyView: async (ref) => {
                     calls.push(['readTopologyView', ref]);
                     return topologyView;
                 }
@@ -445,7 +498,7 @@ describe('admin support use cases', () => {
     });
 
     it('explains CRDT document metadata, integrity, and redacted debug export summaries', async () => {
-        const calls: unknown[] = [];
+        const calls: AdminSupportTestCall[] = [];
         const document: RallarCrdtDocumentRef = {
             ...SCOPE,
             scope: 'room',
@@ -675,7 +728,7 @@ type FakeSupportReaderOptions = Readonly<{
 }>;
 
 class FakeSupportReader {
-    readonly calls: unknown[] = [];
+    readonly calls: AdminSupportTestCall[] = [];
 
     private readonly options: FakeSupportReaderOptions;
 

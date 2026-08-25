@@ -2,14 +2,14 @@ import type {
     AdminSupportExplainQueueItemRequest,
     AdminSupportExplainRequestRequest,
     AdminSupportNarrativeResponse
-} from '@shared/api/admin-support-types.ts';
+} from '@shared/api/admin-support/admin-support-types.ts';
 import type { Key } from '@shared/queuebox/ResourceEntry.ts';
 import type { AdminSupportWriteInput, QueueAdminSupportDependencies } from './admin-support-contracts.ts';
-import { executeAdminSupportUseCase } from './execute-admin-support-use-case.ts';
 import {
     projectQueueAdminSupportNarrative,
     projectRequestAdminSupportNarrative
 } from './narratives/queue-admin-support-narrative.ts';
+import { readTimedAdminSupportNarrative } from './read-timed-admin-support-narrative.ts';
 
 export class QueueAdminSupport {
     private readonly dependencies: QueueAdminSupportDependencies;
@@ -21,11 +21,15 @@ export class QueueAdminSupport {
     public async explainRequest(
         input: AdminSupportWriteInput<AdminSupportExplainRequestRequest>
     ): Promise<AdminSupportNarrativeResponse> {
-        return await executeAdminSupportUseCase(
-            this.dependencies,
-            'explain.request',
-            input,
-            async () => {
+        return await readTimedAdminSupportNarrative({
+            dependencies: this.dependencies,
+            operation: 'explain.request',
+            adminSession: input.adminSession,
+            timing: {
+                requestId: input.request.requestId,
+                queueKey: input.request.queueKey
+            },
+            readNarrative: async () => {
                 const queueNarrative = input.request.queueKey
                     ? await this.explainQueueItem({
                         adminSession: input.adminSession,
@@ -41,17 +45,18 @@ export class QueueAdminSupport {
                     queueNarrative
                 );
             }
-        );
+        });
     }
 
     public async explainQueueItem(
         input: AdminSupportWriteInput<AdminSupportExplainQueueItemRequest>
     ): Promise<AdminSupportNarrativeResponse> {
-        return await executeAdminSupportUseCase(
-            this.dependencies,
-            'explain.queue-item',
-            input,
-            async () => {
+        return await readTimedAdminSupportNarrative({
+            dependencies: this.dependencies,
+            operation: 'explain.queue-item',
+            adminSession: input.adminSession,
+            timing: { queueKey: input.request.queueKey },
+            readNarrative: async () => {
                 const queueKey = requireQueueKey(input.request.queueKey);
                 const includeExpired = input.request.includeExpired === true;
                 const [inbox, result] = await Promise.all([
@@ -65,7 +70,7 @@ export class QueueAdminSupport {
                     result
                 });
             }
-        );
+        });
     }
 
     private narrativeBase() {

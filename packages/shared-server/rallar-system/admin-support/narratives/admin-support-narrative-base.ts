@@ -1,4 +1,4 @@
-import type { AdminSupportNarrativeResponse } from '@shared/api/admin-support-types.ts';
+import type { AdminSupportNarrativeResponse } from '@shared/api/admin-support/admin-support-types.ts';
 
 export interface AdminSupportNarrativeBase {
     readonly generatedAtEpochMs: number;

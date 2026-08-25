@@ -1,11 +1,11 @@
 import type {
     AdminSupportExplainGroupRequest,
     AdminSupportNarrativeResponse
-} from '@shared/api/admin-support-types.ts';
+} from '@shared/api/admin-support/admin-support-types.ts';
 import type { AdminSupportWriteInput, GroupAdminSupportDependencies } from './admin-support-contracts.ts';
-import { executeAdminSupportUseCase } from './execute-admin-support-use-case.ts';
 import { projectGroupAdminSupportNarrative } from './narratives/project-group-admin-support-narrative.ts';
 import { readAdminSupportRecentEventLimit } from './read-admin-support-recent-event-limit.ts';
+import { readTimedAdminSupportNarrative } from './read-timed-admin-support-narrative.ts';
 
 export class GroupAdminSupport {
     private readonly dependencies: GroupAdminSupportDependencies;
@@ -17,11 +17,12 @@ export class GroupAdminSupport {
     public async explainGroup(
         input: AdminSupportWriteInput<AdminSupportExplainGroupRequest>
     ): Promise<AdminSupportNarrativeResponse> {
-        return await executeAdminSupportUseCase(
-            this.dependencies,
-            'explain.group',
-            input,
-            async () => {
+        return await readTimedAdminSupportNarrative({
+            dependencies: this.dependencies,
+            operation: 'explain.group',
+            adminSession: input.adminSession,
+            timing: {},
+            readNarrative: async () => {
                 const groupRef = input.request.groupRef;
                 const service = this.dependencies.groupStateService;
                 const topologyQuery = this.dependencies.topologyQuery;
@@ -44,6 +45,6 @@ export class GroupAdminSupport {
                     topologyView
                 });
             }
-        );
+        });
     }
 }

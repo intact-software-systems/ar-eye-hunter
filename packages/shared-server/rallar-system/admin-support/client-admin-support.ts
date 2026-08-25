@@ -1,12 +1,12 @@
 import type {
     AdminSupportExplainClientRequest,
     AdminSupportNarrativeResponse
-} from '@shared/api/admin-support-types.ts';
+} from '@shared/api/admin-support/admin-support-types.ts';
 import type { ClientPrincipalRef } from '@shared/api/client-types.ts';
 import type { AdminSupportWriteInput, ClientAdminSupportDependencies } from './admin-support-contracts.ts';
-import { executeAdminSupportUseCase } from './execute-admin-support-use-case.ts';
 import { projectClientAdminSupportNarrative } from './narratives/project-client-admin-support-narrative.ts';
 import { readAdminSupportRecentEventLimit } from './read-admin-support-recent-event-limit.ts';
+import { readTimedAdminSupportNarrative } from './read-timed-admin-support-narrative.ts';
 
 export class ClientAdminSupport {
     private readonly dependencies: ClientAdminSupportDependencies;
@@ -18,11 +18,12 @@ export class ClientAdminSupport {
     public async explainClient(
         input: AdminSupportWriteInput<AdminSupportExplainClientRequest>
     ): Promise<AdminSupportNarrativeResponse> {
-        return await executeAdminSupportUseCase(
-            this.dependencies,
-            'explain.client',
-            input,
-            async () => {
+        return await readTimedAdminSupportNarrative({
+            dependencies: this.dependencies,
+            operation: 'explain.client',
+            adminSession: input.adminSession,
+            timing: {},
+            readNarrative: async () => {
                 const ref: ClientPrincipalRef = {
                     ...input.request.scope,
                     principalId: input.request.principalId
@@ -49,6 +50,6 @@ export class ClientAdminSupport {
                     wsStatus: this.dependencies.wsStatus?.()
                 });
             }
-        );
+        });
     }
 }

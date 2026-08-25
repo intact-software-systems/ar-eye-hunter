@@ -1,4 +1,4 @@
-import { PSqlAdminSupportReader } from '@shared-server/postgres/admin-support/PSqlAdminSupportReader.ts';
+import { PSqlAdminSupportReader } from '@shared-server/rallar-system/admin-support/postgres/p-sql-admin-support-reader.ts';
 import assert from 'node:assert/strict';
 import type { PGliteSql } from '../../src/db/pglite-sql-adapter.ts';
 import { createApiV1TestPGliteDatabaseLifecycle } from './api-v1-test-pglite-database.ts';
