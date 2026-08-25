@@ -80,7 +80,7 @@ export function computeLifecycleTransition(
     if (facts.internalAuthority === 'formation-criterion') {
         // The criterion evaluator petitions with service authority; the state
         // machine below is the only check that applies. Principals never carry
-        // this authority mode (validateTrustedAuthorityMode enforces it).
+        // this authority mode (validateGroupMutationAuthority enforces it).
     }
     else if (command.operation === 'failGroupFormation') {
         throw new GroupMutationRejectedError('Formation failure is criterion-commanded only');

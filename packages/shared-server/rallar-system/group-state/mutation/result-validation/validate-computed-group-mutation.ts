@@ -5,22 +5,22 @@ import type {
     GroupMutationFacts,
     GroupMutationRead
 } from '../group-mutation-contracts.ts';
-import { validateComputedWrite } from './validate-computed-group-mutation-write.ts';
+import { validateComputedGroupMutationWrite } from './validate-computed-group-mutation-write.ts';
 import { validateCommandHash, validateMutationReceipt } from './validate-group-mutation-result.ts';
 
-export interface ValidateComputedMutationShapeInput {
+export interface ValidateComputedGroupMutationInput {
     readonly command: GroupMutationCommand;
     readonly read: GroupMutationRead;
     readonly facts: GroupMutationFacts;
     readonly computed: GroupMutationComputed;
 }
 
-export function validateComputedMutationShape({
+export function validateComputedGroupMutation({
     command,
     read,
     facts,
     computed
-}: ValidateComputedMutationShapeInput): void {
+}: ValidateComputedGroupMutationInput): void {
     const value = computed;
     switch (computed.outcome) {
         case 'replay':
@@ -33,7 +33,7 @@ export function validateComputedMutationShape({
             return;
         case 'write':
             validateWriteOutcomeKeys(value);
-            validateComputedWrite({ command, read, facts, computed });
+            validateComputedGroupMutationWrite({ command, read, facts, computed });
             return;
     }
 }
@@ -116,7 +116,3 @@ function validateWriteOutcomeKeys(value: object): void {
     assertExactKeys(value, keys, 'Group mutation computed result');
     assertRequiredKeys(value, keys, 'Group mutation computed result');
 }
-
-export { validateComputedMutationShape as validateComputedGroupMutation };
-export { validateComputedRosterFacts } from '../state-validation/validate-computed-roster-facts.ts';
-export { validateComputedOutboxEntries } from './validate-computed-group-mutation-write.ts';

@@ -1,3 +1,4 @@
+import { validateAuthoritativeGroupEvent } from '@shared/api/authoritative-state-validation.ts';
 import type { Group, GroupEvent, GroupRef, GroupScope } from '@shared/api/group-types.ts';
 import type { StateEventPage } from '@shared/api/state-event-types.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
@@ -8,6 +9,7 @@ import {
     type RuntimeStateConditionalWriteResult,
     type RuntimeStateRepositoryLike
 } from '../../../runtime-state/runtime-state-repository.ts';
+import { decodeJsonWireValue } from '../../protocol/json-wire-identity.ts';
 import type { GroupStateEventStore } from '../../state-events/group-state-event-store.ts';
 import type { StateEventListQuery } from '../../state-events/state-event-listing.ts';
 import type { GroupMutationIdempotencyRecord } from '../mutation/group-mutation-contracts.ts';
@@ -28,7 +30,6 @@ import {
     groupStateGroupStorageKey,
     groupStateIdempotencyStorageKey
 } from './group-state-storage-keys.ts';
-import { validatePersistedGroupEvent } from './persisted-group-event.ts';
 import { validatePersistedGroup } from './validate-persisted-group.ts';
 
 export class GroupAggregateRepository extends RuntimeStateJsonStore {
@@ -95,7 +96,7 @@ export class GroupAggregateRepository extends RuntimeStateJsonStore {
     }
 
     async appendEvent(event: GroupEvent): Promise<void> {
-        validatePersistedGroupEvent(event, event);
+        validateAuthoritativeGroupEvent(event, event);
         await this.events.appendGroupEvent(event);
     }
 
@@ -149,8 +150,8 @@ export function materializeGroupStateAuthorityGuard(
     };
 }
 
-export function canonicalStoredGroup(
-    stored: RuntimeStateEntryValue<unknown>,
+export function canonicalStoredGroup<StoredValue>(
+    stored: RuntimeStateEntryValue<StoredValue>,
     expectedScope: GroupScope
 ): RuntimeStateEntryValue<Group> {
     let decoded: GroupRef;
@@ -221,7 +222,7 @@ function assertGroupStateAuthorityGuard(
     let value: Group;
     try {
         value = decodeStoredGroupStateValue(
-            JSON.parse(entry.value) as unknown,
+            decodeJsonWireValue(JSON.parse(entry.value), 'Stored authority-fence group'),
             guard.groupRef,
             entry.key,
             decodePersistedGroup,

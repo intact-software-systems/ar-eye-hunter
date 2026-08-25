@@ -2,6 +2,7 @@ import { jsonEquals } from '@shared/repository/state-utils.ts';
 
 import { requireJsonSafe } from '../../group-state-validation-primitives.ts';
 import { validatePresenceAdmission } from '../../persistence/validate-persisted-group-presence.ts';
+import { validateGroupMutationAuthority } from '../command-validation/validate-group-mutation-authority.ts';
 import { validateGroupMutationCommand } from '../command-validation/validate-group-mutation-command.ts';
 import type {
     GroupMutationCommand,
@@ -9,17 +10,13 @@ import type {
     GroupMutationFacts,
     GroupMutationRead
 } from '../group-mutation-contracts.ts';
-import {
-    computeGroupMutation,
-    validateFacts,
-    validateTrustedAuthorityMode
-} from '../orchestration/compute-group-mutation.ts';
-import {
-    validateComputedMutationShape,
-    validateComputedOutboxEntries,
-    validateComputedRosterFacts
-} from '../result-validation/validate-computed-group-mutation.ts';
+import { computeGroupMutation } from '../orchestration/compute-group-mutation.ts';
+import { validateComputedGroupMutation } from '../result-validation/validate-computed-group-mutation.ts';
+import { validateComputedGroupMutationOutbox } from '../result-validation/validate-computed-group-mutation-outbox.ts';
+import { validateComputedRosterFacts } from './validate-computed-roster-facts.ts';
+import { validateGroupMutationFacts } from './validate-group-mutation-facts.ts';
 import { validateGroupMutationRead } from './validate-group-mutation-read.ts';
+
 export function validateGroupMutation(
     input: Readonly<{
         command: GroupMutationCommand;
@@ -30,13 +27,13 @@ export function validateGroupMutation(
 ): void {
     validateGroupMutationCommand(input.command);
     validateGroupMutationRead(input.read, input.command);
-    validateFacts(input.facts);
-    validateTrustedAuthorityMode(input.command, input.facts);
+    validateGroupMutationFacts(input.facts);
+    validateGroupMutationAuthority(input.command, input.facts);
     requireJsonSafe(
         input.computed.outcome === 'write' ? { ...input.computed, outboxEntries: [] } : input.computed,
         'Group mutation computed result'
     );
-    validateComputedMutationShape(input);
+    validateComputedGroupMutation(input);
     const canonical = computeGroupMutation({
         command: input.command,
         read: input.read,
@@ -60,7 +57,7 @@ export function validateGroupMutation(
         if (input.computed.presenceAdmission) {
             validatePresenceAdmission(input.computed.presenceAdmission.value);
         }
-        validateComputedOutboxEntries({
+        validateComputedGroupMutationOutbox({
             command: input.command,
             read: input.read,
             facts: input.facts,
