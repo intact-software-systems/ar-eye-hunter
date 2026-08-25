@@ -4,11 +4,11 @@ import type { AuthSession, LoginResponse } from '@shared/api/api-config.ts';
 import { throwRallarValidation } from '@shared/api/rallar-validation.ts';
 import type { RallarCrdtTransportStrategy } from '@shared/crdt/mod.ts';
 import type { RtcDataChannelLaneConfig } from '@shared/services/WebRtcConnectionService.ts';
+import type { BlackBoxRallarRoomRefreshOptions, BlackBoxRallarRuntime } from './black-box-rallar-runtime-contract.ts';
 import {
     createBlackBoxBrowserRallarRuntimeDependency,
     type BlackBoxBrowserRallarRuntimeDependency
 } from './browser-rallar-runtime-composition.ts';
-import type { BlackBoxRallarRoomRefreshOptions, BlackBoxRallarRuntime } from './black-box-rallar-runtime-contract.ts';
 import { createBlackBoxRallarCrdtController } from './crdt-controller.ts';
 import { createBlackBoxRallarConsoleDiagnostics, createBlackBoxRallarRuntimeDiagnostics } from './diagnostics.ts';
 import { createBlackBoxRallarDirectorController } from './director-controller.ts';

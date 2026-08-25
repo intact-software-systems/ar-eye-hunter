@@ -274,7 +274,6 @@ describe('Rallar message send', () => {
                 payload: { text: 'invalid topic' }
             })
         ).rejects.toSatisfy(isRallarValidationError);
-
     });
 
     it('rejects room-scoped WS sends without a room target before queueing', async () => {
@@ -290,7 +289,6 @@ describe('Rallar message send', () => {
                 payload: { text: 'missing room' }
             })
         ).rejects.toSatisfy(isRallarValidationError);
-
     });
 
     it('rejects invalid RTC room ids before connecting or queueing', async () => {
@@ -305,7 +303,6 @@ describe('Rallar message send', () => {
                 payload: { text: 'invalid room' }
             })
         ).rejects.toSatisfy(isRallarValidationError);
-
     });
 
     it('rejects corrupt and oversized message payloads before queueing', async () => {
@@ -332,7 +329,6 @@ describe('Rallar message send', () => {
             typeId: 'chat.message.v1',
             payload: { text: 'too large' }
         })).rejects.toSatisfy(isRallarValidationError);
-
     });
 
     it('returns RTC send status with the message when multicast enqueue reports no entries', async () => {

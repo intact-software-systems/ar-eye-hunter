@@ -43,18 +43,18 @@ to vary by machine, Postgres state, runtime version, cache warmth, and load.
 
 ## Scripts
 
-| File                                                 | Purpose                                                                                                                                                                           |
-| ---------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `runtime-validation-bench.ts`                        | Deno benchmark harness for event parsing, runtime prefix reads, cache retention, rate limiter cleanup, state-sync recipient resolution, WebSocket serialization, and cache churn. |
-| `summarize-runtime-results.mjs`                      | Node helper that summarizes harness JSON into per-case duration and memory deltas.                                                                                                |
-| `api-v1-state-write-concurrency-bench.ts`            | Direct PostgreSQL API-v1 state-write benchmark for uncontended, shared-group, and hot-group concurrency.                                                                          |
-| `compare-api-v1-state-write-results.mjs`             | Validates state-write artifacts and enforces the relative performance and correctness gate.                                                                                       |
-| `compare-api-v1-crdt-append-history-results.mjs`     | Validates and compares diagnostic black-box append/replay timings at small, medium, and large bounded CRDT histories.                                                             |
-| `seed-perf-db.sql`                                   | Synthetic Postgres fixture for runtime state, app data, state events, queue rows, and CRDT rows.                                                                                  |
-| `explain-perf-db.sql`                                | EXPLAIN ANALYZE script for the seeded Postgres fixture.                                                                                                                           |
-| `seed-perf-db-sparse-queue.sql`                      | Worst-case sparse queue fixture and EXPLAIN for runnable-row selection.                                                                                                           |
-| `client-list-fanout-bench.ts`                        | Client snapshot fanout/pagination workload.                                                                                                                                       |
-| `group-list-fanout-bench.ts`                         | Group snapshot fanout/pagination workload.                                                                                                                                        |
+| File                                             | Purpose                                                                                                                                                                           |
+| ------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `runtime-validation-bench.ts`                    | Deno benchmark harness for event parsing, runtime prefix reads, cache retention, rate limiter cleanup, state-sync recipient resolution, WebSocket serialization, and cache churn. |
+| `summarize-runtime-results.mjs`                  | Node helper that summarizes harness JSON into per-case duration and memory deltas.                                                                                                |
+| `api-v1-state-write-concurrency-bench.ts`        | Direct PostgreSQL API-v1 state-write benchmark for uncontended, shared-group, and hot-group concurrency.                                                                          |
+| `compare-api-v1-state-write-results.mjs`         | Validates state-write artifacts and enforces the relative performance and correctness gate.                                                                                       |
+| `compare-api-v1-crdt-append-history-results.mjs` | Validates and compares diagnostic black-box append/replay timings at small, medium, and large bounded CRDT histories.                                                             |
+| `seed-perf-db.sql`                               | Synthetic Postgres fixture for runtime state, app data, state events, queue rows, and CRDT rows.                                                                                  |
+| `explain-perf-db.sql`                            | EXPLAIN ANALYZE script for the seeded Postgres fixture.                                                                                                                           |
+| `seed-perf-db-sparse-queue.sql`                  | Worst-case sparse queue fixture and EXPLAIN for runnable-row selection.                                                                                                           |
+| `client-list-fanout-bench.ts`                    | Client snapshot fanout/pagination workload.                                                                                                                                       |
+| `group-list-fanout-bench.ts`                     | Group snapshot fanout/pagination workload.                                                                                                                                        |
 
 ## RTC/WebRTC benchmark package
 
