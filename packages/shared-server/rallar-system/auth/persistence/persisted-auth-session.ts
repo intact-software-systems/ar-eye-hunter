@@ -1,4 +1,4 @@
-import { decodeJsonWireValue, type JsonWireObject } from '../../protocol/json-wire-identity.ts';
+import { decodeJsonWireValue, type JsonWireObject, type JsonWireValue } from '../../protocol/json-wire-identity.ts';
 import {
     assertExactAuthPersistenceKeys,
     decodeAuthPersistenceObject,
@@ -16,7 +16,7 @@ export interface PersistedAuthSession extends JsonWireObject {
 }
 
 export function decodePersistedAuthSession(
-    input: unknown
+    input: JsonWireValue
 ): PersistedAuthSession {
     const session = decodeAuthPersistenceObject(
         decodeJsonWireValue(input, 'Persisted auth session'),

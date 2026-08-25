@@ -1,4 +1,4 @@
-import { decodeJsonWireValue, type JsonWireObject } from '../../protocol/json-wire-identity.ts';
+import { decodeJsonWireValue, type JsonWireObject, type JsonWireValue } from '../../protocol/json-wire-identity.ts';
 import { normalizeAuthUsername } from '../credentials/normalize-auth-username.ts';
 import {
     assertExactAuthPersistenceKeys,
@@ -27,7 +27,7 @@ export interface PersistedAuthUser extends JsonWireObject {
 }
 
 export function decodePersistedAuthUser(
-    input: unknown
+    input: JsonWireValue
 ): PersistedAuthUser {
     const user = decodeAuthPersistenceObject(
         decodeJsonWireValue(input, 'Persisted auth user'),

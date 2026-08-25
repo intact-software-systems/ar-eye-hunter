@@ -1,4 +1,4 @@
-import { decodeJsonWireValue, type JsonWireObject } from '../../protocol/json-wire-identity.ts';
+import { decodeJsonWireValue, type JsonWireObject, type JsonWireValue } from '../../protocol/json-wire-identity.ts';
 import {
     assertExactAuthPersistenceKeys,
     decodeAuthPersistenceObject,
@@ -20,7 +20,7 @@ export interface PersistedAgentSessionTicket extends PersistedWebSocketTicket {
 }
 
 export function decodePersistedWebSocketTicket(
-    input: unknown
+    input: JsonWireValue
 ): PersistedWebSocketTicket {
     const ticket = decodeAuthPersistenceObject(
         decodeJsonWireValue(input, 'Persisted websocket ticket'),
@@ -42,7 +42,7 @@ export function decodePersistedWebSocketTicket(
 }
 
 export function decodePersistedAgentSessionTicket(
-    input: unknown
+    input: JsonWireValue
 ): PersistedAgentSessionTicket {
     const ticket = decodeAuthPersistenceObject(
         decodeJsonWireValue(input, 'Persisted agent session ticket'),

@@ -2,7 +2,9 @@ import { decodeJsonWireValue, type JsonWireObject, type JsonWireValue } from '..
 import { decodePersistedAuthSession } from '../persistence/persisted-auth-session.ts';
 import type { AuthMutationIntent } from './auth-mutation-contracts.ts';
 
-export function decodeAuthMutationIntent(input: unknown): AuthMutationIntent {
+type AuthMutationIntentCandidate = JsonWireValue | AuthMutationIntent;
+
+export function decodeAuthMutationIntent(input: AuthMutationIntentCandidate): AuthMutationIntent {
     const intent = requireRecord(
         decodeJsonWireValue(input, 'Auth mutation intent'),
         'Auth mutation intent'
