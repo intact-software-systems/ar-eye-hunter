@@ -15,12 +15,23 @@ export interface GenerateRallarServerAiProviderResultInput {
 export async function generateRallarServerAiProviderResult(
     input: GenerateRallarServerAiProviderResultInput
 ): Promise<RallarAiJsonResult<RallarAiJsonValue>> {
+    if (input.request.signal?.aborted) {
+        throw createProviderCancelledError();
+    }
     if (input.timeoutMs === undefined) {
-        return await input.provider.generateJson<RallarAiJsonValue, RallarAiJsonValue>(input.request);
+        try {
+            return await input.provider.generateJson<RallarAiJsonValue, RallarAiJsonValue>(input.request);
+        }
+        catch (error) {
+            if (input.request.signal?.aborted) {
+                throw createProviderCancelledError();
+            }
+            throw error;
+        }
     }
 
     const controller = new AbortController();
-    const abortFromRequest = () => controller.abort(input.request.signal?.reason);
+    const abortFromRequest = () => controller.abort(createProviderCancelledError());
     input.request.signal?.addEventListener('abort', abortFromRequest, { once: true });
     const timeout = setTimeout(() => {
         controller.abort(
@@ -48,4 +59,11 @@ export async function generateRallarServerAiProviderResult(
         clearTimeout(timeout);
         input.request.signal?.removeEventListener('abort', abortFromRequest);
     }
+}
+
+function createProviderCancelledError(): RallarAiError {
+    return new RallarAiError(
+        'provider-cancelled',
+        'RallarAI server generation was cancelled before completion.'
+    );
 }

@@ -133,6 +133,19 @@ describe('Rallar server AI generation', () => {
             .rejects.toMatchObject({ code: 'provider-timeout' });
     });
 
+    it('reports a request cancelled before provider invocation', async () => {
+        const controller = new AbortController();
+        controller.abort();
+        const ai = createRallarServerAiTestService({
+            provider: createRallarAiMockProvider({ value: { kind: 'spawn' } })
+        });
+
+        await expect(ai.generateJson({
+            ...createRallarServerAiTestRequest(),
+            signal: controller.signal
+        })).rejects.toMatchObject({ code: 'provider-cancelled' });
+    });
+
     it('rejects a provider result whose value is not JSON-safe', async () => {
         const request: RallarAiJsonRequest = {
             schemaId: 'json-result',
