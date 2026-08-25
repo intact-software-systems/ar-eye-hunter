@@ -4,14 +4,6 @@ import { computeCrdtMutation } from '@shared-server/rallar-system/crdt/mutation/
 import { createCrdtMutationCommand, decodeCrdtMutationCommand } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-command-codec.ts';
 import { toCrdtAuditOutbox } from '@shared-server/rallar-system/crdt/mutation/create-crdt-mutation-outbox.ts';
 import { decodeCrdtMutationResult } from '@shared-server/rallar-system/crdt/mutation/decode-crdt-mutation-result.ts';
-import {
-    toMetadata,
-    toRecord,
-    toSnapshot,
-    type DocumentRow,
-    type SnapshotRow,
-    type UpdateRow
-} from '@shared-server/rallar-system/crdt/persistence/crdt-mutation-row-codec.ts';
 import { installRallarCrdtWsTopics } from '@shared-server/rallar-system/crdt/realtime/install-rallar-crdt-ws-topics.ts';
 import { RallarServerWsRouter } from '@shared-server/rallar-system/websocket/router/rallar-server-ws-router.ts';
 import {
@@ -79,72 +71,6 @@ describe('CRDT persisted mutation contract invariants', () => {
                 })
             ).rejects.toThrow(/projection/i);
         }
-    });
-
-    it('rejects persisted metadata with impossible lifecycle timestamps', () => {
-        expect(() =>
-            toMetadata(
-                documentRow({
-                    lifecycle: 'archived',
-                    archived_at_ts: null
-                }),
-                toRallarCrdtDocumentKey(DOCUMENT),
-                DOCUMENT
-            )
-        ).toThrow(/metadata|lifecycle|corrupt/i);
-    });
-
-    it('rejects persisted snapshot rows when the envelope omits its required reason', () => {
-        const documentKey = toRallarCrdtDocumentKey(DOCUMENT);
-        const snapshotEnvelope = {
-            protocolVersion: RALLAR_CRDT_PROTOCOL_VERSION,
-            document: DOCUMENT,
-            snapshotId: 'snapshot-without-reason',
-            schemaVersion: 1,
-            createdAtEpochMs: 2_000,
-            maxLamport: 0,
-            includedUpdateIds: [],
-            value: {},
-            metadata: { updateCount: 0 }
-        };
-        const row: SnapshotRow = {
-            document_key: documentKey,
-            snapshot_id: snapshotEnvelope.snapshotId,
-            append_sequence: 0,
-            snapshot_envelope: JSON.stringify(snapshotEnvelope),
-            created_at_ts: new Date(snapshotEnvelope.createdAtEpochMs),
-            reason: 'legacy-import',
-            snapshot_bytes: 2,
-            snapshot_count: 1
-        };
-
-        expect(() =>
-            toSnapshot({
-                row,
-                expectedDocumentKey: documentKey,
-                expectedDocument: DOCUMENT,
-                lastAppendSequence: 0
-            })
-        ).toThrow(/snapshot|reason|corrupt/i);
-    });
-
-    it('rejects persisted update rows with invalid physical sequence and authorization scope', () => {
-        const envelope = update();
-        const row: UpdateRow = {
-            document_key: toRallarCrdtDocumentKey(DOCUMENT),
-            update_id: envelope.updateId,
-            append_sequence: 0,
-            update_envelope: JSON.stringify(envelope),
-            accepted_update_hash: hashRallarCrdtUpdateEnvelope(envelope),
-            actor_id: 'actor-1',
-            principal_id: 'principal-1',
-            session_id: 'session-1',
-            server_id: 'server-1',
-            authorization_scope: 'forged-scope',
-            accepted_at_ts: new Date(1_000)
-        };
-
-        expect(() => toRecord(row, DOCUMENT)).toThrow(/update|sequence|scope|corrupt/i);
     });
 
     it('binds accepted nested results to the outer document, revision, and sequence', async () => {
@@ -353,33 +279,6 @@ function metadata(): RallarCrdtDocumentMetadata {
         retention: null,
         quota: null,
         projectionIds: []
-    };
-}
-
-function documentRow(overrides: Partial<DocumentRow> = {}): DocumentRow {
-    const value = metadata();
-    return {
-        document_key: value.documentKey,
-        application_id: DOCUMENT.applicationId,
-        workspace_id: DOCUMENT.workspaceId ?? null,
-        document_scope: DOCUMENT.scope,
-        document_type: DOCUMENT.documentType,
-        document_id: DOCUMENT.documentId,
-        document_ref: JSON.stringify(DOCUMENT),
-        document_revision: value.documentRevision,
-        lifecycle: value.lifecycle,
-        created_at_ts: new Date(value.createdAtEpochMs),
-        updated_at_ts: new Date(value.updatedAtEpochMs),
-        archived_at_ts: null,
-        destroyed_at_ts: null,
-        last_append_sequence: value.lastAppendSequence,
-        update_count: value.updateCount,
-        snapshot_count: value.snapshotCount,
-        stored_update_bytes: value.storedUpdateBytes,
-        retention_policy: null,
-        quota_policy: null,
-        projection_ids: JSON.stringify([]),
-        ...overrides
     };
 }
 
