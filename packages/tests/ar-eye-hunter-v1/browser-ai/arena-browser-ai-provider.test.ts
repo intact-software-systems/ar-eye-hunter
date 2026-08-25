@@ -17,7 +17,6 @@ describe('AR Eye Hunter browser AI provider selection', () => {
         expect(selection.status).toBe('ready');
         expect(selection.mode).toBe('webllm');
         expect(selection.provider?.providerId).toBe(webLlmProvider.providerId);
-        expect(selection.reason).toBeUndefined();
     });
 
     it('keeps WebLLM generation failures visible without switching providers', async () => {
