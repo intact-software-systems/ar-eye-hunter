@@ -15,6 +15,7 @@ import {
     requireRecord,
     requireString
 } from '../../protocol/exact-object-decoding.ts';
+import { decodeJsonWireValue } from '../../protocol/json-wire-identity.ts';
 import { appendRejectionReason, isAppendRejectionRetryable, toAppendRejectionCode } from './crdt-append-rejection.ts';
 import type { CrdtMutationResult } from './crdt-mutation-contracts.ts';
 import {
@@ -23,11 +24,9 @@ import {
     decodeExactIntegrityReport,
     decodeExactValidationResult
 } from './crdt-mutation-result-detail-codec.ts';
-import {
-    decodeExactDocumentMetadata,
-    decodeExactSnapshotEnvelope,
-    decodeExactTrustedAppendMetadata
-} from './crdt-mutation-value-codec.ts';
+import { decodeExactDocumentMetadata } from './decoding/decode-exact-document-metadata.ts';
+import { decodeExactSnapshotEnvelope } from './decoding/decode-exact-snapshot-envelope.ts';
+import { decodeExactTrustedAppendMetadata } from './decoding/decode-exact-trusted-append-metadata.ts';
 import { decodeExactDebugBundle } from './decode-exact-debug-bundle.ts';
 import { decodeExactUpdateEnvelope } from './decode-exact-update-envelope.ts';
 import { requireCrdtCanonicalSnapshotReason } from './to-crdt-canonical-snapshot.ts';
@@ -98,22 +97,30 @@ export function decodeCrdtMutationResult(value: unknown): CrdtMutationResult {
     }
     else if (operation === 'compact') {
         if (result.snapshot !== null) {
-            const snapshot = decodeExactSnapshotEnvelope(result.snapshot);
+            const snapshot = decodeExactSnapshotEnvelope(
+                decodeJsonWireValue(result.snapshot, 'CRDT compact result snapshot')
+            );
             requireCrdtCanonicalSnapshotReason(snapshot.metadata.reason);
         }
         if (result.metadata !== null) {
-            decodeExactDocumentMetadata(result.metadata);
+            decodeExactDocumentMetadata(
+                decodeJsonWireValue(result.metadata, 'CRDT compact result metadata')
+            );
         }
     }
     else if (operation === 'lifecycle' && result.metadata !== null) {
-        decodeExactDocumentMetadata(result.metadata);
+        decodeExactDocumentMetadata(
+            decodeJsonWireValue(result.metadata, 'CRDT lifecycle result metadata')
+        );
     }
     else if (operation === 'rebuild-projection') {
         if (result.integrity !== null) {
             decodeExactIntegrityReport(requireRecord(result.integrity, 'CRDT integrity report'));
         }
         if (result.metadata !== null) {
-            decodeExactDocumentMetadata(result.metadata);
+            decodeExactDocumentMetadata(
+                decodeJsonWireValue(result.metadata, 'CRDT rebuild result metadata')
+            );
         }
     }
     else if (operation === 'erase') {
@@ -124,7 +131,9 @@ export function decodeCrdtMutationResult(value: unknown): CrdtMutationResult {
             decodeExactErasureAuditEvent(requireRecord(result.auditEvent, 'CRDT erasure audit event'));
         }
         if (result.metadata !== null) {
-            decodeExactDocumentMetadata(result.metadata);
+            decodeExactDocumentMetadata(
+                decodeJsonWireValue(result.metadata, 'CRDT erase result metadata')
+            );
         }
         if (result.redactedBundle !== null) {
             decodeExactDebugBundle(result.redactedBundle);
@@ -272,8 +281,12 @@ function decodeAppendResult(value: unknown): void {
     if (status === 'accepted' || status === 'duplicate') {
         requireExactKeys(append, ['status', 'update', 'append', 'document'], 'CRDT append result');
         decodeExactUpdateEnvelope(append.update);
-        decodeExactTrustedAppendMetadata(append.append);
-        decodeExactDocumentMetadata(append.document);
+        decodeExactTrustedAppendMetadata(
+            decodeJsonWireValue(append.append, 'CRDT append result metadata')
+        );
+        decodeExactDocumentMetadata(
+            decodeJsonWireValue(append.document, 'CRDT append result document')
+        );
         return;
     }
     const keys = [
@@ -308,6 +321,8 @@ function decodeAppendResult(value: unknown): void {
         decodeExactValidationResult(requireRecord(append.validation, 'CRDT validation result'));
     }
     if ('document' in append) {
-        decodeExactDocumentMetadata(append.document);
+        decodeExactDocumentMetadata(
+            decodeJsonWireValue(append.document, 'CRDT append rejection document')
+        );
     }
 }

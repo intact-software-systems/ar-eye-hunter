@@ -8,13 +8,11 @@ import type {
     CrdtMutationResponseAudience,
     CrdtMutationResult
 } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-contracts.ts';
-import {
-    decodeExactDocumentRef,
-    decodeExactProjectionIds,
-    decodeExactQuotaPolicy,
-    decodeExactRetentionPolicy,
-    decodeExactSnapshotEnvelope
-} from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-value-codec.ts';
+import { decodeExactDocumentRef } from '@shared-server/rallar-system/crdt/mutation/decoding/decode-exact-document-ref.ts';
+import { decodeExactProjectionIds } from '@shared-server/rallar-system/crdt/mutation/decoding/decode-exact-projection-ids.ts';
+import { decodeExactQuotaPolicy } from '@shared-server/rallar-system/crdt/mutation/decoding/decode-exact-quota-policy.ts';
+import { decodeExactRetentionPolicy } from '@shared-server/rallar-system/crdt/mutation/decoding/decode-exact-retention-policy.ts';
+import { decodeExactSnapshotEnvelope } from '@shared-server/rallar-system/crdt/mutation/decoding/decode-exact-snapshot-envelope.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type {
     RallarCrdtDocumentLifecycleState,

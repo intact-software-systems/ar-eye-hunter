@@ -1,11 +1,19 @@
 import { validateRallarCrdtUpdateEnvelope, type RallarCrdtUpdateEnvelope } from '@shared/crdt/mod.ts';
 
-import { requireExactKeys, requireRecord } from '../../protocol/exact-object-decoding.ts';
-import { decodeExactDocumentRef } from './crdt-mutation-value-codec.ts';
-import { decodeExactCausalFrontierShape, decodeExactOperationBatchShape } from './crdt-operation-exact-codec.ts';
+import { requireExactKeys } from '../../protocol/exact-object-decoding.ts';
+import { decodeJsonWireValue } from '../../protocol/json-wire-identity.ts';
+import { decodeExactDocumentRef } from './decoding/decode-exact-document-ref.ts';
+import {
+    decodeExactCausalFrontierShape,
+    decodeExactOperationBatchShape
+} from './decoding/decode-exact-operation-shapes.ts';
+import { requireCrdtJsonWireObject } from './decoding/require-crdt-json-wire-object.ts';
 
 export function decodeExactUpdateEnvelope(value: unknown): RallarCrdtUpdateEnvelope {
-    const update = requireRecord(value, 'CRDT update envelope');
+    const update = requireCrdtJsonWireObject(
+        decodeJsonWireValue(value, 'CRDT update envelope'),
+        'CRDT update envelope'
+    );
     const allowed = [
         'protocolVersion',
         'document',

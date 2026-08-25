@@ -6,7 +6,8 @@ import {
     requireRecord,
     requireString
 } from '../../protocol/exact-object-decoding.ts';
-import { decodeExactDocumentRef } from './crdt-mutation-value-codec.ts';
+import { decodeJsonWireValue } from '../../protocol/json-wire-identity.ts';
+import { decodeExactDocumentRef } from './decoding/decode-exact-document-ref.ts';
 
 export function decodeExactValidationResult(value: object): void {
     const validation = requireRecord(value, 'CRDT validation result');
@@ -68,7 +69,10 @@ export function decodeExactErasureRequest(value: object): void {
         ['document', 'requestedAtEpochMs', 'requestedBy', 'reason', 'mode'],
         'CRDT erasure request'
     );
-    decodeExactDocumentRef(request.document, 'CRDT erasure document');
+    decodeExactDocumentRef(
+        decodeJsonWireValue(request.document, 'CRDT erasure document'),
+        'CRDT erasure document'
+    );
     requireEpoch(request.requestedAtEpochMs, 'erasure requestedAtEpochMs');
     requireString(request.requestedBy, 'erasure requestedBy');
     requireString(request.reason, 'erasure reason');

@@ -17,14 +17,12 @@ import {
 } from '@shared/crdt/mod.ts';
 
 import type * as Crdt from '../mutation/crdt-mutation-contracts.ts';
-import {
-    decodeExactDocumentMetadata,
-    decodeExactDocumentRef,
-    decodeExactQuotaPolicy,
-    decodeExactRetentionPolicy,
-    decodeExactSnapshotEnvelope,
-    decodeExactTrustedAppendMetadata
-} from '../mutation/crdt-mutation-value-codec.ts';
+import { decodeExactDocumentMetadata } from '../mutation/decoding/decode-exact-document-metadata.ts';
+import { decodeExactDocumentRef } from '../mutation/decoding/decode-exact-document-ref.ts';
+import { decodeExactQuotaPolicy } from '../mutation/decoding/decode-exact-quota-policy.ts';
+import { decodeExactRetentionPolicy } from '../mutation/decoding/decode-exact-retention-policy.ts';
+import { decodeExactSnapshotEnvelope } from '../mutation/decoding/decode-exact-snapshot-envelope.ts';
+import { decodeExactTrustedAppendMetadata } from '../mutation/decoding/decode-exact-trusted-append-metadata.ts';
 import * as CrdtUpdate from '../mutation/decode-exact-update-envelope.ts';
 
 export interface DocumentRow {

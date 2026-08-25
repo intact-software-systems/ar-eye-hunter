@@ -13,7 +13,7 @@ import {
 import { ResourceInboxResultsRepository } from '@shared-server/queuebox/postgres/resource-inbox-results-repository.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 
-import { decodeExactSnapshotEnvelope } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-value-codec.ts';
+import { decodeExactSnapshotEnvelope } from '@shared-server/rallar-system/crdt/mutation/decoding/decode-exact-snapshot-envelope.ts';
 
 import { decodeCrdtMutationResult } from '@shared-server/rallar-system/crdt/mutation/decode-crdt-mutation-result.ts';
 

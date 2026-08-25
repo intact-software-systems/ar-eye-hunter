@@ -1,7 +1,15 @@
-import { requireExactKeys, requireExactOptionalKeys, requireRecord } from '../../protocol/exact-object-decoding.ts';
+import {
+    requireExactKeys,
+    requireExactOptionalKeys
+} from '../../../protocol/exact-object-decoding.ts';
+import type {
+    JsonWireObject,
+    JsonWireValue
+} from '../../../protocol/json-wire-identity.ts';
+import { requireCrdtJsonWireObject } from './require-crdt-json-wire-object.ts';
 
-export function decodeExactOperationBatchShape(value: unknown): void {
-    const batch = requireRecord(value, 'CRDT operation batch');
+export function decodeExactOperationBatchShape(value: JsonWireValue): void {
+    const batch = requireCrdtJsonWireObject(value, 'CRDT operation batch');
     requireExactOptionalKeys({
         value: batch,
         required: ['kind', 'operations'],
@@ -25,8 +33,8 @@ export function decodeExactOperationBatchShape(value: unknown): void {
     }
 }
 
-export function decodeExactCausalFrontierShape(value: unknown): void {
-    const frontier = requireRecord(value, 'CRDT causal frontier');
+export function decodeExactCausalFrontierShape(value: JsonWireValue): void {
+    const frontier = requireCrdtJsonWireObject(value, 'CRDT causal frontier');
     requireExactOptionalKeys({
         value: frontier,
         required: ['frontierUpdateIds'],
@@ -38,26 +46,8 @@ export function decodeExactCausalFrontierShape(value: unknown): void {
     }
 }
 
-function decodeExactOperationShape(value: unknown): void {
-    const operation = requireRecord(value, 'CRDT operation');
-    const keys = operationKeys[operation.kind as keyof typeof operationKeys];
-    if (!keys) {
-        throw new TypeError('CRDT operation kind is invalid');
-    }
-    requireExactKeys(operation, keys, 'CRDT operation');
-}
-
-function decodeExactUndoRedoShape(value: unknown, label: string): void {
-    const metadata = requireRecord(value, `CRDT ${label} metadata`);
-    requireExactKeys(
-        metadata,
-        ['actorId', 'targetOperationGroupId', 'targetUpdateIds'],
-        `CRDT ${label} metadata`
-    );
-}
-
-export function decodeExactEncryptedEnvelopeShape(value: unknown): void {
-    const envelope = requireRecord(value, 'CRDT encrypted envelope');
+export function decodeExactEncryptedEnvelopeShape(value: JsonWireValue): void {
+    const envelope = requireCrdtJsonWireObject(value, 'CRDT encrypted envelope');
     requireExactOptionalKeys({
         value: envelope,
         required: [
@@ -77,9 +67,27 @@ export function decodeExactEncryptedEnvelopeShape(value: unknown): void {
     });
 }
 
-function decodeDynamicNumberRecord(value: unknown, label: string): void {
-    const record = requireRecord(value, label);
-    if (Object.values(record).some((item) => !Number.isSafeInteger(item) || (item as number) < 0)) {
+function decodeExactOperationShape(value: JsonWireValue): void {
+    const operation = requireCrdtJsonWireObject(value, 'CRDT operation');
+    const keys = operationKeys[operation.kind as keyof typeof operationKeys];
+    if (!keys) {
+        throw new TypeError('CRDT operation kind is invalid');
+    }
+    requireExactKeys(operation, keys, 'CRDT operation');
+}
+
+function decodeExactUndoRedoShape(value: JsonWireValue | undefined, label: string): void {
+    const metadata = requireCrdtJsonWireObject(value, `CRDT ${label} metadata`);
+    requireExactKeys(
+        metadata,
+        ['actorId', 'targetOperationGroupId', 'targetUpdateIds'],
+        `CRDT ${label} metadata`
+    );
+}
+
+function decodeDynamicNumberRecord(value: JsonWireValue | undefined, label: string): void {
+    const record: JsonWireObject = requireCrdtJsonWireObject(value, label);
+    if (Object.values(record).some((item) => !Number.isSafeInteger(item) || Number(item) < 0)) {
         throw new TypeError(`${label} values are invalid`);
     }
 }
