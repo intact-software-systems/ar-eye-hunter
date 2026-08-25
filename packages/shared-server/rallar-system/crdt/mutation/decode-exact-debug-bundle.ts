@@ -10,25 +10,31 @@ import {
     requireExactKeys,
     requireExactOptionalKeys,
     requireOneOf,
-    requireRecord,
     requireString
 } from '../../protocol/exact-object-decoding.ts';
 import {
-    decodeExactDocumentMetadata,
-    decodeExactDocumentRef,
-    decodeExactSnapshotEnvelope,
-    decodeExactTrustedAppendMetadata
-} from './crdt-mutation-value-codec.ts';
+    decodeJsonWireValue,
+    type JsonWireObject,
+    type JsonWireValue
+} from '../../protocol/json-wire-identity.ts';
+import { decodeExactDocumentMetadata } from './decoding/decode-exact-document-metadata.ts';
+import { decodeExactDocumentRef } from './decoding/decode-exact-document-ref.ts';
+import { decodeExactSnapshotEnvelope } from './decoding/decode-exact-snapshot-envelope.ts';
+import { decodeExactTrustedAppendMetadata } from './decoding/decode-exact-trusted-append-metadata.ts';
+import { requireCrdtJsonWireObject } from './decoding/require-crdt-json-wire-object.ts';
 import { decodeExactUpdateEnvelope } from './decode-exact-update-envelope.ts';
 
 export function decodeExactDebugBundle(value: unknown): RallarCrdtDebugBundle {
-    const bundle = requireRecord(value, 'CRDT debug bundle');
+    const bundle = requireCrdtJsonWireObject(
+        decodeJsonWireValue(value, 'CRDT debug bundle'),
+        'CRDT debug bundle'
+    );
     validateExactDebugBundle(bundle);
     return bundle;
 }
 
-function validateExactDebugBundle(bundle: object): asserts bundle is RallarCrdtDebugBundle {
-    const fields = requireRecord(bundle, 'CRDT debug bundle');
+function validateExactDebugBundle(bundle: JsonWireObject): asserts bundle is JsonWireObject & RallarCrdtDebugBundle {
+    const fields = bundle;
     requireExactOptionalKeys({
         value: fields,
         required: [
@@ -69,15 +75,16 @@ function validateExactDebugBundle(bundle: object): asserts bundle is RallarCrdtD
 }
 
 function decodeExactRecords(
-    value: unknown,
+    value: JsonWireValue | undefined,
     document: RallarCrdtDocumentRef
-): readonly Record<string, unknown>[] {
-    if (!Array.isArray(value)) {
+): readonly JsonWireObject[] {
+    if (!isJsonWireArray(value)) {
         throw new TypeError('CRDT debug records are invalid');
     }
     const documentKey = toRallarCrdtDocumentKey(document);
-    return value.map((item) => {
-        const record = requireRecord(item, 'CRDT debug record');
+    const records: JsonWireObject[] = [];
+    for (const item of value) {
+        const record = requireCrdtJsonWireObject(item, 'CRDT debug record');
         requireExactKeys(record, ['document', 'documentKey', 'update', 'append'], 'CRDT debug record');
         const recordDocument = decodeExactDocumentRef(record.document, 'CRDT debug record document');
         const update = decodeExactUpdateEnvelope(record.update);
@@ -90,12 +97,13 @@ function decodeExactRecords(
         ) {
             throw new TypeError('CRDT debug record identity is invalid');
         }
-        return record;
-    });
+        records.push(record);
+    }
+    return records;
 }
 
-function decodeExactRedaction(value: unknown): void {
-    const redaction = requireRecord(value, 'CRDT debug redaction');
+function decodeExactRedaction(value: JsonWireValue | undefined): void {
+    const redaction = requireCrdtJsonWireObject(value, 'CRDT debug redaction');
     requireExactOptionalKeys({
         value: redaction,
         required: ['payloadsRedacted'],
@@ -118,10 +126,10 @@ function decodeExactRedaction(value: unknown): void {
 }
 
 function decodeExactBundleIntegrity(
-    value: unknown,
-    records: readonly Record<string, unknown>[]
+    value: JsonWireValue | undefined,
+    records: readonly JsonWireObject[]
 ): void {
-    const integrity = requireRecord(value, 'CRDT debug bundle integrity');
+    const integrity = requireCrdtJsonWireObject(value, 'CRDT debug bundle integrity');
     requireExactOptionalKeys({
         value: integrity,
         required: ['bundleHash', 'documentRefHash', 'updateHashes', 'updateCount', 'sequenceGaps'],
@@ -133,7 +141,10 @@ function decodeExactBundleIntegrity(
     if ('snapshotHash' in integrity) {
         requireString(integrity.snapshotHash, 'debug snapshot hash');
     }
-    const updateHashes = requireRecord(integrity.updateHashes, 'CRDT debug update hashes');
+    const updateHashes = requireCrdtJsonWireObject(
+        integrity.updateHashes,
+        'CRDT debug update hashes'
+    );
     for (const hash of Object.values(updateHashes)) {
         requireString(hash, 'CRDT debug update hash');
     }
@@ -150,8 +161,8 @@ function decodeExactBundleIntegrity(
     }
 }
 
-function decodeExactHealth(value: unknown): void {
-    const health = requireRecord(value, 'CRDT debug health');
+function decodeExactHealth(value: JsonWireValue | undefined): void {
+    const health = requireCrdtJsonWireObject(value, 'CRDT debug health');
     const required = [
         'replicaId',
         'pendingUpdateCount',
@@ -229,7 +240,7 @@ function decodeExactHealth(value: unknown): void {
         requireString(health.lastLiveSendStatus, 'CRDT last live send status');
     }
     if ('quota' in health) {
-        const quota = requireRecord(health.quota, 'CRDT debug health quota');
+        const quota = requireCrdtJsonWireObject(health.quota, 'CRDT debug health quota');
         requireExactOptionalKeys({
             value: quota,
             required: [],
@@ -248,12 +259,18 @@ function decodeExactHealth(value: unknown): void {
     }
 }
 
-function decodeSequenceList(value: unknown, label: string): void {
+function decodeSequenceList(value: JsonWireValue | undefined, label: string): void {
     if (
-        !Array.isArray(value) ||
-        value.some((item) => !Number.isSafeInteger(item) || item < 1) ||
+        !isJsonWireArray(value) ||
+        value.some((item) => !Number.isSafeInteger(item) || Number(item) < 1) ||
         new Set(value).size !== value.length
     ) {
         throw new TypeError(`${label} is invalid`);
     }
+}
+
+function isJsonWireArray(
+    value: JsonWireValue | undefined
+): value is readonly JsonWireValue[] {
+    return Array.isArray(value);
 }

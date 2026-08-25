@@ -4,23 +4,24 @@ import {
     requireEpoch,
     requireExactKeys,
     requireOneOf,
-    requireRecord,
     requireString
 } from '../../protocol/exact-object-decoding.ts';
+import {
+    decodeJsonWireValue,
+    type JsonWireObject,
+    type JsonWireValue
+} from '../../protocol/json-wire-identity.ts';
 import type {
     CrdtLifecycleFieldAction,
     CrdtMutationCommand,
     CreateCrdtMutationCommandInput
 } from './crdt-mutation-contracts.ts';
-import {
-    decodeExactDocumentMetadata,
-    decodeExactDocumentRef,
-    decodeExactProjectionIds,
-    decodeExactQuotaPolicy,
-    decodeExactRetentionPolicy,
-    decodeExactSnapshotEnvelope,
-    decodeExactTrustedAppendMetadata
-} from './crdt-mutation-value-codec.ts';
+import { decodeExactDocumentRef } from './decoding/decode-exact-document-ref.ts';
+import { decodeExactProjectionIds } from './decoding/decode-exact-projection-ids.ts';
+import { decodeExactQuotaPolicy } from './decoding/decode-exact-quota-policy.ts';
+import { decodeExactRetentionPolicy } from './decoding/decode-exact-retention-policy.ts';
+import { decodeExactSnapshotEnvelope } from './decoding/decode-exact-snapshot-envelope.ts';
+import { requireCrdtJsonWireObject } from './decoding/require-crdt-json-wire-object.ts';
 import { decodeExactUpdateEnvelope } from './decode-exact-update-envelope.ts';
 import { requireCrdtCanonicalSnapshotReason, toCrdtCanonicalSnapshotEnvelope } from './to-crdt-canonical-snapshot.ts';
 
@@ -41,7 +42,10 @@ export async function createCrdtMutationCommand(
 }
 
 export function decodeCrdtMutationCommand(value: unknown): CrdtMutationCommand {
-    const command = requireRecord(value, 'CRDT mutation command');
+    const command = requireCrdtJsonWireObject(
+        decodeJsonWireValue(value, 'CRDT mutation command'),
+        'CRDT mutation command'
+    );
     const operation = requireOneOf(
         command.operation,
         ['append', 'rebuild-projection', 'compact', 'lifecycle', 'erase'] as const,
@@ -70,7 +74,7 @@ export function decodeCrdtMutationCommand(value: unknown): CrdtMutationCommand {
     if ((command.expireAtEpochMs as number) <= (command.capturedAtEpochMs as number)) {
         throw new TypeError('CRDT mutation expiry must follow capture time');
     }
-    const actor = requireRecord(command.actor, 'CRDT mutation actor');
+    const actor = requireCrdtJsonWireObject(command.actor, 'CRDT mutation actor');
     requireExactKeys(actor, ['actorId', 'principalId', 'sessionId', 'serverId'], 'actor');
     const actorId = actor.actorId;
     const principalId = actor.principalId;
@@ -80,7 +84,10 @@ export function decodeCrdtMutationCommand(value: unknown): CrdtMutationCommand {
     requireString(principalId, 'actor field');
     requireString(sessionId, 'actor field');
     requireString(serverId, 'actor field');
-    const audience = requireRecord(command.responseAudience, 'CRDT response audience');
+    const audience = requireCrdtJsonWireObject(
+        command.responseAudience,
+        'CRDT response audience'
+    );
     requireExactKeys(
         audience,
         ['kind', 'senderSessionId', 'topicId', 'contextId'],
@@ -138,7 +145,9 @@ export function decodeCrdtMutationCommand(value: unknown): CrdtMutationCommand {
     }
     else if (operation === 'compact') {
         requireString(command.snapshotId, 'snapshotId');
-        const rawSnapshot = command.snapshot === null ? null : decodeExactSnapshotEnvelope(command.snapshot);
+        const rawSnapshot = command.snapshot === null
+            ? null
+            : decodeExactSnapshotEnvelope(requireCommandValue(command.snapshot, 'snapshot'));
         if (
             rawSnapshot !== null &&
             toRallarCrdtDocumentKey(rawSnapshot.document) !== toRallarCrdtDocumentKey(document)
@@ -171,17 +180,9 @@ export function decodeCrdtMutationCommand(value: unknown): CrdtMutationCommand {
             ...common,
             operation,
             lifecycle,
-            retentionAction: decodeLifecycleAction(
-                command.retentionAction,
-                'retention',
-                decodeExactRetentionPolicy
-            ),
-            quotaAction: decodeLifecycleAction(command.quotaAction, 'quota', decodeExactQuotaPolicy),
-            projectionIdsAction: decodeLifecycleAction(
-                command.projectionIdsAction,
-                'projectionIds',
-                decodeExactProjectionIds
-            )
+            retentionAction: decodeRetentionAction(command.retentionAction),
+            quotaAction: decodeQuotaAction(command.quotaAction),
+            projectionIdsAction: decodeProjectionIdsAction(command.projectionIdsAction)
         });
     }
     else {
@@ -196,7 +197,7 @@ export function decodeCrdtMutationCommand(value: unknown): CrdtMutationCommand {
 }
 
 function completeCommand<T extends CrdtMutationCommand>(
-    rawCommand: Record<string, unknown>,
+    rawCommand: JsonWireObject,
     command: T
 ): T {
     const { commandHash: _hash, ...stable } = rawCommand;
@@ -218,12 +219,32 @@ function toCanonicalCompactCommandInput(
     };
 }
 
-function decodeLifecycleAction<T>(
-    value: unknown,
-    label: string,
-    decodeValue: (candidate: unknown) => T
-): CrdtLifecycleFieldAction<T> {
-    const action = requireRecord(value, `${label} action`);
+function decodeRetentionAction(value: JsonWireValue | undefined) {
+    const action = decodeLifecycleActionValue(value, 'retention');
+    return action.kind === 'set'
+        ? { kind: action.kind, value: decodeExactRetentionPolicy(action.value) }
+        : action;
+}
+
+function decodeQuotaAction(value: JsonWireValue | undefined) {
+    const action = decodeLifecycleActionValue(value, 'quota');
+    return action.kind === 'set'
+        ? { kind: action.kind, value: decodeExactQuotaPolicy(action.value) }
+        : action;
+}
+
+function decodeProjectionIdsAction(value: JsonWireValue | undefined) {
+    const action = decodeLifecycleActionValue(value, 'projectionIds');
+    return action.kind === 'set'
+        ? { kind: action.kind, value: decodeExactProjectionIds(action.value) }
+        : action;
+}
+
+function decodeLifecycleActionValue(
+    value: JsonWireValue | undefined,
+    label: string
+): CrdtLifecycleFieldAction<JsonWireValue> {
+    const action = requireCrdtJsonWireObject(value, `${label} action`);
     const kind = requireOneOf(
         action.kind,
         ['preserve', 'clear', 'set'] as const,
@@ -236,10 +257,20 @@ function decodeLifecycleAction<T>(
     if (kind === 'clear') {
         return { kind };
     }
-    if (action.value === null) {
+    if (action.value === null || action.value === undefined) {
         throw new TypeError(`${label} action value is invalid`);
     }
-    return { kind, value: decodeValue(action.value) };
+    return { kind, value: action.value };
+}
+
+function requireCommandValue(
+    value: JsonWireValue | undefined,
+    label: string
+): JsonWireValue {
+    if (value === undefined) {
+        throw new TypeError(`CRDT mutation command ${label} is missing`);
+    }
+    return value;
 }
 
 const commonCommandKeys = [

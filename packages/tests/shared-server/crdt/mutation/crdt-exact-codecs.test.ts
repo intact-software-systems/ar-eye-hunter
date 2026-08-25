@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
 import { createCrdtMutationCommand, decodeCrdtMutationCommand } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-command-codec.ts';
-import { decodeCrdtAuditEvent, decodeExactSnapshotEnvelope } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-value-codec.ts';
+import { decodeCrdtAuditEvent } from '@shared-server/rallar-system/crdt/mutation/decoding/decode-crdt-audit-event.ts';
+import { decodeExactSnapshotEnvelope } from '@shared-server/rallar-system/crdt/mutation/decoding/decode-exact-snapshot-envelope.ts';
 import { decodeCrdtMutationResult } from '@shared-server/rallar-system/crdt/mutation/decode-crdt-mutation-result.ts';
 import { decodeExactDebugBundle } from '@shared-server/rallar-system/crdt/mutation/decode-exact-debug-bundle.ts';
 import {
@@ -36,7 +37,7 @@ describe('CRDT mutation exact nested codecs', () => {
 
         expect(decodeCrdtAuditEvent(event)).toEqual(event);
         expect(() => decodeCrdtAuditEvent({ ...event, metadata: { mode: { nested: true } } })).toThrow('CRDT audit outbox event is invalid');
-        expect(() => decodeCrdtAuditEvent(null)).toThrow('CRDT admin request must be an object');
+        expect(() => decodeCrdtAuditEvent(null)).toThrow('CRDT audit outbox event must be an exact object');
     });
 
     it('rejects extra fields in authoritative update payload batches', async () => {
