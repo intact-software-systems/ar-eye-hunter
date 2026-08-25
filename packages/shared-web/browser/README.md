@@ -137,7 +137,8 @@ the typed result or failure visible without crossing a feature-blind module.
    restores auth, connects when a session exists, and refreshes the requested
    room/people state.
 3. [BrowserTransportRuntime.init](./connection/browser-transport-runtime.ts)
-   starts [initialiseMiddleware](./middleware.ts), whose visible phases create
+   starts [initialiseMiddleware](./connection/initialise-browser-middleware.ts),
+   whose visible phases create
    runtime stores, WebSocket/QueueBox transport, RTC services/group ownership,
    initial state and topology hydration plus reopen resync, and heartbeat in
    that order.

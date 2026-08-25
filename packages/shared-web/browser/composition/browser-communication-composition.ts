@@ -20,7 +20,7 @@ import type { BrowserWebSocketInbox } from '@shared-web/browser/websocket/browse
 import { readSession } from '@shared/api/auth.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import { RALLAR_DEFAULT_MAX_MESSAGE_PAYLOAD_BYTES } from '@shared/api/rallar-validation.ts';
-import type { RallarBrowserFacadeRuntimeContext } from '../rallar-runtime-context.ts';
+import type { RallarBrowserFacadeRuntimeContext } from './browser-facade-runtime-state.ts';
 
 import type { BrowserStateComposition } from './browser-runtime-composition.ts';
 

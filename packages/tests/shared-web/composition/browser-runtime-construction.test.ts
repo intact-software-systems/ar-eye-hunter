@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { configureTestCacheRepositories } from '../../cache-repository-config.ts';
 
-type MiddlewareModule = typeof import('@shared-web/browser/middleware.ts');
+type MiddlewareModule = typeof import('@shared-web/browser/connection/initialise-browser-middleware.ts');
 type AuthModule = typeof import('@shared/api/auth.ts');
 
 const runtime = await vi.hoisted(async () => {
@@ -20,7 +20,7 @@ const runtime = await vi.hoisted(async () => {
 });
 
 vi.mock(
-    import('@shared-web/browser/middleware.ts'),
+    import('@shared-web/browser/connection/initialise-browser-middleware.ts'),
     async (importOriginal): Promise<Partial<MiddlewareModule>> => ({
         ...await importOriginal(),
         initialiseMiddleware: runtime.initialiseMiddleware

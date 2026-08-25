@@ -22,6 +22,7 @@ import { WebRtcRxStreamerService } from '@shared/services/WebRtcRxStreamerServic
 import { WsQueueBoxClientService } from '@shared/services/WsQueueBoxClientService.ts';
 import { WsRtcSignalingTransportUsingWsQBox } from '@shared/webrtc/WsRtcSignalingTransportUsingWsQBox.ts';
 
+/** Inputs for constructing the browser RTC overlay multicast owner. */
 export interface InitialiseRtcOverlayMulticastManagerInput {
     readonly webRtcConnectionService: WebRtcConnectionService;
     readonly qboxEngine: InboxOutboxEngine;

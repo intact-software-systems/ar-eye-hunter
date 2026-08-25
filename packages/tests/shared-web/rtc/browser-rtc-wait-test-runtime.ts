@@ -41,10 +41,8 @@ const mocks = await vi.hoisted(async () => {
         webSocketQueueBox: vi.mocked(ctx.middleware.webSocketQueueBox),
         webSocketClient: vi.mocked(ctx.middleware.webSocketQueueBox.socket),
         clearSession: vi.fn<ContractModules.Auth['clearSession']>(),
-        clearMiddleware: vi.fn<ContractModules.AppContext['clearMiddleware']>(),
         hydrateStateCache: vi.fn<ContractModules.StateCacheLifecycle['browserStateCacheLifecycle']['hydrate']>(() => Promise.resolve()),
-        initMiddleware: vi.fn<ContractModules.AppContext['initMiddleware']>(() => Promise.resolve(ctx)),
-        isMiddlewareReady: vi.fn<ContractModules.AppContext['isMiddlewareReady']>(() => false),
+        initialiseApiMiddleware: vi.fn<ContractModules.BrowserTransportRuntime['init']>(() => Promise.resolve(ctx)),
         createAndJoinStateGroup: vi.fn<ContractModules.RoomGroupStateWorkflows['createAndJoinStateGroup']>(
             () => Promise.reject(new Error('create not mocked'))
         ),
@@ -100,9 +98,9 @@ const mocks = await vi.hoisted(async () => {
 });
 
 vi.mock(
-    import('@shared-web/browser/middleware.ts'),
+    import('@shared-web/browser/connection/initialise-browser-middleware.ts'),
     (): Partial<ContractModules.Middleware> => ({
-        initialiseMiddleware: async (_session, _topic, options) => (await mocks.initMiddleware(options)).middleware
+        initialiseMiddleware: async (_session, _topic, options) => (await mocks.initialiseApiMiddleware(options)).middleware
     })
 );
 
@@ -184,8 +182,7 @@ export async function resetRtcWaitTestRuntime(): Promise<void> {
     mockClientRepositoryMissing();
     mockGroupRepositoryMissing();
     mocks.refreshStateSnapshots.mockResolvedValue({ clients: [], groups: [] });
-    mocks.initMiddleware.mockResolvedValue(mocks.ctx);
-    mocks.isMiddlewareReady.mockReturnValue(false);
+    mocks.initialiseApiMiddleware.mockResolvedValue(mocks.ctx);
     mocks.clearSession.mockImplementation(() => undefined);
     mocks.readSession.mockReturnValue(mocks.ctx.session);
     mocks.logoutFromApi.mockResolvedValue({ loggedOut: true });

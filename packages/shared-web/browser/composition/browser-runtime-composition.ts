@@ -1,4 +1,11 @@
 import {
+    BrowserFacadeRuntimeState,
+    type RallarAuthRuntimePort,
+    type RallarBrowserFacadeRuntimeContext,
+    type RallarConnectionRuntimePort,
+    type RallarStateRuntimePort
+} from '@shared-web/browser/composition/browser-facade-runtime-state.ts';
+import {
     browserTransportRuntime,
     type BrowserTransportRuntimePort
 } from '@shared-web/browser/connection/browser-transport-runtime.ts';
@@ -7,13 +14,6 @@ import {
     type RallarStateEventsPort
 } from '@shared-web/browser/people/browser-rallar-people-events.ts';
 import type { RallarDefaults } from '@shared-web/browser/rallar-connection-facade.ts';
-import {
-    BrowserFacadeRuntimeState,
-    type RallarAuthRuntimePort,
-    type RallarBrowserFacadeRuntimeContext,
-    type RallarConnectionRuntimePort,
-    type RallarStateRuntimePort
-} from '@shared-web/browser/rallar-runtime-context.ts';
 import { createRoomEvents, type RallarRoomEventsPort } from '@shared-web/browser/rooms/room-events.ts';
 import { resolveActiveRoomPeerIds } from '@shared-web/browser/rooms/room-group-state-translation.ts';
 import { createRoomStateStore, type RallarRoomStateStorePort } from '@shared-web/browser/rooms/room-state-store.ts';

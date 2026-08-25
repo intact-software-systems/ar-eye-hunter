@@ -7,7 +7,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createGroupSnapshotFixture } from '../authoritative-group-fixtures.ts';
 import { createDirectorGroupSnapshot } from '../director-group-snapshot-fixture.ts';
 
-type MiddlewareModule = typeof import('@shared-web/browser/middleware.ts');
+type MiddlewareModule = typeof import('@shared-web/browser/connection/initialise-browser-middleware.ts');
 type StateEventHttpApiModule = typeof import('@shared-web/browser/state-read/state-event-http-api.ts');
 type AuthApiModule = typeof import('@shared-web/browser/auth/session-http-api.ts');
 type RoomGroupStateWorkflowsModule = typeof import('@shared-web/browser/rooms/room-group-state-workflows.ts');
@@ -41,8 +41,8 @@ const mocks = await vi.hoisted(async () => {
     return createLightweightBrowserFacadeTestMocks();
 });
 
-vi.mock(import('@shared-web/browser/middleware.ts'), (): Partial<MiddlewareModule> => ({
-    initialiseMiddleware: async () => (await mocks.initMiddleware()).middleware
+vi.mock(import('@shared-web/browser/connection/initialise-browser-middleware.ts'), (): Partial<MiddlewareModule> => ({
+    initialiseMiddleware: async () => (await mocks.initialiseApiMiddleware()).middleware
 }));
 
 vi.mock(
@@ -112,8 +112,7 @@ describe('Rallar targeted channel', () => {
         resetRepositoryDoublesToMissing();
         resetMiddlewareDoublesToDefaults();
         mocks.refreshStateSnapshots.mockResolvedValue({ clients: [], groups: [] });
-        mocks.initMiddleware.mockResolvedValue(mocks.ctx);
-        mocks.isMiddlewareReady.mockReturnValue(false);
+        mocks.initialiseApiMiddleware.mockResolvedValue(mocks.ctx);
         mocks.clearSession.mockImplementation(() => undefined);
         mocks.readSession.mockReturnValue(mocks.ctx.session);
         mocks.logoutFromApi.mockResolvedValue({ loggedOut: true });

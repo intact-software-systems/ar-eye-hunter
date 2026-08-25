@@ -2,13 +2,16 @@ import { deleteBrowserALRuntimeEntriesForSession } from '@shared-web/browser/al-
 import { ApiHttpError } from '@shared-web/browser/api/http-error.ts';
 import * as authApi from '@shared-web/browser/auth/session-http-api.ts';
 import type {
+    RallarAuthRuntimePort,
+    RallarConnectionRuntimePort
+} from '@shared-web/browser/composition/browser-facade-runtime-state.ts';
+import type {
     ApiMiddleware,
     BrowserTransportRuntimePort
 } from '@shared-web/browser/connection/browser-transport-runtime.ts';
 import { notifyListener } from '@shared-web/browser/messages/rallar-listener-delivery.ts';
 import type { RallarScopedOperationOptions } from '@shared-web/browser/rallar-connection-facade.ts';
 import { toRallarCommandOptions, type RallarOperationOptions } from '@shared-web/browser/rallar-operation-options.ts';
-import type { RallarAuthRuntimePort, RallarConnectionRuntimePort } from '@shared-web/browser/rallar-runtime-context.ts';
 import type { RallarOnChangeOptions, RallarUnsubscribe } from '@shared-web/browser/rallar-shared-contracts.ts';
 import type {
     RallarAuthChangeListener,

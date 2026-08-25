@@ -1,6 +1,7 @@
 import { ApiHttpError } from '@shared-web/browser/api/http-error.ts';
 import type { OrchestratorResults } from '@shared/cache/CommandsOrchestrator.ts';
 
+/** Requires a completed value from an owned state workflow step. */
 export function requireStateWorkflowResult<K, V>(
     results: OrchestratorResults<K, V>,
     key: K

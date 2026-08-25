@@ -4,7 +4,7 @@ import {
     requireStateWorkflowResult,
     toApiMutationWorkflowRequestId,
     tolerateStateWorkflowNotFound
-} from '@shared-web/browser/state-workflow-support.ts';
+} from '@shared-web/browser/state-read/state-workflow-support.ts';
 import { CommandsOrchestrator } from '@shared/cache/CommandsOrchestrator.ts';
 import type { CommandsOrchestratorPolicies } from '@shared/cache/CommandsOrchestrator.ts';
 

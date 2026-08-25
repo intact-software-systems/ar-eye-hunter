@@ -1,4 +1,4 @@
-import type { ApiMiddleware } from '@shared-web/browser/app-context.ts';
+import type { ApiMiddleware } from '@shared-web/browser/connection/browser-transport-runtime.ts';
 import { appointStateGroupDirector } from '@shared-web/browser/director/appoint-room-director.ts';
 import type {
     RallarDirectorAppointOptions,

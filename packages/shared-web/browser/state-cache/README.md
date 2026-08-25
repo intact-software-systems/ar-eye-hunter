@@ -35,7 +35,8 @@ heartbeat targeting, and overlay adoption all hang off cache writes.
    is the floored point read (`minCausalRevision`) for resync pulls, and
    [readStateGroupTopology](../rtc/rtc-topology-http-api.ts#readStateGroupTopology) is
    the overlay read-through endpoint client.
-7. [initHeartbeat](../heartbeat.ts#initHeartbeat) refreshes full snapshots for
+7. [initHeartbeat](../session/browser-session-heartbeat.ts#initHeartbeat)
+   refreshes full snapshots for
    joined groups every 20 s — the standing self-heal loop that must keep
    working under any dissemination mode.
 

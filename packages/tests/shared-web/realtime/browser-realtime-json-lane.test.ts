@@ -2,8 +2,8 @@ import type { QRtcPeerDto } from '@shared/services/WebRtcConnectionService.ts';
 import type { QRtcDataChannel, RtcDataChannelSendResult, RtcRawMessageCallback } from '@shared/webrtc/QRtcDataChannel.ts';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-type AppContextModule = typeof import('@shared-web/browser/app-context.ts');
-type MiddlewareModule = typeof import('@shared-web/browser/middleware.ts');
+import type { BrowserTransportRuntimePort } from '@shared-web/browser/connection/browser-transport-runtime.ts';
+type MiddlewareModule = typeof import('@shared-web/browser/connection/initialise-browser-middleware.ts');
 type StateCacheLifecycleModule = typeof import('@shared-web/browser/state-cache/browser-state-cache-lifecycle.ts');
 type AuthModule = typeof import('@shared/api/auth.ts');
 type ClientStateSnapshotsRepositoryModule = typeof import('@shared/repository/client-state-snapshots-repository.ts');
@@ -35,8 +35,7 @@ const mocks = await vi.hoisted(async () => {
         throwClientRepositoryMissing,
         throwGroupRepositoryMissing,
         hydrateStateCache: vi.fn<StateCacheLifecycleModule['browserStateCacheLifecycle']['hydrate']>(() => Promise.resolve()),
-        initMiddleware: vi.fn<AppContextModule['initMiddleware']>(() => Promise.resolve(ctx)),
-        isMiddlewareReady: vi.fn<AppContextModule['isMiddlewareReady']>(() => false),
+        initialiseApiMiddleware: vi.fn<BrowserTransportRuntimePort['init']>(() => Promise.resolve(ctx)),
         onCacheChange: vi.fn<StateCacheLifecycleModule['browserStateCacheLifecycle']['onChange']>(() => vi.fn()),
         readSession: vi.fn<AuthModule['readSession']>(() => ctx.session),
         clientRepositoryMissing: vi.fn(throwClientRepositoryMissing),
@@ -45,9 +44,9 @@ const mocks = await vi.hoisted(async () => {
 });
 
 vi.mock(
-    import('@shared-web/browser/middleware.ts'),
+    import('@shared-web/browser/connection/initialise-browser-middleware.ts'),
     (): Partial<MiddlewareModule> => ({
-        initialiseMiddleware: async (_session, _topic, options) => (await mocks.initMiddleware(options)).middleware
+        initialiseMiddleware: async (_session, _topic, options) => (await mocks.initialiseApiMiddleware(options)).middleware
     })
 );
 
@@ -96,8 +95,7 @@ describe('Rallar realtime JSON lane', () => {
             (value?: string): never => (value === undefined ? [] : undefined) as never
         );
         mocks.hydrateStateCache.mockResolvedValue(undefined);
-        mocks.initMiddleware.mockResolvedValue(mocks.ctx);
-        mocks.isMiddlewareReady.mockReturnValue(false);
+        mocks.initialiseApiMiddleware.mockResolvedValue(mocks.ctx);
         mocks.readSession.mockReturnValue(mocks.ctx.session);
         vi.mocked(mocks.webRtcConnectionService.activePeerIds).mockReturnValue([]);
         vi.mocked(mocks.webRtcConnectionService.readPeer).mockReturnValue(undefined);

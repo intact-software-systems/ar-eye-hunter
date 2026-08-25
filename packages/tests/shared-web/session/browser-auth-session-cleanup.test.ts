@@ -1,4 +1,4 @@
-import type { Middleware } from '@shared-web/browser/middleware.ts';
+import type { Middleware } from '@shared-web/browser/connection/initialise-browser-middleware.ts';
 import type { RallarWsLifecycleEvent } from '@shared-web/browser/rallar-realtime-facade.ts';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createAuthSessionApiHttpError } from '../auth-session-contract-fixtures.ts';

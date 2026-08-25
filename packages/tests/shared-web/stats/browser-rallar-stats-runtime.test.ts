@@ -22,8 +22,7 @@ const mocks = vi.hoisted(() => {
         readStateMyRealtimeStatus: vi.fn(async () => ({
             generatedAtEpochMs: 3
         })),
-        initMiddleware: vi.fn(),
-        isMiddlewareReady: vi.fn(() => false)
+        initialiseApiMiddleware: vi.fn()
     };
 });
 
@@ -44,7 +43,6 @@ describe('Rallar stats facade', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.readSession.mockReturnValue(mocks.session);
-        mocks.isMiddlewareReady.mockReturnValue(false);
     });
 
     it('exposes rallar.stats helpers with default scope and current auth session', async () => {

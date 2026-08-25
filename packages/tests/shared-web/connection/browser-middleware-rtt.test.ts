@@ -1,8 +1,12 @@
-import { BROWSER_RTT_HEARTBEAT_TTL_MS, toBrowserRtcInboundPeerCreationDecision, toBrowserRttHeartbeatMessage } from '@shared-web/browser/middleware.ts';
+import {
+    BROWSER_RTT_HEARTBEAT_TTL_MS,
+    toBrowserRtcInboundPeerCreationDecision,
+    toBrowserRttHeartbeatMessage
+} from '@shared-web/browser/connection/initialise-browser-middleware.ts';
 import { AppTopics, type RttMeasurementInfo } from '@shared/api/api-config.ts';
 import { describe, expect, it } from 'vitest';
 
-describe('browser middleware RTT heartbeat messages', () => {
+describe('Browser middleware RTT heartbeat messages', () => {
     it('uses short-lived versioned AL messages for RTT observations', () => {
         const first = toBrowserRttHeartbeatMessage('session-a', rtt(1));
         const second = toBrowserRttHeartbeatMessage('session-a', rtt(2));

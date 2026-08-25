@@ -80,8 +80,8 @@ The production-symbol construction, registration, invocation, and cleanup map
 is maintained in [browser/README.md](./browser/README.md). Construction passes
 completed dependencies top-to-bottom with no late-bound state, event, session,
 or startup consumer. `BrowserTransportRuntime` is the single pending/active
-middleware and transport-shutdown owner; `app-context.ts` delegates to it and
-contains no teardown algorithm.
+middleware and transport-shutdown owner; callers use that connection-owned
+runtime directly, with no duplicate browser-root context layer.
 
 ## Room Transport Product Helpers
 

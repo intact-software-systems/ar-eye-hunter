@@ -1,7 +1,7 @@
 import { vi } from 'vitest';
 
 import type { ApiMiddleware } from '@shared-web/browser/connection/browser-transport-runtime.ts';
-import type { Middleware } from '@shared-web/browser/middleware.ts';
+import type { Middleware } from '@shared-web/browser/connection/initialise-browser-middleware.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 
 import { createGroupSnapshotFixture } from '../authoritative-group-fixtures.ts';
@@ -28,9 +28,7 @@ const roomWorkflowMocks = await vi.hoisted(async () => {
         cacheListeners: new Set<Parameters<StateCacheLifecycleModule['browserStateCacheLifecycle']['onChange']>[0]>(),
         session: ctx.session,
         ctx,
-        clearMiddleware: vi.fn(),
-        initMiddleware: vi.fn(async (): Promise<ApiMiddleware> => ctx),
-        isMiddlewareReady: vi.fn(() => false),
+        initialiseApiMiddleware: vi.fn(async (): Promise<ApiMiddleware> => ctx),
         createAndJoinStateGroup: vi.fn<RoomGroupStateWorkflowsModule['createAndJoinStateGroup']>(),
         joinStateGroup: vi.fn<RoomGroupStateWorkflowsModule['joinStateGroup']>(),
         leaveStateGroup: vi.fn<RoomGroupStateWorkflowsModule['leaveStateGroup']>(),
@@ -51,7 +49,7 @@ const roomWorkflowMocks = await vi.hoisted(async () => {
     };
 });
 
-vi.mock(import('@shared-web/browser/middleware.ts'), () => ({
+vi.mock(import('@shared-web/browser/connection/initialise-browser-middleware.ts'), () => ({
     initialiseMiddleware: async (): Promise<Middleware> => roomWorkflowMocks.ctx.middleware
 }));
 
@@ -136,8 +134,7 @@ export function resetRoomWorkflowTestRuntime(): void {
 
 function resetRoomWorkflowLifecycleMocks(): void {
     roomWorkflowMocks.readSession.mockReturnValue(roomWorkflowMocks.session);
-    roomWorkflowMocks.initMiddleware.mockResolvedValue(roomWorkflowMocks.ctx);
-    roomWorkflowMocks.isMiddlewareReady.mockReturnValue(false);
+    roomWorkflowMocks.initialiseApiMiddleware.mockResolvedValue(roomWorkflowMocks.ctx);
 }
 
 function resetRoomWorkflowEntryMocks(): void {

@@ -7,7 +7,7 @@ import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import { CommandsOrchestrator, type CommandsOrchestratorPolicies } from '@shared/cache/CommandsOrchestrator.ts';
 
-import { requireStateWorkflowResult } from '../state-workflow-support.ts';
+import { requireStateWorkflowResult } from '@shared-web/browser/state-read/state-workflow-support.ts';
 import {
     captureStateSnapshotCollectionObservations,
     reconcileCompleteStateSnapshotCollections

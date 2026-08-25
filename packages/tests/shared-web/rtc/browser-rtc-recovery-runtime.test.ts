@@ -1,7 +1,4 @@
-import type {
-    RallarRtcLifecycleEvent,
-    RallarRtcStatus
-} from '@shared-web/browser/rallar-rtc-facade.ts';
+import type { RallarRtcLifecycleEvent, RallarRtcStatus } from '@shared-web/browser/rallar-rtc-facade.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import { DEFAULT_RTC_DATA_CHANNEL_LANE_ID, type QRtcPeerDto } from '@shared/services/WebRtcConnectionService.ts';
 import type { QRtcClientCallbacks } from '@shared/webrtc/QRtcClientCallbacks.ts';
@@ -9,8 +6,8 @@ import type { QRtcDataChannel, RtcDataChannelHealth } from '@shared/webrtc/QRtcD
 import type { QRtcPeerConnection } from '@shared/webrtc/QRtcPeerConnection.ts';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-type AppContextModule = typeof import('@shared-web/browser/app-context.ts');
-type MiddlewareModule = typeof import('@shared-web/browser/middleware.ts');
+import type { BrowserTransportRuntimePort } from '@shared-web/browser/connection/browser-transport-runtime.ts';
+type MiddlewareModule = typeof import('@shared-web/browser/connection/initialise-browser-middleware.ts');
 type StateEventHttpApiModule = typeof import('@shared-web/browser/state-read/state-event-http-api.ts');
 type AuthApiModule = typeof import('@shared-web/browser/auth/session-http-api.ts');
 type RoomGroupStateWorkflowsModule = typeof import('@shared-web/browser/rooms/room-group-state-workflows.ts');
@@ -43,10 +40,8 @@ const mocks = await vi.hoisted(async () => {
         webSocketQueueBox: vi.mocked(ctx.middleware.webSocketQueueBox),
         webSocketClient: vi.mocked(ctx.middleware.webSocketQueueBox.socket),
         clearSession: vi.fn<AuthModule['clearSession']>(),
-        clearMiddleware: vi.fn<AppContextModule['clearMiddleware']>(),
         hydrateStateCache: vi.fn<StateCacheLifecycleModule['browserStateCacheLifecycle']['hydrate']>(() => Promise.resolve()),
-        initMiddleware: vi.fn<AppContextModule['initMiddleware']>(() => Promise.resolve(ctx)),
-        isMiddlewareReady: vi.fn<AppContextModule['isMiddlewareReady']>(() => false),
+        initialiseApiMiddleware: vi.fn<BrowserTransportRuntimePort['init']>(() => Promise.resolve(ctx)),
         createAndJoinStateGroup: vi.fn<RoomGroupStateWorkflowsModule['createAndJoinStateGroup']>(
             () => Promise.reject(new Error('create not mocked'))
         ),
@@ -88,9 +83,9 @@ const mocks = await vi.hoisted(async () => {
 });
 
 vi.mock(
-    import('@shared-web/browser/middleware.ts'),
+    import('@shared-web/browser/connection/initialise-browser-middleware.ts'),
     (): Partial<MiddlewareModule> => ({
-        initialiseMiddleware: async (_session, _topic, options) => (await mocks.initMiddleware(options)).middleware
+        initialiseMiddleware: async (_session, _topic, options) => (await mocks.initialiseApiMiddleware(options)).middleware
     })
 );
 
@@ -169,8 +164,7 @@ describe('Rallar RTC recovery', () => {
         mockClientRepositoryMissing();
         mockGroupRepositoryMissing();
         mocks.refreshStateSnapshots.mockResolvedValue({ clients: [], groups: [] });
-        mocks.initMiddleware.mockResolvedValue(mocks.ctx);
-        mocks.isMiddlewareReady.mockReturnValue(false);
+        mocks.initialiseApiMiddleware.mockResolvedValue(mocks.ctx);
         mocks.clearSession.mockImplementation(() => undefined);
         mocks.readSession.mockReturnValue(mocks.ctx.session);
         mocks.logoutFromApi.mockResolvedValue({ loggedOut: true });

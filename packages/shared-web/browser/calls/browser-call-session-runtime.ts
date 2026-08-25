@@ -1,6 +1,6 @@
-import type { ApiMiddleware } from '@shared-web/browser/app-context.ts';
 import { BrowserCallMediaRuntime } from '@shared-web/browser/calls/browser-call-media-runtime.ts';
 import { BrowserCallStatusReader } from '@shared-web/browser/calls/browser-call-status-reader.ts';
+import type { ApiMiddleware } from '@shared-web/browser/connection/browser-transport-runtime.ts';
 import type {
     RallarCallEndOptions,
     RallarCallHandle,

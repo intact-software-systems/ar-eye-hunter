@@ -1,7 +1,7 @@
 import { vi } from 'vitest';
 
-import type { ApiMiddleware } from '@shared-web/browser/app-context.ts';
-import type { Middleware } from '@shared-web/browser/middleware.ts';
+import type { ApiMiddleware } from '@shared-web/browser/connection/browser-transport-runtime.ts';
+import type { Middleware } from '@shared-web/browser/connection/initialise-browser-middleware.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { Either } from '@shared/resilience/Either.ts';

@@ -77,6 +77,7 @@ interface BrowserCurrentRoomState {
     readonly ref: GroupRef;
 }
 
+/** Mutable session state shared by the completed browser facade capabilities. */
 export class BrowserFacadeRuntimeState implements RallarBrowserFacadeRuntimeContext {
     private connectState: RallarBrowserConnectStatus = 'idle';
     private stateCacheUnsubscribe: (() => void) | undefined;

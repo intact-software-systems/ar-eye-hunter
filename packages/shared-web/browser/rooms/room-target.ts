@@ -74,7 +74,12 @@ export function assertValidRoomTarget(
     input: Readonly<{ roomId?: string; roomRef?: GroupRef; }>
 ): void {
     const issues: RallarValidationIssue[] = [];
-    pushOptionalRouteIdIssue(input.roomId, '$.roomId', 'Room ID', issues);
+    pushOptionalRouteIdIssue({
+        value: input.roomId,
+        path: '$.roomId',
+        label: 'Room ID',
+        issues
+    });
     pushOptionalGroupRefIssue(input.roomRef, '$.roomRef', issues);
     if (!input.roomId && !input.roomRef) {
         issues.push({

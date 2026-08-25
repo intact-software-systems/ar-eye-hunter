@@ -11,7 +11,7 @@ type AuthApiModule = typeof import('@shared-web/browser/auth/session-http-api.ts
 type AppointRoomDirectorModule = typeof import('@shared-web/browser/director/appoint-room-director.ts');
 type RoomMutationWorkflowsModule = typeof import('@shared-web/browser/rooms/room-group-state-mutation-workflows.ts');
 type RefreshStateSnapshotsModule = typeof import('@shared-web/browser/state-read/refresh-state-snapshots.ts');
-type MiddlewareModule = typeof import('@shared-web/browser/middleware.ts');
+type MiddlewareModule = typeof import('@shared-web/browser/connection/initialise-browser-middleware.ts');
 type AuthModule = typeof import('@shared/api/auth.ts');
 type ClientStateSnapshotsRepositoryModule = typeof import('@shared/repository/client-state-snapshots-repository.ts');
 type StateCacheLifecycleModule = typeof import('@shared-web/browser/state-cache/browser-state-cache-lifecycle.ts');
@@ -38,9 +38,9 @@ const mocks = await vi.hoisted(async () => {
 });
 
 vi.mock(
-    import('@shared-web/browser/middleware.ts'),
+    import('@shared-web/browser/connection/initialise-browser-middleware.ts'),
     (): Partial<MiddlewareModule> => ({
-        initialiseMiddleware: async (_session, _topic, options) => (await mocks.initMiddleware(options)).middleware
+        initialiseMiddleware: async (_session, _topic, options) => (await mocks.initialiseApiMiddleware(options)).middleware
     })
 );
 
@@ -246,7 +246,7 @@ describe('Rallar director relay', () => {
         await facade.rooms.createAndSwitch('Owner arena');
         await facade.auth.logout();
         mocks.readSession.mockReturnValue(rejoinSession);
-        mocks.initMiddleware.mockResolvedValue({
+        mocks.initialiseApiMiddleware.mockResolvedValue({
             ...mocks.ctx,
             session: rejoinSession
         });
@@ -466,7 +466,7 @@ describe('Rallar director relay', () => {
                 return { status: 'enqueued', message, entries: [] };
             }
         );
-        mocks.initMiddleware.mockImplementation(async () => {
+        mocks.initialiseApiMiddleware.mockImplementation(async () => {
             postLogoutEffects.push('middleware:init');
             return mocks.ctx;
         });
@@ -515,7 +515,7 @@ describe('Rallar director relay', () => {
                 return { status: 'enqueued', message, entries: [] };
             }
         );
-        mocks.initMiddleware.mockImplementation(async () => {
+        mocks.initialiseApiMiddleware.mockImplementation(async () => {
             postLogoutEffects.push('middleware:init');
             return mocks.ctx;
         });
@@ -549,8 +549,7 @@ function resetDirectorRepositoryAndSessionDoubles(): void {
     );
     mockGroupRepositoryMissing();
     mocks.refreshStateSnapshots.mockResolvedValue({ clients: [], groups: [] });
-    mocks.initMiddleware.mockResolvedValue(mocks.ctx);
-    mocks.isMiddlewareReady.mockReturnValue(false);
+    mocks.initialiseApiMiddleware.mockResolvedValue(mocks.ctx);
     mocks.clearSession.mockImplementation(() => undefined);
     mocks.readSession.mockReturnValue(mocks.ctx.session);
     mocks.logoutFromApi.mockResolvedValue({ loggedOut: true });

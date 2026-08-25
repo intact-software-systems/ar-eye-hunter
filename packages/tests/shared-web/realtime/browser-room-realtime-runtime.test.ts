@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { ApiMiddleware } from '@shared-web/browser/connection/browser-transport-runtime.ts';
-import type { Middleware } from '@shared-web/browser/middleware.ts';
+import type { Middleware } from '@shared-web/browser/connection/initialise-browser-middleware.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
@@ -20,8 +20,7 @@ const mocks = await vi.hoisted(async () => {
         realtimeChannel,
         webRtcConnectionService: ctx.middleware.webRtcConnectionService,
         hydrateStateCache: vi.fn(async (): Promise<void> => undefined),
-        initMiddleware: vi.fn(async (): Promise<ApiMiddleware> => ctx),
-        isMiddlewareReady: vi.fn(() => false),
+        initialiseApiMiddleware: vi.fn(async (): Promise<ApiMiddleware> => ctx),
         onCacheChange: vi.fn(() => vi.fn()),
         readSession: vi.fn((): AuthSession | undefined => ctx.session),
         findFirstGroupStateSnapshotRefSessionIdIsIn: vi.fn(
@@ -46,7 +45,7 @@ const mocks = await vi.hoisted(async () => {
     };
 });
 
-vi.mock(import('@shared-web/browser/middleware.ts'), () => ({
+vi.mock(import('@shared-web/browser/connection/initialise-browser-middleware.ts'), () => ({
     initialiseMiddleware: async (): Promise<Middleware> => mocks.ctx.middleware
 }));
 
@@ -80,8 +79,7 @@ describe('Rallar room realtime channel', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.hydrateStateCache.mockResolvedValue(undefined);
-        mocks.initMiddleware.mockResolvedValue(mocks.ctx);
-        mocks.isMiddlewareReady.mockReturnValue(false);
+        mocks.initialiseApiMiddleware.mockResolvedValue(mocks.ctx);
         mocks.readSession.mockReturnValue(mocks.ctx.session);
         mocks.findFirstGroupStateSnapshotRefSessionIdIsIn.mockReturnValue(undefined);
         mocks.findGroupStateSnapshotByRef.mockReturnValue(undefined);

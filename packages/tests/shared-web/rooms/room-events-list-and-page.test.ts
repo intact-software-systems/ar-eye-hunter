@@ -17,7 +17,7 @@ describe('room event history compatibility', () => {
             workspaceId: 'room-workspace'
         });
         mocks.listStateGroupEvents.mockResolvedValue([event]);
-        mocks.initMiddleware.mockRejectedValue(
+        mocks.initialiseApiMiddleware.mockRejectedValue(
             new Error('Room history reads must not initialize middleware')
         );
         mocks.hydrateStateCache.mockRejectedValue(
@@ -58,7 +58,7 @@ describe('room event history compatibility', () => {
             workspaceId: 'default-workspace'
         });
         mocks.listStateGroupEvents.mockResolvedValue([event]);
-        mocks.initMiddleware.mockRejectedValue(
+        mocks.initialiseApiMiddleware.mockRejectedValue(
             new Error('Room history reads must not initialize middleware')
         );
 
@@ -93,7 +93,7 @@ describe('room event history compatibility', () => {
             workspaceId: 'default-workspace'
         });
         mocks.listStateGroupEventPage.mockResolvedValue(page);
-        mocks.initMiddleware.mockRejectedValue(
+        mocks.initialiseApiMiddleware.mockRejectedValue(
             new Error('Room history reads must not initialize middleware')
         );
         mocks.hydrateStateCache.mockRejectedValue(

@@ -4,10 +4,10 @@ import {
     readApiBaseUrl,
     type RallarApiClientConfig
 } from '@shared-web/browser/api-client-config.ts';
+import type { RallarConnectionRuntimePort } from '@shared-web/browser/composition/browser-facade-runtime-state.ts';
 import type { BrowserTransportRuntimePort } from '@shared-web/browser/connection/browser-transport-runtime.ts';
 import { BrowserRallarSubscriptionScope } from '@shared-web/browser/messages/rallar-listener-delivery.ts';
 import type { RallarConnectionOperations, RallarDefaults } from '@shared-web/browser/rallar-connection-facade.ts';
-import type { RallarConnectionRuntimePort } from '@shared-web/browser/rallar-runtime-context.ts';
 import { readSession } from '@shared/api/auth.ts';
 import { CommandsOrchestrator } from '@shared/cache/CommandsOrchestrator.ts';
 

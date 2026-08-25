@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { BrowserFacadeRuntimeState } from '@shared-web/browser/composition/browser-facade-runtime-state.ts';
 import { BrowserTransportRuntime } from '@shared-web/browser/connection/browser-transport-runtime.ts';
-import { BrowserFacadeRuntimeState } from '@shared-web/browser/rallar-runtime-context.ts';
 import { createRoomStateStore } from '@shared-web/browser/rooms/room-state-store.ts';
 import { createRallarStateCacheReadPort } from '@shared-web/browser/state-cache/rallar-state-store.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';

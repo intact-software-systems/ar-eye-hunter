@@ -6,8 +6,7 @@ import { toResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createGroupSnapshotFixture } from '../authoritative-group-fixtures.ts';
 
-type AppContextModule = typeof import('@shared-web/browser/app-context.ts');
-type MiddlewareModule = typeof import('@shared-web/browser/middleware.ts');
+type MiddlewareModule = typeof import('@shared-web/browser/connection/initialise-browser-middleware.ts');
 type StateCacheLifecycleModule = typeof import('@shared-web/browser/state-cache/browser-state-cache-lifecycle.ts');
 type AuthModule = typeof import('@shared/api/auth.ts');
 type ClientStateSnapshotsRepositoryModule = typeof import('@shared/repository/client-state-snapshots-repository.ts');
@@ -44,8 +43,7 @@ const mocks = await vi.hoisted(async () => {
         clientRepositoryMissing,
         groupRepositoryMissing,
         hydrateStateCache: vi.fn((): Promise<void> => Promise.resolve()),
-        initMiddleware: vi.fn(() => Promise.resolve(ctx)),
-        isMiddlewareReady: vi.fn(() => false),
+        initialiseApiMiddleware: vi.fn(() => Promise.resolve(ctx)),
         onCacheChange: vi.fn((): () => void => vi.fn()),
         readSession: vi.fn((): AuthSession | undefined => ctx.session),
         findClientStateSnapshotByPrincipalId: vi.fn(
@@ -66,8 +64,8 @@ const mocks = await vi.hoisted(async () => {
     };
 });
 
-vi.mock(import('@shared-web/browser/middleware.ts'), (): Partial<MiddlewareModule> => ({
-    initialiseMiddleware: async () => (await mocks.initMiddleware()).middleware
+vi.mock(import('@shared-web/browser/connection/initialise-browser-middleware.ts'), (): Partial<MiddlewareModule> => ({
+    initialiseMiddleware: async () => (await mocks.initialiseApiMiddleware()).middleware
 }));
 
 vi.mock(import('@shared-web/browser/state-cache/browser-state-cache-lifecycle.ts'), (): Partial<StateCacheLifecycleModule> => ({
@@ -108,8 +106,7 @@ describe('Rallar typed message channel', () => {
         resetRepositoryDoublesToMissing();
         resetMiddlewareDoublesToDefaults();
         mocks.hydrateStateCache.mockResolvedValue(undefined);
-        mocks.initMiddleware.mockResolvedValue(mocks.ctx);
-        mocks.isMiddlewareReady.mockReturnValue(false);
+        mocks.initialiseApiMiddleware.mockResolvedValue(mocks.ctx);
         mocks.readSession.mockReturnValue(mocks.ctx.session);
     });
 

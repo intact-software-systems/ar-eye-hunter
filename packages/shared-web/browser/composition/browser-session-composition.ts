@@ -1,11 +1,11 @@
-import type { RallarConnectionOperations } from '@shared-web/browser/rallar-connection-facade.ts';
-import { createRallarCrdtFacade, type RallarCrdtFacade } from '@shared-web/browser/rallar-crdt.ts';
-import { createRallarDataFacade, type RallarDataFacade } from '@shared-web/browser/rallar-data.ts';
 import type {
     RallarAuthRuntimePort,
     RallarBrowserFacadeRuntimeContext,
     RallarConnectionRuntimePort
-} from '@shared-web/browser/rallar-runtime-context.ts';
+} from '@shared-web/browser/composition/browser-facade-runtime-state.ts';
+import type { RallarConnectionOperations } from '@shared-web/browser/rallar-connection-facade.ts';
+import { createRallarCrdtFacade, type RallarCrdtFacade } from '@shared-web/browser/rallar-crdt.ts';
+import { createRallarDataFacade, type RallarDataFacade } from '@shared-web/browser/rallar-data.ts';
 import type { RallarAuthFacade } from '@shared-web/browser/session/rallar-auth-facade.ts';
 import type { RallarLifecycleCoordinator } from '@shared-web/browser/session/rallar-lifecycle-coordinator.ts';
 import {

@@ -1,4 +1,9 @@
 import type {
+    RallarAuthRuntimePort,
+    RallarBrowserFacadeRuntimeContext,
+    RallarConnectionRuntimePort
+} from '@shared-web/browser/composition/browser-facade-runtime-state.ts';
+import type {
     ApiMiddleware,
     BrowserTransportRuntimePort
 } from '@shared-web/browser/connection/browser-transport-runtime.ts';
@@ -8,11 +13,6 @@ import type {
     RallarScopedOperationOptions
 } from '@shared-web/browser/rallar-connection-facade.ts';
 import type { RallarOperationOptions } from '@shared-web/browser/rallar-operation-options.ts';
-import type {
-    RallarAuthRuntimePort,
-    RallarBrowserFacadeRuntimeContext,
-    RallarConnectionRuntimePort
-} from '@shared-web/browser/rallar-runtime-context.ts';
 import { BrowserSessionAuthOperations } from '@shared-web/browser/session/browser-session-auth-operations.ts';
 import type { RallarAuthFacade } from '@shared-web/browser/session/rallar-auth-facade.ts';
 import type { RallarLifecycleCoordinator } from '@shared-web/browser/session/rallar-lifecycle-coordinator.ts';

@@ -1,4 +1,4 @@
-import type { ApiMiddleware } from '@shared-web/browser/app-context.ts';
+import type { ApiMiddleware } from '@shared-web/browser/connection/browser-transport-runtime.ts';
 
 /** One ordered participant in the browser session connect/disconnect lifecycle. */
 export interface RallarLifecycleParticipant {

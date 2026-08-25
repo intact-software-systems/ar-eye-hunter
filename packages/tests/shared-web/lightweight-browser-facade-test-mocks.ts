@@ -1,5 +1,5 @@
-import type { ApiMiddleware } from '@shared-web/browser/app-context.ts';
-import type { MiddlewareInitOptions } from '@shared-web/browser/middleware.ts';
+import type { ApiMiddleware } from '@shared-web/browser/connection/browser-transport-runtime.ts';
+import type { MiddlewareInitOptions } from '@shared-web/browser/connection/initialise-browser-middleware.ts';
 import { vi } from 'vitest';
 import { createApiMiddlewareTestDouble } from './api-middleware-test-double.ts';
 
@@ -33,10 +33,8 @@ export function createLightweightBrowserFacadeTestMocks() {
 function createLifecycleMocks(ctx: ApiMiddleware) {
     return {
         clearSession: vi.fn(),
-        clearMiddleware: vi.fn(),
         hydrateStateCache: vi.fn((): Promise<void> => Promise.resolve()),
-        initMiddleware: vi.fn((_options?: MiddlewareInitOptions) => Promise.resolve(ctx)),
-        isMiddlewareReady: vi.fn(() => false),
+        initialiseApiMiddleware: vi.fn((_options?: MiddlewareInitOptions) => Promise.resolve(ctx)),
         loginToApi: vi.fn<AuthApiModule['loginToApi']>(() => Promise.resolve(ctx.session)),
         logoutFromApi: vi.fn<AuthApiModule['logoutFromApi']>(() => Promise.resolve({ loggedOut: true })),
         registerWithApi: vi.fn<AuthApiModule['registerWithApi']>(() =>

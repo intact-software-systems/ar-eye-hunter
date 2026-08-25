@@ -1,13 +1,13 @@
+import { BrowserFacadeRuntimeState } from '@shared-web/browser/composition/browser-facade-runtime-state.ts';
 import { BrowserTransportRuntime } from '@shared-web/browser/connection/browser-transport-runtime.ts';
-import type { Middleware } from '@shared-web/browser/middleware.ts';
-import { BrowserFacadeRuntimeState } from '@shared-web/browser/rallar-runtime-context.ts';
+import type { Middleware } from '@shared-web/browser/connection/initialise-browser-middleware.ts';
 import { createRallarLifecycleCoordinator } from '@shared-web/browser/session/rallar-lifecycle-coordinator.ts';
 import { createRallarSessionController } from '@shared-web/browser/session/rallar-session-controller.ts';
 import { BrowserSessionConnectionLifecycle, type RallarSessionConnectionInput } from '@shared-web/browser/session/session-connection-lifecycle.ts';
 import { describe, expect, it, vi } from 'vitest';
 import { createApiMiddlewareTestDouble } from '../api-middleware-test-double.ts';
 
-type MiddlewareModule = typeof import('@shared-web/browser/middleware.ts');
+type MiddlewareModule = typeof import('@shared-web/browser/connection/initialise-browser-middleware.ts');
 type AuthModule = typeof import('@shared/api/auth.ts');
 
 const mocks = vi.hoisted(() => ({
@@ -16,7 +16,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock(
-    import('@shared-web/browser/middleware.ts'),
+    import('@shared-web/browser/connection/initialise-browser-middleware.ts'),
     async (importOriginal): Promise<Partial<MiddlewareModule>> => ({
         ...await importOriginal(),
         initialiseMiddleware: mocks.initialiseMiddleware
@@ -27,7 +27,7 @@ vi.mock(import('@shared/api/auth.ts'), (): Partial<AuthModule> => ({
     readSession: mocks.readSession
 }));
 
-describe('browser connection cleanup', () => {
+describe('Browser transport cleanup', () => {
     it('continues transport and lifecycle cleanup when a detach participant fails', async () => {
         const middleware = createApiMiddlewareTestDouble();
         const effects: string[] = [];

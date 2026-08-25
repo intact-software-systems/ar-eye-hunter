@@ -148,7 +148,7 @@ describe('people events', () => {
             workspaceId: 'people-workspace'
         });
         mocks.listStateClientEvents.mockResolvedValue([event]);
-        mocks.initMiddleware.mockRejectedValue(
+        mocks.initialiseApiMiddleware.mockRejectedValue(
             new Error('People history reads must not initialize middleware')
         );
         mocks.hydrateStateCache.mockRejectedValue(
@@ -196,7 +196,7 @@ describe('people events', () => {
             workspaceId: 'default-workspace'
         });
         mocks.listStateClientEventPage.mockResolvedValue(page);
-        mocks.initMiddleware.mockRejectedValue(
+        mocks.initialiseApiMiddleware.mockRejectedValue(
             new Error('People history reads must not initialize middleware')
         );
         mocks.hydrateStateCache.mockRejectedValue(

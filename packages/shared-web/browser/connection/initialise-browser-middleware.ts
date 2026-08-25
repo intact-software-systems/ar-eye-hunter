@@ -40,21 +40,21 @@ import { readApiConfig, readIceCandidates } from '@shared-web/browser/connection
 import { initGroupStateResyncOnReopen } from '@shared-web/browser/state-read/group-state-resync-on-reopen.ts';
 import { hydrateGroupTopologyOverlays } from '@shared-web/browser/state-read/hydrate-group-topology-overlays.ts';
 import { refreshStateSnapshots } from '@shared-web/browser/state-read/refresh-state-snapshots.ts';
-import { toResilienceDto } from './resilience-config.ts';
+import { toResilienceDto } from '../resilience-config.ts';
 
 import { initBrowserALRuntimeExpiryEviction } from '@shared-web/browser/al-runtime/browser-al-runtime-cleanup.ts';
 import { configureBrowserALRuntimeStores } from '@shared-web/browser/al-runtime/browser-al-runtime-stores.ts';
-import { initialiseBrowserCacheRepositories } from '@shared-web/browser/browser-cache-repositories.ts';
-import type { HeartbeatHandle } from '@shared-web/browser/heartbeat.ts';
-import * as heartbeat from '@shared-web/browser/heartbeat.ts';
 import { initBrowserQueueBoxExpiryEviction } from '@shared-web/browser/queuebox/browser-queuebox-persistence.ts';
 import { createBrowserQueueBoxEngine } from '@shared-web/browser/queuebox/create-browser-queue-box-engine.ts';
-import * as rtcEngine from '@shared-web/browser/rtc-engine.ts';
+import * as rtcEngine from '@shared-web/browser/rtc/initialise-browser-rtc-runtime.ts';
+import type { HeartbeatHandle } from '@shared-web/browser/session/browser-session-heartbeat.ts';
+import * as heartbeat from '@shared-web/browser/session/browser-session-heartbeat.ts';
+import { initialiseBrowserCacheRepositories } from '@shared-web/browser/state-cache/initialise-browser-cache-repositories.ts';
 import { createBrowserWebSocketQueueBox } from '@shared-web/browser/websocket/create-browser-web-socket-queue-box.ts';
 import {
     browserStateCacheLifecycle,
     type StateCacheScopeOptions
-} from './state-cache/browser-state-cache-lifecycle.ts';
+} from '../state-cache/browser-state-cache-lifecycle.ts';
 
 export interface Middleware {
     readonly qboxEngine: InboxOutboxEngine;

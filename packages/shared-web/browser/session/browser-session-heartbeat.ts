@@ -14,6 +14,7 @@ import * as groupStateSnapshotsRepository from '@shared/repository/group-state-s
 const intervalMsecs = 20000;
 const retryIntervalMsecs = 5000;
 
+/** Handle for the single active browser session heartbeat. */
 export type HeartbeatHandle = Readonly<{
     sessionId: string;
     generationId: string;

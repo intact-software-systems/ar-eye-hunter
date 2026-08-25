@@ -1,4 +1,8 @@
-import { initialiseMiddleware, type Middleware, type MiddlewareInitOptions } from '@shared-web/browser/middleware.ts';
+import {
+    initialiseMiddleware,
+    type Middleware,
+    type MiddlewareInitOptions
+} from '@shared-web/browser/connection/initialise-browser-middleware.ts';
 import { AppTopics, type AuthSession } from '@shared/api/api-config.ts';
 import { readSession } from '@shared/api/auth.ts';
 

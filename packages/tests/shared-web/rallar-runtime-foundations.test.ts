@@ -1,6 +1,6 @@
+import { BrowserFacadeRuntimeState } from '@shared-web/browser/composition/browser-facade-runtime-state.ts';
 import { BrowserTransportRuntime } from '@shared-web/browser/connection/browser-transport-runtime.ts';
 import { BrowserRallarSubscriptionScope } from '@shared-web/browser/messages/rallar-listener-delivery.ts';
-import { BrowserFacadeRuntimeState } from '@shared-web/browser/rallar-runtime-context.ts';
 import { createRallarFacade } from '@shared-web/browser/rallar.ts';
 import { createRoomStateStore } from '@shared-web/browser/rooms/room-state-store.ts';
 import { createRallarLifecycleCoordinator, type RallarLifecycleParticipant } from '@shared-web/browser/session/rallar-lifecycle-coordinator.ts';

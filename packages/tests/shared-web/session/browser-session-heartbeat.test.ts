@@ -1,12 +1,12 @@
 import { configureApiClient } from '@shared-web/browser/api-client-config.ts';
-import { initHeartbeat } from '@shared-web/browser/heartbeat.ts';
-import { toCreateWsUrl } from '@shared-web/browser/middleware.ts';
+import { toCreateWsUrl } from '@shared-web/browser/connection/initialise-browser-middleware.ts';
+import { initHeartbeat } from '@shared-web/browser/session/browser-session-heartbeat.ts';
 import type { AuthSession, ClientInfo } from '@shared/api/api-config.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { configureTestCacheRepositories } from '../cache-repository-config.ts';
+import { configureTestCacheRepositories } from '../../cache-repository-config.ts';
 import {
     createActiveClientInstanceFixture,
     createActiveClientSessionFixture,
@@ -14,7 +14,7 @@ import {
     createActiveGroupPresenceSessionFixture,
     createClientSnapshotFixture,
     createGroupSnapshotFixture
-} from './authoritative-group-fixtures.ts';
+} from '../authoritative-group-fixtures.ts';
 
 interface FetchCall {
     readonly url: string;
@@ -22,7 +22,7 @@ interface FetchCall {
     readonly body?: unknown;
 }
 
-describe('browser heartbeat', () => {
+describe('Browser session heartbeat', () => {
     const fetchCalls: FetchCall[] = [];
     const authSession: AuthSession = {
         clientId: 'principal-1',

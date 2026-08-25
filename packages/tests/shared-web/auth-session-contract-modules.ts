@@ -1,9 +1,9 @@
 export type StateEventHttpApi = typeof import('@shared-web/browser/state-read/state-event-http-api.ts');
-export type AppContext = typeof import('@shared-web/browser/app-context.ts');
 export type AuthApi = typeof import('@shared-web/browser/auth/session-http-api.ts');
+export type BrowserTransportRuntime = import('@shared-web/browser/connection/browser-transport-runtime.ts').BrowserTransportRuntimePort;
 export type RoomMutationWorkflows = typeof import('@shared-web/browser/rooms/room-group-state-mutation-workflows.ts');
 export type RefreshStateSnapshots = typeof import('@shared-web/browser/state-read/refresh-state-snapshots.ts');
-export type Middleware = typeof import('@shared-web/browser/middleware.ts');
+export type Middleware = typeof import('@shared-web/browser/connection/initialise-browser-middleware.ts');
 export type Auth = typeof import('@shared/api/auth.ts');
 export type BrowserALRuntimeCleanup = typeof import('@shared-web/browser/al-runtime/browser-al-runtime-cleanup.ts');
 export type ClientStateSnapshotsRepository = typeof import('@shared/repository/client-state-snapshots-repository.ts');

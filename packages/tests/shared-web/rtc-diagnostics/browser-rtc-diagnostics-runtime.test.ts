@@ -6,8 +6,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 // The factories below annotate their return type on purpose: without it the contextual type of a
 // `vi.mock` factory is a union, and TypeScript then accepts an export name the module does not
 // have. With the annotation a renamed or removed export fails the type check.
-type AppContextModule = typeof import('@shared-web/browser/app-context.ts');
-type MiddlewareModule = typeof import('@shared-web/browser/middleware.ts');
+type MiddlewareModule = typeof import('@shared-web/browser/connection/initialise-browser-middleware.ts');
 type StateCacheLifecycleModule = typeof import('@shared-web/browser/state-cache/browser-state-cache-lifecycle.ts');
 type AuthModule = typeof import('@shared/api/auth.ts');
 type ClientStateSnapshotsModule = typeof import('@shared/repository/client-state-snapshots-repository.ts');
@@ -24,8 +23,7 @@ const mocks = await vi.hoisted(async () => {
         webRtcConnectionService: ctx.middleware.webRtcConnectionService,
         webSocketQueueBox: ctx.middleware.webSocketQueueBox,
         hydrateStateCache: vi.fn(() => Promise.resolve()),
-        initMiddleware: vi.fn(() => Promise.resolve(ctx)),
-        isMiddlewareReady: vi.fn(() => false),
+        initialiseApiMiddleware: vi.fn(() => Promise.resolve(ctx)),
         onCacheChange: vi.fn(() => vi.fn()),
         readSession: vi.fn(() => ctx.session),
         clientRepositoryMissing: vi.fn((): never => {
@@ -42,9 +40,9 @@ const mocks = await vi.hoisted(async () => {
 });
 
 vi.mock(
-    import('@shared-web/browser/middleware.ts'),
+    import('@shared-web/browser/connection/initialise-browser-middleware.ts'),
     (): Partial<MiddlewareModule> => ({
-        initialiseMiddleware: async () => (await mocks.initMiddleware()).middleware
+        initialiseMiddleware: async () => (await mocks.initialiseApiMiddleware()).middleware
     })
 );
 
@@ -96,8 +94,7 @@ describe('Rallar RTC diagnostics', () => {
             (value?: string): never => (value === undefined ? [] : undefined) as never
         );
         mocks.hydrateStateCache.mockResolvedValue(undefined);
-        mocks.initMiddleware.mockResolvedValue(mocks.ctx);
-        mocks.isMiddlewareReady.mockReturnValue(false);
+        mocks.initialiseApiMiddleware.mockResolvedValue(mocks.ctx);
         mocks.readSession.mockReturnValue(mocks.ctx.session);
         vi.mocked(mocks.webRtcConnectionService.knownPeerIds).mockReturnValue([]);
         vi.mocked(mocks.webRtcConnectionService.activePeerIds).mockReturnValue([]);

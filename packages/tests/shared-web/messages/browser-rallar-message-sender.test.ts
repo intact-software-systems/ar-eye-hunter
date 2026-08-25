@@ -1,6 +1,6 @@
-import type * as AppContextModule from '@shared-web/browser/app-context.ts';
 import type * as AuthApiModule from '@shared-web/browser/auth/session-http-api.ts';
-import type * as MiddlewareModule from '@shared-web/browser/middleware.ts';
+import type { BrowserTransportRuntimePort } from '@shared-web/browser/connection/browser-transport-runtime.ts';
+import type * as MiddlewareModule from '@shared-web/browser/connection/initialise-browser-middleware.ts';
 import type * as RoomMutationWorkflowsModule from '@shared-web/browser/rooms/room-group-state-mutation-workflows.ts';
 import type * as RoomGroupStateWorkflowsModule from '@shared-web/browser/rooms/room-group-state-workflows.ts';
 import type * as StateCacheLifecycleModule from '@shared-web/browser/state-cache/browser-state-cache-lifecycle.ts';
@@ -43,7 +43,6 @@ const mocks = await vi.hoisted(async () => {
         ctx,
         readMissingClientStateSnapshotRepository,
         readMissingGroupStateSnapshotRepository,
-        clearMiddleware: vi.fn<typeof AppContextModule.clearMiddleware>(),
         clearSession: vi.fn<typeof AuthModule.clearSession>(),
         createAndJoinStateGroup: vi.fn<typeof RoomGroupStateWorkflowsModule.createAndJoinStateGroup>(() => Promise.reject(new Error('create not mocked'))),
         findClientStateSnapshotByPrincipalId: vi.fn<typeof ClientStateSnapshotsRepositoryModule.findClientStateSnapshotByPrincipalId>(
@@ -58,10 +57,7 @@ const mocks = await vi.hoisted(async () => {
         hydrateStateCache: vi.fn<typeof StateCacheLifecycleModule.browserStateCacheLifecycle.hydrate>(
             () => Promise.resolve()
         ),
-        initMiddleware: vi.fn<typeof AppContextModule.initMiddleware>(() => Promise.resolve(ctx)),
-        isMiddlewareReady: vi.fn<typeof AppContextModule.isMiddlewareReady>(
-            () => false
-        ),
+        initialiseApiMiddleware: vi.fn<BrowserTransportRuntimePort['init']>(() => Promise.resolve(ctx)),
         joinStateGroup: vi.fn<typeof RoomGroupStateWorkflowsModule.joinStateGroup>(() => Promise.reject(new Error('join not mocked'))),
         leaveStateGroup: vi.fn<typeof RoomGroupStateWorkflowsModule.leaveStateGroup>(() => Promise.reject(new Error('leave not mocked'))),
         listStateClientEventPage: vi.fn<typeof StateEventHttpApiModule.listStateClientEventPage>(() =>
@@ -102,9 +98,9 @@ const webSocketQueueBox = vi.mocked(mocks.ctx.middleware.webSocketQueueBox);
 const webSocketClient = vi.mocked(mocks.ctx.middleware.webSocketQueueBox.socket);
 
 vi.mock(
-    import('@shared-web/browser/middleware.ts'),
+    import('@shared-web/browser/connection/initialise-browser-middleware.ts'),
     (): Partial<typeof MiddlewareModule> => ({
-        initialiseMiddleware: async (_session, _topic, options) => (await mocks.initMiddleware(options)).middleware
+        initialiseMiddleware: async (_session, _topic, options) => (await mocks.initialiseApiMiddleware(options)).middleware
     })
 );
 
@@ -190,8 +186,7 @@ describe('Rallar message send', () => {
         mocks.findGroupStateSnapshotByRef.mockReturnValue(undefined);
         mocks.getAllGroupStateSnapshots.mockReturnValue([]);
         mocks.refreshStateSnapshots.mockResolvedValue({ clients: [], groups: [] });
-        mocks.initMiddleware.mockResolvedValue(mocks.ctx);
-        mocks.isMiddlewareReady.mockReturnValue(false);
+        mocks.initialiseApiMiddleware.mockResolvedValue(mocks.ctx);
         mocks.clearSession.mockImplementation(() => undefined);
         mocks.readSession.mockReturnValue(mocks.ctx.session);
         mocks.logoutFromApi.mockResolvedValue({ loggedOut: true });

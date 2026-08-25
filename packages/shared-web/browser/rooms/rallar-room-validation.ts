@@ -7,12 +7,17 @@ import {
 } from '@shared/api/rallar-validation.ts';
 
 /** Adds route validation failures for an optional room identifier. */
+export interface OptionalRouteIdIssueInput {
+    readonly value: string | undefined;
+    readonly path: string;
+    readonly label: string;
+    readonly issues: RallarValidationIssue[];
+}
+
 export function pushOptionalRouteIdIssue(
-    value: string | undefined,
-    path: string,
-    label: string,
-    issues: RallarValidationIssue[]
+    input: OptionalRouteIdIssueInput
 ): void {
+    const { value, path, label, issues } = input;
     if (value !== undefined) {
         issues.push(...validateRallarRouteId(value, path, label).issues);
     }

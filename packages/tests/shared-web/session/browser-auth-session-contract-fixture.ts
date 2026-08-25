@@ -78,7 +78,7 @@ export function readAuthSessionContractMocks(): typeof mocks {
 }
 
 vi.mock(
-    import('@shared-web/browser/middleware.ts'),
+    import('@shared-web/browser/connection/initialise-browser-middleware.ts'),
     (): Partial<ContractModules.Middleware> => ({
         initialiseMiddleware: mocks.initialiseMiddleware
     })

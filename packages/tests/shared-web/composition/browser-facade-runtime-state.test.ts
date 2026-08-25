@@ -1,10 +1,10 @@
+import { BrowserFacadeRuntimeState } from '@shared-web/browser/composition/browser-facade-runtime-state.ts';
 import { BrowserTransportRuntime } from '@shared-web/browser/connection/browser-transport-runtime.ts';
 import type { RallarDefaults } from '@shared-web/browser/rallar-connection-facade.ts';
-import { BrowserFacadeRuntimeState } from '@shared-web/browser/rallar-runtime-context.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import type { RtcDataChannelLaneConfig } from '@shared/services/WebRtcConnectionService.ts';
 import { describe, expect, it, vi } from 'vitest';
-import { createGroupSnapshotFixture } from './authoritative-group-fixtures.ts';
+import { createGroupSnapshotFixture } from '../authoritative-group-fixtures.ts';
 
 type RoomDefaults = NonNullable<RallarDefaults['room']>;
 
@@ -12,7 +12,7 @@ type MutableRoomDefaults = {
     -readonly [K in keyof RoomDefaults]: RoomDefaults[K];
 };
 
-describe('Rallar browser facade runtime context', () => {
+describe('Browser facade runtime state', () => {
     it('clones defaults and resolves operation options from them', () => {
         const shouldRetry = vi.fn(() => true);
         const signal = new AbortController().signal;

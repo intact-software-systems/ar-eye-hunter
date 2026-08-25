@@ -8,15 +8,15 @@ import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import { CommandsOrchestrator, type CommandsOrchestratorPolicies } from '@shared/cache/CommandsOrchestrator.ts';
 
-import { ApiHttpError } from '../api/http-error.ts';
-import { defaultStateScope } from '../api/state-http-path.ts';
-import { roomGroupStateHttpApi } from '../rooms/room-group-state-http-api.ts';
 import {
     isStateWorkflowNotFoundError,
     requireStateWorkflowResult,
     toApiMutationWorkflowRequestId,
     tolerateStateWorkflowNotFound
-} from '../state-workflow-support.ts';
+} from '@shared-web/browser/state-read/state-workflow-support.ts';
+import { ApiHttpError } from '../api/http-error.ts';
+import { defaultStateScope } from '../api/state-http-path.ts';
+import { roomGroupStateHttpApi } from '../rooms/room-group-state-http-api.ts';
 import {
     connectStateClientSession,
     heartbeatStateClientSession,

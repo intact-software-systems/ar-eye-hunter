@@ -3,7 +3,7 @@ import { roomGroupStateHttpApi } from '@shared-web/browser/rooms/room-group-stat
 import {
     requireStateWorkflowResult,
     toApiMutationWorkflowRequestId
-} from '@shared-web/browser/state-workflow-support.ts';
+} from '@shared-web/browser/state-read/state-workflow-support.ts';
 import { Command, type CommandOptions } from '@shared/cache/Command.ts';
 import { CommandsOrchestrator, type CommandsOrchestratorPolicies } from '@shared/cache/CommandsOrchestrator.ts';
 

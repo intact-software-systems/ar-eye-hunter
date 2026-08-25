@@ -267,7 +267,7 @@ options configure the dedicated lane before the first possible connection and
 are reused by post-login `start(...)`.
 
 ```ts
-import { DEFAULT_REALTIME_DATA_CHANNEL_LANE } from '@shared-web/browser/middleware.ts';
+import { DEFAULT_REALTIME_DATA_CHANNEL_LANE } from '@shared-web/browser/connection/initialise-browser-middleware.ts';
 import { rallar, type RallarStartOptions } from '@shared-web/browser/rallar.ts';
 import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';

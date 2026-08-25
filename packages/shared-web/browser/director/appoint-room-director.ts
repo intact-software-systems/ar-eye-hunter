@@ -1,7 +1,7 @@
 import { defaultStateScope } from '@shared-web/browser/api/state-http-path.ts';
 import type { AppointStateGroupDirectorBody } from '@shared-web/browser/api/state-mutation-http-contracts.ts';
 import { roomGroupStateHttpApi } from '@shared-web/browser/rooms/room-group-state-http-api.ts';
-import { toApiMutationWorkflowRequestId } from '@shared-web/browser/state-workflow-support.ts';
+import { toApiMutationWorkflowRequestId } from '@shared-web/browser/state-read/state-workflow-support.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import { Command, type CommandOptions } from '@shared/cache/Command.ts';
 import type { CommandsOrchestratorPolicies } from '@shared/cache/CommandsOrchestrator.ts';
