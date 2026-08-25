@@ -22,21 +22,24 @@ import {
     type RallarCrdtIntegrityReport,
     type RallarCrdtListDocumentsInput,
     type RallarCrdtListUpdatesInput,
-    type RallarCrdtOperationBatch,
     type RallarCrdtSnapshotEnvelope,
     type RallarCrdtUpdatePage
 } from '@shared/crdt/mod.ts';
 
 import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
 import {
-    toMetadata,
-    toRecord,
-    toSnapshot,
-    toStoredMetadata,
-    type DocumentRow,
-    type SnapshotRow,
-    type UpdateRow
-} from './crdt-mutation-row-codec.ts';
+    decodeCrdtDocumentRow,
+    decodeStoredCrdtDocumentRow,
+    type CrdtDocumentRow
+} from './row-decoding/decode-crdt-document-row.ts';
+import {
+    decodeCrdtSnapshotRow,
+    type CrdtSnapshotRow
+} from './row-decoding/decode-crdt-snapshot-row.ts';
+import {
+    decodeCrdtUpdateRow,
+    type CrdtUpdateRow
+} from './row-decoding/decode-crdt-update-row.ts';
 
 export interface PSqlCrdtLogRepositoryOptions {
     readonly now?: () => number;
@@ -44,10 +47,7 @@ export interface PSqlCrdtLogRepositoryOptions {
     readonly audit?: RallarCrdtAuditSink;
 }
 
-export class PSqlCrdtLogRepository<
-    TPayload extends RallarCrdtOperationBatch = RallarCrdtOperationBatch,
-    TValue = RallarCrdtSnapshotEnvelope['value'],
-> implements RallarCrdtAdminReadRepository<TPayload, TValue> {
+export class PSqlCrdtLogRepository implements RallarCrdtAdminReadRepository {
     private readonly now: () => number;
     private readonly policies: readonly RallarCrdtDocumentTypePolicy[];
     private readonly audit?: RallarCrdtAuditSink;
@@ -63,12 +63,12 @@ export class PSqlCrdtLogRepository<
         this.audit = options.audit;
     }
 
-    async listAfter(input: RallarCrdtListUpdatesInput): Promise<RallarCrdtUpdatePage<TPayload>> {
+    async listAfter(input: RallarCrdtListUpdatesInput): Promise<RallarCrdtUpdatePage> {
         const documentKey = toRallarCrdtDocumentKey(input.document);
         const metadata = await this.readDocumentMetadata(input.document);
         const afterSequence = input.afterSequence ?? fromRallarCrdtAppendCursor(input.afterCursor) ?? 0;
         const limit = Math.max(0, input.limit ?? 100);
-        const rows = await this.sql<UpdateRow[]>`
+        const rows = await this.sql<CrdtUpdateRow[]>`
             select document_key,
                    append_sequence,
                    update_id,
@@ -90,7 +90,9 @@ export class PSqlCrdtLogRepository<
             throw new TypeError('CRDT persisted update has no document');
         }
         const selected = rows.slice(0, limit);
-        const records = selected.map((row) => toRecord<TPayload>(row, input.document));
+        const records = selected.map((row) =>
+            decodeCrdtUpdateRow({ row, document: input.document })
+        );
         const lastSequence = records.at(-1)?.append.appendSequence;
 
         return {
@@ -105,10 +107,10 @@ export class PSqlCrdtLogRepository<
 
     async readSnapshot(
         document: RallarCrdtDocumentRef
-    ): Promise<RallarCrdtSnapshotEnvelope<TValue> | undefined> {
+    ): Promise<RallarCrdtSnapshotEnvelope | undefined> {
         const documentKey = toRallarCrdtDocumentKey(document);
         const metadata = await this.readDocumentMetadata(document);
-        const rows = await this.sql<SnapshotRow[]>`
+        const rows = await this.sql<CrdtSnapshotRow[]>`
             select document_key, snapshot_id, append_sequence, snapshot_envelope,
                    created_at_ts, reason,
                    sum(octet_length(snapshot_envelope)) over () as snapshot_bytes,
@@ -128,12 +130,12 @@ export class PSqlCrdtLogRepository<
             throw new TypeError('CRDT persisted snapshot count differs from document');
         }
         return rows[0]
-            ? (toSnapshot({
+            ? decodeCrdtSnapshotRow({
                 row: rows[0],
                 expectedDocumentKey: documentKey,
                 expectedDocument: document,
                 lastAppendSequence: metadata.lastAppendSequence
-            }) as RallarCrdtSnapshotEnvelope<TValue>)
+            })
             : undefined;
     }
 
@@ -146,7 +148,7 @@ export class PSqlCrdtLogRepository<
     async listDocuments(
         input: RallarCrdtListDocumentsInput = {}
     ): Promise<RallarCrdtDocumentAdminPage> {
-        const rows = await this.sql<DocumentRow[]>`
+        const rows = await this.sql<CrdtDocumentRow[]>`
             select document_key,
                    application_id,
                    workspace_id,
@@ -172,7 +174,7 @@ export class PSqlCrdtLogRepository<
         `;
         const limit = Math.max(0, input.limit ?? 100);
         const documents = rows
-            .map(toStoredMetadata)
+            .map(decodeStoredCrdtDocumentRow)
             .filter((metadata) => matchesDocumentListInput(metadata, input));
         const startIndex = input.cursor
             ? documents.findIndex((metadata) => metadata.documentKey > input.cursor!)
@@ -198,7 +200,7 @@ export class PSqlCrdtLogRepository<
     async exportDebugBundle(
         document: RallarCrdtDocumentRef,
         options: RallarCrdtDebugBundleExportOptions = {}
-    ): Promise<RallarCrdtDebugBundle<TPayload>> {
+    ): Promise<RallarCrdtDebugBundle> {
         const [metadata, snapshot, records] = await Promise.all([
             this.readDocumentMetadata(document),
             this.readSnapshot(document),
@@ -214,7 +216,7 @@ export class PSqlCrdtLogRepository<
             reason: options.reason ?? 'operator-export',
             document,
             metadata,
-            snapshot: snapshot as RallarCrdtSnapshotEnvelope | undefined,
+            snapshot,
             records,
             redaction: options.redaction
         });
@@ -223,7 +225,7 @@ export class PSqlCrdtLogRepository<
     async exportBackupBundle(
         document: RallarCrdtDocumentRef,
         options: RallarCrdtBackupBundleExportOptions = {}
-    ): Promise<RallarCrdtBackupBundle<TPayload> | undefined> {
+    ): Promise<RallarCrdtBackupBundle | undefined> {
         const [metadata, snapshot, records] = await Promise.all([
             this.readDocumentMetadata(document),
             this.readSnapshot(document),
@@ -238,7 +240,7 @@ export class PSqlCrdtLogRepository<
             exportedAtEpochMs: options.exportedAtEpochMs ?? this.now(),
             document,
             metadata,
-            snapshot: snapshot as RallarCrdtSnapshotEnvelope | undefined,
+            snapshot,
             records
         });
     }
@@ -253,8 +255,8 @@ export class PSqlCrdtLogRepository<
 
     private async readAllRecords(
         document: RallarCrdtDocumentRef
-    ): Promise<RallarCrdtDurableUpdateRecord<TPayload>[]> {
-        const records: RallarCrdtDurableUpdateRecord<TPayload>[] = [];
+    ): Promise<RallarCrdtDurableUpdateRecord[]> {
+        const records: RallarCrdtDurableUpdateRecord[] = [];
         let cursor: string | undefined;
 
         do {
@@ -315,7 +317,7 @@ async function readDocumentMetadataByKey(
     documentKey: string,
     document: RallarCrdtDocumentRef
 ): Promise<RallarCrdtDocumentMetadata | undefined> {
-    const rows = await sql<DocumentRow[]>`
+    const rows = await sql<CrdtDocumentRow[]>`
             select document_key,
                    application_id,
                    workspace_id,
@@ -341,5 +343,11 @@ async function readDocumentMetadataByKey(
             limit 1
         `;
 
-    return rows[0] ? toMetadata(rows[0], documentKey, document) : undefined;
+    return rows[0]
+        ? decodeCrdtDocumentRow({
+            row: rows[0],
+            expectedDocumentKey: documentKey,
+            expectedDocument: document
+        })
+        : undefined;
 }

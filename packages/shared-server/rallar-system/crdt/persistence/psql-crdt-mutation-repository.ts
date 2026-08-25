@@ -19,16 +19,20 @@ import {
     type CrdtMutationRepository
 } from '../mutation/crdt-mutation-contracts.ts';
 import {
-    toDate,
-    toFeatureDecision,
-    toJson,
-    toMetadata,
-    toRecord,
-    toSnapshot,
-    type DocumentRow,
-    type SnapshotRow,
-    type UpdateRow
-} from './crdt-mutation-row-codec.ts';
+    evaluateCrdtMutationFeatureDecision
+} from '../mutation/evaluate-crdt-mutation-feature-decision.ts';
+import {
+    decodeCrdtDocumentRow,
+    type CrdtDocumentRow
+} from './row-decoding/decode-crdt-document-row.ts';
+import {
+    decodeCrdtSnapshotRow,
+    type CrdtSnapshotRow
+} from './row-decoding/decode-crdt-snapshot-row.ts';
+import {
+    decodeCrdtUpdateRow,
+    type CrdtUpdateRow
+} from './row-decoding/decode-crdt-update-row.ts';
 
 export interface CrdtMutationAuthorityDecision {
     readonly allowed: boolean;
@@ -79,11 +83,17 @@ export class PSqlCrdtMutationRepository implements CrdtMutationRepository {
             throw new CrdtMutationConflictError(command.documentKey);
         }
         const document = beforeRows[0]
-            ? toMetadata(beforeRows[0], command.documentKey, command.document)
+            ? decodeCrdtDocumentRow({
+                row: beforeRows[0],
+                expectedDocumentKey: command.documentKey,
+                expectedDocument: command.document
+            })
             : null;
-        const decodedRecords = updateRows.history.map((row) => toRecord(row, command.document));
+        const decodedRecords = updateRows.history.map((row) =>
+            decodeCrdtUpdateRow({ row, document: command.document })
+        );
         const existingRecord = updateRows.candidate
-            ? toRecord(updateRows.candidate, command.document)
+            ? decodeCrdtUpdateRow({ row: updateRows.candidate, document: command.document })
             : null;
         validateReadSet({
             document,
@@ -93,7 +103,7 @@ export class PSqlCrdtMutationRepository implements CrdtMutationRepository {
             scope: updateRows.scope
         });
         const snapshot = snapshots[0]
-            ? toSnapshot({
+            ? decodeCrdtSnapshotRow({
                 row: snapshots[0],
                 expectedDocumentKey: command.documentKey,
                 expectedDocument: command.document,
@@ -111,7 +121,10 @@ export class PSqlCrdtMutationRepository implements CrdtMutationRepository {
             snapshot,
             authorized: authorityDecision.allowed,
             authorizationCode: authorityDecision.code,
-            featureDecision: toFeatureDecision(command, this.policies),
+            featureDecision: evaluateCrdtMutationFeatureDecision({
+                command,
+                policies: this.policies
+            }),
             actorUpdatesInWindow: Number(actorRate[0]?.actor_updates_in_window ?? 0),
             storedSnapshotBytes: Number(snapshots[0]?.snapshot_bytes ?? 0)
         };
@@ -156,8 +169,8 @@ export class PSqlCrdtMutationRepository implements CrdtMutationRepository {
     }
 }
 
-async function readDocument(sql: PSqlSql, documentKey: string): Promise<DocumentRow[]> {
-    return await sql<DocumentRow[]>`
+async function readDocument(sql: PSqlSql, documentKey: string): Promise<CrdtDocumentRow[]> {
+    return await sql<CrdtDocumentRow[]>`
         select document_key, application_id, workspace_id, document_scope,
                document_type, document_id, document_ref, document_revision, lifecycle,
                created_at_ts, updated_at_ts, archived_at_ts, destroyed_at_ts,
@@ -171,14 +184,14 @@ async function readDocument(sql: PSqlSql, documentKey: string): Promise<Document
 
 interface AppendLocalCrdtMutationUpdateRows {
     readonly scope: 'append-local';
-    readonly candidate: UpdateRow | undefined;
+    readonly candidate: CrdtUpdateRow | undefined;
     readonly history: readonly [];
 }
 
 interface CompleteCrdtMutationUpdateHistory {
     readonly scope: 'complete-history';
     readonly candidate: undefined;
-    readonly history: readonly UpdateRow[];
+    readonly history: readonly CrdtUpdateRow[];
 }
 
 type CrdtMutationUpdateRows = AppendLocalCrdtMutationUpdateRows | CompleteCrdtMutationUpdateHistory;
@@ -205,8 +218,8 @@ async function readAppendUpdate(
     sql: PSqlSql,
     documentKey: string,
     updateId: string
-): Promise<UpdateRow | undefined> {
-    const rows = await sql<UpdateRow[]>`
+): Promise<CrdtUpdateRow | undefined> {
+    const rows = await sql<CrdtUpdateRow[]>`
         select document_key, update_id, append_sequence, update_envelope, accepted_update_hash,
                actor_id, principal_id, session_id, server_id, authorization_scope,
                accepted_at_ts
@@ -218,8 +231,8 @@ async function readAppendUpdate(
     return rows[0];
 }
 
-async function readCompleteUpdateHistory(sql: PSqlSql, documentKey: string): Promise<UpdateRow[]> {
-    return await sql<UpdateRow[]>`
+async function readCompleteUpdateHistory(sql: PSqlSql, documentKey: string): Promise<CrdtUpdateRow[]> {
+    return await sql<CrdtUpdateRow[]>`
         select document_key, update_id, append_sequence, update_envelope, accepted_update_hash,
                actor_id, principal_id, session_id, server_id, authorization_scope,
                accepted_at_ts
@@ -229,8 +242,8 @@ async function readCompleteUpdateHistory(sql: PSqlSql, documentKey: string): Pro
     `;
 }
 
-async function readSnapshot(sql: PSqlSql, documentKey: string): Promise<SnapshotRow[]> {
-    return await sql<SnapshotRow[]>`
+async function readSnapshot(sql: PSqlSql, documentKey: string): Promise<CrdtSnapshotRow[]> {
+    return await sql<CrdtSnapshotRow[]>`
         select document_key, snapshot_id, append_sequence, snapshot_envelope,
                created_at_ts, reason,
                sum(octet_length(snapshot_envelope)) over () as snapshot_bytes,
@@ -242,7 +255,10 @@ async function readSnapshot(sql: PSqlSql, documentKey: string): Promise<Snapshot
     `;
 }
 
-function sameDocumentGuard(left: DocumentRow | undefined, right: DocumentRow | undefined): boolean {
+function sameDocumentGuard(
+    left: CrdtDocumentRow | undefined,
+    right: CrdtDocumentRow | undefined
+): boolean {
     if (!left || !right) {
         return left === right;
     }
@@ -259,9 +275,9 @@ function sameDocumentGuard(left: DocumentRow | undefined, right: DocumentRow | u
 
 interface ValidateReadSetInput {
     readonly document: RallarCrdtDocumentMetadata | null;
-    readonly records: readonly ReturnType<typeof toRecord>[];
-    readonly appendCandidate: ReturnType<typeof toRecord> | null;
-    readonly snapshots: readonly SnapshotRow[];
+    readonly records: readonly ReturnType<typeof decodeCrdtUpdateRow>[];
+    readonly appendCandidate: ReturnType<typeof decodeCrdtUpdateRow> | null;
+    readonly snapshots: readonly CrdtSnapshotRow[];
     readonly scope: CrdtMutationUpdateRows['scope'];
 }
 
@@ -335,10 +351,10 @@ async function insertDocument(
             ${metadata.document.documentType}, ${metadata.document.documentId},
             ${JSON.stringify(metadata.document)}, ${metadata.documentRevision},
             ${metadata.lifecycle}, ${new Date(metadata.createdAtEpochMs)},
-            ${new Date(metadata.updatedAtEpochMs)}, ${toDate(metadata.archivedAtEpochMs)},
-            ${toDate(metadata.destroyedAtEpochMs)}, ${metadata.lastAppendSequence},
+            ${new Date(metadata.updatedAtEpochMs)}, ${toOptionalDate(metadata.archivedAtEpochMs)},
+            ${toOptionalDate(metadata.destroyedAtEpochMs)}, ${metadata.lastAppendSequence},
             ${metadata.updateCount}, ${metadata.snapshotCount}, ${metadata.storedUpdateBytes},
-            ${toJson(metadata.retention)}, ${toJson(metadata.quota)},
+            ${encodeOptionalPolicy(metadata.retention)}, ${encodeOptionalPolicy(metadata.quota)},
             ${JSON.stringify(metadata.projectionIds)}
         ) on conflict (document_key) do nothing
         returning document_key
@@ -363,13 +379,13 @@ async function updateDocument(input: UpdateDocumentInput): Promise<boolean> {
         update crdt_documents
         set document_revision = ${metadata.documentRevision}, lifecycle = ${metadata.lifecycle},
             updated_at_ts = ${new Date(metadata.updatedAtEpochMs)},
-            archived_at_ts = ${toDate(metadata.archivedAtEpochMs)},
-            destroyed_at_ts = ${toDate(metadata.destroyedAtEpochMs)},
+            archived_at_ts = ${toOptionalDate(metadata.archivedAtEpochMs)},
+            destroyed_at_ts = ${toOptionalDate(metadata.destroyedAtEpochMs)},
             last_append_sequence = ${metadata.lastAppendSequence},
             update_count = ${metadata.updateCount}, snapshot_count = ${metadata.snapshotCount},
             stored_update_bytes = ${metadata.storedUpdateBytes},
-            retention_policy = ${toJson(metadata.retention)},
-            quota_policy = ${toJson(metadata.quota)},
+            retention_policy = ${encodeOptionalPolicy(metadata.retention)},
+            quota_policy = ${encodeOptionalPolicy(metadata.quota)},
             projection_ids = ${JSON.stringify(metadata.projectionIds)}
         where document_key = ${metadata.documentKey}
           and document_revision = ${expectedRevision}
@@ -422,4 +438,14 @@ async function insertSnapshot(input: InsertSnapshotInput): Promise<void> {
             ${snapshot.metadata.reason}
         )
     `;
+}
+
+function toOptionalDate(epochMs: number | null): Date | null {
+    return epochMs === null ? null : new Date(epochMs);
+}
+
+function encodeOptionalPolicy(
+    value: RallarCrdtDocumentMetadata['retention'] | RallarCrdtDocumentMetadata['quota']
+): string | null {
+    return value === null ? null : JSON.stringify(value);
 }
