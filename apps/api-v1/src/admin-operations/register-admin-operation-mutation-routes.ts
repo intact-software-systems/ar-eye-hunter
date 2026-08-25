@@ -1,4 +1,7 @@
+import type { AdminOperationMutationRequest } from '@shared-server/rallar-system/admin-operations/admin-operation-request.ts';
+import type { AdminOperationUseCases } from '@shared-server/rallar-system/admin-operations/admin-operation-use-cases.ts';
 import type { AdminPruneEnqueueResult } from '@shared-server/rallar-system/admin-operations/inbox/app-admin-inbox-service.ts';
+import type { IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
 import type {
     CrdtAdminCompactResult,
     CrdtAdminEraseResult
@@ -31,37 +34,18 @@ import {
     type ApiAdminAuthDependencies
 } from '../services/admin-auth-service.ts';
 
-export interface AdminOperationMutationWriteInput<TRequest = JsonWireValue> {
-    readonly adminSession: AuthSession;
-    readonly requestId: string;
-    readonly request: TRequest;
-}
-
-export interface AdminOperationMutationRouteService {
-    readonly recomputeTopology: (
-        input: AdminOperationMutationWriteInput<AdminTopologyRecomputeRequest>
-    ) => Promise<TopologyReconfigureInboxResult>;
-    readonly pruneExpired: (
-        input: AdminOperationMutationWriteInput<AdminPruneExpiredRequest>
-    ) => Promise<AdminPruneEnqueueResult>;
-    readonly compactCrdt: (
-        input: AdminOperationMutationWriteInput
-    ) => Promise<CrdtAdminCompactResult>;
-    readonly updateCrdtLifecycle: (
-        input: AdminOperationMutationWriteInput
-    ) => Promise<RallarCrdtDocumentMetadata>;
-    readonly eraseCrdt: (
-        input: AdminOperationMutationWriteInput
-    ) => Promise<CrdtAdminEraseResult>;
-}
+type AdminOperationMutationRouteUseCases = Pick<
+    AdminOperationUseCases,
+    'topologyRecompute' | 'prune' | 'crdtCompact' | 'crdtLifecycle' | 'crdtErase'
+>;
 
 export type AdminOperationMutationRouteDependencies = Readonly<
     ApiAdminAuthDependencies & {
-        operations: AdminOperationMutationRouteService;
+        operations: AdminOperationMutationRouteUseCases;
         requireApiAdminSession?: (
             request: { header(name: string): string | undefined; },
             dependencies: ApiAdminAuthDependencies
-        ) => Promise<AuthSession>;
+        ) => Promise<IssuedAuthSession>;
     }
 >;
 
@@ -76,7 +60,7 @@ export function registerAdminOperationMutationRoutes(
                 context,
                 dependencies,
                 (input) =>
-                    dependencies.operations.recomputeTopology({
+                    dependencies.operations.topologyRecompute.execute({
                         ...input,
                         request: readTopologyRecomputeRequest(input.request)
                     })
@@ -89,7 +73,7 @@ export function registerAdminOperationMutationRoutes(
                 context,
                 dependencies,
                 (input) =>
-                    dependencies.operations.pruneExpired({
+                    dependencies.operations.prune.execute({
                         ...input,
                         request: readAdminPruneExpiredRequest(input.request)
                     })
@@ -101,7 +85,7 @@ export function registerAdminOperationMutationRoutes(
             withAdminMutationJson(
                 context,
                 dependencies,
-                (input) => dependencies.operations.compactCrdt(input)
+                (input) => dependencies.operations.crdtCompact.execute(input)
             )
     );
     app.post(
@@ -110,7 +94,7 @@ export function registerAdminOperationMutationRoutes(
             withAdminMutationJson(
                 context,
                 dependencies,
-                (input) => dependencies.operations.updateCrdtLifecycle(input)
+                (input) => dependencies.operations.crdtLifecycle.execute(input)
             )
     );
     app.post(
@@ -119,7 +103,7 @@ export function registerAdminOperationMutationRoutes(
             withAdminMutationJson(
                 context,
                 dependencies,
-                (input) => dependencies.operations.eraseCrdt(input)
+                (input) => dependencies.operations.crdtErase.execute(input)
             )
     );
 }
@@ -127,7 +111,7 @@ export function registerAdminOperationMutationRoutes(
 async function withAdminMutationJson<TResult>(
     context: Context,
     dependencies: AdminOperationMutationRouteDependencies,
-    execute: (input: AdminOperationMutationWriteInput) => Promise<TResult>
+    execute: (input: AdminOperationMutationRequest<JsonWireValue>) => Promise<TResult>
 ): Promise<Response> {
     try {
         const adminSession = await requireAdminSession(context, dependencies);
@@ -150,7 +134,7 @@ async function withAdminMutationJson<TResult>(
 async function requireAdminSession(
     context: Context,
     dependencies: AdminOperationMutationRouteDependencies
-): Promise<AuthSession> {
+): Promise<IssuedAuthSession> {
     return await (dependencies.requireApiAdminSession ?? defaultRequireApiAdminSession)(
         context.req,
         {

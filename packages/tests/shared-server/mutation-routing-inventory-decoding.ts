@@ -19,7 +19,11 @@ const PATHS = {
     ad: 'apps/api-v1/src/admin-operations/register-admin-operation-mutation-routes.ts',
     cr: 'apps/api-v1/src/crdt/register-crdt-admin-routes.ts',
     cm: 'apps/api-v1/src/crdt/create-crdt-admin-mutations.ts',
-    ag: 'apps/api-v1/src/admin-operations/create-api-admin-mutation-gateway.ts',
+    ar: 'apps/api-v1/src/admin-operations/recompute-api-admin-topology.ts',
+    ap: 'apps/api-v1/src/admin-operations/prune-api-admin-expired-data.ts',
+    acc: 'apps/api-v1/src/admin-operations/compact-api-admin-crdt.ts',
+    acl: 'apps/api-v1/src/admin-operations/update-api-admin-crdt-lifecycle.ts',
+    ace: 'apps/api-v1/src/admin-operations/erase-api-admin-crdt.ts',
     rq: 'apps/api-v1/src/services/request-auth-service.ts',
     l: 'packages/shared-server/rallar-system/websocket/ws-lifecycle-service.ts',
     e: 'packages/shared-server/rallar-system/group-state/presence/' +

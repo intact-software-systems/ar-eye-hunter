@@ -49,7 +49,7 @@ also invalid, so this document cannot accumulate orphan approvals.
 
 ## Reviewed boundary groups
 
-The current 119 entries were reviewed by independently meaningful behavior,
+The current 113 entries were reviewed by independently meaningful behavior,
 not by vocabulary. The metadata below splits these groups further by exact
 executable assertion so a broad domain label cannot conceal unrelated evidence.
 
@@ -61,7 +61,7 @@ executable assertion so a broad domain label cannot conceal unrelated evidence.
 | Repository style and release interfaces          |       2 | Automation consumes stable rule and release-gate mappings.                                                       |
 | AppInbox transport routing                       |      14 | Concrete route and command-binding mutations must fail before they bypass the canonical transaction owner.       |
 | Mutation-analysis implementation interface       |       3 | The audit must follow new files, re-exports, and type declarations fail-closed.                                  |
-| Mutation route and owner traversal               |      13 | Route, export, helper, and capability evasions must still resolve to AppInbox.                                   |
+| Mutation route and owner traversal               |       7 | Route, export, helper, and capability evasions must still resolve to AppInbox.                                   |
 | Group mutation construction                      |      14 | Missing, duplicate, reordered, conditional, or rebound owner calls must be rejected.                             |
 | Group HTTP mutation shapes                       |      17 | Malformed commands, results, registrations, translators, and unreachable handoffs must be rejected.              |
 | Mutation registration collections and predicates |      12 | Live handler families and exact predicates must remain complete and authoritative.                               |
@@ -493,8 +493,8 @@ moved or changed test.
       "id": "mutation-capability-type-interface",
       "domain": "Mutation capability type analysis",
       "owner": "Rallar server maintainers",
-      "summary": "Capability declarations remain distinguishable from executable authoritative mutation owners. Executable assertion: “maps all 54 entrypoints and 50 types to real registrations and owners”.",
-      "semanticCoverage": "packages/tests/shared-server/mutation-route-owner-analysis.test.ts#maps all 54 entrypoints and 50 types to real registrations and owners",
+      "summary": "Capability declarations remain distinguishable from executable authoritative mutation owners. Executable assertion: “maps all 56 entrypoints and 52 types to real registrations and owners”.",
+      "semanticCoverage": "packages/tests/shared-server/mutation-route-owner-analysis.test.ts#maps all 56 entrypoints and 52 types to real registrations and owners",
       "coverageRelation": "The route-owner suite executes type-to-owner mapping over the complete inventory; this AST parse distinguishes type declarations from executable mutation owners."
     },
     {
@@ -576,14 +576,6 @@ moved or changed test.
       "summary": "Registration predicates accept only authoritative messages owned by their handler family. Executable assertion: “rejects a group registration filter that is always false”.",
       "semanticCoverage": "packages/tests/shared-server/mutation-route-owner-registration-predicates.test.ts#rejects a group registration filter that is always false",
       "coverageRelation": "The named test mutates the live group registration expression and executes the fail-closed route-owner analyzer; the source read supplies the exact security boundary being mutated."
-    },
-    {
-      "id": "mutation-route-owner-analysis--requires-the-admin-mutation-gateway-and-contains-no-direct-write",
-      "domain": "Authoritative mutation route ownership",
-      "owner": "Rallar server maintainers",
-      "summary": "Every authoritative route resolves to one AppInbox transaction owner without a persistence bypass. Executable assertion: “requires the admin mutation gateway and contains no direct-write fallback”.",
-      "semanticCoverage": "packages/tests/shared-server/mutation-route-owner-analysis.test.ts#requires the admin mutation gateway and contains no direct-write fallback",
-      "coverageRelation": "The named analyzer test executes a concrete route, type, owner, or fallback mutation and requires the security audit to reject it; each source access supplies the exact mutated module or canonical comparison for that scenario."
     },
     {
       "id": "mutation-route-owner-analysis--uses-one-named-readonly-input-object-for-each-authorised-websock",
@@ -1175,7 +1167,7 @@ moved or changed test.
       "boundary": "security",
       "owner": "Rallar server maintainers",
       "rationale": "Inspects the canonical capability declarations so every inventoried mutation type can be joined to an actual registration and owner.",
-      "semanticCoverage": "packages/tests/shared-server/mutation-route-owner-analysis.test.ts#maps all 54 entrypoints and 50 types to real registrations and owners"
+      "semanticCoverage": "packages/tests/shared-server/mutation-route-owner-analysis.test.ts#maps all 56 entrypoints and 52 types to real registrations and owners"
     },
     {
       "id": "test-structure-coupling-debeaecd0b266bcd",
@@ -1187,28 +1179,6 @@ moved or changed test.
       "owner": "Rallar server maintainers",
       "rationale": "Uses the parsed parameter nodes to distinguish one object contract from several positional parameters across both helpers.",
       "semanticCoverage": "packages/tests/shared-server/mutation-route-owner-analysis.test.ts#uses one named readonly input object for each authorised websocket enqueue helper"
-    },
-    {
-      "id": "test-structure-coupling-3c5718f79c27b9b8",
-      "path": "packages/tests/shared-server/mutation-route-owner-analysis.test.ts",
-      "kind": "migration-or-compatibility-topology",
-      "contract": "mutation-route-owner-analysis--requires-the-admin-mutation-gateway-and-contains-no-direct-write",
-      "disposition": "durable-boundary",
-      "boundary": "compatibility",
-      "owner": "Rallar server maintainers",
-      "rationale": "Classifies every forbidden fallback fragment as compatibility topology, documenting that these historical direct-write paths may not reappear.",
-      "semanticCoverage": "packages/tests/shared-server/mutation-route-owner-analysis.test.ts#requires the admin mutation gateway and contains no direct-write fallback"
-    },
-    {
-      "id": "test-structure-coupling-5f9f9aea995b5065",
-      "path": "packages/tests/shared-server/mutation-route-owner-analysis.test.ts",
-      "kind": "production-source-read",
-      "contract": "mutation-route-owner-analysis--requires-the-admin-mutation-gateway-and-contains-no-direct-write",
-      "disposition": "durable-boundary",
-      "boundary": "security",
-      "owner": "Rallar server maintainers",
-      "rationale": "Reads AdminOperations once as the canonical module on which the required-gateway and no-fallback assertions operate.",
-      "semanticCoverage": "packages/tests/shared-server/mutation-route-owner-analysis.test.ts#requires the admin mutation gateway and contains no direct-write fallback"
     },
     {
       "id": "test-structure-coupling-06292983819f11f6",
@@ -1242,50 +1212,6 @@ moved or changed test.
       "owner": "Rallar server maintainers",
       "rationale": "Checks the second enqueue helper in the same module for its own named readonly input object.",
       "semanticCoverage": "packages/tests/shared-server/mutation-route-owner-analysis.test.ts#uses one named readonly input object for each authorised websocket enqueue helper"
-    },
-    {
-      "id": "test-structure-coupling-84af1298a4f9664c",
-      "path": "packages/tests/shared-server/mutation-route-owner-analysis.test.ts",
-      "kind": "symbol-assertion",
-      "contract": "mutation-route-owner-analysis--requires-the-admin-mutation-gateway-and-contains-no-direct-write",
-      "disposition": "durable-boundary",
-      "boundary": "security",
-      "owner": "Rallar server maintainers",
-      "rationale": "Separately rejects the optional-field spelling so a superficially present gateway cannot remain bypassable.",
-      "semanticCoverage": "packages/tests/shared-server/mutation-route-owner-analysis.test.ts#requires the admin mutation gateway and contains no direct-write fallback"
-    },
-    {
-      "id": "test-structure-coupling-96bf5ff0f18c8b9a",
-      "path": "packages/tests/shared-server/mutation-route-owner-analysis.test.ts",
-      "kind": "symbol-assertion",
-      "contract": "mutation-route-owner-analysis--requires-the-admin-mutation-gateway-and-contains-no-direct-write",
-      "disposition": "durable-boundary",
-      "boundary": "security",
-      "owner": "Rallar server maintainers",
-      "rationale": "Requires the non-optional AdminOperationsMutationGateway field declaration, making gateway ownership explicit in the constructor contract.",
-      "semanticCoverage": "packages/tests/shared-server/mutation-route-owner-analysis.test.ts#requires the admin mutation gateway and contains no direct-write fallback"
-    },
-    {
-      "id": "test-structure-coupling-a0b28d40bcf2474e",
-      "path": "packages/tests/shared-server/mutation-route-owner-analysis.test.ts",
-      "kind": "symbol-assertion",
-      "contract": "mutation-route-owner-analysis--requires-the-admin-mutation-gateway-and-contains-no-direct-write",
-      "disposition": "durable-boundary",
-      "boundary": "security",
-      "owner": "Rallar server maintainers",
-      "rationale": "Forbids a truthiness guard around mutationGateway, because optional control flow would reopen the direct-write path.",
-      "semanticCoverage": "packages/tests/shared-server/mutation-route-owner-analysis.test.ts#requires the admin mutation gateway and contains no direct-write fallback"
-    },
-    {
-      "id": "test-structure-coupling-b2af86e0a7cfe66f",
-      "path": "packages/tests/shared-server/mutation-route-owner-analysis.test.ts",
-      "kind": "symbol-assertion",
-      "contract": "mutation-route-owner-analysis--requires-the-admin-mutation-gateway-and-contains-no-direct-write",
-      "disposition": "durable-boundary",
-      "boundary": "security",
-      "owner": "Rallar server maintainers",
-      "rationale": "Checks each forbidden direct-write fragment against AdminOperations, covering the concrete fallback statements that could bypass the gateway.",
-      "semanticCoverage": "packages/tests/shared-server/mutation-route-owner-analysis.test.ts#requires the admin mutation gateway and contains no direct-write fallback"
     },
     {
       "id": "test-structure-coupling-1109adc1f00e654e",

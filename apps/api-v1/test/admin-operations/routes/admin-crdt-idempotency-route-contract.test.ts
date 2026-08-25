@@ -2,12 +2,13 @@ import assert from 'node:assert/strict';
 
 import { Hono } from 'jsr:@hono/hono@4.11.9';
 
+import type { AdminOperationMutationRequest } from '@shared-server/rallar-system/admin-operations/admin-operation-request.ts';
+import type { AdminOperationUseCases } from '@shared-server/rallar-system/admin-operations/admin-operation-use-cases.ts';
 import type { IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
 import { decodeJsonWireValue, type JsonWireObject, type JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import type { RallarCrdtAdminReadRepository, RallarCrdtDocumentMetadata, RallarCrdtDocumentRef } from '@shared/crdt/mod.ts';
 
-import type { AdminOperationMutationWriteInput } from '../../../src/admin-operations/register-admin-operation-mutation-routes.ts';
-import { registerAdminOperationsRoutes, type AdminOperationsRouteService } from '../../../src/admin-operations/register-admin-operations-routes.ts';
+import { registerAdminOperationsRoutes } from '../../../src/admin-operations/register-admin-operations-routes.ts';
 import { registerCrdtAdminRoutes } from '../../../src/crdt/register-crdt-admin-routes.ts';
 
 const NOW_EPOCH_MS = 1_700_000_000_000;
@@ -294,9 +295,9 @@ function createRouteFixture(input: CreateRouteFixtureInput = {}): RouteFixture {
     return { app, calls, authCalls: () => authCallCount };
 }
 
-function createAdminOperations(calls: RouteCall[]): AdminOperationsRouteService {
+function createAdminOperations(calls: RouteCall[]): AdminOperationUseCases {
     const unusedRead = () => Promise.reject(new Error('Admin read operation is unused'));
-    const record = (operation: string, mutation: AdminOperationMutationWriteInput) => {
+    const record = (operation: string, mutation: AdminOperationMutationRequest<JsonWireValue>) => {
         calls.push({
             family: 'admin',
             operation,
@@ -305,73 +306,89 @@ function createAdminOperations(calls: RouteCall[]): AdminOperationsRouteService 
         });
     };
     return {
-        readOverview: unusedRead,
-        readQueues: unusedRead,
-        readRealtime: unusedRead,
-        readState: unusedRead,
-        readCrdt: unusedRead,
-        readSystem: unusedRead,
-        resetMetrics: () => Promise.reject(new Error('Admin metrics reset is unused')),
-        recomputeTopology: (mutation) => {
-            record('topology-recompute', mutation);
-            return Promise.resolve({
-                status: 'queued',
-                groupRef: mutation.request.groupRef,
-                requestId: mutation.requestId,
-                outboxId: 'topology-outbox-1'
-            });
+        overview: { execute: unusedRead },
+        queues: { execute: unusedRead },
+        realtime: { execute: unusedRead },
+        state: { execute: unusedRead },
+        crdt: { execute: unusedRead },
+        system: { execute: unusedRead },
+        metricsReset: {
+            execute: () => Promise.reject(new Error('Admin metrics reset is unused'))
         },
-        pruneExpired: (mutation) => {
-            record('prune-expired', mutation);
-            return Promise.resolve({
-                generatedAtEpochMs: NOW_EPOCH_MS,
-                serverId: 'server-1',
-                warnings: [],
-                operation: 'maintenance.prune-expired',
-                status: 'dry-run',
-                changed: false,
-                jobId: 'prune-job-1',
-                results: []
-            });
+        topologyRecompute: {
+            execute: (mutation) => {
+                record('topology-recompute', mutation);
+                return Promise.resolve({
+                    status: 'queued',
+                    groupRef: mutation.request.groupRef,
+                    requestId: mutation.requestId,
+                    outboxId: 'topology-outbox-1'
+                });
+            }
         },
-        verifyCrdtIntegrity: () => Promise.reject(new Error('CRDT integrity is unused')),
-        exportCrdtDebug: () => Promise.reject(new Error('CRDT debug export is unused')),
-        compactCrdt: (mutation) => {
-            record('compact', mutation);
-            return Promise.resolve({
-                document: DOCUMENT,
-                documentKey: DOCUMENT_METADATA.documentKey,
-                appendSequence: 0,
-                snapshot: {
-                    protocolVersion: 1,
+        prune: {
+            execute: (mutation) => {
+                record('prune-expired', mutation);
+                return Promise.resolve({
+                    generatedAtEpochMs: NOW_EPOCH_MS,
+                    serverId: 'server-1',
+                    warnings: [],
+                    operation: 'maintenance.prune-expired',
+                    status: 'dry-run',
+                    changed: false,
+                    jobId: 'prune-job-1',
+                    results: []
+                });
+            }
+        },
+        crdtIntegrity: {
+            execute: () => Promise.reject(new Error('CRDT integrity is unused'))
+        },
+        crdtDebugExport: {
+            execute: () => Promise.reject(new Error('CRDT debug export is unused'))
+        },
+        crdtCompact: {
+            execute: (mutation) => {
+                record('compact', mutation);
+                return Promise.resolve({
                     document: DOCUMENT,
-                    snapshotId: 'snapshot-1',
-                    schemaVersion: 1,
-                    createdAtEpochMs: NOW_EPOCH_MS,
-                    maxLamport: 0,
-                    includedUpdateIds: [],
-                    value: null,
-                    metadata: { updateCount: 0, reason: 'test' }
-                }
-            });
+                    documentKey: DOCUMENT_METADATA.documentKey,
+                    appendSequence: 0,
+                    snapshot: {
+                        protocolVersion: 1,
+                        document: DOCUMENT,
+                        snapshotId: 'snapshot-1',
+                        schemaVersion: 1,
+                        createdAtEpochMs: NOW_EPOCH_MS,
+                        maxLamport: 0,
+                        includedUpdateIds: [],
+                        value: null,
+                        metadata: { updateCount: 0, reason: 'test' }
+                    }
+                });
+            }
         },
-        updateCrdtLifecycle: (mutation) => {
-            record('lifecycle', mutation);
-            return Promise.resolve(DOCUMENT_METADATA);
+        crdtLifecycle: {
+            execute: (mutation) => {
+                record('lifecycle', mutation);
+                return Promise.resolve(DOCUMENT_METADATA);
+            }
         },
-        eraseCrdt: (mutation) => {
-            record('erase', mutation);
-            return Promise.resolve({
-                request: {
-                    document: DOCUMENT,
-                    requestedAtEpochMs: NOW_EPOCH_MS,
-                    requestedBy: ADMIN_SESSION.clientId,
-                    reason: 'test',
-                    mode: 'destroy-document'
-                },
-                auditEvent: { kind: 'erase', atEpochMs: NOW_EPOCH_MS },
-                metadata: DOCUMENT_METADATA
-            });
+        crdtErase: {
+            execute: (mutation) => {
+                record('erase', mutation);
+                return Promise.resolve({
+                    request: {
+                        document: DOCUMENT,
+                        requestedAtEpochMs: NOW_EPOCH_MS,
+                        requestedBy: ADMIN_SESSION.clientId,
+                        reason: 'test',
+                        mode: 'destroy-document'
+                    },
+                    auditEvent: { kind: 'erase', atEpochMs: NOW_EPOCH_MS },
+                    metadata: DOCUMENT_METADATA
+                });
+            }
         }
     };
 }

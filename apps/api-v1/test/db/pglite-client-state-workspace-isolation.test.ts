@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 
-import { PSqlAdminOperationsStatsReader } from '@shared-server/postgres/admin-operations/PSqlAdminOperationsStatsReader.ts';
+import { PSqlAdminStateReader } from '@shared-server/rallar-system/admin-operations/postgres/p-sql-admin-state-reader.ts';
+import { PSqlAdminSystemReader } from '@shared-server/rallar-system/admin-operations/postgres/p-sql-admin-system-reader.ts';
 import { PSqlClientStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-client-state-event-repository.ts';
 import type { ClientEvent } from '@shared/api/client-types.ts';
 
@@ -132,16 +133,18 @@ Deno.test('PGlite admin state scopes recent events while system totals stay glob
       `;
         }
 
-        const reader = new PSqlAdminOperationsStatsReader(sql, { now: () => nowEpochMs });
+        const stateReader = new PSqlAdminStateReader(sql, { nowEpochMs: () => nowEpochMs });
         for (const { workspaceId } of WORKSPACE_CASES) {
-            const state = await reader.readState({
+            const state = await stateReader.execute({
                 adminSession: createAdminSession(),
                 scope: { applicationId, workspaceId }
             });
             assert.equal(state.events.recentClientEvents, 1, workspaceId);
         }
 
-        const system = await reader.readSystem({
+        const system = await new PSqlAdminSystemReader(sql, {
+            nowEpochMs: () => nowEpochMs
+        }).execute({
             adminSession: createAdminSession(),
             scope: { applicationId, workspaceId: '_' }
         });
@@ -235,8 +238,8 @@ Deno.test('PGlite scoped admin state starts events before facts and shares activ
         const delayed = delayAdminRuntimeFactQueries(sql);
         const clockValues = [1_000, 2_000, activityCutoffEpochMs, 4_000];
         let clockCalls = 0;
-        const reader = new PSqlAdminOperationsStatsReader(delayed.sql, {
-            now: () => {
+        const reader = new PSqlAdminStateReader(delayed.sql, {
+            nowEpochMs: () => {
                 const value = clockValues[clockCalls];
                 clockCalls += 1;
                 assert.notEqual(value, undefined, 'unexpected clock observation');
@@ -245,7 +248,7 @@ Deno.test('PGlite scoped admin state starts events before facts and shares activ
             recentEventWindowMs
         });
 
-        const statePromise = reader.readState({
+        const statePromise = reader.execute({
             adminSession: createAdminSession(),
             scope: { applicationId, workspaceId: '_' }
         });
@@ -292,8 +295,8 @@ Deno.test('PGlite global admin state preserves independent query and response cl
         const delayed = delayAdminRuntimeFactQueries(sql);
         const clockValues = [1_000, 2_000, 3_000, 4_000, 5_000, 6_000];
         let clockCalls = 0;
-        const reader = new PSqlAdminOperationsStatsReader(delayed.sql, {
-            now: () => {
+        const reader = new PSqlAdminStateReader(delayed.sql, {
+            nowEpochMs: () => {
                 const value = clockValues[clockCalls];
                 clockCalls += 1;
                 assert.notEqual(value, undefined, 'unexpected clock observation');
@@ -302,7 +305,7 @@ Deno.test('PGlite global admin state preserves independent query and response cl
             recentEventWindowMs
         });
 
-        const statePromise = reader.readState({ adminSession: createAdminSession() });
+        const statePromise = reader.execute({ adminSession: createAdminSession() });
         const launchEvidence = delayed.readLaunchEvidence();
         const clockCallsBeforeRelease = clockCalls;
         delayed.releaseRuntimeFacts();
@@ -456,10 +459,10 @@ async function insertAdminStateEventBoundaries(
 }
 
 async function readGlobalAdminState(sql: PGliteSql) {
-    const reader = new PSqlAdminOperationsStatsReader(sql, {
-        now: () => 1_700_000_000_000
+    const reader = new PSqlAdminStateReader(sql, {
+        nowEpochMs: () => 1_700_000_000_000
     });
-    return await reader.readState({ adminSession: createAdminSession() });
+    return await reader.execute({ adminSession: createAdminSession() });
 }
 
 function createAdminSession() {

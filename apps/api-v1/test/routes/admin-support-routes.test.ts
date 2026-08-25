@@ -1,14 +1,15 @@
-import type { AuthSession } from '@shared/api/api-config.ts';
+import type { IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
 import { Hono } from 'jsr:@hono/hono@4.11.9';
 import assert from 'node:assert/strict';
 import * as adminSupportRoutes from '../../src/routes/admin-support-routes.ts';
 
 const NOW_EPOCH_MS = 1_700_000_000_000;
-const ADMIN_SESSION: AuthSession = {
+const ADMIN_SESSION: IssuedAuthSession = {
     clientId: 'platform-admin',
     username: 'admin',
     accessToken: 'access-token',
     sessionId: 'admin-session',
+    issuedAtEpochMs: NOW_EPOCH_MS,
     expiresAtEpochMs: NOW_EPOCH_MS + 60_000
 };
 

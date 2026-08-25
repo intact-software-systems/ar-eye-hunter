@@ -8,10 +8,10 @@ import type { MutationRoutingProgramLoader } from './mutation-routing-live-regis
 const CRDT_ADMIN_MUTATIONS_PATH = 'apps/api-v1/src/crdt/create-crdt-admin-mutations.ts';
 const CRDT_ADMIN_ROUTES_PATH = 'apps/api-v1/src/crdt/register-crdt-admin-routes.ts';
 
-const GENERAL_ADMIN_METHOD_BY_OPERATION: Readonly<Record<string, string>> = {
-    compact: 'compactCrdt',
-    lifecycle: 'updateCrdtLifecycle',
-    erase: 'eraseCrdt'
+const GENERAL_ADMIN_USE_CASE_BY_OPERATION: Readonly<Record<string, Readonly<{ routeOwner: string; }>>> = {
+    compact: { routeOwner: 'crdtCompact' },
+    lifecycle: { routeOwner: 'crdtLifecycle' },
+    erase: { routeOwner: 'crdtErase' }
 };
 
 interface ExactCrdtAdminRouteOperationInput {
@@ -130,13 +130,13 @@ function hasExactGeneralAdminRouteOperation(
     input: ExactCrdtAdminRouteOperationInput,
     operation: string
 ): boolean {
-    const gatewayMethod = GENERAL_ADMIN_METHOD_BY_OPERATION[operation];
-    if (!gatewayMethod || !hasSingleLiveCall(input.handler, gatewayMethod)) {
+    const useCase = GENERAL_ADMIN_USE_CASE_BY_OPERATION[operation];
+    if (!useCase || !hasSingleLiveMemberCall(input.handler, useCase.routeOwner)) {
         return false;
     }
     return hasNamedOwnerOperationCall({
         program: input.enqueueSource,
-        ownerName: gatewayMethod,
+        ownerName: 'execute',
         callName: 'writeCrdtAdminMutation',
         expectedOperationValues: [`literal:${operation}`]
     });
@@ -572,6 +572,16 @@ function hasSingleLiveCall(root: MutationRoutingAstNode, callName: string): bool
     return (
         readLiveFunctionFacts(root).calls.filter((call) => isCallNamed(call, callName)).length === 1
     );
+}
+
+function hasSingleLiveMemberCall(
+    root: MutationRoutingAstNode,
+    ownerName: string
+): boolean {
+    return readLiveFunctionFacts(root).calls.filter((call) => {
+        const path = readMemberPath(asNode(call.callee));
+        return path.endsWith(`.${ownerName}.execute`);
+    }).length === 1;
 }
 
 function readEffectiveOperation(object: MutationRoutingAstNode | undefined): string | undefined {
