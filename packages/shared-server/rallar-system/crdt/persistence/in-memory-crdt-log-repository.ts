@@ -26,35 +26,32 @@ import type {
     RallarCrdtWriteSnapshotInput
 } from '@shared/crdt/mod.ts';
 
+import type { JsonWireValue } from '../../protocol/json-wire-identity.ts';
 import { InMemoryCrdtAdministration } from './in-memory-crdt-administration.ts';
 import { InMemoryCrdtAppend } from './in-memory-crdt-append.ts';
 import { InMemoryCrdtDocumentStore } from './in-memory-crdt-document-store.ts';
 
-export interface InMemoryRallarCrdtLogRepositoryOptions<
-    TPayload extends RallarCrdtOperationBatch = RallarCrdtOperationBatch,
-> {
+export interface InMemoryRallarCrdtLogRepositoryOptions {
     readonly now?: () => number;
     readonly serverId?: string;
     readonly validation?: RallarCrdtValidationOptions;
-    readonly hooks?: RallarCrdtProjectionHooks<TPayload>;
+    readonly hooks?: RallarCrdtProjectionHooks<RallarCrdtOperationBatch>;
     readonly policies?: readonly RallarCrdtDocumentTypePolicy[];
     readonly metrics?: RallarCrdtMetricsSink;
     readonly audit?: RallarCrdtAuditSink;
 }
 
-export class InMemoryRallarCrdtLogRepository<
-    TPayload extends RallarCrdtOperationBatch = RallarCrdtOperationBatch,
-    TValue = unknown,
-> implements RallarCrdtAdminLogRepository<TPayload, TValue> {
+export class InMemoryRallarCrdtLogRepository
+    implements RallarCrdtAdminLogRepository<RallarCrdtOperationBatch, JsonWireValue> {
     private readonly now: () => number;
     private readonly audit: RallarCrdtAuditSink | undefined;
-    private readonly appendOwner: InMemoryCrdtAppend<TPayload, TValue>;
-    private readonly administration: InMemoryCrdtAdministration<TPayload, TValue>;
+    private readonly appendOwner: InMemoryCrdtAppend<RallarCrdtOperationBatch, JsonWireValue>;
+    private readonly administration: InMemoryCrdtAdministration<RallarCrdtOperationBatch, JsonWireValue>;
 
-    constructor(options: InMemoryRallarCrdtLogRepositoryOptions<TPayload> = {}) {
+    constructor(options: InMemoryRallarCrdtLogRepositoryOptions = {}) {
         this.now = options.now ?? Date.now;
         this.audit = options.audit;
-        const documents = new InMemoryCrdtDocumentStore<TPayload, TValue>();
+        const documents = new InMemoryCrdtDocumentStore<RallarCrdtOperationBatch, JsonWireValue>();
         const policies = options.policies ?? [];
 
         this.appendOwner = new InMemoryCrdtAppend(
@@ -79,28 +76,30 @@ export class InMemoryRallarCrdtLogRepository<
     }
 
     async append(
-        input: RallarCrdtAppendUpdateInput<TPayload>
-    ): Promise<RallarCrdtAppendResult<TPayload>> {
+        input: RallarCrdtAppendUpdateInput<RallarCrdtOperationBatch>
+    ): Promise<RallarCrdtAppendResult<RallarCrdtOperationBatch>> {
         return await this.appendOwner.append(input);
     }
 
     async appendBatch(
-        input: RallarCrdtAppendBatchInput<TPayload>
-    ): Promise<RallarCrdtAppendBatchResult<TPayload>> {
+        input: RallarCrdtAppendBatchInput<RallarCrdtOperationBatch>
+    ): Promise<RallarCrdtAppendBatchResult<RallarCrdtOperationBatch>> {
         return await this.appendOwner.appendBatch(input);
     }
 
-    async listAfter(input: RallarCrdtListUpdatesInput): Promise<RallarCrdtUpdatePage<TPayload>> {
+    async listAfter(
+        input: RallarCrdtListUpdatesInput
+    ): Promise<RallarCrdtUpdatePage<RallarCrdtOperationBatch>> {
         return await this.administration.listAfter(input);
     }
 
     async readSnapshot(
         document: RallarCrdtDocumentRef
-    ): Promise<RallarCrdtSnapshotEnvelope<TValue> | undefined> {
+    ): Promise<RallarCrdtSnapshotEnvelope<JsonWireValue> | undefined> {
         return await this.administration.readSnapshot(document);
     }
 
-    async writeSnapshot(input: RallarCrdtWriteSnapshotInput<TValue>): Promise<void> {
+    async writeSnapshot(input: RallarCrdtWriteSnapshotInput<JsonWireValue>): Promise<void> {
         await this.administration.writeSnapshot(input);
     }
 
@@ -125,19 +124,19 @@ export class InMemoryRallarCrdtLogRepository<
     async exportDebugBundle(
         document: RallarCrdtDocumentRef,
         options: InMemoryCrdtAdministration.DebugExportOptions = {}
-    ): Promise<RallarCrdtDebugBundle<TPayload>> {
+    ): Promise<RallarCrdtDebugBundle<RallarCrdtOperationBatch>> {
         return await this.administration.exportDebugBundle(document, options);
     }
 
     async exportBackupBundle(
         document: RallarCrdtDocumentRef,
         options: InMemoryCrdtAdministration.BackupExportOptions = {}
-    ): Promise<RallarCrdtBackupBundle<TPayload> | undefined> {
+    ): Promise<RallarCrdtBackupBundle<RallarCrdtOperationBatch> | undefined> {
         return await this.administration.exportBackupBundle(document, options);
     }
 
     async restoreBackupBundle(
-        bundle: RallarCrdtBackupBundle<TPayload>,
+        bundle: RallarCrdtBackupBundle<RallarCrdtOperationBatch>,
         options: InMemoryCrdtAdministration.RestoreOptions = {}
     ): Promise<RallarCrdtRestoreResult> {
         return await this.administration.restoreBackupBundle(bundle, options);

@@ -68,6 +68,21 @@ describe('CRDT append and administration result invariants', () => {
         ).toThrow(/replay|operation|status/i);
     });
 
+    it('rejects an incomplete persisted append replay', async () => {
+        const command = await appendCommand();
+
+        expect(() =>
+            computeCrdtMutation({
+                command,
+                read: {
+                    ...emptyRead(),
+                    existingUpdate: command.update
+                },
+                serviceId: 'server-1'
+            })
+        ).toThrow(/persisted.*document.*append/i);
+    });
+
     it('requires exact producer update and rejection reason relationships', async () => {
         const command = await appendCommand();
         const rejected = computeCrdtMutation({

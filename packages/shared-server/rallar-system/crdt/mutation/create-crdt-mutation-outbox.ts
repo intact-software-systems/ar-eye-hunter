@@ -15,6 +15,7 @@ import {
 } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 
 import { toAppQueueCreatedBy, toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
+import { decodeJsonWireValue, type JsonWireValue } from '../../protocol/json-wire-identity.ts';
 import type { CrdtAppendCommand } from './crdt-mutation-contracts.ts';
 
 interface AppendOutboxInput {
@@ -29,7 +30,7 @@ interface WsOutboxInput {
     readonly serviceId: string;
     readonly effect: 'reply' | 'fanout';
     readonly typeId: string;
-    readonly payload: unknown;
+    readonly payload: JsonWireValue;
 }
 
 interface ResourceEntryInput {
@@ -47,13 +48,16 @@ export function toAppendOutbox(input: AppendOutboxInput): readonly ResourceEntry
         serviceId,
         effect: 'reply',
         typeId: RALLAR_CRDT_APPEND_RESPONSE_TYPE_ID,
-        payload: {
-            protocolVersion: RALLAR_CRDT_PROTOCOL_VERSION,
-            requestId: command.update.updateId,
-            document: command.document,
-            acceptedAtEpochMs: command.capturedAtEpochMs,
-            results: [response]
-        }
+        payload: decodeJsonWireValue(
+            {
+                protocolVersion: RALLAR_CRDT_PROTOCOL_VERSION,
+                requestId: command.update.updateId,
+                document: command.document,
+                acceptedAtEpochMs: command.capturedAtEpochMs,
+                results: [response]
+            },
+            'CRDT append response outbox payload'
+        )
     });
     return fanout
         ? [
@@ -63,7 +67,7 @@ export function toAppendOutbox(input: AppendOutboxInput): readonly ResourceEntry
                 serviceId,
                 effect: 'fanout',
                 typeId: RALLAR_CRDT_UPDATE_TYPE_ID,
-                payload: command.update
+                payload: decodeJsonWireValue(command.update, 'CRDT update outbox payload')
             })
         ]
         : [reply];
@@ -108,7 +112,7 @@ export function toCrdtAuditOutbox(
         payload: {
             typeId: CRDT_AUDIT_APP_OUTBOX_TYPE,
             contentType: 'application/json',
-            resource: JSON.stringify(event)
+            resource: JSON.stringify(decodeJsonWireValue(event, 'CRDT audit outbox payload'))
         },
         audit: { createdBy: serviceId, createdTs: command.capturedAtEpochMs }
     };

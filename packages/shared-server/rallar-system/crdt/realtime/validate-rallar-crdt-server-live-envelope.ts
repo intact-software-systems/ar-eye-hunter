@@ -66,7 +66,7 @@ export function validateRallarCrdtServerLiveEnvelope(
         }
     }
 
-    issues.push(...collectKnownBinaryJsonShapeIssues(input.value));
+    issues.push(...validateKnownBinaryJsonShapes(input.value));
 
     return {
         valid: issues.length === 0,
@@ -208,15 +208,15 @@ function toSharedValidationOptions(
     };
 }
 
-function collectKnownBinaryJsonShapeIssues(value: unknown): readonly RallarCrdtValidationIssue[] {
+function validateKnownBinaryJsonShapes(value: unknown): readonly RallarCrdtValidationIssue[] {
     const issues: RallarCrdtValidationIssue[] = [];
     if (value && typeof value === 'object') {
-        collectKnownBinaryJsonShapeIssuesAt(value, '$', issues);
+        validateKnownBinaryJsonShapesAt(value, '$', issues);
     }
     return issues;
 }
 
-function collectKnownBinaryJsonShapeIssuesAt(
+function validateKnownBinaryJsonShapesAt(
     value: object,
     path: string,
     issues: RallarCrdtValidationIssue[]
@@ -224,7 +224,7 @@ function collectKnownBinaryJsonShapeIssuesAt(
     if (Array.isArray(value)) {
         value.forEach((entry, index) => {
             if (entry && typeof entry === 'object') {
-                collectKnownBinaryJsonShapeIssuesAt(entry, `${path}[${index}]`, issues);
+                validateKnownBinaryJsonShapesAt(entry, `${path}[${index}]`, issues);
             }
         });
         return;
@@ -244,7 +244,7 @@ function collectKnownBinaryJsonShapeIssuesAt(
     Object.keys(value).forEach((key) => {
         const entry = Reflect.get(value, key);
         if (entry && typeof entry === 'object') {
-            collectKnownBinaryJsonShapeIssuesAt(entry, `${path}.${key}`, issues);
+            validateKnownBinaryJsonShapesAt(entry, `${path}.${key}`, issues);
         }
     });
 }
