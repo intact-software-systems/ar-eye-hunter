@@ -6,14 +6,12 @@ import { describe, expect, it, vi } from 'vitest';
 interface Payload {
     readonly value: string;
 }
-type RelayConfig = RallarDirectorRelayConfig<RallarGameEnvelope<Payload>, RallarGameEnvelope<Payload>, RallarGameEnvelope<Payload>>;
-
 describe('RallarGameDirectorRelayRuntime', () => {
     it('does not read director status when an optional snapshot is absent', async () => {
-        let relayConfig: RelayConfig | undefined;
+        let relayConfig: RallarDirectorRelayConfig<RallarGameEnvelope<Payload>, RallarGameEnvelope<Payload>, RallarGameEnvelope<Payload>> | undefined;
         const readFreshDirectorStatus = vi.fn(() => undefined);
         const readSnapshot = vi.fn(async () => undefined);
-        const createRelay = ((config: RelayConfig) => {
+        const createRelay = ((config: RallarDirectorRelayConfig<RallarGameEnvelope<Payload>, RallarGameEnvelope<Payload>, RallarGameEnvelope<Payload>>) => {
             relayConfig = config;
             return toTestDouble<RallarDirectorRelayHandle<RallarGameEnvelope<Payload>, RallarGameEnvelope<Payload>, RallarGameEnvelope<Payload>>>({
                 stop: vi.fn()

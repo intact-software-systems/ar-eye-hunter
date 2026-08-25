@@ -36,27 +36,21 @@ export interface RallarMediaSourceAttachOptions {
     readonly attach?: boolean;
 }
 
-export type RallarMicrophoneSourceStartOptions =
-    & RallarMediaSourceAttachOptions
-    & Readonly<{
-        stream?: MediaStream;
-        audio?: boolean | MediaTrackConstraints;
-    }>;
+export interface RallarMicrophoneSourceStartOptions extends RallarMediaSourceAttachOptions {
+    readonly stream?: MediaStream;
+    readonly audio?: boolean | MediaTrackConstraints;
+}
 
-export type RallarCameraSourceStartOptions =
-    & RallarMediaSourceAttachOptions
-    & Readonly<{
-        stream?: MediaStream;
-        video?: boolean | MediaTrackConstraints;
-    }>;
+export interface RallarCameraSourceStartOptions extends RallarMediaSourceAttachOptions {
+    readonly stream?: MediaStream;
+    readonly video?: boolean | MediaTrackConstraints;
+}
 
-export type RallarScreenSourceStartOptions =
-    & RallarMediaSourceAttachOptions
-    & Readonly<{
-        stream?: MediaStream;
-        video?: boolean | MediaTrackConstraints;
-        audio?: boolean | MediaTrackConstraints;
-    }>;
+export interface RallarScreenSourceStartOptions extends RallarMediaSourceAttachOptions {
+    readonly stream?: MediaStream;
+    readonly video?: boolean | MediaTrackConstraints;
+    readonly audio?: boolean | MediaTrackConstraints;
+}
 
 export interface RallarMediaSourceController<TOptions> {
     start(options?: TOptions): Promise<RallarMediaSourceHandle>;

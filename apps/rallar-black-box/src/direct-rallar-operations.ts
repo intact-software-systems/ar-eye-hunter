@@ -1,5 +1,9 @@
 import type { RallarBlackBoxTestRuntimeEventInput } from '@shared-test/rallar-bb-test/types.ts';
-import type { RallarMessageSelectorInput, RallarUnsubscribe } from '@shared-web/browser/rallar.ts';
+import type {
+    RallarMessageHandler,
+    RallarMessageSelectorInput,
+    RallarUnsubscribe
+} from '@shared-web/browser/rallar.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import { assertValidRallarRouteId, assertValidRallarWsUserTopicId } from '@shared/api/rallar-validation.ts';
@@ -8,12 +12,11 @@ import type {
     CreateDirectRallarRuntimeEventInput,
     DirectRallarFacade,
     DirectRallarFacadeLoader,
-    DirectRallarMessageHandler,
     DirectRallarOperationContext,
     DirectRallarStartResult,
     DirectRallarWsPayload,
     DirectRallarWsSendInput
-} from './direct-rallar-contracts.ts';
+} from './diagnostics/direct-rallar-contracts.ts';
 
 export type DirectRallarOperationKind =
     | 'status.check'
@@ -43,6 +46,16 @@ export interface DirectRallarOperationResult {
 
 export interface DirectRallarWsSubscribeResult extends DirectRallarOperationResult {
     readonly unsubscribe?: RallarUnsubscribe;
+}
+
+export interface DirectRallarWsSubscription<TPayload> {
+    readonly selector: RallarMessageSelectorInput;
+    readonly handler: RallarMessageHandler<TPayload>;
+}
+
+interface SubscribeDirectRallarWsInput<TPayload> extends DirectRallarWsSubscription<TPayload> {
+    readonly context: DirectRallarOperationContext;
+    readonly loadFacade: DirectRallarFacadeLoader;
 }
 
 const DIRECT_BACKEND_REQUIRED_ERROR_CODE = 'RALLAR_DIRECT_BACKEND_REQUIRED';
@@ -376,14 +389,14 @@ function validateRallarServerUserTopic(topicId: string, action: string): string 
     return assertValidRallarWsUserTopicId(trimmed, '$.topicId');
 }
 
-function effectiveWsTopicId(input: DirectRallarWsSendInput): string {
+function effectiveWsTopicId<TPayload>(input: DirectRallarWsSendInput<TPayload>): string {
     return input.topicId?.trim() || input.typeId.trim();
 }
 
-function directWsSendPayload(
+function directWsSendPayload<TPayload>(
     context: DirectRallarOperationContext,
-    input: DirectRallarWsSendInput
-): DirectRallarWsPayload {
+    input: DirectRallarWsSendInput<TPayload>
+): DirectRallarWsPayload<TPayload> {
     const scope = input.scope ?? (context.roomId ? 'room' : 'all');
     const roomRef = scope === 'room' ? directRoomRef(context) : undefined;
     return {
@@ -518,10 +531,9 @@ async function joinDirectRallarGroup(
     };
 }
 
-export async function runDirectRallarWsSubscribe(
+export async function runDirectRallarWsSubscribe<TPayload>(
     context: DirectRallarOperationContext,
-    selector: RallarMessageSelectorInput,
-    handler: DirectRallarMessageHandler,
+    subscription: DirectRallarWsSubscription<TPayload>,
     loadFacade: DirectRallarFacadeLoader = loadDirectRallarFacade
 ): Promise<DirectRallarWsSubscribeResult> {
     let unsubscribe: RallarUnsubscribe | undefined;
@@ -532,11 +544,15 @@ export async function runDirectRallarWsSubscribe(
         transport: 'ws',
         startedPayload: {
             action: 'ws.subscribe',
-            selector
+            selector: subscription.selector
         },
-        failurePayload: { selector },
+        failurePayload: { selector: subscription.selector },
         run: async () => {
-            const success = await subscribeDirectRallarWs(context, selector, handler, loadFacade);
+            const success = await subscribeDirectRallarWs({
+                context,
+                ...subscription,
+                loadFacade
+            });
             unsubscribe = success.unsubscribe;
             return success;
         },
@@ -544,28 +560,32 @@ export async function runDirectRallarWsSubscribe(
     });
 }
 
-async function subscribeDirectRallarWs(
-    context: DirectRallarOperationContext,
-    selector: RallarMessageSelectorInput,
-    handler: DirectRallarMessageHandler,
-    loadFacade: DirectRallarFacadeLoader
+async function subscribeDirectRallarWs<TPayload>(
+    input: SubscribeDirectRallarWsInput<TPayload>
 ): Promise<DirectRallarOperationSuccess> {
-    const roomId = validateRoomId(context, 'WS subscribe');
-    if (typeof selector !== 'string' && typeof selector.topicId === 'string' && selector.topicId.trim()) {
-        validateRallarServerUserTopic(selector.topicId, 'WS subscribe');
+    const roomId = validateRoomId(input.context, 'WS subscribe');
+    if (
+        typeof input.selector !== 'string' &&
+        typeof input.selector.topicId === 'string' &&
+        input.selector.topicId.trim()
+    ) {
+        validateRallarServerUserTopic(input.selector.topicId, 'WS subscribe');
     }
-    const facade = await loadFacade();
-    configureDirectRallarFacade(facade, context);
-    const unsubscribe = facade.messages.ws.onMessage(selector, (message) => handler({ ...message }));
-    const startResult = await startDirectRallarFacade(facade, context);
+    const facade = await input.loadFacade();
+    configureDirectRallarFacade(facade, input.context);
+    const unsubscribe = facade.messages.ws.onMessage(
+        input.selector,
+        (message) => input.handler({ ...message })
+    );
+    const startResult = await startDirectRallarFacade(facade, input.context);
     const snapshot = await facade.rooms.join(roomId, {
-        timeoutMs: context.timeoutMs,
-        scope: directScope(context)
+        timeoutMs: input.context.timeoutMs,
+        scope: directScope(input.context)
     });
     return {
         value: {
             action: 'ws.subscribe',
-            selector,
+            selector: input.selector,
             groupId: groupIdFromSnapshot(snapshot) ?? roomId,
             displayName: groupDisplayNameFromSnapshot(snapshot),
             connected: startResult.connected,
@@ -576,9 +596,9 @@ async function subscribeDirectRallarWs(
     };
 }
 
-export async function runDirectRallarWsSend(
+export async function runDirectRallarWsSend<TPayload>(
     context: DirectRallarOperationContext,
-    input: DirectRallarWsSendInput,
+    input: DirectRallarWsSendInput<TPayload>,
     loadFacade: DirectRallarFacadeLoader = loadDirectRallarFacade
 ): Promise<DirectRallarOperationResult> {
     return await executeDirectRallarOperation({
@@ -597,9 +617,9 @@ export async function runDirectRallarWsSend(
     });
 }
 
-async function sendDirectRallarWs(
+async function sendDirectRallarWs<TPayload>(
     context: DirectRallarOperationContext,
-    input: DirectRallarWsSendInput,
+    input: DirectRallarWsSendInput<TPayload>,
     loadFacade: DirectRallarFacadeLoader
 ): Promise<DirectRallarOperationSuccess> {
     if (!input.typeId.trim()) {

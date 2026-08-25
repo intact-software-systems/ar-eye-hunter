@@ -29,15 +29,15 @@ registration, invocation, and cleanup without consulting a historical plan.
 
 ## Construction and registration timeline
 
-1. [createRallarFacade](./rallar.ts#L235) delegates to
+1. [createRallarFacade](./rallar.ts#L239) delegates to
    [createBrowserRallarFacade](./rallar-runtime/composition.ts#L43).
 2. [createBrowserRuntimeFoundation](./rallar-runtime/composition/browser-runtime-composition.ts#L68)
    creates the per-facade runtime ports and lifecycle coordinator.
 3. [createBrowserStateComposition](./rallar-runtime/composition/browser-runtime-composition.ts#L110)
-   creates [createRallarStateCacheReadPort](./rallar-runtime/state-store.ts#L76)
+   creates [createRallarStateCacheReadPort](./rallar-runtime/state-store.ts#L54)
    before constructing both the room-state store and aggregate state store from
    that completed cache-read/observation port.
-4. [createBrowserStateEventComposition](./rallar-runtime/composition/browser-runtime-composition.ts#L150)
+4. [createBrowserStateEventComposition](./rallar-runtime/composition/browser-runtime-composition.ts#L151)
    creates one [createRallarWsInbox](./rallar-runtime/ws-inbox.ts#L24)
    subscription capability from the completed connection runtime, then gives
    room events and people state events direct access to it.
@@ -80,11 +80,11 @@ than a callback to a future controller.
 
 ## State and event invocation timeline
 
-1. [RoomEvents.onEvent](./rooms/room-events.ts#L138) registers a room-event
+1. [RoomEvents.onEvent](./rooms/room-events.ts#L137) registers a room-event
    listener and registers the room-event owner with the completed WS inbox.
 2. [createRallarWsInbox](./rallar-runtime/ws-inbox.ts#L24) provides the WS inbox that receives
    messages, orders subscribed owners, and invokes the room-event handler.
-3. [RoomEvents.dispatch](./rooms/room-events.ts#L153) validates a group event,
+3. [RoomEvents.dispatch](./rooms/room-events.ts#L152) validates a group event,
    filters it by room and scope, deduplicates it, then notifies matching room
    listeners.
 4. [RallarStateEvents.onPeopleEvent](./rallar-runtime/state-events.ts#L161)

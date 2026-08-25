@@ -59,85 +59,68 @@ export interface RallarRoomState {
     readonly members: readonly RallarRoomMember[];
 }
 
-export type RallarRoomPresenceWaitOptions =
-    & RallarScopedOperationOptions
-    & Readonly<{
-        expect?: RallarReadinessExpectation;
-        timeoutMs?: number;
-        signal?: AbortSignal;
-    }>;
+export interface RallarRoomPresenceWaitOptions extends RallarScopedOperationOptions {
+    readonly expect?: RallarReadinessExpectation;
+    readonly timeoutMs?: number;
+    readonly signal?: AbortSignal;
+}
 
-export type RallarRoomPresenceWaitResult =
-    & RallarReadinessEvaluation
-    & Readonly<{
-        roomId: string;
-        roomRef?: GroupRef;
-        activeSessionIds: readonly string[];
-        timedOut: boolean;
-    }>;
+export interface RallarRoomPresenceWaitResult extends RallarReadinessEvaluation {
+    readonly roomId: string;
+    readonly roomRef?: GroupRef;
+    readonly activeSessionIds: readonly string[];
+    readonly timedOut: boolean;
+}
 
-export type RallarCreateRoomInput =
-    & RallarScopedOperationOptions
-    & Readonly<{
-        groupId?: string;
-        displayName: string;
-    }>
-    & Readonly<
-        Pick<
-            CreateStateGroupBody,
-            | 'description'
-            | 'joinMode'
-            | 'maxMembers'
-            | 'maxSessionsPerMember'
-            | 'metadata'
-            | 'expiresAtEpochMs'
-            | 'purgeAfterEpochMs'
-        >
-    >;
+export interface RallarCreateRoomInput extends
+    RallarScopedOperationOptions,
+    Pick<
+        CreateStateGroupBody,
+        | 'description'
+        | 'joinMode'
+        | 'maxMembers'
+        | 'maxSessionsPerMember'
+        | 'metadata'
+        | 'expiresAtEpochMs'
+        | 'purgeAfterEpochMs'
+    > {
+    readonly groupId?: string;
+    readonly displayName: string;
+}
 
-export type RallarRoomTargetInput =
-    & RallarScopedOperationOptions
-    & Readonly<{
-        roomId?: string;
-        roomRef?: GroupRef;
-    }>;
+export interface RallarRoomTargetInput extends RallarScopedOperationOptions {
+    readonly roomId?: string;
+    readonly roomRef?: GroupRef;
+}
 
-export type RallarUpdateRoomInput =
-    & RallarRoomTargetInput
-    & Readonly<
-        Pick<
-            UpdateStateGroupBody,
-            | 'slug'
-            | 'displayName'
-            | 'description'
-            | 'kind'
-            | 'joinMode'
-            | 'maxMembers'
-            | 'maxSessionsPerMember'
-            | 'metadata'
-            | 'expiresAtEpochMs'
-            | 'purgeAfterEpochMs'
-        >
-    >;
+export interface RallarUpdateRoomInput extends
+    RallarRoomTargetInput,
+    Pick<
+        UpdateStateGroupBody,
+        | 'slug'
+        | 'displayName'
+        | 'description'
+        | 'kind'
+        | 'joinMode'
+        | 'maxMembers'
+        | 'maxSessionsPerMember'
+        | 'metadata'
+        | 'expiresAtEpochMs'
+        | 'purgeAfterEpochMs'
+    > {}
 
-export type RallarRoomLifecycleOptions =
-    & RallarScopedOperationOptions
-    & Readonly<{
-        reason?: string;
-    }>;
+export interface RallarRoomLifecycleOptions extends RallarScopedOperationOptions {
+    readonly reason?: string;
+}
 
-export type RallarRoomInviteOptions =
-    & RallarScopedOperationOptions
-    & Readonly<{
-        invitationExpiresAtEpochMs?: number;
-        reason?: string;
-    }>;
+export interface RallarRoomInviteOptions extends RallarScopedOperationOptions {
+    readonly invitationExpiresAtEpochMs?: number;
+    readonly reason?: string;
+}
 
-export type RallarRoomGovernanceOptions =
-    & RallarScopedOperationOptions
-    & Readonly<{
-        reason?: string;
-    }>;
+export interface RallarRoomGovernanceOptions extends RallarScopedOperationOptions {
+    readonly reason?: string;
+}
 
 export interface RallarSetRoomMemberRoleInput {
     readonly room: string | GroupRef | RallarRoomTargetInput;
@@ -146,40 +129,32 @@ export interface RallarSetRoomMemberRoleInput {
     readonly options?: RallarRoomGovernanceOptions;
 }
 
-export type RallarJoinRoomOptions =
-    & RallarScopedOperationOptions
-    & Readonly<{
-        roomRef?: GroupRef;
-        leaveCurrent?: boolean;
-        inviteToken?: string;
-        joinCode?: string;
-    }>;
+export interface RallarJoinRoomOptions extends RallarScopedOperationOptions {
+    readonly roomRef?: GroupRef;
+    readonly leaveCurrent?: boolean;
+    readonly inviteToken?: string;
+    readonly joinCode?: string;
+}
 
-export type RallarJoinRoomInput =
-    & RallarJoinRoomOptions
-    & Readonly<{
-        roomId?: string;
-    }>;
+export interface RallarJoinRoomInput extends RallarJoinRoomOptions {
+    readonly roomId?: string;
+}
 
 export type RallarRoomSwitchOperation = 'join' | 'create-and-switch';
 
-export type RallarRoomSwitchPartialFailureError =
-    & Error
-    & Readonly<{
-        name: 'RallarRoomSwitchPartialFailureError';
-        operation: RallarRoomSwitchOperation;
-        joinedRoom: GroupSnapshot;
-        previousRoomRef: GroupRef;
-        leaveError: unknown;
-    }>;
+export interface RallarRoomSwitchPartialFailureError extends Error {
+    readonly name: 'RallarRoomSwitchPartialFailureError';
+    readonly operation: RallarRoomSwitchOperation;
+    readonly joinedRoom: GroupSnapshot;
+    readonly previousRoomRef: GroupRef;
+    readonly leaveError: unknown;
+}
 
-export type RallarLeaveRoomOptions =
-    & RallarScopedOperationOptions
-    & Readonly<{
-        roomId?: string;
-        roomRef?: GroupRef;
-        clearCurrent?: boolean;
-    }>;
+export interface RallarLeaveRoomOptions extends RallarScopedOperationOptions {
+    readonly roomId?: string;
+    readonly roomRef?: GroupRef;
+    readonly clearCurrent?: boolean;
+}
 
 export interface RallarRoomEventOptions {
     readonly scope?: StateScope;
@@ -188,28 +163,22 @@ export interface RallarRoomEventOptions {
     readonly eventTypes?: readonly GroupEventType[];
 }
 
-export type RallarListRoomEventsOptions =
-    & RallarScopedOperationOptions
-    & Readonly<{
-        roomId?: string;
-        roomRef?: GroupRef;
-        eventTypes?: readonly GroupEventType[];
-        limit?: number;
-        after?: StateEventCursor;
-    }>;
+export interface RallarListRoomEventsOptions extends RallarScopedOperationOptions {
+    readonly roomId?: string;
+    readonly roomRef?: GroupRef;
+    readonly eventTypes?: readonly GroupEventType[];
+    readonly limit?: number;
+    readonly after?: StateEventCursor;
+}
 
 export type RallarListRoomEventsInput = string | RallarListRoomEventsOptions;
 
-export type RallarReplayRoomEventsOptions =
-    & RallarListRoomEventsOptions
-    & Readonly<{
-        maxPages?: number;
-        listener?: RallarRoomEventListener;
-    }>;
+export interface RallarReplayRoomEventsOptions extends RallarListRoomEventsOptions {
+    readonly maxPages?: number;
+    readonly listener?: RallarStateEventListener<GroupEvent>;
+}
 
 export type RallarReplayRoomEventsInput = string | RallarReplayRoomEventsOptions;
-
-export type RallarRoomEventListener = RallarStateEventListener<GroupEvent>;
 
 export type RallarRoomSessionRealtimeInput = string | RallarRoomRealtimeJsonDefaults;
 

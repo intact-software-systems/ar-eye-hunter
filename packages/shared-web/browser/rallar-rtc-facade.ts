@@ -37,20 +37,16 @@ export interface RallarWaitForOpenOptions {
     readonly signal?: AbortSignal;
 }
 
-export type RallarRtcWaitForOpenOptions =
-    & RallarWaitForOpenOptions
-    & Readonly<{
-        laneId?: string;
-        connect?: boolean;
-    }>;
+export interface RallarRtcWaitForOpenOptions extends RallarWaitForOpenOptions {
+    readonly laneId?: string;
+    readonly connect?: boolean;
+}
 
-export type RallarRtcRoomLaneWaitOptions =
-    & RallarWaitForOpenOptions
-    & Readonly<{
-        connect?: boolean;
-        roomRef?: GroupRef;
-        expect?: RallarReadinessExpectation;
-    }>;
+export interface RallarRtcRoomLaneWaitOptions extends RallarWaitForOpenOptions {
+    readonly connect?: boolean;
+    readonly roomRef?: GroupRef;
+    readonly expect?: RallarReadinessExpectation;
+}
 
 export type RallarRtcRoomLaneWaitStatus =
     | 'open'
@@ -78,29 +74,29 @@ export interface RallarRoomTransportStatus {
     readonly roomRef?: GroupRef;
     readonly roomId?: string;
     readonly ws: RallarWsStatus;
-    readonly rtc: Readonly<{
-        desired: boolean;
-        mode: RallarRtcRoomMode;
-        state: RallarRoomTransportState;
-        desiredPeerIds: readonly string[];
-        knownPeerIds: readonly string[];
-        activePeerIds: readonly string[];
-        readyPeerIds: readonly string[];
-        failedPeerIds: readonly string[];
-        laneId: string;
-        lastChangedAtEpochMs?: number;
-        reason?: string;
-    }>;
+    readonly rtc: RallarRtcRoomTransportStatus;
 }
 
-export type RallarRtcRoomTransportOptions =
-    & RallarWaitForOpenOptions
-    & Readonly<{
-        laneId?: string;
-        mode?: RallarRtcRoomMode;
-        minReadyPeers?: number;
-        connect?: boolean;
-    }>;
+export interface RallarRtcRoomTransportStatus {
+    readonly desired: boolean;
+    readonly mode: RallarRtcRoomMode;
+    readonly state: RallarRoomTransportState;
+    readonly desiredPeerIds: readonly string[];
+    readonly knownPeerIds: readonly string[];
+    readonly activePeerIds: readonly string[];
+    readonly readyPeerIds: readonly string[];
+    readonly failedPeerIds: readonly string[];
+    readonly laneId: string;
+    readonly lastChangedAtEpochMs?: number;
+    readonly reason?: string;
+}
+
+export interface RallarRtcRoomTransportOptions extends RallarWaitForOpenOptions {
+    readonly laneId?: string;
+    readonly mode?: RallarRtcRoomMode;
+    readonly minReadyPeers?: number;
+    readonly connect?: boolean;
+}
 
 export interface RallarRtcStatusOptions {
     readonly laneId?: string;
@@ -155,11 +151,9 @@ export interface RallarRtcRecoveryResult {
     readonly reason?: string;
 }
 
-export type RallarRtcReconnectOptions =
-    & RallarWaitForOpenOptions
-    & Readonly<{
-        laneId?: string;
-    }>;
+export interface RallarRtcReconnectOptions extends RallarWaitForOpenOptions {
+    readonly laneId?: string;
+}
 
 export interface RallarRtcWaitForOpenResult {
     readonly transport: 'rtc';

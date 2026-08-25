@@ -21,13 +21,11 @@ export interface RallarCallDataInput {
     readonly openTimeoutMs?: number;
 }
 
-export type RallarCallStartInput =
-    & RallarTargetSelector
-    & Readonly<{
-        callId?: string;
-        media?: RallarCallMediaInput;
-        data?: RallarCallDataInput;
-    }>;
+export interface RallarCallStartInput extends RallarTargetSelector {
+    readonly callId?: string;
+    readonly media?: RallarCallMediaInput;
+    readonly data?: RallarCallDataInput;
+}
 
 export type RallarCallParticipantState =
     | 'idle'
@@ -62,12 +60,14 @@ export interface RallarCallStatus {
     readonly participants: readonly RallarCallParticipantStatus[];
     readonly startedAtEpochMs: number;
     readonly endedAtEpochMs?: number;
-    readonly media: Readonly<{
-        localStreamId?: string;
-        audioEnabled?: boolean;
-        videoEnabled?: boolean;
-        sources: readonly RallarMediaSourceStatus[];
-    }>;
+    readonly media: RallarCallMediaStatus;
+}
+
+export interface RallarCallMediaStatus {
+    readonly localStreamId?: string;
+    readonly audioEnabled?: boolean;
+    readonly videoEnabled?: boolean;
+    readonly sources: readonly RallarMediaSourceStatus[];
 }
 
 export interface RallarCallEndOptions {
@@ -88,24 +88,26 @@ export interface RallarCallSignalPayload {
     readonly toPeerIds: readonly string[];
     readonly roomRef?: GroupRef;
     readonly membership?: RallarTargetMembership;
-    readonly data?: Readonly<{
-        laneIds: readonly string[];
-    }>;
-    readonly media?: Readonly<{
-        audio?: boolean;
-        video?: boolean;
-        screen?: boolean;
-    }>;
+    readonly data?: RallarCallSignalData;
+    readonly media?: RallarCallSignalMedia;
     readonly message?: string;
     readonly reason?: string;
     readonly occurredAtEpochMs: number;
 }
 
-export type RallarCallInviteInput =
-    & RallarCallStartInput
-    & Readonly<{
-        message?: string;
-    }>;
+export interface RallarCallSignalData {
+    readonly laneIds: readonly string[];
+}
+
+export interface RallarCallSignalMedia {
+    readonly audio?: boolean;
+    readonly video?: boolean;
+    readonly screen?: boolean;
+}
+
+export interface RallarCallInviteInput extends RallarCallStartInput {
+    readonly message?: string;
+}
 
 export interface RallarCallSignalSend {
     readonly peerId: string;
@@ -126,26 +128,18 @@ export interface RallarCallSignalEvent {
     readonly roomRef?: GroupRef;
     readonly membership?: RallarTargetMembership;
     readonly dataLaneIds: readonly string[];
-    readonly media: Readonly<{
-        audio?: boolean;
-        video?: boolean;
-        screen?: boolean;
-    }>;
+    readonly media: RallarCallSignalMedia;
     readonly message?: string;
     readonly reason?: string;
     readonly payload: RallarCallSignalPayload;
     readonly raw: RallarMessage<RallarCallSignalPayload>;
 }
 
-export type RallarIncomingCallInvite =
-    & RallarCallSignalEvent
-    & Readonly<{
-        kind: 'invite';
-        accept(
-            input?: Partial<RallarCallStartInput>
-        ): Promise<RallarCallHandle>;
-        decline(reason?: string): Promise<readonly RallarCallSignalSend[]>;
-    }>;
+export interface RallarIncomingCallInvite extends RallarCallSignalEvent {
+    readonly kind: 'invite';
+    accept(input?: Partial<RallarCallStartInput>): Promise<RallarCallHandle>;
+    decline(reason?: string): Promise<readonly RallarCallSignalSend[]>;
+}
 
 export type RallarCallSignalListener = (
     event: RallarCallSignalEvent

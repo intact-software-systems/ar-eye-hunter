@@ -6,6 +6,11 @@ import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 
 import { createGroupSnapshotFixture } from '../authoritative-group-fixtures.ts';
 
+interface RoomSnapshotScopeFixture {
+    readonly applicationId?: string;
+    readonly workspaceId?: string;
+}
+
 const roomWorkflowMocks = await vi.hoisted(async () => {
     const { createApiMiddlewareTestDouble } = await import('../api-middleware-test-double.ts');
     const ctx = createApiMiddlewareTestDouble();
@@ -121,9 +126,19 @@ export function resetRoomWorkflowTestRuntime(): void {
     roomWorkflowMocks.operationLog.length = 0;
     roomWorkflowMocks.groupSnapshots.length = 0;
     roomWorkflowMocks.cacheListeners.clear();
+    resetRoomWorkflowLifecycleMocks();
+    resetRoomWorkflowEntryMocks();
+    resetRoomWorkflowMutationMocks();
+    resetRoomWorkflowCacheMocks();
+}
+
+function resetRoomWorkflowLifecycleMocks(): void {
     roomWorkflowMocks.readSession.mockReturnValue(roomWorkflowMocks.session);
     roomWorkflowMocks.initMiddleware.mockResolvedValue(roomWorkflowMocks.ctx);
     roomWorkflowMocks.isMiddlewareReady.mockReturnValue(false);
+}
+
+function resetRoomWorkflowEntryMocks(): void {
     roomWorkflowMocks.createAndJoinStateGroup.mockImplementation(async (displayName) => {
         roomWorkflowMocks.operationLog.push(`create:${String(displayName)}`);
         throw new Error('create not mocked');
@@ -136,6 +151,9 @@ export function resetRoomWorkflowTestRuntime(): void {
         roomWorkflowMocks.operationLog.push(`leave:${String(roomId)}`);
         throw new Error('leave not mocked');
     });
+}
+
+function resetRoomWorkflowMutationMocks(): void {
     roomWorkflowMocks.updateStateGroupDetails.mockImplementation(async () => {
         throw new Error('update not mocked');
     });
@@ -169,6 +187,9 @@ export function resetRoomWorkflowTestRuntime(): void {
     roomWorkflowMocks.transferStateGroupOwnership.mockImplementation(async () => {
         throw new Error('transfer ownership not mocked');
     });
+}
+
+function resetRoomWorkflowCacheMocks(): void {
     roomWorkflowMocks.hydrateStateCaches.mockImplementation(
         async (_manager, _client, _clients, groups: readonly GroupSnapshot[]) => {
             roomWorkflowMocks.operationLog.push(
@@ -189,7 +210,7 @@ export function resetRoomWorkflowTestRuntime(): void {
 export function createRoomSnapshot(
     groupId: string,
     sessionIds: readonly string[],
-    scope: Readonly<{ applicationId?: string; workspaceId?: string; }> = {}
+    scope: RoomSnapshotScopeFixture = {}
 ): GroupSnapshot {
     return createGroupSnapshotFixture({
         applicationId: scope.applicationId ?? 'app-1',

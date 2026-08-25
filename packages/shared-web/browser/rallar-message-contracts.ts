@@ -9,7 +9,9 @@ export type RallarTypedMessageSendStrategy = 'ws' | 'rtc' | 'realtime' | 'ws-the
 
 export type RallarMessageTransport = 'rtc' | 'ws' | 'replay';
 
-export interface RallarMessage<T = unknown> {
+export type RallarMessagePayload = object | string | number | boolean | null;
+
+export interface RallarMessage<T = never> {
     readonly transport: RallarMessageTransport;
     readonly typeId: string;
     readonly topicId: string;
@@ -22,7 +24,7 @@ export interface RallarMessage<T = unknown> {
     readonly receivedAtEpochMs: number;
 }
 
-export type RallarMessageHandler<T = unknown> = (
+export type RallarMessageHandler<T = never> = (
     message: RallarMessage<T>
 ) => void | Promise<void>;
 
@@ -44,29 +46,25 @@ export interface RallarMessageSendBase<T> {
     readonly ownership?: 'shared' | 'exclusive';
 }
 
-export type RallarRtcSendInput<T> =
-    & RallarMessageSendBase<T>
-    & Readonly<{
-        roomId?: string;
-        roomRef?: GroupRef;
-        membershipEpoch?: number;
-        minSnapshotVersion?: number;
-        seq?: number;
-        orderingKey?: string;
-        nextHopPeerIds?: readonly string[];
-        overlayId?: string;
-        fanoutLimit?: number;
-    }>;
+export interface RallarRtcSendInput<T> extends RallarMessageSendBase<T> {
+    readonly roomId?: string;
+    readonly roomRef?: GroupRef;
+    readonly membershipEpoch?: number;
+    readonly minSnapshotVersion?: number;
+    readonly seq?: number;
+    readonly orderingKey?: string;
+    readonly nextHopPeerIds?: readonly string[];
+    readonly overlayId?: string;
+    readonly fanoutLimit?: number;
+}
 
-export type RallarWsSendInput<T> =
-    & RallarMessageSendBase<T>
-    & Readonly<{
-        scope?: 'room' | 'world' | 'all';
-        roomId?: string;
-        roomRef?: GroupRef;
-        minSnapshotVersion?: number;
-        exceptPeerIds?: readonly string[];
-    }>;
+export interface RallarWsSendInput<T> extends RallarMessageSendBase<T> {
+    readonly scope?: 'room' | 'world' | 'all';
+    readonly roomId?: string;
+    readonly roomRef?: GroupRef;
+    readonly minSnapshotVersion?: number;
+    readonly exceptPeerIds?: readonly string[];
+}
 
 export interface RallarMessageSendResult {
     readonly transport: RallarMessageTransport;
@@ -79,7 +77,7 @@ export interface RallarMessageSendResult {
 
 export interface RallarMessageLane<TSendInput, TSelector = string> {
     send<T>(input: TSendInput & RallarMessageSendBase<T>): Promise<RallarMessageSendResult>;
-    onMessage<T = unknown>(selector: TSelector, handler: RallarMessageHandler<T>): RallarUnsubscribe;
+    onMessage<T = never>(selector: TSelector, handler: RallarMessageHandler<T>): RallarUnsubscribe;
 }
 
 export interface RallarTypedMessageChannelDefinition {
@@ -96,12 +94,10 @@ export type RallarTypedRtcSendOptions<T> = Omit<RallarRtcSendInput<T>, 'topicId'
 
 export type RallarTypedWsSendOptions<T> = Omit<RallarWsSendInput<T>, 'topicId' | 'typeId' | 'payload'>;
 
-export type RallarTypedMessageSendOptions<T> =
-    & Partial<RallarTypedRtcSendOptions<T>>
-    & Partial<RallarTypedWsSendOptions<T>>
-    & Readonly<{
-        strategy?: RallarTypedMessageSendStrategy;
-    }>;
+export interface RallarTypedMessageSendOptions<T>
+    extends Partial<RallarTypedRtcSendOptions<T>>, Partial<RallarTypedWsSendOptions<T>> {
+    readonly strategy?: RallarTypedMessageSendStrategy;
+}
 
 export interface RallarTypedMessageChannel<T> {
     send(payload: T, options?: RallarTypedMessageSendOptions<T>): Promise<RallarMessageSendResult>;
@@ -111,9 +107,7 @@ export interface RallarTypedMessageChannel<T> {
     onWs(handler: RallarTypedPayloadHandler<T>): RallarUnsubscribe;
 }
 
-export type RallarRoomMessageChannelDefinition =
-    & RallarTypedMessageChannelDefinition
-    & Readonly<{
-        roomId?: string;
-        roomRef?: GroupRef;
-    }>;
+export interface RallarRoomMessageChannelDefinition extends RallarTypedMessageChannelDefinition {
+    readonly roomId?: string;
+    readonly roomRef?: GroupRef;
+}

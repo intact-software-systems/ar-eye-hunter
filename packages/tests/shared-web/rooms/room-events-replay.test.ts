@@ -20,8 +20,11 @@ describe('room event replay', () => {
         const facade = createRallarFacade();
         const liveListener = vi.fn();
         const replayListener = vi.fn();
-        const live = createRoomEvent('room-1', 'event-1', 'member-joined');
-        const replayed = createRoomEvent('room-1', 'event-2', 'member-left', {
+        const live = createRoomEvent({ groupId: 'room-1', eventId: 'event-1', eventType: 'member-joined' });
+        const replayed = createRoomEvent({
+            groupId: 'room-1',
+            eventId: 'event-2',
+            eventType: 'member-left',
             snapshotVersion: 2,
             occurredAtEpochMs: 2
         });
@@ -89,8 +92,11 @@ describe('room event replay', () => {
         const mocks = readRoomEventMocks();
         const facade = createRallarFacade();
         const listener = vi.fn();
-        const first = createRoomEvent('room-1', 'event-1', 'member-joined');
-        const second = createRoomEvent('room-1', 'event-2', 'member-left', {
+        const first = createRoomEvent({ groupId: 'room-1', eventId: 'event-1', eventType: 'member-joined' });
+        const second = createRoomEvent({
+            groupId: 'room-1',
+            eventId: 'event-2',
+            eventType: 'member-left',
             snapshotVersion: 2,
             occurredAtEpochMs: 2
         });
@@ -150,7 +156,7 @@ describe('room event replay', () => {
         const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
         const mocks = readRoomEventMocks();
         const facade = createRallarFacade();
-        const event = createRoomEvent('room-1', 'event-1', 'member-joined');
+        const event = createRoomEvent({ groupId: 'room-1', eventId: 'event-1', eventType: 'member-joined' });
         facade.setDefaults({ applicationId: 'app-1', workspaceId: 'workspace-1' });
         facade.rooms.onEvent(vi.fn(), { roomId: 'room-1' });
         mocks.listStateGroupEventPage.mockResolvedValue(createRoomEventPage([event], true));

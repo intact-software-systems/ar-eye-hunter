@@ -1,11 +1,19 @@
 import { existsSync, readFileSync } from 'node:fs';
-import { describe, expect, it } from 'vitest';
+import { expect, it } from 'vitest';
 import { appTabsForMode } from '../../../apps/rallar-black-box/src/app-tabs.ts';
 
 const appSourcePath = new URL('../../../apps/rallar-black-box/src/App.tsx', import.meta.url);
 const styleSourcePath = new URL('../../../apps/rallar-black-box/src/styles.css', import.meta.url);
-const legacyExperienceSourcePath = new URL(
-    '../../../apps/rallar-black-box/src/legacy/shell/LegacyExperience.tsx',
+const canonicalWebSocketPanelSourcePath = new URL(
+    '../../../apps/rallar-black-box/src/diagnostics/websocket/websocket-command-center-panel.tsx',
+    import.meta.url
+);
+const legacyWebSocketPanelSourcePath = new URL(
+    '../../../apps/rallar-black-box/src/legacy/diagnostics/websocket/WebSocketCommandCenterPanel.tsx',
+    import.meta.url
+);
+const workbenchExperienceSourcePath = new URL(
+    '../../../apps/rallar-black-box/src/workbench/workbench-experience.tsx',
     import.meta.url
 );
 const legacyRunHeaderSourcePath = new URL(
@@ -81,15 +89,15 @@ const topologyGraphPanelSourcePath = new URL(
     import.meta.url
 );
 const quickControllerSourcePath = new URL(
-    '../../../apps/rallar-black-box/src/legacy/diagnostics/quick-test/use-quick-rallar-test-controller.ts',
+    '../../../apps/rallar-black-box/src/diagnostics/quick-test/use-quick-rallar-test-controller.ts',
     import.meta.url
 );
 const quickPanelSourcePath = new URL(
-    '../../../apps/rallar-black-box/src/legacy/diagnostics/quick-test/QuickRallarTestPanel.tsx',
+    '../../../apps/rallar-black-box/src/diagnostics/quick-test/quick-rallar-test-panel.tsx',
     import.meta.url
 );
 const quickViewSourcePath = new URL(
-    '../../../apps/rallar-black-box/src/legacy/diagnostics/quick-test/QuickRallarTestView.tsx',
+    '../../../apps/rallar-black-box/src/diagnostics/quick-test/quick-rallar-test-view.tsx',
     import.meta.url
 );
 const rtcRealtimeViewSourcePath = new URL(
@@ -106,22 +114,28 @@ const rtcRealtimePanelSourcePath = new URL(
 );
 const webSocketSupportSourcePaths = [
     '../../../apps/rallar-black-box/src/legacy/diagnostics/shared/auth-command-center-ticket.ts',
-    '../../../apps/rallar-black-box/src/legacy/diagnostics/websocket/websocket-contracts.ts',
-    '../../../apps/rallar-black-box/src/legacy/diagnostics/websocket/websocket-presets.ts',
-    '../../../apps/rallar-black-box/src/legacy/diagnostics/websocket/websocket-routing.ts',
-    '../../../apps/rallar-black-box/src/legacy/diagnostics/websocket/websocket-recipes.ts',
-    '../../../apps/rallar-black-box/src/legacy/diagnostics/websocket/websocket-diagnostics.ts'
+    '../../../apps/rallar-black-box/src/diagnostics/websocket/websocket-contracts.ts',
+    '../../../apps/rallar-black-box/src/diagnostics/websocket/websocket-presets.ts',
+    '../../../apps/rallar-black-box/src/diagnostics/websocket/websocket-routing.ts',
+    '../../../apps/rallar-black-box/src/diagnostics/websocket/websocket-url-routing.ts',
+    '../../../apps/rallar-black-box/src/diagnostics/websocket/evidence/websocket-recipes.ts',
+    '../../../apps/rallar-black-box/src/diagnostics/websocket/state/derive-web-socket-diagnostics.ts',
+    '../../../apps/rallar-black-box/src/diagnostics/websocket/use-rallar-websocket-actions.ts',
+    '../../../apps/rallar-black-box/src/diagnostics/websocket/raw/use-raw-websocket-actions.ts',
+    '../../../apps/rallar-black-box/src/diagnostics/websocket/ticket/use-websocket-ticket-wait-actions.ts',
+    '../../../apps/rallar-black-box/src/diagnostics/websocket/evidence/use-websocket-evidence-actions.ts',
+    '../../../apps/rallar-black-box/src/diagnostics/websocket/view/websocket-status-section.tsx'
 ].map((path) => new URL(path, import.meta.url));
 const webSocketViewSourcePath = new URL(
-    '../../../apps/rallar-black-box/src/legacy/diagnostics/websocket/WebSocketCommandCenterView.tsx',
+    '../../../apps/rallar-black-box/src/diagnostics/websocket/view/websocket-command-center-view.tsx',
     import.meta.url
 );
 const webSocketControllerSourcePath = new URL(
-    '../../../apps/rallar-black-box/src/legacy/diagnostics/websocket/use-websocket-command-center-controller.ts',
+    '../../../apps/rallar-black-box/src/diagnostics/websocket/use-websocket-command-center-controller.ts',
     import.meta.url
 );
 const webSocketPanelSourcePath = new URL(
-    '../../../apps/rallar-black-box/src/legacy/diagnostics/websocket/WebSocketCommandCenterPanel.tsx',
+    '../../../apps/rallar-black-box/src/diagnostics/websocket/websocket-command-center-panel.tsx',
     import.meta.url
 );
 const mediaConsolePanelSourcePath = new URL(
@@ -206,12 +220,14 @@ function sourceBetween(source: string, startMarker: string, endMarker: string): 
     return source.slice(startIndex, endIndex);
 }
 
-function diagnosticOwnerSources(source: string): Readonly<{
-    rtcController: string;
-    rtcPanel: string;
-    topologyPanel: string;
-    quickPanel: string;
-}> {
+interface DiagnosticOwnerSources {
+    readonly rtcController: string;
+    readonly rtcPanel: string;
+    readonly topologyPanel: string;
+    readonly quickPanel: string;
+}
+
+function diagnosticOwnerSources(source: string): DiagnosticOwnerSources {
     const rtcFallback = existsSync(rtcDiagnosticsControllerSourcePath) &&
             existsSync(rtcDiagnosticsPanelSourcePath)
         ? ''
@@ -389,273 +405,292 @@ function crdtOwnerSource(source: string): string {
     ].join('\n');
 }
 
-describe('rallar-black-box Rallar mode boundary', () => {
-    it('does not expose black-box-runner command tabs in Rallar mode', () => {
-        expect(appTabsForMode('rallar').map((tab) => tab.id)).not.toEqual(
-            expect.arrayContaining([
-                'manual-rallar',
-                'local-workbench',
-                'flow-builder',
-                'run-manager',
-                'shared-test'
-            ])
-        );
-    });
-
-    it('keeps runner sample controls and bootstrap behind black-box-runner mode', () => {
-        const source = appSource();
-        const legacyExperience = readFileSync(legacyExperienceSourcePath, 'utf8');
-        const header = existsSync(legacyRunHeaderSourcePath)
-            ? readFileSync(legacyRunHeaderSourcePath, 'utf8')
-            : sourceBetween(source, 'function Header', 'function AppTabs');
-
-        expect(header).toContain('mode === \'black-box-runner\'');
-        expect(header).toContain('rallarBlackBoxRuntimeStore.runSample()');
-        expect(legacyExperience).toContain(
-            'if (canBootstrap && navigation.activeMode === \'black-box-runner\')'
-        );
-        expect(legacyExperience).toContain(
-            '}, [canBootstrap, navigation.activeMode]);'
-        );
-        expect(legacyExperience).toContain('bootstrapMatchesAuthSession');
-    });
-
-    it('does not reset the browser-rallar runtime when runner mode is first opened', () => {
-        const legacyExperience = readFileSync(legacyExperienceSourcePath, 'utf8');
-        const runtimeBootstrap = readFileSync(
-            new URL('../../../apps/rallar-black-box/src/runtime-store.ts', import.meta.url),
-            'utf8'
-        );
-        const configureLocalWorkbenchOnly = sourceBetween(
-            runtimeBootstrap,
-            'async configureLocalWorkbenchOnly(): Promise<void>',
-            'async bootstrapControlAgent(): Promise<void>'
-        );
-
-        expect(configureLocalWorkbenchOnly).toContain('await this.configureRuntime(runNumber)');
-        expect(configureLocalWorkbenchOnly).not.toContain('resetForRun');
-        expect(legacyExperience).toContain(
-            'if (canBootstrap && navigation.activeMode === \'black-box-runner\')'
-        );
-        expect(legacyExperience).toContain(
-            '}, [canBootstrap, navigation.activeMode]);'
-        );
-    });
-
-    it('does not execute black-box runtime commands from direct Rallar panels', () => {
-        const source = appSource();
-        const diagnostics = diagnosticOwnerSources(source);
-        const directPanels = [
-            diagnostics.quickPanel,
-            diagnostics.rtcController,
-            diagnostics.rtcPanel,
-            diagnostics.topologyPanel,
-            webSocketCommandCenterOwnerSource(source),
-            rtcRealtimeOwnerSource(source),
-            rallarDataOwnerSource(source),
-            mediaConsoleOwnerSource(source),
-            authCommandCenterOwnerSource(source),
-            roomsClientsOwnerSource(source),
-            rallarServerOwnerSource(source),
-            crdtOwnerSource(source)
-        ].join('\n');
-
-        expect(directPanels).not.toMatch(/executeManualCommand|executeManualCommands|executeCommandFromJson/);
-        expect(directPanels).not.toMatch(/loadRecipeFromJson|runLoadedRecipe|runSample/);
-        expect(directPanels).not.toContain('__blackBoxRallar');
-        expect(directPanels).not.toContain('__blackBoxRallarEmit');
-        expect(directPanels).not.toContain('browser-rallar-runtime');
-        expect(directPanels).not.toContain('createSpaBrowserRallarRuntime');
-    });
-
-    it('uses the shared browser Rallar facade for direct WebSocket and RTC actions', () => {
-        const source = appSource();
-        const diagnostics = diagnosticOwnerSources(source);
-        const websocketPanel = webSocketCommandCenterOwnerSource(source);
-
-        expect(websocketPanel).toContain('runDirectRallarWsSend');
-        expect(websocketPanel).toContain('runDirectRallarWsSubscribe');
-        expect(websocketPanel).toContain('loadBrowserRallarFacade');
-        expect(diagnostics.rtcController).toContain('loadBrowserRallarFacade');
-        expect(diagnostics.rtcController).toContain('facade.start');
-    });
-
-    it('keeps RTC sends on the direct facade fast path after the room is joined', () => {
-        const source = appSource();
-        const rtcRealtimePanel = rtcRealtimeOwnerSource(source);
-
-        expect(rtcRealtimePanel).toContain('\'rallar.direct.rtc_realtime.phase\'');
-        expect(rtcRealtimePanel).toContain('isFacadeJoinedToActiveGroup');
-        expect(rtcRealtimePanel).toContain('status: \'skipped\'');
-        expect(rtcRealtimePanel).toMatch(
-            /useState<\s*'best-effort' \| 'at-least-once'\s*>\('best-effort'\)/
-        );
-    });
-
-    it('surfaces action feedback and live subscription state in direct command panels', () => {
-        const source = appSource();
-        const diagnostics = diagnosticOwnerSources(source);
-        const actionFeedbackPanelFallback = existsSync(
-                actionFeedbackPanelSourcePath
-            )
-            ? ''
-            : sourceBetween(
-                source,
-                'function CommandCenterActionFeedbackPanel',
-                'function RallarServerRequestFeedbackPanel'
-            );
-        const actionFeedbackPanel = sourceOrFallback(
-            actionFeedbackPanelSourcePath,
-            actionFeedbackPanelFallback
-        );
-        const roomsClientsPanel = roomsClientsOwnerSource(source);
-        const websocketPanel = webSocketCommandCenterOwnerSource(source);
-        const rtcRealtimePanel = rtcRealtimeOwnerSource(source);
-
-        expect(actionFeedbackPanel).toContain('feedback.state');
-        expect(actionFeedbackPanel).toContain('aria-live="polite"');
-        expect(roomsClientsPanel).toContain('CommandCenterActionFeedbackPanel');
-        expect(websocketPanel).toContain('CommandCenterActionFeedbackPanel');
-        expect(websocketPanel).toContain('WS subscribed');
-        expect(rtcRealtimePanel).toContain('CommandCenterActionFeedbackPanel');
-        expect(rtcRealtimePanel).toContain('Realtime sub');
-        expect(rtcRealtimePanel).toContain('RTC message sub');
-        expect(diagnostics.rtcPanel).toContain('RtcDiagnosticsTimeseriesPanel');
-    });
-
-    it('keeps runner analysis evidence before setup controls and adds RTC performance surfaces', () => {
-        const source = appSource();
-        const diagnostics = diagnosticOwnerSources(source);
-        const styles = styleSource();
-        const recipesControllerFallback = existsSync(
-                runnerRecipesControllerSourcePath
-            )
-            ? ''
-            : sourceBetween(
-                source,
-                'function RunnerRecipesPanel',
-                'function RunnerRunsPanel'
-            );
-        const recipesController = sourceOrFallback(
-            runnerRecipesControllerSourcePath,
-            recipesControllerFallback
-        );
-        const recipesPanel = [
-            sourceOrFallback(runnerAgentActionsSourcePath, recipesControllerFallback),
-            recipesController,
-            sourceOrFallback(runnerRecipesPanelSourcePath, recipesControllerFallback),
-            ...runnerRecipeViewSourcePaths.map((path) => sourceOrFallback(path, recipesControllerFallback))
-        ].join('\n');
-        const runsControllerFallback = existsSync(runnerRunsControllerSourcePath)
-            ? ''
-            : sourceBetween(
-                source,
-                'function RunnerRunsPanel',
-                'function RunnerFleetPanel'
-            );
-        const runsController = sourceOrFallback(
-            runnerRunsControllerSourcePath,
-            runsControllerFallback
-        );
-        const runsPanel = sourceOrFallback(
-            runnerRunsPanelSourcePath,
-            runsControllerFallback
-        );
-        const runsDistributedView = sourceOrFallback(
-            runnerDistributedAnalysisSourcePath,
-            runsPanel
-        );
-        const fleetControllerFallback = existsSync(runnerFleetControllerSourcePath)
-            ? ''
-            : sourceBetween(
-                source,
-                'function RunnerFleetPanel',
-                'function RtcDiagnosticsPanel'
-            );
-        const fleetController = sourceOrFallback(
-            runnerFleetControllerSourcePath,
-            fleetControllerFallback
-        );
-        const fleetViewsFallback = fleetControllerFallback;
-        const fleetViews = [
-            sourceOrFallback(runnerFleetControlsSourcePath, fleetViewsFallback),
-            sourceOrFallback(runnerFleetOverviewSourcePath, fleetViewsFallback),
-            sourceOrFallback(runnerFleetAnalysisSourcePath, fleetViewsFallback),
-            sourceOrFallback(runnerFleetDetailsSourcePath, fleetViewsFallback),
-            sourceOrFallback(runnerFleetTimingSourcePath, fleetViewsFallback)
-        ].join('\n');
-        const rtcDiagnosticsPanel = diagnostics.rtcPanel;
-
-        expect(runsPanel).toContain('RunVerdictPanel');
-        expect(runsPanel).toContain('CausalTrailPanel');
-        expect(runsPanel).toContain('RtcPerformancePanel');
-        expect(runsDistributedView).toContain('title="Run Participants"');
-        expect(runsController).toContain(
-            'monitorAgentProgress: selectedMonitor?.agentProgress'
-        );
-        expect(runsController).toContain('distributedRunSeed');
-        expect(runsDistributedView).toContain('DISTRIBUTED_RUN_SEEDS');
-        expect(runsDistributedView).toContain('Synthetic seed');
-        expect(runsDistributedView).toContain('Synthetic evidence');
-        expect(runsDistributedView).toContain('Clear seed');
-        expect(fleetViews).toContain('Live Fleet');
-        expect(fleetViews).toContain('title="Live Fleet Agents"');
-        expect(fleetController).toContain('fetchControlServerSnapshot');
-        expect(recipesPanel).toContain('resolveBlackBoxControlToken');
-        expect(recipesPanel).toContain('brokeredControlToken');
-        expect(recipesPanel).toContain('Session control token valid until');
-        expect(recipesPanel).toContain('Session control token will be requested when needed.');
-        expect(recipesPanel).toContain('title="Targetable Agents"');
-        expect(recipesPanel).toContain('showConnectedAgents={false}');
-        expect(recipesPanel).toContain('const distributedControlToken');
-        expect(recipesPanel).toContain('token: distributedControlToken');
-        expect(recipesPanel).toContain('controlToken,');
-        expect(recipesPanel).not.toContain('const agentLaunchUrls =');
-        expect(recipesPanel).not.toContain('createRunnerAgentLaunchUrl({');
-        expect(recipesPanel).toContain('createBrowserAgentLaunchService');
-        expect(recipesPanel).toContain('reserveBrowserAgentPopups(agentIds)');
-        expect(runsPanel.indexOf('RunVerdictPanel')).toBeLessThan(
-            runsPanel.indexOf(
-                existsSync(runnerDistributedAnalysisSourcePath)
-                    ? '<RunnerDistributedAnalysisSection'
-                    : 'runner-distributed-analysis'
-            )
-        );
-        expect(runsDistributedView.indexOf('Synthetic seed')).toBeLessThan(
-            runsDistributedView.indexOf('title="Run Participants"')
-        );
-        expect(runsController).toContain('selectedMonitor');
-        expect(runsController).toContain(
-            'distributedMonitor: selectedMonitor'
-        );
-        expect(recipesPanel.indexOf('runner-quick-launch-strip')).toBeLessThan(
-            recipesPanel.indexOf('<RunnerReadinessPanel')
-        );
-        expect(recipesPanel.indexOf('<RunnerReadinessPanel')).toBeLessThan(
-            recipesPanel.indexOf('title="Targetable Agents"')
-        );
-        expect(recipesPanel.indexOf('title="Targetable Agents"')).toBeLessThan(
-            recipesPanel.indexOf('<RunnerAgentSetupPanel')
-        );
-        expect(rtcDiagnosticsPanel).toContain('RtcPerformancePanel');
-        expect(rtcDiagnosticsPanel.indexOf('<RtcPerformancePanel')).toBeLessThan(
-            rtcDiagnosticsPanel.indexOf('<RtcDiagnosticsTimeseriesPanel')
-        );
-        expect(rtcDiagnosticsPanel.indexOf('<RtcPerformancePanel')).toBeLessThan(
-            rtcDiagnosticsPanel.indexOf('rtc-stage-list')
-        );
-        expect(styles).toContain('.run-verdict-band');
-        expect(styles).toContain('.causal-trail-panel');
-        expect(styles).toContain('.rtc-performance-panel');
-        expect(styles).toContain('.runner-evidence-first');
-        expect(styles).toContain('.control-agent-board-panel');
-        expect(styles).toContain('.control-agent-board-row');
-        expect(styles).toContain('.fleet-live-panel');
-        expect(styles).toContain('.app-shell.mode-black-box-runner .app-mode-switch');
-        expect(styles).toContain('.app-shell.mode-black-box-runner .app-mode-copy p');
-        expect(styles).toContain('.causal-trail-actions');
-        expect(styles).toContain('.rtc-performance-legend');
-        expect(styles).toContain('.synthetic-seed-control');
-        expect(styles).toContain('.synthetic-seed-notice');
-    });
+it('owns active WebSocket diagnostics outside the legacy tree', () => {
+    expect(existsSync(canonicalWebSocketPanelSourcePath)).toBe(true);
+    expect(existsSync(legacyWebSocketPanelSourcePath)).toBe(false);
 });
+
+it('does not expose black-box-runner command tabs in Rallar mode', () => {
+    expect(appTabsForMode('rallar').map((tab) => tab.id)).not.toEqual(
+        expect.arrayContaining([
+            'manual-rallar',
+            'local-workbench',
+            'flow-builder',
+            'run-manager',
+            'shared-test'
+        ])
+    );
+});
+
+it('keeps runner sample controls and bootstrap behind black-box-runner mode', () => {
+    const source = appSource();
+    const workbenchExperience = readFileSync(workbenchExperienceSourcePath, 'utf8');
+    const header = existsSync(legacyRunHeaderSourcePath)
+        ? readFileSync(legacyRunHeaderSourcePath, 'utf8')
+        : sourceBetween(source, 'function Header', 'function AppTabs');
+
+    expect(header).toContain('mode === \'black-box-runner\'');
+    expect(header).toContain('rallarBlackBoxRuntimeStore.runSample()');
+    expect(workbenchExperience).toContain(
+        'if (canBootstrap && navigation.activeMode === \'black-box-runner\')'
+    );
+    expect(workbenchExperience).toContain(
+        '}, [canBootstrap, navigation.activeMode]);'
+    );
+    expect(workbenchExperience).toContain('bootstrapMatchesAuthSession');
+});
+
+it('does not reset the browser-rallar runtime when runner mode is first opened', () => {
+    const workbenchExperience = readFileSync(workbenchExperienceSourcePath, 'utf8');
+    const runtimeBootstrap = readFileSync(
+        new URL('../../../apps/rallar-black-box/src/runtime-store.ts', import.meta.url),
+        'utf8'
+    );
+    const configureLocalWorkbenchOnly = sourceBetween(
+        runtimeBootstrap,
+        'async configureLocalWorkbenchOnly(): Promise<void>',
+        'async bootstrapControlAgent(): Promise<void>'
+    );
+
+    expect(configureLocalWorkbenchOnly).toContain('await this.configureRuntime(runNumber)');
+    expect(configureLocalWorkbenchOnly).not.toContain('resetForRun');
+    expect(workbenchExperience).toContain(
+        'if (canBootstrap && navigation.activeMode === \'black-box-runner\')'
+    );
+    expect(workbenchExperience).toContain(
+        '}, [canBootstrap, navigation.activeMode]);'
+    );
+});
+
+it('does not execute black-box runtime commands from direct Rallar panels', () => {
+    const source = appSource();
+    const diagnostics = diagnosticOwnerSources(source);
+    const directPanels = [
+        diagnostics.quickPanel,
+        diagnostics.rtcController,
+        diagnostics.rtcPanel,
+        diagnostics.topologyPanel,
+        webSocketCommandCenterOwnerSource(source),
+        rtcRealtimeOwnerSource(source),
+        rallarDataOwnerSource(source),
+        mediaConsoleOwnerSource(source),
+        authCommandCenterOwnerSource(source),
+        roomsClientsOwnerSource(source),
+        rallarServerOwnerSource(source),
+        crdtOwnerSource(source)
+    ].join('\n');
+
+    expect(directPanels).not.toMatch(/executeManualCommand|executeManualCommands|executeCommandFromJson/);
+    expect(directPanels).not.toMatch(/loadRecipeFromJson|runLoadedRecipe|runSample/);
+    expect(directPanels).not.toContain('__blackBoxRallar');
+    expect(directPanels).not.toContain('__blackBoxRallarEmit');
+    expect(directPanels).not.toContain('browser-rallar-runtime');
+    expect(directPanels).not.toContain('createSpaBrowserRallarRuntime');
+});
+
+it('uses the shared browser Rallar facade for direct WebSocket and RTC actions', () => {
+    const source = appSource();
+    const diagnostics = diagnosticOwnerSources(source);
+    const websocketPanel = webSocketCommandCenterOwnerSource(source);
+
+    expect(websocketPanel).toContain('runDirectRallarWsSend');
+    expect(websocketPanel).toContain('runDirectRallarWsSubscribe');
+    expect(websocketPanel).toContain('loadBrowserRallarFacade');
+    expect(diagnostics.rtcController).toContain('loadBrowserRallarFacade');
+    expect(diagnostics.rtcController).toContain('facade.start');
+});
+
+it('keeps RTC sends on the direct facade fast path after the room is joined', () => {
+    const source = appSource();
+    const rtcRealtimePanel = rtcRealtimeOwnerSource(source);
+
+    expect(rtcRealtimePanel).toContain('\'rallar.direct.rtc_realtime.phase\'');
+    expect(rtcRealtimePanel).toContain('isFacadeJoinedToActiveGroup');
+    expect(rtcRealtimePanel).toContain('status: \'skipped\'');
+    expect(rtcRealtimePanel).toMatch(
+        /useState<\s*'best-effort' \| 'at-least-once'\s*>\('best-effort'\)/
+    );
+});
+
+it('surfaces action feedback and live subscription state in direct command panels', () => {
+    const source = appSource();
+    const diagnostics = diagnosticOwnerSources(source);
+    const actionFeedbackPanelFallback = existsSync(
+            actionFeedbackPanelSourcePath
+        )
+        ? ''
+        : sourceBetween(
+            source,
+            'function CommandCenterActionFeedbackPanel',
+            'function RallarServerRequestFeedbackPanel'
+        );
+    const actionFeedbackPanel = sourceOrFallback(
+        actionFeedbackPanelSourcePath,
+        actionFeedbackPanelFallback
+    );
+    const roomsClientsPanel = roomsClientsOwnerSource(source);
+    const websocketPanel = webSocketCommandCenterOwnerSource(source);
+    const rtcRealtimePanel = rtcRealtimeOwnerSource(source);
+
+    expect(actionFeedbackPanel).toContain('feedback.state');
+    expect(actionFeedbackPanel).toContain('aria-live="polite"');
+    expect(roomsClientsPanel).toContain('CommandCenterActionFeedbackPanel');
+    expect(websocketPanel).toContain('CommandCenterActionFeedbackPanel');
+    expect(websocketPanel).toContain('WS subscribed');
+    expect(rtcRealtimePanel).toContain('CommandCenterActionFeedbackPanel');
+    expect(rtcRealtimePanel).toContain('Realtime sub');
+    expect(rtcRealtimePanel).toContain('RTC message sub');
+    expect(diagnostics.rtcPanel).toContain('RtcDiagnosticsTimeseriesPanel');
+});
+
+interface RecipeEvidenceSources {
+    readonly panel: string;
+}
+
+interface RunEvidenceSources {
+    readonly controller: string;
+    readonly panel: string;
+    readonly distributedView: string;
+}
+
+interface FleetEvidenceSources {
+    readonly controller: string;
+    readonly views: string;
+}
+
+it('keeps runner analysis evidence before setup controls and adds RTC performance surfaces', () => {
+    const source = appSource();
+    assertRunEvidence(readRunEvidenceSources(source));
+    assertRecipeEvidence(readRecipeEvidenceSources(source));
+    assertFleetEvidence(readFleetEvidenceSources(source));
+    assertRtcAndStyleEvidence(diagnosticOwnerSources(source).rtcPanel, styleSource());
+});
+
+function readRecipeEvidenceSources(source: string): RecipeEvidenceSources {
+    const fallback = existsSync(runnerRecipesControllerSourcePath)
+        ? ''
+        : sourceBetween(source, 'function RunnerRecipesPanel', 'function RunnerRunsPanel');
+    const controller = sourceOrFallback(runnerRecipesControllerSourcePath, fallback);
+    return {
+        panel: [
+            sourceOrFallback(runnerAgentActionsSourcePath, fallback),
+            controller,
+            sourceOrFallback(runnerRecipesPanelSourcePath, fallback),
+            ...runnerRecipeViewSourcePaths.map((path) => sourceOrFallback(path, fallback))
+        ].join('\n')
+    };
+}
+
+function readRunEvidenceSources(source: string): RunEvidenceSources {
+    const fallback = existsSync(runnerRunsControllerSourcePath)
+        ? ''
+        : sourceBetween(source, 'function RunnerRunsPanel', 'function RunnerFleetPanel');
+    const controller = sourceOrFallback(runnerRunsControllerSourcePath, fallback);
+    const panel = sourceOrFallback(runnerRunsPanelSourcePath, fallback);
+    return {
+        controller,
+        panel,
+        distributedView: sourceOrFallback(runnerDistributedAnalysisSourcePath, panel)
+    };
+}
+
+function readFleetEvidenceSources(source: string): FleetEvidenceSources {
+    const fallback = existsSync(runnerFleetControllerSourcePath)
+        ? ''
+        : sourceBetween(source, 'function RunnerFleetPanel', 'function RtcDiagnosticsPanel');
+    return {
+        controller: sourceOrFallback(runnerFleetControllerSourcePath, fallback),
+        views: [
+            sourceOrFallback(runnerFleetControlsSourcePath, fallback),
+            sourceOrFallback(runnerFleetOverviewSourcePath, fallback),
+            sourceOrFallback(runnerFleetAnalysisSourcePath, fallback),
+            sourceOrFallback(runnerFleetDetailsSourcePath, fallback),
+            sourceOrFallback(runnerFleetTimingSourcePath, fallback)
+        ].join('\n')
+    };
+}
+
+function assertRunEvidence(sources: RunEvidenceSources): void {
+    expect(sources.panel).toContain('RunVerdictPanel');
+    expect(sources.panel).toContain('CausalTrailPanel');
+    expect(sources.panel).toContain('RtcPerformancePanel');
+    expect(sources.distributedView).toContain('title="Run Participants"');
+    expect(sources.controller).toContain('monitorAgentProgress: selectedMonitor?.agentProgress');
+    expect(sources.controller).toContain('distributedRunSeed');
+    expect(sources.distributedView).toContain('DISTRIBUTED_RUN_SEEDS');
+    expect(sources.distributedView).toContain('Synthetic seed');
+    expect(sources.distributedView).toContain('Synthetic evidence');
+    expect(sources.distributedView).toContain('Clear seed');
+    expect(sources.panel.indexOf('RunVerdictPanel')).toBeLessThan(
+        sources.panel.indexOf(
+            existsSync(runnerDistributedAnalysisSourcePath)
+                ? '<RunnerDistributedAnalysisSection'
+                : 'runner-distributed-analysis'
+        )
+    );
+    expect(sources.distributedView.indexOf('Synthetic seed')).toBeLessThan(
+        sources.distributedView.indexOf('title="Run Participants"')
+    );
+    expect(sources.controller).toContain('selectedMonitor');
+    expect(sources.controller).toContain('distributedMonitor: selectedMonitor');
+}
+
+function assertRecipeEvidence(sources: RecipeEvidenceSources): void {
+    expect(sources.panel).toContain('resolveBlackBoxControlToken');
+    expect(sources.panel).toContain('brokeredControlToken');
+    expect(sources.panel).toContain('Session control token valid until');
+    expect(sources.panel).toContain('Session control token will be requested when needed.');
+    expect(sources.panel).toContain('title="Targetable Agents"');
+    expect(sources.panel).toContain('showConnectedAgents={false}');
+    expect(sources.panel).toContain('const distributedControlToken');
+    expect(sources.panel).toContain('token: distributedControlToken');
+    expect(sources.panel).toContain('controlToken,');
+    expect(sources.panel).not.toContain('const agentLaunchUrls =');
+    expect(sources.panel).not.toContain('createRunnerAgentLaunchUrl({');
+    expect(sources.panel).toContain('createBrowserAgentLaunchService');
+    expect(sources.panel).toContain('reserveBrowserAgentPopups(agentIds)');
+    expect(sources.panel.indexOf('runner-quick-launch-strip')).toBeLessThan(
+        sources.panel.indexOf('<RunnerReadinessPanel')
+    );
+    expect(sources.panel.indexOf('<RunnerReadinessPanel')).toBeLessThan(
+        sources.panel.indexOf('title="Targetable Agents"')
+    );
+    expect(sources.panel.indexOf('title="Targetable Agents"')).toBeLessThan(
+        sources.panel.indexOf('<RunnerAgentSetupPanel')
+    );
+}
+
+function assertFleetEvidence(sources: FleetEvidenceSources): void {
+    expect(sources.views).toContain('Live Fleet');
+    expect(sources.views).toContain('title="Live Fleet Agents"');
+    expect(sources.controller).toContain('fetchControlServerSnapshot');
+}
+
+function assertRtcAndStyleEvidence(rtcDiagnosticsPanel: string, styles: string): void {
+    expect(rtcDiagnosticsPanel).toContain('RtcPerformancePanel');
+    expect(rtcDiagnosticsPanel.indexOf('<RtcPerformancePanel')).toBeLessThan(
+        rtcDiagnosticsPanel.indexOf('<RtcDiagnosticsTimeseriesPanel')
+    );
+    expect(rtcDiagnosticsPanel.indexOf('<RtcPerformancePanel')).toBeLessThan(
+        rtcDiagnosticsPanel.indexOf('rtc-stage-list')
+    );
+    for (
+        const sentinel of [
+            '.run-verdict-band',
+            '.causal-trail-panel',
+            '.rtc-performance-panel',
+            '.runner-evidence-first',
+            '.control-agent-board-panel',
+            '.control-agent-board-row',
+            '.fleet-live-panel',
+            '.app-shell.mode-black-box-runner .app-mode-switch',
+            '.app-shell.mode-black-box-runner .app-mode-copy p',
+            '.causal-trail-actions',
+            '.rtc-performance-legend',
+            '.synthetic-seed-control',
+            '.synthetic-seed-notice'
+        ]
+    ) {
+        expect(styles).toContain(sentinel);
+    }
+}

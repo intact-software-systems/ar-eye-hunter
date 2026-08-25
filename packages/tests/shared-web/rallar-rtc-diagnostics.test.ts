@@ -426,6 +426,12 @@ describe('Rallar RTC diagnostics', () => {
 
 type RtcPeerConnectionStatus = QRtcPeerDto['connection']['status'];
 
+interface RtcPeerConnectionTestDoubleMembers {
+    readonly localDescription?: Pick<RTCSessionDescription, 'type'>;
+    readonly remoteDescription?: Pick<RTCSessionDescription, 'type'>;
+    readonly getStats?: () => Promise<ReadonlyMap<string, Record<string, unknown>>>;
+}
+
 type RtcPeerConnectionTestDouble =
     & Partial<
         Pick<
@@ -437,19 +443,24 @@ type RtcPeerConnectionTestDouble =
             | 'canTrickleIceCandidates'
         >
     >
-    & Readonly<{
-        localDescription?: Pick<RTCSessionDescription, 'type'>;
-        remoteDescription?: Pick<RTCSessionDescription, 'type'>;
-        getStats?: () => Promise<ReadonlyMap<string, Record<string, unknown>>>;
-    }>;
+    & RtcPeerConnectionTestDoubleMembers;
+
+interface RtcPeerStatusTestDoubleMembers {
+    readonly pc?: RtcPeerConnectionTestDouble;
+    readonly localStream?: Pick<MediaStream, 'id'>;
+    readonly remoteStreams?: ReadonlyMap<string, unknown>;
+}
 
 type RtcPeerStatusTestDouble =
     & Omit<Partial<RtcPeerConnectionStatus>, 'pc' | 'localStream' | 'remoteStreams'>
-    & Readonly<{
-        pc?: RtcPeerConnectionTestDouble;
-        localStream?: Pick<MediaStream, 'id'>;
-        remoteStreams?: ReadonlyMap<string, unknown>;
-    }>;
+    & RtcPeerStatusTestDoubleMembers;
+
+interface ChannelHealthFixtureInput {
+    readonly peerId: string;
+    readonly label: string;
+    readonly state: string;
+    readonly readyState: RTCDataChannelState;
+}
 
 interface RtcPeerTestDoubleInput {
     readonly peerId: QRtcPeerDto['peerId'];
@@ -479,14 +490,7 @@ function toRtcPeerTestDouble(input: RtcPeerTestDoubleInput): QRtcPeerDto {
     } as unknown as QRtcPeerDto;
 }
 
-function createChannelHealth(
-    input: Readonly<{
-        peerId: string;
-        label: string;
-        state: string;
-        readyState: RTCDataChannelState;
-    }>
-): RtcDataChannelHealth {
+function createChannelHealth(input: ChannelHealthFixtureInput): RtcDataChannelHealth {
     return {
         peerId: input.peerId,
         label: input.label,

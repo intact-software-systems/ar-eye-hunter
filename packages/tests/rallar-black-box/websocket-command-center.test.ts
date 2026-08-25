@@ -1,25 +1,50 @@
 import { describe, expect, it } from 'vitest';
-import type { WebSocketCommandCenterValues, WebSocketDiagnostic } from '../../../apps/rallar-black-box/src/legacy/diagnostics/websocket/websocket-contracts.ts';
-import { deriveWebSocketDiagnostics } from '../../../apps/rallar-black-box/src/legacy/diagnostics/websocket/websocket-diagnostics.ts';
+import { webSocketCommandCenterRecipe } from '../../../apps/rallar-black-box/src/diagnostics/websocket/evidence/websocket-recipes.ts';
+import {
+    isWebSocketJsonObject,
+    normalizeWebSocketJsonValue,
+    parseWebSocketJsonValue
+} from '../../../apps/rallar-black-box/src/diagnostics/websocket/normalize-websocket-json-value.ts';
+import { deriveWebSocketDiagnostics } from '../../../apps/rallar-black-box/src/diagnostics/websocket/state/derive-web-socket-diagnostics.ts';
+import type {
+    WebSocketCommandCenterValues,
+    WebSocketDiagnostic,
+    WebSocketJsonValue
+} from '../../../apps/rallar-black-box/src/diagnostics/websocket/websocket-contracts.ts';
 import {
     DEFAULT_WEBSOCKET_PAYLOAD_PRESET_ID,
     WEBSOCKET_PAYLOAD_PRESETS,
     webSocketPayloadPresetById,
     webSocketPayloadPresetText
-} from '../../../apps/rallar-black-box/src/legacy/diagnostics/websocket/websocket-presets.ts';
-import { webSocketCommandCenterRecipe } from '../../../apps/rallar-black-box/src/legacy/diagnostics/websocket/websocket-recipes.ts';
+} from '../../../apps/rallar-black-box/src/diagnostics/websocket/websocket-presets.ts';
 import {
-    defaultWebSocketApiUrl,
     defaultWebSocketScope,
     defaultWebSocketTopicId,
     defaultWebSocketTypeId,
     defaultWebSocketValuesFromContext,
-    resolveWebSocketUrlTemplate,
     webSocketRoutePreview
-} from '../../../apps/rallar-black-box/src/legacy/diagnostics/websocket/websocket-routing.ts';
+} from '../../../apps/rallar-black-box/src/diagnostics/websocket/websocket-routing.ts';
+import { defaultWebSocketApiUrl, resolveWebSocketUrlTemplate } from '../../../apps/rallar-black-box/src/diagnostics/websocket/websocket-url-routing.ts';
 import { resolveRallarBlackBoxBootstrapConfig } from '../../shared-test/rallar-bb-test/browser-control-agent-config.ts';
 import type { RallarBlackBoxTestEvent, RallarBlackBoxTestResult, RallarBlackBoxTestState } from '../../shared-test/rallar-bb-test/types.ts';
 import type { AuthSession } from '../../shared/api/api-config.ts';
+
+interface WebSocketRecipeCommand {
+    readonly kind: string;
+    readonly commandId: string;
+    readonly data?: WebSocketJsonValue;
+    readonly [key: string]: WebSocketJsonValue | undefined;
+}
+
+interface WebSocketRecipeDocument {
+    readonly recipeId?: string;
+    readonly commands: readonly WebSocketRecipeCommand[];
+}
+
+interface CircularDiagnosticPayload {
+    readonly label: string;
+    self?: CircularDiagnosticPayload;
+}
 
 const bootstrap = resolveRallarBlackBoxBootstrapConfig(
     '?apiBaseUrl=https%3A%2F%2Fbootstrap.example%2Fapi&applicationId=bootstrap-app&workspaceId=bootstrap-workspace&roomId=bootstrap-room&actor=bootstrap-actor&sessionId=bootstrap-session',
@@ -54,6 +79,33 @@ const values: WebSocketCommandCenterValues = {
     closeReason: 'done'
 };
 
+function readWebSocketRecipe(recipeText: string): WebSocketRecipeDocument {
+    const value = JSON.parse(recipeText) as WebSocketJsonValue;
+    if (!isWebSocketJsonObject(value) || !Array.isArray(value.commands)) {
+        throw new Error('Expected a WebSocket recipe with commands.');
+    }
+    const recipeId = typeof value.recipeId === 'string' ? value.recipeId : undefined;
+    return {
+        recipeId,
+        commands: value.commands.map(readWebSocketRecipeCommand)
+    };
+}
+
+function readWebSocketRecipeCommand(value: WebSocketJsonValue): WebSocketRecipeCommand {
+    if (
+        !isWebSocketJsonObject(value) ||
+        typeof value.kind !== 'string' ||
+        typeof value.commandId !== 'string'
+    ) {
+        throw new Error('Expected a WebSocket recipe command.');
+    }
+    return {
+        ...value,
+        kind: value.kind,
+        commandId: value.commandId
+    };
+}
+
 function event(
     eventId: string,
     atEpochMs: number,
@@ -86,6 +138,26 @@ function result(
         ...overrides
     };
 }
+
+describe('WebSocket JSON normalization', () => {
+    it('normalizes unsupported and circular diagnostic values without propagating them', () => {
+        const circular: CircularDiagnosticPayload = { label: 'cycle' };
+        circular.self = circular;
+
+        expect(normalizeWebSocketJsonValue({ count: 1n, circular })).toEqual({
+            count: '1',
+            circular: { label: 'cycle', self: '[Circular]' }
+        });
+    });
+
+    it('returns a typed JSON value or a normalized parse failure', () => {
+        expect(parseWebSocketJsonValue('{"message":"hello"}')).toEqual({
+            ok: true,
+            value: { message: 'hello' }
+        });
+        expect(parseWebSocketJsonValue('{')).toMatchObject({ ok: false });
+    });
+});
 
 function state(
     events: readonly RallarBlackBoxTestEvent[] = [],
@@ -136,27 +208,27 @@ describe('WebSocket command-center presets and routing', () => {
         );
 
         expect(
-            resolveWebSocketUrlTemplate(
-                '{config.wsBaseUrl}/api/ws/{auth.sessionId}?ticket={auth.wsTicket}',
-                'https://api.example.test/nested?old=1#hash',
+            resolveWebSocketUrlTemplate({
+                template: '{config.wsBaseUrl}/api/ws/{auth.sessionId}?ticket={auth.wsTicket}',
+                apiBaseUrl: 'https://api.example.test/nested?old=1#hash',
                 authSession,
-                {
+                ticket: {
                     ticket: 'ticket/? +',
                     sessionId: 'ticket-session',
                     expiresAtEpochMs: 8_000,
                     issuedAtEpochMs: 7_000
                 }
-            )
+            })
         ).toBe(
             'wss://api.example.test/api/ws/session%2Fwith%20spaces?ticket=ticket%2F%3F%20%2B'
         );
         expect(
-            resolveWebSocketUrlTemplate(
-                '{config.wsBaseUrl}/{auth.sessionId}/{auth.wsTicket}',
-                'invalid',
-                undefined,
-                undefined
-            )
+            resolveWebSocketUrlTemplate({
+                template: '{config.wsBaseUrl}/{auth.sessionId}/{auth.wsTicket}',
+                apiBaseUrl: 'invalid',
+                authSession: undefined,
+                ticket: undefined
+            })
         ).toBe('ws://localhost:8080//');
     });
 
@@ -206,18 +278,20 @@ describe('WebSocket command-center presets and routing', () => {
     it('normalizes untyped payloads while preserving typed routing overrides through copied recipes', () => {
         const recipeFor = (
             nextValues: WebSocketCommandCenterValues,
-            payload: unknown
-        ): Record<string, unknown> => {
-            const recipe = JSON.parse(
-                webSocketCommandCenterRecipe({
-                    values: nextValues,
-                    payload,
-                    bootstrap,
-                    providerMode: 'real',
-                    sequence: 1
-                })
-            ) as { commands: readonly Record<string, unknown>[]; };
-            return recipe.commands.find((command) => command.kind === 'ws.send') ?? {};
+            payload: WebSocketJsonValue
+        ): WebSocketRecipeCommand => {
+            const recipe = readWebSocketRecipe(webSocketCommandCenterRecipe({
+                values: nextValues,
+                payload,
+                bootstrap,
+                providerMode: 'real',
+                sequence: 1
+            }));
+            const sendCommand = recipe.commands.find((command) => command.kind === 'ws.send');
+            if (!sendCommand) {
+                throw new Error('Expected copied recipe to include a WebSocket send command.');
+            }
+            return sendCommand;
         };
 
         expect(recipeFor(values, { text: 'hello' }).data).toEqual({
@@ -350,19 +424,17 @@ describe('WebSocket command-center presets and routing', () => {
 
 describe('WebSocket command-center copied recipes', () => {
     it('builds configure/open/send/close commands without changing backend contracts', () => {
-        const recipe = JSON.parse(
-            webSocketCommandCenterRecipe({
-                values: { ...values, closeCode: Number.NaN },
-                bootstrap,
-                providerMode: 'browser-rallar',
-                authSession,
-                sequence: 7,
-                payload: {
-                    deliveryMode: 'broadcast',
-                    text: 'hello from rallar-black-box'
-                }
-            })
-        ) as { commands: readonly Record<string, unknown>[]; };
+        const recipe = readWebSocketRecipe(webSocketCommandCenterRecipe({
+            values: { ...values, closeCode: Number.NaN },
+            bootstrap,
+            providerMode: 'browser-rallar',
+            authSession,
+            sequence: 7,
+            payload: {
+                deliveryMode: 'broadcast',
+                text: 'hello from rallar-black-box'
+            }
+        }));
 
         expect(recipe.commands[0]).toMatchObject({
             kind: 'configure',
@@ -428,20 +500,15 @@ describe('WebSocket command-center copied recipes', () => {
     });
 
     it('keeps copied recipe command order, parity commands, and secret redaction exact', () => {
-        const recipe = JSON.parse(
-            webSocketCommandCenterRecipe({
-                values,
-                payload: { accessToken: 'access-secret', text: 'parity' },
-                bootstrap: { ...bootstrap, rallarPassword: 'password-secret' },
-                providerMode: 'browser-rallar',
-                authSession,
-                sequence: 20,
-                includeRtcParity: true
-            })
-        ) as {
-            recipeId: string;
-            commands: readonly Record<string, unknown>[];
-        };
+        const recipe = readWebSocketRecipe(webSocketCommandCenterRecipe({
+            values,
+            payload: { accessToken: 'access-secret', text: 'parity' },
+            bootstrap: { ...bootstrap, rallarPassword: 'password-secret' },
+            providerMode: 'browser-rallar',
+            authSession,
+            sequence: 20,
+            includeRtcParity: true
+        }));
 
         expect(recipe.recipeId).toBe(
             'rallar-websocket-rtc-parity-command-center'

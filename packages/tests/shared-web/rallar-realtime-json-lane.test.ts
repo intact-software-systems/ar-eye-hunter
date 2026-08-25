@@ -9,6 +9,10 @@ type AuthModule = typeof import('@shared/api/auth.ts');
 type ClientStateSnapshotsRepositoryModule = typeof import('@shared/repository/client-state-snapshots-repository.ts');
 type GroupStateSnapshotsRepositoryModule = typeof import('@shared/repository/group-state-snapshots-repository.ts');
 
+interface GameplayPosition {
+    readonly x: number;
+}
+
 const mocks = await vi.hoisted(async () => {
     const { createApiMiddlewareTestDouble } = await import(
         './api-middleware-test-double.ts'
@@ -130,7 +134,7 @@ describe('Rallar realtime JSON lane', () => {
                 channel: gameplayChannel
             });
         const facade = createRallarFacade();
-        const gameplay = facade.realtime.json<{ x: number; }>({
+        const gameplay = facade.realtime.json<GameplayPosition>({
             laneId: 'gameplay',
             peerIds: ['peer-1'],
             openTimeoutMs: 750,

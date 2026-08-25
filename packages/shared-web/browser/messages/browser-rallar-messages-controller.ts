@@ -1,5 +1,6 @@
 import type { ApiMiddleware } from '@shared-web/browser/app-context.ts';
 import { BrowserMessageInputValidator } from '@shared-web/browser/messages/browser-message-input-validator.ts';
+import { BrowserRallarMessageSubscriptions } from '@shared-web/browser/messages/browser-rallar-message-subscriptions.ts';
 import type { RallarCrdtMessageTransport } from '@shared-web/browser/rallar-crdt-transport.ts';
 import type {
     RallarMessageHandler,
@@ -16,13 +17,9 @@ import type {
     RallarWsSendInput
 } from '@shared-web/browser/rallar-message-contracts.ts';
 import {
-    matchesRallarMessageSelector,
     normalizeRallarMessageSelector,
-    toRallarMessageSelectorKey,
-    type RallarMessageSelector,
     type RallarMessageSelectorInput
 } from '@shared-web/browser/rallar-message-selectors.ts';
-import { toRallarMessage } from '@shared-web/browser/rallar-runtime/message-conversion.ts';
 import type { RallarWsInbox } from '@shared-web/browser/rallar-runtime/ws-inbox.ts';
 import type { RallarUnsubscribe } from '@shared-web/browser/rallar-shared-contracts.ts';
 import {
@@ -39,11 +36,6 @@ import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import { RALLAR_DEFAULT_MAX_MESSAGE_PAYLOAD_BYTES, throwRallarValidation } from '@shared/api/rallar-validation.ts';
 
-interface RallarMessageSubscription {
-    readonly selector: RallarMessageSelector;
-    readonly listeners: Set<RallarMessageHandler>;
-}
-
 interface ResolvedRtcMessageTarget {
     readonly room: string | GroupRef | undefined;
     readonly roomId: string;
@@ -52,7 +44,7 @@ interface ResolvedRtcMessageTarget {
 
 interface RallarRtcMessageLane {
     send<T>(input: RallarRtcSendInput<T>): Promise<RallarMessageSendResult>;
-    onMessage<T = unknown>(
+    onMessage<T = never>(
         selector: RallarMessageSelectorInput,
         handler: RallarMessageHandler<T>
     ): RallarUnsubscribe;
@@ -60,7 +52,7 @@ interface RallarRtcMessageLane {
 
 interface RallarWsMessageLane {
     send<T>(input: RallarWsSendInput<T>): Promise<RallarMessageSendResult>;
-    onMessage<T = unknown>(
+    onMessage<T = never>(
         selector: RallarMessageSelectorInput,
         handler: RallarMessageHandler<T>
     ): RallarUnsubscribe;
@@ -120,16 +112,17 @@ export interface RallarMessagesController {
 }
 
 export class BrowserRallarMessagesController implements RallarMessagesController {
-    private readonly rtcMessageListeners = new Map<string, RallarMessageSubscription>();
-    private readonly wsMessageListeners = new Map<string, RallarMessageSubscription>();
-    private readonly registeredRtcMessageTypes = new Set<string>();
-    private stopWsInbox: RallarUnsubscribe | undefined;
     private readonly inputValidator: BrowserMessageInputValidator;
+    private readonly subscriptions: BrowserRallarMessageSubscriptions;
 
     private readonly options: BrowserRallarMessagesControllerInput;
 
     public constructor(options: BrowserRallarMessagesControllerInput) {
         this.options = options;
+        this.subscriptions = new BrowserRallarMessageSubscriptions({
+            wsInbox: options.wsInbox,
+            readMiddleware: () => options.readMiddleware()
+        });
         this.inputValidator = new BrowserMessageInputValidator({
             readMaxPayloadBytes: () => this.resolveMessageMaxPayloadBytes()
         });
@@ -141,14 +134,14 @@ export class BrowserRallarMessagesController implements RallarMessagesController
             onMessage: <T>(
                 selector: RallarMessageSelectorInput,
                 handler: RallarMessageHandler<T>
-            ) => this.onRtcMessage(selector, handler)
+            ) => this.subscriptions.subscribe('rtc', selector, handler)
         },
         ws: {
             send: async <T>(input: RallarWsSendInput<T>) => await this.sendWsMessage(input),
             onMessage: <T>(
                 selector: RallarMessageSelectorInput,
                 handler: RallarMessageHandler<T>
-            ) => this.onWsMessage(selector, handler)
+            ) => this.subscriptions.subscribe('ws', selector, handler)
         },
         channel: <T>(
             definition: RallarTypedMessageChannelDefinition
@@ -262,17 +255,6 @@ export class BrowserRallarMessagesController implements RallarMessagesController
         );
     }
 
-    private onRtcMessage<T>(
-        selector: RallarMessageSelectorInput,
-        handler: RallarMessageHandler<T>
-    ): RallarUnsubscribe {
-        return this.onTransportMessage(
-            'rtc',
-            selector,
-            handler as RallarMessageHandler
-        );
-    }
-
     private async sendWsMessage<T>(
         input: RallarWsSendInput<T>
     ): Promise<RallarMessageSendResult> {
@@ -317,17 +299,6 @@ export class BrowserRallarMessagesController implements RallarMessagesController
         wakeQBoxEngineIfQueued(ctx.middleware.qboxEngine, enqueueResult);
 
         return toRallarMessageSendResult('ws', msg, enqueueResult);
-    }
-
-    private onWsMessage<T>(
-        selector: RallarMessageSelectorInput,
-        handler: RallarMessageHandler<T>
-    ): RallarUnsubscribe {
-        return this.onTransportMessage(
-            'ws',
-            selector,
-            handler as RallarMessageHandler
-        );
     }
 
     toCrdtMessageTransport(): RallarCrdtMessageTransport {
@@ -521,159 +492,12 @@ export class BrowserRallarMessagesController implements RallarMessagesController
         });
     }
 
-    attachRtc(ctx = this.options.readMiddleware()): void {
-        if (!ctx) {
-            return;
-        }
-        for (const subscription of this.rtcMessageListeners.values()) {
-            this.registerRtcMessageCallback(subscription.selector, ctx);
-        }
+    attachRtc(ctx?: ApiMiddleware): void {
+        this.subscriptions.attachRtc(ctx);
     }
 
-    detachRtc(ctx = this.options.readMiddleware()): void {
-        if (ctx) {
-            for (const typeId of this.registeredRtcMessageTypes) {
-                ctx.middleware.rtcRxStreamer.removeInboxMessageCallback(typeId);
-            }
-        }
-        this.registeredRtcMessageTypes.clear();
-    }
-
-    private onTransportMessage(
-        transport: RallarMessageTransport,
-        selectorInput: RallarMessageSelectorInput,
-        handler: RallarMessageHandler
-    ): RallarUnsubscribe {
-        const selector = normalizeRallarMessageSelector(selectorInput);
-        if (transport === 'rtc' && !selector.typeId) {
-            throw new Error('RTC message subscriptions require a typeId.');
-        }
-
-        const subscription = this.messageSubscription(transport, selector);
-        subscription.listeners.add(handler);
-        if (transport === 'rtc') {
-            this.registerRtcMessageCallback(selector);
-        }
-        else {
-            this.ensureWsInbox();
-        }
-
-        return () => {
-            subscription.listeners.delete(handler);
-            if (subscription.listeners.size > 0) {
-                return;
-            }
-
-            const registry = transport === 'rtc'
-                ? this.rtcMessageListeners
-                : this.wsMessageListeners;
-            registry.delete(toRallarMessageSelectorKey(selector));
-
-            if (transport === 'rtc' && selector.typeId) {
-                if (!this.hasRtcSubscriptionsForTypeId(selector.typeId)) {
-                    this.unregisterRtcMessageCallback(selector.typeId);
-                }
-                return;
-            }
-
-            if (transport === 'ws' && this.wsMessageListeners.size === 0) {
-                this.stopWsInbox?.();
-                this.stopWsInbox = undefined;
-            }
-        };
-    }
-
-    private messageSubscription(
-        transport: RallarMessageTransport,
-        selector: RallarMessageSelector
-    ): RallarMessageSubscription {
-        const registry = transport === 'rtc' ? this.rtcMessageListeners : this.wsMessageListeners;
-        const key = toRallarMessageSelectorKey(selector);
-        const existing = registry.get(key);
-        if (existing) {
-            return existing;
-        }
-        const created: RallarMessageSubscription = {
-            selector,
-            listeners: new Set<RallarMessageHandler>()
-        };
-        registry.set(key, created);
-        return created;
-    }
-
-    private ensureWsInbox(): void {
-        if (this.stopWsInbox || this.wsMessageListeners.size === 0) {
-            return;
-        }
-        this.stopWsInbox = this.options.wsInbox.subscribe({
-            id: 'messages',
-            order: 20,
-            onMessage: async (message) => {
-                await this.dispatchTransportMessage('ws', message);
-            }
-        });
-    }
-
-    private registerRtcMessageCallback(
-        selector: RallarMessageSelector,
-        ctx = this.options.readMiddleware()
-    ): void {
-        const typeId = selector.typeId;
-        if (!ctx || !typeId || this.registeredRtcMessageTypes.has(typeId)) {
-            return;
-        }
-        ctx.middleware.rtcRxStreamer.onInboxMessageDo(typeId, {
-            onMessage: async (message: ALMessage) => {
-                await this.dispatchTransportMessage('rtc', message);
-            }
-        });
-        this.registeredRtcMessageTypes.add(typeId);
-    }
-
-    private unregisterRtcMessageCallback(typeId: string): void {
-        const ctx = this.options.readMiddleware();
-        ctx?.middleware.rtcRxStreamer.removeInboxMessageCallback(typeId);
-        this.registeredRtcMessageTypes.delete(typeId);
-    }
-
-    private hasRtcSubscriptionsForTypeId(typeId: string): boolean {
-        for (const subscription of this.rtcMessageListeners.values()) {
-            if (subscription.selector.typeId === typeId) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private async dispatchTransportMessage(
-        transport: RallarMessageTransport,
-        message: ALMessage
-    ): Promise<void> {
-        const registry = transport === 'rtc' ? this.rtcMessageListeners : this.wsMessageListeners;
-        const listeners = new Set<RallarMessageHandler>();
-        for (const subscription of registry.values()) {
-            if (!matchesRallarMessageSelector(subscription.selector, message)) {
-                continue;
-            }
-            for (const listener of subscription.listeners) {
-                listeners.add(listener);
-            }
-        }
-        if (listeners.size === 0) {
-            return;
-        }
-
-        const rallarMessage = toRallarMessage(transport, message);
-        await Promise.all(
-            [...listeners].map(async (listener) => {
-                try {
-                    await listener(rallarMessage);
-                }
-                catch (error) {
-                    console.error('Error notifying Rallar message listener', error);
-                }
-            })
-        );
+    detachRtc(ctx?: ApiMiddleware): void {
+        this.subscriptions.detachRtc(ctx);
     }
 
     private resolveMessageMaxPayloadBytes(): number {

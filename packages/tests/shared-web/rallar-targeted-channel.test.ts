@@ -16,6 +16,22 @@ type AuthModule = typeof import('@shared/api/auth.ts');
 type ClientStateSnapshotsRepositoryModule = typeof import('@shared/repository/client-state-snapshots-repository.ts');
 type GroupStateSnapshotsRepositoryModule = typeof import('@shared/repository/group-state-snapshots-repository.ts');
 
+interface PositionUpdate {
+    readonly x: number;
+}
+
+interface ChannelHealthFixtureInput {
+    readonly peerId: string;
+    readonly label: string;
+    readonly state: string;
+    readonly readyState: RTCDataChannelState;
+}
+
+interface GroupSnapshotFixtureScope {
+    readonly applicationId?: string;
+    readonly workspaceId?: string;
+}
+
 const mocks = await vi.hoisted(async () => {
     const { createLightweightBrowserFacadeTestMocks } = await import(
         './lightweight-browser-facade-test-mocks.ts'
@@ -145,7 +161,7 @@ describe('Rallar targeted channel', () => {
                 error: new Error('slow peer')
             });
 
-        const channel = createRallarFacade().channels.targeted<{ x: number; }>({
+        const channel = createRallarFacade().channels.targeted<PositionUpdate>({
             peerIds: ['session-1', 'peer-a', 'peer-b', 'peer-a'],
             laneId: 'realtime',
             openTimeoutMs: 25
@@ -227,7 +243,7 @@ describe('Rallar targeted channel', () => {
             applicationId: 'app-1',
             workspaceId: 'workspace-1'
         });
-        const channel = facade.channels.room<{ x: number; }>({
+        const channel = facade.channels.room<PositionUpdate>({
             roomId: 'room-1',
             laneId: 'realtime'
         });
@@ -301,14 +317,7 @@ function resetMiddlewareDoublesToDefaults(): void {
     });
 }
 
-function createChannelHealth(
-    input: Readonly<{
-        peerId: string;
-        label: string;
-        state: string;
-        readyState: RTCDataChannelState;
-    }>
-) {
+function createChannelHealth(input: ChannelHealthFixtureInput) {
     return {
         peerId: input.peerId,
         label: input.label,
@@ -378,10 +387,7 @@ function withSnapshotVersion(
 function createGroupSnapshot(
     groupId: string,
     sessionIds: readonly string[],
-    scope: Readonly<{
-        applicationId?: string;
-        workspaceId?: string;
-    }> = {}
+    scope: GroupSnapshotFixtureScope = {}
 ): GroupSnapshot {
     const applicationId = scope.applicationId ?? 'app-1';
     const workspaceId = scope.workspaceId ?? 'workspace-1';

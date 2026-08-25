@@ -1,25 +1,10 @@
-import { ApiHttpError } from '@shared-web/browser/api/http-error.ts';
-import type { ApiMiddleware } from '@shared-web/browser/connection/browser-transport-runtime.ts';
 import type { Middleware } from '@shared-web/browser/middleware.ts';
-import { newALRoute, newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
-import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
-import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { Either } from '@shared/resilience/Either.ts';
-import type { OnMessageCallback } from '@shared/services/InboxOutboxContracts.ts';
 import { DEFAULT_RTC_DATA_CHANNEL_LANE_ID, type QRtcPeerDto, type WebRtcPeerConnectionLeft } from '@shared/services/WebRtcConnectionService.ts';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { createActiveGroupMemberFixture, createActiveGroupPresenceSessionFixture, createGroupSnapshotFixture } from './authoritative-group-fixtures.ts';
-
-type ApiIntegrationModule = typeof import('@shared-web/browser/api-integration.ts');
-type AuthApiModule = typeof import('@shared-web/browser/auth/session-http-api.ts');
-type ApiWorkflowsModule = typeof import('@shared-web/browser/api-workflows.ts');
-type MiddlewareModule = typeof import('@shared-web/browser/middleware.ts');
-type AuthModule = typeof import('@shared/api/auth.ts');
-type BrowserALRuntimeStoresModule = typeof import('@shared-web/browser/browser-al-runtime-stores.ts');
-type ClientStateSnapshotsRepositoryModule = typeof import('@shared/repository/client-state-snapshots-repository.ts');
-type DataCachesModule = typeof import('@shared-web/browser/data-caches.ts');
-type GroupStateSnapshotsRepositoryModule = typeof import('@shared/repository/group-state-snapshots-repository.ts');
-type RoomGroupStateWorkflowsModule = typeof import('@shared-web/browser/rooms/room-group-state-workflows.ts');
+import { createAuthSessionApiHttpError, createAuthSessionGroupSnapshot, installGroupSnapshotRepositoryMocks } from './auth-session-contract-fixtures.ts';
+import type * as ContractModules from './auth-session-contract-modules.ts';
+import { createDeferred, createMediaStream, createMediaTrack } from './browser-lifecycle-fixtures.ts';
 
 const mocks = await vi.hoisted(async () => {
     const { createApiMiddlewareTestDouble } = await import('./api-middleware-test-double.ts');
@@ -34,13 +19,13 @@ const mocks = await vi.hoisted(async () => {
         webRtcConnectionService: vi.mocked(ctx.middleware.webRtcConnectionService),
         webSocketQueueBox: vi.mocked(ctx.middleware.webSocketQueueBox),
         webSocket: vi.mocked(ctx.middleware.webSocketQueueBox.socket),
-        initialiseMiddleware: vi.fn<MiddlewareModule['initialiseMiddleware']>(() => Promise.resolve(ctx.middleware)),
-        clearSession: vi.fn<AuthModule['clearSession']>(),
-        readSession: vi.fn<AuthModule['readSession']>(() => session),
-        writeSession: vi.fn<AuthModule['writeSession']>(),
-        hydrateStateCaches: vi.fn<DataCachesModule['hydrateStateCaches']>(() => Promise.resolve()),
-        onStateCacheChange: vi.fn<DataCachesModule['onStateCacheChange']>(() => vi.fn()),
-        deleteBrowserALRuntimeEntriesForSession: vi.fn<BrowserALRuntimeStoresModule['deleteBrowserALRuntimeEntriesForSession']>(() =>
+        initialiseMiddleware: vi.fn<ContractModules.Middleware['initialiseMiddleware']>(() => Promise.resolve(ctx.middleware)),
+        clearSession: vi.fn<ContractModules.Auth['clearSession']>(),
+        readSession: vi.fn<ContractModules.Auth['readSession']>(() => session),
+        writeSession: vi.fn<ContractModules.Auth['writeSession']>(),
+        hydrateStateCaches: vi.fn<ContractModules.DataCaches['hydrateStateCaches']>(() => Promise.resolve()),
+        onStateCacheChange: vi.fn<ContractModules.DataCaches['onStateCacheChange']>(() => vi.fn()),
+        deleteBrowserALRuntimeEntriesForSession: vi.fn<ContractModules.BrowserALRuntimeStores['deleteBrowserALRuntimeEntriesForSession']>(() =>
             Promise.resolve({
                 dbName: '',
                 storeName: '',
@@ -49,16 +34,18 @@ const mocks = await vi.hoisted(async () => {
                 deleted: 0
             })
         ),
-        createAndJoinStateGroup: vi.fn<ApiWorkflowsModule['createAndJoinStateGroup']>(() => Promise.reject(new Error('create not mocked'))),
-        joinStateGroup: vi.fn<ApiWorkflowsModule['joinStateGroup']>(() => Promise.reject(new Error('join not mocked'))),
-        leaveStateGroup: vi.fn<ApiWorkflowsModule['leaveStateGroup']>(() => Promise.reject(new Error('leave not mocked'))),
-        updateStateGroupMetadata: vi.fn<ApiWorkflowsModule['updateStateGroupMetadata']>(() => Promise.reject(new Error('metadata update not mocked'))),
-        refreshStateSnapshots: vi.fn<ApiWorkflowsModule['refreshStateSnapshots']>(
+        createAndJoinStateGroup: vi.fn<ContractModules.ApiWorkflows['createAndJoinStateGroup']>(() => Promise.reject(new Error('create not mocked'))),
+        joinStateGroup: vi.fn<ContractModules.ApiWorkflows['joinStateGroup']>(() => Promise.reject(new Error('join not mocked'))),
+        leaveStateGroup: vi.fn<ContractModules.ApiWorkflows['leaveStateGroup']>(() => Promise.reject(new Error('leave not mocked'))),
+        updateStateGroupMetadata: vi.fn<ContractModules.ApiWorkflows['updateStateGroupMetadata']>(() =>
+            Promise.reject(new Error('metadata update not mocked'))
+        ),
+        refreshStateSnapshots: vi.fn<ContractModules.ApiWorkflows['refreshStateSnapshots']>(
             () => Promise.resolve({ clients: [], groups: [] })
         ),
-        loginToApi: vi.fn<AuthApiModule['loginToApi']>(() => Promise.resolve(session)),
-        logoutFromApi: vi.fn<AuthApiModule['logoutFromApi']>(() => Promise.resolve({ loggedOut: true })),
-        registerWithApi: vi.fn<AuthApiModule['registerWithApi']>(() =>
+        loginToApi: vi.fn<ContractModules.AuthApi['loginToApi']>(() => Promise.resolve(session)),
+        logoutFromApi: vi.fn<ContractModules.AuthApi['logoutFromApi']>(() => Promise.resolve({ loggedOut: true })),
+        registerWithApi: vi.fn<ContractModules.AuthApi['registerWithApi']>(() =>
             Promise.resolve({
                 clientId: 'client-new',
                 username: 'new-user',
@@ -66,32 +53,36 @@ const mocks = await vi.hoisted(async () => {
                 registeredAtEpochMs: 1_000
             })
         ),
-        listStateClientEvents: vi.fn<ApiIntegrationModule['listStateClientEvents']>(
+        listStateClientEvents: vi.fn<ContractModules.ApiIntegration['listStateClientEvents']>(
             () => Promise.reject(new Error('client events not mocked'))
         ),
-        listStateClientEventPage: vi.fn<ApiIntegrationModule['listStateClientEventPage']>(() => Promise.reject(new Error('client event page not mocked'))),
-        listStateGroupEvents: vi.fn<ApiIntegrationModule['listStateGroupEvents']>(
+        listStateClientEventPage: vi.fn<ContractModules.ApiIntegration['listStateClientEventPage']>(() =>
+            Promise.reject(new Error('client event page not mocked'))
+        ),
+        listStateGroupEvents: vi.fn<ContractModules.ApiIntegration['listStateGroupEvents']>(
             () => Promise.reject(new Error('group events not mocked'))
         ),
-        listStateGroupEventPage: vi.fn<ApiIntegrationModule['listStateGroupEventPage']>(() => Promise.reject(new Error('group event page not mocked'))),
+        listStateGroupEventPage: vi.fn<ContractModules.ApiIntegration['listStateGroupEventPage']>(() =>
+            Promise.reject(new Error('group event page not mocked'))
+        ),
         clientRepositoryMissing: vi.fn(() => undefined),
-        getAllClientStateSnapshots: vi.fn<ClientStateSnapshotsRepositoryModule['getAllClientStateSnapshots']>(() => []),
-        findFirstGroupStateSnapshotRefSessionIdIsIn: vi.fn<GroupStateSnapshotsRepositoryModule['findFirstGroupStateSnapshotRefSessionIdIsIn']>(),
-        findGroupStateSnapshotByRef: vi.fn<GroupStateSnapshotsRepositoryModule['findGroupStateSnapshotByRef']>(),
-        getAllGroupStateSnapshots: vi.fn<GroupStateSnapshotsRepositoryModule['getAllGroupStateSnapshots']>()
+        getAllClientStateSnapshots: vi.fn<ContractModules.ClientStateSnapshotsRepository['getAllClientStateSnapshots']>(() => []),
+        findFirstGroupStateSnapshotRefSessionIdIsIn: vi.fn<ContractModules.GroupStateSnapshotsRepository['findFirstGroupStateSnapshotRefSessionIdIsIn']>(),
+        findGroupStateSnapshotByRef: vi.fn<ContractModules.GroupStateSnapshotsRepository['findGroupStateSnapshotByRef']>(),
+        getAllGroupStateSnapshots: vi.fn<ContractModules.GroupStateSnapshotsRepository['getAllGroupStateSnapshots']>()
     };
 });
 
 vi.mock(
     import('@shared-web/browser/middleware.ts'),
-    (): Partial<MiddlewareModule> => ({
+    (): Partial<ContractModules.Middleware> => ({
         initialiseMiddleware: mocks.initialiseMiddleware
     })
 );
 
 vi.mock(
     import('@shared-web/browser/api-integration.ts'),
-    (): Partial<ApiIntegrationModule> => ({
+    (): Partial<ContractModules.ApiIntegration> => ({
         listStateClientEventPage: mocks.listStateClientEventPage,
         listStateClientEvents: mocks.listStateClientEvents,
         listStateGroupEventPage: mocks.listStateGroupEventPage,
@@ -101,7 +92,7 @@ vi.mock(
 
 vi.mock(
     import('@shared-web/browser/auth/session-http-api.ts'),
-    (): Partial<AuthApiModule> => ({
+    (): Partial<ContractModules.AuthApi> => ({
         loginToApi: mocks.loginToApi,
         logoutFromApi: mocks.logoutFromApi,
         registerWithApi: mocks.registerWithApi
@@ -110,7 +101,7 @@ vi.mock(
 
 vi.mock(
     import('@shared-web/browser/api-workflows.ts'),
-    (): Partial<ApiWorkflowsModule> => ({
+    (): Partial<ContractModules.ApiWorkflows> => ({
         createAndJoinStateGroup: mocks.createAndJoinStateGroup,
         joinStateGroup: mocks.joinStateGroup,
         leaveStateGroup: mocks.leaveStateGroup,
@@ -121,7 +112,7 @@ vi.mock(
 
 vi.mock(
     import('@shared-web/browser/rooms/room-group-state-workflows.ts'),
-    (): Partial<RoomGroupStateWorkflowsModule> => ({
+    (): Partial<ContractModules.RoomGroupStateWorkflows> => ({
         joinStateGroup: mocks.joinStateGroup,
         leaveStateGroup: mocks.leaveStateGroup
     })
@@ -129,20 +120,20 @@ vi.mock(
 
 vi.mock(
     import('@shared-web/browser/browser-al-runtime-stores.ts'),
-    (): Partial<BrowserALRuntimeStoresModule> => ({
+    (): Partial<ContractModules.BrowserALRuntimeStores> => ({
         deleteBrowserALRuntimeEntriesForSession: mocks.deleteBrowserALRuntimeEntriesForSession
     })
 );
 
 vi.mock(
     import('@shared-web/browser/data-caches.ts'),
-    (): Partial<DataCachesModule> => ({
+    (): Partial<ContractModules.DataCaches> => ({
         hydrateStateCaches: mocks.hydrateStateCaches,
         onStateCacheChange: mocks.onStateCacheChange
     })
 );
 
-vi.mock(import('@shared/api/auth.ts'), (): Partial<AuthModule> => ({
+vi.mock(import('@shared/api/auth.ts'), (): Partial<ContractModules.Auth> => ({
     clearSession: mocks.clearSession,
     isLoggedIn: vi.fn(() => true),
     readSession: mocks.readSession,
@@ -151,7 +142,7 @@ vi.mock(import('@shared/api/auth.ts'), (): Partial<AuthModule> => ({
 
 vi.mock(
     import('@shared/repository/client-state-snapshots-repository.ts'),
-    (): Partial<ClientStateSnapshotsRepositoryModule> => ({
+    (): Partial<ContractModules.ClientStateSnapshotsRepository> => ({
         findClientStateSnapshotByPrincipalId: mocks.clientRepositoryMissing,
         getAllClientStateSnapshots: mocks.getAllClientStateSnapshots
     })
@@ -159,7 +150,7 @@ vi.mock(
 
 vi.mock(
     import('@shared/repository/group-state-snapshots-repository.ts'),
-    (): Partial<GroupStateSnapshotsRepositoryModule> => ({
+    (): Partial<ContractModules.GroupStateSnapshotsRepository> => ({
         findFirstGroupStateSnapshotRefSessionIdIsIn: mocks.findFirstGroupStateSnapshotRefSessionIdIsIn,
         findGroupStateSnapshotByRef: mocks.findGroupStateSnapshotByRef,
         getAllGroupStateSnapshots: mocks.getAllGroupStateSnapshots
@@ -175,7 +166,7 @@ describe('Rallar auth session contract', () => {
         vi.useRealTimers();
         mocks.clientRepositoryMissing.mockReturnValue(undefined);
         mocks.getAllClientStateSnapshots.mockReturnValue([]);
-        mockGroupRepositoryMissing();
+        installGroupSnapshotRepositoryMocks(mocks, []);
         mocks.refreshStateSnapshots.mockResolvedValue({ clients: [], groups: [] });
         mocks.initialiseMiddleware.mockResolvedValue(mocks.ctx.middleware);
         mocks.clearSession.mockImplementation(() => undefined);
@@ -311,7 +302,7 @@ describe('Rallar auth session contract', () => {
     it('reuses one request ID when login retries after a lost response', async () => {
         const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
         mocks.loginToApi
-            .mockRejectedValueOnce(apiHttpError(503, 'response lost'))
+            .mockRejectedValueOnce(createAuthSessionApiHttpError(503, 'response lost'))
             .mockResolvedValueOnce(mocks.ctx.session);
 
         await createRallarFacade().auth.login(
@@ -417,7 +408,7 @@ describe('Rallar auth session contract', () => {
         facade.auth.onChange(authListener, { emitCurrent: false });
         await facade.connect();
         mocks.refreshStateSnapshots.mockRejectedValue(
-            apiHttpError(401, 'Unauthorized')
+            createAuthSessionApiHttpError(401, 'Unauthorized')
         );
 
         await expect(facade.rooms.refresh()).rejects.toThrow('Unauthorized');
@@ -439,8 +430,8 @@ describe('Rallar auth session contract', () => {
         const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
         const facade = createRallarFacade();
         const authListener = vi.fn();
-        const oldRoom = createGroupSnapshot('old-room', ['session-1']);
-        const newRoom = createGroupSnapshot('new-room', ['session-1']);
+        const oldRoom = createAuthSessionGroupSnapshot('old-room', ['session-1']);
+        const newRoom = createAuthSessionGroupSnapshot('new-room', ['session-1']);
 
         facade.setDefaults({
             applicationId: 'app-1',
@@ -448,12 +439,12 @@ describe('Rallar auth session contract', () => {
         });
         mocks.joinStateGroup.mockResolvedValueOnce(oldRoom);
         await facade.rooms.join('old-room');
-        mockGroupSnapshot(oldRoom);
+        installGroupSnapshotRepositoryMocks(mocks, [oldRoom]);
 
         facade.auth.onChange(authListener, { emitCurrent: false });
         mocks.joinStateGroup.mockResolvedValueOnce(newRoom);
         mocks.leaveStateGroup.mockRejectedValueOnce(
-            apiHttpError(401, 'Unauthorized')
+            createAuthSessionApiHttpError(401, 'Unauthorized')
         );
 
         await expect(facade.rooms.join('new-room')).rejects.toThrow('Unauthorized');
@@ -473,7 +464,7 @@ describe('Rallar auth session contract', () => {
         await facade.connect();
         mocks.webSocketQueueBox.close.mockClear();
         mocks.refreshStateSnapshots.mockRejectedValue(
-            apiHttpError(403, 'Forbidden')
+            createAuthSessionApiHttpError(403, 'Forbidden')
         );
 
         await expect(facade.rooms.refresh()).rejects.toThrow('Forbidden');
@@ -519,7 +510,7 @@ describe('Rallar auth session contract', () => {
     it('reuses one request ID when registration retries after a lost response', async () => {
         const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
         mocks.registerWithApi
-            .mockRejectedValueOnce(apiHttpError(503, 'response lost'))
+            .mockRejectedValueOnce(createAuthSessionApiHttpError(503, 'response lost'))
             .mockResolvedValueOnce({
                 clientId: 'client-new',
                 username: 'new-user',
@@ -574,7 +565,7 @@ describe('Rallar auth session contract', () => {
     it('reuses one request ID when logout retries after a lost response', async () => {
         const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
         mocks.logoutFromApi
-            .mockRejectedValueOnce(apiHttpError(503, 'response lost'))
+            .mockRejectedValueOnce(createAuthSessionApiHttpError(503, 'response lost'))
             .mockResolvedValueOnce({ loggedOut: true });
 
         await createRallarFacade().auth.logout({ maxAttempts: 2 });
@@ -801,272 +792,3 @@ describe('Rallar auth session contract', () => {
         });
     });
 });
-
-function findLatestWsAnyMessageCallback(): OnMessageCallback | undefined {
-    return mocks.webSocketQueueBox.onAnyInboxMessageDo.mock.calls
-        .filter(([callbackId]) => callbackId === 'rallar:ws:any-message')
-        .at(-1)?.[1];
-}
-function createChannelHealth(
-    input: Readonly<{
-        peerId: string;
-        label: string;
-        state: string;
-        readyState: RTCDataChannelState;
-    }>
-) {
-    return {
-        peerId: input.peerId,
-        label: input.label,
-        state: input.state,
-        role: 'Initiator',
-        readyState: input.readyState,
-        binaryType: 'arraybuffer' as const,
-        bufferedAmount: 0,
-        bufferedAmountLowThreshold: 0,
-        queuedItemCount: 0,
-        rawCallbackCount: 0,
-        messageCallbackCount: 0,
-        lifecycleCallbackCount: 0,
-        flowControl: {
-            highWatermarkBytes: 64 * 1024,
-            lowWatermarkBytes: 16 * 1024,
-            overflow: 'drop-new' as const,
-            maxQueueItems: 32
-        },
-        counters: {
-            sent: 0,
-            queued: 0,
-            dropped: 0,
-            replaced: 0,
-            closed: 0,
-            flushed: 0,
-            droppedOldest: 0,
-            droppedStale: 0,
-            receivedRaw: 0,
-            receivedString: 0,
-            receivedBinary: 0
-        }
-    };
-}
-
-function mockGroupSnapshot(snapshot: GroupSnapshot): void {
-    mockGroupSnapshots([snapshot]);
-}
-
-function mockGroupSnapshots(snapshots: readonly GroupSnapshot[]): void {
-    mocks.getAllGroupStateSnapshots.mockImplementation(() => [...snapshots]);
-    mocks.findGroupStateSnapshotByRef.mockImplementation((ref) =>
-        snapshots.find(
-            (snapshot) =>
-                snapshot.group.groupId === ref.groupId &&
-                snapshot.group.applicationId === ref.applicationId &&
-                (snapshot.group.workspaceId ?? '') === (ref.workspaceId ?? '')
-        )
-    );
-    mocks.findFirstGroupStateSnapshotRefSessionIdIsIn.mockImplementation(
-        (sessionId) => snapshots.find((snapshot) => snapshot.group.groupId === sessionId)?.group
-    );
-}
-
-function mockGroupRepositoryMissing(): void {
-    mocks.getAllGroupStateSnapshots.mockReturnValue([]);
-    mocks.findGroupStateSnapshotByRef.mockReturnValue(undefined);
-    mocks.findFirstGroupStateSnapshotRefSessionIdIsIn.mockReturnValue(undefined);
-}
-
-function withSnapshotVersion(
-    snapshot: GroupSnapshot,
-    snapshotVersion: number
-): GroupSnapshot {
-    return {
-        ...snapshot,
-        group: {
-            ...snapshot.group,
-            snapshotVersion
-        }
-    };
-}
-
-function createGroupSnapshot(
-    groupId: string,
-    sessionIds: readonly string[],
-    scope: Readonly<{
-        applicationId?: string;
-        workspaceId?: string;
-    }> = {}
-): GroupSnapshot {
-    const applicationId = scope.applicationId ?? 'app-1';
-    const workspaceId = scope.workspaceId ?? 'workspace-1';
-    return createGroupSnapshotFixture({
-        applicationId,
-        workspaceId,
-        groupId,
-        sessionIds
-    });
-}
-
-function createDirectorGroupSnapshot(
-    appointment?: Readonly<{
-        sessionId: string;
-        principalId: string;
-        epoch: number;
-        appointedAtEpochMs: number;
-        heartbeatTtlMs: number;
-    }>
-): GroupSnapshot {
-    const snapshot = createGroupSnapshot('room-1', ['session-1']);
-    const activeSessions: GroupSnapshot['activeSessions'][number][] = [
-        {
-            ...snapshot.activeSessions[0],
-            principalId: 'principal-1',
-            sessionId: 'session-1'
-        }
-    ];
-    const members: GroupSnapshot['members'][number][] = [
-        {
-            ...snapshot.members[0],
-            principalId: 'principal-1',
-            role: 'owner'
-        }
-    ];
-
-    if (appointment) {
-        activeSessions.push(
-            createActiveGroupPresenceSessionFixture({
-                applicationId: 'app-1',
-                workspaceId: 'workspace-1',
-                groupId: 'room-1',
-                principalId: appointment.principalId,
-                sessionId: appointment.sessionId
-            })
-        );
-        members.push(
-            createActiveGroupMemberFixture({
-                applicationId: 'app-1',
-                workspaceId: 'workspace-1',
-                groupId: 'room-1',
-                principalId: appointment.principalId,
-                role: 'member',
-                actorPrincipalId: 'principal-1'
-            })
-        );
-    }
-
-    return {
-        ...snapshot,
-        group: {
-            ...snapshot.group,
-            created: {
-                ...snapshot.group.created,
-                actor: { kind: 'principal', principalId: 'principal-1' }
-            },
-            metadata: appointment
-                ? {
-                    rallarDirector: {
-                        version: 1,
-                        mode: 'appointed-spa',
-                        ...appointment
-                    }
-                }
-                : {}
-        },
-        members,
-        activeSessions,
-        memberCount: members.length,
-        onlineMemberCount: activeSessions.length
-    };
-}
-
-function apiHttpError(status: number, message: string): ApiHttpError {
-    return new ApiHttpError(
-        'POST',
-        '/api/auth/test/requests/test-request-id',
-        status,
-        JSON.stringify({
-            type: 'api-mutation-failure',
-            version: 'canonical.v2',
-            code: `test-${status}`,
-            status,
-            message,
-            issues: null,
-            denial: null,
-            retry: status === 503
-                ? {
-                    retryable: true,
-                    retryAfterMs: null,
-                    reason: 'test-retry'
-                }
-                : null
-        })
-    );
-}
-
-function createDeferred<T>(): {
-    promise: Promise<T>;
-    resolve: (value: T) => void;
-    reject: (error: unknown) => void;
-} {
-    let resolve!: (value: T) => void;
-    let reject!: (error: unknown) => void;
-    const promise = new Promise<T>((resolvePromise, rejectPromise) => {
-        resolve = resolvePromise;
-        reject = rejectPromise;
-    });
-
-    return { promise, resolve, reject };
-}
-
-function createMediaTrack(
-    id: string,
-    kind: 'audio' | 'video'
-): MediaStreamTrack {
-    const listeners = new Set<EventListenerOrEventListenerObject>();
-    const track = {
-        id,
-        kind,
-        enabled: true,
-        readyState: 'live',
-        addEventListener: vi.fn(
-            (type: string, listener: EventListenerOrEventListenerObject) => {
-                if (type === 'ended') {
-                    listeners.add(listener);
-                }
-            }
-        ),
-        removeEventListener: vi.fn(
-            (type: string, listener: EventListenerOrEventListenerObject) => {
-                if (type === 'ended') {
-                    listeners.delete(listener);
-                }
-            }
-        ),
-        stop: vi.fn(() => {
-            track.readyState = 'ended';
-            const event = { type: 'ended' } as Event;
-            for (const listener of listeners) {
-                if (typeof listener === 'function') {
-                    listener(event);
-                }
-                else {
-                    listener.handleEvent(event);
-                }
-            }
-        })
-    };
-
-    return track as unknown as MediaStreamTrack;
-}
-
-function createMediaStream(
-    id: string,
-    tracks: readonly MediaStreamTrack[]
-): MediaStream {
-    return {
-        id,
-        active: tracks.some((track) => track.readyState !== 'ended'),
-        getTracks: vi.fn(() => [...tracks]),
-        getAudioTracks: vi.fn(() => tracks.filter((track) => track.kind === 'audio')),
-        getVideoTracks: vi.fn(() => tracks.filter((track) => track.kind === 'video'))
-    } as unknown as MediaStream;
-}

@@ -26,7 +26,7 @@ export interface RallarGameAuthorityPeerAssistOptions<TSnapshot> {
     ) => boolean | Promise<boolean>;
 }
 
-export interface RallarGameAuthorityClientConfig<TCommand, TSnapshot, TEvent, TPresence = unknown> {
+export interface RallarGameAuthorityClientConfig<TCommand, TSnapshot, TEvent, TPresence = never> {
     readonly rallar: RallarGameAuthorityClientRallarFacade;
     readonly protocol: string;
     readonly topicId: string;
@@ -46,7 +46,7 @@ export interface RallarGameAuthorityCommandOptions {
     readonly key?: string;
 }
 
-export interface RallarGameAuthorityClientHandle<TCommand, TSnapshot, TEvent, TPresence = unknown> {
+export interface RallarGameAuthorityClientHandle<TCommand, TSnapshot, TEvent, TPresence = never> {
     start(): Promise<RallarGameAuthorityClientStatus>;
     stop(): void;
     status(): RallarGameAuthorityClientStatus;
@@ -55,7 +55,7 @@ export interface RallarGameAuthorityClientHandle<TCommand, TSnapshot, TEvent, TP
         command: TCommand,
         options?: RallarGameAuthorityCommandOptions
     ): Promise<RallarGameAuthoritySendResult>;
-    requestSync(payload?: unknown): Promise<RallarGameAuthoritySendResult>;
+    requestSync<TPayload>(payload?: TPayload): Promise<RallarGameAuthoritySendResult>;
     publishPresence(presence: TPresence): Promise<RallarGameAuthoritySendResult>;
     publishSnapshotRepair(snapshot: TSnapshot): Promise<RallarGameAuthoritySendResult>;
     onStatus(handler: RallarGameAuthorityStatusHandler): RallarUnsubscribe;

@@ -137,7 +137,7 @@ export class RallarStateStore implements RallarStatePort {
 
     onPeopleChange(
         listener: RallarStateListener<RallarPeopleState>,
-        options: Readonly<{ emitCurrent?: boolean; }> = {}
+        options: RallarOnChangeOptions = {}
     ): RallarUnsubscribe {
         this.#peopleStateListeners.add(listener);
         if (options.emitCurrent ?? true) {

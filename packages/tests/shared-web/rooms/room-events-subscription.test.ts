@@ -21,19 +21,22 @@ describe('room event subscriptions', () => {
         await facade.connect();
         roomListener.mockClear();
         const callback = findRoomWsCallback();
-        const matching = createRoomEvent('room-1', 'event-1', 'member-joined');
+        const matching = createRoomEvent({ groupId: 'room-1', eventId: 'event-1', eventType: 'member-joined' });
 
         await callback?.onMessage?.(toRoomEventEnvelopeMessage(matching));
         await callback?.onMessage?.(toRoomEventEnvelopeMessage(matching));
         await callback?.onMessage?.(
-            toRoomEventEnvelopeMessage(createRoomEvent('room-2', 'event-2', 'member-joined'))
+            toRoomEventEnvelopeMessage(createRoomEvent({ groupId: 'room-2', eventId: 'event-2', eventType: 'member-joined' }))
         );
         await callback?.onMessage?.(
-            toRoomEventEnvelopeMessage(createRoomEvent('room-1', 'event-3', 'member-left'))
+            toRoomEventEnvelopeMessage(createRoomEvent({ groupId: 'room-1', eventId: 'event-3', eventType: 'member-left' }))
         );
         await callback?.onMessage?.(
             toRoomEventEnvelopeMessage(
-                createRoomEvent('room-1', 'event-4', 'member-joined', {
+                createRoomEvent({
+                    groupId: 'room-1',
+                    eventId: 'event-4',
+                    eventType: 'member-joined',
                     workspaceId: 'other-workspace'
                 })
             )
@@ -71,8 +74,8 @@ describe('room event subscriptions', () => {
         facade.rooms.onEvent(listener, { roomId: 'room-1' });
         await facade.connect();
         const callback = findRoomWsCallback();
-        const wrapped = createRoomEvent('room-1', 'event-wrapped', 'member-joined');
-        const duplicated = createRoomEvent('room-1', 'event-duplicated', 'member-left');
+        const wrapped = createRoomEvent({ groupId: 'room-1', eventId: 'event-wrapped', eventType: 'member-joined' });
+        const duplicated = createRoomEvent({ groupId: 'room-1', eventId: 'event-duplicated', eventType: 'member-left' });
 
         await callback?.onMessage?.(toRoomEventEnvelopeMessage(wrapped));
         await callback?.onMessage?.(toRoomEventEnvelopeMessage(duplicated));
@@ -96,7 +99,7 @@ describe('room event subscriptions', () => {
         const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
         const facade = createRallarFacade();
         const listener = vi.fn();
-        const event = createRoomEvent('room-1', 'incomplete-envelope', 'member-joined');
+        const event = createRoomEvent({ groupId: 'room-1', eventId: 'incomplete-envelope', eventType: 'member-joined' });
         facade.setDefaults({ applicationId: 'app-1', workspaceId: 'workspace-1' });
         facade.rooms.onEvent(listener, { roomId: 'room-1' });
         await facade.connect();
@@ -115,7 +118,7 @@ describe('room event subscriptions', () => {
         const unsubscribe = facade.rooms.onEvent(listener, { roomId: 'room-1' });
         await facade.connect();
         const callback = findRoomWsCallback();
-        const event = createRoomEvent('room-1', 'valid-event', 'member-joined');
+        const event = createRoomEvent({ groupId: 'room-1', eventId: 'valid-event', eventType: 'member-joined' });
 
         await callback?.onMessage?.(
             toRoomEventEnvelopeMessage({
@@ -126,7 +129,7 @@ describe('room event subscriptions', () => {
         await callback?.onMessage?.(toRoomEventEnvelopeMessage(event));
         unsubscribe();
         await callback?.onMessage?.(
-            toRoomEventEnvelopeMessage(createRoomEvent('room-1', 'later-event', 'member-left'))
+            toRoomEventEnvelopeMessage(createRoomEvent({ groupId: 'room-1', eventId: 'later-event', eventType: 'member-left' }))
         );
 
         expect(listener).toHaveBeenCalledOnce();
@@ -143,7 +146,7 @@ describe('room event subscriptions', () => {
         await facade.connect();
 
         await findRoomWsCallback(true)?.onMessage?.(
-            toRoomEventEnvelopeMessage(createRoomEvent('room-1', 'event-1', 'member-joined'))
+            toRoomEventEnvelopeMessage(createRoomEvent({ groupId: 'room-1', eventId: 'event-1', eventType: 'member-joined' }))
         );
         expect(listener).toHaveBeenCalledTimes(1);
 
@@ -157,7 +160,7 @@ describe('room event subscriptions', () => {
         expect(mocks.listStateGroupEventPage).not.toHaveBeenCalled();
 
         await findRoomWsCallback(true)?.onMessage?.(
-            toRoomEventEnvelopeMessage(createRoomEvent('room-1', 'event-3', 'member-left'))
+            toRoomEventEnvelopeMessage(createRoomEvent({ groupId: 'room-1', eventId: 'event-3', eventType: 'member-left' }))
         );
         expect(listener).toHaveBeenCalledTimes(2);
         expect(listener.mock.calls.map((call) => call[0].eventId)).toEqual(['event-1', 'event-3']);

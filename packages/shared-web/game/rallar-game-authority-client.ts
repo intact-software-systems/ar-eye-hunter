@@ -9,7 +9,6 @@ import type {
     RallarGameAuthorityClientHandle,
     RallarGameAuthorityCommandOptions
 } from '@shared-web/game/rallar-game-authority-client-contracts.ts';
-import type { ALOutboundEnqueueStatus } from '@shared/alm/ALOutboundMessageRuntime.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import {
     createRallarGameAuthorityEnvelope,
@@ -21,10 +20,16 @@ import {
     type RallarGameAuthorityCommandResult,
     type RallarGameAuthorityDiagnostics,
     type RallarGameAuthorityEnvelope,
+    type RallarGameAuthorityEnvelopeKind,
     type RallarGameAuthoritySendResult,
     type RallarGameAuthorityStatusHandler,
     type RallarGameAuthorityTypeIds
 } from '@shared/rallar-game/mod.ts';
+import {
+    decodeAuthorityCommandResult,
+    isSuccessfulAuthorityMessageStatus,
+    notReadyAuthoritySendResult
+} from './rallar-game-authority-message-results.ts';
 
 interface RallarGameAuthorityRoomTarget {
     readonly roomId?: string;
@@ -54,7 +59,7 @@ interface AuthorityEnvelopeAcceptanceOptions {
     readonly senderId?: string;
 }
 
-export class RallarGameAuthorityClient<TCommand, TSnapshot, TEvent, TPresence = unknown>
+export class RallarGameAuthorityClient<TCommand, TSnapshot, TEvent, TPresence = never>
     implements RallarGameAuthorityClientHandle<TCommand, TSnapshot, TEvent, TPresence> {
     private readonly config: RallarGameAuthorityClientConfig<TCommand, TSnapshot, TEvent, TPresence>;
     private readonly typeIds: RallarGameAuthorityTypeIds;
@@ -137,10 +142,10 @@ export class RallarGameAuthorityClient<TCommand, TSnapshot, TEvent, TPresence = 
         });
     }
 
-    public async requestSync(payload: unknown = {}): Promise<RallarGameAuthoritySendResult> {
+    public async requestSync<TPayload>(payload?: TPayload): Promise<RallarGameAuthoritySendResult> {
         return await this.sendWsEnvelope({
             kind: 'sync-request',
-            payload,
+            payload: payload ?? {},
             typeId: this.typeIds.syncRequest,
             options: { reliability: 'at-least-once', ack: 'receiver' }
         });
@@ -229,7 +234,7 @@ export class RallarGameAuthorityClient<TCommand, TSnapshot, TEvent, TPresence = 
         const senderId = this.readLocalPeerId();
         if (!room.roomId || !senderId) {
             this.refreshStatus();
-            return notReadyResult('ws');
+            return notReadyAuthoritySendResult('ws');
         }
         const envelope = this.createEnvelope(input.kind, input.payload, {
             roomId: room.roomId,
@@ -250,7 +255,7 @@ export class RallarGameAuthorityClient<TCommand, TSnapshot, TEvent, TPresence = 
                 reliability: input.options.reliability,
                 ack: input.options.ack
             });
-        const sent = isSuccessfulMessageStatus(result.status);
+        const sent = isSuccessfulAuthorityMessageStatus(result.status);
         if (!sent && input.options.trackPending) {
             this.pendingCommands.delete(envelope.seq);
         }
@@ -278,7 +283,7 @@ export class RallarGameAuthorityClient<TCommand, TSnapshot, TEvent, TPresence = 
         const senderId = this.readLocalPeerId();
         if (!room.roomId || !senderId) {
             this.refreshStatus();
-            return notReadyResult('rtc');
+            return notReadyAuthoritySendResult('rtc');
         }
         const envelope = this.createEnvelope(kind, payload, {
             roomId: room.roomId,
@@ -296,7 +301,7 @@ export class RallarGameAuthorityClient<TCommand, TSnapshot, TEvent, TPresence = 
                 ack: 'none',
                 ttlMs: 5_000
             });
-        const sent = isSuccessfulMessageStatus(result.status);
+        const sent = isSuccessfulAuthorityMessageStatus(result.status);
         this.recordPeerAssistSend(kind, sent, envelope.sentAtEpochMs);
         this.refreshStatus();
         return sent
@@ -311,7 +316,7 @@ export class RallarGameAuthorityClient<TCommand, TSnapshot, TEvent, TPresence = 
     }
 
     private recordPeerAssistSend(
-        kind: RallarGameAuthorityEnvelope<unknown>['kind'],
+        kind: RallarGameAuthorityEnvelopeKind,
         sent: boolean,
         sentAtEpochMs: number
     ): void {
@@ -333,7 +338,7 @@ export class RallarGameAuthorityClient<TCommand, TSnapshot, TEvent, TPresence = 
         ) {
             return;
         }
-        const commandResult = toCommandResult(message.payload.payload);
+        const commandResult = decodeAuthorityCommandResult(message.payload.payload);
         if (commandResult) {
             this.pendingCommands.delete(commandResult.commandSeq);
         }
@@ -412,9 +417,9 @@ export class RallarGameAuthorityClient<TCommand, TSnapshot, TEvent, TPresence = 
         await this.config.onPresence?.(message.payload);
     }
 
-    private acceptEnvelope(
-        envelope: RallarGameAuthorityEnvelope<unknown>,
-        kind: RallarGameAuthorityEnvelope<unknown>['kind'],
+    private acceptEnvelope<T>(
+        envelope: RallarGameAuthorityEnvelope<T>,
+        kind: RallarGameAuthorityEnvelopeKind,
         options: AuthorityEnvelopeAcceptanceOptions = {}
     ): boolean {
         if (
@@ -530,45 +535,6 @@ export class RallarGameAuthorityClient<TCommand, TSnapshot, TEvent, TPresence = 
             void notifyStatusHandler(handler, status);
         }
     }
-}
-
-function notReadyResult(
-    transport: 'rtc' | 'ws'
-): RallarGameAuthoritySendResult {
-    return {
-        status: 'not-ready',
-        transport,
-        reason: 'Cannot send without a room and local session.'
-    };
-}
-
-function toCommandResult(
-    value: unknown
-): RallarGameAuthorityCommandResult | undefined {
-    if (typeof value !== 'object' || value === null || Array.isArray(value)) {
-        return undefined;
-    }
-    const candidate = value as Partial<RallarGameAuthorityCommandResult>;
-    if (
-        typeof candidate.commandSeq !== 'number' ||
-        !Number.isSafeInteger(candidate.commandSeq) ||
-        candidate.commandSeq < 0 ||
-        (candidate.status !== 'accepted' && candidate.status !== 'rejected')
-    ) {
-        return undefined;
-    }
-    return {
-        commandSeq: candidate.commandSeq,
-        status: candidate.status,
-        reason: typeof candidate.reason === 'string'
-            ? candidate.reason
-            : undefined
-    };
-}
-
-function isSuccessfulMessageStatus(status: ALOutboundEnqueueStatus): boolean {
-    return status === 'enqueued' || status === 'sent-immediate' ||
-        status === 'skipped' || status === 'duplicate';
 }
 
 function uniqueSorted(values: readonly string[]): readonly string[] {

@@ -11,6 +11,16 @@ import type { StateEventPage } from '@shared/api/state-event-types.ts';
 
 import { createActiveClientSessionFixture, createClientSnapshotFixture, createGroupSnapshotFixture } from '../authoritative-group-fixtures.ts';
 
+export interface PeopleEventFixtureInput {
+    readonly principalId: string;
+    readonly eventId: string;
+    readonly eventType: ClientEvent['eventType'];
+    readonly applicationId?: string;
+    readonly workspaceId?: string;
+    readonly snapshotVersion?: number;
+    readonly occurredAtEpochMs?: number;
+}
+
 const peopleEventMocks = await vi.hoisted(async () => {
     const { createApiMiddlewareTestDouble } = await import('../api-middleware-test-double.ts');
     const context = createApiMiddlewareTestDouble();
@@ -122,26 +132,19 @@ export function toPeopleEventMessage(event: ClientEvent) {
 }
 
 export function createPeopleEvent(
-    principalId: string,
-    eventId: string,
-    eventType: ClientEvent['eventType'],
-    scope: Readonly<{
-        applicationId?: string;
-        workspaceId?: string;
-        snapshotVersion?: number;
-        occurredAtEpochMs?: number;
-    }> = {}
+    input: PeopleEventFixtureInput
 ): ClientEvent {
+    const { principalId, eventId, eventType } = input;
     return {
-        applicationId: scope.applicationId ?? 'app-1',
-        workspaceId: scope.workspaceId ?? 'workspace-1',
+        applicationId: input.applicationId ?? 'app-1',
+        workspaceId: input.workspaceId ?? 'workspace-1',
         principalId,
         eventId,
         eventType,
         clientInstanceId: `${principalId}-instance`,
         sessionId: `${principalId}-session`,
-        snapshotVersion: scope.snapshotVersion ?? 1,
-        occurredAtEpochMs: scope.occurredAtEpochMs ?? 1,
+        snapshotVersion: input.snapshotVersion ?? 1,
+        occurredAtEpochMs: input.occurredAtEpochMs ?? 1,
         actor: {
             kind: 'session',
             principalId,

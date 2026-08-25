@@ -9,7 +9,10 @@ describe('room event history compatibility', () => {
         const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
         const mocks = readRoomEventMocks();
         const facade = createRallarFacade();
-        const event = createRoomEvent('room-1', 'event-1', 'member-joined', {
+        const event = createRoomEvent({
+            groupId: 'room-1',
+            eventId: 'event-1',
+            eventType: 'member-joined',
             applicationId: 'room-app',
             workspaceId: 'room-workspace'
         });
@@ -45,7 +48,7 @@ describe('room event history compatibility', () => {
         const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
         const mocks = readRoomEventMocks();
         const facade = createRallarFacade();
-        const event = createRoomEvent('room-1', 'event-1', 'member-joined');
+        const event = createRoomEvent({ groupId: 'room-1', eventId: 'event-1', eventType: 'member-joined' });
         facade.setDefaults({
             applicationId: 'default-app',
             workspaceId: 'default-workspace'
@@ -66,7 +69,10 @@ describe('room event history compatibility', () => {
         const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
         const mocks = readRoomEventMocks();
         const facade = createRallarFacade();
-        const event = createRoomEvent('room-1', 'event-2', 'member-left', {
+        const event = createRoomEvent({
+            groupId: 'room-1',
+            eventId: 'event-2',
+            eventType: 'member-left',
             snapshotVersion: 2,
             occurredAtEpochMs: 2_000
         });

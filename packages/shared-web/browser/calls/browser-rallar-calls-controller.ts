@@ -205,7 +205,7 @@ export class BrowserRallarCallsController {
             message: payload.message,
             reason: payload.reason,
             payload,
-            raw: message as RallarMessage<RallarCallSignalPayload>
+            raw: { ...message, payload }
         };
     }
 

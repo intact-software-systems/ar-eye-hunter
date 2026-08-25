@@ -1,4 +1,5 @@
 import type { ApiMiddleware } from '@shared-web/browser/app-context.ts';
+import type { MiddlewareInitOptions } from '@shared-web/browser/middleware.ts';
 import { vi } from 'vitest';
 import { createApiMiddlewareTestDouble } from './api-middleware-test-double.ts';
 
@@ -31,7 +32,7 @@ function createLifecycleMocks(ctx: ApiMiddleware) {
         clearSession: vi.fn(),
         clearMiddleware: vi.fn(),
         hydrateStateCaches: vi.fn((): Promise<void> => Promise.resolve()),
-        initMiddleware: vi.fn((_options?: unknown) => Promise.resolve(ctx)),
+        initMiddleware: vi.fn((_options?: MiddlewareInitOptions) => Promise.resolve(ctx)),
         isMiddlewareReady: vi.fn(() => false),
         loginToApi: vi.fn<AuthApiModule['loginToApi']>(() => Promise.resolve(ctx.session)),
         logoutFromApi: vi.fn<AuthApiModule['logoutFromApi']>(() => Promise.resolve({ loggedOut: true })),
@@ -89,7 +90,7 @@ function createRepositoryMocks() {
     };
 }
 
-function rejectedWorkflow<T extends (...input: never[]) => Promise<unknown>>(
+function rejectedWorkflow<T extends (...input: never[]) => Promise<object | undefined>>(
     message: string
 ) {
     return vi.fn<T>().mockRejectedValue(new Error(message));

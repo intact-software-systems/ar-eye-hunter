@@ -38,33 +38,35 @@ export interface CreateRallarPeopleControllerOptions {
 }
 
 export interface RallarPeopleController {
-    readonly operations: Readonly<{
-        state(): RallarPeopleState;
-        list(): readonly RallarPerson[];
-        refresh(input?: StateScope | RallarScopedOperationOptions): Promise<RallarPeopleState>;
-        listEvents(
-            principalId: string,
-            options?: RallarListPeopleEventsOptions
-        ): Promise<readonly ClientEvent[]>;
-        listEventPage(
-            principalId: string,
-            options?: RallarListPeopleEventsOptions
-        ): Promise<StateEventPage<ClientEvent>>;
-        replayEvents(
-            principalId: string,
-            options?: RallarReplayPeopleEventsOptions,
-            listener?: RallarStateEventListener<ClientEvent>
-        ): Promise<RallarReplayEventsResult<ClientEvent>>;
-        get(principalId: string): RallarPerson | undefined;
-        onChange(
-            listener: RallarStateListener<RallarPeopleState>,
-            options?: RallarOnChangeOptions
-        ): RallarUnsubscribe;
-        onEvent(
-            listener: RallarStateEventListener<ClientEvent>,
-            options?: RallarPeopleEventOptions
-        ): RallarUnsubscribe;
-    }>;
+    readonly operations: RallarPeopleOperations;
+}
+
+export interface RallarPeopleOperations {
+    state(): RallarPeopleState;
+    list(): readonly RallarPerson[];
+    refresh(input?: StateScope | RallarScopedOperationOptions): Promise<RallarPeopleState>;
+    listEvents(
+        principalId: string,
+        options?: RallarListPeopleEventsOptions
+    ): Promise<readonly ClientEvent[]>;
+    listEventPage(
+        principalId: string,
+        options?: RallarListPeopleEventsOptions
+    ): Promise<StateEventPage<ClientEvent>>;
+    replayEvents(
+        principalId: string,
+        options?: RallarReplayPeopleEventsOptions,
+        listener?: RallarStateEventListener<ClientEvent>
+    ): Promise<RallarReplayEventsResult<ClientEvent>>;
+    get(principalId: string): RallarPerson | undefined;
+    onChange(
+        listener: RallarStateListener<RallarPeopleState>,
+        options?: RallarOnChangeOptions
+    ): RallarUnsubscribe;
+    onEvent(
+        listener: RallarStateEventListener<ClientEvent>,
+        options?: RallarPeopleEventOptions
+    ): RallarUnsubscribe;
 }
 
 export function createRallarPeopleController(

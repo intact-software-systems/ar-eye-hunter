@@ -178,13 +178,13 @@ describe('room state store current-room projection', () => {
 
     it('preserves the selected current room when defaults move to another scope', () => {
         const runtime = new BrowserFacadeRuntimeState(new BrowserTransportRuntime());
-        const current = createRoomSnapshot('scope-a-room', 'Scope A Room');
-        const visible = createRoomSnapshot(
-            'scope-b-room',
-            'Scope B Room',
-            { applicationId: 'app-2', workspaceId: 'workspace-2' },
-            []
-        );
+        const current = createRoomSnapshot({ groupId: 'scope-a-room', displayName: 'Scope A Room' });
+        const visible = createRoomSnapshot({
+            groupId: 'scope-b-room',
+            displayName: 'Scope B Room',
+            scope: { applicationId: 'app-2', workspaceId: 'workspace-2' },
+            sessionIds: []
+        });
         stateMocks.groups.push(current, visible);
         stateMocks.repositoriesConfigured = true;
         const store = createRoomStateStore({
@@ -210,7 +210,7 @@ describe('room state store current-room projection', () => {
 
     it('selects the session room when the canonical current room ref is absent', () => {
         const runtime = new BrowserFacadeRuntimeState(new BrowserTransportRuntime());
-        const sessionRoom = createRoomSnapshot('session-room', 'Session Room');
+        const sessionRoom = createRoomSnapshot({ groupId: 'session-room', displayName: 'Session Room' });
         stateMocks.groups.push(sessionRoom);
         stateMocks.repositoriesConfigured = true;
         const store = createRoomStateStore({
@@ -237,23 +237,30 @@ function requireConfiguredRepositories(): void {
     }
 }
 
-function createRoomSnapshot(
-    groupId: string,
-    displayName: string,
-    scope: Readonly<{ applicationId?: string; workspaceId?: string; }> = {},
-    sessionIds: readonly string[] = ['session-1']
-): GroupSnapshot {
+interface RoomSnapshotFixtureScope {
+    readonly applicationId?: string;
+    readonly workspaceId?: string;
+}
+
+interface RoomSnapshotFixtureInput {
+    readonly groupId: string;
+    readonly displayName: string;
+    readonly scope?: RoomSnapshotFixtureScope;
+    readonly sessionIds?: readonly string[];
+}
+
+function createRoomSnapshot(input: RoomSnapshotFixtureInput): GroupSnapshot {
     const snapshot = createGroupSnapshotFixture({
-        applicationId: scope.applicationId ?? 'app-1',
-        workspaceId: scope.workspaceId ?? 'workspace-1',
-        groupId,
-        sessionIds
+        applicationId: input.scope?.applicationId ?? 'app-1',
+        workspaceId: input.scope?.workspaceId ?? 'workspace-1',
+        groupId: input.groupId,
+        sessionIds: input.sessionIds ?? ['session-1']
     });
-    return { ...snapshot, group: { ...snapshot.group, displayName } };
+    return { ...snapshot, group: { ...snapshot.group, displayName: input.displayName } };
 }
 
 function createMemberRoomSnapshot(): GroupSnapshot {
-    const snapshot = createRoomSnapshot('room-1', 'Room One', {}, []);
+    const snapshot = createRoomSnapshot({ groupId: 'room-1', displayName: 'Room One', sessionIds: [] });
     const scope = { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'room-1' };
     const alice = createActiveGroupMemberFixture({
         ...scope,
@@ -304,14 +311,16 @@ function createMemberRoomSnapshot(): GroupSnapshot {
     };
 }
 
+interface ClientSnapshotFixtureOptions {
+    readonly applicationId?: string;
+    readonly workspaceId?: string;
+    readonly stateRevision?: number;
+}
+
 function createClient(
     principalId: string,
     displayName: string | null,
-    options: Readonly<{
-        applicationId?: string;
-        workspaceId?: string;
-        stateRevision?: number;
-    }> = {}
+    options: ClientSnapshotFixtureOptions = {}
 ): ClientSnapshot {
     const snapshot = createClientSnapshotFixture({
         applicationId: options.applicationId ?? 'app-1',

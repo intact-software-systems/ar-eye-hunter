@@ -306,9 +306,7 @@ class RallarDataStoreLifecycle {
     public readonly closeScope = async (
         scope: RallarDataScope
     ): Promise<number> => {
-        return await forEachActiveScopeRepository(
-            this.manager,
-            this.activeTokens,
+        return await this.forEachActiveScopeRepository(
             this.resolveScopeKey(scope),
             async (token) => await this.manager.delete(token)
         );
@@ -317,9 +315,7 @@ class RallarDataStoreLifecycle {
     public readonly clearScope = async (
         scope: RallarDataScope
     ): Promise<number> => {
-        return await forEachActiveScopeRepository(
-            this.manager,
-            this.activeTokens,
+        return await this.forEachActiveScopeRepository(
             this.resolveScopeKey(scope),
             async (_token, managed) => {
                 await clearManagedRepository(managed);
@@ -349,9 +345,7 @@ class RallarDataStoreLifecycle {
     public readonly destroyScope = async (
         scope: RallarDataScope
     ): Promise<number> => {
-        return await forEachActiveScopeRepository(
-            this.manager,
-            this.activeTokens,
+        return await this.forEachActiveScopeRepository(
             this.resolveScopeKey(scope),
             async (_token, managed) => {
                 await clearManagedRepository(managed);
@@ -360,6 +354,36 @@ class RallarDataStoreLifecycle {
             }
         );
     };
+
+    private async forEachActiveScopeRepository(
+        scopeKey: string,
+        operation: (
+            token: RepositoryToken<unknown>,
+            managed: ManagedRallarDataRepository<unknown>
+        ) => Promise<boolean>,
+        removeFromActive = true
+    ): Promise<number> {
+        let count = 0;
+
+        for (const [id, token] of this.activeTokens) {
+            const managed = this.manager.get(
+                token as RepositoryToken<ManagedRallarDataRepository<unknown>>
+            );
+            if (!managed || managed.scopeKey !== scopeKey) {
+                continue;
+            }
+
+            if (await operation(token, managed)) {
+                count += 1;
+            }
+
+            if (removeFromActive) {
+                this.activeTokens.delete(id);
+            }
+        }
+
+        return count;
+    }
 }
 
 export function defineRallarDataStore<V>(
@@ -964,38 +988,6 @@ async function destroyPreparedStore<V>(
     }
 
     return existing !== undefined || keys.length > 0;
-}
-
-async function forEachActiveScopeRepository(
-    manager: RepositoryManager,
-    activeTokens: Map<string, RepositoryToken<unknown>>,
-    scopeKey: string,
-    operation: (
-        token: RepositoryToken<unknown>,
-        managed: ManagedRallarDataRepository<unknown>
-    ) => Promise<boolean>,
-    removeFromActive = true
-): Promise<number> {
-    let count = 0;
-
-    for (const [id, token] of [...activeTokens]) {
-        const managed = manager.get(
-            token as RepositoryToken<ManagedRallarDataRepository<unknown>>
-        );
-        if (!managed || managed.scopeKey !== scopeKey) {
-            continue;
-        }
-
-        if (await operation(token, managed)) {
-            count += 1;
-        }
-
-        if (removeFromActive) {
-            activeTokens.delete(id);
-        }
-    }
-
-    return count;
 }
 
 function toRepositoryId<V>(options: NormalizedRallarDataOptions<V>): string {

@@ -20,8 +20,28 @@ type ClientStateSnapshotsRepositoryModule = typeof import('@shared/repository/cl
 type DataCachesModule = typeof import('@shared-web/browser/data-caches.ts');
 type GroupStateSnapshotsRepositoryModule = typeof import('@shared/repository/group-state-snapshots-repository.ts');
 
+interface CallAcceptResult {
+    readonly id: string;
+}
+
+interface CallTextMessage {
+    readonly text: string;
+}
+
+interface ChannelHealthFixtureInput {
+    readonly peerId: string;
+    readonly label: string;
+    readonly state: string;
+    readonly readyState: RTCDataChannelState;
+}
+
+interface GroupSnapshotFixtureScope {
+    readonly applicationId?: string;
+    readonly workspaceId?: string;
+}
+
 interface CallInviteTestDouble {
-    accept(): Promise<{ id: string; }>;
+    accept(): Promise<CallAcceptResult>;
     decline(reason?: string): Promise<readonly unknown[]>;
 }
 
@@ -164,7 +184,7 @@ describe('Rallar calls', () => {
             }
         });
         const status = call.status();
-        const callChannel = call.channel<{ text: string; }>();
+        const callChannel = call.channel<CallTextMessage>();
         const sendResult = await callChannel.send({
             text: 'hello'
         });
@@ -475,14 +495,7 @@ function findLatestWsAnyMessageCallback(): OnMessageCallback | undefined {
         .at(-1)?.[1];
 }
 
-function createChannelHealth(
-    input: Readonly<{
-        peerId: string;
-        label: string;
-        state: string;
-        readyState: RTCDataChannelState;
-    }>
-): RtcDataChannelHealth {
+function createChannelHealth(input: ChannelHealthFixtureInput): RtcDataChannelHealth {
     return {
         peerId: input.peerId,
         label: input.label,
@@ -558,10 +571,7 @@ function withSnapshotVersion(
 function createGroupSnapshot(
     groupId: string,
     sessionIds: readonly string[],
-    scope: Readonly<{
-        applicationId?: string;
-        workspaceId?: string;
-    }> = {}
+    scope: GroupSnapshotFixtureScope = {}
 ): GroupSnapshot {
     const applicationId = scope.applicationId ?? 'app-1';
     const workspaceId = scope.workspaceId ?? 'workspace-1';

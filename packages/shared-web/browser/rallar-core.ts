@@ -60,7 +60,6 @@ export type {
     RallarReplayPeopleEventsOptions,
     RallarReplayRoomEventsInput,
     RallarReplayRoomEventsOptions,
-    RallarRoomEventListener,
     RallarRoomEventOptions,
     RallarRoomMember,
     RallarRoomMessageChannelDefinition,

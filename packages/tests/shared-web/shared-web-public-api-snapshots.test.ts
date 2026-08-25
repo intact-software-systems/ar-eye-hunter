@@ -134,7 +134,6 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
                 'RallarReplayPeopleEventsOptions',
                 'RallarReplayRoomEventsInput',
                 'RallarReplayRoomEventsOptions',
-                'RallarRoomEventListener',
                 'RallarRoomEventOptions',
                 'RallarRoomGovernanceOptions',
                 'RallarRoomInviteOptions',
@@ -273,7 +272,6 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
                 'RallarReplayPeopleEventsOptions',
                 'RallarReplayRoomEventsInput',
                 'RallarReplayRoomEventsOptions',
-                'RallarRoomEventListener',
                 'RallarRoomEventOptions',
                 'RallarRoomMember',
                 'RallarRoomMessageChannelDefinition',
@@ -468,9 +466,9 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
                 'DEFAULT_RALLAR_GAME_LANE_IDS',
                 'RALLAR_GAME_CANNOT_HOST_SCORE',
                 'RALLAR_GAME_MISSING_CAPABILITY_SCORE',
+                'RallarGameAuthorityClient',
                 'createRallarAuthorityBrowserMatch',
                 'createRallarBrowserMatch',
-                'RallarGameAuthorityClient',
                 'createRallarGameEnvelope',
                 'createRallarGameLanePresets',
                 'createRallarGameMatch',
@@ -535,11 +533,10 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
                 'RallarGameSequenceAcceptResult',
                 'RallarGameSequenceTracker',
                 'RallarGameStatusHandler',
-                'RallarGameTypeIds'
+                'RallarGameTypeIds',
+                'RallarServerGameAuthorityRef'
             ],
             starExports: [
-                './rallar-game-authority-client-contracts.ts',
-                './rallar-game-authority-client.ts',
                 './authority-match-support.ts',
                 './diagnostics.ts',
                 './election.ts',
@@ -547,6 +544,8 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
                 './lanes.ts',
                 './match-support.ts',
                 './match.ts',
+                './rallar-game-authority-client-contracts.ts',
+                './rallar-game-authority-client.ts',
                 './types.ts'
             ],
             namespaceExports: []

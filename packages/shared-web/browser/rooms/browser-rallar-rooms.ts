@@ -5,6 +5,7 @@ import { ApiHttpError } from '@shared-web/browser/api/http-error.ts';
 import type { ApiMiddleware } from '@shared-web/browser/app-context.ts';
 import type { RallarMessagesController } from '@shared-web/browser/messages/browser-rallar-messages-controller.ts';
 import type { RallarScopedOperationOptions } from '@shared-web/browser/rallar-connection-facade.ts';
+import type { RallarStateEventListener } from '@shared-web/browser/rallar-message-contracts.ts';
 import {
     toRallarCommandOptions,
     toRallarWorkflowPolicies,
@@ -40,7 +41,6 @@ import type {
     RallarLeaveRoomOptions,
     RallarListRoomEventsInput,
     RallarReplayRoomEventsInput,
-    RallarRoomEventListener,
     RallarRoomEventOptions,
     RallarRoomGovernanceOptions,
     RallarRoomInviteOptions,
@@ -99,7 +99,7 @@ export interface BrowserRallarRooms {
     listEventPage(input: RallarListRoomEventsInput): Promise<StateEventPage<GroupEvent>>;
     replayEvents(
         input: RallarReplayRoomEventsInput,
-        listener?: RallarRoomEventListener
+        listener?: RallarStateEventListener<GroupEvent>
     ): Promise<RallarReplayEventsResult<GroupEvent>>;
     create(input: string | RallarCreateRoomInput): Promise<GroupSnapshot>;
     createAndSwitch(input: string | RallarCreateRoomInput): Promise<GroupSnapshot>;
@@ -157,7 +157,7 @@ export interface BrowserRallarRooms {
     ): Promise<RallarRoomPresenceWaitResult>;
     current(): GroupSnapshot | undefined;
     onChange(listener: RallarStateListener<RallarRoomState>, options?: RallarOnChangeOptions): RallarUnsubscribe;
-    onEvent(listener: RallarRoomEventListener, options?: RallarRoomEventOptions): RallarUnsubscribe;
+    onEvent(listener: RallarStateEventListener<GroupEvent>, options?: RallarRoomEventOptions): RallarUnsubscribe;
 }
 
 interface CreateRoomEntryOperationsInput {

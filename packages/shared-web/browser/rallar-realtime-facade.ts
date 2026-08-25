@@ -14,27 +14,21 @@ import type {
     RtcDataChannelSendResult
 } from '@shared/webrtc/QRtcDataChannel.ts';
 
-export type RallarRealtimeSendOptions =
-    & RtcDataChannelSendOptions
-    & Readonly<{
-        laneId?: string;
-        roomId?: string;
-        roomRef?: GroupRef;
-        peerIds?: readonly string[];
-        openTimeoutMs?: number;
-    }>;
+export interface RallarRealtimeSendOptions extends RtcDataChannelSendOptions {
+    readonly laneId?: string;
+    readonly roomId?: string;
+    readonly roomRef?: GroupRef;
+    readonly peerIds?: readonly string[];
+    readonly openTimeoutMs?: number;
+}
 
-export type RallarRealtimeJsonSendInput<T> =
-    & RallarRealtimeSendOptions
-    & Readonly<{
-        data: T;
-    }>;
+export interface RallarRealtimeJsonSendInput<T> extends RallarRealtimeSendOptions {
+    readonly data: T;
+}
 
-export type RallarRealtimeBinarySendInput =
-    & RallarRealtimeSendOptions
-    & Readonly<{
-        data: ArrayBuffer | ArrayBufferView<ArrayBuffer>;
-    }>;
+export interface RallarRealtimeBinarySendInput extends RallarRealtimeSendOptions {
+    readonly data: ArrayBuffer | ArrayBufferView<ArrayBuffer>;
+}
 
 export interface RallarRealtimeSendResult {
     readonly peerId: string;
@@ -56,31 +50,25 @@ export type RallarRoomRealtimeSendStatus =
     | 'no-targets'
     | 'failed';
 
-export type RallarRoomRealtimeJsonDefaults =
-    & Omit<RallarRealtimeSendOptions, 'peerIds'>
-    & Readonly<{
-        waitForReady?: boolean;
-        waitTimeoutMs?: number;
-        minReadyPeers?: number;
-        connect?: boolean;
-    }>;
+export interface RallarRoomRealtimeJsonDefaults extends Omit<RallarRealtimeSendOptions, 'peerIds'> {
+    readonly waitForReady?: boolean;
+    readonly waitTimeoutMs?: number;
+    readonly minReadyPeers?: number;
+    readonly connect?: boolean;
+}
 
-export type RallarRoomRealtimeJsonSendOptions<T> =
-    & Omit<RallarRealtimeJsonLaneSendOptions<T>, 'peerIds'>
-    & Readonly<{
-        waitForReady?: boolean;
-        waitTimeoutMs?: number;
-        minReadyPeers?: number;
-        connect?: boolean;
-        signal?: AbortSignal;
-    }>;
+export interface RallarRoomRealtimeJsonSendOptions<T> extends Omit<RallarRealtimeJsonLaneSendOptions<T>, 'peerIds'> {
+    readonly waitForReady?: boolean;
+    readonly waitTimeoutMs?: number;
+    readonly minReadyPeers?: number;
+    readonly connect?: boolean;
+    readonly signal?: AbortSignal;
+}
 
-export type RallarRoomRealtimeTransportOptions =
-    & RallarRtcRoomTransportOptions
-    & Readonly<{
-        roomId?: string;
-        roomRef?: GroupRef;
-    }>;
+export interface RallarRoomRealtimeTransportOptions extends RallarRtcRoomTransportOptions {
+    readonly roomId?: string;
+    readonly roomRef?: GroupRef;
+}
 
 export interface RallarRoomRealtimeSendResult {
     readonly transport: 'rtc';
@@ -113,12 +101,10 @@ export interface RallarTargetSelector {
     readonly membership?: RallarTargetMembership;
 }
 
-export type RallarTargetedChannelDefinition =
-    & RallarTargetSelector
-    & Readonly<{
-        laneId?: string;
-        openTimeoutMs?: number;
-    }>;
+export interface RallarTargetedChannelDefinition extends RallarTargetSelector {
+    readonly laneId?: string;
+    readonly openTimeoutMs?: number;
+}
 
 export type RallarTargetedChannelSendOptions<T> =
     & RallarRealtimeJsonLaneSendOptions<T>

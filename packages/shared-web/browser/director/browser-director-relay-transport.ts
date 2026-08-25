@@ -41,13 +41,6 @@ export interface SendDirectorRoomEnvelopeInput<T> {
     readonly payload: T;
 }
 
-interface CreateDirectorEnvelopeInput<T> {
-    readonly current: RallarDirectorStatus;
-    readonly topicId: string;
-    readonly typeId: string;
-    readonly payload: T;
-}
-
 export class BrowserDirectorRelayTransport {
     private readonly input: BrowserDirectorRelayTransportInput;
 
@@ -174,7 +167,7 @@ export class BrowserDirectorRelayTransport {
 }
 
 function createEnvelope<T>(
-    input: CreateDirectorEnvelopeInput<T>
+    input: SendDirectorRoomEnvelopeInput<T>
 ): RallarDirectorRelayEnvelope<T> {
     if (!input.current.appointment || !input.current.roomId) {
         throw new Error('Cannot create director envelope without appointment.');

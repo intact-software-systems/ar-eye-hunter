@@ -30,27 +30,30 @@ describe('people events', () => {
 
         const callback = findPeopleWsCallback();
         await callback?.onMessage?.(
-            toPeopleEventMessage(createPeopleEvent('alice', 'client-event-1', 'session-connected'))
+            toPeopleEventMessage(createPeopleEvent({ principalId: 'alice', eventId: 'client-event-1', eventType: 'session-connected' }))
         );
         await callback?.onMessage?.(
-            toPeopleEventMessage(createPeopleEvent('alice', 'client-event-1', 'session-connected'))
+            toPeopleEventMessage(createPeopleEvent({ principalId: 'alice', eventId: 'client-event-1', eventType: 'session-connected' }))
         );
         await callback?.onMessage?.(
-            toPeopleEventMessage(createPeopleEvent('bob', 'client-event-2', 'session-connected'))
+            toPeopleEventMessage(createPeopleEvent({ principalId: 'bob', eventId: 'client-event-2', eventType: 'session-connected' }))
         );
         await callback?.onMessage?.(
-            toPeopleEventMessage(createPeopleEvent('alice', 'client-event-3', 'principal-updated'))
+            toPeopleEventMessage(createPeopleEvent({ principalId: 'alice', eventId: 'client-event-3', eventType: 'principal-updated' }))
         );
         await callback?.onMessage?.(
             toPeopleEventMessage(
-                createPeopleEvent('alice', 'client-event-4', 'session-connected', {
+                createPeopleEvent({
+                    principalId: 'alice',
+                    eventId: 'client-event-4',
+                    eventType: 'session-connected',
                     workspaceId: 'workspace-2'
                 })
             )
         );
         unsubscribe();
         await callback?.onMessage?.(
-            toPeopleEventMessage(createPeopleEvent('alice', 'client-event-5', 'session-connected'))
+            toPeopleEventMessage(createPeopleEvent({ principalId: 'alice', eventId: 'client-event-5', eventType: 'session-connected' }))
         );
 
         expect(eventListener).toHaveBeenCalledOnce();
@@ -75,7 +78,7 @@ describe('people events', () => {
         facade.people.onEvent(listener, { principalId: 'alice' });
         await facade.connect();
         const callback = findPeopleWsCallback();
-        const event = createPeopleEvent('alice', 'client-event-valid', 'session-connected');
+        const event = createPeopleEvent({ principalId: 'alice', eventId: 'client-event-valid', eventType: 'session-connected' });
         const { requestId: omitted, ...missingRequestId } = event;
 
         expect(omitted).not.toBeUndefined();
@@ -124,7 +127,10 @@ describe('people events', () => {
         const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
         const mocks = readPeopleEventMocks();
         const facade = createRallarFacade();
-        const event = createPeopleEvent('alice', 'client-event-1', 'session-connected', {
+        const event = createPeopleEvent({
+            principalId: 'alice',
+            eventId: 'client-event-1',
+            eventType: 'session-connected',
             applicationId: 'people-app',
             workspaceId: 'people-workspace'
         });
@@ -155,7 +161,10 @@ describe('people events', () => {
         const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
         const mocks = readPeopleEventMocks();
         const facade = createRallarFacade();
-        const event = createPeopleEvent('alice', 'client-event-2', 'session-disconnected', {
+        const event = createPeopleEvent({
+            principalId: 'alice',
+            eventId: 'client-event-2',
+            eventType: 'session-disconnected',
             snapshotVersion: 3,
             occurredAtEpochMs: 3_000
         });
@@ -198,7 +207,7 @@ describe('people events', () => {
         const mocks = readPeopleEventMocks();
         const facade = createRallarFacade();
         const listener = vi.fn();
-        const event = createPeopleEvent('alice', 'client-event-1', 'session-connected');
+        const event = createPeopleEvent({ principalId: 'alice', eventId: 'client-event-1', eventType: 'session-connected' });
         facade.setDefaults({ applicationId: 'app-1', workspaceId: 'workspace-1' });
         facade.people.onEvent(listener, { principalId: 'alice' });
         mocks.listStateClientEventPage.mockResolvedValue(createPeopleEventPage([event], false));

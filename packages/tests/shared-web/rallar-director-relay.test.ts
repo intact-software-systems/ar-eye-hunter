@@ -24,6 +24,18 @@ interface EnqueuedDirectorMessagePayload {
     readonly typeId?: unknown;
 }
 
+interface DirectorMove {
+    readonly move: string;
+}
+
+interface DirectorAcknowledgement {
+    readonly ok: true;
+}
+
+interface DirectorSnapshot {
+    readonly revision: number;
+}
+
 const mocks = await vi.hoisted(async () => {
     const { createLightweightBrowserFacadeTestMocks } = await import(
         './lightweight-browser-facade-test-mocks.ts'
@@ -282,7 +294,7 @@ describe('Rallar director relay', () => {
             error: new Error('not ready')
         });
         const facade = createRallarFacade();
-        const relay = facade.director.createRelay<{ move: string; }, { ok: true; }>({
+        const relay = facade.director.createRelay<DirectorMove, DirectorAcknowledgement>({
             roomId: 'room-1',
             laneId: 'director',
             topicId: 'app.game.director',
@@ -326,7 +338,7 @@ describe('Rallar director relay', () => {
             appointedAtEpochMs: 1,
             heartbeatTtlMs: 5
         }));
-        const relay = createRallarFacade().director.createRelay<{ move: string; }, { ok: true; }>({
+        const relay = createRallarFacade().director.createRelay<DirectorMove, DirectorAcknowledgement>({
             roomId: 'room-1',
             laneId: 'director',
             topicId: 'app.game.director',
@@ -356,7 +368,7 @@ describe('Rallar director relay', () => {
             appointedAtEpochMs: 1,
             heartbeatTtlMs: 60_000
         }));
-        const relay = createRallarFacade().director.createRelay<{ move: string; }, { ok: true; }, { revision: number; }>({
+        const relay = createRallarFacade().director.createRelay<DirectorMove, DirectorAcknowledgement, DirectorSnapshot>({
             roomId: 'room-1',
             laneId: 'director',
             topicId: 'app.game.director',
@@ -388,7 +400,7 @@ describe('Rallar director relay', () => {
             appointedAtEpochMs: 1,
             heartbeatTtlMs: 60_000
         }));
-        const relay = createRallarFacade().director.createRelay<{ move: string; }, { ok: true; }>({
+        const relay = createRallarFacade().director.createRelay<DirectorMove, DirectorAcknowledgement>({
             roomId: 'room-1',
             laneId: 'director',
             topicId: 'app.game.director',
@@ -426,7 +438,7 @@ describe('Rallar director relay', () => {
             heartbeatTtlMs: 60_000
         }));
         const facade = createRallarFacade();
-        facade.director.createRelay<{ move: string; }, { ok: true; }>({
+        facade.director.createRelay<DirectorMove, DirectorAcknowledgement>({
             roomId: 'room-1',
             laneId: 'director',
             topicId: 'app.game.director',
@@ -459,7 +471,7 @@ describe('Rallar director relay', () => {
             heartbeatTtlMs: 60_000
         }));
         const facade = createRallarFacade();
-        const relay = facade.director.createRelay<{ move: string; }, { ok: true; }, { revision: number; }>(
+        const relay = facade.director.createRelay<DirectorMove, DirectorAcknowledgement, DirectorSnapshot>(
             {
                 roomId: 'room-1',
                 laneId: 'director',

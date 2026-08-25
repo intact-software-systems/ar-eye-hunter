@@ -1,5 +1,5 @@
 import type { RallarScopedOperationOptions } from '@shared-web/browser/rallar-connection-facade.ts';
-import type { RallarMessageSendResult } from '@shared-web/browser/rallar-message-contracts.ts';
+import type { RallarMessagePayload, RallarMessageSendResult } from '@shared-web/browser/rallar-message-contracts.ts';
 import type { RallarTargetedSendResult } from '@shared-web/browser/rallar-realtime-facade.ts';
 import type { RallarUnsubscribe } from '@shared-web/browser/rallar-shared-contracts.ts';
 import type { RallarGroupDirectorAppointment, RallarGroupDirectorFreshness } from '@shared/api/group-director.ts';
@@ -27,11 +27,9 @@ export interface RallarDirectorStatus {
     readonly nowEpochMs: number;
 }
 
-export type RallarDirectorAppointOptions =
-    & RallarScopedOperationOptions
-    & Readonly<{
-        heartbeatTtlMs?: number;
-    }>;
+export interface RallarDirectorAppointOptions extends RallarScopedOperationOptions {
+    readonly heartbeatTtlMs?: number;
+}
 
 export interface RallarDirectorStatusOptions {
     readonly now?: number;
@@ -41,7 +39,7 @@ export type RallarDirectorStatusListener = (
     status: RallarDirectorStatus
 ) => void | Promise<void>;
 
-export interface RallarDirectorRelayEnvelope<T = unknown> {
+export interface RallarDirectorRelayEnvelope<T = RallarMessagePayload> {
     readonly protocol: 'rallar.director.relay.v1';
     readonly topicId: string;
     readonly typeId: string;
@@ -94,7 +92,7 @@ export interface RallarDirectorRelayConfig<TIntent, TOutput, TSnapshot = TOutput
     readonly onOutput?: (message: RallarDirectorRelayMessage<TOutput>) => void | Promise<void>;
     readonly onSnapshot?: (message: RallarDirectorRelayMessage<TSnapshot>) => void | Promise<void>;
     readonly onSyncRequest?: (
-        message: RallarDirectorRelayMessage<unknown>,
+        message: RallarDirectorRelayMessage<RallarMessagePayload>,
         relay: RallarDirectorRelayHandle<TIntent, TOutput, TSnapshot>
     ) => void | Promise<void>;
 }
@@ -105,7 +103,7 @@ export interface RallarDirectorRelayHandle<TIntent, TOutput, TSnapshot = TOutput
     sendOutput(output: TOutput): Promise<RallarDirectorRelaySendResult>;
     sendHeartbeat(): Promise<RallarDirectorRelaySendResult>;
     sendSnapshot(snapshot?: TSnapshot): Promise<RallarDirectorRelaySendResult>;
-    requestSync(payload?: unknown): Promise<RallarDirectorRelaySendResult>;
+    requestSync<TPayload>(payload?: TPayload): Promise<RallarDirectorRelaySendResult>;
     stop(): void;
 }
 

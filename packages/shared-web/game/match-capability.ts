@@ -1,4 +1,5 @@
-import type { RallarMessage, RallarRoomState } from '@shared-web/browser/rallar.ts';
+import type { RallarMessagePayload } from '@shared-web/browser/rallar-message-contracts.ts';
+import type { RallarRoomState } from '@shared-web/browser/rallar.ts';
 import type { ALOutboundEnqueueStatus } from '@shared/alm/ALOutboundMessageRuntime.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import type {
@@ -35,7 +36,7 @@ export function resolveDefaultRallarGamePeerIds(
 }
 
 export function decodeRallarGameHostCapability(
-    envelope: RallarGameEnvelope<RallarMessage['payload']>
+    envelope: RallarGameEnvelope<RallarMessagePayload>
 ): RallarGameHostCapability | undefined {
     if (
         typeof envelope.payload !== 'object' ||

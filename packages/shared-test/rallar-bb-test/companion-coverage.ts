@@ -7,13 +7,13 @@ export type RallarCompanionCoverageLayer =
     | 'shared-server-facade'
     | 'app-specific';
 
-export type RallarCompanionCoverageSurface = Readonly<{
-    surfaceId: string;
-    layer: RallarCompanionCoverageLayer;
-    intent: string;
-    testFiles: readonly string[];
-    runnerBoundary: string;
-}>;
+export interface RallarCompanionCoverageSurface {
+    readonly surfaceId: string;
+    readonly layer: RallarCompanionCoverageLayer;
+    readonly intent: string;
+    readonly testFiles: readonly string[];
+    readonly runnerBoundary: string;
+}
 
 export const RALLAR_BLACK_BOX_RUNNER_STEP_FAMILIES = [
     'HTTP',
@@ -118,7 +118,6 @@ export const RALLAR_COMPANION_COVERAGE_SURFACES: readonly RallarCompanionCoverag
             'packages/tests/shared-web/rallar-rtc-wait.test.ts',
             'packages/tests/shared-web/rallar-targeted-channel.test.ts',
             'packages/tests/shared-web/rallar-calls.test.ts',
-            'packages/tests/shared-web/rallar-media-facade.test.ts',
             'packages/tests/shared-web/rallar-media-sources.test.ts',
             'packages/tests/shared-web/rallar-flow.test.ts'
         ],

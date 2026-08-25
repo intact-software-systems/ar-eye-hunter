@@ -1,3 +1,4 @@
+import type { RallarMessagePayload } from '@shared-web/browser/rallar-message-contracts.ts';
 import type {
     RallarDirectorRelayMessage,
     RallarDirectorStatus,
@@ -266,15 +267,15 @@ class RallarGameMatchRuntime<TInput, TIntent, TSnapshot, TEvent, TPresence> {
             .add(this.config.rallar.people.onChange(() => this.refreshStatus()))
             .add(this.config.rallar.director.onStatus(() => this.refreshStatus()))
             .add(this.config.rallar.rtc.onStatus(() => this.refreshStatus()))
-            .add(this.config.rallar.messages.ws.onMessage<RallarMessage['payload']>(
+            .add(this.config.rallar.messages.ws.onMessage<RallarMessagePayload>(
                 { topicId: this.config.topicId, typeId: this.typeIds.capability },
                 async (message) => await this.handleCapabilityMessage(message)
             ))
-            .add(this.config.rallar.realtime.onJson<RallarMessage['payload']>(
+            .add(this.config.rallar.realtime.onJson<RallarMessagePayload>(
                 this.laneIds.input,
                 async (message) => await this.handleRealtimeInputOrPresence(message)
             ))
-            .add(this.config.rallar.realtime.onJson<RallarMessage['payload']>(
+            .add(this.config.rallar.realtime.onJson<RallarMessagePayload>(
                 this.laneIds.snapshot,
                 async (message) => await this.handleRealtimeSnapshot(message)
             ))
@@ -381,7 +382,7 @@ class RallarGameMatchRuntime<TInput, TIntent, TSnapshot, TEvent, TPresence> {
     }
 
     private async handleCapabilityMessage(
-        message: RallarMessage
+        message: RallarMessage<RallarMessagePayload>
     ): Promise<void> {
         if (this.stopped || !isRallarGameEnvelope(message.payload, this.config.protocol)) {
             return;
@@ -395,7 +396,9 @@ class RallarGameMatchRuntime<TInput, TIntent, TSnapshot, TEvent, TPresence> {
             return;
         }
 
-        const capability = decodeRallarGameHostCapability(message.payload);
+        const capability = decodeRallarGameHostCapability(
+            message.payload as object as RallarGameEnvelope<RallarMessagePayload>
+        );
         if (!capability) {
             return;
         }
@@ -405,7 +408,7 @@ class RallarGameMatchRuntime<TInput, TIntent, TSnapshot, TEvent, TPresence> {
     }
 
     private async handleRealtimeInputOrPresence(
-        message: RallarRealtimeMessage<RallarMessage['payload']>
+        message: RallarRealtimeMessage<RallarMessagePayload>
     ): Promise<void> {
         const envelope = message.data;
         if (!isRallarGameEnvelope(envelope, this.config.protocol)) {
@@ -460,7 +463,7 @@ class RallarGameMatchRuntime<TInput, TIntent, TSnapshot, TEvent, TPresence> {
     }
 
     private async handleRealtimeSnapshot(
-        message: RallarRealtimeMessage<RallarMessage['payload']>
+        message: RallarRealtimeMessage<RallarMessagePayload>
     ): Promise<void> {
         if (this.stopped || !this.currentStatus.directorIsFresh) {
             return;

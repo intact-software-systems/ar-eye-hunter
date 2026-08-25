@@ -13,6 +13,15 @@ type AuthModule = typeof import('@shared/api/auth.ts');
 type ClientStateSnapshotsRepositoryModule = typeof import('@shared/repository/client-state-snapshots-repository.ts');
 type GroupStateSnapshotsRepositoryModule = typeof import('@shared/repository/group-state-snapshots-repository.ts');
 
+interface ChatMessage {
+    readonly text: string;
+}
+
+interface GroupSnapshotFixtureScope {
+    readonly applicationId?: string;
+    readonly workspaceId?: string;
+}
+
 const mocks = await vi.hoisted(async () => {
     const { createApiMiddlewareTestDouble } = await import(
         './api-middleware-test-double.ts'
@@ -113,7 +122,7 @@ describe('Rallar typed message channel', () => {
                 roomId: 'match-1'
             }
         });
-        const channel = facade.messages.channel<{ text: string; }>({
+        const channel = facade.messages.channel<ChatMessage>({
             topicId: 'room.chat',
             typeId: 'chat.message.v1'
         });
@@ -189,7 +198,7 @@ describe('Rallar typed message channel', () => {
         );
         mockGroupSnapshot(createGroupSnapshot('room-1', ['session-1']));
         const facade = createRallarFacade();
-        const channel = facade.messages.channel<{ text: string; }>({
+        const channel = facade.messages.channel<ChatMessage>({
             topicId: 'room.chat',
             typeId: 'chat.message.v1'
         });
@@ -219,7 +228,7 @@ describe('Rallar typed message channel', () => {
         );
         mockGroupSnapshot(createGroupSnapshot('room-1', ['session-1', 'peer-1']));
         const facade = createRallarFacade();
-        const channel = facade.messages.room<{ text: string; }>({
+        const channel = facade.messages.room<ChatMessage>({
             topicId: 'room.chat',
             typeId: 'chat.message.v1',
             roomId: 'room-1'
@@ -252,7 +261,7 @@ describe('Rallar typed message channel', () => {
         );
         mockGroupSnapshot(createGroupSnapshot('room-1', ['session-1']));
         const facade = createRallarFacade();
-        const channel = facade.messages.room<{ text: string; }>({
+        const channel = facade.messages.room<ChatMessage>({
             topicId: 'room.chat',
             typeId: 'chat.message.v1',
             roomId: 'room-1'
@@ -280,7 +289,7 @@ describe('Rallar typed message channel', () => {
             '@shared-web/browser/rallar.ts'
         );
         const facade = createRallarFacade();
-        const channel = facade.messages.channel<{ text: string; }>({
+        const channel = facade.messages.channel<ChatMessage>({
             topicId: 'room.chat',
             typeId: 'chat.message.v1'
         });
@@ -308,7 +317,7 @@ describe('Rallar typed message channel', () => {
             '@shared-web/browser/rallar.ts'
         );
         const facade = createRallarFacade();
-        const channel = facade.messages.channel<{ text: string; }>({
+        const channel = facade.messages.channel<ChatMessage>({
             topicId: 'room.chat',
             typeId: 'chat.message.v1'
         });
@@ -424,10 +433,7 @@ function mockGroupSnapshots(snapshots: readonly GroupSnapshot[]): void {
 function createGroupSnapshot(
     groupId: string,
     sessionIds: readonly string[],
-    scope: Readonly<{
-        applicationId?: string;
-        workspaceId?: string;
-    }> = {}
+    scope: GroupSnapshotFixtureScope = {}
 ): GroupSnapshot {
     const applicationId = scope.applicationId ?? 'app-1';
     const workspaceId = scope.workspaceId ?? 'workspace-1';

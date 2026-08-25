@@ -148,7 +148,6 @@ export type {
     RallarReplayPeopleEventsOptions,
     RallarReplayRoomEventsInput,
     RallarReplayRoomEventsOptions,
-    RallarRoomEventListener,
     RallarRoomEventOptions,
     RallarRoomGovernanceOptions,
     RallarRoomInviteOptions,

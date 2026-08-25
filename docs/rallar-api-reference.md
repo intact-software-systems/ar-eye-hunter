@@ -260,14 +260,23 @@ created. If joining/creating succeeds but leaving the previous room fails,
 knowing that the new room is now current.
 
 ```ts
+interface RoomChatPayload {
+    readonly text: string;
+}
+
+interface RoomMotionPayload {
+    readonly x: number;
+    readonly y: number;
+}
+
 const created = await rallar.rooms.createAndSwitch({
     displayName: 'Lobby',
     scope: { applicationId: 'game', workspaceId: 'default' }
 });
 
 const room = rallar.rooms.session(created.group);
-const chat = room.message<{ text: string; }>('chat');
-const motion = room.realtime<{ x: number; y: number; }>('motion');
+const chat = room.message<RoomChatPayload>('chat');
+const motion = room.realtime<RoomMotionPayload>('motion');
 
 const presence = await rallar.rooms.waitForPresence(created.group, {
     expect: { min: 2, max: 8 },
@@ -531,7 +540,9 @@ await rallar.messages.ws.send({
 Typed channels reduce boilerplate when one payload type has one topic/type pair:
 
 ```ts
-type ChatMessage = { text: string; };
+interface ChatMessage {
+    readonly text: string;
+}
 
 const chat = rallar.messages.channel<ChatMessage>({
     topicId: 'room.chat',
@@ -550,12 +561,14 @@ Room channels add room defaults and default `send(...)` to the existing
 `isSameGroupRef` before accepting an inbound payload:
 
 ```ts
-import type { RallarMessageSendStatus } from '@shared-web/browser/rallar.ts';
+import type { RallarMessageSendResult } from '@shared-web/browser/rallar.ts';
 import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 
-type RoomChatMessage = { text: string; };
+interface RoomChatMessage {
+    readonly text: string;
+}
 
-const acceptedMessageStatuses: ReadonlySet<RallarMessageSendStatus> = new Set([
+const acceptedMessageStatuses: ReadonlySet<RallarMessageSendResult['status']> = new Set([
     'enqueued',
     'sent-immediate',
     'duplicate',
@@ -678,7 +691,11 @@ selection and readiness handling.
 import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 
-type MotionUpdate = Readonly<{ roomRef: GroupRef; x: number; y: number; }>;
+interface MotionUpdate {
+    readonly roomRef: GroupRef;
+    readonly x: number;
+    readonly y: number;
+}
 
 const room = await rallar.rooms.enter('lobby');
 const lane = room.realtime<MotionUpdate>({
@@ -749,6 +766,11 @@ world scale.
 ```ts
 import { createRallarMotionAdaptiveDelay, RallarMotion } from '@shared/rallar-motion/mod.ts';
 
+interface MotionSample {
+    readonly position: [number, number, number];
+    readonly seq: number;
+}
+
 const adaptiveDelay = createRallarMotionAdaptiveDelay();
 
 const motion = RallarMotion.createBuffer({
@@ -758,7 +780,7 @@ const motion = RallarMotion.createBuffer({
     discontinuity: { enabled: true, maxPositionDelta: 8 }
 });
 
-rallar.realtime.onJson<{ position: [number, number, number]; seq: number; }>(
+rallar.realtime.onJson<MotionSample>(
     'motion',
     (message) => {
         motion.push({
@@ -956,7 +978,9 @@ import { createRallarDataFacade, defineRallarDataStore } from '@shared-web/brows
 `estimateUsage()` returns browser storage usage/quota when available.
 
 ```ts
-type Settings = { volume: number; };
+interface Settings {
+    readonly volume: number;
+}
 
 const settingsDef = rallar.data.define<Settings>('settings', {
     scope: 'principal',
@@ -1018,7 +1042,11 @@ Lifecycle methods:
 - `onChange(listener)`
 
 ```ts
-const drafts = await rallar.data.open<{ body: string; }>('drafts', {
+interface Draft {
+    readonly body: string;
+}
+
+const drafts = await rallar.data.open<Draft>('drafts', {
     scope: 'session',
     durability: 'write-behind',
     hydrate: 'lazy',

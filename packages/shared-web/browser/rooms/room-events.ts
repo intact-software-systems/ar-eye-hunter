@@ -1,5 +1,5 @@
 import * as api from '@shared-web/browser/api-integration.ts';
-import type { RallarMessage } from '@shared-web/browser/rallar-message-contracts.ts';
+import type { RallarMessage, RallarStateEventListener } from '@shared-web/browser/rallar-message-contracts.ts';
 import type { RallarOperationOptions } from '@shared-web/browser/rallar-operation-options.ts';
 import { toRallarMessage } from '@shared-web/browser/rallar-runtime/message-conversion.ts';
 import {
@@ -22,13 +22,12 @@ import type {
     RallarListRoomEventsOptions,
     RallarReplayRoomEventsInput,
     RallarReplayRoomEventsOptions,
-    RallarRoomEventListener,
     RallarRoomEventOptions
 } from './rallar-room-contracts.ts';
 import type { GroupEvent, GroupRef, StateEventPage, StateScope } from './room-group-state-translation.ts';
 
 interface RallarRoomEventSubscription {
-    readonly listener: RallarRoomEventListener;
+    readonly listener: RallarStateEventListener<GroupEvent>;
     readonly options: RallarRoomEventOptions;
 }
 
@@ -39,9 +38,9 @@ export interface RallarRoomEventsPort {
     listPage(input: RallarListRoomEventsInput): Promise<StateEventPage<GroupEvent>>;
     replay(
         input: RallarReplayRoomEventsInput,
-        listener?: RallarRoomEventListener
+        listener?: RallarStateEventListener<GroupEvent>
     ): Promise<RallarReplayEventsResult<GroupEvent>>;
-    onEvent(listener: RallarRoomEventListener, options: RallarRoomEventOptions): RallarUnsubscribe;
+    onEvent(listener: RallarStateEventListener<GroupEvent>, options: RallarRoomEventOptions): RallarUnsubscribe;
     dispatch(message: UnvalidatedRallarMessage): Promise<void>;
 }
 
@@ -109,7 +108,7 @@ class RoomEvents implements RallarRoomEventsPort {
 
     async replay(
         input: RallarReplayRoomEventsInput,
-        listener?: RallarRoomEventListener
+        listener?: RallarStateEventListener<GroupEvent>
     ): Promise<RallarReplayEventsResult<GroupEvent>> {
         const options = toRoomEventListOptions(input);
         const operationOptions = this.#input.resolveOperationOptions(options);
@@ -135,7 +134,7 @@ class RoomEvents implements RallarRoomEventsPort {
         );
     }
 
-    onEvent(listener: RallarRoomEventListener, options: RallarRoomEventOptions): RallarUnsubscribe {
+    onEvent(listener: RallarStateEventListener<GroupEvent>, options: RallarRoomEventOptions): RallarUnsubscribe {
         const subscription = { listener, options };
         this.#subscriptions.add(subscription);
         this.registerWsInboxSubscription();
@@ -170,7 +169,7 @@ class RoomEvents implements RallarRoomEventsPort {
 
     private async replayEvent(
         event: GroupEvent,
-        listener?: RallarRoomEventListener
+        listener?: RallarStateEventListener<GroupEvent>
     ): Promise<'replayed' | 'duplicate' | 'no-listeners'> {
         if (!isGroupEventPayload(event)) {
             return 'no-listeners';
@@ -304,9 +303,14 @@ function isSameStateGroupRef(
     return left.groupId === right.groupId && isSameStateScopeValue(left, right);
 }
 
+interface ComparableStateScope {
+    readonly applicationId: string;
+    readonly workspaceId?: string;
+}
+
 function isSameStateScopeValue(
-    value: Pick<StateScope, 'applicationId'> & { workspaceId?: string; },
-    scope?: Pick<StateScope, 'applicationId'> & { workspaceId?: string; }
+    value: ComparableStateScope,
+    scope?: ComparableStateScope
 ): boolean {
     if (!scope) {
         return true;

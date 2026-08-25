@@ -72,10 +72,15 @@ export type RallarAuthRuntimePort = Pick<
     | 'endedAuthSessionKeys'
 >;
 
+interface BrowserCurrentRoomState {
+    readonly id: string;
+    readonly ref: GroupRef;
+}
+
 export class BrowserFacadeRuntimeState implements RallarBrowserFacadeRuntimeContext {
     private connectState: RallarBrowserConnectStatus = 'idle';
     private stateCacheUnsubscribe: (() => void) | undefined;
-    private currentRoom: Readonly<{ id: string; ref: GroupRef; }> | undefined;
+    private currentRoom: BrowserCurrentRoomState | undefined;
     private runtimeDefaults: RallarDefaults | undefined;
     private defaultScope: StateScope | undefined;
     private authExpiryTimer: ReturnType<typeof setTimeout> | undefined;
