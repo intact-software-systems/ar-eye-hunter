@@ -1,15 +1,23 @@
-import type { RallarDirectorRelayMessage, RallarDirectorRelaySendResult } from '@shared-web/browser/rallar.ts';
-import type { RallarGameFreshDirectorStatus } from './rallar-game-fresh-director-status.ts';
 import type {
-    RallarGameEnvelope,
+    RallarDirectorRelayHandle,
+    RallarDirectorRelayMessage,
+    RallarDirectorRelaySendResult
+} from '@shared-web/browser/rallar.ts';
+import type { RallarGameEnvelope, RallarGameEnvelopeKind } from '../envelopes.ts';
+import type {
     RallarGameEnvelopeHandler,
-    RallarGameEnvelopeKind,
-    RallarGameLaneIds,
     RallarGameMatchConfig,
-    RallarGameRuntimeRelay,
-    RallarGameSendResult,
     RallarGameTypeIds
-} from './types.ts';
+} from '../match/rallar-game-match-contracts.ts';
+import type { RallarGameLaneIds } from '../transport/lanes.ts';
+import type { RallarGameSendResult } from '../transport/rallar-game-send-result.ts';
+import type { RallarGameFreshDirectorStatus } from './rallar-game-fresh-director-status.ts';
+
+type RallarGameRuntimeRelay<TIntent, TSnapshot, TEvent> = RallarDirectorRelayHandle<
+    RallarGameEnvelope<TIntent>,
+    RallarGameEnvelope<TEvent>,
+    RallarGameEnvelope<TSnapshot>
+>;
 
 export namespace RallarGameDirectorRelayRuntime {
     export interface EnvelopeInput<T> {
@@ -115,7 +123,7 @@ export class RallarGameDirectorRelayRuntime<TInput, TIntent, TSnapshot, TEvent, 
         return toRelaySendResult(await this.ensureRelay().sendSnapshot(envelope));
     }
 
-    async requestSync<TPayload>(payload?: TPayload): Promise<RallarGameSendResult> {
+    async requestSync(payload?: object): Promise<RallarGameSendResult> {
         if (this.input.isStopped()) {
             return stoppedResult();
         }
@@ -125,7 +133,7 @@ export class RallarGameDirectorRelayRuntime<TInput, TIntent, TSnapshot, TEvent, 
             return noDirectorResult();
         }
 
-        const syncPayload = payload === undefined ? {} as TPayload : payload;
+        const syncPayload = payload ?? {};
         const envelope = this.input.createEnvelope('sync-request', syncPayload, {
             directorEpoch: director.appointment.epoch
         });

@@ -1,4 +1,62 @@
-import type { RallarGameDiagnostics, RallarGameDiagnosticsInput } from './types.ts';
+import type {
+    RallarRealtimeLaneHealth,
+    RallarRtcDiagnostics,
+    RallarRtcStatus,
+    RallarWsStatus
+} from '@shared-web/browser/rallar.ts';
+import type { RallarGameHostCapability, RallarGameHostElectionResult } from '../director/election.ts';
+import type {
+    RallarGameDirectorAppointmentDiagnostics,
+    RallarGameDirectorAppointmentEligibility,
+    RallarGameHostAppointResult
+} from '../director/rallar-game-director-appointment-contracts.ts';
+import type { RallarGamePeerReadiness } from './rallar-game-match-egress-contracts.ts';
+import type {
+    RallarGameDirectorAuthority,
+    RallarGameEgressStatus,
+    RallarGameMatchPhase,
+    RallarGameMatchStatus,
+    RallarGameRecoveryState
+} from './rallar-game-match-status.ts';
+
+export interface RallarGameDiagnosticsInput {
+    readonly status: RallarGameMatchStatus;
+    readonly election?: RallarGameHostElectionResult;
+    readonly appointment?: RallarGameDirectorAppointmentEligibility;
+    readonly lastAppointment?: RallarGameHostAppointResult;
+    readonly peerReadiness?: RallarGamePeerReadiness;
+    readonly rtcStatus?: RallarRtcStatus;
+    readonly rtcDiagnostics?: RallarRtcDiagnostics;
+    readonly wsStatus?: RallarWsStatus;
+    readonly realtimeHealth?: readonly RallarRealtimeLaneHealth[];
+    readonly capabilities?: readonly RallarGameHostCapability[];
+    readonly nowEpochMs?: number;
+}
+
+export interface RallarGameDiagnostics {
+    readonly generatedAtEpochMs: number;
+    readonly phase: RallarGameMatchPhase;
+    readonly roomId?: string;
+    readonly localPeerId?: string;
+    readonly directorPeerId?: string;
+    readonly directorEpoch?: number;
+    readonly directorIsFresh: boolean;
+    readonly directorAuthority: RallarGameDirectorAuthority;
+    readonly egress: RallarGameEgressStatus;
+    readonly recovery: RallarGameRecoveryState;
+    readonly hostPeerId?: string;
+    readonly backupPeerId?: string;
+    readonly knownPeerIds: readonly string[];
+    readonly readyPeerIds: readonly string[];
+    readonly notReadyPeerIds: readonly string[];
+    readonly capabilityCount: number;
+    readonly rtcPeerCount: number;
+    readonly rtcRelayPeerCount?: number;
+    readonly wsStatus?: RallarWsStatus;
+    readonly realtimeHealth: readonly RallarRealtimeLaneHealth[];
+    readonly appointment?: RallarGameDirectorAppointmentDiagnostics;
+    readonly issues: readonly string[];
+}
 
 export function deriveRallarGameDiagnostics(
     input: RallarGameDiagnosticsInput

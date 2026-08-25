@@ -1,10 +1,46 @@
-import type {
-    RallarGameHostCandidate,
-    RallarGameHostCandidateReason,
-    RallarGameHostCapability,
-    RallarGameHostElectionInput,
-    RallarGameHostElectionResult
-} from './types.ts';
+export interface RallarGameHostCapability {
+    readonly peerId: string;
+    readonly reportedAtEpochMs: number;
+    readonly canHost?: boolean;
+    readonly rttMs?: number;
+    readonly fps?: number;
+    readonly hardwareConcurrency?: number;
+    readonly deviceMemoryGb?: number;
+    readonly isMobile?: boolean;
+    readonly isBatterySaving?: boolean;
+    readonly previousDisconnects?: number;
+    readonly scoreBias?: number;
+}
+
+export type RallarGameHostCandidateReason =
+    | 'fresh-capability'
+    | 'missing-capability'
+    | 'stale-capability'
+    | 'cannot-host';
+
+export interface RallarGameHostCandidate {
+    readonly peerId: string;
+    readonly capability?: RallarGameHostCapability;
+    readonly score: number;
+    readonly eligible: boolean;
+    readonly reason: RallarGameHostCandidateReason;
+}
+
+export interface RallarGameHostElectionInput {
+    readonly peerIds: readonly string[];
+    readonly capabilities?: readonly RallarGameHostCapability[];
+    readonly nowEpochMs?: number;
+    readonly capabilityTtlMs?: number;
+    readonly scoreHost?: (capability: RallarGameHostCapability) => number;
+}
+
+export interface RallarGameHostElectionResult {
+    readonly host?: RallarGameHostCandidate;
+    readonly backup?: RallarGameHostCandidate;
+    readonly candidates: readonly RallarGameHostCandidate[];
+    readonly nowEpochMs: number;
+    readonly capabilityTtlMs: number;
+}
 
 export const DEFAULT_RALLAR_GAME_CAPABILITY_TTL_MS = 15_000;
 export const RALLAR_GAME_MISSING_CAPABILITY_SCORE = -1_000_000;

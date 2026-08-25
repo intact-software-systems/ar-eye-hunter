@@ -1,56 +1,56 @@
 import type { RallarMessagePayload } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type {
-    RallarDirectorRelayMessage,
     RallarDirectorStatus,
     RallarMessage,
     RallarRealtimeMessage,
-    RallarRealtimeSendResult,
-    RallarRoomRealtimeSendResult,
-    RallarRtcRoomLaneWaitResult,
-    RallarRtcRoomLaneWaitStatus,
     RallarRtcStatus,
     RallarSubscriptionScope
 } from '@shared-web/browser/rallar.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
-import { deriveRallarGameDiagnostics } from './diagnostics.ts';
 import {
     DEFAULT_RALLAR_GAME_CAPABILITY_TTL_MS,
     electRallarGameHost,
-    scoreRallarGameHostCapability
-} from './election.ts';
-import { createRallarGameEnvelope, createRallarGameSequenceTracker, isRallarGameEnvelope } from './envelopes.ts';
-import { resolveRallarGameLaneIds } from './lanes.ts';
+    scoreRallarGameHostCapability,
+    type RallarGameHostCapability,
+    type RallarGameHostElectionResult
+} from './director/election.ts';
+import { RallarGameDirectorAppointmentRuntime } from './director/rallar-game-director-appointment-runtime.ts';
+import { RallarGameDirectorRelayRuntime } from './director/rallar-game-director-relay-runtime.ts';
+import type { RallarGameFreshDirectorStatus } from './director/rallar-game-fresh-director-status.ts';
+import {
+    createRallarGameEnvelope,
+    createRallarGameSequenceTracker,
+    isRallarGameEnvelope,
+    type RallarGameEnvelope,
+    type RallarGameEnvelopeKind,
+    type RallarGameSequenceTracker
+} from './envelopes.ts';
+import { deriveRallarGameDiagnostics } from './match/diagnostics.ts';
 import {
     decodeRallarGameHostCapability,
     publishRallarGameHostCapability,
     resolveDefaultRallarGamePeerIds
-} from './match-capability.ts';
-import { RallarGameDirectorAppointmentRuntime } from './rallar-game-director-appointment-runtime.ts';
-import { RallarGameDirectorRelayRuntime } from './rallar-game-director-relay-runtime.ts';
-import type { RallarGameFreshDirectorStatus } from './rallar-game-fresh-director-status.ts';
-import { RallarGameMatchEgressRuntime, toRallarGameReliableEgressState } from './rallar-game-match-egress-runtime.ts';
-import { RallarGamePresenceEgressRuntime } from './rallar-game-presence-egress-runtime.ts';
+} from './match/match-capability.ts';
 import type {
-    RallarGameEgressState,
-    RallarGameEnvelope,
     RallarGameEnvelopeHandler,
-    RallarGameEnvelopeKind,
-    RallarGameHostCapability,
-    RallarGameHostElectionResult,
-    RallarGameLaneIds,
-    RallarGameLaneReadyOptions,
     RallarGameMatchConfig,
     RallarGameMatchHandle,
+    RallarGameTypeIds
+} from './match/rallar-game-match-contracts.ts';
+import {
+    RallarGameMatchEgressRuntime,
+    toRallarGameReliableEgressState
+} from './match/rallar-game-match-egress-runtime.ts';
+import type {
+    RallarGameEgressState,
     RallarGameMatchPhase,
     RallarGameMatchStatus,
-    RallarGamePeerReadiness,
-    RallarGamePresenceSendOptions,
     RallarGameRecoveryState,
-    RallarGameSendResult,
-    RallarGameSequenceTracker,
-    RallarGameStatusHandler,
-    RallarGameTypeIds
-} from './types.ts';
+    RallarGameStatusHandler
+} from './match/rallar-game-match-status.ts';
+import { resolveRallarGameLaneIds, type RallarGameLaneIds } from './transport/lanes.ts';
+import { RallarGamePresenceEgressRuntime } from './transport/rallar-game-presence-egress-runtime.ts';
+import type { RallarGameSendResult } from './transport/rallar-game-send-result.ts';
 
 const DEFAULT_RALLAR_GAME_HEARTBEAT_TTL_MS = 10_000;
 

@@ -1,19 +1,16 @@
 import type { RallarRoomRealtimeSendResult, RallarRtcStatus } from '@shared-web/browser/rallar.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
+import type { RallarGameEnvelope, RallarGameEnvelopeKind } from '../envelopes.ts';
+import type { RallarGameMatchConfig } from '../match/rallar-game-match-contracts.ts';
+import type { RallarGamePeerReadiness } from '../match/rallar-game-match-egress-contracts.ts';
+import type { RallarGameMatchStatus } from '../match/rallar-game-match-status.ts';
+import type { RallarGameLaneIds } from './lanes.ts';
+import type { RallarGamePresenceSendOptions } from './rallar-game-presence-send-options.ts';
+import type { RallarGameSendResult } from './rallar-game-send-result.ts';
 import {
     toRallarGameRealtimeSendResult,
     toRallarGameRoomRealtimeSendResult
 } from './to-rallar-game-realtime-send-result.ts';
-import type {
-    RallarGameEnvelope,
-    RallarGameEnvelopeKind,
-    RallarGameLaneIds,
-    RallarGameMatchConfig,
-    RallarGameMatchStatus,
-    RallarGamePeerReadiness,
-    RallarGamePresenceSendOptions,
-    RallarGameSendResult
-} from './types.ts';
 
 export namespace RallarGamePresenceEgressRuntime {
     export interface RoomTarget {

@@ -1,12 +1,12 @@
 import type { RallarDirectorStatus } from '@shared-web/browser/rallar.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
+import type { RallarGameMatchConfig } from '../match/rallar-game-match-contracts.ts';
+import type { RallarGameHostElectionResult } from './election.ts';
 import type {
     RallarGameDirectorAppointmentContext,
     RallarGameDirectorAppointmentEligibility,
-    RallarGameHostAppointResult,
-    RallarGameHostElectionResult,
-    RallarGameMatchConfig
-} from './types.ts';
+    RallarGameHostAppointResult
+} from './rallar-game-director-appointment-contracts.ts';
 
 export namespace RallarGameDirectorAppointmentRuntime {
     export interface RoomTarget {

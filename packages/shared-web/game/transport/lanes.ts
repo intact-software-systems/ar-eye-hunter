@@ -1,5 +1,21 @@
 import type { RtcDataChannelLaneConfig } from '@shared/services/WebRtcConnectionService.ts';
-import type { RallarGameLaneIds, RallarGameLanePresetOptions } from './types.ts';
+
+export interface RallarGameLaneIds {
+    readonly input: string;
+    readonly intent: string;
+    readonly snapshot: string;
+    readonly metrics: string;
+    readonly replication: string;
+}
+
+export interface RallarGameLanePresetConfig {
+    readonly laneIds: RallarGameLaneIds;
+    readonly inputMaxQueueItems: number;
+    readonly snapshotMaxQueueItems: number;
+    readonly metricsMaxQueueItems: number;
+    readonly intentMaxQueueItems: number;
+    readonly replicationMaxQueueItems: number;
+}
 
 export const DEFAULT_RALLAR_GAME_LANE_IDS: RallarGameLaneIds = {
     input: 'game-input',
@@ -19,13 +35,11 @@ export function resolveRallarGameLaneIds(
 }
 
 export function createRallarGameLanePresets(
-    options: RallarGameLanePresetOptions = {}
+    config: RallarGameLanePresetConfig
 ): readonly RtcDataChannelLaneConfig[] {
-    const laneIds = resolveRallarGameLaneIds(options.laneIds);
-
     return [
         {
-            id: laneIds.input,
+            id: config.laneIds.input,
             label: 'rtc-game-input',
             init: {
                 ordered: false,
@@ -36,11 +50,11 @@ export function createRallarGameLanePresets(
                 highWatermarkBytes: 32 * 1024,
                 lowWatermarkBytes: 8 * 1024,
                 overflow: 'replace-by-key',
-                maxQueueItems: options.inputMaxQueueItems ?? 16
+                maxQueueItems: config.inputMaxQueueItems
             }
         },
         {
-            id: laneIds.intent,
+            id: config.laneIds.intent,
             label: 'rtc-game-intent',
             init: {
                 ordered: true
@@ -50,11 +64,11 @@ export function createRallarGameLanePresets(
                 highWatermarkBytes: 128 * 1024,
                 lowWatermarkBytes: 32 * 1024,
                 overflow: 'queue',
-                maxQueueItems: options.intentMaxQueueItems ?? 128
+                maxQueueItems: config.intentMaxQueueItems
             }
         },
         {
-            id: laneIds.snapshot,
+            id: config.laneIds.snapshot,
             label: 'rtc-game-snapshot',
             init: {
                 ordered: false,
@@ -65,11 +79,11 @@ export function createRallarGameLanePresets(
                 highWatermarkBytes: 64 * 1024,
                 lowWatermarkBytes: 16 * 1024,
                 overflow: 'replace-by-key',
-                maxQueueItems: options.snapshotMaxQueueItems ?? 8
+                maxQueueItems: config.snapshotMaxQueueItems
             }
         },
         {
-            id: laneIds.metrics,
+            id: config.laneIds.metrics,
             label: 'rtc-game-metrics',
             init: {
                 ordered: false,
@@ -80,11 +94,11 @@ export function createRallarGameLanePresets(
                 highWatermarkBytes: 16 * 1024,
                 lowWatermarkBytes: 4 * 1024,
                 overflow: 'drop-old',
-                maxQueueItems: options.metricsMaxQueueItems ?? 16
+                maxQueueItems: config.metricsMaxQueueItems
             }
         },
         {
-            id: laneIds.replication,
+            id: config.laneIds.replication,
             label: 'rtc-game-replication',
             init: {
                 ordered: true
@@ -94,8 +108,19 @@ export function createRallarGameLanePresets(
                 highWatermarkBytes: 256 * 1024,
                 lowWatermarkBytes: 64 * 1024,
                 overflow: 'queue',
-                maxQueueItems: options.replicationMaxQueueItems ?? 256
+                maxQueueItems: config.replicationMaxQueueItems
             }
         }
     ];
+}
+
+export function createDefaultRallarGameLanePresets(): readonly RtcDataChannelLaneConfig[] {
+    return createRallarGameLanePresets({
+        laneIds: DEFAULT_RALLAR_GAME_LANE_IDS,
+        inputMaxQueueItems: 16,
+        intentMaxQueueItems: 128,
+        snapshotMaxQueueItems: 8,
+        metricsMaxQueueItems: 16,
+        replicationMaxQueueItems: 256
+    });
 }

@@ -5,8 +5,8 @@ import type {
     RallarGameAuthorityClientConfig,
     RallarGameAuthorityClientHandle,
     RallarGameAuthorityCommandOptions
-} from './rallar-game-authority-client-contracts.ts';
-import { RallarGameAuthorityClient } from './rallar-game-authority-client.ts';
+} from './authority/rallar-game-authority-client-contracts.ts';
+import { RallarGameAuthorityClient } from './authority/rallar-game-authority-client.ts';
 
 export interface RallarServerGameAuthorityRef extends RallarGameAuthorityRef {
     readonly kind: 'server';

@@ -4,11 +4,6 @@ import type {
     RallarSubscriptionScope,
     RallarUnsubscribe
 } from '@shared-web/browser/rallar.ts';
-import type {
-    RallarGameAuthorityClientConfig,
-    RallarGameAuthorityClientHandle,
-    RallarGameAuthorityCommandOptions
-} from '@shared-web/game/rallar-game-authority-client-contracts.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import {
     createRallarGameAuthorityEnvelope,
@@ -25,6 +20,11 @@ import {
     type RallarGameAuthorityStatusHandler,
     type RallarGameAuthorityTypeIds
 } from '@shared/rallar-game/mod.ts';
+import type {
+    RallarGameAuthorityClientConfig,
+    RallarGameAuthorityClientHandle,
+    RallarGameAuthorityCommandOptions
+} from './rallar-game-authority-client-contracts.ts';
 import {
     decodeAuthorityCommandResult,
     isSuccessfulAuthorityMessageStatus,

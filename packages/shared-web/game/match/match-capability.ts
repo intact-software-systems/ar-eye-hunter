@@ -2,12 +2,10 @@ import type { RallarMessagePayload } from '@shared-web/browser/messages/rallar-m
 import type { RallarRoomState } from '@shared-web/browser/rallar.ts';
 import type { ALOutboundEnqueueStatus } from '@shared/alm/ALOutboundMessageRuntime.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
-import type {
-    RallarGameEnvelope,
-    RallarGameHostCapability,
-    RallarGameMatchConfig,
-    RallarGameSendResult
-} from './types.ts';
+import type { RallarGameHostCapability } from '../director/election.ts';
+import type { RallarGameEnvelope } from '../envelopes.ts';
+import type { RallarGameSendResult } from '../transport/rallar-game-send-result.ts';
+import type { RallarGameMatchConfig } from './rallar-game-match-contracts.ts';
 
 interface PublishRallarGameHostCapabilityRoomTarget {
     readonly roomId: string;

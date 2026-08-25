@@ -1,5 +1,5 @@
 import type { RallarRealtimeSendResult, RallarRoomRealtimeSendResult } from '@shared-web/browser/rallar.ts';
-import { toRallarGameRealtimeSendResult, toRallarGameRoomRealtimeSendResult } from '@shared-web/game/to-rallar-game-realtime-send-result.ts';
+import { toRallarGameRealtimeSendResult, toRallarGameRoomRealtimeSendResult } from '@shared-web/game/transport/to-rallar-game-realtime-send-result.ts';
 import { describe, expect, it } from 'vitest';
 
 describe('Rallar Game realtime send results', () => {

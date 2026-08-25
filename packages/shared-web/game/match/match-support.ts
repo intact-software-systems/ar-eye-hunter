@@ -8,8 +8,9 @@ import {
     deriveRallarMatchParticipants,
     deriveRallarMatchStandings
 } from '@shared/rallar-match/mod.ts';
-import { createRallarGameMatch } from './match.ts';
-import type { RallarGameMatchConfig, RallarGameMatchHandle, RallarGameSendResult } from './types.ts';
+import { createRallarGameMatch } from '../match.ts';
+import type { RallarGameSendResult } from '../transport/rallar-game-send-result.ts';
+import type { RallarGameMatchConfig, RallarGameMatchHandle } from './rallar-game-match-contracts.ts';
 
 export type RallarBrowserMatchConfig<TCommand, TSnapshot, TEvent, TPresence = TCommand> =
     & Omit<RallarGameMatchConfig<TCommand, TCommand, TSnapshot, TEvent, TPresence>, 'onInput' | 'onIntent'>

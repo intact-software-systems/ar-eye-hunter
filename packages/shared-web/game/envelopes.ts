@@ -1,11 +1,87 @@
-import type {
-    RallarGameEnvelope,
-    RallarGameEnvelopeCreateInput,
-    RallarGameEnvelopeKind,
-    RallarGameSequenceAcceptConstraints,
-    RallarGameSequenceAcceptResult,
-    RallarGameSequenceTracker
-} from './types.ts';
+export type RallarGameEnvelopeKind =
+    | 'capability'
+    | 'presence'
+    | 'input'
+    | 'intent'
+    | 'event'
+    | 'snapshot'
+    | 'sync-request'
+    | 'heartbeat';
+
+type RallarGameEnvelopePayload =
+    | object
+    | string
+    | number
+    | boolean
+    | null
+    | undefined;
+
+export interface RallarGameEnvelope<T> {
+    readonly protocol: string;
+    readonly kind: RallarGameEnvelopeKind;
+    readonly roomId: string;
+    readonly matchId?: string;
+    readonly senderId: string;
+    readonly seq: number;
+    readonly sentAtEpochMs: number;
+    readonly directorEpoch: number;
+    readonly payload: T;
+}
+
+export interface RallarGameEnvelopeCreateInput<T> {
+    readonly protocol: string;
+    readonly kind: RallarGameEnvelopeKind;
+    readonly roomId: string;
+    readonly matchId?: string;
+    readonly senderId: string;
+    readonly seq: number;
+    readonly directorEpoch: number;
+    readonly payload: T;
+    readonly sentAtEpochMs?: number;
+}
+
+export type RallarGameEnvelopeRejectReason =
+    | 'wrong-protocol'
+    | 'wrong-room'
+    | 'wrong-match'
+    | 'wrong-sender'
+    | 'wrong-kind'
+    | 'stale-epoch'
+    | 'duplicate-sequence'
+    | 'stale-sequence';
+
+export interface RallarGameSequenceAcceptConstraints {
+    readonly protocol?: string;
+    readonly roomId?: string;
+    readonly matchId?: string;
+    readonly senderId?: string;
+    readonly minDirectorEpoch?: number;
+    readonly kinds?: readonly RallarGameEnvelopeKind[];
+}
+
+export type RallarGameSequenceAcceptResult<T = RallarGameEnvelopePayload> =
+    | Readonly<{
+        accepted: true;
+        envelope: RallarGameEnvelope<T>;
+    }>
+    | Readonly<{
+        accepted: false;
+        reason: RallarGameEnvelopeRejectReason;
+        envelope: RallarGameEnvelope<T>;
+    }>;
+
+export interface RallarGameSequenceTracker {
+    accept<T>(
+        envelope: RallarGameEnvelope<T>,
+        constraints?: RallarGameSequenceAcceptConstraints
+    ): RallarGameSequenceAcceptResult<T>;
+    last<T>(
+        envelope:
+            | RallarGameEnvelope<T>
+            | Pick<RallarGameEnvelope<T>, 'roomId' | 'matchId' | 'directorEpoch' | 'senderId' | 'kind'>
+    ): number | undefined;
+    reset(): void;
+}
 
 const RALLAR_GAME_ENVELOPE_KINDS = new Set<RallarGameEnvelopeKind>([
     'capability',
@@ -37,12 +113,12 @@ export function createRallarGameEnvelope<T>(
 export function isRallarGameEnvelope(
     value: unknown,
     protocol: string
-): value is RallarGameEnvelope<unknown> {
+): value is RallarGameEnvelope<RallarGameEnvelopePayload> {
     if (typeof value !== 'object' || value === null || Array.isArray(value)) {
         return false;
     }
 
-    const envelope = value as Partial<RallarGameEnvelope<unknown>>;
+    const envelope = value as Partial<RallarGameEnvelope<RallarGameEnvelopePayload>>;
     return envelope.protocol === protocol &&
         typeof envelope.kind === 'string' &&
         RALLAR_GAME_ENVELOPE_KINDS.has(envelope.kind as RallarGameEnvelopeKind) &&
@@ -66,10 +142,10 @@ export function createRallarGameSequenceTracker(): RallarGameSequenceTracker {
     const lastSeqByKey = new Map<string, number>();
 
     return {
-        accept(
-            envelope: RallarGameEnvelope<unknown>,
+        accept<T>(
+            envelope: RallarGameEnvelope<T>,
             constraints: RallarGameSequenceAcceptConstraints = {}
-        ): RallarGameSequenceAcceptResult {
+        ): RallarGameSequenceAcceptResult<T> {
             const rejected = rejectByConstraints(envelope, constraints);
             if (rejected) {
                 return {
@@ -114,8 +190,8 @@ export function createRallarGameSequenceTracker(): RallarGameSequenceTracker {
     };
 }
 
-function rejectByConstraints(
-    envelope: RallarGameEnvelope<unknown>,
+function rejectByConstraints<T>(
+    envelope: RallarGameEnvelope<T>,
     constraints: RallarGameSequenceAcceptConstraints
 ): Exclude<RallarGameSequenceAcceptResult, { accepted: true; }>['reason'] | undefined {
     if (constraints.protocol && envelope.protocol !== constraints.protocol) {
@@ -154,8 +230,8 @@ function rejectByConstraints(
     return undefined;
 }
 
-function sequenceKey(
-    envelope: Pick<RallarGameEnvelope<unknown>, 'roomId' | 'matchId' | 'directorEpoch' | 'senderId' | 'kind'>
+function sequenceKey<T>(
+    envelope: Pick<RallarGameEnvelope<T>, 'roomId' | 'matchId' | 'directorEpoch' | 'senderId' | 'kind'>
 ): string {
     return [
         envelope.roomId,

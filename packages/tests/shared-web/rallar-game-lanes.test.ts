@@ -1,4 +1,9 @@
-import { createRallarGameLanePresets, DEFAULT_RALLAR_GAME_LANE_IDS, resolveRallarGameLaneIds } from '@shared-web/game/mod.ts';
+import {
+    createDefaultRallarGameLanePresets,
+    createRallarGameLanePresets,
+    DEFAULT_RALLAR_GAME_LANE_IDS,
+    resolveRallarGameLaneIds
+} from '@shared-web/game/mod.ts';
 import { describe, expect, it } from 'vitest';
 
 describe('Rallar Game lane presets', () => {
@@ -13,7 +18,7 @@ describe('Rallar Game lane presets', () => {
     });
 
     it('produces exact V1 lane reliability and flow-control presets', () => {
-        expect(createRallarGameLanePresets()).toEqual([
+        expect(createDefaultRallarGameLanePresets()).toEqual([
             {
                 id: 'game-input',
                 label: 'rtc-game-input',
@@ -80,11 +85,15 @@ describe('Rallar Game lane presets', () => {
     it('allows lane IDs and queue budgets to be overridden without changing roles', () => {
         expect(
             createRallarGameLanePresets({
-                laneIds: {
+                laneIds: resolveRallarGameLaneIds({
                     input: 'cash-input',
                     snapshot: 'cash-snapshot'
-                },
-                inputMaxQueueItems: 4
+                }),
+                inputMaxQueueItems: 4,
+                intentMaxQueueItems: 128,
+                snapshotMaxQueueItems: 8,
+                metricsMaxQueueItems: 16,
+                replicationMaxQueueItems: 256
             })[0]
         ).toMatchObject({
             id: 'cash-input',
