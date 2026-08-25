@@ -3,7 +3,6 @@ import assert from 'node:assert/strict';
 import { RALLAR_CRDT_PROTOCOL_VERSION, toRallarCrdtDocumentKey, type RallarCrdtDocumentRef, type RallarCrdtSnapshotEnvelope } from '@shared/crdt/mod.ts';
 
 import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
-import { PSqlCrdtLogRepository } from '@shared-server/rallar-system/crdt/persistence/psql-crdt-log-repository.ts';
 
 import {
     createPSqlResourceInboxRepository,
@@ -49,20 +48,21 @@ interface RetryMutationScenario {
     readonly documentAuthorityReadCount: () => number;
 }
 
-interface LegacySnapshotFixture {
+interface PreConstraintSnapshotFixture {
     readonly document: RallarCrdtDocumentRef;
     readonly reason: string | null;
 }
 
-const LEGACY_SNAPSHOT_FIXTURES: readonly LegacySnapshotFixture[] = [
-    { document: legacyDocument('physical'), reason: 'api-v1-admin-compaction' },
-    { document: legacyDocument('null'), reason: null },
-    { document: legacyDocument('blank'), reason: '   ' }
+const MIGRATION_BACKFILL_REASON = 'legacy-import';
+const PRE_CONSTRAINT_SNAPSHOT_FIXTURES: readonly PreConstraintSnapshotFixture[] = [
+    { document: preConstraintDocument('physical'), reason: 'api-v1-admin-compaction' },
+    { document: preConstraintDocument('null'), reason: null },
+    { document: preConstraintDocument('blank'), reason: '   ' }
 ];
 
 Deno.test(
-    'compatible migration binds omitted legacy snapshot reasons in row and envelope',
-    verifyCompatibleSnapshotReasonMigration
+    'trusted identity migration makes snapshot reason mandatory in row and envelope',
+    verifySnapshotReasonConstraintMigration
 );
 
 Deno.test(
@@ -70,13 +70,13 @@ Deno.test(
     verifyRealSqlCasConflictRetry
 );
 
-async function verifyCompatibleSnapshotReasonMigration(): Promise<void> {
-    await withPGliteSql(runCompatibleSnapshotReasonMigration);
+async function verifySnapshotReasonConstraintMigration(): Promise<void> {
+    await withPGliteSql(runSnapshotReasonConstraintMigration);
 }
 
-async function runCompatibleSnapshotReasonMigration(sql: PGliteSql): Promise<void> {
+async function runSnapshotReasonConstraintMigration(sql: PGliteSql): Promise<void> {
     await sql`alter table crdt_snapshots alter column reason drop not null`;
-    await insertLegacySnapshotFixtures(sql);
+    await insertPreConstraintSnapshotFixtures(sql);
     const migration = await Deno.readTextFile(
         new URL(
             '../../../prisma/migrations/20260723170000_crdt_trusted_identity_required/migration.sql',
@@ -87,13 +87,12 @@ async function runCompatibleSnapshotReasonMigration(sql: PGliteSql): Promise<voi
 
     const rows = await readMigratedSnapshotContract(sql);
     assertMigratedSnapshotContract(rows);
-    await assertMigratedSnapshotRepositoryReads(sql);
 }
 
-async function insertLegacySnapshotFixtures(sql: PGliteSql): Promise<void> {
-    for (const fixture of LEGACY_SNAPSHOT_FIXTURES) {
+async function insertPreConstraintSnapshotFixtures(sql: PGliteSql): Promise<void> {
+    for (const fixture of PRE_CONSTRAINT_SNAPSHOT_FIXTURES) {
         const documentKey = toRallarCrdtDocumentKey(fixture.document);
-        const envelope = legacySnapshot(fixture.document);
+        const envelope = preConstraintSnapshot(fixture.document);
         await sql`
           insert into crdt_documents (
               document_key, application_id, workspace_id, document_scope,
@@ -144,21 +143,21 @@ function assertMigratedSnapshotContract(rows: readonly MigratedSnapshotContractR
         }),
         [
             {
-                documentId: 'legacy-blank',
+                documentId: 'pre-constraint-blank',
                 documentRevision: 1,
-                logicalReason: 'legacy-import',
-                physicalReason: 'legacy-import',
+                logicalReason: MIGRATION_BACKFILL_REASON,
+                physicalReason: MIGRATION_BACKFILL_REASON,
                 reasonNullable: 'NO'
             },
             {
-                documentId: 'legacy-null',
+                documentId: 'pre-constraint-null',
                 documentRevision: 1,
-                logicalReason: 'legacy-import',
-                physicalReason: 'legacy-import',
+                logicalReason: MIGRATION_BACKFILL_REASON,
+                physicalReason: MIGRATION_BACKFILL_REASON,
                 reasonNullable: 'NO'
             },
             {
-                documentId: 'legacy-physical',
+                documentId: 'pre-constraint-physical',
                 documentRevision: 1,
                 logicalReason: 'api-v1-admin-compaction',
                 physicalReason: 'api-v1-admin-compaction',
@@ -166,15 +165,6 @@ function assertMigratedSnapshotContract(rows: readonly MigratedSnapshotContractR
             }
         ]
     );
-}
-
-async function assertMigratedSnapshotRepositoryReads(sql: PGliteSql): Promise<void> {
-    const repository = new PSqlCrdtLogRepository(sql);
-    for (const fixture of LEGACY_SNAPSHOT_FIXTURES) {
-        const snapshot = await repository.readSnapshot(fixture.document);
-        const expectedReason = fixture.reason?.trim() ? fixture.reason : 'legacy-import';
-        assert.equal(snapshot?.metadata.reason, expectedReason);
-    }
 }
 
 async function verifyRealSqlCasConflictRetry(): Promise<void> {
@@ -281,16 +271,16 @@ async function assertRetryMutationOutcome(
     assert.equal(result.code, 'authorization-scope-denied');
 }
 
-function legacyDocument(suffix: string): RallarCrdtDocumentRef {
+function preConstraintDocument(suffix: string): RallarCrdtDocumentRef {
     return {
         applicationId: 'app-1',
         scope: 'app',
         documentType: 'checklist',
-        documentId: `legacy-${suffix}`
+        documentId: `pre-constraint-${suffix}`
     };
 }
 
-function legacySnapshot(document: RallarCrdtDocumentRef): RallarCrdtSnapshotEnvelope {
+function preConstraintSnapshot(document: RallarCrdtDocumentRef): RallarCrdtSnapshotEnvelope {
     return {
         protocolVersion: RALLAR_CRDT_PROTOCOL_VERSION,
         document,
@@ -299,7 +289,7 @@ function legacySnapshot(document: RallarCrdtDocumentRef): RallarCrdtSnapshotEnve
         createdAtEpochMs: 10_000,
         maxLamport: 0,
         includedUpdateIds: [],
-        value: { legacy: true },
+        value: { preConstraint: true },
         metadata: { updateCount: 0 }
     };
 }

@@ -84,7 +84,7 @@ export interface RallarCrdtServerMutationIngress {
 export interface RallarCrdtServerDocumentAuthorizationInput {
     readonly kind: RallarCrdtServerEnvelopeKind;
     readonly document: RallarCrdtDocumentRef;
-    readonly envelope: unknown;
+    readonly envelope: RallarCrdtServerAcceptedEnvelope['envelope'];
     readonly trusted: RallarCrdtServerTrustedMetadata;
     readonly raw: ALMessage;
 }

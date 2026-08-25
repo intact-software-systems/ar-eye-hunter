@@ -48,7 +48,7 @@ interface PersistedSnapshotResultRow {
 }
 
 Deno.test(
-    'modern compact normalizes one reason before compute and persists it atomically',
+    'compact normalizes one reason before compute and persists it atomically',
     async () => {
         await withPGliteSql(async (sql) => {
             const now = await readPGliteDatabaseEpochMs(sql) + 12 * 60 * 60 * 1_000;

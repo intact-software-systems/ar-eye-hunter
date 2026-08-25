@@ -48,7 +48,8 @@ describe('CRDT command and outbox invariants', () => {
             command,
             read({
                 document: accepted.document,
-                existingUpdate: command.update
+                existingUpdate: command.update,
+                existingAppend: accepted.append
             })
         );
         expect(replay.outboxEntries).toHaveLength(1);

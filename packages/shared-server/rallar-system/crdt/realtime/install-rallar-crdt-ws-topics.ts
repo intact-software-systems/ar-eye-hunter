@@ -220,10 +220,8 @@ interface AuthorizeAcceptedEnvelopeInput {
 }
 
 async function authorizeAcceptedEnvelope(input: AuthorizeAcceptedEnvelopeInput): Promise<boolean> {
-    const document = readEnvelopeDocument(input.message.payload);
-    if (!document) {
-        return false;
-    }
+    const accepted = toAcceptedEnvelope(input.kind, input.message, input.context);
+    const document = accepted.envelope.document;
 
     const policyDecision = evaluateRallarCrdtFeaturePolicy({
         document,
@@ -242,9 +240,9 @@ async function authorizeAcceptedEnvelope(input: AuthorizeAcceptedEnvelopeInput):
         input.options.authorizeDocument?.({
             kind: input.kind,
             document,
-            envelope: input.message.payload,
-            trusted: toTrustedMetadata(input.message, input.context),
-            raw: input.message.raw
+            envelope: accepted.envelope,
+            trusted: accepted.trusted,
+            raw: accepted.raw
         }) ?? true
     );
 }
@@ -297,19 +295,6 @@ function toEnvelopeKind(typeId: string): RallarCrdtServerEnvelopeKind | undefine
 
 function toTopicId(scope: RallarCrdtServerTopicScope): string {
     return scope === 'room' ? RALLAR_CRDT_ROOM_TOPIC_ID : RALLAR_CRDT_APP_TOPIC_ID;
-}
-
-function readEnvelopeDocument(
-    value: RallarServerWsPayload
-): RallarCrdtServerAcceptedEnvelope['envelope']['document'] | undefined {
-    if (!value || typeof value !== 'object') {
-        return undefined;
-    }
-
-    const document = Reflect.get(value, 'document');
-    return document && typeof document === 'object'
-        ? (document as RallarCrdtServerAcceptedEnvelope['envelope']['document'])
-        : undefined;
 }
 
 function toTrustedMetadata(

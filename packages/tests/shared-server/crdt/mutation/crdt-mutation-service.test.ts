@@ -324,6 +324,7 @@ function createMetadata(overrides: Partial<RallarCrdtDocumentMetadata> = {}): Ra
 class MemoryCrdtMutationRepository implements CrdtMutationRepository {
     metadata: RallarCrdtDocumentMetadata | null = null;
     updates: RallarCrdtUpdateEnvelope[] = [];
+    append: CrdtMutationComputedWrite['append'] = null;
     outbox: CrdtMutationComputed['outboxEntries'][number][] = [];
     operations: string[] = [];
     readCalls = 0;
@@ -335,7 +336,7 @@ class MemoryCrdtMutationRepository implements CrdtMutationRepository {
         return Promise.resolve({
             document: this.metadata,
             existingUpdate: this.updates.at(-1) ?? null,
-            existingAppend: null,
+            existingAppend: this.append,
             records: [],
             snapshot: null,
             authorized: true,
@@ -364,6 +365,7 @@ class MemoryCrdtMutationRepository implements CrdtMutationRepository {
                 throw new Error('Expected append mutation update');
             }
             this.updates.push(computed.update);
+            this.append = computed.append;
         }
         return Promise.resolve();
     }

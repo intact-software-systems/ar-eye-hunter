@@ -9,9 +9,6 @@ import type {
     CrdtMutationResult
 } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-contracts.ts';
 import { decodeExactDocumentRef } from '@shared-server/rallar-system/crdt/mutation/decoding/decode-exact-document-ref.ts';
-import { decodeExactProjectionIds } from '@shared-server/rallar-system/crdt/mutation/decoding/decode-exact-projection-ids.ts';
-import { decodeExactQuotaPolicy } from '@shared-server/rallar-system/crdt/mutation/decoding/decode-exact-quota-policy.ts';
-import { decodeExactRetentionPolicy } from '@shared-server/rallar-system/crdt/mutation/decoding/decode-exact-retention-policy.ts';
 import { decodeExactSnapshotEnvelope } from '@shared-server/rallar-system/crdt/mutation/decoding/decode-exact-snapshot-envelope.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type {
@@ -31,6 +28,7 @@ import {
     type JsonWireObject,
     type JsonWireValue
 } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
+import { decodeCrdtAdminLifecycleActions } from './decode-crdt-admin-lifecycle-actions.ts';
 
 export type CrdtAdminMutationOperation =
     | 'rebuild-projection'
@@ -57,16 +55,18 @@ export interface CrdtAdminMutations {
 
 export interface CrdtAdminMutationInbox {
     writeHttpAdminCommandUntilCompletion(
-        reservation: Readonly<{
-            operation: CrdtAdminMutationOperation;
-            requestId: string;
-            callerId: string;
-            documentKey: string;
-            semanticHash: string;
-            materialize: () => Promise<CrdtMutationCommand>;
-            matches: (command: CrdtMutationCommand) => boolean | Promise<boolean>;
-        }>
+        reservation: CrdtAdminCommandReservation
     ): Promise<Either<AppInboxFailure, CrdtMutationResult>>;
+}
+
+export interface CrdtAdminCommandReservation {
+    readonly operation: CrdtAdminMutationOperation;
+    readonly requestId: string;
+    readonly callerId: string;
+    readonly documentKey: string;
+    readonly semanticHash: string;
+    readonly materialize: () => Promise<CrdtMutationCommand>;
+    readonly matches: (command: CrdtMutationCommand) => boolean | Promise<boolean>;
 }
 
 export interface CreateCrdtAdminMutationsInput {
@@ -98,15 +98,20 @@ interface ToCrdtAdminCommandCommonInput {
     readonly capturedAtEpochMs: number;
 }
 
-interface ToLifecycleActionInput<T> {
-    readonly request: JsonWireObject;
-    readonly key: 'retention' | 'quota' | 'projectionIds';
-    readonly decode: (value: JsonWireValue) => T;
-}
-
 interface NormalizedCrdtAdminMutation {
     readonly document: RallarCrdtDocumentRef;
-    readonly semantic: object;
+    readonly semantic: JsonWireObject;
+}
+
+interface CreateCrdtAdminCommandReservationInput {
+    readonly mutation: CreateCrdtAdminCommandInput;
+    readonly normalized: NormalizedCrdtAdminMutation;
+    readonly semanticHash: string;
+}
+
+interface MatchStoredCrdtAdminCommandInput {
+    readonly command: CrdtMutationCommand;
+    readonly semanticHash: string;
 }
 
 export function createCrdtAdminMutations(
@@ -115,30 +120,19 @@ export function createCrdtAdminMutations(
     return {
         writeCrdtAdminMutation: async (mutation) => {
             const normalized = normalizeCrdtAdminMutation(mutation);
-            const semanticHash = await hashCanonicalCommand(
-                decodeJsonWireValue(normalized.semantic, 'CRDT admin semantic command')
-            );
-            const completed = await input.appCrdtInboxService.writeHttpAdminCommandUntilCompletion({
-                operation: mutation.operation,
-                requestId: mutation.requestId,
-                callerId: mutation.adminSession.clientId,
-                documentKey: toRallarCrdtDocumentKey(normalized.document),
-                semanticHash,
-                materialize: async () =>
-                    await createCrdtAdminCommand({
+            const semanticHash = await hashCanonicalCommand(normalized.semantic);
+            const completed = await input.appCrdtInboxService.writeHttpAdminCommandUntilCompletion(
+                createCrdtAdminCommandReservation({
+                    mutation: {
                         ...mutation,
                         nowEpochMs: input.nowEpochMs,
                         createId: input.createId,
                         serviceId: input.serviceId
-                    }),
-                matches: async (command) =>
-                    await hashCanonicalCommand(
-                        decodeJsonWireValue(
-                            toCrdtAdminSemanticCommand(command),
-                            'Stored CRDT admin semantic command'
-                        )
-                    ) === semanticHash
-            });
+                    },
+                    normalized,
+                    semanticHash
+                })
+            );
             if (completed.left !== undefined) {
                 throw Object.assign(new Error(completed.left.message), completed.left);
             }
@@ -155,6 +149,31 @@ export function createCrdtAdminMutations(
             return toAdminPublicResult(result);
         }
     };
+}
+
+function createCrdtAdminCommandReservation(
+    input: CreateCrdtAdminCommandReservationInput
+): CrdtAdminCommandReservation {
+    return {
+        operation: input.mutation.operation,
+        requestId: input.mutation.requestId,
+        callerId: input.mutation.adminSession.clientId,
+        documentKey: toRallarCrdtDocumentKey(input.normalized.document),
+        semanticHash: input.semanticHash,
+        materialize: () => createCrdtAdminCommand(input.mutation),
+        matches: (command) =>
+            matchesStoredCrdtAdminCommand({
+                command,
+                semanticHash: input.semanticHash
+            })
+    };
+}
+
+async function matchesStoredCrdtAdminCommand(
+    input: MatchStoredCrdtAdminCommandInput
+): Promise<boolean> {
+    return await hashCanonicalCommand(toCrdtAdminSemanticCommand(input.command)) ===
+        input.semanticHash;
 }
 
 function normalizeCrdtAdminMutation(
@@ -183,31 +202,21 @@ function normalizeCrdtAdminMutation(
                 document,
                 semantic: {
                     ...common,
-                    snapshot: readSnapshot(request.snapshot),
+                    snapshot: decodeJsonWireValue(
+                        readSnapshot(request.snapshot),
+                        'CRDT admin compact snapshot'
+                    ),
                     reason: readString(request.reason) ?? 'api-v1-admin-compaction'
                 }
             };
         case 'lifecycle':
+            const lifecycleActions = decodeCrdtAdminLifecycleActions(request);
             return {
                 document,
                 semantic: {
                     ...common,
                     lifecycle: requireLifecycle(request.lifecycle),
-                    retentionAction: toLifecycleAction({
-                        request,
-                        key: 'retention',
-                        decode: decodeExactRetentionPolicy
-                    }),
-                    quotaAction: toLifecycleAction({
-                        request,
-                        key: 'quota',
-                        decode: decodeExactQuotaPolicy
-                    }),
-                    projectionIdsAction: toLifecycleAction({
-                        request,
-                        key: 'projectionIds',
-                        decode: decodeExactProjectionIds
-                    })
+                    ...lifecycleActions
                 }
             };
         case 'erase':
@@ -222,7 +231,7 @@ function normalizeCrdtAdminMutation(
     }
 }
 
-function toCrdtAdminSemanticCommand(command: CrdtMutationCommand): object {
+function toCrdtAdminSemanticCommand(command: CrdtMutationCommand): JsonWireObject {
     const common = {
         version: 1,
         operation: command.operation,
@@ -236,7 +245,14 @@ function toCrdtAdminSemanticCommand(command: CrdtMutationCommand): object {
         case 'rebuild-projection':
             return { ...common, projectionId: command.projectionId };
         case 'compact':
-            return { ...common, snapshot: command.snapshot, reason: command.reason };
+            return {
+                ...common,
+                snapshot: decodeJsonWireValue(
+                    command.snapshot,
+                    'Stored CRDT admin compact snapshot'
+                ),
+                reason: command.reason
+            };
         case 'lifecycle':
             return {
                 ...common,
@@ -282,26 +298,13 @@ async function createCrdtAdminCommand(
         }
         case 'lifecycle': {
             const lifecycle = requireLifecycle(request.lifecycle);
+            const lifecycleActions = decodeCrdtAdminLifecycleActions(request);
             const common = toCrdtAdminCommandCommon({ mutation: input, request, capturedAtEpochMs });
             return await createCrdtMutationCommand({
                 ...common,
                 operation: input.operation,
                 lifecycle,
-                retentionAction: toLifecycleAction({
-                    request,
-                    key: 'retention',
-                    decode: decodeExactRetentionPolicy
-                }),
-                quotaAction: toLifecycleAction({
-                    request,
-                    key: 'quota',
-                    decode: decodeExactQuotaPolicy
-                }),
-                projectionIdsAction: toLifecycleAction({
-                    request,
-                    key: 'projectionIds',
-                    decode: decodeExactProjectionIds
-                })
+                ...lifecycleActions
             });
         }
         case 'erase': {
@@ -390,19 +393,6 @@ function readSnapshotId(value: JsonWireValue | undefined): string | null {
     return value !== null && typeof value === 'object'
         ? readString(Reflect.get(value, 'snapshotId'))
         : null;
-}
-
-function toLifecycleAction<T>(
-    input: ToLifecycleActionInput<T>
-):
-    | Readonly<{ kind: 'preserve'; }>
-    | Readonly<{ kind: 'clear'; }>
-    | Readonly<{ kind: 'set'; value: T; }> {
-    if (!(input.key in input.request)) {
-        return { kind: 'preserve' };
-    }
-    const value = input.request[input.key];
-    return value === null ? { kind: 'clear' } : { kind: 'set', value: input.decode(value) };
 }
 
 function toAdminMutationError(code: string | null): Error {

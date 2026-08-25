@@ -16,13 +16,16 @@ import type {
     CrdtMutationComputedWrite,
     CrdtMutationRead
 } from './crdt-mutation-contracts.ts';
-import { toAppendOutbox, toCrdtAuditOutbox } from './create-crdt-mutation-outbox.ts';
 import {
-    toAcceptedAdminResultDetails,
-    toCrdtMutationResult,
-    toFallbackReplayAppend,
-    toRejectedAdminResultDetails
-} from './create-crdt-mutation-result.ts';
+    createAcceptedCrdtAdministrationMutationResult,
+    createRejectedCrdtAdministrationMutationResult
+} from './create-crdt-administration-mutation-result.ts';
+import {
+    createAcceptedCrdtAppendMutationResult,
+    createRejectedCrdtAppendMutationResult,
+    createReplayCrdtAppendMutationResult
+} from './create-crdt-append-mutation-result.ts';
+import { toAppendOutbox, toCrdtAuditOutbox } from './create-crdt-mutation-outbox.ts';
 
 export interface ComputeCrdtAcceptedAppendOutcomeInput {
     readonly command: CrdtAppendCommand;
@@ -92,13 +95,11 @@ export function computeCrdtAcceptedAppendOutcome(
         append,
         document
     };
-    const result = toCrdtMutationResult({
+    const result = createAcceptedCrdtAppendMutationResult({
         command,
-        status: 'accepted',
         document,
-        appendSequence: append.appendSequence,
-        code: null,
-        details: { appendResult }
+        append,
+        appendResult
     });
     return {
         ...createCrdtMutationComputedBase({
@@ -119,17 +120,21 @@ export function computeCrdtReplayOutcome(
     input: ComputeCrdtReplayOutcomeInput
 ): CrdtMutationComputedReplay {
     const { command, read, serviceId } = input;
-    const append = read.existingAppend ?? toFallbackReplayAppend(command, read.document);
-    const appendResult: RallarCrdtAppendResult = read.document
-        ? { status: 'duplicate', update: command.update, append, document: read.document }
-        : toCrdtAppendRejection(command, null, 'storage-failed');
-    const result = toCrdtMutationResult({
+    if (!read.document || !read.existingAppend) {
+        throw new TypeError('Persisted CRDT replay requires document and append metadata');
+    }
+    const append = read.existingAppend;
+    const appendResult = {
+        status: 'duplicate' as const,
+        update: command.update,
+        append,
+        document: read.document
+    };
+    const result = createReplayCrdtAppendMutationResult({
         command,
-        status: 'replay',
         document: read.document,
-        appendSequence: append.appendSequence,
-        code: null,
-        details: { appendResult }
+        append,
+        appendResult
     });
     return {
         ...createCrdtMutationComputedBase({
@@ -150,21 +155,24 @@ export function computeCrdtRejectedOutcome(
     input: ComputeCrdtRejectedOutcomeInput
 ): CrdtMutationComputedRejected {
     const { command, read, code, serviceId } = input;
-    const appendResult = command.operation === 'append' ? toCrdtAppendRejection(command, read.document, code) : null;
-    const result = toCrdtMutationResult({
-        command,
-        status: 'rejected',
-        document: read.document,
-        appendSequence: null,
-        code,
-        details: command.operation === 'append' ? { appendResult } : toRejectedAdminResultDetails(command)
-    });
+    const result = command.operation === 'append'
+        ? createRejectedCrdtAppendMutationResult({
+            command,
+            document: read.document,
+            code,
+            appendResult: toCrdtAppendRejection(command, read.document, code)
+        })
+        : createRejectedCrdtAdministrationMutationResult({
+            command,
+            document: read.document,
+            code
+        });
     const outboxEntries = command.operation === 'append' &&
-            appendResult !== null &&
+            result.operation === 'append' &&
             read.authorized &&
             !code.startsWith('authorization-') &&
             !code.startsWith('authentication-')
-        ? toAppendOutbox({ command, response: appendResult, serviceId, fanout: false })
+        ? toAppendOutbox({ command, response: result.appendResult, serviceId, fanout: false })
         : [];
     return {
         ...createCrdtMutationComputedBase({
@@ -186,13 +194,11 @@ export function computeCrdtAcceptedAdministrationOutcome(
     input: ComputeCrdtAcceptedAdministrationOutcomeInput
 ): CrdtMutationComputedWrite {
     const { command, read, document, snapshot, serviceId } = input;
-    const result = toCrdtMutationResult({
+    const result = createAcceptedCrdtAdministrationMutationResult({
         command,
-        status: 'accepted',
+        read,
         document,
-        appendSequence: document.lastAppendSequence,
-        code: null,
-        details: toAcceptedAdminResultDetails({ command, read, document, snapshot })
+        snapshot
     });
     const auditEvent = result.operation === 'erase' && result.status === 'accepted' ? result.auditEvent : null;
     return {
