@@ -33,12 +33,14 @@ it('routes an invite through the room membership owner', async () => {
     await expect(createRallarFacade().rooms.invite('room-1', 'principal-2')).resolves.toBe(snapshot);
 
     expect(roomWorkflowMocks.createStateGroupInvite).toHaveBeenCalledWith(
-        'room-1',
-        'principal-2',
-        {},
-        'principal-1',
-        'session-1',
-        expect.anything(),
-        {}
+        {
+            groupId: 'room-1',
+            targetPrincipalId: 'principal-2',
+            request: {},
+            actorPrincipalId: 'principal-1',
+            sessionId: 'session-1',
+            scope: { applicationId: 'rallar-server', workspaceId: 'default' },
+            policies: {}
+        }
     );
 });

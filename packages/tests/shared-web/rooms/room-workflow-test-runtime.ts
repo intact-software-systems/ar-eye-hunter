@@ -6,6 +6,10 @@ import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 
 import { createGroupSnapshotFixture } from '../authoritative-group-fixtures.ts';
 
+type RoomGroupStateWorkflowsModule = typeof import('@shared-web/browser/rooms/room-group-state-workflows.ts');
+type RoomGroupStateMutationWorkflowsModule = typeof import('@shared-web/browser/rooms/room-group-state-mutation-workflows.ts');
+type RoomMembershipGroupStateWorkflowsModule = typeof import('@shared-web/browser/rooms/room-membership-group-state-workflows.ts');
+
 interface RoomSnapshotScopeFixture {
     readonly applicationId?: string;
     readonly workspaceId?: string;
@@ -26,20 +30,20 @@ const roomWorkflowMocks = await vi.hoisted(async () => {
         clearMiddleware: vi.fn(),
         initMiddleware: vi.fn(async (): Promise<ApiMiddleware> => ctx),
         isMiddlewareReady: vi.fn(() => false),
-        createAndJoinStateGroup: vi.fn(),
-        joinStateGroup: vi.fn(),
-        leaveStateGroup: vi.fn(),
-        updateStateGroupDetails: vi.fn(),
-        updateStateGroupMetadata: vi.fn(),
-        archiveStateGroup: vi.fn(),
-        deleteStateGroup: vi.fn(),
-        createStateGroupInvite: vi.fn(),
-        acceptStateGroupInvite: vi.fn(),
-        removeStateGroupMember: vi.fn(),
-        banStateGroupMember: vi.fn(),
-        unbanStateGroupMember: vi.fn(),
-        setStateGroupMemberRole: vi.fn(),
-        transferStateGroupOwnership: vi.fn(),
+        createAndJoinStateGroup: vi.fn<RoomGroupStateWorkflowsModule['createAndJoinStateGroup']>(),
+        joinStateGroup: vi.fn<RoomGroupStateWorkflowsModule['joinStateGroup']>(),
+        leaveStateGroup: vi.fn<RoomGroupStateWorkflowsModule['leaveStateGroup']>(),
+        updateStateGroupDetails: vi.fn<RoomGroupStateMutationWorkflowsModule['updateStateGroupDetails']>(),
+        updateStateGroupMetadata: vi.fn<RoomGroupStateMutationWorkflowsModule['updateStateGroupMetadata']>(),
+        archiveStateGroup: vi.fn<RoomGroupStateMutationWorkflowsModule['archiveStateGroup']>(),
+        deleteStateGroup: vi.fn<RoomGroupStateMutationWorkflowsModule['deleteStateGroup']>(),
+        createStateGroupInvite: vi.fn<RoomMembershipGroupStateWorkflowsModule['createStateGroupInvite']>(),
+        acceptStateGroupInvite: vi.fn<RoomMembershipGroupStateWorkflowsModule['acceptStateGroupInvite']>(),
+        removeStateGroupMember: vi.fn<RoomMembershipGroupStateWorkflowsModule['removeStateGroupMember']>(),
+        banStateGroupMember: vi.fn<RoomMembershipGroupStateWorkflowsModule['banStateGroupMember']>(),
+        unbanStateGroupMember: vi.fn<RoomMembershipGroupStateWorkflowsModule['unbanStateGroupMember']>(),
+        setStateGroupMemberRole: vi.fn<RoomMembershipGroupStateWorkflowsModule['setStateGroupMemberRole']>(),
+        transferStateGroupOwnership: vi.fn<RoomMembershipGroupStateWorkflowsModule['transferStateGroupOwnership']>(),
         hydrateStateCaches: vi.fn(),
         onStateCacheChange: vi.fn(),
         readSession: vi.fn(() => ctx.session)
@@ -133,16 +137,16 @@ function resetRoomWorkflowLifecycleMocks(): void {
 }
 
 function resetRoomWorkflowEntryMocks(): void {
-    roomWorkflowMocks.createAndJoinStateGroup.mockImplementation(async (displayName) => {
-        roomWorkflowMocks.operationLog.push(`create:${String(displayName)}`);
+    roomWorkflowMocks.createAndJoinStateGroup.mockImplementation(async (input) => {
+        roomWorkflowMocks.operationLog.push(`create:${input.displayName}`);
         throw new Error('create not mocked');
     });
-    roomWorkflowMocks.joinStateGroup.mockImplementation(async (roomId) => {
-        roomWorkflowMocks.operationLog.push(`join:${String(roomId)}`);
+    roomWorkflowMocks.joinStateGroup.mockImplementation(async (input) => {
+        roomWorkflowMocks.operationLog.push(`join:${input.groupId}`);
         throw new Error('join not mocked');
     });
-    roomWorkflowMocks.leaveStateGroup.mockImplementation(async (roomId) => {
-        roomWorkflowMocks.operationLog.push(`leave:${String(roomId)}`);
+    roomWorkflowMocks.leaveStateGroup.mockImplementation(async (input) => {
+        roomWorkflowMocks.operationLog.push(`leave:${input.groupId}`);
         throw new Error('leave not mocked');
     });
 }
@@ -219,43 +223,43 @@ export function seedRoomSnapshots(snapshots: readonly GroupSnapshot[]): void {
 }
 
 export function resolveCreateWith(snapshot: GroupSnapshot): void {
-    roomWorkflowMocks.createAndJoinStateGroup.mockImplementation(async (displayName) => {
-        roomWorkflowMocks.operationLog.push(`create:${String(displayName)}`);
+    roomWorkflowMocks.createAndJoinStateGroup.mockImplementation(async (input) => {
+        roomWorkflowMocks.operationLog.push(`create:${input.displayName}`);
         return snapshot;
     });
 }
 
 export function rejectCreateWith(error: Error): void {
-    roomWorkflowMocks.createAndJoinStateGroup.mockImplementation(async (displayName) => {
-        roomWorkflowMocks.operationLog.push(`create:${String(displayName)}`);
+    roomWorkflowMocks.createAndJoinStateGroup.mockImplementation(async (input) => {
+        roomWorkflowMocks.operationLog.push(`create:${input.displayName}`);
         throw error;
     });
 }
 
 export function resolveJoinWith(snapshot: GroupSnapshot): void {
-    roomWorkflowMocks.joinStateGroup.mockImplementation(async (roomId) => {
-        roomWorkflowMocks.operationLog.push(`join:${String(roomId)}`);
+    roomWorkflowMocks.joinStateGroup.mockImplementation(async (input) => {
+        roomWorkflowMocks.operationLog.push(`join:${input.groupId}`);
         return snapshot;
     });
 }
 
 export function rejectJoinWith(error: Error): void {
-    roomWorkflowMocks.joinStateGroup.mockImplementation(async (roomId) => {
-        roomWorkflowMocks.operationLog.push(`join:${String(roomId)}`);
+    roomWorkflowMocks.joinStateGroup.mockImplementation(async (input) => {
+        roomWorkflowMocks.operationLog.push(`join:${input.groupId}`);
         throw error;
     });
 }
 
 export function resolveLeaveWith(snapshot: GroupSnapshot): void {
-    roomWorkflowMocks.leaveStateGroup.mockImplementation(async (roomId) => {
-        roomWorkflowMocks.operationLog.push(`leave:${String(roomId)}`);
+    roomWorkflowMocks.leaveStateGroup.mockImplementation(async (input) => {
+        roomWorkflowMocks.operationLog.push(`leave:${input.groupId}`);
         return snapshot;
     });
 }
 
 export function rejectLeaveWith(error: Error): void {
-    roomWorkflowMocks.leaveStateGroup.mockImplementation(async (roomId) => {
-        roomWorkflowMocks.operationLog.push(`leave:${String(roomId)}`);
+    roomWorkflowMocks.leaveStateGroup.mockImplementation(async (input) => {
+        roomWorkflowMocks.operationLog.push(`leave:${input.groupId}`);
         throw error;
     });
 }

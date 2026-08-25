@@ -158,17 +158,17 @@ describe('Rallar director relay', () => {
         });
 
         expect(mocks.appointStateGroupDirector).toHaveBeenCalledWith(
-            'room-1',
             expect.objectContaining({
-                heartbeatTtlMs: 1_000
-            }),
-            'principal-1',
-            'session-1',
-            expect.objectContaining({
-                applicationId: 'app-1',
-                workspaceId: 'workspace-1'
-            }),
-            expect.any(Object)
+                groupId: 'room-1',
+                request: expect.objectContaining({ heartbeatTtlMs: 1_000 }),
+                principalId: 'principal-1',
+                sessionId: 'session-1',
+                scope: expect.objectContaining({
+                    applicationId: 'app-1',
+                    workspaceId: 'workspace-1'
+                }),
+                policies: expect.any(Object)
+            })
         );
         expect(status).toMatchObject({
             role: 'director',

@@ -33,21 +33,25 @@ describe('room join operations', () => {
         };
         const roomIdSnapshot = createRoomSnapshot('room-id', ['session-1']);
         const roomRefSnapshot = createRoomSnapshot('room-ref', ['session-1']);
-        roomWorkflowMocks.joinStateGroup.mockImplementation(async (roomId) => {
-            roomWorkflowMocks.operationLog.push(`join:${String(roomId)}`);
-            return roomId === 'room-id' ? roomIdSnapshot : roomRefSnapshot;
+        roomWorkflowMocks.joinStateGroup.mockImplementation(async (input) => {
+            roomWorkflowMocks.operationLog.push(`join:${input.groupId}`);
+            return input.groupId === 'room-id' ? roomIdSnapshot : roomRefSnapshot;
         });
         const facade = createRallarFacade();
 
         await facade.rooms.join({ roomId: 'room-id', leaveCurrent: false });
         await facade.rooms.join({ roomRef, leaveCurrent: false });
 
-        expect(roomWorkflowMocks.joinStateGroup.mock.calls[0]?.[0]).toBe('room-id');
-        expect(roomWorkflowMocks.joinStateGroup.mock.calls[0]?.[4]).toBeUndefined();
-        expect(roomWorkflowMocks.joinStateGroup.mock.calls[1]?.[0]).toBe('room-ref');
-        expect(roomWorkflowMocks.joinStateGroup.mock.calls[1]?.[4]).toEqual({
-            applicationId: 'app-1',
-            workspaceId: 'workspace-1'
+        expect(roomWorkflowMocks.joinStateGroup.mock.calls[0]?.[0]).toMatchObject({
+            groupId: 'room-id',
+            scope: undefined
+        });
+        expect(roomWorkflowMocks.joinStateGroup.mock.calls[1]?.[0]).toMatchObject({
+            groupId: 'room-ref',
+            scope: {
+                applicationId: 'app-1',
+                workspaceId: 'workspace-1'
+            }
         });
     });
 
@@ -66,13 +70,15 @@ describe('room join operations', () => {
         });
 
         expect(roomWorkflowMocks.joinStateGroup).toHaveBeenCalledWith(
-            'room-1',
-            'principal-1',
-            'session-1',
-            undefined,
-            undefined,
-            { command: { signal, timeoutMs: 44 } },
-            { inviteToken: 'invite-1', joinCode: 'code-1' }
+            {
+                groupId: 'room-1',
+                principalId: 'principal-1',
+                sessionId: 'session-1',
+                generationId: undefined,
+                scope: undefined,
+                policies: { command: { signal, timeoutMs: 44 } },
+                intent: { inviteToken: 'invite-1', joinCode: 'code-1' }
+            }
         );
     });
 
@@ -83,7 +89,7 @@ describe('room join operations', () => {
         await createRallarFacade().rooms.join('room-1', { maxAttempts: 3 });
 
         const policies = requireRecord(
-            roomWorkflowMocks.joinStateGroup.mock.calls[0]?.[5],
+            roomWorkflowMocks.joinStateGroup.mock.calls[0]?.[0].policies,
             'join workflow policies'
         );
         const command = requireRecord(policies.command, 'join command policies');

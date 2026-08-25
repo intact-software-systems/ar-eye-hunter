@@ -24,11 +24,13 @@ it('routes a detail update through the room update owner', async () => {
     ).resolves.toBe(snapshot);
 
     expect(roomWorkflowMocks.updateStateGroupDetails).toHaveBeenCalledWith(
-        'room-1',
-        { displayName: 'Room 1' },
-        'principal-1',
-        'session-1',
-        expect.anything(),
-        {}
+        {
+            groupId: 'room-1',
+            request: { displayName: 'Room 1' },
+            principalId: 'principal-1',
+            sessionId: 'session-1',
+            scope: { applicationId: 'rallar-server', workspaceId: 'default' },
+            policies: {}
+        }
     );
 });
