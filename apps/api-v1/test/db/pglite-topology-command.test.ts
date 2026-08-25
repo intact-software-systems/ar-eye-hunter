@@ -22,11 +22,12 @@ import { createGroupTopologyRuntimeOwners } from '@shared-server/rallar-system/t
 import { RallarRtcTopologyService } from '@shared-server/rallar-system/topology/runtime/rallar-rtc-topology-service.ts';
 import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
-import type { GroupSnapshot } from '@shared/api/group-types.ts';
+import type { GroupPresenceSummary, GroupSnapshot } from '@shared/api/group-types.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
 
 import { toResilienceDto } from '../api-v1-test-queue-resilience.ts';
+import { readPGliteDatabaseEpochMs } from './pglite-app-inbox-test-runtime.ts';
 import { withPGliteSql } from './pglite-auth-test-harness.ts';
 import { canonicalAuditStamp } from './pglite-state-mutation-test-runtime.ts';
 import {
@@ -153,7 +154,7 @@ Deno.test(
     'PGlite topology planning filters RTTs outside recomputed group reporting edges',
     async () => {
         await withPGliteSql(async (sql) => {
-            const nowEpochMs = 1_000;
+            const nowEpochMs = await readPGliteDatabaseEpochMs(sql);
             const groupRef = {
                 applicationId: 'pglite-topology-rtt-filter',
                 workspaceId: 'planning',
@@ -173,6 +174,22 @@ Deno.test(
             for (const session of group.activeSessions) {
                 await groups.putPresenceSession(session);
             }
+            const presenceSummary: GroupPresenceSummary = {
+                ...groupRef,
+                causalRevision: group.causalRevision,
+                activePrincipalIds: group.activeSessions
+                    .map((session) => session.principalId)
+                    .toSorted(),
+                activeSessionIds: group.activeSessions.map((session) => session.sessionId),
+                activeSessions: group.activeSessions,
+                activePrincipalCount: group.onlineMemberCount,
+                activeSessionCount: group.activeSessions.length,
+                computedAtEpochMs: nowEpochMs
+            };
+            assert.equal(
+                (await groups.insertPresenceSummary(presenceSummary)).status,
+                'applied'
+            );
             const rttRepository = new RtcRttRepository(runtime, {
                 now: () => nowEpochMs
             });
