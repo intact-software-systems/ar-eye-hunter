@@ -216,7 +216,11 @@ async function startDirectorRelay(runtime: BlackBoxRallarRuntime) {
 async function receiveDirectorIntent(
     scenario: DirectorRelayScenario
 ): Promise<BlackBoxRallarDirectorOutputRecord> {
-    const output = await scenario.config().onIntent?.(
+    const onIntent = scenario.config().onIntent;
+    if (onIntent === undefined) {
+        throw new Error('The director relay did not register its intent handler.');
+    }
+    const output = await onIntent(
         relayMessage({ intentId: 'intent-b-1', action: 'move' }, 'session-b', 1_100),
         scenario.relay
     );
@@ -231,9 +235,21 @@ async function receiveDirectorObservations(
     output: BlackBoxRallarDirectorOutputRecord
 ): Promise<void> {
     const config = scenario.config();
-    await config.onOutput?.(relayMessage(output, 'session-1', 1_150));
-    await config.onSnapshot?.(relayMessage(await config.readSnapshot?.(), 'session-1', 1_200));
-    await config.onSyncRequest?.(
+    if (
+        config.onOutput === undefined ||
+        config.onSnapshot === undefined ||
+        config.readSnapshot === undefined ||
+        config.onSyncRequest === undefined
+    ) {
+        throw new Error('The director relay did not register all observation handlers.');
+    }
+    await config.onOutput(relayMessage(output, 'session-1', 1_150));
+    const snapshot = await config.readSnapshot();
+    if (snapshot === undefined) {
+        throw new Error('The director relay did not produce a snapshot.');
+    }
+    await config.onSnapshot(relayMessage(snapshot, 'session-1', 1_200));
+    await config.onSyncRequest(
         relayMessage({ reason: 'unit-test' }, 'session-b', 1_250),
         scenario.relay
     );
@@ -258,7 +274,7 @@ function relayMessage<T>(data: T, senderId: string, receivedAtEpochMs: number): 
 }
 
 function isDirectorOutput(
-    value: void | RallarMessagePayload | readonly BlackBoxRallarDirectorOutputRecord[]
+    value: void | BlackBoxRallarDirectorOutputRecord | readonly BlackBoxRallarDirectorOutputRecord[]
 ): value is BlackBoxRallarDirectorOutputRecord {
     return typeof value === 'object' && value !== null && 'kind' in value &&
         value.kind === 'black-box-director-output';

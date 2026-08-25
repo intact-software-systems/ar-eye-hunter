@@ -1,4 +1,3 @@
-import { defaultRepositoryManager } from '@shared/cache/defaultRepositoryManager.ts';
 import type { ValueEqualityChecker } from '@shared/cache/ObservableLatestValue.ts';
 import {
     type ObservableKeyedValueEvent,
@@ -225,13 +224,6 @@ export function createRallarDataFacade(
         destroyScope: stores.destroyScope,
         estimateUsage: estimateBrowserStorage
     };
-}
-
-export function createDefaultRallarDataFacade(): RallarDataFacade {
-    return createRallarDataFacade({
-        manager: defaultRepositoryManager,
-        resolveScopeKey: (scope) => String(scope)
-    });
 }
 
 class RallarDataStoreLifecycle {

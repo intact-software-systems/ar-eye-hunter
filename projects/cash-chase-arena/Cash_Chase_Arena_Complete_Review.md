@@ -156,7 +156,15 @@ Replayability should come first from player interaction, arena seeds, the three 
 
 ### Current public evidence
 
-The current browser facade exposes connection/session, Data, CRDT, auth, rooms, people, director, typed messages, targeted channels, RTC status/recovery, WS status, realtime JSON/binary lanes, media, and diagnostics (`packages/shared-web/browser/rallar.ts:1559-1877`). Room-bound handles expose `realtime<T>()` and `message<T>()` (`rallar.ts:792-807`). Room realtime sends expose explicit `sent`, `partial`, `not-ready`, `no-targets`, and `failed` outcomes plus readiness and transport status (`rallar.ts:921-976`).
+The aggregate browser contract in `packages/shared-web/browser/rallar-facade-contract.ts`
+exposes connection/session, Data, CRDT, auth, rooms, people, director, typed
+messages, targeted channels, RTC status/recovery, WS status, realtime JSON and
+binary lanes, media, and diagnostics. Room-bound `realtime<T>()` and
+`message<T>()` handles are owned by `browser/rooms/rallar-room-contracts.ts` and
+constructed by `browser/rooms/room-session.ts`. Room realtime results and their
+explicit `sent`, `partial`, `not-ready`, `no-targets`, and `failed` outcomes are
+owned by `browser/rallar-realtime-facade.ts` and
+`browser/realtime/browser-room-realtime-runtime.ts`.
 
 Rallar Game is not merely a transport preset:
 
@@ -164,23 +172,23 @@ Rallar Game is not merely a transport preset:
 - Host capability, deterministic host/backup election, lease concepts, phases, egress, recovery, envelope sequence/epoch guards, and diagnostics are public at `packages/shared-web/game/types.ts:34-397`.
 - The match handle provides start/stop, diagnostics, capability reporting, election, appointment, readiness, input, presence, intent, snapshot, event, and sync operations at `types.ts:407-490`.
 - Inputs target only the fresh director; snapshots go to the room realtime channel; reliable intents/events/sync use Director Relay at `packages/shared-web/game/match.ts:577-720`.
-- `createRallarBrowserMatch` adds participants, standings, and a room-trusted result boundary at `packages/shared-web/game/match-support.ts:61-189`.
-- Current server authority is public through `installRallarGameAuthorityServer` (`packages/shared-server/game/authority-server.ts:68-127`) and the browser client through `createRallarGameAuthorityClient` (`packages/shared-web/game/authority-client.ts:41-96`). Server-validated result creation exists at `packages/shared-server/game/match-result.ts:8-52`.
+- `createRallarBrowserMatch` in `packages/shared-web/game/match-support.ts` adds participants, standings, and a room-trusted result boundary.
+- Current server authority is public through `installRallarGameAuthorityServer` in `packages/shared-server/game/authority-server.ts` and the browser client through `createRallarGameAuthorityClient` in `packages/shared-web/game/rallar-game-authority-client.ts`. Server-validated result creation lives in `packages/shared-server/game/match-result.ts`.
 
 ### Classification by subsystem
 
 | Game subsystem                                       | Classification                                | Current Rallar evidence                                                                                                                                                                                                                                | CCA responsibility / gap                                                                    |
 | ---------------------------------------------------- | --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------- |
-| Authentication and restored session                  | **Fully provided**                            | `RallarFacade.auth` and `session()` at `rallar.ts:1563-1594`; AR Eye consumes the singleton at `apps/ar-eye-hunter-v1/src/game/useRallarArena.ts:1-29,217-229`.                                                                                        | Login/register UI, player-facing errors, and session-expiry UX.                             |
+| Authentication and restored session                  | **Fully provided**                            | `RallarFacade.auth` and `session()` are composed by `browser/rallar-runtime/composition/browser-facade-assembly.ts`; AR Eye consumes the canonical browser facade in `apps/ar-eye-hunter-v1/src/game/useRallarArena.ts`.                               | Login/register UI, player-facing errors, and session-expiry UX.                             |
 | Rooms, membership, governance, invites, event replay | **Fully provided**                            | `rallar.rooms`; `createAndSwitch`, `session`, and `waitForPresence` are owned by `browser-rallar-rooms.ts`.                                                                                                                                            | Room naming/filtering, ready state payload, invite-link route.                              |
-| Scoped identity                                      | **Fully provided**                            | Room APIs accept `GroupRef`; `RallarRoomSession` retains `roomRef` at `rallar.ts:792-807`.                                                                                                                                                             | Use `roomRef` rather than bare IDs when scope matters.                                      |
-| People and presence                                  | **Fully provided**                            | `rallar.people` at `rallar.ts:1689-1717`; bounded presence waits in Rooms.                                                                                                                                                                             | Derive lobby roster/readiness; do not create a second presence service.                     |
-| WebSocket/RTC signaling and ICE                      | **Fully provided**                            | Facade RTC/WS status, waits, diagnostics, reconnect, and ICE restart at `rallar.ts:1763-1835`.                                                                                                                                                         | Configure Rallar/TURN and surface failure states. No raw transports in CCA.                 |
-| Low-latency JSON/binary lanes                        | **Fully provided**                            | `rallar.realtime` at `rallar.ts:1836-1860`; room send/status/wait at `:968-976`.                                                                                                                                                                       | Define compact app payloads and rates.                                                      |
+| Scoped identity                                      | **Fully provided**                            | Room APIs accept `GroupRef`; `RallarRoomSession` retains `roomRef` in `browser/rooms/rallar-room-contracts.ts`.                                                                                                                                        | Use `roomRef` rather than bare IDs when scope matters.                                      |
+| People and presence                                  | **Fully provided**                            | `browser/rallar-people-facade.ts` owns the public contract and bounded presence waits remain in Rooms.                                                                                                                                                 | Derive lobby roster/readiness; do not create a second presence service.                     |
+| WebSocket/RTC signaling and ICE                      | **Fully provided**                            | `browser/rallar-rtc-facade.ts` and `browser/rallar-ws-facade.ts` own status, waits, diagnostics, reconnect, and ICE restart contracts.                                                                                                                 | Configure Rallar/TURN and surface failure states. No raw transports in CCA.                 |
+| Low-latency JSON/binary lanes                        | **Fully provided**                            | `browser/rallar-realtime-facade.ts` owns realtime and room send/status/wait contracts; feature runtimes under `browser/realtime/` implement them.                                                                                                      | Define compact app payloads and rates.                                                      |
 | Typed reliable messages and RTC→WS fallback          | **Fully provided**                            | `rallar.messages.room<T>`; the typed message contract is owned by `rallar-message-contracts.ts`, with behavior covered by `rallar-message-channel.test.ts`.                                                                                            | Define topic/type IDs and validation. Do not build a custom channel manager.                |
 | Game lane roles and backpressure                     | **Fully provided**                            | Unordered replace-by-key input/snapshot, ordered intent/replication, drop-old metrics at `game/lanes.ts:24-103`.                                                                                                                                       | Tune queue budgets only after measurement.                                                  |
 | Host/backup election                                 | **Provided; requires composition**            | Capability model at `game/types.ts:119-169`; deterministic election at `game/election.ts:9-95`; tests at `rallar-game-election.test.ts:8-94`.                                                                                                          | Read device/RTT/FPS signals and optionally supply scoring weights.                          |
-| Director appointment/heartbeat/relay                 | **Provided; requires composition**            | Director facade at `rallar-director-facade.ts:13-58`; epoch-bearing relay at `rallar.ts:1435-1507`; Rallar Game appointment policy at `game/types.ts:336-373`.                                                                                         | Decide when lobby is startable and expose user-facing recovery state.                       |
+| Director appointment/heartbeat/relay                 | **Provided; requires composition**            | `browser/rallar-director-facade.ts` owns the public contract, `browser/director/` owns epoch-bearing relay behavior, and `game/rallar-game-director-appointment-runtime.ts` owns game appointment policy.                                              | Decide when lobby is startable and expose user-facing recovery state.                       |
 | Browser-director game runtime transport              | **Provided; requires composition**            | `createRallarGameMatch` and handle at `game/match.ts:67-145`, `game/types.ts:448-483`.                                                                                                                                                                 | Pure simulation, payload validators, snapshots, match phases, content.                      |
 | Server-authority game transport                      | **Provided; requires composition**            | Shared authority envelopes, browser authority client, server installer, and tests in `packages/tests/shared*/rallar-game-authority*.test.ts`.                                                                                                          | Server simulation service and operational capacity if this authority model is chosen.       |
 | Authority trust labeling and standings               | **Provided; requires composition**            | `local`, `room-trusted`, and `server-validated` types at `packages/shared/rallar-match/types.ts:89-127`.                                                                                                                                               | Define score rows and never present room-trusted scores as cheat-resistant.                 |
@@ -197,7 +205,7 @@ Rallar Game is not merely a transport preset:
 
 ### Verified test and bundle evidence
 
-At `9540106`, the following focused command passed:
+The current focused command is:
 
 ```sh
 npx vitest run \
@@ -206,8 +214,8 @@ npx vitest run \
   packages/tests/shared-web/rallar-game-envelopes.test.ts \
   packages/tests/shared-web/rallar-game-match.test.ts \
   packages/tests/shared/rallar-motion.test.ts \
-  packages/tests/shared-web/rallar-room-realtime-channel.test.ts \
-  packages/tests/shared-web/rallar-message-channel-compat.test.ts \
+  packages/tests/shared-web/rooms/rallar-room-realtime-channel.test.ts \
+  packages/tests/shared-web/rallar-message-channel.test.ts \
   packages/tests/shared-web/rallar-data.test.ts \
   packages/tests/shared-web/rallar-crdt.test.ts \
   packages/tests/shared/rallar-ai-contracts.test.ts \
@@ -215,7 +223,7 @@ npx vitest run \
   packages/tests/shared-server/rallar-game-authority-server.test.ts
 ```
 
-Result: **12 files passed, 136 tests passed**.
+Result: **12 files passed, 137 tests passed**.
 
 The existing bundle measurement command also passed as a reporting run:
 
@@ -223,7 +231,10 @@ The existing bundle measurement command also passed as a reporting run:
 npm --workspace @ar-eye-hunter/shared-web run measure:browser-bundles
 ```
 
-Current Brotli signals: full browser facade 136.1 KiB, Rallar Data 6.1 KiB, Rallar CRDT 15.7 KiB. Additional isolated measurements made for this review: shared-web Rallar Game 9.2 KiB Brotli, Rallar Motion 4.2 KiB, and browser Rallar AI 1.3 KiB. These are bundled entry-point sizes, not incremental costs when combined and not a CCA application bundle.
+Current Brotli signals are 160.2 KiB for the full browser facade, 6.4 KiB for
+Rallar Data, and 15.7 KiB for Rallar CRDT. Historical isolated measurements for
+Rallar Game, Rallar Motion, and browser Rallar AI are not treated as current
+incremental costs; CCA must measure its own composed application bundle.
 
 ### Largest Rallar gaps for CCA
 
@@ -441,7 +452,7 @@ These are **recommendations and measurement gates**, not measured CCA performanc
 
 | Metric               | MVP budget and workload                                                                                                                                                                           |
 | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Lobby critical JS    | ≤250 KiB Brotli, excluding lazy renderer and AI/provider code. Rallar full facade currently accounts for 136.1 KiB Brotli in isolation.                                                           |
+| Lobby critical JS    | ≤250 KiB Brotli, excluding lazy renderer and AI/provider code. Rallar full facade currently accounts for 160.2 KiB Brotli in isolation.                                                           |
 | Lazy renderer chunk  | ≤500 KiB Brotli before model/audio assets; renderer bake-off must report minified, gzip, and Brotli.                                                                                              |
 | Lobby interactive    | ≤2.5 seconds in a repeatable Fast-4G/mid-tier-desktop lab profile, cold cache; no 3D or AI on the critical path.                                                                                  |
 | Setup-to-first frame | ≤1.5 seconds after deterministic setup commit with procedural arena on the reference desktop.                                                                                                     |
@@ -607,8 +618,8 @@ npx vitest run packages/tests/shared-web/rallar-game-match.test.ts \
   packages/tests/shared-web/rallar-game-envelopes.test.ts
 
 npx vitest run packages/tests/shared/rallar-motion.test.ts \
-  packages/tests/shared-web/rallar-room-realtime-channel.test.ts \
-  packages/tests/shared-web/rallar-message-channel-compat.test.ts
+  packages/tests/shared-web/rooms/rallar-room-realtime-channel.test.ts \
+  packages/tests/shared-web/rallar-message-channel.test.ts
 
 npx vitest run packages/tests/shared/rallar-ai-contracts.test.ts \
   packages/tests/shared-web/rallar-data.test.ts \
@@ -763,7 +774,7 @@ The remaining feasibility risks require implementation evidence rather than more
 
 ### Commands run for this analysis
 
-- Focused Vitest command in section 5: **passed, 12 files / 136 tests**.
+- Focused Vitest command in section 5: **passed, 12 files / 137 tests**.
 - `npm --workspace @ar-eye-hunter/shared-web run measure:browser-bundles`: **passed as reporting run**; all defined budgets reported `ok`.
 - Isolated esbuild measurements for Rallar Game, Motion, and browser AI: completed under `/tmp`; these were analysis artifacts, not committed files.
 - Existing ignored `dist` artifacts were inspected only as comparative size signals; they were not rebuilt and are not proof of CCA cost.

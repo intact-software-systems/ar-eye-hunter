@@ -10,8 +10,18 @@ import type {
     BlackBoxBrowserRtcDependency,
     BlackBoxBrowserWsDependency
 } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/browser-rallar-runtime-composition.ts';
-import type { RallarMessageSendResult } from '@shared-web/browser/rallar-message-contracts.ts';
+import type { BlackBoxRallarDirectorOutputRecord } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/contracts.ts';
+import type { RallarCrdtDocument, RallarCrdtOpenOptions } from '@shared-web/browser/rallar-crdt.ts';
+import type { RallarDirectorRelayConfig, RallarDirectorRelayHandle } from '@shared-web/browser/rallar-director-facade.ts';
+import type { RallarMessagePayload, RallarMessageSendResult } from '@shared-web/browser/rallar-message-contracts.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
+import type { RallarCrdtOperationBatch } from '@shared/crdt/crdt-types.ts';
+
+interface BrowserRuntimeDirectorRelayBehavior {
+    (
+        config: RallarDirectorRelayConfig<RallarMessagePayload, BlackBoxRallarDirectorOutputRecord, RallarMessagePayload>
+    ): RallarDirectorRelayHandle<RallarMessagePayload, BlackBoxRallarDirectorOutputRecord, RallarMessagePayload>;
+}
 import { vi } from 'vitest';
 
 export interface BrowserRuntimeFacadeRecords {
@@ -104,7 +114,7 @@ export const facadeBehavior = {
     directorAppoint: vi.fn<BlackBoxBrowserDirectorDependency['appoint']>(),
     directorResign: vi.fn<BlackBoxBrowserDirectorDependency['resign']>(),
     directorStatus: vi.fn<BlackBoxBrowserDirectorDependency['status']>(),
-    directorCreateRelay: vi.fn<BlackBoxBrowserDirectorDependency['createRelay']>()
+    directorCreateRelay: vi.fn<BrowserRuntimeDirectorRelayBehavior>()
 };
 
 const defaultRtcMessageSendResult: RallarMessageSendResult = {
@@ -173,14 +183,7 @@ const realtime: BlackBoxBrowserRealtimeDependency = {
         records.realtimeSends.push([input]);
         return await facadeBehavior.realtimeSend(input);
     },
-    onJson: (laneId, handler) => {
-        records.realtimeSubscriptions.push([laneId, handler]);
-        const unsubscribe = facadeBehavior.realtimeOnJson(laneId, handler);
-        return () => {
-            records.realtimeUnsubscribeCount += 1;
-            unsubscribe();
-        };
-    },
+    onJson: facadeBehavior.realtimeOnJson,
     health: (options) => facadeBehavior.realtimeHealth(options)
 };
 
@@ -190,28 +193,14 @@ const messages: BlackBoxBrowserMessagesDependency = {
             records.rtcMessageSends.push([input]);
             return await facadeBehavior.rtcMessageSend(input);
         },
-        onMessage: (selector, handler) => {
-            records.rtcMessageSubscriptions.push([selector, handler]);
-            const unsubscribe = facadeBehavior.rtcMessageOnMessage(selector, handler);
-            return () => {
-                records.rtcMessageUnsubscribeCount += 1;
-                unsubscribe();
-            };
-        }
+        onMessage: facadeBehavior.rtcMessageOnMessage
     },
     ws: {
         send: async (input) => {
             records.wsMessageSends.push([input]);
             return await facadeBehavior.wsMessageSend(input);
         },
-        onMessage: (selector, handler) => {
-            records.wsMessageSubscriptions.push([selector, handler]);
-            const unsubscribe = facadeBehavior.wsMessageOnMessage(selector, handler);
-            return () => {
-                records.wsMessageUnsubscribeCount += 1;
-                unsubscribe();
-            };
-        }
+        onMessage: facadeBehavior.wsMessageOnMessage
     }
 };
 
@@ -225,17 +214,19 @@ const rtc: BlackBoxBrowserRtcDependency = {
 
 const ws: BlackBoxBrowserWsDependency = {
     status: () => ({
-        state: 'idle',
+        connectState: 'idle',
         readyState: 'closed',
-        connected: false
+        isOpen: false,
+        reconnecting: false,
+        reconnectEnabled: false,
+        reconnectAttempts: 0,
+        maxReconnectAttempts: 0,
+        reconnectExhausted: false
     })
 };
 
 const crdt: BlackBoxBrowserCrdtDependency = {
-    open: async (name, options) => {
-        records.crdtOpens.push([name, options]);
-        return await facadeBehavior.crdtOpen(name, options);
-    }
+    open: openCrdtWithRecords
 };
 
 const director: BlackBoxBrowserDirectorDependency = {
@@ -245,7 +236,7 @@ const director: BlackBoxBrowserDirectorDependency = {
     },
     resign: async (room, options) => await facadeBehavior.directorResign(room, options),
     status: (room, options) => facadeBehavior.directorStatus(room, options),
-    createRelay: (config) => facadeBehavior.directorCreateRelay(config)
+    createRelay: createDirectorRelay
 };
 
 export const rallarFacadeTestDouble: BlackBoxBrowserRallarRuntimeDependency = {
@@ -265,7 +256,7 @@ export const rallarFacadeTestDouble: BlackBoxBrowserRallarRuntimeDependency = {
         records.disconnectCount += 1;
         await facadeBehavior.disconnect();
     },
-    status: () => ({ connected: true, connecting: false }),
+    status: () => 'connected',
     isConnected: () => true,
     session: () => facadeSession,
     auth,
@@ -293,11 +284,65 @@ export function resetBrowserRuntimeFacadeTestDouble(): void {
     facadeBehavior.currentRoomRefresh.mockResolvedValue({});
     facadeBehavior.realtimeHealth.mockReturnValue([]);
     facadeBehavior.realtimeSend.mockResolvedValue([]);
-    facadeBehavior.realtimeOnJson.mockReturnValue(() => undefined);
+    facadeBehavior.realtimeOnJson.mockImplementation((laneId, handler) => {
+        records.realtimeSubscriptions.push([laneId, handler]);
+        return () => {
+            records.realtimeUnsubscribeCount += 1;
+        };
+    });
     facadeBehavior.rtcMessageSend.mockResolvedValue(defaultRtcMessageSendResult);
-    facadeBehavior.rtcMessageOnMessage.mockReturnValue(() => undefined);
+    facadeBehavior.rtcMessageOnMessage.mockImplementation((selector, handler) => {
+        records.rtcMessageSubscriptions.push([selector, handler]);
+        return () => {
+            records.rtcMessageUnsubscribeCount += 1;
+        };
+    });
     facadeBehavior.wsMessageSend.mockResolvedValue(defaultWsMessageSendResult);
-    facadeBehavior.wsMessageOnMessage.mockReturnValue(() => undefined);
+    facadeBehavior.wsMessageOnMessage.mockImplementation((selector, handler) => {
+        records.wsMessageSubscriptions.push([selector, handler]);
+        return () => {
+            records.wsMessageUnsubscribeCount += 1;
+        };
+    });
+}
+
+function openCrdtWithRecords<TValue, TPayload extends RallarCrdtOperationBatch = RallarCrdtOperationBatch>(
+    name: string,
+    options?: RallarCrdtOpenOptions<TValue, TPayload>
+): Promise<RallarCrdtDocument<TValue, TPayload>>;
+async function openCrdtWithRecords(
+    name: string,
+    options?: RallarCrdtOpenOptions
+): Promise<object> {
+    records.crdtOpens.push([name, options]);
+    return await facadeBehavior.crdtOpen(name, options);
+}
+
+function createDirectorRelay<TIntent, TOutput, TSnapshot = TOutput>(
+    config: RallarDirectorRelayConfig<TIntent, TOutput, TSnapshot>
+): RallarDirectorRelayHandle<TIntent, TOutput, TSnapshot>;
+function createDirectorRelay(config: object): object {
+    if (!isDirectorRelayConfig(config)) {
+        throw new Error('The director relay test double received an invalid config.');
+    }
+    return facadeBehavior.directorCreateRelay(config);
+}
+
+function isDirectorRelayConfig(
+    value: object
+): value is RallarDirectorRelayConfig<RallarMessagePayload, BlackBoxRallarDirectorOutputRecord, RallarMessagePayload> {
+    return 'intentTypeId' in value && typeof value.intentTypeId === 'string' &&
+        'outputTypeId' in value && typeof value.outputTypeId === 'string' &&
+        (!('readSnapshot' in value) || value.readSnapshot === undefined ||
+            typeof value.readSnapshot === 'function') &&
+        (!('onIntent' in value) || value.onIntent === undefined ||
+            typeof value.onIntent === 'function') &&
+        (!('onOutput' in value) || value.onOutput === undefined ||
+            typeof value.onOutput === 'function') &&
+        (!('onSnapshot' in value) || value.onSnapshot === undefined ||
+            typeof value.onSnapshot === 'function') &&
+        (!('onSyncRequest' in value) || value.onSyncRequest === undefined ||
+            typeof value.onSyncRequest === 'function');
 }
 
 function clearRecords(): void {

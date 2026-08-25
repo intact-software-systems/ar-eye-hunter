@@ -18,7 +18,6 @@ import type { RallarTargetedChannelDefinition } from '../../rallar-facade-contra
 import type {
     BrowserMediaComposition,
     BrowserMessagingComposition,
-    BrowserRealtimeComposition,
     BrowserRealtimeCoreComposition
 } from './browser-communication-composition.ts';
 import type { BrowserStateComposition, BrowserStateEventComposition } from './browser-runtime-composition.ts';
@@ -32,8 +31,6 @@ export interface BrowserPeopleStatsComposition {
     readonly stats: RallarStatsController['operations'];
 }
 
-export interface BrowserRoomPeopleStatsComposition extends BrowserRoomsComposition, BrowserPeopleStatsComposition {}
-
 export interface BrowserCallsComposition {
     readonly calls: RallarCallsFacade;
 }
@@ -42,8 +39,6 @@ export interface BrowserDirectorComposition {
     readonly directorController: RallarDirectorController;
     readonly director: RallarDirectorFacade;
 }
-
-export interface BrowserCallsDirectorComposition extends BrowserCallsComposition, BrowserDirectorComposition {}
 
 export interface CreateBrowserRoomsCompositionInput {
     readonly state: BrowserStateComposition;
@@ -59,13 +54,11 @@ export interface CreateBrowserPeopleStatsCompositionInput {
     readonly session: RallarSessionController;
 }
 
-export interface CreateBrowserRoomPeopleStatsCompositionInput
-    extends CreateBrowserRoomsCompositionInput, CreateBrowserPeopleStatsCompositionInput {}
-
 export interface CreateBrowserCallsCompositionInput {
     readonly state: BrowserStateComposition;
     readonly messaging: BrowserMessagingComposition;
-    readonly realtime: BrowserRealtimeComposition;
+    readonly realtime: BrowserRealtimeCoreComposition;
+    readonly media: BrowserMediaComposition;
     readonly session: RallarSessionController;
 }
 
@@ -73,12 +66,8 @@ export interface CreateBrowserDirectorCompositionInput {
     readonly state: BrowserStateComposition;
     readonly messaging: BrowserMessagingComposition;
     readonly realtime: BrowserRealtimeCoreComposition;
-    readonly products: BrowserRoomsComposition;
+    readonly rooms: BrowserRoomsComposition;
     readonly session: RallarSessionController;
-}
-
-export interface CreateBrowserCallsDirectorCompositionInput extends CreateBrowserCallsCompositionInput {
-    readonly products: BrowserRoomsComposition;
 }
 
 export function createBrowserRoomsComposition(
@@ -125,15 +114,6 @@ export function createBrowserPeopleStatsComposition(
     };
 }
 
-export function createBrowserRoomPeopleStatsComposition(
-    input: CreateBrowserRoomPeopleStatsCompositionInput
-): BrowserRoomPeopleStatsComposition {
-    return {
-        ...createBrowserRoomsComposition(input),
-        ...createBrowserPeopleStatsComposition(input)
-    };
-}
-
 export function createBrowserCallsComposition(
     input: CreateBrowserCallsCompositionInput
 ): BrowserCallsComposition {
@@ -148,8 +128,8 @@ export function createBrowserCallsComposition(
             input.realtime.realtimeTargeted.create<T>(definition),
         messages: input.messaging.messages,
         rtc: input.realtime.rtc,
-        media: input.realtime.media,
-        mediaController: input.realtime.mediaController,
+        media: input.media.media,
+        mediaController: input.media.mediaController,
         sendWsUnicast: async ({ peerId, payload, typeId, route }) =>
             await input.messaging.messagesController.sendWsUnicast({ peerId, payload, typeId, route })
     });
@@ -162,7 +142,7 @@ export function createBrowserDirectorComposition(
 ): BrowserDirectorComposition {
     const directorController = new BrowserRallarDirectorController({
         roomStateStore: input.state.roomStateStore,
-        rooms: input.products.rooms,
+        rooms: input.rooms.rooms,
         messages: input.messaging.messages,
         realtime: input.realtime.realtime,
         readSession,
@@ -179,13 +159,4 @@ export function createBrowserDirectorComposition(
     const director = directorController.operations;
     input.state.stateStore.onAfterEmit(() => directorController.onStateChanged());
     return { directorController, director };
-}
-
-export function createBrowserCallsDirectorComposition(
-    input: CreateBrowserCallsDirectorCompositionInput
-): BrowserCallsDirectorComposition {
-    return {
-        ...createBrowserCallsComposition(input),
-        ...createBrowserDirectorComposition(input)
-    };
 }

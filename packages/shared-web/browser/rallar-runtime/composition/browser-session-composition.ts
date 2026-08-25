@@ -24,7 +24,7 @@ import { readSession } from '@shared/api/auth.ts';
 import { defaultRepositoryManager } from '@shared/cache/defaultRepositoryManager.ts';
 
 import type { BrowserMessagingComposition } from './browser-communication-composition.ts';
-import type { BrowserRoomPeopleStatsComposition } from './browser-product-composition.ts';
+import type { BrowserPeopleStatsComposition, BrowserRoomsComposition } from './browser-product-composition.ts';
 import type { BrowserRuntimeFoundation, BrowserStateComposition } from './browser-runtime-composition.ts';
 
 export interface BrowserSessionCoreComposition {
@@ -43,8 +43,6 @@ export interface BrowserCrdtComposition {
     readonly crdt: RallarCrdtFacade;
 }
 
-export interface BrowserSessionProductComposition extends BrowserStartupComposition, BrowserCrdtComposition {}
-
 export interface CreateBrowserSessionCoreCompositionInput {
     readonly foundation: BrowserRuntimeFoundation;
     readonly state: BrowserStateComposition;
@@ -52,7 +50,8 @@ export interface CreateBrowserSessionCoreCompositionInput {
 
 export interface CreateBrowserStartupCompositionInput {
     readonly session: BrowserSessionCoreComposition;
-    readonly products: BrowserRoomPeopleStatsComposition;
+    readonly rooms: BrowserRoomsComposition;
+    readonly peopleStats: BrowserPeopleStatsComposition;
 }
 
 export interface CreateBrowserCrdtCompositionInput {
@@ -60,9 +59,6 @@ export interface CreateBrowserCrdtCompositionInput {
     readonly state: BrowserStateComposition;
     readonly messaging: BrowserMessagingComposition;
 }
-
-export interface CreateBrowserSessionProductCompositionInput
-    extends CreateBrowserStartupCompositionInput, CreateBrowserCrdtCompositionInput {}
 
 export function createBrowserSessionCoreComposition(
     input: CreateBrowserSessionCoreCompositionInput
@@ -102,8 +98,8 @@ export function createBrowserStartupComposition(
     const startup = createRallarStartupController({
         connection: input.session.connection,
         auth: input.session.auth,
-        rooms: input.products.rooms,
-        people: input.products.people,
+        rooms: input.rooms.rooms,
+        people: input.peopleStats.people,
         waitForAuthEnd: input.session.session.waitForAuthEnd,
         resolveOperationOptions: input.session.session.resolveOperationOptions
     });
@@ -119,13 +115,4 @@ export function createBrowserCrdtComposition(
         readTransport: () => input.messaging.messagesController.toCrdtMessageTransport()
     });
     return { crdt };
-}
-
-export function createBrowserSessionProductComposition(
-    input: CreateBrowserSessionProductCompositionInput
-): BrowserSessionProductComposition {
-    return {
-        ...createBrowserStartupComposition(input),
-        ...createBrowserCrdtComposition(input)
-    };
 }

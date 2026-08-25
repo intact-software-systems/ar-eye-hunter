@@ -12,7 +12,6 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
         filePath: 'packages/shared-web/browser/rallar.ts',
         expected: {
             values: [
-                'createDefaultRallarDataFacade',
                 'createRallarCrdtFacade',
                 'createRallarDataFacade',
                 'createRallarFacade',
@@ -407,7 +406,6 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
         filePath: 'packages/shared-web/browser/rallar-data.ts',
         expected: {
             values: [
-                'createDefaultRallarDataFacade',
                 'createRallarDataFacade',
                 'defineRallarDataStore'
             ],

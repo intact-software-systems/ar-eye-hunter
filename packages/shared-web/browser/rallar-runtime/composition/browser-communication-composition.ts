@@ -46,17 +46,19 @@ export interface BrowserMediaComposition {
     readonly media: RallarMediaFacade;
 }
 
-export interface BrowserRealtimeComposition extends BrowserRealtimeCoreComposition, BrowserMediaComposition {}
-
 export interface CreateBrowserMessagingCompositionInput {
     readonly wsInbox: RallarWsInbox;
     readonly state: BrowserStateComposition;
     readonly session: RallarSessionController;
 }
 
-export interface CreateBrowserRealtimeCompositionInput {
+export interface CreateBrowserRealtimeCoreCompositionInput {
     readonly runtime: RallarBrowserFacadeRuntimeContext;
     readonly state: BrowserStateComposition;
+    readonly session: RallarSessionController;
+}
+
+export interface CreateBrowserMediaCompositionInput {
     readonly session: RallarSessionController;
 }
 
@@ -86,7 +88,7 @@ export function createBrowserMessagingComposition(
 }
 
 export function createBrowserRealtimeCoreComposition(
-    input: CreateBrowserRealtimeCompositionInput
+    input: CreateBrowserRealtimeCoreCompositionInput
 ): BrowserRealtimeCoreComposition {
     const rtcComposition = createBrowserRtcComposition(input);
     const realtimeComposition = createBrowserRealtimeChannelComposition({
@@ -100,7 +102,7 @@ export function createBrowserRealtimeCoreComposition(
 }
 
 export function createBrowserMediaComposition(
-    input: CreateBrowserRealtimeCompositionInput
+    input: CreateBrowserMediaCompositionInput
 ): BrowserMediaComposition {
     const mediaController = new BrowserRallarMediaController({
         connect: async () => await input.session.connect(),
@@ -112,15 +114,6 @@ export function createBrowserMediaComposition(
     };
 }
 
-export function createBrowserRealtimeComposition(
-    input: CreateBrowserRealtimeCompositionInput
-): BrowserRealtimeComposition {
-    return {
-        ...createBrowserRealtimeCoreComposition(input),
-        ...createBrowserMediaComposition(input)
-    };
-}
-
 interface BrowserRtcComposition {
     readonly wsController: RallarWsController;
     readonly rtcController: BrowserRallarRtcController;
@@ -128,7 +121,7 @@ interface BrowserRtcComposition {
 }
 
 function createBrowserRtcComposition(
-    input: CreateBrowserRealtimeCompositionInput
+    input: CreateBrowserRealtimeCoreCompositionInput
 ): BrowserRtcComposition {
     const wsController = new BrowserRallarWsController({
         readMiddleware: input.session.readMiddleware,
@@ -154,7 +147,7 @@ interface BrowserRealtimeChannelComposition {
     readonly realtime: RallarRealtimeFacade;
 }
 
-interface CreateBrowserRealtimeChannelCompositionInput extends CreateBrowserRealtimeCompositionInput {
+interface CreateBrowserRealtimeChannelCompositionInput extends CreateBrowserRealtimeCoreCompositionInput {
     readonly rtc: RallarRtcFacade;
 }
 

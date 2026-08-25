@@ -29,8 +29,8 @@ registration, invocation, and cleanup without consulting a historical plan.
 
 ## Construction and registration timeline
 
-1. [createRallarFacade](./rallar.ts#L239) delegates to
-   [createBrowserRallarFacade](./rallar-runtime/composition.ts#L43).
+1. [createRallarFacade](./rallar.ts#L238) delegates to
+   [createBrowserRallarFacade](./rallar-runtime/composition.ts#L58).
 2. [createBrowserRuntimeFoundation](./rallar-runtime/composition/browser-runtime-composition.ts#L68)
    creates the per-facade runtime ports and lifecycle coordinator.
 3. [createBrowserStateComposition](./rallar-runtime/composition/browser-runtime-composition.ts#L110)
@@ -47,14 +47,12 @@ registration, invocation, and cleanup without consulting a historical plan.
    completed transport-connection lifecycle, auth-session lifecycle, and public
    connection/auth operations in that order before any product consumer receives
    them.
-6. [createBrowserSessionProductComposition](./rallar-runtime/composition/browser-session-composition.ts)
-   constructs startup and CRDT only after the completed session, rooms, people,
-   and messaging capabilities exist.
-7. [createBrowserMessagingComposition](./rallar-runtime/composition/browser-communication-composition.ts),
-   [createBrowserRealtimeComposition](./rallar-runtime/composition/browser-communication-composition.ts),
-   and the product compositions construct completed message, RTC, realtime,
-   media, room, people, stats, call, and director capabilities. Call signal
-   routing lives in
+6. [createBrowserMessagingComposition](./rallar-runtime/composition/browser-communication-composition.ts),
+   [createBrowserRealtimeCoreComposition](./rallar-runtime/composition/browser-communication-composition.ts),
+   and the granular feature compositions construct completed message, RTC,
+   realtime, media, room, people, stats, call, and director capabilities
+   directly. No grouping factory sits between a feature owner and the composer.
+   Call signal routing lives in
    [BrowserRallarCallsController](./calls/browser-rallar-calls-controller.ts),
    while each accepted or started call creates one
    [BrowserCallSessionRuntime](./calls/browser-call-session-runtime.ts).
@@ -66,12 +64,17 @@ registration, invocation, and cleanup without consulting a historical plan.
    waiting to [BrowserRtcWaitRuntime](./rtc/browser-rtc-wait-runtime.ts), and
    observation/diagnostics to the owners under
    [`rtc-diagnostics/`](./rtc-diagnostics/).
-8. The composer registers state and transport lifecycle participants through
-   [registerBrowserStateLifecycle](./rallar-runtime/composition/browser-lifecycle-composition.ts#L27)
+7. [createBrowserStartupComposition](./rallar-runtime/composition/browser-session-composition.ts)
+   and [createBrowserCrdtComposition](./rallar-runtime/composition/browser-session-composition.ts)
+   run only after their completed session, rooms, people, state, and messaging
+   dependencies exist.
+8. The composer registers state, transport, and media lifecycle participants through
+   [registerBrowserStateLifecycle](./rallar-runtime/composition/browser-lifecycle-composition.ts#L31),
+   [registerBrowserTransportLifecycle](./rallar-runtime/composition/browser-lifecycle-composition.ts#L47),
    and
-   [registerBrowserTransportLifecycle](./rallar-runtime/composition/browser-lifecycle-composition.ts#L43),
+   [registerBrowserMediaLifecycle](./rallar-runtime/composition/browser-lifecycle-composition.ts#L92),
    then returns the aggregate facade from
-   [createBrowserFacadeAssembly](./rallar-runtime/composition/browser-facade-assembly.ts#L21).
+   [createBrowserFacadeAssembly](./rallar-runtime/composition/browser-facade-assembly.ts#L35).
 
 State, state-event, session, and startup construction use completed values:
 neither room state nor room events reads a later-created owner, and the auth

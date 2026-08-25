@@ -96,12 +96,14 @@ describe('browser facade behavior', () => {
         const wsHandler = vi.fn();
         const rtcHandler = vi.fn();
         const shutdownEvents: string[] = [];
-        runtime.middleware.middleware.qboxEngine.stop.mockImplementation(() => {
+        const stopQueueEngine = vi.fn(() => {
             shutdownEvents.push('queue-engine-stopped');
         });
-        runtime.middleware.middleware.webSocketQueueBox.close.mockImplementation(() => {
+        const closeWebSocket = vi.fn(() => {
             shutdownEvents.push('websocket-closed');
         });
+        runtime.middleware.middleware.qboxEngine.stop = stopQueueEngine;
+        runtime.middleware.middleware.webSocketQueueBox.close = closeWebSocket;
         const wsCallbacks = new Map<string, { onMessage(data: { payload: RouterPayload; }): Promise<void>; }>();
         const rtcCallbacks = new Map<string, { onMessage(data: { payload: RouterPayload; }): Promise<void>; }>();
         runtime.middleware.middleware.webSocketQueueBox.onInboxMessageDo = vi.fn(
@@ -122,8 +124,13 @@ describe('browser facade behavior', () => {
         await facade.connect();
         addWebSocketInboxCallback('ws.root', wsHandler);
         addRtcInboxCallback('rtc.root', rtcHandler);
-        await wsCallbacks.get('ws.root')?.onMessage({ payload: { source: 'ws' } });
-        await rtcCallbacks.get('rtc.root')?.onMessage({ payload: { source: 'rtc' } });
+        const wsCallback = wsCallbacks.get('ws.root');
+        const rtcCallback = rtcCallbacks.get('rtc.root');
+        if (wsCallback === undefined || rtcCallback === undefined) {
+            throw new Error('The browser facade did not register both public root routers.');
+        }
+        await wsCallback.onMessage({ payload: { source: 'ws' } });
+        await rtcCallback.onMessage({ payload: { source: 'rtc' } });
 
         expect(wsHandler).toHaveBeenCalledWith({ source: 'ws' });
         expect(rtcHandler).toHaveBeenCalledWith({ source: 'rtc' });

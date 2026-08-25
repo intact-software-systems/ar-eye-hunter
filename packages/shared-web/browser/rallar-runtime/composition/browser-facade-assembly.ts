@@ -2,20 +2,34 @@ import type { ApiMiddleware } from '@shared-web/browser/connection/browser-trans
 import type { RallarFacade, RallarTargetedChannelDefinition } from '@shared-web/browser/rallar-facade-contract.ts';
 import type { BrowserTargetedRealtimeRuntime } from '@shared-web/browser/realtime/browser-targeted-realtime-runtime.ts';
 
-import type { BrowserMessagingComposition, BrowserRealtimeComposition } from './browser-communication-composition.ts';
 import type {
-    BrowserCallsDirectorComposition,
-    BrowserRoomPeopleStatsComposition
+    BrowserMediaComposition,
+    BrowserMessagingComposition,
+    BrowserRealtimeCoreComposition
+} from './browser-communication-composition.ts';
+import type {
+    BrowserCallsComposition,
+    BrowserDirectorComposition,
+    BrowserPeopleStatsComposition,
+    BrowserRoomsComposition
 } from './browser-product-composition.ts';
-import type { BrowserSessionCoreComposition, BrowserSessionProductComposition } from './browser-session-composition.ts';
+import type {
+    BrowserCrdtComposition,
+    BrowserSessionCoreComposition,
+    BrowserStartupComposition
+} from './browser-session-composition.ts';
 
 export interface CreateBrowserFacadeAssemblyInput {
     readonly session: BrowserSessionCoreComposition;
-    readonly sessionProducts: BrowserSessionProductComposition;
+    readonly startup: BrowserStartupComposition;
+    readonly crdt: BrowserCrdtComposition;
     readonly messaging: BrowserMessagingComposition;
-    readonly realtime: BrowserRealtimeComposition;
-    readonly products: BrowserRoomPeopleStatsComposition;
-    readonly callsDirector: BrowserCallsDirectorComposition;
+    readonly realtime: BrowserRealtimeCoreComposition;
+    readonly media: BrowserMediaComposition;
+    readonly rooms: BrowserRoomsComposition;
+    readonly peopleStats: BrowserPeopleStatsComposition;
+    readonly calls: BrowserCallsComposition;
+    readonly director: BrowserDirectorComposition;
 }
 
 export function createBrowserFacadeAssembly(input: CreateBrowserFacadeAssemblyInput): RallarFacade {
@@ -23,22 +37,22 @@ export function createBrowserFacadeAssembly(input: CreateBrowserFacadeAssemblyIn
     const { connection, session } = input.session;
     return {
         ...connection,
-        setup: input.sessionProducts.startup.setup,
-        start: input.sessionProducts.startup.start,
+        setup: input.startup.startup.setup,
+        start: input.startup.startup.start,
         data: input.session.data,
-        crdt: input.sessionProducts.crdt,
+        crdt: input.crdt.crdt,
         auth: input.session.auth,
-        rooms: input.products.rooms,
-        people: input.products.people,
-        stats: input.products.stats,
-        director: input.callsDirector.director,
+        rooms: input.rooms.rooms,
+        people: input.peopleStats.people,
+        stats: input.peopleStats.stats,
+        director: input.director.director,
         messages: input.messaging.messages,
         channels,
         rtc: input.realtime.rtc,
-        calls: input.callsDirector.calls,
+        calls: input.calls.calls,
         ws: input.realtime.wsController.facade,
         realtime: input.realtime.realtime,
-        media: input.realtime.media,
+        media: input.media.media,
         advanced: {
             middleware: (): ApiMiddleware => session.requireMiddleware()
         }

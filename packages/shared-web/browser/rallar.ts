@@ -2,7 +2,6 @@ import type { RallarFacade } from '@shared-web/browser/rallar-facade-contract.ts
 import { createBrowserRallarFacade } from '@shared-web/browser/rallar-runtime/composition.ts';
 
 export {
-    createDefaultRallarDataFacade,
     createRallarDataFacade,
     defineRallarDataStore
 } from '@shared-web/browser/rallar-data.ts';

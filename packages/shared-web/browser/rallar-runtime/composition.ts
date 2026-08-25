@@ -1,10 +1,12 @@
 import type { RallarFacade } from '@shared-web/browser/rallar-facade-contract.ts';
 
 import {
+    createBrowserMediaComposition,
     createBrowserMessagingComposition,
-    createBrowserRealtimeComposition,
+    createBrowserRealtimeCoreComposition,
+    type BrowserMediaComposition,
     type BrowserMessagingComposition,
-    type BrowserRealtimeComposition
+    type BrowserRealtimeCoreComposition
 } from './composition/browser-communication-composition.ts';
 import { createBrowserFacadeAssembly } from './composition/browser-facade-assembly.ts';
 import {
@@ -13,10 +15,14 @@ import {
     registerBrowserTransportLifecycle
 } from './composition/browser-lifecycle-composition.ts';
 import {
-    createBrowserCallsDirectorComposition,
-    createBrowserRoomPeopleStatsComposition,
-    type BrowserCallsDirectorComposition,
-    type BrowserRoomPeopleStatsComposition
+    createBrowserCallsComposition,
+    createBrowserDirectorComposition,
+    createBrowserPeopleStatsComposition,
+    createBrowserRoomsComposition,
+    type BrowserCallsComposition,
+    type BrowserDirectorComposition,
+    type BrowserPeopleStatsComposition,
+    type BrowserRoomsComposition
 } from './composition/browser-product-composition.ts';
 import {
     createBrowserRuntimeFoundation,
@@ -27,18 +33,26 @@ import {
     type BrowserStateEventComposition
 } from './composition/browser-runtime-composition.ts';
 import {
+    createBrowserCrdtComposition,
     createBrowserSessionCoreComposition,
-    createBrowserSessionProductComposition,
-    type BrowserSessionCoreComposition
+    createBrowserStartupComposition,
+    type BrowserCrdtComposition,
+    type BrowserSessionCoreComposition,
+    type BrowserStartupComposition
 } from './composition/browser-session-composition.ts';
 
 interface BrowserFacadeCompositions {
     readonly session: BrowserSessionCoreComposition;
     readonly stateEvents: BrowserStateEventComposition;
     readonly messaging: BrowserMessagingComposition;
-    readonly realtime: BrowserRealtimeComposition;
-    readonly products: BrowserRoomPeopleStatsComposition;
-    readonly callsDirector: BrowserCallsDirectorComposition;
+    readonly realtime: BrowserRealtimeCoreComposition;
+    readonly media: BrowserMediaComposition;
+    readonly rooms: BrowserRoomsComposition;
+    readonly peopleStats: BrowserPeopleStatsComposition;
+    readonly calls: BrowserCallsComposition;
+    readonly director: BrowserDirectorComposition;
+    readonly startup: BrowserStartupComposition;
+    readonly crdt: BrowserCrdtComposition;
 }
 
 export function createBrowserRallarFacade(): RallarFacade {
@@ -49,19 +63,17 @@ export function createBrowserRallarFacade(): RallarFacade {
     });
     const compositions = createBrowserFacadeCompositions(foundation, state);
     registerBrowserFacadeLifecycle(foundation, state, compositions);
-    const sessionProducts = createBrowserSessionProductComposition({
-        session: compositions.session,
-        state,
-        messaging: compositions.messaging,
-        products: compositions.products
-    });
     return createBrowserFacadeAssembly({
         session: compositions.session,
-        sessionProducts,
+        startup: compositions.startup,
+        crdt: compositions.crdt,
         messaging: compositions.messaging,
         realtime: compositions.realtime,
-        products: compositions.products,
-        callsDirector: compositions.callsDirector
+        media: compositions.media,
+        rooms: compositions.rooms,
+        peopleStats: compositions.peopleStats,
+        calls: compositions.calls,
+        director: compositions.director
     });
 }
 
@@ -79,33 +91,57 @@ function createBrowserFacadeCompositions(
         state,
         session: session.session
     });
-    const realtime = createBrowserRealtimeComposition({
+    const realtime = createBrowserRealtimeCoreComposition({
         runtime: foundation.runtime,
         state,
         session: session.session
     });
-    const products = createBrowserRoomPeopleStatsComposition({
+    const media = createBrowserMediaComposition({ session: session.session });
+    const rooms = createBrowserRoomsComposition({
         state,
         stateEvents,
         messaging,
         realtime,
         session: session.session
     });
-    const callsDirector = createBrowserCallsDirectorComposition({
+    const peopleStats = createBrowserPeopleStatsComposition({
+        state,
+        stateEvents,
+        session: session.session
+    });
+    const calls = createBrowserCallsComposition({
         state,
         messaging,
         realtime,
-        products,
+        media,
         session: session.session
     });
+    const director = createBrowserDirectorComposition({
+        state,
+        messaging,
+        realtime,
+        rooms,
+        session: session.session
+    });
+    const startup = createBrowserStartupComposition({
+        session,
+        rooms,
+        peopleStats
+    });
+    const crdt = createBrowserCrdtComposition({ session, state, messaging });
 
     return {
         session,
         stateEvents,
         messaging,
         realtime,
-        products,
-        callsDirector
+        media,
+        rooms,
+        peopleStats,
+        calls,
+        director,
+        startup,
+        crdt
     };
 }
 
@@ -116,7 +152,7 @@ function registerBrowserFacadeLifecycle(
 ): void {
     registerBrowserStateLifecycle({
         lifecycle: foundation.lifecycle,
-        directorController: compositions.callsDirector.directorController,
+        directorController: compositions.director.directorController,
         stateStore: state.stateStore
     });
     registerBrowserTransportLifecycle({
@@ -129,6 +165,6 @@ function registerBrowserFacadeLifecycle(
     });
     registerBrowserMediaLifecycle({
         lifecycle: foundation.lifecycle,
-        mediaController: compositions.realtime.mediaController
+        mediaController: compositions.media.mediaController
     });
 }

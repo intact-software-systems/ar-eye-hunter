@@ -1,5 +1,5 @@
+import type { RallarRealtimeSendResult } from '@shared-web/browser/rallar-realtime-facade.ts';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import type { RallarRealtimeSendResult } from '../../../../shared-web/browser/index.ts';
 import { facade, loadRuntime, resetFacade, topics } from './browser-rallar-runtime-test-harness.ts';
 import { createDeferred } from './browser-runtime-lifecycle-test-fixture.ts';
 import { CrdtDocumentTestDouble } from './crdt-document-test-double.ts';
@@ -56,7 +56,7 @@ it('leaves rooms, logs out, and emits cleanup diagnostics on close', async () =>
 });
 
 it('does not allow an in-flight connect to commit after close starts', async () => {
-    const connection = createDeferred<void>();
+    const connection = createDeferred<object>();
     facade.behavior.connect.mockReturnValueOnce(connection.promise);
     const runtime = await loadRuntime();
     const connecting = runtime.connect({
@@ -77,7 +77,7 @@ it('does not allow an in-flight connect to commit after close starts', async () 
     await Promise.resolve();
     expect(facade.records.disconnectCount).toBe(0);
 
-    connection.resolve();
+    connection.resolve({});
     await expect(connecting).rejects.toThrow(
         'Connection was cancelled because the Rallar runtime closed.'
     );
@@ -89,7 +89,7 @@ it('does not allow an in-flight connect to commit after close starts', async () 
 });
 
 it('serializes concurrent connects that share a target but use different transports', async () => {
-    const firstConnection = createDeferred<void>();
+    const firstConnection = createDeferred<object>();
     facade.behavior.connect.mockReturnValueOnce(firstConnection.promise);
     const runtime = await loadRuntime();
     const baseConfig = {
@@ -124,7 +124,7 @@ it('serializes concurrent connects that share a target but use different transpo
     });
     expect(facade.records.connectionAttempts).toHaveLength(1);
 
-    firstConnection.resolve();
+    firstConnection.resolve({});
     await expect(realtimeConnect).resolves.toMatchObject({
         transport: 'realtime'
     });
@@ -139,7 +139,7 @@ it('serializes concurrent connects that share a target but use different transpo
 });
 
 it('serializes fresh authentication behind an in-flight connection', async () => {
-    const firstConnection = createDeferred<void>();
+    const firstConnection = createDeferred<object>();
     facade.behavior.connect.mockReturnValueOnce(firstConnection.promise);
     const runtime = await loadRuntime();
     const connecting = runtime.connect({
@@ -156,6 +156,9 @@ it('serializes fresh authentication behind an in-flight connection', async () =>
         expect(facade.records.connectionAttempts).toHaveLength(1);
     });
 
+    if (runtime.authenticate === undefined) {
+        throw new Error('The browser runtime under test does not expose authentication.');
+    }
     const authenticating = runtime.authenticate({
         connection: 'bobHttp',
         actor: 'bob',
@@ -169,7 +172,7 @@ it('serializes fresh authentication behind an in-flight connection', async () =>
         (input) => input.apiBaseUrl === 'https://other-api.example.test'
     )).toBe(false);
 
-    firstConnection.resolve();
+    firstConnection.resolve({});
     await connecting;
     await expect(authenticating).rejects.toThrow(
         'Fresh Rallar authentication requires closing the connected black-box runtime first.'

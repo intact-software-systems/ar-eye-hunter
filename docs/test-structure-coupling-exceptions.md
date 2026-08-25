@@ -674,14 +674,6 @@ moved or changed test.
       "coverageRelation": "The browser bundle suite builds the narrow entrypoints and checks their dependency graph and size; this manifest read establishes the package dependency declaration used by that executable bundle check."
     },
     {
-      "id": "shared-web-browser-entrypoints--keeps-capability-controllers-behind-injected-ports",
-      "domain": "Shared-web public browser entrypoints",
-      "owner": "Shared Web maintainers",
-      "summary": "Published browser entrypoints expose the intended files and remain importable by consumers. Executable assertion: “keeps capability controllers behind injected ports”.",
-      "semanticCoverage": "packages/tests/shared-web/shared-web-browser-entrypoints.test.ts#keeps capability controllers behind injected ports",
-      "coverageRelation": "The named entrypoint test imports or analyzes the published browser surface and requires the exact internal module inventory represented by this occurrence to remain behind its injected port or public owner."
-    },
-    {
       "id": "shared-web-browser-entrypoints--keeps-mutable-state-cache-access-inside-the-state-store",
       "domain": "Shared-web public browser entrypoints",
       "owner": "Shared Web maintainers",
@@ -698,19 +690,11 @@ moved or changed test.
       "coverageRelation": "The named entrypoint test imports or analyzes the published browser surface and requires the exact internal module inventory represented by this occurrence to remain behind its injected port or public owner."
     },
     {
-      "id": "shared-web-browser-entrypoints--keeps-runtime-controllers-independent-from-the-compatibility-ent",
+      "id": "shared-web-browser-entrypoints--keeps-runtime-controllers-independent-from-the-full-facade-entryp",
       "domain": "Shared-web public browser entrypoints",
       "owner": "Shared Web maintainers",
-      "summary": "Published browser entrypoints expose the intended files and remain importable by consumers. Executable assertion: “keeps runtime controllers independent from the compatibility entrypoint”.",
-      "semanticCoverage": "packages/tests/shared-web/shared-web-browser-entrypoints.test.ts#keeps runtime controllers independent from the compatibility entrypoint",
-      "coverageRelation": "The named entrypoint test imports or analyzes the published browser surface and requires the exact internal module inventory represented by this occurrence to remain behind its injected port or public owner."
-    },
-    {
-      "id": "shared-web-browser-entrypoints--limits-the-full-runtime-context-to-the-composer-and-port-contrac",
-      "domain": "Shared-web public browser entrypoints",
-      "owner": "Shared Web maintainers",
-      "summary": "Published browser entrypoints expose the intended files and remain importable by consumers. Executable assertion: “limits the full runtime context to the composer and port contracts”.",
-      "semanticCoverage": "packages/tests/shared-web/shared-web-browser-entrypoints.test.ts#limits the full runtime context to the composer and port contracts",
+      "summary": "Published browser entrypoints expose the intended files and remain importable by consumers. Executable assertion: “keeps runtime controllers independent from the full facade entrypoint”.",
+      "semanticCoverage": "packages/tests/shared-web/shared-web-browser-entrypoints.test.ts#keeps runtime controllers independent from the full facade entrypoint",
       "coverageRelation": "The named entrypoint test imports or analyzes the published browser surface and requires the exact internal module inventory represented by this occurrence to remain behind its injected port or public owner."
     },
     {
@@ -2063,17 +2047,6 @@ moved or changed test.
       "semanticCoverage": "packages/tests/shared-web/shared-web-browser-bundle-boundaries.test.ts#keeps shared-web from declaring graphology directly"
     },
     {
-      "id": "test-structure-coupling-dc5400b6d32427d7",
-      "path": "packages/tests/shared-web/shared-web-browser-entrypoints.test.ts",
-      "kind": "exact-file-tree",
-      "contract": "shared-web-browser-entrypoints--keeps-capability-controllers-behind-injected-ports",
-      "disposition": "durable-boundary",
-      "boundary": "public",
-      "owner": "Shared Web maintainers",
-      "rationale": "Enumerates runtime controller modules and checks each for injected-port use, preventing a newly added controller from escaping the capability boundary.",
-      "semanticCoverage": "packages/tests/shared-web/shared-web-browser-entrypoints.test.ts#keeps capability controllers behind injected ports"
-    },
-    {
       "id": "test-structure-coupling-90681dd61a7ee38b",
       "path": "packages/tests/shared-web/shared-web-browser-entrypoints.test.ts",
       "kind": "exact-file-tree",
@@ -2099,23 +2072,12 @@ moved or changed test.
       "id": "test-structure-coupling-8734e4d033198b85",
       "path": "packages/tests/shared-web/shared-web-browser-entrypoints.test.ts",
       "kind": "exact-file-tree",
-      "contract": "shared-web-browser-entrypoints--keeps-runtime-controllers-independent-from-the-compatibility-ent",
+      "contract": "shared-web-browser-entrypoints--keeps-runtime-controllers-independent-from-the-full-facade-entryp",
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Shared Web maintainers",
-      "rationale": "Scans the complete runtime-controller inventory for compatibility-entrypoint imports that runtime behavior would not reveal.",
-      "semanticCoverage": "packages/tests/shared-web/shared-web-browser-entrypoints.test.ts#keeps runtime controllers independent from the compatibility entrypoint"
-    },
-    {
-      "id": "test-structure-coupling-70a8536755b5a0ae",
-      "path": "packages/tests/shared-web/shared-web-browser-entrypoints.test.ts",
-      "kind": "exact-file-tree",
-      "contract": "shared-web-browser-entrypoints--limits-the-full-runtime-context-to-the-composer-and-port-contrac",
-      "disposition": "durable-boundary",
-      "boundary": "public",
-      "owner": "Shared Web maintainers",
-      "rationale": "Enumerates runtime modules and permits full-context access only in the composer and explicit port contracts.",
-      "semanticCoverage": "packages/tests/shared-web/shared-web-browser-entrypoints.test.ts#limits the full runtime context to the composer and port contracts"
+      "rationale": "Scans the complete runtime-controller inventory for full-facade imports that runtime behavior would not reveal.",
+      "semanticCoverage": "packages/tests/shared-web/shared-web-browser-entrypoints.test.ts#keeps runtime controllers independent from the full facade entrypoint"
     }
   ]
 }

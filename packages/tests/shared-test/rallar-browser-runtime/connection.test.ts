@@ -86,6 +86,9 @@ it('rejects a connected identity change before mutating facade configuration', a
         }
     });
 
+    if (runtime.authenticate === undefined) {
+        throw new Error('The browser runtime under test does not expose authentication.');
+    }
     await expect(runtime.authenticate({
         connection: 'bobHttp',
         actor: 'bob',
@@ -104,7 +107,7 @@ it('rejects a connected identity change before mutating facade configuration', a
 });
 
 it('revalidates a queued connection target before mutating the facade', async () => {
-    const firstConnect = createDeferred<void>();
+    const firstConnect = createDeferred<object>();
     facade.behavior.connect.mockReturnValueOnce(firstConnect.promise);
     const runtime = await loadRuntime();
     const first = runtime.connect({
@@ -138,7 +141,7 @@ it('revalidates a queued connection target before mutating the facade', async ()
         apiBaseUrl: 'https://other-api.example.test'
     });
 
-    firstConnect.resolve();
+    firstConnect.resolve({});
     await first;
     await secondResult;
     expect(facade.records.configurationWrites).not.toContainEqual({

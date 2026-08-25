@@ -113,7 +113,7 @@ export function createBlackBoxBrowserRallarRuntimeDependency(): BlackBoxBrowserR
         state,
         messaging,
         realtime,
-        products: rooms,
+        rooms,
         session: session.session
     });
     registerBlackBoxBrowserRallarLifecycle({
