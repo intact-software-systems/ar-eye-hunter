@@ -2,7 +2,7 @@ import type { RallarTimingSink } from '@shared-server/rallar-system/observabilit
 import type { InstallQueueBoxPubSubBridgeOptions } from '@shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-bridge.ts';
 import {
     isRtcTopologyPublicationOutboxEntry
-} from '@shared-server/rallar-system/topology/replay/is-rtc-topology-publication-outbox-entry.ts';
+} from '@shared-server/rallar-system/topology/replay/work/is-rtc-topology-publication-outbox-entry.ts';
 
 import type { ApiV1DatabaseConfiguration } from '../../configuration/api-v1-configuration.ts';
 import type { ApiV1DatabaseNotificationPort } from '../../db/api-v1-database-lifecycle.ts';

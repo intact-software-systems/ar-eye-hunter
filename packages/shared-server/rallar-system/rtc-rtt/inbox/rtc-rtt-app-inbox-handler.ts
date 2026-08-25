@@ -82,7 +82,13 @@ export class RtcRttAppInboxHandler {
         };
         const computed = computeRtcRttMutation({ command, read, facts });
         validateRtcRttMutation({ command, read, facts, computed });
-        const result = await this.commitMutation(context, authority.command, computed, facts);
+        const result = await this.commitMutation({
+            context,
+            command: authority.command,
+            computed,
+            facts,
+            mutationDependencies: rtcRttDependencies
+        });
         if (computed.outcome === 'write') {
             rtcRttDependencies.observeCommitted?.(computed.measurementGuard.value);
             this.dependencies.wakeQueue?.();
@@ -98,27 +104,32 @@ export class RtcRttAppInboxHandler {
         return result;
     }
 
-    private async commitMutation(
-        context: AppInboxMessageContext<RtcRttAppInboxResult>,
-        command: RtcRttAppInboxCommand,
-        computed: ReturnType<typeof computeRtcRttMutation>,
-        facts: Parameters<typeof computeRtcRttMutation>[0]['facts']
-    ): Promise<RtcRttAppInboxResult> {
+    private async commitMutation(input: CommitRtcRttMutationInput): Promise<RtcRttAppInboxResult> {
+        const { context, command, computed, facts } = input;
         return await this.dependencies.writeMutation(context, async (transaction) => {
             if (computed.outcome === 'write') {
                 if (facts.requestedAtEpochMs === null || facts.purgeAfterEpochMs === null) {
                     throw new TypeError('RTC RTT write lifecycle facts are missing');
                 }
-                await writeRtcRttMutation(
+                await writeRtcRttMutation({
                     transaction,
-                    {
+                    repositoryOptions: {
                         ttlMs: facts.purgeAfterEpochMs - facts.requestedAtEpochMs,
                         now: () => facts.requestedAtEpochMs
                     },
-                    computed
-                );
+                    computed,
+                    outboxWriter: input.mutationDependencies.outboxWriter
+                });
             }
             return toRtcRttAppInboxResult(computed, command.requestId);
         });
     }
+}
+
+interface CommitRtcRttMutationInput {
+    readonly context: AppInboxMessageContext<RtcRttAppInboxResult>;
+    readonly command: RtcRttAppInboxCommand;
+    readonly computed: ReturnType<typeof computeRtcRttMutation>;
+    readonly facts: Parameters<typeof computeRtcRttMutation>[0]['facts'];
+    readonly mutationDependencies: RtcRttAppInboxDependencies;
 }

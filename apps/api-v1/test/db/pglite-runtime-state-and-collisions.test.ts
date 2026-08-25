@@ -17,7 +17,9 @@ import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/topo
 import { toTopologyAppInboxCommand } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-command.ts';
 import type { TopologyAppInboxRequestPayload } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-contracts.ts';
 import { TopologyInboxService } from '@shared-server/rallar-system/topology/inbox/topology-inbox-service.ts';
-import { createGroupTopologyOwners } from '@shared-server/rallar-system/topology/runtime/create-group-topology-owners.ts';
+import { createGroupTopologyMutationOwners } from '@shared-server/rallar-system/topology/mutation/create-group-topology-mutation-owners.ts';
+import { RtcTopologyOutboxWriter } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-writer.ts';
+import { createGroupTopologyRuntimeOwners } from '@shared-server/rallar-system/topology/runtime/create-group-topology-runtime-owners.ts';
 import { RallarRtcTopologyService } from '@shared-server/rallar-system/topology/runtime/rallar-rtc-topology-service.ts';
 import {
     isRuntimeStateGuardedBatchRepositoryLike,
@@ -666,27 +668,36 @@ Deno.test(
                 await groupStateRepository.putMember(member);
             }
             const configRepository = new GroupTopologyConfigRepository(runtime);
-            const baselineService = createGroupTopologyOwners({
+            const topologyRuntime = createGroupTopologyRuntimeOwners({
                 findGroupSnapshotByRef: (ref) => groupStateRepository.readSnapshot(ref),
+                readCurrentGroupSnapshot: async (ref) => await groupStateRepository.readSnapshot(ref),
+                readRttMeasurements: () => [],
+                configRepository,
+                topologyService: new RallarRtcTopologyService()
+            });
+            const outboxWriter = new RtcTopologyOutboxWriter({ recordWrite: () => undefined });
+            const baselineMutation = createGroupTopologyMutationOwners({
                 groupStateRepository,
                 configRepository,
-                topologyService: new RallarRtcTopologyService(),
-                now: () => nowEpochMs
+                planning: topologyRuntime.planning,
+                nowEpochMs: () => nowEpochMs,
+                isPlatformAdmin: () => false,
+                outboxWriter
             });
-            const staleOverrideRead = await baselineService.configMutation!.read(
+            const staleOverrideRead = await baselineMutation.configMutation.read(
                 topologyOverrideCommand(groupRef, 'pglite-topology-b', 'mesh')
             );
             let staleReadCount = 0;
             let delegatedReadCount = 0;
-            const topology = createGroupTopologyOwners({
-                findGroupSnapshotByRef: (ref) => groupStateRepository.readSnapshot(ref),
+            const topologyMutation = createGroupTopologyMutationOwners({
                 groupStateRepository,
                 configRepository,
-                topologyService: new RallarRtcTopologyService(),
-                now: () => nowEpochMs
+                planning: topologyRuntime.planning,
+                nowEpochMs: () => nowEpochMs,
+                isPlatformAdmin: () => false,
+                outboxWriter
             });
-            const configMutation = topology.configMutation;
-            assert.ok(configMutation);
+            const configMutation = topologyMutation.configMutation;
             const readTopologyConfigMutation = configMutation.read.bind(configMutation);
             configMutation.read = async (command: GroupTopologyConfigMutationCommand) => {
                 if (command.commandId === 'pglite-topology-b' && staleReadCount === 0) {
@@ -710,7 +721,7 @@ Deno.test(
                     resourceInboxResultsRepository: new ResourceInboxResultsRepository(sql),
                     database: sql,
                     groupStateService: groupState,
-                    mutationOwners: requireTopologyMutationOwners(topology)
+                    mutationOwners: requireTopologyMutationOwners(topologyMutation)
                 },
                 {
                     serviceId: 'pglite-topology-cross-target',

@@ -4,8 +4,8 @@ import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { toRateLimiter } from '@shared/resilience/Resilience.ts';
 import type { WsQueueBoxServerService } from '@shared/services/WsQueueBoxServerService.ts';
 import type { GroupTopologyConfigQueryService } from '../../topology/config/group-topology-config-query-service.ts';
-import type { GroupTopologyGroupSnapshotReader } from '../../topology/group-topology-management-contracts.ts';
 import type { RtcTopologyWorkPublisher } from '../../topology/mutation/rtc-topology-outbox-work.ts';
+import type { GroupTopologyGroupSnapshotReader } from '../../topology/planning/group-topology-planning-contracts.ts';
 import {
     RallarRtcTopologyService,
     type RallarRtcTopologyServiceOptions

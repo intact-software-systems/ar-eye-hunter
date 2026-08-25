@@ -115,7 +115,7 @@ describe('group topology config mutation compute', () => {
             'const result = await this.dependencies.transactionWriter.writeMutation',
             validate
         );
-        const write = appInboxSource.indexOf('writeTopologyConfigMutation(', transaction);
+        const write = appInboxSource.indexOf('configMutationService.write(', transaction);
         expect(read).toBeGreaterThan(-1);
         expect(read).toBeLessThan(compute);
         expect(compute).toBeLessThan(validate);
@@ -124,7 +124,7 @@ describe('group topology config mutation compute', () => {
         const writeHelper = writerSource.indexOf('export async function writeTopologyConfigMutation');
         expect(writeHelper).toBeGreaterThan(-1);
         const writer = writerSource.slice(writeHelper);
-        expect(writer).toContain('transaction: PSqlSql');
+        expect(writerSource).toContain('readonly transaction: PSqlSql');
         expect(writer).not.toContain('.begin(');
         expect(appInboxSource.slice(read, write)).not.toContain('.begin(');
     });

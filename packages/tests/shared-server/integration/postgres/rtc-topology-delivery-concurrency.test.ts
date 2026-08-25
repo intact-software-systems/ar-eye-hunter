@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
-import { PSqlRtcTopologyDeliveryRepository } from '@shared-server/postgres/rtc-topology/p-sql-rtc-topology-delivery-repository.ts';
 import type {
     RtcTopologyDeliveryAppendInput,
     RtcTopologyDeliveryAppendResult
-} from '@shared-server/rallar-system/topology/replay/rtc-topology-delivery-contracts.ts';
-import { isRtcTopologyDeliveryRetryableConflict } from '@shared-server/rallar-system/topology/replay/rtc-topology-delivery-validation.ts';
+} from '@shared-server/rallar-system/topology/replay/delivery/rtc-topology-delivery-contracts.ts';
+import { isRtcTopologyDeliveryRetryableConflict } from '@shared-server/rallar-system/topology/replay/delivery/rtc-topology-delivery-validation.ts';
+import { PSqlRtcTopologyDeliveryRepository } from '@shared-server/rallar-system/topology/replay/postgres/p-sql-rtc-topology-delivery-repository.ts';
 import { createPostgresSql, type PostgresSql } from '../../rallar-system/topology/concurrency/postgres-topology-concurrency-fixtures.ts';
 
 const postgresIt = process.env.RALLAR_POSTGRES_INTEGRATION === '1' ? it : it.skip;

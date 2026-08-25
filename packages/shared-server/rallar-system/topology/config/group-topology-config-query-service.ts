@@ -8,7 +8,7 @@ import type {
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 
-import type { GroupTopologyGroupSnapshotReader } from '../group-topology-management-contracts.ts';
+import type { GroupTopologyGroupSnapshotReader } from '../planning/group-topology-planning-contracts.ts';
 import { resolveGroupTopologyConfig, type GroupTopologyServerOptions } from './group-topology-config.ts';
 import { GroupTopologyConfigRepository } from './persistence/group-topology-config-repository.ts';
 

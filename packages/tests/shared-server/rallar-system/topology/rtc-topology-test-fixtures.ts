@@ -1,4 +1,6 @@
+import type { ComputedRtcTopologyOutbox } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-entry.ts';
 import type { RttMeasurementInfo } from '@shared/api/api-config.ts';
+import { toCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topology-config-canonical.ts';
 import type { AuditStamp, GroupSnapshot } from '@shared/api/group-types.ts';
 import { createTestGroup } from '../../../create-test-group.ts';
 
@@ -70,18 +72,18 @@ export function createRtcTopologyGroupSnapshot(
             activeMemberCount: memberSessionIds.length,
             ownerPrincipalId,
             snapshotVersion: 1,
-            metadataVersion: 0,
+            metadataVersion: 1,
             rosterVersion: 1,
             presenceVersion: 0,
             created: createAuditStamp(1),
             updated: createAuditStamp(1)
         }),
-        members: memberSessionIds.map((sessionId) => ({
+        members: memberSessionIds.map((sessionId, index) => ({
             applicationId,
             workspaceId,
             groupId,
             principalId: sessionId,
-            role: 'member',
+            role: index === 0 ? 'owner' : 'member',
             status: 'active',
             invitedByPrincipalId: null,
             invitationExpiresAtEpochMs: null,
@@ -108,6 +110,24 @@ export function createRtcTopologyGroupSnapshot(
         })),
         memberCount: memberSessionIds.length,
         onlineMemberCount: memberSessionIds.length
+    };
+}
+
+export function createComputedRtcTopologyOutbox(): ComputedRtcTopologyOutbox {
+    const groupSnapshot = createRtcTopologyGroupSnapshot('group-1', ['session-1']);
+    return {
+        commandId: 'command-1',
+        aggregateRef: groupSnapshot.group,
+        acceptedCausalRevision: groupSnapshot.causalRevision,
+        groupSnapshot,
+        effectKind: 'rtc-topology-recompute',
+        payloadKind: 'group-revision',
+        senderId: 'server-1',
+        resourceId: 'command-1:rtc-topology-recompute:group-revision:group=1;presence=0',
+        requestOptions: toCanonicalGroupTopologyConfigPatch({}),
+        publish: true,
+        createdAtEpochMs: 1_800_000_000_000,
+        expireAtEpochMs: 1_800_000_060_000
     };
 }
 

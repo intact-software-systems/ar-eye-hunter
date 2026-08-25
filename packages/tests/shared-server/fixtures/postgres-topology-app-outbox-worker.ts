@@ -12,7 +12,7 @@ import { GroupStateRepository } from '@shared-server/rallar-system/group-state/p
 import { PSqlGroupStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-group-state-event-repository.ts';
 import { createRtcTopologyOutboxPublisher, createRtcTopologyWorkHandler } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-work.ts';
 import { RtcTopologyExecutionRepository } from '@shared-server/rallar-system/topology/persistence/rtc-topology-execution-repository.ts';
-import { createGroupTopologyOwners } from '@shared-server/rallar-system/topology/runtime/create-group-topology-owners.ts';
+import { createGroupTopologyRuntimeOwners } from '@shared-server/rallar-system/topology/runtime/create-group-topology-runtime-owners.ts';
 import { RallarRtcTopologyService } from '@shared-server/rallar-system/topology/runtime/rallar-rtc-topology-service.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
@@ -88,15 +88,15 @@ function registerTopologyAppOutboxHandler(
         registration.trace
     );
     const runtimeRepository = new PSqlRuntimeStateRepository(registration.sql);
-    const topologyManagement = createGroupTopologyOwners({
+    const groupStateRepository = createTestGroupStateRepository(
+        runtimeRepository,
+        new PSqlGroupStateEventRepository(registration.sql)
+    );
+    const topologyManagement = createGroupTopologyRuntimeOwners({
         findGroupSnapshotByRef: () => input.groupSnapshot,
-        groupStateRepository: createTestGroupStateRepository(
-            runtimeRepository,
-            new PSqlGroupStateEventRepository(registration.sql)
-        ),
-        topologyService: new RallarRtcTopologyService({ now: () => input.atEpochMs }),
-        processRttReader: () => [],
-        serviceId: `postgres-topology-outbox-${Deno.pid}`
+        readCurrentGroupSnapshot: async (ref) => await groupStateRepository.readSnapshot(ref),
+        readRttMeasurements: () => [],
+        topologyService: new RallarRtcTopologyService({ now: () => input.atEpochMs })
     });
     registration.outboxQueueReader.onOutboxMessageDo(
         runtime.workType,

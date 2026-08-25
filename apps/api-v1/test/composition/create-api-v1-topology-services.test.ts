@@ -32,19 +32,18 @@ Deno.test('topology composition installs canonical owners and RTT policy inputs'
             readSnapshotAtLeast: () => Promise.resolve(snapshot)
         },
         groupFormationRttMutation: (event) => formationEvents.push(event),
+        topologyOutboxWritten: () => undefined,
         topologyReplayMetrics: {
             readMetrics: () => ({ replayWakeCount: 2 }),
             resetMetrics: () => {}
         },
-        serviceId: 'api-test',
         adminClientIds: ['admin'],
         rtcTopologyOptions: { rttReportingDegreeLimit: 7 },
         rttRefinementGateConfig: {
             minIntervalMs: 30_000,
             vivaldiDeltaThresholdMs: 5
         },
-        nowEpochMs: () => NOW_EPOCH_MS,
-        timing: () => {}
+        nowEpochMs: () => NOW_EPOCH_MS
     };
 
     const services = createApiV1TopologyServices(input);
@@ -104,19 +103,18 @@ function createMinimalInput(): CreateApiV1TopologyServicesInput {
         ),
         groupStateService: { readSnapshotAtLeast: () => Promise.resolve(undefined) },
         groupFormationRttMutation: () => {},
+        topologyOutboxWritten: () => undefined,
         topologyReplayMetrics: {
             readMetrics: () => ({}),
             resetMetrics: () => {}
         },
-        serviceId: 'api-test',
         adminClientIds: [],
         rtcTopologyOptions: {},
         rttRefinementGateConfig: {
             minIntervalMs: 30_000,
             vivaldiDeltaThresholdMs: 5
         },
-        nowEpochMs: () => NOW_EPOCH_MS,
-        timing: () => {}
+        nowEpochMs: () => NOW_EPOCH_MS
     };
 }
 

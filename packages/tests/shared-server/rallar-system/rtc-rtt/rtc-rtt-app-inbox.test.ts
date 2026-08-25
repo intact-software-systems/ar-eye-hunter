@@ -4,7 +4,8 @@ import { AppOutboxType } from '@shared-server/rallar-system/app-outbox/app-outbo
 import { RtcRttInboxService } from '@shared-server/rallar-system/rtc-rtt/inbox/rtc-rtt-inbox-service.ts';
 import { toRtcRttMutationReceiptId } from '@shared-server/rallar-system/rtc-rtt/mutation/rtc-rtt-mutation-identifiers.ts';
 import { RtcRttRepository } from '@shared-server/rallar-system/rtc-rtt/persistence/rtc-rtt-repository.ts';
-import { parsePersistedRtcTopologyALMessage, readRtcTopologyWorkEnvelope } from '@shared-server/rallar-system/topology/replay/rtc-topology-work-codec.ts';
+import { RtcTopologyOutboxWriter } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-writer.ts';
+import { parsePersistedRtcTopologyALMessage, readRtcTopologyWorkEnvelope } from '@shared-server/rallar-system/topology/replay/work/rtc-topology-work-codec.ts';
 import type { AuditStamp, GroupMember, GroupPresenceSession, GroupSnapshot } from '@shared/api/group-types.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 
@@ -33,6 +34,7 @@ describe('durable RTC RTT refinement work', () => {
                     repository: new RtcRttRepository(harness.runtimeRepository, {
                         now: () => harness.nowEpochMs
                     }),
+                    outboxWriter: new RtcTopologyOutboxWriter({ recordWrite: () => undefined }),
                     readPolicyInputs: async () => ({
                         candidateGroups: [group],
                         overlaySnapshotsByGroupKey: new Map(),

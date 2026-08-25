@@ -3,6 +3,7 @@ import { computeRtcRttMutation } from '@shared-server/rallar-system/rtc-rtt/muta
 import { toRtcRttMutationReceiptId } from '@shared-server/rallar-system/rtc-rtt/mutation/rtc-rtt-mutation-identifiers.ts';
 import { validateRtcRttMutation } from '@shared-server/rallar-system/rtc-rtt/mutation/validate-rtc-rtt-mutation.ts';
 import { writeRtcRttMutation } from '@shared-server/rallar-system/rtc-rtt/mutation/write-rtc-rtt-mutation.ts';
+import { RtcTopologyOutboxWriter } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-writer.ts';
 import { toWebRtcGroupKey } from '@shared/api/api-type-utils.ts';
 import type { AuditStamp, GroupMember, GroupPresenceSession, GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
@@ -339,7 +340,12 @@ describe('RTC RTT mutation phases', () => {
         const transaction = createUnopenedTransactionSql(queries);
 
         await expect(
-            writeRtcRttMutation(transaction, { ttlMs: 60_000, now: () => 1 }, malformed)
+            writeRtcRttMutation({
+                transaction,
+                repositoryOptions: { ttlMs: 60_000, now: () => 1 },
+                computed: malformed,
+                outboxWriter: new RtcTopologyOutboxWriter({ recordWrite: () => undefined })
+            })
         ).rejects.toThrow('Stored group snapshot has invalid keys');
         expect(queries).toEqual([]);
     });

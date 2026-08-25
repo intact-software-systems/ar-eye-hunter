@@ -1,4 +1,6 @@
+import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
 import type { GroupStateRepository } from '../../group-state/persistence/group-state-repository.ts';
+import type { RtcTopologyOutboxWriter } from '../mutation/rtc-topology-outbox-writer.ts';
 import { resolveOverrideExpiresAtEpochMs } from './group-topology-config.ts';
 import type { GroupTopologyServerOptions } from './group-topology-config.ts';
 import { computeTopologyConfigMutation } from './mutation/compute-topology-config-mutation.ts';
@@ -9,6 +11,7 @@ import {
     validateTopologyConfigMutationIdempotency
 } from './mutation/topology-config-mutation-idempotency.ts';
 import { validateTopologyConfigMutation } from './mutation/validate-topology-config-mutation.ts';
+import { writeTopologyConfigMutation } from './mutation/write-topology-config-mutation.ts';
 import type { GroupTopologyConfigRepository } from './persistence/group-topology-config-repository.ts';
 
 export interface GroupTopologyConfigMutationServiceDependencies {
@@ -17,6 +20,7 @@ export interface GroupTopologyConfigMutationServiceDependencies {
     readonly serverDefaults?: GroupTopologyServerOptions;
     readonly nowEpochMs: () => number;
     readonly isPlatformAdmin: (principalId: string) => boolean;
+    readonly outboxWriter: RtcTopologyOutboxWriter;
 }
 
 export interface GroupTopologyConfigMutationPreparation {
@@ -117,6 +121,17 @@ export class GroupTopologyConfigMutationService {
             facts: this.toFacts(preparation, read, attemptCount),
             serverDefaults: this.dependencies.serverDefaults ?? {},
             computed
+        });
+    }
+
+    async write(
+        transaction: PSqlSql,
+        computed: Extract<mutationContracts.GroupTopologyConfigMutationComputed, { outcome: 'write' | 'claim'; }>
+    ): Promise<mutationContracts.GroupTopologyConfigMutationReceipt> {
+        return await writeTopologyConfigMutation({
+            transaction,
+            computed,
+            outboxWriter: this.dependencies.outboxWriter
         });
     }
 

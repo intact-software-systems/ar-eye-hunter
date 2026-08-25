@@ -17,7 +17,7 @@ import {
     type RtcTopologyMutationComputed,
     type RtcTopologyMutationRead
 } from '../mutation/rtc-topology-mutations.ts';
-import { RtcTopologyInputFingerprintRepository } from '../replay/rtc-topology-input-fingerprint.ts';
+import { RtcTopologyInputFingerprintRepository } from '../replay/work/rtc-topology-input-fingerprint.ts';
 import { RtcTopologyRepositoryInvariantCorruptionError } from './rtc-topology-errors.ts';
 import { rtcTopologySemanticEqual } from './rtc-topology-semantic-equal.ts';
 import { RtcTopologySnapshotRepository } from './rtc-topology-snapshot-repository.ts';

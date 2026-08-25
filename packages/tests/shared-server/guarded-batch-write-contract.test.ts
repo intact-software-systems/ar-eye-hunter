@@ -9,7 +9,7 @@ const topologyConfigSource = readFileSync(
 describe('authoritative conditional-write structural contract', () => {
     it('keeps topology config writes on the caller transaction without an owned transaction or retry', () => {
         const writer = topologyConfigWriter();
-        expect(writer).toMatch(/writeTopologyConfigMutation\(\s*transaction:\s*PSqlSql/);
+        expect(topologyConfigSource).toContain('readonly transaction: PSqlSql');
         expect(writer).not.toMatch(/\.begin\s*\(/);
         expect(writer).not.toMatch(/waitForRuntimeStateWriteRetry/);
         expect(writer).not.toMatch(/for\s*\([^)]*attempt/);
@@ -20,7 +20,7 @@ describe('authoritative conditional-write structural contract', () => {
             'writeTopologyConfigAuthorityFence(runtime, computed)',
             'writeTopologyConfigState(repository, computed)',
             'insertMutationRecord(computed.idempotency)',
-            'writeRtcTopologyOutbox(transaction, computed.outbox)'
+            'input.outboxWriter.write(transaction, computed.outbox)'
         ]);
         expectInOrder(topologyConfigAuthorityFence(), [
             'advanceGroupStateAuthorityFence(',
@@ -45,7 +45,7 @@ describe('authoritative conditional-write structural contract', () => {
         expect(writer).not.toContain('StateMutation' + 'Outbox');
         expect(writer).not.toContain('materializeTopologyConfigGuardedBatch');
         expect(writer).not.toContain('executeGuardedBatch');
-        expect(writer).toContain('writeRtcTopologyOutbox(transaction, computed.outbox)');
+        expect(writer).toContain('input.outboxWriter.write(transaction, computed.outbox)');
     });
 });
 

@@ -1,16 +1,17 @@
 import { describe, expect, it } from 'vitest';
 
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
-import { PSqlRtcTopologyDeliveryRepository } from '@shared-server/postgres/rtc-topology/p-sql-rtc-topology-delivery-repository.ts';
-import { PSqlRtcTopologyReplayRepository } from '@shared-server/postgres/rtc-topology/p-sql-rtc-topology-replay-repository.ts';
-import type { RtcTopologyDeliveryLogEntry } from '@shared-server/rallar-system/topology/replay/rtc-topology-delivery-contracts.ts';
 import {
     RTC_TOPOLOGY_REPLAY_ANTI_ENTROPY_INTERVAL_MS,
     RTC_TOPOLOGY_REPLAY_MAX_ENTRIES_PER_TURN,
     RTC_TOPOLOGY_REPLAY_MAX_PAGES_PER_TURN,
     RTC_TOPOLOGY_REPLAY_PAGE_SIZE
-} from '@shared-server/rallar-system/topology/replay/rtc-topology-replay-policy.ts';
-import { RtcTopologyReplayService, type RtcTopologyReplayServiceScheduler } from '@shared-server/rallar-system/topology/replay/rtc-topology-replay-service.ts';
+} from '@shared-server/rallar-system/topology/replay/consumer/rtc-topology-replay-policy.ts';
+import type { RtcTopologyReplayServiceScheduler } from '@shared-server/rallar-system/topology/replay/consumer/rtc-topology-replay-scheduler.ts';
+import { RtcTopologyReplayService } from '@shared-server/rallar-system/topology/replay/consumer/rtc-topology-replay-service.ts';
+import type { RtcTopologyDeliveryLogEntry } from '@shared-server/rallar-system/topology/replay/delivery/rtc-topology-delivery-contracts.ts';
+import { PSqlRtcTopologyDeliveryRepository } from '@shared-server/rallar-system/topology/replay/postgres/p-sql-rtc-topology-delivery-repository.ts';
+import { PSqlRtcTopologyReplayRepository } from '@shared-server/rallar-system/topology/replay/postgres/p-sql-rtc-topology-replay-repository.ts';
 
 import { createPostgresSql, type PostgresSql } from '../../rallar-system/topology/concurrency/postgres-topology-concurrency-fixtures.ts';
 

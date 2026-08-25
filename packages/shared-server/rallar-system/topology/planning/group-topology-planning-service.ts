@@ -13,12 +13,6 @@ import { filterRtcRttMeasurementsForGroup } from '../../rtc-rtt/policy/rtc-rtt-m
 import type { GroupTopologyConfigQueryService } from '../config/group-topology-config-query-service.ts';
 import type { GroupTopologyServerOptions } from '../config/group-topology-config.ts';
 import { GroupTopologyValidationError } from '../group-topology-errors.ts';
-import type {
-    GroupTopologyGroupSnapshotReader,
-    GroupTopologyPublisher,
-    ReconcileGroupTopologyResult,
-    ReconfigureGroupTopologyInput
-} from '../group-topology-management-contracts.ts';
 import { compareRtcTopologyIdentifiers } from '../persistence/rtc-topology-identifiers.ts';
 import { DEFAULT_RTC_TOPOLOGY_PUBLICATION_RETENTION_MS } from '../publication/rtc-topology-publication-repository-contracts.ts';
 import {
@@ -30,6 +24,12 @@ import type {
     GroupTopologyPlanningAuthority,
     ReadGroupTopologyPlanningAuthorityInput
 } from './group-topology-planning-authority.ts';
+import type {
+    GroupTopologyGroupSnapshotReader,
+    GroupTopologyPublisher,
+    ReconcileGroupTopologyResult,
+    ReconfigureGroupTopologyInput
+} from './group-topology-planning-contracts.ts';
 import { materializeRtcOverlayTopologyBroadcastMessage } from './materialize-rtc-overlay-topology-broadcast-message.ts';
 import {
     isGroupTopologyPlannableAt,

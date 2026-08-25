@@ -15,8 +15,8 @@ import { PSqlCrdtLogRepository } from '@shared-server/rallar-system/crdt/persist
 import { createRtcTopologyOutboxPublisher, createRtcTopologyWorkHandler } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-work.ts';
 import { RtcTopologyExecutionRepository } from '@shared-server/rallar-system/topology/persistence/rtc-topology-execution-repository.ts';
 import { RtcTopologySnapshotRepository } from '@shared-server/rallar-system/topology/persistence/rtc-topology-snapshot-repository.ts';
-import { computeCoalescedRtcTopologyGroupRevisionWork } from '@shared-server/rallar-system/topology/replay/rtc-topology-coalesced-group-revision-work.ts';
-import { createGroupTopologyOwners } from '@shared-server/rallar-system/topology/runtime/create-group-topology-owners.ts';
+import { computeCoalescedRtcTopologyGroupRevisionWork } from '@shared-server/rallar-system/topology/replay/work/rtc-topology-coalesced-group-revision-work.ts';
+import { createGroupTopologyRuntimeOwners } from '@shared-server/rallar-system/topology/runtime/create-group-topology-runtime-owners.ts';
 import { RallarRtcTopologyService } from '@shared-server/rallar-system/topology/runtime/rallar-rtc-topology-service.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
@@ -660,12 +660,12 @@ Deno.test(
             );
             const runtimeRepository = new PSqlRuntimeStateRepository(sql);
             const topologyService = new RallarRtcTopologyService({ now: () => nowEpochMs });
-            const topologyManagement = createGroupTopologyOwners({
+            const topologyManagement = createGroupTopologyRuntimeOwners({
                 findGroupSnapshotByRef: () => currentSnapshot,
+                readCurrentGroupSnapshot: async () => currentSnapshot,
+                readRttMeasurements: () => [],
                 topologyService,
-                topologySnapshotRepository: new RtcTopologySnapshotRepository(runtimeRepository),
-                processRttReader: () => [],
-                now: () => nowEpochMs
+                topologySnapshotRepository: new RtcTopologySnapshotRepository(runtimeRepository)
             });
             const executionRepository = new RtcTopologyExecutionRepository(
                 runtimeRepository,

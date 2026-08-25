@@ -8,7 +8,9 @@ import { RtcRttInboxService } from '@shared-server/rallar-system/rtc-rtt/inbox/r
 import { RtcRttRepository } from '@shared-server/rallar-system/rtc-rtt/persistence/rtc-rtt-repository.ts';
 import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/topology/config/persistence/group-topology-config-repository.ts';
 import { TopologyInboxService } from '@shared-server/rallar-system/topology/inbox/topology-inbox-service.ts';
-import { createGroupTopologyOwners } from '@shared-server/rallar-system/topology/runtime/create-group-topology-owners.ts';
+import { createGroupTopologyMutationOwners } from '@shared-server/rallar-system/topology/mutation/create-group-topology-mutation-owners.ts';
+import { RtcTopologyOutboxWriter } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-writer.ts';
+import { createGroupTopologyRuntimeOwners } from '@shared-server/rallar-system/topology/runtime/create-group-topology-runtime-owners.ts';
 import { RallarRtcTopologyService } from '@shared-server/rallar-system/topology/runtime/rallar-rtc-topology-service.ts';
 import { createTestClientStateRepository, createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import type { QueueBoxResourceEntryRepository } from '@shared/queuebox/queue-box-types.ts';
@@ -69,19 +71,25 @@ export function createRallarMiddlewareTestRuntime(
         runtimeRepository,
         database.groupEventStore
     );
-    const topologyOwners = createGroupTopologyOwners({
+    const topologyOutboxWriter = new RtcTopologyOutboxWriter({ recordWrite: () => undefined });
+    const topologyConfigRepository = new GroupTopologyConfigRepository(runtimeRepository);
+    const topologyRuntimeOwners = createGroupTopologyRuntimeOwners({
         findGroupSnapshotByRef: async (ref) => await groupStateService.readSnapshot(ref),
-        groupStateRepository: groupsRepository,
-        configRepository: new GroupTopologyConfigRepository(runtimeRepository),
-        topologyService: new RallarRtcTopologyService(),
-        processRttReader: () => [],
-        serviceId: TEST_SERVICE_ID
+        readCurrentGroupSnapshot: async (ref) => await groupsRepository.readSnapshot(ref),
+        readRttMeasurements: () => [],
+        configRepository: topologyConfigRepository,
+        topologyService: new RallarRtcTopologyService()
     });
-    if (!topologyOwners.configMutation || !topologyOwners.reconfigureMutation) {
-        throw new TypeError('Rallar middleware test runtime requires topology mutation owners');
-    }
-    const configMutationService = topologyOwners.configMutation;
-    const reconfigureMutation = topologyOwners.reconfigureMutation;
+    const topologyMutationOwners = createGroupTopologyMutationOwners({
+        groupStateRepository: groupsRepository,
+        configRepository: topologyConfigRepository,
+        planning: topologyRuntimeOwners.planning,
+        nowEpochMs: () => Date.now(),
+        isPlatformAdmin: () => false,
+        outboxWriter: topologyOutboxWriter
+    });
+    const configMutationService = topologyMutationOwners.configMutation;
+    const reconfigureMutation = topologyMutationOwners.reconfigureMutation;
 
     const options: CreateRallarMiddlewareOptions = {
         inbox,
@@ -141,6 +149,7 @@ export function createRallarMiddlewareTestRuntime(
                     groupStateService,
                     mutationDependencies: {
                         repository: new RtcRttRepository(runtimeRepository),
+                        outboxWriter: topologyOutboxWriter,
                         readPolicyInputs: async () => ({
                             candidateGroups: [],
                             overlaySnapshotsByGroupKey: new Map(),

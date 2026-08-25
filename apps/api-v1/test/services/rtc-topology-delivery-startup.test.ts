@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import type {
     RtcTopologyDeliveryStreamMaintenancePort,
     RtcTopologyDeliveryStreamScheduler
-} from '@shared-server/rallar-system/topology/replay/rtc-topology-delivery-stream-service.ts';
-import { RtcTopologyDeliveryLeaseLostError } from '@shared-server/rallar-system/topology/replay/rtc-topology-delivery-stream-service.ts';
+} from '@shared-server/rallar-system/topology/replay/delivery/rtc-topology-delivery-stream-service.ts';
+import { RtcTopologyDeliveryLeaseLostError } from '@shared-server/rallar-system/topology/replay/delivery/rtc-topology-delivery-stream-service.ts';
 import { startApiRtcTopologyDelivery } from '../../src/runtime/rtc-topology/rtc-topology-delivery-startup.ts';
 
 const STREAM_ID = '00000000-0000-4000-8000-000000000001';

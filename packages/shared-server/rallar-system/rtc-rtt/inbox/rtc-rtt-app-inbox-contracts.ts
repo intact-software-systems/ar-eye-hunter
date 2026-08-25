@@ -4,35 +4,42 @@ import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology
 
 import type { GroupFormationRttMutationSink } from '../../observability/formation-metrics.ts';
 import type { TopologyMutationAuthorityProof } from '../../topology/inbox/topology-mutation-authority-proof.ts';
+import type { RtcTopologyOutboxWriter } from '../../topology/mutation/rtc-topology-outbox-writer.ts';
 import type { RtcRttRepository } from '../persistence/rtc-rtt-repository.ts';
 
-export type RtcRttAppInboxCommand = Readonly<{
-    actor: Readonly<{ principalId: string; sessionId: string; }>;
-    requestId: string;
-    commandHash: string;
-    mutationCommandHash: string;
-    capturedAtEpochMs: number;
-    rtt: RttMeasurementInfo;
-}>;
+export interface RtcRttAppInboxCommandActor {
+    readonly principalId: string;
+    readonly sessionId: string;
+}
 
-export type RtcRttAppInboxAuthority = Readonly<{
-    kind: 'rtc-rtt';
-    proof: TopologyMutationAuthorityProof;
-    command: RtcRttAppInboxCommand;
-}>;
+export interface RtcRttAppInboxCommand {
+    readonly actor: RtcRttAppInboxCommandActor;
+    readonly requestId: string;
+    readonly commandHash: string;
+    readonly mutationCommandHash: string;
+    readonly capturedAtEpochMs: number;
+    readonly rtt: RttMeasurementInfo;
+}
 
-export type RtcRttAppInboxDependencies = Readonly<{
-    repository: RtcRttRepository;
-    readPolicyInputs(command: RtcRttAppInboxCommand): Promise<
-        Readonly<{
-            candidateGroups: readonly GroupSnapshot[];
-            overlaySnapshotsByGroupKey: ReadonlyMap<string, RallarOverlayTopologySnapshot>;
-            degreeLimit: number;
-        }>
-    >;
+export interface RtcRttAppInboxAuthority {
+    readonly kind: 'rtc-rtt';
+    readonly proof: TopologyMutationAuthorityProof;
+    readonly command: RtcRttAppInboxCommand;
+}
+
+export interface RtcRttPolicyInputs {
+    readonly candidateGroups: readonly GroupSnapshot[];
+    readonly overlaySnapshotsByGroupKey: ReadonlyMap<string, RallarOverlayTopologySnapshot>;
+    readonly degreeLimit: number;
+}
+
+export interface RtcRttAppInboxDependencies {
+    readonly repository: RtcRttRepository;
+    readonly outboxWriter: RtcTopologyOutboxWriter;
+    readPolicyInputs(command: RtcRttAppInboxCommand): Promise<RtcRttPolicyInputs>;
     observeCommitted?(rtt: RttMeasurementInfo): void;
     formationMetrics?: GroupFormationRttMutationSink;
-}>;
+}
 
 export interface CreateRtcRttAppInboxEnqueueInput {
     readonly rtt: RttMeasurementInfo;

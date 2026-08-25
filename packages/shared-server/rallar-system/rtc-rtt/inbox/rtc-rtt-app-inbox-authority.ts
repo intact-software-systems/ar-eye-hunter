@@ -3,12 +3,11 @@ import { AppInboxType } from '../../app-inbox/app-inbox-contracts.ts';
 import { hashCanonicalCommand } from '../../app-inbox/hash-canonical-command.ts';
 import { GroupMutationAuthorizationError } from '../../group-state/group-mutation-authority.ts';
 import type { GroupStateService } from '../../group-state/group-state-service-contracts.ts';
-import type { JsonWireValue } from '../../protocol/json-wire-identity.ts';
+import { decodeJsonWireValue, type JsonWireObject, type JsonWireValue } from '../../protocol/json-wire-identity.ts';
 import {
     constantTimeTopologyProofEqual,
     validateTopologyMutationAuthorityProof
 } from '../../topology/inbox/topology-app-inbox-authority.ts';
-import { isTopologyRecord, requireExactTopologyKeys } from '../../topology/inbox/topology-app-inbox-command.ts';
 import { createTopologyMutationAuthorityProof } from '../../topology/inbox/topology-mutation-authority-proof.ts';
 import { toRtcRttMutationReceiptId } from '../mutation/rtc-rtt-mutation-identifiers.ts';
 import { validateRtcRttMeasurement } from '../persistence/rtc-rtt-persistence-validation.ts';
@@ -73,30 +72,22 @@ export async function createRtcRttDurableEnqueue(
     };
 }
 
-export function decodeRtcRttAppInboxAuthority(value: unknown): RtcRttAppInboxAuthority {
+export function decodeRtcRttAppInboxAuthority(
+    value: JsonWireValue | undefined
+): RtcRttAppInboxAuthority {
     try {
-        if (!isTopologyRecord(value)) {
-            throw new TypeError('authority is not a record');
-        }
-        requireExactTopologyKeys(value, ['kind', 'proof', 'command']);
-        if (value.kind !== 'rtc-rtt') {
+        const authority = requireRtcRttJsonObject(value, 'authority');
+        requireExactRtcRttKeys(authority, ['kind', 'proof', 'command']);
+        if (authority.kind !== 'rtc-rtt') {
             throw new TypeError('authority kind is invalid');
         }
-        validateTopologyMutationAuthorityProof(value.proof);
-        const command = isTopologyRecord(value.command) ? value.command : null;
-        if (!command) {
-            throw new TypeError('RTC RTT command is invalid');
-        }
-        requireExactTopologyKeys(command, [
-            'actor',
-            'requestId',
-            'commandHash',
-            'mutationCommandHash',
-            'capturedAtEpochMs',
-            'rtt'
-        ]);
-        validateRtcRttMeasurement(command.rtt);
-        return value as RtcRttAppInboxAuthority;
+        const proof = authority.proof;
+        validateTopologyMutationAuthorityProof(proof);
+        return {
+            kind: 'rtc-rtt',
+            proof,
+            command: readRtcRttAppInboxCommand(authority.command)
+        };
     }
     catch {
         throw new GroupMutationAuthorizationError('RTC RTT AppInbox durable authority is malformed.');
@@ -106,10 +97,8 @@ export function decodeRtcRttAppInboxAuthority(value: unknown): RtcRttAppInboxAut
 export function readRtcRttAppInboxCommand(
     value: JsonWireValue
 ): RtcRttAppInboxCommand {
-    if (!isTopologyRecord(value)) {
-        throw new TypeError('RTC RTT AppInbox command is invalid');
-    }
-    requireExactTopologyKeys(value, [
+    const command = requireRtcRttJsonObject(value, 'command');
+    requireExactRtcRttKeys(command, [
         'actor',
         'requestId',
         'commandHash',
@@ -117,30 +106,36 @@ export function readRtcRttAppInboxCommand(
         'capturedAtEpochMs',
         'rtt'
     ]);
-    const actor = isTopologyRecord(value.actor) ? value.actor : null;
-    if (!actor) {
-        throw new TypeError('RTC RTT AppInbox actor is invalid');
+    const actor = requireRtcRttJsonObject(command.actor, 'actor');
+    requireExactRtcRttKeys(actor, ['principalId', 'sessionId']);
+    const principalId = actor.principalId;
+    const sessionId = actor.sessionId;
+    if (typeof principalId !== 'string' || principalId.length === 0) {
+        throw new TypeError('RTC RTT AppInbox actor principalId is invalid');
     }
-    requireExactTopologyKeys(actor, ['principalId', 'sessionId']);
-    for (const field of ['principalId', 'sessionId'] as const) {
-        if (typeof actor[field] !== 'string' || actor[field].length === 0) {
-            throw new TypeError(`RTC RTT AppInbox actor ${field} is invalid`);
-        }
+    if (typeof sessionId !== 'string' || sessionId.length === 0) {
+        throw new TypeError('RTC RTT AppInbox actor sessionId is invalid');
     }
-    for (const field of ['requestId', 'commandHash', 'mutationCommandHash'] as const) {
-        if (typeof value[field] !== 'string' || value[field].length === 0) {
-            throw new TypeError(`RTC RTT AppInbox ${field} is invalid`);
-        }
-    }
-    if (
-        typeof value.capturedAtEpochMs !== 'number' ||
-        !Number.isSafeInteger(value.capturedAtEpochMs) ||
-        value.capturedAtEpochMs < 0
-    ) {
+    const requestId = requireRtcRttCommandString(command.requestId, 'requestId');
+    const commandHash = requireRtcRttCommandString(command.commandHash, 'commandHash');
+    const mutationCommandHash = requireRtcRttCommandString(
+        command.mutationCommandHash,
+        'mutationCommandHash'
+    );
+    const capturedAtEpochMs = command.capturedAtEpochMs;
+    if (typeof capturedAtEpochMs !== 'number' || !Number.isSafeInteger(capturedAtEpochMs) || capturedAtEpochMs < 0) {
         throw new TypeError('RTC RTT AppInbox captured time is invalid');
     }
-    validateRtcRttMeasurement(value.rtt);
-    return value as RtcRttAppInboxCommand;
+    const rtt = command.rtt;
+    validateRtcRttMeasurement(rtt);
+    return {
+        actor: { principalId, sessionId },
+        requestId,
+        commandHash,
+        mutationCommandHash,
+        capturedAtEpochMs,
+        rtt
+    };
 }
 
 export async function verifyRtcRttAppInboxAuthority(
@@ -180,12 +175,49 @@ async function verifyRtcRttCommandHashes(command: RtcRttAppInboxCommand): Promis
         rtt: command.rtt
     };
     if (
-        (await hashCanonicalCommand(canonicalStableCommand)) !== command.commandHash ||
-        (await hashCanonicalCommand({
+        (await hashCanonicalCommand(
+                decodeJsonWireValue(canonicalStableCommand, 'RTC RTT stable command')
+            )) !== command.commandHash ||
+        (await hashCanonicalCommand(decodeJsonWireValue({
                 rtt: command.rtt,
                 alSenderId: command.actor.sessionId
-            })) !== command.mutationCommandHash
+            }, 'RTC RTT mutation command'))) !== command.mutationCommandHash
     ) {
         throw new GroupMutationAuthorizationError('RTC RTT durable command hash is invalid.');
+    }
+}
+
+function requireRtcRttCommandString(value: JsonWireValue, field: string): string {
+    if (typeof value !== 'string' || value.length === 0) {
+        throw new TypeError(`RTC RTT AppInbox ${field} is invalid`);
+    }
+    return value;
+}
+
+function requireRtcRttJsonObject(
+    value: JsonWireValue | undefined,
+    label: string
+): JsonWireObject {
+    if (!isRtcRttJsonObject(value)) {
+        throw new TypeError(`RTC RTT AppInbox ${label} is invalid`);
+    }
+    return value;
+}
+
+function isRtcRttJsonObject(value: JsonWireValue | undefined): value is JsonWireObject {
+    return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function requireExactRtcRttKeys(
+    value: JsonWireObject,
+    expected: readonly string[]
+): void {
+    const actual = Object.keys(value).sort();
+    const canonicalExpected = [...expected].sort();
+    if (
+        actual.length !== canonicalExpected.length ||
+        actual.some((key, index) => key !== canonicalExpected[index])
+    ) {
+        throw new TypeError('RTC RTT AppInbox fields are invalid');
     }
 }

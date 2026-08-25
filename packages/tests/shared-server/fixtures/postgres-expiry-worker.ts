@@ -1,5 +1,5 @@
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
-import type { DeleteGroupTopologyConfigInput, PutGroupTopologyConfigInput } from '@shared-server/rallar-system/topology/group-topology-management-contracts.ts';
+import type { GroupTopologyConfigPatch } from '@shared/api/graph-topology-management-types.ts';
 import { fromCanonicalGroupTopologyConfigPatch, toCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topology-config-canonical.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import type {
@@ -69,6 +69,15 @@ type WorkerMutationRequest<T> =
         requestId: string;
     }>;
 
+interface TopologyPutWorkerRequest {
+    readonly config: GroupTopologyConfigPatch;
+    readonly updatedByPrincipalId: string;
+}
+
+interface TopologyDeleteWorkerRequest {
+    readonly updatedByPrincipalId: string;
+}
+
 type ClientWorkerInput =
     & WorkerCommandBase
     & Readonly<{
@@ -133,11 +142,11 @@ type TopologyWorkerInput =
     & (
         | Readonly<{
             command: 'topology-config-put';
-            request: WorkerMutationRequest<Omit<PutGroupTopologyConfigInput, 'groupRef'>>;
+            request: WorkerMutationRequest<TopologyPutWorkerRequest>;
         }>
         | Readonly<{
             command: 'topology-config-delete';
-            request: WorkerMutationRequest<Omit<DeleteGroupTopologyConfigInput, 'groupRef'>>;
+            request: WorkerMutationRequest<TopologyDeleteWorkerRequest>;
         }>
     );
 

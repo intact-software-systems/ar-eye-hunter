@@ -20,17 +20,17 @@ import {
     readRtcTopologyWorkEnvelope,
     toRtcTopologyQueueContextId,
     type RtcTopologyWorkEnvelope
-} from '../replay/rtc-topology-work-codec.ts';
+} from '../replay/work/rtc-topology-work-codec.ts';
 export {
     createRtcTopologyWorkHandler,
     type RtcTopologyDeliveryOptions
-} from '../replay/create-rtc-topology-work-handler.ts';
+} from '../replay/work/create-rtc-topology-work-handler.ts';
 export {
     APP_OUTBOX_RTC_TOPOLOGY_TOPIC,
     type ComputedRtcTopologyOutbox,
-    computeRtcTopologyEntry,
-    writeRtcTopologyOutbox
+    computeRtcTopologyEntry
 } from './rtc-topology-outbox-entry.ts';
+export { RtcTopologyOutboxWriter } from './rtc-topology-outbox-writer.ts';
 import { APP_OUTBOX_RTC_TOPOLOGY_TOPIC } from './rtc-topology-outbox-entry.ts';
 
 export type RtcTopologyGroupRevisionWork = Readonly<{

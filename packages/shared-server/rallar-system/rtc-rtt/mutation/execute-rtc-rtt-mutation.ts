@@ -1,6 +1,7 @@
 import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
 
 import { hashCanonicalCommand } from '../../app-inbox/hash-canonical-command.ts';
+import type { RtcTopologyOutboxWriter } from '../../topology/mutation/rtc-topology-outbox-writer.ts';
 import { RtcRttRepository } from '../persistence/rtc-rtt-repository.ts';
 import { computeRtcRttMutation } from './compute-rtc-rtt-mutation.ts';
 import { readRtcRttMutation } from './read-rtc-rtt-mutation.ts';
@@ -14,19 +15,20 @@ import type {
 import { validateRtcRttMutation } from './validate-rtc-rtt-mutation.ts';
 import { writeRtcRttMutation } from './write-rtc-rtt-mutation.ts';
 
-export type ExecuteRtcRttMutationResult = Readonly<{
-    computed: RtcRttMutationComputed;
-    updated: boolean;
-}>;
+export interface ExecuteRtcRttMutationResult {
+    readonly computed: RtcRttMutationComputed;
+    readonly updated: boolean;
+}
 
-export type ExecuteRtcRttMutationInput = Readonly<{
-    repository: RtcRttRepository;
-    transaction: PSqlSql;
+export interface ExecuteRtcRttMutationInput {
+    readonly repository: RtcRttRepository;
+    readonly transaction: PSqlSql;
+    readonly outboxWriter: RtcTopologyOutboxWriter;
     readFacts: () => RtcRttMutationLifecycleFacts | Promise<RtcRttMutationLifecycleFacts>;
-    request: RtcRttStableRequest;
+    readonly request: RtcRttStableRequest;
     readCommand: () => RtcRttMutationCommand | Promise<RtcRttMutationCommand>;
-    attemptCount: number;
-}>;
+    readonly attemptCount: number;
+}
 
 export async function executeRtcRttMutation(
     input: ExecuteRtcRttMutationInput
@@ -66,13 +68,14 @@ export async function executeRtcRttMutation(
     if (facts.requestedAtEpochMs === null || facts.purgeAfterEpochMs === null) {
         throw new TypeError('RTC RTT write is missing lifecycle facts');
     }
-    await writeRtcRttMutation(
-        input.transaction,
-        {
+    await writeRtcRttMutation({
+        transaction: input.transaction,
+        repositoryOptions: {
             ttlMs: facts.purgeAfterEpochMs - facts.requestedAtEpochMs,
             now: () => facts.requestedAtEpochMs
         },
-        computed
-    );
+        computed,
+        outboxWriter: input.outboxWriter
+    });
     return { computed, updated: true };
 }

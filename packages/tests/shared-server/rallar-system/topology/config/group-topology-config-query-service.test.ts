@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { GroupTopologyConfigQueryService } from '@shared-server/rallar-system/topology/config/group-topology-config-query-service.ts';
 import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/topology/config/persistence/group-topology-config-repository.ts';
-import { createGroupTopologyOwners } from '@shared-server/rallar-system/topology/runtime/create-group-topology-owners.ts';
+import { createGroupTopologyRuntimeOwners } from '@shared-server/rallar-system/topology/runtime/create-group-topology-runtime-owners.ts';
 import { RallarRtcTopologyService } from '@shared-server/rallar-system/topology/runtime/rallar-rtc-topology-service.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 
@@ -67,11 +67,11 @@ describe('GroupTopologyConfigQueryService', () => {
     });
 
     it('does not expose direct config writes outside AppInbox execution', () => {
-        const service = createGroupTopologyOwners({
+        const service = createGroupTopologyRuntimeOwners({
             findGroupSnapshotByRef: async () => undefined,
-            topologyService: new RallarRtcTopologyService({ now: () => 20_000 }),
-            processRttReader: () => [],
-            now: () => 20_000
+            readCurrentGroupSnapshot: async () => undefined,
+            readRttMeasurements: () => [],
+            topologyService: new RallarRtcTopologyService({ now: () => 20_000 })
         });
 
         expect('putConfig' in service).toBe(false);

@@ -17,23 +17,18 @@ import {
     isRuntimeStateConditionalRepositoryLike,
     isRuntimeStateTransactionalRepositoryLike
 } from '../../../runtime-state/runtime-state-repository.ts';
+import { decodeJsonWireValue } from '../../protocol/json-wire-identity.ts';
+import { decodeRtcTopologySnapshot } from './decode-rtc-topology-snapshot.ts';
 import { RtcTopologyRepositoryInvariantCorruptionError } from './rtc-topology-errors.ts';
 import { rtcTopologySemanticEqual } from './rtc-topology-semantic-equal.ts';
-import {
-    decideTopologySnapshot,
-    validateTopologySnapshot,
-    type RtcTopologySnapshotObservation
-} from './rtc-topology-snapshot-contract.ts';
+import { decideTopologySnapshot, type RtcTopologySnapshotObservation } from './rtc-topology-snapshot-contract.ts';
 
 export {
     RtcTopologyRepositoryInvariantCorruptionError,
     RtcTopologySnapshotRevisionConflictError
 } from './rtc-topology-errors.ts';
 export {
-    compareTopologyTuple,
-    decideTopologySnapshot,
-    type RtcTopologySnapshotObservation,
-    validateTopologySnapshot
+    type RtcTopologySnapshotObservation
 } from './rtc-topology-snapshot-contract.ts';
 
 export const RTC_TOPOLOGY_SNAPSHOTS_NAMESPACE = 'rtc-topology:snapshots';
@@ -107,7 +102,6 @@ export class RtcTopologySnapshotRepository extends RuntimeStateJsonStore {
         expectedRevision: number | null
     ): Promise<RtcTopologySnapshotConditionalResult> {
         const storedSnapshot = canonicalSnapshot(snapshot);
-        validateTopologySnapshot(storedSnapshot, storedSnapshot.groupRef);
         const result = expectedRevision === null
             ? await this.putValueIfAbsent(
                 RTC_TOPOLOGY_SNAPSHOTS_NAMESPACE,
@@ -211,15 +205,33 @@ export class RtcTopologySnapshotRepository extends RuntimeStateJsonStore {
 function canonicalSnapshot(
     snapshot: RallarOverlayTopologySnapshot
 ): RallarOverlayTopologySnapshot {
-    const ref = snapshot.groupRef;
-    return {
-        ...snapshot,
-        groupRef: {
-            applicationId: ref.applicationId,
-            workspaceId: ref.workspaceId,
-            groupId: ref.groupId
-        }
-    };
+    const sourceRevision = snapshot.sourceGroupStateCausalRevision;
+    const groupRef = snapshot.groupRef;
+    return decodeRtcTopologySnapshot(
+        decodeJsonWireValue({
+            sourceGroupStateCausalRevision: {
+                groupRevision: sourceRevision.groupRevision,
+                presenceRevision: sourceRevision.presenceRevision
+            },
+            state: snapshot.state,
+            overlayId: snapshot.overlayId,
+            groupRef: {
+                applicationId: groupRef.applicationId,
+                workspaceId: groupRef.workspaceId,
+                groupId: groupRef.groupId
+            },
+            name: snapshot.name,
+            topology: snapshot.topology,
+            activeSessionIds: snapshot.activeSessionIds,
+            nextHopsBySessionId: snapshot.nextHopsBySessionId,
+            degreeLimit: snapshot.degreeLimit,
+            version: snapshot.version,
+            createdByClientId: snapshot.createdByClientId,
+            createdAtEpochMs: snapshot.createdAtEpochMs,
+            updatedAtEpochMs: snapshot.updatedAtEpochMs
+        }, 'RTC topology snapshot'),
+        groupRef
+    );
 }
 
 function decodeSnapshotEntry(
@@ -242,24 +254,19 @@ function decodeSnapshotEntry(
     if (entry.expireAtTimestamp !== NEVER_EXPIRE_AT_TIMESTAMP) {
         throw topologyCorruption(entry.key, 'RTC topology snapshot must not expire');
     }
-    const value = parseSnapshot(entry);
-    try {
-        validateTopologySnapshot(value, decoded);
-    }
-    catch (error) {
-        throw topologyCorruption(
-            entry.key,
-            error instanceof Error ? error.message : 'RTC topology snapshot is invalid'
-        );
-    }
+    const value = parseSnapshot(entry, decoded);
     return { entry, value };
 }
 
-function parseSnapshot(entry: RuntimeStateEntry): RallarOverlayTopologySnapshot {
+function parseSnapshot(
+    entry: RuntimeStateEntry,
+    expectedRef: GroupRef
+): RallarOverlayTopologySnapshot {
     try {
-        const value: unknown = JSON.parse(entry.value);
-        validateTopologySnapshot(value, valueGroupRef(value));
-        return value;
+        return decodeRtcTopologySnapshot(
+            decodeJsonWireValue(JSON.parse(entry.value), 'RTC topology snapshot'),
+            expectedRef
+        );
     }
     catch (error) {
         throw topologyCorruption(
@@ -267,31 +274,6 @@ function parseSnapshot(entry: RuntimeStateEntry): RallarOverlayTopologySnapshot 
             error instanceof Error ? error.message : 'RTC topology JSON is invalid'
         );
     }
-}
-
-function valueGroupRef(value: unknown): GroupRef {
-    if (!isUnknownRecord(value)) {
-        throw new TypeError('RTC topology snapshot is invalid');
-    }
-    const groupRef = Object.hasOwn(value, 'groupRef')
-        ? value.groupRef
-        : undefined;
-    if (!isUnknownRecord(groupRef)) {
-        throw new TypeError('RTC topology groupRef is invalid');
-    }
-    const { applicationId, workspaceId, groupId } = groupRef;
-    if (
-        typeof applicationId !== 'string' || applicationId.length === 0 ||
-        typeof workspaceId !== 'string' || workspaceId.length === 0 ||
-        typeof groupId !== 'string' || groupId.length === 0
-    ) {
-        throw new TypeError('RTC topology groupRef is invalid');
-    }
-    return { applicationId, workspaceId, groupId };
-}
-
-function isUnknownRecord(value: unknown): value is Record<string, unknown> {
-    return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 function sameSnapshot(

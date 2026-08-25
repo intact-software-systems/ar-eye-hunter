@@ -17,11 +17,11 @@ import type { RtcRttInboxService } from '../rtc-rtt/inbox/rtc-rtt-inbox-service.
 import type { TopologyInboxService } from '../topology/inbox/topology-inbox-service.ts';
 import type { RtcTopologyExecutionRepository } from '../topology/persistence/rtc-topology-execution-repository.ts';
 import type { RtcTopologyPublicationRepository } from '../topology/publication/rtc-topology-publication-repository.ts';
-import type { RtcTopologyDeliveryAppendPort } from '../topology/replay/rtc-topology-delivery-append-port.ts';
 import type {
     RtcTopologyReplayMetrics,
     RtcTopologyReplayWakeSource
-} from '../topology/replay/rtc-topology-replay-diagnostics.ts';
+} from '../topology/replay/consumer/rtc-topology-replay-diagnostics.ts';
+import type { RtcTopologyDeliveryAppendPort } from '../topology/replay/delivery/rtc-topology-delivery-append-port.ts';
 
 export interface RtcTopologyReplayRuntime {
     wake(source: RtcTopologyReplayWakeSource): void;

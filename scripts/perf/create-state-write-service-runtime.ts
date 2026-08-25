@@ -35,7 +35,9 @@ import { RallarRtcTopologyService } from '@shared-server/rallar-system/topology/
 
 import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/topology/config/persistence/group-topology-config-repository.ts';
 
-import { createGroupTopologyOwners } from '@shared-server/rallar-system/topology/runtime/create-group-topology-owners.ts';
+import { createGroupTopologyMutationOwners } from '@shared-server/rallar-system/topology/mutation/create-group-topology-mutation-owners.ts';
+import { RtcTopologyOutboxWriter } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-writer.ts';
+import { createGroupTopologyRuntimeOwners } from '@shared-server/rallar-system/topology/runtime/create-group-topology-runtime-owners.ts';
 import type { Sql } from 'postgres';
 
 import { toApiV1PostgresClient } from '../../apps/api-v1/src/db/api-v1-database-lifecycle.ts';
@@ -126,17 +128,23 @@ export function createStateWriteServiceRuntime({
             options: STATE_WRITE_BENCHMARK_APP_INBOX_OPTIONS.group
         }
     );
-    const topologyOwners = createGroupTopologyOwners({
+    const topologyGroupStateRepository = new GroupStateRepository(runtimeRepository, groupStateEventStore);
+    const topologyConfigRepository = new GroupTopologyConfigRepository(runtimeRepository);
+    const topologyRuntimeOwners = createGroupTopologyRuntimeOwners({
         findGroupSnapshotByRef: (ref) => groupState.readSnapshot(ref),
-        groupStateRepository: new GroupStateRepository(runtimeRepository, groupStateEventStore),
-        configRepository: new GroupTopologyConfigRepository(runtimeRepository),
-        topologyService: new RallarRtcTopologyService(),
-        timing,
-        serviceId
+        readCurrentGroupSnapshot: async (ref) => await topologyGroupStateRepository.readSnapshot(ref),
+        readRttMeasurements: () => [],
+        configRepository: topologyConfigRepository,
+        topologyService: new RallarRtcTopologyService()
     });
-    if (!topologyOwners.configMutation || !topologyOwners.reconfigureMutation) {
-        throw new TypeError('State-write topology mutation owners are required');
-    }
+    const topologyMutationOwners = createGroupTopologyMutationOwners({
+        groupStateRepository: topologyGroupStateRepository,
+        configRepository: topologyConfigRepository,
+        planning: topologyRuntimeOwners.planning,
+        nowEpochMs: () => Date.now(),
+        isPlatformAdmin: () => false,
+        outboxWriter: new RtcTopologyOutboxWriter({ recordWrite: () => undefined })
+    });
     const topology = new TopologyInboxService(
         {
             inboxQueueReader: inbox,
@@ -145,8 +153,8 @@ export function createStateWriteServiceRuntime({
             database: instrumentedSql,
             groupStateService: groupState,
             mutationOwners: {
-                configMutationService: topologyOwners.configMutation,
-                reconfigureMutation: topologyOwners.reconfigureMutation
+                configMutationService: topologyMutationOwners.configMutation,
+                reconfigureMutation: topologyMutationOwners.reconfigureMutation
             }
         },
         {

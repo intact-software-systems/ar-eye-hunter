@@ -4,7 +4,6 @@ import type {
     CachedGroupStateService
 } from '@shared-server/rallar-system/group-state/snapshot/cached-group-state-service.ts';
 import type { GroupFormationRttMutationSink } from '@shared-server/rallar-system/observability/formation-metrics.ts';
-import type { RallarTimingSink } from '@shared-server/rallar-system/observability/timing.ts';
 import type { RtcRttAppInboxDependencies } from '@shared-server/rallar-system/rtc-rtt/inbox/rtc-rtt-app-inbox-contracts.ts';
 import { RtcRttRepository } from '@shared-server/rallar-system/rtc-rtt/persistence/rtc-rtt-repository.ts';
 import {
@@ -16,12 +15,16 @@ import type { GroupTopologyConfigMutationService } from '@shared-server/rallar-s
 import type { GroupTopologyConfigQueryService } from '@shared-server/rallar-system/topology/config/group-topology-config-query-service.ts';
 import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/topology/config/persistence/group-topology-config-repository.ts';
 import type { TopologyAppInboxMutationOwners } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-handler.ts';
+import {
+    createGroupTopologyMutationOwners
+} from '@shared-server/rallar-system/topology/mutation/create-group-topology-mutation-owners.ts';
+import { RtcTopologyOutboxWriter } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-writer.ts';
 import { RtcTopologySnapshotRepository } from '@shared-server/rallar-system/topology/persistence/rtc-topology-snapshot-repository.ts';
 import type { GroupTopologyPlanningService } from '@shared-server/rallar-system/topology/planning/group-topology-planning-service.ts';
 import type { GroupTopologyReconfigureMutation } from '@shared-server/rallar-system/topology/reconfigure/group-topology-reconfigure-mutation.ts';
 import {
-    createGroupTopologyOwners
-} from '@shared-server/rallar-system/topology/runtime/create-group-topology-owners.ts';
+    createGroupTopologyRuntimeOwners
+} from '@shared-server/rallar-system/topology/runtime/create-group-topology-runtime-owners.ts';
 import {
     RallarRtcTopologyService,
     type RallarRtcTopologyServiceOptions
@@ -43,13 +46,12 @@ export interface CreateApiV1TopologyServicesInput {
     readonly groupStateRepository: GroupStateRepository;
     readonly groupStateService: Pick<CachedGroupStateService, 'readSnapshotAtLeast'>;
     readonly groupFormationRttMutation: GroupFormationRttMutationSink;
+    readonly topologyOutboxWritten: () => void;
     readonly topologyReplayMetrics: ApiV1TopologyReplayMetrics;
-    readonly serviceId: string;
     readonly adminClientIds: readonly string[];
     readonly rtcTopologyOptions: RallarRtcTopologyServiceOptions;
     readonly rttRefinementGateConfig: RtcRttRefinementGateConfig;
     readonly nowEpochMs: () => number;
-    readonly timing: RallarTimingSink;
 }
 
 export interface ApiV1TopologyServices {
@@ -98,34 +100,42 @@ export function createApiV1TopologyServices(
     const rttRepository = new RtcRttRepository(input.runtimeStateRepository, {
         now: nowEpochMs
     });
-    const topologyOwners = createGroupTopologyOwners({
+    const outboxWriter = new RtcTopologyOutboxWriter({
+        recordWrite: input.topologyOutboxWritten
+    });
+    const topologyRuntimeOwners = createGroupTopologyRuntimeOwners({
         findGroupSnapshotByRef: (ref, cacheOptions) =>
             input.groupStateService.readSnapshotAtLeast(ref, cacheOptions ?? {}),
-        groupStateRepository,
+        readCurrentGroupSnapshot: async (ref) => await groupStateRepository.readSnapshot(ref),
+        readRttMeasurements: async (group) =>
+            await rttRepository.listMeasurementsForSessionIds(
+                group.activeSessions.map((session) => session.sessionId)
+            ),
         configRepository: topologyConfigRepository,
         topologyService: rtcTopologyService,
         topologySnapshotRepository,
-        rttRepository,
+        serverDefaults: {
+            ...rtcTopologyOptions,
+            topologyKind: rtcTopologyOptions.topologyKind ?? 'auto'
+        }
+    });
+    const topologyMutationOwners = createGroupTopologyMutationOwners({
+        groupStateRepository,
+        configRepository: topologyConfigRepository,
+        planning: topologyRuntimeOwners.planning,
         serverDefaults: {
             ...rtcTopologyOptions,
             topologyKind: rtcTopologyOptions.topologyKind ?? 'auto'
         },
-        now: nowEpochMs,
-        timing: input.timing,
-        serviceId: input.serviceId,
-        adminPrincipalIds: new Set(input.adminClientIds)
+        nowEpochMs,
+        isPlatformAdmin: (principalId) => input.adminClientIds.includes(principalId),
+        outboxWriter
     });
-
-    const topologyConfigMutation = requireOwner(
-        topologyOwners.configMutation,
-        'Topology config mutation'
-    );
-    const topologyReconfigureMutation = requireOwner(
-        topologyOwners.reconfigureMutation,
-        'Topology reconfigure mutation'
-    );
+    const topologyConfigMutation = topologyMutationOwners.configMutation;
+    const topologyReconfigureMutation = topologyMutationOwners.reconfigureMutation;
     const rtcRttMutationDependencies: RtcRttAppInboxDependencies = {
         repository: rttRepository,
+        outboxWriter,
         formationMetrics: input.groupFormationRttMutation,
         readPolicyInputs: async (command) => {
             const sessionsByGroupKey = await readActiveSessionsByGroup(
@@ -156,7 +166,7 @@ export function createApiV1TopologyServices(
             // stored and readiness can never cover the plan.
             const groupDegreeLimits = await Promise.all(
                 candidateGroups.map(async (group) => {
-                    const config = await topologyOwners.query.readConfig(group.group);
+                    const config = await topologyRuntimeOwners.query.readConfig(group.group);
                     return rtcTopologyService.readRttReportingDegreeLimit({
                         ...config.effective,
                         rttReportingDegreeLimit: rtcTopologyOptions.rttReportingDegreeLimit
@@ -180,8 +190,8 @@ export function createApiV1TopologyServices(
     return {
         rtcTopologyService,
         rtcTopologyOptions,
-        topologyQuery: topologyOwners.query,
-        topologyPlanning: topologyOwners.planning,
+        topologyQuery: topologyRuntimeOwners.query,
+        topologyPlanning: topologyRuntimeOwners.planning,
         topologyConfigMutation,
         topologyReconfigureMutation,
         topologyMutationOwners: {
@@ -199,13 +209,6 @@ export function createApiV1TopologyServices(
         readRtcTopologyMetrics: adminMetrics.read,
         resetRtcTopologyMetrics: adminMetrics.reset
     };
-}
-
-function requireOwner<T>(owner: T | undefined, label: string): T {
-    if (!owner) {
-        throw new TypeError(`${label} owner is required`);
-    }
-    return owner;
 }
 
 async function readActiveSessionsByGroup(

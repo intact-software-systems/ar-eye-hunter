@@ -173,7 +173,7 @@ describe('distributed validation risk classification', () => {
         },
         {
             family: 'realtime-routing-topology',
-            path: 'packages/shared-server/rallar-system/topology/runtime/create-group-topology-owners.ts'
+            path: 'packages/shared-server/rallar-system/topology/runtime/create-group-topology-runtime-owners.ts'
         },
         {
             family: 'deployment-runner',

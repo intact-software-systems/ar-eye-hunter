@@ -1,10 +1,4 @@
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
-import {
-    PSqlRtcTopologyDeliveryRepository
-} from '@shared-server/postgres/rtc-topology/p-sql-rtc-topology-delivery-repository.ts';
-import {
-    PSqlRtcTopologyReplayRepository
-} from '@shared-server/postgres/rtc-topology/p-sql-rtc-topology-replay-repository.ts';
 import { type GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
 import {
     RtcTopologyExecutionRepository
@@ -15,17 +9,23 @@ import {
 import { DEFAULT_RTC_TOPOLOGY_PUBLICATION_RETENTION_MS } from '@shared-server/rallar-system/topology/publication/rtc-topology-publication-repository-contracts.ts';
 import { RtcTopologyPublicationRepository } from '@shared-server/rallar-system/topology/publication/rtc-topology-publication-repository.ts';
 import {
-    RtcTopologyReconnectHydrator,
-    type RtcTopologyHydrationIdentity
-} from '@shared-server/rallar-system/topology/replay/rtc-topology-reconnect-hydrator.ts';
-import {
     createRtcTopologyReplayDiagnostics,
     type RtcTopologyReplayMetrics,
     type RtcTopologyReplayWakeSource
-} from '@shared-server/rallar-system/topology/replay/rtc-topology-replay-diagnostics.ts';
+} from '@shared-server/rallar-system/topology/replay/consumer/rtc-topology-replay-diagnostics.ts';
 import {
     RtcTopologyReplayEntryHandlerService
-} from '@shared-server/rallar-system/topology/replay/rtc-topology-replay-entry-handler.ts';
+} from '@shared-server/rallar-system/topology/replay/consumer/rtc-topology-replay-entry-handler.ts';
+import type { RtcTopologyHydrationIdentity } from '@shared-server/rallar-system/topology/replay/hydration/rtc-topology-reconnect-hydration.ts';
+import {
+    RtcTopologyReconnectHydrator
+} from '@shared-server/rallar-system/topology/replay/hydration/rtc-topology-reconnect-hydrator.ts';
+import {
+    PSqlRtcTopologyDeliveryRepository
+} from '@shared-server/rallar-system/topology/replay/postgres/p-sql-rtc-topology-delivery-repository.ts';
+import {
+    PSqlRtcTopologyReplayRepository
+} from '@shared-server/rallar-system/topology/replay/postgres/p-sql-rtc-topology-replay-repository.ts';
 import type {
     RuntimeStateOptimisticTransactionalRepositoryLike
 } from '@shared-server/runtime-state/runtime-state-repository.ts';

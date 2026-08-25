@@ -221,11 +221,16 @@ export * from './rallar-system/topology/mutation/rtc-topology-mutations.ts';
 export * from './rallar-system/topology/mutation/rtc-topology-outbox-work.ts';
 export * from './rallar-system/topology/persistence/rtc-topology-execution-repository.ts';
 export * from './rallar-system/topology/persistence/rtc-topology-identifiers.ts';
+export * from './rallar-system/topology/persistence/rtc-topology-snapshot-contract.ts';
 export * from './rallar-system/topology/persistence/rtc-topology-snapshot-repository.ts';
 export * from './rallar-system/topology/publication/rtc-topology-publication-repository-contracts.ts';
 export * from './rallar-system/topology/publication/rtc-topology-publication-repository.ts';
 export * from './rallar-system/topology/publication/rtc-topology-publication.ts';
-export * from './rallar-system/topology/runtime/create-group-topology-owners.ts';
+export { createGroupTopologyRuntimeOwners } from './rallar-system/topology/runtime/create-group-topology-runtime-owners.ts';
+export type {
+    CreateGroupTopologyRuntimeOwnersInput,
+    GroupTopologyRuntimeOwners
+} from './rallar-system/topology/runtime/create-group-topology-runtime-owners.ts';
 export * from './rallar-system/topology/runtime/rallar-rtc-topology-service.ts';
 export * from './rallar-system/websocket/router/rallar-server-ws-router-contracts.ts';
 export * from './rallar-system/websocket/router/rallar-server-ws-router.ts';

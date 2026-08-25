@@ -12,22 +12,11 @@ import type { GroupRef, GroupSnapshot, GroupStateCausalRevision } from '@shared/
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 
 import { toAppQueueCreatedBy, toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
-import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
-import { PSqlResourceInboxEntryRepository } from '../../../queuebox/postgres/p-sql-resource-inbox-entry-repository.ts';
 import { AppOutboxType } from '../../app-outbox/app-outbox-type.ts';
 import { toRtcRttMutationReceiptId } from '../../rtc-rtt/mutation/rtc-rtt-mutation-identifiers.ts';
 import { validateRtcRttMeasurement } from '../../rtc-rtt/persistence/rtc-rtt-persistence-validation.ts';
 
 export const APP_OUTBOX_RTC_TOPOLOGY_TOPIC = 'app-outbox.rtc-topology';
-
-export type RtcTopologyOutboxWriteSink = () => void;
-
-// One process-wide sink keeps this free-function write path additive and opt-in.
-let outboxWriteSink: RtcTopologyOutboxWriteSink | undefined;
-
-export function setRtcTopologyOutboxWriteSink(sink: RtcTopologyOutboxWriteSink | undefined): void {
-    outboxWriteSink = sink;
-}
 
 interface ComputedRtcTopologyOutboxBase {
     readonly commandId: string;
@@ -181,21 +170,6 @@ export function computeRtcTopologyEntry(computed: ComputedRtcTopologyOutbox): Re
 
 export function toRtcTopologyEntryResourceId(computed: ComputedRtcTopologyOutbox): string {
     return computed.resourceId;
-}
-
-export async function writeRtcTopologyOutbox(
-    transaction: PSqlSql,
-    computed: ComputedRtcTopologyOutbox
-): Promise<ResourceEntry> {
-    const entry = computeRtcTopologyEntry(computed);
-    await new PSqlResourceInboxEntryRepository(transaction).writeIfAbsentOrMatch(entry);
-    try {
-        outboxWriteSink?.();
-    }
-    catch {
-        // Recording must never affect topology outbox writes.
-    }
-    return entry;
 }
 
 export function deriveRtcTopologyEntryResourceId(
