@@ -9,7 +9,8 @@ import {
     RALLAR_CRDT_OPERATION_VERSION,
     RALLAR_CRDT_PROTOCOL_VERSION,
     toRallarCrdtDocumentKey,
-    type RallarCrdtDocumentRef
+    type RallarCrdtDocumentRef,
+    type RallarCrdtUpdateEnvelope
 } from '@shared/crdt/mod.ts';
 
 const DOCUMENT: RallarCrdtDocumentRef = {
@@ -23,7 +24,7 @@ const DOCUMENT: RallarCrdtDocumentRef = {
 
 describe('CRDT update row decoding', () => {
     it('rejects an invalid physical sequence and authorization scope', () => {
-        const update = {
+        const update: RallarCrdtUpdateEnvelope = {
             protocolVersion: RALLAR_CRDT_PROTOCOL_VERSION,
             document: DOCUMENT,
             updateId: 'update-1',

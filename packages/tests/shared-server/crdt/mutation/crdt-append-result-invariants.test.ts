@@ -10,6 +10,7 @@ import { AppCrdtInboxService } from '@shared-server/rallar-system/crdt/inbox/app
 import { computeCrdtMutation } from '@shared-server/rallar-system/crdt/mutation/compute-crdt-mutation.ts';
 import { appendRejectionReason } from '@shared-server/rallar-system/crdt/mutation/crdt-append-rejection.ts';
 import { createCrdtMutationCommand } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-command-codec.ts';
+import type { CrdtAppendCommand } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-contracts.ts';
 import { createCrdtMutationService } from '@shared-server/rallar-system/crdt/mutation/create-crdt-mutation-service.ts';
 import { decodeCrdtMutationResult } from '@shared-server/rallar-system/crdt/mutation/decode-crdt-mutation-result.ts';
 import {
@@ -317,14 +318,18 @@ function common(commandId: string) {
     };
 }
 
-async function appendCommand() {
-    return await createCrdtMutationCommand({
+async function appendCommand(): Promise<CrdtAppendCommand> {
+    const command = await createCrdtMutationCommand({
         ...common('append-1'),
         operation: 'append',
         responseAudience: audience('principal'),
         authorizationScope: 'principal',
         update: update('append-1')
     });
+    if (command.operation !== 'append') {
+        throw new Error(`Expected append command, received ${command.operation}`);
+    }
+    return command;
 }
 
 async function lifecycleCommand() {

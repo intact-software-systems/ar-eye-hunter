@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { InMemoryRallarCrdtLogRepository } from '@shared-server/rallar-system/crdt/persistence/in-memory-crdt-log-repository.ts';
+import type { JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import {
     createRallarCrdtAppendRequestEnvelope,
     createRallarCrdtBackupBundle,
@@ -260,7 +261,7 @@ describe('InMemoryRallarCrdtLogRepository', () => {
             now: fixedNow(2_000)
         });
         await repository.append(toAppendInput(createUpdateEnvelope('update-1')));
-        const snapshot: RallarCrdtSnapshotEnvelope = {
+        const snapshot: RallarCrdtSnapshotEnvelope<JsonWireValue> = {
             protocolVersion: RALLAR_CRDT_PROTOCOL_VERSION,
             document: documentRef,
             snapshotId: 'snapshot-1',
@@ -294,7 +295,7 @@ describe('InMemoryRallarCrdtLogRepository', () => {
         await repository.append(toAppendInput(createUpdateEnvelope('snapshot-clock-1')));
         clock.reset();
         clock.throwOnCall(1);
-        const snapshot: RallarCrdtSnapshotEnvelope = {
+        const snapshot: RallarCrdtSnapshotEnvelope<JsonWireValue> = {
             protocolVersion: RALLAR_CRDT_PROTOCOL_VERSION,
             document: documentRef,
             snapshotId: 'snapshot-clock-1',
