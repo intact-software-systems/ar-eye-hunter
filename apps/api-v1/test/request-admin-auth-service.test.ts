@@ -1,12 +1,13 @@
-import type { AuthSession } from '@shared/api/api-config.ts';
+import type { IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
 import assert from 'node:assert/strict';
 import { requireApiAdminSession } from '../src/services/admin-auth-service.ts';
 
-const ADMIN_SESSION: AuthSession = {
+const ADMIN_SESSION: IssuedAuthSession = {
     clientId: 'platform-admin',
     username: 'admin',
     accessToken: 'access-token',
     sessionId: 'admin-session',
+    issuedAtEpochMs: 1_700_000_000_000,
     expiresAtEpochMs: 1_700_000_060_000
 };
 

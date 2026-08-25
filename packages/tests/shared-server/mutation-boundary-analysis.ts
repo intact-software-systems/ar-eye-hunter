@@ -150,7 +150,6 @@ function mutationBoundaryFiles(): readonly string[] {
         'apps/api-v1/src/routes/auth/register-auth-credential-mutation-routes.ts',
         'apps/api-v1/src/routes/auth/register-auth-user-mutation-routes.ts',
         'apps/api-v1/src/admin-operations/register-admin-operation-mutation-routes.ts',
-        'apps/api-v1/src/admin-operations/create-api-admin-mutation-gateway.ts',
         'apps/api-v1/src/crdt/create-crdt-admin-mutations.ts',
         'packages/shared-server/rallar-system/crdt/inbox/create-crdt-ws-mutation-ingress.ts',
         'apps/api-v1/src/services/request-auth-service.ts',
