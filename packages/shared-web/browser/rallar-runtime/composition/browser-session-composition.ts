@@ -1,4 +1,4 @@
-import type { RallarAuthFacade } from '@shared-web/browser/rallar-auth-facade.ts';
+import type { RallarAuthFacade } from '@shared-web/browser/session/rallar-auth-facade.ts';
 import type { RallarConnectionOperations } from '@shared-web/browser/rallar-connection-facade.ts';
 import { createRallarCrdtFacade, type RallarCrdtFacade } from '@shared-web/browser/rallar-crdt.ts';
 import { createRallarDataFacade, type RallarDataFacade } from '@shared-web/browser/rallar-data.ts';
@@ -88,7 +88,7 @@ export function createBrowserSessionCoreComposition(
         identity,
         session,
         connection: session.connectionOperations,
-        auth: session.authOperations
+        auth: session.auth
     };
 }
 

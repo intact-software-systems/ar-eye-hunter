@@ -1,5 +1,5 @@
 import type { Middleware } from '@shared-web/browser/middleware.ts';
-import type { RallarAuthState } from '@shared-web/browser/rallar-auth-facade.ts';
+import type { RallarAuthState } from '@shared-web/browser/session/rallar-auth-facade.ts';
 import type { RallarWsLifecycleEvent } from '@shared-web/browser/rallar-realtime-facade.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import { DEFAULT_RTC_DATA_CHANNEL_LANE_ID, type QRtcPeerDto, type WebRtcPeerConnectionLeft } from '@shared/services/WebRtcConnectionService.ts';

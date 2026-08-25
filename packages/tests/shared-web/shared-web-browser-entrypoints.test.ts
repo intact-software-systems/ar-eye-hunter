@@ -69,7 +69,7 @@ const BROWSER_ENTRYPOINTS: readonly BrowserEntrypoint[] = [
 ];
 
 const PUBLIC_FACADE_MODULES = [
-    'packages/shared-web/browser/rallar-auth-facade.ts',
+    'packages/shared-web/browser/session/rallar-auth-facade.ts',
     'packages/shared-web/browser/rallar-calls-facade.ts',
     'packages/shared-web/browser/rallar-connection-facade.ts',
     'packages/shared-web/browser/rallar-director-facade.ts',

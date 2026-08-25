@@ -9,7 +9,7 @@ import type {
     RallarAuthChangeListener,
     RallarAuthChangeReason,
     RallarAuthState
-} from '@shared-web/browser/rallar-auth-facade.ts';
+} from '@shared-web/browser/session/rallar-auth-facade.ts';
 import type { RallarScopedOperationOptions } from '@shared-web/browser/rallar-connection-facade.ts';
 import { toRallarCommandOptions, type RallarOperationOptions } from '@shared-web/browser/rallar-operation-options.ts';
 import type { RallarAuthRuntimePort, RallarConnectionRuntimePort } from '@shared-web/browser/rallar-runtime-context.ts';

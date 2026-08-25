@@ -1,4 +1,4 @@
-import type { RallarAuthFacade } from '@shared-web/browser/rallar-auth-facade.ts';
+import type { RallarAuthFacade } from '@shared-web/browser/session/rallar-auth-facade.ts';
 import type {
     RallarConnectionOperations,
     RallarScopedOperationOptions,

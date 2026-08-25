@@ -16,7 +16,7 @@ export type {
     RallarConnectionOperations
 } from '@shared-web/browser/rallar-connection-facade.ts';
 
-export type { RallarAuthFacade } from '@shared-web/browser/rallar-auth-facade.ts';
+export type { RallarAuthFacade } from '@shared-web/browser/session/rallar-auth-facade.ts';
 
 export type {
     RallarMessageSelector,

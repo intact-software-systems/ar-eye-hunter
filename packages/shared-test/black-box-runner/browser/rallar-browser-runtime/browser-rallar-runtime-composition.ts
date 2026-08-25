@@ -1,5 +1,5 @@
 import type { RallarMessagesOperations } from '@shared-web/browser/messages/rallar-message-operations.ts';
-import type { RallarAuthFacade } from '@shared-web/browser/rallar-auth-facade.ts';
+import type { RallarAuthFacade } from '@shared-web/browser/rallar-core.ts';
 import type { RallarConnectionOperations } from '@shared-web/browser/rallar-connection-facade.ts';
 import type { RallarCrdtFacade } from '@shared-web/browser/rallar-crdt.ts';
 import type { RallarDirectorFacade } from '@shared-web/browser/rallar-director-facade.ts';

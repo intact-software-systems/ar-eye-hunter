@@ -1,5 +1,5 @@
 import type { ApiMiddleware } from '@shared-web/browser/app-context.ts';
-import type { RallarAuthFacade } from '@shared-web/browser/rallar-auth-facade.ts';
+import type { RallarAuthFacade } from '@shared-web/browser/session/rallar-auth-facade.ts';
 import type { RallarCallsFacade } from '@shared-web/browser/rallar-calls-facade.ts';
 import type {
     RallarConnectionFacade,
@@ -22,7 +22,7 @@ import type { RallarPeopleOperations } from '@shared-web/browser/people/rallar-p
 import type { RallarStatsOperations } from '@shared-web/browser/stats/rallar-stats-operations.ts';
 import type { BrowserRallarRooms } from '@shared-web/browser/rooms/browser-rallar-rooms.ts';
 
-export type * from '@shared-web/browser/rallar-auth-facade.ts';
+export type * from '@shared-web/browser/session/rallar-auth-facade.ts';
 export type * from '@shared-web/browser/rallar-calls-facade.ts';
 export type * from '@shared-web/browser/rallar-connection-facade.ts';
 export type * from '@shared-web/browser/rallar-director-facade.ts';
