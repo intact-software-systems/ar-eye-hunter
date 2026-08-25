@@ -19,7 +19,7 @@ import {
 import { validateStoredGroup } from '../../persistence/validate-persisted-group.ts';
 import { validateGroupExpiredStateAuthority } from '../../presence/group-expired-state-authority.ts';
 import type { GroupMutationCommand, GroupMutationRead } from '../group-mutation-contracts.ts';
-import { groupMutationIdempotencyKey } from '../group-mutation-idempotency-key.ts';
+import { groupMutationIdempotencyKey } from '../idempotency/group-mutation-idempotency-key.ts';
 import { resolveGroupMutationReadIdentities } from '../read/resolve-group-mutation-read-identities.ts';
 import { validateGroupMutationIdempotencyRecord } from '../result-validation/validate-group-mutation-result.ts';
 import { validateGroupMutationAuthorityReads } from './validate-group-mutation-authority-reads.ts';

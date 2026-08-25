@@ -1,6 +1,6 @@
 import { jsonEquals } from '@shared/repository/state-utils.ts';
 
-import { groupMutationIdempotencyKey } from '../group-mutation-idempotency-key.ts';
+import { groupMutationIdempotencyKey } from '../idempotency/group-mutation-idempotency-key.ts';
 import {
     validateGroupMutationIdempotencyRecord,
     validateMutationReceipt

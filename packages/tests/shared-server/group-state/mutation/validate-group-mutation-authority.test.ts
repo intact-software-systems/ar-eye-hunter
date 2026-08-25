@@ -1,4 +1,4 @@
-import { validateGroupMutationAuthority } from '@shared-server/rallar-system/group-state/mutation/authority/validate-group-mutation-authority.ts';
+import { validateGroupMutationAuthority } from '@shared-server/rallar-system/group-state/mutation/command-validation/validate-group-mutation-authority.ts';
 import type {
     GroupMutationCommand,
     GroupMutationFacts

@@ -2,7 +2,7 @@ import { jsonEquals } from '@shared/repository/state-utils.ts';
 
 import { requireJsonSafe } from '../../group-state-validation-primitives.ts';
 import { validatePresenceAdmission } from '../../persistence/validate-persisted-group-presence.ts';
-import { validateGroupMutationAuthority } from '../authority/validate-group-mutation-authority.ts';
+import { validateGroupMutationAuthority } from '../command-validation/validate-group-mutation-authority.ts';
 import { validateGroupMutationCommand } from '../command-validation/validate-group-mutation-command.ts';
 import type {
     GroupMutationCommand,

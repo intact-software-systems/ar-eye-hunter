@@ -5,7 +5,7 @@ import {
     computeUpdate
 } from '../aggregate/compute-group-aggregate-mutation.ts';
 import { computeLifecycleTransition } from '../aggregate/compute-lifecycle-transition.ts';
-import { validateGroupMutationAuthority } from '../authority/validate-group-mutation-authority.ts';
+import { validateGroupMutationAuthority } from '../command-validation/validate-group-mutation-authority.ts';
 import { validateGroupMutationCommand } from '../command-validation/validate-group-mutation-command.ts';
 import type {
     GroupMutationCommand,

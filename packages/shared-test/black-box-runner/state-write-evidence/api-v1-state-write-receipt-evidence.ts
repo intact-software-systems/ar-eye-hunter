@@ -16,7 +16,7 @@ import { validateClientMutationIdempotencyRecord } from '@shared-server/rallar-s
 import { validateGroupMutationCommand } from '@shared-server/rallar-system/group-state/mutation/command-validation/validate-group-mutation-command.ts';
 import {
     groupMutationIdempotencyKey
-} from '@shared-server/rallar-system/group-state/mutation/group-mutation-idempotency-key.ts';
+} from '@shared-server/rallar-system/group-state/mutation/idempotency/group-mutation-idempotency-key.ts';
 import { GroupStateRepositoryReads } from '@shared-server/rallar-system/group-state/persistence/group-state-repository-reads.ts';
 import { decodeJsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import { InMemoryClientStateEventStore } from '@shared-server/rallar-system/state-events/in-memory-client-state-event-store.ts';
