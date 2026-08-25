@@ -21,7 +21,6 @@ import {
 } from './room-group-state-translation.ts';
 
 export type StateGroupWorkflowValue = GroupSnapshot | undefined;
-export type JoinStateGroupIntent = RoomJoinGroupStateFields;
 export type CreateAndJoinStateGroupOptions = Omit<RoomCreateGroupStateFields, 'displayName'>;
 
 type GroupWorkflowKey = 'created' | 'member' | 'joined' | 'disconnected' | 'left';
@@ -44,7 +43,7 @@ export interface JoinStateGroupInput {
     readonly generationId: string;
     readonly scope?: StateScope;
     readonly policies?: CommandsOrchestratorPolicies<StateGroupWorkflowValue>;
-    readonly intent?: JoinStateGroupIntent;
+    readonly intent?: RoomJoinGroupStateFields;
 }
 
 export interface LeaveStateGroupInput {

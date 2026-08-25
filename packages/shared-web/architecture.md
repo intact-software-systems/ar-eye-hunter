@@ -41,7 +41,7 @@ Use the smallest browser entry point that matches the feature area.
 ## Browser Facade Runtime
 
 `browser/rallar.ts` owns the full browser facade and delegates construction to
-[`createBrowserRallarFacade`](./browser/rallar-runtime/composition.ts#L58).
+[`createRallarFacade`](./browser/rallar-runtime/composition.ts#L58).
 Implementation lives in capability controllers under `browser/rallar-runtime/`
 and in feature-owned `browser/calls/`, `browser/connection/`,
 `browser/director/`, `browser/media/`, `browser/messages/`,

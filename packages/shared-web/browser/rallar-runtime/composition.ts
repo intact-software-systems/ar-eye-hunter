@@ -55,7 +55,7 @@ interface BrowserFacadeCompositions {
     readonly crdt: BrowserCrdtComposition;
 }
 
-export function createBrowserRallarFacade(): RallarFacade {
+export function createRallarFacade(): RallarFacade {
     const foundation = createBrowserRuntimeFoundation();
     const state = createBrowserStateComposition({
         runtime: foundation.runtime,

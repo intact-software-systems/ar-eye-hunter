@@ -30,7 +30,7 @@ registration, invocation, and cleanup without consulting a historical plan.
 ## Construction and registration timeline
 
 1. [createRallarFacade](./rallar.ts#L238) delegates to
-   [createBrowserRallarFacade](./rallar-runtime/composition.ts#L58).
+   [createRallarFacade](./rallar-runtime/composition.ts#L58).
 2. [createBrowserRuntimeFoundation](./rallar-runtime/composition/browser-runtime-composition.ts#L68)
    creates the per-facade runtime ports and lifecycle coordinator.
 3. [createBrowserStateComposition](./rallar-runtime/composition/browser-runtime-composition.ts#L110)

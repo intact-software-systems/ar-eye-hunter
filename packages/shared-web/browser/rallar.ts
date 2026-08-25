@@ -1,5 +1,7 @@
 import type { RallarFacade } from '@shared-web/browser/rallar-facade-contract.ts';
-import { createBrowserRallarFacade } from '@shared-web/browser/rallar-runtime/composition.ts';
+import { createRallarFacade } from '@shared-web/browser/rallar-runtime/composition.ts';
+
+export { createRallarFacade } from '@shared-web/browser/rallar-runtime/composition.ts';
 
 export {
     createRallarDataFacade,
@@ -234,9 +236,5 @@ export type {
     RallarWsStatusListener,
     RallarWsWaitForOpenResult
 } from '@shared-web/browser/rallar-facade-contract.ts';
-
-export function createRallarFacade(): RallarFacade {
-    return createBrowserRallarFacade();
-}
 
 export const rallar: RallarFacade = createRallarFacade();
