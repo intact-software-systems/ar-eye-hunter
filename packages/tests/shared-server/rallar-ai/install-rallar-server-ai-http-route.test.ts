@@ -63,6 +63,35 @@ describe('Rallar server AI HTTP route', () => {
             }
         });
     });
+
+    it('rejects predecessor request fields instead of ignoring them', async () => {
+        const registration = createHttpRegistration();
+        installRallarServerAiHttpRoute({
+            router: registration.router,
+            serverAi: createRallarServerAiTestService({
+                provider: createRallarAiMockProvider({ value: { kind: 'spawn' } })
+            }),
+            path: '/ai/json'
+        });
+
+        const response = await registration.invoke({
+            body: {
+                ...createRallarServerAiTestRequest(),
+                oldContext: { roomId: 'room-1' }
+            }
+        });
+
+        expect(response).toMatchObject({
+            status: 400,
+            body: {
+                ok: false,
+                error: {
+                    code: 'invalid-json',
+                    message: 'RallarAI generation request contains unexpected field oldContext.'
+                }
+            }
+        });
+    });
 });
 
 interface HttpRegistration {

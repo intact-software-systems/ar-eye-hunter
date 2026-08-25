@@ -1,10 +1,34 @@
 import type { AppDataValueCodec } from '@shared-server/app-data/app-data-value-codec.ts';
+import type { RallarServerAppData } from '@shared-server/app-data/rallar-server-app-data.ts';
+import { RALLAR_SERVER_AI_RESULT_APP_DATA_CODEC } from '@shared-server/rallar-ai/rallar-server-ai-result-app-data-codec.ts';
 import { createRallarServerAiResultPersistence, type RallarServerAiResultStorePort } from '@shared-server/rallar-ai/rallar-server-ai-result-persistence.ts';
 import type { RallarAiJsonResult, RallarAiJsonValue } from '@shared/rallar-ai/mod.ts';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, expectTypeOf, it } from 'vitest';
 import { createRallarServerAiTestResult } from './rallar-server-ai-test-fixtures.ts';
 
 describe('Rallar server AI result persistence', () => {
+    it('accepts the current server AppData surface directly', () => {
+        expectTypeOf<RallarServerAppData>().toMatchTypeOf<RallarServerAiResultStorePort>();
+    });
+
+    it('round-trips only the current persisted result shape', () => {
+        const result = createRallarServerAiTestResult();
+        const encoded = RALLAR_SERVER_AI_RESULT_APP_DATA_CODEC.encode(result);
+
+        expect(RALLAR_SERVER_AI_RESULT_APP_DATA_CODEC.decode(encoded)).toEqual(result);
+        expect(() => RALLAR_SERVER_AI_RESULT_APP_DATA_CODEC.decode('old-result'))
+            .toThrow('RallarAI result must be an object.');
+        if (encoded === null || typeof encoded !== 'object' || Array.isArray(encoded)) {
+            throw new Error('RallarAI result codec did not encode an object.');
+        }
+        expect(() =>
+            RALLAR_SERVER_AI_RESULT_APP_DATA_CODEC.decode({
+                ...encoded,
+                protocolVersion: 0
+            })
+        ).toThrow('RallarAI result metadata is malformed.');
+    });
+
     it('opens the selected current-format store and writes the generated result', async () => {
         const stored = createStoredResultCapture();
         const persist = createRallarServerAiResultPersistence({

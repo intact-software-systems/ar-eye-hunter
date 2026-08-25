@@ -162,6 +162,42 @@ describe('Rallar server AI generation', () => {
             code: 'invalid-json'
         });
     });
+
+    it('rejects JSON that does not satisfy the requested schema', async () => {
+        const ai = createRallarServerAiTestService({
+            provider: createRallarAiMockProvider({ value: { other: 'value' } })
+        });
+
+        await expect(ai.generateJson(createRallarServerAiTestRequest()))
+            .rejects.toMatchObject({ code: 'schema-validation-failed' });
+    });
+
+    it('reports provider failures without including request content', async () => {
+        const diagnostics: RallarAiDiagnosticEvent[] = [];
+        const baseProvider = createRallarAiMockProvider();
+        const provider: RallarAiJsonProvider = {
+            ...baseProvider,
+            generateJson: async () => {
+                throw new Error('provider unavailable');
+            }
+        };
+        const ai = createRallarServerAiTestService({
+            provider,
+            diagnostics: (event) => diagnostics.push(event)
+        });
+        const request = {
+            ...createRallarServerAiTestRequest(),
+            prompt: 'secret prompt'
+        };
+
+        await expect(ai.generateJson(request)).rejects.toThrow('provider unavailable');
+        expect(diagnostics.at(-1)).toMatchObject({
+            kind: 'provider-failed',
+            errorCode: 'provider-failed',
+            message: 'provider unavailable'
+        });
+        expect(JSON.stringify(diagnostics)).not.toContain('secret prompt');
+    });
 });
 
 interface Deferred {

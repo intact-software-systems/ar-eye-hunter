@@ -82,6 +82,27 @@ describe('Rallar server AI WebSocket topic', () => {
         expect(topic.validate({ prompt: 'missing schema' })).toBe(false);
     });
 
+    it('fails topic authorization closed', async () => {
+        const websocket = createRallarServerAiTestWebSocket();
+        installRallarServerAiWebSocketTopic({
+            websocket: websocket.port,
+            serverAi: createRallarServerAiTestService({
+                provider: createRallarAiMockProvider({ value: { kind: 'spawn' } })
+            }),
+            config: TEST_WEBSOCKET_CONFIG,
+            authorize: () => false
+        });
+        const topic = websocket.topics[0];
+        if (topic === undefined) {
+            throw new Error('RallarAI topic was not registered.');
+        }
+
+        await expect(topic.authorize(
+            { payload: createRallarServerAiTestRequest() },
+            { senderId: 'peer-1', roomId: 'room-1' }
+        )).resolves.toBe(false);
+    });
+
     it('fails closed when room publication lacks workspace identity', async () => {
         const websocket = createRallarServerAiTestWebSocket();
         installRallarServerAiWebSocketTopic({
