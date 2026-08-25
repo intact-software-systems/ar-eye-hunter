@@ -1,20 +1,20 @@
 // @vitest-environment happy-dom
 
-import '../setup-browser-indexeddb.ts';
+import '../../setup-browser-indexeddb.ts';
 
-import { createRallarDataFacade, defineRallarDataStore, type RallarDataScope } from '@shared-web/browser/rallar-data.ts';
+import { createRallarDataFacade, defineRallarDataStore } from '@shared-web/browser/rallar-data.ts';
 import { createRallarFacade } from '@shared-web/browser/rallar.ts';
 import { ObservableValueEventType } from '@shared/cache/RepositoryInterfaces.ts';
 import { RepositoryManager } from '@shared/cache/RepositoryManager.ts';
 import { IndexedDbStringPersistenceProvider } from '@shared/persistence/IndexedDbStringPersistenceProvider.ts';
 import { afterEach, describe, expect, it } from 'vitest';
 
-type Todo = Readonly<{
-    title: string;
-    done: boolean;
-}>;
-
-const resolveTestDataScopeKey = (scope: RallarDataScope): string => String(scope);
+import {
+    FakeBroadcastChannel,
+    resolveTestDataScopeKey,
+    type Todo,
+    waitFor
+} from './rallar-data-test-runtime.ts';
 
 describe('Rallar data stores', () => {
     const originalBroadcastChannel = globalThis.BroadcastChannel;
@@ -385,50 +385,3 @@ describe('Rallar data stores', () => {
         expect(await reopened.getAll()).toEqual([]);
     });
 });
-
-class FakeBroadcastChannel {
-    private static readonly channels = new Map<string, Set<FakeBroadcastChannel>>();
-
-    public onmessage: ((event: MessageEvent) => void) | null = null;
-
-    public readonly name: string;
-
-    public constructor(name: string) {
-        this.name = name;
-        const channels = FakeBroadcastChannel.channels.get(name) ?? new Set();
-        channels.add(this);
-        FakeBroadcastChannel.channels.set(name, channels);
-    }
-
-    public postMessage(message: unknown): void {
-        for (const channel of FakeBroadcastChannel.channels.get(this.name) ?? []) {
-            if (channel === this) {
-                continue;
-            }
-
-            queueMicrotask(() => {
-                channel.onmessage?.({ data: message } as MessageEvent);
-            });
-        }
-    }
-
-    public close(): void {
-        FakeBroadcastChannel.channels.get(this.name)?.delete(this);
-    }
-
-    public static clear(): void {
-        FakeBroadcastChannel.channels.clear();
-    }
-}
-
-async function waitFor(predicate: () => boolean): Promise<void> {
-    for (let attempt = 0; attempt < 10; attempt += 1) {
-        if (predicate()) {
-            return;
-        }
-
-        await new Promise((resolve) => setTimeout(resolve, 0));
-    }
-
-    expect(predicate()).toBe(true);
-}

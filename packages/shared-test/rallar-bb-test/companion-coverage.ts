@@ -128,7 +128,7 @@ export const RALLAR_COMPANION_COVERAGE_SURFACES: readonly RallarCompanionCoverag
         surfaceId: 'browser-data-facade',
         layer: 'shared-web-facade',
         intent: 'Rallar Data repository behavior, persistence, synchronization, and browser storage semantics.',
-        testFiles: ['packages/tests/shared-web/rallar-data.test.ts'],
+        testFiles: ['packages/tests/shared-web/data/rallar-data.test.ts'],
         runnerBoundary: 'Keep data API parity in package or app tests unless it is visible as HTTP/WS/RTC traffic.'
     },
     {

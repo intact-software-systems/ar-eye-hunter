@@ -11,13 +11,23 @@ import type { WriteThroughObservableLatestRepository } from '@shared/cache/Write
 import type { PersistenceProvider } from '@shared/persistence/PersistenceProvider.ts';
 
 export namespace RepositoryBackedRallarDataStore {
-    export interface Managed<V> {
-        readonly name: string;
+    export interface Lifecycle {
         readonly id: string;
-        readonly optionsKey: string;
-        readonly scope: RallarDataScope;
         readonly scopeKey: string;
         readonly durability: RallarDataDurability;
+        readonly persistence: Pick<PersistenceProvider<string, object>, 'getAllKeys' | 'removeItem'>;
+        readonly repository: Readonly<{
+            clearAll(): void | Promise<void>;
+            whenIdle(): Promise<void>;
+        }>;
+        readonly instanceId: string;
+        broadcast?: BroadcastChannel;
+    }
+
+    export interface Managed<V> extends Lifecycle {
+        readonly name: string;
+        readonly optionsKey: string;
+        readonly scope: RallarDataScope;
         readonly persistence: PersistenceProvider<string, V>;
         readonly repository:
             | WriteThroughObservableLatestRepository<string, V>
@@ -296,8 +306,8 @@ export class RepositoryBackedRallarDataStore<V> implements RallarDataStore<V> {
     }
 }
 
-export async function clearManagedRallarDataRepository<V>(
-    managed: RepositoryBackedRallarDataStore.Managed<V>
+export async function clearManagedRallarDataRepository(
+    managed: RepositoryBackedRallarDataStore.Lifecycle
 ): Promise<void> {
     if (managed.durability === 'write-behind') {
         const keys = await managed.persistence.getAllKeys();
@@ -310,8 +320,8 @@ export async function clearManagedRallarDataRepository<V>(
     await Promise.resolve(managed.repository.clearAll());
 }
 
-export function broadcastRallarDataClear<V>(
-    managed: RepositoryBackedRallarDataStore.Managed<V>
+export function broadcastRallarDataClear(
+    managed: RepositoryBackedRallarDataStore.Lifecycle
 ): void {
     managed.broadcast?.postMessage(
         {
@@ -319,7 +329,7 @@ export function broadcastRallarDataClear<V>(
             repositoryId: managed.id,
             instanceId: managed.instanceId,
             type: 'clear'
-        } satisfies RepositoryBackedRallarDataStore.BroadcastMessage<V>
+        } satisfies RepositoryBackedRallarDataStore.BroadcastMessage<object>
     );
 }
 
