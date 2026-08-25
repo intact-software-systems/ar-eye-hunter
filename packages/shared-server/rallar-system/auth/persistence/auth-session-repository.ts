@@ -4,29 +4,11 @@ import type {
     RuntimeStateConditionalWriteResult,
     RuntimeStateRepositoryLike
 } from '../../../runtime-state/runtime-state-repository.ts';
-import type {
-    PersistedAgentSessionTicket,
-    PersistedAuthSession,
-    PersistedWebSocketTicket
-} from './auth-persistence-contracts.ts';
 import { AuthSessionPersistence } from './auth-session-persistence.ts';
 import type { IssuedAgentSessionTicket, IssuedWebSocketTicket } from './auth-session-types.ts';
 import { AuthTicketPersistence } from './auth-ticket-persistence.ts';
-
-export { hashAuthSecret } from '../credentials/hash-auth-secret.ts';
-export {
-    decodePersistedAgentSessionTicket,
-    decodePersistedAuthSession,
-    decodePersistedWebSocketTicket,
-    type PersistedAgentSessionTicket,
-    type PersistedAuthSession,
-    type PersistedWebSocketTicket
-} from './auth-persistence-contracts.ts';
-export type {
-    IssuedAgentSessionTicket,
-    IssuedAuthSession,
-    IssuedWebSocketTicket
-} from './auth-session-types.ts';
+import type { PersistedAuthSession } from './persisted-auth-session.ts';
+import type { PersistedAgentSessionTicket, PersistedWebSocketTicket } from './persisted-auth-ticket.ts';
 
 export class AuthSessionRepository extends AuthSessionPersistence {
     private readonly tickets: AuthTicketPersistence;

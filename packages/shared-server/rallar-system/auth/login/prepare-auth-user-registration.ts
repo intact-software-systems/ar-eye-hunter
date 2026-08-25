@@ -1,6 +1,7 @@
 import type { RegisterRequest } from '@shared/api/api-config.ts';
 
-import { normalizeUsername, type AuthUser } from '../persistence/auth-user-repository.ts';
+import { normalizeAuthUsername } from '../credentials/normalize-auth-username.ts';
+import type { PersistedAuthUser } from '../persistence/persisted-auth-user.ts';
 import type { LoginClientData } from './authenticate-auth-user.ts';
 
 const PASSWORD_ALGORITHM = 'pbkdf2-sha256' as const;
@@ -29,7 +30,7 @@ export async function prepareAuthUserRegistration(
         passwordSaltSeed?: string;
     }>,
     staticClients: readonly LoginClientData[] = []
-): Promise<AuthUser> {
+): Promise<PersistedAuthUser> {
     const prepared = await prepareAuthUserRegistrationVerifier(
         request,
         { passwordSaltSeed: facts.passwordSaltSeed },
@@ -44,9 +45,9 @@ export async function prepareAuthUserRegistrationVerifier(
     staticClients: readonly LoginClientData[] = []
 ): Promise<PreparedAuthUserRegistration> {
     const username = validateUsername(request.username);
-    const normalizedUsername = normalizeUsername(username);
+    const normalizedUsername = normalizeAuthUsername(username);
     validatePassword(request.password);
-    if (staticClients.some((client) => normalizeUsername(client.username) === normalizedUsername)) {
+    if (staticClients.some((client) => normalizeAuthUsername(client.username) === normalizedUsername)) {
         throw Object.assign(new Error(`Auth user already exists: ${username}`), {
             code: 'auth-user-exists',
             status: 409
@@ -69,7 +70,7 @@ export async function prepareAuthUserRegistrationVerifier(
 export function materializeAuthUserRegistration(
     prepared: PreparedAuthUserRegistration,
     facts: Readonly<{ clientId: string; capturedAtEpochMs: number; }>
-): AuthUser {
+): PersistedAuthUser {
     return {
         clientId: facts.clientId,
         ...prepared,

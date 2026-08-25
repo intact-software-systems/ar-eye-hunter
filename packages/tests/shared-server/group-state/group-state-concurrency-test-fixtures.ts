@@ -5,7 +5,7 @@ import type {
 } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
 import type { AuditStamp, GroupMember, GroupPresenceAdmission } from '@shared/api/group-types.ts';
 import { createTestGroup } from '../../create-test-group.ts';
-import type { TestAuthenticatedGroupStateService } from './group-state-test-runtime.ts';
+import type { GroupStateTestService } from './group-state-test-runtime.ts';
 import { groupMemberStorageKey, groupRef, groupStorageKey, storagePart, storedEntry } from './mutation/group-mutation-test-runtime.ts';
 
 export const BASE_EPOCH_MS = Date.now();
@@ -31,10 +31,6 @@ export function groupIdempotencyStorageKey(requestId: string): string {
     return `${groupStorageKey()}:${storagePart('request', requestId)}`;
 }
 
-export function groupPresenceSummaryStorageKey(): string {
-    return groupStorageKey();
-}
-
 export function rekey<T>(stored: ReturnType<typeof storedEntry<T>>, key: string) {
     return { ...stored, entry: { ...stored.entry, key } };
 }
@@ -57,7 +53,7 @@ export function memberFor(principalId: string): GroupMember {
 }
 
 export function requireJoinCodeResult(
-    written: Awaited<ReturnType<TestAuthenticatedGroupStateService['rotateGroupJoinCode']>>
+    written: Awaited<ReturnType<GroupStateTestService['rotateGroupJoinCode']>>
 ) {
     return written.result;
 }

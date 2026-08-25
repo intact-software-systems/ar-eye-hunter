@@ -1,6 +1,6 @@
 import type { StateScope } from '@shared/api/state-types.ts';
-import type { PersistedAuthSession } from '../../auth/persistence/auth-persistence-contracts.ts';
 import type { IssuedAuthSession } from '../../auth/persistence/auth-session-types.ts';
+import type { PersistedAuthSession } from '../../auth/persistence/persisted-auth-session.ts';
 
 import type {
     ClientMutationIssuedSessionAuthority,

@@ -8,8 +8,8 @@ import type {
     RuntimeStateConditionalWriteResult,
     RuntimeStateRepositoryLike
 } from '../../../runtime-state/runtime-state-repository.ts';
+import type { JsonWireValue } from '../../protocol/json-wire-identity.ts';
 import { hashAuthSecret } from '../credentials/hash-auth-secret.ts';
-import { decodePersistedAuthSession, type PersistedAuthSession } from './auth-persistence-contracts.ts';
 import type { IssuedAuthSession } from './auth-session-types.ts';
 import {
     AUTH_SESSIONS_BY_SESSION_NAMESPACE,
@@ -17,6 +17,7 @@ import {
     authSessionKey,
     authTokenDigestKey
 } from './auth-storage-keys.ts';
+import { decodePersistedAuthSession, type PersistedAuthSession } from './persisted-auth-session.ts';
 
 export class AuthSessionPersistence extends RuntimeStateJsonStore {
     constructor(repository: RuntimeStateRepositoryLike) {
@@ -111,7 +112,7 @@ export class AuthSessionPersistence extends RuntimeStateJsonStore {
     async readSessionByAccessTokenDigestEntry(
         accessTokenDigest: string
     ): Promise<RuntimeStateEntryRead<PersistedAuthSession>> {
-        const read = await this.getEntryRead<unknown>(
+        const read = await this.getEntryRead<JsonWireValue>(
             AUTH_SESSIONS_BY_TOKEN_NAMESPACE,
             authTokenDigestKey(accessTokenDigest)
         );
@@ -134,7 +135,7 @@ export class AuthSessionPersistence extends RuntimeStateJsonStore {
     async readSessionBySessionIdEntry(
         sessionId: string
     ): Promise<RuntimeStateEntryRead<PersistedAuthSession>> {
-        const read = await this.getEntryRead<unknown>(
+        const read = await this.getEntryRead<JsonWireValue>(
             AUTH_SESSIONS_BY_SESSION_NAMESPACE,
             authSessionKey(sessionId)
         );

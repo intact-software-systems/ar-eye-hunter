@@ -1,9 +1,12 @@
+import type { IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
 import { type toExpiryCommand, type toSessionCleanupCommand } from '@shared-server/rallar-system/group-state/group-presence-mutation-command.ts';
 import {
+    type GroupJoinCodeWritten,
     type GroupMutationDescriptor,
     type GroupStateMutationCommand,
     type GroupStateService,
-    type GroupStateServiceDependencies
+    type GroupStateServiceDependencies,
+    type GroupStateWritten
 } from '@shared-server/rallar-system/group-state/group-state-service-contracts.ts';
 import {
     type GroupMutationComputed,
@@ -32,7 +35,11 @@ import {
 import type { RuntimeStateOptimisticTransactionalRepositoryLike } from '@shared-server/runtime-state/runtime-state-repository.ts';
 import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import type { GroupEvent } from '@shared/api/group-types.ts';
-import type { AuthSession } from '../auth/auth-test-fixtures.ts';
+
+export type GroupStateTestMutationResult =
+    | GroupJoinCodeWritten
+    | GroupMutationReceipt
+    | GroupStateWritten;
 
 type GroupStateTestMutationExecutorDependencies = Readonly<{
     durableService: GroupStateService;
@@ -54,7 +61,11 @@ export class GroupStateTestMutationExecutor {
         this.dependencies = dependencies;
     }
 
-    async executeAuthenticated(descriptor: GroupMutationDescriptor, authority: AuthSession, receiptOnly: boolean): Promise<unknown> {
+    async executeAuthenticated(
+        descriptor: GroupMutationDescriptor,
+        authority: IssuedAuthSession,
+        receiptOnly: boolean
+    ): Promise<GroupStateTestMutationResult> {
         const prepared = await this.dependencies.durableService.prepareMutation(descriptor, authority);
         let computed: GroupMutationComputed | undefined;
         for (let attempt = 1; attempt <= 3; attempt += 1) {
@@ -128,8 +139,28 @@ export class GroupStateTestMutationExecutor {
     async toMutationResult(
         operation: GroupStateMutationCommand['command']['operation'],
         computed: Exclude<GroupMutationComputed, { outcome: 'idempotency-conflict'; }>,
+        receiptOnly: true
+    ): Promise<GroupMutationReceipt>;
+    async toMutationResult(
+        operation: 'rotateGroupJoinCode',
+        computed: Exclude<GroupMutationComputed, { outcome: 'idempotency-conflict'; }>,
+        receiptOnly?: false
+    ): Promise<GroupJoinCodeWritten>;
+    async toMutationResult(
+        operation: Exclude<GroupStateMutationCommand['command']['operation'], 'rotateGroupJoinCode'>,
+        computed: Exclude<GroupMutationComputed, { outcome: 'idempotency-conflict'; }>,
+        receiptOnly?: false
+    ): Promise<GroupStateWritten>;
+    async toMutationResult(
+        operation: GroupStateMutationCommand['command']['operation'],
+        computed: Exclude<GroupMutationComputed, { outcome: 'idempotency-conflict'; }>,
+        receiptOnly: boolean
+    ): Promise<GroupStateTestMutationResult>;
+    async toMutationResult(
+        operation: GroupStateMutationCommand['command']['operation'],
+        computed: Exclude<GroupMutationComputed, { outcome: 'idempotency-conflict'; }>,
         receiptOnly = false
-    ): Promise<any> {
+    ): Promise<GroupStateTestMutationResult> {
         const repository = this.repository();
         const receipt = computed.receipt;
         if (receiptOnly) {
@@ -144,6 +175,9 @@ export class GroupStateTestMutationExecutor {
             throw toGroupMutationRejectionError(computed);
         }
         if (operation === 'rotateGroupJoinCode') {
+            if (receipt.joinCode === null || receipt.joinCodeExpiresAtEpochMs === null) {
+                throw new TypeError('Rotate join-code receipt requires current join-code values');
+            }
             return {
                 status: 'ok',
                 result: {

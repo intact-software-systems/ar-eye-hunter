@@ -1,11 +1,8 @@
 import { hashAuthSecret } from '@shared-server/rallar-system/auth/credentials/hash-auth-secret.ts';
-import type { PersistedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-persistence-contracts.ts';
 import type { IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
+import type { PersistedAuthSession } from '@shared-server/rallar-system/auth/persistence/persisted-auth-session.ts';
 
-export type AuthSession = IssuedAuthSession;
-export type StoredAuthSession = PersistedAuthSession;
-
-export async function persistAuthSession(session: AuthSession): Promise<StoredAuthSession> {
+export async function persistAuthSession(session: IssuedAuthSession): Promise<PersistedAuthSession> {
     return {
         clientId: session.clientId,
         username: session.username,

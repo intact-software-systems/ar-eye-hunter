@@ -1,5 +1,5 @@
 import type { RuntimeStateEntryValue } from '../../../../runtime-state/runtime-state-json-store.ts';
-import { decodePersistedAuthSession, type PersistedAuthSession } from '../../persistence/auth-persistence-contracts.ts';
+import { decodePersistedAuthSession, type PersistedAuthSession } from '../../persistence/persisted-auth-session.ts';
 import { requireIssueSessionLifecycle } from '../../sessions/require-issue-session-lifecycle.ts';
 import type {
     AuthMutationCommand,

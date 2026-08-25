@@ -11,14 +11,10 @@ import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import type { RuntimeStateEntryValue } from '../../../runtime-state/runtime-state-json-store.ts';
 import type { RuntimeStateEntry } from '../../../runtime-state/runtime-state-repository.ts';
 import type { PreparedAuthUserRegistration } from '../login/prepare-auth-user-registration.ts';
-import type {
-    PersistedAgentSessionTicket,
-    PersistedAuthSession,
-    PersistedWebSocketTicket
-} from '../persistence/auth-persistence-contracts.ts';
 import type { IssuedAuthSession } from '../persistence/auth-session-types.ts';
-
-type AuthUser = import('../persistence/auth-user-repository.ts').AuthUser;
+import type { PersistedAuthSession } from '../persistence/persisted-auth-session.ts';
+import type { PersistedAgentSessionTicket, PersistedWebSocketTicket } from '../persistence/persisted-auth-ticket.ts';
+import type { PersistedAuthUser } from '../persistence/persisted-auth-user.ts';
 
 type CommandBase = Readonly<{
     version: 1;
@@ -113,7 +109,7 @@ export type RegisterAuthUserCommand =
     & CommandBase
     & Readonly<{
         kind: 'register-user';
-        user: AuthUser;
+        user: PersistedAuthUser;
     }>;
 
 export type IssueAuthSessionCommand =
@@ -243,14 +239,14 @@ export type AuthSessionEntries = Readonly<{
 export type AuthMutationRead =
     | Readonly<{
         kind: 'register-user';
-        byUsername: RuntimeStateEntryValue<AuthUser> | null;
-        byClientId: RuntimeStateEntryValue<AuthUser> | null;
+        byUsername: RuntimeStateEntryValue<PersistedAuthUser> | null;
+        byClientId: RuntimeStateEntryValue<PersistedAuthUser> | null;
     }>
     | (
         & Readonly<{
             kind: 'issue-session';
-            userByUsername: RuntimeStateEntryValue<AuthUser> | null;
-            userByClientId: RuntimeStateEntryValue<AuthUser> | null;
+            userByUsername: RuntimeStateEntryValue<PersistedAuthUser> | null;
+            userByClientId: RuntimeStateEntryValue<PersistedAuthUser> | null;
         }>
         & AuthSessionEntries
     )

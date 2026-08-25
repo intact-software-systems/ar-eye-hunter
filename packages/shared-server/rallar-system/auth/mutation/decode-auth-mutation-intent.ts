@@ -1,11 +1,14 @@
-import type { JsonWireObject, JsonWireValue } from '../../protocol/json-wire-identity.ts';
-import { decodePersistedAuthSession } from '../persistence/auth-persistence-contracts.ts';
+import { decodeJsonWireValue, type JsonWireObject, type JsonWireValue } from '../../protocol/json-wire-identity.ts';
+import { decodePersistedAuthSession } from '../persistence/persisted-auth-session.ts';
 import type { AuthMutationIntent } from './auth-mutation-contracts.ts';
 
 type AuthMutationIntentCandidate = JsonWireValue | AuthMutationIntent;
 
 export function decodeAuthMutationIntent(input: AuthMutationIntentCandidate): AuthMutationIntent {
-    const intent = requireRecord(input, 'Auth mutation intent');
+    const intent = requireRecord(
+        decodeJsonWireValue(input, 'Auth mutation intent'),
+        'Auth mutation intent'
+    );
     if (intent.version !== 1) {
         throw new TypeError('Auth mutation intent version is invalid');
     }
@@ -159,7 +162,7 @@ function assertNoPlaintextAuthFields(value: JsonWireValue): void {
     }
 }
 
-function requireRecord(value: AuthMutationIntentCandidate, label: string): JsonWireObject {
+function requireRecord(value: JsonWireValue, label: string): JsonWireObject {
     if (
         typeof value !== 'object' ||
         value === null ||
@@ -186,13 +189,13 @@ function requireString(value: JsonWireValue, label: string): asserts value is st
 }
 
 function requirePositiveInteger(value: JsonWireValue, label: string): asserts value is number {
-    if (!Number.isSafeInteger(value) || (value as number) <= 0) {
+    if (typeof value !== 'number' || !Number.isSafeInteger(value) || value <= 0) {
         throw new TypeError(`${label} is invalid`);
     }
 }
 
 function requireNonNegativeInteger(value: JsonWireValue, label: string): asserts value is number {
-    if (!Number.isSafeInteger(value) || (value as number) < 0) {
+    if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) {
         throw new TypeError(`${label} is invalid`);
     }
 }

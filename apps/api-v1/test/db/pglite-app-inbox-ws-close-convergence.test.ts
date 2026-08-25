@@ -15,13 +15,14 @@ import { GROUP_PRESENCE_SUMMARY_TOPIC as APP_OUTBOX_GROUP_PRESENCE_SUMMARY_TOPIC
 import { toAuthorisedWsClientConnectEnqueue } from '@shared-server/rallar-system/client-state/inbox/authorised-ws-client-app-inbox.ts';
 import type { PGliteSql } from '../../src/db/pglite-sql-adapter.ts';
 import { toResilienceDto } from '../api-v1-test-queue-resilience.ts';
+import { waitForPGliteQueueRow } from './pglite-app-inbox-test-runtime.ts';
 import {
     assertPGliteQueuedTypes as assertQueuedTypes,
     assertPGliteQueueRetriedAndCompleted as assertQueueRetriedAndCompleted,
     createPGliteAppInboxWsCloseHarness as createHarness,
     pauseNextPGliteLifecycleRead as pauseNextLifecycleRead
 } from './pglite-app-inbox-ws-close-test-harness.ts';
-import { FUTURE_MS, waitForPGliteQueueRow, withPGliteSql } from './pglite-auth-test-harness.ts';
+import { FUTURE_MS, withPGliteSql } from './pglite-auth-test-harness.ts';
 
 const SCOPE: StateScope = { applicationId: 'ar-eye-hunter', workspaceId: 'default' };
 

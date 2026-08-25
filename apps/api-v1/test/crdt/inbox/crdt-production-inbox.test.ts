@@ -24,7 +24,8 @@ import { createApiCrdtInboxFactory } from '../../../src/crdt/create-api-crdt-inb
 import { createApiCrdtInboxService } from '../../../src/crdt/create-api-crdt-inbox-service.ts';
 import type { PGliteSql } from '../../../src/db/pglite-sql-adapter.ts';
 import { toResilienceDto } from '../../api-v1-test-queue-resilience.ts';
-import { readPGliteDatabaseEpochMs, waitForPGliteQueueRow, withPGliteSql } from '../../db/pglite-auth-test-harness.ts';
+import { waitForPGliteQueueRow } from '../../db/pglite-app-inbox-test-runtime.ts';
+import { readPGliteDatabaseEpochMs, withPGliteSql } from '../../db/pglite-auth-test-harness.ts';
 
 const DOCUMENT: RallarCrdtDocumentRef = {
     applicationId: 'app-1',
@@ -486,33 +487,19 @@ function withInjectedTransactionFailure(
 
 function executeSql(
     sql: PSqlSql,
-    parts: unknown,
-    values: readonly unknown[]
+    parts: TemplateStringsArray | readonly PSqlParameter[],
+    values: readonly PSqlParameter[]
 ): object | Promise<object> {
-    requirePSqlParameters(values);
     if (isTemplateStringsArray(parts)) {
         return sql<object>(parts, ...values);
     }
-    requirePSqlParameters(parts);
     return sql(parts);
 }
 
-function isTemplateStringsArray(value: unknown): value is TemplateStringsArray {
+function isTemplateStringsArray(
+    value: TemplateStringsArray | readonly PSqlParameter[]
+): value is TemplateStringsArray {
     return Array.isArray(value) && 'raw' in value;
-}
-
-function requirePSqlParameters(
-    value: unknown
-): asserts value is readonly PSqlParameter[] {
-    if (
-        !Array.isArray(value) ||
-        !value.every((candidate) =>
-            candidate === null || candidate === undefined ||
-            ['string', 'number', 'boolean', 'bigint', 'object'].includes(typeof candidate)
-        )
-    ) {
-        throw new TypeError('Expected a current PSql parameter list');
-    }
 }
 
 class RecordingOutboxQueueReader extends OutboxQueueReader {

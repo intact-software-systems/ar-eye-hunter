@@ -1,7 +1,8 @@
 import { Hono } from 'jsr:@hono/hono@4.11.9';
 import assert from 'node:assert/strict';
 
-import type { IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
+import type { IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
+import { decodeJsonWireValue, type JsonWireObject, type JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import {
     RALLAR_CRDT_OPERATION_VERSION,
@@ -117,12 +118,12 @@ Deno.test('durable CRDT catch-up serves the log for an authorized caller', async
     assert.equal(response.status, 200);
     const body = await readJsonRecord(response);
     assert.equal(body.ok, true);
-    const result = requireRecord(body.result, 'CRDT catch-up result');
-    const page = requireRecord(result.page, 'CRDT catch-up page');
+    const result = decodeJsonWireObject(body.result, 'CRDT catch-up result');
+    const page = decodeJsonWireObject(result.page, 'CRDT catch-up page');
     const records = requireArray(page.records, 'CRDT catch-up records');
-    const record = requireRecord(records[0], 'CRDT catch-up record');
-    const recordUpdate = requireRecord(record.update, 'CRDT catch-up update');
-    const snapshot = requireRecord(result.snapshot, 'CRDT catch-up snapshot');
+    const record = decodeJsonWireObject(records[0], 'CRDT catch-up record');
+    const recordUpdate = decodeJsonWireObject(record.update, 'CRDT catch-up update');
+    const snapshot = decodeJsonWireObject(result.snapshot, 'CRDT catch-up snapshot');
     assert.equal(recordUpdate.updateId, 'update-1');
     assert.equal(snapshot.snapshotId, 'snapshot-1');
     assert.equal(authorizeInputs.length, 1);
@@ -245,7 +246,7 @@ function createCatchUpSnapshot(): RallarCrdtSnapshotEnvelope {
     };
 }
 
-async function postCatchUp(app: Hono, body: unknown): Promise<Response> {
+async function postCatchUp(app: Hono, body: JsonWireValue): Promise<Response> {
     return await app.request('/api/crdt/catch-up', {
         method: 'POST',
         headers: {
@@ -257,19 +258,19 @@ async function postCatchUp(app: Hono, body: unknown): Promise<Response> {
     });
 }
 
-async function readJsonRecord(response: Response): Promise<Record<string, unknown>> {
-    const value: unknown = await response.json();
-    return requireRecord(value, 'CRDT route response');
+async function readJsonRecord(response: Response): Promise<JsonWireObject> {
+    const value = decodeJsonWireValue(await response.json(), 'CRDT route response');
+    return decodeJsonWireObject(value, 'CRDT route response');
 }
 
-function requireRecord(value: unknown, label: string): Record<string, unknown> {
-    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+function decodeJsonWireObject(value: JsonWireValue, label: string): JsonWireObject {
+    if (value === null || typeof value !== 'object' || Array.isArray(value)) {
         throw new TypeError(`${label} must be an object`);
     }
-    return Object.fromEntries(Object.entries(value));
+    return value as JsonWireObject;
 }
 
-function requireArray(value: unknown, label: string): readonly unknown[] {
+function requireArray(value: JsonWireValue, label: string): readonly JsonWireValue[] {
     if (!Array.isArray(value)) {
         throw new TypeError(`${label} must be an array`);
     }

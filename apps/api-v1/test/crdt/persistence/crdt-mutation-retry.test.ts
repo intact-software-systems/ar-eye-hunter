@@ -20,7 +20,8 @@ import { decodeCrdtMutationResult } from '@shared-server/rallar-system/crdt/muta
 import { createApiCrdtInboxService } from '../../../src/crdt/create-api-crdt-inbox-service.ts';
 import type { PGliteSql } from '../../../src/db/pglite-sql-adapter.ts';
 import { toResilienceDto } from '../../api-v1-test-queue-resilience.ts';
-import { waitForPGliteQueueRow, withPGliteSql } from '../../db/pglite-auth-test-harness.ts';
+import { waitForPGliteQueueRow } from '../../db/pglite-app-inbox-test-runtime.ts';
+import { withPGliteSql } from '../../db/pglite-auth-test-harness.ts';
 
 import { queueNow, update, withCompetingWrite } from '../crdt-api-test-fixtures.ts';
 
