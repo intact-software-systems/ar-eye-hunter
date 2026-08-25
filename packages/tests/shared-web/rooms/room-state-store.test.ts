@@ -112,6 +112,29 @@ describe('room state store summaries', () => {
         }));
     });
 
+    it('shares the browser session and cache repositories across facade instances', async () => {
+        const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
+        const firstFacade = createRallarFacade();
+        const secondFacade = createRallarFacade();
+        const room = createRoomSnapshot({
+            groupId: 'shared-room',
+            displayName: 'Shared Room'
+        });
+        stateMocks.repositoriesConfigured = true;
+        stateMocks.groups.push(room);
+        firstFacade.setDefaults({ applicationId: 'app-1', workspaceId: 'workspace-1' });
+        secondFacade.setDefaults({ applicationId: 'app-1', workspaceId: 'workspace-1' });
+
+        expect(firstFacade.auth.restore()).toEqual(stateMocks.session);
+        expect(secondFacade.auth.restore()).toEqual(stateMocks.session);
+        expect(firstFacade.rooms.state().rooms.map((summary) => summary.roomId)).toEqual([
+            'shared-room'
+        ]);
+        expect(secondFacade.rooms.state().rooms.map((summary) => summary.roomId)).toEqual([
+            'shared-room'
+        ]);
+    });
+
     it('orders active room summaries by display name and omits archived rooms', async () => {
         const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
         const facade = createRallarFacade();
