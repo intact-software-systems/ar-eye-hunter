@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { DirectRallarFacade } from '../../../apps/rallar-black-box/src/diagnostics/direct-rallar-contracts.ts';
+import type { DirectRallarFacade } from '../../../apps/rallar-black-box/src/direct-rallar-contracts.ts';
 import {
     runDirectRallarGroupCreate,
     runDirectRallarGroupJoin,
@@ -7,7 +7,7 @@ import {
     runDirectRallarWsSend,
     runDirectRallarWsSubscribe
 } from '../../../apps/rallar-black-box/src/direct-rallar-operations.ts';
-import type { RallarMessage, RallarMessageHandler, RallarMessageSendResult } from '../../../packages/shared-web/browser/rallar.ts';
+import type { RallarMessage, RallarMessageHandler } from '../../../packages/shared-web/browser/rallar.ts';
 import type { AuthSession } from '../../../packages/shared/api/api-config.ts';
 
 const session: AuthSession = {
@@ -17,10 +17,6 @@ const session: AuthSession = {
     sessionId: 'alice-session',
     expiresAtEpochMs: Date.now() + 60_000
 };
-
-interface TestWsPayload {
-    readonly text: string;
-}
 
 describe('direct Rallar operations', () => {
     it('refuses direct operations when the provider is simulated', async () => {
@@ -368,7 +364,7 @@ describe('direct Rallar operations', () => {
 
     it('subscribes and sends WS messages through direct Rallar operations', async () => {
         const calls: string[] = [];
-        let subscribedHandler: RallarMessageHandler<TestWsPayload> | undefined;
+        let subscribedHandler: RallarMessageHandler<unknown> | undefined;
         const facade: DirectRallarFacade = {
             configure(config) {
                 calls.push(`configure:${config.apiBaseUrl}`);
@@ -433,16 +429,17 @@ describe('direct Rallar operations', () => {
                 ws: {
                     async send(input) {
                         calls.push(`send:${String(input.roomId)}:${String(input.typeId)}`);
-                        return toTestDouble<RallarMessageSendResult>({
-                            status: 'enqueued'
-                        });
+                        return {
+                            status: 'enqueued',
+                            message: input
+                        };
                     },
                     onMessage(selector, handler) {
                         const selectorLabel = typeof selector === 'string'
                             ? selector
                             : `${String(selector.topicId)}:${String(selector.typeId)}`;
                         calls.push(`subscribe:${selectorLabel}`);
-                        subscribedHandler = toTestWsMessageHandler(handler);
+                        subscribedHandler = handler;
                         return () => calls.push('unsubscribe');
                     }
                 }
@@ -471,18 +468,16 @@ describe('direct Rallar operations', () => {
             timeoutMs: 5000
         };
 
-        const received: RallarMessage<TestWsPayload>[] = [];
+        const received: Record<string, unknown>[] = [];
         const subscribeResult = await runDirectRallarWsSubscribe(
             context,
-            {
-                selector: { typeId: 'room.manual.message', topicId: 'room.manual.message' },
-                handler: (message: RallarMessage<TestWsPayload>) => {
-                    received.push(message);
-                }
+            { typeId: 'room.manual.message', topicId: 'room.manual.message' },
+            (message) => {
+                received.push(message);
             },
             async () => facade
         );
-        await subscribedHandler?.(toTestDouble<RallarMessage<TestWsPayload>>({
+        await subscribedHandler?.(toTestDouble<RallarMessage<unknown>>({
             typeId: 'room.manual.message',
             topicId: 'room.manual.message',
             payload: {
@@ -529,10 +524,4 @@ describe('direct Rallar operations', () => {
 
 function toTestDouble<T>(members: Partial<T>): T {
     return members as T;
-}
-
-function toTestWsMessageHandler<T>(
-    handler: RallarMessageHandler<T>
-): RallarMessageHandler<TestWsPayload> {
-    return handler as object as RallarMessageHandler<TestWsPayload>;
 }
