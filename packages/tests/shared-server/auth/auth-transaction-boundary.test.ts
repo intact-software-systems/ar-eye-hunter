@@ -1,20 +1,16 @@
+import { Temporal } from '@js-temporal/polyfill';
 import { expect, it, vi } from 'vitest';
 
 import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
 import { AuthUserRepository, type AuthUser } from '@shared-server/rallar-system/auth/persistence/auth-user-repository.ts';
-import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
+import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 
+import { createAppInboxTestResilience } from '../app-inbox-resource-fixtures.ts';
 import { FakeRuntimeStateRepository } from '../fake-runtime-state-repository.ts';
-import {
-    createAuthInboxTestResilience,
-    createAuthInboxTestRuntime,
-    readEntries,
-    waitForAuthInboxEntry,
-    type AuthInboxTestRuntime
-} from './auth-app-inbox-test-runtime.ts';
+import { createAuthInboxTestRuntime, type AuthInboxTestRuntime } from './auth-app-inbox-test-runtime.ts';
 
-const serviceId = 'auth-test-service';
+const SERVICE_ID = 'auth-test-service';
 
 it(
     'commits issued session, durable result, and completion in one AppInbox transaction',
@@ -36,7 +32,7 @@ async function commitsIssuedSessionAndResultAtomically(): Promise<void> {
     const credentialSecret = 'test-auth-secret-0123456789abcdef-extra';
     const fixture = createAuthInboxTestRuntime({
         runtimeRepository,
-        serviceId,
+        serviceId: SERVICE_ID,
         credentialSecret
     });
     const pending = fixture.service.issueSession({
@@ -50,7 +46,7 @@ async function commitsIssuedSessionAndResultAtomically(): Promise<void> {
         },
         ttlMs: 60_000
     });
-    await waitForAuthInboxEntry(fixture.queue);
+    await fixture.queue.waitForEntryCount();
     await dequeue(fixture);
     const result = await pending;
 
@@ -75,7 +71,7 @@ async function expectDurableIssueResult({
     accessToken,
     credentialSecret
 }: DurableIssueResultExpectation): Promise<void> {
-    const entries = await readEntries(fixture.queue);
+    const entries = await fixture.queue.readEntries();
     expect(entries).toHaveLength(1);
     expect(entries[0].status).toBe(EntityStatus.COMPLETED);
     expect(entries[0].resource).not.toContain(accessToken);
@@ -90,7 +86,7 @@ async function deniesSessionWhenUserIsDisabledAfterEnqueue(): Promise<void> {
     const runtimeRepository = new FakeRuntimeStateRepository();
     const fixture = createAuthInboxTestRuntime({
         runtimeRepository,
-        serviceId,
+        serviceId: SERVICE_ID,
         credentialSecret: 'disabled-user-secret-0123456789abcdef'
     });
     const user = createRegisteredUser('client-disabled', 'disabled-user');
@@ -103,7 +99,7 @@ async function deniesSessionWhenUserIsDisabledAfterEnqueue(): Promise<void> {
         ttlMs: 60_000,
         authority: registeredUserAuthority(user)
     });
-    await waitForAuthInboxEntry(fixture.queue);
+    await fixture.queue.waitForEntryCount();
     await users.putUser({ ...user, status: 'disabled', updatedAtEpochMs: 1_001 });
     await dequeue(fixture);
 
@@ -133,20 +129,26 @@ async function rereadsUserPolicyAfterRetryConflict(): Promise<void> {
         authority: registeredUserAuthority(fixture.user)
     });
 
-    await releaseConflictForRetry(fixture);
+    const releasedForRetry = await releaseConflictForRetry(fixture);
     await fixture.users.putUser({
         ...fixture.user,
         status: 'disabled',
         updatedAtEpochMs: 1_001
     });
-    await new Promise((resolve) => setTimeout(resolve, 110));
+    await fixture.auth.queue.enqueue({
+        ...releasedForRetry,
+        dequeueAudit: {
+            ...releasedForRetry.dequeueAudit,
+            nextTs: Temporal.Now.instant().subtract({ milliseconds: 1 })
+        }
+    });
     await dequeue(fixture.auth);
 
     const result = await pending;
     expect(result.left).toMatchObject({ status: 403 });
     expect(fixture.conflict.injected).toBe(true);
     expect(fixture.conflict.rollbackCount).toBe(1);
-    expect(policyReadCalls(userRead.mock.calls)).toHaveLength(4);
+    expect(countPolicyReadCalls(userRead.mock.calls)).toBe(4);
     await expectFailedRetry(fixture);
 }
 
@@ -173,28 +175,29 @@ async function createRetryFixture(): Promise<RetryFixture> {
     };
     const auth = createAuthInboxTestRuntime({
         runtimeRepository,
-        serviceId,
+        serviceId: SERVICE_ID,
         credentialSecret: 'retry-disabled-secret-0123456789abcdef',
         databaseOptions: { onTransactionRollback: () => void (conflict.rollbackCount += 1) }
     });
     return { runtimeRepository, auth, users, user, conflict };
 }
 
-async function releaseConflictForRetry(fixture: RetryFixture): Promise<void> {
-    await waitForAuthInboxEntry(fixture.auth.queue);
+async function releaseConflictForRetry(fixture: RetryFixture): Promise<ResourceEntry> {
+    await fixture.auth.queue.waitForEntryCount();
     await fixture.auth.reader.dequeueInbox(
         InboxQueueReader.INBOX_DEQUEUE_TYPES,
-        createAuthInboxTestResilience(100)
+        createAppInboxTestResilience(100)
     );
-    const [releasedForRetry] = await readEntries(fixture.auth.queue);
+    const [releasedForRetry] = await fixture.auth.queue.readEntries();
     expect(releasedForRetry).toMatchObject({
         status: EntityStatus.RETRY,
         dequeueAudit: { attempts: 1 }
     });
+    return releasedForRetry;
 }
 
 async function expectFailedRetry(fixture: RetryFixture): Promise<void> {
-    const [failed] = await readEntries(fixture.auth.queue);
+    const [failed] = await fixture.auth.queue.readEntries();
     expect(failed).toMatchObject({
         status: EntityStatus.FAILED,
         dequeueAudit: { attempts: 2 }
@@ -240,10 +243,12 @@ function registeredUserAuthority(user: AuthUser) {
     };
 }
 
-function policyReadCalls(calls: readonly (readonly unknown[])[]): readonly unknown[] {
+function countPolicyReadCalls(
+    calls: readonly (readonly [namespace: string, key: string])[]
+): number {
     return calls.filter(
         ([namespace]) => namespace === 'auth-users:by-username' || namespace === 'auth-users:by-client-id'
-    );
+    ).length;
 }
 
 function sessionStorageKeys(runtimeRepository: FakeRuntimeStateRepository): readonly string[] {
@@ -255,6 +260,6 @@ function sessionStorageKeys(runtimeRepository: FakeRuntimeStateRepository): read
 async function dequeue(fixture: AuthInboxTestRuntime): Promise<void> {
     await fixture.reader.dequeueInbox(
         InboxQueueReader.INBOX_DEQUEUE_TYPES,
-        createAuthInboxTestResilience()
+        createAppInboxTestResilience()
     );
 }

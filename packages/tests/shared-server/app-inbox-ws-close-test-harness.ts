@@ -1,24 +1,19 @@
+import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
+import type { IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
+import type { ClientStateService } from '@shared-server/rallar-system/client-state/client-state-service-contracts.ts';
+import { createClientStateService } from '@shared-server/rallar-system/client-state/client-state-service.ts';
+import { AppClientInboxService } from '@shared-server/rallar-system/client-state/inbox/app-client-inbox-service.ts';
+import { ClientStateRepository } from '@shared-server/rallar-system/client-state/persistence/client-state-repository.ts';
+import type { GroupStateService } from '@shared-server/rallar-system/group-state/group-state-service-contracts.ts';
+import { createGroupStateService } from '@shared-server/rallar-system/group-state/group-state-service.ts';
+import { GroupStateInboxService } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-service.ts';
+import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
 import { createTestClientStateRepository, createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 
-import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
-
-import { type IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
-
-import { ClientStateRepository } from '@shared-server/rallar-system/client-state/persistence/client-state-repository.ts';
-
-import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
-
-import { AppClientInboxService } from '@shared-server/rallar-system/client-state/inbox/app-client-inbox-service.ts';
-
-import { type ClientStateService } from '@shared-server/rallar-system/client-state/client-state-service-contracts.ts';
-import { createClientStateService } from '@shared-server/rallar-system/client-state/client-state-service.ts';
-import { type GroupStateService } from '@shared-server/rallar-system/group-state/group-state-service-contracts.ts';
-import { createGroupStateService } from '@shared-server/rallar-system/group-state/group-state-service.ts';
-import { GroupStateInboxService } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-service.ts';
+import { TestResourceInbox, TestResourceInboxResults } from './app-inbox-resource-fixtures.ts';
 import { createAppInboxTestDatabase } from './app-inbox-test-database.ts';
-import { TestResourceInbox, TestResourceInboxResults } from './auth/auth-app-inbox-test-runtime.ts';
 import { FakeRuntimeStateRepository } from './fake-runtime-state-repository.ts';
 
 // Anchor the seed clock to the real processing clock. The AppInbox stamps and
@@ -161,21 +156,19 @@ export function pauseNextLifecycleRead(
 ): Readonly<{ reached: Promise<void>; resume(): void; }> {
     const lifecycle = state.sessionGenerationLifecycle;
     const originalRead = lifecycle.read.bind(lifecycle);
-    let release!: () => void;
-    let announce!: () => void;
-    const reached = new Promise<void>((resolve) => (announce = resolve));
-    const resumed = new Promise<void>((resolve) => (release = resolve));
+    const reached = Promise.withResolvers<void>();
+    const resumed = Promise.withResolvers<void>();
     let pause = true;
     lifecycle.read = async (identity) => {
         const read = await originalRead(identity);
         if (pause) {
             pause = false;
-            announce();
-            await resumed;
+            reached.resolve();
+            await resumed.promise;
         }
         return read;
     };
-    return { reached, resume: release };
+    return { reached: reached.promise, resume: resumed.resolve };
 }
 
 function issuedSession(clientId: string, sessionId: string): IssuedAuthSession {

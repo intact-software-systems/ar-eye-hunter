@@ -1,26 +1,20 @@
+import { describe, expect, it } from 'vitest';
+
+import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
+import { createAuthMutationService } from '@shared-server/rallar-system/auth/auth-mutation-service.ts';
+import { createHmacAuthCredentialIssuer } from '@shared-server/rallar-system/auth/credentials/auth-credential-issuer.ts';
+import { hashAuthSecret } from '@shared-server/rallar-system/auth/credentials/hash-auth-secret.ts';
+import { AppAuthInboxService } from '@shared-server/rallar-system/auth/inbox/app-auth-inbox-service.ts';
+import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
+import { createGroupStateService } from '@shared-server/rallar-system/group-state/group-state-service.ts';
+import { GroupStateInboxService } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-service.ts';
+import type { JsonWireObject, JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import { createTestClientStateRepository, createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
-import { describe, expect, it } from 'vitest';
 
-import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
-
-import { ClientStateRepository } from '@shared-server/rallar-system/client-state/persistence/client-state-repository.ts';
-
-import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
-import { AppAuthInboxService } from '@shared-server/rallar-system/auth/inbox/app-auth-inbox-service.ts';
-import { GroupStateInboxService, type GroupCreateAppInboxPayload } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-service.ts';
-import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
-
-import { createHmacAuthCredentialIssuer } from '@shared-server/rallar-system/auth/credentials/auth-credential-issuer.ts';
-
-import { createAuthMutationService } from '@shared-server/rallar-system/auth/auth-mutation-service.ts';
-
-import { hashAuthSecret } from '@shared-server/rallar-system/auth/credentials/hash-auth-secret.ts';
-import { createGroupStateService } from '@shared-server/rallar-system/group-state/group-state-service.ts';
-import type { JsonWireObject, JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
+import { createAppInboxTestResilience, TestResourceInbox, TestResourceInboxResults } from './app-inbox-resource-fixtures.ts';
 import { createAppInboxTestDatabase } from './app-inbox-test-database.ts';
-import { createResilience, readEntries, TestResourceInbox, TestResourceInboxResults, waitForQueuedEntry } from './auth/auth-app-inbox-test-runtime.ts';
 import { createClientStatePhaseTestDriver, failNextClientStateTestOutboxWrite } from './client-state/client-state-test-runtime.ts';
 import { FakeRuntimeStateRepository } from './fake-runtime-state-repository.ts';
 
@@ -172,12 +166,18 @@ describe('AppInbox expired row replacement', () => {
                 normalizedUsername: 'alice'
             }
         });
-        await waitForQueuedEntry(queue);
-        await reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience(1));
-        const [afterFirstDequeue] = await readEntries(queue);
+        await queue.waitForEntryCount();
+        await reader.dequeueInbox(
+            InboxQueueReader.INBOX_DEQUEUE_TYPES,
+            createAppInboxTestResilience(1)
+        );
+        const [afterFirstDequeue] = await queue.readEntries();
         if (afterFirstDequeue?.status === EntityStatus.RETRY) {
             await new Promise((resolve) => setTimeout(resolve, 2));
-            await reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
+            await reader.dequeueInbox(
+                InboxQueueReader.INBOX_DEQUEUE_TYPES,
+                createAppInboxTestResilience()
+            );
         }
         await expect(pending).resolves.toMatchObject({
             right: { sessionId, accessToken }
@@ -190,7 +190,7 @@ describe('AppInbox expired row replacement', () => {
         expect(after[1][0]?.revision).toBe(1);
         expect(rollbackCount).toBe(1);
         expect(rollbackPreservedExpiredIndexes).toBe(true);
-        expect((await readEntries(queue))[0]).toMatchObject({
+        expect((await queue.readEntries())[0]).toMatchObject({
             status: EntityStatus.COMPLETED,
             dequeueAudit: { attempts: 2 }
         });
@@ -268,12 +268,15 @@ describe('AppInbox expired row replacement', () => {
                     },
                     owner
                 );
-                await waitForQueuedEntry(queue, minimumEntries);
+                await queue.waitForEntryCount(minimumEntries);
                 return { pending };
             };
 
             const seeded = await create('seed-group', 'Old room');
-            await reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
+            await reader.dequeueInbox(
+                InboxQueueReader.INBOX_DEQUEUE_TYPES,
+                createAppInboxTestResilience()
+            );
             await expect(seeded.pending).resolves.toMatchObject({
                 right: { status: 'created' }
             });
@@ -322,13 +325,19 @@ describe('AppInbox expired row replacement', () => {
                 }
             };
             const replacement = await create('replace-group', 'New room');
-            await reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience(1));
-            const afterFirst = (await readEntries(queue)).find(
+            await reader.dequeueInbox(
+                InboxQueueReader.INBOX_DEQUEUE_TYPES,
+                createAppInboxTestResilience(1)
+            );
+            const afterFirst = (await queue.readEntries()).find(
                 (entry) => entry.status === EntityStatus.RETRY || entry.dequeueAudit.attempts > 1
             );
             if (afterFirst?.status === EntityStatus.RETRY) {
                 await new Promise((resolve) => setTimeout(resolve, 2));
-                await reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
+                await reader.dequeueInbox(
+                    InboxQueueReader.INBOX_DEQUEUE_TYPES,
+                    createAppInboxTestResilience()
+                );
             }
             await expect(replacement.pending).resolves.toMatchObject({
                 right: { status: 'created' }
@@ -380,7 +389,7 @@ describe('AppInbox expired row replacement', () => {
             expect(database.groupEventStore.events).toHaveLength(2);
             expect(database.outboxEntries.size).toBe(2);
             expect(
-                (await readEntries(queue)).some(
+                (await queue.readEntries()).some(
                     (entry) => entry.status === EntityStatus.COMPLETED && entry.dequeueAudit.attempts === 2
                 )
             ).toBe(true);

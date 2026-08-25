@@ -1,26 +1,20 @@
-import { createTestClientStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
-import { expect, it } from 'vitest';
-
-import type { ClientPrincipalRef } from '@shared/api/client-types.ts';
-import type { StateScope } from '@shared/api/state-types.ts';
-import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
-
-import { ClientStateRepository } from '@shared-server/rallar-system/client-state/persistence/client-state-repository.ts';
-
-import type { ClientStateWritten } from '@shared-server/rallar-system/client-state/client-state-service-contracts.ts';
-
-import { createClientStateService } from '@shared-server/rallar-system/client-state/client-state-service.ts';
+import { expect, it, vi } from 'vitest';
 
 import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
+import { createClientStateService } from '@shared-server/rallar-system/client-state/client-state-service.ts';
 import {
     type ClientExpiredSessionsAppInboxPayload,
     type ClientSessionConnectAppInboxPayload
 } from '@shared-server/rallar-system/client-state/inbox/app-client-inbox-contracts.ts';
 import { AppClientInboxService } from '@shared-server/rallar-system/client-state/inbox/app-client-inbox-service.ts';
 import { toAuthenticatedClientMutationContextId } from '@shared-server/rallar-system/client-state/inbox/authenticated-client-mutation-ingress.ts';
+import { createTestClientStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
+import type { ClientPrincipalRef } from '@shared/api/client-types.ts';
+import type { StateScope } from '@shared/api/state-types.ts';
+import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 
+import { createAppInboxTestResilience } from '../app-inbox-resource-fixtures.ts';
 import { createAppInboxTestDatabase } from '../app-inbox-test-database.ts';
-import { createResilience } from '../auth/auth-app-inbox-test-runtime.ts';
 import { FakeRuntimeStateRepository } from '../fake-runtime-state-repository.ts';
 import {
     ClientExpiryTestResourceInbox,
@@ -69,6 +63,7 @@ it(
         await seedClientExpirySession(service, reader, { expiresAtEpochMs, runtimeRepository });
 
         const expired = await processClientInbox(
+            queue,
             reader,
             () => service.processExpiredSessions(expiresAtEpochMs + 1)
         );
@@ -330,28 +325,32 @@ async function seedClientExpirySession(
     await seeded;
 }
 
-async function processClientInbox<R>(reader: InboxQueueReader, run: () => Promise<R>): Promise<R> {
+async function processClientInbox<R>(
+    queue: ClientExpiryTestResourceInbox,
+    reader: InboxQueueReader,
+    run: () => Promise<R>
+): Promise<R> {
+    const minimumEntries = (await readClientExpiryTestEntries(queue)).length + 1;
     const pending = run();
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await waitForQueueEntryCount(queue, minimumEntries);
     await dequeueClientInbox(reader);
     return await pending;
 }
 
 async function dequeueClientInbox(reader: InboxQueueReader): Promise<void> {
-    await reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
+    await reader.dequeueInbox(
+        InboxQueueReader.INBOX_DEQUEUE_TYPES,
+        createAppInboxTestResilience()
+    );
 }
 
 async function waitForQueueEntryCount(
     queue: ClientExpiryTestResourceInbox,
     count: number
 ): Promise<void> {
-    for (let attempt = 0; attempt < 20; attempt += 1) {
-        if ((await readClientExpiryTestEntries(queue)).length >= count) {
-            return;
-        }
-        await new Promise((resolve) => setTimeout(resolve, 0));
-    }
-    throw new Error(`Expected at least ${count} app inbox entries`);
+    await vi.waitFor(async () => {
+        expect((await readClientExpiryTestEntries(queue)).length).toBeGreaterThanOrEqual(count);
+    }, { timeout: 2_000 });
 }
 
 async function seedConnectedSession(

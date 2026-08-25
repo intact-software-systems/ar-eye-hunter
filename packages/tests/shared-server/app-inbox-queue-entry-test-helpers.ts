@@ -1,9 +1,11 @@
 import { Temporal } from '@js-temporal/polyfill';
+import { vi } from 'vitest';
 
 import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
-import { createResilience, readEntries, type TestResourceInbox } from './auth/auth-app-inbox-test-runtime.ts';
+
+import { createAppInboxTestResilience, type TestResourceInbox } from './app-inbox-resource-fixtures.ts';
 
 const DELAYED_UNTIL_EPOCH_MS = 1_800_001_000_000;
 
@@ -25,7 +27,10 @@ export function groupPresenceFacts(
 }
 
 export async function processNext(reader: InboxQueueReader): Promise<void> {
-    await reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
+    await reader.dequeueInbox(
+        InboxQueueReader.INBOX_DEQUEUE_TYPES,
+        createAppInboxTestResilience()
+    );
 }
 
 export async function delayEntry(
@@ -57,7 +62,7 @@ export async function requireQueuedType(
     queue: TestResourceInbox,
     type: AppInboxType
 ): Promise<ResourceEntry> {
-    const entry = (await readEntries(queue)).find((candidate) => readType(candidate) === type);
+    const entry = (await queue.readEntries()).find((candidate) => readType(candidate) === type);
     if (!entry) {
         throw new Error(`Expected queued AppInbox type ${type}`);
     }
@@ -68,20 +73,19 @@ export async function waitForQueuedType(
     queue: TestResourceInbox,
     type: AppInboxType
 ): Promise<ResourceEntry> {
-    for (let attempt = 0; attempt < 50; attempt += 1) {
-        const entry = (await readEntries(queue)).find((candidate) => readType(candidate) === type && candidate.status === EntityStatus.NEW);
+    return await vi.waitFor(async () => {
+        const entry = (await queue.readEntries()).find((candidate) => readType(candidate) === type && candidate.status === EntityStatus.NEW);
         if (entry) {
             return entry;
         }
-        await new Promise((resolve) => setTimeout(resolve, 0));
-    }
-    throw new Error(`Expected queued AppInbox type ${type}`);
+        throw new Error(`Expected queued AppInbox type ${type}`);
+    }, { timeout: 2_000 });
 }
 
 export async function queuedTypes(
     queue: TestResourceInbox
 ): Promise<readonly AppInboxType[]> {
-    return (await readEntries(queue)).map(readType);
+    return (await queue.readEntries()).map(readType);
 }
 
 function readType(entry: ResourceEntry): AppInboxType {

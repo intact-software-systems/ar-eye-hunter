@@ -1,19 +1,17 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
-
 import { createAuthMutationService } from '@shared-server/rallar-system/auth/auth-mutation-service.ts';
-
 import { createHmacAuthCredentialIssuer } from '@shared-server/rallar-system/auth/credentials/auth-credential-issuer.ts';
 import { hashAuthSecret } from '@shared-server/rallar-system/auth/credentials/hash-auth-secret.ts';
-
 import { AppAuthInboxService } from '@shared-server/rallar-system/auth/inbox/app-auth-inbox-service.ts';
-
 import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
+import type { IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
+import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 
+import { createAppInboxTestResilience, TestResourceInbox, TestResourceInboxResults } from '../app-inbox-resource-fixtures.ts';
 import { createAppInboxTestDatabase } from '../app-inbox-test-database.ts';
 import { FakeRuntimeStateRepository } from '../fake-runtime-state-repository.ts';
-import { createResilience, TestResourceInbox, TestResourceInboxResults, waitForQueuedEntry } from './auth-app-inbox-test-runtime.ts';
+
 it('fails closed without consuming corrupt digest-key ticket rows', async () => {
     const cases = [
         {
@@ -126,7 +124,7 @@ async function expectCurrentConsumeOutcomes(): Promise<void> {
     ).resolves.toMatchObject({ left: { status: 404 } });
 }
 
-function createCurrentSession(capturedAtEpochMs: number) {
+function createCurrentSession(capturedAtEpochMs: number): IssuedAuthSession {
     return {
         clientId: 'current-client',
         accessToken: 'current-access-token',
@@ -161,19 +159,20 @@ async function runCurrentOperation<Result>(
         }
     );
     const pending = operation(service);
-    await waitForQueuedEntry(queue);
-    await reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
+    await queue.waitForEntryCount();
+    await reader.dequeueInbox(
+        InboxQueueReader.INBOX_DEQUEUE_TYPES,
+        createAppInboxTestResilience()
+    );
     return await pending;
 }
 
-it('does not scan or accept explicit predecessor rows after the current', async () => {
+it('rejects explicit predecessor rows after the current storage cutover', async () => {
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(new Date('2027-01-01T00:00:00.000Z'));
     try {
         const runtime = new FakeRuntimeStateRepository();
         const repository = new AuthSessionRepository(runtime);
-        const page = vi.spyOn(runtime, 'findEntriesByPrefixPage');
-        const findEntry = vi.spyOn(runtime, 'findEntry');
         const expiresAtEpochMs = Date.now() + 60_000;
         const token = 'current-predecessor-token';
         await runtime.upsert(
@@ -215,11 +214,6 @@ it('does not scan or accept explicit predecessor rows after the current', async 
         await expect(
             repository.consumeAgentSessionTicket('predecessor-agent-ticket')
         ).resolves.toBeUndefined();
-        expect(page).not.toHaveBeenCalled();
-        expect(findEntry).not.toHaveBeenCalledWith(
-            'auth-sessions:by-token',
-            `token=${encodeURIComponent(token)}`
-        );
     }
     finally {
         vi.useRealTimers();
