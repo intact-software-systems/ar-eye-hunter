@@ -42,7 +42,10 @@ export function createApiMiddlewareTestDouble(
             webRtcOverlayMulticastManager: toServiceTestDouble<RallarBrowserMiddleware['webRtcOverlayMulticastManager']>({
                 ...middlewareOverrides.webRtcOverlayMulticastManager
             }),
-            heartbeat: createHeartbeatDouble(middlewareOverrides.heartbeat)
+            heartbeat: createHeartbeatDouble(
+                session.sessionId,
+                middlewareOverrides.heartbeat
+            )
         }
     };
 }
@@ -174,14 +177,14 @@ function createRtcRxStreamerDouble(
     return rtcRxStreamer;
 }
 
-// `sessionId` and `generationId` are deliberately absent unless overridden: the twenty-two doubles
-// this factory replaces all stub `heartbeat` with `stop` alone, and the room workflows read
-// `generationId` as `undefined` in assertions such as leave-room.test.ts.
 function createHeartbeatDouble(
+    sessionId: string,
     override: Partial<RallarBrowserMiddleware['heartbeat']> = {}
 ): RallarBrowserMiddleware['heartbeat'] {
-    return toServiceTestDouble<RallarBrowserMiddleware['heartbeat']>({
+    return {
+        sessionId,
+        generationId: `generation-${sessionId}`,
         stop: vi.fn(),
         ...override
-    });
+    };
 }

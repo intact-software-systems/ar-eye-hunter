@@ -69,96 +69,95 @@ export function evaluateRallarReadinessExpectation(
     expectation: RallarNormalizedReadinessExpectation
 ): RallarReadinessEvaluation {
     const observed = uniqueSortedSessionIds(observedSessionIds);
-    const observedSet = new Set(observed);
-
     if (expectation.sessionIds) {
-        const expectedSessionIds = expectation.sessionIds;
-        const expectedSet = new Set(expectedSessionIds);
-        const missingSessionIds = expectedSessionIds
-            .filter((sessionId) => !observedSet.has(sessionId));
-        const extraSessionIds = observed
-            .filter((sessionId) => !expectedSet.has(sessionId));
-        if (missingSessionIds.length > 0) {
-            return toEvaluation({
-                status: observed.length === 0 ? 'empty' : 'partial',
-                observedSessionIds: observed,
-                missingSessionIds: missingSessionIds,
-                extraSessionIds: extraSessionIds,
-                expectedCount: expectedSessionIds.length
-            });
-        }
-        if (!expectation.allowExtras && extraSessionIds.length > 0) {
-            return toEvaluation({
-                status: 'over-capacity',
-                observedSessionIds: observed,
-                missingSessionIds: missingSessionIds,
-                extraSessionIds: extraSessionIds,
-                expectedCount: expectedSessionIds.length
-            });
-        }
-        return toEvaluation({
-            status: expectedSessionIds.length === 0 && observed.length === 0
-                ? 'empty'
-                : 'ready',
-            observedSessionIds: observed,
-            missingSessionIds: missingSessionIds,
-            extraSessionIds: extraSessionIds,
-            expectedCount: expectedSessionIds.length
-        });
+        return evaluateExpectedSessions(observed, expectation);
     }
-
     if (expectation.exact !== undefined) {
-        if (observed.length === expectation.exact) {
-            return toEvaluation({
-                status: expectation.exact === 0 ? 'empty' : 'ready',
-                observedSessionIds: observed,
-                missingSessionIds: [],
-                extraSessionIds: [],
-                expectedCount: expectation.exact
-            });
-        }
-        if (observed.length > expectation.exact) {
-            return toEvaluation({
-                status: 'over-capacity',
-                observedSessionIds: observed,
-                missingSessionIds: [],
-                extraSessionIds: observed.slice(expectation.exact),
-                expectedCount: expectation.exact
-            });
-        }
-        return toEvaluation({
-            status: observed.length === 0 ? 'empty' : 'partial',
-            observedSessionIds: observed,
-            missingSessionIds: [],
-            extraSessionIds: [],
-            expectedCount: expectation.exact
-        });
+        return evaluateExactSessionCount(observed, expectation.exact);
+    }
+    return evaluateSessionCountRange(observed, expectation);
+}
+
+function evaluateExpectedSessions(
+    observedSessionIds: readonly string[],
+    expectation: RallarNormalizedReadinessExpectation
+): RallarReadinessEvaluation {
+    const expectedSessionIds = expectation.sessionIds ?? [];
+    const observedSet = new Set(observedSessionIds);
+    const expectedSet = new Set(expectedSessionIds);
+    const missingSessionIds = expectedSessionIds
+        .filter((sessionId) => !observedSet.has(sessionId));
+    const extraSessionIds = observedSessionIds
+        .filter((sessionId) => !expectedSet.has(sessionId));
+    let status: RallarReadinessStatus = 'ready';
+    if (missingSessionIds.length > 0) {
+        status = observedSessionIds.length === 0 ? 'empty' : 'partial';
+    }
+    else if (!expectation.allowExtras && extraSessionIds.length > 0) {
+        status = 'over-capacity';
+    }
+    else if (expectedSessionIds.length === 0 && observedSessionIds.length === 0) {
+        status = 'empty';
     }
 
-    const min = expectation.min ?? 1;
-    if (expectation.max !== undefined && observed.length > expectation.max) {
-        return toEvaluation({
-            status: 'over-capacity',
-            observedSessionIds: observed,
-            missingSessionIds: [],
-            extraSessionIds: observed.slice(expectation.max),
-            expectedCount: min
-        });
+    return toEvaluation({
+        status,
+        observedSessionIds,
+        missingSessionIds,
+        extraSessionIds,
+        expectedCount: expectedSessionIds.length
+    });
+}
+
+function evaluateExactSessionCount(
+    observedSessionIds: readonly string[],
+    exact: number
+): RallarReadinessEvaluation {
+    let status: RallarReadinessStatus;
+    if (observedSessionIds.length === exact) {
+        status = exact === 0 ? 'empty' : 'ready';
     }
-    if (observed.length >= min) {
-        return toEvaluation({
-            status: min === 0 && observed.length === 0 ? 'empty' : 'ready',
-            observedSessionIds: observed,
-            missingSessionIds: [],
-            extraSessionIds: [],
-            expectedCount: min
-        });
+    else if (observedSessionIds.length > exact) {
+        status = 'over-capacity';
+    }
+    else {
+        status = observedSessionIds.length === 0 ? 'empty' : 'partial';
     }
     return toEvaluation({
-        status: observed.length === 0 ? 'empty' : 'partial',
-        observedSessionIds: observed,
+        status,
+        observedSessionIds,
         missingSessionIds: [],
-        extraSessionIds: [],
+        extraSessionIds: observedSessionIds.length > exact
+            ? observedSessionIds.slice(exact)
+            : [],
+        expectedCount: exact
+    });
+}
+
+function evaluateSessionCountRange(
+    observedSessionIds: readonly string[],
+    expectation: RallarNormalizedReadinessExpectation
+): RallarReadinessEvaluation {
+    const min = expectation.min ?? 1;
+    const max = expectation.max;
+    const overCapacity = max !== undefined && observedSessionIds.length > max;
+    let status: RallarReadinessStatus;
+    if (overCapacity) {
+        status = 'over-capacity';
+    }
+    else if (observedSessionIds.length >= min) {
+        status = min === 0 && observedSessionIds.length === 0 ? 'empty' : 'ready';
+    }
+    else {
+        status = observedSessionIds.length === 0 ? 'empty' : 'partial';
+    }
+    return toEvaluation({
+        status,
+        observedSessionIds,
+        missingSessionIds: [],
+        extraSessionIds: overCapacity
+            ? observedSessionIds.slice(max)
+            : [],
         expectedCount: min
     });
 }

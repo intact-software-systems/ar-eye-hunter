@@ -30,7 +30,26 @@ export namespace CreateBrowserWebSocketQueueBox {
 export async function createBrowserWebSocketQueueBox(
     input: CreateBrowserWebSocketQueueBox.Input
 ): Promise<WsQueueBoxClientService> {
-    const { clientData, qboxEngine, resilience, socket } = input;
+    const wsQueueBox = createBrowserWebSocketQueueBoxService(input);
+    const taskInput: RegisterBrowserWebSocketQueueTaskInput = {
+        qboxEngine: input.qboxEngine,
+        wsQueueBox,
+        resilience: input.resilience
+    };
+    registerBrowserWebSocketOutboxTask(taskInput);
+    registerBrowserWebSocketInboxTask(taskInput);
+    await connectInitialSocket(wsQueueBox.socket, input);
+    wsQueueBox
+        .enableReconnect()
+        .enableDefaultCallbacks();
+
+    return wsQueueBox;
+}
+
+function createBrowserWebSocketQueueBoxService(
+    input: CreateBrowserWebSocketQueueBox.Input
+): WsQueueBoxClientService {
+    const { clientData, socket } = input;
     const wsQueueBox = new WsQueueBoxClientService(
         createBrowserQueueBox(`ws-inbox-${clientData.sessionId}`),
         createBrowserQueueBox(`ws-outbox-${clientData.sessionId}`),
@@ -49,47 +68,63 @@ export async function createBrowserWebSocketQueueBox(
             }
         }
     );
+    return wsQueueBox;
+}
 
-    qboxEngine.includeTask(
+interface RegisterBrowserWebSocketQueueTaskInput {
+    readonly qboxEngine: InboxOutboxEngine;
+    readonly wsQueueBox: WsQueueBoxClientService;
+    readonly resilience: ResilienceDto;
+}
+
+function registerBrowserWebSocketOutboxTask(
+    input: RegisterBrowserWebSocketQueueTaskInput
+): void {
+    input.qboxEngine.includeTask(
         WsQueueBoxClientService.OUTBOX_ENQUEUE_TYPE,
         {
             name: WsQueueBoxClientService.OUTBOX_ENQUEUE_TYPE,
             maxConcurrency: () => 1,
             isWork: () =>
-                wsQueueBox
+                input.wsQueueBox
                     .outbox
                     .isAnyEntryToLock(
                         WsQueueBoxClientService.OUTBOX_DEQUEUE_TYPES,
-                        resilience.toWorkAdvertisementOptions()
+                        input.resilience.toWorkAdvertisementOptions()
                     ),
-            runnable: () => wsQueueBox.dequeueOutbox(WsQueueBoxClientService.OUTBOX_DEQUEUE_TYPES, resilience),
+            runnable: () =>
+                input.wsQueueBox.dequeueOutbox(
+                    WsQueueBoxClientService.OUTBOX_DEQUEUE_TYPES,
+                    input.resilience
+                ),
             ongoingTasks: []
         }
     );
+}
 
-    qboxEngine.includeTask(
+function registerBrowserWebSocketInboxTask(
+    input: RegisterBrowserWebSocketQueueTaskInput
+): void {
+    input.qboxEngine.includeTask(
         WsQueueBoxClientService.INBOX_ENQUEUE_TYPE,
         {
             name: WsQueueBoxClientService.INBOX_ENQUEUE_TYPE,
             maxConcurrency: () => 1,
             isWork: () =>
-                wsQueueBox
+                input.wsQueueBox
                     .inbox
                     .isAnyEntryToLock(
                         WsQueueBoxClientService.INBOX_DEQUEUE_TYPES,
-                        resilience.toWorkAdvertisementOptions()
+                        input.resilience.toWorkAdvertisementOptions()
                     ),
-            runnable: () => wsQueueBox.dequeueInbox(WsQueueBoxClientService.INBOX_DEQUEUE_TYPES, resilience),
+            runnable: () =>
+                input.wsQueueBox.dequeueInbox(
+                    WsQueueBoxClientService.INBOX_DEQUEUE_TYPES,
+                    input.resilience
+                ),
             ongoingTasks: []
         }
     );
-
-    await connectInitialSocket(wsQueueBox.socket, input);
-    wsQueueBox
-        .enableReconnect()
-        .enableDefaultCallbacks();
-
-    return wsQueueBox;
 }
 
 async function connectInitialSocket(
