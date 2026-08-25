@@ -4,7 +4,7 @@ import type {
     RallarDirectorRelaySendResult,
     RallarDirectorStatus
 } from '@shared-web/browser/rallar-director-facade.ts';
-import type { RallarMessageSendResult } from '@shared-web/browser/rallar-message-contracts.ts';
+import type { RallarMessageSendResult } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type { RallarMessagesOperations } from '@shared-web/browser/messages/rallar-message-operations.ts';
 import type {
     RallarTargetedChannel,

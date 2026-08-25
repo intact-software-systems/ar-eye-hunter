@@ -1,5 +1,5 @@
 import type { RallarScopedOperationOptions } from '@shared-web/browser/rallar-connection-facade.ts';
-import type { RallarStateEventListener } from '@shared-web/browser/rallar-message-contracts.ts';
+import type { RallarStateEventListener } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type {
     RallarOnChangeOptions,
     RallarReplayEventsResult,

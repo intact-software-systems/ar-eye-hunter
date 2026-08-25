@@ -7,7 +7,7 @@ import {
     runDirectRallarWsSubscribe,
     type DirectRallarFacade
 } from '../../../apps/rallar-black-box/src/direct-rallar-operations.ts';
-import type { RallarMessagePayload } from '../../../packages/shared-web/browser/rallar-message-contracts.ts';
+import type { RallarMessagePayload } from '../../../packages/shared-web/browser/messages/rallar-message-contracts.ts';
 import type { RallarMessage, RallarMessageHandler, RallarMessageSendResult } from '../../../packages/shared-web/browser/rallar.ts';
 import type { AuthSession } from '../../../packages/shared/api/api-config.ts';
 

@@ -1,6 +1,6 @@
 import type { BlackBoxRallarRuntime } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-runtime-contract.ts';
 import type { BlackBoxRallarConnectDiagnostics } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/contracts.ts';
-import type { RallarMessage } from '@shared-web/browser/rallar-message-contracts.ts';
+import type { RallarMessage } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';

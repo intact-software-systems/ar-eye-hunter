@@ -6,8 +6,8 @@ import type {
     RallarTypedMessageChannel,
     RallarTypedMessageChannelDefinition,
     RallarWsSendInput
-} from '@shared-web/browser/rallar-message-contracts.ts';
-import type { RallarMessageSelectorInput } from '@shared-web/browser/rallar-message-selectors.ts';
+} from '@shared-web/browser/messages/rallar-message-contracts.ts';
+import type { RallarMessageSelectorInput } from '@shared-web/browser/messages/rallar-message-selectors.ts';
 import type { RallarUnsubscribe } from '@shared-web/browser/rallar-shared-contracts.ts';
 
 export interface RallarRtcMessageLane {

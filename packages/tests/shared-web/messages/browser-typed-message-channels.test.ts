@@ -4,7 +4,7 @@ import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import { toResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { createGroupSnapshotFixture } from './authoritative-group-fixtures.ts';
+import { createGroupSnapshotFixture } from '../authoritative-group-fixtures.ts';
 
 type AppContextModule = typeof import('@shared-web/browser/app-context.ts');
 type MiddlewareModule = typeof import('@shared-web/browser/middleware.ts');
@@ -24,7 +24,7 @@ interface GroupSnapshotFixtureScope {
 
 const mocks = await vi.hoisted(async () => {
     const { createApiMiddlewareTestDouble } = await import(
-        './api-middleware-test-double.ts'
+        '../api-middleware-test-double.ts'
     );
     const ctx = createApiMiddlewareTestDouble();
     const clientRepositoryMissing = (): never => {

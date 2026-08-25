@@ -13,7 +13,7 @@ import type {
 import type { BlackBoxRallarDirectorOutputRecord } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/contracts.ts';
 import type { RallarCrdtDocument, RallarCrdtOpenOptions } from '@shared-web/browser/rallar-crdt.ts';
 import type { RallarDirectorRelayConfig, RallarDirectorRelayHandle } from '@shared-web/browser/rallar-director-facade.ts';
-import type { RallarMessagePayload, RallarMessageSendResult } from '@shared-web/browser/rallar-message-contracts.ts';
+import type { RallarMessagePayload, RallarMessageSendResult } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { RallarCrdtOperationBatch } from '@shared/crdt/crdt-types.ts';
 

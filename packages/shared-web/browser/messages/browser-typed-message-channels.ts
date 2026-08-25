@@ -7,9 +7,9 @@ import type {
     RallarTypedMessageSendOptions,
     RallarTypedRtcSendOptions,
     RallarTypedWsSendOptions
-} from '@shared-web/browser/rallar-message-contracts.ts';
+} from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type { RallarMessagesOperations } from '@shared-web/browser/messages/rallar-message-operations.ts';
-import { normalizeRallarMessageSelector } from '@shared-web/browser/rallar-message-selectors.ts';
+import { normalizeRallarMessageSelector } from '@shared-web/browser/messages/rallar-message-selectors.ts';
 import type { ALOutboundEnqueueStatus } from '@shared/alm/ALOutboundMessageRuntime.ts';
 
 export namespace BrowserTypedMessageChannels {

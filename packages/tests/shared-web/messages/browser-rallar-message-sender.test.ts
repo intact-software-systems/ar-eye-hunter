@@ -17,14 +17,14 @@ import { Either } from '@shared/resilience/Either.ts';
 import type { OnMessageCallback } from '@shared/services/InboxOutboxContracts.ts';
 import { DEFAULT_RTC_DATA_CHANNEL_LANE_ID } from '@shared/services/WebRtcConnectionService.ts';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { createGroupSnapshotFixture } from './authoritative-group-fixtures.ts';
-import { createDeferred, createMediaStream, createMediaTrack } from './browser-lifecycle-fixtures.ts';
+import { createGroupSnapshotFixture } from '../authoritative-group-fixtures.ts';
+import { createDeferred, createMediaStream, createMediaTrack } from '../browser-lifecycle-fixtures.ts';
 
 const mocks = await vi.hoisted(async () => {
     // The shared double must be pulled in dynamically: vi.hoisted runs above the static import
     // transform, so a statically imported factory is still in its temporal dead zone here.
     const { createApiMiddlewareTestDouble } = await import(
-        './api-middleware-test-double.ts'
+        '../api-middleware-test-double.ts'
     );
     const ctx = createApiMiddlewareTestDouble();
     const session = ctx.session;

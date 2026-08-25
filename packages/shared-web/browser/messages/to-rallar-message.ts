@@ -1,5 +1,5 @@
-import type { RallarMessage, RallarMessageTransport } from '@shared-web/browser/rallar-message-contracts.ts';
-import { readRallarMessageRoomId } from '@shared-web/browser/rallar-message-selectors.ts';
+import type { RallarMessage, RallarMessageTransport } from '@shared-web/browser/messages/rallar-message-contracts.ts';
+import { readRallarMessageRoomId } from '@shared-web/browser/messages/rallar-message-selectors.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 
 export function toRallarMessage<T>(

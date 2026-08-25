@@ -12,9 +12,9 @@ import type {
     RallarTypedMessageChannel,
     RallarTypedMessageChannelDefinition,
     RallarWsSendInput
-} from '@shared-web/browser/rallar-message-contracts.ts';
+} from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type { RallarMessagesOperations } from '@shared-web/browser/messages/rallar-message-operations.ts';
-import type { RallarMessageSelectorInput } from '@shared-web/browser/rallar-message-selectors.ts';
+import type { RallarMessageSelectorInput } from '@shared-web/browser/messages/rallar-message-selectors.ts';
 import type { BrowserWebSocketInbox } from '@shared-web/browser/websocket/browser-websocket-inbox.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';

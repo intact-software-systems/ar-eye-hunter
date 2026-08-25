@@ -27,11 +27,11 @@ export type * from '@shared-web/browser/rallar-calls-facade.ts';
 export type * from '@shared-web/browser/rallar-connection-facade.ts';
 export type * from '@shared-web/browser/rallar-director-facade.ts';
 export type * from '@shared-web/browser/rallar-media-facade.ts';
-export type * from '@shared-web/browser/rallar-message-contracts.ts';
+export type * from '@shared-web/browser/messages/rallar-message-contracts.ts';
 export type {
     RallarMessageSelector,
     RallarMessageSelectorInput
-} from '@shared-web/browser/rallar-message-selectors.ts';
+} from '@shared-web/browser/messages/rallar-message-selectors.ts';
 export type {
     RallarOperationOptions,
     RallarOperationRetryPredicate

@@ -4,7 +4,7 @@ import type { RallarMediaPort } from '@shared-web/browser/media/browser-rallar-m
 import type { RallarMessagesOperations } from '@shared-web/browser/messages/rallar-message-operations.ts';
 import type { RallarCallSignalPayload, RallarIncomingCallInvite } from '@shared-web/browser/rallar-calls-facade.ts';
 import type { RallarMediaFacade } from '@shared-web/browser/rallar-media-facade.ts';
-import type { RallarMessage, RallarMessageHandler, RallarMessageSendResult } from '@shared-web/browser/rallar-message-contracts.ts';
+import type { RallarMessage, RallarMessageHandler, RallarMessageSendResult } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type { RallarTargetedChannel, RallarTargetSelector } from '@shared-web/browser/rallar-realtime-facade.ts';
 import type { RallarRtcFacade, RallarRtcStatus, RallarRtcWaitForOpenResult } from '@shared-web/browser/rallar-rtc-facade.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';

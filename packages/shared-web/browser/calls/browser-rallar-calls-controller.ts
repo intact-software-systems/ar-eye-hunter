@@ -17,7 +17,7 @@ import type {
 import type {
     RallarMessage,
     RallarMessageSendResult
-} from '@shared-web/browser/rallar-message-contracts.ts';
+} from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type { RallarMessagesOperations } from '@shared-web/browser/messages/rallar-message-operations.ts';
 import type { RallarUnsubscribe } from '@shared-web/browser/rallar-shared-contracts.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';

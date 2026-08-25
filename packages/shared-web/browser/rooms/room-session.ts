@@ -1,5 +1,5 @@
 import type { RallarScopedOperationOptions } from '@shared-web/browser/rallar-connection-facade.ts';
-import type { RallarRoomMessageChannelDefinition } from '@shared-web/browser/rallar-message-contracts.ts';
+import type { RallarRoomMessageChannelDefinition } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type { RallarMessagesOperations } from '@shared-web/browser/messages/rallar-message-operations.ts';
 import type { RallarRealtimeFacade } from '@shared-web/browser/rallar-realtime-facade.ts';
 import { throwIfRallarValidationIssues } from '@shared-web/browser/rallar-runtime/validation.ts';

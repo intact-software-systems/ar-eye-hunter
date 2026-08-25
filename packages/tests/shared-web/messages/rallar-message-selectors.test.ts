@@ -1,7 +1,7 @@
-import { readRallarMessageRoomId, toRallarMessageSelectorKey } from '@shared-web/browser/rallar-message-selectors.ts';
-import { createRallarFacade, matchesRallarMessageSelector, normalizeRallarMessageSelector } from '@shared-web/browser/rallar.ts';
+import { readRallarMessageRoomId, toRallarMessageSelectorKey } from '@shared-web/browser/messages/rallar-message-selectors.ts';
+import { matchesRallarMessageSelector, normalizeRallarMessageSelector } from '@shared-web/browser/rallar.ts';
 import { newALBroadcastMessage, newALMulticastMessage, newALRoute } from '@shared/al-contracts/al-contract.ts';
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
 describe('Rallar message selectors', () => {
     it('keeps string shorthand as a typeId selector', () => {
@@ -100,45 +100,4 @@ describe('Rallar message selectors', () => {
         expect(readRallarMessageRoomId(worldBroadcast)).toBeUndefined();
     });
 
-    it('allows RTC subscriptions to use topic and type selectors', () => {
-        const facade = createRallarFacade();
-
-        const unsubscribe = facade.messages.rtc.onMessage(
-            { topicId: 'room.chat', typeId: 'chat.message.v1' },
-            vi.fn()
-        );
-
-        expect(unsubscribe).toEqual(expect.any(Function));
-        unsubscribe();
-    });
-
-    it('keeps RTC string subscriptions backward compatible', () => {
-        const facade = createRallarFacade();
-
-        const unsubscribe = facade.messages.rtc.onMessage(
-            'chat.message.v1',
-            vi.fn()
-        );
-
-        expect(unsubscribe).toEqual(expect.any(Function));
-        unsubscribe();
-    });
-
-    it('rejects RTC topic-only subscriptions because the low-level RTC callback is type keyed', () => {
-        const facade = createRallarFacade();
-
-        expect(() => facade.messages.rtc.onMessage({ topicId: 'room.chat' }, vi.fn())).toThrow('RTC message subscriptions require a typeId.');
-    });
-
-    it('allows WS topic-only subscriptions', () => {
-        const facade = createRallarFacade();
-
-        const unsubscribe = facade.messages.ws.onMessage(
-            { topicId: 'room.chat' },
-            vi.fn()
-        );
-
-        expect(unsubscribe).toEqual(expect.any(Function));
-        unsubscribe();
-    });
 });

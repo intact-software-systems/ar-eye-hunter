@@ -13,7 +13,7 @@ export { createRallarCrdtFacade } from '@shared-web/browser/rallar-crdt.ts';
 export {
     matchesRallarMessageSelector,
     normalizeRallarMessageSelector
-} from '@shared-web/browser/rallar-message-selectors.ts';
+} from '@shared-web/browser/messages/rallar-message-selectors.ts';
 
 export {
     evaluateRallarReadinessExpectation,
@@ -48,7 +48,7 @@ export type {
 export type {
     RallarMessageSelector,
     RallarMessageSelectorInput
-} from '@shared-web/browser/rallar-message-selectors.ts';
+} from '@shared-web/browser/messages/rallar-message-selectors.ts';
 
 export type {
     RallarOperationOptions,

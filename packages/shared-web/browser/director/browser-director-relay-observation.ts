@@ -3,7 +3,7 @@ import type {
     RallarDirectorRelayMessage,
     RallarDirectorStatus
 } from '@shared-web/browser/rallar-director-facade.ts';
-import type { RallarMessagePayload } from '@shared-web/browser/rallar-message-contracts.ts';
+import type { RallarMessagePayload } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import { RALLAR_DIRECTOR_RELAY_PROTOCOL } from './browser-director-relay-transport.ts';
 import type { BrowserDirectorStatusRuntime } from './browser-director-status-runtime.ts';
 

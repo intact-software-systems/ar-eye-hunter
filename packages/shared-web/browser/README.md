@@ -177,6 +177,27 @@ wrappers had no verified production consumer. Public message send and receive
 continue through the facade's message capability and its owned subscriptions;
 there is no forwarding export for the deleted paths.
 
+Message ownership is concentrated under [`messages/`](./messages/):
+
+- [BrowserRallarMessagesController](./messages/browser-rallar-messages-controller.ts)
+  constructs the completed capability and exposes its lifecycle owners.
+- [BrowserRallarMessageSender](./messages/browser-rallar-message-sender.ts)
+  owns RTC/WS envelope construction, scoped targets, QueueBox enqueue results,
+  and queue wake-up decisions.
+- [BrowserTypedMessageChannels](./messages/browser-typed-message-channels.ts)
+  owns typed channels and the current RTC-with-WS and WS-then-RTC policies.
+- [BrowserRallarMessageSubscriptions](./messages/browser-rallar-message-subscriptions.ts)
+  owns selector registries, WS inbox lifetime, RTC callback lifetime, and
+  listener delivery.
+- [`rallar-message-contracts.ts`](./messages/rallar-message-contracts.ts),
+  [`rallar-message-selectors.ts`](./messages/rallar-message-selectors.ts), and
+  [`to-rallar-message.ts`](./messages/to-rallar-message.ts) keep the public
+  contracts and wire-to-facade translation beside those runtime owners.
+
+The former root contract/selector paths and `rallar-runtime/message-conversion`
+path were deleted after every verified consumer moved; no old-path re-export or
+forwarder remains.
+
 Connection initialization failures leave connection state idle and propagate an
 `Error` to the caller. A 401 additionally ends the captured auth session once.
 Manual logout preserves disconnect, revoke, and Data-cleanup failures in that

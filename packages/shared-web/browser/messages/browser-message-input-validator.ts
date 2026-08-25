@@ -3,7 +3,7 @@ import type {
     RallarMessageTransport,
     RallarRtcSendInput,
     RallarWsSendInput
-} from '@shared-web/browser/rallar-message-contracts.ts';
+} from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import {
     throwRallarValidation,

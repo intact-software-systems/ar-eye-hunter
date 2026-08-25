@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AppTopics } from '@shared/api/api-config.ts';
 import type { GroupEvent } from '@shared/api/group-types.ts';
 import type { StateEventCursor } from '@shared/api/state-event-types.ts';
-import type { RallarMessage } from '@shared-web/browser/rallar-message-contracts.ts';
+import type { RallarMessage } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 
 import {
     createRoomEvent,

@@ -1,4 +1,4 @@
-import type { RallarMessage, RallarStateEventListener } from '@shared-web/browser/rallar-message-contracts.ts';
+import type { RallarMessage, RallarStateEventListener } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type {
     RallarStateListener,
     RallarSubscriptionScope,

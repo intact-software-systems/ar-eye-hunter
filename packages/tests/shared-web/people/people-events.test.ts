@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { RallarMessage } from '@shared-web/browser/rallar-message-contracts.ts';
+import type { RallarMessage } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import { AppTopics } from '@shared/api/api-config.ts';
 import type { ClientEvent } from '@shared/api/client-types.ts';
 
