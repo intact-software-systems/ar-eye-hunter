@@ -154,7 +154,7 @@ function registerBrowserFacadeLifecycle(
         wsInbox: compositions.stateEvents.wsInbox,
         wsController: compositions.realtime.wsController,
         realtimeReceive: compositions.realtime.realtimeReceive,
-        rtcController: compositions.realtime.rtcController
+        rtcLifecycle: compositions.realtime.rtcController.lifecycle
     });
     registerBrowserMediaLifecycle({
         lifecycle: foundation.lifecycle,

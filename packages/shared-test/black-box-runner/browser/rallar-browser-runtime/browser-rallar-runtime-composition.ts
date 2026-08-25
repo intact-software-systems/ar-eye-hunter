@@ -165,6 +165,6 @@ function registerBlackBoxBrowserRallarLifecycle(
         wsInbox: input.stateEvents.wsInbox,
         wsController: input.realtime.wsController,
         realtimeReceive: input.realtime.realtimeReceive,
-        rtcController: input.realtime.rtcController
+        rtcLifecycle: input.realtime.rtcController.lifecycle
     });
 }

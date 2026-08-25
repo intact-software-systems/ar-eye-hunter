@@ -59,14 +59,13 @@ registration, invocation, and cleanup without consulting a historical plan.
    [BrowserRallarCallsController](./calls/browser-rallar-calls-controller.ts),
    while each accepted or started call creates one
    [BrowserCallSessionRuntime](./calls/browser-call-session-runtime.ts).
-   Realtime composition delegates inbound subscriptions, sending, room
-   readiness, and targeted channels to the four owners under
-   [`realtime/`](./realtime/). RTC composition delegates connection and status
-   operations to
-   [BrowserRallarRtcController](./rtc/browser-rallar-rtc-controller.ts), lane
-   waiting to [BrowserRtcWaitRuntime](./rtc/browser-rtc-wait-runtime.ts), and
-   observation/diagnostics to the owners under
-   [`rtc-diagnostics/`](./rtc-diagnostics/).
+   Realtime composition delegates inbound subscriptions, sending/target
+   policy, room readiness, targeted channels, and health reads to five owners
+   under [`realtime/`](./realtime/). RTC composition uses
+   [BrowserRallarRtcController](./rtc/browser-rallar-rtc-controller.ts) only to
+   construct the public capability from the status, lifecycle, wait/readiness,
+   room transport, and recovery owners under [`rtc/`](./rtc/), plus diagnostic
+   collection under [`rtc-diagnostics/`](./rtc-diagnostics/).
 7. [createBrowserStartupComposition](./rallar-runtime/composition/browser-session-composition.ts)
    and [createBrowserCrdtComposition](./rallar-runtime/composition/browser-session-composition.ts)
    run only after their completed session, rooms, people, state, and messaging

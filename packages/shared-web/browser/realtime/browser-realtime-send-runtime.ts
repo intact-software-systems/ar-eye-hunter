@@ -2,11 +2,9 @@ import type { ApiMiddleware } from '@shared-web/browser/app-context.ts';
 import type {
     RallarRealtimeBinarySendInput,
     RallarRealtimeHandler,
-    RallarRealtimeHealthOptions,
     RallarRealtimeJsonLane,
     RallarRealtimeJsonLaneSendOptions,
     RallarRealtimeJsonSendInput,
-    RallarRealtimeLaneHealth,
     RallarRealtimeSendOptions,
     RallarRealtimeSendResult
 } from '@shared-web/browser/rallar-realtime-facade.ts';
@@ -19,7 +17,6 @@ import type { RtcDataChannelSendOptions, RtcDataChannelSendResult } from '@share
 export namespace BrowserRealtimeSendRuntime {
     export interface Input {
         connect(): Promise<ApiMiddleware>;
-        readMiddleware(): ApiMiddleware | undefined;
         readSession(): AuthSession | undefined;
         readDefaultRoom(): string | GroupRef | undefined;
         readCurrentRoomSnapshot(): GroupSnapshot | undefined;
@@ -90,26 +87,6 @@ export class BrowserRealtimeSendRuntime {
                 await this.sendJson<T>({ ...defaults, ...sendOptions, data }),
             on: (handler) => this.input.onJson<T>(laneId, handler)
         };
-    }
-
-    health(options: RallarRealtimeHealthOptions = {}): readonly RallarRealtimeLaneHealth[] {
-        const ctx = this.input.readMiddleware();
-        if (!ctx) {
-            return [];
-        }
-        const peerIds = options.peerIds ?? ctx.middleware.webRtcConnectionService.activePeerIds();
-        return peerIds.flatMap((peerId) => {
-            const peer = ctx.middleware.webRtcConnectionService.readPeer(peerId);
-            if (!peer) {
-                return [];
-            }
-            const laneIds = options.laneIds ?? Array.from(peer.channels.keys());
-            return laneIds.map((laneId) => ({
-                peerId,
-                laneId,
-                channel: peer.channels.get(laneId)?.readHealth()
-            }));
-        });
     }
 
     private resolvePeerIds(input: RallarRealtimeSendOptions): readonly string[] {

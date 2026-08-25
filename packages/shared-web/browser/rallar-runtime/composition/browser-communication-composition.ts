@@ -11,6 +11,7 @@ import type { RallarRealtimeFacade } from '@shared-web/browser/rallar-realtime-f
 import type { RallarRtcFacade } from '@shared-web/browser/rallar-rtc-facade.ts';
 import type { RallarSessionController } from '@shared-web/browser/rallar-runtime/session.ts';
 import { BrowserRealtimeReceiveRuntime } from '@shared-web/browser/realtime/browser-realtime-receive-runtime.ts';
+import { BrowserRealtimeHealthRuntime } from '@shared-web/browser/realtime/browser-realtime-health-runtime.ts';
 import { BrowserRealtimeSendRuntime } from '@shared-web/browser/realtime/browser-realtime-send-runtime.ts';
 import { BrowserRoomRealtimeRuntime } from '@shared-web/browser/realtime/browser-room-realtime-runtime.ts';
 import { BrowserTargetedRealtimeRuntime } from '@shared-web/browser/realtime/browser-targeted-realtime-runtime.ts';
@@ -175,6 +176,9 @@ function createBrowserRealtimeChannelComposition(
         rtc: input.rtc
     };
     const realtimeReceive = new BrowserRealtimeReceiveRuntime(ownerInput);
+    const realtimeHealth = new BrowserRealtimeHealthRuntime({
+        readMiddleware: input.session.readMiddleware
+    });
     const realtimeSend = new BrowserRealtimeSendRuntime({
         ...ownerInput,
         onJson: (laneId, handler) => realtimeReceive.onJson(laneId, handler)
@@ -196,7 +200,7 @@ function createBrowserRealtimeChannelComposition(
         onBinary: (laneId, handler) => realtimeReceive.onBinary(laneId, handler),
         json: (defaults = {}) => realtimeSend.createJsonLane(defaults),
         room: (defaults = {}) => realtimeRoom.create(defaults),
-        health: (options = {}) => realtimeSend.health(options)
+        health: (options = {}) => realtimeHealth.read(options)
     };
     return {
         realtimeReceive,

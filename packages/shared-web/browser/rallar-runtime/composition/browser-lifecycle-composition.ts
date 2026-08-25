@@ -4,7 +4,7 @@ import type { BrowserRallarMessageSubscriptions } from '@shared-web/browser/mess
 import type { RallarLifecycleCoordinator } from '@shared-web/browser/rallar-runtime/lifecycle.ts';
 import type { RallarStatePort } from '@shared-web/browser/rallar-runtime/state-store.ts';
 import type { BrowserRealtimeReceiveRuntime } from '@shared-web/browser/realtime/browser-realtime-receive-runtime.ts';
-import type { BrowserRallarRtcController } from '@shared-web/browser/rtc/browser-rallar-rtc-controller.ts';
+import type { BrowserRtcLifecycleRuntime } from '@shared-web/browser/rtc/browser-rtc-lifecycle-runtime.ts';
 import type { RallarWsController } from '@shared-web/browser/websocket/browser-rallar-ws-controller.ts';
 import type { BrowserWebSocketInbox } from '@shared-web/browser/websocket/browser-websocket-inbox.ts';
 
@@ -20,7 +20,7 @@ export interface RegisterBrowserTransportLifecycleInput {
     readonly wsInbox: BrowserWebSocketInbox;
     readonly wsController: RallarWsController;
     readonly realtimeReceive: BrowserRealtimeReceiveRuntime;
-    readonly rtcController: BrowserRallarRtcController;
+    readonly rtcLifecycle: BrowserRtcLifecycleRuntime;
 }
 
 export interface RegisterBrowserMediaLifecycleInput {
@@ -76,10 +76,10 @@ export function registerBrowserTransportLifecycle(
     input.lifecycle.register({
         id: 'rtc-status',
         order: 70,
-        attach: (context) => input.rtcController.attach(context),
-        connected: () => input.rtcController.connected(),
-        detach: (context) => input.rtcController.detach(context),
-        disconnected: () => input.rtcController.disconnected()
+        attach: (context) => input.rtcLifecycle.attach(context),
+        connected: () => input.rtcLifecycle.connected(),
+        detach: (context) => input.rtcLifecycle.detach(context),
+        disconnected: () => input.rtcLifecycle.disconnected()
     });
     input.lifecycle.register({
         id: 'realtime-lanes',
