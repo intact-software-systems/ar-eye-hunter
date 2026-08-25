@@ -4,7 +4,7 @@ import type {
     RallarOperationOptions,
     RallarOperationRetryPredicate
 } from '@shared-web/browser/rallar-operation-options.ts';
-import type { RallarPeopleState } from '@shared-web/browser/rallar-people-contracts.ts';
+import type { RallarPeopleState } from '@shared-web/browser/people/rallar-people-contracts.ts';
 import type { RallarSubscriptionScope } from '@shared-web/browser/rallar-shared-contracts.ts';
 import type { RallarRoomState } from '@shared-web/browser/rooms/rallar-room-contracts.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';

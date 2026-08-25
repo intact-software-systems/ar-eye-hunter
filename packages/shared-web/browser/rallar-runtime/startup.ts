@@ -7,8 +7,10 @@ import type {
     RallarStartResult
 } from '@shared-web/browser/rallar-connection-facade.ts';
 import type { RallarOperationOptions } from '@shared-web/browser/rallar-operation-options.ts';
-import type { RallarPeopleState } from '@shared-web/browser/rallar-people-contracts.ts';
-import type { RallarPeopleController } from '@shared-web/browser/rallar-runtime/people.ts';
+import type {
+    RallarPeopleOperations,
+    RallarPeopleState
+} from '@shared-web/browser/people/rallar-people-contracts.ts';
 import type { BrowserRallarRooms } from '@shared-web/browser/rooms/browser-rallar-rooms.ts';
 import type { RallarRoomState } from '@shared-web/browser/rooms/rallar-room-contracts.ts';
 
@@ -16,7 +18,7 @@ export type CreateRallarStartupControllerOptions = Readonly<{
     connection: RallarConnectionOperations;
     auth: RallarAuthFacade;
     rooms: BrowserRallarRooms;
-    people: RallarPeopleController['operations'];
+    people: RallarPeopleOperations;
     waitForAuthEnd(): Promise<void>;
     resolveOperationOptions<T extends RallarOperationOptions>(
         options: T

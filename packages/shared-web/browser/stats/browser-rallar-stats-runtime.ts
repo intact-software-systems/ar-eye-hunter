@@ -1,6 +1,7 @@
 import { defaultStateScope } from '@shared-web/browser/api/state-http-path.ts';
 import type { RallarScopedOperationOptions } from '@shared-web/browser/rallar-connection-facade.ts';
 import { toRallarCommandOptions, type RallarOperationOptions } from '@shared-web/browser/rallar-operation-options.ts';
+import type { RallarStatsOperations } from '@shared-web/browser/stats/rallar-stats-operations.ts';
 import {
     readStateGroupStats,
     readStateMyRealtimeStatus,
@@ -16,54 +17,38 @@ import type {
 import { DEFAULT_STATE_WORKSPACE_ID, type StateScope } from '@shared/api/state-types.ts';
 import { Command } from '@shared/cache/Command.ts';
 
-export interface BrowserRallarStatsControllerInput {
-    resolveOperationOptions<T extends RallarOperationOptions>(
-        options: T
-    ): T & RallarOperationOptions;
-    resolveOperationScope(scope?: StateScope): StateScope | undefined;
-    requireSession(): AuthSession;
-    runAuthAwareOperation<T>(operation: () => Promise<T>): Promise<T>;
+export namespace BrowserRallarStatsRuntime {
+    export interface Input {
+        resolveOperationOptions<T extends RallarOperationOptions>(
+            options: T
+        ): T & RallarOperationOptions;
+        resolveOperationScope(scope?: StateScope): StateScope | undefined;
+        requireSession(): AuthSession;
+        runAuthAwareOperation<T>(operation: () => Promise<T>): Promise<T>;
+    }
 }
 
-export interface RallarStatsOperations {
-    summary(options?: RallarScopedOperationOptions): Promise<WorkspaceSpaStatisticsResponse>;
-    group(
-        group: string | GroupRef,
-        options?: RallarScopedOperationOptions
-    ): Promise<GroupSpaStatisticsResponse>;
-    meRealtime(options?: RallarScopedOperationOptions): Promise<MyRealtimeSpaStatisticsResponse>;
-}
-
-export interface RallarStatsController {
-    readonly operations: RallarStatsOperations;
-}
-
-interface RallarStatsGroupTarget {
+interface StatsGroupTarget {
     readonly groupId: string;
     readonly scope: StateScope;
 }
 
-export class BrowserRallarStatsController implements RallarStatsController {
-    private readonly options: BrowserRallarStatsControllerInput;
+/** Owns browser statistics reads and their auth-aware retry policy. */
+export class BrowserRallarStatsRuntime implements RallarStatsOperations {
+    private readonly input: BrowserRallarStatsRuntime.Input;
 
-    public readonly operations: RallarStatsOperations = {
-        summary: async (options) => await this.summary(options),
-        group: async (group, options) => await this.group(group, options),
-        meRealtime: async (options) => await this.meRealtime(options)
-    };
-
-    public constructor(options: BrowserRallarStatsControllerInput) {
-        this.options = options;
+    public constructor(input: BrowserRallarStatsRuntime.Input) {
+        this.input = input;
     }
 
-    private async summary(
+    public async summary(
         readOptions: RallarScopedOperationOptions = {}
     ): Promise<WorkspaceSpaStatisticsResponse> {
-        const operationOptions = this.options.resolveOperationOptions(readOptions);
-        const session = this.options.requireSession();
-        const scope = this.options.resolveOperationScope(readOptions.scope) ??
+        const operationOptions = this.input.resolveOperationOptions(readOptions);
+        const session = this.input.requireSession();
+        const scope = this.input.resolveOperationScope(readOptions.scope) ??
             defaultStateScope();
-        return await this.options.runAuthAwareOperation(
+        return await this.input.runAuthAwareOperation(
             async () =>
                 await runRallarCommand(
                     async (signal) =>
@@ -76,14 +61,14 @@ export class BrowserRallarStatsController implements RallarStatsController {
         );
     }
 
-    private async group(
+    public async group(
         group: string | GroupRef,
         readOptions: RallarScopedOperationOptions = {}
     ): Promise<GroupSpaStatisticsResponse> {
-        const operationOptions = this.options.resolveOperationOptions(readOptions);
-        const session = this.options.requireSession();
+        const operationOptions = this.input.resolveOperationOptions(readOptions);
+        const session = this.input.requireSession();
         const target = this.toGroupTarget(group, readOptions.scope);
-        return await this.options.runAuthAwareOperation(
+        return await this.input.runAuthAwareOperation(
             async () =>
                 await runRallarCommand(
                     async (signal) =>
@@ -96,14 +81,14 @@ export class BrowserRallarStatsController implements RallarStatsController {
         );
     }
 
-    private async meRealtime(
+    public async meRealtime(
         readOptions: RallarScopedOperationOptions = {}
     ): Promise<MyRealtimeSpaStatisticsResponse> {
-        const operationOptions = this.options.resolveOperationOptions(readOptions);
-        const session = this.options.requireSession();
-        const scope = this.options.resolveOperationScope(readOptions.scope) ??
+        const operationOptions = this.input.resolveOperationOptions(readOptions);
+        const session = this.input.requireSession();
+        const scope = this.input.resolveOperationScope(readOptions.scope) ??
             defaultStateScope();
-        return await this.options.runAuthAwareOperation(
+        return await this.input.runAuthAwareOperation(
             async () =>
                 await runRallarCommand(
                     async (signal) =>
@@ -119,11 +104,11 @@ export class BrowserRallarStatsController implements RallarStatsController {
     private toGroupTarget(
         group: string | GroupRef,
         scope?: StateScope
-    ): RallarStatsGroupTarget {
+    ): StatsGroupTarget {
         if (typeof group === 'string') {
             return {
                 groupId: group,
-                scope: this.options.resolveOperationScope(scope) ?? defaultStateScope()
+                scope: this.input.resolveOperationScope(scope) ?? defaultStateScope()
             };
         }
         return {

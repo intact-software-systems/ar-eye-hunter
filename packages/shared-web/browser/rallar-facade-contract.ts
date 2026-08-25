@@ -18,8 +18,8 @@ import type {
     RallarWsFacade
 } from '@shared-web/browser/rallar-realtime-facade.ts';
 import type { RallarRtcFacade } from '@shared-web/browser/rallar-rtc-facade.ts';
-import type { RallarPeopleOperations } from '@shared-web/browser/rallar-runtime/people.ts';
-import type { RallarStatsOperations } from '@shared-web/browser/rallar-runtime/stats.ts';
+import type { RallarPeopleOperations } from '@shared-web/browser/people/rallar-people-contracts.ts';
+import type { RallarStatsOperations } from '@shared-web/browser/stats/rallar-stats-operations.ts';
 import type { BrowserRallarRooms } from '@shared-web/browser/rooms/browser-rallar-rooms.ts';
 
 export type * from '@shared-web/browser/rallar-auth-facade.ts';
@@ -36,7 +36,8 @@ export type {
     RallarOperationOptions,
     RallarOperationRetryPredicate
 } from '@shared-web/browser/rallar-operation-options.ts';
-export type * from '@shared-web/browser/rallar-people-contracts.ts';
+export type * from '@shared-web/browser/people/rallar-people-contracts.ts';
+export type * from '@shared-web/browser/stats/rallar-stats-operations.ts';
 export type * from '@shared-web/browser/rallar-realtime-facade.ts';
 export type * from '@shared-web/browser/rallar-rtc-facade.ts';
 export type * from '@shared-web/browser/rallar-shared-contracts.ts';

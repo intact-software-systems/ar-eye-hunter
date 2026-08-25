@@ -4,7 +4,7 @@ import type {
     RallarListPeopleEventsOptions,
     RallarPeopleEventOptions,
     RallarReplayPeopleEventsOptions
-} from '@shared-web/browser/rallar-people-contracts.ts';
+} from '@shared-web/browser/people/rallar-people-contracts.ts';
 import { toRallarMessage } from '@shared-web/browser/messages/to-rallar-message.ts';
 import { notifyStateEventListener } from '@shared-web/browser/rallar-runtime/subscriptions.ts';
 import * as stateEventHttpApi from '@shared-web/browser/state-read/state-event-http-api.ts';

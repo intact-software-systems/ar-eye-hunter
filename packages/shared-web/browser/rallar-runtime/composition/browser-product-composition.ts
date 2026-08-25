@@ -7,11 +7,12 @@ import {
 import type { RallarCallsFacade } from '@shared-web/browser/rallar-calls-facade.ts';
 import type { RallarDirectorFacade } from '@shared-web/browser/rallar-director-facade.ts';
 import {
-    createRallarPeopleController,
-    type RallarPeopleController
-} from '@shared-web/browser/rallar-runtime/people.ts';
+    BrowserRallarPeopleRuntime
+} from '@shared-web/browser/people/browser-rallar-people-runtime.ts';
+import type { RallarPeopleOperations } from '@shared-web/browser/people/rallar-people-contracts.ts';
 import type { RallarSessionController } from '@shared-web/browser/rallar-runtime/session.ts';
-import { BrowserRallarStatsController, type RallarStatsController } from '@shared-web/browser/rallar-runtime/stats.ts';
+import { BrowserRallarStatsRuntime } from '@shared-web/browser/stats/browser-rallar-stats-runtime.ts';
+import type { RallarStatsOperations } from '@shared-web/browser/stats/rallar-stats-operations.ts';
 import { createBrowserRallarRooms, type BrowserRallarRooms } from '@shared-web/browser/rooms/browser-rallar-rooms.ts';
 import { readSession } from '@shared/api/auth.ts';
 import type { RallarTargetedChannelDefinition } from '../../rallar-facade-contract.ts';
@@ -28,8 +29,8 @@ export interface BrowserRoomsComposition {
 }
 
 export interface BrowserPeopleStatsComposition {
-    readonly people: RallarPeopleController['operations'];
-    readonly stats: RallarStatsController['operations'];
+    readonly people: RallarPeopleOperations;
+    readonly stats: RallarStatsOperations;
 }
 
 export interface BrowserCallsComposition {
@@ -94,7 +95,7 @@ export function createBrowserRoomsComposition(
 export function createBrowserPeopleStatsComposition(
     input: CreateBrowserPeopleStatsCompositionInput
 ): BrowserPeopleStatsComposition {
-    const peopleController = createRallarPeopleController({
+    const people = new BrowserRallarPeopleRuntime({
         stateStore: input.state.stateStore,
         stateEvents: input.stateEvents.stateEvents,
         resolveOperationOptions: input.session.resolveOperationOptions,
@@ -103,15 +104,15 @@ export function createBrowserPeopleStatsComposition(
         connect: async (options) => await input.session.connect(options),
         acceptSnapshots: async (snapshotInput) => await input.state.stateStore.acceptSnapshots(snapshotInput)
     });
-    const statsController = new BrowserRallarStatsController({
+    const stats = new BrowserRallarStatsRuntime({
         resolveOperationOptions: input.session.resolveOperationOptions,
         resolveOperationScope: input.session.resolveOperationScope,
         requireSession: input.session.requireSession,
         runAuthAwareOperation: input.session.runAuthAwareOperation
     });
     return {
-        people: peopleController.operations,
-        stats: statsController.operations
+        people,
+        stats
     };
 }
 
