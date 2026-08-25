@@ -616,7 +616,7 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
             values: [
                 'DEFAULT_STATE_HEARTBEAT_TTL_MSECS',
                 'acceptStateGroupInvite',
-                'appointStateGroupDirectorWorkflow',
+                'appointStateGroupDirector',
                 'archiveStateGroup',
                 'banStateGroupMember',
                 'createAndJoinStateGroup',

@@ -18,7 +18,7 @@ export * from './browser/crdt/crdt-catch-up-http-api.ts';
 export * as dataCaches from './browser/data-caches.ts';
 export {
     type AppointRoomDirectorInput,
-    appointStateGroupDirector as appointStateGroupDirectorWorkflow
+    appointStateGroupDirector
 } from './browser/director/appoint-room-director.ts';
 export * from './browser/heartbeat.ts';
 export * from './browser/middleware.ts';
