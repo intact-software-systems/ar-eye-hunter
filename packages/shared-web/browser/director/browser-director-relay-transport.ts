@@ -1,13 +1,11 @@
-import type {
-    RallarMessagesController,
-    RallarWsUnicastSendInput
-} from '@shared-web/browser/messages/browser-rallar-messages-controller.ts';
+import type { BrowserRallarMessageSender } from '@shared-web/browser/messages/browser-rallar-message-sender.ts';
 import type {
     RallarDirectorRelayEnvelope,
     RallarDirectorRelaySendResult,
     RallarDirectorStatus
 } from '@shared-web/browser/rallar-director-facade.ts';
 import type { RallarMessageSendResult } from '@shared-web/browser/rallar-message-contracts.ts';
+import type { RallarMessagesOperations } from '@shared-web/browser/messages/rallar-message-operations.ts';
 import type {
     RallarTargetedChannel,
     RallarTargetedChannelDefinition
@@ -18,12 +16,14 @@ import type { AuthSession } from '@shared/api/api-config.ts';
 export const RALLAR_DIRECTOR_RELAY_PROTOCOL = 'rallar.director.relay.v1';
 
 export interface BrowserDirectorRelayTransportInput {
-    readonly messages: RallarMessagesController['operations'];
+    readonly messages: RallarMessagesOperations;
     readSession(): AuthSession | undefined;
     createTargetedChannel<T>(
         definition: RallarTargetedChannelDefinition
     ): RallarTargetedChannel<T>;
-    sendWsUnicast<T>(input: RallarWsUnicastSendInput<T>): Promise<RallarMessageSendResult>;
+    sendWsUnicast<T>(
+        input: BrowserRallarMessageSender.WsUnicastInput<T>
+    ): Promise<RallarMessageSendResult>;
 }
 
 export interface SendDirectorIntentInput<T> {

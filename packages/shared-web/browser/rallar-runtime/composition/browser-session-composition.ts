@@ -112,7 +112,7 @@ export function createBrowserCrdtComposition(
     const crdt = createRallarCrdtFacade({
         data: input.session.data,
         readDefaults: input.state.readDefaults,
-        readTransport: () => input.messaging.messagesController.toCrdtMessageTransport()
+        readTransport: () => input.messaging.messagesController.crdtTransport
     });
     return { crdt };
 }

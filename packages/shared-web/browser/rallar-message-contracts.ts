@@ -1,4 +1,3 @@
-import type { RallarMessageSelectorInput } from '@shared-web/browser/rallar-message-selectors.ts';
 import type { RallarUnsubscribe } from '@shared-web/browser/rallar-shared-contracts.ts';
 import type { ALAckMode, ALMessage } from '@shared/al-contracts/al-contract.ts';
 import type { ALOutboundEnqueueStatus } from '@shared/alm/ALOutboundMessageRuntime.ts';

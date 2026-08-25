@@ -1,5 +1,4 @@
 import type { ApiMiddleware } from '@shared-web/browser/app-context.ts';
-import type { RallarMessagesOperations } from '@shared-web/browser/messages/browser-rallar-messages-controller.ts';
 import type { RallarAuthFacade } from '@shared-web/browser/rallar-auth-facade.ts';
 import type { RallarCallsFacade } from '@shared-web/browser/rallar-calls-facade.ts';
 import type {
@@ -11,6 +10,7 @@ import type { RallarCrdtFacade } from '@shared-web/browser/rallar-crdt.ts';
 import type { RallarDataFacade } from '@shared-web/browser/rallar-data.ts';
 import type { RallarDirectorFacade } from '@shared-web/browser/rallar-director-facade.ts';
 import type { RallarMediaFacade } from '@shared-web/browser/rallar-media-facade.ts';
+import type { RallarMessagesOperations } from '@shared-web/browser/messages/rallar-message-operations.ts';
 import type {
     RallarRealtimeFacade,
     RallarTargetedChannel,

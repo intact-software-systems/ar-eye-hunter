@@ -1,9 +1,6 @@
 import type { ApiMiddleware } from '@shared-web/browser/app-context.ts';
 import { appointStateGroupDirector } from '@shared-web/browser/director/appoint-room-director.ts';
-import type {
-    RallarMessagesController,
-    RallarWsUnicastSendInput
-} from '@shared-web/browser/messages/browser-rallar-messages-controller.ts';
+import type { BrowserRallarMessageSender } from '@shared-web/browser/messages/browser-rallar-message-sender.ts';
 import type { RallarScopedOperationOptions } from '@shared-web/browser/rallar-connection-facade.ts';
 import type {
     RallarDirectorAppointOptions,
@@ -13,6 +10,7 @@ import type {
     RallarDirectorStatus
 } from '@shared-web/browser/rallar-director-facade.ts';
 import type { RallarMessageSendResult } from '@shared-web/browser/rallar-message-contracts.ts';
+import type { RallarMessagesOperations } from '@shared-web/browser/messages/rallar-message-operations.ts';
 import { toRallarWorkflowPolicies, type RallarOperationOptions } from '@shared-web/browser/rallar-operation-options.ts';
 import type {
     RallarRealtimeFacade,
@@ -38,7 +36,7 @@ import { BrowserDirectorStatusRuntime } from './browser-director-status-runtime.
 export interface BrowserRallarDirectorControllerInput {
     readonly roomStateStore: RallarRoomStateStorePort;
     readonly rooms: BrowserRallarRooms;
-    readonly messages: RallarMessagesController['operations'];
+    readonly messages: RallarMessagesOperations;
     readonly realtime: RallarRealtimeFacade;
     readSession(): AuthSession | undefined;
     requireSession(): AuthSession;
@@ -52,7 +50,9 @@ export interface BrowserRallarDirectorControllerInput {
     createTargetedChannel<T>(
         definition: RallarTargetedChannelDefinition
     ): RallarTargetedChannel<T>;
-    sendWsUnicast<T>(input: RallarWsUnicastSendInput<T>): Promise<RallarMessageSendResult>;
+    sendWsUnicast<T>(
+        input: BrowserRallarMessageSender.WsUnicastInput<T>
+    ): Promise<RallarMessageSendResult>;
 }
 
 export interface RallarDirectorController {

@@ -1,6 +1,6 @@
-import type { RallarMessagesController } from '@shared-web/browser/messages/browser-rallar-messages-controller.ts';
 import type { RallarScopedOperationOptions } from '@shared-web/browser/rallar-connection-facade.ts';
 import type { RallarRoomMessageChannelDefinition } from '@shared-web/browser/rallar-message-contracts.ts';
+import type { RallarMessagesOperations } from '@shared-web/browser/messages/rallar-message-operations.ts';
 import type { RallarRealtimeFacade } from '@shared-web/browser/rallar-realtime-facade.ts';
 import { throwIfRallarValidationIssues } from '@shared-web/browser/rallar-runtime/validation.ts';
 import { isSameGroupRef, toStateScope } from '@shared/api/api-type-utils.ts';
@@ -19,7 +19,7 @@ import type { RallarRoomStateStorePort } from './room-state-store.ts';
 export interface CreateRoomSessionInput {
     readonly roomRef: GroupRef;
     readonly stateStore: RallarRoomStateStorePort;
-    readonly messages: RallarMessagesController['operations'];
+    readonly messages: RallarMessagesOperations;
     readonly realtime: RallarRealtimeFacade;
     readonly leaveRoom: (
         input?: string | RallarLeaveRoomOptions

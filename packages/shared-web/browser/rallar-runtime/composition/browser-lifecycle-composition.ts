@@ -1,6 +1,6 @@
 import type { RallarDirectorController } from '@shared-web/browser/director/browser-rallar-director-controller.ts';
 import type { RallarMediaPort } from '@shared-web/browser/media/browser-rallar-media-controller.ts';
-import type { RallarMessagesController } from '@shared-web/browser/messages/browser-rallar-messages-controller.ts';
+import type { BrowserRallarMessageSubscriptions } from '@shared-web/browser/messages/browser-rallar-message-subscriptions.ts';
 import type { RallarLifecycleCoordinator } from '@shared-web/browser/rallar-runtime/lifecycle.ts';
 import type { RallarStatePort } from '@shared-web/browser/rallar-runtime/state-store.ts';
 import type { BrowserRealtimeReceiveRuntime } from '@shared-web/browser/realtime/browser-realtime-receive-runtime.ts';
@@ -16,7 +16,7 @@ export interface RegisterBrowserStateLifecycleInput {
 
 export interface RegisterBrowserTransportLifecycleInput {
     readonly lifecycle: RallarLifecycleCoordinator;
-    readonly messagesController: RallarMessagesController;
+    readonly messageSubscriptions: BrowserRallarMessageSubscriptions;
     readonly wsInbox: BrowserWebSocketInbox;
     readonly wsController: RallarWsController;
     readonly realtimeReceive: BrowserRealtimeReceiveRuntime;
@@ -50,8 +50,8 @@ export function registerBrowserTransportLifecycle(
     input.lifecycle.register({
         id: 'rtc-message-inbox',
         order: 30,
-        attach: (context) => input.messagesController.attachRtc(context),
-        detach: (context) => input.messagesController.detachRtc(context)
+        attach: (context) => input.messageSubscriptions.attachRtc(context),
+        detach: (context) => input.messageSubscriptions.detachRtc(context)
     });
     input.lifecycle.register({
         id: 'ws-inbox',

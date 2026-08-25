@@ -3,9 +3,9 @@ import {
     type RallarMediaPort
 } from '@shared-web/browser/media/browser-rallar-media-controller.ts';
 import {
-    BrowserRallarMessagesController,
-    type RallarMessagesController
+    BrowserRallarMessagesController
 } from '@shared-web/browser/messages/browser-rallar-messages-controller.ts';
+import type { RallarMessagesOperations } from '@shared-web/browser/messages/rallar-message-operations.ts';
 import type { RallarMediaFacade } from '@shared-web/browser/rallar-media-facade.ts';
 import type { RallarRealtimeFacade } from '@shared-web/browser/rallar-realtime-facade.ts';
 import type { RallarRtcFacade } from '@shared-web/browser/rallar-rtc-facade.ts';
@@ -31,8 +31,8 @@ const DEFAULT_RALLAR_REALTIME_LANE_ID = 'realtime';
 const DEFAULT_RALLAR_REALTIME_OPEN_TIMEOUT_MS = 5_000;
 
 export interface BrowserMessagingComposition {
-    readonly messagesController: RallarMessagesController;
-    readonly messages: RallarMessagesController['operations'];
+    readonly messagesController: BrowserRallarMessagesController;
+    readonly messages: RallarMessagesOperations;
 }
 
 export interface BrowserRealtimeCoreComposition {

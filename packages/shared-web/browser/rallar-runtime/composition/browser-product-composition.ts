@@ -131,7 +131,7 @@ export function createBrowserCallsComposition(
         media: input.media.media,
         mediaController: input.media.mediaController,
         sendWsUnicast: async ({ peerId, payload, typeId, route }) =>
-            await input.messaging.messagesController.sendWsUnicast({ peerId, payload, typeId, route })
+            await input.messaging.messagesController.sender.sendWsUnicast({ peerId, payload, typeId, route })
     });
     const calls = callsController.operations;
     return { calls };
@@ -154,7 +154,8 @@ export function createBrowserDirectorComposition(
         acceptSnapshots: async (snapshotInput) => await input.state.stateStore.acceptSnapshots(snapshotInput),
         createTargetedChannel: <T>(definition: RallarTargetedChannelDefinition) =>
             input.realtime.realtimeTargeted.create<T>(definition),
-        sendWsUnicast: async (sendInput) => await input.messaging.messagesController.sendWsUnicast(sendInput)
+        sendWsUnicast: async (sendInput) =>
+            await input.messaging.messagesController.sender.sendWsUnicast(sendInput)
     });
     const director = directorController.operations;
     input.state.stateStore.onAfterEmit(() => directorController.onStateChanged());

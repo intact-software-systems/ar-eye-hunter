@@ -1,7 +1,7 @@
 import type { ApiMiddleware } from '@shared-web/browser/app-context.ts';
 import { BrowserRallarCallsController } from '@shared-web/browser/calls/browser-rallar-calls-controller.ts';
 import type { RallarMediaPort } from '@shared-web/browser/media/browser-rallar-media-controller.ts';
-import type { RallarMessagesOperations } from '@shared-web/browser/messages/browser-rallar-messages-controller.ts';
+import type { RallarMessagesOperations } from '@shared-web/browser/messages/rallar-message-operations.ts';
 import type { RallarCallSignalPayload, RallarIncomingCallInvite } from '@shared-web/browser/rallar-calls-facade.ts';
 import type { RallarMediaFacade } from '@shared-web/browser/rallar-media-facade.ts';
 import type { RallarMessage, RallarMessageHandler, RallarMessageSendResult } from '@shared-web/browser/rallar-message-contracts.ts';

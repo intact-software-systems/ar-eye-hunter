@@ -150,7 +150,7 @@ function registerBrowserFacadeLifecycle(
     });
     registerBrowserTransportLifecycle({
         lifecycle: foundation.lifecycle,
-        messagesController: compositions.messaging.messagesController,
+        messageSubscriptions: compositions.messaging.messagesController.subscriptions,
         wsInbox: compositions.stateEvents.wsInbox,
         wsController: compositions.realtime.wsController,
         realtimeReceive: compositions.realtime.realtimeReceive,

@@ -1,6 +1,5 @@
 import type { ApiMiddleware } from '@shared-web/browser/app-context.ts';
 import { BrowserCallSessionRuntime } from '@shared-web/browser/calls/browser-call-session-runtime.ts';
-import type { RallarMessagesController } from '@shared-web/browser/messages/browser-rallar-messages-controller.ts';
 import type {
     RallarCallHandle,
     RallarCallInviteInput,
@@ -15,7 +14,11 @@ import type {
     RallarCallStartInput,
     RallarIncomingCallInvite
 } from '@shared-web/browser/rallar-calls-facade.ts';
-import type { RallarMessage, RallarMessageSendResult } from '@shared-web/browser/rallar-message-contracts.ts';
+import type {
+    RallarMessage,
+    RallarMessageSendResult
+} from '@shared-web/browser/rallar-message-contracts.ts';
+import type { RallarMessagesOperations } from '@shared-web/browser/messages/rallar-message-operations.ts';
 import type { RallarUnsubscribe } from '@shared-web/browser/rallar-shared-contracts.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
@@ -45,7 +48,7 @@ export namespace BrowserRallarCallsController {
         readSession(): AuthSession | undefined;
         requireSession(): AuthSession;
         resolveRoomRef(room?: string | GroupRef): GroupRef | undefined;
-        readonly messages: RallarMessagesController['operations'];
+        readonly messages: RallarMessagesOperations;
         sendWsUnicast<T>(input: SignalSendInput<T>): Promise<RallarMessageSendResult>;
     }
 

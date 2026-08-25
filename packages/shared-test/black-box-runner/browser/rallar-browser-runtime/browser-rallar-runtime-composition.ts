@@ -1,4 +1,4 @@
-import type { RallarMessagesOperations } from '@shared-web/browser/messages/browser-rallar-messages-controller.ts';
+import type { RallarMessagesOperations } from '@shared-web/browser/messages/rallar-message-operations.ts';
 import type { RallarAuthFacade } from '@shared-web/browser/rallar-auth-facade.ts';
 import type { RallarConnectionOperations } from '@shared-web/browser/rallar-connection-facade.ts';
 import type { RallarCrdtFacade } from '@shared-web/browser/rallar-crdt.ts';
@@ -161,7 +161,7 @@ function registerBlackBoxBrowserRallarLifecycle(
     });
     registerBrowserTransportLifecycle({
         lifecycle: input.foundation.lifecycle,
-        messagesController: input.messaging.messagesController,
+        messageSubscriptions: input.messaging.messagesController.subscriptions,
         wsInbox: input.stateEvents.wsInbox,
         wsController: input.realtime.wsController,
         realtimeReceive: input.realtime.realtimeReceive,

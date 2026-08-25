@@ -1,9 +1,9 @@
-import type { RallarMessagesController } from '@shared-web/browser/messages/browser-rallar-messages-controller.ts';
 import type {
     RallarDirectorRelayConfig,
     RallarDirectorRelayHandle
 } from '@shared-web/browser/rallar-director-facade.ts';
 import type { RallarRealtimeFacade } from '@shared-web/browser/rallar-realtime-facade.ts';
+import type { RallarMessagesOperations } from '@shared-web/browser/messages/rallar-message-operations.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { BrowserDirectorRelaySession } from './browser-director-relay-session.ts';
 import type { BrowserDirectorRelayTransport } from './browser-director-relay-transport.ts';
@@ -12,7 +12,7 @@ import type { BrowserDirectorStatusRuntime } from './browser-director-status-run
 export interface BrowserDirectorRelayRuntimeInput {
     readonly status: BrowserDirectorStatusRuntime;
     readonly transport: BrowserDirectorRelayTransport;
-    readonly messages: RallarMessagesController['operations'];
+    readonly messages: RallarMessagesOperations;
     readonly realtime: RallarRealtimeFacade;
     readSession(): AuthSession | undefined;
 }
