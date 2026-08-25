@@ -1,8 +1,8 @@
+import { decodePersistedAuthSession } from '../persistence/persisted-auth-session.ts';
 import {
     decodePersistedAgentSessionTicket,
-    decodePersistedAuthSession,
     decodePersistedWebSocketTicket
-} from '../persistence/auth-persistence-contracts.ts';
+} from '../persistence/persisted-auth-ticket.ts';
 import { requireIssueSessionLifecycle } from '../sessions/require-issue-session-lifecycle.ts';
 
 import type { AuthMutationCommand } from './auth-mutation-contracts.ts';

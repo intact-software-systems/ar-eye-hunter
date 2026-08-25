@@ -2,7 +2,8 @@ import { Temporal } from '@js-temporal/polyfill';
 import { expect, it, vi } from 'vitest';
 
 import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
-import { AuthUserRepository, type AuthUser } from '@shared-server/rallar-system/auth/persistence/auth-user-repository.ts';
+import { AuthUserRepository } from '@shared-server/rallar-system/auth/persistence/auth-user-repository.ts';
+import type { PersistedAuthUser } from '@shared-server/rallar-system/auth/persistence/persisted-auth-user.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 
@@ -114,7 +115,7 @@ interface RetryFixture {
     readonly runtimeRepository: FakeRuntimeStateRepository;
     readonly auth: AuthInboxTestRuntime;
     readonly users: AuthUserRepository;
-    readonly user: AuthUser;
+    readonly user: PersistedAuthUser;
     readonly conflict: { injected: boolean; rollbackCount: number; };
 }
 
@@ -217,7 +218,7 @@ async function expectFailedRetry(fixture: RetryFixture): Promise<void> {
     ).toBeUndefined();
 }
 
-function createRegisteredUser(clientId: string, username: string): AuthUser {
+function createRegisteredUser(clientId: string, username: string): PersistedAuthUser {
     return {
         clientId,
         username,
@@ -234,7 +235,7 @@ function createRegisteredUser(clientId: string, username: string): AuthUser {
     };
 }
 
-function registeredUserAuthority(user: AuthUser) {
+function registeredUserAuthority(user: PersistedAuthUser) {
     return {
         kind: 'registered-user' as const,
         clientId: user.clientId,

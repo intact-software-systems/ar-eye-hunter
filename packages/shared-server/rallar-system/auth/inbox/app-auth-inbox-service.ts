@@ -62,7 +62,7 @@ import { decodeAuthMutationIntent } from '../mutation/decode-auth-mutation-inten
 import { decodeAuthMutationResult } from '../mutation/decode-auth-mutation-result.ts';
 import { toAuthMutationPublicResult } from '../mutation/to-auth-mutation-public-result.ts';
 import type { IssuedAuthSession } from '../persistence/auth-session-types.ts';
-import type { AuthUser } from '../persistence/auth-user-repository.ts';
+import type { PersistedAuthUser } from '../persistence/persisted-auth-user.ts';
 import {
     AUTH_STATE_APP_INBOX_TOPIC,
     toAuthAppInboxType,

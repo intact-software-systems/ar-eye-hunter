@@ -8,7 +8,7 @@ import { toCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topology-
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import { QueueBoxUtilities } from '@shared/services/QueueBoxUtilities.ts';
 
-import type { PersistedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-persistence-contracts.ts';
+import type { PersistedAuthSession } from '@shared-server/rallar-system/auth/persistence/persisted-auth-session.ts';
 
 import type { IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
 

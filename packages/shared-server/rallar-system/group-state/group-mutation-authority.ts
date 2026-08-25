@@ -4,8 +4,8 @@ import { NonRetryableException } from '@shared/queuebox/DequeueResourceEntryCont
 
 import { type AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
 import type { GroupPolicyCapacityConfig } from '@shared-server/rallar-system/group-state/policy/group-membership-admission-policy.ts';
-import type { PersistedAuthSession } from '../auth/persistence/auth-persistence-contracts.ts';
 import type { IssuedAuthSession } from '../auth/persistence/auth-session-types.ts';
+import type { PersistedAuthSession } from '../auth/persistence/persisted-auth-session.ts';
 import { authSessionProofSecret } from '../auth/sessions/auth-session-proof-secret.ts';
 import { hashMutationCommand, type JsonWireValue } from '../protocol/json-wire-identity.ts';
 import { toAggregateMutationCommand, toMembershipMutationCommand } from './group-mutation-command.ts';

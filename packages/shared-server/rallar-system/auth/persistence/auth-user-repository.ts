@@ -4,91 +4,96 @@ import type {
     RuntimeStateConditionalWriteResult,
     RuntimeStateRepositoryLike
 } from '../../../runtime-state/runtime-state-repository.ts';
+import type { JsonWireValue } from '../../protocol/json-wire-identity.ts';
+import { normalizeAuthUsername } from '../credentials/normalize-auth-username.ts';
+import { decodePersistedAuthUser, type PersistedAuthUser } from './persisted-auth-user.ts';
 
 const AUTH_USERS_BY_USERNAME_NAMESPACE = 'auth-users:by-username';
 const AUTH_USERS_BY_CLIENT_ID_NAMESPACE = 'auth-users:by-client-id';
-
-export type AuthUserStatus = 'active' | 'disabled';
-
-export type AuthUser = Readonly<{
-    clientId: string;
-    username: string;
-    normalizedUsername: string;
-    displayName: string | null;
-    passwordHash: string;
-    passwordSalt: string;
-    passwordAlgorithm: 'pbkdf2-sha256';
-    passwordIterations: number;
-    roles: readonly string[];
-    status: AuthUserStatus;
-    createdAtEpochMs: number;
-    updatedAtEpochMs: number;
-}>;
 
 export class AuthUserRepository extends RuntimeStateJsonStore {
     constructor(repository: RuntimeStateRepositoryLike) {
         super(repository);
     }
 
-    async putUser(user: AuthUser): Promise<void> {
+    async putUser(user: PersistedAuthUser): Promise<void> {
+        const persisted = decodePersistedAuthUser(user);
         await this.putValue(
             AUTH_USERS_BY_USERNAME_NAMESPACE,
-            this.normalizedUsernameKey(user.normalizedUsername),
-            user
+            this.normalizedUsernameKey(persisted.normalizedUsername),
+            persisted
         );
-        await this.putValue(AUTH_USERS_BY_CLIENT_ID_NAMESPACE, this.clientIdKey(user.clientId), user);
+        await this.putValue(
+            AUTH_USERS_BY_CLIENT_ID_NAMESPACE,
+            this.clientIdKey(persisted.clientId),
+            persisted
+        );
     }
 
-    async insertByNormalizedUsername(user: AuthUser): Promise<RuntimeStateConditionalWriteResult> {
+    async insertByNormalizedUsername(
+        user: PersistedAuthUser
+    ): Promise<RuntimeStateConditionalWriteResult> {
+        const persisted = decodePersistedAuthUser(user);
         return await this.putValueIfAbsent(
             AUTH_USERS_BY_USERNAME_NAMESPACE,
-            this.normalizedUsernameKey(user.normalizedUsername),
-            user
+            this.normalizedUsernameKey(persisted.normalizedUsername),
+            persisted
         );
     }
 
-    async insertByClientId(user: AuthUser): Promise<RuntimeStateConditionalWriteResult> {
+    async insertByClientId(user: PersistedAuthUser): Promise<RuntimeStateConditionalWriteResult> {
+        const persisted = decodePersistedAuthUser(user);
         return await this.putValueIfAbsent(
             AUTH_USERS_BY_CLIENT_ID_NAMESPACE,
-            this.clientIdKey(user.clientId),
-            user
+            this.clientIdKey(persisted.clientId),
+            persisted
         );
     }
 
-    async findByUsername(username: string): Promise<AuthUser | undefined> {
-        return await this.findByNormalizedUsername(normalizeUsername(username));
+    async findByUsername(username: string): Promise<PersistedAuthUser | undefined> {
+        return await this.findByNormalizedUsername(normalizeAuthUsername(username));
     }
 
-    async findByNormalizedUsername(normalizedUsername: string): Promise<AuthUser | undefined> {
-        return await this.getValue<AuthUser>(
-            AUTH_USERS_BY_USERNAME_NAMESPACE,
-            this.normalizedUsernameKey(normalizedUsername)
-        );
+    async findByNormalizedUsername(normalizedUsername: string): Promise<PersistedAuthUser | undefined> {
+        return (await this.findByNormalizedUsernameEntry(normalizedUsername))?.value;
     }
 
     async findByNormalizedUsernameEntry(
         normalizedUsername: string
-    ): Promise<RuntimeStateEntryValue<AuthUser> | undefined> {
-        return await this.getEntryValue<AuthUser>(
+    ): Promise<RuntimeStateEntryValue<PersistedAuthUser> | undefined> {
+        const stored = await this.getEntryValue<JsonWireValue>(
             AUTH_USERS_BY_USERNAME_NAMESPACE,
             this.normalizedUsernameKey(normalizedUsername)
         );
+        if (!stored) {
+            return undefined;
+        }
+        const value = decodePersistedAuthUser(stored.value);
+        if (value.normalizedUsername !== normalizedUsername) {
+            throw new TypeError('Persisted auth user normalized username identity differs');
+        }
+        return { entry: stored.entry, value };
     }
 
-    async findByClientId(clientId: string): Promise<AuthUser | undefined> {
-        return await this.getValue<AuthUser>(
-            AUTH_USERS_BY_CLIENT_ID_NAMESPACE,
-            this.clientIdKey(clientId)
-        );
+    async findByClientId(clientId: string): Promise<PersistedAuthUser | undefined> {
+        return (await this.findByClientIdEntry(clientId))?.value;
     }
 
     async findByClientIdEntry(
         clientId: string
-    ): Promise<RuntimeStateEntryValue<AuthUser> | undefined> {
-        return await this.getEntryValue<AuthUser>(
+    ): Promise<RuntimeStateEntryValue<PersistedAuthUser> | undefined> {
+        const stored = await this.getEntryValue<JsonWireValue>(
             AUTH_USERS_BY_CLIENT_ID_NAMESPACE,
             this.clientIdKey(clientId)
         );
+        if (!stored) {
+            return undefined;
+        }
+        const value = decodePersistedAuthUser(stored.value);
+        if (value.clientId !== clientId) {
+            throw new TypeError('Persisted auth user client id identity differs');
+        }
+        return { entry: stored.entry, value };
     }
 
     normalizedUsernameStorageKey(normalizedUsername: string): string {
@@ -106,8 +111,4 @@ export class AuthUserRepository extends RuntimeStateJsonStore {
     private clientIdKey(clientId: string): string {
         return this.idKey('client', clientId);
     }
-}
-
-export function normalizeUsername(username: string): string {
-    return username.trim().toLowerCase();
 }

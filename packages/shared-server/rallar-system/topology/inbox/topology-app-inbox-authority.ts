@@ -1,7 +1,7 @@
 import { type AppInboxEnqueueInput } from '../../app-inbox/app-inbox-contracts.ts';
 import { hashCanonicalCommand } from '../../app-inbox/hash-canonical-command.ts';
-import type { PersistedAuthSession } from '../../auth/persistence/auth-persistence-contracts.ts';
 import type { IssuedAuthSession } from '../../auth/persistence/auth-session-types.ts';
+import type { PersistedAuthSession } from '../../auth/persistence/persisted-auth-session.ts';
 import { authSessionProofSecret } from '../../auth/sessions/auth-session-proof-secret.ts';
 import { GroupMutationAuthorizationError } from '../../group-state/group-mutation-authority.ts';
 import type { GroupStateService } from '../../group-state/group-state-service-contracts.ts';

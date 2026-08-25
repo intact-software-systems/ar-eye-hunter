@@ -1,5 +1,5 @@
 import type { JsonWireObject, JsonWireValue } from '../../protocol/json-wire-identity.ts';
-import { decodePersistedAuthSession } from '../persistence/auth-persistence-contracts.ts';
+import { decodePersistedAuthSession } from '../persistence/persisted-auth-session.ts';
 import type { AuthMutationIntent } from './auth-mutation-contracts.ts';
 
 type AuthMutationIntentCandidate = JsonWireValue | AuthMutationIntent;

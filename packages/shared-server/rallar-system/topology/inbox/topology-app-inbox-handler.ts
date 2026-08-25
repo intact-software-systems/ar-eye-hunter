@@ -2,8 +2,8 @@ import { fromCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topolog
 
 import { type AppInboxEnqueueInput, type AppInboxMessageContext } from '../../app-inbox/app-inbox-contracts.ts';
 import type { AppInboxMutationTransactionWriter } from '../../app-inbox/app-inbox-transaction-writer.ts';
-import type { PersistedAuthSession } from '../../auth/persistence/auth-persistence-contracts.ts';
 import type { IssuedAuthSession } from '../../auth/persistence/auth-session-types.ts';
+import type { PersistedAuthSession } from '../../auth/persistence/persisted-auth-session.ts';
 import type { GroupStateService } from '../../group-state/group-state-service-contracts.ts';
 import { requireExactKeys, requireString } from '../../protocol/exact-object-decoding.ts';
 import type { JsonWireValue } from '../../protocol/json-wire-identity.ts';

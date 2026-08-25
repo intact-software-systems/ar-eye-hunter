@@ -32,8 +32,8 @@ import { type AuthSessionRepository } from '@shared-server/rallar-system/auth/pe
 import type { GroupPolicyCapacityConfig } from '@shared-server/rallar-system/group-state/policy/group-membership-admission-policy.ts';
 import type { PSqlSql } from '../../postgres/p-sql-sql.ts';
 import type { RuntimeStateOptimisticTransactionalRepositoryLike } from '../../runtime-state/runtime-state-repository.ts';
-import type { PersistedAuthSession } from '../auth/persistence/auth-persistence-contracts.ts';
 import type { IssuedAuthSession } from '../auth/persistence/auth-session-types.ts';
+import type { PersistedAuthSession } from '../auth/persistence/persisted-auth-session.ts';
 import type { RallarTimingSink } from '../observability/timing.ts';
 import type { GroupStateEventStore } from '../state-events/group-state-event-store.ts';
 import type { StateEventListQuery } from '../state-events/state-event-listing.ts';
