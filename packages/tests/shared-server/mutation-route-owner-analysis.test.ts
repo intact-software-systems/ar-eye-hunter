@@ -6,6 +6,7 @@ import * as boundaryAnalysis from './mutation-boundary-analysis.ts';
 import * as routingContract from './mutation-routing-inventory.ts';
 
 const AUTHORISED_WS_HELPER = 'packages/shared-server/rallar-system/client-state/inbox/authorised-ws-client-app-inbox.ts';
+const CRDT_ADMIN_MUTATIONS = 'apps/api-v1/src/crdt/create-crdt-admin-mutations.ts';
 
 describe('Mutation route owner analysis contracts', () => {
     it('uses one named readonly input object for each authorised websocket enqueue helper', () => {
@@ -44,19 +45,9 @@ describe('Mutation route owner analysis contracts', () => {
     });
 
     it('exports a syntax-aware analyzer for named, default, namespace, dynamic, and alias evasions', () => {
-        const analyze = (
-            boundaryAnalysis as unknown as {
-                analyzeMutationBoundarySource?: (
-                    source: string,
-                    filePath: string
-                ) => boundaryAnalysis.MutationBoundaryViolation;
-            }
-        ).analyzeMutationBoundarySource;
+        const analyze = boundaryAnalysis.analyzeMutationBoundarySource;
 
         expect(analyze).toBeTypeOf('function');
-        if (!analyze) {
-            return;
-        }
 
         const evasions = [
             'import { GroupStateRepository as SafeName } from \'./repository.ts\';\nSafeName.prototype[\'createGroup\']({});',
@@ -84,6 +75,30 @@ describe('Mutation route owner analysis contracts', () => {
         expect(inventory).toHaveLength(56);
         expect(new Set(inventory.map((entry) => entry.type)).size).toBe(52);
         expect(validate(inventory)).toEqual([]);
+    });
+
+    it('rejects a CRDT reservation builder disconnected from command materialization', () => {
+        const source = read(CRDT_ADMIN_MUTATIONS);
+        const connectedMaterializer =
+            'materialize: () => createCrdtAdminCommand(input.mutation),';
+        expect(source).toContain(connectedMaterializer);
+        const disconnected = source.replace(
+            connectedMaterializer,
+            'materialize: () => disconnectedCrdtAdminCommand(input.mutation),'
+        );
+        const issues = routingContract.validateMutationRouteInventory(
+            routingContract.MUTATION_ROUTE_INVENTORY,
+            { sourceOverrides: new Map([[CRDT_ADMIN_MUTATIONS, disconnected]]) }
+        );
+
+        expect(issues).toEqual(
+            expect.arrayContaining([
+                expect.stringContaining(
+                    'CRDT_PROJECTION_REBUILD operation is not connected to ' +
+                        'writeHttpAdminCommandUntilCompletion'
+                )
+            ])
+        );
     });
 
     it('keeps every strict Task 4 HTTP mutation in the reachability audit', () => {
