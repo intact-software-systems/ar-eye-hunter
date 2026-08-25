@@ -32,10 +32,7 @@ import {
 } from '@shared-web/browser/rallar-runtime/composition/browser-session-composition.ts';
 import type { BrowserRallarRooms } from '@shared-web/browser/rooms/browser-rallar-rooms.ts';
 import type { RallarRoomSession } from '@shared-web/browser/rooms/rallar-room-contracts.ts';
-import type {
-    BlackBoxRallarDirectorOutputRecord,
-    BlackBoxRallarEvent
-} from './contracts.ts';
+import type { BlackBoxRallarDirectorOutputRecord, BlackBoxRallarEvent } from './contracts.ts';
 
 export interface BlackBoxBrowserRallarRuntimeDependency extends
     Pick<
@@ -86,8 +83,7 @@ export interface BlackBoxBrowserRtcDependency extends Pick<RallarRtcFacade, 'sta
 
 export interface BlackBoxBrowserCrdtDependency extends Pick<RallarCrdtFacade, 'open'> {}
 
-export interface BlackBoxBrowserDirectorDependency
-    extends Pick<RallarDirectorFacade, 'appoint' | 'resign' | 'status'> {
+export interface BlackBoxBrowserDirectorDependency extends Pick<RallarDirectorFacade, 'appoint' | 'resign' | 'status'> {
     createRelay(
         config: RallarDirectorRelayConfig<
             BlackBoxRallarEvent['data'],

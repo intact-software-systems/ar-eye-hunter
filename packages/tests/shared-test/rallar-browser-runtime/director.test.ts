@@ -1,10 +1,7 @@
 import type { BlackBoxRallarRuntime } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-runtime-contract.ts';
 import type { BlackBoxBrowserDirectorDependency } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/browser-rallar-runtime-composition.ts';
 import type { BlackBoxRallarDirectorOutputRecord } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/contracts.ts';
-import type {
-    RallarDirectorRelayMessage,
-    RallarDirectorStatus
-} from '@shared-web/browser/rallar-director-facade.ts';
+import type { RallarDirectorRelayMessage, RallarDirectorStatus } from '@shared-web/browser/rallar-director-facade.ts';
 import type { RallarMessagePayload } from '@shared-web/browser/rallar-message-contracts.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';

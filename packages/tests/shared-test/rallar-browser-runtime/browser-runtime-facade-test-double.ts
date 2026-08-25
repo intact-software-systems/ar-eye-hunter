@@ -10,15 +10,8 @@ import type {
     BlackBoxBrowserRtcDependency,
     BlackBoxBrowserWsDependency
 } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/browser-rallar-runtime-composition.ts';
-import type {
-    RallarMessageHandler,
-    RallarMessagePayload,
-    RallarMessageSendResult
-} from '@shared-web/browser/rallar-message-contracts.ts';
-import type {
-    RallarCrdtDocument,
-    RallarCrdtOpenOptions
-} from '@shared-web/browser/rallar-crdt.ts';
+import type { RallarCrdtDocument, RallarCrdtOpenOptions } from '@shared-web/browser/rallar-crdt.ts';
+import type { RallarMessageHandler, RallarMessagePayload, RallarMessageSendResult } from '@shared-web/browser/rallar-message-contracts.ts';
 import type { RallarRealtimeHandler } from '@shared-web/browser/rallar-realtime-facade.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { RallarCrdtOperationBatch } from '@shared/crdt/mod.ts';
@@ -40,19 +33,19 @@ export interface BrowserRuntimeFacadeRecords {
     readonly currentRoomRefreshes: Array<Parameters<BlackBoxBrowserRoomSessionDependency['refresh']>>;
     readonly realtimeSubscriptions: Array<[
         Parameters<BlackBoxBrowserRealtimeDependency['onJson']>[0],
-        RallarRealtimeHandler<never>,
+        RallarRealtimeHandler<never>
     ]>;
     realtimeUnsubscribeCount: number;
     readonly realtimeSends: Array<Parameters<BlackBoxBrowserRealtimeDependency['sendJson']>>;
     readonly rtcMessageSubscriptions: Array<[
         Parameters<BlackBoxBrowserMessagesDependency['rtc']['onMessage']>[0],
-        RallarMessageHandler<RallarMessagePayload>,
+        RallarMessageHandler<RallarMessagePayload>
     ]>;
     rtcMessageUnsubscribeCount: number;
     readonly rtcMessageSends: Array<Parameters<BlackBoxBrowserMessagesDependency['rtc']['send']>>;
     readonly wsMessageSubscriptions: Array<[
         Parameters<BlackBoxBrowserMessagesDependency['ws']['onMessage']>[0],
-        RallarMessageHandler<RallarMessagePayload>,
+        RallarMessageHandler<RallarMessagePayload>
     ]>;
     wsMessageUnsubscribeCount: number;
     readonly wsMessageSends: Array<Parameters<BlackBoxBrowserMessagesDependency['ws']['send']>>;
@@ -112,22 +105,28 @@ export const facadeBehavior = {
     currentRoomRefresh: vi.fn<BlackBoxBrowserRoomSessionDependency['refresh']>(),
     realtimeHealth: vi.fn<BlackBoxBrowserRealtimeDependency['health']>(),
     realtimeSend: vi.fn<BlackBoxBrowserRealtimeDependency['sendJson']>(),
-    realtimeOnJson: vi.fn<(
-        laneId: Parameters<BlackBoxBrowserRealtimeDependency['onJson']>[0],
-        handler: RallarRealtimeHandler<never>
-    ) => () => void>(),
+    realtimeOnJson: vi.fn<
+        (
+            laneId: Parameters<BlackBoxBrowserRealtimeDependency['onJson']>[0],
+            handler: RallarRealtimeHandler<never>
+        ) => () => void
+    >(),
     rtcStatus: vi.fn<BlackBoxBrowserRtcDependency['status']>(),
     rtcDiagnostics: vi.fn<BlackBoxBrowserRtcDependency['diagnostics']>(),
     rtcMessageSend: vi.fn<BlackBoxBrowserMessagesDependency['rtc']['send']>(),
-    rtcMessageOnMessage: vi.fn<(
-        selector: Parameters<BlackBoxBrowserMessagesDependency['rtc']['onMessage']>[0],
-        handler: RallarMessageHandler<RallarMessagePayload>
-    ) => () => void>(),
+    rtcMessageOnMessage: vi.fn<
+        (
+            selector: Parameters<BlackBoxBrowserMessagesDependency['rtc']['onMessage']>[0],
+            handler: RallarMessageHandler<RallarMessagePayload>
+        ) => () => void
+    >(),
     wsMessageSend: vi.fn<BlackBoxBrowserMessagesDependency['ws']['send']>(),
-    wsMessageOnMessage: vi.fn<(
-        selector: Parameters<BlackBoxBrowserMessagesDependency['ws']['onMessage']>[0],
-        handler: RallarMessageHandler<RallarMessagePayload>
-    ) => () => void>(),
+    wsMessageOnMessage: vi.fn<
+        (
+            selector: Parameters<BlackBoxBrowserMessagesDependency['ws']['onMessage']>[0],
+            handler: RallarMessageHandler<RallarMessagePayload>
+        ) => () => void
+    >(),
     crdtOpen: vi.fn<BlackBoxBrowserCrdtDependency['open']>(),
     directorAppoint: vi.fn<BlackBoxBrowserDirectorDependency['appoint']>(),
     directorResign: vi.fn<BlackBoxBrowserDirectorDependency['resign']>(),
@@ -369,10 +368,7 @@ function clearRecords(): void {
 
 export { records as facadeRecords };
 
-async function openCrdtDocument<
-    TValue,
-    TPayload extends RallarCrdtOperationBatch = RallarCrdtOperationBatch,
->(
+async function openCrdtDocument<TValue, TPayload extends RallarCrdtOperationBatch = RallarCrdtOperationBatch>(
     name: string,
     options?: RallarCrdtOpenOptions<TValue, TPayload>
 ): Promise<RallarCrdtDocument<TValue, TPayload>> {
