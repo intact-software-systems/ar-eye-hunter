@@ -3,9 +3,6 @@ import { resourceInboxRetryExpiryAtEpochMs } from '@shared/queuebox/ResourceInbo
 import type { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 import type { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
 
-import { PSqlAdminOperationsPruner } from '@shared-server/postgres/admin-operations/p-sql-admin-operations-pruner.ts';
-import { PSqlAdminPruneRepository } from '@shared-server/postgres/admin-operations/p-sql-admin-prune-repository.ts';
-
 import type { PSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 
 import type { ResourceInboxResultsRepository } from '@shared-server/queuebox/postgres/resource-inbox-results-repository.ts';
@@ -13,6 +10,8 @@ import {
     AppAdminInboxService,
     createAdminPruneIdempotencyIdentity
 } from '@shared-server/rallar-system/admin-operations/inbox/app-admin-inbox-service.ts';
+import { PSqlAdminExpiredDataPruner } from '@shared-server/rallar-system/admin-operations/postgres/p-sql-admin-expired-data-pruner.ts';
+import { PSqlAdminPruneRepository } from '@shared-server/rallar-system/admin-operations/postgres/p-sql-admin-prune-repository.ts';
 import { AdminPrunePageWorker } from '@shared-server/rallar-system/admin-operations/prune/admin-prune-page-worker.ts';
 
 import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
@@ -89,7 +88,7 @@ export function createApiAdminInboxService(
             resourceInboxRepository: input.resourceInboxRepository.entries,
             resourceInboxResultsRepository: input.resourceInboxResultsRepository,
             database: input.database,
-            pruner: new PSqlAdminOperationsPruner(input.database),
+            pruner: new PSqlAdminExpiredDataPruner(input.database),
             readAuthority,
             wakeQueueEngine: input.wakeQueueEngine,
             computeRetryExpiryAtEpochMs: resourceInboxRetryExpiryAtEpochMs,

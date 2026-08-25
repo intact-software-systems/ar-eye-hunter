@@ -1,4 +1,4 @@
-import { PSqlAdminOperationsStatsReader } from '@shared-server/postgres/admin-operations/PSqlAdminOperationsStatsReader.ts';
+import { PSqlAdminStateReader } from '@shared-server/rallar-system/admin-operations/postgres/p-sql-admin-state-reader.ts';
 import assert from 'node:assert/strict';
 import {
     createAdminSession,
@@ -8,7 +8,7 @@ import {
     withPGliteSql
 } from './admin-operations-postgres-test-runtime.ts';
 
-Deno.test('PSqlAdminOperationsStatsReader uses encoded runtime-state scope keys', async () => {
+Deno.test('admin state reader uses encoded runtime-state scope keys', async () => {
     await withPGliteSql(async (sql) => {
         const applicationId = 'ops app/1';
         const workspaceId = 'workspace:blue';
@@ -36,11 +36,11 @@ Deno.test('PSqlAdminOperationsStatsReader uses encoded runtime-state scope keys'
             value: { status: 'active' }
         });
 
-        const reader = new PSqlAdminOperationsStatsReader(sql, {
-            now: () => 1_700_000_000_000
+        const reader = new PSqlAdminStateReader(sql, {
+            nowEpochMs: () => 1_700_000_000_000
         });
 
-        const state = await reader.readState({
+        const state = await reader.execute({
             adminSession: createAdminSession(),
             scope: { applicationId, workspaceId }
         });
@@ -53,7 +53,7 @@ Deno.test('PSqlAdminOperationsStatsReader uses encoded runtime-state scope keys'
 });
 
 Deno.test(
-    'PSqlAdminOperationsStatsReader reads the current underscore workspace identity',
+    'admin state reader reads the current underscore workspace identity',
     async () => {
         await withPGliteSql(async (sql) => {
             const applicationId = 'ops-sentinel-app';
@@ -85,10 +85,10 @@ Deno.test(
       )
     `;
 
-            const reader = new PSqlAdminOperationsStatsReader(sql, {
-                now: () => 1_700_000_000_100
+            const reader = new PSqlAdminStateReader(sql, {
+                nowEpochMs: () => 1_700_000_000_100
             });
-            const state = await reader.readState({
+            const state = await reader.execute({
                 adminSession: createAdminSession(),
                 scope: { applicationId, workspaceId: '_' }
             });
@@ -100,7 +100,7 @@ Deno.test(
 );
 
 Deno.test(
-    'PSqlAdminOperationsStatsReader fails closed on wrong-scope group runtime values',
+    'admin state reader fails closed on wrong-scope group runtime values',
     async () => {
         await withPGliteSql(async (sql) => {
             const scope = {
@@ -117,12 +117,12 @@ Deno.test(
                     status: 'active'
                 }
             });
-            const reader = new PSqlAdminOperationsStatsReader(sql, {
-                now: () => 1_700_000_000_100
+            const reader = new PSqlAdminStateReader(sql, {
+                nowEpochMs: () => 1_700_000_000_100
             });
 
             await assert.rejects(
-                () => reader.readState({ adminSession: createAdminSession(), scope }),
+                () => reader.execute({ adminSession: createAdminSession(), scope }),
                 (error) =>
                     error instanceof Error &&
                     'code' in error &&
@@ -133,7 +133,7 @@ Deno.test(
 );
 
 Deno.test(
-    'PSqlAdminOperationsStatsReader rejects noncanonical group child-key aliases',
+    'admin state reader rejects noncanonical group child-key aliases',
     async () => {
         for (
             const input of [
@@ -188,13 +188,13 @@ Deno.test(
           ${new Date('9999-12-31T23:59:59Z')}
         )
       `;
-                const reader = new PSqlAdminOperationsStatsReader(sql, {
-                    now: () => 1_700_000_000_100
+                const reader = new PSqlAdminStateReader(sql, {
+                    nowEpochMs: () => 1_700_000_000_100
                 });
 
                 await assert.rejects(
                     () =>
-                        reader.readState({
+                        reader.execute({
                             adminSession: createAdminSession(),
                             scope: {
                                 applicationId: 'ops-alias-app',
@@ -211,7 +211,7 @@ Deno.test(
     }
 );
 
-Deno.test('PSqlAdminOperationsStatsReader treats encoded scope prefixes literally', async () => {
+Deno.test('admin state reader treats encoded scope prefixes literally', async () => {
     await withPGliteSql(async (sql) => {
         const applicationId = 'ops/app';
         const workspaceId = 'workspace:blue';
@@ -256,11 +256,11 @@ Deno.test('PSqlAdminOperationsStatsReader treats encoded scope prefixes literall
             }
         });
 
-        const reader = new PSqlAdminOperationsStatsReader(sql, {
-            now: () => 1_700_000_000_000
+        const reader = new PSqlAdminStateReader(sql, {
+            nowEpochMs: () => 1_700_000_000_000
         });
 
-        const state = await reader.readState({
+        const state = await reader.execute({
             adminSession: createAdminSession(),
             scope: { applicationId, workspaceId }
         });
@@ -272,7 +272,7 @@ Deno.test('PSqlAdminOperationsStatsReader treats encoded scope prefixes literall
 });
 
 Deno.test(
-    'PSqlAdminOperationsStatsReader excludes inactive domain state from active counts',
+    'admin state reader excludes inactive domain state from active counts',
     async () => {
         await withPGliteSql(async (sql) => {
             const keyPrefix = 'app=app-1:ws=workspace-1';
@@ -375,11 +375,11 @@ Deno.test(
                 await insertRuntimeState(sql, input);
             }
 
-            const reader = new PSqlAdminOperationsStatsReader(sql, {
-                now: () => 1_700_000_000_000
+            const reader = new PSqlAdminStateReader(sql, {
+                nowEpochMs: () => 1_700_000_000_000
             });
 
-            const state = await reader.readState({
+            const state = await reader.execute({
                 adminSession: createAdminSession(),
                 scope: { applicationId: 'app-1', workspaceId: 'workspace-1' }
             });
@@ -395,7 +395,7 @@ Deno.test(
 );
 
 Deno.test(
-    'PSqlAdminOperationsStatsReader excludes expired retained sessions from active counts',
+    'admin state reader excludes expired retained sessions from active counts',
     async () => {
         await withPGliteSql(async (sql) => {
             const keyPrefix = 'app=app-1:ws=workspace-1';
@@ -472,11 +472,11 @@ Deno.test(
                 await insertRuntimeState(sql, input);
             }
 
-            const reader = new PSqlAdminOperationsStatsReader(sql, {
-                now: () => 1_700_000_000_000
+            const reader = new PSqlAdminStateReader(sql, {
+                nowEpochMs: () => 1_700_000_000_000
             });
 
-            const state = await reader.readState({
+            const state = await reader.execute({
                 adminSession: createAdminSession(),
                 scope: { applicationId: 'app-1', workspaceId: 'workspace-1' }
             });
@@ -488,7 +488,7 @@ Deno.test(
     }
 );
 
-Deno.test('PSqlAdminOperationsStatsReader keeps online identity scoped globally', async () => {
+Deno.test('admin state reader keeps online identity scoped globally', async () => {
     await withPGliteSql(async (sql) => {
         for (
             const input of [
@@ -552,11 +552,11 @@ Deno.test('PSqlAdminOperationsStatsReader keeps online identity scoped globally'
             await insertRuntimeState(sql, input);
         }
 
-        const reader = new PSqlAdminOperationsStatsReader(sql, {
-            now: () => 1_700_000_000_000
+        const reader = new PSqlAdminStateReader(sql, {
+            nowEpochMs: () => 1_700_000_000_000
         });
 
-        const state = await reader.readState({
+        const state = await reader.execute({
             adminSession: createAdminSession()
         });
 
@@ -568,7 +568,7 @@ Deno.test('PSqlAdminOperationsStatsReader keeps online identity scoped globally'
 });
 
 Deno.test(
-    'PSqlAdminOperationsStatsReader keeps colon-bearing identities distinct globally',
+    'admin state reader keeps colon-bearing identities distinct globally',
     async () => {
         await withPGliteSql(async (sql) => {
             for (
@@ -601,11 +601,11 @@ Deno.test(
                 });
             }
 
-            const reader = new PSqlAdminOperationsStatsReader(sql, {
-                now: () => 1_700_000_000_000
+            const reader = new PSqlAdminStateReader(sql, {
+                nowEpochMs: () => 1_700_000_000_000
             });
 
-            const state = await reader.readState({
+            const state = await reader.execute({
                 adminSession: createAdminSession()
             });
 
@@ -615,7 +615,7 @@ Deno.test(
     }
 );
 
-Deno.test('PSqlAdminOperationsStatsReader fails closed on corrupt global group rows', async () => {
+Deno.test('admin state reader fails closed on corrupt global group rows', async () => {
     await withPGliteSql(async (sql) => {
         await insertRawRuntimeState(sql, {
             namespace: 'group-state:members',
@@ -628,12 +628,12 @@ Deno.test('PSqlAdminOperationsStatsReader fails closed on corrupt global group r
                 status: 'active'
             }
         });
-        const reader = new PSqlAdminOperationsStatsReader(sql, {
-            now: () => 1_700_000_000_000
+        const reader = new PSqlAdminStateReader(sql, {
+            nowEpochMs: () => 1_700_000_000_000
         });
 
         await assert.rejects(
-            () => reader.readState({ adminSession: createAdminSession() }),
+            () => reader.execute({ adminSession: createAdminSession() }),
             (error) =>
                 error instanceof Error &&
                 'code' in error &&
@@ -642,7 +642,7 @@ Deno.test('PSqlAdminOperationsStatsReader fails closed on corrupt global group r
     });
 });
 
-Deno.test('PSqlAdminOperationsStatsReader rejects global noncanonical group keys', async () => {
+Deno.test('admin state reader rejects global noncanonical group keys', async () => {
     for (
         const input of [
             {
@@ -689,12 +689,12 @@ Deno.test('PSqlAdminOperationsStatsReader rejects global noncanonical group keys
           ${new Date('9999-12-31T23:59:59Z')}
         )
       `;
-            const reader = new PSqlAdminOperationsStatsReader(sql, {
-                now: () => 1_700_000_000_000
+            const reader = new PSqlAdminStateReader(sql, {
+                nowEpochMs: () => 1_700_000_000_000
             });
 
             await assert.rejects(
-                () => reader.readState({ adminSession: createAdminSession() }),
+                () => reader.execute({ adminSession: createAdminSession() }),
                 (error) =>
                     error instanceof Error &&
                     'code' in error &&
@@ -705,7 +705,7 @@ Deno.test('PSqlAdminOperationsStatsReader rejects global noncanonical group keys
 });
 
 Deno.test(
-    'PSqlAdminOperationsStatsReader joins current group member and session identities globally',
+    'admin state reader joins current group member and session identities globally',
     async () => {
         await withPGliteSql(async (sql) => {
             await insertRuntimeState(sql, {
@@ -732,11 +732,11 @@ Deno.test(
                     expiresAtEpochMs: 1_700_000_060_000
                 }
             });
-            const reader = new PSqlAdminOperationsStatsReader(sql, {
-                now: () => 1_700_000_000_000
+            const reader = new PSqlAdminStateReader(sql, {
+                nowEpochMs: () => 1_700_000_000_000
             });
 
-            const state = await reader.readState({ adminSession: createAdminSession() });
+            const state = await reader.execute({ adminSession: createAdminSession() });
 
             assert.equal(state.groups.totalActiveMembers, 1);
             assert.equal(state.groups.onlineMembers, 1);
@@ -745,15 +745,15 @@ Deno.test(
 );
 
 Deno.test(
-    'PSqlAdminOperationsStatsReader validates the three global group row families',
+    'admin state reader validates the three global group row families',
     async () => {
         await withPGliteSql(async (sql) => {
             const guard = createRuntimeJsonScanGuard(sql);
-            const reader = new PSqlAdminOperationsStatsReader(guard.guardedSql, {
-                now: () => 1_700_000_000_000
+            const reader = new PSqlAdminStateReader(guard.guardedSql, {
+                nowEpochMs: () => 1_700_000_000_000
             });
 
-            await reader.readState({ adminSession: createAdminSession() });
+            await reader.execute({ adminSession: createAdminSession() });
 
             assert.equal(guard.runtimeJsonScanCount, 3);
         });

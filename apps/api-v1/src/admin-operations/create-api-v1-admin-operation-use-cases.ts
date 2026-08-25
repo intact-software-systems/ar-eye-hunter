@@ -1,7 +1,10 @@
-import { PSqlAdminOperationsStatsReader } from '@shared-server/postgres/admin-operations/PSqlAdminOperationsStatsReader.ts';
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import type { AdminOperationUseCases } from '@shared-server/rallar-system/admin-operations/admin-operation-use-cases.ts';
 import { ExportAdminCrdtDebug } from '@shared-server/rallar-system/admin-operations/export-admin-crdt-debug.ts';
+import { PSqlAdminCrdtReader } from '@shared-server/rallar-system/admin-operations/postgres/p-sql-admin-crdt-reader.ts';
+import { PSqlAdminQueueReader } from '@shared-server/rallar-system/admin-operations/postgres/p-sql-admin-queue-reader.ts';
+import { PSqlAdminStateReader } from '@shared-server/rallar-system/admin-operations/postgres/p-sql-admin-state-reader.ts';
+import { PSqlAdminSystemReader } from '@shared-server/rallar-system/admin-operations/postgres/p-sql-admin-system-reader.ts';
 import { ReadAdminOverview } from '@shared-server/rallar-system/admin-operations/read-admin-overview.ts';
 import { ReadAdminRealtime } from '@shared-server/rallar-system/admin-operations/read-admin-realtime.ts';
 import { ResetAdminMetrics } from '@shared-server/rallar-system/admin-operations/reset-admin-metrics.ts';
@@ -40,9 +43,15 @@ export interface CreateApiV1AdminOperationUseCasesInput {
 export function createApiV1AdminOperationUseCases(
     input: CreateApiV1AdminOperationUseCasesInput
 ): AdminOperationUseCases {
-    const statistics = new PSqlAdminOperationsStatsReader(input.database, {
-        now: input.nowEpochMs,
-        serverId: input.serviceId,
+    const readerOptions = {
+        nowEpochMs: input.nowEpochMs,
+        serverId: input.serviceId
+    };
+    const queues = new PSqlAdminQueueReader(input.database, readerOptions);
+    const state = new PSqlAdminStateReader(input.database, readerOptions);
+    const crdt = new PSqlAdminCrdtReader(input.database, readerOptions);
+    const system = new PSqlAdminSystemReader(input.database, {
+        ...readerOptions,
         sqlBackend: input.databaseMode,
         dbPubSub: input.databasePubSubMode
     });
@@ -57,17 +66,17 @@ export function createApiV1AdminOperationUseCases(
         overview: new ReadAdminOverview({
             nowEpochMs: input.nowEpochMs,
             serverId: input.serviceId,
-            readQueues: async (request) => await statistics.readQueues(request),
-            readState: async (request) => await statistics.readState(request),
-            readCrdt: async (request) => await statistics.readCrdt(request),
-            readSystem: async (request) => await statistics.readSystem(request),
+            readQueues: async (request) => await queues.execute(request),
+            readState: async (request) => await state.execute(request),
+            readCrdt: async (request) => await crdt.execute(request),
+            readSystem: async (request) => await system.execute(request),
             readRealtime: async (request) => await realtime.execute(request)
         }),
-        queues: { execute: async (request) => await statistics.readQueues(request) },
+        queues,
         realtime,
-        state: { execute: async (request) => await statistics.readState(request) },
-        crdt: { execute: async (request) => await statistics.readCrdt(request) },
-        system: { execute: async (request) => await statistics.readSystem(request) },
+        state,
+        crdt,
+        system,
         metricsReset: new ResetAdminMetrics({
             nowEpochMs: input.nowEpochMs,
             serverId: input.serviceId,

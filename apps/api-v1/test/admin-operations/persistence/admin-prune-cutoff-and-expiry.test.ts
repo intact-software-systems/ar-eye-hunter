@@ -1,9 +1,9 @@
 import { Temporal } from '@js-temporal/polyfill';
 import assert from 'node:assert/strict';
 
-import { PSqlAdminOperationsPruner } from '@shared-server/postgres/admin-operations/p-sql-admin-operations-pruner.ts';
+import { PSqlAdminExpiredDataPruner } from '@shared-server/rallar-system/admin-operations/postgres/p-sql-admin-expired-data-pruner.ts';
 
-import { PSqlAdminPruneRepository } from '@shared-server/postgres/admin-operations/p-sql-admin-prune-repository.ts';
+import { PSqlAdminPruneRepository } from '@shared-server/rallar-system/admin-operations/postgres/p-sql-admin-prune-repository.ts';
 
 import { ResourceInboxResultsRepository } from '@shared-server/queuebox/postgres/resource-inbox-results-repository.ts';
 import { createAdminPruneAggregate, toAdminPruneAggregateEntry } from '@shared-server/rallar-system/admin-operations/prune/admin-prune-progress.ts';
@@ -23,7 +23,7 @@ Deno.test(
                     expiryTs: Temporal.Instant.fromEpochMilliseconds(databaseNow - 1_000)
                 })
             );
-            const pruner = new PSqlAdminOperationsPruner(sql);
+            const pruner = new PSqlAdminExpiredDataPruner(sql);
 
             assert.equal(
                 await pruner.countExpired('resource-inbox-results', {

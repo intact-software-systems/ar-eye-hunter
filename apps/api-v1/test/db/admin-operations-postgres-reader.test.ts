@@ -1,4 +1,7 @@
-import { PSqlAdminOperationsStatsReader } from '@shared-server/postgres/admin-operations/PSqlAdminOperationsStatsReader.ts';
+import { PSqlAdminCrdtReader } from '@shared-server/rallar-system/admin-operations/postgres/p-sql-admin-crdt-reader.ts';
+import { PSqlAdminQueueReader } from '@shared-server/rallar-system/admin-operations/postgres/p-sql-admin-queue-reader.ts';
+import { PSqlAdminStateReader } from '@shared-server/rallar-system/admin-operations/postgres/p-sql-admin-state-reader.ts';
+import { PSqlAdminSystemReader } from '@shared-server/rallar-system/admin-operations/postgres/p-sql-admin-system-reader.ts';
 import assert from 'node:assert/strict';
 import {
     canonicalGroupRuntimeValue,
@@ -13,17 +16,21 @@ import {
     withPGliteSql
 } from './admin-operations-postgres-test-runtime.ts';
 
-Deno.test('PSqlAdminOperationsStatsReader aggregates admin read statistics', async () => {
+Deno.test('named PostgreSQL admin readers aggregate their owned statistics', async () => {
     await withPGliteSql(async (sql) => {
         await seedAdminOperationsRows(sql);
-        const reader = new PSqlAdminOperationsStatsReader(sql, {
-            now: () => 1_700_000_000_000,
+        const options = {
+            nowEpochMs: () => 1_700_000_000_000,
             serverId: 'test-server',
             sqlBackend: 'pglite-memory',
             dbPubSub: 'local'
-        });
+        };
+        const queueReader = new PSqlAdminQueueReader(sql, options);
+        const stateReader = new PSqlAdminStateReader(sql, options);
+        const crdtReader = new PSqlAdminCrdtReader(sql, options);
+        const systemReader = new PSqlAdminSystemReader(sql, options);
 
-        const queues = await reader.readQueues({ adminSession: createAdminSession() });
+        const queues = await queueReader.execute({ adminSession: createAdminSession() });
         assert.equal(queues.queueRows.total, 3);
         assert.equal(queues.queueRows.expired, 1);
         assert.deepEqual(queues.queueRows.byTypeStatus, [
@@ -34,7 +41,7 @@ Deno.test('PSqlAdminOperationsStatsReader aggregates admin read statistics', asy
         assert.equal(queues.resultRows.total, 2);
         assert.equal(queues.resultRows.expired, 1);
 
-        const state = await reader.readState({
+        const state = await stateReader.execute({
             adminSession: createAdminSession(),
             scope: { applicationId: 'app-1', workspaceId: 'workspace-1' }
         });
@@ -45,7 +52,7 @@ Deno.test('PSqlAdminOperationsStatsReader aggregates admin read statistics', asy
         assert.equal(state.events.recentClientEvents, 1);
         assert.equal(state.events.recentGroupEvents, 1);
 
-        const crdt = await reader.readCrdt({
+        const crdt = await crdtReader.execute({
             adminSession: createAdminSession(),
             scope: { applicationId: 'app-1', workspaceId: 'workspace-1' }
         });
@@ -57,7 +64,7 @@ Deno.test('PSqlAdminOperationsStatsReader aggregates admin read statistics', asy
         assert.equal(crdt.storage.snapshots, 1);
         assert.equal(crdt.storage.storedUpdateBytes, 42);
 
-        const system = await reader.readSystem({ adminSession: createAdminSession() });
+        const system = await systemReader.execute({ adminSession: createAdminSession() });
         assert.equal(system.runtimeState.rows, 7);
         assert.equal(system.runtimeState.expiredRows, 2);
         assert.equal(system.appData.rows, 2);
@@ -128,11 +135,12 @@ Deno.test('admin stats bound recent events and expire active groups logically', 
         )
     `;
 
-        const reader = new PSqlAdminOperationsStatsReader(sql, { now: () => nowEpochMs });
+        const stateReader = new PSqlAdminStateReader(sql, { nowEpochMs: () => nowEpochMs });
+        const systemReader = new PSqlAdminSystemReader(sql, { nowEpochMs: () => nowEpochMs });
 
-        const scopedState = await reader.readState({ adminSession: createAdminSession(), scope });
-        const globalState = await reader.readState({ adminSession: createAdminSession() });
-        const system = await reader.readSystem({ adminSession: createAdminSession() });
+        const scopedState = await stateReader.execute({ adminSession: createAdminSession(), scope });
+        const globalState = await stateReader.execute({ adminSession: createAdminSession() });
+        const system = await systemReader.execute({ adminSession: createAdminSession() });
 
         assert.equal(scopedState.events.recentClientEvents, 1);
         assert.equal(scopedState.events.recentGroupEvents, 1);
@@ -193,11 +201,11 @@ Deno.test('admin stats fail closed on contract violations in both scopes', async
     ) {
         await withPGliteSql(async (sql) => {
             await insertRawRuntimeState(sql, input);
-            const reader = new PSqlAdminOperationsStatsReader(sql, { now: () => nowEpochMs });
+            const reader = new PSqlAdminStateReader(sql, { nowEpochMs: () => nowEpochMs });
             for (
                 const read of [
-                    () => reader.readState({ adminSession: createAdminSession() }),
-                    () => reader.readState({ adminSession: createAdminSession(), scope })
+                    () => reader.execute({ adminSession: createAdminSession() }),
+                    () => reader.execute({ adminSession: createAdminSession(), scope })
                 ]
             ) {
                 await assert.rejects(
@@ -234,9 +242,9 @@ Deno.test('admin stats count canonical group expiries in both scopes', async () 
                 })
             });
         }
-        const reader = new PSqlAdminOperationsStatsReader(sql, { now: () => nowEpochMs });
-        const globalState = await reader.readState({ adminSession: createAdminSession() });
-        const scopedState = await reader.readState({ adminSession: createAdminSession(), scope });
+        const reader = new PSqlAdminStateReader(sql, { nowEpochMs: () => nowEpochMs });
+        const globalState = await reader.execute({ adminSession: createAdminSession() });
+        const scopedState = await reader.execute({ adminSession: createAdminSession(), scope });
         assert.equal(globalState.groups.activeGroups, 2);
         assert.equal(scopedState.groups.activeGroups, 2);
     });
@@ -275,12 +283,13 @@ Deno.test('admin stats apply a custom recent-event window within scope', async (
         )
     `;
 
-        const readerOptions = { now: () => nowEpochMs, recentEventWindowMs };
-        const reader = new PSqlAdminOperationsStatsReader(sql, readerOptions);
+        const readerOptions = { nowEpochMs: () => nowEpochMs, recentEventWindowMs };
+        const stateReader = new PSqlAdminStateReader(sql, readerOptions);
+        const systemReader = new PSqlAdminSystemReader(sql, readerOptions);
 
-        const scopedState = await reader.readState({ adminSession: createAdminSession(), scope });
-        const globalState = await reader.readState({ adminSession: createAdminSession() });
-        const system = await reader.readSystem({ adminSession: createAdminSession() });
+        const scopedState = await stateReader.execute({ adminSession: createAdminSession(), scope });
+        const globalState = await stateReader.execute({ adminSession: createAdminSession() });
+        const system = await systemReader.execute({ adminSession: createAdminSession() });
 
         assert.equal(scopedState.events.recentClientEvents, 1);
         assert.equal(scopedState.events.recentGroupEvents, 1);
@@ -315,11 +324,11 @@ Deno.test('admin stats order queue topPressure by descending count', async () =>
             await insertResourceInboxResult(sql, input);
         }
 
-        const reader = new PSqlAdminOperationsStatsReader(sql, {
-            now: () => 1_700_000_000_000
+        const reader = new PSqlAdminQueueReader(sql, {
+            nowEpochMs: () => 1_700_000_000_000
         });
 
-        const queues = await reader.readQueues({ adminSession: createAdminSession() });
+        const queues = await reader.execute({ adminSession: createAdminSession() });
 
         assert.deepEqual(queues.queueRows.topPressure.slice(0, 3), [
             { typeId: 'ZZ_HIGH', status: 'PENDING', count: 3 },

@@ -13,8 +13,6 @@ export * from './game/install-rallar-game-authority-server.ts';
 export * from './game/match-result.ts';
 export * from './http/rate-limit-service.ts';
 export * from './http/request-auth-service.ts';
-export * from './postgres/admin-operations/p-sql-admin-operations-pruner.ts';
-export * from './postgres/admin-operations/PSqlAdminOperationsStatsReader.ts';
 export * from './postgres/admin-support/PSqlAdminSupportReader.ts';
 export * from './postgres/p-sql-sql.ts';
 export * from './postgres/run-in-p-sql-transaction.ts';
