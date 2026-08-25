@@ -1,8 +1,8 @@
 import { createRallarAiJsonResult, createRallarAiMockProvider, type RallarAiJsonProvider, type RallarAiJsonRequest } from '@shared/rallar-ai/mod.ts';
 import { describe, expect, it, vi } from 'vitest';
 
-import { DEFAULT_ARENA_WEBLLM_MODEL_ID, type ArenaBrowserAiConfig } from '../../../apps/ar-eye-hunter-v1/src/game/browserAiConfig.ts';
-import { createArenaBrowserAiProvider } from '../../../apps/ar-eye-hunter-v1/src/game/browserAiProvider.ts';
+import { DEFAULT_ARENA_WEBLLM_MODEL_ID, type ArenaBrowserAiConfig } from '../../../../apps/ar-eye-hunter-v1/src/game/browser-ai/arena-browser-ai-config.ts';
+import { createArenaBrowserAiProvider } from '../../../../apps/ar-eye-hunter-v1/src/game/browser-ai/arena-browser-ai-provider.ts';
 
 describe('AR Eye Hunter browser AI provider selection', () => {
     it('selects WebLLM when configured and WebGPU is available', () => {

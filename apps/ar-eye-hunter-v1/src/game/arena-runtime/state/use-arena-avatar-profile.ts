@@ -11,8 +11,8 @@ import {
     validateAvatarProfile,
     type AvatarProfile
 } from '../../avatarProfile.ts';
-import { resolveArenaBrowserAiConfig } from '../../browserAiConfig.ts';
-import { createArenaBrowserAiProvider } from '../../browserAiProvider.ts';
+import { resolveArenaBrowserAiConfig } from '../../browser-ai/arena-browser-ai-config.ts';
+import { createArenaBrowserAiProvider } from '../../browser-ai/arena-browser-ai-provider.ts';
 import type { ArenaSnapshot } from '../../types.ts';
 
 const BROWSER_RALLAR_AI_CONFIG = resolveArenaBrowserAiConfig();

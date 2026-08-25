@@ -9,7 +9,7 @@ import {
     isArenaBrowserAiEnabled,
     resolveArenaBrowserAiConfig,
     resolveArenaBrowserAiMode
-} from '../../../apps/ar-eye-hunter-v1/src/game/browserAiConfig.ts';
+} from '../../../../apps/ar-eye-hunter-v1/src/game/browser-ai/arena-browser-ai-config.ts';
 
 describe('AR Eye Hunter browser RallarAI config', () => {
     it('enables browser RallarAI for the Cloudflare production env', () => {

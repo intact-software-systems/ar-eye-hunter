@@ -59,7 +59,7 @@ large model runtime code by default.
 
 ```ts
 const { createWebLlmRallarAiProvider } = await import(
-    '@shared-web/browser/rallar-ai-providers/webllm.ts'
+    '@shared-web/browser/ai/providers/webllm-rallar-ai-provider.ts'
 );
 
 const provider = createWebLlmRallarAiProvider({

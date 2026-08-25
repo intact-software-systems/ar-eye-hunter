@@ -4,8 +4,8 @@ import type { RallarDirectorStatus } from '@shared-web/browser/rallar.ts';
 import type { Dispatch, RefObject, SetStateAction } from 'react';
 
 import { createAiDirectorMockProvider } from '../../aiDirector.ts';
-import { resolveArenaBrowserAiConfig } from '../../browserAiConfig.ts';
-import { createArenaBrowserAiProvider } from '../../browserAiProvider.ts';
+import { resolveArenaBrowserAiConfig } from '../../browser-ai/arena-browser-ai-config.ts';
+import { createArenaBrowserAiProvider } from '../../browser-ai/arena-browser-ai-provider.ts';
 import type { ArenaRallarGameMatchHandle } from '../../rallar-game-match-adapter.ts';
 import { arenaRevisionKey, hydrateArenaSnapshot } from '../../simulation.ts';
 import type { ArenaEvent, ArenaSnapshot } from '../../types.ts';

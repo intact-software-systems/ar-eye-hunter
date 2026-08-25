@@ -12,8 +12,8 @@ import {
     validateAvatarProfile,
     type AvatarProfile
 } from '../../avatarProfile.ts';
-import { resolveArenaBrowserAiConfig } from '../../browserAiConfig.ts';
-import { createArenaBrowserAiProvider } from '../../browserAiProvider.ts';
+import { resolveArenaBrowserAiConfig } from '../../browser-ai/arena-browser-ai-config.ts';
+import { createArenaBrowserAiProvider } from '../../browser-ai/arena-browser-ai-provider.ts';
 import type { ArenaRallarGameMatchHandle } from '../../rallar-game-match-adapter.ts';
 import type { ArenaSnapshot } from '../../types.ts';
 import type { ArenaTransportDiagnostics } from '../arena-connection-contracts.ts';

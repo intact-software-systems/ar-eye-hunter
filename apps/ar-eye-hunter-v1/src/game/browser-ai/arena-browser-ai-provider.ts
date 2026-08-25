@@ -1,7 +1,10 @@
 import type { RallarAiJsonProvider, RallarAiJsonRequest, RallarAiJsonResult } from '@shared/rallar-ai/mod.ts';
 
-import { type ArenaBrowserAiConfig } from './browserAiConfig.ts';
-import { createWebLlmRallarAiProvider, type CreateWebLlmRallarAiProviderOptions } from './webLlmProvider.ts';
+import { type ArenaBrowserAiConfig } from './arena-browser-ai-config.ts';
+import {
+    createArenaWebLlmProvider,
+    type CreateArenaWebLlmProviderOptions
+} from './arena-webllm-provider.ts';
 
 export type ArenaBrowserAiProviderMode = 'mock' | 'webllm';
 
@@ -24,10 +27,10 @@ export type ArenaBrowserAiProviderSelection =
 export type CreateArenaBrowserAiProviderOptions = Readonly<{
     config: ArenaBrowserAiConfig;
     createMockProvider: () => RallarAiJsonProvider;
-    createWebLlmProvider?: (options: CreateWebLlmRallarAiProviderOptions) => RallarAiJsonProvider;
+    createWebLlmProvider?: (options: CreateArenaWebLlmProviderOptions) => RallarAiJsonProvider;
     hasWebGpu?: () => boolean;
     onFallback?: (reason: string) => void;
-    onWebLlmProgress?: (progress: unknown) => void;
+    onWebLlmProgress?: (progress: object) => void;
 }>;
 
 export function createArenaBrowserAiProvider(
@@ -71,7 +74,7 @@ export function createArenaBrowserAiProvider(
         };
     }
 
-    const webLlmProvider = (options.createWebLlmProvider ?? createWebLlmRallarAiProvider)({
+    const webLlmProvider = (options.createWebLlmProvider ?? createArenaWebLlmProvider)({
         modelId: config.modelId,
         hasWebGpu: () => hasWebGpu,
         onProgress: options.onWebLlmProgress
@@ -102,7 +105,7 @@ function createProviderWithMockFallback(
         source: primary.source,
         modelId: primary.modelId,
         capabilities: primary.capabilities,
-        async generateJson<TValue = unknown, TContext = unknown>(
+        async generateJson<TValue, TContext>(
             request: RallarAiJsonRequest<TContext>
         ): Promise<RallarAiJsonResult<TValue>> {
             try {

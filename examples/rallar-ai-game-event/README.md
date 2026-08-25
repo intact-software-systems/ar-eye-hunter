@@ -79,7 +79,7 @@ await tracker.acceptOnce(accepted, (result) => {
 In production, replace the mock provider with either:
 
 - a browser provider imported from
-  `@shared-web/browser/rallar-ai-providers/webllm.ts`, or
+  `@shared-web/browser/ai/providers/webllm-rallar-ai-provider.ts`, or
 - a Rallar Server route/topic backed by a private server-side sidecar such as
   Ollama.
 

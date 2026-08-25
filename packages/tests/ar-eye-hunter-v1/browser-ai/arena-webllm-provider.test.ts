@@ -1,17 +1,19 @@
 import { isRallarAiProviderAllowedInProduction, type RallarAiJsonRequest } from '@shared/rallar-ai/mod.ts';
 import { describe, expect, it, vi } from 'vitest';
 
-import { DEFAULT_ARENA_WEBLLM_MODEL_ID } from '../../../apps/ar-eye-hunter-v1/src/game/browserAiConfig.ts';
+import { DEFAULT_ARENA_WEBLLM_MODEL_ID } from '../../../../apps/ar-eye-hunter-v1/src/game/browser-ai/arena-browser-ai-config.ts';
+import {
+    runArenaWebLlmDeterministicEvaluation,
+    runArenaWebLlmLiveEvaluationIfEnabled
+} from '../../../../apps/ar-eye-hunter-v1/src/game/browser-ai/arena-webllm-evaluation.ts';
 import {
     ARENA_WEBLLM_LIVE_EVALUATION_GATE,
     ARENA_WEBLLM_PROVIDER_GOVERNANCE,
-    createWebLlmRallarAiProvider,
-    runArenaWebLlmDeterministicEvaluation,
-    runArenaWebLlmLiveEvaluationIfEnabled,
+    createArenaWebLlmProvider,
     type WebLlmChatRequest,
     type WebLlmEngine,
     type WebLlmModule
-} from '../../../apps/ar-eye-hunter-v1/src/game/webLlmProvider.ts';
+} from '../../../../apps/ar-eye-hunter-v1/src/game/browser-ai/arena-webllm-provider.ts';
 
 describe('AR Eye Hunter WebLLM RallarAI provider', () => {
     it('declares app-owned governance metadata for the WebLLM provider', () => {
@@ -56,7 +58,7 @@ describe('AR Eye Hunter WebLLM RallarAI provider', () => {
             }
         };
         const createEngine = vi.fn(async () => engine);
-        const provider = createWebLlmRallarAiProvider({
+        const provider = createArenaWebLlmProvider({
             modelId: 'test-webllm-model',
             loadWebLlm: async (): Promise<WebLlmModule> => ({
                 CreateMLCEngine: createEngine
@@ -64,8 +66,8 @@ describe('AR Eye Hunter WebLLM RallarAI provider', () => {
             hasWebGpu: () => true
         });
 
-        const first = await provider.generateJson<Record<string, unknown>>(request('one'));
-        const second = await provider.generateJson<Record<string, unknown>>(request('two'));
+        const first = await provider.generateJson<WebLlmTestResult>(request('one'));
+        const second = await provider.generateJson<WebLlmTestResult>(request('two'));
 
         expect(createEngine).toHaveBeenCalledTimes(1);
         expect(createEngine).toHaveBeenCalledWith('test-webllm-model', expect.any(Object));
@@ -84,7 +86,7 @@ describe('AR Eye Hunter WebLLM RallarAI provider', () => {
     });
 
     it('rejects malformed JSON so app validation can fall back safely', async () => {
-        const provider = createWebLlmRallarAiProvider({
+        const provider = createArenaWebLlmProvider({
             modelId: 'test-webllm-model',
             loadWebLlm: async (): Promise<WebLlmModule> => ({
                 CreateMLCEngine: async () => ({
@@ -106,7 +108,7 @@ describe('AR Eye Hunter WebLLM RallarAI provider', () => {
     });
 
     it('honors abort signals before and during generation', async () => {
-        const provider = createWebLlmRallarAiProvider({
+        const provider = createArenaWebLlmProvider({
             modelId: 'test-webllm-model',
             loadWebLlm: async (): Promise<WebLlmModule> => ({
                 CreateMLCEngine: async () => ({
@@ -161,7 +163,7 @@ describe('AR Eye Hunter WebLLM RallarAI provider', () => {
             env: {},
             nowEpochMs: 18_000,
             createProvider: () =>
-                createWebLlmRallarAiProvider({
+                createArenaWebLlmProvider({
                     modelId: 'should-not-load',
                     hasWebGpu: () => false
                 })
@@ -176,7 +178,7 @@ describe('AR Eye Hunter WebLLM RallarAI provider', () => {
             env: { [ARENA_WEBLLM_LIVE_EVALUATION_GATE]: '1' },
             nowEpochMs: 18_000,
             createProvider: () =>
-                createWebLlmRallarAiProvider({
+                createArenaWebLlmProvider({
                     modelId: 'mock-live-webllm',
                     hasWebGpu: () => true,
                     loadWebLlm: async (): Promise<WebLlmModule> => ({
@@ -239,4 +241,9 @@ function request(requestId: string): RallarAiJsonRequest<{ roomId: string; }> {
         maxOutputTokens: 123,
         temperature: 0.41
     };
+}
+
+interface WebLlmTestResult {
+    readonly headline: string;
+    readonly urgency: string;
 }

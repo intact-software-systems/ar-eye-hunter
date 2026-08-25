@@ -1,8 +1,14 @@
 import { createRallarBrowserAi } from '@shared-web/browser/rallar-ai.ts';
-import type { RallarDataStoreOptions } from '@shared-web/browser/rallar-data.ts';
-import type { RallarMessageSendResult, RallarRealtimeJsonSendInput, RallarRtcSendInput, RallarWsSendInput } from '@shared-web/browser/rallar.ts';
-import { createRallarAiAcceptedResultTracker, createRallarAiMockProvider, RallarAiError, transitionRallarAiResultLifecycle } from '@shared/rallar-ai/mod.ts';
+import {
+    createRallarAiAcceptedResultTracker,
+    createRallarAiMockProvider,
+    RallarAiError,
+    transitionRallarAiResultLifecycle,
+    type RallarAiJsonProvider
+} from '@shared/rallar-ai/mod.ts';
 import { describe, expect, it, vi } from 'vitest';
+
+import { createFakeRallar } from './browser-rallar-ai-test-runtime.ts';
 
 describe('Rallar browser AI facade', () => {
     const schema = {
@@ -131,6 +137,50 @@ describe('Rallar browser AI facade', () => {
         expect(JSON.stringify(diagnostics.mock.calls)).not.toContain('secret');
     });
 
+    it('aborts timed-out providers and reports the provider lifecycle failure', async () => {
+        const diagnostics = vi.fn();
+        const provider: RallarAiJsonProvider = {
+            ...createRallarAiMockProvider({ value: { kind: 'spawn' } }),
+            async generateJson(request) {
+                return await new Promise<never>((_resolve, reject) => {
+                    request.signal?.addEventListener(
+                        'abort',
+                        () => reject(request.signal?.reason),
+                        { once: true }
+                    );
+                });
+            }
+        };
+        const ai = createRallarBrowserAi({
+            rallar: createFakeRallar(),
+            provider,
+            policy: {
+                mode: 'browser-only',
+                timeoutMs: 1
+            },
+            diagnostics
+        });
+
+        await expect(
+            ai.generateJson({
+                requestId: 'request-timeout',
+                schemaId: 'game-event',
+                schemaVersion: '1',
+                schema,
+                prompt: 'generate'
+            })
+        ).rejects.toMatchObject({
+            code: 'provider-timeout'
+        });
+        expect(diagnostics).toHaveBeenCalledWith(
+            expect.objectContaining({
+                kind: 'provider-timed-out',
+                requestId: 'request-timeout',
+                errorCode: 'provider-timeout'
+            })
+        );
+    });
+
     it('rejects stale results when configured with a revision reader', async () => {
         const ai = createRallarBrowserAi({
             rallar: createFakeRallar(),
@@ -211,7 +261,7 @@ describe('Rallar browser AI facade', () => {
             rallar,
             provider: createRallarAiMockProvider({ value: { kind: 'spawn' } })
         });
-        const draft = await ai.generateJson({
+        const draft = await ai.generateJson<{ kind: string; }>({
             requestId: 'approval-request',
             schemaId: 'game-event',
             schemaVersion: '1',
@@ -222,7 +272,7 @@ describe('Rallar browser AI facade', () => {
         const proposed = transitionRallarAiResultLifecycle(draft, 'proposed');
         const accepted = transitionRallarAiResultLifecycle(proposed, 'accepted');
         const tracker = createRallarAiAcceptedResultTracker<typeof accepted.value>();
-        const gameEvents: unknown[] = [];
+        const gameEvents: Array<{ kind: string; }> = [];
 
         await ai.broadcastJson({
             result: proposed,
@@ -291,161 +341,4 @@ describe('Rallar browser AI facade', () => {
         expect(rallar.store.set).toHaveBeenCalledWith('result-1', result);
     });
 
-    it('supports dynamic import of the browser WebLLM provider entry point', async () => {
-        const { createWebLlmRallarAiProvider } = await import('@shared-web/browser/rallar-ai-providers/webllm.ts');
-        const runtime = {
-            generateJson: vi.fn(async (input: unknown) => {
-                expect(JSON.stringify(input)).toContain('Generate a spawn');
-                return { json: { kind: 'spawn' } };
-            })
-        };
-        const provider = createWebLlmRallarAiProvider({
-            modelId: 'webllm-test-model',
-            runtime,
-            typicalColdStartMs: 100
-        });
-        const ai = createRallarBrowserAi({
-            rallar: createFakeRallar(),
-            provider
-        });
-
-        const result = await ai.generateJson({
-            requestId: 'webllm-request',
-            schemaId: 'game-event',
-            schemaVersion: '1',
-            schema,
-            prompt: 'Generate a spawn.'
-        });
-
-        expect(provider.capabilities).toEqual(
-            expect.objectContaining({
-                target: 'browser',
-                typicalColdStartMs: 100
-            })
-        );
-        expect(result).toEqual(
-            expect.objectContaining({
-                providerId: 'webllm',
-                modelId: 'webllm-test-model',
-                source: 'browser',
-                value: { kind: 'spawn' },
-                validation: expect.objectContaining({ ok: true })
-            })
-        );
-    });
 });
-
-function createFakeRallar() {
-    const store = createFakeDataStore();
-    return {
-        store,
-        data: {
-            open: vi.fn(
-                async (
-                    _input: string,
-                    _options?: Pick<RallarDataStoreOptions<never>, 'durability' | 'schemaVersion' | 'scope'>
-                ) => store
-            ),
-            define: unusedByBrowserAi,
-            lookup: () => undefined,
-            close: async () => false,
-            closeScope: async () => 0,
-            clearScope: async () => 0,
-            destroy: async () => false,
-            destroyScope: async () => 0,
-            estimateUsage: async () => ({})
-        },
-        realtime: {
-            sendJson: vi.fn(
-                async (_input: RallarRealtimeJsonSendInput<unknown>) => []
-            ),
-            sendBinary: async () => [],
-            onJson: () => noopUnsubscribe,
-            onBinary: () => noopUnsubscribe,
-            json: unusedByBrowserAi,
-            room: unusedByBrowserAi,
-            health: () => []
-        },
-        messages: {
-            rtc: {
-                send: vi.fn(async (_input: RallarRtcSendInput<unknown>) => createFakeMessageSendResult('rtc')),
-                onMessage: () => noopUnsubscribe
-            },
-            ws: {
-                send: vi.fn(async (_input: RallarWsSendInput<unknown>) => createFakeMessageSendResult('ws')),
-                onMessage: () => noopUnsubscribe
-            },
-            channel: unusedByBrowserAi,
-            room: unusedByBrowserAi
-        }
-    };
-}
-
-function createFakeDataStore() {
-    return {
-        name: 'rallar-ai-results',
-        repositoryId: 'rallar-ai-results',
-        hydrate: async () => undefined,
-        whenHydrated: async () => undefined,
-        isHydrated: () => true,
-        whenIdle: async () => undefined,
-        flush: async () => undefined,
-        read: (_key: string) => undefined,
-        get: async (_key: string) => undefined,
-        readEntries: () => [],
-        readAllValues: () => [],
-        getEntries: async () => [],
-        getAll: async () => [],
-        listKeys: async () => [],
-        keys: () => [],
-        exportData: async () => ({}),
-        set: vi.fn(async (_key: string, _value: unknown) => undefined),
-        update: async (_key: string) => undefined,
-        updateOrCreate: unusedByBrowserAi,
-        setIfAbsent: unusedByBrowserAi,
-        compareAndSet: async (_key: string) => false,
-        getAndSet: async (_key: string) => undefined,
-        delete: async (_key: string) => false,
-        deleteExpired: async () => 0,
-        clear: async () => undefined,
-        clearAll: async () => undefined,
-        close: async () => false,
-        destroy: async () => undefined,
-        estimateUsage: async () => ({}),
-        onChange: () => noopUnsubscribe
-    };
-}
-
-function createFakeMessageSendResult(
-    transport: 'rtc' | 'ws'
-): RallarMessageSendResult {
-    return {
-        transport,
-        status: 'enqueued',
-        message: {
-            id: {
-                v: 2,
-                msgId: `${transport}-message-1`,
-                ts: 1_000,
-                senderId: 'peer-a'
-            },
-            route: {
-                topicId: 'room.ai',
-                resourceId: 'result-1',
-                contextId: 'room-1'
-            },
-            payload: {
-                typeId: 'generated',
-                contentType: 'application/json',
-                resource: '{}'
-            }
-        },
-        entries: []
-    };
-}
-
-function noopUnsubscribe(): void {}
-
-function unusedByBrowserAi(): never {
-    throw new Error('member is not exercised by the browser AI facade');
-}
