@@ -1,19 +1,105 @@
 import type { RallarBlackBoxTestRuntimeEventInput } from '@shared-test/rallar-bb-test/types.ts';
-import type { RallarMessageSelectorInput, RallarUnsubscribe } from '@shared-web/browser/rallar.ts';
+import type { RallarMessagePayload } from '@shared-web/browser/rallar-message-contracts.ts';
+import type {
+    RallarFacade,
+    RallarMessage,
+    RallarMessageHandler,
+    RallarMessageSelectorInput,
+    RallarMessageSendResult,
+    RallarStartResult,
+    RallarUnsubscribe,
+    RallarWsSendInput
+} from '@shared-web/browser/rallar.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import { assertValidRallarRouteId, assertValidRallarWsUserTopicId } from '@shared/api/rallar-validation.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
-import type {
-    CreateDirectRallarRuntimeEventInput,
-    DirectRallarFacade,
-    DirectRallarFacadeLoader,
-    DirectRallarMessageHandler,
-    DirectRallarOperationContext,
-    DirectRallarStartResult,
-    DirectRallarWsPayload,
-    DirectRallarWsSendInput
-} from './direct-rallar-contracts.ts';
+import type { RallarBlackBoxProviderMode } from './client-defaults.ts';
+
+export interface DirectRallarOperationContext {
+    readonly providerMode: RallarBlackBoxProviderMode;
+    readonly apiBaseUrl: string;
+    readonly applicationId: string;
+    readonly workspaceId: string;
+    readonly roomId?: string;
+    readonly actor?: string;
+    readonly connection?: string;
+    readonly authSession?: AuthSession;
+    readonly timeoutMs?: number;
+}
+
+export interface DirectRallarWsSendInput {
+    readonly scope?: 'room' | 'world' | 'all';
+    readonly typeId: string;
+    readonly topicId?: string;
+    readonly contextId?: string;
+    readonly resourceId?: string;
+    readonly payload: RallarBlackBoxTestRuntimeEventInput['payload'];
+    readonly minSnapshotVersion?: number;
+}
+
+export interface DirectRallarMessageHandler {
+    (
+        message: RallarMessage<RallarMessagePayload> & Record<string, unknown>
+    ): void | Promise<void>;
+}
+
+export interface DirectRallarWsMessagesFacade {
+    send<T extends RallarMessagePayload>(input: RallarWsSendInput<T>): Promise<RallarMessageSendResult>;
+    onMessage(
+        selector: RallarMessageSelectorInput,
+        handler: RallarMessageHandler<RallarMessagePayload>
+    ): RallarUnsubscribe;
+}
+
+export interface DirectRallarMessagesFacade {
+    readonly ws: DirectRallarWsMessagesFacade;
+}
+
+export interface DirectRallarFacade extends
+    Pick<
+        RallarFacade,
+        | 'configure'
+        | 'setDefaults'
+        | 'defaults'
+        | 'start'
+        | 'status'
+        | 'isConnected'
+        | 'session'
+    > {
+    readonly auth: Pick<RallarFacade['auth'], 'restore'>;
+    readonly rooms: Pick<RallarFacade['rooms'], 'current' | 'list' | 'create' | 'join'>;
+    readonly people: Pick<RallarFacade['people'], 'list'>;
+    readonly messages: DirectRallarMessagesFacade;
+    readonly ws: Pick<RallarFacade['ws'], 'status'>;
+    readonly rtc: Pick<RallarFacade['rtc'], 'status'>;
+}
+
+export interface DirectRallarFacadeLoader {
+    (): Promise<DirectRallarFacade>;
+}
+
+export interface DirectRallarWsPayload extends RallarWsSendInput<RallarMessagePayload> {
+    readonly applicationId: string;
+    readonly workspaceId: string;
+    readonly groupId?: string;
+}
+
+export interface CreateDirectRallarRuntimeEventInput {
+    readonly topic: string;
+    readonly context: DirectRallarOperationContext;
+    readonly kind?: RallarBlackBoxTestRuntimeEventInput['kind'];
+    readonly transport?: RallarBlackBoxTestRuntimeEventInput['transport'];
+    readonly severity?: RallarBlackBoxTestRuntimeEventInput['severity'];
+    readonly payload?: RallarBlackBoxTestRuntimeEventInput['payload'];
+}
+
+export interface DirectRallarStartResult {
+    readonly session: AuthSession;
+    readonly connected: RallarStartResult['connected'];
+    readonly roomState?: RallarStartResult['roomState'];
+    readonly peopleState?: RallarStartResult['peopleState'];
+}
 
 export type DirectRallarOperationKind =
     | 'status.check'
@@ -380,9 +466,27 @@ function effectiveWsTopicId(input: DirectRallarWsSendInput): string {
     return input.topicId?.trim() || input.typeId.trim();
 }
 
+function requireRallarMessagePayload(
+    payload: RallarBlackBoxTestRuntimeEventInput['payload']
+): RallarMessagePayload {
+    if (
+        payload === null ||
+        typeof payload === 'object' ||
+        typeof payload === 'string' ||
+        typeof payload === 'number' ||
+        typeof payload === 'boolean'
+    ) {
+        return payload;
+    }
+    throw new Error(
+        'WS send payload must be an object, array, string, number, boolean, or null.'
+    );
+}
+
 function directWsSendPayload(
     context: DirectRallarOperationContext,
-    input: DirectRallarWsSendInput
+    input: DirectRallarWsSendInput,
+    payload: RallarMessagePayload
 ): DirectRallarWsPayload {
     const scope = input.scope ?? (context.roomId ? 'room' : 'all');
     const roomRef = scope === 'room' ? directRoomRef(context) : undefined;
@@ -404,7 +508,7 @@ function directWsSendPayload(
         ...(input.minSnapshotVersion !== undefined
             ? { minSnapshotVersion: input.minSnapshotVersion }
             : {}),
-        payload: input.payload
+        payload
     };
 }
 
@@ -605,6 +709,7 @@ async function sendDirectRallarWs(
     if (!input.typeId.trim()) {
         throw new Error('WS send requires a Type ID.');
     }
+    const payload = requireRallarMessagePayload(input.payload);
     validateRallarServerUserTopic(effectiveWsTopicId(input), 'WS send');
     if ((input.scope ?? 'room') === 'room') {
         validateRoomId(context, 'WS send');
@@ -612,7 +717,7 @@ async function sendDirectRallarWs(
     const facade = await loadFacade();
     configureDirectRallarFacade(facade, context);
     const startResult = await startDirectRallarFacade(facade, context);
-    const sendInput = directWsSendPayload(context, input);
+    const sendInput = directWsSendPayload(context, input, payload);
     const sendResult = await facade.messages.ws.send(sendInput);
     return {
         value: {

@@ -1,13 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import type { DirectRallarFacade } from '../../../apps/rallar-black-box/src/direct-rallar-contracts.ts';
 import {
     runDirectRallarGroupCreate,
     runDirectRallarGroupJoin,
     runDirectRallarStatusCheck,
     runDirectRallarWsSend,
-    runDirectRallarWsSubscribe
+    runDirectRallarWsSubscribe,
+    type DirectRallarFacade
 } from '../../../apps/rallar-black-box/src/direct-rallar-operations.ts';
-import type { RallarMessage, RallarMessageHandler } from '../../../packages/shared-web/browser/rallar.ts';
+import type { RallarMessagePayload } from '../../../packages/shared-web/browser/rallar-message-contracts.ts';
+import type { RallarMessage, RallarMessageHandler, RallarMessageSendResult } from '../../../packages/shared-web/browser/rallar.ts';
 import type { AuthSession } from '../../../packages/shared/api/api-config.ts';
 
 const session: AuthSession = {
@@ -73,6 +74,42 @@ describe('direct Rallar operations', () => {
         expect(loadCalled).toBe(false);
         expect(result.status).toBe('failed');
         expect(result.error?.message).toContain('must start with app. or room.');
+        expect(result.events.at(-1)?.topic).toBe('rallar.direct.ws.send.failed');
+    });
+
+    it.each([
+        ['undefined', undefined],
+        ['function', () => undefined],
+        ['symbol', Symbol('unsupported')],
+        ['bigint', BigInt(1)]
+    ])('rejects an unsupported %s WS payload before loading the facade', async (_label, payload) => {
+        let loadCalled = false;
+
+        const result = await runDirectRallarWsSend(
+            {
+                providerMode: 'browser-rallar',
+                apiBaseUrl: 'http://localhost:8080',
+                applicationId: 'app-1',
+                workspaceId: 'workspace-1',
+                roomId: 'bb-group',
+                actor: 'alice',
+                authSession: session
+            },
+            {
+                scope: 'room',
+                typeId: 'manual.message',
+                topicId: 'room.manual.message',
+                payload
+            },
+            async () => {
+                loadCalled = true;
+                throw new Error('should not load facade');
+            }
+        );
+
+        expect(loadCalled).toBe(false);
+        expect(result.status).toBe('failed');
+        expect(result.error?.message).toContain('object, array, string, number, boolean, or null');
         expect(result.events.at(-1)?.topic).toBe('rallar.direct.ws.send.failed');
     });
 
@@ -364,7 +401,7 @@ describe('direct Rallar operations', () => {
 
     it('subscribes and sends WS messages through direct Rallar operations', async () => {
         const calls: string[] = [];
-        let subscribedHandler: RallarMessageHandler<unknown> | undefined;
+        let subscribedHandler: RallarMessageHandler<RallarMessagePayload> | undefined;
         const facade: DirectRallarFacade = {
             configure(config) {
                 calls.push(`configure:${config.apiBaseUrl}`);
@@ -429,10 +466,12 @@ describe('direct Rallar operations', () => {
                 ws: {
                     async send(input) {
                         calls.push(`send:${String(input.roomId)}:${String(input.typeId)}`);
-                        return {
+                        return toTestDouble<RallarMessageSendResult>({
+                            transport: 'ws',
                             status: 'enqueued',
-                            message: input
-                        };
+                            message: toTestDouble<RallarMessageSendResult['message']>({}),
+                            entries: []
+                        });
                     },
                     onMessage(selector, handler) {
                         const selectorLabel = typeof selector === 'string'
@@ -477,7 +516,7 @@ describe('direct Rallar operations', () => {
             },
             async () => facade
         );
-        await subscribedHandler?.(toTestDouble<RallarMessage<unknown>>({
+        await subscribedHandler?.(toTestDouble<RallarMessage<RallarMessagePayload>>({
             typeId: 'room.manual.message',
             topicId: 'room.manual.message',
             payload: {
