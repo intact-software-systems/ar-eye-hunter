@@ -1,12 +1,6 @@
-import {
-    newALBroadcastMessage,
-    newALRoute,
-    newALUnicastMessage,
-    type ALMessage
-} from '@shared/al-contracts/al-contract.ts';
+import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import {
-    createRallarGameAuthorityEnvelope,
     createRallarGameAuthoritySequenceTracker,
     isRallarGameAuthorityEnvelope,
     resolveRallarGameAuthorityTypeIds,
@@ -16,6 +10,7 @@ import {
     type RallarGameAuthoritySendResult,
     type RallarGameAuthorityTypeIds
 } from '@shared/rallar-game/mod.ts';
+import type { JsonWireValue } from '../rallar-system/protocol/json-wire-identity.ts';
 import type {
     RallarServerWsFanout,
     RallarServerWsHandler,
@@ -26,6 +21,7 @@ import type {
     RallarServerWsSelector,
     RallarServerWsTopicDefinition
 } from '../rallar-system/websocket/router/rallar-server-ws-router-contracts.ts';
+import { toRallarGameAuthorityServerPublication } from './to-rallar-game-authority-server-publication.ts';
 
 export interface RallarGameAuthorityServerWsFacade {
     defineTopic<T extends RallarServerWsPayload>(definition: RallarServerWsTopicDefinition<T>): void;
@@ -45,28 +41,32 @@ export interface RallarGameAuthorityServerRallarFacade {
 
 export interface RallarGameAuthorityServerCommandInput<TCommand> {
     readonly command: TCommand;
-    readonly envelope: RallarGameAuthorityEnvelope<TCommand>;
+    readonly envelope: RallarGameAuthorityEnvelope<JsonWireValue>;
     readonly roomId: string;
     readonly senderId: string;
-    readonly raw: RallarServerWsMessage<RallarGameAuthorityEnvelope<TCommand>>;
+    readonly raw: RallarServerWsMessage<RallarGameAuthorityEnvelope<JsonWireValue>>;
     readonly context: RallarServerWsMessageContext;
 }
 
 export interface RallarGameAuthorityServerSyncInput {
-    readonly payload: unknown;
-    readonly envelope: RallarGameAuthorityEnvelope<unknown>;
+    readonly payload: JsonWireValue;
+    readonly envelope: RallarGameAuthorityEnvelope<JsonWireValue>;
     readonly roomId: string;
     readonly senderId: string;
-    readonly raw: RallarServerWsMessage<RallarGameAuthorityEnvelope<unknown>>;
+    readonly raw: RallarServerWsMessage<RallarGameAuthorityEnvelope<JsonWireValue>>;
     readonly context: RallarServerWsMessageContext;
 }
 
-export interface RallarGameAuthorityServerCommandOutcome<TSnapshot, TEvent> {
-    readonly status: 'accepted' | 'rejected';
-    readonly reason?: string;
-    readonly snapshot?: TSnapshot;
-    readonly events?: readonly TEvent[];
-}
+export type RallarGameAuthorityServerCommandOutcome<TSnapshot, TEvent> =
+    | Readonly<{
+        status: 'accepted';
+        snapshot?: TSnapshot;
+        events?: readonly TEvent[];
+    }>
+    | Readonly<{
+        status: 'rejected';
+        reason: string;
+    }>;
 
 export interface RallarGameAuthorityServerConfig<TCommand, TSnapshot, TEvent> {
     readonly rallar: RallarGameAuthorityServerRallarFacade;
@@ -78,6 +78,8 @@ export interface RallarGameAuthorityServerConfig<TCommand, TSnapshot, TEvent> {
     readonly snapshotFanout?: RallarServerWsFanout;
     readonly eventFanout?: RallarServerWsFanout;
     readonly commandResultFanout?: RallarServerWsFanout;
+    readonly decodeCommand: (value: JsonWireValue) => TCommand;
+    readonly nowEpochMs: () => number;
     handleCommand(
         input: RallarGameAuthorityServerCommandInput<TCommand>
     ):
@@ -100,18 +102,28 @@ export interface RallarGameAuthorityServerStatus {
     readonly publishedEventCount: number;
 }
 
+export interface PublishRallarGameAuthoritySnapshotInput<TSnapshot> {
+    readonly roomId: string;
+    readonly snapshot: TSnapshot;
+    readonly roomRef?: GroupRef;
+    readonly toPeerId?: string;
+}
+
+export interface PublishRallarGameAuthorityEventInput<TEvent> {
+    readonly roomId: string;
+    readonly event: TEvent;
+    readonly roomRef?: GroupRef;
+    readonly toPeerId?: string;
+}
+
 export interface RallarGameAuthorityServerHandle<TSnapshot, TEvent> {
     authority(): RallarGameAuthorityRef;
     status(): RallarGameAuthorityServerStatus;
     publishSnapshot(
-        roomId: string,
-        snapshot: TSnapshot,
-        options?: { roomRef?: GroupRef; toPeerId?: string; }
+        input: PublishRallarGameAuthoritySnapshotInput<TSnapshot>
     ): Promise<RallarGameAuthoritySendResult>;
     publishEvent(
-        roomId: string,
-        event: TEvent,
-        options?: { roomRef?: GroupRef; toPeerId?: string; }
+        input: PublishRallarGameAuthorityEventInput<TEvent>
     ): Promise<RallarGameAuthoritySendResult>;
     stop(): void;
 }
@@ -121,6 +133,16 @@ interface PublishRallarGameAuthorityCommandResultInput {
     readonly toPeerId: string;
     readonly commandResult: RallarGameAuthorityCommandResult;
     readonly roomRef?: GroupRef;
+}
+
+interface PublishRallarGameAuthorityEnvelopeInput<TPayload> {
+    readonly roomId: string;
+    readonly kind: RallarGameAuthorityEnvelope<TPayload>['kind'];
+    readonly typeId: string;
+    readonly payload: TPayload;
+    readonly roomRef?: GroupRef;
+    readonly toPeerId?: string;
+    readonly fanout: RallarServerWsFanout;
 }
 
 const DEFAULT_RALLAR_GAME_AUTHORITY_SERVER_ID = 'rallar-game-authority-server';
@@ -149,14 +171,14 @@ export function installRallarGameAuthorityServer<TCommand, TSnapshot, TEvent>(
     let publishedEventCount = 0;
     let nextSeq = 1;
 
-    config.rallar.ws.defineTopic<RallarGameAuthorityEnvelope<TCommand>>({
+    config.rallar.ws.defineTopic<RallarGameAuthorityEnvelope<JsonWireValue>>({
         topicId: config.topicId,
         typeId: typeIds.command,
         scope: 'room',
         fanout: 'none',
         validate: (value, context) => isIncomingEnvelope(value, context, 'command')
     });
-    config.rallar.ws.defineTopic<RallarGameAuthorityEnvelope<unknown>>({
+    config.rallar.ws.defineTopic<RallarGameAuthorityEnvelope<JsonWireValue>>({
         topicId: config.topicId,
         typeId: typeIds.syncRequest,
         scope: 'room',
@@ -165,13 +187,13 @@ export function installRallarGameAuthorityServer<TCommand, TSnapshot, TEvent>(
     });
 
     unsubscribes.push(
-        config.rallar.ws.on<RallarGameAuthorityEnvelope<TCommand>>(
+        config.rallar.ws.on<RallarGameAuthorityEnvelope<JsonWireValue>>(
             { topicId: config.topicId, typeId: typeIds.command },
             handleCommandMessage
         )
     );
     unsubscribes.push(
-        config.rallar.ws.on<RallarGameAuthorityEnvelope<unknown>>(
+        config.rallar.ws.on<RallarGameAuthorityEnvelope<JsonWireValue>>(
             { topicId: config.topicId, typeId: typeIds.syncRequest },
             handleSyncRequestMessage
         )
@@ -200,16 +222,24 @@ export function installRallarGameAuthorityServer<TCommand, TSnapshot, TEvent>(
     }
 
     async function handleCommandMessage(
-        message: RallarServerWsMessage<RallarGameAuthorityEnvelope<TCommand>>,
+        message: RallarServerWsMessage<RallarGameAuthorityEnvelope<JsonWireValue>>,
         context: RallarServerWsMessageContext
     ): Promise<void> {
-        if (stopped || !acceptIncomingEnvelope(message.payload, 'command', context)) {
+        if (stopped) {
+            return;
+        }
+
+        const decodedCommand = decodeIncomingCommand(message.payload.payload);
+        if (
+            decodedCommand === undefined ||
+            !acceptIncomingEnvelope(message.payload, 'command', context)
+        ) {
             return;
         }
 
         handledCommandCount += 1;
         const outcome = await config.handleCommand({
-            command: message.payload.payload,
+            command: decodedCommand.command,
             envelope: message.payload,
             roomId: message.payload.roomId,
             senderId: context.senderId,
@@ -218,6 +248,17 @@ export function installRallarGameAuthorityServer<TCommand, TSnapshot, TEvent>(
         });
         if (outcome.status === 'rejected') {
             rejectedCommandCount += 1;
+            await publishCommandResult({
+                roomId: message.payload.roomId,
+                toPeerId: context.senderId,
+                commandResult: {
+                    commandSeq: message.payload.seq,
+                    status: 'rejected',
+                    reason: outcome.reason
+                },
+                roomRef: context.roomRef
+            });
+            return;
         }
 
         await publishCommandResult({
@@ -225,31 +266,30 @@ export function installRallarGameAuthorityServer<TCommand, TSnapshot, TEvent>(
             toPeerId: context.senderId,
             commandResult: {
                 commandSeq: message.payload.seq,
-                status: outcome.status,
-                reason: outcome.reason
+                status: 'accepted'
             },
             roomRef: context.roomRef
         });
 
-        if (outcome.status !== 'accepted') {
-            return;
-        }
-
         if (outcome.snapshot !== undefined) {
-            await publishSnapshot(message.payload.roomId, outcome.snapshot, {
+            await publishSnapshot({
+                roomId: message.payload.roomId,
+                snapshot: outcome.snapshot,
                 roomRef: context.roomRef
             });
         }
 
         for (const event of outcome.events ?? []) {
-            await publishEvent(message.payload.roomId, event, {
+            await publishEvent({
+                roomId: message.payload.roomId,
+                event,
                 roomRef: context.roomRef
             });
         }
     }
 
     async function handleSyncRequestMessage(
-        message: RallarServerWsMessage<RallarGameAuthorityEnvelope<unknown>>,
+        message: RallarServerWsMessage<RallarGameAuthorityEnvelope<JsonWireValue>>,
         context: RallarServerWsMessageContext
     ): Promise<void> {
         if (
@@ -272,7 +312,9 @@ export function installRallarGameAuthorityServer<TCommand, TSnapshot, TEvent>(
             return;
         }
 
-        await publishSnapshot(message.payload.roomId, snapshot, {
+        await publishSnapshot({
+            roomId: message.payload.roomId,
+            snapshot,
             roomRef: context.roomRef,
             toPeerId: context.senderId
         });
@@ -281,34 +323,29 @@ export function installRallarGameAuthorityServer<TCommand, TSnapshot, TEvent>(
     async function publishCommandResult(
         input: PublishRallarGameAuthorityCommandResultInput
     ): Promise<RallarGameAuthoritySendResult> {
-        return await publishEnvelope(
-            input.roomId,
-            'command-result',
-            typeIds.commandResult,
-            input.commandResult,
-            {
-                roomRef: input.roomRef,
-                toPeerId: input.toPeerId,
-                fanout: config.commandResultFanout ?? 'live-only'
-            }
-        );
+        return await publishEnvelope({
+            roomId: input.roomId,
+            kind: 'command-result',
+            typeId: typeIds.commandResult,
+            payload: input.commandResult,
+            roomRef: input.roomRef,
+            toPeerId: input.toPeerId,
+            fanout: config.commandResultFanout ?? 'live-only'
+        });
     }
 
     async function publishSnapshot(
-        roomId: string,
-        snapshot: TSnapshot,
-        options: { roomRef?: GroupRef; toPeerId?: string; } = {}
+        input: PublishRallarGameAuthoritySnapshotInput<TSnapshot>
     ): Promise<RallarGameAuthoritySendResult> {
-        const result = await publishEnvelope(
-            roomId,
-            'snapshot',
-            typeIds.snapshot,
-            snapshot,
-            {
-                ...options,
-                fanout: config.snapshotFanout ?? 'live-only'
-            }
-        );
+        const result = await publishEnvelope({
+            roomId: input.roomId,
+            kind: 'snapshot',
+            typeId: typeIds.snapshot,
+            payload: input.snapshot,
+            roomRef: input.roomRef,
+            toPeerId: input.toPeerId,
+            fanout: config.snapshotFanout ?? 'live-only'
+        });
         if (result.status === 'sent') {
             publishedSnapshotCount += 1;
         }
@@ -316,81 +353,53 @@ export function installRallarGameAuthorityServer<TCommand, TSnapshot, TEvent>(
     }
 
     async function publishEvent(
-        roomId: string,
-        event: TEvent,
-        options: { roomRef?: GroupRef; toPeerId?: string; } = {}
+        input: PublishRallarGameAuthorityEventInput<TEvent>
     ): Promise<RallarGameAuthoritySendResult> {
-        const result = await publishEnvelope(
-            roomId,
-            'event',
-            typeIds.event,
-            event,
-            {
-                ...options,
-                fanout: config.eventFanout ?? 'live-only'
-            }
-        );
+        const result = await publishEnvelope({
+            roomId: input.roomId,
+            kind: 'event',
+            typeId: typeIds.event,
+            payload: input.event,
+            roomRef: input.roomRef,
+            toPeerId: input.toPeerId,
+            fanout: config.eventFanout ?? 'live-only'
+        });
         if (result.status === 'sent') {
             publishedEventCount += 1;
         }
         return result;
     }
 
-    async function publishEnvelope<T>(
-        roomId: string,
-        kind: RallarGameAuthorityEnvelope<T>['kind'],
-        typeId: string,
-        payload: T,
-        options: Readonly<{
-            roomRef?: GroupRef;
-            toPeerId?: string;
-            fanout: RallarServerWsFanout;
-        }>
+    async function publishEnvelope<TPayload>(
+        input: PublishRallarGameAuthorityEnvelopeInput<TPayload>
     ): Promise<RallarGameAuthoritySendResult> {
         if (stopped) {
             return { status: 'stopped', transport: 'server' };
         }
 
-        const envelope = createRallarGameAuthorityEnvelope({
+        const publication = toRallarGameAuthorityServerPublication({
             protocol: config.protocol,
-            kind,
-            roomId,
-            senderId: authority.id,
-            seq: nextSeq++,
+            topicId: config.topicId,
+            kind: input.kind,
+            roomId: input.roomId,
+            typeId: input.typeId,
+            payload: input.payload,
             authority,
-            payload
+            sequence: nextSeq++,
+            sentAtEpochMs: config.nowEpochMs(),
+            ttlMs: config.ttlMs ?? DEFAULT_RALLAR_GAME_AUTHORITY_TTL_MS,
+            roomRef: input.roomRef,
+            toPeerId: input.toPeerId
         });
-        const route = newALRoute(
-            config.topicId,
-            roomId,
-            `${roomId}:${kind}:${envelope.seq}`
+        const result = await config.rallar.ws.publish(
+            publication.message,
+            input.fanout
         );
-        const message = options.toPeerId
-            ? newALUnicastMessage(
-                authority.id,
-                route,
-                options.toPeerId,
-                typeId,
-                envelope
-            )
-            : newALBroadcastMessage(
-                authority.id,
-                route,
-                'room',
-                typeId,
-                envelope,
-                {
-                    groupRef: options.roomRef,
-                    reliability: 'at-least-once',
-                    ttlMs: config.ttlMs ?? DEFAULT_RALLAR_GAME_AUTHORITY_TTL_MS
-                }
-            );
-        const result = await config.rallar.ws.publish(message, options.fanout);
 
         return {
             status: isSuccessfulPublishStatus(result.status) ? 'sent' : 'failed',
             transport: 'server',
-            seq: envelope.seq,
+            seq: publication.envelope.seq,
             raw: result,
             reason: isSuccessfulPublishStatus(result.status)
                 ? undefined
@@ -422,21 +431,33 @@ export function installRallarGameAuthorityServer<TCommand, TSnapshot, TEvent>(
     }
 
     function isIncomingEnvelope(
-        value: unknown,
+        value: JsonWireValue,
         context: Pick<RallarServerWsMessageContext, 'roomId' | 'senderId'>,
-        kind: RallarGameAuthorityEnvelope<unknown>['kind']
+        kind: RallarGameAuthorityEnvelope<JsonWireValue>['kind']
     ): boolean {
         if (!isRallarGameAuthorityEnvelope(value, config.protocol)) {
             return false;
         }
 
-        return value.kind === kind &&
+        const envelope = value as RallarGameAuthorityEnvelope<JsonWireValue>;
+        return envelope.kind === kind &&
             context.roomId !== undefined &&
-            value.roomId === context.roomId &&
-            value.senderId === context.senderId &&
-            value.authority.kind === authority.kind &&
-            value.authority.id === authority.id &&
-            value.authority.epoch === authority.epoch;
+            envelope.roomId === context.roomId &&
+            envelope.senderId === context.senderId &&
+            envelope.authority.kind === authority.kind &&
+            envelope.authority.id === authority.id &&
+            envelope.authority.epoch === authority.epoch;
+    }
+
+    function decodeIncomingCommand(
+        value: JsonWireValue
+    ): Readonly<{ command: TCommand; }> | undefined {
+        try {
+            return { command: config.decodeCommand(value) };
+        }
+        catch {
+            return undefined;
+        }
     }
 
     function stop(): void {
