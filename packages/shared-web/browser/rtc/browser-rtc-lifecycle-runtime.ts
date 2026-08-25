@@ -109,9 +109,7 @@ export class BrowserRtcLifecycleRuntime {
             },
             onDeleted: (peer) => {
                 this.unregisterPeerCallbacks(peer);
-                queueMicrotask(() =>
-                    this.emitLifecycle('peer-deleted', { peerId: peer.peerId })
-                );
+                queueMicrotask(() => this.emitLifecycle('peer-deleted', { peerId: peer.peerId }));
             },
             onConnectTimeout: (peer) => {
                 this.emitLifecycle('peer-timeout', { peerId: peer.peerId });

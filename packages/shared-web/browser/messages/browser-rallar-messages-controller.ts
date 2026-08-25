@@ -1,10 +1,10 @@
 import type { ApiMiddleware } from '@shared-web/browser/app-context.ts';
+import type { RallarCrdtMessageTransport } from '@shared-web/browser/crdt/browser-crdt-transport.ts';
+import { createRallarCrdtMessageTransport } from '@shared-web/browser/crdt/create-rallar-crdt-message-transport.ts';
 import { BrowserMessageInputValidator } from '@shared-web/browser/messages/browser-message-input-validator.ts';
 import { BrowserRallarMessageSender } from '@shared-web/browser/messages/browser-rallar-message-sender.ts';
 import { BrowserRallarMessageSubscriptions } from '@shared-web/browser/messages/browser-rallar-message-subscriptions.ts';
 import { BrowserTypedMessageChannels } from '@shared-web/browser/messages/browser-typed-message-channels.ts';
-import { createRallarCrdtMessageTransport } from '@shared-web/browser/crdt/create-rallar-crdt-message-transport.ts';
-import type { RallarCrdtMessageTransport } from '@shared-web/browser/crdt/browser-crdt-transport.ts';
 import type {
     RallarMessageHandler,
     RallarRoomMessageChannelDefinition,
@@ -68,16 +68,14 @@ export class BrowserRallarMessagesController {
         });
 
         const rtc: RallarMessagesOperations['rtc'] = {
-            send: async <T>(sendInput: RallarRtcSendInput<T>) =>
-                await this.sender.sendRtc(sendInput),
+            send: async <T>(sendInput: RallarRtcSendInput<T>) => await this.sender.sendRtc(sendInput),
             onMessage: <T>(
                 selector: RallarMessageSelectorInput,
                 handler: RallarMessageHandler<T>
             ) => this.subscriptions.subscribe('rtc', selector, handler)
         };
         const ws: RallarMessagesOperations['ws'] = {
-            send: async <T>(sendInput: RallarWsSendInput<T>) =>
-                await this.sender.sendWs(sendInput),
+            send: async <T>(sendInput: RallarWsSendInput<T>) => await this.sender.sendWs(sendInput),
             onMessage: <T>(
                 selector: RallarMessageSelectorInput,
                 handler: RallarMessageHandler<T>

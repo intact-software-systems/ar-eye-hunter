@@ -7,10 +7,7 @@ import {
     assertBrowserRallarAiGenerationAllowed,
     assertBrowserRallarAiResultIsFresh
 } from '@shared-web/browser/ai/browser-rallar-ai-generation-policy.ts';
-import type {
-    CreateRallarBrowserAiOptions,
-    RallarBrowserAiFacade
-} from '@shared-web/browser/rallar-ai.ts';
+import type { CreateRallarBrowserAiOptions, RallarBrowserAiFacade } from '@shared-web/browser/rallar-ai.ts';
 import {
     RallarAiError,
     type RallarAiGenerationPolicy,

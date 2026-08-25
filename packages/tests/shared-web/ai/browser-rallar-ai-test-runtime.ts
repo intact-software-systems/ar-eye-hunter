@@ -1,10 +1,5 @@
 import type { RallarDataStoreOptions } from '@shared-web/browser/rallar-data.ts';
-import type {
-    RallarMessageSendResult,
-    RallarRealtimeJsonSendInput,
-    RallarRtcSendInput,
-    RallarWsSendInput
-} from '@shared-web/browser/rallar.ts';
+import type { RallarMessageSendResult, RallarRealtimeJsonSendInput, RallarRtcSendInput, RallarWsSendInput } from '@shared-web/browser/rallar.ts';
 import { vi } from 'vitest';
 
 export function createFakeRallar() {
@@ -15,10 +10,7 @@ export function createFakeRallar() {
             open: vi.fn(
                 async (
                     _input: string,
-                    _options?: Pick<
-                        RallarDataStoreOptions<never>,
-                        'durability' | 'schemaVersion' | 'scope'
-                    >
+                    _options?: Pick<RallarDataStoreOptions<never>, 'durability' | 'schemaVersion' | 'scope'>
                 ) => store
             ),
             define: unusedByBrowserAi,
@@ -44,15 +36,13 @@ export function createFakeRallar() {
         messages: {
             rtc: {
                 send: vi.fn(
-                    async <TValue>(_input: RallarRtcSendInput<TValue>) =>
-                        createFakeMessageSendResult('rtc')
+                    async <TValue>(_input: RallarRtcSendInput<TValue>) => createFakeMessageSendResult('rtc')
                 ),
                 onMessage: () => noopUnsubscribe
             },
             ws: {
                 send: vi.fn(
-                    async <TValue>(_input: RallarWsSendInput<TValue>) =>
-                        createFakeMessageSendResult('ws')
+                    async <TValue>(_input: RallarWsSendInput<TValue>) => createFakeMessageSendResult('ws')
                 ),
                 onMessage: () => noopUnsubscribe
             },

@@ -49,15 +49,9 @@ export class BrowserRtcRoomRuntime {
         const desiredPeerIds = this.input.resolveRoomPeerIds(roomRef ?? room);
         const desiredPeerIdSet = new Set(desiredPeerIds);
         const rtcStatus = this.input.readRtcStatus({ laneId });
-        const knownPeerIds = rtcStatus.knownPeerIds.filter((peerId) =>
-            desiredPeerIdSet.has(peerId)
-        );
-        const activePeerIds = rtcStatus.activePeerIds.filter((peerId) =>
-            desiredPeerIdSet.has(peerId)
-        );
-        const readyPeerIds = rtcStatus.readyPeerIds.filter((peerId) =>
-            desiredPeerIdSet.has(peerId)
-        );
+        const knownPeerIds = rtcStatus.knownPeerIds.filter((peerId) => desiredPeerIdSet.has(peerId));
+        const activePeerIds = rtcStatus.activePeerIds.filter((peerId) => desiredPeerIdSet.has(peerId));
+        const readyPeerIds = rtcStatus.readyPeerIds.filter((peerId) => desiredPeerIdSet.has(peerId));
         const failedPeerIds = rtcStatus.peerIdsWithNoReconnectableLanes.filter(
             (peerId) => desiredPeerIdSet.has(peerId)
         );

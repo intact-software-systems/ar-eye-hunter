@@ -1,5 +1,8 @@
 import type { ApiMiddleware } from '@shared-web/browser/app-context.ts';
-import type { RallarMessageHandler, RallarMessageTransport } from '@shared-web/browser/messages/rallar-message-contracts.ts';
+import type {
+    RallarMessageHandler,
+    RallarMessageTransport
+} from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import {
     matchesRallarMessageSelector,
     normalizeRallarMessageSelector,

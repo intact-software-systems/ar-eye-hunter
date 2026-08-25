@@ -1,15 +1,12 @@
 import * as authApi from '@shared-web/browser/auth/session-http-api.ts';
 import { toRallarCommandOptions, type RallarOperationOptions } from '@shared-web/browser/rallar-operation-options.ts';
 import type { RallarConnectionRuntimePort } from '@shared-web/browser/rallar-runtime-context.ts';
+import type { RallarOnChangeOptions, RallarUnsubscribe } from '@shared-web/browser/rallar-shared-contracts.ts';
 import type {
     RallarAuthChangeListener,
     RallarAuthFacade,
     RallarRegisterOptions
 } from '@shared-web/browser/session/rallar-auth-facade.ts';
-import type {
-    RallarOnChangeOptions,
-    RallarUnsubscribe
-} from '@shared-web/browser/rallar-shared-contracts.ts';
 import type {
     AuthSession,
     LoginRequest,

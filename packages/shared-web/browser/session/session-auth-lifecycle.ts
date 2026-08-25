@@ -5,16 +5,16 @@ import type {
     ApiMiddleware,
     BrowserTransportRuntimePort
 } from '@shared-web/browser/connection/browser-transport-runtime.ts';
-import type {
-    RallarAuthChangeListener,
-    RallarAuthChangeReason,
-    RallarAuthState
-} from '@shared-web/browser/session/rallar-auth-facade.ts';
 import type { RallarScopedOperationOptions } from '@shared-web/browser/rallar-connection-facade.ts';
 import { toRallarCommandOptions, type RallarOperationOptions } from '@shared-web/browser/rallar-operation-options.ts';
 import type { RallarAuthRuntimePort, RallarConnectionRuntimePort } from '@shared-web/browser/rallar-runtime-context.ts';
 import { notifyListener } from '@shared-web/browser/rallar-runtime/subscriptions.ts';
 import type { RallarOnChangeOptions, RallarUnsubscribe } from '@shared-web/browser/rallar-shared-contracts.ts';
+import type {
+    RallarAuthChangeListener,
+    RallarAuthChangeReason,
+    RallarAuthState
+} from '@shared-web/browser/session/rallar-auth-facade.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { clearSession, readSession, writeSession } from '@shared/api/auth.ts';
 import type { StateScope } from '@shared/api/state-types.ts';

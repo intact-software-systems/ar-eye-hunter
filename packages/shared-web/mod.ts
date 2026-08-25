@@ -12,6 +12,7 @@ export * from './browser/auth/session-http-api.ts';
 export * from './browser/auth/websocket-ticket-http-api.ts';
 export * from './browser/browser-cache-repositories.ts';
 export * from './browser/connection/connection-http-api.ts';
+export * from './browser/crdt/browser-crdt-transport.ts';
 export * from './browser/crdt/crdt-catch-up-http-api.ts';
 export {
     type AppointRoomDirectorInput,
@@ -20,7 +21,6 @@ export {
 export * from './browser/heartbeat.ts';
 export * from './browser/middleware.ts';
 export * from './browser/rallar-ai.ts';
-export * from './browser/crdt/browser-crdt-transport.ts';
 export * from './browser/rallar-crdt.ts';
 export * from './browser/rallar.ts';
 export * from './browser/resilience-config.ts';

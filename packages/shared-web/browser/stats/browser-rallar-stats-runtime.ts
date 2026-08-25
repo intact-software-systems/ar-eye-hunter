@@ -1,12 +1,12 @@
 import { defaultStateScope } from '@shared-web/browser/api/state-http-path.ts';
 import type { RallarScopedOperationOptions } from '@shared-web/browser/rallar-connection-facade.ts';
 import { toRallarCommandOptions, type RallarOperationOptions } from '@shared-web/browser/rallar-operation-options.ts';
-import type { RallarStatsOperations } from '@shared-web/browser/stats/rallar-stats-operations.ts';
 import {
     readStateGroupStats,
     readStateMyRealtimeStatus,
     readStateWorkspaceStatsSummary
 } from '@shared-web/browser/stats/rallar-stats-http-api.ts';
+import type { RallarStatsOperations } from '@shared-web/browser/stats/rallar-stats-operations.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import type {

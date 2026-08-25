@@ -5,15 +5,13 @@ import { BrowserDirectorRelayRuntime } from '@shared-web/browser/director/browse
 import { BrowserDirectorRelayTransport } from '@shared-web/browser/director/browser-director-relay-transport.ts';
 import { BrowserDirectorStatusRuntime } from '@shared-web/browser/director/browser-director-status-runtime.ts';
 import type { RallarDirectorFacade } from '@shared-web/browser/director/rallar-director-facade.ts';
-import type { RallarCallsFacade } from '@shared-web/browser/rallar-calls-facade.ts';
-import {
-    BrowserRallarPeopleRuntime
-} from '@shared-web/browser/people/browser-rallar-people-runtime.ts';
+import { BrowserRallarPeopleRuntime } from '@shared-web/browser/people/browser-rallar-people-runtime.ts';
 import type { RallarPeopleOperations } from '@shared-web/browser/people/rallar-people-contracts.ts';
+import type { RallarCallsFacade } from '@shared-web/browser/rallar-calls-facade.ts';
 import type { RallarSessionController } from '@shared-web/browser/rallar-runtime/session.ts';
+import { createBrowserRallarRooms, type BrowserRallarRooms } from '@shared-web/browser/rooms/browser-rallar-rooms.ts';
 import { BrowserRallarStatsRuntime } from '@shared-web/browser/stats/browser-rallar-stats-runtime.ts';
 import type { RallarStatsOperations } from '@shared-web/browser/stats/rallar-stats-operations.ts';
-import { createBrowserRallarRooms, type BrowserRallarRooms } from '@shared-web/browser/rooms/browser-rallar-rooms.ts';
 import { readSession } from '@shared/api/auth.ts';
 import type { RallarTargetedChannelDefinition } from '../../rallar-facade-contract.ts';
 
@@ -168,16 +166,14 @@ export function createBrowserDirectorComposition(
         resolveOperationOptions: input.session.resolveOperationOptions,
         resolveDefaultRoom: input.state.resolveDefaultRoom,
         runAuthAwareOperation: input.session.runAuthAwareOperation,
-        acceptSnapshots: async (snapshotInput) =>
-            await input.state.stateStore.acceptSnapshots(snapshotInput)
+        acceptSnapshots: async (snapshotInput) => await input.state.stateStore.acceptSnapshots(snapshotInput)
     });
     const relayTransport = new BrowserDirectorRelayTransport({
         messages: input.messaging.messages,
         readSession,
         createTargetedChannel: <T>(definition: RallarTargetedChannelDefinition) =>
             input.realtime.realtimeTargeted.create<T>(definition),
-        sendWsUnicast: async (sendInput) =>
-            await input.messaging.messagesController.sender.sendWsUnicast(sendInput)
+        sendWsUnicast: async (sendInput) => await input.messaging.messagesController.sender.sendWsUnicast(sendInput)
     });
     const directorRelays = new BrowserDirectorRelayRuntime({
         status: directorStatus,
@@ -187,10 +183,8 @@ export function createBrowserDirectorComposition(
         readSession
     });
     const director: RallarDirectorFacade = {
-        appoint: async (room, options) =>
-            await directorAppointments.appoint(room, options),
-        resign: async (room, options) =>
-            await directorAppointments.resign(room, options),
+        appoint: async (room, options) => await directorAppointments.appoint(room, options),
+        resign: async (room, options) => await directorAppointments.resign(room, options),
         status: (room, options) => directorStatus.read(room, options),
         onStatus: (listener) => directorStatus.onStatus(listener),
         createRelay: (config) => directorRelays.create(config)

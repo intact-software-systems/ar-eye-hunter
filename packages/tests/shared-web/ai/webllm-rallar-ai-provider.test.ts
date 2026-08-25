@@ -1,7 +1,4 @@
-import {
-    createWebLlmRallarAiProvider,
-    type RallarAiWebLlmRuntime
-} from '@shared-web/browser/ai/providers/webllm-rallar-ai-provider.ts';
+import { createWebLlmRallarAiProvider, type RallarAiWebLlmRuntime } from '@shared-web/browser/ai/providers/webllm-rallar-ai-provider.ts';
 import { RallarAiError } from '@shared/rallar-ai/mod.ts';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -62,10 +59,12 @@ describe('shared-web WebLLM provider', () => {
             }
         });
 
-        await expect(provider.generateJson(request('invalid-json'))).rejects.toMatchObject({
-            name: 'RallarAiError',
-            code: 'invalid-json'
-        } satisfies Partial<RallarAiError>);
+        await expect(provider.generateJson(request('invalid-json'))).rejects.toMatchObject(
+            {
+                name: 'RallarAiError',
+                code: 'invalid-json'
+            } satisfies Partial<RallarAiError>
+        );
     });
 
     it('keeps schema-invalid output as an explicit unaccepted draft', async () => {

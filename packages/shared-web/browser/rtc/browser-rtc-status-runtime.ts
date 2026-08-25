@@ -7,10 +7,7 @@ import type {
     RallarRtcStatusOptions
 } from '@shared-web/browser/rallar-rtc-facade.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
-import {
-    DEFAULT_RTC_DATA_CHANNEL_LANE_ID,
-    type QRtcPeerDto
-} from '@shared/services/WebRtcConnectionService.ts';
+import { DEFAULT_RTC_DATA_CHANNEL_LANE_ID, type QRtcPeerDto } from '@shared/services/WebRtcConnectionService.ts';
 import type { RtcDataChannelHealth } from '@shared/webrtc/QRtcDataChannel.ts';
 
 interface BrowserRtcPeerStatusInput {

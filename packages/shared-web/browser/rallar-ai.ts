@@ -7,11 +7,7 @@ import type {
     RallarAiJsonResult
 } from '@shared/rallar-ai/mod.ts';
 import type { RallarDataDurability, RallarDataScope } from './rallar-data.ts';
-import type {
-    RallarFacade,
-    RallarMessageSendResult,
-    RallarRealtimeSendResult
-} from './rallar.ts';
+import type { RallarFacade, RallarMessageSendResult, RallarRealtimeSendResult } from './rallar.ts';
 
 export { createRallarBrowserAi } from './ai/create-rallar-browser-ai.ts';
 

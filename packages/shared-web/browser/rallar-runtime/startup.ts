@@ -1,4 +1,4 @@
-import type { RallarAuthFacade } from '@shared-web/browser/session/rallar-auth-facade.ts';
+import type { RallarPeopleOperations, RallarPeopleState } from '@shared-web/browser/people/rallar-people-contracts.ts';
 import type {
     RallarConnectionOperations,
     RallarScopedOperationOptions,
@@ -7,12 +7,9 @@ import type {
     RallarStartResult
 } from '@shared-web/browser/rallar-connection-facade.ts';
 import type { RallarOperationOptions } from '@shared-web/browser/rallar-operation-options.ts';
-import type {
-    RallarPeopleOperations,
-    RallarPeopleState
-} from '@shared-web/browser/people/rallar-people-contracts.ts';
 import type { BrowserRallarRooms } from '@shared-web/browser/rooms/browser-rallar-rooms.ts';
 import type { RallarRoomState } from '@shared-web/browser/rooms/rallar-room-contracts.ts';
+import type { RallarAuthFacade } from '@shared-web/browser/session/rallar-auth-facade.ts';
 
 export type CreateRallarStartupControllerOptions = Readonly<{
     connection: RallarConnectionOperations;

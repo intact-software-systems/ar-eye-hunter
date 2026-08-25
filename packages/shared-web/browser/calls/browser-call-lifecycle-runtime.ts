@@ -1,8 +1,5 @@
 import { BrowserCallSessionRuntime } from '@shared-web/browser/calls/browser-call-session-runtime.ts';
-import type {
-    RallarCallHandle,
-    RallarCallStartInput
-} from '@shared-web/browser/rallar-calls-facade.ts';
+import type { RallarCallHandle, RallarCallStartInput } from '@shared-web/browser/rallar-calls-facade.ts';
 
 /** Starts call sessions after the browser connection is ready. */
 export class BrowserCallLifecycleRuntime {

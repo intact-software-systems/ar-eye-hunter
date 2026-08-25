@@ -1,11 +1,11 @@
 import { defaultStateScope } from '@shared-web/browser/api/state-http-path.ts';
 import type { RallarMessage, RallarStateEventListener } from '@shared-web/browser/messages/rallar-message-contracts.ts';
+import { toRallarMessage } from '@shared-web/browser/messages/to-rallar-message.ts';
 import type {
     RallarListPeopleEventsOptions,
     RallarPeopleEventOptions,
     RallarReplayPeopleEventsOptions
 } from '@shared-web/browser/people/rallar-people-contracts.ts';
-import { toRallarMessage } from '@shared-web/browser/messages/to-rallar-message.ts';
 import { notifyStateEventListener } from '@shared-web/browser/rallar-runtime/subscriptions.ts';
 import * as stateEventHttpApi from '@shared-web/browser/state-read/state-event-http-api.ts';
 import type { BrowserWebSocketInbox } from '@shared-web/browser/websocket/browser-websocket-inbox.ts';

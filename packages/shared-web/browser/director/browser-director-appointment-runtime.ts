@@ -1,10 +1,10 @@
 import type { ApiMiddleware } from '@shared-web/browser/app-context.ts';
 import { appointStateGroupDirector } from '@shared-web/browser/director/appoint-room-director.ts';
-import type { RallarScopedOperationOptions } from '@shared-web/browser/rallar-connection-facade.ts';
 import type {
     RallarDirectorAppointOptions,
     RallarDirectorStatus
 } from '@shared-web/browser/director/rallar-director-facade.ts';
+import type { RallarScopedOperationOptions } from '@shared-web/browser/rallar-connection-facade.ts';
 import { toRallarWorkflowPolicies, type RallarOperationOptions } from '@shared-web/browser/rallar-operation-options.ts';
 import type { RallarStateSnapshotAcceptanceInput } from '@shared-web/browser/rallar-runtime/state-store.ts';
 import type { BrowserRallarRooms } from '@shared-web/browser/rooms/browser-rallar-rooms.ts';

@@ -3,11 +3,7 @@ import { BrowserCallLifecycleRuntime } from '@shared-web/browser/calls/browser-c
 import type { BrowserCallSessionRuntime } from '@shared-web/browser/calls/browser-call-session-runtime.ts';
 import type { RallarMediaFacade } from '@shared-web/browser/rallar-media-facade.ts';
 import type { RallarTargetedChannel } from '@shared-web/browser/rallar-realtime-facade.ts';
-import type {
-    RallarRtcFacade,
-    RallarRtcStatus,
-    RallarRtcWaitForOpenResult
-} from '@shared-web/browser/rallar-rtc-facade.ts';
+import type { RallarRtcFacade, RallarRtcStatus, RallarRtcWaitForOpenResult } from '@shared-web/browser/rallar-rtc-facade.ts';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 describe('BrowserCallLifecycleRuntime', () => {
@@ -47,18 +43,20 @@ function createCallLifecycleInput(
         resolveTargetPeerIds: () => [],
         createTargetedChannel: <T>() => toTestDouble<RallarTargetedChannel<T>>({}),
         rtc: toTestDouble<RallarRtcFacade>({
-            waitForLane: async (peerId, laneId) => toTestDouble<RallarRtcWaitForOpenResult>({
-                transport: 'rtc',
-                status: 'no-peer',
-                peerId,
-                laneId
-            }),
-            status: () => toTestDouble<RallarRtcStatus>({
-                knownPeerIds: [],
-                activePeerIds: [],
-                readyPeerIds: [],
-                peers: []
-            })
+            waitForLane: async (peerId, laneId) =>
+                toTestDouble<RallarRtcWaitForOpenResult>({
+                    transport: 'rtc',
+                    status: 'no-peer',
+                    peerId,
+                    laneId
+                }),
+            status: () =>
+                toTestDouble<RallarRtcStatus>({
+                    knownPeerIds: [],
+                    activePeerIds: [],
+                    readyPeerIds: [],
+                    peers: []
+                })
         }),
         media: toTestDouble<RallarMediaFacade>({
             microphone: toTestDouble<RallarMediaFacade['microphone']>({}),

@@ -29,9 +29,7 @@ describe('browser Rallar message subscriptions', () => {
     it('rejects RTC topic-only subscriptions because the low-level callback is type keyed', () => {
         const facade = createRallarFacade();
 
-        expect(() =>
-            facade.messages.rtc.onMessage({ topicId: 'room.chat' }, vi.fn())
-        ).toThrow('RTC message subscriptions require a typeId.');
+        expect(() => facade.messages.rtc.onMessage({ topicId: 'room.chat' }, vi.fn())).toThrow('RTC message subscriptions require a typeId.');
     });
 
     it('allows WS topic-only subscriptions', () => {

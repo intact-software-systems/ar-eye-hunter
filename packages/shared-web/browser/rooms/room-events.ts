@@ -1,7 +1,7 @@
 import { defaultStateScope } from '@shared-web/browser/api/state-http-path.ts';
 import type { RallarMessage, RallarStateEventListener } from '@shared-web/browser/messages/rallar-message-contracts.ts';
-import type { RallarOperationOptions } from '@shared-web/browser/rallar-operation-options.ts';
 import { toRallarMessage } from '@shared-web/browser/messages/to-rallar-message.ts';
+import type { RallarOperationOptions } from '@shared-web/browser/rallar-operation-options.ts';
 import {
     rememberStateEventKey,
     replayStateEventPages,

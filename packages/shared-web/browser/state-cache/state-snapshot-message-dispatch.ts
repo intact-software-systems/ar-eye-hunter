@@ -9,17 +9,16 @@ import type { StateScope } from '@shared/api/state-types.ts';
 import * as clientStateSnapshotsRepository from '@shared/repository/client-state-snapshots-repository.ts';
 import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
 
-import {
-    acceptClientStateSnapshots,
-    acceptGroupStateSnapshotsOrRecompute
-} from './state-cache-snapshot-adoption.ts';
+import { acceptClientStateSnapshots, acceptGroupStateSnapshotsOrRecompute } from './state-cache-snapshot-adoption.ts';
 
 export interface DispatchStateSnapshotMessageInput {
     readonly message: ALMessage;
     readonly scope: StateScope;
-    readonly rereadGroupSnapshots: ((
-        scope: StateScope
-    ) => Promise<readonly GroupSnapshot[]>) | undefined;
+    readonly rereadGroupSnapshots:
+        | ((
+            scope: StateScope
+        ) => Promise<readonly GroupSnapshot[]>)
+        | undefined;
     readonly waitForLifecycleObservers: () => Promise<void>;
 }
 

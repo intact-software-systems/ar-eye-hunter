@@ -1,4 +1,3 @@
-import type { RallarAuthFacade } from '@shared-web/browser/session/rallar-auth-facade.ts';
 import type { RallarConnectionOperations } from '@shared-web/browser/rallar-connection-facade.ts';
 import { createRallarCrdtFacade, type RallarCrdtFacade } from '@shared-web/browser/rallar-crdt.ts';
 import { createRallarDataFacade, type RallarDataFacade } from '@shared-web/browser/rallar-data.ts';
@@ -16,6 +15,7 @@ import {
     createRallarStartupController,
     type RallarStartupController
 } from '@shared-web/browser/rallar-runtime/startup.ts';
+import type { RallarAuthFacade } from '@shared-web/browser/session/rallar-auth-facade.ts';
 import {
     createRallarSessionIdentity,
     type RallarSessionIdentity
