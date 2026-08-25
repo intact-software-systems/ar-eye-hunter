@@ -445,12 +445,11 @@ describe('AppAdminInboxService initial prune command', () => {
             dryRun: true
         });
 
-        expect(harness.events).toEqual([
+        expect(harness.events.filter((event) => event !== 'queue-wake')).toEqual([
             'semantic-identity-completed',
             'phase:semantic-identity',
             'now-callback',
             'retry-expiry-callback',
-            'queue-wake',
             'now-callback',
             'count:runtime-state',
             'current-authority',
@@ -462,10 +461,11 @@ describe('AppAdminInboxService initial prune command', () => {
             'now-callback',
             'commit-return'
         ]);
+        expect(harness.events.filter((event) => event === 'queue-wake')).toHaveLength(1);
         expect(harness.database.outboxEntries.size).toBe(0);
     });
 
-    it('commits aggregate and page work before waking the queue', async () => {
+    it('commits aggregate and page work before waking downstream work', async () => {
         const harness = createAdminInboxHarness();
 
         await completePrune(harness, createAdminSession('admin', 'admin-session'), {
@@ -474,12 +474,11 @@ describe('AppAdminInboxService initial prune command', () => {
             dryRun: false
         });
 
-        expect(harness.events).toEqual([
+        expect(harness.events.filter((event) => event !== 'queue-wake')).toEqual([
             'semantic-identity-completed',
             'phase:semantic-identity',
             'now-callback',
             'retry-expiry-callback',
-            'queue-wake',
             'now-callback',
             'count:runtime-state',
             'count:resource-inbox-results',
@@ -493,9 +492,12 @@ describe('AppAdminInboxService initial prune command', () => {
             'aggregate-write',
             'result-write',
             'now-callback',
-            'commit-return',
-            'queue-wake'
+            'commit-return'
         ]);
+        expect(harness.events.filter((event) => event === 'queue-wake')).toHaveLength(2);
+        expect(harness.events.lastIndexOf('queue-wake')).toBeGreaterThan(
+            harness.events.indexOf('commit-return')
+        );
         expect(harness.database.outboxEntries.size).toBe(2);
     });
 
