@@ -3,12 +3,10 @@ import type { ClientInstance, ClientPrincipal, ClientSession, ClientSnapshot } f
 import { toClientSnapshotLastSeenAtEpochMs } from '@shared/api/group-client-views.ts';
 
 import { isLogicallyActiveSession } from '../../presence/session-expiry.ts';
+import { compareClientStateInstanceStorageKeys } from './client-state-instance-storage-key.ts';
 import { ClientStateRepositoryInvariantCorruptionError } from './client-state-persistence-contracts.ts';
-import {
-    clientStatePrincipalStorageKey,
-    compareClientStateInstanceStorageKeys,
-    compareClientStateSessionStorageKeys
-} from './client-state-storage-keys.ts';
+import { clientStatePrincipalStorageKey } from './client-state-principal-storage-key.ts';
+import { compareClientStateSessionStorageKeys } from './client-state-session-storage-key.ts';
 
 export type ClientStateSnapshotAssemblyInput = Readonly<{
     principal: ClientPrincipal;

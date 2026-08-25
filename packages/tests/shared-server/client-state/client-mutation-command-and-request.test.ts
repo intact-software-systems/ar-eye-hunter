@@ -1,24 +1,21 @@
 import { describe, expect, expectTypeOf, it } from 'vitest';
 
-import { ClientMutationRejectedError } from '@shared-server/rallar-system/client-state/client-state-validation-primitives.ts';
 import {
     toClientMutationIssuedSessionAuthority,
     toClientMutationSystemAuthority
 } from '@shared-server/rallar-system/client-state/mutation/client-mutation-authority.ts';
-import {
-    toClientMutationCommand,
-    toConnectCommandInput,
-    toExpiryCommandInput,
-    toUpsertPrincipalCommandInput,
-    type ClientMutationPersistedFacts
-} from '@shared-server/rallar-system/client-state/mutation/client-mutation-command.ts';
+import { toClientMutationCommand, type ClientMutationPersistedFacts } from '@shared-server/rallar-system/client-state/mutation/client-mutation-command.ts';
+import { toConnectClientSessionMutationInput } from '@shared-server/rallar-system/client-state/mutation/command-input/to-connect-client-session-mutation-input.ts';
+import { toExpireClientSessionMutationInput } from '@shared-server/rallar-system/client-state/mutation/command-input/to-expire-client-session-mutation-input.ts';
+import { toUpsertClientPrincipalMutationInput } from '@shared-server/rallar-system/client-state/mutation/command-input/to-upsert-client-principal-mutation-input.ts';
 import { validateClientMutationCommand } from '@shared-server/rallar-system/client-state/mutation/command-validation/validate-client-mutation-command.ts';
+import { clientStateInstanceStorageKey } from '@shared-server/rallar-system/client-state/persistence/client-state-instance-storage-key.ts';
 import {
-    clientStateInstanceStorageKey,
     clientStatePrincipalStorageKey,
-    clientStateSessionStorageKey,
     decodeClientPrincipalStorageKey
-} from '@shared-server/rallar-system/client-state/persistence/client-state-storage-keys.ts';
+} from '@shared-server/rallar-system/client-state/persistence/client-state-principal-storage-key.ts';
+import { clientStateSessionStorageKey } from '@shared-server/rallar-system/client-state/persistence/client-state-session-storage-key.ts';
+import { ClientMutationRejectedError } from '@shared-server/rallar-system/client-state/validation/client-mutation-rejection.ts';
 import { hashMutationCommand, type JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import type { ClientSession } from '@shared/api/client-types.ts';
 import type { ConnectClientSessionRequest } from '@shared/api/state-types.ts';
@@ -35,12 +32,12 @@ describe('client mutation command and request projection', () => {
     it('preserves principal defaults, omissions, and owned collection clones', () => {
         const roles = ['member'];
         const metadata = { theme: 'dark', nested: { enabled: true } };
-        const command = toUpsertPrincipalCommandInput(
+        const command = toUpsertClientPrincipalMutationInput({
             scope,
-            'alice',
-            { username: 'alice', roles, metadata },
-            'fallback-command'
-        );
+            principalId: 'alice',
+            request: { username: 'alice', roles, metadata },
+            defaultCommandId: 'fallback-command'
+        });
 
         roles.push('admin');
         metadata.nested.enabled = false;
@@ -68,17 +65,28 @@ describe('client mutation command and request projection', () => {
         });
     });
 
+    it('rejects non-JSON principal metadata before command identity is computed', () => {
+        expect(() =>
+            toUpsertClientPrincipalMutationInput({
+                scope,
+                principalId: 'alice',
+                request: { username: 'alice', metadata: { createdAt: new Date(0) } },
+                defaultCommandId: 'principal-invalid-metadata'
+            })
+        ).toThrow(ClientMutationRejectedError);
+    });
+
     it('hashes the exact input and authority before adding persisted facts', async () => {
-        const input = toConnectCommandInput(
-            'connectSession',
+        const input = toConnectClientSessionMutationInput({
+            operation: 'connectSession',
             scope,
-            'alice',
-            'browser',
-            'session-1',
-            { generationId: 'generation-1', requestId: 'connect-1' },
-            'fallback-command',
-            { capabilities: ['rtc'], principalRoles: ['member'] }
-        );
+            principalId: 'alice',
+            clientInstanceId: 'browser',
+            sessionId: 'session-1',
+            request: { generationId: 'generation-1', requestId: 'connect-1' },
+            defaultCommandId: 'fallback-command',
+            identityDefaults: { capabilities: ['rtc'], principalRoles: ['member'] }
+        });
         const authority = toClientMutationIssuedSessionAuthority(
             {
                 clientId: 'alice',
@@ -114,7 +122,7 @@ describe('client mutation command and request projection', () => {
 
     it('preserves deterministic expiry identity and system authority', () => {
         expect(
-            toExpiryCommandInput({
+            toExpireClientSessionMutationInput({
                 ...scope,
                 principalId: 'alice',
                 clientInstanceId: 'browser',

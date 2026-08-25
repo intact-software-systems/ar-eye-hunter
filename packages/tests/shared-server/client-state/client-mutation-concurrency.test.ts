@@ -3,7 +3,8 @@ import { describe, expect, it } from 'vitest';
 
 import { createClientStateService as createClientMutationService } from '@shared-server/rallar-system/client-state/client-state-service.ts';
 import { toClientMutationSystemAuthority } from '@shared-server/rallar-system/client-state/mutation/client-mutation-authority.ts';
-import { toClientMutationCommand, toExpiryCommandInput } from '@shared-server/rallar-system/client-state/mutation/client-mutation-command.ts';
+import { toClientMutationCommand } from '@shared-server/rallar-system/client-state/mutation/client-mutation-command.ts';
+import { toExpireClientSessionMutationInput } from '@shared-server/rallar-system/client-state/mutation/command-input/to-expire-client-session-mutation-input.ts';
 import { computeClientMutation } from '@shared-server/rallar-system/client-state/mutation/compute/compute-client-mutation.ts';
 import { validateClientMutation } from '@shared-server/rallar-system/client-state/mutation/result-validation/validate-client-mutation.ts';
 import { ClientStateRepository } from '@shared-server/rallar-system/client-state/persistence/client-state-repository.ts';
@@ -59,7 +60,7 @@ describe('client mutation stable-read concurrency', () => {
             throw new Error('Expected a stored client session');
         }
         const command = await toClientMutationCommand(
-            toExpiryCommandInput(toClientSessionExpiryCandidate(session)),
+            toExpireClientSessionMutationInput(toClientSessionExpiryCandidate(session)),
             {
                 nowEpochMs: session.expiresAtEpochMs,
                 serviceId: 'client-service',

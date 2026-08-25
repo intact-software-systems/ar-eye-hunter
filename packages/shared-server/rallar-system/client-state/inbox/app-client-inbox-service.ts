@@ -17,13 +17,11 @@ import {
     toClientMutationIssuedSessionAuthority,
     toClientMutationSystemAuthority
 } from '../mutation/client-mutation-authority.ts';
-import {
-    toConnectCommandInput,
-    toDisconnectCommandInput,
-    toHeartbeatCommandInput,
-    toUpsertInstanceCommandInput,
-    toUpsertPrincipalCommandInput
-} from '../mutation/client-mutation-command.ts';
+import { toConnectClientSessionMutationInput } from '../mutation/command-input/to-connect-client-session-mutation-input.ts';
+import { toDisconnectClientSessionMutationInput } from '../mutation/command-input/to-disconnect-client-session-mutation-input.ts';
+import { toHeartbeatClientSessionMutationInput } from '../mutation/command-input/to-heartbeat-client-session-mutation-input.ts';
+import { toUpsertClientInstanceMutationInput } from '../mutation/command-input/to-upsert-client-instance-mutation-input.ts';
+import { toUpsertClientPrincipalMutationInput } from '../mutation/command-input/to-upsert-client-principal-mutation-input.ts';
 import {
     CLIENT_STATE_INBOX_REGISTRATION_TYPES,
     type ClientAuthorisedWsSessionConnectAppInboxPayload,
@@ -215,12 +213,12 @@ export class AppClientInboxService {
             handle: async (principal, context) =>
                 await this.handler.processCommand(
                     context,
-                    toUpsertPrincipalCommandInput(
-                        principal.scope,
-                        principal.principalId,
-                        principal.request,
-                        context.entry.key.resourceId
-                    )
+                    toUpsertClientPrincipalMutationInput({
+                        scope: principal.scope,
+                        principalId: principal.principalId,
+                        request: principal.request,
+                        defaultCommandId: context.entry.key.resourceId
+                    })
                 )
         });
     }
@@ -233,13 +231,13 @@ export class AppClientInboxService {
             handle: async (instance, context) =>
                 await this.handler.processCommand(
                     context,
-                    toUpsertInstanceCommandInput(
-                        instance.scope,
-                        instance.principalId,
-                        instance.clientInstanceId,
-                        instance.request,
-                        context.entry.key.resourceId
-                    )
+                    toUpsertClientInstanceMutationInput({
+                        scope: instance.scope,
+                        principalId: instance.principalId,
+                        clientInstanceId: instance.clientInstanceId,
+                        request: instance.request,
+                        defaultCommandId: context.entry.key.resourceId
+                    })
                 )
         });
     }
@@ -252,16 +250,16 @@ export class AppClientInboxService {
             handle: async (session, context) =>
                 await this.handler.processCommand(
                     context,
-                    toConnectCommandInput(
-                        'connectSession',
-                        session.scope,
-                        session.principalId,
-                        session.clientInstanceId,
-                        session.sessionId,
-                        session.request,
-                        context.entry.key.resourceId,
-                        {}
-                    )
+                    toConnectClientSessionMutationInput({
+                        operation: 'connectSession',
+                        scope: session.scope,
+                        principalId: session.principalId,
+                        clientInstanceId: session.clientInstanceId,
+                        sessionId: session.sessionId,
+                        request: session.request,
+                        defaultCommandId: context.entry.key.resourceId,
+                        identityDefaults: {}
+                    })
                 )
         });
     }
@@ -274,14 +272,14 @@ export class AppClientInboxService {
             handle: async (session, context) =>
                 await this.handler.processCommand(
                     context,
-                    toHeartbeatCommandInput(
-                        session.scope,
-                        session.principalId,
-                        session.clientInstanceId,
-                        session.sessionId,
-                        session.request,
-                        context.entry.key.resourceId
-                    )
+                    toHeartbeatClientSessionMutationInput({
+                        scope: session.scope,
+                        principalId: session.principalId,
+                        clientInstanceId: session.clientInstanceId,
+                        sessionId: session.sessionId,
+                        request: session.request,
+                        defaultCommandId: context.entry.key.resourceId
+                    })
                 )
         });
     }
@@ -294,15 +292,15 @@ export class AppClientInboxService {
             handle: async (session, context) =>
                 await this.handler.processCommand(
                     context,
-                    toDisconnectCommandInput(
-                        'disconnectSession',
-                        session.scope,
-                        session.principalId,
-                        session.clientInstanceId,
-                        session.sessionId,
-                        session.request,
-                        context.entry.key.resourceId
-                    )
+                    toDisconnectClientSessionMutationInput({
+                        operation: 'disconnectSession',
+                        scope: session.scope,
+                        principalId: session.principalId,
+                        clientInstanceId: session.clientInstanceId,
+                        sessionId: session.sessionId,
+                        request: session.request,
+                        defaultCommandId: context.entry.key.resourceId
+                    })
                 )
         });
     }

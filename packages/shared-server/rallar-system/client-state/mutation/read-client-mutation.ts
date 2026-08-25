@@ -1,7 +1,7 @@
 import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
 import { StateSnapshotReadConflictError } from '../../state-events/state-snapshot-read.ts';
-import { ClientMutationRejectedError } from '../client-state-validation-primitives.ts';
 import { ClientStateRepository } from '../persistence/client-state-repository.ts';
+import { ClientMutationRejectedError } from '../validation/client-mutation-rejection.ts';
 import type { ClientMutationCommand, ClientMutationRead } from './client-mutation-contracts.ts';
 
 interface ClientMutationTargetRefs {

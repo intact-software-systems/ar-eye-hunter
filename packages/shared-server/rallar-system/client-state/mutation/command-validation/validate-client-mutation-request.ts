@@ -6,19 +6,22 @@ import type {
     UpsertClientPrincipalRequest
 } from '@shared/api/state-types.ts';
 
+import { requireOptionalEnum } from '../../validation/client-enum-validation.ts';
+import { requireJsonRecord } from '../../validation/client-json-validation.ts';
+import { rejectClientMutation } from '../../validation/client-mutation-rejection.ts';
 import {
-    rejectClientMutation,
+    decodeClientValidationRecord,
     requireAllowedKeys,
-    requireJsonRecord,
+    type ClientValidationRecord,
+    type ClientValidationValue
+} from '../../validation/client-record-validation.ts';
+import {
     requireNonEmptyString,
-    requireOptionalEnum,
     requireOptionalNonEmptyString,
     requireOptionalString,
-    requireOptionalTimestamp,
-    requirePlainRecord,
     requireStringArray
-} from '../../client-state-validation-primitives.ts';
-import type { ClientValidationRecord } from '../../client-state-validation-primitives.ts';
+} from '../../validation/client-string-validation.ts';
+import { requireOptionalTimestamp } from '../../validation/client-timestamp-validation.ts';
 import {
     CLIENT_INSTANCE_STATUSES,
     CLIENT_PLATFORMS,
@@ -56,7 +59,7 @@ export function validateClientMutationRequest(
         | 'disconnectSession',
     request: unknown
 ): void {
-    const value = requirePlainRecord(request, `Client ${operation} request`);
+    const value = decodeClientValidationRecord(request, `Client ${operation} request`);
     validateOptionalActorInput(value);
     validateRequestOperation(operation, value);
 }
@@ -180,7 +183,7 @@ function validateOptionalActorInput(input: ClientValidationRecord): void {
     requireOptionalNonEmptyString(input.requestId, 'Client request requestId');
 }
 
-function validateGenerationId(value: unknown): void {
+function validateGenerationId(value: ClientValidationValue): void {
     requireNonEmptyString(value, 'Client session generationId');
 }
 
@@ -230,7 +233,7 @@ function validateDisconnectTimestampOrder(input: ClientValidationRecord): void {
     }
 }
 
-function timestampValue(value: unknown): number | undefined {
+function timestampValue(value: ClientValidationValue): number | undefined {
     return typeof value === 'number' ? value : undefined;
 }
 

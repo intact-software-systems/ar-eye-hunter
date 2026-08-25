@@ -14,18 +14,15 @@ import {
     type ClientStateService,
     type ClientStateWritten
 } from '../client-state-service-contracts.ts';
-import {
-    toClientMutationCommand,
-    toConnectCommandInput,
-    toDisconnectCommandInput,
-    toExpiryCommandInput,
-    type ClientMutationPersistedFacts
-} from '../mutation/client-mutation-command.ts';
+import { toClientMutationCommand, type ClientMutationPersistedFacts } from '../mutation/client-mutation-command.ts';
 import type {
     ClientMutationCommand,
     ClientMutationCommandInput,
     ClientMutationComputed
 } from '../mutation/client-mutation-contracts.ts';
+import { toConnectClientSessionMutationInput } from '../mutation/command-input/to-connect-client-session-mutation-input.ts';
+import { toDisconnectClientSessionMutationInput } from '../mutation/command-input/to-disconnect-client-session-mutation-input.ts';
+import { toExpireClientSessionMutationInput } from '../mutation/command-input/to-expire-client-session-mutation-input.ts';
 import { validateClientMutationAuthorityPolicy } from '../mutation/result-validation/validate-client-mutation-authority-policy.ts';
 import type {
     ClientAuthorisedWsSessionConnectAppInboxPayload,
@@ -267,13 +264,13 @@ export class ClientStateInboxHandler {
         const requestId = toAuthorisedWsRequestId('connect', connection);
         return await this.toCommand(
             context,
-            toConnectCommandInput(
-                'connectAuthorisedWsSession',
-                connection.scope,
-                connection.principalId,
-                connection.clientInstanceId,
-                connection.authSession.sessionId,
-                {
+            toConnectClientSessionMutationInput({
+                operation: 'connectAuthorisedWsSession',
+                scope: connection.scope,
+                principalId: connection.principalId,
+                clientInstanceId: connection.clientInstanceId,
+                sessionId: connection.authSession.sessionId,
+                request: {
                     generationId: connection.generationId,
                     presenceState: 'online',
                     transport: 'ws',
@@ -284,8 +281,8 @@ export class ClientStateInboxHandler {
                     actorSessionId: connection.authSession.sessionId,
                     requestId
                 },
-                requestId,
-                {
+                defaultCommandId: requestId,
+                identityDefaults: {
                     platform: connection.platform,
                     userAgent: connection.userAgent ?? undefined,
                     capabilities: connection.capabilities,
@@ -293,7 +290,7 @@ export class ClientStateInboxHandler {
                     principalDisplayName: connection.displayName,
                     principalRoles: ['member']
                 }
-            )
+            })
         );
     }
 
@@ -304,13 +301,13 @@ export class ClientStateInboxHandler {
         const connection = input.connection;
         return await this.toCommand(
             context,
-            toDisconnectCommandInput(
-                'disconnectAuthorisedWsSession',
-                connection.scope,
-                connection.principalId,
-                connection.clientInstanceId,
-                connection.authSession.sessionId,
-                {
+            toDisconnectClientSessionMutationInput({
+                operation: 'disconnectAuthorisedWsSession',
+                scope: connection.scope,
+                principalId: connection.principalId,
+                clientInstanceId: connection.clientInstanceId,
+                sessionId: connection.authSession.sessionId,
+                request: {
                     generationId: connection.generationId,
                     disconnectedAtEpochMs: input.disconnectedAtEpochMs,
                     reason: input.reason,
@@ -318,8 +315,8 @@ export class ClientStateInboxHandler {
                     actorSessionId: connection.authSession.sessionId,
                     requestId: toAuthorisedWsRequestId('disconnect', connection)
                 },
-                context.entry.key.resourceId
-            )
+                defaultCommandId: context.entry.key.resourceId
+            })
         );
     }
 
@@ -333,7 +330,10 @@ export class ClientStateInboxHandler {
                 atEpochMs
             )
         ) {
-            const command = await this.toCommand(context, toExpiryCommandInput(candidate));
+            const command = await this.toCommand(
+                context,
+                toExpireClientSessionMutationInput(candidate)
+            );
             computed.push(await this.computeValidatedMutation(command));
         }
         return computed;

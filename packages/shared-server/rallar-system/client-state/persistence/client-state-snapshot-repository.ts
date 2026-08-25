@@ -15,8 +15,9 @@ import { readStableStateSnapshot } from '../../state-events/state-snapshot-read.
 import { toClientPresenceState } from '../client-presence-state.ts';
 import { assembleClientStateSnapshot, toActiveClientSessions } from './assemble-client-state-snapshot.ts';
 import { toLiveClientStateEntryValue, type ClientPrincipalSnapshotRead } from './client-state-persistence-contracts.ts';
+import { clientStatePrincipalStorageKey } from './client-state-principal-storage-key.ts';
 import { ClientStateRepositoryReads } from './client-state-repository-reads.ts';
-import { clientStatePrincipalStorageKey } from './client-state-storage-keys.ts';
+import { clientStateScopeStorageKeyPrefix } from './client-state-scope-storage-key.ts';
 
 export class ClientStateSnapshotRepository extends ClientStateRepositoryReads {
     constructor(repository: RuntimeStateRepositoryLike, events: ClientStateEventStore) {
@@ -24,7 +25,7 @@ export class ClientStateSnapshotRepository extends ClientStateRepositoryReads {
     }
 
     async listSnapshots(scope: ClientScope): Promise<readonly ClientSnapshot[]> {
-        const keyPrefix = this.scopeChildPrefix(scope);
+        const keyPrefix = clientStateScopeStorageKeyPrefix(scope);
         const principalsBefore = await this.listClientPrincipalEntries(keyPrefix, scope);
         const [instances, sessions] = await Promise.all([
             this.listClientInstanceEntries(keyPrefix, scope),

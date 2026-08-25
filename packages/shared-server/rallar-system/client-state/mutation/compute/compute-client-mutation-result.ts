@@ -9,11 +9,9 @@ import {
     computeClientStateSyncEntries,
     type ComputedClientStateSync
 } from '../../../state-sync/state-sync-entry-computation.ts';
-import { ClientMutationRejectedError } from '../../client-state-validation-primitives.ts';
-import {
-    compareClientStateInstanceStorageKeys,
-    compareClientStateSessionStorageKeys
-} from '../../persistence/client-state-storage-keys.ts';
+import { compareClientStateInstanceStorageKeys } from '../../persistence/client-state-instance-storage-key.ts';
+import { compareClientStateSessionStorageKeys } from '../../persistence/client-state-session-storage-key.ts';
+import { ClientMutationRejectedError } from '../../validation/client-mutation-rejection.ts';
 import type {
     ClientMutationCommand,
     ClientMutationComputed,

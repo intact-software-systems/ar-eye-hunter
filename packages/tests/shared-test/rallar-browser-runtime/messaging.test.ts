@@ -79,7 +79,7 @@ it('passes the connected room reference through RTC message sends', async () => 
 it('subscribes before WebSocket sends and preserves message metadata', async () => {
     facade.behavior.wsMessageSend.mockResolvedValue({
         transport: 'ws',
-        status: 'sent',
+        status: 'sent-immediate',
         message: outboundMessage(),
         entries: []
     });
@@ -112,7 +112,7 @@ it('subscribes before WebSocket sends and preserves message metadata', async () 
 it('emits received WebSocket payloads and releases their subscription on close', async () => {
     facade.behavior.wsMessageSend.mockResolvedValue({
         transport: 'ws',
-        status: 'sent',
+        status: 'sent-immediate',
         message: outboundMessage(),
         entries: []
     });

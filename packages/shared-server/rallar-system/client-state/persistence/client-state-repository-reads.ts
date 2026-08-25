@@ -16,8 +16,15 @@ import {
     type RuntimeStateEntryValue
 } from '../../../runtime-state/runtime-state-json-store.ts';
 import type { RuntimeStateRepositoryLike } from '../../../runtime-state/runtime-state-repository.ts';
+import type { JsonWireValue } from '../../protocol/json-wire-identity.ts';
 import type { ClientStateEventStore } from '../../state-events/client-state-event-store.ts';
 import type { StateEventListQuery } from '../../state-events/state-event-listing.ts';
+import { assertExpectedClientStorageIdentity } from './assert-expected-client-storage-identity.ts';
+import {
+    clientStateIdempotencyStorageKey,
+    decodeClientIdempotencyStorageKey
+} from './client-state-idempotency-storage-key.ts';
+import { clientStateInstanceStorageKey, decodeClientInstanceStorageKey } from './client-state-instance-storage-key.ts';
 import {
     decodePersistedClientEvent,
     decodePersistedClientInstance,
@@ -30,22 +37,17 @@ import {
     type ClientMutationIdempotencyRecord
 } from './client-state-persistence-contracts.ts';
 import {
+    clientStatePrincipalStorageKey,
+    decodeClientPrincipalStorageKey
+} from './client-state-principal-storage-key.ts';
+import {
     CLIENT_STATE_IDEMPOTENT_NAMESPACE,
     CLIENT_STATE_INSTANCES_NAMESPACE,
     CLIENT_STATE_PRINCIPALS_NAMESPACE,
     CLIENT_STATE_SESSIONS_NAMESPACE
 } from './client-state-runtime-namespaces.ts';
-import {
-    assertExpectedClientStorageIdentity,
-    clientStateIdempotencyStorageKey,
-    clientStateInstanceStorageKey,
-    clientStatePrincipalStorageKey,
-    clientStateSessionStorageKey,
-    decodeClientIdempotencyStorageKey,
-    decodeClientInstanceStorageKey,
-    decodeClientPrincipalStorageKey,
-    decodeClientSessionStorageKey
-} from './client-state-storage-keys.ts';
+import { clientStateScopeStorageKeyPrefix } from './client-state-scope-storage-key.ts';
+import { clientStateSessionStorageKey, decodeClientSessionStorageKey } from './client-state-session-storage-key.ts';
 import { validateClientMutationIdempotencyRecord } from './validate-persisted-client-state.ts';
 
 export class ClientStateRepositoryReads extends RuntimeStateJsonStore {
@@ -67,7 +69,7 @@ export class ClientStateRepositoryReads extends RuntimeStateJsonStore {
         ref: ClientPrincipalRef,
         requestId: string
     ): Promise<RuntimeStateEntryValue<ClientMutationIdempotencyRecord> | undefined> {
-        const stored = await this.getEntryValue<unknown>(
+        const stored = await this.getEntryValue<JsonWireValue>(
             CLIENT_STATE_IDEMPOTENT_NAMESPACE,
             clientStateIdempotencyStorageKey(ref, requestId)
         );
@@ -81,7 +83,7 @@ export class ClientStateRepositoryReads extends RuntimeStateJsonStore {
     async findPrincipalEntry(
         ref: ClientPrincipalRef
     ): Promise<RuntimeStateEntryValue<ClientPrincipal> | undefined> {
-        const stored = await this.getEntryValue<unknown>(
+        const stored = await this.getEntryValue<JsonWireValue>(
             CLIENT_STATE_PRINCIPALS_NAMESPACE,
             clientStatePrincipalStorageKey(ref)
         );
@@ -89,7 +91,7 @@ export class ClientStateRepositoryReads extends RuntimeStateJsonStore {
     }
 
     async listPrincipals(scope: ClientScope): Promise<readonly ClientPrincipal[]> {
-        return (await this.listClientPrincipalEntries(this.scopeChildPrefix(scope), scope)).map(
+        return (await this.listClientPrincipalEntries(clientStateScopeStorageKeyPrefix(scope), scope)).map(
             (entry) => entry.value
         );
     }
@@ -101,7 +103,7 @@ export class ClientStateRepositoryReads extends RuntimeStateJsonStore {
     async findInstanceEntry(
         ref: ClientInstanceRef
     ): Promise<RuntimeStateEntryValue<ClientInstance> | undefined> {
-        const stored = await this.getEntryValue<unknown>(
+        const stored = await this.getEntryValue<JsonWireValue>(
             CLIENT_STATE_INSTANCES_NAMESPACE,
             clientStateInstanceStorageKey(ref)
         );
@@ -128,7 +130,7 @@ export class ClientStateRepositoryReads extends RuntimeStateJsonStore {
     }
 
     async readSessionEntry(ref: ClientSessionRef): Promise<RuntimeStateEntryRead<ClientSession>> {
-        const stored = await this.getEntryRead<unknown>(
+        const stored = await this.getEntryRead<JsonWireValue>(
             CLIENT_STATE_SESSIONS_NAMESPACE,
             clientStateSessionStorageKey(ref)
         );
@@ -198,7 +200,7 @@ export class ClientStateRepositoryReads extends RuntimeStateJsonStore {
         keyPrefix: string,
         expected: ClientScope
     ): Promise<readonly RuntimeStateEntryValue<ClientPrincipal>[]> {
-        const stored = await this.listEntryValues<unknown>(
+        const stored = await this.listEntryValues<JsonWireValue>(
             CLIENT_STATE_PRINCIPALS_NAMESPACE,
             keyPrefix
         );
@@ -209,7 +211,10 @@ export class ClientStateRepositoryReads extends RuntimeStateJsonStore {
         keyPrefix?: string,
         expected?: ClientScope | ClientPrincipalRef
     ): Promise<readonly RuntimeStateEntryValue<ClientInstance>[]> {
-        const stored = await this.listEntryValues<unknown>(CLIENT_STATE_INSTANCES_NAMESPACE, keyPrefix);
+        const stored = await this.listEntryValues<JsonWireValue>(
+            CLIENT_STATE_INSTANCES_NAMESPACE,
+            keyPrefix
+        );
         return stored.map((entry) => this.toInstanceEntry(entry, expected));
     }
 
@@ -217,12 +222,15 @@ export class ClientStateRepositoryReads extends RuntimeStateJsonStore {
         keyPrefix?: string,
         expected?: ClientScope | ClientPrincipalRef | ClientInstanceRef
     ): Promise<readonly RuntimeStateEntryValue<ClientSession>[]> {
-        const stored = await this.listEntryValues<unknown>(CLIENT_STATE_SESSIONS_NAMESPACE, keyPrefix);
+        const stored = await this.listEntryValues<JsonWireValue>(
+            CLIENT_STATE_SESSIONS_NAMESPACE,
+            keyPrefix
+        );
         return stored.map((entry) => this.toSessionEntry(entry, expected));
     }
 
     protected findPrincipalEntryValue(
-        stored: RuntimeStateEntryValue<unknown>,
+        stored: RuntimeStateEntryValue<JsonWireValue>,
         expected: ClientScope | ClientPrincipalRef
     ): RuntimeStateEntryValue<ClientPrincipal> {
         return withClientStateRepositoryInvariantError(stored.entry.key, () => {
@@ -237,7 +245,7 @@ export class ClientStateRepositoryReads extends RuntimeStateJsonStore {
     }
 
     protected toInstanceEntry(
-        stored: RuntimeStateEntryValue<unknown>,
+        stored: RuntimeStateEntryValue<JsonWireValue>,
         expected?: ClientScope | ClientPrincipalRef | ClientInstanceRef
     ): RuntimeStateEntryValue<ClientInstance> {
         return withClientStateRepositoryInvariantError(stored.entry.key, () => {
@@ -254,7 +262,7 @@ export class ClientStateRepositoryReads extends RuntimeStateJsonStore {
     }
 
     protected toSessionEntry(
-        stored: RuntimeStateEntryValue<unknown>,
+        stored: RuntimeStateEntryValue<JsonWireValue>,
         expected?: ClientScope | ClientPrincipalRef | ClientSessionRef
     ): RuntimeStateEntryValue<ClientSession> {
         return withClientStateRepositoryInvariantError(stored.entry.key, () => {
@@ -271,7 +279,7 @@ export class ClientStateRepositoryReads extends RuntimeStateJsonStore {
     }
 
     private toIdempotencyEntry(
-        stored: RuntimeStateEntryValue<unknown>,
+        stored: RuntimeStateEntryValue<JsonWireValue>,
         expected: ClientPrincipalRef & Readonly<{ requestId: string; }>
     ): RuntimeStateEntryValue<ClientMutationIdempotencyRecord> {
         return withClientStateRepositoryInvariantError(stored.entry.key, () => {
@@ -306,7 +314,7 @@ export function assertCanonicalClientStateIdempotencyRecord(
 }
 
 export function decodePersistedClientEventForRepository(
-    event: unknown,
+    event: ClientEvent,
     expected: ClientPrincipalRef
 ): ClientEvent {
     return withClientStateRepositoryInvariantError(

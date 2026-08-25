@@ -1,41 +1,41 @@
+import { requireEnum } from '../../validation/client-enum-validation.ts';
+import { rejectClientMutation } from '../../validation/client-mutation-rejection.ts';
 import {
-    rejectClientMutation,
+    decodeClientValidationRecord,
     requireExactKeys,
+    type ClientValidationRecord
+} from '../../validation/client-record-validation.ts';
+import {
     requireNonEmptyString,
     requireNullableNonEmptyString,
-    requirePlainRecord,
-    requirePositiveSafeInteger,
-    requireSha256,
-    requireTimestamp,
-    validateClientPrincipalRef
-} from '../../client-state-validation-primitives.ts';
-import type { ClientValidationRecord } from '../../client-state-validation-primitives.ts';
+    requireSha256
+} from '../../validation/client-string-validation.ts';
+import { requirePositiveSafeInteger, requireTimestamp } from '../../validation/client-timestamp-validation.ts';
+import { validateClientPrincipalRef } from '../../validation/validate-client-principal-ref.ts';
 import { CLIENT_MUTATION_OPERATIONS, type ClientMutationCommand } from '../client-mutation-contracts.ts';
 import { validateClientMutationOperationInput } from './validate-client-mutation-operation-input.ts';
 
 export function validateClientMutationCommand(
     command: unknown
 ): asserts command is ClientMutationCommand {
-    const value = requirePlainRecord(command, 'Client mutation command');
+    const value = decodeClientValidationRecord(command, 'Client mutation command');
     const operation = value.operation;
-    if (!CLIENT_MUTATION_OPERATIONS.has(operation as never)) {
-        rejectClientMutation('Client mutation command operation is invalid');
-    }
+    requireEnum(operation, CLIENT_MUTATION_OPERATIONS, 'Client mutation command operation');
     requireNonEmptyString(value.commandId, 'Client mutation commandId');
     requireNullableNonEmptyString(value.requestId, 'Client mutation requestId');
     validateClientPrincipalRef(value.aggregateRef, 'Client mutation aggregateRef');
     validateClientMutationFacts(value.facts);
     validateClientMutationAuthority(value.authority);
-    const input = requirePlainRecord(value.input, 'Client mutation input');
+    const input = decodeClientValidationRecord(value.input, 'Client mutation input');
     validateClientMutationOperationInput({
-        operation: operation as ClientMutationCommand['operation'],
+        operation,
         input,
         commandRoot: value
     });
 }
 
 export function validateClientMutationFacts(facts: unknown): void {
-    const value = requirePlainRecord(facts, 'Client mutation facts');
+    const value = decodeClientValidationRecord(facts, 'Client mutation facts');
     requireExactKeys(
         value,
         [
@@ -54,13 +54,13 @@ export function validateClientMutationFacts(facts: unknown): void {
     requireSha256(value.commandHash, 'Client mutation facts.commandHash');
     requirePositiveSafeInteger(value.attemptCount, 'Client mutation facts.attemptCount');
     requireTimestamp(value.expireAtEpochMs, 'Client mutation facts.expireAtEpochMs');
-    if ((value.expireAtEpochMs as number) <= (value.nowEpochMs as number)) {
+    if (value.expireAtEpochMs <= value.nowEpochMs) {
         rejectClientMutation('Client mutation facts.expireAtEpochMs must follow nowEpochMs');
     }
 }
 
 function validateClientMutationAuthority(authority: unknown): void {
-    const value = requirePlainRecord(authority, 'Client mutation authority');
+    const value = decodeClientValidationRecord(authority, 'Client mutation authority');
     if (value.kind === 'issued-session') {
         validateIssuedSessionAuthority(value);
         return;
@@ -98,11 +98,15 @@ function validateIssuedSessionAuthority(value: ClientValidationRecord): void {
     );
     if (
         value.version !== 1 ||
-        value.operation === 'expireSession' ||
-        !CLIENT_MUTATION_OPERATIONS.has(value.operation as never)
+        value.operation === 'expireSession'
     ) {
         rejectClientMutation('Client mutation issued-session authority is invalid');
     }
+    requireEnum(
+        value.operation,
+        CLIENT_MUTATION_OPERATIONS,
+        'Client mutation issued-session authority operation'
+    );
     for (const field of ['principalId', 'sessionId', 'applicationId', 'workspaceId'] as const) {
         requireNonEmptyString(value[field], `Client mutation authority.${field}`);
     }
@@ -114,7 +118,7 @@ function validateIssuedSessionAuthority(value: ClientValidationRecord): void {
         value.sessionExpiresAtEpochMs,
         'Client mutation authority.sessionExpiresAtEpochMs'
     );
-    if ((value.sessionExpiresAtEpochMs as number) <= (value.sessionIssuedAtEpochMs as number)) {
+    if (value.sessionExpiresAtEpochMs <= value.sessionIssuedAtEpochMs) {
         rejectClientMutation('Client mutation authority expiry must follow issuance');
     }
 }

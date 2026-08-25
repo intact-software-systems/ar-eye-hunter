@@ -13,7 +13,8 @@ import { createClientStateService } from '@shared-server/rallar-system/client-st
 import { AppClientInboxService } from '@shared-server/rallar-system/client-state/inbox/app-client-inbox-service.ts';
 import { toAuthenticatedClientMutationContextId } from '@shared-server/rallar-system/client-state/inbox/authenticated-client-mutation-ingress.ts';
 import { toClientMutationIssuedSessionAuthority } from '@shared-server/rallar-system/client-state/mutation/client-mutation-authority.ts';
-import { toClientMutationCommand, toUpsertPrincipalCommandInput } from '@shared-server/rallar-system/client-state/mutation/client-mutation-command.ts';
+import { toClientMutationCommand } from '@shared-server/rallar-system/client-state/mutation/client-mutation-command.ts';
+import { toUpsertClientPrincipalMutationInput } from '@shared-server/rallar-system/client-state/mutation/command-input/to-upsert-client-principal-mutation-input.ts';
 import { ClientStateRepository } from '@shared-server/rallar-system/client-state/persistence/client-state-repository.ts';
 
 import { createAppInboxTestDatabase } from '../app-inbox-test-database.ts';
@@ -144,18 +145,18 @@ describe('AppClientInbox authentication', () => {
             serviceId: 'server-12345678'
         });
         const command = await toClientMutationCommand(
-            toUpsertPrincipalCommandInput(
-                SCOPE,
-                'alice',
-                {
+            toUpsertClientPrincipalMutationInput({
+                scope: SCOPE,
+                principalId: 'alice',
+                request: {
                     username: 'alice',
                     displayName: 'Mallory controlled',
                     actorPrincipalId: 'mallory',
                     actorSessionId: 'mallory-session',
                     requestId: 'direct-mallory-targets-alice'
                 },
-                'direct-mallory-targets-alice'
-            ),
+                defaultCommandId: 'direct-mallory-targets-alice'
+            }),
             {
                 nowEpochMs: Date.now(),
                 serviceId: 'server-12345678',

@@ -302,6 +302,7 @@ it('reports invalid auth bootstrap configuration and allows a corrected retry', 
     await expect(runtime.authenticate({
         connection: 'invalidHttp',
         rallar: {
+            apiBaseUrl: '',
             username: 'alice',
             password: 'secret'
         }

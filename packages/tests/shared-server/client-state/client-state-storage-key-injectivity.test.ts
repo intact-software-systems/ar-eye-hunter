@@ -2,15 +2,25 @@ import { describe, expect, it } from 'vitest';
 
 import {
     clientStateIdempotencyStorageKey,
+    decodeClientIdempotencyStorageKey
+} from '@shared-server/rallar-system/client-state/persistence/client-state-idempotency-storage-key.ts';
+import {
     clientStateInstanceStorageKey,
+    decodeClientInstanceStorageKey
+} from '@shared-server/rallar-system/client-state/persistence/client-state-instance-storage-key.ts';
+import {
     clientStatePrincipalStorageKey,
+    decodeClientPrincipalStorageKey
+} from '@shared-server/rallar-system/client-state/persistence/client-state-principal-storage-key.ts';
+import {
+    clientStateScopeStorageKey,
+    clientStateScopeStorageKeyPrefix
+} from '@shared-server/rallar-system/client-state/persistence/client-state-scope-storage-key.ts';
+import {
     clientStateSessionStorageKey,
-    clientStateWorkspaceStorageKey,
-    decodeClientIdempotencyStorageKey,
-    decodeClientInstanceStorageKey,
-    decodeClientPrincipalStorageKey,
     decodeClientSessionStorageKey
-} from '@shared-server/rallar-system/client-state/persistence/client-state-storage-keys.ts';
+} from '@shared-server/rallar-system/client-state/persistence/client-state-session-storage-key.ts';
+import { clientStateWorkspaceStorageKey } from '@shared-server/rallar-system/client-state/persistence/client-state-workspace-storage-key.ts';
 
 const workspaceStorageKeys = [
     { workspaceId: '_', storageKey: '_' },
@@ -84,6 +94,18 @@ describe('client-state storage-key workspace injectivity', () => {
         }
     });
 
+    it('owns the canonical scoped key and child prefix', () => {
+        expect(
+            clientStateScopeStorageKey({ applicationId: 'app:a', workspaceId: 'workspace:b' })
+        ).toBe('app=app%3Aa:ws=workspace%3Ab');
+        expect(
+            clientStateScopeStorageKeyPrefix({
+                applicationId: 'app:a',
+                workspaceId: 'workspace:b'
+            })
+        ).toBe('app=app%3Aa:ws=workspace%3Ab:');
+    });
+
     it('keeps every derived workspace key distinct and decodable', () => {
         const principals = workspaceStorageKeys.map(({ workspaceId }) => ({
             applicationId: 'app',
@@ -141,6 +163,9 @@ describe('client-state storage-key workspace injectivity', () => {
 
         expect(() => unsafeClientStateWorkspaceStorageKey()).toThrow(TypeError);
         expect(() => unsafeClientStateWorkspaceStorageKey('')).toThrow(TypeError);
+        expect(() => clientStateScopeStorageKey({ applicationId: '', workspaceId: 'workspace' })).toThrow(
+            TypeError
+        );
     });
 
     it('rejects literal noncanonical keys through every decoder', () => {

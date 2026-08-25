@@ -68,6 +68,12 @@ describe('reviewed repository style dispositions', () => {
                 symbol: 'decodeAppInboxEnqueue'
             },
             {
+                path: 'packages/shared-server/rallar-system/client-state/validation/' +
+                    'client-record-validation.ts',
+                rule: 'boundary.unknown',
+                symbol: 'decodeClientValidationRecord'
+            },
+            {
                 path: 'packages/shared-server/rallar-system/group-state/mutation/command-validation/' +
                     'validate-group-mutation-operation-input.ts',
                 rule: 'boundary.unknown',

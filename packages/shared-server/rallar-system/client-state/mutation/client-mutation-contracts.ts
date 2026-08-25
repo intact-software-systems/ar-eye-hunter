@@ -14,6 +14,7 @@ import type {
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import type { RuntimeStateEntryValue } from '../../../runtime-state/runtime-state-json-store.ts';
 import type { RuntimeStateEntry } from '../../../runtime-state/runtime-state-repository.ts';
+import type { JsonWireObject } from '../../protocol/json-wire-identity.ts';
 import type { ComputedClientStateSync } from '../../state-sync/state-sync-entry-computation.ts';
 import type {
     ClientMutationIdempotencyRecord,
@@ -117,7 +118,7 @@ export type ClientMutationCommand =
                     authProvider: string | null;
                     externalSubjectId: string | null;
                     roles: readonly string[] | null;
-                    metadata: Readonly<Record<string, unknown>> | null;
+                    metadata: JsonWireObject | null;
                     lastSeenAtEpochMs: number | null;
                 }>;
         }>
