@@ -19,21 +19,19 @@ export type RallarAuthChangeReason =
     | 'expired'
     | 'unauthorized';
 
-export type RallarAuthState = Readonly<{
-    authenticated: boolean;
-    reason: RallarAuthChangeReason;
-    session?: AuthSession;
-}>;
+export interface RallarAuthState {
+    readonly authenticated: boolean;
+    readonly reason: RallarAuthChangeReason;
+    readonly session?: AuthSession;
+}
 
 export type RallarAuthChangeListener = RallarStateListener<RallarAuthState>;
 
-export type RallarRegisterOptions =
-    & RallarOperationOptions
-    & Readonly<{
-        adminSession?: AuthSession | null;
-    }>;
+export interface RallarRegisterOptions extends RallarOperationOptions {
+    readonly adminSession?: AuthSession | null;
+}
 
-export type RallarAuthFacade = Readonly<{
+export interface RallarAuthFacade {
     login(
         request: LoginRequest,
         options?: RallarOperationOptions
@@ -53,4 +51,4 @@ export type RallarAuthFacade = Readonly<{
         listener: RallarAuthChangeListener,
         options?: RallarOnChangeOptions
     ): RallarUnsubscribe;
-}>;
+}

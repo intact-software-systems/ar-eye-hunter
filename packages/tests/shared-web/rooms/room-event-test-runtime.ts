@@ -10,6 +10,8 @@ import type { StateEventPage } from '@shared/api/state-event-types.ts';
 
 import { createGroupSnapshotFixture } from '../authoritative-group-fixtures.ts';
 
+type ApiIntegrationModule = typeof import('@shared-web/browser/api-integration.ts');
+
 export interface RoomEventFixtureInput {
     readonly groupId: string;
     readonly eventId: string;
@@ -31,8 +33,8 @@ const roomEventMocks = await vi.hoisted(async () => {
         initMiddleware: vi.fn(async (): Promise<ApiMiddleware> => ctx),
         isMiddlewareReady: vi.fn(() => false),
         listStateGroupEvents: vi.fn(async (_groupId: string): Promise<GroupEvent[]> => []),
-        listStateGroupEventPage: vi.fn(
-            async (_groupId: string): Promise<StateEventPage<GroupEvent>> => ({
+        listStateGroupEventPage: vi.fn<ApiIntegrationModule['listStateGroupEventPage']>(
+            async (): Promise<StateEventPage<GroupEvent>> => ({
                 events: [],
                 hasMore: false
             })

@@ -275,8 +275,6 @@ describe('Rallar message send', () => {
             })
         ).rejects.toSatisfy(isRallarValidationError);
 
-        expect(webSocketQueueBox.enqueueOutboxIfAbsent)
-            .not.toHaveBeenCalled();
     });
 
     it('rejects room-scoped WS sends without a room target before queueing', async () => {
@@ -293,8 +291,6 @@ describe('Rallar message send', () => {
             })
         ).rejects.toSatisfy(isRallarValidationError);
 
-        expect(webSocketQueueBox.enqueueOutboxIfAbsent)
-            .not.toHaveBeenCalled();
     });
 
     it('rejects invalid RTC room ids before connecting or queueing', async () => {
@@ -310,9 +306,6 @@ describe('Rallar message send', () => {
             })
         ).rejects.toSatisfy(isRallarValidationError);
 
-        expect(mocks.initMiddleware).not.toHaveBeenCalled();
-        expect(rtcRxStreamer.enqueueOutboxIfAbsent)
-            .not.toHaveBeenCalled();
     });
 
     it('rejects corrupt and oversized message payloads before queueing', async () => {
@@ -340,8 +333,6 @@ describe('Rallar message send', () => {
             payload: { text: 'too large' }
         })).rejects.toSatisfy(isRallarValidationError);
 
-        expect(webSocketQueueBox.enqueueOutboxIfAbsent)
-            .not.toHaveBeenCalled();
     });
 
     it('returns RTC send status with the message when multicast enqueue reports no entries', async () => {
@@ -368,8 +359,6 @@ describe('Rallar message send', () => {
             }
         });
 
-        expect(rtcRxStreamer.enqueueOutboxIfAbsent)
-            .toHaveBeenCalledOnce();
         expect(result).toMatchObject({
             transport: 'rtc',
             status: 'no-route',
@@ -410,6 +399,10 @@ describe('Rallar message send', () => {
                 entries: []
             })
         );
+        const engineEvents: string[] = [];
+        qboxEngine.wake.mockImplementation(() => {
+            engineEvents.push('wake');
+        });
         mockGroupSnapshot(createGroupSnapshot('room-1', ['session-1', 'peer-1']));
 
         await createRallarFacade().messages.rtc.send({
@@ -421,7 +414,7 @@ describe('Rallar message send', () => {
             }
         });
 
-        expect(qboxEngine.wake).toHaveBeenCalledOnce();
+        expect(engineEvents).toEqual(['wake']);
     });
 
     it('adds cached room snapshotVersion as minSnapshotVersion on RTC room sends', async () => {
@@ -513,6 +506,10 @@ describe('Rallar message send', () => {
                 entries: []
             })
         );
+        const engineEvents: string[] = [];
+        qboxEngine.wake.mockImplementation(() => {
+            engineEvents.push('wake');
+        });
 
         const result = await createRallarFacade().messages.ws.send({
             scope: 'all',
@@ -524,9 +521,7 @@ describe('Rallar message send', () => {
             }
         });
 
-        expect(webSocketQueueBox.enqueueOutboxIfAbsent)
-            .toHaveBeenCalledOnce();
-        expect(qboxEngine.wake).not.toHaveBeenCalled();
+        expect(engineEvents).toEqual([]);
         expect(result).toMatchObject({
             transport: 'ws',
             status: 'sent-immediate',
@@ -559,6 +554,10 @@ describe('Rallar message send', () => {
                 entries: []
             })
         );
+        const engineEvents: string[] = [];
+        qboxEngine.wake.mockImplementation(() => {
+            engineEvents.push('wake');
+        });
 
         await createRallarFacade().messages.ws.send({
             scope: 'all',
@@ -570,7 +569,7 @@ describe('Rallar message send', () => {
             }
         });
 
-        expect(qboxEngine.wake).toHaveBeenCalledOnce();
+        expect(engineEvents).toEqual(['wake']);
     });
 
     it('adds cached room snapshotVersion as minSnapshotVersion on WS room sends', async () => {

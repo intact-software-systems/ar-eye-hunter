@@ -239,7 +239,10 @@ describe('Rallar RTC recovery', () => {
         const { createRallarFacade } = await import(
             '@shared-web/browser/rallar.ts'
         );
-        const restartIce = vi.fn();
+        let restartCount = 0;
+        const restartIce = () => {
+            restartCount += 1;
+        };
         const peer = createPeerTestDouble({
             peerId: 'peer-1',
             status: {
@@ -260,7 +263,7 @@ describe('Rallar RTC recovery', () => {
         await facade.connect();
         const result = await facade.rtc.restartIce('peer-1');
 
-        expect(restartIce).toHaveBeenCalledOnce();
+        expect(restartCount).toBe(1);
         expect(result).toMatchObject({
             peerId: 'peer-1',
             action: 'restart-ice',
@@ -375,7 +378,11 @@ describe('Rallar RTC recovery', () => {
                 return realtimeChannel;
             }
         );
-        const removeRtcCallbackById = vi.fn(() => true);
+        const removalEvents: string[] = [];
+        const removeRtcCallbackById = (id: string) => {
+            removalEvents.push(`lane:${id}`);
+            return true;
+        };
         const realtimeChannel = toTestDouble<QRtcDataChannel>({
             readHealth: vi.fn(() => health),
             onRtcCallbacksDo,
@@ -402,6 +409,12 @@ describe('Rallar RTC recovery', () => {
             .mockReturnValue(['peer-1']);
         mocks.webRtcConnectionService.readyPeerIdsForLane.mockReturnValue(['peer-1']);
         mocks.webRtcConnectionService.readPeer.mockReturnValue(peer);
+        mocks.webRtcConnectionService.removeRtcPeerLifecycleById.mockImplementation(
+            (id) => {
+                removalEvents.push(`peer:${id}`);
+                return true;
+            }
+        );
         const facade = createRallarFacade();
         const statuses: unknown[] = [];
         const lifecycles: unknown[] = [];
@@ -479,12 +492,13 @@ describe('Rallar RTC recovery', () => {
         });
 
         unsubscribeStatus();
-        expect(removeRtcCallbackById).not.toHaveBeenCalled();
+        expect(removalEvents).toEqual([]);
 
         unsubscribeLifecycle();
-        expect(mocks.webRtcConnectionService.removeRtcPeerLifecycleById)
-            .toHaveBeenCalledWith('rallar:rtc:status');
-        expect(removeRtcCallbackById).toHaveBeenCalledWith('rallar:rtc:status');
+        expect(removalEvents).toEqual([
+            'peer:rallar:rtc:status',
+            'lane:rallar:rtc:status'
+        ]);
     });
 
     it('emits RTC peer lifecycle removal after service deletion completes', async () => {

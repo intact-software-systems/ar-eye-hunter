@@ -21,6 +21,10 @@ export interface RegisterBrowserTransportLifecycleInput {
     readonly wsController: RallarWsController;
     readonly realtimeReceive: BrowserRealtimeReceiveRuntime;
     readonly rtcController: BrowserRallarRtcController;
+}
+
+export interface RegisterBrowserMediaLifecycleInput {
+    readonly lifecycle: RallarLifecycleCoordinator;
     readonly mediaController: RallarMediaPort;
 }
 
@@ -83,6 +87,11 @@ export function registerBrowserTransportLifecycle(
         attach: () => input.realtimeReceive.attachLaneCallbacks(),
         detach: (context) => input.realtimeReceive.detachLaneCallbacks(context)
     });
+}
+
+export function registerBrowserMediaLifecycle(
+    input: RegisterBrowserMediaLifecycleInput
+): void {
     input.lifecycle.register({
         id: 'media',
         order: 90,

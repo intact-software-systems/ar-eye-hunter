@@ -15,66 +15,69 @@ import type { RtcDataChannelLaneConfig } from '@shared/services/WebRtcConnection
 
 export type RallarConnectStatus = 'idle' | 'connecting' | 'connected';
 
-export type RallarDefaults = Readonly<{
-    applicationId: ApplicationId;
-    workspaceId?: WorkspaceId;
-    room?: Readonly<{
-        roomId?: string;
-        roomRef?: GroupRef;
-    }>;
-    realtime?: Readonly<{
-        laneId?: string;
-        openTimeoutMs?: number;
-    }>;
-    rtc?: Readonly<{
-        waitTimeoutMs?: number;
-        connectOnWait?: boolean;
-        dataChannelLanes?: readonly RtcDataChannelLaneConfig[];
-        maxPeerConnections?: number;
-        rttReportingDegreeLimit?: number;
-        bootstrapDegree?: number;
-    }>;
-    messages?: Readonly<{
-        maxPayloadBytes?: number;
-    }>;
-    operations?: Readonly<{
-        timeoutMs?: number;
-        maxAttempts?: number;
-        shouldRetry?: RallarOperationRetryPredicate;
-    }>;
-}>;
+interface RallarRoomDefaults {
+    readonly roomId?: string;
+    readonly roomRef?: GroupRef;
+}
 
-export type RallarScopedOperationOptions =
-    & RallarOperationOptions
-    & Readonly<{
-        scope?: StateScope;
-    }>;
+interface RallarRealtimeDefaults {
+    readonly laneId?: string;
+    readonly openTimeoutMs?: number;
+}
 
-export type RallarStartOptions =
-    & RallarScopedOperationOptions
-    & Readonly<{
-        restoreSession?: boolean;
-        connect?: boolean;
-        refreshRooms?: boolean;
-        refreshPeople?: boolean;
-    }>;
+interface RallarRtcDefaults {
+    readonly waitTimeoutMs?: number;
+    readonly connectOnWait?: boolean;
+    readonly dataChannelLanes?: readonly RtcDataChannelLaneConfig[];
+    readonly maxPeerConnections?: number;
+    readonly rttReportingDegreeLimit?: number;
+    readonly bootstrapDegree?: number;
+}
 
-export type RallarStartResult = Readonly<{
-    session?: AuthSession;
-    connected: boolean;
-    middleware?: ApiMiddleware;
-    roomState?: RallarRoomState;
-    peopleState?: RallarPeopleState;
-}>;
+interface RallarMessageDefaults {
+    readonly maxPayloadBytes?: number;
+}
 
-export type RallarSetupInput =
-    & RallarApiClientConfig
-    & RallarDefaults
-    & Readonly<{
-        start?: RallarStartOptions;
-    }>;
+interface RallarOperationDefaults {
+    readonly timeoutMs?: number;
+    readonly maxAttempts?: number;
+    readonly shouldRetry?: RallarOperationRetryPredicate;
+}
 
-export type RallarConnectionOperations = Readonly<{
+export interface RallarDefaults {
+    readonly applicationId: ApplicationId;
+    readonly workspaceId?: WorkspaceId;
+    readonly room?: RallarRoomDefaults;
+    readonly realtime?: RallarRealtimeDefaults;
+    readonly rtc?: RallarRtcDefaults;
+    readonly messages?: RallarMessageDefaults;
+    readonly operations?: RallarOperationDefaults;
+}
+
+export interface RallarScopedOperationOptions extends RallarOperationOptions {
+    readonly scope?: StateScope;
+}
+
+export interface RallarStartOptions extends RallarScopedOperationOptions {
+    readonly restoreSession?: boolean;
+    readonly connect?: boolean;
+    readonly refreshRooms?: boolean;
+    readonly refreshPeople?: boolean;
+}
+
+export interface RallarStartResult {
+    readonly session?: AuthSession;
+    readonly connected: boolean;
+    readonly middleware?: ApiMiddleware;
+    readonly roomState?: RallarRoomState;
+    readonly peopleState?: RallarPeopleState;
+}
+
+export interface RallarSetupInput extends RallarApiClientConfig, RallarDefaults {
+    readonly start?: RallarStartOptions;
+}
+
+export interface RallarConnectionOperations {
     configure(config: RallarApiClientConfig): void;
     setDefaults(defaults?: RallarDefaults): void;
     defaults(): RallarDefaults | undefined;
@@ -85,10 +88,8 @@ export type RallarConnectionOperations = Readonly<{
     session(): AuthSession | undefined;
     subscriptions(): RallarSubscriptionScope;
     flow<K, V>(policies?: CommandsOrchestratorPolicies<V>): CommandsOrchestrator<K, V>;
-}>;
+}
 
-export type RallarConnectionFacade =
-    & RallarConnectionOperations
-    & Readonly<{
-        start(options?: RallarStartOptions): Promise<RallarStartResult>;
-    }>;
+export interface RallarConnectionFacade extends RallarConnectionOperations {
+    start(options?: RallarStartOptions): Promise<RallarStartResult>;
+}

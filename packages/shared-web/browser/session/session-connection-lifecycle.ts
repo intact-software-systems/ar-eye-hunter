@@ -58,12 +58,8 @@ export class BrowserSessionConnectionLifecycle implements RallarSessionConnectio
         const middleware = this.input.connectionRuntime.readMiddleware();
         this.disconnectPromise = Promise.resolve().then(() => {
             this.connectionGeneration += 1;
-            this.input.lifecycle.detach(middleware);
-            this.input.transportRuntime.shutdown();
-            this.input.clearCurrentRoom();
-            this.input.connectionRuntime.setConnectState('idle');
-            this.input.lifecycle.disconnected();
-            this.lifecycleIsDisconnected = true;
+            this.connectionPromise = undefined;
+            this.cleanupConnection(middleware);
         }).finally(() => {
             this.disconnectPromise = undefined;
         });
@@ -99,6 +95,9 @@ export class BrowserSessionConnectionLifecycle implements RallarSessionConnectio
                 const connectionError = error instanceof Error
                     ? error
                     : new Error('Rallar connection failed.');
+                if (generation !== this.connectionGeneration) {
+                    throw new Error('Rallar connection was cancelled because auth ended.');
+                }
                 this.input.connectionRuntime.setConnectState('idle');
                 await input.onAuthInvalid(connectionError);
                 if (input.hasAuthEndInProgress()) {
@@ -130,9 +129,44 @@ export class BrowserSessionConnectionLifecycle implements RallarSessionConnectio
             throw new Error('Rallar connection was cancelled because auth ended.');
         }
         this.input.connectionRuntime.setConnectState('connected');
-        this.input.lifecycle.attach(middleware);
-        this.input.lifecycle.connected();
-        return middleware;
+        try {
+            this.input.lifecycle.attach(middleware);
+            this.input.lifecycle.connected();
+            return middleware;
+        }
+        catch (error) {
+            this.connectionPromise = undefined;
+            try {
+                this.cleanupConnection(middleware);
+            }
+            catch {
+                // Preserve the lifecycle failure that caused this rollback.
+            }
+            throw error;
+        }
+    }
+
+    private cleanupConnection(middleware: ApiMiddleware | undefined): void {
+        let failure: Error | undefined;
+        const attempt = (cleanup: () => void): void => {
+            try {
+                cleanup();
+            }
+            catch (error) {
+                failure ??= error instanceof Error
+                    ? error
+                    : new Error('Rallar connection cleanup failed.');
+            }
+        };
+        attempt(() => this.input.lifecycle.detach(middleware));
+        attempt(() => this.input.transportRuntime.shutdown());
+        attempt(() => this.input.clearCurrentRoom());
+        attempt(() => this.input.connectionRuntime.setConnectState('idle'));
+        attempt(() => this.input.lifecycle.disconnected());
+        this.lifecycleIsDisconnected = true;
+        if (failure !== undefined) {
+            throw failure;
+        }
     }
 
     private isDisconnectedWithoutTransport(): boolean {

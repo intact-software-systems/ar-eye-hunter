@@ -4,6 +4,7 @@ import type * as AppContextModule from '@shared-web/browser/app-context.ts';
 import type * as AuthApiModule from '@shared-web/browser/auth/session-http-api.ts';
 import type * as DataCachesModule from '@shared-web/browser/data-caches.ts';
 import type * as MiddlewareModule from '@shared-web/browser/middleware.ts';
+import type { RallarRealtimeMessage } from '@shared-web/browser/rallar-realtime-facade.ts';
 import { newALRoute, newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import type * as AuthModule from '@shared/api/auth.ts';
@@ -323,7 +324,9 @@ describe('Rallar realtime send and listen', () => {
             '@shared-web/browser/rallar.ts'
         );
         const realtimeChannel = createRtcDataChannelTestDouble({
-            sendJson: vi.fn()
+            sendJson: () => {
+                throw new Error('A timed-out realtime lane cannot send JSON');
+            }
         });
         webRtcConnectionService.ensurePeerLaneOpen.mockResolvedValueOnce({
             status: 'timeout',
@@ -361,7 +364,6 @@ describe('Rallar realtime send and listen', () => {
                     timeoutMs: 25
                 })
             );
-        expect(realtimeChannel.sendJson).not.toHaveBeenCalled();
     });
 
     it('sends realtime binary over the requested peer lane', async () => {
@@ -522,10 +524,12 @@ describe('Rallar realtime send and listen', () => {
         });
         webRtcConnectionService.activePeerIds.mockReturnValue(['peer-1']);
         webRtcConnectionService.readPeer.mockReturnValue(peer);
-        const handler = vi.fn();
+        const messages: RallarRealtimeMessage<ArrayBuffer>[] = [];
         const facade = createRallarFacade();
 
-        facade.realtime.onBinary('realtime', handler);
+        facade.realtime.onBinary('realtime', (message) => {
+            messages.push(message);
+        });
         await facade.connect();
 
         const callback = rawCallbacks.get('rallar:realtime:realtime');
@@ -536,8 +540,8 @@ describe('Rallar realtime send and listen', () => {
             } as MessageEvent
         );
 
-        expect(handler).toHaveBeenCalledOnce();
-        const message = handler.mock.calls[0]?.[0];
+        expect(messages).toHaveLength(1);
+        const message = messages[0];
         expect(message).toMatchObject({
             peerId: 'peer-1',
             laneId: 'realtime'

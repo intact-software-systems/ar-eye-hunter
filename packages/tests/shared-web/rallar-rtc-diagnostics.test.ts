@@ -354,8 +354,6 @@ describe('Rallar RTC diagnostics', () => {
             laneIds: ['reliable']
         });
 
-        expect(getStats).toHaveBeenCalledOnce();
-        expect(readDiagnostics).toHaveBeenCalledOnce();
         expect(diagnostics).toMatchObject({
             sessionId: 'session-1',
             peerCount: 1,

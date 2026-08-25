@@ -8,6 +8,7 @@ import {
 } from './composition/browser-communication-composition.ts';
 import { createBrowserFacadeAssembly } from './composition/browser-facade-assembly.ts';
 import {
+    registerBrowserMediaLifecycle,
     registerBrowserStateLifecycle,
     registerBrowserTransportLifecycle
 } from './composition/browser-lifecycle-composition.ts';
@@ -124,7 +125,10 @@ function registerBrowserFacadeLifecycle(
         wsInbox: compositions.stateEvents.wsInbox,
         wsController: compositions.realtime.wsController,
         realtimeReceive: compositions.realtime.realtimeReceive,
-        rtcController: compositions.realtime.rtcController,
+        rtcController: compositions.realtime.rtcController
+    });
+    registerBrowserMediaLifecycle({
+        lifecycle: foundation.lifecycle,
         mediaController: compositions.realtime.mediaController
     });
 }

@@ -147,18 +147,32 @@ describe('Rallar targeted channel', () => {
                 (_data: unknown, _options?: RtcDataChannelSendOptions) => sent
             )
         };
+        const laneOpenRequests: Array<{
+            readonly peerId: string;
+            readonly laneId: string;
+            readonly timeoutMs: number | undefined;
+        }> = [];
         vi.mocked(mocks.webRtcConnectionService.ensurePeerLaneOpen)
-            .mockResolvedValueOnce({
-                status: 'open',
-                peerId: 'peer-a',
-                laneId: 'realtime',
-                channel: toDataChannelTestDouble(realtimeChannel)
-            })
-            .mockResolvedValueOnce({
-                status: 'timeout',
-                peerId: 'peer-b',
-                laneId: 'realtime',
-                error: new Error('slow peer')
+            .mockImplementation(async (peerId, laneId = 'reliable', options) => {
+                laneOpenRequests.push({
+                    peerId,
+                    laneId,
+                    timeoutMs: options?.timeoutMs
+                });
+                if (peerId === 'peer-a') {
+                    return {
+                        status: 'open',
+                        peerId,
+                        laneId,
+                        channel: toDataChannelTestDouble(realtimeChannel)
+                    };
+                }
+                return {
+                    status: 'timeout',
+                    peerId,
+                    laneId,
+                    error: new Error('slow peer')
+                };
             });
 
         const channel = createRallarFacade().channels.targeted<PositionUpdate>({
@@ -189,24 +203,10 @@ describe('Rallar targeted channel', () => {
                 }
             ]
         });
-        expect(mocks.webRtcConnectionService.ensurePeerLaneOpen)
-            .toHaveBeenNthCalledWith(
-                1,
-                'peer-a',
-                'realtime',
-                expect.objectContaining({
-                    timeoutMs: 25
-                })
-            );
-        expect(mocks.webRtcConnectionService.ensurePeerLaneOpen)
-            .toHaveBeenNthCalledWith(
-                2,
-                'peer-b',
-                'realtime',
-                expect.objectContaining({
-                    timeoutMs: 25
-                })
-            );
+        expect(laneOpenRequests).toEqual([
+            { peerId: 'peer-a', laneId: 'realtime', timeoutMs: 25 },
+            { peerId: 'peer-b', laneId: 'realtime', timeoutMs: 25 }
+        ]);
         expect(realtimeChannel.sendJson).toHaveBeenCalledWith(
             {
                 x: 1

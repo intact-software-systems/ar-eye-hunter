@@ -15,40 +15,75 @@ import { createBrowserRallarRooms, type BrowserRallarRooms } from '@shared-web/b
 import { readSession } from '@shared/api/auth.ts';
 import type { RallarTargetedChannelDefinition } from '../../rallar-facade-contract.ts';
 
-import type { BrowserMessagingComposition, BrowserRealtimeComposition } from './browser-communication-composition.ts';
+import type {
+    BrowserMediaComposition,
+    BrowserMessagingComposition,
+    BrowserRealtimeComposition,
+    BrowserRealtimeCoreComposition
+} from './browser-communication-composition.ts';
 import type { BrowserStateComposition, BrowserStateEventComposition } from './browser-runtime-composition.ts';
 
-export interface BrowserRoomPeopleStatsComposition {
+export interface BrowserRoomsComposition {
     readonly rooms: BrowserRallarRooms;
+}
+
+export interface BrowserPeopleStatsComposition {
     readonly people: RallarPeopleController['operations'];
     readonly stats: RallarStatsController['operations'];
 }
 
-export interface BrowserCallsDirectorComposition {
+export interface BrowserRoomPeopleStatsComposition extends BrowserRoomsComposition, BrowserPeopleStatsComposition {}
+
+export interface BrowserCallsComposition {
     readonly calls: RallarCallsFacade;
+}
+
+export interface BrowserDirectorComposition {
     readonly directorController: RallarDirectorController;
     readonly director: RallarDirectorFacade;
 }
 
-export interface CreateBrowserRoomPeopleStatsCompositionInput {
+export interface BrowserCallsDirectorComposition extends BrowserCallsComposition, BrowserDirectorComposition {}
+
+export interface CreateBrowserRoomsCompositionInput {
     readonly state: BrowserStateComposition;
     readonly stateEvents: BrowserStateEventComposition;
     readonly messaging: BrowserMessagingComposition;
-    readonly realtime: BrowserRealtimeComposition;
+    readonly realtime: BrowserRealtimeCoreComposition;
     readonly session: RallarSessionController;
 }
 
-export interface CreateBrowserCallsDirectorCompositionInput {
+export interface CreateBrowserPeopleStatsCompositionInput {
+    readonly state: BrowserStateComposition;
+    readonly stateEvents: BrowserStateEventComposition;
+    readonly session: RallarSessionController;
+}
+
+export interface CreateBrowserRoomPeopleStatsCompositionInput
+    extends CreateBrowserRoomsCompositionInput, CreateBrowserPeopleStatsCompositionInput {}
+
+export interface CreateBrowserCallsCompositionInput {
     readonly state: BrowserStateComposition;
     readonly messaging: BrowserMessagingComposition;
     readonly realtime: BrowserRealtimeComposition;
-    readonly products: BrowserRoomPeopleStatsComposition;
     readonly session: RallarSessionController;
 }
 
-export function createBrowserRoomPeopleStatsComposition(
-    input: CreateBrowserRoomPeopleStatsCompositionInput
-): BrowserRoomPeopleStatsComposition {
+export interface CreateBrowserDirectorCompositionInput {
+    readonly state: BrowserStateComposition;
+    readonly messaging: BrowserMessagingComposition;
+    readonly realtime: BrowserRealtimeCoreComposition;
+    readonly products: BrowserRoomsComposition;
+    readonly session: RallarSessionController;
+}
+
+export interface CreateBrowserCallsDirectorCompositionInput extends CreateBrowserCallsCompositionInput {
+    readonly products: BrowserRoomsComposition;
+}
+
+export function createBrowserRoomsComposition(
+    input: CreateBrowserRoomsCompositionInput
+): BrowserRoomsComposition {
     const rooms = createBrowserRallarRooms({
         stateStore: input.state.roomStateStore,
         roomEvents: input.stateEvents.roomEvents,
@@ -63,6 +98,12 @@ export function createBrowserRoomPeopleStatsComposition(
         runAuthAwareOperation: input.session.runAuthAwareOperation,
         acceptSnapshots: async (snapshotInput) => await input.state.stateStore.acceptSnapshots(snapshotInput)
     });
+    return { rooms };
+}
+
+export function createBrowserPeopleStatsComposition(
+    input: CreateBrowserPeopleStatsCompositionInput
+): BrowserPeopleStatsComposition {
     const peopleController = createRallarPeopleController({
         stateStore: input.state.stateStore,
         stateEvents: input.stateEvents.stateEvents,
@@ -79,15 +120,23 @@ export function createBrowserRoomPeopleStatsComposition(
         runAuthAwareOperation: input.session.runAuthAwareOperation
     });
     return {
-        rooms,
         people: peopleController.operations,
         stats: statsController.operations
     };
 }
 
-export function createBrowserCallsDirectorComposition(
-    input: CreateBrowserCallsDirectorCompositionInput
-): BrowserCallsDirectorComposition {
+export function createBrowserRoomPeopleStatsComposition(
+    input: CreateBrowserRoomPeopleStatsCompositionInput
+): BrowserRoomPeopleStatsComposition {
+    return {
+        ...createBrowserRoomsComposition(input),
+        ...createBrowserPeopleStatsComposition(input)
+    };
+}
+
+export function createBrowserCallsComposition(
+    input: CreateBrowserCallsCompositionInput
+): BrowserCallsComposition {
     const callsController = new BrowserRallarCallsController({
         connect: async () => await input.session.connect(),
         readMiddleware: input.session.readMiddleware,
@@ -105,6 +154,12 @@ export function createBrowserCallsDirectorComposition(
             await input.messaging.messagesController.sendWsUnicast({ peerId, payload, typeId, route })
     });
     const calls = callsController.operations;
+    return { calls };
+}
+
+export function createBrowserDirectorComposition(
+    input: CreateBrowserDirectorCompositionInput
+): BrowserDirectorComposition {
     const directorController = new BrowserRallarDirectorController({
         roomStateStore: input.state.roomStateStore,
         rooms: input.products.rooms,
@@ -123,5 +178,14 @@ export function createBrowserCallsDirectorComposition(
     });
     const director = directorController.operations;
     input.state.stateStore.onAfterEmit(() => directorController.onStateChanged());
-    return { calls, directorController, director };
+    return { directorController, director };
+}
+
+export function createBrowserCallsDirectorComposition(
+    input: CreateBrowserCallsDirectorCompositionInput
+): BrowserCallsDirectorComposition {
+    return {
+        ...createBrowserCallsComposition(input),
+        ...createBrowserDirectorComposition(input)
+    };
 }

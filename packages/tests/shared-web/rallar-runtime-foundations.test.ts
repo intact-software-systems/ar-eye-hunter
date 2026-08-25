@@ -6,10 +6,34 @@ import { BrowserRallarSubscriptionScope } from '@shared-web/browser/rallar-runti
 import { createRallarWsInbox } from '@shared-web/browser/rallar-runtime/ws-inbox.ts';
 import { createRallarFacade } from '@shared-web/browser/rallar.ts';
 import { createRoomStateStore } from '@shared-web/browser/rooms/room-state-store.ts';
+import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { describe, expect, it } from 'vitest';
 import { vi } from 'vitest';
 
 import { configureTestCacheRepositories } from '../cache-repository-config.ts';
+
+const wsInboxTestMessage: ALMessage = {
+    id: {
+        v: 2,
+        msgId: 'message-1',
+        ts: 1,
+        senderId: 'sender-1'
+    },
+    route: {
+        topicId: 'test.message',
+        contextId: 'test-context',
+        resourceId: 'test-resource'
+    },
+    payload: {
+        typeId: 'test.message',
+        contentType: 'application/json',
+        resource: '{}'
+    }
+};
+
+interface WsInboxCallbacks {
+    onMessage(message: ALMessage): Promise<void>;
+}
 
 describe('Rallar browser runtime foundations', () => {
     it('isolates composed facade defaults between instances', () => {
@@ -110,12 +134,16 @@ describe('Rallar browser runtime foundations', () => {
 
     it('multiplexes one WS callback and dispatches handlers in order', async () => {
         const events: string[] = [];
-        let onMessage: ((message: unknown) => Promise<void>) | undefined;
+        let onMessage: ((message: ALMessage) => Promise<void>) | undefined;
+        const subscriptionEvents: string[] = [];
         const queueBox = {
-            onAnyInboxMessageDo: vi.fn((_id, callbacks) => {
+            onAnyInboxMessageDo: (_id: string, callbacks: WsInboxCallbacks) => {
+                subscriptionEvents.push('attached');
                 onMessage = callbacks.onMessage;
-            }),
-            removeAnyInboxMessageCallback: vi.fn()
+            },
+            removeAnyInboxMessageCallback: () => {
+                subscriptionEvents.push('removed');
+            }
         };
         const ctx = { middleware: { webSocketQueueBox: queueBox } } as never;
         const inbox = createRallarWsInbox({ readMiddleware: () => ctx });
@@ -135,14 +163,14 @@ describe('Rallar browser runtime foundations', () => {
             }
         });
 
-        expect(queueBox.onAnyInboxMessageDo).toHaveBeenCalledTimes(1);
-        await onMessage?.({});
+        expect(subscriptionEvents).toEqual(['attached']);
+        await onMessage?.(wsInboxTestMessage);
         expect(events).toEqual(['state-events', 'messages']);
 
         stopState();
-        expect(queueBox.removeAnyInboxMessageCallback).not.toHaveBeenCalled();
+        expect(subscriptionEvents).toEqual(['attached']);
         stopMessages();
-        expect(queueBox.removeAnyInboxMessageCallback).toHaveBeenCalledTimes(1);
+        expect(subscriptionEvents).toEqual(['attached', 'removed']);
     });
 });
 

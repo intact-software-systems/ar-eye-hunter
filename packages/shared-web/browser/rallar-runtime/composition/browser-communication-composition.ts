@@ -32,16 +32,21 @@ export interface BrowserMessagingComposition {
     readonly messages: RallarMessagesController['operations'];
 }
 
-export interface BrowserRealtimeComposition {
+export interface BrowserRealtimeCoreComposition {
     readonly wsController: RallarWsController;
     readonly rtcController: BrowserRallarRtcController;
     readonly rtc: RallarRtcFacade;
     readonly realtimeReceive: BrowserRealtimeReceiveRuntime;
     readonly realtimeTargeted: BrowserTargetedRealtimeRuntime;
     readonly realtime: RallarRealtimeFacade;
+}
+
+export interface BrowserMediaComposition {
     readonly mediaController: RallarMediaPort;
     readonly media: RallarMediaFacade;
 }
+
+export interface BrowserRealtimeComposition extends BrowserRealtimeCoreComposition, BrowserMediaComposition {}
 
 export interface CreateBrowserMessagingCompositionInput {
     readonly wsInbox: RallarWsInbox;
@@ -80,23 +85,39 @@ export function createBrowserMessagingComposition(
     };
 }
 
-export function createBrowserRealtimeComposition(
+export function createBrowserRealtimeCoreComposition(
     input: CreateBrowserRealtimeCompositionInput
-): BrowserRealtimeComposition {
+): BrowserRealtimeCoreComposition {
     const rtcComposition = createBrowserRtcComposition(input);
     const realtimeComposition = createBrowserRealtimeChannelComposition({
         ...input,
         rtc: rtcComposition.rtc
     });
+    return {
+        ...rtcComposition,
+        ...realtimeComposition
+    };
+}
+
+export function createBrowserMediaComposition(
+    input: CreateBrowserRealtimeCompositionInput
+): BrowserMediaComposition {
     const mediaController = new BrowserRallarMediaController({
         connect: async () => await input.session.connect(),
         readMiddleware: input.session.readMiddleware
     });
     return {
-        ...rtcComposition,
-        ...realtimeComposition,
         mediaController,
         media: mediaController.operations
+    };
+}
+
+export function createBrowserRealtimeComposition(
+    input: CreateBrowserRealtimeCompositionInput
+): BrowserRealtimeComposition {
+    return {
+        ...createBrowserRealtimeCoreComposition(input),
+        ...createBrowserMediaComposition(input)
     };
 }
 

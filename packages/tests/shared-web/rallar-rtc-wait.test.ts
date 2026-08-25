@@ -61,6 +61,7 @@ describe('Rallar RTC peer wait', () => {
         await facade.connect();
         mocks.webRtcConnectionService.ensurePeerConnectionStarted.mockClear();
         mocks.webRtcConnectionService.ensurePeerLaneOpen.mockClear();
+        const connectionAttempts = rejectUnexpectedRtcConnectionAttempts();
 
         await expect(facade.rtc.waitForOpen('peer-1', { timeoutMs: 1 }))
             .resolves.toMatchObject({
@@ -69,10 +70,7 @@ describe('Rallar RTC peer wait', () => {
                 peerId: 'peer-1',
                 laneId: 'reliable'
             });
-        expect(mocks.webRtcConnectionService.ensurePeerConnectionStarted)
-            .not.toHaveBeenCalled();
-        expect(mocks.webRtcConnectionService.ensurePeerLaneOpen)
-            .not.toHaveBeenCalled();
+        expect(connectionAttempts).toEqual([]);
     });
 
     it('returns aborted for an already-aborted RTC lane wait', async () => {
@@ -86,6 +84,7 @@ describe('Rallar RTC peer wait', () => {
         await facade.connect();
         mocks.webRtcConnectionService.ensurePeerConnectionStarted.mockClear();
         mocks.webRtcConnectionService.ensurePeerLaneOpen.mockClear();
+        const connectionAttempts = rejectUnexpectedRtcConnectionAttempts();
 
         await expect(
             facade.rtc.waitForLane(
@@ -102,10 +101,7 @@ describe('Rallar RTC peer wait', () => {
             peerId: 'peer-1',
             laneId: 'realtime'
         });
-        expect(mocks.webRtcConnectionService.ensurePeerConnectionStarted)
-            .not.toHaveBeenCalled();
-        expect(mocks.webRtcConnectionService.ensurePeerLaneOpen)
-            .not.toHaveBeenCalled();
+        expect(connectionAttempts).toEqual([]);
     });
 
     it('returns no-lane when an RTC peer lacks the requested lane', async () => {
@@ -142,7 +138,9 @@ describe('Rallar RTC peer wait', () => {
                     readyState: 'closed'
                 })
             ),
-            waitUntilOpen: vi.fn()
+            waitUntilOpen: () => {
+                throw new Error('A closed lane cannot be awaited');
+            }
         };
         const peer = createPeerTestDouble('peer-1', [['realtime', channel]]);
         mocks.webRtcConnectionService.knownPeerIds.mockReturnValue(['peer-1']);
@@ -162,7 +160,6 @@ describe('Rallar RTC peer wait', () => {
                     isReconnectable: true
                 }
             });
-        expect(channel.waitUntilOpen).not.toHaveBeenCalled();
     });
 
     it('returns aborted when RTC lane wait is aborted while pending', async () => {
@@ -299,3 +296,20 @@ describe('Rallar RTC peer wait', () => {
             );
     });
 });
+
+function rejectUnexpectedRtcConnectionAttempts(): string[] {
+    const attempts: string[] = [];
+    mocks.webRtcConnectionService.ensurePeerConnectionStarted.mockImplementation(
+        (peerId) => {
+            attempts.push(`connect:${peerId}`);
+            throw new Error(`Unexpected RTC connection attempt for ${peerId}`);
+        }
+    );
+    mocks.webRtcConnectionService.ensurePeerLaneOpen.mockImplementation(
+        async (peerId, laneId = 'reliable') => {
+            attempts.push(`open:${peerId}:${laneId}`);
+            throw new Error(`Unexpected RTC lane open for ${peerId}:${laneId}`);
+        }
+    );
+    return attempts;
+}

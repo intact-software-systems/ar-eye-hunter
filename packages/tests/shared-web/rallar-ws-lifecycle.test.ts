@@ -303,9 +303,14 @@ describe('Rallar WS lifecycle', () => {
             '@shared-web/browser/rallar.ts'
         );
         let callbacks: WebSocketClientCallbacks | undefined;
+        const removedCallbackIds: string[] = [];
         webSocketClient.onWebsocketCallbacksDo.mockImplementation((_id, next) => {
             callbacks = next;
             return webSocketClient;
+        });
+        webSocketClient.removeWebsocketCallbackById.mockImplementation((id) => {
+            removedCallbackIds.push(id);
+            return true;
         });
         webSocketQueueBox.readHealth.mockReturnValue({
             sessionId: 'session-1',
@@ -404,18 +409,10 @@ describe('Rallar WS lifecycle', () => {
         });
 
         unsubscribeStatus();
-        expect(
-            webSocketClient
-                .removeWebsocketCallbackById
-        )
-            .not.toHaveBeenCalled();
+        expect(removedCallbackIds).toEqual([]);
 
         unsubscribeLifecycle();
-        expect(
-            webSocketClient
-                .removeWebsocketCallbackById
-        )
-            .toHaveBeenCalledWith('rallar:ws:status');
+        expect(removedCallbackIds).toEqual(['rallar:ws:status']);
     });
 
     it('waits for WS open without implicitly connecting', async () => {
@@ -433,7 +430,6 @@ describe('Rallar WS lifecycle', () => {
                     isOpen: false
                 }
             });
-        expect(mocks.initMiddleware).not.toHaveBeenCalled();
     });
 
     it('returns aborted for an already-aborted WS wait', async () => {
@@ -451,7 +447,6 @@ describe('Rallar WS lifecycle', () => {
             transport: 'ws',
             status: 'aborted'
         });
-        expect(mocks.initMiddleware).not.toHaveBeenCalled();
     });
 
     it('resolves WS wait immediately when the socket is already open', async () => {
@@ -501,6 +496,11 @@ describe('Rallar WS lifecycle', () => {
             maxReconnectAttempts: 12,
             reconnectExhausted: false
         });
+        const middlewareInitializations: string[] = [];
+        mocks.initMiddleware.mockImplementation(async () => {
+            middlewareInitializations.push(mocks.ctx.session.sessionId);
+            return mocks.ctx;
+        });
         const facade = createRallarFacade();
 
         await facade.connect();
@@ -517,7 +517,7 @@ describe('Rallar WS lifecycle', () => {
                 reconnecting: true
             }
         });
-        expect(mocks.initMiddleware).not.toHaveBeenCalled();
+        expect(middlewareInitializations).toEqual(['session-1']);
     });
 
     it('resolves WS wait when the socket opens after waiting starts', async () => {

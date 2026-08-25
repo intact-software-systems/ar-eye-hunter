@@ -11,9 +11,9 @@ type DataCachesModule = typeof import('@shared-web/browser/data-caches.ts');
 type ClientStateSnapshotsRepositoryModule = typeof import('@shared/repository/client-state-snapshots-repository.ts');
 type GroupStateSnapshotsRepositoryModule = typeof import('@shared/repository/group-state-snapshots-repository.ts');
 
-type RouterPayload = Readonly<{
-    source: 'rtc' | 'ws';
-}>;
+interface RouterPayload {
+    readonly source: 'rtc' | 'ws';
+}
 
 const runtime = await vi.hoisted(async () => {
     const { createApiMiddlewareTestDouble } = await import(
@@ -95,6 +95,13 @@ describe('browser facade behavior', () => {
     it('connects the facade and public root routers through one transport owner', async () => {
         const wsHandler = vi.fn();
         const rtcHandler = vi.fn();
+        const shutdownEvents: string[] = [];
+        runtime.middleware.middleware.qboxEngine.stop.mockImplementation(() => {
+            shutdownEvents.push('queue-engine-stopped');
+        });
+        runtime.middleware.middleware.webSocketQueueBox.close.mockImplementation(() => {
+            shutdownEvents.push('websocket-closed');
+        });
         const wsCallbacks = new Map<string, { onMessage(data: { payload: RouterPayload; }): Promise<void>; }>();
         const rtcCallbacks = new Map<string, { onMessage(data: { payload: RouterPayload; }): Promise<void>; }>();
         runtime.middleware.middleware.webSocketQueueBox.onInboxMessageDo = vi.fn(
@@ -126,8 +133,10 @@ describe('browser facade behavior', () => {
 
         await facade.disconnect();
 
-        expect(runtime.middleware.middleware.qboxEngine.stop).toHaveBeenCalledOnce();
-        expect(runtime.middleware.middleware.webSocketQueueBox.close).toHaveBeenCalledOnce();
+        expect(shutdownEvents).toEqual([
+            'queue-engine-stopped',
+            'websocket-closed'
+        ]);
         expect(browserTransportRuntime.readMiddleware()).toBeUndefined();
     });
 
@@ -211,23 +220,25 @@ describe('browser facade behavior', () => {
     it('starts disconnected and owns idempotent subscription cleanup', async () => {
         const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
         const facade = createRallarFacade();
-        const first = vi.fn();
-        const second = vi.fn();
-        const late = vi.fn();
+        const cleanupEvents: string[] = [];
         const subscriptions = facade.subscriptions();
 
-        subscriptions.add(first);
+        subscriptions.add(() => {
+            cleanupEvents.push('first');
+        });
         subscriptions.add(undefined);
-        subscriptions.add(second);
+        subscriptions.add(() => {
+            cleanupEvents.push('second');
+        });
         subscriptions.unsubscribe();
         subscriptions.unsubscribe();
-        subscriptions.add(late);
+        subscriptions.add(() => {
+            cleanupEvents.push('late');
+        });
 
         expect(facade.status()).toBe('idle');
         expect(facade.isConnected()).toBe(false);
-        expect(first).toHaveBeenCalledOnce();
-        expect(second).toHaveBeenCalledOnce();
-        expect(late).toHaveBeenCalledOnce();
+        expect(cleanupEvents).toEqual(['first', 'second', 'late']);
         expect(subscriptions.size()).toBe(0);
     });
 });

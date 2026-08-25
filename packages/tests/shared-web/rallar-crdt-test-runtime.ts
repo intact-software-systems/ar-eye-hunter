@@ -29,6 +29,13 @@ interface TransportDocumentOptions {
     encryption?: RallarCrdtEncryptionKeyring;
 }
 
+export interface CreateTransportDocumentInput {
+    readonly replicaId: string;
+    readonly network: FakeCrdtTransportNetwork;
+    readonly transport: 'ws' | 'rtc' | 'ws-then-rtc' | 'rtc-with-ws-fallback';
+    readonly options?: TransportDocumentOptions;
+}
+
 interface HttpCatchUpRequest {
     requestId: string;
     document: RallarCrdtUpdateEnvelope['document'];
@@ -120,13 +127,8 @@ export async function waitFor(predicate: () => boolean): Promise<void> {
     expect(predicate()).toBe(true);
 }
 
-export async function createTransportDocument(
-    replicaId: string,
-    network: FakeCrdtTransportNetwork,
-    transport: 'ws' | 'rtc' | 'ws-then-rtc' | 'rtc-with-ws-fallback',
-    options: TransportDocumentOptions = {}
-) {
-    const endpoint = network.createEndpoint(replicaId);
+export async function createTransportDocument(input: CreateTransportDocumentInput) {
+    const endpoint = input.network.createEndpoint(input.replicaId);
     return await createRallarCrdtFacade({
         data: createRallarDataFacade({
             manager: new RepositoryManager(),
@@ -144,10 +146,10 @@ export async function createTransportDocument(
         },
         persist: false,
         tabSync: false,
-        replicaId,
-        transport,
-        policies: options.policies,
-        encryption: options.encryption
+        replicaId: input.replicaId,
+        transport: input.transport,
+        policies: input.options?.policies,
+        encryption: input.options?.encryption
     });
 }
 

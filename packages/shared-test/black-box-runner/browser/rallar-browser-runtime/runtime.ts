@@ -1,13 +1,13 @@
-import {
-    createRallarFacade,
-    type RallarFacade,
-    type RallarRealtimeLaneHealth,
-    type RallarRtcDiagnostics
-} from '@shared-web/browser/rallar.ts';
+import type { RallarRealtimeLaneHealth } from '@shared-web/browser/rallar-realtime-facade.ts';
+import type { RallarRtcDiagnostics } from '@shared-web/browser/rallar-rtc-facade.ts';
 import type { AuthSession, LoginResponse } from '@shared/api/api-config.ts';
 import { throwRallarValidation } from '@shared/api/rallar-validation.ts';
 import type { RallarCrdtTransportStrategy } from '@shared/crdt/mod.ts';
 import type { RtcDataChannelLaneConfig } from '@shared/services/WebRtcConnectionService.ts';
+import {
+    createBlackBoxBrowserRallarRuntimeDependency,
+    type BlackBoxBrowserRallarRuntimeDependency
+} from './browser-rallar-runtime-composition.ts';
 import type { BlackBoxRallarRoomRefreshOptions, BlackBoxRallarRuntime } from './black-box-rallar-runtime-contract.ts';
 import { createBlackBoxRallarCrdtController } from './crdt-controller.ts';
 import { createBlackBoxRallarConsoleDiagnostics, createBlackBoxRallarRuntimeDiagnostics } from './diagnostics.ts';
@@ -129,7 +129,7 @@ type BlackBoxRallarRuntimeInstallation = Readonly<{
 }>;
 
 type CreateBlackBoxRallarRuntimeOptions = Readonly<{
-    facade: RallarFacade;
+    facade: BlackBoxBrowserRallarRuntimeDependency;
     targetWindow: Window;
     clock?: Readonly<{
         now(): number;
@@ -1337,7 +1337,7 @@ export function createBlackBoxRallarRuntime(options: CreateBlackBoxRallarRuntime
 
 export function installBlackBoxRallarRuntime(targetWindow: Window): BlackBoxRallarRuntime {
     const installation = createBlackBoxRallarRuntimeInstallation({
-        facade: createRallarFacade(),
+        facade: createBlackBoxBrowserRallarRuntimeDependency(),
         targetWindow
     });
     targetWindow.__blackBoxRallar = installation.runtime;

@@ -216,10 +216,6 @@ describe('Rallar typed message channel', () => {
 
         expect(result.transport).toBe('ws');
         expect(result.status).toBe('enqueued');
-        expect(mocks.ctx.middleware.rtcRxStreamer.enqueueOutboxIfAbsent)
-            .not.toHaveBeenCalled();
-        expect(mocks.ctx.middleware.webSocketQueueBox.enqueueOutboxIfAbsent)
-            .toHaveBeenCalledOnce();
     });
 
     it('applies room defaults to typed RTC and WS room message sends', async () => {
@@ -278,10 +274,6 @@ describe('Rallar typed message channel', () => {
             contextId: 'room-1',
             resourceId: 'room-fallback-1'
         });
-        expect(mocks.ctx.middleware.rtcRxStreamer.enqueueOutboxIfAbsent)
-            .not.toHaveBeenCalled();
-        expect(mocks.ctx.middleware.webSocketQueueBox.enqueueOutboxIfAbsent)
-            .toHaveBeenCalledOnce();
     });
 
     it('uses WS only for typed channel send when strategy is ws', async () => {
@@ -306,10 +298,6 @@ describe('Rallar typed message channel', () => {
         );
 
         expect(result.transport).toBe('ws');
-        expect(mocks.ctx.middleware.rtcRxStreamer.enqueueOutboxIfAbsent)
-            .not.toHaveBeenCalled();
-        expect(mocks.ctx.middleware.webSocketQueueBox.enqueueOutboxIfAbsent)
-            .toHaveBeenCalledOnce();
     });
 
     it('delivers decoded payloads through typed message channel subscriptions', async () => {

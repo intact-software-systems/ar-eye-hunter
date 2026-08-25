@@ -1,5 +1,5 @@
 import type { ApiMiddleware } from '@shared-web/browser/app-context.ts';
-import type { RallarMessagesController } from '@shared-web/browser/messages/browser-rallar-messages-controller.ts';
+import type { RallarMessagesOperations } from '@shared-web/browser/messages/browser-rallar-messages-controller.ts';
 import type { RallarAuthFacade } from '@shared-web/browser/rallar-auth-facade.ts';
 import type { RallarCallsFacade } from '@shared-web/browser/rallar-calls-facade.ts';
 import type {
@@ -18,8 +18,8 @@ import type {
     RallarWsFacade
 } from '@shared-web/browser/rallar-realtime-facade.ts';
 import type { RallarRtcFacade } from '@shared-web/browser/rallar-rtc-facade.ts';
-import type { RallarPeopleController } from '@shared-web/browser/rallar-runtime/people.ts';
-import type { RallarStatsController } from '@shared-web/browser/rallar-runtime/stats.ts';
+import type { RallarPeopleOperations } from '@shared-web/browser/rallar-runtime/people.ts';
+import type { RallarStatsOperations } from '@shared-web/browser/rallar-runtime/stats.ts';
 import type { BrowserRallarRooms } from '@shared-web/browser/rooms/browser-rallar-rooms.ts';
 
 export type * from '@shared-web/browser/rallar-auth-facade.ts';
@@ -61,10 +61,10 @@ export interface RallarProductFacade {
     readonly crdt: RallarCrdtFacade;
     readonly auth: RallarAuthFacade;
     readonly rooms: BrowserRallarRooms;
-    readonly people: RallarPeopleController['operations'];
-    readonly stats: RallarStatsController['operations'];
+    readonly people: RallarPeopleOperations;
+    readonly stats: RallarStatsOperations;
     readonly director: RallarDirectorFacade;
-    readonly messages: RallarMessagesController['operations'];
+    readonly messages: RallarMessagesOperations;
     readonly channels: RallarChannelsFacade;
     readonly rtc: RallarRtcFacade;
     readonly calls: RallarCallsFacade;

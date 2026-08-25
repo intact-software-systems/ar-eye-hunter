@@ -17,6 +17,12 @@ describe('room event history compatibility', () => {
             workspaceId: 'room-workspace'
         });
         mocks.listStateGroupEvents.mockResolvedValue([event]);
+        mocks.initMiddleware.mockRejectedValue(
+            new Error('Room history reads must not initialize middleware')
+        );
+        mocks.hydrateStateCaches.mockRejectedValue(
+            new Error('Room history reads must not hydrate state')
+        );
 
         await expect(
             facade.rooms.listEvents({
@@ -31,8 +37,6 @@ describe('room event history compatibility', () => {
             })
         ).resolves.toEqual([event]);
 
-        expect(mocks.initMiddleware).not.toHaveBeenCalled();
-        expect(mocks.hydrateStateCaches).not.toHaveBeenCalled();
         expect(mocks.listStateGroupEvents).toHaveBeenCalledWith(
             'room-1',
             { applicationId: 'room-app', workspaceId: 'room-workspace' },
@@ -54,10 +58,12 @@ describe('room event history compatibility', () => {
             workspaceId: 'default-workspace'
         });
         mocks.listStateGroupEvents.mockResolvedValue([event]);
+        mocks.initMiddleware.mockRejectedValue(
+            new Error('Room history reads must not initialize middleware')
+        );
 
         await expect(facade.rooms.listEvents('room-1')).resolves.toEqual([event]);
 
-        expect(mocks.initMiddleware).not.toHaveBeenCalled();
         expect(mocks.listStateGroupEvents).toHaveBeenCalledWith(
             'room-1',
             { applicationId: 'default-app', workspaceId: 'default-workspace' },
@@ -87,6 +93,12 @@ describe('room event history compatibility', () => {
             workspaceId: 'default-workspace'
         });
         mocks.listStateGroupEventPage.mockResolvedValue(page);
+        mocks.initMiddleware.mockRejectedValue(
+            new Error('Room history reads must not initialize middleware')
+        );
+        mocks.hydrateStateCaches.mockRejectedValue(
+            new Error('Room history reads must not hydrate state')
+        );
 
         await expect(
             facade.rooms.listEventPage({
@@ -105,8 +117,6 @@ describe('room event history compatibility', () => {
             hasMore: false
         });
 
-        expect(mocks.initMiddleware).not.toHaveBeenCalled();
-        expect(mocks.hydrateStateCaches).not.toHaveBeenCalled();
         expect(mocks.listStateGroupEventPage).toHaveBeenCalledWith(
             'room-1',
             { applicationId: 'default-app', workspaceId: 'default-workspace' },

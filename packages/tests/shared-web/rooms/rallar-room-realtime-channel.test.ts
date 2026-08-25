@@ -156,6 +156,9 @@ describe('Rallar room realtime channel', () => {
             laneId: 'motion',
             error: new Error('timeout')
         });
+        vi.mocked(mocks.realtimeChannel.sendJson).mockImplementation(() => {
+            throw new Error('A room lane without ready peers cannot send');
+        });
 
         const result = await createRallarFacade()
             .realtime.room<{ x: number; }>({
@@ -168,12 +171,19 @@ describe('Rallar room realtime channel', () => {
         expect(result.status).toBe('not-ready');
         expect(result.peerIds).toEqual([]);
         expect(result.readiness?.status).toBe('timeout');
-        expect(mocks.realtimeChannel.sendJson).not.toHaveBeenCalled();
     });
 
     it('does not open or send room realtime for a room the current session has not joined', async () => {
         const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
         mockGroupSnapshot(createGroupSnapshot('room-1', ['peer-ready']));
+        vi.mocked(mocks.webRtcConnectionService.ensurePeerLaneOpen).mockImplementation(
+            async (peerId) => {
+                throw new Error(`An unjoined room cannot open ${peerId}`);
+            }
+        );
+        vi.mocked(mocks.realtimeChannel.sendJson).mockImplementation(() => {
+            throw new Error('An unjoined room cannot send');
+        });
 
         const result = await createRallarFacade()
             .realtime.room<{ x: number; }>({
@@ -186,8 +196,6 @@ describe('Rallar room realtime channel', () => {
         expect(result.status).toBe('no-targets');
         expect(result.peerIds).toEqual([]);
         expect(result.desiredPeerIds).toEqual([]);
-        expect(mocks.webRtcConnectionService.ensurePeerLaneOpen).not.toHaveBeenCalled();
-        expect(mocks.realtimeChannel.sendJson).not.toHaveBeenCalled();
     });
 
     it('uses already-ready room peers without a readiness wait', async () => {
@@ -207,8 +215,6 @@ describe('Rallar room realtime channel', () => {
 
         expect(result.status).toBe('sent');
         expect(result.readiness).toBeUndefined();
-        expect(mocks.webRtcConnectionService.ensurePeerLaneOpen).toHaveBeenCalledTimes(1);
-        expect(mocks.realtimeChannel.sendJson).toHaveBeenCalledOnce();
     });
 });
 

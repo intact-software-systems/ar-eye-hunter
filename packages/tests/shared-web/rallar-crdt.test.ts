@@ -473,8 +473,8 @@ describe('Rallar CRDT browser facade', () => {
 
     it('converges over mocked WS when the WS strategy is selected', async () => {
         const network = new FakeCrdtTransportNetwork();
-        const first = await createTransportDocument('tab-a', network, 'ws');
-        const second = await createTransportDocument('tab-b', network, 'ws');
+        const first = await createTransportDocument({ replicaId: 'tab-a', network, transport: 'ws' });
+        const second = await createTransportDocument({ replicaId: 'tab-b', network, transport: 'ws' });
 
         await first.applyLocal(
             rallarCrdtBatch([
@@ -501,11 +501,17 @@ describe('Rallar CRDT browser facade', () => {
     it('encrypts live updates and decrypts them before browser merge', async () => {
         const network = new FakeCrdtTransportNetwork();
         const encryption = testKeyring();
-        const first = await createTransportDocument('tab-a', network, 'ws', {
-            encryption
+        const first = await createTransportDocument({
+            replicaId: 'tab-a',
+            network,
+            transport: 'ws',
+            options: { encryption }
         });
-        const second = await createTransportDocument('tab-b', network, 'ws', {
-            encryption
+        const second = await createTransportDocument({
+            replicaId: 'tab-b',
+            network,
+            transport: 'ws',
+            options: { encryption }
         });
 
         const update = await first.applyLocal(
@@ -532,8 +538,8 @@ describe('Rallar CRDT browser facade', () => {
 
     it('converges over mocked RTC when the RTC strategy is selected', async () => {
         const network = new FakeCrdtTransportNetwork();
-        const first = await createTransportDocument('tab-a', network, 'rtc');
-        const second = await createTransportDocument('tab-b', network, 'rtc');
+        const first = await createTransportDocument({ replicaId: 'tab-a', network, transport: 'rtc' });
+        const second = await createTransportDocument({ replicaId: 'tab-b', network, transport: 'rtc' });
 
         await first.applyLocal(
             rallarCrdtBatch([
@@ -559,12 +565,16 @@ describe('Rallar CRDT browser facade', () => {
 
     it('uses configured combined and fallback transport order', async () => {
         const combined = new FakeCrdtTransportNetwork();
-        const combinedDoc = await createTransportDocument(
-            'tab-a',
-            combined,
-            'ws-then-rtc'
-        );
-        await createTransportDocument('tab-b', combined, 'ws-then-rtc');
+        const combinedDoc = await createTransportDocument({
+            replicaId: 'tab-a',
+            network: combined,
+            transport: 'ws-then-rtc'
+        });
+        await createTransportDocument({
+            replicaId: 'tab-b',
+            network: combined,
+            transport: 'ws-then-rtc'
+        });
 
         await combinedDoc.applyLocal(
             rallarCrdtBatch([
@@ -582,16 +592,16 @@ describe('Rallar CRDT browser facade', () => {
         const fallback = new FakeCrdtTransportNetwork({
             rtcStatuses: ['sent', 'sent', 'sent', 'no-route']
         });
-        const fallbackDoc = await createTransportDocument(
-            'tab-a',
-            fallback,
-            'rtc-with-ws-fallback'
-        );
-        const receiver = await createTransportDocument(
-            'tab-b',
-            fallback,
-            'rtc-with-ws-fallback'
-        );
+        const fallbackDoc = await createTransportDocument({
+            replicaId: 'tab-a',
+            network: fallback,
+            transport: 'rtc-with-ws-fallback'
+        });
+        const receiver = await createTransportDocument({
+            replicaId: 'tab-b',
+            network: fallback,
+            transport: 'rtc-with-ws-fallback'
+        });
 
         await fallbackDoc.applyLocal(
             rallarCrdtBatch([
@@ -621,22 +631,18 @@ describe('Rallar CRDT browser facade', () => {
                 }
             }
         ];
-        const sender = await createTransportDocument(
-            'tab-a',
+        const sender = await createTransportDocument({
+            replicaId: 'tab-a',
             network,
-            'ws-then-rtc',
-            {
-                policies
-            }
-        );
-        const receiver = await createTransportDocument(
-            'tab-b',
+            transport: 'ws-then-rtc',
+            options: { policies }
+        });
+        const receiver = await createTransportDocument({
+            replicaId: 'tab-b',
             network,
-            'ws-then-rtc',
-            {
-                policies
-            }
-        );
+            transport: 'ws-then-rtc',
+            options: { policies }
+        });
 
         await sender.applyLocal(
             rallarCrdtBatch([
@@ -661,7 +667,7 @@ describe('Rallar CRDT browser facade', () => {
 
     it('catches up from a peer when a browser opens after missing live updates', async () => {
         const network = new FakeCrdtTransportNetwork();
-        const first = await createTransportDocument('tab-a', network, 'ws');
+        const first = await createTransportDocument({ replicaId: 'tab-a', network, transport: 'ws' });
 
         await first.applyLocal(
             rallarCrdtBatch([
@@ -674,7 +680,7 @@ describe('Rallar CRDT browser facade', () => {
             ])
         );
 
-        const second = await createTransportDocument('tab-b', network, 'ws');
+        const second = await createTransportDocument({ replicaId: 'tab-b', network, transport: 'ws' });
 
         await waitFor(
             () => JSON.stringify(second.read()) === '{"title":"Catch-up title"}'
@@ -691,7 +697,7 @@ describe('Rallar CRDT browser facade', () => {
         const network = new FakeCrdtTransportNetwork({
             appendResponses: 'accepted'
         });
-        const document = await createTransportDocument('tab-a', network, 'ws');
+        const document = await createTransportDocument({ replicaId: 'tab-a', network, transport: 'ws' });
 
         const update = await document.applyLocal(
             rallarCrdtBatch([
@@ -720,7 +726,7 @@ describe('Rallar CRDT browser facade', () => {
         const network = new FakeCrdtTransportNetwork({
             appendResponses: 'rejected'
         });
-        const document = await createTransportDocument('tab-a', network, 'ws');
+        const document = await createTransportDocument({ replicaId: 'tab-a', network, transport: 'ws' });
 
         const update = await document.applyLocal(
             rallarCrdtBatch([

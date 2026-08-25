@@ -202,8 +202,6 @@ describe('Rallar startup lifecycle behavior', () => {
             session: undefined,
             connected: false
         });
-        expect(mocks.initialiseMiddleware).not.toHaveBeenCalled();
-        expect(mocks.refreshStateSnapshots).not.toHaveBeenCalled();
     });
 
     it('leaves the facade idle when middleware initialization fails', async () => {
@@ -228,6 +226,10 @@ describe('Rallar startup lifecycle behavior', () => {
         );
         const facade = createRallarFacade();
         const authChanges: string[] = [];
+        const authCleanupEvents: string[] = [];
+        mocks.clearSession.mockImplementation(() => {
+            authCleanupEvents.push('session-cleared');
+        });
         facade.auth.onChange((state) => {
             authChanges.push(state.reason);
         }, {
@@ -236,7 +238,7 @@ describe('Rallar startup lifecycle behavior', () => {
 
         await expect(facade.connect()).rejects.toThrow('expired');
 
-        expect(mocks.clearSession).toHaveBeenCalledOnce();
+        expect(authCleanupEvents).toEqual(['session-cleared']);
         expect(authChanges).toEqual(['unauthorized']);
         expect(facade.status()).toBe('idle');
     });

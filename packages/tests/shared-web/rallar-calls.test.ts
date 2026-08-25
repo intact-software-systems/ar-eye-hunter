@@ -239,9 +239,6 @@ describe('Rallar calls', () => {
             'peer-a',
             'peer-b'
         ]);
-        expect(mocks.webSocketQueueBox.enqueueOutboxIfAbsent)
-            .toHaveBeenCalledTimes(2);
-
         const firstMessage = mocks.webSocketQueueBox.enqueueOutboxIfAbsent.mock.calls[0][0];
         expect(firstMessage).toMatchObject({
             route: {

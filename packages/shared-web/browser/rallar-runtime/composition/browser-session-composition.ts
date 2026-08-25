@@ -35,22 +35,34 @@ export interface BrowserSessionCoreComposition {
     readonly auth: RallarAuthFacade;
 }
 
-export interface BrowserSessionProductComposition {
+export interface BrowserStartupComposition {
     readonly startup: RallarStartupController;
+}
+
+export interface BrowserCrdtComposition {
     readonly crdt: RallarCrdtFacade;
 }
+
+export interface BrowserSessionProductComposition extends BrowserStartupComposition, BrowserCrdtComposition {}
 
 export interface CreateBrowserSessionCoreCompositionInput {
     readonly foundation: BrowserRuntimeFoundation;
     readonly state: BrowserStateComposition;
 }
 
-export interface CreateBrowserSessionProductCompositionInput {
+export interface CreateBrowserStartupCompositionInput {
+    readonly session: BrowserSessionCoreComposition;
+    readonly products: BrowserRoomPeopleStatsComposition;
+}
+
+export interface CreateBrowserCrdtCompositionInput {
     readonly session: BrowserSessionCoreComposition;
     readonly state: BrowserStateComposition;
     readonly messaging: BrowserMessagingComposition;
-    readonly products: BrowserRoomPeopleStatsComposition;
 }
+
+export interface CreateBrowserSessionProductCompositionInput
+    extends CreateBrowserStartupCompositionInput, CreateBrowserCrdtCompositionInput {}
 
 export function createBrowserSessionCoreComposition(
     input: CreateBrowserSessionCoreCompositionInput
@@ -84,9 +96,9 @@ export function createBrowserSessionCoreComposition(
     };
 }
 
-export function createBrowserSessionProductComposition(
-    input: CreateBrowserSessionProductCompositionInput
-): BrowserSessionProductComposition {
+export function createBrowserStartupComposition(
+    input: CreateBrowserStartupCompositionInput
+): BrowserStartupComposition {
     const startup = createRallarStartupController({
         connection: input.session.connection,
         auth: input.session.auth,
@@ -95,11 +107,25 @@ export function createBrowserSessionProductComposition(
         waitForAuthEnd: input.session.session.waitForAuthEnd,
         resolveOperationOptions: input.session.session.resolveOperationOptions
     });
+    return { startup };
+}
+
+export function createBrowserCrdtComposition(
+    input: CreateBrowserCrdtCompositionInput
+): BrowserCrdtComposition {
     const crdt = createRallarCrdtFacade({
         data: input.session.data,
         readDefaults: input.state.readDefaults,
         readTransport: () => input.messaging.messagesController.toCrdtMessageTransport()
     });
+    return { crdt };
+}
 
-    return { startup, crdt };
+export function createBrowserSessionProductComposition(
+    input: CreateBrowserSessionProductCompositionInput
+): BrowserSessionProductComposition {
+    return {
+        ...createBrowserStartupComposition(input),
+        ...createBrowserCrdtComposition(input)
+    };
 }

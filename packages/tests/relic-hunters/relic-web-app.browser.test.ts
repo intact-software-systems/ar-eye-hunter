@@ -47,7 +47,11 @@ const rallarMock = vi.hoisted(() => ({
 }));
 
 const soundMock = vi.hoisted(() => ({
-    startAmbientSound: vi.fn(() => true),
+    ambientStartCount: 0,
+    startAmbientSound: vi.fn(() => {
+        soundMock.ambientStartCount += 1;
+        return true;
+    }),
     stopAmbientSound: vi.fn(),
     isAmbientSoundPlaying: vi.fn(() => false),
     playActionSound: vi.fn(),
@@ -239,6 +243,7 @@ describe('Relic Hunters browser app', () => {
         vi.unstubAllGlobals();
         installMemoryLocalStorage();
         vi.clearAllMocks();
+        soundMock.ambientStartCount = 0;
         rallarMock.session = session();
         rallarMock.roomState = roomState(1);
         rallarMock.connectCalls = 0;
@@ -287,7 +292,7 @@ describe('Relic Hunters browser app', () => {
             atmosphereButtons()[0].dispatchEvent(new MouseEvent('click', { bubbles: true }));
         });
 
-        expect(soundMock.startAmbientSound).toHaveBeenCalledTimes(1);
+        expect(soundMock.ambientStartCount).toBe(1);
     });
 
     it('updates the visible expedition when a Rallar WebSocket snapshot event arrives', async () => {

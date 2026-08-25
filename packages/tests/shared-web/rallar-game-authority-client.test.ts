@@ -23,7 +23,7 @@ import {
     type RallarGameAuthorityEnvelope,
     type RallarGameAuthorityRef
 } from '@shared/rallar-game/mod.ts';
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
 interface Command {
     readonly action: string;
@@ -102,7 +102,7 @@ describe('Rallar Game Authority browser client', () => {
             seq: 1
         });
         expect(client.status().pendingCommandCount).toBe(1);
-        expect(fake.wsSend).toHaveBeenCalledWith(
+        expect(fake.wsSends).toEqual([
             expect.objectContaining({
                 topicId: 'game.authority',
                 typeId: 'game.authority.command.v1',
@@ -110,24 +110,31 @@ describe('Rallar Game Authority browser client', () => {
                 roomRef,
                 reliability: 'at-least-once',
                 ack: 'receiver',
-                resourceId: 'command:peer-a'
+                resourceId: 'command:peer-a',
+                payload: expect.objectContaining({
+                    protocol: 'test.authority.v1',
+                    kind: 'command',
+                    roomId: 'room-1',
+                    senderId: 'peer-a',
+                    authority,
+                    payload: { action: 'dash' }
+                })
             })
-        );
-        expect(fake.wsSend.mock.calls[0][0].payload).toMatchObject({
-            protocol: 'test.authority.v1',
-            kind: 'command',
-            roomId: 'room-1',
-            senderId: 'peer-a',
-            authority,
-            payload: { action: 'dash' }
-        });
+        ]);
     });
 
     it('accepts server WS snapshots and events after envelope checks', async () => {
         const fake = createFakeRallar();
-        const onSnapshot = vi.fn();
-        const onEvent = vi.fn();
-        const client = createClient(fake, { onSnapshot, onEvent });
+        const snapshots: RallarGameAuthorityEnvelope<Snapshot>[] = [];
+        const events: RallarGameAuthorityEnvelope<Event>[] = [];
+        const client = createClient(fake, {
+            onSnapshot: (snapshot) => {
+                snapshots.push(snapshot);
+            },
+            onEvent: (event) => {
+                events.push(event);
+            }
+        });
         await client.start();
 
         await fake.emitWs(
@@ -149,17 +156,19 @@ describe('Rallar Game Authority browser client', () => {
             envelope({ kind: 'event', senderId: 'server-1', payload: { kind: 'cash-picked' }, seq: 1 })
         );
 
-        expect(onSnapshot).toHaveBeenCalledTimes(1);
-        expect(onSnapshot.mock.calls[0][0].payload).toEqual({ tick: 2 });
-        expect(onEvent).toHaveBeenCalledTimes(1);
-        expect(onEvent.mock.calls[0][0].payload).toEqual({ kind: 'cash-picked' });
+        expect(snapshots.map((snapshot) => snapshot.payload)).toEqual([{ tick: 2 }]);
+        expect(events.map((event) => event.payload)).toEqual([{ kind: 'cash-picked' }]);
         expect(client.diagnostics().issues).not.toContain('stale-authority');
     });
 
     it('rejects wrong authority and duplicate sequences before handlers run', async () => {
         const fake = createFakeRallar();
-        const onSnapshot = vi.fn();
-        const client = createClient(fake, { onSnapshot });
+        const snapshots: RallarGameAuthorityEnvelope<Snapshot>[] = [];
+        const client = createClient(fake, {
+            onSnapshot: (snapshot) => {
+                snapshots.push(snapshot);
+            }
+        });
         await client.start();
 
         await fake.emitWs(
@@ -186,14 +195,17 @@ describe('Rallar Game Authority browser client', () => {
             envelope({ kind: 'snapshot', senderId: 'server-1', payload: { tick: 3 }, seq: 2 })
         );
 
-        expect(onSnapshot).toHaveBeenCalledTimes(1);
-        expect(onSnapshot.mock.calls[0][0].payload).toEqual({ tick: 2 });
+        expect(snapshots.map((snapshot) => snapshot.payload)).toEqual([{ tick: 2 }]);
     });
 
     it('clears pending command diagnostics when command-result arrives', async () => {
         const fake = createFakeRallar();
-        const onCommandResult = vi.fn();
-        const client = createClient(fake, { onCommandResult });
+        const commandResults: RallarGameAuthorityEnvelope<RallarGameAuthorityCommandResult>[] = [];
+        const client = createClient(fake, {
+            onCommandResult: (commandResult) => {
+                commandResults.push(commandResult);
+            }
+        });
         await client.start();
 
         const command = await client.sendCommand({ action: 'jump' });
@@ -212,13 +224,18 @@ describe('Rallar Game Authority browser client', () => {
 
         expect(client.status().pendingCommandCount).toBe(0);
         expect(client.diagnostics().issues).not.toContain('pending-commands');
-        expect(onCommandResult).toHaveBeenCalledTimes(1);
+        expect(commandResults.map((commandResult) => commandResult.payload)).toEqual([
+            { commandSeq: command.seq, status: 'accepted' }
+        ]);
     });
 
     it('ignores RTC snapshot repair by default', async () => {
         const fake = createFakeRallar();
-        const onSnapshot = vi.fn();
-        const client = createClient(fake, { onSnapshot });
+        const client = createClient(fake, {
+            onSnapshot: () => {
+                throw new Error('RTC snapshot repair must remain disabled by default.');
+            }
+        });
         await client.start();
 
         await fake.emitRtc(
@@ -227,18 +244,23 @@ describe('Rallar Game Authority browser client', () => {
             envelope({ kind: 'snapshot', senderId: 'peer-b', payload: { tick: 1 }, seq: 1 })
         );
 
-        expect(onSnapshot).not.toHaveBeenCalled();
+        expect(client.status().peerAssist.snapshotRepairEnabled).toBe(false);
     });
 
     it('accepts RTC snapshot repair only when enabled and app-approved', async () => {
         const fake = createFakeRallar();
-        const onSnapshot = vi.fn();
-        const acceptSnapshotRepair = vi.fn(async () => true);
+        const repairRequests: RallarGameAuthorityEnvelope<Snapshot>[] = [];
+        const snapshots: RallarGameAuthorityEnvelope<Snapshot>[] = [];
         const client = createClient(fake, {
-            onSnapshot,
+            onSnapshot: (snapshot) => {
+                snapshots.push(snapshot);
+            },
             peerAssist: {
                 snapshotRepair: true,
-                acceptSnapshotRepair
+                acceptSnapshotRepair: async (snapshot) => {
+                    repairRequests.push(snapshot);
+                    return true;
+                }
             }
         });
         await client.start();
@@ -249,16 +271,18 @@ describe('Rallar Game Authority browser client', () => {
             envelope({ kind: 'snapshot', senderId: 'peer-b', payload: { tick: 5 }, seq: 1 })
         );
 
-        expect(acceptSnapshotRepair).toHaveBeenCalledTimes(1);
-        expect(onSnapshot).toHaveBeenCalledTimes(1);
-        expect(onSnapshot.mock.calls[0][0].payload).toEqual({ tick: 5 });
+        expect(repairRequests.map((snapshot) => snapshot.payload)).toEqual([{ tick: 5 }]);
+        expect(snapshots.map((snapshot) => snapshot.payload)).toEqual([{ tick: 5 }]);
         expect(client.status().peerAssist.snapshotRepairEnabled).toBe(true);
     });
 
     it('stops subscriptions and prevents later callbacks', async () => {
         const fake = createFakeRallar();
-        const onEvent = vi.fn();
-        const client = createClient(fake, { onEvent });
+        const client = createClient(fake, {
+            onEvent: () => {
+                throw new Error('Stopped authority clients must not deliver events.');
+            }
+        });
         await client.start();
 
         client.stop();
@@ -272,7 +296,6 @@ describe('Rallar Game Authority browser client', () => {
             phase: 'stopped',
             stopped: true
         });
-        expect(onEvent).not.toHaveBeenCalled();
         expect(fake.wsMessageHandlers).toHaveLength(0);
         expect(fake.rtcMessageHandlers).toHaveLength(0);
     });
@@ -333,8 +356,6 @@ function createFakeRallar() {
     return {
         ...lifecycle.handlers,
         ...messages.handlers,
-        wsSend: messages.wsSend,
-        rtcSend: messages.rtcSend,
         rallar,
         async emitWs<T>(
             typeId: string,
@@ -402,21 +423,27 @@ function createFakeAuthorityLifecycle() {
 function createFakeAuthorityMessages() {
     const wsMessageHandlers: Array<MessageSubscription> = [];
     const rtcMessageHandlers: Array<MessageSubscription> = [];
-    const wsSend = vi.fn(async (input: RallarWsSendInput<RallarMessagePayload>) => ({
-        transport: 'ws' as const,
-        status: 'enqueued' as const,
-        message: input,
-        entries: []
-    }));
-    const rtcSend = vi.fn(async (input: RallarRtcSendInput<RallarMessagePayload>) => ({
-        transport: 'rtc' as const,
-        status: 'enqueued' as const,
-        message: input,
-        entries: []
-    }));
+    const wsSends: RallarWsSendInput<RallarMessagePayload>[] = [];
+    const wsSend: FakeWsSend = async (input) => {
+        wsSends.push(input);
+        return {
+            transport: 'ws',
+            status: 'enqueued',
+            message: input,
+            entries: []
+        };
+    };
+    const rtcSend: FakeRtcSend = async (input) => {
+        return {
+            transport: 'rtc',
+            status: 'enqueued',
+            message: input,
+            entries: []
+        };
+    };
 
     return {
-        handlers: { wsMessageHandlers, rtcMessageHandlers },
+        handlers: { wsMessageHandlers, rtcMessageHandlers, wsSends },
         wsSend,
         rtcSend,
         operations: createFakeMessageOperations({

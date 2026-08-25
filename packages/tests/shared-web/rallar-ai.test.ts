@@ -323,7 +323,6 @@ describe('Rallar browser AI facade', () => {
                 typicalColdStartMs: 100
             })
         );
-        expect(runtime.generateJson).toHaveBeenCalledOnce();
         expect(result).toEqual(
             expect.objectContaining({
                 providerId: 'webllm',

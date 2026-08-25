@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type { RallarMessage } from '@shared-web/browser/rallar-message-contracts.ts';
 import { AppTopics } from '@shared/api/api-config.ts';
+import type { ClientEvent } from '@shared/api/client-types.ts';
 
 import {
     createPeopleEvent,
@@ -19,10 +21,14 @@ describe('people events', () => {
     it('delivers client state events through people.onEvent with filtering and unsubscribe', async () => {
         const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
         const facade = createRallarFacade();
-        const eventListener = vi.fn();
+        const events: ClientEvent[] = [];
+        const messages: RallarMessage<ClientEvent>[] = [];
 
         facade.setDefaults({ applicationId: 'app-1', workspaceId: 'workspace-1' });
-        const unsubscribe = facade.people.onEvent(eventListener, {
+        const unsubscribe = facade.people.onEvent((event, message) => {
+            events.push(event);
+            messages.push(message);
+        }, {
             principalId: 'alice',
             eventTypes: ['session-connected']
         });
@@ -56,14 +62,14 @@ describe('people events', () => {
             toPeopleEventMessage(createPeopleEvent({ principalId: 'alice', eventId: 'client-event-5', eventType: 'session-connected' }))
         );
 
-        expect(eventListener).toHaveBeenCalledOnce();
-        expect(eventListener.mock.calls[0]?.[0]).toMatchObject({
+        expect(events).toHaveLength(1);
+        expect(events[0]).toMatchObject({
             principalId: 'alice',
             eventId: 'client-event-1',
             eventType: 'session-connected',
             snapshotVersion: 1
         });
-        expect(eventListener.mock.calls[0]?.[1]).toMatchObject({
+        expect(messages[0]).toMatchObject({
             transport: 'ws',
             typeId: AppTopics.clientStateEvent,
             topicId: AppTopics.clientStateEvent
@@ -73,9 +79,11 @@ describe('people events', () => {
     it('drops malformed authoritative client events received over WS', async () => {
         const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
         const facade = createRallarFacade();
-        const listener = vi.fn();
+        const events: ClientEvent[] = [];
         facade.setDefaults({ applicationId: 'app-1', workspaceId: 'workspace-1' });
-        facade.people.onEvent(listener, { principalId: 'alice' });
+        facade.people.onEvent((clientEvent) => {
+            events.push(clientEvent);
+        }, { principalId: 'alice' });
         await facade.connect();
         const callback = findPeopleWsCallback();
         const event = createPeopleEvent({ principalId: 'alice', eventId: 'client-event-valid', eventType: 'session-connected' });
@@ -85,22 +93,25 @@ describe('people events', () => {
         await callback?.onMessage?.(toPeopleEventMessage(missingRequestId as typeof event));
         await callback?.onMessage?.(toPeopleEventMessage(event));
 
-        expect(listener).toHaveBeenCalledOnce();
-        expect(listener.mock.calls[0]?.[0]).toEqual(event);
+        expect(events).toEqual([event]);
     });
 
     it('uses refresh snapshots as convergence without replaying missed event callbacks', async () => {
         const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
         const mocks = readPeopleEventMocks();
         const facade = createRallarFacade();
-        const roomEventListener = vi.fn();
-        const peopleEventListener = vi.fn();
+        let roomEventCount = 0;
+        const peopleEvents: ClientEvent[] = [];
         const groupSnapshot = createPeopleRoomSnapshot('room-1', ['session-1']);
         const clientSnapshot = createPeopleSnapshot('principal-1', 'session-1');
 
         facade.setDefaults({ applicationId: 'app-1', workspaceId: 'workspace-1' });
-        facade.rooms.onEvent(roomEventListener);
-        facade.people.onEvent(peopleEventListener);
+        facade.rooms.onEvent(() => {
+            roomEventCount += 1;
+        });
+        facade.people.onEvent((event) => {
+            peopleEvents.push(event);
+        });
         mocks.refreshStateSnapshots.mockResolvedValue({
             clients: [clientSnapshot],
             groups: [groupSnapshot]
@@ -109,9 +120,8 @@ describe('people events', () => {
         await facade.rooms.refresh();
         await facade.people.refresh();
 
-        expect(roomEventListener).not.toHaveBeenCalled();
-        expect(peopleEventListener).not.toHaveBeenCalled();
-        expect(mocks.refreshStateSnapshots).toHaveBeenCalledTimes(2);
+        expect(roomEventCount).toBe(0);
+        expect(peopleEvents).toEqual([]);
         expect(mocks.hydrateStateCaches).toHaveBeenCalledWith(
             mocks.context.middleware.webRtcGroupManager,
             expect.objectContaining({ clientId: 'principal-1', sessionId: 'session-1' }),
@@ -135,6 +145,12 @@ describe('people events', () => {
             workspaceId: 'people-workspace'
         });
         mocks.listStateClientEvents.mockResolvedValue([event]);
+        mocks.initMiddleware.mockRejectedValue(
+            new Error('People history reads must not initialize middleware')
+        );
+        mocks.hydrateStateCaches.mockRejectedValue(
+            new Error('People history reads must not hydrate state')
+        );
 
         await expect(
             facade.people.listEvents('alice', {
@@ -144,8 +160,6 @@ describe('people events', () => {
             })
         ).resolves.toEqual([event]);
 
-        expect(mocks.initMiddleware).not.toHaveBeenCalled();
-        expect(mocks.hydrateStateCaches).not.toHaveBeenCalled();
         expect(mocks.listStateClientEvents).toHaveBeenCalledWith(
             'alice',
             { applicationId: 'people-app', workspaceId: 'people-workspace' },
@@ -179,6 +193,12 @@ describe('people events', () => {
             workspaceId: 'default-workspace'
         });
         mocks.listStateClientEventPage.mockResolvedValue(page);
+        mocks.initMiddleware.mockRejectedValue(
+            new Error('People history reads must not initialize middleware')
+        );
+        mocks.hydrateStateCaches.mockRejectedValue(
+            new Error('People history reads must not hydrate state')
+        );
 
         await expect(
             facade.people.listEventPage('alice', {
@@ -188,8 +208,6 @@ describe('people events', () => {
             })
         ).resolves.toEqual(page);
 
-        expect(mocks.initMiddleware).not.toHaveBeenCalled();
-        expect(mocks.hydrateStateCaches).not.toHaveBeenCalled();
         expect(mocks.listStateClientEventPage).toHaveBeenCalledWith(
             'alice',
             { applicationId: 'default-app', workspaceId: 'default-workspace' },
@@ -206,19 +224,22 @@ describe('people events', () => {
         const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
         const mocks = readPeopleEventMocks();
         const facade = createRallarFacade();
-        const listener = vi.fn();
+        const events: ClientEvent[] = [];
+        const messages: RallarMessage<ClientEvent>[] = [];
         const event = createPeopleEvent({ principalId: 'alice', eventId: 'client-event-1', eventType: 'session-connected' });
         facade.setDefaults({ applicationId: 'app-1', workspaceId: 'workspace-1' });
-        facade.people.onEvent(listener, { principalId: 'alice' });
+        facade.people.onEvent((clientEvent, message) => {
+            events.push(clientEvent);
+            messages.push(message);
+        }, { principalId: 'alice' });
         mocks.listStateClientEventPage.mockResolvedValue(createPeopleEventPage([event], false));
         await facade.connect();
 
         const result = await facade.people.replayEvents('alice');
         await findPeopleWsCallback(true)?.onMessage?.(toPeopleEventMessage(event));
 
-        expect(listener).toHaveBeenCalledOnce();
-        expect(listener.mock.calls[0]?.[0]).toEqual(event);
-        expect(listener.mock.calls[0]?.[1]).toMatchObject({
+        expect(events).toEqual([event]);
+        expect(messages[0]).toMatchObject({
             transport: 'replay',
             typeId: AppTopics.clientStateEvent,
             topicId: AppTopics.clientStateEvent

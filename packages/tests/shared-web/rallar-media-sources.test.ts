@@ -135,6 +135,18 @@ describe('Rallar media sources', () => {
         const stream = {
             id: 'local-stream-1'
         } as MediaStream;
+        const laneOpenRequests: string[] = [];
+        mocks.webRtcConnectionService.ensurePeerLaneOpen.mockImplementation(
+            async (peerId, laneId = 'reliable') => {
+                laneOpenRequests.push(`${peerId}:${laneId}`);
+                return {
+                    status: 'connect-failed',
+                    peerId,
+                    laneId,
+                    error: new Error('unexpected data-lane open')
+                };
+            }
+        );
 
         const call = await createRallarFacade().calls.start({
             peerIds: ['peer-1'],
@@ -154,8 +166,7 @@ describe('Rallar media sources', () => {
             .toHaveBeenCalledWith(false);
         expect(mocks.webRtcConnectionService.ensurePeerConnectionStarted)
             .toHaveBeenCalledWith('peer-1');
-        expect(mocks.webRtcConnectionService.ensurePeerLaneOpen)
-            .not.toHaveBeenCalled();
+        expect(laneOpenRequests).toEqual([]);
         expect(mocks.ctx.middleware.rtcRxStreamer.stopLocalMedia)
             .toHaveBeenCalledWith('all');
         expect(ended).toMatchObject({
@@ -204,10 +215,7 @@ describe('Rallar media sources', () => {
         expect(videoTrack.enabled).toBe(false);
         expect(lastAttachedStream?.getTracks().map((track) => track.id))
             .toEqual(['audio-track-1', 'video-track-1']);
-        expect(mocks.ctx.middleware.rtcRxStreamer.setLocalAudioEnabled)
-            .toHaveBeenLastCalledWith(true);
-        expect(mocks.ctx.middleware.rtcRxStreamer.setLocalVideoEnabled)
-            .toHaveBeenLastCalledWith(false);
+        expect(microphone.status().enabledTrackIds).toEqual(['audio-track-1']);
     });
 
     it('exposes call source handles for screen sharing without opening data lanes', async () => {
@@ -216,6 +224,18 @@ describe('Rallar media sources', () => {
         );
         const screenTrack = createMediaTrack('screen-track-1', 'video');
         const screenStream = createMediaStream('screen-stream', [screenTrack]);
+        const laneOpenRequests: string[] = [];
+        mocks.webRtcConnectionService.ensurePeerLaneOpen.mockImplementation(
+            async (peerId, laneId = 'reliable') => {
+                laneOpenRequests.push(`${peerId}:${laneId}`);
+                return {
+                    status: 'connect-failed',
+                    peerId,
+                    laneId,
+                    error: new Error('unexpected data-lane open')
+                };
+            }
+        );
         const facade = createRallarFacade();
 
         const call = await facade.calls.start({
@@ -230,8 +250,7 @@ describe('Rallar media sources', () => {
 
         expect(mocks.webRtcConnectionService.ensurePeerConnectionStarted)
             .toHaveBeenCalledWith('peer-1');
-        expect(mocks.webRtcConnectionService.ensurePeerLaneOpen)
-            .not.toHaveBeenCalled();
+        expect(laneOpenRequests).toEqual([]);
         expect(statusWithScreen.media.sources).toEqual([
             expect.objectContaining({
                 kind: 'screen',
@@ -244,7 +263,7 @@ describe('Rallar media sources', () => {
             kind: 'screen',
             state: 'ended'
         });
-        expect(screenTrack.stop).toHaveBeenCalledOnce();
+        expect(screenTrack.readyState).toBe('ended');
         expect(mocks.ctx.middleware.rtcRxStreamer.stopLocalMedia)
             .toHaveBeenCalledWith('all');
     });

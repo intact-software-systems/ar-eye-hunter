@@ -16,14 +16,6 @@ type DataCachesModule = typeof import('@shared-web/browser/data-caches.ts');
 type GroupStateSnapshotsRepositoryModule = typeof import('@shared/repository/group-state-snapshots-repository.ts');
 type RoomGroupStateWorkflowsModule = typeof import('@shared-web/browser/rooms/room-group-state-workflows.ts');
 
-interface EnqueuedDirectorMessage {
-    readonly payload?: EnqueuedDirectorMessagePayload;
-}
-
-interface EnqueuedDirectorMessagePayload {
-    readonly typeId?: unknown;
-}
-
 interface DirectorMove {
     readonly move: string;
 }
@@ -338,6 +330,11 @@ describe('Rallar director relay', () => {
             appointedAtEpochMs: 1,
             heartbeatTtlMs: 5
         }));
+        mocks.webRtcConnectionService.ensurePeerLaneOpen.mockImplementation(
+            async () => {
+                throw new Error('Stale director intents must not open an RTC lane.');
+            }
+        );
         const relay = createRallarFacade().director.createRelay<DirectorMove, DirectorAcknowledgement>({
             roomId: 'room-1',
             laneId: 'director',
@@ -352,7 +349,6 @@ describe('Rallar director relay', () => {
         expect(result).toMatchObject({
             status: 'stale-director'
         });
-        expect(mocks.webRtcConnectionService.ensurePeerLaneOpen).not.toHaveBeenCalled();
     });
 
     it('can disable periodic director snapshots while keeping explicit sync snapshots', async () => {
@@ -368,6 +364,13 @@ describe('Rallar director relay', () => {
             appointedAtEpochMs: 1,
             heartbeatTtlMs: 60_000
         }));
+        const enqueuedWsTypeIds: string[] = [];
+        mocks.webSocketQueueBox.enqueueOutboxIfAbsent.mockImplementation(
+            async (message) => {
+                enqueuedWsTypeIds.push(message.payload.typeId);
+                return { status: 'enqueued', message, entries: [] };
+            }
+        );
         const relay = createRallarFacade().director.createRelay<DirectorMove, DirectorAcknowledgement, DirectorSnapshot>({
             roomId: 'room-1',
             laneId: 'director',
@@ -381,12 +384,12 @@ describe('Rallar director relay', () => {
         });
 
         await vi.advanceTimersByTimeAsync(5_000);
-        expect(enqueuedWsTypeIds()).not.toContain('game.snapshot');
+        expect(enqueuedWsTypeIds).not.toContain('game.snapshot');
 
         await relay.sendSnapshot();
         relay.stop();
 
-        expect(enqueuedWsTypeIds()).toContain('game.snapshot');
+        expect(enqueuedWsTypeIds).toContain('game.snapshot');
     });
 
     it('falls back to WS when director room RTC output has no remote route', async () => {
@@ -448,15 +451,26 @@ describe('Rallar director relay', () => {
         });
 
         await facade.auth.logout();
-        mocks.webSocketQueueBox.enqueueOutboxIfAbsent.mockClear();
-        mocks.rtcRxStreamer.enqueueOutboxIfAbsent.mockClear();
+        const postLogoutEffects: string[] = [];
+        mocks.webSocketQueueBox.enqueueOutboxIfAbsent.mockImplementation(
+            async (message) => {
+                postLogoutEffects.push(`ws:${message.payload.typeId}`);
+                return { status: 'enqueued', message, entries: [] };
+            }
+        );
+        mocks.rtcRxStreamer.enqueueOutboxIfAbsent.mockImplementation(
+            async (message) => {
+                postLogoutEffects.push(`rtc:${message.payload.typeId}`);
+                return { status: 'enqueued', message, entries: [] };
+            }
+        );
+        mocks.initMiddleware.mockImplementation(async () => {
+            postLogoutEffects.push('middleware:init');
+            return mocks.ctx;
+        });
         await vi.advanceTimersByTimeAsync(5_000);
 
-        expect(mocks.webSocketQueueBox.enqueueOutboxIfAbsent)
-            .not.toHaveBeenCalled();
-        expect(mocks.rtcRxStreamer.enqueueOutboxIfAbsent)
-            .not.toHaveBeenCalled();
-        expect(mocks.initMiddleware).not.toHaveBeenCalled();
+        expect(postLogoutEffects).toEqual([]);
     });
 
     it('rejects stale director relay handle sends after logout without reconnecting', async () => {
@@ -486,9 +500,23 @@ describe('Rallar director relay', () => {
         );
 
         await facade.auth.logout();
-        mocks.webSocketQueueBox.enqueueOutboxIfAbsent.mockClear();
-        mocks.rtcRxStreamer.enqueueOutboxIfAbsent.mockClear();
-        mocks.initMiddleware.mockClear();
+        const postLogoutEffects: string[] = [];
+        mocks.webSocketQueueBox.enqueueOutboxIfAbsent.mockImplementation(
+            async (message) => {
+                postLogoutEffects.push(`ws:${message.payload.typeId}`);
+                return { status: 'enqueued', message, entries: [] };
+            }
+        );
+        mocks.rtcRxStreamer.enqueueOutboxIfAbsent.mockImplementation(
+            async (message) => {
+                postLogoutEffects.push(`rtc:${message.payload.typeId}`);
+                return { status: 'enqueued', message, entries: [] };
+            }
+        );
+        mocks.initMiddleware.mockImplementation(async () => {
+            postLogoutEffects.push('middleware:init');
+            return mocks.ctx;
+        });
 
         const results = await Promise.all([
             relay.sendHeartbeat(),
@@ -500,11 +528,7 @@ describe('Rallar director relay', () => {
 
         expect(results.every((result) => result.status === 'no-director')).toBe(true);
         expect(results.every((result) => result.reason === 'Auth session ended.')).toBe(true);
-        expect(mocks.webSocketQueueBox.enqueueOutboxIfAbsent)
-            .not.toHaveBeenCalled();
-        expect(mocks.rtcRxStreamer.enqueueOutboxIfAbsent)
-            .not.toHaveBeenCalled();
-        expect(mocks.initMiddleware).not.toHaveBeenCalled();
+        expect(postLogoutEffects).toEqual([]);
     });
 });
 
@@ -622,15 +646,6 @@ function resetDirectorApiDoubles(): void {
     mocks.listStateGroupEventPage.mockRejectedValue(
         new Error('group event page not mocked')
     );
-}
-
-function enqueuedWsTypeIds(): readonly string[] {
-    return mocks.webSocketQueueBox.enqueueOutboxIfAbsent.mock.calls
-        .map(([message]) => {
-            const payload = (message as EnqueuedDirectorMessage).payload;
-            return typeof payload?.typeId === 'string' ? payload.typeId : undefined;
-        })
-        .filter((typeId): typeId is string => typeId !== undefined);
 }
 
 function mockGroupSnapshot(snapshot: GroupSnapshot): void {
