@@ -3,8 +3,8 @@ import { BrowserMessageInputValidator } from '@shared-web/browser/messages/brows
 import { BrowserRallarMessageSender } from '@shared-web/browser/messages/browser-rallar-message-sender.ts';
 import { BrowserRallarMessageSubscriptions } from '@shared-web/browser/messages/browser-rallar-message-subscriptions.ts';
 import { BrowserTypedMessageChannels } from '@shared-web/browser/messages/browser-typed-message-channels.ts';
-import { createRallarCrdtMessageTransport } from '@shared-web/browser/messages/create-rallar-crdt-message-transport.ts';
-import type { RallarCrdtMessageTransport } from '@shared-web/browser/rallar-crdt-transport.ts';
+import { createRallarCrdtMessageTransport } from '@shared-web/browser/crdt/create-rallar-crdt-message-transport.ts';
+import type { RallarCrdtMessageTransport } from '@shared-web/browser/crdt/browser-crdt-transport.ts';
 import type {
     RallarMessageHandler,
     RallarRoomMessageChannelDefinition,

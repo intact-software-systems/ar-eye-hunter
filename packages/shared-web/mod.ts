@@ -20,7 +20,7 @@ export {
 export * from './browser/heartbeat.ts';
 export * from './browser/middleware.ts';
 export * from './browser/rallar-ai.ts';
-export * from './browser/rallar-crdt-transport.ts';
+export * from './browser/crdt/browser-crdt-transport.ts';
 export * from './browser/rallar-crdt.ts';
 export * from './browser/rallar.ts';
 export * from './browser/resilience-config.ts';

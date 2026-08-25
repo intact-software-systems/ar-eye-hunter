@@ -2,8 +2,8 @@ import {
     createRallarCrdtLocalStore,
     DEFAULT_RALLAR_CRDT_DB_NAME,
     type RallarCrdtLocalStore
-} from '@shared-web/browser/rallar-crdt-local-store.ts';
-import { createRallarCrdtTabSync, type RallarCrdtTabSync } from '@shared-web/browser/rallar-crdt-tab-sync.ts';
+} from '@shared-web/browser/crdt/browser-crdt-local-store.ts';
+import { createRallarCrdtTabSync, type RallarCrdtTabSync } from '@shared-web/browser/crdt/browser-crdt-tab-sync.ts';
 import {
     sendRallarCrdtCatchUpRequest,
     sendRallarCrdtLiveUpdate,
@@ -12,7 +12,7 @@ import {
     subscribeRallarCrdtLiveTransport,
     type RallarCrdtMessageTransport,
     type RallarCrdtTransportKind
-} from '@shared-web/browser/rallar-crdt-transport.ts';
+} from '@shared-web/browser/crdt/browser-crdt-transport.ts';
 import type { RallarDataFacade, RallarUnsubscribe } from '@shared-web/browser/rallar-data.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import {

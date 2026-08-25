@@ -1,8 +1,11 @@
 // @vitest-environment happy-dom
 
-import '../setup-browser-indexeddb.ts';
+import '../../setup-browser-indexeddb.ts';
 
-import { DEFAULT_RALLAR_CRDT_DB_NAME, RALLAR_CRDT_LOCAL_STORE_NAMES } from '@shared-web/browser/rallar-crdt-local-store.ts';
+import {
+    DEFAULT_RALLAR_CRDT_DB_NAME,
+    RALLAR_CRDT_LOCAL_STORE_NAMES
+} from '@shared-web/browser/crdt/browser-crdt-local-store.ts';
 import { createRallarCrdtFacade } from '@shared-web/browser/rallar-crdt.ts';
 import { createRallarDataFacade, type RallarDataScope } from '@shared-web/browser/rallar-data.ts';
 import { createRallarFacade } from '@shared-web/browser/rallar.ts';

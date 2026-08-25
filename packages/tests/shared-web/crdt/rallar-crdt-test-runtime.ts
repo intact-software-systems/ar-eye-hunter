@@ -4,7 +4,7 @@ import type {
     RallarCrdtTransportMessage,
     RallarCrdtTransportSendInput,
     RallarCrdtTransportSendResult
-} from '@shared-web/browser/rallar-crdt-transport.ts';
+} from '@shared-web/browser/crdt/browser-crdt-transport.ts';
 import { createRallarCrdtFacade } from '@shared-web/browser/rallar-crdt.ts';
 import { createRallarDataFacade, type RallarDataScope } from '@shared-web/browser/rallar-data.ts';
 import { RepositoryManager } from '@shared/cache/RepositoryManager.ts';

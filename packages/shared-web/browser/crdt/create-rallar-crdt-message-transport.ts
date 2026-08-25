@@ -1,4 +1,4 @@
-import type { RallarCrdtMessageTransport } from '@shared-web/browser/rallar-crdt-transport.ts';
+import type { RallarCrdtMessageTransport } from '@shared-web/browser/crdt/browser-crdt-transport.ts';
 import type { RallarMessagesOperations } from '@shared-web/browser/messages/rallar-message-operations.ts';
 
 export function createRallarCrdtMessageTransport(
