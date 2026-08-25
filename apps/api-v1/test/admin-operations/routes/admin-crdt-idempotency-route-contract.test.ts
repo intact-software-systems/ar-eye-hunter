@@ -4,7 +4,7 @@ import { Hono } from 'jsr:@hono/hono@4.11.9';
 
 import type { AdminOperationMutationRequest } from '@shared-server/rallar-system/admin-operations/admin-operation-request.ts';
 import type { AdminOperationUseCases } from '@shared-server/rallar-system/admin-operations/admin-operation-use-cases.ts';
-import type { IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
+import type { IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
 import { decodeJsonWireValue, type JsonWireObject, type JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import type { RallarCrdtAdminReadRepository, RallarCrdtDocumentMetadata, RallarCrdtDocumentRef } from '@shared/crdt/mod.ts';
 
@@ -118,11 +118,11 @@ Deno.test(
         const fixture = createRouteFixture();
 
         for (const route of ROUTES) {
-            const response = await postMutation(
-                fixture.app,
-                `${route.path}/requests/${REQUEST_ID}`,
-                route.body
-            );
+            const response = await postMutation({
+                app: fixture.app,
+                path: `${route.path}/requests/${REQUEST_ID}`,
+                body: route.body
+            });
             assert.equal(response.status, 200, route.path);
         }
 
@@ -147,7 +147,11 @@ Deno.test('all replaced CRDT and admin mutation URLs return 404', async () => {
     const fixture = createRouteFixture();
 
     for (const route of ROUTES) {
-        const response = await postMutation(fixture.app, route.path, route.body);
+        const response = await postMutation({
+            app: fixture.app,
+            path: route.path,
+            body: route.body
+        });
         assert.equal(response.status, 404, route.path);
     }
 
@@ -157,12 +161,12 @@ Deno.test('all replaced CRDT and admin mutation URLs return 404', async () => {
 Deno.test('all strict CRDT and admin mutation routes reject header request identity', async () => {
     for (const route of ROUTES) {
         const fixture = createRouteFixture();
-        const response = await postMutation(
-            fixture.app,
-            `${route.path}/requests/${REQUEST_ID}`,
-            route.body,
-            { 'Idempotency-Key': REQUEST_ID }
-        );
+        const response = await postMutation({
+            app: fixture.app,
+            path: `${route.path}/requests/${REQUEST_ID}`,
+            body: route.body,
+            headers: { 'Idempotency-Key': REQUEST_ID }
+        });
 
         await assertCanonicalValidationFailure(response, route.path);
         assert.equal(fixture.authCalls(), 1, route.path);
@@ -173,9 +177,10 @@ Deno.test('all strict CRDT and admin mutation routes reject header request ident
 Deno.test('all strict CRDT and admin mutation routes reject body request identity', async () => {
     for (const route of ROUTES) {
         const fixture = createRouteFixture();
-        const response = await postMutation(fixture.app, `${route.path}/requests/${REQUEST_ID}`, {
-            ...route.body,
-            requestId: REQUEST_ID
+        const response = await postMutation({
+            app: fixture.app,
+            path: `${route.path}/requests/${REQUEST_ID}`,
+            body: { ...route.body, requestId: REQUEST_ID }
         });
 
         await assertCanonicalValidationFailure(response, route.path);
@@ -189,12 +194,12 @@ Deno.test(
     async () => {
         for (const route of ROUTES) {
             const fixture = createRouteFixture({ authenticated: false });
-            const response = await postMutation(
-                fixture.app,
-                `${route.path}/requests/short`,
-                { ...route.body, requestId: REQUEST_ID },
-                { 'Idempotency-Key': REQUEST_ID }
-            );
+            const response = await postMutation({
+                app: fixture.app,
+                path: `${route.path}/requests/short`,
+                body: { ...route.body, requestId: REQUEST_ID },
+                headers: { 'Idempotency-Key': REQUEST_ID }
+            });
 
             assert.equal(response.status, 401, route.path);
             const failure = await readJsonRecord(response);
@@ -214,11 +219,11 @@ Deno.test('all strict CRDT and admin routes enforce exact request ID boundaries'
         ) {
             const fixture = createRouteFixture();
             const requestId = 'a'.repeat(length);
-            const response = await postMutation(
-                fixture.app,
-                `${route.path}/requests/${requestId}`,
-                route.body
-            );
+            const response = await postMutation({
+                app: fixture.app,
+                path: `${route.path}/requests/${requestId}`,
+                body: route.body
+            });
             if (accepted) {
                 assert.equal(response.status, 200, `${route.path} length ${length}`);
                 assert.equal(fixture.calls[0]?.requestId, requestId, route.path);
@@ -406,21 +411,23 @@ function createUnusedCrdtReadRepository(): RallarCrdtAdminReadRepository {
     };
 }
 
-async function postMutation(
-    app: Hono,
-    path: string,
-    body: JsonWireValue,
-    headers: Readonly<Record<string, string>> = {}
-): Promise<Response> {
-    return await app.request(path, {
+interface PostMutationInput {
+    readonly app: Hono;
+    readonly path: string;
+    readonly body: JsonWireValue;
+    readonly headers?: Readonly<Record<string, string>>;
+}
+
+async function postMutation(input: PostMutationInput): Promise<Response> {
+    return await input.app.request(input.path, {
         method: 'POST',
         headers: {
             authorization: 'Bearer access-token',
             'x-client-id': ADMIN_SESSION.clientId,
             'content-type': 'application/json',
-            ...headers
+            ...input.headers
         },
-        body: JSON.stringify(body)
+        body: JSON.stringify(input.body)
     });
 }
 

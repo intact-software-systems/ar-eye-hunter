@@ -1,7 +1,9 @@
 import type { LoginRequest } from '@shared/api/api-config.ts';
 
+import { normalizeAuthUsername } from '../credentials/normalize-auth-username.ts';
 import type { AuthSessionAuthority } from '../mutation/auth-mutation-contracts.ts';
-import { AuthUserRepository, normalizeUsername, type AuthUser } from '../persistence/auth-user-repository.ts';
+import { AuthUserRepository } from '../persistence/auth-user-repository.ts';
+import type { PersistedAuthUser } from '../persistence/persisted-auth-user.ts';
 
 export type AuthenticatedUserIdentity = Readonly<{
     clientId: string;
@@ -27,7 +29,7 @@ export async function authenticateAuthUser(
     loginRequest: LoginRequest,
     options: LoginAuthUserOptions
 ): Promise<AuthenticatedUserIdentity | undefined> {
-    const normalizedUsername = normalizeUsername(loginRequest.username);
+    const normalizedUsername = normalizeAuthUsername(loginRequest.username);
     const registeredUser = await options.userRepository.findByNormalizedUsernameEntry(normalizedUsername);
     if (registeredUser) {
         if (
@@ -54,10 +56,10 @@ function authenticateStaticClient(
     loginRequest: LoginRequest,
     staticClients: readonly LoginClientData[]
 ): AuthenticatedUserIdentity | undefined {
-    const normalizedUsername = normalizeUsername(loginRequest.username);
+    const normalizedUsername = normalizeAuthUsername(loginRequest.username);
     for (const client of staticClients) {
         if (
-            normalizeUsername(client.username) === normalizedUsername &&
+            normalizeAuthUsername(client.username) === normalizedUsername &&
             client.password === loginRequest.password
         ) {
             return {
@@ -76,7 +78,7 @@ function authenticateStaticClient(
 
 export async function verifyAuthUserPassword(
     password: string,
-    user: Pick<AuthUser, 'passwordAlgorithm' | 'passwordHash' | 'passwordIterations' | 'passwordSalt'>
+    user: Pick<PersistedAuthUser, 'passwordAlgorithm' | 'passwordHash' | 'passwordIterations' | 'passwordSalt'>
 ): Promise<boolean> {
     if (user.passwordAlgorithm !== PASSWORD_ALGORITHM) {
         return false;

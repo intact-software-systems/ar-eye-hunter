@@ -8,7 +8,7 @@ import { validateRtcRttMutation } from '../mutation/validate-rtc-rtt-mutation.ts
 import { writeRtcRttMutation } from '../mutation/write-rtc-rtt-mutation.ts';
 import {
     createRtcRttDurableEnqueue,
-    readRtcRttAppInboxAuthority,
+    decodeRtcRttAppInboxAuthority,
     verifyRtcRttAppInboxAuthority
 } from './rtc-rtt-app-inbox-authority.ts';
 import type {
@@ -49,7 +49,7 @@ export class RtcRttAppInboxHandler {
         context: AppInboxMessageContext<RtcRttAppInboxResult>,
         rtcRttDependencies: RtcRttAppInboxDependencies
     ): Promise<RtcRttAppInboxResult> {
-        const authority = readRtcRttAppInboxAuthority(context.enqueue.authority);
+        const authority = decodeRtcRttAppInboxAuthority(context.enqueue.authority);
         await verifyRtcRttAppInboxAuthority({
             authority,
             groupStateService: this.dependencies.groupStateService,

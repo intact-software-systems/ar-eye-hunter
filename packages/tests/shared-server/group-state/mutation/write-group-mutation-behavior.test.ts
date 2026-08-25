@@ -32,10 +32,15 @@ describe('GroupStateService guarded batch write boundary', () => {
         });
 
         const prepared = await group.durable.prepareMutation(
-            mutationDescriptor('updateGroup', SCOPE, 'write-boundary', {
-                displayName: 'Updated through AppInbox',
-                actorPrincipalId: authority.clientId,
-                requestId: 'write-boundary-update'
+            mutationDescriptor({
+                operation: 'updateGroup',
+                scope: SCOPE,
+                groupId: 'write-boundary',
+                request: {
+                    displayName: 'Updated through AppInbox',
+                    actorPrincipalId: authority.clientId,
+                    requestId: 'write-boundary-update'
+                }
             }),
             authority
         );

@@ -1,4 +1,4 @@
-import { type PersistedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-persistence-contracts.ts';
+import { type PersistedAuthSession } from '@shared-server/rallar-system/auth/persistence/persisted-auth-session.ts';
 import type {
     ClientEvent,
     ClientInstance,

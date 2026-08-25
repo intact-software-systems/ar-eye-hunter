@@ -1,12 +1,13 @@
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
 import { GroupPresenceSummaryWork } from '@shared-server/rallar-system/group-state/presence/group-presence-summary-worker.ts';
 import type { RallarTimingEvent } from '@shared-server/rallar-system/observability/timing.ts';
+import { decodeJsonWireValue, type JsonWireObject, type JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import { requireConditionalWrite } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
 import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import type { GroupPresenceSummaryWorkData } from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
 import { GroupBarrierRepository } from '../group-state-concurrency-test-runtime.ts';
-import { createTestGroupStateRuntime, createTestGroupStateService, type TestAuthenticatedGroupStateService } from '../group-state-test-runtime.ts';
+import { createTestGroupStateRuntime, createTestGroupStateService, type GroupStateTestService } from '../group-state-test-runtime.ts';
 import { groupRef, SCOPE } from '../mutation/group-mutation-test-runtime.ts';
 
 export function createService(
@@ -15,7 +16,7 @@ export function createService(
     sleep: (delayMs: number) => Promise<void> = () => Promise.resolve(),
     injectedRandomId?: () => string,
     timing?: (event: RallarTimingEvent) => void
-) {
+): GroupStateTestService {
     let id = 0;
     const currentNow = () => (typeof nowEpochMs === 'function' ? nowEpochMs() : nowEpochMs);
     return createTestGroupStateService({
@@ -118,7 +119,7 @@ export async function requireSnapshot(runtime: GroupBarrierRepository, groupId: 
 interface CorruptFirstEntryInput {
     readonly runtime: GroupBarrierRepository;
     readonly namespace: string;
-    readonly corrupt: (value: Record<string, unknown>) => Record<string, unknown>;
+    readonly corrupt: (value: JsonWireObject) => JsonWireObject;
 }
 
 export async function corruptFirstEntry({
@@ -130,10 +131,18 @@ export async function corruptFirstEntry({
     if (!entry) {
         throw new Error(`Missing ${namespace} entry to corrupt`);
     }
+    const persisted = decodeJsonWireValue(JSON.parse(entry.value), `${namespace} entry`);
+    if (!isJsonWireObject(persisted)) {
+        throw new TypeError(`Expected ${namespace} entry to be a JSON object`);
+    }
     await runtime.upsert(
         namespace,
         entry.key,
-        JSON.stringify(corrupt(JSON.parse(entry.value) as Record<string, unknown>)),
+        JSON.stringify(corrupt(persisted)),
         entry.expireAtTimestamp
     );
+}
+
+function isJsonWireObject(value: JsonWireValue): value is JsonWireObject {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
 }

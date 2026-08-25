@@ -1,7 +1,5 @@
-import {
-    decodePersistedAuthSession,
-    type PersistedAgentSessionTicket
-} from '../../persistence/auth-persistence-contracts.ts';
+import { decodePersistedAuthSession } from '../../persistence/persisted-auth-session.ts';
+import type { PersistedAgentSessionTicket } from '../../persistence/persisted-auth-ticket.ts';
 import type {
     AuthComputedSession,
     AuthMutationCommand,

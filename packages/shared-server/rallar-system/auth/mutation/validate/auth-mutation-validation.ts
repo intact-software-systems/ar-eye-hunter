@@ -1,7 +1,7 @@
 import { validateRuntimeStateExpiredAuthority } from '../../../../runtime-state/runtime-state-expired-entry.ts';
 import type { RuntimeStateEntryValue } from '../../../../runtime-state/runtime-state-json-store.ts';
-import type { PersistedAuthSession } from '../../persistence/auth-persistence-contracts.ts';
 import { authSessionKey, authTokenDigestKey } from '../../persistence/auth-storage-keys.ts';
+import type { PersistedAuthSession } from '../../persistence/persisted-auth-session.ts';
 import type { AuthMutationCommand, AuthMutationRead, AuthSessionEntries } from '../auth-mutation-contracts.ts';
 import { AuthMutationRejectedError } from '../auth-mutation-rejected-error.ts';
 

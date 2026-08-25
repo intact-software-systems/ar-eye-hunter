@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import { decodePersistedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-persistence-contracts.ts';
 import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
+import { decodePersistedAuthSession } from '@shared-server/rallar-system/auth/persistence/persisted-auth-session.ts';
 
 import { FakeRuntimeStateRepository } from '../fake-runtime-state-repository.ts';
 

@@ -9,7 +9,8 @@ import { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
 import assert from 'node:assert/strict';
 import { createApiAdminInboxService } from '../../../src/admin-operations/create-api-admin-inbox-service.ts';
 import { toResilienceDto } from '../../api-v1-test-queue-resilience.ts';
-import { readPGliteDatabaseEpochMs, waitForPGliteQueueRow, withUtcPGliteSql } from '../../db/pglite-auth-test-harness.ts';
+import { waitForPGliteQueueRow } from '../../db/pglite-app-inbox-test-runtime.ts';
+import { readPGliteDatabaseEpochMs, withUtcPGliteSql } from '../../db/pglite-auth-test-harness.ts';
 
 Deno.test('production admin prune rereads current admin authority before creating page work', async () => {
     await withUtcPGliteSql(async (sql) => {

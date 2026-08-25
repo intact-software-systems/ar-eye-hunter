@@ -9,20 +9,21 @@ import type {
     RuntimeStateConditionalWriteResult,
     RuntimeStateRepositoryLike
 } from '../../../runtime-state/runtime-state-repository.ts';
+import type { JsonWireValue } from '../../protocol/json-wire-identity.ts';
 import { hashAuthSecret } from '../credentials/hash-auth-secret.ts';
-import {
-    decodePersistedAgentSessionTicket,
-    decodePersistedWebSocketTicket,
-    type PersistedAgentSessionTicket,
-    type PersistedAuthSession,
-    type PersistedWebSocketTicket
-} from './auth-persistence-contracts.ts';
 import type { IssuedAgentSessionTicket, IssuedWebSocketTicket } from './auth-session-types.ts';
 import {
     AGENT_SESSION_TICKETS_NAMESPACE,
     authTicketDigestKey,
     WS_AUTH_TICKETS_NAMESPACE
 } from './auth-storage-keys.ts';
+import type { PersistedAuthSession } from './persisted-auth-session.ts';
+import {
+    decodePersistedAgentSessionTicket,
+    decodePersistedWebSocketTicket,
+    type PersistedAgentSessionTicket,
+    type PersistedWebSocketTicket
+} from './persisted-auth-ticket.ts';
 
 type FindSessionById = (sessionId: string) => Promise<PersistedAuthSession | undefined>;
 
@@ -142,7 +143,7 @@ export class AuthTicketPersistence extends RuntimeStateJsonStore {
     async readWebSocketTicketByDigestEntry(
         ticketDigest: string
     ): Promise<RuntimeStateEntryRead<PersistedWebSocketTicket>> {
-        const read = await this.getEntryRead<unknown>(
+        const read = await this.getEntryRead<JsonWireValue>(
             WS_AUTH_TICKETS_NAMESPACE,
             authTicketDigestKey(ticketDigest)
         );
@@ -208,7 +209,7 @@ export class AuthTicketPersistence extends RuntimeStateJsonStore {
     async readAgentSessionTicketByDigestEntry(
         ticketDigest: string
     ): Promise<RuntimeStateEntryRead<PersistedAgentSessionTicket>> {
-        const read = await this.getEntryRead<unknown>(
+        const read = await this.getEntryRead<JsonWireValue>(
             AGENT_SESSION_TICKETS_NAMESPACE,
             authTicketDigestKey(ticketDigest)
         );

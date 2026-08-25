@@ -1,4 +1,4 @@
-import type { AuthUser } from '../../persistence/auth-user-repository.ts';
+import type { PersistedAuthUser } from '../../persistence/persisted-auth-user.ts';
 import type { AuthMutationComputed, AuthMutationRead, RegisterAuthUserCommand } from '../auth-mutation-contracts.ts';
 import { equalAuthJson } from '../validate/auth-mutation-validation.ts';
 
@@ -25,7 +25,7 @@ export function computeAuthUserRegistration(
     };
 }
 
-function isMatchingUserRead(read: AuthMutationRead, user: AuthUser): boolean {
+function isMatchingUserRead(read: AuthMutationRead, user: PersistedAuthUser): boolean {
     return (
         read.kind === 'register-user' &&
         read.byUsername !== null &&

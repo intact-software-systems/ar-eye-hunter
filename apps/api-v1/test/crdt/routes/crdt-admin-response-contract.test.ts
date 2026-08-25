@@ -27,14 +27,15 @@ import { AppCrdtInboxService } from '@shared-server/rallar-system/crdt/inbox/app
 import { createCrdtMutationService } from '@shared-server/rallar-system/crdt/mutation/create-crdt-mutation-service.ts';
 
 import { createCrdtMutationCommand } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-command-codec.ts';
-import type { JsonWireObject, JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
+import { decodeJsonWireValue, type JsonWireObject, type JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 import { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
 
 import { createCrdtAdminMutations } from '../../../src/crdt/create-crdt-admin-mutations.ts';
 import * as routes from '../../../src/crdt/register-crdt-admin-routes.ts';
 import { toResilienceDto } from '../../api-v1-test-queue-resilience.ts';
-import { waitForPGliteQueueRow, withPGliteSql } from '../../db/pglite-auth-test-harness.ts';
+import { waitForPGliteQueueRow } from '../../db/pglite-app-inbox-test-runtime.ts';
+import { withPGliteSql } from '../../db/pglite-auth-test-harness.ts';
 
 const DOCUMENT: RallarCrdtDocumentRef = {
     applicationId: 'app-1',
@@ -166,8 +167,8 @@ async function createCrdtAdminRouteHarness(
         sql
     });
     return {
-        app: createCrdtAdminApp(sql, appCrdt, now, nowEpochMs, createId),
-        appForSession: (session) => createCrdtAdminApp(sql, appCrdt, now, nowEpochMs, createId, session),
+        app: createCrdtAdminApp({ sql, appCrdt, now, nowEpochMs, createId }),
+        appForSession: (session) => createCrdtAdminApp({ sql, appCrdt, now, nowEpochMs, createId, session }),
         audit,
         documentKey,
         inbox,
@@ -269,28 +270,31 @@ function createAdminAppCrdt(input: CreateAdminAppCrdtInput): AppCrdtInboxService
     );
 }
 
-function createCrdtAdminApp(
-    sql: Parameters<Parameters<typeof withPGliteSql>[0]>[0],
-    appCrdt: AppCrdtInboxService,
-    now: number,
-    nowEpochMs: () => number,
-    createId: () => string,
-    session: IssuedAdminSession = {
+interface CreateCrdtAdminAppInput {
+    readonly sql: Parameters<Parameters<typeof withPGliteSql>[0]>[0];
+    readonly appCrdt: AppCrdtInboxService;
+    readonly now: number;
+    readonly nowEpochMs: () => number;
+    readonly createId: () => string;
+    readonly session?: IssuedAdminSession;
+}
+
+function createCrdtAdminApp(input: CreateCrdtAdminAppInput): Hono {
+    const session = input.session ?? {
         clientId: 'admin',
         username: 'admin',
         sessionId: 'admin-session',
         accessToken: 'token',
-        issuedAtEpochMs: now,
-        expiresAtEpochMs: now + 60_000
-    }
-): Hono {
+        issuedAtEpochMs: input.now,
+        expiresAtEpochMs: input.now + 60_000
+    };
     const app = new Hono();
     routes.registerCrdtAdminRoutes(app, {
-        repository: new PSqlCrdtLogRepository(sql),
+        repository: new PSqlCrdtLogRepository(input.sql),
         crdtAdminMutations: createCrdtAdminMutations({
-            appCrdtInboxService: appCrdt,
-            nowEpochMs,
-            createId,
+            appCrdtInboxService: input.appCrdt,
+            nowEpochMs: input.nowEpochMs,
+            createId: input.createId,
             serviceId: 'server-1'
         }),
         requireAuth: false,
@@ -548,9 +552,9 @@ async function verifyCompactResponse(harness: CrdtAdminRouteHarness): Promise<vo
         }
     });
     assert.equal(compact.ok, true);
-    const result = requireJsonWireObject(compact.result, 'compact result');
-    const snapshot = requireJsonWireObject(result.snapshot, 'compact snapshot');
-    const document = requireJsonWireObject(snapshot.document, 'compact snapshot document');
+    const result = decodeJsonWireObject(compact.result, 'compact result');
+    const snapshot = decodeJsonWireObject(result.snapshot, 'compact snapshot');
+    const document = decodeJsonWireObject(snapshot.document, 'compact snapshot document');
     assert.equal(result.appendSequence, 1);
     assert.equal(document.documentId, DOCUMENT.documentId);
 }
@@ -564,7 +568,7 @@ async function verifyLifecycleResponse(harness: CrdtAdminRouteHarness): Promise<
             lifecycle: 'archived'
         }
     });
-    const result = requireJsonWireObject(lifecycle.result, 'lifecycle result');
+    const result = decodeJsonWireObject(lifecycle.result, 'lifecycle result');
     assert.equal(result.lifecycle, 'archived');
     assert.equal(result.documentKey, harness.documentKey);
     assert.deepEqual(result.retention, { mode: 'retain', reason: 'existing' });
@@ -588,13 +592,13 @@ async function verifyEraseResponseAndAuditDelivery(
             reason: 'privacy'
         }
     });
-    const result = requireJsonWireObject(erase.result, 'erase result');
+    const result = decodeJsonWireObject(erase.result, 'erase result');
     assert.equal(
-        requireJsonWireObject(result.request, 'erase request').mode,
+        decodeJsonWireObject(result.request, 'erase request').mode,
         'destroy-document'
     );
-    assert.equal(requireJsonWireObject(result.auditEvent, 'erase audit event').kind, 'erase');
-    assert.equal(requireJsonWireObject(result.metadata, 'erase metadata').lifecycle, 'destroyed');
+    assert.equal(decodeJsonWireObject(result.auditEvent, 'erase audit event').kind, 'erase');
+    assert.equal(decodeJsonWireObject(result.metadata, 'erase metadata').lifecycle, 'destroyed');
     assert.equal(harness.audit.length, 0);
     assert.equal(await readAuditCount(harness.sql, 'ri_status = \'NEW\''), 1);
     await waitForPGliteQueueRow(harness.sql, 'APP_OUTBOX', 'NEW');
@@ -811,39 +815,15 @@ async function postJson(
 }
 
 async function readJsonRecord(response: Response): Promise<JsonWireObject> {
-    const value: unknown = await response.json();
-    return requireJsonWireObject(value, 'CRDT admin response');
+    const value = decodeJsonWireValue(await response.json(), 'CRDT admin response');
+    return decodeJsonWireObject(value, 'CRDT admin response');
 }
 
-function requireJsonWireObject(value: unknown, label: string): JsonWireObject {
-    if (!isJsonWireObject(value)) {
+function decodeJsonWireObject(value: JsonWireValue, label: string): JsonWireObject {
+    if (value === null || typeof value !== 'object' || Array.isArray(value)) {
         throw new TypeError(`${label} must be an object`);
     }
-    return value;
-}
-
-function isJsonWireObject(value: unknown): value is JsonWireObject {
-    return value !== null &&
-        typeof value === 'object' &&
-        !Array.isArray(value) &&
-        Object.values(value).every(isJsonWireValue);
-}
-
-function isJsonWireValue(value: unknown): value is JsonWireValue {
-    if (
-        value === null ||
-        typeof value === 'boolean' ||
-        typeof value === 'string'
-    ) {
-        return true;
-    }
-    if (typeof value === 'number') {
-        return Number.isFinite(value);
-    }
-    if (Array.isArray(value)) {
-        return value.every(isJsonWireValue);
-    }
-    return isJsonWireObject(value);
+    return value as JsonWireObject;
 }
 
 function update(now: number): RallarCrdtUpdateEnvelope {

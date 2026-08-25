@@ -4,8 +4,8 @@ import { NonRetryableException } from '@shared/queuebox/DequeueResourceEntryCont
 
 import { type AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
 import type { GroupPolicyCapacityConfig } from '@shared-server/rallar-system/group-state/policy/group-membership-admission-policy.ts';
-import type { PersistedAuthSession } from '../auth/persistence/auth-persistence-contracts.ts';
 import type { IssuedAuthSession } from '../auth/persistence/auth-session-types.ts';
+import type { PersistedAuthSession } from '../auth/persistence/persisted-auth-session.ts';
 import { authSessionProofSecret } from '../auth/sessions/auth-session-proof-secret.ts';
 import { hashMutationCommand, type JsonWireValue } from '../protocol/json-wire-identity.ts';
 import { toAggregateMutationCommand, toMembershipMutationCommand } from './group-mutation-command.ts';
@@ -227,15 +227,24 @@ async function materializeAuthenticatedGroupMutationCommand(
     };
 }
 
-export function mutationDescriptor(
-    operation: GroupMutationDescriptor['operation'],
-    scope: StateScope,
-    groupId: string,
-    request: GroupMutationDescriptor['request'],
-    targetPrincipalId: string | null = null,
-    sessionId: string | null = null
-): GroupMutationDescriptor {
-    return { operation, scope, groupId, targetPrincipalId, sessionId, request };
+export interface MutationDescriptorInput {
+    readonly operation: GroupMutationDescriptor['operation'];
+    readonly scope: StateScope;
+    readonly groupId: string;
+    readonly request: GroupMutationDescriptor['request'];
+    readonly targetPrincipalId?: string | null;
+    readonly sessionId?: string | null;
+}
+
+export function mutationDescriptor(input: MutationDescriptorInput): GroupMutationDescriptor {
+    return {
+        operation: input.operation,
+        scope: input.scope,
+        groupId: input.groupId,
+        targetPrincipalId: input.targetPrincipalId ?? null,
+        sessionId: input.sessionId ?? null,
+        request: input.request
+    };
 }
 
 export function toDescriptorCommand(

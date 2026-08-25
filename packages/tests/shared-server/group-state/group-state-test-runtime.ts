@@ -1,4 +1,5 @@
 import { type IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
+import type { PersistedAuthSession } from '@shared-server/rallar-system/auth/persistence/persisted-auth-session.ts';
 import { mutationDescriptor } from '@shared-server/rallar-system/group-state/group-mutation-authority.ts';
 import {
     groupStateMaintenanceRequestId,
@@ -6,23 +7,58 @@ import {
     toSessionCleanupCommand
 } from '@shared-server/rallar-system/group-state/group-presence-mutation-command.ts';
 import {
+    type GroupJoinCodeWritten,
     type GroupMutationDescriptor,
     type GroupStateService,
     type GroupStateServiceDependencies,
     type GroupStateWritten
 } from '@shared-server/rallar-system/group-state/group-state-service-contracts.ts';
 import { createGroupStateService } from '@shared-server/rallar-system/group-state/group-state-service.ts';
+import type { GroupMutationReceipt } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
 import type { GroupStateEventStore } from '@shared-server/rallar-system/state-events/group-state-event-store.ts';
 import type { RuntimeStateOptimisticTransactionalRepositoryLike } from '@shared-server/runtime-state/runtime-state-repository.ts';
 import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import type { GroupPresenceSession } from '@shared/api/group-types.ts';
-import { persistAuthSession, type AuthSession, type StoredAuthSession } from '../auth/auth-test-fixtures.ts';
-import { GroupStateTestMutationExecutor } from './group-state-test-mutation-executor.ts';
+import { persistAuthSession } from '../auth/auth-test-fixtures.ts';
+import { GroupStateTestMutationExecutor, type GroupStateTestMutationResult } from './group-state-test-mutation-executor.ts';
 
-export type TestAuthenticatedGroupStateService =
+type GroupStateTestMutationMethod = (
+    ...args: GroupStateMethodArgument[]
+) => Promise<GroupStateWritten>;
+
+type GroupStateTestReceiptMethod = (
+    ...args: GroupStateMethodArgument[]
+) => Promise<GroupMutationReceipt>;
+
+export type GroupStateTestService =
     & GroupStateService
-    & Readonly<Record<string, (...args: any[]) => Promise<any>>>;
+    & Readonly<{
+        createGroup: GroupStateTestMutationMethod;
+        updateGroup: GroupStateTestMutationMethod;
+        appointDirector: GroupStateTestMutationMethod;
+        joinGroup: GroupStateTestMutationMethod;
+        createGroupInvite: GroupStateTestMutationMethod;
+        revokeGroupInvite: GroupStateTestMutationMethod;
+        acceptGroupInvite: GroupStateTestMutationMethod;
+        grantGroupAdmission: GroupStateTestMutationMethod;
+        declineGroupAdmission: GroupStateTestMutationMethod;
+        rotateGroupJoinCode: (
+            ...args: GroupStateMethodArgument[]
+        ) => Promise<GroupJoinCodeWritten>;
+        removeGroupMember: GroupStateTestMutationMethod;
+        banGroupMember: GroupStateTestMutationMethod;
+        unbanGroupMember: GroupStateTestMutationMethod;
+        setGroupMemberRole: GroupStateTestMutationMethod;
+        transferGroupOwnership: GroupStateTestMutationMethod;
+        upsertMember: GroupStateTestMutationMethod;
+        connectPresenceSession: GroupStateTestMutationMethod;
+        connectPresenceSessionReceipt: GroupStateTestReceiptMethod;
+        heartbeatPresenceSession: GroupStateTestMutationMethod;
+        heartbeatPresenceSessionReceipt: GroupStateTestReceiptMethod;
+        disconnectPresenceSession: GroupStateTestMutationMethod;
+        disconnectPresenceSessionReceipt: GroupStateTestReceiptMethod;
+    }>;
 
 export type TestGroupStateMaintenanceService = Readonly<{
     disconnectPresenceSessionsBySessionId(
@@ -37,7 +73,7 @@ export type TestGroupStateMaintenanceService = Readonly<{
 }>;
 
 export type TestGroupStateRuntime = Readonly<{
-    service: TestAuthenticatedGroupStateService;
+    service: GroupStateTestService;
     durable: GroupStateService;
     maintenance: TestGroupStateMaintenanceService;
 }>;
@@ -77,7 +113,7 @@ export function authSession({
 export function createTestGroupStateRuntime(
     dependencies: TestGroupStateServiceDependencies
 ): TestGroupStateRuntime {
-    const issued = new Map<string, StoredAuthSession>();
+    const issued = new Map<string, PersistedAuthSession>();
     const now = dependencies.now ?? (() => Date.now());
     const randomId = dependencies.randomId ?? (() => crypto.randomUUID());
     const eventStoreFor = resolveGroupStateEventStoreFactory(dependencies);
@@ -129,15 +165,17 @@ function resolveGroupStateEventStoreFactory(
 
 function createAuthenticatedTestGroupStateService(
     durable: GroupStateService,
-    issued: Map<string, StoredAuthSession>,
+    issued: Map<string, PersistedAuthSession>,
     mutationExecutor: GroupStateTestMutationExecutor
-): TestAuthenticatedGroupStateService {
+): GroupStateTestService {
     let testRequestSequence = 0;
-    const service = Object.assign({}, durable) as TestAuthenticatedGroupStateService;
+    const service = Object.assign({}, durable);
     for (const method of USER_MUTATIONS) {
         Object.defineProperty(service, method, {
             enumerable: true,
-            value: async (...args: unknown[]) => {
+            value: async (
+                ...args: GroupStateMethodArgument[]
+            ): Promise<GroupStateTestMutationResult> => {
                 const originalDescriptor = descriptorForMethod(method, args);
                 const descriptor = originalDescriptor.request.requestId
                     ? originalDescriptor
@@ -148,13 +186,8 @@ function createAuthenticatedTestGroupStateService(
                             requestId: `test-group-mutation-${++testRequestSequence}`
                         }
                     };
-                const request = args.at(-1) as Record<string, unknown>;
-                const principalId = String(
-                    request.actorPrincipalId ??
-                        request.createdByPrincipalId ??
-                        request.principalId ??
-                        'alice'
-                );
+                const request = args.at(-1) as GroupMutationDescriptor['request'];
+                const principalId = readPrincipalId(request);
                 const sessionId = PRESENCE_MUTATIONS.has(method)
                     ? String(args[2])
                     : String(request.actorSessionId ?? `${principalId}-session`);
@@ -168,7 +201,7 @@ function createAuthenticatedTestGroupStateService(
             }
         });
     }
-    return service;
+    return service as GroupStateTestService;
 }
 
 function createTestGroupStateMaintenanceService(
@@ -225,14 +258,14 @@ function createTestGroupStateMaintenanceService(
 
 export function createTestGroupStateService(
     dependencies: TestGroupStateServiceDependencies
-): TestAuthenticatedGroupStateService {
+): GroupStateTestService {
     return createTestGroupStateRuntime(dependencies).service;
 }
 
 export function createTestAuthSession(
     principalId: string,
     sessionId: string = `${principalId}-session`
-): AuthSession {
+): IssuedAuthSession {
     return {
         clientId: principalId,
         sessionId,
@@ -243,7 +276,15 @@ export function createTestAuthSession(
     };
 }
 
-function descriptorForMethod(method: string, args: readonly unknown[]): GroupMutationDescriptor {
+type GroupStateMethodArgument =
+    | GroupMutationDescriptor['scope']
+    | GroupMutationDescriptor['request']
+    | string;
+
+function descriptorForMethod(
+    method: string,
+    args: readonly GroupStateMethodArgument[]
+): GroupMutationDescriptor {
     const scope = args[0] as GroupMutationDescriptor['scope'];
     const groupId = method === 'createGroup' ? String((args[1] as { groupId: string; }).groupId) : String(args[1]);
     const isTarget = TARGET_MUTATIONS.has(method);
@@ -254,19 +295,28 @@ function descriptorForMethod(method: string, args: readonly unknown[]): GroupMut
     if (!operation) {
         throw new TypeError(`Unknown test group mutation method: ${method}`);
     }
-    return mutationDescriptor(
+    return mutationDescriptor({
         operation,
         scope,
         groupId,
         request,
-        isTarget
+        targetPrincipalId: isTarget
             ? String(args[2])
             : operation === 'transferGroupOwnership'
             ? String((request as { newOwnerPrincipalId: string; }).newOwnerPrincipalId)
             : isPresence && 'principalId' in request
             ? String(request.principalId ?? '') || null
             : null,
-        isPresence ? String(args[2]) : null
+        sessionId: isPresence ? String(args[2]) : null
+    });
+}
+
+function readPrincipalId(request: GroupMutationDescriptor['request']): string {
+    return String(
+        request.actorPrincipalId ??
+            ('createdByPrincipalId' in request ? request.createdByPrincipalId : undefined) ??
+            ('principalId' in request ? request.principalId : undefined) ??
+            'alice'
     );
 }
 

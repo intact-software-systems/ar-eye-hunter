@@ -60,7 +60,27 @@ export * from './rallar-system/auth/mutation/decode-auth-mutation-command.ts';
 export * from './rallar-system/auth/mutation/decode-auth-mutation-result.ts';
 export * from './rallar-system/auth/mutation/read/capture-auth-mutation-facts.ts';
 export * from './rallar-system/auth/persistence/auth-session-repository.ts';
+export type {
+    IssuedAgentSessionTicket,
+    IssuedAuthSession,
+    IssuedWebSocketTicket
+} from './rallar-system/auth/persistence/auth-session-types.ts';
 export * from './rallar-system/auth/persistence/auth-user-repository.ts';
+export {
+    decodePersistedAuthSession,
+    type PersistedAuthSession
+} from './rallar-system/auth/persistence/persisted-auth-session.ts';
+export {
+    decodePersistedAgentSessionTicket,
+    decodePersistedWebSocketTicket,
+    type PersistedAgentSessionTicket,
+    type PersistedWebSocketTicket
+} from './rallar-system/auth/persistence/persisted-auth-ticket.ts';
+export type {
+    AuthUserStatus,
+    PersistedAuthUser
+} from './rallar-system/auth/persistence/persisted-auth-user.ts';
+export { decodePersistedAuthUser } from './rallar-system/auth/persistence/persisted-auth-user.ts';
 export {
     requiresClientWrite,
     toClientMutationReceipt,

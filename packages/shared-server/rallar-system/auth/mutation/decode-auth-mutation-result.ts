@@ -1,9 +1,11 @@
+import { decodeJsonWireValue, type JsonWireObject, type JsonWireValue } from '../../protocol/json-wire-identity.ts';
 import type { AuthMutationResult } from './auth-mutation-contracts.ts';
 
-type AuthMutationRecord = ReturnType<typeof requireRecord>;
-
 export function decodeAuthMutationResult(input: unknown): AuthMutationResult {
-    const result = requireRecord(input, 'Auth mutation result');
+    const result = requireRecord(
+        decodeJsonWireValue(input, 'Auth mutation result'),
+        'Auth mutation result'
+    );
     requireString(result.requestId, 'Auth mutation result requestId');
     if ('registeredAtEpochMs' in result) {
         validateAuthRegistrationResult(result);
@@ -18,7 +20,7 @@ export function decodeAuthMutationResult(input: unknown): AuthMutationResult {
     return structuredClone(result) as AuthMutationResult;
 }
 
-function validateAuthRegistrationResult(result: AuthMutationRecord): void {
+function validateAuthRegistrationResult(result: JsonWireObject): void {
     requireExactKeys(result, [
         'requestId',
         'clientId',
@@ -34,14 +36,14 @@ function validateAuthRegistrationResult(result: AuthMutationRecord): void {
     requireTimestamp(result.registeredAtEpochMs, 'Auth result registeredAtEpochMs');
 }
 
-function validateAuthLogoutResult(result: AuthMutationRecord): void {
+function validateAuthLogoutResult(result: JsonWireObject): void {
     requireExactKeys(result, ['requestId', 'loggedOut']);
     if (result.loggedOut !== true) {
         throw new TypeError('Auth logout result is invalid');
     }
 }
 
-function validateDiscriminatedResult(result: AuthMutationRecord): void {
+function validateDiscriminatedResult(result: JsonWireObject): void {
     switch (result.kind) {
         case 'session-issued':
         case 'ws-ticket-consumed':
@@ -59,7 +61,7 @@ function validateDiscriminatedResult(result: AuthMutationRecord): void {
     }
 }
 
-function validateWebSocketTicketIssuedResult(result: AuthMutationRecord): void {
+function validateWebSocketTicketIssuedResult(result: JsonWireObject): void {
     requireExactKeys(result, [
         'requestId',
         'kind',
@@ -73,7 +75,7 @@ function validateWebSocketTicketIssuedResult(result: AuthMutationRecord): void {
     validateResultLifecycle(result);
 }
 
-function validateAgentTicketsIssuedResult(result: AuthMutationRecord): void {
+function validateAgentTicketsIssuedResult(result: JsonWireObject): void {
     requireExactKeys(result, ['requestId', 'kind', 'tickets']);
     if (!Array.isArray(result.tickets) || result.tickets.length === 0) {
         throw new TypeError('Auth result tickets must be a non-empty array');
@@ -83,7 +85,7 @@ function validateAgentTicketsIssuedResult(result: AuthMutationRecord): void {
     }
 }
 
-function validateAgentTicketResult(ticket: AuthMutationRecord): void {
+function validateAgentTicketResult(ticket: JsonWireObject): void {
     requireExactKeys(ticket, [
         'agentId',
         'ticketDigest',
@@ -97,7 +99,7 @@ function validateAgentTicketResult(ticket: AuthMutationRecord): void {
     validateResultLifecycle(ticket);
 }
 
-function validateSessionResult(result: AuthMutationRecord): void {
+function validateSessionResult(result: JsonWireObject): void {
     requireExactKeys(result, [
         'requestId',
         'kind',
@@ -114,7 +116,7 @@ function validateSessionResult(result: AuthMutationRecord): void {
     validateResultLifecycle(result);
 }
 
-function validateResultLifecycle(result: AuthMutationRecord): void {
+function validateResultLifecycle(result: JsonWireObject): void {
     requireTimestamp(result.issuedAtEpochMs, 'Auth result issuedAtEpochMs');
     requireTimestamp(result.expiresAtEpochMs, 'Auth result expiresAtEpochMs');
     if (result.issuedAtEpochMs >= result.expiresAtEpochMs) {
@@ -122,7 +124,7 @@ function validateResultLifecycle(result: AuthMutationRecord): void {
     }
 }
 
-function assertNoPlaintextAuthFields(value: unknown): void {
+function assertNoPlaintextAuthFields(value: JsonWireValue): void {
     if (Array.isArray(value)) {
         for (const item of value) {
             assertNoPlaintextAuthFields(item);
@@ -140,7 +142,7 @@ function assertNoPlaintextAuthFields(value: unknown): void {
     }
 }
 
-function requireRecord(value: unknown, label: string): Readonly<Record<string, unknown>> {
+function requireRecord(value: JsonWireValue, label: string): JsonWireObject {
     if (
         typeof value !== 'object' ||
         value === null ||
@@ -149,10 +151,10 @@ function requireRecord(value: unknown, label: string): Readonly<Record<string, u
     ) {
         throw new TypeError(`${label} must be a plain JSON object`);
     }
-    return value as Readonly<Record<string, unknown>>;
+    return value as JsonWireObject;
 }
 
-function requireExactKeys(value: AuthMutationRecord, keys: readonly string[]): void {
+function requireExactKeys(value: JsonWireObject, keys: readonly string[]): void {
     const actual = Object.keys(value).sort();
     const expected = [...keys].sort();
     if (JSON.stringify(actual) !== JSON.stringify(expected)) {
@@ -160,14 +162,14 @@ function requireExactKeys(value: AuthMutationRecord, keys: readonly string[]): v
     }
 }
 
-function requireString(value: unknown, label: string): asserts value is string {
+function requireString(value: JsonWireValue, label: string): asserts value is string {
     if (typeof value !== 'string' || value.length === 0) {
         throw new TypeError(`${label} is required`);
     }
 }
 
-function requireTimestamp(value: unknown, label: string): asserts value is number {
-    if (!Number.isSafeInteger(value) || (value as number) < 0) {
+function requireTimestamp(value: JsonWireValue, label: string): asserts value is number {
+    if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) {
         throw new TypeError(`${label} is invalid`);
     }
 }

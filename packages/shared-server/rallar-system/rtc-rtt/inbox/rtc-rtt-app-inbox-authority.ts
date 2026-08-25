@@ -6,7 +6,7 @@ import type { GroupStateService } from '../../group-state/group-state-service-co
 import type { JsonWireValue } from '../../protocol/json-wire-identity.ts';
 import {
     constantTimeTopologyProofEqual,
-    readTopologyMutationAuthorityProof
+    validateTopologyMutationAuthorityProof
 } from '../../topology/inbox/topology-app-inbox-authority.ts';
 import { isTopologyRecord, requireExactTopologyKeys } from '../../topology/inbox/topology-app-inbox-command.ts';
 import { createTopologyMutationAuthorityProof } from '../../topology/inbox/topology-mutation-authority-proof.ts';
@@ -73,7 +73,7 @@ export async function createRtcRttDurableEnqueue(
     };
 }
 
-export function readRtcRttAppInboxAuthority(value: unknown): RtcRttAppInboxAuthority {
+export function decodeRtcRttAppInboxAuthority(value: unknown): RtcRttAppInboxAuthority {
     try {
         if (!isTopologyRecord(value)) {
             throw new TypeError('authority is not a record');
@@ -82,7 +82,7 @@ export function readRtcRttAppInboxAuthority(value: unknown): RtcRttAppInboxAutho
         if (value.kind !== 'rtc-rtt') {
             throw new TypeError('authority kind is invalid');
         }
-        readTopologyMutationAuthorityProof(value.proof);
+        validateTopologyMutationAuthorityProof(value.proof);
         const command = isTopologyRecord(value.command) ? value.command : null;
         if (!command) {
             throw new TypeError('RTC RTT command is invalid');

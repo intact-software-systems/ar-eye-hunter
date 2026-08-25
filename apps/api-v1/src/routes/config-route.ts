@@ -1,6 +1,6 @@
 import { signRallarBlackBoxOperatorToken } from '@shared-server/http/black-box-operator-token.ts';
 import type { AppAuthInboxService } from '@shared-server/rallar-system/auth/inbox/app-auth-inbox-service.ts';
-import type { IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
+import type { IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
 import type { AuthUserRepository } from '@shared-server/rallar-system/auth/persistence/auth-user-repository.ts';
 import type { ApiConfig } from '@shared/api/api-config.ts';
 import { Hono, type Context } from 'jsr:@hono/hono@4.11.9';
