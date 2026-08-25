@@ -1,6 +1,6 @@
 import type { AdminPruneExpiredCategory } from '@shared/api/admin-operations-types.ts';
 
-import type { AdminOperationsPruner } from '../../rallar-system/admin-operations/admin-operations-service.ts';
+import type { AdminExpiredDataPruner } from '../../rallar-system/admin-operations/admin-expired-data-pruner.ts';
 
 import type { AdminPruneExpiredOptions } from '../../rallar-system/admin-operations/admin-prune-options.ts';
 import type { PSqlSql } from '../p-sql-sql.ts';
@@ -9,7 +9,7 @@ type CountRow = Readonly<{
     count: number | string | bigint;
 }>;
 
-export class PSqlAdminOperationsPruner implements AdminOperationsPruner {
+export class PSqlAdminOperationsPruner implements AdminExpiredDataPruner {
     private readonly sql: PSqlSql;
 
     constructor(sql: PSqlSql) {

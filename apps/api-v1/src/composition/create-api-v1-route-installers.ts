@@ -1,3 +1,4 @@
+import type { AdminOperationUseCases } from '@shared-server/rallar-system/admin-operations/admin-operation-use-cases.ts';
 import type { Hono } from 'jsr:@hono/hono@4.11.9';
 
 import { readGroupGraphDiagnostic, readScopedGlobalGraphDiagnostic } from '@shared-graph/graph-diagnostics-service.ts';
@@ -7,10 +8,7 @@ import type { AuthUserRepository } from '@shared-server/rallar-system/auth/persi
 import type { ApiConfig } from '@shared/api/api-config.ts';
 import type { RallarCrdtAdminReadRepository } from '@shared/crdt/mod.ts';
 
-import {
-    registerAdminOperationsRoutes,
-    type AdminOperationsRouteService
-} from '../admin-operations/register-admin-operations-routes.ts';
+import { registerAdminOperationsRoutes } from '../admin-operations/register-admin-operations-routes.ts';
 import type {
     ApiV1GroupAdmissionConfiguration,
     ApiV1IceConfiguration,
@@ -75,7 +73,7 @@ export interface ApiV1RouteInstallerTopology {
 }
 
 export interface ApiV1RouteInstallerAdminServices {
-    readonly operations: AdminOperationsRouteService;
+    readonly operations: AdminOperationUseCases;
     readonly support: adminSupportRoutes.AdminSupportRouteUseCases;
     readonly statistics: spaStatisticsRoutes.SpaStatisticsRouteService;
 }

@@ -24,7 +24,15 @@ export * from './queuebox/postgres/p-sql-results-queue-box.ts';
 export * from './queuebox/postgres/resource-inbox-results-repository.ts';
 export * from './rallar-ai/mod.ts';
 export * from './rallar-server/rallar-server-application.ts';
-export * from './rallar-system/admin-operations/admin-operations-service.ts';
+export type {
+    AdminOperationMutationRequest,
+    AdminOperationReadRequest,
+    AdminOperationWriteRequest
+} from './rallar-system/admin-operations/admin-operation-request.ts';
+export type {
+    AdminOperationUseCase,
+    AdminOperationUseCases
+} from './rallar-system/admin-operations/admin-operation-use-cases.ts';
 export * from './rallar-system/admin-support/admin-support-contracts.ts';
 export * from './rallar-system/admin-support/create-admin-support-use-cases.ts';
 export * from './rallar-system/admin-support/statistics/create-spa-statistics-use-cases.ts';

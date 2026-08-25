@@ -19,10 +19,7 @@ import type {
 } from '@shared/api/admin-operations-types.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
-import type {
-    AdminOperationsReadInput,
-    AdminOperationsStatsReader
-} from '../../rallar-system/admin-operations/admin-operations-service.ts';
+import type { AdminOperationReadRequest } from '../../rallar-system/admin-operations/admin-operation-request.ts';
 import { groupStateEventWorkspaceKey } from '../../rallar-system/state-events/postgres/group-state-event-workspace-key.ts';
 import type { PSqlSql } from '../p-sql-sql.ts';
 import { PSqlClientStateAdminStatsReader } from './p-sql-client-state-admin-stats-reader.ts';
@@ -72,7 +69,7 @@ type CrdtStorageRow = Readonly<{
     snapshots: number | string | bigint | null;
     stored_update_bytes: number | string | bigint | null;
 }>;
-export class PSqlAdminOperationsStatsReader implements AdminOperationsStatsReader {
+export class PSqlAdminOperationsStatsReader {
     private readonly clientStateStatsReader: PSqlClientStateAdminStatsReader;
 
     private readonly sql: PSqlSql;
@@ -86,7 +83,7 @@ export class PSqlAdminOperationsStatsReader implements AdminOperationsStatsReade
         this.options = options;
         this.clientStateStatsReader = new PSqlClientStateAdminStatsReader(sql, options);
     }
-    async readQueues(_input: AdminOperationsReadInput): Promise<AdminOperationsQueuesResponse> {
+    async readQueues(_input: AdminOperationReadRequest): Promise<AdminOperationsQueuesResponse> {
         const [queueTotal, queueExpired, queueGroups, resultTotal, resultExpired, resultGroups] = await Promise.all([
             this.countRows('resource_inbox'),
             this.countExpired('resource_inbox', 'expire_ts'),
@@ -111,7 +108,7 @@ export class PSqlAdminOperationsStatsReader implements AdminOperationsStatsReade
             }
         };
     }
-    async readState(input: AdminOperationsReadInput): Promise<AdminOperationsStateResponse> {
+    async readState(input: AdminOperationReadRequest): Promise<AdminOperationsStateResponse> {
         if (!input.scope) {
             return await this.readGlobalState();
         }
@@ -204,7 +201,7 @@ export class PSqlAdminOperationsStatsReader implements AdminOperationsStatsReade
             }
         };
     }
-    async readCrdt(input: AdminOperationsReadInput): Promise<AdminOperationsCrdtResponse> {
+    async readCrdt(input: AdminOperationReadRequest): Promise<AdminOperationsCrdtResponse> {
         const scope = input.scope;
         const [total, byLifecycle, byScopeType, storage] = await Promise.all([
             this.countCrdtDocuments(scope),
@@ -222,7 +219,7 @@ export class PSqlAdminOperationsStatsReader implements AdminOperationsStatsReade
             storage
         };
     }
-    async readSystem(_input: AdminOperationsReadInput): Promise<AdminOperationsSystemResponse> {
+    async readSystem(_input: AdminOperationReadRequest): Promise<AdminOperationsSystemResponse> {
         const [
             runtimeRows,
             runtimeExpiredRows,

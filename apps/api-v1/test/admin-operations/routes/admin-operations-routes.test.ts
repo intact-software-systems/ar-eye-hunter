@@ -2,14 +2,20 @@ import assert from 'node:assert/strict';
 
 import { Hono } from 'jsr:@hono/hono@4.11.9';
 
+import type { AdminOperationReadRequest, AdminOperationWriteRequest } from '@shared-server/rallar-system/admin-operations/admin-operation-request.ts';
+import type { AdminOperationUseCases } from '@shared-server/rallar-system/admin-operations/admin-operation-use-cases.ts';
 import { toUnavailableAppInboxFailure, type AppInboxFailure } from '@shared-server/rallar-system/app-inbox/app-inbox-failure.ts';
 import type { IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import type { RallarCrdtDocumentMetadata, RallarCrdtDocumentRef } from '@shared/crdt/mod.ts';
 import { Either } from '@shared/resilience/Either.ts';
 
-import { createApiAdminMutationGateway, type CreateApiAdminMutationGatewayInput } from '../../../src/admin-operations/create-api-admin-mutation-gateway.ts';
+import { CompactApiAdminCrdt } from '../../../src/admin-operations/compact-api-admin-crdt.ts';
+import { EraseApiAdminCrdt } from '../../../src/admin-operations/erase-api-admin-crdt.ts';
+import { PruneApiAdminExpiredData } from '../../../src/admin-operations/prune-api-admin-expired-data.ts';
+import { RecomputeApiAdminTopology } from '../../../src/admin-operations/recompute-api-admin-topology.ts';
 import * as adminOperationsRoutes from '../../../src/admin-operations/register-admin-operations-routes.ts';
+import { UpdateApiAdminCrdtLifecycle } from '../../../src/admin-operations/update-api-admin-crdt-lifecycle.ts';
 import type { CrdtAdminMutationInput, CrdtAdminPublicResult } from '../../../src/crdt/create-crdt-admin-mutations.ts';
 
 const NOW_EPOCH_MS = 1_700_000_000_000;
@@ -106,17 +112,19 @@ Deno.test(
         const calls: unknown[] = [];
         const app = createApp({
             operations: {
-                readState: (input: adminOperationsRoutes.AdminOperationReadInput) => {
-                    calls.push(input);
-                    return Promise.resolve({
-                        generatedAtEpochMs: NOW_EPOCH_MS,
-                        serverId: 'test-server',
-                        scope: input.scope,
-                        warnings: [],
-                        clients: { totalPrincipals: 0, onlinePrincipals: 0, activeSessions: 0 },
-                        groups: { activeGroups: 0, totalActiveMembers: 0, onlineMembers: 0 },
-                        events: { recentClientEvents: 0, recentGroupEvents: 0 }
-                    });
+                state: {
+                    execute: (input: AdminOperationReadRequest) => {
+                        calls.push(input);
+                        return Promise.resolve({
+                            generatedAtEpochMs: NOW_EPOCH_MS,
+                            serverId: 'test-server',
+                            scope: input.scope,
+                            warnings: [],
+                            clients: { totalPrincipals: 0, onlinePrincipals: 0, activeSessions: 0 },
+                            groups: { activeGroups: 0, totalActiveMembers: 0, onlineMembers: 0 },
+                            events: { recentClientEvents: 0, recentGroupEvents: 0 }
+                        });
+                    }
                 }
             }
         });
@@ -152,18 +160,20 @@ Deno.test('admin operations metrics reset forwards request body and admin sessio
     const calls: unknown[] = [];
     const app = createApp({
         operations: {
-            resetMetrics: (input: adminOperationsRoutes.AdminOperationWriteInput<unknown>) => {
-                calls.push(input);
-                return Promise.resolve({
-                    generatedAtEpochMs: NOW_EPOCH_MS,
-                    serverId: 'test-server',
-                    warnings: [],
-                    operation: 'metrics.reset',
-                    status: 'completed',
-                    changed: true,
-                    before: { rtcTopology: { recomputeCount: 2 } },
-                    after: { rtcTopology: { recomputeCount: 0 } }
-                });
+            metricsReset: {
+                execute: (input: AdminOperationWriteRequest<{ readonly requestId?: string; }>) => {
+                    calls.push(input);
+                    return Promise.resolve({
+                        generatedAtEpochMs: NOW_EPOCH_MS,
+                        serverId: 'test-server',
+                        warnings: [],
+                        operation: 'metrics.reset',
+                        status: 'completed' as const,
+                        changed: true,
+                        before: { rtcTopology: { recomputeCount: 2 } },
+                        after: { rtcTopology: { recomputeCount: 0 } }
+                    });
+                }
             }
         }
     });
@@ -197,10 +207,12 @@ Deno.test('admin operations metrics reset forwards request body and admin sessio
 });
 
 Deno.test('admin prune pending completion preserves its typed 503 response', async () => {
-    const recording = createRecordingGateway({
+    const recording = createRecordingOperations({
         pruneExpired: () => Promise.resolve(Either.ofLeft(toUnavailableAppInboxFailure()))
     });
-    const app = createApp({ operations: { pruneExpired: recording.gateway.pruneExpired } });
+    const app = createApp({
+        operations: { prune: recording.prune }
+    });
 
     const response = await app.request(
         '/api/admin/operations/maintenance/prune-expired/requests/pending-prune-request-0001',
@@ -249,7 +261,7 @@ Deno.test(
         >();
         let capturedAtEpochMs = NOW_EPOCH_MS;
         let materializations = 0;
-        const recording = createRecordingGateway({
+        const recording = createRecordingOperations({
             topology: async (reservation) => {
                 const key = `${reservation.operation}:${reservation.callerId}:${reservation.requestId}`;
                 const existing = completed.get(key);
@@ -283,7 +295,7 @@ Deno.test(
             publish: true
         };
 
-        const first = await recording.gateway.recomputeTopology({
+        const first = await recording.topologyRecompute.execute({
             adminSession: ADMIN_SESSION,
             requestId: 'admin-topology-request-0001',
             request
@@ -294,7 +306,7 @@ Deno.test(
             issuedAtEpochMs: ADMIN_SESSION.issuedAtEpochMs + 1
         };
         await assert.doesNotReject(() =>
-            recording.gateway.recomputeTopology({
+            recording.topologyRecompute.execute({
                 adminSession: renewed,
                 requestId: 'admin-topology-request-0001',
                 request
@@ -306,7 +318,7 @@ Deno.test(
             username: 'other-admin',
             sessionId: 'other-admin-session'
         };
-        const isolated = await recording.gateway.recomputeTopology({
+        const isolated = await recording.topologyRecompute.execute({
             adminSession: other,
             requestId: 'admin-topology-request-0001',
             request
@@ -320,12 +332,12 @@ Deno.test(
 );
 
 Deno.test('admin CRDT routes preserve compact lifecycle and erase operations', async () => {
-    const recording = createRecordingGateway();
+    const recording = createRecordingOperations();
     const app = createApp({
         operations: {
-            compactCrdt: recording.gateway.compactCrdt,
-            updateCrdtLifecycle: recording.gateway.updateCrdtLifecycle,
-            eraseCrdt: recording.gateway.eraseCrdt
+            crdtCompact: recording.crdtCompact,
+            crdtLifecycle: recording.crdtLifecycle,
+            crdtErase: recording.crdtErase
         }
     });
 
@@ -357,16 +369,20 @@ Deno.test('admin CRDT routes preserve compact lifecycle and erase operations', a
     }
 });
 
-interface CreateRecordingGatewayInput {
-    readonly pruneExpired?: CreateApiAdminMutationGatewayInput['appAdmin']['pruneExpired'];
-    readonly topology?: CreateApiAdminMutationGatewayInput['topologyInbox'][
+interface CreateRecordingOperationsInput {
+    readonly pruneExpired?: PruneApiAdminExpiredData.Options['appAdminInbox']['pruneExpired'];
+    readonly topology?: RecomputeApiAdminTopology.Options['topologyInbox'][
         'processAuthenticatedHttpEntryUntilCompletionResult'
     ];
     readonly now?: () => number;
 }
 
-interface RecordingGateway {
-    readonly gateway: ReturnType<typeof createApiAdminMutationGateway>;
+interface RecordingOperations {
+    readonly topologyRecompute: RecomputeApiAdminTopology;
+    readonly prune: PruneApiAdminExpiredData;
+    readonly crdtCompact: CompactApiAdminCrdt;
+    readonly crdtLifecycle: UpdateApiAdminCrdtLifecycle;
+    readonly crdtErase: EraseApiAdminCrdt;
     readonly crdtCalls: CrdtAdminMutationInput[];
 }
 
@@ -374,30 +390,37 @@ interface CreateAppOptions {
     readonly adminClientIds?: adminOperationsRoutes.AdminOperationsRouteDependencies['adminClientIds'];
     readonly requireApiAuthSession?: adminOperationsRoutes.AdminOperationsRouteDependencies['requireApiAuthSession'];
     readonly requireApiAdminSession?: adminOperationsRoutes.AdminOperationsRouteDependencies['requireApiAdminSession'];
-    readonly operations?: Partial<adminOperationsRoutes.AdminOperationsRouteService>;
+    readonly operations?: Partial<AdminOperationUseCases>;
 }
 
-function createRecordingGateway(
-    input: CreateRecordingGatewayInput = {}
-): RecordingGateway {
+function createRecordingOperations(
+    input: CreateRecordingOperationsInput = {}
+): RecordingOperations {
     const crdtCalls: CrdtAdminMutationInput[] = [];
-    const gateway = createApiAdminMutationGateway({
-        appAdmin: {
-            pruneExpired: input.pruneExpired ?? (() => Promise.reject(new Error('Unexpected prune')))
-        },
-        crdtAdminMutations: {
-            writeCrdtAdminMutation: (mutation) => {
-                crdtCalls.push(mutation);
-                return Promise.resolve(toRecordedCrdtResult(mutation));
+    const crdtAdminMutations = {
+        writeCrdtAdminMutation: (mutation: CrdtAdminMutationInput) => {
+            crdtCalls.push(mutation);
+            return Promise.resolve(toRecordedCrdtResult(mutation));
+        }
+    };
+    return {
+        topologyRecompute: new RecomputeApiAdminTopology({
+            topologyInbox: {
+                processAuthenticatedHttpEntryUntilCompletionResult: input.topology ??
+                    (() => Promise.reject(new Error('Unexpected topology recompute')))
+            },
+            nowEpochMs: input.now ?? (() => NOW_EPOCH_MS)
+        }),
+        prune: new PruneApiAdminExpiredData({
+            appAdminInbox: {
+                pruneExpired: input.pruneExpired ?? (() => Promise.reject(new Error('Unexpected prune')))
             }
-        },
-        topologyInbox: {
-            processAuthenticatedHttpEntryUntilCompletionResult: input.topology ??
-                (() => Promise.reject(new Error('Unexpected topology recompute')))
-        },
-        now: input.now ?? (() => NOW_EPOCH_MS)
-    });
-    return { gateway, crdtCalls };
+        }),
+        crdtCompact: new CompactApiAdminCrdt(crdtAdminMutations),
+        crdtLifecycle: new UpdateApiAdminCrdtLifecycle(crdtAdminMutations),
+        crdtErase: new EraseApiAdminCrdt(crdtAdminMutations),
+        crdtCalls
+    };
 }
 
 function toRecordedCrdtResult(mutation: CrdtAdminMutationInput): CrdtAdminPublicResult {
@@ -457,30 +480,32 @@ function createApp(options: CreateAppOptions = {}): Hono {
 }
 
 function createOperations(
-    overrides: Partial<adminOperationsRoutes.AdminOperationsRouteService> = {}
-): adminOperationsRoutes.AdminOperationsRouteService {
+    overrides: Partial<AdminOperationUseCases> = {}
+): AdminOperationUseCases {
     const unusedOperation = () => Promise.reject(new Error('Admin operation is unused'));
     return {
-        readOverview: () =>
-            Promise.resolve({
-                generatedAtEpochMs: NOW_EPOCH_MS,
-                serverId: 'test-server',
-                warnings: [],
-                health: { status: 'ok' }
-            }),
-        readQueues: unusedOperation,
-        readRealtime: unusedOperation,
-        readState: unusedOperation,
-        readCrdt: unusedOperation,
-        readSystem: unusedOperation,
-        resetMetrics: unusedOperation,
-        recomputeTopology: unusedOperation,
-        pruneExpired: unusedOperation,
-        verifyCrdtIntegrity: unusedOperation,
-        exportCrdtDebug: unusedOperation,
-        compactCrdt: unusedOperation,
-        updateCrdtLifecycle: unusedOperation,
-        eraseCrdt: unusedOperation,
+        overview: {
+            execute: () =>
+                Promise.resolve({
+                    generatedAtEpochMs: NOW_EPOCH_MS,
+                    serverId: 'test-server',
+                    warnings: [],
+                    health: { status: 'ok' }
+                })
+        },
+        queues: { execute: unusedOperation },
+        realtime: { execute: unusedOperation },
+        state: { execute: unusedOperation },
+        crdt: { execute: unusedOperation },
+        system: { execute: unusedOperation },
+        metricsReset: { execute: unusedOperation },
+        topologyRecompute: { execute: unusedOperation },
+        prune: { execute: unusedOperation },
+        crdtIntegrity: { execute: unusedOperation },
+        crdtDebugExport: { execute: unusedOperation },
+        crdtCompact: { execute: unusedOperation },
+        crdtLifecycle: { execute: unusedOperation },
+        crdtErase: { execute: unusedOperation },
         ...overrides
     };
 }
