@@ -330,20 +330,30 @@ Deno.test(
             await applyPGliteGroupMutation({
                 sql,
                 service,
-                descriptor: mutationDescriptor('createGroup', scope, ref.groupId, {
+                descriptor: mutationDescriptor({
+                    operation: 'createGroup',
+                    scope,
                     groupId: ref.groupId,
-                    displayName: 'Before collision',
-                    kind: 'room',
-                    joinMode: 'open',
-                    createdByPrincipalId: 'alice',
-                    requestId: 'seed-collision-group'
+                    request: {
+                        groupId: ref.groupId,
+                        displayName: 'Before collision',
+                        kind: 'room',
+                        joinMode: 'open',
+                        createdByPrincipalId: 'alice',
+                        requestId: 'seed-collision-group'
+                    }
                 }),
                 authority
             });
-            const updateDescriptor = mutationDescriptor('updateGroup', scope, ref.groupId, {
-                displayName: 'Must roll back',
-                actorPrincipalId: 'alice',
-                requestId: 'collision-request'
+            const updateDescriptor = mutationDescriptor({
+                operation: 'updateGroup',
+                scope,
+                groupId: ref.groupId,
+                request: {
+                    displayName: 'Must roll back',
+                    actorPrincipalId: 'alice',
+                    requestId: 'collision-request'
+                }
             });
             const updatePreparation = await service.prepareMutation(updateDescriptor, authority);
             await new PSqlGroupStateEventRepository(sql).appendGroupEvent(
@@ -421,22 +431,32 @@ Deno.test(
             await applyPGliteGroupMutation({
                 sql,
                 service,
-                descriptor: mutationDescriptor('createGroup', scope, ref.groupId, {
+                descriptor: mutationDescriptor({
+                    operation: 'createGroup',
+                    scope,
                     groupId: ref.groupId,
-                    displayName: 'Before summary collision',
-                    kind: 'room',
-                    joinMode: 'open',
-                    createdByPrincipalId: 'alice',
-                    requestId: 'seed-summary-collision-group'
+                    request: {
+                        groupId: ref.groupId,
+                        displayName: 'Before summary collision',
+                        kind: 'room',
+                        joinMode: 'open',
+                        createdByPrincipalId: 'alice',
+                        requestId: 'seed-summary-collision-group'
+                    }
                 }),
                 authority
             });
 
             const preparation = await service.prepareMutation(
-                mutationDescriptor('updateGroup', scope, ref.groupId, {
-                    displayName: 'Must roll back at summary outbox',
-                    actorPrincipalId: 'alice',
-                    requestId: 'summary-collision-request'
+                mutationDescriptor({
+                    operation: 'updateGroup',
+                    scope,
+                    groupId: ref.groupId,
+                    request: {
+                        displayName: 'Must roll back at summary outbox',
+                        actorPrincipalId: 'alice',
+                        requestId: 'summary-collision-request'
+                    }
                 }),
                 authority
             );

@@ -9,11 +9,13 @@ import { createHmacAuthCredentialIssuer } from '@shared-server/rallar-system/aut
 import { hashAuthSecret } from '@shared-server/rallar-system/auth/credentials/hash-auth-secret.ts';
 import { AppAuthInboxService } from '@shared-server/rallar-system/auth/inbox/app-auth-inbox-service.ts';
 import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
+import type { JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 import assert from 'node:assert/strict';
 import { toResilienceDto } from '../api-v1-test-queue-resilience.ts';
-import { readPGliteDatabaseEpochMs, waitForPGliteQueueRow, withPGliteSql } from './pglite-auth-test-harness.ts';
+import { waitForPGliteQueueRow } from './pglite-app-inbox-test-runtime.ts';
+import { readPGliteDatabaseEpochMs, withPGliteSql } from './pglite-auth-test-harness.ts';
 
 import { AuthUserRepository } from '@shared-server/rallar-system/auth/persistence/auth-user-repository.ts';
 
@@ -122,7 +124,12 @@ Deno.test('PGlite AppAuth atomically commits auth state, results, completion, an
                 ticket
             })
         ];
-        await waitForPGliteQueueRow(sql, 'APP_INBOX', 'NEW', 2);
+        await waitForPGliteQueueRows({
+            sql,
+            typeId: 'APP_INBOX',
+            status: 'NEW',
+            minimum: 2
+        });
         await inboxReader.dequeueInbox(
             InboxQueueReader.INBOX_DEQUEUE_TYPES,
             toResilienceDto()
@@ -160,7 +167,7 @@ Deno.test('PGlite AppAuth atomically commits auth state, results, completion, an
         });
         assert.deepEqual(logoutReplay?.right, { loggedOut: true });
 
-        const durableRows = await sql<{ resource: unknown; }[]>`
+        const durableRows = await sql<{ resource: JsonWireValue; }[]>`
       select store_key || ':' || store_value as resource
       from runtime_state_store
       where store_namespace like 'auth-%'
@@ -175,6 +182,30 @@ Deno.test('PGlite AppAuth atomically commits auth state, results, completion, an
         assert.equal(durableResources.includes(secret), false);
     });
 });
+
+interface WaitForPGliteQueueRowsInput {
+    readonly sql: Parameters<Parameters<typeof withPGliteSql>[0]>[0];
+    readonly typeId: string;
+    readonly status: string;
+    readonly minimum: number;
+}
+
+async function waitForPGliteQueueRows(input: WaitForPGliteQueueRowsInput): Promise<void> {
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+        const [row] = await input.sql<{ count: string; }[]>`
+      select count(*) as count
+      from resource_inbox
+      where ri_type_id = ${input.typeId} and ri_status = ${input.status}
+    `;
+        if (Number(row?.count ?? 0) >= input.minimum) {
+            return;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+    throw new Error(
+        `Timed out waiting for ${input.minimum} ${input.typeId} ${input.status} queue rows`
+    );
+}
 
 Deno.test('PGlite AppAuth rereads registered-user policy after enqueue', async () => {
     await withPGliteSql(async (sql) => {
@@ -257,7 +288,7 @@ Deno.test('PGlite AppAuth rereads registered-user policy after enqueue', async (
             ),
             undefined
         );
-        const rows = await sql<{ ris_status: string; ris_resource: unknown; }[]>`
+        const rows = await sql<{ ris_status: string; ris_resource: JsonWireValue; }[]>`
       select ris_status, ris_resource
       from resource_inbox_results
       where ris_resource_id = 'pglite-disabled-after-enqueue'

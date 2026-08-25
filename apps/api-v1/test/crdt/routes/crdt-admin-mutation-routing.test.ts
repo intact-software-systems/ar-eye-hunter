@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 
 import type { IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
 import { InMemoryRallarCrdtLogRepository } from '@shared-server/rallar-system/crdt/persistence/in-memory-crdt-log-repository.ts';
+import { decodeJsonWireValue, type JsonWireObject, type JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import type { RallarCrdtAdminReadRepository, RallarCrdtDocumentRef } from '@shared/crdt/mod.ts';
 
 import type { CrdtAdminMutationInput, CrdtAdminPublicResult } from '../../../src/crdt/create-crdt-admin-mutations.ts';
@@ -341,19 +342,19 @@ function toCrdtAdminRoutingResult(input: CrdtAdminMutationInput): CrdtAdminPubli
     }
 }
 
-async function readJsonObject(response: Response): Promise<Record<string, unknown>> {
-    const value: unknown = await response.json();
-    return requireRecord(value, 'CRDT admin route response');
+async function readJsonObject(response: Response): Promise<JsonWireObject> {
+    const value = decodeJsonWireValue(await response.json(), 'CRDT admin route response');
+    return decodeJsonWireObject(value, 'CRDT admin route response');
 }
 
-function requireRecord(value: unknown, label: string): Record<string, unknown> {
-    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+function decodeJsonWireObject(value: JsonWireValue, label: string): JsonWireObject {
+    if (value === null || typeof value !== 'object' || Array.isArray(value)) {
         throw new TypeError(`${label} must be an object`);
     }
-    return Object.fromEntries(Object.entries(value));
+    return value as JsonWireObject;
 }
 
-async function post(app: Hono, path: string, body: unknown): Promise<Response> {
+async function post(app: Hono, path: string, body: JsonWireValue): Promise<Response> {
     return await app.request(path, {
         method: 'POST',
         headers: {

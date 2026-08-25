@@ -2,6 +2,7 @@ import { Temporal } from '@js-temporal/polyfill';
 import { hashAuthSecret } from '@shared-server/rallar-system/auth/credentials/hash-auth-secret.ts';
 import { type IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
 import { type PersistedAuthSession } from '@shared-server/rallar-system/auth/persistence/persisted-auth-session.ts';
+import type { JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import assert from 'node:assert/strict';
 import type { PGliteSql } from '../../src/db/pglite-sql-adapter.ts';
@@ -53,26 +54,6 @@ export async function toPersistedAuthSessionFixture(
     };
 }
 
-export async function waitForPGliteQueueRow(
-    sql: PGliteSql,
-    typeId: string,
-    status: string,
-    minimum = 1
-): Promise<void> {
-    for (let attempt = 0; attempt < 100; attempt += 1) {
-        const [row] = await sql<{ count: string; }[]>`
-      select count(*) as count
-      from resource_inbox
-      where ri_type_id = ${typeId} and ri_status = ${status}
-    `;
-        if (Number(row?.count ?? 0) >= minimum) {
-            return;
-        }
-        await new Promise((resolve) => setTimeout(resolve, 0));
-    }
-    throw new Error(`Timed out waiting for ${minimum} ${typeId} ${status} queue rows`);
-}
-
 export function createResourceEntry(
     resourceId: string,
     options: Readonly<{
@@ -80,7 +61,7 @@ export function createResourceEntry(
         contextId?: string;
         typeId?: string;
         status?: EntityStatus;
-        payload?: unknown;
+        payload?: JsonWireValue;
         expiryTs?: Temporal.Instant;
     }> = {}
 ): ResourceEntry {

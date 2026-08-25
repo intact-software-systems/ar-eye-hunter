@@ -74,7 +74,7 @@ export async function createAuthenticatedTopologyEnqueueFromValidatedSession<V>(
     return { ...input.enqueue, authority };
 }
 
-export function readTopologyAppInboxAuthority(value: unknown): TopologyAppInboxAuthority {
+export function decodeTopologyAppInboxAuthority(value: unknown): TopologyAppInboxAuthority {
     try {
         if (!isTopologyRecord(value)) {
             throw new TypeError('authority is not a record');
@@ -83,7 +83,7 @@ export function readTopologyAppInboxAuthority(value: unknown): TopologyAppInboxA
         if (value.kind !== 'topology-config' && value.kind !== 'topology-reconfigure') {
             throw new TypeError('authority kind is invalid');
         }
-        readTopologyMutationAuthorityProof(value.proof);
+        validateTopologyMutationAuthorityProof(value.proof);
         readDurableTopologyAppInboxCommand(value.command);
         return value as TopologyAppInboxAuthority;
     }
@@ -126,7 +126,7 @@ export async function verifyTopologyAppInboxAuthority(
     }
 }
 
-export function readTopologyMutationAuthorityProof(value: unknown): void {
+export function validateTopologyMutationAuthorityProof(value: unknown): void {
     if (!isTopologyRecord(value)) {
         throw new TypeError('authority proof is invalid');
     }

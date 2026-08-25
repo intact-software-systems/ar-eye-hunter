@@ -22,7 +22,7 @@ import type { GroupTopologyReconfigureMutation } from '../reconfigure/group-topo
 import {
     createAuthenticatedTopologyEnqueue,
     createAuthenticatedTopologyEnqueueFromValidatedSession,
-    readTopologyAppInboxAuthority,
+    decodeTopologyAppInboxAuthority,
     validateCurrentTopologySession,
     verifyTopologyAppInboxAuthority
 } from './topology-app-inbox-authority.ts';
@@ -167,7 +167,7 @@ export class TopologyAppInboxHandler {
         context: AppInboxMessageContext<TopologyAppInboxResult>,
         owners: TopologyAppInboxMutationOwners
     ): Promise<TopologyAppInboxResult> {
-        const authority = readTopologyAppInboxAuthority(context.enqueue.authority);
+        const authority = decodeTopologyAppInboxAuthority(context.enqueue.authority);
         await verifyTopologyAppInboxAuthority({
             authority,
             groupStateService: this.dependencies.groupStateService,

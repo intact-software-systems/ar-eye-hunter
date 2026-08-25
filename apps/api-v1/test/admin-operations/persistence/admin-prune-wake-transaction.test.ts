@@ -1,3 +1,4 @@
+import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import {
     createPSqlResourceInboxRepository,
     type PSqlResourceInboxRepository
@@ -10,7 +11,8 @@ import assert from 'node:assert/strict';
 import { createApiAdminInboxService } from '../../../src/admin-operations/create-api-admin-inbox-service.ts';
 import type { PGliteSql } from '../../../src/db/pglite-sql-adapter.ts';
 import { toResilienceDto } from '../../api-v1-test-queue-resilience.ts';
-import { readPGliteDatabaseEpochMs, waitForPGliteQueueRow, withUtcPGliteSql } from '../../db/pglite-auth-test-harness.ts';
+import { waitForPGliteQueueRow } from '../../db/pglite-app-inbox-test-runtime.ts';
+import { readPGliteDatabaseEpochMs, withUtcPGliteSql } from '../../db/pglite-auth-test-harness.ts';
 import { assertUtcPGliteSession, RealEngineAdminPruneFixture } from './admin-prune-real-engine-fixture.ts';
 
 Deno.test('committed initial admin page work wakes the running queue engine into APP_OUTBOX processing', async () => {
@@ -33,19 +35,23 @@ Deno.test('initial admin page work does not wake until its successful transactio
         const commitReleased = new Promise<void>((resolve) => {
             releaseCommit = resolve;
         });
-        const deferredDatabase = Object.assign(
-            (...args: unknown[]) => (sql as unknown as (...values: unknown[]) => unknown)(...args),
-            sql,
-            {
-                begin: async <T>(write: (transaction: typeof sql) => Promise<T>): Promise<T> =>
+        const deferredDatabase = new Proxy(sql, {
+            get: (target, property, receiver) => {
+                if (property !== 'begin') {
+                    return Reflect.get(target, property, receiver);
+                }
+                const begin: PSqlSql['begin'] = async <T>(
+                    write: (transaction: PSqlSql) => Promise<T>
+                ): Promise<T> =>
                     await sql.begin(async (transaction) => {
-                        const result = await write(transaction as typeof sql);
+                        const result = await write(transaction);
                         observeWrite?.();
                         await commitReleased;
                         return result;
-                    })
+                    });
+                return begin;
             }
-        );
+        });
         const appAdmin = createApiAdminInboxService({
             inboxQueueReader: inbox,
             outboxQueueReader: outbox,
@@ -54,7 +60,7 @@ Deno.test('initial admin page work does not wake until its successful transactio
             },
             resourceInboxRepository: repository,
             resourceInboxResultsRepository: new ResourceInboxResultsRepository(sql),
-            database: deferredDatabase as never,
+            database: deferredDatabase,
             serviceId: 'server-1',
             options: {
                 waitMaxElapsedMsecs: 1_000,
@@ -160,17 +166,21 @@ Deno.test('rolled-back initial admin page work does not wake the queue', async (
         const inbox = new InboxQueueReader(queue);
         const now = await readPGliteDatabaseEpochMs(sql);
         let wakeCount = 0;
-        const failingDatabase = Object.assign(
-            (...args: unknown[]) => (sql as unknown as (...values: unknown[]) => unknown)(...args),
-            sql,
-            {
-                begin: async <T>(write: (transaction: typeof sql) => Promise<T>): Promise<T> =>
+        const failingDatabase = new Proxy(sql, {
+            get: (target, property, receiver) => {
+                if (property !== 'begin') {
+                    return Reflect.get(target, property, receiver);
+                }
+                const begin: PSqlSql['begin'] = async <T>(
+                    write: (transaction: PSqlSql) => Promise<T>
+                ): Promise<T> =>
                     await sql.begin(async (transaction) => {
-                        await write(transaction as typeof sql);
+                        await write(transaction);
                         throw new Error('forced rollback after page insertion');
-                    })
+                    });
+                return begin;
             }
-        );
+        });
         const appAdmin = createApiAdminInboxService({
             inboxQueueReader: inbox,
             outboxQueueReader: new OutboxQueueReader(queue),
@@ -179,7 +189,7 @@ Deno.test('rolled-back initial admin page work does not wake the queue', async (
             },
             resourceInboxRepository: repository,
             resourceInboxResultsRepository: new ResourceInboxResultsRepository(sql),
-            database: failingDatabase as never,
+            database: failingDatabase,
             serviceId: 'server-1',
             options: {
                 waitMaxElapsedMsecs: 1,
@@ -231,28 +241,17 @@ Deno.test('rejected initial admin outbox write does not wake or persist page wor
         const inbox = new InboxQueueReader(queue);
         const now = await readPGliteDatabaseEpochMs(sql);
         let wakeCount = 0;
-        const rejectingDatabase = Object.assign(
-            (...args: unknown[]) => (sql as unknown as (...values: unknown[]) => unknown)(...args),
-            sql,
-            {
-                begin: async <T>(write: (transaction: typeof sql) => Promise<T>): Promise<T> =>
-                    await sql.begin(async (transaction) => {
-                        const rejectingTransaction = Object.assign(
-                            (...args: unknown[]) => {
-                                const [strings] = args;
-                                if (
-                                    Array.isArray(strings) && strings.join('').includes('insert into resource_inbox')
-                                ) {
-                                    throw new Error('rejected initial outbox write');
-                                }
-                                return (transaction as unknown as (...values: unknown[]) => unknown)(...args);
-                            },
-                            transaction
-                        ) as typeof sql;
-                        return await write(rejectingTransaction);
-                    })
+        const rejectingDatabase = new Proxy(sql, {
+            get: (target, property, receiver) => {
+                if (property !== 'begin') {
+                    return Reflect.get(target, property, receiver);
+                }
+                const begin: PSqlSql['begin'] = async <T>(
+                    write: (transaction: PSqlSql) => Promise<T>
+                ): Promise<T> => await sql.begin(async (transaction) => await write(rejectInitialOutboxInsert(transaction)));
+                return begin;
             }
-        );
+        });
         const appAdmin = createApiAdminInboxService({
             inboxQueueReader: inbox,
             outboxQueueReader: new OutboxQueueReader(queue),
@@ -261,7 +260,7 @@ Deno.test('rejected initial admin outbox write does not wake or persist page wor
             },
             resourceInboxRepository: repository,
             resourceInboxResultsRepository: new ResourceInboxResultsRepository(sql),
-            database: rejectingDatabase as never,
+            database: rejectingDatabase,
             serviceId: 'server-1',
             options: {
                 waitMaxElapsedMsecs: 1,
@@ -305,6 +304,21 @@ Deno.test('rejected initial admin outbox write does not wake or persist page wor
         assert.equal(Number(page?.count ?? 0), 0);
     });
 });
+
+function rejectInitialOutboxInsert(transaction: PSqlSql): PSqlSql {
+    return new Proxy(transaction, {
+        apply: (target, thisArgument, argumentsList) => {
+            const [strings] = argumentsList;
+            if (
+                Array.isArray(strings) &&
+                strings.join('').includes('insert into resource_inbox')
+            ) {
+                throw new Error('rejected initial outbox write');
+            }
+            return Reflect.apply(target, thisArgument, argumentsList);
+        }
+    });
+}
 
 async function runRealEngineHandoffTest(sql: PGliteSql): Promise<void> {
     await assertUtcPGliteSession(sql);

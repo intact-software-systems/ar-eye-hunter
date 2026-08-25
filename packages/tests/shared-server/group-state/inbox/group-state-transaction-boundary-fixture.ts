@@ -68,7 +68,7 @@ export async function createGroupStateTransactionBoundaryHarness(
     const storage = createTransactionBoundaryStorage(failurePhase);
     const groupState = await createTransactionBoundaryGroupStateService(storage);
     const prepared = await groupState.service.prepareMutation(
-        mutationDescriptor('createGroup', SCOPE, GROUP_ID, createGroupRequest()),
+        mutationDescriptor({ operation: 'createGroup', scope: SCOPE, groupId: GROUP_ID, request: createGroupRequest() }),
         createOwnerAuthority()
     );
     const context = await createReservedContext(storage.queue, prepared);

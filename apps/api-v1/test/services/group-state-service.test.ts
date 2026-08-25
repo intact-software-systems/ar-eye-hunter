@@ -15,7 +15,7 @@ import type { StateScope } from '@shared/api/state-types.ts';
 import assert from 'node:assert/strict';
 import {
     createTestGroupStateRuntime,
-    type TestAuthenticatedGroupStateService,
+    type GroupStateTestService,
     type TestGroupStateMaintenanceService
 } from '../../../../packages/tests/shared-server/group-state/group-state-test-runtime.ts';
 
@@ -96,14 +96,22 @@ Deno.test('upsertMember preserves existing admin roles across leave and rejoin',
         actorPrincipalId: 'admin-1',
         actorSessionId: 'admin-session'
     });
-    assertMember(await readSnapshot(service), 'admin-1', 'admin', 'left');
+    assertMember(await readSnapshot(service), {
+        principalId: 'admin-1',
+        role: 'admin',
+        status: 'left'
+    });
 
     await service.upsertMember(TEST_SCOPE, 'group-1', 'admin-1', {
         status: 'active',
         actorPrincipalId: 'admin-1',
         actorSessionId: 'admin-session'
     });
-    assertMember(await readSnapshot(service), 'admin-1', 'admin', 'active');
+    assertMember(await readSnapshot(service), {
+        principalId: 'admin-1',
+        role: 'admin',
+        status: 'active'
+    });
 });
 
 Deno.test('semantic group mutations advance snapshotVersion', async () => {
@@ -536,7 +544,7 @@ Deno.test('joinGroup enforces admission policy and activates allowed members', a
             requestId: 'join-open-member'
         })
     );
-    assertMember(joined, 'member-1', 'member', 'active');
+    assertMember(joined, { principalId: 'member-1', role: 'member', status: 'active' });
 
     await service.upsertMember(TEST_SCOPE, 'open-group', 'member-1', {
         status: 'left',
@@ -550,7 +558,7 @@ Deno.test('joinGroup enforces admission policy and activates allowed members', a
             requestId: 'rejoin-open-member'
         })
     );
-    assertMember(rejoined, 'member-1', 'member', 'active');
+    assertMember(rejoined, { principalId: 'member-1', role: 'member', status: 'active' });
 });
 
 Deno.test('joinGroup rejects invite-only, code, removed, and banned join attempts when policy denies them', async () => {
@@ -722,8 +730,12 @@ Deno.test('invited members do not reserve maxMembers slots by default', async ()
         })
     );
 
-    assertMember(joined, 'invited-member', 'member', 'invited');
-    assertMember(joined, 'member-1', 'member', 'active');
+    assertMember(joined, {
+        principalId: 'invited-member',
+        role: 'member',
+        status: 'invited'
+    });
+    assertMember(joined, { principalId: 'member-1', role: 'member', status: 'active' });
     assert.equal(joined.memberCount, 2);
 });
 
@@ -842,7 +854,7 @@ Deno.test('createGroupInvite lets owners and admins invite members', async () =>
             requestId: 'invite-member-1'
         })
     );
-    assertMember(ownerInvite, 'member-1', 'member', 'invited');
+    assertMember(ownerInvite, { principalId: 'member-1', role: 'member', status: 'invited' });
 
     await service.upsertMember(TEST_SCOPE, 'group-1', 'admin-1', {
         status: 'active',
@@ -862,7 +874,7 @@ Deno.test('createGroupInvite lets owners and admins invite members', async () =>
     );
     const adminInvite = snapshotFromGroupStateWritten(adminInviteWritten);
 
-    assertMember(adminInvite, 'member-2', 'member', 'invited');
+    assertMember(adminInvite, { principalId: 'member-2', role: 'member', status: 'invited' });
     assert.equal(adminInviteWritten.result?.event?.eventType, 'member-invited');
     const invited = adminInvite.members.find((member) => member.principalId === 'member-2');
     assert.equal(invited?.invitedByPrincipalId, 'admin-1');
@@ -935,7 +947,7 @@ Deno.test('acceptGroupInvite enforces invite expiry and activates valid invites'
     });
     const accepted = snapshotFromGroupStateWritten(acceptedWritten);
 
-    assertMember(accepted, 'member-1', 'member', 'active');
+    assertMember(accepted, { principalId: 'member-1', role: 'member', status: 'active' });
     assert.equal(acceptedWritten.result?.event?.eventType, 'member-joined');
 });
 
@@ -1040,7 +1052,7 @@ Deno.test('rotateGroupJoinCode stores only a verifier and validates code joins',
             requestId: 'join-old-code'
         })
     );
-    assertMember(joined, 'member-1', 'member', 'active');
+    assertMember(joined, { principalId: 'member-1', role: 'member', status: 'active' });
 
     await service.rotateGroupJoinCode(TEST_SCOPE, 'code-group', {
         joinCode: 'new-code',
@@ -1067,7 +1079,11 @@ Deno.test('rotateGroupJoinCode stores only a verifier and validates code joins',
             requestId: 'join-new-code'
         })
     );
-    assertMember(joinedAfterRotation, 'member-2', 'member', 'active');
+    assertMember(joinedAfterRotation, {
+        principalId: 'member-2',
+        role: 'member',
+        status: 'active'
+    });
 });
 
 Deno.test('rotateGroupJoinCode replays the same request id without rematerializing defaults', async () => {
@@ -1162,7 +1178,7 @@ Deno.test('membership governance operations enforce hierarchy and emit member ev
     );
     const removed = snapshotFromGroupStateWritten(removedWritten);
     assert.equal(removedWritten.result?.event?.eventType, 'member-removed');
-    assertMember(removed, 'member-1', 'member', 'removed');
+    assertMember(removed, { principalId: 'member-1', role: 'member', status: 'removed' });
 
     const bannedWritten = await service.banGroupMember(
         TEST_SCOPE,
@@ -1176,7 +1192,7 @@ Deno.test('membership governance operations enforce hierarchy and emit member ev
     );
     const banned = snapshotFromGroupStateWritten(bannedWritten);
     assert.equal(bannedWritten.result?.event?.eventType, 'member-banned');
-    assertMember(banned, 'member-2', 'member', 'banned');
+    assertMember(banned, { principalId: 'member-2', role: 'member', status: 'banned' });
 
     await assertPolicyRejects(
         () =>
@@ -1209,7 +1225,7 @@ Deno.test('membership governance operations enforce hierarchy and emit member ev
     );
     const unbanned = snapshotFromGroupStateWritten(unbannedWritten);
     assert.equal(unbannedWritten.result?.event?.eventType, 'member-unbanned');
-    assertMember(unbanned, 'member-2', 'member', 'left');
+    assertMember(unbanned, { principalId: 'member-2', role: 'member', status: 'left' });
 
     const promotedWritten = await service.setGroupMemberRole(
         TEST_SCOPE,
@@ -1224,7 +1240,7 @@ Deno.test('membership governance operations enforce hierarchy and emit member ev
     );
     const promoted = snapshotFromGroupStateWritten(promotedWritten);
     assert.equal(promotedWritten.result?.event?.eventType, 'member-role-changed');
-    assertMember(promoted, 'member-3', 'admin', 'active');
+    assertMember(promoted, { principalId: 'member-3', role: 'admin', status: 'active' });
 
     const transferredWritten = await service.transferGroupOwnership(
         TEST_SCOPE,
@@ -1241,8 +1257,8 @@ Deno.test('membership governance operations enforce hierarchy and emit member ev
         transferredWritten.result?.event?.eventType,
         'ownership-transferred'
     );
-    assertMember(transferred, 'owner-1', 'admin', 'active');
-    assertMember(transferred, 'admin-1', 'owner', 'active');
+    assertMember(transferred, { principalId: 'owner-1', role: 'admin', status: 'active' });
+    assertMember(transferred, { principalId: 'admin-1', role: 'owner', status: 'active' });
 });
 
 Deno.test('last-owner protection applies to leave remove ban and demote operations', async () => {
@@ -1567,7 +1583,7 @@ Deno.test('upsertMember and connectPresenceSession ignore unchanged semantic sta
 });
 
 function createTestGroupStateService():
-    & TestAuthenticatedGroupStateService
+    & GroupStateTestService
     & Pick<TestGroupStateMaintenanceService, 'expireExpiredPresenceSessions'> {
     const eventStore = new InMemoryGroupStateEventStore();
     const runtime = createTestGroupStateRuntime({
@@ -1625,19 +1641,20 @@ async function readSnapshot(
     return snapshot;
 }
 
-function assertMember(
-    snapshot: GroupSnapshot,
-    principalId: string,
-    role: string,
-    status: string
-): void {
-    const member = snapshot.members.find((entry) => entry.principalId === principalId);
+interface ExpectedMemberInput {
+    readonly principalId: string;
+    readonly role: GroupSnapshot['members'][number]['role'];
+    readonly status: GroupSnapshot['members'][number]['status'];
+}
+
+function assertMember(snapshot: GroupSnapshot, expected: ExpectedMemberInput): void {
+    const member = snapshot.members.find((entry) => entry.principalId === expected.principalId);
     if (!member) {
-        throw new Error(`Expected member ${principalId} to exist`);
+        throw new Error(`Expected member ${expected.principalId} to exist`);
     }
 
-    assert.equal(member.role, role);
-    assert.equal(member.status, status);
+    assert.equal(member.role, expected.role);
+    assert.equal(member.status, expected.status);
 }
 
 function assertSnapshotVersion(snapshot: GroupSnapshot, expected: number): void {
@@ -1653,8 +1670,8 @@ function assertEventSnapshotVersion(written: GroupStateWritten, expected: number
     assert.equal(event.snapshotVersion, expected);
 }
 
-async function assertPolicyRejects(
-    action: () => Promise<unknown>,
+async function assertPolicyRejects<TResult>(
+    action: () => Promise<TResult>,
     code: GroupPolicyReasonCode
 ): Promise<void> {
     await assert.rejects(

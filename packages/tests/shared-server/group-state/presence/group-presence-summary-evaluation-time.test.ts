@@ -14,13 +14,7 @@ import {
 import type { Group, GroupMember, GroupPresenceAdmission, GroupPresenceSession, GroupPresenceSummary, GroupRef } from '@shared/api/group-types.ts';
 import { describe, expect, it } from 'vitest';
 import { createTestGroup } from '../../../create-test-group.ts';
-import {
-    createMutationCommand,
-    createMutationFacts,
-    createMutationRead,
-    groupPresenceSummaryStorageKey,
-    rekey
-} from '../group-state-concurrency-test-fixtures.ts';
+import { createMutationCommand, createMutationFacts, createMutationRead, rekey } from '../group-state-concurrency-test-fixtures.ts';
 import { groupRef, presenceFor } from '../mutation/group-mutation-test-runtime.ts';
 
 const REF: GroupRef = {
@@ -89,7 +83,7 @@ describe('group presence summary evaluation time', () => {
         const current = {
             entry: {
                 ...group.entry,
-                key: groupPresenceSummaryStorageKey(),
+                key: groupStatePresenceSummaryStorageKey(groupRef('pure-room')),
                 value: JSON.stringify(base),
                 revision: 0
             },
@@ -185,7 +179,10 @@ describe('group presence summary evaluation time', () => {
                 ref: groupRef('pure-room'),
                 read: {
                     ...read,
-                    current: rekey(current, `${groupPresenceSummaryStorageKey()}:wrong`)
+                    current: rekey(
+                        current,
+                        `${groupStatePresenceSummaryStorageKey(groupRef('pure-room'))}:wrong`
+                    )
                 },
                 computed: { outcome: 'no-op', evaluatedAtEpochMs: 2_000, summary: base }
             })

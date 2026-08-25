@@ -66,7 +66,12 @@ describe('group mutation result adaptation', () => {
 async function computeCreateReplay(runtime: TestGroupStateRuntime, request: CreateGroupRequest) {
     const authority = createTestAuthSession('alice');
     const prepared = await runtime.durable.prepareMutation(
-        mutationDescriptor('createGroup', SCOPE, request.groupId, request),
+        mutationDescriptor({
+            operation: 'createGroup',
+            scope: SCOPE,
+            groupId: request.groupId,
+            request
+        }),
         authority
     );
     const command: GroupStateMutationCommand = {

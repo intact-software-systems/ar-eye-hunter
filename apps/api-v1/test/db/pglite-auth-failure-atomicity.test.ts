@@ -8,11 +8,13 @@ import { createAuthMutationService } from '@shared-server/rallar-system/auth/aut
 import { createHmacAuthCredentialIssuer } from '@shared-server/rallar-system/auth/credentials/auth-credential-issuer.ts';
 import { AppAuthInboxService } from '@shared-server/rallar-system/auth/inbox/app-auth-inbox-service.ts';
 import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
+import type { JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 import assert from 'node:assert/strict';
 import { toResilienceDto } from '../api-v1-test-queue-resilience.ts';
-import { readPGliteDatabaseEpochMs, waitForPGliteQueueRow, withPGliteSql } from './pglite-auth-test-harness.ts';
+import { waitForPGliteQueueRow } from './pglite-app-inbox-test-runtime.ts';
+import { readPGliteDatabaseEpochMs, withPGliteSql } from './pglite-auth-test-harness.ts';
 
 import { createResourceEntry } from './pglite-auth-test-harness.ts';
 
@@ -95,7 +97,7 @@ Deno.test(
         and ri_resource_id = 'logout-outbox-collision'
     `;
             assert.equal(Number(outboxRows?.count), 1);
-            const results = await sql<{ ris_status: string; ris_resource: unknown; }[]>`
+            const results = await sql<{ ris_status: string; ris_resource: JsonWireValue; }[]>`
       select ris_status, ris_resource
       from resource_inbox_results
       where ris_resource_id = 'logout-outbox-collision'

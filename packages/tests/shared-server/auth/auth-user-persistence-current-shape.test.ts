@@ -23,7 +23,12 @@ const currentUser: PersistedAuthUser = {
 describe('auth user persistence current shape', () => {
     it('decodes a complete current auth user before returning it', async () => {
         const runtime = new FakeRuntimeStateRepository();
-        await writeStoredUser(runtime, 'auth-users:by-username', 'username=alice', currentUser);
+        await writeStoredUser({
+            runtime,
+            namespace: 'auth-users:by-username',
+            key: 'username=alice',
+            value: currentUser
+        });
 
         await expect(new AuthUserRepository(runtime).findByUsername(' Alice ')).resolves.toEqual(currentUser);
     });
@@ -38,7 +43,12 @@ describe('auth user persistence current shape', () => {
 
         for (const malformedRow of malformedRows) {
             const runtime = new FakeRuntimeStateRepository();
-            await writeStoredUser(runtime, 'auth-users:by-username', 'username=alice', malformedRow);
+            await writeStoredUser({
+                runtime,
+                namespace: 'auth-users:by-username',
+                key: 'username=alice',
+                value: malformedRow
+            });
 
             await expect(new AuthUserRepository(runtime).findByNormalizedUsername('alice')).rejects.toThrow(
                 TypeError
@@ -48,18 +58,18 @@ describe('auth user persistence current shape', () => {
 
     it('rejects auth user rows stored under a different username or client identity', async () => {
         const runtime = new FakeRuntimeStateRepository();
-        await writeStoredUser(
+        await writeStoredUser({
             runtime,
-            'auth-users:by-username',
-            'username=alice',
-            { ...currentUser, username: 'Mallory', normalizedUsername: 'mallory' }
-        );
-        await writeStoredUser(
+            namespace: 'auth-users:by-username',
+            key: 'username=alice',
+            value: { ...currentUser, username: 'Mallory', normalizedUsername: 'mallory' }
+        });
+        await writeStoredUser({
             runtime,
-            'auth-users:by-client-id',
-            'client=client-1',
-            { ...currentUser, clientId: 'client-2' }
-        );
+            namespace: 'auth-users:by-client-id',
+            key: 'client=client-1',
+            value: { ...currentUser, clientId: 'client-2' }
+        });
         const repository = new AuthUserRepository(runtime);
 
         await expect(repository.findByNormalizedUsername('alice')).rejects.toThrow(
@@ -71,11 +81,18 @@ describe('auth user persistence current shape', () => {
     });
 });
 
-async function writeStoredUser(
-    runtime: FakeRuntimeStateRepository,
-    namespace: string,
-    key: string,
-    value: object
-): Promise<void> {
-    await runtime.upsert(namespace, key, JSON.stringify(value), Date.now() + 60_000);
+interface WriteStoredUserInput {
+    readonly runtime: FakeRuntimeStateRepository;
+    readonly namespace: string;
+    readonly key: string;
+    readonly value: object;
+}
+
+async function writeStoredUser(input: WriteStoredUserInput): Promise<void> {
+    await input.runtime.upsert(
+        input.namespace,
+        input.key,
+        JSON.stringify(input.value),
+        Date.now() + 60_000
+    );
 }

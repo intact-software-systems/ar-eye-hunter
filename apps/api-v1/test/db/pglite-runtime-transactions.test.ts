@@ -305,13 +305,18 @@ Deno.test(
                 await applyPGliteGroupMutation({
                     sql,
                     service,
-                    descriptor: mutationDescriptor('createGroup', scope, ref.groupId, {
+                    descriptor: mutationDescriptor({
+                        operation: 'createGroup',
+                        scope,
                         groupId: ref.groupId,
-                        displayName: `Complete ${testCase.kind}`,
-                        kind: 'room',
-                        joinMode: 'open',
-                        createdByPrincipalId: 'alice',
-                        requestId: `create-${testCase.kind}`
+                        request: {
+                            groupId: ref.groupId,
+                            displayName: `Complete ${testCase.kind}`,
+                            kind: 'room',
+                            joinMode: 'open',
+                            createdByPrincipalId: 'alice',
+                            requestId: `create-${testCase.kind}`
+                        }
                     }),
                     authority
                 });
@@ -319,11 +324,11 @@ Deno.test(
                     await applyPGliteGroupMutation({
                         sql,
                         service,
-                        descriptor: mutationDescriptor(
-                            'connectPresence',
+                        descriptor: mutationDescriptor({
+                            operation: 'connectPresence',
                             scope,
-                            ref.groupId,
-                            {
+                            groupId: ref.groupId,
+                            request: {
                                 principalId: 'alice',
                                 generationId: `generation-${testCase.kind}`,
                                 connectedAtEpochMs: 10_000,
@@ -333,9 +338,9 @@ Deno.test(
                                 actorSessionId: authority.sessionId,
                                 requestId: `connect-${testCase.kind}`
                             },
-                            'alice',
-                            authority.sessionId
-                        ),
+                            targetPrincipalId: 'alice',
+                            sessionId: authority.sessionId
+                        }),
                         authority
                     });
                 }

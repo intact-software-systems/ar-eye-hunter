@@ -47,19 +47,19 @@ describe('API-v1 state-write final durable evidence', { timeout: 30_000 }, () =>
             topicId,
             contextId: logicalContextId
         });
-        const descriptor = mutationDescriptor(
-            'updateGroup',
-            {
+        const descriptor = mutationDescriptor({
+            operation: 'updateGroup',
+            scope: {
                 applicationId: groupRef.applicationId,
                 workspaceId: groupRef.workspaceId
             },
-            groupRef.groupId,
-            {
+            groupId: groupRef.groupId,
+            request: {
                 metadata: { benchmarkConfigSource: requestId },
                 actorPrincipalId,
                 requestId
             }
-        );
+        });
         const commandId = await toScopedGroupMutationCommandId(descriptor, actorPrincipalId);
         const semanticCommand = toDescriptorCommand(descriptor, () => requestId);
         const commandHash = await hashMutationCommand(semanticCommand as JsonWireValue);
@@ -185,11 +185,11 @@ describe('API-v1 state-write final durable evidence', { timeout: 30_000 }, () =>
         const logicalContextId = [groupRef.applicationId, groupRef.workspaceId, groupRef.groupId]
             .map(encodeURIComponent)
             .join(':');
-        const descriptor = mutationDescriptor(
-            'connectPresence',
-            { applicationId: groupRef.applicationId, workspaceId: groupRef.workspaceId },
-            groupRef.groupId,
-            {
+        const descriptor = mutationDescriptor({
+            operation: 'connectPresence',
+            scope: { applicationId: groupRef.applicationId, workspaceId: groupRef.workspaceId },
+            groupId: groupRef.groupId,
+            request: {
                 principalId: actorPrincipalId,
                 generationId: `${sessionId}:generation-1`,
                 connectedAtEpochMs: 1_000,
@@ -199,9 +199,9 @@ describe('API-v1 state-write final durable evidence', { timeout: 30_000 }, () =>
                 actorSessionId: sessionId,
                 requestId
             },
-            actorPrincipalId,
+            targetPrincipalId: actorPrincipalId,
             sessionId
-        );
+        });
         const commandId = await toScopedGroupMutationCommandId(descriptor, actorPrincipalId);
         const semanticCommand = toDescriptorCommand(descriptor, () => requestId);
         const commandHash = await hashMutationCommand(semanticCommand as JsonWireValue);
@@ -305,16 +305,16 @@ describe('API-v1 state-write final durable evidence', { timeout: 30_000 }, () =>
         'keeps the descriptor target empty for %s after resolving its command principal',
         (operation) => {
             const actorPrincipalId = 'client-admission';
-            const descriptor = mutationDescriptor(
+            const descriptor = mutationDescriptor({
                 operation,
-                { applicationId: 'app', workspaceId: 'workspace' },
-                'group',
-                {
+                scope: { applicationId: 'app', workspaceId: 'workspace' },
+                groupId: 'group',
+                request: {
                     actorPrincipalId,
                     actorSessionId: 'session',
                     requestId: `request-${operation}`
                 }
-            );
+            });
             const command = toDescriptorCommand(descriptor, () => `command-${operation}`);
             if (command.operation !== operation) {
                 throw new Error(`Expected ${operation} command`);
@@ -890,7 +890,10 @@ describe('API-v1 state-write final durable evidence', { timeout: 30_000 }, () =>
     });
 });
 
-function expectStateWriteArtifactIssues(candidate: unknown, ...messages: readonly string[]): void {
+function expectStateWriteArtifactIssues(
+    candidate: Parameters<typeof validateStateWriteArtifact>[0],
+    ...messages: readonly string[]
+): void {
     expect(validateStateWriteArtifact(candidate)).toEqual(
         expect.arrayContaining(messages.map((message) => expect.stringContaining(message)))
     );

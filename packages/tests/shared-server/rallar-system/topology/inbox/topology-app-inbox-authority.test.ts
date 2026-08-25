@@ -8,7 +8,7 @@ import type { GroupStateService } from '@shared-server/rallar-system/group-state
 import {
     constantTimeTopologyProofEqual,
     createAuthenticatedTopologyEnqueue,
-    readTopologyAppInboxAuthority,
+    decodeTopologyAppInboxAuthority,
     verifyTopologyAppInboxAuthority
 } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-authority.ts';
 import { toTopologyAppInboxCommand } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-command.ts';
@@ -40,7 +40,7 @@ describe('topology AppInbox authority', () => {
             groupStateService,
             nowEpochMs: () => NOW_EPOCH_MS
         });
-        const authority = readTopologyAppInboxAuthority(enqueue.authority);
+        const authority = decodeTopologyAppInboxAuthority(enqueue.authority);
 
         expect(authority).toMatchObject({
             kind: 'topology-config',
@@ -86,7 +86,7 @@ describe('topology AppInbox authority', () => {
             groupStateService,
             nowEpochMs: () => NOW_EPOCH_MS
         });
-        const authority = readTopologyAppInboxAuthority(prepared.authority);
+        const authority = decodeTopologyAppInboxAuthority(prepared.authority);
 
         await expect(
             verifyTopologyAppInboxAuthority({
@@ -111,7 +111,7 @@ describe('topology AppInbox authority', () => {
                 nowEpochMs: () => NOW_EPOCH_MS
             })
         ).rejects.toThrow(/command hash is invalid/i);
-        expect(() => readTopologyAppInboxAuthority({ ...authority, unexpected: true })).toThrow(
+        expect(() => decodeTopologyAppInboxAuthority({ ...authority, unexpected: true })).toThrow(
             /durable authority is malformed/i
         );
     });
@@ -149,8 +149,10 @@ async function toPersistedSession(session: IssuedAuthSession): Promise<Persisted
     };
 }
 
-function sessionReader(read: () => PersistedAuthSession | undefined): GroupStateService {
+function sessionReader(
+    read: () => PersistedAuthSession | undefined
+): Pick<GroupStateService, 'readIssuedAuthSession'> {
     return {
         readIssuedAuthSession: () => Promise.resolve(read())
-    } as unknown as GroupStateService;
+    };
 }

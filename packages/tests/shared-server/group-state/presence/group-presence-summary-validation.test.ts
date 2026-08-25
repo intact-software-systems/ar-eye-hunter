@@ -1,5 +1,6 @@
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
 import { GroupPresenceSummaryWork } from '@shared-server/rallar-system/group-state/presence/group-presence-summary-worker.ts';
+import type { JsonWireObject } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
@@ -82,7 +83,7 @@ describe('group presence summary validation', () => {
             [
                 'wrong-scope member',
                 'group-state:members',
-                (value: Record<string, unknown>) => ({
+                (value: JsonWireObject) => ({
                     ...value,
                     groupId: 'wrong-group'
                 })
@@ -90,12 +91,12 @@ describe('group presence summary validation', () => {
             [
                 'wrong-scope admission',
                 'group-state:presence-admissions',
-                (value: Record<string, unknown>) => ({ ...value, groupId: 'wrong-group' })
+                (value: JsonWireObject) => ({ ...value, groupId: 'wrong-group' })
             ],
             [
                 'impossible session lifecycle',
                 'group-state:sessions',
-                (value: Record<string, unknown>) => ({
+                (value: JsonWireObject) => ({
                     ...value,
                     lastHeartbeatAtEpochMs: BASE_EPOCH_MS + 50_000,
                     expiresAtEpochMs: BASE_EPOCH_MS + 40_000
@@ -104,7 +105,7 @@ describe('group presence summary validation', () => {
             [
                 'malformed current summary',
                 'group-state:presence-summaries',
-                (value: Record<string, unknown>) => ({ ...value, unexpected: true })
+                (value: JsonWireObject) => ({ ...value, unexpected: true })
             ]
         ] as const
     )('rejects %s before the summary CAS', async (_label, namespace, corrupt) => {
