@@ -1,5 +1,4 @@
 import type { ApiMiddleware } from '@shared-web/browser/app-context.ts';
-import * as stateCaches from '@shared-web/browser/data-caches.ts';
 import type { RallarPeopleState, RallarPerson } from '@shared-web/browser/rallar-people-contracts.ts';
 import type { RallarStateRuntimePort } from '@shared-web/browser/rallar-runtime-context.ts';
 import { notifyListener } from '@shared-web/browser/rallar-runtime/subscriptions.ts';
@@ -9,6 +8,7 @@ import type {
     RallarUnsubscribe
 } from '@shared-web/browser/rallar-shared-contracts.ts';
 import type { RallarRoomStateStorePort } from '@shared-web/browser/rooms/room-state-store.ts';
+import { browserStateCacheLifecycle } from '@shared-web/browser/state-cache/browser-state-cache-lifecycle.ts';
 import type { AuthSession, ClientInfo } from '@shared/api/api-config.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import { readActiveClientSessionIds } from '@shared/api/group-client-views.ts';
@@ -53,7 +53,7 @@ export interface RallarStatePort {
 
 export function createRallarStateCacheReadPort(): RallarStateCacheReadPort {
     return {
-        onCacheChange: (listener) => stateCaches.onStateCacheChange(listener),
+        onCacheChange: (listener) => browserStateCacheLifecycle.onChange(listener),
         readGroupSnapshots: () => groupStateSnapshotsRepository.getAllGroupStateSnapshots(),
         findGroupSnapshotByRef: (roomRef) => groupStateSnapshotsRepository.findGroupStateSnapshotByRef(roomRef),
         findFirstGroupRefForSession: (sessionId) =>
@@ -85,7 +85,7 @@ export class RallarStateStore implements RallarStatePort {
     attachCache(): void {
         if (!this.#input.runtime.readStateCacheUnsubscribe()) {
             this.#input.runtime.setStateCacheUnsubscribe(
-                stateCaches.onStateCacheChange(() => this.emit())
+                browserStateCacheLifecycle.onChange(() => this.emit())
             );
         }
     }
@@ -96,13 +96,13 @@ export class RallarStateStore implements RallarStatePort {
     }
 
     async acceptSnapshots(input: RallarStateSnapshotAcceptanceInput): Promise<void> {
-        await stateCaches.hydrateStateCaches(
-            input.context.middleware.webRtcGroupManager,
-            toClientInfo(input.context.session),
-            input.clients,
-            input.groups,
-            { scope: input.scope }
-        );
+        await browserStateCacheLifecycle.hydrate({
+            webRtcGroupManager: input.context.middleware.webRtcGroupManager,
+            clientData: toClientInfo(input.context.session),
+            clientSnapshots: input.clients,
+            groupSnapshots: input.groups,
+            options: { scope: input.scope }
+        });
         this.emit();
     }
 

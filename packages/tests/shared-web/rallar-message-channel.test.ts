@@ -8,7 +8,7 @@ import { createGroupSnapshotFixture } from './authoritative-group-fixtures.ts';
 
 type AppContextModule = typeof import('@shared-web/browser/app-context.ts');
 type MiddlewareModule = typeof import('@shared-web/browser/middleware.ts');
-type DataCachesModule = typeof import('@shared-web/browser/data-caches.ts');
+type StateCacheLifecycleModule = typeof import('@shared-web/browser/state-cache/browser-state-cache-lifecycle.ts');
 type AuthModule = typeof import('@shared/api/auth.ts');
 type ClientStateSnapshotsRepositoryModule = typeof import('@shared/repository/client-state-snapshots-repository.ts');
 type GroupStateSnapshotsRepositoryModule = typeof import('@shared/repository/group-state-snapshots-repository.ts');
@@ -43,10 +43,10 @@ const mocks = await vi.hoisted(async () => {
         webRtcConnectionService: ctx.middleware.webRtcConnectionService,
         clientRepositoryMissing,
         groupRepositoryMissing,
-        hydrateStateCaches: vi.fn((): Promise<void> => Promise.resolve()),
+        hydrateStateCache: vi.fn((): Promise<void> => Promise.resolve()),
         initMiddleware: vi.fn(() => Promise.resolve(ctx)),
         isMiddlewareReady: vi.fn(() => false),
-        onStateCacheChange: vi.fn((): () => void => vi.fn()),
+        onCacheChange: vi.fn((): () => void => vi.fn()),
         readSession: vi.fn((): AuthSession | undefined => ctx.session),
         findClientStateSnapshotByPrincipalId: vi.fn(
             (_principalId: string): ClientSnapshot | undefined => clientRepositoryMissing()
@@ -70,9 +70,12 @@ vi.mock(import('@shared-web/browser/middleware.ts'), (): Partial<MiddlewareModul
     initialiseMiddleware: async () => (await mocks.initMiddleware()).middleware
 }));
 
-vi.mock(import('@shared-web/browser/data-caches.ts'), (): Partial<DataCachesModule> => ({
-    hydrateStateCaches: mocks.hydrateStateCaches,
-    onStateCacheChange: mocks.onStateCacheChange
+vi.mock(import('@shared-web/browser/state-cache/browser-state-cache-lifecycle.ts'), (): Partial<StateCacheLifecycleModule> => ({
+    browserStateCacheLifecycle: {
+        hydrate: mocks.hydrateStateCache,
+        onChange: mocks.onCacheChange,
+        initialise: vi.fn()
+    }
 }));
 
 vi.mock(import('@shared/api/auth.ts'), (): Partial<AuthModule> => ({
@@ -104,7 +107,7 @@ describe('Rallar typed message channel', () => {
         vi.clearAllMocks();
         resetRepositoryDoublesToMissing();
         resetMiddlewareDoublesToDefaults();
-        mocks.hydrateStateCaches.mockResolvedValue(undefined);
+        mocks.hydrateStateCache.mockResolvedValue(undefined);
         mocks.initMiddleware.mockResolvedValue(mocks.ctx);
         mocks.isMiddlewareReady.mockReturnValue(false);
         mocks.readSession.mockReturnValue(mocks.ctx.session);

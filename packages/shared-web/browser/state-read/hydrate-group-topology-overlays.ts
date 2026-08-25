@@ -4,8 +4,8 @@ import { OverlayRevisionConflictError } from '@shared/repository/overlays-reposi
 import type { WebRtcGroupManager } from '@shared/services/WebRtcGroupManager.ts';
 
 import type { ApiRequestOptions } from '../api/http-request.ts';
-import { acceptServerOverlayTopology } from '../data-caches.ts';
 import { readStateGroupTopology } from '../rtc/rtc-topology-http-api.ts';
+import { adoptOverlayTopology } from '../state-cache/overlay-topology-message-dispatch.ts';
 import { emitBrowserStateReadDiagnostic } from './diagnostics.ts';
 
 export interface HydrateGroupTopologyOverlaysInput {
@@ -50,7 +50,7 @@ async function readThroughGroupTopology(
             outcome = 'no-overlay';
         }
         else {
-            await acceptServerOverlayTopology({
+            await adoptOverlayTopology({
                 topology: view.snapshot,
                 sessionId: input.sessionId,
                 webRtcGroupManager: input.webRtcGroupManager,

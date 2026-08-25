@@ -9,6 +9,7 @@ import { createGroupSnapshotFixture } from '../authoritative-group-fixtures.ts';
 type RoomGroupStateWorkflowsModule = typeof import('@shared-web/browser/rooms/room-group-state-workflows.ts');
 type RoomGroupStateMutationWorkflowsModule = typeof import('@shared-web/browser/rooms/room-group-state-mutation-workflows.ts');
 type RoomMembershipGroupStateWorkflowsModule = typeof import('@shared-web/browser/rooms/room-membership-group-state-workflows.ts');
+type StateCacheLifecycleModule = typeof import('@shared-web/browser/state-cache/browser-state-cache-lifecycle.ts');
 
 interface RoomSnapshotScopeFixture {
     readonly applicationId?: string;
@@ -24,7 +25,7 @@ const roomWorkflowMocks = await vi.hoisted(async () => {
     return {
         operationLog,
         groupSnapshots,
-        cacheListeners: new Set<() => void | Promise<void>>(),
+        cacheListeners: new Set<Parameters<StateCacheLifecycleModule['browserStateCacheLifecycle']['onChange']>[0]>(),
         session: ctx.session,
         ctx,
         clearMiddleware: vi.fn(),
@@ -44,8 +45,8 @@ const roomWorkflowMocks = await vi.hoisted(async () => {
         unbanStateGroupMember: vi.fn<RoomMembershipGroupStateWorkflowsModule['unbanStateGroupMember']>(),
         setStateGroupMemberRole: vi.fn<RoomMembershipGroupStateWorkflowsModule['setStateGroupMemberRole']>(),
         transferStateGroupOwnership: vi.fn<RoomMembershipGroupStateWorkflowsModule['transferStateGroupOwnership']>(),
-        hydrateStateCaches: vi.fn(),
-        onStateCacheChange: vi.fn(),
+        hydrateStateCache: vi.fn<StateCacheLifecycleModule['browserStateCacheLifecycle']['hydrate']>(),
+        onCacheChange: vi.fn<StateCacheLifecycleModule['browserStateCacheLifecycle']['onChange']>(),
         readSession: vi.fn(() => ctx.session)
     };
 });
@@ -77,9 +78,12 @@ vi.mock(import('@shared-web/browser/rooms/room-membership-group-state-workflows.
     transferStateGroupOwnership: roomWorkflowMocks.transferStateGroupOwnership
 }));
 
-vi.mock(import('@shared-web/browser/data-caches.ts'), () => ({
-    hydrateStateCaches: roomWorkflowMocks.hydrateStateCaches,
-    onStateCacheChange: roomWorkflowMocks.onStateCacheChange
+vi.mock(import('@shared-web/browser/state-cache/browser-state-cache-lifecycle.ts'), () => ({
+    browserStateCacheLifecycle: {
+        hydrate: roomWorkflowMocks.hydrateStateCache,
+        onChange: roomWorkflowMocks.onCacheChange,
+        initialise: vi.fn()
+    }
 }));
 
 vi.mock(import('@shared/api/auth.ts'), () => ({
@@ -188,16 +192,16 @@ function resetRoomWorkflowMutationMocks(): void {
 }
 
 function resetRoomWorkflowCacheMocks(): void {
-    roomWorkflowMocks.hydrateStateCaches.mockImplementation(
-        async (_manager, _client, _clients, groups: readonly GroupSnapshot[]) => {
+    roomWorkflowMocks.hydrateStateCache.mockImplementation(
+        async (input) => {
             roomWorkflowMocks.operationLog.push(
-                `hydrate:${groups.map((snapshot) => snapshot.group.groupId).join(',')}`
+                `hydrate:${input.groupSnapshots.map((snapshot) => snapshot.group.groupId).join(',')}`
             );
-            upsertGroupSnapshots(groups);
-            await notifyCacheListeners();
+            upsertGroupSnapshots(input.groupSnapshots);
+            await notifyCacheListeners(input.groupSnapshots);
         }
     );
-    roomWorkflowMocks.onStateCacheChange.mockImplementation((listener) => {
+    roomWorkflowMocks.onCacheChange.mockImplementation((listener) => {
         roomWorkflowMocks.cacheListeners.add(listener);
         return () => {
             roomWorkflowMocks.cacheListeners.delete(listener);
@@ -266,7 +270,7 @@ export function rejectLeaveWith(error: Error): void {
 
 export async function publishRoomSnapshots(snapshots: readonly GroupSnapshot[]): Promise<void> {
     seedRoomSnapshots(snapshots);
-    await notifyCacheListeners();
+    await notifyCacheListeners(snapshots);
 }
 
 export function requireRecord(value: unknown, label: string): Record<string, unknown> {
@@ -288,9 +292,14 @@ function upsertGroupSnapshots(snapshots: readonly GroupSnapshot[]): void {
     }
 }
 
-async function notifyCacheListeners(): Promise<void> {
+async function notifyCacheListeners(groups: readonly GroupSnapshot[]): Promise<void> {
     await Promise.all(
-        [...roomWorkflowMocks.cacheListeners].map(async (listener) => await listener())
+        [...roomWorkflowMocks.cacheListeners].map(async (listener) =>
+            await listener({
+                clients: [],
+                groups
+            })
+        )
     );
 }
 

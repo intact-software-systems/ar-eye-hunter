@@ -7,7 +7,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 type MiddlewareModule = typeof import('@shared-web/browser/middleware.ts');
 type RefreshStateSnapshotsModule = typeof import('@shared-web/browser/state-read/refresh-state-snapshots.ts');
 type AuthModule = typeof import('@shared/api/auth.ts');
-type DataCachesModule = typeof import('@shared-web/browser/data-caches.ts');
+type StateCacheLifecycleModule = typeof import('@shared-web/browser/state-cache/browser-state-cache-lifecycle.ts');
 type ClientStateSnapshotsRepositoryModule = typeof import('@shared/repository/client-state-snapshots-repository.ts');
 type GroupStateSnapshotsRepositoryModule = typeof import('@shared/repository/group-state-snapshots-repository.ts');
 
@@ -25,8 +25,8 @@ const runtime = await vi.hoisted(async () => {
         initialiseMiddleware: vi.fn<MiddlewareModule['initialiseMiddleware']>(),
         readSession: vi.fn<AuthModule['readSession']>(),
         refreshStateSnapshots: vi.fn<RefreshStateSnapshotsModule['refreshStateSnapshots']>(),
-        hydrateStateCaches: vi.fn<DataCachesModule['hydrateStateCaches']>(),
-        onStateCacheChange: vi.fn<DataCachesModule['onStateCacheChange']>(),
+        hydrateStateCache: vi.fn<StateCacheLifecycleModule['browserStateCacheLifecycle']['hydrate']>(),
+        onCacheChange: vi.fn<StateCacheLifecycleModule['browserStateCacheLifecycle']['onChange']>(),
         findClientStateSnapshotByPrincipalId: vi.fn<ClientStateSnapshotsRepositoryModule['findClientStateSnapshotByPrincipalId']>(() => undefined),
         getAllClientStateSnapshots: vi.fn<ClientStateSnapshotsRepositoryModule['getAllClientStateSnapshots']>(() => []),
         findFirstGroupStateSnapshotRefSessionIdIsIn: vi.fn<GroupStateSnapshotsRepositoryModule['findFirstGroupStateSnapshotRefSessionIdIsIn']>(() => undefined),
@@ -50,10 +50,13 @@ vi.mock(
 );
 
 vi.mock(
-    import('@shared-web/browser/data-caches.ts'),
-    (): Partial<DataCachesModule> => ({
-        hydrateStateCaches: runtime.hydrateStateCaches,
-        onStateCacheChange: runtime.onStateCacheChange
+    import('@shared-web/browser/state-cache/browser-state-cache-lifecycle.ts'),
+    (): Partial<StateCacheLifecycleModule> => ({
+        browserStateCacheLifecycle: {
+            hydrate: runtime.hydrateStateCache,
+            onChange: runtime.onCacheChange,
+            initialise: vi.fn()
+        }
     })
 );
 
@@ -87,8 +90,8 @@ beforeEach(() => {
     runtime.initialiseMiddleware.mockResolvedValue(runtime.middleware.middleware);
     runtime.readSession.mockReturnValue(runtime.middleware.session);
     runtime.refreshStateSnapshots.mockResolvedValue({ clients: [], groups: [] });
-    runtime.hydrateStateCaches.mockResolvedValue(undefined);
-    runtime.onStateCacheChange.mockReturnValue(() => undefined);
+    runtime.hydrateStateCache.mockResolvedValue(undefined);
+    runtime.onCacheChange.mockReturnValue(() => undefined);
 });
 
 describe('browser facade transport ownership', () => {

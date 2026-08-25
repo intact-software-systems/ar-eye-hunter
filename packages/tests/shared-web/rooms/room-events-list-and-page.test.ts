@@ -20,7 +20,7 @@ describe('room event history compatibility', () => {
         mocks.initMiddleware.mockRejectedValue(
             new Error('Room history reads must not initialize middleware')
         );
-        mocks.hydrateStateCaches.mockRejectedValue(
+        mocks.hydrateStateCache.mockRejectedValue(
             new Error('Room history reads must not hydrate state')
         );
 
@@ -96,7 +96,7 @@ describe('room event history compatibility', () => {
         mocks.initMiddleware.mockRejectedValue(
             new Error('Room history reads must not initialize middleware')
         );
-        mocks.hydrateStateCaches.mockRejectedValue(
+        mocks.hydrateStateCache.mockRejectedValue(
             new Error('Room history reads must not hydrate state')
         );
 

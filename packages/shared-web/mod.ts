@@ -15,7 +15,6 @@ export * from './browser/browser-cache-repositories.ts';
 export * from './browser/browser-queuebox.ts';
 export * from './browser/connection/connection-http-api.ts';
 export * from './browser/crdt/crdt-catch-up-http-api.ts';
-export * as dataCaches from './browser/data-caches.ts';
 export {
     type AppointRoomDirectorInput,
     appointStateGroupDirector

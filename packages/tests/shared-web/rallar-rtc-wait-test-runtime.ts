@@ -42,7 +42,7 @@ const mocks = await vi.hoisted(async () => {
         webSocketClient: vi.mocked(ctx.middleware.webSocketQueueBox.socket),
         clearSession: vi.fn<ContractModules.Auth['clearSession']>(),
         clearMiddleware: vi.fn<ContractModules.AppContext['clearMiddleware']>(),
-        hydrateStateCaches: vi.fn<ContractModules.DataCaches['hydrateStateCaches']>(() => Promise.resolve()),
+        hydrateStateCache: vi.fn<ContractModules.StateCacheLifecycle['browserStateCacheLifecycle']['hydrate']>(() => Promise.resolve()),
         initMiddleware: vi.fn<ContractModules.AppContext['initMiddleware']>(() => Promise.resolve(ctx)),
         isMiddlewareReady: vi.fn<ContractModules.AppContext['isMiddlewareReady']>(() => false),
         createAndJoinStateGroup: vi.fn<ContractModules.RoomGroupStateWorkflows['createAndJoinStateGroup']>(
@@ -81,7 +81,7 @@ const mocks = await vi.hoisted(async () => {
                 registeredAtEpochMs: 1_000
             })
         ),
-        onStateCacheChange: vi.fn<ContractModules.DataCaches['onStateCacheChange']>(() => vi.fn()),
+        onCacheChange: vi.fn<ContractModules.StateCacheLifecycle['browserStateCacheLifecycle']['onChange']>(() => vi.fn()),
         readSession: vi.fn<ContractModules.Auth['readSession']>(() => ctx.session),
         refreshStateSnapshots: vi.fn<ContractModules.RefreshStateSnapshots['refreshStateSnapshots']>(
             () => Promise.resolve({ clients: [], groups: [] })
@@ -138,10 +138,13 @@ vi.mock(import('@shared-web/browser/rooms/room-group-state-mutation-workflows.ts
 }));
 
 vi.mock(
-    import('@shared-web/browser/data-caches.ts'),
-    (): Partial<ContractModules.DataCaches> => ({
-        hydrateStateCaches: mocks.hydrateStateCaches,
-        onStateCacheChange: mocks.onStateCacheChange
+    import('@shared-web/browser/state-cache/browser-state-cache-lifecycle.ts'),
+    (): Partial<ContractModules.StateCacheLifecycle> => ({
+        browserStateCacheLifecycle: {
+            hydrate: mocks.hydrateStateCache,
+            onChange: mocks.onCacheChange,
+            initialise: vi.fn()
+        }
     })
 );
 
@@ -192,7 +195,7 @@ export async function resetRtcWaitTestRuntime(): Promise<void> {
     mocks.updateStateGroupMetadata.mockRejectedValue(
         new Error('metadata update not mocked')
     );
-    mocks.onStateCacheChange.mockImplementation(() => vi.fn());
+    mocks.onCacheChange.mockImplementation(() => vi.fn());
     resetRtcConnectionMocks();
     resetRtcTransportMocks();
     mocks.registerWithApi.mockResolvedValue({

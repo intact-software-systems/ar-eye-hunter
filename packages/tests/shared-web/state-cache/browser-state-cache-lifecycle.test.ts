@@ -1,9 +1,9 @@
 import { configureApiClient } from '@shared-web/browser/api-client-config.ts';
-import * as dataCaches from '@shared-web/browser/data-caches.ts';
+import { browserStateCacheLifecycle } from '@shared-web/browser/state-cache/browser-state-cache-lifecycle.ts';
 import { newALBroadcastMessage, newALEventRoute, newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
 import { AppTopics, type ClientInfo } from '@shared/api/api-config.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
-import type { AuditStamp, ClientEvent, ClientSnapshot } from '@shared/api/client-types.ts';
+import type { AuditStamp, ClientSnapshot } from '@shared/api/client-types.ts';
 import type { GroupStateDeltaEnvelope } from '@shared/api/group-state-delta.ts';
 import type { GroupEvent, GroupSnapshot, GroupStateCausalRevision } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
@@ -12,10 +12,10 @@ import * as clientStateSnapshotsRepository from '@shared/repository/client-state
 import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
 import { findOverlayById, setOverlayById } from '@shared/repository/overlays-repository.ts';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { configureTestCacheRepositories } from '../cache-repository-config.ts';
-import { createTestGroup } from '../create-test-group.ts';
+import { configureTestCacheRepositories } from '../../cache-repository-config.ts';
+import { createTestGroup } from '../../create-test-group.ts';
 
-describe('browser data caches state scope filtering', () => {
+describe('browser state cache lifecycle scope filtering', () => {
     beforeEach(() => {
         configureTestCacheRepositories();
     });
@@ -56,12 +56,12 @@ describe('browser data caches state scope filtering', () => {
             1
         );
 
-        await dataCaches.hydrateStateCaches(
-            manager as never,
+        await browserStateCacheLifecycle.hydrate({
+            webRtcGroupManager: manager as never,
             clientData,
-            [sameScopeClient, otherWorkspaceClient],
-            [sameScopeGroup, otherWorkspaceGroup]
-        );
+            clientSnapshots: [sameScopeClient, otherWorkspaceClient],
+            groupSnapshots: [sameScopeGroup, otherWorkspaceGroup]
+        });
 
         expect(
             clientStateSnapshotsRepository.getAllClientStateSnapshots()
@@ -111,18 +111,18 @@ describe('browser data caches state scope filtering', () => {
             1
         );
 
-        await dataCaches.hydrateStateCaches(
-            manager as never,
+        await browserStateCacheLifecycle.hydrate({
+            webRtcGroupManager: manager as never,
             clientData,
-            [defaultScopeClient, customScopeClient],
-            [defaultScopeGroup, customScopeGroup],
-            {
+            clientSnapshots: [defaultScopeClient, customScopeClient],
+            groupSnapshots: [defaultScopeGroup, customScopeGroup],
+            options: {
                 scope: {
                     applicationId: 'app-1',
                     workspaceId: 'workspace-b'
                 }
             }
-        );
+        });
 
         expect(
             clientStateSnapshotsRepository.getAllClientStateSnapshots()
@@ -165,21 +165,21 @@ describe('browser data caches state scope filtering', () => {
         );
         const rereadGroupSnapshots = vi.fn(async () => [recovered]);
 
-        await dataCaches.hydrateStateCaches(
-            manager as never,
+        await browserStateCacheLifecycle.hydrate({
+            webRtcGroupManager: manager as never,
             clientData,
-            [],
-            [current]
-        );
+            clientSnapshots: [],
+            groupSnapshots: [current]
+        });
         acceptUpdate.mockClear();
 
-        await dataCaches.hydrateStateCaches(
-            manager as never,
+        await browserStateCacheLifecycle.hydrate({
+            webRtcGroupManager: manager as never,
             clientData,
-            [],
-            [incomparable],
-            { rereadGroupSnapshots }
-        );
+            clientSnapshots: [],
+            groupSnapshots: [incomparable],
+            options: { rereadGroupSnapshots }
+        });
         expect(rereadGroupSnapshots).toHaveBeenCalledOnce();
         expect(acceptUpdate).toHaveBeenCalledWith(recovered);
         expect(groupStateSnapshotsRepository.findGroupStateSnapshotByRef(current.group))
@@ -206,18 +206,18 @@ describe('browser data caches state scope filtering', () => {
             isOnline: true
         };
 
-        await dataCaches.hydrateStateCaches(
-            manager as never,
+        await browserStateCacheLifecycle.hydrate({
+            webRtcGroupManager: manager as never,
             clientData,
-            [],
-            [group],
-            {
+            clientSnapshots: [],
+            groupSnapshots: [group],
+            options: {
                 scope: {
                     applicationId: 'app-1',
                     workspaceId: 'workspace-b'
                 }
             }
-        );
+        });
 
         expect(manager.has).toHaveBeenCalledWith(group.group);
         expect(manager.delete).toHaveBeenCalledWith(group.group, {
@@ -252,18 +252,18 @@ describe('browser data caches state scope filtering', () => {
             isOnline: true
         };
 
-        await dataCaches.hydrateStateCaches(
-            manager as never,
+        await browserStateCacheLifecycle.hydrate({
+            webRtcGroupManager: manager as never,
             clientData,
-            [],
-            [joined],
-            {
+            clientSnapshots: [],
+            groupSnapshots: [joined],
+            options: {
                 scope: {
                     applicationId: 'app-1',
                     workspaceId: 'workspace-b'
                 }
             }
-        );
+        });
 
         expect(findOverlayById(toScopedOverlayId(joined.group))).toBeDefined();
         manager.acceptGroupUpdate.mockClear();
@@ -301,18 +301,18 @@ describe('browser data caches state scope filtering', () => {
             isOnline: true
         };
 
-        await dataCaches.hydrateStateCaches(
-            manager as never,
+        await browserStateCacheLifecycle.hydrate({
+            webRtcGroupManager: manager as never,
             clientData,
-            [],
-            [directoryOnly],
-            {
+            clientSnapshots: [],
+            groupSnapshots: [directoryOnly],
+            options: {
                 scope: {
                     applicationId: 'app-1',
                     workspaceId: 'workspace-b'
                 }
             }
-        );
+        });
 
         expect(manager.acceptGroupUpdate).not.toHaveBeenCalled();
         expect(manager.delete).not.toHaveBeenCalled();
@@ -340,20 +340,20 @@ describe('browser data caches state scope filtering', () => {
             isOnline: true
         };
         const listener = vi.fn();
-        const unsubscribe = dataCaches.onStateCacheChange(listener);
+        const unsubscribe = browserStateCacheLifecycle.onChange(listener);
 
-        await dataCaches.hydrateStateCaches(
-            manager as never,
+        await browserStateCacheLifecycle.hydrate({
+            webRtcGroupManager: manager as never,
             clientData,
-            [],
-            [group],
-            {
+            clientSnapshots: [],
+            groupSnapshots: [group],
+            options: {
                 scope: {
                     applicationId: 'app-1',
                     workspaceId: 'workspace-b'
                 }
             }
-        );
+        });
         manager.acceptGroupUpdate.mockClear();
         manager.delete.mockClear();
         listener.mockClear();
@@ -367,65 +367,6 @@ describe('browser data caches state scope filtering', () => {
             clients: [],
             groups: [group]
         });
-
-        unsubscribe();
-    });
-
-    it('ignores bare group and client state event websocket messages in the snapshot cache layer', async () => {
-        const manager = createWebRtcGroupManager();
-        const clientData: ClientInfo = {
-            clientId: 'alice',
-            sessionId: 'session-a',
-            isOnline: true
-        };
-        let onInboxMessage:
-            | ((message: unknown) => Promise<void>)
-            | undefined;
-        const webSocketQueueBox = {
-            onAllInboxMessagesDo: vi.fn((callback: {
-                onMessage: (message: unknown) => Promise<void>;
-            }) => {
-                onInboxMessage = callback.onMessage;
-                return webSocketQueueBox;
-            })
-        };
-        const listener = vi.fn();
-        const unsubscribe = dataCaches.onStateCacheChange(listener);
-
-        dataCaches.initialise(
-            webSocketQueueBox,
-            manager as never,
-            clientData
-        );
-
-        await onInboxMessage?.(
-            newALBroadcastMessage(
-                'server-1',
-                newALEventRoute(AppTopics.groupStateEvent, 'room-a', 'event-1'),
-                'all',
-                AppTopics.groupStateEvent,
-                createGroupEvent('room-a', 'event-1')
-            )
-        );
-        await onInboxMessage?.(
-            newALBroadcastMessage(
-                'server-1',
-                newALEventRoute(AppTopics.clientStateEvent, 'alice', 'event-2'),
-                'all',
-                AppTopics.clientStateEvent,
-                createClientEvent('alice', 'event-2')
-            )
-        );
-
-        expect(listener).not.toHaveBeenCalled();
-        expect(manager.notifyClientPresenceChanged).not.toHaveBeenCalled();
-        expect(manager.acceptGroupUpdate).not.toHaveBeenCalled();
-        expect(clientStateSnapshotsRepository.getAllClientStateSnapshots()).toEqual(
-            []
-        );
-        expect(groupStateSnapshotsRepository.getAllGroupStateSnapshots()).toEqual(
-            []
-        );
 
         unsubscribe();
     });
@@ -450,7 +391,7 @@ describe('browser data caches state scope filtering', () => {
             })
         };
         const listener = vi.fn();
-        const unsubscribe = dataCaches.onStateCacheChange(listener);
+        const unsubscribe = browserStateCacheLifecycle.onChange(listener);
         const current = withGroupCausalRevision(
             createGroupSnapshot(
                 'room-a',
@@ -475,19 +416,19 @@ describe('browser data caches state scope filtering', () => {
         const rereadGroupSnapshots = vi.fn(async () => [recovered]);
         const cacheOptions = { rereadGroupSnapshots };
 
-        dataCaches.initialise(
-            webSocketQueueBox,
-            manager as never,
+        browserStateCacheLifecycle.initialise({
+            inbox: webSocketQueueBox,
+            webRtcGroupManager: manager as never,
             clientData,
-            cacheOptions
-        );
-        await dataCaches.hydrateStateCaches(
-            manager as never,
+            options: cacheOptions
+        });
+        await browserStateCacheLifecycle.hydrate({
+            webRtcGroupManager: manager as never,
             clientData,
-            [],
-            [current],
-            cacheOptions
-        );
+            clientSnapshots: [],
+            groupSnapshots: [current],
+            options: cacheOptions
+        });
         recompute.mockClear();
         listener.mockClear();
 
@@ -570,11 +511,11 @@ describe('browser data caches state scope filtering', () => {
             updatedAtEpochMs: 2
         };
 
-        dataCaches.initialise(
-            webSocketQueueBox,
-            manager as never,
+        browserStateCacheLifecycle.initialise({
+            inbox: webSocketQueueBox,
+            webRtcGroupManager: manager as never,
             clientData
-        );
+        });
 
         await onInboxMessage?.(
             newALBroadcastMessage(
@@ -677,7 +618,11 @@ describe('browser data caches state scope filtering', () => {
                 { groupRevision: 5, presenceRevision: 5 },
                 8
             );
-            dataCaches.initialise(webSocketQueueBox, manager as never, clientData);
+            browserStateCacheLifecycle.initialise({
+                inbox: webSocketQueueBox,
+                webRtcGroupManager: manager as never,
+                clientData
+            });
             const receive = onInboxMessage;
             if (!receive) {
                 throw new Error('WebSocket topology callback was not installed.');
@@ -804,7 +749,7 @@ describe('browser data caches state scope filtering', () => {
             })
         };
         const listener = vi.fn();
-        const unsubscribe = dataCaches.onStateCacheChange(listener);
+        const unsubscribe = browserStateCacheLifecycle.onChange(listener);
         const resulting = createGroupSnapshot(
             'room-a',
             DEFAULT_STATE_APPLICATION_ID,
@@ -821,11 +766,11 @@ describe('browser data caches state scope filtering', () => {
         const fetchMock = vi.fn(async (input: RequestInfo | URL) => groupSnapshotResponse(resulting));
         vi.stubGlobal('fetch', fetchMock);
 
-        dataCaches.initialise(
-            webSocketQueueBox,
-            manager as never,
+        browserStateCacheLifecycle.initialise({
+            inbox: webSocketQueueBox,
+            webRtcGroupManager: manager as never,
             clientData
-        );
+        });
 
         await onInboxMessage?.(
             newALBroadcastMessage(
@@ -873,7 +818,12 @@ describe('browser data caches state scope filtering', () => {
             1
         );
 
-        await dataCaches.hydrateStateCaches(manager as never, clientData, [], [group]);
+        await browserStateCacheLifecycle.hydrate({
+            webRtcGroupManager: manager as never,
+            clientData,
+            clientSnapshots: [],
+            groupSnapshots: [group]
+        });
 
         const overlay = findOverlayById(toScopedOverlayId(group.group));
         expect(overlay).toMatchObject({
@@ -926,7 +876,12 @@ describe('browser data caches state scope filtering', () => {
             ['session-a', 'session-b', 'session-c'],
             5
         );
-        await dataCaches.hydrateStateCaches(manager as never, clientData, [], [newerGroup]);
+        await browserStateCacheLifecycle.hydrate({
+            webRtcGroupManager: manager as never,
+            clientData,
+            clientSnapshots: [],
+            groupSnapshots: [newerGroup]
+        });
 
         expect(findOverlayById(overlayId)).toMatchObject({
             provenance: 'server',
@@ -1260,32 +1215,6 @@ function createGroupEvent(
         reason: null,
         traceId: null,
         requestId: 'request-1',
-        payload: {}
-    };
-}
-
-function createClientEvent(
-    principalId: string,
-    eventId: string
-): ClientEvent {
-    return {
-        applicationId: 'ar-eye-hunter',
-        workspaceId: 'default',
-        principalId,
-        eventId,
-        eventType: 'session-connected',
-        snapshotVersion: 1,
-        clientInstanceId: `${principalId}-instance`,
-        sessionId: 'session-a',
-        occurredAtEpochMs: 1,
-        actor: {
-            kind: 'session',
-            principalId,
-            sessionId: 'session-a'
-        },
-        reason: null,
-        traceId: null,
-        requestId: 'request-2',
         payload: {}
     };
 }

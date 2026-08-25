@@ -7,14 +7,12 @@ import * as groupStateSnapshotsRepository from '@shared/repository/group-state-s
 import { StateSnapshotRevisionConflictError } from '@shared/repository/state-snapshot-revision.ts';
 import { Either } from '@shared/resilience/Either.ts';
 
-import { emitBrowserStateReadDiagnostic } from '../state-read/diagnostics.ts';
-import { readStateGroupSnapshot } from '../state-read/point-read.ts';
 import { acceptGroupStateSnapshotsOrRecompute } from './state-cache-snapshot-adoption.ts';
 
-export type GroupStateDeltaApplication =
+export type GroupStateDeltaAcceptance =
     | 'applied'
     | 'no-op'
-    | 'gap-pull'
+    | 'refresh-required'
     | 'revision-conflict';
 
 export type GroupStateDeltaMaterializationGap =
@@ -25,13 +23,7 @@ export type RereadGroupSnapshots = (
     scope: StateScope
 ) => Promise<readonly GroupSnapshot[]>;
 
-/**
- * Decodes a `group-state.event` WS payload into its delta envelope. Any other
- * shape yields undefined and the cache layer ignores the row. Servers no longer
- * emit the bare GroupEvent payload, but a row written by an older server can
- * still be in flight across a rolling deploy.
- */
-export function toGroupStateDeltaEnvelope(
+export function parseGroupStateDeltaEnvelope(
     serialized: string,
     scope: StateScope
 ): GroupStateDeltaEnvelope | undefined {
@@ -49,12 +41,11 @@ export async function acceptGroupStateDeltaEnvelope(
     envelope: GroupStateDeltaEnvelope,
     scope: StateScope,
     rereadGroupSnapshots?: RereadGroupSnapshots
-): Promise<GroupStateDeltaApplication> {
-    const startedAtMs = performance.now();
+): Promise<GroupStateDeltaAcceptance> {
     const cached = groupStateSnapshotsRepository.findGroupStateSnapshotByRef(envelope.group);
     const disposition = resolveGroupStateDeltaDisposition(cached, envelope);
     if (disposition === 'no-op') {
-        return emitGroupStateDeltaDiagnostic('no-op', startedAtMs);
+        return 'no-op';
     }
     if (disposition === 'apply' && cached !== undefined) {
         const materialized = toGroupSnapshotFromDeltaEnvelope(cached, envelope);
@@ -65,14 +56,12 @@ export async function acceptGroupStateDeltaEnvelope(
                 rereadGroupSnapshots
             );
             if (adoption === 'adopted') {
-                return emitGroupStateDeltaDiagnostic('applied', startedAtMs);
+                return 'applied';
             }
-            await readGroupSnapshotAtDeltaFloor(envelope, scope, rereadGroupSnapshots);
-            return emitGroupStateDeltaDiagnostic('revision-conflict', startedAtMs);
+            return 'revision-conflict';
         }
     }
-    await readGroupSnapshotAtDeltaFloor(envelope, scope, rereadGroupSnapshots);
-    return emitGroupStateDeltaDiagnostic('gap-pull', startedAtMs);
+    return 'refresh-required';
 }
 
 /**
@@ -155,38 +144,6 @@ async function adoptMaterializedGroupSnapshot(
     }
 }
 
-async function readGroupSnapshotAtDeltaFloor(
-    envelope: GroupStateDeltaEnvelope,
-    scope: StateScope,
-    rereadGroupSnapshots?: RereadGroupSnapshots
-): Promise<void> {
-    try {
-        const pulled = await readStateGroupSnapshot(envelope.group.groupId, scope, {
-            minCausalRevision: envelope.resultingCausalRevision
-        });
-        await acceptGroupStateSnapshotsOrRecompute([pulled.snapshot], scope, rereadGroupSnapshots);
-    }
-    catch {
-        await rereadGroupSnapshotsAfterFailedPull(scope, rereadGroupSnapshots);
-    }
-}
-
-async function rereadGroupSnapshotsAfterFailedPull(
-    scope: StateScope,
-    rereadGroupSnapshots?: RereadGroupSnapshots
-): Promise<void> {
-    if (rereadGroupSnapshots === undefined) {
-        return;
-    }
-    try {
-        const reread = await rereadGroupSnapshots(scope);
-        await acceptGroupStateSnapshotsOrRecompute(reread, scope, rereadGroupSnapshots);
-    }
-    catch {
-        // Convergence falls back to the heartbeat snapshot refresh.
-    }
-}
-
 function toDeltaMembers(
     cached: readonly GroupMember[],
     affected: readonly GroupMember[]
@@ -245,18 +202,4 @@ function isAuthoritativeGroupSnapshot(snapshot: GroupSnapshot, scope: StateScope
     catch {
         return false;
     }
-}
-
-function emitGroupStateDeltaDiagnostic(
-    application: GroupStateDeltaApplication,
-    startedAtMs: number
-): GroupStateDeltaApplication {
-    emitBrowserStateReadDiagnostic({
-        name: 'rallar.browser.state-read',
-        feature: 'group',
-        operation: 'delta-apply',
-        result: application,
-        durationMs: performance.now() - startedAtMs
-    });
-    return application;
 }

@@ -167,7 +167,7 @@ describe('shared-web browser entrypoints', () => {
                 readSourceAnalysis(
                     `packages/shared-web/browser/rallar-runtime/${fileName}`
                 ),
-                '@shared-web/browser/data-caches.ts'
+                '@shared-web/browser/state-cache/browser-state-cache-lifecycle.ts'
             ).map((reference) => `${fileName}: ${reference}`)
         );
 

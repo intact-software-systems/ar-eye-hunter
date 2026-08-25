@@ -696,7 +696,6 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
                 './game/mod.ts'
             ],
             namespaceExports: [
-                'dataCaches from ./browser/data-caches.ts',
                 'qboxEngine from ./browser/qbox-engine.ts',
                 'wsEngine from ./browser/ws-engine.ts'
             ]

@@ -78,7 +78,7 @@ describe('room leave operations', () => {
         await expect(createRallarFacade().rooms.leave()).resolves.toBeUndefined();
 
         expect(roomWorkflowMocks.leaveStateGroup).not.toHaveBeenCalled();
-        expect(roomWorkflowMocks.hydrateStateCaches).not.toHaveBeenCalled();
+        expect(roomWorkflowMocks.hydrateStateCache).not.toHaveBeenCalled();
         expect(roomWorkflowMocks.operationLog).toEqual([]);
     });
 });

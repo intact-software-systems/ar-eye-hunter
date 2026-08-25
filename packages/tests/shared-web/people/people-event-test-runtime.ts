@@ -28,7 +28,7 @@ const peopleEventMocks = await vi.hoisted(async () => {
     return {
         session: context.session,
         context,
-        hydrateStateCaches: vi.fn(async (): Promise<void> => undefined),
+        hydrateStateCache: vi.fn(async (): Promise<void> => undefined),
         initMiddleware: vi.fn(async (): Promise<ApiMiddleware> => context),
         isMiddlewareReady: vi.fn(() => false),
         listStateClientEvents: vi.fn(async (_principalId: string): Promise<ClientEvent[]> => []),
@@ -65,9 +65,12 @@ vi.mock(import('@shared-web/browser/state-read/refresh-state-snapshots.ts'), () 
     refreshStateSnapshots: peopleEventMocks.refreshStateSnapshots
 }));
 
-vi.mock(import('@shared-web/browser/data-caches.ts'), () => ({
-    hydrateStateCaches: peopleEventMocks.hydrateStateCaches,
-    onStateCacheChange: vi.fn(() => vi.fn())
+vi.mock(import('@shared-web/browser/state-cache/browser-state-cache-lifecycle.ts'), () => ({
+    browserStateCacheLifecycle: {
+        hydrate: peopleEventMocks.hydrateStateCache,
+        onChange: vi.fn(() => vi.fn()),
+        initialise: vi.fn()
+    }
 }));
 
 vi.mock(import('@shared/api/auth.ts'), () => ({
@@ -94,7 +97,7 @@ export function readPeopleEventMocks(): typeof peopleEventMocks {
 
 export function resetPeopleEventTestRuntime(): void {
     vi.clearAllMocks();
-    peopleEventMocks.hydrateStateCaches.mockResolvedValue(undefined);
+    peopleEventMocks.hydrateStateCache.mockResolvedValue(undefined);
     peopleEventMocks.initMiddleware.mockResolvedValue(peopleEventMocks.context);
     peopleEventMocks.isMiddlewareReady.mockReturnValue(false);
     peopleEventMocks.listStateClientEvents.mockRejectedValue(new Error('client events not mocked'));

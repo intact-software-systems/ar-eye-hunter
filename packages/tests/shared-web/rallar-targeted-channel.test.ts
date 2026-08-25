@@ -13,7 +13,7 @@ type AuthApiModule = typeof import('@shared-web/browser/auth/session-http-api.ts
 type RoomGroupStateWorkflowsModule = typeof import('@shared-web/browser/rooms/room-group-state-workflows.ts');
 type RoomMutationWorkflowsModule = typeof import('@shared-web/browser/rooms/room-group-state-mutation-workflows.ts');
 type RefreshStateSnapshotsModule = typeof import('@shared-web/browser/state-read/refresh-state-snapshots.ts');
-type DataCachesModule = typeof import('@shared-web/browser/data-caches.ts');
+type StateCacheLifecycleModule = typeof import('@shared-web/browser/state-cache/browser-state-cache-lifecycle.ts');
 type AuthModule = typeof import('@shared/api/auth.ts');
 type ClientStateSnapshotsRepositoryModule = typeof import('@shared/repository/client-state-snapshots-repository.ts');
 type GroupStateSnapshotsRepositoryModule = typeof import('@shared/repository/group-state-snapshots-repository.ts');
@@ -73,9 +73,12 @@ vi.mock(import('@shared-web/browser/rooms/room-group-state-mutation-workflows.ts
     updateStateGroupMetadata: mocks.updateStateGroupMetadata
 }));
 
-vi.mock(import('@shared-web/browser/data-caches.ts'), (): Partial<DataCachesModule> => ({
-    hydrateStateCaches: mocks.hydrateStateCaches,
-    onStateCacheChange: mocks.onStateCacheChange
+vi.mock(import('@shared-web/browser/state-cache/browser-state-cache-lifecycle.ts'), (): Partial<StateCacheLifecycleModule> => ({
+    browserStateCacheLifecycle: {
+        hydrate: mocks.hydrateStateCache,
+        onChange: mocks.onCacheChange,
+        initialise: vi.fn()
+    }
 }));
 
 vi.mock(import('@shared/api/auth.ts'), (): Partial<AuthModule> => ({

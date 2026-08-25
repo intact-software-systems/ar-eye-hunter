@@ -25,8 +25,8 @@ const mocks = await vi.hoisted(async () => {
         clearSession: vi.fn<ContractModules.Auth['clearSession']>(),
         readSession: vi.fn<ContractModules.Auth['readSession']>(() => session),
         writeSession: vi.fn<ContractModules.Auth['writeSession']>(),
-        hydrateStateCaches: vi.fn<ContractModules.DataCaches['hydrateStateCaches']>(() => Promise.resolve()),
-        onStateCacheChange: vi.fn<ContractModules.DataCaches['onStateCacheChange']>(() => vi.fn()),
+        hydrateStateCache: vi.fn<ContractModules.StateCacheLifecycle['browserStateCacheLifecycle']['hydrate']>(() => Promise.resolve()),
+        onCacheChange: vi.fn<ContractModules.StateCacheLifecycle['browserStateCacheLifecycle']['onChange']>(() => vi.fn()),
         deleteBrowserALRuntimeEntriesForSession: vi.fn<ContractModules.BrowserALRuntimeStores['deleteBrowserALRuntimeEntriesForSession']>(() =>
             Promise.resolve({
                 dbName: '',
@@ -127,10 +127,13 @@ vi.mock(
 );
 
 vi.mock(
-    import('@shared-web/browser/data-caches.ts'),
-    (): Partial<ContractModules.DataCaches> => ({
-        hydrateStateCaches: mocks.hydrateStateCaches,
-        onStateCacheChange: mocks.onStateCacheChange
+    import('@shared-web/browser/state-cache/browser-state-cache-lifecycle.ts'),
+    (): Partial<ContractModules.StateCacheLifecycle> => ({
+        browserStateCacheLifecycle: {
+            hydrate: mocks.hydrateStateCache,
+            onChange: mocks.onCacheChange,
+            initialise: vi.fn()
+        }
     })
 );
 

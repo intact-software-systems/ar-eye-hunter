@@ -34,7 +34,7 @@ function createLifecycleMocks(ctx: ApiMiddleware) {
     return {
         clearSession: vi.fn(),
         clearMiddleware: vi.fn(),
-        hydrateStateCaches: vi.fn((): Promise<void> => Promise.resolve()),
+        hydrateStateCache: vi.fn((): Promise<void> => Promise.resolve()),
         initMiddleware: vi.fn((_options?: MiddlewareInitOptions) => Promise.resolve(ctx)),
         isMiddlewareReady: vi.fn(() => false),
         loginToApi: vi.fn<AuthApiModule['loginToApi']>(() => Promise.resolve(ctx.session)),
@@ -47,7 +47,7 @@ function createLifecycleMocks(ctx: ApiMiddleware) {
                 registeredAtEpochMs: 1_000
             })
         ),
-        onStateCacheChange: vi.fn((): () => void => vi.fn()),
+        onCacheChange: vi.fn((): () => void => vi.fn()),
         readSession: vi.fn(() => ctx.session),
         writeSession: vi.fn()
     };

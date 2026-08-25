@@ -19,10 +19,10 @@ const mocks = await vi.hoisted(async () => {
         ctx,
         realtimeChannel,
         webRtcConnectionService: ctx.middleware.webRtcConnectionService,
-        hydrateStateCaches: vi.fn(async (): Promise<void> => undefined),
+        hydrateStateCache: vi.fn(async (): Promise<void> => undefined),
         initMiddleware: vi.fn(async (): Promise<ApiMiddleware> => ctx),
         isMiddlewareReady: vi.fn(() => false),
-        onStateCacheChange: vi.fn(() => vi.fn()),
+        onCacheChange: vi.fn(() => vi.fn()),
         readSession: vi.fn((): AuthSession | undefined => ctx.session),
         findFirstGroupStateSnapshotRefSessionIdIsIn: vi.fn(
             (_sessionId: string): GroupRef | undefined => {
@@ -50,9 +50,12 @@ vi.mock(import('@shared-web/browser/middleware.ts'), () => ({
     initialiseMiddleware: async (): Promise<Middleware> => mocks.ctx.middleware
 }));
 
-vi.mock(import('@shared-web/browser/data-caches.ts'), () => ({
-    hydrateStateCaches: mocks.hydrateStateCaches,
-    onStateCacheChange: mocks.onStateCacheChange
+vi.mock(import('@shared-web/browser/state-cache/browser-state-cache-lifecycle.ts'), () => ({
+    browserStateCacheLifecycle: {
+        hydrate: mocks.hydrateStateCache,
+        onChange: mocks.onCacheChange,
+        initialise: vi.fn()
+    }
 }));
 
 vi.mock(import('@shared/api/auth.ts'), () => ({
@@ -76,7 +79,7 @@ vi.mock(import('@shared/repository/group-state-snapshots-repository.ts'), () => 
 describe('Rallar room realtime channel', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        mocks.hydrateStateCaches.mockResolvedValue(undefined);
+        mocks.hydrateStateCache.mockResolvedValue(undefined);
         mocks.initMiddleware.mockResolvedValue(mocks.ctx);
         mocks.isMiddlewareReady.mockReturnValue(false);
         mocks.readSession.mockReturnValue(mocks.ctx.session);

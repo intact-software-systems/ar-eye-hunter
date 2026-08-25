@@ -1,7 +1,7 @@
 import { configureApiClient } from '@shared-web/browser/api-client-config.ts';
-import * as dataCaches from '@shared-web/browser/data-caches.ts';
+import { browserStateCacheLifecycle } from '@shared-web/browser/state-cache/browser-state-cache-lifecycle.ts';
 import { setBrowserStateReadDiagnosticsSink, type BrowserStateReadDiagnosticEvent } from '@shared-web/browser/state-read/diagnostics.ts';
-import { newALBroadcastMessage, newALEventRoute } from '@shared/al-contracts/al-contract.ts';
+import { newALBroadcastMessage, newALEventRoute, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { AppTopics, type ClientInfo } from '@shared/api/api-config.ts';
 import { validateGroupStateDeltaEnvelope, type GroupStateDeltaEnvelope } from '@shared/api/group-state-delta.ts';
 import type { GroupEvent, GroupMember, GroupPresenceSession, GroupSnapshot, GroupStateCausalRevision } from '@shared/api/group-types.ts';
@@ -10,8 +10,8 @@ import { decideGroupSnapshotCausalRevision } from '@shared/repository/group-stat
 import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
 import { StateSnapshotRevisionConflictError } from '@shared/repository/state-snapshot-revision.ts';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { configureTestCacheRepositories } from '../cache-repository-config.ts';
-import { createTestGroup } from '../create-test-group.ts';
+import { configureTestCacheRepositories } from '../../cache-repository-config.ts';
+import { createTestGroup } from '../../create-test-group.ts';
 
 vi.mock('@shared/repository/group-state-snapshot-revision.ts', async (importOriginal) => {
     const actual = await importOriginal<typeof import('@shared/repository/group-state-snapshot-revision.ts')>();
@@ -21,7 +21,7 @@ vi.mock('@shared/repository/group-state-snapshot-revision.ts', async (importOrig
     };
 });
 
-describe('browser group-state delta application', () => {
+describe('browser group-state delta reconciliation', () => {
     const diagnostics: BrowserStateReadDiagnosticEvent[] = [];
 
     beforeEach(() => {
@@ -283,26 +283,30 @@ function createStateCacheRuntime() {
         sessionId: 'session-m-alpha',
         isOnline: true
     };
-    let onInboxMessage: ((message: unknown) => Promise<void>) | undefined;
+    let onInboxMessage: ((message: ALMessage) => Promise<void>) | undefined;
     const webSocketQueueBox = {
         onAllInboxMessagesDo: vi.fn((callback: {
-            onMessage: (message: unknown) => Promise<void>;
+            onMessage: (message: ALMessage) => Promise<void>;
         }) => {
             onInboxMessage = callback.onMessage;
             return webSocketQueueBox;
         })
     };
-    dataCaches.initialise(webSocketQueueBox, manager as never, clientData);
+    browserStateCacheLifecycle.initialise({
+        inbox: webSocketQueueBox,
+        webRtcGroupManager: manager as never,
+        clientData
+    });
 
     return {
         manager,
         hydrate: async (snapshots: readonly GroupSnapshot[]) => {
-            await dataCaches.hydrateStateCaches(
-                manager as never,
+            await browserStateCacheLifecycle.hydrate({
+                webRtcGroupManager: manager as never,
                 clientData,
-                [],
-                snapshots
-            );
+                clientSnapshots: [],
+                groupSnapshots: snapshots
+            });
         },
         receiveDeltaMessage: async (envelope: GroupStateDeltaEnvelope) => {
             await onInboxMessage?.(

@@ -12,7 +12,7 @@ type AuthApiModule = typeof import('@shared-web/browser/auth/session-http-api.ts
 type RoomGroupStateWorkflowsModule = typeof import('@shared-web/browser/rooms/room-group-state-workflows.ts');
 type RoomMutationWorkflowsModule = typeof import('@shared-web/browser/rooms/room-group-state-mutation-workflows.ts');
 type RefreshStateSnapshotsModule = typeof import('@shared-web/browser/state-read/refresh-state-snapshots.ts');
-type DataCachesModule = typeof import('@shared-web/browser/data-caches.ts');
+type StateCacheLifecycleModule = typeof import('@shared-web/browser/state-cache/browser-state-cache-lifecycle.ts');
 type AuthModule = typeof import('@shared/api/auth.ts');
 type ClientStateSnapshotsRepositoryModule = typeof import('@shared/repository/client-state-snapshots-repository.ts');
 type GroupStateSnapshotsRepositoryModule = typeof import('@shared/repository/group-state-snapshots-repository.ts');
@@ -40,7 +40,7 @@ const mocks = await vi.hoisted(async () => {
         webSocketClient: vi.mocked(ctx.middleware.webSocketQueueBox.socket),
         clearSession: vi.fn<AuthModule['clearSession']>(),
         clearMiddleware: vi.fn<AppContextModule['clearMiddleware']>(),
-        hydrateStateCaches: vi.fn<DataCachesModule['hydrateStateCaches']>(() => Promise.resolve()),
+        hydrateStateCache: vi.fn<StateCacheLifecycleModule['browserStateCacheLifecycle']['hydrate']>(() => Promise.resolve()),
         initMiddleware: vi.fn<AppContextModule['initMiddleware']>(() => Promise.resolve(ctx)),
         isMiddlewareReady: vi.fn<AppContextModule['isMiddlewareReady']>(() => false),
         createAndJoinStateGroup: vi.fn<RoomGroupStateWorkflowsModule['createAndJoinStateGroup']>(
@@ -67,7 +67,7 @@ const mocks = await vi.hoisted(async () => {
                 registeredAtEpochMs: 1_000
             })
         ),
-        onStateCacheChange: vi.fn<DataCachesModule['onStateCacheChange']>(() => vi.fn()),
+        onCacheChange: vi.fn<StateCacheLifecycleModule['browserStateCacheLifecycle']['onChange']>(() => vi.fn()),
         readSession: vi.fn<AuthModule['readSession']>(() => ctx.session),
         refreshStateSnapshots: vi.fn<RefreshStateSnapshotsModule['refreshStateSnapshots']>(() => Promise.resolve({ clients: [], groups: [] })),
         findClientStateSnapshotByPrincipalId: vi.fn<ClientStateSnapshotsRepositoryModule['findClientStateSnapshotByPrincipalId']>(throwClientRepositoryMissing),
@@ -122,10 +122,13 @@ vi.mock(import('@shared-web/browser/rooms/room-group-state-mutation-workflows.ts
 }));
 
 vi.mock(
-    import('@shared-web/browser/data-caches.ts'),
-    (): Partial<DataCachesModule> => ({
-        hydrateStateCaches: mocks.hydrateStateCaches,
-        onStateCacheChange: mocks.onStateCacheChange
+    import('@shared-web/browser/state-cache/browser-state-cache-lifecycle.ts'),
+    (): Partial<StateCacheLifecycleModule> => ({
+        browserStateCacheLifecycle: {
+            hydrate: mocks.hydrateStateCache,
+            onChange: mocks.onCacheChange,
+            initialise: vi.fn()
+        }
     })
 );
 

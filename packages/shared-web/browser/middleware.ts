@@ -53,7 +53,10 @@ import * as heartbeat from '@shared-web/browser/heartbeat.ts';
 import * as qbox from '@shared-web/browser/qbox-engine.ts';
 import * as rtcEngine from '@shared-web/browser/rtc-engine.ts';
 import * as wsEngine from '@shared-web/browser/ws-engine.ts';
-import * as cache from './data-caches.ts';
+import {
+    browserStateCacheLifecycle,
+    type StateCacheScopeOptions
+} from './state-cache/browser-state-cache-lifecycle.ts';
 
 export interface Middleware {
     readonly qboxEngine: InboxOutboxEngine;
@@ -405,7 +408,7 @@ function createBrowserRtcGroupManager(
 async function initialiseBrowserStateTransport(
     input: InitialiseBrowserStateTransportInput
 ): Promise<void> {
-    const stateCacheOptions: cache.StateCacheScopeOptions = {
+    const stateCacheOptions: StateCacheScopeOptions = {
         scope: input.options.scope,
         rereadGroupSnapshots: async () =>
             (await refreshStateSnapshots(input.options.scope, {
@@ -413,12 +416,12 @@ async function initialiseBrowserStateTransport(
             })).groups,
         groupFormation: { bootstrapDegree: input.bootstrapDegree }
     };
-    cache.initialise(
-        input.webSocketQueueBox,
-        input.webRtcGroupManager,
-        input.clientData,
-        stateCacheOptions
-    );
+    browserStateCacheLifecycle.initialise({
+        inbox: input.webSocketQueueBox,
+        webRtcGroupManager: input.webRtcGroupManager,
+        clientData: input.clientData,
+        options: stateCacheOptions
+    });
     const snapshots = await refreshStateSnapshots(input.options.scope, {
         command: toCommandOptions(input.options)
     });
@@ -429,16 +432,16 @@ async function initialiseBrowserStateTransport(
 
 async function hydrateBrowserStateCaches(
     input: InitialiseBrowserStateTransportInput,
-    stateCacheOptions: cache.StateCacheScopeOptions,
+    stateCacheOptions: StateCacheScopeOptions,
     snapshots: Awaited<ReturnType<typeof refreshStateSnapshots>>
 ): Promise<void> {
-    await cache.hydrateStateCaches(
-        input.webRtcGroupManager,
-        input.clientData,
-        snapshots.clients,
-        snapshots.groups,
-        stateCacheOptions
-    );
+    await browserStateCacheLifecycle.hydrate({
+        webRtcGroupManager: input.webRtcGroupManager,
+        clientData: input.clientData,
+        clientSnapshots: snapshots.clients,
+        groupSnapshots: snapshots.groups,
+        options: stateCacheOptions
+    });
 }
 
 async function hydrateBrowserGroupTopologies(
@@ -456,7 +459,7 @@ async function hydrateBrowserGroupTopologies(
 
 function installBrowserStateResync(
     input: InitialiseBrowserStateTransportInput,
-    stateCacheOptions: cache.StateCacheScopeOptions
+    stateCacheOptions: StateCacheScopeOptions
 ): void {
     initGroupStateResyncOnReopen({
         socket: input.webSocketQueueBox.socket,

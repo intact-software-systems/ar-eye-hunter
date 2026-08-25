@@ -5,7 +5,7 @@ import { createGroupSnapshotFixture } from './authoritative-group-fixtures.ts';
 
 type MiddlewareModule = typeof import('@shared-web/browser/middleware.ts');
 type RefreshStateSnapshotsModule = typeof import('@shared-web/browser/state-read/refresh-state-snapshots.ts');
-type DataCachesModule = typeof import('@shared-web/browser/data-caches.ts');
+type StateCacheLifecycleModule = typeof import('@shared-web/browser/state-cache/browser-state-cache-lifecycle.ts');
 type AuthModule = typeof import('@shared/api/auth.ts');
 type ClientStateSnapshotsRepositoryModule = typeof import('@shared/repository/client-state-snapshots-repository.ts');
 type GroupStateSnapshotsRepositoryModule = typeof import('@shared/repository/group-state-snapshots-repository.ts');
@@ -23,9 +23,9 @@ const mocks = await vi.hoisted(async () => {
     return {
         clearSession: vi.fn<AuthModule['clearSession']>(),
         ctx,
-        hydrateStateCaches: vi.fn<DataCachesModule['hydrateStateCaches']>(() => Promise.resolve()),
+        hydrateStateCache: vi.fn<StateCacheLifecycleModule['browserStateCacheLifecycle']['hydrate']>(() => Promise.resolve()),
         initialiseMiddleware: vi.fn<MiddlewareModule['initialiseMiddleware']>(() => Promise.resolve(ctx.middleware)),
-        onStateCacheChange: vi.fn<DataCachesModule['onStateCacheChange']>(() => vi.fn()),
+        onCacheChange: vi.fn<StateCacheLifecycleModule['browserStateCacheLifecycle']['onChange']>(() => vi.fn()),
         readSession: vi.fn<AuthModule['readSession']>(() => ctx.session),
         refreshStateSnapshots: vi.fn<RefreshStateSnapshotsModule['refreshStateSnapshots']>(() => Promise.resolve({ clients: [], groups: [] })),
         findClientStateSnapshotByPrincipalId: vi.fn<ClientStateSnapshotsRepositoryModule['findClientStateSnapshotByPrincipalId']>(() => undefined),
@@ -55,10 +55,13 @@ vi.mock(
 );
 
 vi.mock(
-    import('@shared-web/browser/data-caches.ts'),
-    (): Partial<DataCachesModule> => ({
-        hydrateStateCaches: mocks.hydrateStateCaches,
-        onStateCacheChange: mocks.onStateCacheChange
+    import('@shared-web/browser/state-cache/browser-state-cache-lifecycle.ts'),
+    (): Partial<StateCacheLifecycleModule> => ({
+        browserStateCacheLifecycle: {
+            hydrate: mocks.hydrateStateCache,
+            onChange: mocks.onCacheChange,
+            initialise: vi.fn()
+        }
     })
 );
 
@@ -94,7 +97,7 @@ describe('Rallar startup lifecycle behavior', () => {
         mocks.findClientStateSnapshotByPrincipalId.mockReturnValue(undefined);
         mocks.getAllClientStateSnapshots.mockReturnValue([]);
         mockGroupSnapshots([]);
-        mocks.hydrateStateCaches.mockResolvedValue(undefined);
+        mocks.hydrateStateCache.mockResolvedValue(undefined);
         mocks.clearSession.mockReset();
         mocks.initialiseMiddleware.mockResolvedValue(mocks.ctx.middleware);
         mocks.readSession.mockReturnValue(mocks.ctx.session);

@@ -29,7 +29,7 @@ const roomEventMocks = await vi.hoisted(async () => {
     return {
         session: ctx.session,
         ctx,
-        hydrateStateCaches: vi.fn(async (): Promise<void> => undefined),
+        hydrateStateCache: vi.fn(async (): Promise<void> => undefined),
         initMiddleware: vi.fn(async (): Promise<ApiMiddleware> => ctx),
         isMiddlewareReady: vi.fn(() => false),
         listStateGroupEvents: vi.fn(async (_groupId: string): Promise<GroupEvent[]> => []),
@@ -60,9 +60,12 @@ vi.mock(import('@shared-web/browser/state-read/refresh-state-snapshots.ts'), () 
     refreshStateSnapshots: vi.fn(async () => ({ clients: [], groups: [] }))
 }));
 
-vi.mock(import('@shared-web/browser/data-caches.ts'), () => ({
-    hydrateStateCaches: roomEventMocks.hydrateStateCaches,
-    onStateCacheChange: vi.fn(() => vi.fn())
+vi.mock(import('@shared-web/browser/state-cache/browser-state-cache-lifecycle.ts'), () => ({
+    browserStateCacheLifecycle: {
+        hydrate: roomEventMocks.hydrateStateCache,
+        onChange: vi.fn(() => vi.fn()),
+        initialise: vi.fn()
+    }
 }));
 
 vi.mock(import('@shared/api/auth.ts'), () => ({
@@ -89,7 +92,7 @@ export function readRoomEventMocks(): typeof roomEventMocks {
 
 export function resetRoomEventTestRuntime(): void {
     vi.clearAllMocks();
-    roomEventMocks.hydrateStateCaches.mockResolvedValue(undefined);
+    roomEventMocks.hydrateStateCache.mockResolvedValue(undefined);
     roomEventMocks.initMiddleware.mockResolvedValue(roomEventMocks.ctx);
     roomEventMocks.isMiddlewareReady.mockReturnValue(false);
     roomEventMocks.listStateGroupEvents.mockRejectedValue(new Error('group events not mocked'));

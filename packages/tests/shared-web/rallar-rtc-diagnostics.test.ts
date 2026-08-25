@@ -8,7 +8,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 // have. With the annotation a renamed or removed export fails the type check.
 type AppContextModule = typeof import('@shared-web/browser/app-context.ts');
 type MiddlewareModule = typeof import('@shared-web/browser/middleware.ts');
-type DataCachesModule = typeof import('@shared-web/browser/data-caches.ts');
+type StateCacheLifecycleModule = typeof import('@shared-web/browser/state-cache/browser-state-cache-lifecycle.ts');
 type AuthModule = typeof import('@shared/api/auth.ts');
 type ClientStateSnapshotsModule = typeof import('@shared/repository/client-state-snapshots-repository.ts');
 type GroupStateSnapshotsModule = typeof import('@shared/repository/group-state-snapshots-repository.ts');
@@ -23,10 +23,10 @@ const mocks = await vi.hoisted(async () => {
         ctx,
         webRtcConnectionService: ctx.middleware.webRtcConnectionService,
         webSocketQueueBox: ctx.middleware.webSocketQueueBox,
-        hydrateStateCaches: vi.fn(() => Promise.resolve()),
+        hydrateStateCache: vi.fn(() => Promise.resolve()),
         initMiddleware: vi.fn(() => Promise.resolve(ctx)),
         isMiddlewareReady: vi.fn(() => false),
-        onStateCacheChange: vi.fn(() => vi.fn()),
+        onCacheChange: vi.fn(() => vi.fn()),
         readSession: vi.fn(() => ctx.session),
         clientRepositoryMissing: vi.fn((): never => {
             throw new Error(
@@ -49,10 +49,13 @@ vi.mock(
 );
 
 vi.mock(
-    import('@shared-web/browser/data-caches.ts'),
-    (): Partial<DataCachesModule> => ({
-        hydrateStateCaches: mocks.hydrateStateCaches,
-        onStateCacheChange: mocks.onStateCacheChange
+    import('@shared-web/browser/state-cache/browser-state-cache-lifecycle.ts'),
+    (): Partial<StateCacheLifecycleModule> => ({
+        browserStateCacheLifecycle: {
+            hydrate: mocks.hydrateStateCache,
+            onChange: mocks.onCacheChange,
+            initialise: vi.fn()
+        }
     })
 );
 
@@ -92,7 +95,7 @@ describe('Rallar RTC diagnostics', () => {
         mocks.groupRepositoryMissing.mockImplementation(
             (value?: string): never => (value === undefined ? [] : undefined) as never
         );
-        mocks.hydrateStateCaches.mockResolvedValue(undefined);
+        mocks.hydrateStateCache.mockResolvedValue(undefined);
         mocks.initMiddleware.mockResolvedValue(mocks.ctx);
         mocks.isMiddlewareReady.mockReturnValue(false);
         mocks.readSession.mockReturnValue(mocks.ctx.session);

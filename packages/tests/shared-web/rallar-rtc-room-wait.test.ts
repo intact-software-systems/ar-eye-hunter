@@ -1,4 +1,4 @@
-import type { StateCacheChangeListener } from '@shared-web/browser/data-caches.ts';
+import type { StateCacheChangeListener } from '@shared-web/browser/state-cache/browser-state-cache-lifecycle.ts';
 import { DEFAULT_RTC_DATA_CHANNEL_LANE_ID } from '@shared/services/WebRtcConnectionService.ts';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createGroupSnapshot, mockGroupSnapshot, mockGroupSnapshots, readRtcWaitMocks, resetRtcWaitTestRuntime } from './rallar-rtc-wait-test-runtime.ts';
@@ -131,7 +131,7 @@ describe('Rallar RTC room wait', () => {
             '@shared-web/browser/rallar.ts'
         );
         let onCacheChange: StateCacheChangeListener | undefined;
-        mocks.onStateCacheChange.mockImplementation((listener) => {
+        mocks.onCacheChange.mockImplementation((listener) => {
             onCacheChange = listener;
             return vi.fn();
         });
@@ -161,7 +161,7 @@ describe('Rallar RTC room wait', () => {
             '@shared-web/browser/rallar.ts'
         );
         mockGroupSnapshot(createGroupSnapshot('room-1', ['session-1']));
-        mocks.onStateCacheChange.mockImplementation(() => {
+        mocks.onCacheChange.mockImplementation(() => {
             mockGroupSnapshot(createGroupSnapshot('room-1', [
                 'session-1',
                 'peer-a'

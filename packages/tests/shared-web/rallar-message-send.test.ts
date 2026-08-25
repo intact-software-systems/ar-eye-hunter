@@ -1,9 +1,9 @@
 import type * as AppContextModule from '@shared-web/browser/app-context.ts';
 import type * as AuthApiModule from '@shared-web/browser/auth/session-http-api.ts';
-import type * as DataCachesModule from '@shared-web/browser/data-caches.ts';
 import type * as MiddlewareModule from '@shared-web/browser/middleware.ts';
 import type * as RoomMutationWorkflowsModule from '@shared-web/browser/rooms/room-group-state-mutation-workflows.ts';
 import type * as RoomGroupStateWorkflowsModule from '@shared-web/browser/rooms/room-group-state-workflows.ts';
+import type * as StateCacheLifecycleModule from '@shared-web/browser/state-cache/browser-state-cache-lifecycle.ts';
 import type * as RefreshStateSnapshotsModule from '@shared-web/browser/state-read/refresh-state-snapshots.ts';
 import type * as StateEventHttpApiModule from '@shared-web/browser/state-read/state-event-http-api.ts';
 import { newALRoute, newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
@@ -55,7 +55,7 @@ const mocks = await vi.hoisted(async () => {
         findGroupStateSnapshotByRef: vi.fn<typeof GroupStateSnapshotsRepositoryModule.findGroupStateSnapshotByRef>(readMissingGroupStateSnapshotRepository),
         getAllClientStateSnapshots: vi.fn<typeof ClientStateSnapshotsRepositoryModule.getAllClientStateSnapshots>(readMissingClientStateSnapshotRepository),
         getAllGroupStateSnapshots: vi.fn<typeof GroupStateSnapshotsRepositoryModule.getAllGroupStateSnapshots>(readMissingGroupStateSnapshotRepository),
-        hydrateStateCaches: vi.fn<typeof DataCachesModule.hydrateStateCaches>(
+        hydrateStateCache: vi.fn<typeof StateCacheLifecycleModule.browserStateCacheLifecycle.hydrate>(
             () => Promise.resolve()
         ),
         initMiddleware: vi.fn<typeof AppContextModule.initMiddleware>(() => Promise.resolve(ctx)),
@@ -72,7 +72,7 @@ const mocks = await vi.hoisted(async () => {
         listStateGroupEvents: vi.fn<typeof StateEventHttpApiModule.listStateGroupEvents>(() => Promise.reject(new Error('group events not mocked'))),
         loginToApi: vi.fn<typeof AuthApiModule.loginToApi>(() => Promise.resolve(session)),
         logoutFromApi: vi.fn<typeof AuthApiModule.logoutFromApi>(() => Promise.resolve({ loggedOut: true })),
-        onStateCacheChange: vi.fn<typeof DataCachesModule.onStateCacheChange>(
+        onCacheChange: vi.fn<typeof StateCacheLifecycleModule.browserStateCacheLifecycle.onChange>(
             () => vi.fn()
         ),
         readSession: vi.fn<typeof AuthModule.readSession>(() => session),
@@ -143,10 +143,13 @@ vi.mock(import('@shared-web/browser/rooms/room-group-state-mutation-workflows.ts
 }));
 
 vi.mock(
-    import('@shared-web/browser/data-caches.ts'),
-    (): Partial<typeof DataCachesModule> => ({
-        hydrateStateCaches: mocks.hydrateStateCaches,
-        onStateCacheChange: mocks.onStateCacheChange
+    import('@shared-web/browser/state-cache/browser-state-cache-lifecycle.ts'),
+    (): Partial<typeof StateCacheLifecycleModule> => ({
+        browserStateCacheLifecycle: {
+            hydrate: mocks.hydrateStateCache,
+            onChange: mocks.onCacheChange,
+            initialise: vi.fn()
+        }
     })
 );
 
