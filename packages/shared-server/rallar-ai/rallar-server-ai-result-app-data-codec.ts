@@ -9,7 +9,7 @@ import {
 import type { AppDataValueCodec } from '../app-data/app-data-value-codec.ts';
 import type { JsonWireObject, JsonWireValue } from '../rallar-system/protocol/json-wire-identity.ts';
 
-export const RALLAR_AI_RESULT_APP_DATA_CODEC: AppDataValueCodec<RallarAiJsonResult<RallarAiJsonValue>> = {
+export const RALLAR_SERVER_AI_RESULT_APP_DATA_CODEC: AppDataValueCodec<RallarAiJsonResult<RallarAiJsonValue>> = {
     schemaVersion: 1,
     encode: (value) => toJsonWireValue(value),
     decode: decodeRallarAiResult

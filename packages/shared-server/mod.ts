@@ -20,7 +20,13 @@ export * from './queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 export * from './queuebox/postgres/p-sql-queue-box.ts';
 export * from './queuebox/postgres/p-sql-results-queue-box.ts';
 export * from './queuebox/postgres/resource-inbox-results-repository.ts';
-export * from './rallar-ai/mod.ts';
+export * from './rallar-ai/create-rallar-ai-ollama-provider.ts';
+export * from './rallar-ai/create-rallar-server-ai.ts';
+export * from './rallar-ai/install-rallar-server-ai-http-route.ts';
+export * from './rallar-ai/install-rallar-server-ai-websocket-topic.ts';
+export * from './rallar-ai/rallar-server-ai-contracts.ts';
+export * from './rallar-ai/rallar-server-ai-result-persistence.ts';
+export * from './rallar-ai/rallar-server-ai-result-publication.ts';
 export * from './rallar-server/rallar-server-application.ts';
 export type {
     AdminOperationMutationRequest,

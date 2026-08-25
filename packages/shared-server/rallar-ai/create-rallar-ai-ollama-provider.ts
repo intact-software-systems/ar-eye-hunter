@@ -4,8 +4,10 @@ import {
     RallarAiError,
     type RallarAiJsonProvider,
     type RallarAiJsonRequest,
-    type RallarAiJsonResult
+    type RallarAiJsonResult,
+    type RallarAiJsonValue
 } from '@shared/rallar-ai/mod.ts';
+import { decodeJsonWireValue, type JsonWireObject } from '../rallar-system/protocol/json-wire-identity.ts';
 
 export type RallarAiOllamaFetch = (
     input: RequestInfo | URL,
@@ -56,7 +58,7 @@ export function createRallarAiOllamaProvider(
             supportsCancellation: true,
             target: 'server'
         },
-        async generateJson<TValue = unknown, TContext = unknown>(
+        async generateJson<TValue = RallarAiJsonValue, TContext = RallarAiJsonValue>(
             request: RallarAiJsonRequest<TContext>
         ): Promise<RallarAiJsonResult<TValue>> {
             const startedAtEpochMs = Date.now();
@@ -88,10 +90,9 @@ export function createRallarAiOllamaProvider(
                 );
             }
 
-            const payload = await response.json() as Record<string, unknown>;
-            const rawText = typeof payload.response === 'string'
-                ? payload.response
-                : JSON.stringify(payload.response ?? payload);
+            const rawText = decodeOllamaResponse(
+                decodeJsonWireValue(await response.json(), 'Ollama response')
+            );
             const parsed = parseRallarAiJson(rawText);
             if (!parsed.ok) {
                 throw new RallarAiError(
@@ -100,17 +101,35 @@ export function createRallarAiOllamaProvider(
                     parsed.validation
                 );
             }
+            const jsonValue = decodeJsonWireValue(
+                parsed.value,
+                'Ollama generated value'
+            );
 
             return createRallarAiJsonResult<TValue>({
                 request,
                 provider: this,
-                value: parsed.value as TValue,
+                value: jsonValue as TValue,
                 rawText,
                 startedAtEpochMs,
                 completedAtEpochMs: Date.now()
             });
         }
     };
+}
+
+function decodeOllamaResponse(payload: ReturnType<typeof decodeJsonWireValue>): string {
+    if (!isJsonObject(payload) || typeof payload.response !== 'string') {
+        throw new RallarAiError(
+            'invalid-json',
+            'Ollama returned a malformed response envelope.'
+        );
+    }
+    return payload.response;
+}
+
+function isJsonObject(value: ReturnType<typeof decodeJsonWireValue>): value is JsonWireObject {
+    return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
 function normalizeBaseUrl(baseUrl: string): URL {

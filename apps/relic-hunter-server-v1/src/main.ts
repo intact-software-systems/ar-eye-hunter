@@ -54,7 +54,6 @@ addEventListener('unload', () => {
 const relicGame = await installRelicHunterGame(rallar, {
     createInitialState: createRelicExpeditionInitialStateFactory({
         configuration: configuration.expeditionAi,
-        rallar,
         onFallback: (event) => {
             console.warn(
                 `[relic-ai] expedition generation fell back for ${event.gameId}: ${event.error}`

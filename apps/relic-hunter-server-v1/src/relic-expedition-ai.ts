@@ -1,4 +1,5 @@
 import {
+    assertRelicExpeditionBlueprint,
     createProceduralRelicExpeditionBlueprint,
     createRelicGame,
     createRelicGameFromBlueprint,
@@ -16,10 +17,10 @@ import {
 } from '@relic-hunters/mod.ts';
 import {
     createRallarAiOllamaProvider,
-    createRallarServerAi,
-    type RallarAiOllamaFetch,
-    type RallarServerAiRallar
-} from '@shared-server/rallar-ai/mod.ts';
+    type RallarAiOllamaFetch
+} from '@shared-server/rallar-ai/create-rallar-ai-ollama-provider.ts';
+import { createRallarServerAi } from '@shared-server/rallar-ai/create-rallar-server-ai.ts';
+import type { RallarServerAiJsonRequest } from '@shared-server/rallar-ai/decode-rallar-server-ai-json-request.ts';
 import {
     createRallarAiMockProvider,
     defineRallarAiProviderGovernanceMetadata,
@@ -53,7 +54,6 @@ export interface RelicAiExpeditionFallbackEvent {
 
 export interface CreateRelicExpeditionInitialStateFactoryOptions {
     readonly configuration: RelicAiExpeditionConfiguration;
-    readonly rallar?: RallarServerAiRallar;
     readonly fetch?: RallarAiOllamaFetch;
     readonly provider?: RallarAiJsonProvider;
     readonly mockBlueprint?:
@@ -94,14 +94,8 @@ export function createRelicExpeditionInitialStateFactory(
         return (gameId) => Promise.resolve(createRelicGame(gameId, gameId, now()));
     }
 
-    const rallar = options.rallar;
-    if (!rallar) {
-        throw new Error('Relic AI expedition generation requires a Rallar server facade.');
-    }
-
     const provider = options.provider ?? createProvider(options, mode);
     const ai = createRallarServerAi({
-        rallar,
         provider,
         policy: {
             mode: 'server-only',
@@ -128,17 +122,11 @@ export function createRelicExpeditionInitialStateFactory(
         });
 
         try {
-            const result = await ai.generateJson<RelicExpeditionBlueprint>(
+            const result = await ai.generateJson(
                 request,
                 { roomId: gameId }
             );
-
-            const validation = validateRelicExpeditionBlueprint(result.value);
-            if (!validation.ok) {
-                throw new Error(
-                    `Generated blueprint failed Relic validation: ${validation.errors.join('; ')}`
-                );
-            }
+            assertRelicExpeditionBlueprint(result.value);
 
             const visualFit = validateRelicExpeditionVisualFit(result.value);
             if (!visualFit.ok) {
@@ -195,7 +183,7 @@ export interface CreateRelicExpeditionAiRequestInput {
 
 export function createRelicExpeditionAiRequest(
     input: CreateRelicExpeditionAiRequestInput
-): RallarAiJsonRequest {
+): RallarServerAiJsonRequest {
     return {
         requestId: `relic-expedition:${input.gameId}:${input.reason}:${input.seed}`,
         schemaId: RELIC_EXPEDITION_BLUEPRINT_SCHEMA_ID,

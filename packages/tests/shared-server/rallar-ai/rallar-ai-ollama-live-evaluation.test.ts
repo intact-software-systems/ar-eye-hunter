@@ -1,4 +1,4 @@
-import { createRallarAiOllamaProvider } from '@shared-server/rallar-ai/mod.ts';
+import { createRallarAiOllamaProvider } from '@shared-server/rallar-ai/create-rallar-ai-ollama-provider.ts';
 import {
     createRallarAiMockProvider,
     isRallarAiLiveEvaluationEnabled,
@@ -6,9 +6,10 @@ import {
     type RallarAiJsonProvider,
     type RallarAiLiveEvaluationEnvironment
 } from '@shared/rallar-ai/mod.ts';
+import { env } from 'node:process';
 import { describe, expect, it } from 'vitest';
 
-describe('RallarAI live Ollama evaluation harness', () => {
+describe('Rallar AI Ollama live evaluation', () => {
     const gameEventSchema = {
         type: 'object',
         required: ['kind'],
@@ -18,26 +19,24 @@ describe('RallarAI live Ollama evaluation harness', () => {
         additionalProperties: false
     } as const;
 
-    it('skips by default and runs only when RALLAR_AI_LIVE_OLLAMA is enabled', async () => {
-        const env = readProcessEnv();
+    it('runs only when the live Ollama gate is explicitly enabled', async () => {
+        const environment: RallarAiLiveEvaluationEnvironment = env;
         const liveEnabled = isRallarAiLiveEvaluationEnabled(
-            env,
+            environment,
             'RALLAR_AI_LIVE_OLLAMA'
         );
         const provider: RallarAiJsonProvider = liveEnabled
             ? createRallarAiOllamaProvider({
-                model: env.RALLAR_AI_OLLAMA_MODEL ?? 'llama-test',
-                baseUrl: env.RALLAR_AI_OLLAMA_BASE_URL ??
+                model: environment.RALLAR_AI_OLLAMA_MODEL ?? 'llama-test',
+                baseUrl: environment.RALLAR_AI_OLLAMA_BASE_URL ??
                     'http://127.0.0.1:11434',
                 allowedBaseUrls: [
-                    env.RALLAR_AI_OLLAMA_BASE_URL ?? 'http://127.0.0.1:11434',
+                    environment.RALLAR_AI_OLLAMA_BASE_URL ?? 'http://127.0.0.1:11434',
                     'http://127.0.0.1:11434',
                     'http://localhost:11434'
                 ]
             })
-            : createRallarAiMockProvider({
-                value: { kind: 'spawn' }
-            });
+            : createRallarAiMockProvider({ value: { kind: 'spawn' } });
 
         const result = await runRallarAiEvaluationSuiteIfEnabled({
             suiteId: 'ollama-live-game-event-smoke',
@@ -52,40 +51,32 @@ describe('RallarAI live Ollama evaluation harness', () => {
                         prompt: 'Return JSON for a spawn event.',
                         timeoutMs: 20_000
                     },
-                    validateResult: (generated) => generated.validation.ok ? [] : ['schema validation failed']
+                    validateResult: (generated) =>
+                        generated.validation.ok
+                            ? []
+                            : ['schema validation failed']
                 }
             ],
-            env,
+            env: environment,
             gate: 'RALLAR_AI_LIVE_OLLAMA',
             providerLabel: 'Ollama'
         });
 
         if (!liveEnabled) {
-            expect(result).toEqual(
-                expect.objectContaining({
-                    status: 'skipped',
-                    gate: 'RALLAR_AI_LIVE_OLLAMA'
-                })
-            );
+            expect(result).toEqual(expect.objectContaining({
+                status: 'skipped',
+                gate: 'RALLAR_AI_LIVE_OLLAMA'
+            }));
             return;
         }
 
-        expect(result).toEqual(
-            expect.objectContaining({
-                status: 'ran',
-                report: expect.objectContaining({
-                    suiteId: 'ollama-live-game-event-smoke',
-                    providerId: 'ollama',
-                    failed: 0
-                })
+        expect(result).toEqual(expect.objectContaining({
+            status: 'ran',
+            report: expect.objectContaining({
+                suiteId: 'ollama-live-game-event-smoke',
+                providerId: 'ollama',
+                failed: 0
             })
-        );
+        }));
     });
 });
-
-function readProcessEnv(): RallarAiLiveEvaluationEnvironment {
-    const maybeProcess = globalThis as unknown as {
-        process?: { env?: Record<string, string | undefined>; };
-    };
-    return maybeProcess.process?.env ?? {};
-}

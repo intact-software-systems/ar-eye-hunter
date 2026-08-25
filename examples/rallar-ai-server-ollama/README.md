@@ -32,7 +32,7 @@ For live evaluation outside the container, use:
 RALLAR_AI_LIVE_OLLAMA=1 \
 RALLAR_AI_OLLAMA_BASE_URL=http://127.0.0.1:11434 \
 RALLAR_AI_OLLAMA_MODEL=llama-test \
-npx vitest run packages/tests/shared-server/rallar-ai-live-ollama.test.ts
+npx vitest run packages/tests/shared-server/rallar-ai/rallar-ai-ollama-live-evaluation.test.ts
 ```
 
 When running the evaluation from inside the Compose network, use
