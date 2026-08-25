@@ -1,6 +1,10 @@
 import { createProceduralRelicExpeditionBlueprint, type RelicExpeditionBlueprint } from '@relic-hunters/mod.ts';
-import type { RallarServerAiRallar } from '@shared-server/rallar-ai/mod.ts';
-import { isRallarAiProviderAllowedInProduction, type RallarAiJsonProvider, type RallarAiJsonRequest, type RallarAiJsonResult } from '@shared/rallar-ai/mod.ts';
+import {
+    createRallarAiMockProvider,
+    isRallarAiProviderAllowedInProduction,
+    type RallarAiJsonProvider,
+    type RallarAiJsonRequest
+} from '@shared/rallar-ai/mod.ts';
 import { describe, expect, it, vi } from 'vitest';
 import {
     createRelicExpeditionAiEvaluationCases,
@@ -61,7 +65,6 @@ describe('Relic expedition AI factory', () => {
     it('creates a mock RallarAI blueprint when mock mode is enabled', async () => {
         const factory = createRelicExpeditionInitialStateFactory({
             configuration: expeditionAiConfiguration('mock'),
-            rallar: fakeRallar(),
             now: () => 2
         });
 
@@ -79,9 +82,8 @@ describe('Relic expedition AI factory', () => {
         const fallback = vi.fn();
         const factory = createRelicExpeditionInitialStateFactory({
             configuration: expeditionAiConfiguration('mock'),
-            rallar: fakeRallar(),
             now: () => 3,
-            mockBlueprint: { schemaVersion: 1 } as unknown as RelicExpeditionBlueprint,
+            provider: createRallarAiMockProvider({ value: { schemaVersion: 1 } }),
             onFallback: fallback
         });
 
@@ -102,7 +104,6 @@ describe('Relic expedition AI factory', () => {
         const fallback = vi.fn();
         const factory = createRelicExpeditionInitialStateFactory({
             configuration: expeditionAiConfiguration('mock'),
-            rallar: fakeRallar(),
             now: () => 6,
             mockBlueprint: createProceduralRelicExpeditionBlueprint({
                 seed: 'visually-bad',
@@ -129,7 +130,6 @@ describe('Relic expedition AI factory', () => {
         const provider = createAbortAwareProvider();
         const factory = createRelicExpeditionInitialStateFactory({
             configuration: expeditionAiConfiguration('mock', 1),
-            rallar: fakeRallar(),
             provider,
             now: () => 4
         });
@@ -213,16 +213,6 @@ describe('Relic expedition AI factory', () => {
     });
 });
 
-function fakeRallar(): RallarServerAiRallar {
-    return {
-        ws: {
-            defineTopic: vi.fn(),
-            on: vi.fn(),
-            publish: vi.fn()
-        }
-    } as unknown as RallarServerAiRallar;
-}
-
 function expeditionAiConfiguration(
     mode: RelicAiExpeditionMode,
     timeoutMs = 15_000
@@ -236,41 +226,19 @@ function expeditionAiConfiguration(
 }
 
 function createAbortAwareProvider(): RallarAiJsonProvider {
-    return {
+    const provider = createRallarAiMockProvider({
         providerId: 'abort-aware',
-        source: 'mock',
         modelId: 'abort-aware',
-        capabilities: {
-            supportsJsonSchema: true,
-            supportsStreaming: false,
-            supportsCancellation: true,
-            target: 'shared'
-        },
-        generateJson<TValue = unknown, TContext = unknown>(
+        value: createProceduralRelicExpeditionBlueprint({ seed: 'late' })
+    });
+    return {
+        ...provider,
+        generateJson<TValue, TContext>(
             request: RallarAiJsonRequest<TContext>
-        ): Promise<RallarAiJsonResult<TValue>> {
-            return new Promise((resolve, reject) => {
+        ) {
+            return new Promise<never>((_resolve, reject) => {
                 const abort = () => reject(request.signal?.reason ?? new Error('aborted'));
                 request.signal?.addEventListener('abort', abort, { once: true });
-                setTimeout(() => {
-                    request.signal?.removeEventListener('abort', abort);
-                    resolve({
-                        protocolVersion: 1,
-                        generationId: 'late',
-                        source: 'mock',
-                        providerId: 'abort-aware',
-                        modelId: 'abort-aware',
-                        schemaId: request.schemaId,
-                        schemaVersion: request.schemaVersion,
-                        schemaHash: 'test',
-                        promptHash: 'test',
-                        createdAtEpochMs: 1,
-                        value: createProceduralRelicExpeditionBlueprint({
-                            seed: 'late'
-                        }) as TValue,
-                        validation: { ok: true, errors: [], issues: [] }
-                    });
-                }, 50);
             });
         }
     };
@@ -279,36 +247,10 @@ function createAbortAwareProvider(): RallarAiJsonProvider {
 function createStaticBlueprintProvider(
     blueprint: RelicExpeditionBlueprint
 ): RallarAiJsonProvider {
-    return {
+    return createRallarAiMockProvider({
         providerId: 'relic-expedition-ollama',
-        source: 'server',
         modelId: 'llama-test',
-        capabilities: {
-            supportsJsonSchema: true,
-            supportsStreaming: false,
-            supportsCancellation: true,
-            target: 'server'
-        },
-        async generateJson<TValue = unknown, TContext = unknown>(
-            request: RallarAiJsonRequest<TContext>
-        ): Promise<RallarAiJsonResult<TValue>> {
-            return {
-                protocolVersion: 1,
-                requestId: request.requestId,
-                generationId: 'static-blueprint',
-                dedupeKey: request.dedupeKey,
-                source: 'server',
-                providerId: 'relic-expedition-ollama',
-                modelId: 'llama-test',
-                schemaId: request.schemaId,
-                schemaVersion: request.schemaVersion,
-                schemaHash: 'test',
-                promptHash: 'test',
-                baseStateRevision: request.baseStateRevision,
-                createdAtEpochMs: 1,
-                value: blueprint as TValue,
-                validation: { ok: true, errors: [], issues: [] }
-            };
-        }
-    };
+        value: blueprint,
+        createdAtEpochMs: 1
+    });
 }

@@ -5,7 +5,7 @@ import { cors } from 'hono/cors';
 import { createDefaultRallarServer } from '@api-v1/src/composition/create-default-rallar-server.ts';
 import { createApiV1DatabaseLifecycle } from '@api-v1/src/db/api-v1-database-lifecycle.ts';
 import { requireApiAuthSession, toAuthErrorResponse } from '@api-v1/src/services/request-auth-service.ts';
-import { isRelicCommand, type RelicCommand } from '@relic-hunters/mod.ts';
+import { isRelicCommand } from '@relic-hunters/mod.ts';
 import { isGroupPolicyDeniedError } from '@shared-server/rallar-system/group-state/policy/group-policy-result.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { DEFAULT_STATE_APPLICATION_ID, DEFAULT_STATE_WORKSPACE_ID } from '@shared/api/state-types.ts';
@@ -54,7 +54,6 @@ addEventListener('unload', () => {
 const relicGame = await installRelicHunterGame(rallar, {
     createInitialState: createRelicExpeditionInitialStateFactory({
         configuration: configuration.expeditionAi,
-        rallar,
         onFallback: (event) => {
             console.warn(
                 `[relic-ai] expedition generation fell back for ${event.gameId}: ${event.error}`
@@ -127,7 +126,7 @@ app.post('/api/relic/games/:gameId/commands', async (c) => {
             ...(typeof body === 'object' && body !== null ? body : {}),
             gameId,
             username: session.username
-        } as RelicCommand;
+        };
 
         if (!isRelicCommand(command)) {
             return c.json({ error: 'Invalid relic command' }, 400);

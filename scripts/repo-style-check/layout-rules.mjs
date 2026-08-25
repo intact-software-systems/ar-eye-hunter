@@ -20,7 +20,7 @@ const ignoredLeadingFeatureTokens = toWordSet(
 const approvedModCompatibilityBoundaries = toWordSet(
     'packages/relic-hunters/mod.ts packages/shared-graph/mod.ts packages/shared/ontology/mod.ts ' +
         'packages/shared-server/mod.ts packages/shared/mod.ts ' +
-        'packages/shared-server/rallar-ai/mod.ts packages/shared-test/rallar-bb-test/mod.ts ' +
+        'packages/shared-test/rallar-bb-test/mod.ts ' +
         'packages/shared-web/game/mod.ts packages/shared-web/mod.ts packages/shared/crdt/mod.ts ' +
         'packages/shared/rallar-ai/mod.ts packages/shared/rallar-game/mod.ts ' +
         'packages/shared/rallar-match/mod.ts packages/shared/rallar-motion/mod.ts'

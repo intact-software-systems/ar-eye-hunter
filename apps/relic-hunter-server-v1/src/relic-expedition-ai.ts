@@ -1,4 +1,5 @@
 import {
+    assertRelicExpeditionBlueprint,
     createProceduralRelicExpeditionBlueprint,
     createRelicGame,
     createRelicGameFromBlueprint,
@@ -16,10 +17,15 @@ import {
 } from '@relic-hunters/mod.ts';
 import {
     createRallarAiOllamaProvider,
-    createRallarServerAi,
-    type RallarAiOllamaFetch,
-    type RallarServerAiRallar
-} from '@shared-server/rallar-ai/mod.ts';
+    type RallarAiOllamaFetch
+} from '@shared-server/rallar-ai/create-rallar-ai-ollama-provider.ts';
+import { createRallarServerAi } from '@shared-server/rallar-ai/create-rallar-server-ai.ts';
+import type { RallarServerAiJsonRequest } from '@shared-server/rallar-ai/decode-rallar-server-ai-json-request.ts';
+import {
+    decodeJsonWireValue,
+    type JsonWireObject,
+    type JsonWireValue
+} from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import {
     createRallarAiMockProvider,
     defineRallarAiProviderGovernanceMetadata,
@@ -53,7 +59,6 @@ export interface RelicAiExpeditionFallbackEvent {
 
 export interface CreateRelicExpeditionInitialStateFactoryOptions {
     readonly configuration: RelicAiExpeditionConfiguration;
-    readonly rallar?: RallarServerAiRallar;
     readonly fetch?: RallarAiOllamaFetch;
     readonly provider?: RallarAiJsonProvider;
     readonly mockBlueprint?:
@@ -94,14 +99,8 @@ export function createRelicExpeditionInitialStateFactory(
         return (gameId) => Promise.resolve(createRelicGame(gameId, gameId, now()));
     }
 
-    const rallar = options.rallar;
-    if (!rallar) {
-        throw new Error('Relic AI expedition generation requires a Rallar server facade.');
-    }
-
     const provider = options.provider ?? createProvider(options, mode);
     const ai = createRallarServerAi({
-        rallar,
         provider,
         policy: {
             mode: 'server-only',
@@ -128,17 +127,11 @@ export function createRelicExpeditionInitialStateFactory(
         });
 
         try {
-            const result = await ai.generateJson<RelicExpeditionBlueprint>(
+            const result = await ai.generateJson(
                 request,
                 { roomId: gameId }
             );
-
-            const validation = validateRelicExpeditionBlueprint(result.value);
-            if (!validation.ok) {
-                throw new Error(
-                    `Generated blueprint failed Relic validation: ${validation.errors.join('; ')}`
-                );
-            }
+            assertRelicExpeditionBlueprint(result.value);
 
             const visualFit = validateRelicExpeditionVisualFit(result.value);
             if (!visualFit.ok) {
@@ -195,7 +188,7 @@ export interface CreateRelicExpeditionAiRequestInput {
 
 export function createRelicExpeditionAiRequest(
     input: CreateRelicExpeditionAiRequestInput
-): RallarAiJsonRequest {
+): RallarServerAiJsonRequest {
     return {
         requestId: `relic-expedition:${input.gameId}:${input.reason}:${input.seed}`,
         schemaId: RELIC_EXPEDITION_BLUEPRINT_SCHEMA_ID,
@@ -354,11 +347,7 @@ function createMockRelicExpeditionProvider(
         providerId: 'relic-expedition-mock',
         modelId: 'deterministic-expedition-blueprint-v1',
         value: (request: RallarAiJsonRequest) => {
-            const context = request.context as {
-                gameId?: string;
-                reason?: RelicInitialStateReason;
-                seed?: string;
-            } | undefined;
+            const context = decodeRelicExpeditionMockContext(request.context);
             const input = {
                 gameId: context?.gameId ?? 'relic-room',
                 reason: context?.reason ?? 'ensure',
@@ -373,6 +362,39 @@ function createMockRelicExpeditionProvider(
                     });
         }
     });
+}
+
+interface RelicExpeditionMockContext {
+    readonly gameId?: string;
+    readonly reason?: RelicInitialStateReason;
+    readonly seed?: string;
+}
+
+function decodeRelicExpeditionMockContext(
+    value: RallarAiJsonRequest['context']
+): RelicExpeditionMockContext | undefined {
+    if (value === undefined) {
+        return undefined;
+    }
+    const context = decodeJsonWireValue(value, 'Relic expedition mock context');
+    if (!isJsonWireObject(context)) {
+        return undefined;
+    }
+    return {
+        gameId: typeof context.gameId === 'string' ? context.gameId : undefined,
+        reason: isRelicInitialStateReason(context.reason) ? context.reason : undefined,
+        seed: typeof context.seed === 'string' ? context.seed : undefined
+    };
+}
+
+function isJsonWireObject(value: JsonWireValue): value is JsonWireObject {
+    return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function isRelicInitialStateReason(
+    value: JsonWireValue | undefined
+): value is RelicInitialStateReason {
+    return value === 'ensure' || value === 'reset' || value === 'command';
 }
 
 function validateExpeditionEvaluationBlueprint(

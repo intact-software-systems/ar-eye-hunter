@@ -118,11 +118,12 @@ should still go through the normal validated command path.
 ## Server-Side Flow
 
 ```ts
-import { createRallarServerAi } from '@shared-server/rallar-ai/mod.ts';
-import { createRallarAiOllamaProvider } from '@shared-server/rallar-ai/providers/ollama.ts';
+import { createRallarAiOllamaProvider } from '@shared-server/rallar-ai/create-rallar-ai-ollama-provider.ts';
+import { createRallarServerAi } from '@shared-server/rallar-ai/create-rallar-server-ai.ts';
+import { installRallarServerAiHttpRoute } from '@shared-server/rallar-ai/install-rallar-server-ai-http-route.ts';
+import { installRallarServerAiWebSocketTopic } from '@shared-server/rallar-ai/install-rallar-server-ai-websocket-topic.ts';
 
 const ai = createRallarServerAi({
-    rallar: server,
     provider: createRallarAiOllamaProvider({
         model: 'llama-test',
         baseUrl: 'http://127.0.0.1:11434'
@@ -131,17 +132,38 @@ const ai = createRallarServerAi({
     authorize: ({ action, actorId, roomId }) => canUseRoomAi({ action, actorId, roomId }),
     limits: {
         maxConcurrentGenerations: 4,
-        maxRequestBytes: 256 * 1024
+        maxRequestBytes: 256 * 1024,
+        maxPromptBytes: 64 * 1024,
+        maxSchemaBytes: 128 * 1024,
+        maxContextBytes: 64 * 1024
     }
 });
 
-ai.createRestRouteInstaller({ path: '/rallar-ai/generate-json' })(app);
-ai.installGenerationTopic({
-    requestTopicId: 'room.ai.generate',
-    resultTopicId: 'room.ai.generated',
-    resultFanout: 'outbox'
+installRallarServerAiHttpRoute({
+    router: decodedHttpRouter,
+    serverAi: ai,
+    path: '/rallar-ai/generate-json'
+});
+installRallarServerAiWebSocketTopic({
+    websocket: server.ws,
+    serverAi: ai,
+    config: {
+        requestTopicId: 'room.ai.generate',
+        requestTypeId: 'rallar.ai.generate-json.request.v1',
+        resultTopicId: 'room.ai.generated',
+        resultTypeId: 'rallar.ai.generate-json.result.v1',
+        requestFanout: 'none',
+        resultFanout: 'outbox',
+        resultScope: 'room',
+        maxPayloadBytes: 256 * 1024,
+        serverSenderId: 'rallar-ai-server'
+    }
 });
 ```
+
+`decodedHttpRouter` is the application-owned HTTP adapter that supplies a
+JSON-wire body plus explicit actor and room identity. Framework request
+reflection is intentionally outside the RallarAI owner.
 
 Keep Ollama or another model sidecar private to the server network. The public
 surface should be the Rallar Server route or WebSocket topic, not the raw model
@@ -173,7 +195,7 @@ Recommended fallback order:
 1. Check the app's generation policy.
 2. Check `provider.capabilities.target` and `supportsJsonSchema`.
 3. Apply an app timeout with `timeoutMs`.
-4. Use the server facade when browser generation is unavailable.
+4. Use the server generation route when browser generation is unavailable.
 5. Surface disabled/unavailable state as application UI, not as a hidden retry
    loop.
 
@@ -253,8 +275,8 @@ inside the current CRDT durability, validation, and hardening boundaries.
 
 ## Local Live Providers
 
-Normal CI should use the mock provider or fake sidecar provider. Live checks are
-local or scheduled:
+Normal CI should use the mock provider or an Ollama adapter with a stubbed fetch
+port. Live checks are local or scheduled:
 
 - Ollama: run a local sidecar on `http://127.0.0.1:11434`, choose a model that
   supports structured JSON well enough for the test schema, and keep the test
