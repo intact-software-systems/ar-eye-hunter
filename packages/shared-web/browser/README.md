@@ -38,7 +38,7 @@ registration, invocation, and cleanup without consulting a historical plan.
    before constructing both the room-state store and aggregate state store from
    that completed cache-read/observation port.
 4. [createBrowserStateEventComposition](./rallar-runtime/composition/browser-runtime-composition.ts#L151)
-   creates one [createRallarWsInbox](./rallar-runtime/ws-inbox.ts#L24)
+   creates one [createBrowserWebSocketInbox](./websocket/browser-websocket-inbox.ts)
    subscription capability from the completed connection runtime, then gives
    room events and people state events direct access to it.
 5. [createBrowserSessionCoreComposition](./rallar-runtime/composition/browser-session-composition.ts)
@@ -88,7 +88,7 @@ than a callback to a future controller.
 
 1. [RoomEvents.onEvent](./rooms/room-events.ts#L137) registers a room-event
    listener and registers the room-event owner with the completed WS inbox.
-2. [createRallarWsInbox](./rallar-runtime/ws-inbox.ts#L24) provides the WS inbox that receives
+2. [createBrowserWebSocketInbox](./websocket/browser-websocket-inbox.ts) provides the WS inbox that receives
    messages, orders subscribed owners, and invokes the room-event handler.
 3. [RoomEvents.dispatch](./rooms/room-events.ts#L152) validates a group event,
    filters it by room and scope, deduplicates it, then notifies matching room
@@ -153,6 +153,29 @@ the typed result or failure visible without crossing a feature-blind module.
 6. The transport runtime keeps best-effort shutdown ordering for heartbeat, RTC,
    multicast, QueueBox, and WebSocket resources while session ownership keeps
    auth timing and lifecycle notification visible.
+
+The browser transport storage and WebSocket owners are feature-colocated:
+
+- [browser-al-runtime-identity.ts](./al-runtime/browser-al-runtime-identity.ts)
+  owns the persisted database, store, and session-key names;
+  [browser-al-runtime-stores.ts](./al-runtime/browser-al-runtime-stores.ts)
+  owns session-scoped AL runtime store factories;
+  [browser-al-runtime-cleanup.ts](./al-runtime/browser-al-runtime-cleanup.ts)
+  owns IndexedDB scanning, expiry scheduling, and session cleanup.
+- [browser-queuebox-persistence.ts](./queuebox/browser-queuebox-persistence.ts)
+  owns the browser QueueBox repositories, durable store names, and expiry
+  cleanup; [createBrowserQueueBoxEngine](./queuebox/create-browser-queue-box-engine.ts)
+  owns engine construction and startup.
+- [createBrowserWebSocketQueueBox](./websocket/create-browser-web-socket-queue-box.ts)
+  owns WS inbox/outbox repositories, AL stores, queue tasks, initial connect,
+  and reconnect activation.
+- [BrowserRallarWsController](./websocket/browser-rallar-ws-controller.ts)
+  owns public WS status, lifecycle observation, and wait cleanup.
+
+The deleted root engine namespace exports and global WS/RTC message-router
+wrappers had no verified production consumer. Public message send and receive
+continue through the facade's message capability and its owned subscriptions;
+there is no forwarding export for the deleted paths.
 
 Connection initialization failures leave connection state idle and propagate an
 `Error` to the caller. A 401 additionally ends the captured auth session once.

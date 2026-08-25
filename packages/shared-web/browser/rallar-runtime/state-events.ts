@@ -7,8 +7,8 @@ import type {
 } from '@shared-web/browser/rallar-people-contracts.ts';
 import { toRallarMessage } from '@shared-web/browser/rallar-runtime/message-conversion.ts';
 import { notifyStateEventListener } from '@shared-web/browser/rallar-runtime/subscriptions.ts';
-import type { RallarWsInbox } from '@shared-web/browser/rallar-runtime/ws-inbox.ts';
 import * as stateEventHttpApi from '@shared-web/browser/state-read/state-event-http-api.ts';
+import type { BrowserWebSocketInbox } from '@shared-web/browser/websocket/browser-websocket-inbox.ts';
 import { newALBroadcastMessage, newALRoute } from '@shared/al-contracts/al-contract.ts';
 import { AppTopics } from '@shared/api/api-config.ts';
 import { validateAuthoritativeClientEvent } from '@shared/api/authoritative-state-validation.ts';
@@ -41,7 +41,7 @@ interface ReplayStateEventPagesInput<TEvent> {
 }
 
 export interface CreateRallarStateEventsInput {
-    readonly wsInbox: RallarWsInbox;
+    readonly wsInbox: BrowserWebSocketInbox;
     readonly readDefaultScope: () => StateScope | undefined;
     readonly resolveOperationOptions: <T extends RallarOperationOptions>(
         options: T

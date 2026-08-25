@@ -24,10 +24,13 @@ import {
     RallarStateStore,
     type RallarStatePort
 } from '@shared-web/browser/rallar-runtime/state-store.ts';
-import { createRallarWsInbox, type RallarWsInbox } from '@shared-web/browser/rallar-runtime/ws-inbox.ts';
 import { createRoomEvents, type RallarRoomEventsPort } from '@shared-web/browser/rooms/room-events.ts';
 import { resolveActiveRoomPeerIds } from '@shared-web/browser/rooms/room-group-state-translation.ts';
 import { createRoomStateStore, type RallarRoomStateStorePort } from '@shared-web/browser/rooms/room-state-store.ts';
+import {
+    createBrowserWebSocketInbox,
+    type BrowserWebSocketInbox
+} from '@shared-web/browser/websocket/browser-websocket-inbox.ts';
 import { readSession } from '@shared/api/auth.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 
@@ -50,7 +53,7 @@ export interface BrowserStateComposition {
 }
 
 export interface BrowserStateEventComposition {
-    readonly wsInbox: RallarWsInbox;
+    readonly wsInbox: BrowserWebSocketInbox;
     readonly roomEvents: RallarRoomEventsPort;
     readonly stateEvents: RallarStateEventsPort;
 }
@@ -151,7 +154,7 @@ export function createBrowserStateComposition(
 export function createBrowserStateEventComposition(
     input: CreateBrowserStateEventCompositionInput
 ): BrowserStateEventComposition {
-    const wsInbox = createRallarWsInbox({
+    const wsInbox = createBrowserWebSocketInbox({
         readMiddleware: input.connectionRuntime.readMiddleware
     });
     const roomEvents = createRoomEvents({

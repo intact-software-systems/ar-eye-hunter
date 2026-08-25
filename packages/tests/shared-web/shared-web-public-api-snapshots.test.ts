@@ -670,9 +670,7 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
                 './browser/auth/agent-session-ticket-http-api.ts',
                 './browser/auth/session-http-api.ts',
                 './browser/auth/websocket-ticket-http-api.ts',
-                './browser/browser-al-runtime-stores.ts',
                 './browser/browser-cache-repositories.ts',
-                './browser/browser-queuebox.ts',
                 './browser/connection/connection-http-api.ts',
                 './browser/crdt/crdt-catch-up-http-api.ts',
                 './browser/heartbeat.ts',
@@ -684,7 +682,6 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
                 './browser/resilience-config.ts',
                 './browser/rooms/room-group-state-http-api.ts',
                 './browser/rtc-engine.ts',
-                './browser/rtc-message-router.ts',
                 './browser/rtc/rtc-topology-http-api.ts',
                 './browser/session/client-session-http-api.ts',
                 './browser/state-read/diagnostics.ts',
@@ -692,13 +689,9 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
                 './browser/state-read/state-event-http-api.ts',
                 './browser/state-read/state-snapshot-http-api.ts',
                 './browser/stats/rallar-stats-http-api.ts',
-                './browser/ws-message-router.ts',
                 './game/mod.ts'
             ],
-            namespaceExports: [
-                'qboxEngine from ./browser/qbox-engine.ts',
-                'wsEngine from ./browser/ws-engine.ts'
-            ]
+            namespaceExports: []
         }
     }
 ];

@@ -2,7 +2,7 @@ import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { IndexedDbQueueBox } from '@shared/queuebox/indexed-db-queue-box.ts';
 import { QueueBoxResourceEntryRepository } from '@shared/queuebox/queue-box-types.ts';
 import { tryRunInIntervals } from '@shared/resilience/TryWith.ts';
-import { BROWSER_AL_RUNTIME_DB_NAME } from './browser-al-runtime-stores.ts';
+import { BROWSER_AL_RUNTIME_DB_NAME } from '../al-runtime/browser-al-runtime-identity.ts';
 
 export const BROWSER_QUEUEBOX_EXPIRY_EVICTION_INTERVAL_MS = 15_000;
 export const BROWSER_QUEUEBOX_STORE_NAME_PREFIX = 'queuebox:';

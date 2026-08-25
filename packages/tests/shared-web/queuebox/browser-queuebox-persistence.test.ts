@@ -1,15 +1,15 @@
 // @vitest-environment happy-dom
 
-import '../setup-browser-indexeddb.ts';
+import '../../setup-browser-indexeddb.ts';
 
 import { Temporal } from '@js-temporal/polyfill';
-import { BROWSER_AL_RUNTIME_DB_NAME } from '@shared-web/browser/browser-al-runtime-stores.ts';
+import { BROWSER_AL_RUNTIME_DB_NAME } from '@shared-web/browser/al-runtime/browser-al-runtime-identity.ts';
 import {
     createBrowserQueueBox,
     deleteExpiredBrowserQueueBoxEntriesForSession,
     initBrowserQueueBoxExpiryEviction,
     toBrowserQueueBoxStoreName
-} from '@shared-web/browser/browser-queuebox.ts';
+} from '@shared-web/browser/queuebox/browser-queuebox-persistence.ts';
 import { EntityStatus, NEVER_EXPIRE_TS, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 

@@ -20,8 +20,8 @@ import {
     normalizeRallarMessageSelector,
     type RallarMessageSelectorInput
 } from '@shared-web/browser/rallar-message-selectors.ts';
-import type { RallarWsInbox } from '@shared-web/browser/rallar-runtime/ws-inbox.ts';
 import type { RallarUnsubscribe } from '@shared-web/browser/rallar-shared-contracts.ts';
+import type { BrowserWebSocketInbox } from '@shared-web/browser/websocket/browser-websocket-inbox.ts';
 import {
     newALBroadcastMessage,
     newALMulticastMessage,
@@ -59,7 +59,7 @@ interface RallarWsMessageLane {
 }
 
 export interface BrowserRallarMessagesControllerInput {
-    readonly wsInbox: RallarWsInbox;
+    readonly wsInbox: BrowserWebSocketInbox;
     connect(): Promise<ApiMiddleware>;
     readMiddleware(): ApiMiddleware | undefined;
     requireSession(): AuthSession;

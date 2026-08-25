@@ -1,8 +1,8 @@
 import {
     resolveBrowserRtcOverlayALOutboundRuntimeStores,
     resolveBrowserRtcRxALInboundRuntimeStores
-} from '@shared-web/browser/browser-al-runtime-stores.ts';
-import { createBrowserQueueBox } from '@shared-web/browser/browser-queuebox.ts';
+} from '@shared-web/browser/al-runtime/browser-al-runtime-stores.ts';
+import { createBrowserQueueBox } from '@shared-web/browser/queuebox/browser-queuebox-persistence.ts';
 import type { ALOutboundRuntimeDiagnosticsSink } from '@shared/alm/ALOutboundMessageRuntime.ts';
 import { ClientInfo, IceConfig, OverlayId } from '@shared/api/api-config.ts';
 import { WebRtcOverlayMulticaster } from '@shared/multicast/OverlayMulticastContracts.ts';

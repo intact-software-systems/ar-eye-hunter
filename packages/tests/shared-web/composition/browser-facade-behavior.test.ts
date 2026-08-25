@@ -1,7 +1,5 @@
 import { readApiBaseUrl } from '@shared-web/browser/api-client-config.ts';
 import { browserTransportRuntime } from '@shared-web/browser/connection/browser-transport-runtime.ts';
-import { addRtcInboxCallback } from '@shared-web/browser/rtc-message-router.ts';
-import { addWebSocketInboxCallback } from '@shared-web/browser/ws-message-router.ts';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 type MiddlewareModule = typeof import('@shared-web/browser/middleware.ts');
@@ -10,10 +8,6 @@ type AuthModule = typeof import('@shared/api/auth.ts');
 type StateCacheLifecycleModule = typeof import('@shared-web/browser/state-cache/browser-state-cache-lifecycle.ts');
 type ClientStateSnapshotsRepositoryModule = typeof import('@shared/repository/client-state-snapshots-repository.ts');
 type GroupStateSnapshotsRepositoryModule = typeof import('@shared/repository/group-state-snapshots-repository.ts');
-
-interface RouterPayload {
-    readonly source: 'rtc' | 'ws';
-}
 
 const runtime = await vi.hoisted(async () => {
     const { createApiMiddlewareTestDouble } = await import(
@@ -95,9 +89,7 @@ beforeEach(() => {
 });
 
 describe('browser facade transport ownership', () => {
-    it('connects the facade and public root routers through one transport owner', async () => {
-        const wsHandler = vi.fn();
-        const rtcHandler = vi.fn();
+    it('connects and disconnects the facade through one transport owner', async () => {
         const shutdownEvents: string[] = [];
         const stopQueueEngine = vi.fn(() => {
             shutdownEvents.push('queue-engine-stopped');
@@ -107,36 +99,10 @@ describe('browser facade transport ownership', () => {
         });
         runtime.middleware.middleware.qboxEngine.stop = stopQueueEngine;
         runtime.middleware.middleware.webSocketQueueBox.close = closeWebSocket;
-        const wsCallbacks = new Map<string, { onMessage(data: { payload: RouterPayload; }): Promise<void>; }>();
-        const rtcCallbacks = new Map<string, { onMessage(data: { payload: RouterPayload; }): Promise<void>; }>();
-        runtime.middleware.middleware.webSocketQueueBox.onInboxMessageDo = vi.fn(
-            (typeId, callback) => {
-                wsCallbacks.set(typeId, callback);
-                return runtime.middleware.middleware.webSocketQueueBox;
-            }
-        );
-        runtime.middleware.middleware.rtcRxStreamer.onInboxMessageDo = vi.fn(
-            (typeId, callback) => {
-                rtcCallbacks.set(typeId, callback);
-                return runtime.middleware.middleware.rtcRxStreamer;
-            }
-        );
         const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
         const facade = createRallarFacade();
 
         await facade.connect();
-        addWebSocketInboxCallback('ws.root', wsHandler);
-        addRtcInboxCallback('rtc.root', rtcHandler);
-        const wsCallback = wsCallbacks.get('ws.root');
-        const rtcCallback = rtcCallbacks.get('rtc.root');
-        if (wsCallback === undefined || rtcCallback === undefined) {
-            throw new Error('The browser facade did not register both public root routers.');
-        }
-        await wsCallback.onMessage({ payload: { source: 'ws' } });
-        await rtcCallback.onMessage({ payload: { source: 'rtc' } });
-
-        expect(wsHandler).toHaveBeenCalledWith({ source: 'ws' });
-        expect(rtcHandler).toHaveBeenCalledWith({ source: 'rtc' });
         expect(browserTransportRuntime.readMiddleware()?.middleware).toBe(
             runtime.middleware.middleware
         );

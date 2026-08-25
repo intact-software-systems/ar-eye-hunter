@@ -42,17 +42,15 @@ import { hydrateGroupTopologyOverlays } from '@shared-web/browser/state-read/hyd
 import { refreshStateSnapshots } from '@shared-web/browser/state-read/refresh-state-snapshots.ts';
 import { toResilienceDto } from './resilience-config.ts';
 
-import {
-    configureBrowserALRuntimeStores,
-    initBrowserALRuntimeExpiryEviction
-} from '@shared-web/browser/browser-al-runtime-stores.ts';
+import { initBrowserALRuntimeExpiryEviction } from '@shared-web/browser/al-runtime/browser-al-runtime-cleanup.ts';
+import { configureBrowserALRuntimeStores } from '@shared-web/browser/al-runtime/browser-al-runtime-stores.ts';
 import { initialiseBrowserCacheRepositories } from '@shared-web/browser/browser-cache-repositories.ts';
-import { initBrowserQueueBoxExpiryEviction } from '@shared-web/browser/browser-queuebox.ts';
 import type { HeartbeatHandle } from '@shared-web/browser/heartbeat.ts';
 import * as heartbeat from '@shared-web/browser/heartbeat.ts';
-import * as qbox from '@shared-web/browser/qbox-engine.ts';
+import { initBrowserQueueBoxExpiryEviction } from '@shared-web/browser/queuebox/browser-queuebox-persistence.ts';
+import { createBrowserQueueBoxEngine } from '@shared-web/browser/queuebox/create-browser-queue-box-engine.ts';
 import * as rtcEngine from '@shared-web/browser/rtc-engine.ts';
-import * as wsEngine from '@shared-web/browser/ws-engine.ts';
+import { createBrowserWebSocketQueueBox } from '@shared-web/browser/websocket/create-browser-web-socket-queue-box.ts';
 import {
     browserStateCacheLifecycle,
     type StateCacheScopeOptions
@@ -238,20 +236,18 @@ async function initialiseBrowserWebSocketTransport(
         input.options
     );
     const socket = createBrowserWebSocketClient(input, apiConfig);
-    const qboxEngine = qbox.initialiseQBoxEngine();
-    const webSocketQueueBox = await wsEngine.initialiseWsEngine(
+    const qboxEngine = createBrowserQueueBoxEngine();
+    const webSocketQueueBox = await createBrowserWebSocketQueueBox({
         qboxEngine,
         socket,
-        input.clientData,
-        toResilienceDto(),
-        {
-            signal: input.options.signal,
-            connectTimeoutMs: input.options.timeoutMs ??
-                DEFAULT_WS_QUEUE_BOX_CLIENT_RECONNECT_OPTIONS.connectTimeoutMsecs,
-            newConnectionRequestId: () => crypto.randomUUID(),
-            outboundDiagnostics: input.options.outboundDiagnostics
-        }
-    ).catch((error) => {
+        clientData: input.clientData,
+        resilience: toResilienceDto(),
+        signal: input.options.signal,
+        connectTimeoutMs: input.options.timeoutMs ??
+            DEFAULT_WS_QUEUE_BOX_CLIENT_RECONNECT_OPTIONS.connectTimeoutMsecs,
+        newConnectionRequestId: () => crypto.randomUUID(),
+        outboundDiagnostics: input.options.outboundDiagnostics
+    }).catch((error) => {
         console.error('Failed to connect WebSocket client:', error);
         throw error;
     });

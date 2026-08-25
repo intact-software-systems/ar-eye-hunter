@@ -3,7 +3,7 @@ import { BrowserFacadeRuntimeState } from '@shared-web/browser/rallar-runtime-co
 import { createRallarLifecycleCoordinator, type RallarLifecycleParticipant } from '@shared-web/browser/rallar-runtime/lifecycle.ts';
 import { createRallarStateCacheReadPort, RallarStateStore } from '@shared-web/browser/rallar-runtime/state-store.ts';
 import { BrowserRallarSubscriptionScope } from '@shared-web/browser/rallar-runtime/subscriptions.ts';
-import { createRallarWsInbox } from '@shared-web/browser/rallar-runtime/ws-inbox.ts';
+import { createBrowserWebSocketInbox } from '@shared-web/browser/websocket/browser-websocket-inbox.ts';
 import { createRallarFacade } from '@shared-web/browser/rallar.ts';
 import { createRoomStateStore } from '@shared-web/browser/rooms/room-state-store.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
@@ -146,7 +146,7 @@ describe('Rallar browser runtime foundations', () => {
             }
         };
         const ctx = { middleware: { webSocketQueueBox: queueBox } } as never;
-        const inbox = createRallarWsInbox({ readMiddleware: () => ctx });
+        const inbox = createBrowserWebSocketInbox({ readMiddleware: () => ctx });
 
         const stopMessages = inbox.subscribe({
             id: 'messages',

@@ -1,23 +1,27 @@
 // @vitest-environment happy-dom
 
-import '../setup-browser-indexeddb.ts';
+import '../../setup-browser-indexeddb.ts';
 
 import {
-    BROWSER_AL_RUNTIME_DB_NAME,
-    BROWSER_AL_RUNTIME_STORE_NAME,
-    configureBrowserALRuntimeStores,
-    createBrowserALOutboundRuntimeStores,
     deleteBrowserALRuntimeEntriesForSession,
     deleteExpiredBrowserALRuntimeEntries,
     deleteExpiredBrowserALRuntimeEntriesForSession,
-    initBrowserALRuntimeExpiryEviction,
-    resolveBrowserRtcOverlayALOutboundRuntimeStores,
-    resolveBrowserWsClientALOutboundRuntimeStores,
+    initBrowserALRuntimeExpiryEviction
+} from '@shared-web/browser/al-runtime/browser-al-runtime-cleanup.ts';
+import {
+    BROWSER_AL_RUNTIME_DB_NAME,
+    BROWSER_AL_RUNTIME_STORE_NAME,
     toBrowserALRuntimeEntryKeyPrefix,
     toBrowserRtcOverlayALRuntimeStoreId,
     toBrowserRtcRxALRuntimeStoreId,
     toBrowserWsClientALRuntimeStoreId
-} from '@shared-web/browser/browser-al-runtime-stores.ts';
+} from '@shared-web/browser/al-runtime/browser-al-runtime-identity.ts';
+import {
+    configureBrowserALRuntimeStores,
+    createBrowserALOutboundRuntimeStores,
+    resolveBrowserRtcOverlayALOutboundRuntimeStores,
+    resolveBrowserWsClientALOutboundRuntimeStores
+} from '@shared-web/browser/al-runtime/browser-al-runtime-stores.ts';
 import {
     IndexedDbStringPersistenceProvider,
     newALUnicastMessage,
@@ -30,7 +34,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 type RawBrowserALRuntimeEntry = Readonly<{
     key: string;
-    value: unknown;
     expireAtTimestamp: number;
 }>;
 

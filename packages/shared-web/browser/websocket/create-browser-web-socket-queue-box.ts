@@ -1,33 +1,36 @@
 import {
     resolveBrowserWsClientALInboundRuntimeStores,
     resolveBrowserWsClientALOutboundRuntimeStores
-} from '@shared-web/browser/browser-al-runtime-stores.ts';
-import { createBrowserQueueBox } from '@shared-web/browser/browser-queuebox.ts';
+} from '@shared-web/browser/al-runtime/browser-al-runtime-stores.ts';
+import { createBrowserQueueBox } from '@shared-web/browser/queuebox/browser-queuebox-persistence.ts';
 import type { ALOutboundRuntimeDiagnosticsSink } from '@shared/alm/ALOutboundMessageRuntime.ts';
-import { ClientInfo } from '@shared/api/api-config.ts';
+import type { ClientInfo } from '@shared/api/api-config.ts';
 import { readSession } from '@shared/api/auth.ts';
 import { Command } from '@shared/cache/Command.ts';
-import { ResilienceDto } from '@shared/queuebox/DequeueResourceEntryController.ts';
-import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
+import type { ResilienceDto } from '@shared/queuebox/DequeueResourceEntryController.ts';
+import type { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
 import WsQueueBoxClientService, {
     DEFAULT_WS_QUEUE_BOX_CLIENT_RECONNECT_OPTIONS
 } from '@shared/services/WsQueueBoxClientService.ts';
-import { JsonWebSocketClient } from '@shared/websocket/JsonWebSocketClient.ts';
+import type { JsonWebSocketClient } from '@shared/websocket/JsonWebSocketClient.ts';
 
-export type WsEngineInitOptions = Readonly<{
-    signal?: AbortSignal;
-    connectTimeoutMs?: number;
-    newConnectionRequestId?: () => string;
-    outboundDiagnostics?: ALOutboundRuntimeDiagnosticsSink;
-}>;
+export namespace CreateBrowserWebSocketQueueBox {
+    export interface Input {
+        readonly qboxEngine: InboxOutboxEngine;
+        readonly socket: JsonWebSocketClient;
+        readonly clientData: ClientInfo;
+        readonly resilience: ResilienceDto;
+        readonly signal?: AbortSignal;
+        readonly connectTimeoutMs?: number;
+        readonly newConnectionRequestId?: () => string;
+        readonly outboundDiagnostics?: ALOutboundRuntimeDiagnosticsSink;
+    }
+}
 
-export async function initialiseWsEngine(
-    qboxEngine: InboxOutboxEngine,
-    socket: JsonWebSocketClient,
-    clientData: ClientInfo,
-    resilience: ResilienceDto,
-    options: WsEngineInitOptions = {}
-) {
+export async function createBrowserWebSocketQueueBox(
+    input: CreateBrowserWebSocketQueueBox.Input
+): Promise<WsQueueBoxClientService> {
+    const { clientData, qboxEngine, resilience, socket } = input;
     const wsQueueBox = new WsQueueBoxClientService(
         createBrowserQueueBox(`ws-inbox-${clientData.sessionId}`),
         createBrowserQueueBox(`ws-outbox-${clientData.sessionId}`),
@@ -38,8 +41,8 @@ export async function initialiseWsEngine(
         {
             inboundStores: resolveBrowserWsClientALInboundRuntimeStores(clientData.sessionId),
             outboundStores: resolveBrowserWsClientALOutboundRuntimeStores(clientData.sessionId),
-            outboundDiagnostics: options.outboundDiagnostics,
-            newConnectionRequestId: options.newConnectionRequestId,
+            outboundDiagnostics: input.outboundDiagnostics,
+            newConnectionRequestId: input.newConnectionRequestId,
             reconnect: {
                 ...DEFAULT_WS_QUEUE_BOX_CLIENT_RECONNECT_OPTIONS,
                 canReconnect: () => readSession()?.sessionId === clientData.sessionId
@@ -81,7 +84,7 @@ export async function initialiseWsEngine(
         }
     );
 
-    await connectInitialSocket(wsQueueBox.socket, options);
+    await connectInitialSocket(wsQueueBox.socket, input);
     wsQueueBox
         .enableReconnect()
         .enableDefaultCallbacks();
@@ -91,15 +94,15 @@ export async function initialiseWsEngine(
 
 async function connectInitialSocket(
     socket: JsonWebSocketClient,
-    options: WsEngineInitOptions
+    input: CreateBrowserWebSocketQueueBox.Input
 ): Promise<void> {
-    const requestId = options.newConnectionRequestId?.();
-    const connectTimeoutMs = options.connectTimeoutMs ??
+    const requestId = input.newConnectionRequestId?.();
+    const connectTimeoutMs = input.connectTimeoutMs ??
         DEFAULT_WS_QUEUE_BOX_CLIENT_RECONNECT_OPTIONS.connectTimeoutMsecs;
     if (connectTimeoutMs <= 0) {
         await socket.connect({
             requestId,
-            signal: options.signal
+            signal: input.signal
         });
         return;
     }
@@ -111,7 +114,7 @@ async function connectInitialSocket(
                 signal
             }),
         {
-            signal: options.signal,
+            signal: input.signal,
             timeoutMs: connectTimeoutMs,
             errorOnNull: false
         }

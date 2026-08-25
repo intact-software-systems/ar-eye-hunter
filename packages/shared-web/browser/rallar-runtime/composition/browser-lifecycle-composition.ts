@@ -3,10 +3,10 @@ import type { RallarMediaPort } from '@shared-web/browser/media/browser-rallar-m
 import type { RallarMessagesController } from '@shared-web/browser/messages/browser-rallar-messages-controller.ts';
 import type { RallarLifecycleCoordinator } from '@shared-web/browser/rallar-runtime/lifecycle.ts';
 import type { RallarStatePort } from '@shared-web/browser/rallar-runtime/state-store.ts';
-import type { RallarWsInbox } from '@shared-web/browser/rallar-runtime/ws-inbox.ts';
-import type { RallarWsController } from '@shared-web/browser/rallar-runtime/ws.ts';
 import type { BrowserRealtimeReceiveRuntime } from '@shared-web/browser/realtime/browser-realtime-receive-runtime.ts';
 import type { BrowserRallarRtcController } from '@shared-web/browser/rtc/browser-rallar-rtc-controller.ts';
+import type { RallarWsController } from '@shared-web/browser/websocket/browser-rallar-ws-controller.ts';
+import type { BrowserWebSocketInbox } from '@shared-web/browser/websocket/browser-websocket-inbox.ts';
 
 export interface RegisterBrowserStateLifecycleInput {
     readonly lifecycle: RallarLifecycleCoordinator;
@@ -17,7 +17,7 @@ export interface RegisterBrowserStateLifecycleInput {
 export interface RegisterBrowserTransportLifecycleInput {
     readonly lifecycle: RallarLifecycleCoordinator;
     readonly messagesController: RallarMessagesController;
-    readonly wsInbox: RallarWsInbox;
+    readonly wsInbox: BrowserWebSocketInbox;
     readonly wsController: RallarWsController;
     readonly realtimeReceive: BrowserRealtimeReceiveRuntime;
     readonly rtcController: BrowserRallarRtcController;

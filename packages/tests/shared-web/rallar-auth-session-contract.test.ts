@@ -27,7 +27,7 @@ const mocks = await vi.hoisted(async () => {
         writeSession: vi.fn<ContractModules.Auth['writeSession']>(),
         hydrateStateCache: vi.fn<ContractModules.StateCacheLifecycle['browserStateCacheLifecycle']['hydrate']>(() => Promise.resolve()),
         onCacheChange: vi.fn<ContractModules.StateCacheLifecycle['browserStateCacheLifecycle']['onChange']>(() => vi.fn()),
-        deleteBrowserALRuntimeEntriesForSession: vi.fn<ContractModules.BrowserALRuntimeStores['deleteBrowserALRuntimeEntriesForSession']>(() =>
+        deleteBrowserALRuntimeEntriesForSession: vi.fn<ContractModules.BrowserALRuntimeCleanup['deleteBrowserALRuntimeEntriesForSession']>(() =>
             Promise.resolve({
                 dbName: '',
                 storeName: '',
@@ -120,8 +120,8 @@ vi.mock(
 );
 
 vi.mock(
-    import('@shared-web/browser/browser-al-runtime-stores.ts'),
-    (): Partial<ContractModules.BrowserALRuntimeStores> => ({
+    import('@shared-web/browser/al-runtime/browser-al-runtime-cleanup.ts'),
+    (): Partial<ContractModules.BrowserALRuntimeCleanup> => ({
         deleteBrowserALRuntimeEntriesForSession: mocks.deleteBrowserALRuntimeEntriesForSession
     })
 );

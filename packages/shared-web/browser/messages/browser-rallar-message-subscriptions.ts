@@ -8,12 +8,12 @@ import {
     type RallarMessageSelectorInput
 } from '@shared-web/browser/rallar-message-selectors.ts';
 import { toRallarMessage } from '@shared-web/browser/rallar-runtime/message-conversion.ts';
-import type { RallarWsInbox } from '@shared-web/browser/rallar-runtime/ws-inbox.ts';
 import type { RallarUnsubscribe } from '@shared-web/browser/rallar-shared-contracts.ts';
+import type { BrowserWebSocketInbox } from '@shared-web/browser/websocket/browser-websocket-inbox.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 
 interface BrowserRallarMessageSubscriptionsInput {
-    readonly wsInbox: RallarWsInbox;
+    readonly wsInbox: BrowserWebSocketInbox;
     readMiddleware(): ApiMiddleware | undefined;
 }
 

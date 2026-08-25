@@ -1,13 +1,13 @@
-import { configureBrowserALRuntimeStores } from '@shared-web/browser/browser-al-runtime-stores.ts';
+import { configureBrowserALRuntimeStores } from '@shared-web/browser/al-runtime/browser-al-runtime-stores.ts';
 import { toResilienceDto } from '@shared-web/browser/resilience-config.ts';
-import { initialiseWsEngine } from '@shared-web/browser/ws-engine.ts';
+import { createBrowserWebSocketQueueBox } from '@shared-web/browser/websocket/create-browser-web-socket-queue-box.ts';
 import { type ClientInfo } from '@shared/api/api-config.ts';
 import { CommandTimedOutError } from '@shared/cache/Command.ts';
 import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
 import { type WebSocketConnectOptions } from '@shared/websocket/JsonWebSocketClient.ts';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-describe('initialiseWsEngine', () => {
+describe('createBrowserWebSocketQueueBox', () => {
     afterEach(() => {
         vi.useRealTimers();
         vi.restoreAllMocks();
@@ -17,15 +17,13 @@ describe('initialiseWsEngine', () => {
         const socket = new TestJsonWebSocketClient();
         const qboxEngine = new InboxOutboxEngine();
 
-        const service = await initialiseWsEngine(
+        const service = await createBrowserWebSocketQueueBox({
             qboxEngine,
-            socket.asJsonWebSocketClient(),
-            testClientInfo(),
-            toResilienceDto(),
-            {
-                connectTimeoutMs: 25
-            }
-        );
+            socket: socket.asJsonWebSocketClient(),
+            clientData: testClientInfo(),
+            resilience: toResilienceDto(),
+            connectTimeoutMs: 25
+        });
 
         expect(service.socket).toBe(socket);
         expect(socket.connectCalls).toHaveLength(1);
@@ -41,15 +39,13 @@ describe('initialiseWsEngine', () => {
         });
         const qboxEngine = new InboxOutboxEngine();
 
-        const initPromise = initialiseWsEngine(
+        const initPromise = createBrowserWebSocketQueueBox({
             qboxEngine,
-            socket.asJsonWebSocketClient(),
-            testClientInfo(),
-            toResilienceDto(),
-            {
-                connectTimeoutMs: 25
-            }
-        );
+            socket: socket.asJsonWebSocketClient(),
+            clientData: testClientInfo(),
+            resilience: toResilienceDto(),
+            connectTimeoutMs: 25
+        });
         await Promise.resolve();
 
         expect(socket.connectCalls).toHaveLength(1);
@@ -70,12 +66,12 @@ describe('initialiseWsEngine', () => {
         });
         const qboxEngine = new InboxOutboxEngine();
 
-        const initPromise = initialiseWsEngine(
+        const initPromise = createBrowserWebSocketQueueBox({
             qboxEngine,
-            socket.asJsonWebSocketClient(),
-            testClientInfo(),
-            toResilienceDto()
-        );
+            socket: socket.asJsonWebSocketClient(),
+            clientData: testClientInfo(),
+            resilience: toResilienceDto()
+        });
         await Promise.resolve();
 
         await vi.advanceTimersByTimeAsync(9_999);
@@ -94,15 +90,13 @@ describe('initialiseWsEngine', () => {
         });
         const qboxEngine = new InboxOutboxEngine();
 
-        const initPromise = initialiseWsEngine(
+        const initPromise = createBrowserWebSocketQueueBox({
             qboxEngine,
-            socket.asJsonWebSocketClient(),
-            testClientInfo(),
-            toResilienceDto(),
-            {
-                connectTimeoutMs: 0
-            }
-        );
+            socket: socket.asJsonWebSocketClient(),
+            clientData: testClientInfo(),
+            resilience: toResilienceDto(),
+            connectTimeoutMs: 0
+        });
         await Promise.resolve();
 
         expect(socket.connectCalls).toHaveLength(1);
@@ -123,15 +117,13 @@ describe('initialiseWsEngine', () => {
         });
         const qboxEngine = new InboxOutboxEngine();
 
-        const initPromise = initialiseWsEngine(
+        const initPromise = createBrowserWebSocketQueueBox({
             qboxEngine,
-            socket.asJsonWebSocketClient(),
-            testClientInfo(),
-            toResilienceDto(),
-            {
-                connectTimeoutMs: 0
-            }
-        );
+            socket: socket.asJsonWebSocketClient(),
+            clientData: testClientInfo(),
+            resilience: toResilienceDto(),
+            connectTimeoutMs: 0
+        });
         await Promise.resolve();
 
         expect(socket.connectCalls).toHaveLength(1);

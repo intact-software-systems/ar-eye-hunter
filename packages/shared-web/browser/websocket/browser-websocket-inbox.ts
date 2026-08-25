@@ -4,27 +4,27 @@ import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 
 const RALLAR_WS_ANY_MESSAGE_CALLBACK_ID = 'rallar:ws:any-message';
 
-export type RallarWsInboxHandler = Readonly<{
+export type BrowserWebSocketInboxHandler = Readonly<{
     id: string;
     order: number;
     onMessage(message: ALMessage): void | Promise<void>;
 }>;
 
-export type RallarWsInbox = Readonly<{
-    subscribe(handler: RallarWsInboxHandler): RallarUnsubscribe;
+export type BrowserWebSocketInbox = Readonly<{
+    subscribe(handler: BrowserWebSocketInboxHandler): RallarUnsubscribe;
     attach(ctx?: ApiMiddleware): void;
     detach(ctx?: ApiMiddleware): void;
     isAttached(): boolean;
 }>;
 
-export type CreateRallarWsInboxOptions = Readonly<{
+export type CreateBrowserWebSocketInboxOptions = Readonly<{
     readMiddleware: () => ApiMiddleware | undefined;
 }>;
 
-export function createRallarWsInbox(
-    options: CreateRallarWsInboxOptions
-): RallarWsInbox {
-    const handlers = new Map<string, RallarWsInboxHandler>();
+export function createBrowserWebSocketInbox(
+    options: CreateBrowserWebSocketInboxOptions
+): BrowserWebSocketInbox {
+    const handlers = new Map<string, BrowserWebSocketInboxHandler>();
     let attachedContext: ApiMiddleware | undefined;
 
     const dispatch = async (message: ALMessage): Promise<void> => {
