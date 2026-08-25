@@ -1,19 +1,13 @@
 import { readApiBaseUrl } from '@shared-web/browser/api-client-config.ts';
 import { browserTransportRuntime } from '@shared-web/browser/connection/browser-transport-runtime.ts';
-import { addRtcInboxCallback } from '@shared-web/browser/rtc-message-router.ts';
-import { addWebSocketInboxCallback } from '@shared-web/browser/ws-message-router.ts';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-type MiddlewareModule = typeof import('@shared-web/browser/middleware.ts');
-type ApiWorkflowsModule = typeof import('@shared-web/browser/api-workflows.ts');
+type MiddlewareModule = typeof import('@shared-web/browser/connection/initialise-browser-middleware.ts');
+type RefreshStateSnapshotsModule = typeof import('@shared-web/browser/state-read/refresh-state-snapshots.ts');
 type AuthModule = typeof import('@shared/api/auth.ts');
-type DataCachesModule = typeof import('@shared-web/browser/data-caches.ts');
+type StateCacheLifecycleModule = typeof import('@shared-web/browser/state-cache/browser-state-cache-lifecycle.ts');
 type ClientStateSnapshotsRepositoryModule = typeof import('@shared/repository/client-state-snapshots-repository.ts');
 type GroupStateSnapshotsRepositoryModule = typeof import('@shared/repository/group-state-snapshots-repository.ts');
-
-interface RouterPayload {
-    readonly source: 'rtc' | 'ws';
-}
 
 const runtime = await vi.hoisted(async () => {
     const { createApiMiddlewareTestDouble } = await import(
@@ -24,9 +18,9 @@ const runtime = await vi.hoisted(async () => {
         middleware,
         initialiseMiddleware: vi.fn<MiddlewareModule['initialiseMiddleware']>(),
         readSession: vi.fn<AuthModule['readSession']>(),
-        refreshStateSnapshots: vi.fn<ApiWorkflowsModule['refreshStateSnapshots']>(),
-        hydrateStateCaches: vi.fn<DataCachesModule['hydrateStateCaches']>(),
-        onStateCacheChange: vi.fn<DataCachesModule['onStateCacheChange']>(),
+        refreshStateSnapshots: vi.fn<RefreshStateSnapshotsModule['refreshStateSnapshots']>(),
+        hydrateStateCache: vi.fn<StateCacheLifecycleModule['browserStateCacheLifecycle']['hydrate']>(),
+        onCacheChange: vi.fn<StateCacheLifecycleModule['browserStateCacheLifecycle']['onChange']>(),
         findClientStateSnapshotByPrincipalId: vi.fn<ClientStateSnapshotsRepositoryModule['findClientStateSnapshotByPrincipalId']>(() => undefined),
         getAllClientStateSnapshots: vi.fn<ClientStateSnapshotsRepositoryModule['getAllClientStateSnapshots']>(() => []),
         findFirstGroupStateSnapshotRefSessionIdIsIn: vi.fn<GroupStateSnapshotsRepositoryModule['findFirstGroupStateSnapshotRefSessionIdIsIn']>(() => undefined),
@@ -36,24 +30,27 @@ const runtime = await vi.hoisted(async () => {
 });
 
 vi.mock(
-    import('@shared-web/browser/middleware.ts'),
+    import('@shared-web/browser/connection/initialise-browser-middleware.ts'),
     (): Partial<MiddlewareModule> => ({
         initialiseMiddleware: runtime.initialiseMiddleware
     })
 );
 
 vi.mock(
-    import('@shared-web/browser/api-workflows.ts'),
-    (): Partial<ApiWorkflowsModule> => ({
+    import('@shared-web/browser/state-read/refresh-state-snapshots.ts'),
+    (): Partial<RefreshStateSnapshotsModule> => ({
         refreshStateSnapshots: runtime.refreshStateSnapshots
     })
 );
 
 vi.mock(
-    import('@shared-web/browser/data-caches.ts'),
-    (): Partial<DataCachesModule> => ({
-        hydrateStateCaches: runtime.hydrateStateCaches,
-        onStateCacheChange: runtime.onStateCacheChange
+    import('@shared-web/browser/state-cache/browser-state-cache-lifecycle.ts'),
+    (): Partial<StateCacheLifecycleModule> => ({
+        browserStateCacheLifecycle: {
+            hydrate: runtime.hydrateStateCache,
+            onChange: runtime.onCacheChange,
+            initialise: vi.fn()
+        }
     })
 );
 
@@ -81,52 +78,31 @@ vi.mock(
     })
 );
 
-describe('browser facade behavior', () => {
-    beforeEach(() => {
-        browserTransportRuntime.shutdown('test-reset');
-        vi.clearAllMocks();
-        runtime.initialiseMiddleware.mockResolvedValue(runtime.middleware.middleware);
-        runtime.readSession.mockReturnValue(runtime.middleware.session);
-        runtime.refreshStateSnapshots.mockResolvedValue({ clients: [], groups: [] });
-        runtime.hydrateStateCaches.mockResolvedValue(undefined);
-        runtime.onStateCacheChange.mockReturnValue(() => undefined);
-    });
+beforeEach(() => {
+    browserTransportRuntime.shutdown('test-reset');
+    vi.clearAllMocks();
+    runtime.initialiseMiddleware.mockResolvedValue(runtime.middleware.middleware);
+    runtime.readSession.mockReturnValue(runtime.middleware.session);
+    runtime.refreshStateSnapshots.mockResolvedValue({ clients: [], groups: [] });
+    runtime.hydrateStateCache.mockResolvedValue(undefined);
+    runtime.onCacheChange.mockReturnValue(() => undefined);
+});
 
-    it('connects the facade and public root routers through one transport owner', async () => {
-        const wsHandler = vi.fn();
-        const rtcHandler = vi.fn();
+describe('browser facade transport ownership', () => {
+    it('connects and disconnects the facade through one transport owner', async () => {
         const shutdownEvents: string[] = [];
-        vi.spyOn(runtime.middleware.middleware.qboxEngine, 'stop').mockImplementation(() => {
+        const stopQueueEngine = vi.fn(() => {
             shutdownEvents.push('queue-engine-stopped');
         });
-        vi.spyOn(runtime.middleware.middleware.webSocketQueueBox, 'close').mockImplementation(() => {
+        const closeWebSocket = vi.fn(() => {
             shutdownEvents.push('websocket-closed');
         });
-        const wsCallbacks = new Map<string, { onMessage(data: { payload: RouterPayload; }): Promise<void>; }>();
-        const rtcCallbacks = new Map<string, { onMessage(data: { payload: RouterPayload; }): Promise<void>; }>();
-        runtime.middleware.middleware.webSocketQueueBox.onInboxMessageDo = vi.fn(
-            (typeId, callback) => {
-                wsCallbacks.set(typeId, callback);
-                return runtime.middleware.middleware.webSocketQueueBox;
-            }
-        );
-        runtime.middleware.middleware.rtcRxStreamer.onInboxMessageDo = vi.fn(
-            (typeId, callback) => {
-                rtcCallbacks.set(typeId, callback);
-                return runtime.middleware.middleware.rtcRxStreamer;
-            }
-        );
+        runtime.middleware.middleware.qboxEngine.stop = stopQueueEngine;
+        runtime.middleware.middleware.webSocketQueueBox.close = closeWebSocket;
         const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
         const facade = createRallarFacade();
 
         await facade.connect();
-        addWebSocketInboxCallback('ws.root', wsHandler);
-        addRtcInboxCallback('rtc.root', rtcHandler);
-        await wsCallbacks.get('ws.root')?.onMessage({ payload: { source: 'ws' } });
-        await rtcCallbacks.get('rtc.root')?.onMessage({ payload: { source: 'rtc' } });
-
-        expect(wsHandler).toHaveBeenCalledWith({ source: 'ws' });
-        expect(rtcHandler).toHaveBeenCalledWith({ source: 'rtc' });
         expect(browserTransportRuntime.readMiddleware()?.middleware).toBe(
             runtime.middleware.middleware
         );
@@ -139,7 +115,9 @@ describe('browser facade behavior', () => {
         ]);
         expect(browserTransportRuntime.readMiddleware()).toBeUndefined();
     });
+});
 
+describe('browser facade setup without startup work', () => {
     it('configures defaults and honors explicitly disabled setup startup work', async () => {
         const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
         const facade = createRallarFacade();
@@ -166,7 +144,9 @@ describe('browser facade behavior', () => {
             connected: false
         });
     });
+});
 
+describe('browser facade restored-session setup', () => {
     it('restores, connects, refreshes rooms, and returns the connected setup result by default', async () => {
         const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
         const facade = createRallarFacade();
@@ -216,7 +196,9 @@ describe('browser facade behavior', () => {
             }
         );
     });
+});
 
+describe('browser facade subscriptions', () => {
     it('starts disconnected and owns idempotent subscription cleanup', async () => {
         const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
         const facade = createRallarFacade();

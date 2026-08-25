@@ -1,13 +1,11 @@
 import type {
-    RallarMessagesController,
-    RallarWsUnicastSendInput
-} from '@shared-web/browser/messages/browser-rallar-messages-controller.ts';
-import type {
     RallarDirectorRelayEnvelope,
     RallarDirectorRelaySendResult,
     RallarDirectorStatus
-} from '@shared-web/browser/rallar-director-facade.ts';
-import type { RallarMessageSendResult } from '@shared-web/browser/rallar-message-contracts.ts';
+} from '@shared-web/browser/director/rallar-director-facade.ts';
+import type { BrowserRallarMessageSender } from '@shared-web/browser/messages/browser-rallar-message-sender.ts';
+import type { RallarMessageSendResult } from '@shared-web/browser/messages/rallar-message-contracts.ts';
+import type { RallarMessagesOperations } from '@shared-web/browser/messages/rallar-message-operations.ts';
 import type {
     RallarTargetedChannel,
     RallarTargetedChannelDefinition
@@ -17,39 +15,43 @@ import type { AuthSession } from '@shared/api/api-config.ts';
 
 export const RALLAR_DIRECTOR_RELAY_PROTOCOL = 'rallar.director.relay.v1';
 
-export interface BrowserDirectorRelayTransportInput {
-    readonly messages: RallarMessagesController['operations'];
-    readSession(): AuthSession | undefined;
-    createTargetedChannel<T>(
-        definition: RallarTargetedChannelDefinition
-    ): RallarTargetedChannel<T>;
-    sendWsUnicast<T>(input: RallarWsUnicastSendInput<T>): Promise<RallarMessageSendResult>;
-}
+export namespace BrowserDirectorRelayTransport {
+    export interface Input {
+        readonly messages: RallarMessagesOperations;
+        readSession(): AuthSession | undefined;
+        createTargetedChannel<T>(
+            definition: RallarTargetedChannelDefinition
+        ): RallarTargetedChannel<T>;
+        sendWsUnicast<T>(
+            input: BrowserRallarMessageSender.WsUnicastInput<T>
+        ): Promise<RallarMessageSendResult>;
+    }
 
-export interface SendDirectorIntentInput<T> {
-    readonly current: RallarDirectorStatus;
-    readonly laneId: string;
-    readonly topicId: string;
-    readonly typeId: string;
-    readonly payload: T;
-}
+    export interface SendIntentInput<T> {
+        readonly current: RallarDirectorStatus;
+        readonly laneId: string;
+        readonly topicId: string;
+        readonly typeId: string;
+        readonly payload: T;
+    }
 
-export interface SendDirectorRoomEnvelopeInput<T> {
-    readonly current: RallarDirectorStatus;
-    readonly topicId: string;
-    readonly typeId: string;
-    readonly payload: T;
+    export interface SendRoomEnvelopeInput<T> {
+        readonly current: RallarDirectorStatus;
+        readonly topicId: string;
+        readonly typeId: string;
+        readonly payload: T;
+    }
 }
 
 export class BrowserDirectorRelayTransport {
-    private readonly input: BrowserDirectorRelayTransportInput;
+    private readonly input: BrowserDirectorRelayTransport.Input;
 
-    public constructor(input: BrowserDirectorRelayTransportInput) {
+    public constructor(input: BrowserDirectorRelayTransport.Input) {
         this.input = input;
     }
 
     public async sendIntent<T>(
-        input: SendDirectorIntentInput<T>
+        input: BrowserDirectorRelayTransport.SendIntentInput<T>
     ): Promise<RallarDirectorRelaySendResult> {
         const rejection = this.readIntentRejection(input.current);
         if (rejection) {
@@ -73,7 +75,7 @@ export class BrowserDirectorRelayTransport {
     }
 
     public async sendRoomEnvelope<T>(
-        input: SendDirectorRoomEnvelopeInput<T>
+        input: BrowserDirectorRelayTransport.SendRoomEnvelopeInput<T>
     ): Promise<RallarDirectorRelaySendResult> {
         const rejection = this.readRoomSendRejection(input.current);
         if (rejection) {
@@ -103,7 +105,7 @@ export class BrowserDirectorRelayTransport {
     }
 
     private async sendIntentWithWsFallback<T>(
-        input: SendDirectorIntentInput<T>,
+        input: BrowserDirectorRelayTransport.SendIntentInput<T>,
         envelope: RallarDirectorRelayEnvelope<T>,
         rtc: RallarDirectorRelaySendResult['rtc']
     ): Promise<RallarDirectorRelaySendResult> {
@@ -167,7 +169,7 @@ export class BrowserDirectorRelayTransport {
 }
 
 function createEnvelope<T>(
-    input: SendDirectorRoomEnvelopeInput<T>
+    input: BrowserDirectorRelayTransport.SendRoomEnvelopeInput<T>
 ): RallarDirectorRelayEnvelope<T> {
     if (!input.current.appointment || !input.current.roomId) {
         throw new Error('Cannot create director envelope without appointment.');

@@ -4,8 +4,8 @@ import type { RallarDirectorStatus } from '@shared-web/browser/rallar.ts';
 import type { Dispatch, RefObject, SetStateAction } from 'react';
 
 import { createAiDirectorMockProvider } from '../../aiDirector.ts';
-import { resolveArenaBrowserAiConfig } from '../../browserAiConfig.ts';
-import { createArenaBrowserAiProvider } from '../../browserAiProvider.ts';
+import { resolveArenaBrowserAiConfig } from '../../browser-ai/arena-browser-ai-config.ts';
+import { createArenaBrowserAiProvider } from '../../browser-ai/arena-browser-ai-provider.ts';
 import type { ArenaRallarGameMatchHandle } from '../../rallar-game-match-adapter.ts';
 import { arenaRevisionKey, hydrateArenaSnapshot } from '../../simulation.ts';
 import type { ArenaEvent, ArenaSnapshot } from '../../types.ts';
@@ -41,22 +41,25 @@ export function startArenaAiDirectorSchedule(
         !input.directorStatus.isDirector ||
         !input.directorStatus.isFresh
     ) {
-        input.setAiStatus((current) => current === 'generating' || current === 'loading model' ? 'idle' : current);
+        input.setAiStatus((current) =>
+            current === 'generating' || current === 'loading model'
+                ? 'idle'
+                : current
+        );
         return undefined;
     }
+    return startArenaAiGenerationTimers(input, input.roomId);
+}
+
+function startArenaAiGenerationTimers(
+    input: ArenaAiDirectorScheduleInput,
+    roomId: string
+): (() => void) | undefined {
     let cancelled = false;
     const generation = input.networkGenerationRef.current;
-    let usedMockFallback = false;
     const providerSelection = createArenaBrowserAiProvider({
         config: BROWSER_RALLAR_AI_CONFIG,
         createMockProvider: createAiDirectorMockProvider,
-        onFallback: (reason) => {
-            usedMockFallback = true;
-            if (!cancelled && input.isCurrentNetworkGeneration(generation)) {
-                input.setAiStatus('mock fallback');
-                input.setAiError(`WebLLM fallback: ${reason}`);
-            }
-        },
         onWebLlmProgress: () => {
             if (!cancelled && input.isCurrentNetworkGeneration(generation)) {
                 input.setAiStatus('loading model');
@@ -71,13 +74,18 @@ export function startArenaAiDirectorSchedule(
     const ai = createRallarBrowserAi({
         rallar,
         provider: providerSelection.provider,
-        policy: { mode: 'browser-only', staleResultMode: 'reject', timeoutMs: 3_000 },
+        policy: {
+            mode: 'browser-only',
+            staleResultMode: 'reject',
+            timeoutMs: 3_000
+        },
         readCurrentStateRevision: () => {
             const snapshot = input.arenaSnapshotRef.current;
-            return snapshot ? arenaRevisionKey(hydrateArenaSnapshot(snapshot)) : undefined;
+            return snapshot
+                ? arenaRevisionKey(hydrateArenaSnapshot(snapshot))
+                : undefined;
         }
     });
-    const roomId = input.roomId;
     const generate = () =>
         generateArenaAiDirectorOutput({
             ...input,
@@ -85,9 +93,7 @@ export function startArenaAiDirectorSchedule(
             generation,
             isCancelled: () => cancelled,
             providerMode: providerSelection.mode,
-            providerFallback: providerSelection.fallback,
-            roomId,
-            usedMockFallback: () => usedMockFallback
+            roomId
         });
     const initial = window.setTimeout(() => void generate(), 4_500);
     const interval = window.setInterval(() => void generate(), 10_500);

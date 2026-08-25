@@ -1,8 +1,8 @@
-import * as api from '@shared-web/browser/api-integration.ts';
-import type { ApiMiddleware } from '@shared-web/browser/app-context.ts';
+import { defaultStateScope } from '@shared-web/browser/api/state-http-path.ts';
+import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
 import type { RallarScopedOperationOptions } from '@shared-web/browser/rallar-connection-facade.ts';
 import { toRallarWorkflowPolicies, type RallarOperationOptions } from '@shared-web/browser/rallar-operation-options.ts';
-import type { RallarStateSnapshotAcceptanceInput } from '@shared-web/browser/rallar-runtime/state-store.ts';
+import type { RallarStateSnapshotAcceptanceInput } from '@shared-web/browser/state-cache/rallar-state-store.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { toGroupRefFromScope, toStateScope } from '@shared/api/api-type-utils.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
@@ -75,7 +75,7 @@ export async function runRoomTargetMutation(
         const scope = target.options.scope ??
             (target.roomRef
                 ? toStateScope(target.roomRef)
-                : (input.resolveOperationScope(target.options.scope) ?? api.defaultStateScope()));
+                : (input.resolveOperationScope(target.options.scope) ?? defaultStateScope()));
         const snapshot = await input.execute({
             roomId: target.roomId,
             session,
@@ -97,14 +97,14 @@ export async function updateRoom(
         room: input.input,
         options: input.input,
         execute: async ({ roomId, session, scope, policies }) =>
-            await updateStateGroupDetails(
-                roomId,
+            await updateStateGroupDetails({
+                groupId: roomId,
                 request,
-                session.clientId,
-                session.sessionId,
+                principalId: session.clientId,
+                sessionId: session.sessionId,
                 scope,
                 policies
-            )
+            })
     });
 }
 
@@ -136,14 +136,14 @@ export async function updateRoomMetadata(
         if (!roomId) {
             throw new Error('Cannot update room metadata: room is required.');
         }
-        const snapshot = await updateStateGroupMetadata(
-            roomId,
-            input.patch,
-            session.clientId,
-            session.sessionId,
+        const snapshot = await updateStateGroupMetadata({
+            groupId: roomId,
+            patch: input.patch,
+            principalId: session.clientId,
+            sessionId: session.sessionId,
             scope,
-            toRallarWorkflowPolicies(operationOptions)
-        );
+            policies: toRallarWorkflowPolicies(operationOptions)
+        });
         await input.acceptSnapshots({ context, clients: [], groups: [snapshot], scope });
         return snapshot;
     });
@@ -159,22 +159,22 @@ async function changeRoomLifecycle(
         options,
         execute: async ({ roomId, session, scope, policies }) =>
             input.status === 'archived'
-                ? await archiveStateGroup(
-                    roomId,
+                ? await archiveStateGroup({
+                    groupId: roomId,
                     request,
-                    session.clientId,
-                    session.sessionId,
+                    principalId: session.clientId,
+                    sessionId: session.sessionId,
                     scope,
                     policies
-                )
-                : await deleteStateGroup(
-                    roomId,
+                })
+                : await deleteStateGroup({
+                    groupId: roomId,
                     request,
-                    session.clientId,
-                    session.sessionId,
+                    principalId: session.clientId,
+                    sessionId: session.sessionId,
                     scope,
                     policies
-                )
+                })
     });
 }
 

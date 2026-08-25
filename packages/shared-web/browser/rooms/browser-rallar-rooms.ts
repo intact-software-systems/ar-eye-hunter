@@ -1,26 +1,25 @@
-import { readStateGroupSnapshot } from '@shared-web/browser/api-integration.ts';
-import type { StateGroupSnapshotRead } from '@shared-web/browser/api-integration.ts';
-import * as apiWorkflows from '@shared-web/browser/api-workflows.ts';
 import { ApiHttpError } from '@shared-web/browser/api/http-error.ts';
-import type { ApiMiddleware } from '@shared-web/browser/app-context.ts';
-import type { RallarMessagesController } from '@shared-web/browser/messages/browser-rallar-messages-controller.ts';
+import type { RallarStateEventListener } from '@shared-web/browser/messages/rallar-message-contracts.ts';
+import type { RallarMessagesOperations } from '@shared-web/browser/messages/rallar-message-operations.ts';
+import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
 import type { RallarScopedOperationOptions } from '@shared-web/browser/rallar-connection-facade.ts';
-import type { RallarStateEventListener } from '@shared-web/browser/rallar-message-contracts.ts';
 import {
     toRallarCommandOptions,
     toRallarWorkflowPolicies,
     type RallarOperationOptions
 } from '@shared-web/browser/rallar-operation-options.ts';
 import type { RallarRealtimeFacade } from '@shared-web/browser/rallar-realtime-facade.ts';
-import type { RallarStateSnapshotAcceptanceInput } from '@shared-web/browser/rallar-runtime/state-store.ts';
-import { throwRallarValidationIssue } from '@shared-web/browser/rallar-runtime/validation.ts';
 import type {
     RallarOnChangeOptions,
     RallarReplayEventsResult,
     RallarStateListener,
     RallarUnsubscribe
 } from '@shared-web/browser/rallar-shared-contracts.ts';
+import { throwRallarValidationIssue } from '@shared-web/browser/rooms/rallar-room-validation.ts';
+import type { RallarStateSnapshotAcceptanceInput } from '@shared-web/browser/state-cache/rallar-state-store.ts';
 import { emitBrowserStateReadDiagnostic } from '@shared-web/browser/state-read/diagnostics.ts';
+import { readStateGroupSnapshot, type StateGroupSnapshotRead } from '@shared-web/browser/state-read/point-read.ts';
+import { refreshStateSnapshots } from '@shared-web/browser/state-read/refresh-state-snapshots.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { toGroupRefFromScope, toStateScope } from '@shared/api/api-type-utils.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
@@ -79,7 +78,7 @@ import { archiveRoom, deleteRoom, updateRoom, updateRoomMetadata } from './updat
 export interface CreateBrowserRallarRoomsInput {
     readonly stateStore: RallarRoomStateStorePort;
     readonly roomEvents: RallarRoomEventsPort;
-    readonly messages: RallarMessagesController['operations'];
+    readonly messages: RallarMessagesOperations;
     readonly realtime: RallarRealtimeFacade;
     readonly connect: (options?: RallarOperationOptions) => Promise<ApiMiddleware>;
     readonly requireSession: () => AuthSession;
@@ -342,7 +341,7 @@ async function refreshRooms(
         const operationOptions = input.resolveOperationOptions(options);
         const context = await input.connect(operationOptions);
         const scope = input.resolveOperationScope(options.scope);
-        const { clients, groups } = await apiWorkflows.refreshStateSnapshots(
+        const { clients, groups } = await refreshStateSnapshots(
             scope,
             toRallarWorkflowPolicies(operationOptions)
         );

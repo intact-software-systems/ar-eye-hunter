@@ -69,107 +69,117 @@ export function evaluateRallarReadinessExpectation(
     expectation: RallarNormalizedReadinessExpectation
 ): RallarReadinessEvaluation {
     const observed = uniqueSortedSessionIds(observedSessionIds);
-    const observedSet = new Set(observed);
-
     if (expectation.sessionIds) {
-        const expectedSessionIds = expectation.sessionIds;
-        const expectedSet = new Set(expectedSessionIds);
-        const missingSessionIds = expectedSessionIds
-            .filter((sessionId) => !observedSet.has(sessionId));
-        const extraSessionIds = observed
-            .filter((sessionId) => !expectedSet.has(sessionId));
-        if (missingSessionIds.length > 0) {
-            return toEvaluation(
-                observed.length === 0 ? 'empty' : 'partial',
-                observed,
-                missingSessionIds,
-                extraSessionIds,
-                expectedSessionIds.length
-            );
-        }
-        if (!expectation.allowExtras && extraSessionIds.length > 0) {
-            return toEvaluation(
-                'over-capacity',
-                observed,
-                missingSessionIds,
-                extraSessionIds,
-                expectedSessionIds.length
-            );
-        }
-        return toEvaluation(
-            expectedSessionIds.length === 0 && observed.length === 0
-                ? 'empty'
-                : 'ready',
-            observed,
-            missingSessionIds,
-            extraSessionIds,
-            expectedSessionIds.length
-        );
+        return evaluateExpectedSessions(observed, expectation);
     }
-
     if (expectation.exact !== undefined) {
-        if (observed.length === expectation.exact) {
-            return toEvaluation(
-                expectation.exact === 0 ? 'empty' : 'ready',
-                observed,
-                [],
-                [],
-                expectation.exact
-            );
-        }
-        if (observed.length > expectation.exact) {
-            return toEvaluation(
-                'over-capacity',
-                observed,
-                [],
-                observed.slice(expectation.exact),
-                expectation.exact
-            );
-        }
-        return toEvaluation(
-            observed.length === 0 ? 'empty' : 'partial',
-            observed,
-            [],
-            [],
-            expectation.exact
-        );
+        return evaluateExactSessionCount(observed, expectation.exact);
+    }
+    return evaluateSessionCountRange(observed, expectation);
+}
+
+function evaluateExpectedSessions(
+    observedSessionIds: readonly string[],
+    expectation: RallarNormalizedReadinessExpectation
+): RallarReadinessEvaluation {
+    const expectedSessionIds = expectation.sessionIds ?? [];
+    const observedSet = new Set(observedSessionIds);
+    const expectedSet = new Set(expectedSessionIds);
+    const missingSessionIds = expectedSessionIds
+        .filter((sessionId) => !observedSet.has(sessionId));
+    const extraSessionIds = observedSessionIds
+        .filter((sessionId) => !expectedSet.has(sessionId));
+    let status: RallarReadinessStatus = 'ready';
+    if (missingSessionIds.length > 0) {
+        status = observedSessionIds.length === 0 ? 'empty' : 'partial';
+    }
+    else if (!expectation.allowExtras && extraSessionIds.length > 0) {
+        status = 'over-capacity';
+    }
+    else if (expectedSessionIds.length === 0 && observedSessionIds.length === 0) {
+        status = 'empty';
     }
 
+    return toEvaluation({
+        status,
+        observedSessionIds,
+        missingSessionIds,
+        extraSessionIds,
+        expectedCount: expectedSessionIds.length
+    });
+}
+
+function evaluateExactSessionCount(
+    observedSessionIds: readonly string[],
+    exact: number
+): RallarReadinessEvaluation {
+    let status: RallarReadinessStatus;
+    if (observedSessionIds.length === exact) {
+        status = exact === 0 ? 'empty' : 'ready';
+    }
+    else if (observedSessionIds.length > exact) {
+        status = 'over-capacity';
+    }
+    else {
+        status = observedSessionIds.length === 0 ? 'empty' : 'partial';
+    }
+    return toEvaluation({
+        status,
+        observedSessionIds,
+        missingSessionIds: [],
+        extraSessionIds: observedSessionIds.length > exact
+            ? observedSessionIds.slice(exact)
+            : [],
+        expectedCount: exact
+    });
+}
+
+function evaluateSessionCountRange(
+    observedSessionIds: readonly string[],
+    expectation: RallarNormalizedReadinessExpectation
+): RallarReadinessEvaluation {
     const min = expectation.min ?? 1;
-    if (expectation.max !== undefined && observed.length > expectation.max) {
-        return toEvaluation(
-            'over-capacity',
-            observed,
-            [],
-            observed.slice(expectation.max),
-            min
-        );
+    const max = expectation.max;
+    const overCapacity = max !== undefined && observedSessionIds.length > max;
+    let status: RallarReadinessStatus;
+    if (overCapacity) {
+        status = 'over-capacity';
     }
-    if (observed.length >= min) {
-        return toEvaluation(
-            min === 0 && observed.length === 0 ? 'empty' : 'ready',
-            observed,
-            [],
-            [],
-            min
-        );
+    else if (observedSessionIds.length >= min) {
+        status = min === 0 && observedSessionIds.length === 0 ? 'empty' : 'ready';
     }
-    return toEvaluation(
-        observed.length === 0 ? 'empty' : 'partial',
-        observed,
-        [],
-        [],
-        min
-    );
+    else {
+        status = observedSessionIds.length === 0 ? 'empty' : 'partial';
+    }
+    return toEvaluation({
+        status,
+        observedSessionIds,
+        missingSessionIds: [],
+        extraSessionIds: overCapacity
+            ? observedSessionIds.slice(max)
+            : [],
+        expectedCount: min
+    });
+}
+
+interface RallarReadinessEvaluationInput {
+    readonly status: RallarReadinessStatus;
+    readonly observedSessionIds: readonly string[];
+    readonly missingSessionIds: readonly string[];
+    readonly extraSessionIds: readonly string[];
+    readonly expectedCount?: number;
 }
 
 function toEvaluation(
-    status: RallarReadinessStatus,
-    observedSessionIds: readonly string[],
-    missingSessionIds: readonly string[],
-    extraSessionIds: readonly string[],
-    expectedCount?: number
+    input: RallarReadinessEvaluationInput
 ): RallarReadinessEvaluation {
+    const {
+        status,
+        observedSessionIds,
+        missingSessionIds,
+        extraSessionIds,
+        expectedCount
+    } = input;
     return {
         status,
         observedSessionIds,

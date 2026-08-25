@@ -288,7 +288,8 @@ diagnostics before treating it as a production shape.
   ownership and `RttMeasurementInfo` creation.
 - `packages/shared/services/WebRtcGroupManager.ts`: browser desired RTC peer
   selection and capped RTT reporting peer selection.
-- `packages/shared-web/browser/middleware.ts`: browser RTT AL message creation,
+- `packages/shared-web/browser/connection/initialise-browser-middleware.ts`:
+  browser RTT AL message creation,
   selected-peer heartbeat reconciliation, and WS enqueue.
 - `packages/shared/repository/rtt-repository.ts`: in-memory latest RTT
   repository and unordered pair key.

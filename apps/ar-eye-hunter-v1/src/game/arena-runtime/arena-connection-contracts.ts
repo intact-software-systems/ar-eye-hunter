@@ -34,7 +34,6 @@ export type ArenaAiStatus =
     | 'generating'
     | 'loading model'
     | 'webllm'
-    | 'mock fallback'
     | 'accepted'
     | 'error'
     | 'unavailable';
@@ -106,7 +105,11 @@ export type ArenaConnection = Readonly<{
     remotePlayerHits: readonly PlayerHitAccepted[];
     pickupAcceptances: readonly PickupAccepted[];
     login(username: string, password: string): Promise<void>;
-    register(username: string, password: string, displayName?: string): Promise<void>;
+    register(
+        username: string,
+        password: string,
+        displayName?: string
+    ): Promise<void>;
     logout(): Promise<void>;
     refreshRooms(): Promise<void>;
     createArenaRoom(): Promise<void>;

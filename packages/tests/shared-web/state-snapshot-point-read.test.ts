@@ -1,8 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { configureApiClient } from '@shared-web/browser/api-client-config.ts';
-import { findStateGroup, readStateClientSnapshot, readStateGroupSnapshot } from '@shared-web/browser/api-integration.ts';
 import { setBrowserStateReadDiagnosticsSink, type BrowserStateReadDiagnosticEvent } from '@shared-web/browser/state-read/diagnostics.ts';
+import { readStateClientSnapshot, readStateGroupSnapshot } from '@shared-web/browser/state-read/point-read.ts';
+import { findStateGroup } from '@shared-web/browser/state-read/state-snapshot-http-api.ts';
 
 import { createClientSnapshotFixture, createGroupSnapshotFixture } from './authoritative-group-fixtures.ts';
 

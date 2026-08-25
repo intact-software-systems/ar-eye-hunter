@@ -84,7 +84,7 @@ export const RALLAR_COMPANION_COVERAGE_SURFACES: readonly RallarCompanionCoverag
         layer: 'shared-web-facade',
         intent: 'Direct browser facade auth/session behavior, defaults, restore, and start flows.',
         testFiles: [
-            'packages/tests/shared-web/rallar-auth-session-contract.test.ts',
+            'packages/tests/shared-web/session/browser-auth-session-contract.test.ts',
             'packages/tests/shared-web/rallar-startup-lifecycle.test.ts',
             'packages/tests/rallar-black-box/auth-flow.test.ts',
             'packages/tests/shared-test/rallar-bb-browser-adapter-auth.test.ts'
@@ -110,15 +110,15 @@ export const RALLAR_COMPANION_COVERAGE_SURFACES: readonly RallarCompanionCoverag
         layer: 'shared-web-facade',
         intent: 'Typed message channels, realtime lanes, RTC waits, and facade default propagation.',
         testFiles: [
-            'packages/tests/shared-web/rallar-message-send.test.ts',
-            'packages/tests/shared-web/rallar-message-channel.test.ts',
-            'packages/tests/shared-web/rallar-realtime-send-listen.test.ts',
-            'packages/tests/shared-web/rooms/rallar-room-realtime-channel.test.ts',
-            'packages/tests/shared-web/rallar-realtime-json-lane.test.ts',
-            'packages/tests/shared-web/rallar-rtc-wait.test.ts',
-            'packages/tests/shared-web/rallar-targeted-channel.test.ts',
-            'packages/tests/shared-web/rallar-calls.test.ts',
-            'packages/tests/shared-web/rallar-media-sources.test.ts',
+            'packages/tests/shared-web/messages/browser-rallar-message-sender.test.ts',
+            'packages/tests/shared-web/messages/browser-typed-message-channels.test.ts',
+            'packages/tests/shared-web/realtime/browser-realtime-send-receive.test.ts',
+            'packages/tests/shared-web/realtime/browser-room-realtime-runtime.test.ts',
+            'packages/tests/shared-web/realtime/browser-realtime-json-lane.test.ts',
+            'packages/tests/shared-web/rtc/browser-rtc-wait-runtime.test.ts',
+            'packages/tests/shared-web/realtime/browser-targeted-realtime-runtime.test.ts',
+            'packages/tests/shared-web/calls/rallar-calls.test.ts',
+            'packages/tests/shared-web/media/browser-media-sources.test.ts',
             'packages/tests/shared-web/rallar-flow.test.ts'
         ],
         runnerBoundary:
@@ -128,7 +128,7 @@ export const RALLAR_COMPANION_COVERAGE_SURFACES: readonly RallarCompanionCoverag
         surfaceId: 'browser-data-facade',
         layer: 'shared-web-facade',
         intent: 'Rallar Data repository behavior, persistence, synchronization, and browser storage semantics.',
-        testFiles: ['packages/tests/shared-web/rallar-data.test.ts'],
+        testFiles: ['packages/tests/shared-web/data/rallar-data.test.ts'],
         runnerBoundary: 'Keep data API parity in package or app tests unless it is visible as HTTP/WS/RTC traffic.'
     },
     {

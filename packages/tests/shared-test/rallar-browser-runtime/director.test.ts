@@ -1,8 +1,8 @@
 import type { BlackBoxRallarRuntime } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-runtime-contract.ts';
 import type { BlackBoxBrowserDirectorDependency } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/browser-rallar-runtime-composition.ts';
 import type { BlackBoxRallarDirectorOutputRecord } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/contracts.ts';
-import type { RallarDirectorRelayMessage, RallarDirectorStatus } from '@shared-web/browser/rallar-director-facade.ts';
-import type { RallarMessagePayload } from '@shared-web/browser/rallar-message-contracts.ts';
+import type { RallarDirectorRelayMessage, RallarDirectorStatus } from '@shared-web/browser/director/rallar-director-facade.ts';
+import type { RallarMessagePayload } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { facade, loadRuntime, resetFacade, topics } from './browser-rallar-runtime-test-harness.ts';
@@ -227,13 +227,21 @@ async function receiveDirectorObservations(
     output: BlackBoxRallarDirectorOutputRecord
 ): Promise<void> {
     const config = scenario.config();
-    await config.onOutput?.(relayMessage(output, 'session-1', 1_150));
-    const snapshot = await config.readSnapshot?.();
-    if (snapshot === undefined) {
-        throw new Error('The director relay did not expose a snapshot.');
+    if (
+        config.onOutput === undefined ||
+        config.onSnapshot === undefined ||
+        config.readSnapshot === undefined ||
+        config.onSyncRequest === undefined
+    ) {
+        throw new Error('The director relay did not register all observation handlers.');
     }
-    await config.onSnapshot?.(relayMessage(snapshot, 'session-1', 1_200));
-    await config.onSyncRequest?.(
+    await config.onOutput(relayMessage(output, 'session-1', 1_150));
+    const snapshot = await config.readSnapshot();
+    if (snapshot === undefined) {
+        throw new Error('The director relay did not produce a snapshot.');
+    }
+    await config.onSnapshot(relayMessage(snapshot, 'session-1', 1_200));
+    await config.onSyncRequest(
         relayMessage({ reason: 'unit-test' }, 'session-b', 1_250),
         scenario.relay
     );

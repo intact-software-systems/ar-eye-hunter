@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { configureApiClient } from '@shared-web/browser/api-client-config.ts';
-import * as legacyWorkflows from '@shared-web/browser/api-workflows.ts';
 import * as mutationWorkflows from '@shared-web/browser/rooms/room-group-state-mutation-workflows.ts';
+import { rotateStateGroupJoinCode } from '@shared-web/browser/rooms/room-membership-group-state-workflows.ts';
 import { readGroupCausalRevision } from '@shared/api/group-client-views.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 
@@ -15,216 +15,208 @@ interface FetchCall {
     readonly body?: Record<string, unknown>;
 }
 
-const workflowPaths = [
-    { path: 'legacy', workflows: legacyWorkflows },
-    { path: 'owning', workflows: mutationWorkflows }
-] as const;
+describe('room group-state mutation workflows', () => {
+    const fetchCalls: FetchCall[] = [];
 
-describe.each(workflowPaths)(
-    '$path room group-state mutation workflow compatibility',
-    ({ workflows }) => {
-        const fetchCalls: FetchCall[] = [];
+    beforeEach(() => {
+        fetchCalls.length = 0;
+        configureApiClient({ apiBaseUrl: '' });
+        vi.stubGlobal('localStorage', {
+            getItem: vi.fn(() => null),
+            setItem: vi.fn(),
+            removeItem: vi.fn()
+        });
+    });
 
-        beforeEach(() => {
-            fetchCalls.length = 0;
-            configureApiClient({ apiBaseUrl: '' });
-            vi.stubGlobal('localStorage', {
-                getItem: vi.fn(() => null),
-                setItem: vi.fn(),
-                removeItem: vi.fn()
-            });
+    afterEach(() => {
+        configureApiClient({ apiBaseUrl: '' });
+        vi.unstubAllGlobals();
+        vi.restoreAllMocks();
+    });
+
+    it('reads and merges current metadata before writing the room update', async () => {
+        stubUuids('metadata-request-000001');
+        const current = roomSnapshot('group-1', {
+            keep: true,
+            rallarDirector: { old: true }
+        });
+        stubFetch(fetchCalls, ({ method }) => {
+            const body = method === 'GET'
+                ? current
+                : roomSnapshot('group-1', { keep: true, rallarDirector: { next: true } });
+            return method === 'GET' ? groupPointResponse(body) : jsonResponse(body);
         });
 
-        afterEach(() => {
-            configureApiClient({ apiBaseUrl: '' });
-            vi.unstubAllGlobals();
-            vi.restoreAllMocks();
+        await mutationWorkflows.updateStateGroupMetadata({
+            groupId: 'group-1',
+            patch: { rallarDirector: { next: true } },
+            principalId: 'principal-1',
+            sessionId: 'session-1'
         });
 
-        it('reads and merges current metadata before writing the room update', async () => {
-            stubUuids('metadata-request-000001');
-            const current = roomSnapshot('group-1', {
-                keep: true,
-                rallarDirector: { old: true }
-            });
-            stubFetch(fetchCalls, ({ method }) => {
-                const body = method === 'GET'
-                    ? current
-                    : roomSnapshot('group-1', { keep: true, rallarDirector: { next: true } });
-                return method === 'GET' ? groupPointResponse(body) : jsonResponse(body);
-            });
-
-            await workflows.updateStateGroupMetadata(
-                'group-1',
-                { rallarDirector: { next: true } },
-                'principal-1',
-                'session-1'
-            );
-
-            expect(fetchCalls).toEqual([
-                {
-                    url: '/api/state/apps/rallar-server/workspaces/default/groups/group-1',
-                    method: 'GET',
-                    rawBody: undefined,
-                    body: undefined
-                },
-                {
-                    url: '/api/state/apps/rallar-server/workspaces/default/groups/group-1/' +
-                        'requests/metadata-request-000001',
-                    method: 'PUT',
-                    rawBody: '{"metadata":{"keep":true,"rallarDirector":{"next":true}},' +
-                        '"actorPrincipalId":"principal-1","actorSessionId":"session-1"}',
-                    body: {
-                        metadata: { keep: true, rallarDirector: { next: true } },
-                        actorPrincipalId: 'principal-1',
-                        actorSessionId: 'session-1'
-                    }
+        expect(fetchCalls).toEqual([
+            {
+                url: '/api/state/apps/rallar-server/workspaces/default/groups/group-1',
+                method: 'GET',
+                rawBody: undefined,
+                body: undefined
+            },
+            {
+                url: '/api/state/apps/rallar-server/workspaces/default/groups/group-1/' +
+                    'requests/metadata-request-000001',
+                method: 'PUT',
+                rawBody: '{"metadata":{"keep":true,"rallarDirector":{"next":true}},' +
+                    '"actorPrincipalId":"principal-1","actorSessionId":"session-1"}',
+                body: {
+                    metadata: { keep: true, rallarDirector: { next: true } },
+                    actorPrincipalId: 'principal-1',
+                    actorSessionId: 'session-1'
                 }
-            ]);
+            }
+        ]);
+    });
+
+    it('writes exact detail archive and delete mutations through the shared update path', async () => {
+        stubUuids('details-request-0000001', 'archive-request-0000001', 'delete-request-00000001');
+        stubFetch(fetchCalls, () => jsonResponse(roomSnapshot('group-1')));
+
+        await mutationWorkflows.updateStateGroupDetails({
+            groupId: 'group-1',
+            request: {
+                displayName: 'Renamed',
+                description: 'Mission room',
+                joinMode: 'open',
+                maxMembers: 8,
+                maxSessionsPerMember: 2,
+                metadata: { map: 'fjord', enabled: false, note: null },
+                traceId: 'details-trace'
+            },
+            principalId: 'owner-1',
+            sessionId: 'owner-session'
+        });
+        await mutationWorkflows.archiveStateGroup({
+            groupId: 'group-1',
+            request: {
+                displayName: 'Archived Room',
+                description: '',
+                maxMembers: 0,
+                metadata: { enabled: false, note: null },
+                reason: 'quiet',
+                traceId: 'archive-trace'
+            },
+            principalId: 'owner-1',
+            sessionId: 'owner-session'
+        });
+        await mutationWorkflows.deleteStateGroup({
+            groupId: 'group-1',
+            request: {
+                slug: 'deleted-room',
+                purgeAfterEpochMs: 3_000,
+                reason: 'cleanup',
+                traceId: 'delete-trace'
+            },
+            principalId: 'owner-1',
+            sessionId: 'owner-session'
         });
 
-        it('writes exact detail archive and delete mutations through the shared update path', async () => {
-            stubUuids('details-request-0000001', 'archive-request-0000001', 'delete-request-00000001');
-            stubFetch(fetchCalls, () => jsonResponse(roomSnapshot('group-1')));
-
-            await workflows.updateStateGroupDetails(
-                'group-1',
-                {
+        expect(fetchCalls).toEqual([
+            {
+                url: '/api/state/apps/rallar-server/workspaces/default/groups/group-1/' +
+                    'requests/details-request-0000001',
+                method: 'PUT',
+                rawBody: '{"displayName":"Renamed","description":"Mission room","joinMode":"open",' +
+                    '"maxMembers":8,"maxSessionsPerMember":2,' +
+                    '"metadata":{"map":"fjord","enabled":false,"note":null},' +
+                    '"traceId":"details-trace","actorPrincipalId":"owner-1",' +
+                    '"actorSessionId":"owner-session"}',
+                body: {
                     displayName: 'Renamed',
                     description: 'Mission room',
                     joinMode: 'open',
                     maxMembers: 8,
                     maxSessionsPerMember: 2,
                     metadata: { map: 'fjord', enabled: false, note: null },
-                    traceId: 'details-trace'
-                },
-                'owner-1',
-                'owner-session'
-            );
-            await workflows.archiveStateGroup(
-                'group-1',
-                {
+                    traceId: 'details-trace',
+                    actorPrincipalId: 'owner-1',
+                    actorSessionId: 'owner-session'
+                }
+            },
+            {
+                url: '/api/state/apps/rallar-server/workspaces/default/groups/group-1/' +
+                    'requests/archive-request-0000001',
+                method: 'PUT',
+                rawBody: '{"displayName":"Archived Room","description":"","maxMembers":0,' +
+                    '"metadata":{"enabled":false,"note":null},"reason":"quiet",' +
+                    '"traceId":"archive-trace","status":"archived",' +
+                    '"actorPrincipalId":"owner-1","actorSessionId":"owner-session"}',
+                body: {
                     displayName: 'Archived Room',
                     description: '',
                     maxMembers: 0,
                     metadata: { enabled: false, note: null },
                     reason: 'quiet',
-                    traceId: 'archive-trace'
-                },
-                'owner-1',
-                'owner-session'
-            );
-            await workflows.deleteStateGroup(
-                'group-1',
-                {
+                    traceId: 'archive-trace',
+                    status: 'archived',
+                    actorPrincipalId: 'owner-1',
+                    actorSessionId: 'owner-session'
+                }
+            },
+            {
+                url: '/api/state/apps/rallar-server/workspaces/default/groups/group-1/' +
+                    'requests/delete-request-00000001',
+                method: 'PUT',
+                rawBody: '{"slug":"deleted-room","purgeAfterEpochMs":3000,"reason":"cleanup",' +
+                    '"traceId":"delete-trace","status":"deleted",' +
+                    '"actorPrincipalId":"owner-1","actorSessionId":"owner-session"}',
+                body: {
                     slug: 'deleted-room',
                     purgeAfterEpochMs: 3_000,
                     reason: 'cleanup',
-                    traceId: 'delete-trace'
-                },
-                'owner-1',
-                'owner-session'
-            );
-
-            expect(fetchCalls).toEqual([
-                {
-                    url: '/api/state/apps/rallar-server/workspaces/default/groups/group-1/' +
-                        'requests/details-request-0000001',
-                    method: 'PUT',
-                    rawBody: '{"displayName":"Renamed","description":"Mission room","joinMode":"open",' +
-                        '"maxMembers":8,"maxSessionsPerMember":2,' +
-                        '"metadata":{"map":"fjord","enabled":false,"note":null},' +
-                        '"traceId":"details-trace","actorPrincipalId":"owner-1",' +
-                        '"actorSessionId":"owner-session"}',
-                    body: {
-                        displayName: 'Renamed',
-                        description: 'Mission room',
-                        joinMode: 'open',
-                        maxMembers: 8,
-                        maxSessionsPerMember: 2,
-                        metadata: { map: 'fjord', enabled: false, note: null },
-                        traceId: 'details-trace',
-                        actorPrincipalId: 'owner-1',
-                        actorSessionId: 'owner-session'
-                    }
-                },
-                {
-                    url: '/api/state/apps/rallar-server/workspaces/default/groups/group-1/' +
-                        'requests/archive-request-0000001',
-                    method: 'PUT',
-                    rawBody: '{"displayName":"Archived Room","description":"","maxMembers":0,' +
-                        '"metadata":{"enabled":false,"note":null},"reason":"quiet",' +
-                        '"traceId":"archive-trace","status":"archived",' +
-                        '"actorPrincipalId":"owner-1","actorSessionId":"owner-session"}',
-                    body: {
-                        displayName: 'Archived Room',
-                        description: '',
-                        maxMembers: 0,
-                        metadata: { enabled: false, note: null },
-                        reason: 'quiet',
-                        traceId: 'archive-trace',
-                        status: 'archived',
-                        actorPrincipalId: 'owner-1',
-                        actorSessionId: 'owner-session'
-                    }
-                },
-                {
-                    url: '/api/state/apps/rallar-server/workspaces/default/groups/group-1/' +
-                        'requests/delete-request-00000001',
-                    method: 'PUT',
-                    rawBody: '{"slug":"deleted-room","purgeAfterEpochMs":3000,"reason":"cleanup",' +
-                        '"traceId":"delete-trace","status":"deleted",' +
-                        '"actorPrincipalId":"owner-1","actorSessionId":"owner-session"}',
-                    body: {
-                        slug: 'deleted-room',
-                        purgeAfterEpochMs: 3_000,
-                        reason: 'cleanup',
-                        traceId: 'delete-trace',
-                        status: 'deleted',
-                        actorPrincipalId: 'owner-1',
-                        actorSessionId: 'owner-session'
-                    }
+                    traceId: 'delete-trace',
+                    status: 'deleted',
+                    actorPrincipalId: 'owner-1',
+                    actorSessionId: 'owner-session'
                 }
-            ]);
-        });
+            }
+        ]);
+    });
 
-        it('rotates a room join code with an exact scoped request', async () => {
-            stubUuids('join-code-request-0001');
-            const response = {
-                joinCode: 'code-1',
-                expiresAtEpochMs: 2_000,
-                snapshot: roomSnapshot('group-1')
-            };
-            stubFetch(fetchCalls, () => jsonResponse(response));
+    it('rotates a room join code with an exact scoped request', async () => {
+        stubUuids('join-code-request-0001');
+        const response = {
+            joinCode: 'code-1',
+            expiresAtEpochMs: 2_000,
+            snapshot: roomSnapshot('group-1')
+        };
+        stubFetch(fetchCalls, () => jsonResponse(response));
 
-            await expect(
-                legacyWorkflows.rotateStateGroupJoinCode(
-                    'group-1',
-                    { joinCode: 'code-1', expiresAtEpochMs: 2_000 },
-                    'owner-1',
-                    'owner-session',
-                    { applicationId: 'app-1', workspaceId: 'workspace-1' }
-                )
-            ).resolves.toEqual(response);
+        await expect(
+            rotateStateGroupJoinCode({
+                groupId: 'group-1',
+                request: { joinCode: 'code-1', expiresAtEpochMs: 2_000 },
+                actorPrincipalId: 'owner-1',
+                sessionId: 'owner-session',
+                scope: { applicationId: 'app-1', workspaceId: 'workspace-1' }
+            })
+        ).resolves.toEqual(response);
 
-            expect(fetchCalls).toEqual([
-                {
-                    url: '/api/state/apps/app-1/workspaces/workspace-1/groups/group-1/' +
-                        'join-code/rotate/requests/join-code-request-0001',
-                    method: 'POST',
-                    rawBody: '{"joinCode":"code-1","expiresAtEpochMs":2000,' +
-                        '"actorPrincipalId":"owner-1","actorSessionId":"owner-session"}',
-                    body: {
-                        joinCode: 'code-1',
-                        expiresAtEpochMs: 2_000,
-                        actorPrincipalId: 'owner-1',
-                        actorSessionId: 'owner-session'
-                    }
+        expect(fetchCalls).toEqual([
+            {
+                url: '/api/state/apps/app-1/workspaces/workspace-1/groups/group-1/' +
+                    'join-code/rotate/requests/join-code-request-0001',
+                method: 'POST',
+                rawBody: '{"joinCode":"code-1","expiresAtEpochMs":2000,' +
+                    '"actorPrincipalId":"owner-1","actorSessionId":"owner-session"}',
+                body: {
+                    joinCode: 'code-1',
+                    expiresAtEpochMs: 2_000,
+                    actorPrincipalId: 'owner-1',
+                    actorSessionId: 'owner-session'
                 }
-            ]);
-        });
-    }
-);
+            }
+        ]);
+    });
+});
 
 function stubUuids(...values: string[]): void {
     const spy = vi.spyOn(crypto, 'randomUUID');

@@ -71,7 +71,7 @@ describe('room presence waits', () => {
         const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
         const ready = createRoomSnapshot('room-1', ['session-1', 'peer-a']);
         seedRoomSnapshots([createRoomSnapshot('room-1', ['session-1'])]);
-        roomWorkflowMocks.onStateCacheChange.mockImplementation(() => {
+        roomWorkflowMocks.onCacheChange.mockImplementation(() => {
             seedRoomSnapshots([ready]);
             return () => {};
         });

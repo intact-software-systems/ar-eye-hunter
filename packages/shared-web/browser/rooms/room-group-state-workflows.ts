@@ -1,16 +1,10 @@
-import {
-    connectStateGroupPresenceSession,
-    createStateGroup,
-    defaultStateScope,
-    disconnectStateGroupPresenceSession,
-    joinStateGroup as joinStateGroupApi,
-    upsertStateGroupMember
-} from '@shared-web/browser/api-integration.ts';
+import { defaultStateScope } from '@shared-web/browser/api/state-http-path.ts';
+import { roomGroupStateHttpApi } from '@shared-web/browser/rooms/room-group-state-http-api.ts';
 import {
     requireStateWorkflowResult,
     toApiMutationWorkflowRequestId,
     tolerateStateWorkflowNotFound
-} from '@shared-web/browser/state-workflow-support.ts';
+} from '@shared-web/browser/state-read/state-workflow-support.ts';
 import { CommandsOrchestrator } from '@shared/cache/CommandsOrchestrator.ts';
 import type { CommandsOrchestratorPolicies } from '@shared/cache/CommandsOrchestrator.ts';
 
@@ -27,66 +21,44 @@ import {
 } from './room-group-state-translation.ts';
 
 export type StateGroupWorkflowValue = GroupSnapshot | undefined;
-export type JoinStateGroupIntent = RoomJoinGroupStateFields;
 export type CreateAndJoinStateGroupOptions = Omit<RoomCreateGroupStateFields, 'displayName'>;
 
 type GroupWorkflowKey = 'created' | 'member' | 'joined' | 'disconnected' | 'left';
 
-interface CreateAndJoinStateGroupInput {
+export interface CreateAndJoinStateGroupInput {
     readonly displayName: string;
     readonly principalId: string;
     readonly sessionId: string;
     readonly generationId: string;
-    readonly scope: StateScope;
-    readonly policies: CommandsOrchestratorPolicies<StateGroupWorkflowValue>;
+    readonly scope?: StateScope;
+    readonly policies?: CommandsOrchestratorPolicies<StateGroupWorkflowValue>;
     readonly requestedGroupId?: string;
-    readonly options: CreateAndJoinStateGroupOptions;
+    readonly options?: CreateAndJoinStateGroupOptions;
 }
 
-interface JoinStateGroupInput {
+export interface JoinStateGroupInput {
     readonly groupId: string;
     readonly principalId: string;
     readonly sessionId: string;
     readonly generationId: string;
-    readonly scope: StateScope;
-    readonly policies: CommandsOrchestratorPolicies<StateGroupWorkflowValue>;
-    readonly intent: JoinStateGroupIntent;
+    readonly scope?: StateScope;
+    readonly policies?: CommandsOrchestratorPolicies<StateGroupWorkflowValue>;
+    readonly intent?: RoomJoinGroupStateFields;
 }
 
-interface LeaveStateGroupInput {
+export interface LeaveStateGroupInput {
     readonly groupId: string;
     readonly principalId: string;
     readonly sessionId: string;
     readonly generationId: string;
-    readonly scope: StateScope;
-    readonly policies: CommandsOrchestratorPolicies<StateGroupWorkflowValue>;
+    readonly scope?: StateScope;
+    readonly policies?: CommandsOrchestratorPolicies<StateGroupWorkflowValue>;
 }
 
 export async function createAndJoinStateGroup(
-    displayName: string,
-    principalId: string,
-    sessionId: string,
-    generationId: string,
-    scope: StateScope = defaultStateScope(),
-    policies: CommandsOrchestratorPolicies<StateGroupWorkflowValue> = {},
-    requestedGroupId?: string,
-    options: CreateAndJoinStateGroupOptions = {}
-): Promise<GroupSnapshot> {
-    return await createAndJoinStateGroupWithInput({
-        displayName,
-        principalId,
-        sessionId,
-        generationId,
-        scope,
-        policies,
-        requestedGroupId,
-        options
-    });
-}
-
-async function createAndJoinStateGroupWithInput(
     input: CreateAndJoinStateGroupInput
 ): Promise<GroupSnapshot> {
+    const scope = input.scope ?? defaultStateScope();
     const groupId = input.requestedGroupId?.trim() || crypto.randomUUID();
     const createRequestId = toApiMutationWorkflowRequestId();
     const presenceRequestId = toApiMutationWorkflowRequestId();
@@ -103,23 +75,28 @@ async function createAndJoinStateGroupWithInput(
         actorSessionId: input.sessionId
     });
     const flow = CommandsOrchestrator.withPolicies<GroupWorkflowKey, StateGroupWorkflowValue>(
-        input.policies
+        input.policies ?? {}
     );
 
     const results = await flow
         .sequential(
             flow.commandStep(
                 'created',
-                (signal) => createStateGroup(createRequest, { requestId: createRequestId, signal }, input.scope)
+                (signal) =>
+                    roomGroupStateHttpApi.createGroup({
+                        request: createRequest,
+                        options: { requestId: createRequestId, signal },
+                        scope
+                    })
             ),
             flow.commandStep('joined', (signal) =>
-                connectStateGroupPresenceSession(
+                roomGroupStateHttpApi.connectPresence({
                     groupId,
-                    input.sessionId,
-                    presenceRequest,
-                    { requestId: presenceRequestId, signal },
-                    input.scope
-                ))
+                    sessionId: input.sessionId,
+                    request: presenceRequest,
+                    options: { requestId: presenceRequestId, signal },
+                    scope
+                }))
         )
         .run();
 
@@ -127,30 +104,13 @@ async function createAndJoinStateGroupWithInput(
 }
 
 export async function joinStateGroup(
-    groupId: string,
-    principalId: string,
-    sessionId: string,
-    generationId: string,
-    scope: StateScope = defaultStateScope(),
-    policies: CommandsOrchestratorPolicies<StateGroupWorkflowValue> = {},
-    intent: JoinStateGroupIntent = {}
+    input: JoinStateGroupInput
 ): Promise<GroupSnapshot> {
-    return await joinStateGroupWithInput({
-        groupId,
-        principalId,
-        sessionId,
-        generationId,
-        scope,
-        policies,
-        intent
-    });
-}
-
-async function joinStateGroupWithInput(input: JoinStateGroupInput): Promise<GroupSnapshot> {
+    const scope = input.scope ?? defaultStateScope();
     const joinRequestId = toApiMutationWorkflowRequestId();
     const presenceRequestId = toApiMutationWorkflowRequestId();
     const joinRequest = toJoinGroupStateRequest({
-        room: input.intent,
+        room: input.intent ?? {},
         actorPrincipalId: input.principalId,
         actorSessionId: input.sessionId
     });
@@ -161,26 +121,26 @@ async function joinStateGroupWithInput(input: JoinStateGroupInput): Promise<Grou
         actorSessionId: input.sessionId
     });
     const flow = CommandsOrchestrator.withPolicies<GroupWorkflowKey, StateGroupWorkflowValue>(
-        input.policies
+        input.policies ?? {}
     );
 
     const results = await flow
         .sequential(
             flow.commandStep('member', (signal) =>
-                joinStateGroupApi(
-                    input.groupId,
-                    joinRequest,
-                    { requestId: joinRequestId, signal },
-                    input.scope
-                )),
+                roomGroupStateHttpApi.joinGroup({
+                    groupId: input.groupId,
+                    request: joinRequest,
+                    options: { requestId: joinRequestId, signal },
+                    scope
+                })),
             flow.commandStep('joined', (signal) =>
-                connectStateGroupPresenceSession(
-                    input.groupId,
-                    input.sessionId,
-                    presenceRequest,
-                    { requestId: presenceRequestId, signal },
-                    input.scope
-                ))
+                roomGroupStateHttpApi.connectPresence({
+                    groupId: input.groupId,
+                    sessionId: input.sessionId,
+                    request: presenceRequest,
+                    options: { requestId: presenceRequestId, signal },
+                    scope
+                }))
         )
         .run();
 
@@ -188,24 +148,9 @@ async function joinStateGroupWithInput(input: JoinStateGroupInput): Promise<Grou
 }
 
 export async function leaveStateGroup(
-    groupId: string,
-    principalId: string,
-    sessionId: string,
-    generationId: string,
-    scope: StateScope = defaultStateScope(),
-    policies: CommandsOrchestratorPolicies<StateGroupWorkflowValue> = {}
+    input: LeaveStateGroupInput
 ): Promise<GroupSnapshot> {
-    return await leaveStateGroupWithInput({
-        groupId,
-        principalId,
-        sessionId,
-        generationId,
-        scope,
-        policies
-    });
-}
-
-async function leaveStateGroupWithInput(input: LeaveStateGroupInput): Promise<GroupSnapshot> {
+    const scope = input.scope ?? defaultStateScope();
     const disconnectRequestId = toApiMutationWorkflowRequestId();
     const memberRequestId = toApiMutationWorkflowRequestId();
     const disconnectRequest = toDisconnectRoomPresenceGroupStateRequest({
@@ -219,7 +164,7 @@ async function leaveStateGroupWithInput(input: LeaveStateGroupInput): Promise<Gr
         actorSessionId: input.sessionId
     });
     const flow = CommandsOrchestrator.withPolicies<GroupWorkflowKey, StateGroupWorkflowValue>(
-        input.policies
+        input.policies ?? {}
     );
 
     const results = await flow
@@ -227,26 +172,26 @@ async function leaveStateGroupWithInput(input: LeaveStateGroupInput): Promise<Gr
             flow.commandStep(
                 'disconnected',
                 (signal) =>
-                    disconnectStateGroupPresenceSession(
-                        input.groupId,
-                        input.sessionId,
-                        disconnectRequest,
-                        { requestId: disconnectRequestId, signal },
-                        input.scope
-                    ),
+                    roomGroupStateHttpApi.disconnectPresence({
+                        groupId: input.groupId,
+                        sessionId: input.sessionId,
+                        request: disconnectRequest,
+                        options: { requestId: disconnectRequestId, signal },
+                        scope
+                    }),
                 {
                     errorOnNull: false,
                     fallback: (error) => tolerateStateWorkflowNotFound(error, undefined)
                 }
             ),
             flow.commandStep('left', (signal) =>
-                upsertStateGroupMember(
-                    input.groupId,
-                    input.principalId,
-                    memberRequest,
-                    { requestId: memberRequestId, signal },
-                    input.scope
-                ))
+                roomGroupStateHttpApi.upsertMember({
+                    groupId: input.groupId,
+                    principalId: input.principalId,
+                    request: memberRequest,
+                    options: { requestId: memberRequestId, signal },
+                    scope
+                }))
         )
         .run();
 

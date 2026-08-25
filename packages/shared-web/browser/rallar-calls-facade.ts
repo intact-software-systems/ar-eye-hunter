@@ -1,5 +1,5 @@
+import type { RallarMessage, RallarMessageSendResult } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type { RallarMediaSourcesFacade, RallarMediaSourceStatus } from '@shared-web/browser/rallar-media-facade.ts';
-import type { RallarMessage, RallarMessageSendResult } from '@shared-web/browser/rallar-message-contracts.ts';
 import type {
     RallarTargetedChannel,
     RallarTargetedChannelDefinition,

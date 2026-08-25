@@ -1,8 +1,9 @@
+import { createRallarFacade } from '@shared-web/browser/composition/create-rallar-facade.ts';
 import type { RallarFacade } from '@shared-web/browser/rallar-facade-contract.ts';
-import { createBrowserRallarFacade } from '@shared-web/browser/rallar-runtime/composition.ts';
+
+export { createRallarFacade } from '@shared-web/browser/composition/create-rallar-facade.ts';
 
 export {
-    createDefaultRallarDataFacade,
     createRallarDataFacade,
     defineRallarDataStore
 } from '@shared-web/browser/rallar-data.ts';
@@ -12,12 +13,14 @@ export { createRallarCrdtFacade } from '@shared-web/browser/rallar-crdt.ts';
 export {
     matchesRallarMessageSelector,
     normalizeRallarMessageSelector
-} from '@shared-web/browser/rallar-message-selectors.ts';
+} from '@shared-web/browser/messages/rallar-message-selectors.ts';
 
 export {
     evaluateRallarReadinessExpectation,
     normalizeRallarReadinessExpectation
 } from '@shared-web/browser/readiness.ts';
+
+export { DEFAULT_REALTIME_DATA_CHANNEL_LANE } from '@shared-web/browser/rallar-realtime-facade.ts';
 
 export type {
     RallarCrdtDocument,
@@ -47,7 +50,7 @@ export type {
 export type {
     RallarMessageSelector,
     RallarMessageSelectorInput
-} from '@shared-web/browser/rallar-message-selectors.ts';
+} from '@shared-web/browser/messages/rallar-message-selectors.ts';
 
 export type {
     RallarOperationOptions,
@@ -67,10 +70,12 @@ export type {
 } from '@shared-web/browser/readiness.ts';
 
 export type {
+    ApiMiddleware,
     RallarAdvancedFacade,
     RallarAuthChangeListener,
     RallarAuthChangeReason,
     RallarAuthState,
+    RallarBrowserMiddleware,
     RallarCallDataInput,
     RallarCallEndOptions,
     RallarCallHandle,
@@ -200,6 +205,7 @@ export type {
     RallarRtcWaitForOpenResult,
     RallarScopedOperationOptions,
     RallarScreenSourceStartOptions,
+    RallarSessionHeartbeat,
     RallarSetRoomMemberRoleInput,
     RallarSetupInput,
     RallarStartOptions,
@@ -235,9 +241,5 @@ export type {
     RallarWsStatusListener,
     RallarWsWaitForOpenResult
 } from '@shared-web/browser/rallar-facade-contract.ts';
-
-export function createRallarFacade(): RallarFacade {
-    return createBrowserRallarFacade();
-}
 
 export const rallar: RallarFacade = createRallarFacade();

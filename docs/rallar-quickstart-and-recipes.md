@@ -96,7 +96,7 @@ plaintext code is the value to share; the group snapshot stores only verifier
 metadata.
 
 ```ts
-import { rotateStateGroupJoinCode } from '@shared-web/browser/api-workflows.ts';
+import { rotateStateGroupJoinCode } from '@shared-web/browser/rooms/room-membership-group-state-workflows.ts';
 
 const scope = { applicationId: 'game', workspaceId: 'default' };
 const session = rallar.session();
@@ -110,13 +110,13 @@ const created = await rallar.rooms.createAndSwitch({
     scope
 });
 
-const rotated = await rotateStateGroupJoinCode(
-    created.group.groupId,
-    { expiresAtEpochMs: Date.now() + 30 * 60 * 1000 },
-    session.clientId,
-    session.sessionId,
+const rotated = await rotateStateGroupJoinCode({
+    groupId: created.group.groupId,
+    request: { expiresAtEpochMs: Date.now() + 30 * 60 * 1000 },
+    actorPrincipalId: session.clientId,
+    sessionId: session.sessionId,
     scope
-);
+});
 
 await rallar.rooms.join(created.group, { joinCode: rotated.joinCode });
 ```
@@ -267,7 +267,7 @@ options configure the dedicated lane before the first possible connection and
 are reused by post-login `start(...)`.
 
 ```ts
-import { DEFAULT_REALTIME_DATA_CHANNEL_LANE } from '@shared-web/browser/middleware.ts';
+import { DEFAULT_REALTIME_DATA_CHANNEL_LANE } from '@shared-web/browser/rallar-realtime.ts';
 import { rallar, type RallarStartOptions } from '@shared-web/browser/rallar.ts';
 import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';

@@ -7,21 +7,24 @@ export {
 export {
     matchesRallarMessageSelector,
     normalizeRallarMessageSelector
-} from '@shared-web/browser/rallar-message-selectors.ts';
+} from '@shared-web/browser/messages/rallar-message-selectors.ts';
 
 export type { RallarApiClientConfig } from '@shared-web/browser/api-client-config.ts';
 
 export type {
+    ApiMiddleware,
+    RallarBrowserMiddleware,
     RallarConnectionFacade,
-    RallarConnectionOperations
+    RallarConnectionOperations,
+    RallarSessionHeartbeat
 } from '@shared-web/browser/rallar-connection-facade.ts';
 
-export type { RallarAuthFacade } from '@shared-web/browser/rallar-auth-facade.ts';
+export type { RallarAuthFacade } from '@shared-web/browser/session/rallar-auth-facade.ts';
 
 export type {
     RallarMessageSelector,
     RallarMessageSelectorInput
-} from '@shared-web/browser/rallar-message-selectors.ts';
+} from '@shared-web/browser/messages/rallar-message-selectors.ts';
 
 export type {
     RallarOperationOptions,

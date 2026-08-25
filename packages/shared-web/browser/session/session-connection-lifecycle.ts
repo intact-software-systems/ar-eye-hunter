@@ -1,15 +1,13 @@
-import type {
-    ApiMiddleware,
-    BrowserTransportRuntimePort
-} from '@shared-web/browser/connection/browser-transport-runtime.ts';
-import type { MiddlewareInitOptions } from '@shared-web/browser/middleware.ts';
+import type { RallarConnectionRuntimePort } from '@shared-web/browser/composition/browser-facade-runtime-state.ts';
+import type { BrowserTransportRuntimePort } from '@shared-web/browser/connection/browser-transport-runtime.ts';
+import type { MiddlewareInitOptions } from '@shared-web/browser/connection/initialise-browser-middleware.ts';
+import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
 import {
     toRallarCommandOptions,
     toRallarOperationOptions,
     type RallarOperationOptions
 } from '@shared-web/browser/rallar-operation-options.ts';
-import type { RallarConnectionRuntimePort } from '@shared-web/browser/rallar-runtime-context.ts';
-import type { RallarLifecycleCoordinator } from '@shared-web/browser/rallar-runtime/lifecycle.ts';
+import type { RallarLifecycleCoordinator } from '@shared-web/browser/session/rallar-lifecycle-coordinator.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import { Command } from '@shared/cache/Command.ts';
 

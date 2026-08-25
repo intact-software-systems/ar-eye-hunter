@@ -1,9 +1,9 @@
-import type { RallarScopedOperationOptions } from '@shared-web/browser/rallar-connection-facade.ts';
 import type {
     RallarRoomMessageChannelDefinition,
     RallarStateEventListener,
     RallarTypedMessageChannel
-} from '@shared-web/browser/rallar-message-contracts.ts';
+} from '@shared-web/browser/messages/rallar-message-contracts.ts';
+import type { RallarScopedOperationOptions } from '@shared-web/browser/rallar-connection-facade.ts';
 import type {
     RallarRoomRealtimeJsonChannel,
     RallarRoomRealtimeJsonDefaults

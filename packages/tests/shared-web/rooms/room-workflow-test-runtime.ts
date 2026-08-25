@@ -1,10 +1,15 @@
 import { vi } from 'vitest';
 
-import type { ApiMiddleware } from '@shared-web/browser/connection/browser-transport-runtime.ts';
-import type { Middleware } from '@shared-web/browser/middleware.ts';
+import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
+import type { RallarBrowserMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 
 import { createGroupSnapshotFixture } from '../authoritative-group-fixtures.ts';
+
+type RoomGroupStateWorkflowsModule = typeof import('@shared-web/browser/rooms/room-group-state-workflows.ts');
+type RoomGroupStateMutationWorkflowsModule = typeof import('@shared-web/browser/rooms/room-group-state-mutation-workflows.ts');
+type RoomMembershipGroupStateWorkflowsModule = typeof import('@shared-web/browser/rooms/room-membership-group-state-workflows.ts');
+type StateCacheLifecycleModule = typeof import('@shared-web/browser/state-cache/browser-state-cache-lifecycle.ts');
 
 interface RoomSnapshotScopeFixture {
     readonly applicationId?: string;
@@ -20,40 +25,32 @@ const roomWorkflowMocks = await vi.hoisted(async () => {
     return {
         operationLog,
         groupSnapshots,
-        cacheListeners: new Set<() => void | Promise<void>>(),
+        cacheListeners: new Set<Parameters<StateCacheLifecycleModule['browserStateCacheLifecycle']['onChange']>[0]>(),
         session: ctx.session,
         ctx,
-        clearMiddleware: vi.fn(),
-        initMiddleware: vi.fn(async (): Promise<ApiMiddleware> => ctx),
-        isMiddlewareReady: vi.fn(() => false),
-        createAndJoinStateGroup: vi.fn(),
-        joinStateGroup: vi.fn(),
-        leaveStateGroup: vi.fn(),
-        updateStateGroupDetails: vi.fn(),
-        updateStateGroupMetadata: vi.fn(),
-        archiveStateGroup: vi.fn(),
-        deleteStateGroup: vi.fn(),
-        createStateGroupInvite: vi.fn(),
-        acceptStateGroupInvite: vi.fn(),
-        removeStateGroupMember: vi.fn(),
-        banStateGroupMember: vi.fn(),
-        unbanStateGroupMember: vi.fn(),
-        setStateGroupMemberRole: vi.fn(),
-        transferStateGroupOwnership: vi.fn(),
-        hydrateStateCaches: vi.fn(),
-        onStateCacheChange: vi.fn(),
+        initialiseApiMiddleware: vi.fn(async (): Promise<ApiMiddleware> => ctx),
+        createAndJoinStateGroup: vi.fn<RoomGroupStateWorkflowsModule['createAndJoinStateGroup']>(),
+        joinStateGroup: vi.fn<RoomGroupStateWorkflowsModule['joinStateGroup']>(),
+        leaveStateGroup: vi.fn<RoomGroupStateWorkflowsModule['leaveStateGroup']>(),
+        updateStateGroupDetails: vi.fn<RoomGroupStateMutationWorkflowsModule['updateStateGroupDetails']>(),
+        updateStateGroupMetadata: vi.fn<RoomGroupStateMutationWorkflowsModule['updateStateGroupMetadata']>(),
+        archiveStateGroup: vi.fn<RoomGroupStateMutationWorkflowsModule['archiveStateGroup']>(),
+        deleteStateGroup: vi.fn<RoomGroupStateMutationWorkflowsModule['deleteStateGroup']>(),
+        createStateGroupInvite: vi.fn<RoomMembershipGroupStateWorkflowsModule['createStateGroupInvite']>(),
+        acceptStateGroupInvite: vi.fn<RoomMembershipGroupStateWorkflowsModule['acceptStateGroupInvite']>(),
+        removeStateGroupMember: vi.fn<RoomMembershipGroupStateWorkflowsModule['removeStateGroupMember']>(),
+        banStateGroupMember: vi.fn<RoomMembershipGroupStateWorkflowsModule['banStateGroupMember']>(),
+        unbanStateGroupMember: vi.fn<RoomMembershipGroupStateWorkflowsModule['unbanStateGroupMember']>(),
+        setStateGroupMemberRole: vi.fn<RoomMembershipGroupStateWorkflowsModule['setStateGroupMemberRole']>(),
+        transferStateGroupOwnership: vi.fn<RoomMembershipGroupStateWorkflowsModule['transferStateGroupOwnership']>(),
+        hydrateStateCache: vi.fn<StateCacheLifecycleModule['browserStateCacheLifecycle']['hydrate']>(),
+        onCacheChange: vi.fn<StateCacheLifecycleModule['browserStateCacheLifecycle']['onChange']>(),
         readSession: vi.fn(() => ctx.session)
     };
 });
 
-vi.mock(import('@shared-web/browser/middleware.ts'), () => ({
-    initialiseMiddleware: async (): Promise<Middleware> => roomWorkflowMocks.ctx.middleware
-}));
-
-vi.mock(import('@shared-web/browser/api-workflows.ts'), () => ({
-    createAndJoinStateGroup: roomWorkflowMocks.createAndJoinStateGroup,
-    joinStateGroup: roomWorkflowMocks.joinStateGroup,
-    leaveStateGroup: roomWorkflowMocks.leaveStateGroup
+vi.mock(import('@shared-web/browser/connection/initialise-browser-middleware.ts'), () => ({
+    initialiseMiddleware: async (): Promise<RallarBrowserMiddleware> => roomWorkflowMocks.ctx.middleware
 }));
 
 vi.mock(import('@shared-web/browser/rooms/room-group-state-workflows.ts'), () => ({
@@ -79,9 +76,12 @@ vi.mock(import('@shared-web/browser/rooms/room-membership-group-state-workflows.
     transferStateGroupOwnership: roomWorkflowMocks.transferStateGroupOwnership
 }));
 
-vi.mock(import('@shared-web/browser/data-caches.ts'), () => ({
-    hydrateStateCaches: roomWorkflowMocks.hydrateStateCaches,
-    onStateCacheChange: roomWorkflowMocks.onStateCacheChange
+vi.mock(import('@shared-web/browser/state-cache/browser-state-cache-lifecycle.ts'), () => ({
+    browserStateCacheLifecycle: {
+        hydrate: roomWorkflowMocks.hydrateStateCache,
+        onChange: roomWorkflowMocks.onCacheChange,
+        initialise: vi.fn()
+    }
 }));
 
 vi.mock(import('@shared/api/auth.ts'), () => ({
@@ -134,21 +134,20 @@ export function resetRoomWorkflowTestRuntime(): void {
 
 function resetRoomWorkflowLifecycleMocks(): void {
     roomWorkflowMocks.readSession.mockReturnValue(roomWorkflowMocks.session);
-    roomWorkflowMocks.initMiddleware.mockResolvedValue(roomWorkflowMocks.ctx);
-    roomWorkflowMocks.isMiddlewareReady.mockReturnValue(false);
+    roomWorkflowMocks.initialiseApiMiddleware.mockResolvedValue(roomWorkflowMocks.ctx);
 }
 
 function resetRoomWorkflowEntryMocks(): void {
-    roomWorkflowMocks.createAndJoinStateGroup.mockImplementation(async (displayName) => {
-        roomWorkflowMocks.operationLog.push(`create:${String(displayName)}`);
+    roomWorkflowMocks.createAndJoinStateGroup.mockImplementation(async (input) => {
+        roomWorkflowMocks.operationLog.push(`create:${input.displayName}`);
         throw new Error('create not mocked');
     });
-    roomWorkflowMocks.joinStateGroup.mockImplementation(async (roomId) => {
-        roomWorkflowMocks.operationLog.push(`join:${String(roomId)}`);
+    roomWorkflowMocks.joinStateGroup.mockImplementation(async (input) => {
+        roomWorkflowMocks.operationLog.push(`join:${input.groupId}`);
         throw new Error('join not mocked');
     });
-    roomWorkflowMocks.leaveStateGroup.mockImplementation(async (roomId) => {
-        roomWorkflowMocks.operationLog.push(`leave:${String(roomId)}`);
+    roomWorkflowMocks.leaveStateGroup.mockImplementation(async (input) => {
+        roomWorkflowMocks.operationLog.push(`leave:${input.groupId}`);
         throw new Error('leave not mocked');
     });
 }
@@ -190,16 +189,16 @@ function resetRoomWorkflowMutationMocks(): void {
 }
 
 function resetRoomWorkflowCacheMocks(): void {
-    roomWorkflowMocks.hydrateStateCaches.mockImplementation(
-        async (_manager, _client, _clients, groups: readonly GroupSnapshot[]) => {
+    roomWorkflowMocks.hydrateStateCache.mockImplementation(
+        async (input) => {
             roomWorkflowMocks.operationLog.push(
-                `hydrate:${groups.map((snapshot) => snapshot.group.groupId).join(',')}`
+                `hydrate:${input.groupSnapshots.map((snapshot) => snapshot.group.groupId).join(',')}`
             );
-            upsertGroupSnapshots(groups);
-            await notifyCacheListeners();
+            upsertGroupSnapshots(input.groupSnapshots);
+            await notifyCacheListeners(input.groupSnapshots);
         }
     );
-    roomWorkflowMocks.onStateCacheChange.mockImplementation((listener) => {
+    roomWorkflowMocks.onCacheChange.mockImplementation((listener) => {
         roomWorkflowMocks.cacheListeners.add(listener);
         return () => {
             roomWorkflowMocks.cacheListeners.delete(listener);
@@ -225,50 +224,50 @@ export function seedRoomSnapshots(snapshots: readonly GroupSnapshot[]): void {
 }
 
 export function resolveCreateWith(snapshot: GroupSnapshot): void {
-    roomWorkflowMocks.createAndJoinStateGroup.mockImplementation(async (displayName) => {
-        roomWorkflowMocks.operationLog.push(`create:${String(displayName)}`);
+    roomWorkflowMocks.createAndJoinStateGroup.mockImplementation(async (input) => {
+        roomWorkflowMocks.operationLog.push(`create:${input.displayName}`);
         return snapshot;
     });
 }
 
 export function rejectCreateWith(error: Error): void {
-    roomWorkflowMocks.createAndJoinStateGroup.mockImplementation(async (displayName) => {
-        roomWorkflowMocks.operationLog.push(`create:${String(displayName)}`);
+    roomWorkflowMocks.createAndJoinStateGroup.mockImplementation(async (input) => {
+        roomWorkflowMocks.operationLog.push(`create:${input.displayName}`);
         throw error;
     });
 }
 
 export function resolveJoinWith(snapshot: GroupSnapshot): void {
-    roomWorkflowMocks.joinStateGroup.mockImplementation(async (roomId) => {
-        roomWorkflowMocks.operationLog.push(`join:${String(roomId)}`);
+    roomWorkflowMocks.joinStateGroup.mockImplementation(async (input) => {
+        roomWorkflowMocks.operationLog.push(`join:${input.groupId}`);
         return snapshot;
     });
 }
 
 export function rejectJoinWith(error: Error): void {
-    roomWorkflowMocks.joinStateGroup.mockImplementation(async (roomId) => {
-        roomWorkflowMocks.operationLog.push(`join:${String(roomId)}`);
+    roomWorkflowMocks.joinStateGroup.mockImplementation(async (input) => {
+        roomWorkflowMocks.operationLog.push(`join:${input.groupId}`);
         throw error;
     });
 }
 
 export function resolveLeaveWith(snapshot: GroupSnapshot): void {
-    roomWorkflowMocks.leaveStateGroup.mockImplementation(async (roomId) => {
-        roomWorkflowMocks.operationLog.push(`leave:${String(roomId)}`);
+    roomWorkflowMocks.leaveStateGroup.mockImplementation(async (input) => {
+        roomWorkflowMocks.operationLog.push(`leave:${input.groupId}`);
         return snapshot;
     });
 }
 
 export function rejectLeaveWith(error: Error): void {
-    roomWorkflowMocks.leaveStateGroup.mockImplementation(async (roomId) => {
-        roomWorkflowMocks.operationLog.push(`leave:${String(roomId)}`);
+    roomWorkflowMocks.leaveStateGroup.mockImplementation(async (input) => {
+        roomWorkflowMocks.operationLog.push(`leave:${input.groupId}`);
         throw error;
     });
 }
 
 export async function publishRoomSnapshots(snapshots: readonly GroupSnapshot[]): Promise<void> {
     seedRoomSnapshots(snapshots);
-    await notifyCacheListeners();
+    await notifyCacheListeners(snapshots);
 }
 
 export function requireRecord(value: unknown, label: string): Record<string, unknown> {
@@ -290,9 +289,14 @@ function upsertGroupSnapshots(snapshots: readonly GroupSnapshot[]): void {
     }
 }
 
-async function notifyCacheListeners(): Promise<void> {
+async function notifyCacheListeners(groups: readonly GroupSnapshot[]): Promise<void> {
     await Promise.all(
-        [...roomWorkflowMocks.cacheListeners].map(async (listener) => await listener())
+        [...roomWorkflowMocks.cacheListeners].map(async (listener) =>
+            await listener({
+                clients: [],
+                groups
+            })
+        )
     );
 }
 

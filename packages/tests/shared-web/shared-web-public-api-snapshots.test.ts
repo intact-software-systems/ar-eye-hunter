@@ -12,7 +12,7 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
         filePath: 'packages/shared-web/browser/rallar.ts',
         expected: {
             values: [
-                'createDefaultRallarDataFacade',
+                'DEFAULT_REALTIME_DATA_CHANNEL_LANE',
                 'createRallarCrdtFacade',
                 'createRallarDataFacade',
                 'createRallarFacade',
@@ -24,6 +24,7 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
                 'rallar'
             ],
             types: [
+                'ApiMiddleware',
                 'CommandsOrchestrator',
                 'CommandsOrchestratorPolicies',
                 'CreateRallarDataFacadeInput',
@@ -31,6 +32,7 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
                 'RallarAuthChangeListener',
                 'RallarAuthChangeReason',
                 'RallarAuthState',
+                'RallarBrowserMiddleware',
                 'RallarCallDataInput',
                 'RallarCallEndOptions',
                 'RallarCallHandle',
@@ -186,6 +188,7 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
                 'RallarRtcWaitForOpenResult',
                 'RallarScopedOperationOptions',
                 'RallarScreenSourceStartOptions',
+                'RallarSessionHeartbeat',
                 'RallarSetRoomMemberRoleInput',
                 'RallarSetupInput',
                 'RallarStartOptions',
@@ -236,6 +239,7 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
                 'readApiBaseUrl'
             ],
             types: [
+                'ApiMiddleware',
                 'CommandsOrchestrator',
                 'CommandsOrchestratorPolicies',
                 'RallarApiClientConfig',
@@ -243,6 +247,7 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
                 'RallarAuthChangeReason',
                 'RallarAuthFacade',
                 'RallarAuthState',
+                'RallarBrowserMiddleware',
                 'RallarConnectStatus',
                 'RallarConnectionFacade',
                 'RallarConnectionOperations',
@@ -284,6 +289,7 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
                 'RallarRoomSwitchPartialFailureError',
                 'RallarRtcSendInput',
                 'RallarScopedOperationOptions',
+                'RallarSessionHeartbeat',
                 'RallarSetupInput',
                 'RallarStartOptions',
                 'RallarStartResult',
@@ -307,7 +313,7 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
     {
         filePath: 'packages/shared-web/browser/rallar-realtime.ts',
         expected: {
-            values: [],
+            values: ['DEFAULT_REALTIME_DATA_CHANNEL_LANE'],
             types: [
                 'RallarRealtimeBinarySendInput',
                 'RallarRealtimeFacade',
@@ -407,7 +413,6 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
         filePath: 'packages/shared-web/browser/rallar-data.ts',
         expected: {
             values: [
-                'createDefaultRallarDataFacade',
                 'createRallarDataFacade',
                 'defineRallarDataStore'
             ],
@@ -467,6 +472,7 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
                 'RALLAR_GAME_CANNOT_HOST_SCORE',
                 'RALLAR_GAME_MISSING_CAPABILITY_SCORE',
                 'RallarGameAuthorityClient',
+                'createDefaultRallarGameLanePresets',
                 'createRallarAuthorityBrowserMatch',
                 'createRallarBrowserMatch',
                 'createRallarGameEnvelope',
@@ -492,7 +498,6 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
                 'RallarGameAuthorityClientRallarFacade',
                 'RallarGameAuthorityCommandOptions',
                 'RallarGameAuthorityPeerAssistOptions',
-                'RallarGameCapabilityMessage',
                 'RallarGameDiagnostics',
                 'RallarGameDiagnosticsInput',
                 'RallarGameDirectorAppointmentContext',
@@ -514,10 +519,8 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
                 'RallarGameHostCapability',
                 'RallarGameHostElectionInput',
                 'RallarGameHostElectionResult',
-                'RallarGameHostLease',
                 'RallarGameLaneIds',
-                'RallarGameLanePresetBuilder',
-                'RallarGameLanePresetOptions',
+                'RallarGameLanePresetConfig',
                 'RallarGameLaneReadyOptions',
                 'RallarGameMatchConfig',
                 'RallarGameMatchHandle',
@@ -527,7 +530,6 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
                 'RallarGamePresenceSendOptions',
                 'RallarGameRallarFacade',
                 'RallarGameRecoveryState',
-                'RallarGameRuntimeRelay',
                 'RallarGameSendResult',
                 'RallarGameSequenceAcceptConstraints',
                 'RallarGameSequenceAcceptResult',
@@ -538,15 +540,20 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
             ],
             starExports: [
                 './authority-match-support.ts',
-                './diagnostics.ts',
-                './election.ts',
+                './authority/rallar-game-authority-client-contracts.ts',
+                './authority/rallar-game-authority-client.ts',
+                './director/election.ts',
+                './director/rallar-game-director-appointment-contracts.ts',
                 './envelopes.ts',
-                './lanes.ts',
-                './match-support.ts',
                 './match.ts',
-                './rallar-game-authority-client-contracts.ts',
-                './rallar-game-authority-client.ts',
-                './types.ts'
+                './match/diagnostics.ts',
+                './match/match-support.ts',
+                './match/rallar-game-match-contracts.ts',
+                './match/rallar-game-match-egress-contracts.ts',
+                './match/rallar-game-match-status.ts',
+                './transport/lanes.ts',
+                './transport/rallar-game-presence-send-options.ts',
+                './transport/rallar-game-send-result.ts'
             ],
             namespaceExports: []
         }
@@ -617,16 +624,20 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
         expected: {
             values: [
                 'DEFAULT_STATE_HEARTBEAT_TTL_MSECS',
-                'appointStateGroupDirectorWorkflow',
+                'acceptStateGroupInvite',
+                'appointStateGroupDirector',
                 'archiveStateGroup',
                 'banStateGroupMember',
                 'createAndJoinStateGroup',
+                'createStateGroupInvite',
                 'deleteStateGroup',
                 'joinStateGroup',
                 'leaveStateGroup',
                 'refreshStateHeartbeat',
                 'refreshStateSnapshots',
                 'removeStateGroupMember',
+                'revokeStateGroupInvite',
+                'rotateStateGroupJoinCode',
                 'setStateGroupMemberRole',
                 'transferStateGroupOwnership',
                 'unbanStateGroupMember',
@@ -634,45 +645,57 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
                 'updateStateGroupMetadata'
             ],
             types: [
+                'AcceptStateGroupInviteWorkflowInput',
                 'ApiMutationRequestOptions',
                 'ApiRequestOptions',
+                'AppointRoomDirectorInput',
+                'BanStateGroupMemberWorkflowInput',
+                'CreateAndJoinStateGroupInput',
+                'CreateStateGroupInviteWorkflowInput',
+                'JoinStateGroupInput',
+                'LeaveStateGroupInput',
                 'RefreshStateHeartbeatOptions',
                 'RefreshStateHeartbeatResult',
+                'RemoveStateGroupMemberWorkflowInput',
+                'RevokeStateGroupInviteWorkflowInput',
+                'RoomLifecycleWorkflowInput',
+                'RotateStateGroupJoinCodeWorkflowInput',
+                'SetStateGroupMemberRoleWorkflowInput',
                 'StateGroupWorkflowValue',
                 'StateHeartbeatWorkflowValue',
                 'StateSnapshots',
-                'StateSnapshotsWorkflowValue'
+                'StateSnapshotsWorkflowValue',
+                'TransferStateGroupOwnershipWorkflowInput',
+                'UnbanStateGroupMemberWorkflowInput',
+                'UpdateStateGroupDetailsInput',
+                'UpdateStateGroupMetadataInput'
             ],
             starExports: [
                 './browser/api-client-config.ts',
-                './browser/api-integration.ts',
                 './browser/api/http-error.ts',
+                './browser/api/state-http-path.ts',
                 './browser/api/state-mutation-http-contracts.ts',
-                './browser/app-context.ts',
                 './browser/auth/agent-session-ticket-http-api.ts',
                 './browser/auth/session-http-api.ts',
                 './browser/auth/websocket-ticket-http-api.ts',
-                './browser/browser-al-runtime-stores.ts',
-                './browser/browser-cache-repositories.ts',
-                './browser/browser-queuebox.ts',
-                './browser/heartbeat.ts',
-                './browser/middleware.ts',
+                './browser/connection/connection-http-api.ts',
+                './browser/crdt/browser-crdt-transport.ts',
+                './browser/crdt/crdt-catch-up-http-api.ts',
                 './browser/rallar-ai.ts',
-                './browser/rallar-crdt-transport.ts',
                 './browser/rallar-crdt.ts',
                 './browser/rallar.ts',
                 './browser/resilience-config.ts',
-                './browser/rtc-engine.ts',
-                './browser/rtc-message-router.ts',
+                './browser/rooms/room-group-state-http-api.ts',
+                './browser/rtc/rtc-topology-http-api.ts',
+                './browser/session/client-session-http-api.ts',
                 './browser/state-read/diagnostics.ts',
-                './browser/ws-message-router.ts',
+                './browser/state-read/point-read.ts',
+                './browser/state-read/state-event-http-api.ts',
+                './browser/state-read/state-snapshot-http-api.ts',
+                './browser/stats/rallar-stats-http-api.ts',
                 './game/mod.ts'
             ],
-            namespaceExports: [
-                'dataCaches from ./browser/data-caches.ts',
-                'qboxEngine from ./browser/qbox-engine.ts',
-                'wsEngine from ./browser/ws-engine.ts'
-            ]
+            namespaceExports: []
         }
     }
 ];

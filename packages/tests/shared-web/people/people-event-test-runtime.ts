@@ -1,8 +1,8 @@
 import { vi } from 'vitest';
 
-import type { StateSnapshots } from '@shared-web/browser/api-workflows.ts';
-import type { ApiMiddleware } from '@shared-web/browser/connection/browser-transport-runtime.ts';
-import type { Middleware } from '@shared-web/browser/middleware.ts';
+import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
+import type { RallarBrowserMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
+import type { StateSnapshots } from '@shared-web/browser/state-read/refresh-state-snapshots.ts';
 import { newALBroadcastMessage, newALEventRoute } from '@shared/al-contracts/al-contract.ts';
 import { AppTopics } from '@shared/api/api-config.ts';
 import type { ClientEvent, ClientSnapshot } from '@shared/api/client-types.ts';
@@ -28,9 +28,8 @@ const peopleEventMocks = await vi.hoisted(async () => {
     return {
         session: context.session,
         context,
-        hydrateStateCaches: vi.fn(async (): Promise<void> => undefined),
-        initMiddleware: vi.fn(async (): Promise<ApiMiddleware> => context),
-        isMiddlewareReady: vi.fn(() => false),
+        hydrateStateCache: vi.fn(async (): Promise<void> => undefined),
+        initialiseApiMiddleware: vi.fn(async (): Promise<ApiMiddleware> => context),
         listStateClientEvents: vi.fn(async (_principalId: string): Promise<ClientEvent[]> => []),
         listStateClientEventPage: vi.fn(
             async (_principalId: string): Promise<StateEventPage<ClientEvent>> => ({
@@ -50,24 +49,27 @@ const peopleEventMocks = await vi.hoisted(async () => {
     };
 });
 
-vi.mock(import('@shared-web/browser/middleware.ts'), () => ({
-    initialiseMiddleware: async (): Promise<Middleware> => peopleEventMocks.context.middleware
+vi.mock(import('@shared-web/browser/connection/initialise-browser-middleware.ts'), () => ({
+    initialiseMiddleware: async (): Promise<RallarBrowserMiddleware> => peopleEventMocks.context.middleware
 }));
 
-vi.mock(import('@shared-web/browser/api-integration.ts'), () => ({
+vi.mock(import('@shared-web/browser/state-read/state-event-http-api.ts'), () => ({
     listStateClientEventPage: peopleEventMocks.listStateClientEventPage,
     listStateClientEvents: peopleEventMocks.listStateClientEvents,
     listStateGroupEventPage: vi.fn(),
     listStateGroupEvents: vi.fn()
 }));
 
-vi.mock(import('@shared-web/browser/api-workflows.ts'), () => ({
+vi.mock(import('@shared-web/browser/state-read/refresh-state-snapshots.ts'), () => ({
     refreshStateSnapshots: peopleEventMocks.refreshStateSnapshots
 }));
 
-vi.mock(import('@shared-web/browser/data-caches.ts'), () => ({
-    hydrateStateCaches: peopleEventMocks.hydrateStateCaches,
-    onStateCacheChange: vi.fn(() => vi.fn())
+vi.mock(import('@shared-web/browser/state-cache/browser-state-cache-lifecycle.ts'), () => ({
+    browserStateCacheLifecycle: {
+        hydrate: peopleEventMocks.hydrateStateCache,
+        onChange: vi.fn(() => vi.fn()),
+        initialise: vi.fn()
+    }
 }));
 
 vi.mock(import('@shared/api/auth.ts'), () => ({
@@ -94,9 +96,8 @@ export function readPeopleEventMocks(): typeof peopleEventMocks {
 
 export function resetPeopleEventTestRuntime(): void {
     vi.clearAllMocks();
-    peopleEventMocks.hydrateStateCaches.mockResolvedValue(undefined);
-    peopleEventMocks.initMiddleware.mockResolvedValue(peopleEventMocks.context);
-    peopleEventMocks.isMiddlewareReady.mockReturnValue(false);
+    peopleEventMocks.hydrateStateCache.mockResolvedValue(undefined);
+    peopleEventMocks.initialiseApiMiddleware.mockResolvedValue(peopleEventMocks.context);
     peopleEventMocks.listStateClientEvents.mockRejectedValue(new Error('client events not mocked'));
     peopleEventMocks.listStateClientEventPage.mockRejectedValue(
         new Error('client event page not mocked')

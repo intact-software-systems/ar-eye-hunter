@@ -7,12 +7,12 @@ import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import { CommandsOrchestrator, type CommandsOrchestratorPolicies } from '@shared/cache/CommandsOrchestrator.ts';
 
-import { listStateClients, listStateGroups } from '../api-integration.ts';
-import { requireStateWorkflowResult } from '../state-workflow-support.ts';
+import { requireStateWorkflowResult } from '@shared-web/browser/state-read/state-workflow-support.ts';
 import {
     captureStateSnapshotCollectionObservations,
     reconcileCompleteStateSnapshotCollections
 } from './reconciliation.ts';
+import { listStateClients, listStateGroups } from './state-snapshot-http-api.ts';
 
 type CollectionSnapshot = ClientSnapshot[] | GroupSnapshot[];
 

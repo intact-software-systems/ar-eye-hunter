@@ -1,6 +1,6 @@
-import type { ApiMiddleware } from '@shared-web/browser/app-context.ts';
+import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
 import { toRallarWorkflowPolicies, type RallarOperationOptions } from '@shared-web/browser/rallar-operation-options.ts';
-import type { RallarStateSnapshotAcceptanceInput } from '@shared-web/browser/rallar-runtime/state-store.ts';
+import type { RallarStateSnapshotAcceptanceInput } from '@shared-web/browser/state-cache/rallar-state-store.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { toGroupRefFromScope, toStateScope } from '@shared/api/api-type-utils.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
@@ -43,14 +43,14 @@ export async function leaveRoom(input: LeaveRoomInput): Promise<GroupSnapshot | 
         if (!roomId) {
             return undefined;
         }
-        const snapshot = await leaveStateGroup(
-            roomId,
-            session.clientId,
-            session.sessionId,
-            context.middleware.heartbeat.generationId,
+        const snapshot = await leaveStateGroup({
+            groupId: roomId,
+            principalId: session.clientId,
+            sessionId: session.sessionId,
+            generationId: context.middleware.heartbeat.generationId,
             scope,
-            toRallarWorkflowPolicies<StateGroupWorkflowValue>(operationOptions)
-        );
+            policies: toRallarWorkflowPolicies<StateGroupWorkflowValue>(operationOptions)
+        });
         input.stateStore.clearCurrentRoomIfMatches(
             roomRef ?? roomId,
             leaveOptions.clearCurrent ?? true

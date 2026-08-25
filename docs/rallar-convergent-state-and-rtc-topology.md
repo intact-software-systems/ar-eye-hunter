@@ -649,7 +649,7 @@ Focused concurrency coverage lives in:
 - `packages/tests/shared-server/queuebox-pubsub-bridge.test.ts`
 - `packages/tests/shared-server/rallar-middleware.test.ts`
 - `packages/tests/shared/ws-outbox-owner-miss-retry.test.ts`
-- `packages/tests/shared-web/data-caches.test.ts`
+- `packages/tests/shared-web/state-cache/browser-state-cache-lifecycle.test.ts`
 - `apps/api-v1/test/services/ws-topic-room-authorizer.test.ts`
 - `packages/shared-test/black-box-runner/tests/api-v1/api-v1-rtc-topology-convergence.json`
 - `packages/shared-test/black-box-runner/tests/api-v1/api-v1-state-topology-churn.json`

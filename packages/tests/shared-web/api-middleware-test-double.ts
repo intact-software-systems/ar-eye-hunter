@@ -1,14 +1,14 @@
 import { vi } from 'vitest';
 
-import type { ApiMiddleware } from '@shared-web/browser/app-context.ts';
-import type { Middleware } from '@shared-web/browser/middleware.ts';
+import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
+import type { RallarBrowserMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import { DEFAULT_RTC_DATA_CHANNEL_LANE_ID, type QRtcPeerDto, type WebRtcPeerConnectionLeft } from '@shared/services/WebRtcConnectionService.ts';
 
 export type MiddlewareTestOverrides = {
-    readonly [K in keyof Middleware]?: Partial<Middleware[K]>;
+    readonly [K in keyof RallarBrowserMiddleware]?: Partial<RallarBrowserMiddleware[K]>;
 };
 
 export interface ApiMiddlewareTestOverrides {
@@ -36,13 +36,16 @@ export function createApiMiddlewareTestDouble(
                 middlewareOverrides.webRtcConnectionService
             ),
             rtcRxStreamer: createRtcRxStreamerDouble(middlewareOverrides.rtcRxStreamer),
-            webRtcGroupManager: toServiceTestDouble<Middleware['webRtcGroupManager']>({
+            webRtcGroupManager: toServiceTestDouble<RallarBrowserMiddleware['webRtcGroupManager']>({
                 ...middlewareOverrides.webRtcGroupManager
             }),
-            webRtcOverlayMulticastManager: toServiceTestDouble<Middleware['webRtcOverlayMulticastManager']>({
+            webRtcOverlayMulticastManager: toServiceTestDouble<RallarBrowserMiddleware['webRtcOverlayMulticastManager']>({
                 ...middlewareOverrides.webRtcOverlayMulticastManager
             }),
-            heartbeat: createHeartbeatDouble(middlewareOverrides.heartbeat)
+            heartbeat: createHeartbeatDouble(
+                session.sessionId,
+                middlewareOverrides.heartbeat
+            )
         }
     };
 }
@@ -57,18 +60,18 @@ export function createDefaultTestSession(): AuthSession {
     };
 }
 
-// The seven Middleware members are concrete service classes holding private state, so a double can
-// only supply the public members the browser facade actually calls. This is the single place in the
-// test tree that asserts that partial shape onto the real service type: every default below and
-// every override key is still checked against the production signatures.
+// Six service-valued RallarBrowserMiddleware members are concrete classes holding private state,
+// so their doubles supply only the public members the browser facade calls. This is the single
+// place in the test tree that asserts those partial shapes onto their real service types. Every
+// override remains checked against the production signature, while heartbeat is complete below.
 function toServiceTestDouble<TService>(members: Partial<TService>): TService {
     return members as TService;
 }
 
 function createQboxEngineDouble(
-    override: Partial<Middleware['qboxEngine']> = {}
-): Middleware['qboxEngine'] {
-    return toServiceTestDouble<Middleware['qboxEngine']>({
+    override: Partial<RallarBrowserMiddleware['qboxEngine']> = {}
+): RallarBrowserMiddleware['qboxEngine'] {
+    return toServiceTestDouble<RallarBrowserMiddleware['qboxEngine']>({
         wake: vi.fn(),
         stop: vi.fn(),
         ...override
@@ -77,9 +80,9 @@ function createQboxEngineDouble(
 
 function createWebSocketQueueBoxDouble(
     sessionId: string,
-    override: Partial<Middleware['webSocketQueueBox']> = {}
-): Middleware['webSocketQueueBox'] {
-    const queueBox: Middleware['webSocketQueueBox'] = toServiceTestDouble<Middleware['webSocketQueueBox']>({
+    override: Partial<RallarBrowserMiddleware['webSocketQueueBox']> = {}
+): RallarBrowserMiddleware['webSocketQueueBox'] {
+    const queueBox: RallarBrowserMiddleware['webSocketQueueBox'] = toServiceTestDouble<RallarBrowserMiddleware['webSocketQueueBox']>({
         enqueueOutboxIfAbsent: vi.fn(async (message: ALMessage) => ({
             status: 'enqueued' as const,
             message,
@@ -106,8 +109,8 @@ function createWebSocketQueueBoxDouble(
     return queueBox;
 }
 
-function createWebSocketClientDouble(): Middleware['webSocketQueueBox']['socket'] {
-    const socket: Middleware['webSocketQueueBox']['socket'] = toServiceTestDouble<Middleware['webSocketQueueBox']['socket']>({
+function createWebSocketClientDouble(): RallarBrowserMiddleware['webSocketQueueBox']['socket'] {
+    const socket: RallarBrowserMiddleware['webSocketQueueBox']['socket'] = toServiceTestDouble<RallarBrowserMiddleware['webSocketQueueBox']['socket']>({
         close: vi.fn(),
         onWebsocketCallbacksDo: vi.fn(() => socket),
         removeWebsocketCallbackById: vi.fn(() => true)
@@ -117,9 +120,9 @@ function createWebSocketClientDouble(): Middleware['webSocketQueueBox']['socket'
 }
 
 function createWebRtcConnectionServiceDouble(
-    override: Partial<Middleware['webRtcConnectionService']> = {}
-): Middleware['webRtcConnectionService'] {
-    const connectionService: Middleware['webRtcConnectionService'] = toServiceTestDouble<Middleware['webRtcConnectionService']>({
+    override: Partial<RallarBrowserMiddleware['webRtcConnectionService']> = {}
+): RallarBrowserMiddleware['webRtcConnectionService'] {
+    const connectionService: RallarBrowserMiddleware['webRtcConnectionService'] = toServiceTestDouble<RallarBrowserMiddleware['webRtcConnectionService']>({
         peerIdsWithNoReconnectableLanes: vi.fn((): readonly string[] => []),
         knownPeerIds: vi.fn((): readonly string[] => []),
         activePeerIds: vi.fn((): readonly string[] => []),
@@ -150,9 +153,9 @@ function createWebRtcConnectionServiceDouble(
 }
 
 function createRtcRxStreamerDouble(
-    override: Partial<Middleware['rtcRxStreamer']> = {}
-): Middleware['rtcRxStreamer'] {
-    const rtcRxStreamer: Middleware['rtcRxStreamer'] = toServiceTestDouble<Middleware['rtcRxStreamer']>({
+    override: Partial<RallarBrowserMiddleware['rtcRxStreamer']> = {}
+): RallarBrowserMiddleware['rtcRxStreamer'] {
+    const rtcRxStreamer: RallarBrowserMiddleware['rtcRxStreamer'] = toServiceTestDouble<RallarBrowserMiddleware['rtcRxStreamer']>({
         enqueueOutboxIfAbsent: vi.fn(async (message: ALMessage) => ({
             status: 'enqueued' as const,
             message,
@@ -174,14 +177,14 @@ function createRtcRxStreamerDouble(
     return rtcRxStreamer;
 }
 
-// `sessionId` and `generationId` are deliberately absent unless overridden: the twenty-two doubles
-// this factory replaces all stub `heartbeat` with `stop` alone, and the room workflows read
-// `generationId` as `undefined` in assertions such as leave-room.test.ts.
 function createHeartbeatDouble(
-    override: Partial<Middleware['heartbeat']> = {}
-): Middleware['heartbeat'] {
-    return toServiceTestDouble<Middleware['heartbeat']>({
+    sessionId: string,
+    override: Partial<RallarBrowserMiddleware['heartbeat']> = {}
+): RallarBrowserMiddleware['heartbeat'] {
+    return {
+        sessionId,
+        generationId: `generation-${sessionId}`,
         stop: vi.fn(),
         ...override
-    });
+    };
 }

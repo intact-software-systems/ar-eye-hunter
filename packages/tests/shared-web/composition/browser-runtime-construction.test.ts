@@ -1,9 +1,9 @@
-import { createBrowserRuntimeFoundation } from '@shared-web/browser/rallar-runtime/composition/browser-runtime-composition.ts';
+import { createBrowserRuntimeFoundation } from '@shared-web/browser/composition/browser-runtime-composition.ts';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { configureTestCacheRepositories } from '../../cache-repository-config.ts';
 
-type MiddlewareModule = typeof import('@shared-web/browser/middleware.ts');
+type MiddlewareModule = typeof import('@shared-web/browser/connection/initialise-browser-middleware.ts');
 type AuthModule = typeof import('@shared/api/auth.ts');
 
 const runtime = await vi.hoisted(async () => {
@@ -20,7 +20,7 @@ const runtime = await vi.hoisted(async () => {
 });
 
 vi.mock(
-    import('@shared-web/browser/middleware.ts'),
+    import('@shared-web/browser/connection/initialise-browser-middleware.ts'),
     async (importOriginal): Promise<Partial<MiddlewareModule>> => ({
         ...await importOriginal(),
         initialiseMiddleware: runtime.initialiseMiddleware
@@ -49,8 +49,22 @@ describe('browser runtime construction', () => {
     });
 
     it('completes facade creation before later setup and connect use the composed ports', async () => {
+        let facadeConstructionCompleted = false;
+        runtime.readSession.mockImplementation(() => {
+            if (!facadeConstructionCompleted) {
+                throw new Error('Session dependency was used before facade construction completed.');
+            }
+            return runtime.middleware.session;
+        });
+        runtime.initialiseMiddleware.mockImplementation(async () => {
+            if (!facadeConstructionCompleted) {
+                throw new Error('Transport dependency was used before facade construction completed.');
+            }
+            return runtime.middleware.middleware;
+        });
         const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
         const facade = createRallarFacade();
+        facadeConstructionCompleted = true;
 
         await facade.setup({
             apiBaseUrl: 'https://api.example.test',

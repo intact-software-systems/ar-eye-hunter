@@ -1,5 +1,6 @@
+import type { BlackBoxRallarRuntime } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-runtime-contract.ts';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { facade, loadRuntime, resetFacade, topics } from './browser-rallar-runtime-test-harness.ts';
+import { facade, loadRuntime as loadOptionalAuthenticationRuntime, resetFacade, topics } from './browser-rallar-runtime-test-harness.ts';
 
 beforeEach(() => {
     resetFacade();
@@ -8,6 +9,20 @@ beforeEach(() => {
 afterEach(() => {
     vi.unstubAllGlobals();
 });
+
+async function loadRuntime(): Promise<BlackBoxRallarRuntime & Required<Pick<BlackBoxRallarRuntime, 'authenticate'>>> {
+    const runtime = await loadOptionalAuthenticationRuntime();
+    assertAuthenticationAvailable(runtime);
+    return runtime;
+}
+
+function assertAuthenticationAvailable(
+    runtime: BlackBoxRallarRuntime
+): asserts runtime is BlackBoxRallarRuntime & Required<Pick<BlackBoxRallarRuntime, 'authenticate'>> {
+    if (runtime.authenticate === undefined) {
+        throw new Error('The browser runtime under test does not expose authentication.');
+    }
+}
 
 it('authenticates without initializing realtime middleware or connected runtime state', async () => {
     const runtime = await loadRuntime();

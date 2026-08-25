@@ -1,15 +1,10 @@
-import { initialiseMiddleware, type Middleware, type MiddlewareInitOptions } from '@shared-web/browser/middleware.ts';
+import {
+    initialiseMiddleware,
+    type MiddlewareInitOptions
+} from '@shared-web/browser/connection/initialise-browser-middleware.ts';
+import type { ApiMiddleware, RallarBrowserMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
 import { AppTopics, type AuthSession } from '@shared/api/api-config.ts';
 import { readSession } from '@shared/api/auth.ts';
-
-export interface ApiMiddleware {
-    readonly session: AuthSession;
-    readonly authFetch: (
-        input: RequestInfo | URL,
-        init?: RequestInit
-    ) => Promise<Response>;
-    readonly middleware: Middleware;
-}
 
 export interface BrowserTransportRuntimePort {
     readMiddleware(): ApiMiddleware | undefined;
@@ -112,7 +107,10 @@ export class BrowserTransportRuntime implements BrowserTransportRuntimePort {
         return { session, authFetch, middleware };
     }
 
-    private shutdownMiddleware(middleware: Middleware, reason = 'rallar-disconnect'): void {
+    private shutdownMiddleware(
+        middleware: RallarBrowserMiddleware,
+        reason = 'rallar-disconnect'
+    ): void {
         runShutdownStep(() => middleware.heartbeat?.stop());
         runShutdownStep(() => middleware.rtcRxStreamer.stopAllHeartbeats());
         runShutdownStep(() => {

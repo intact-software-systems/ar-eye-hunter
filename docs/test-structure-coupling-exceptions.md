@@ -49,7 +49,7 @@ also invalid, so this document cannot accumulate orphan approvals.
 
 ## Reviewed boundary groups
 
-The current 110 entries were reviewed by independently meaningful behavior,
+The current 178 entries were reviewed by independently meaningful behavior,
 not by vocabulary. The metadata below splits these groups further by exact
 executable assertion so a broad domain label cannot conceal unrelated evidence.
 
@@ -69,7 +69,15 @@ executable assertion so a broad domain label cannot conceal unrelated evidence.
 | State-read convergence recipes                   |       2 | Parsed fixtures carry run-scoped identity and tertiary causal evidence.                                          |
 | Black-box schema and recipe matrix               |      10 | Published fixtures, examples, compatibility corpus, evidence tiers, and catalog promises are validated directly. |
 | State-write recipe evidence                      |       6 | Parsed command/evidence pairs prove digests, revisions, effects, and execution identity.                         |
-| Shared-web package boundaries                    |       7 | Consumer imports, browser bundles, and entrypoint inventories enforce package direction.                         |
+| Shared-web package boundaries                    |       6 | Consumer imports and browser bundles enforce package direction.                                                  |
+| AR Eye Hunter browser AI                         |       3 | Provider selection stays explicit and expensive browser runtimes are reused per provider.                        |
+| AR Eye Hunter arena lifecycle                    |      35 | Logout, room, election, pose, and snapshot boundaries fence stale work and preserve owned transport behavior.     |
+| Shared-web browser AI                            |       2 | One browser runtime serves all requests while every request reaches generation exactly once.                     |
+| Shared-web WebSocket ticket policy               |       7 | Cooldown, idempotency, rate limiting, and circuit policy determine exactly which HTTP requests reach the server.  |
+| Shared-web remote media lifecycle                |       1 | Remote-stream registration begins only after connection attachment.                                              |
+| Shared-web room workflows                        |       5 | Failed or invalid workflows never advance to unrelated room mutations or hydration.                              |
+| Shared-web state-cache lifecycle                 |      12 | Causal recovery and topology changes invoke durable reads and RTC reconciliation only at their owned boundaries. |
+| Shared-web state-read reconciliation             |       6 | Delta fast paths avoid HTTP while causal gaps and conflicts perform one floored durable read.                    |
 | Shared RTC benchmark navigation                  |       9 | Package navigation, accepted-evidence exclusion, and Deno-check participation are published package interfaces.  |
 
 The full current candidate tree validates this registry even when the command
@@ -650,6 +658,621 @@ moved or changed test.
       "coverageRelation": "The architecture assertion reads the accepted workload catalog and package check command, then proves each maintained diagnostic is excluded from accepted evidence and included in Deno checking."
     },
     {
+      "id": "ar-browser-ai-explicit-provider-selection",
+      "domain": "AR Eye Hunter browser AI provider selection",
+      "owner": "AR Eye Hunter maintainers",
+      "summary": "WebLLM failures stay visible and never silently switch an explicitly selected provider mode. Executable assertion: “keeps WebLLM generation failures visible without switching providers”.",
+      "semanticCoverage": "packages/tests/ar-eye-hunter-v1/browser-ai/arena-browser-ai-provider.test.ts#keeps WebLLM generation failures visible without switching providers",
+      "coverageRelation": "The named assertion executes this lifecycle and observes its owned side-effect port; the registered evidence directly proves the stated constraint.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "AR Eye Hunter mock-provider factory",
+        "observableEffect": "A failed WebLLM generation rejects without constructing the mock provider.",
+        "requiredConstraint": "The mock-provider factory remains unused after a WebLLM generation failure.",
+        "failureRationale": "Constructing the mock provider would hide the selected provider failure and violate explicit mode governance."
+      }
+    },
+    {
+      "id": "ar-webllm-engine-lifecycle",
+      "domain": "AR Eye Hunter WebLLM engine lifecycle",
+      "owner": "AR Eye Hunter maintainers",
+      "summary": "One lazily loaded WebLLM engine serves every request while each request reaches completion. Executable assertion: “loads one engine, requests JSON mode, and parses JSON results”.",
+      "semanticCoverage": "packages/tests/ar-eye-hunter-v1/browser-ai/arena-webllm-provider.test.ts#loads one engine, requests JSON mode, and parses JSON results",
+      "coverageRelation": "The named assertion executes this lifecycle and observes its owned side-effect port; the registered evidence directly proves the stated constraint.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "WebLLM engine loader and chat-completion port",
+        "observableEffect": "Two provider requests initialize one engine and produce two completions.",
+        "requiredConstraint": "Engine creation occurs exactly once and completion occurs exactly once per request.",
+        "failureRationale": "Extra engine loads repeat an expensive cold start; missing or duplicate completions lose or repeat AI work."
+      }
+    },
+    {
+      "id": "ar-arena-reliable-snapshot-coalescing",
+      "domain": "AR Eye Hunter reliable snapshot coalescing",
+      "owner": "AR Eye Hunter maintainers",
+      "summary": "Rapid reliable snapshots publish the first revision immediately and the latest once after the coalescing interval. Executable assertion: “coalesces rapid reliable director snapshots to the latest revision”.",
+      "semanticCoverage": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts#coalesces rapid reliable director snapshots to the latest revision",
+      "coverageRelation": "The named assertion executes this lifecycle and observes its owned side-effect port; the registered evidence directly proves the stated constraint.",
+      "interactionRequirement": {
+        "interactionKind": "order",
+        "ownedPort": "Rallar Game reliable snapshot publication port",
+        "observableEffect": "Revision 20 publishes immediately, no intermediate publication occurs, and revision 22 publishes reliably at the deadline.",
+        "requiredConstraint": "The sequence is exactly the first revision followed by the latest after 1,000 milliseconds, with no superseded revision.",
+        "failureRationale": "Publishing every revision floods reliable transport; publishing the wrong delayed revision exposes stale state."
+      }
+    },
+    {
+      "id": "ar-arena-pending-snapshot-generation-cancellation",
+      "domain": "AR Eye Hunter network-generation snapshot fencing",
+      "owner": "AR Eye Hunter maintainers",
+      "summary": "A network-generation reset cancels a queued reliable snapshot before transport. Executable assertion: “cancels pending reliable director snapshots when the network generation resets”.",
+      "semanticCoverage": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts#cancels pending reliable director snapshots when the network generation resets",
+      "coverageRelation": "The named assertion executes this lifecycle and observes its owned side-effect port; the registered evidence directly proves the stated constraint.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "Rallar Game reliable snapshot publication port",
+        "observableEffect": "The immediate snapshot remains the only publication after logout and timer expiry.",
+        "requiredConstraint": "No queued second snapshot publishes after the network generation resets.",
+        "failureRationale": "A late publication would leak state from a signed-out or superseded connection generation."
+      }
+    },
+    {
+      "id": "ar-arena-expired-auth-transition",
+      "domain": "AR Eye Hunter expired-auth lifecycle",
+      "owner": "AR Eye Hunter maintainers",
+      "summary": "An auth expiry clears arena state without issuing a manual logout request. Executable assertion: “clears arena state when auth expires outside manual logout”.",
+      "semanticCoverage": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts#clears arena state when auth expires outside manual logout",
+      "coverageRelation": "The named assertion executes this lifecycle and observes its owned side-effect port; the registered evidence directly proves the stated constraint.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "Rallar auth logout port",
+        "observableEffect": "The hook becomes signed out from the auth event without invoking explicit logout.",
+        "requiredConstraint": "Auth expiry does not call the manual logout port.",
+        "failureRationale": "A second logout duplicates revocation and confuses event versus user-action ownership."
+      }
+    },
+    {
+      "id": "ar-arena-manual-logout-rejection",
+      "domain": "AR Eye Hunter manual logout failure handling",
+      "owner": "AR Eye Hunter maintainers",
+      "summary": "Manual logout invokes revocation once and leaves local state signed out even when revocation rejects. Executable assertion: “catches manual logout rejection and leaves the arena signed out”.",
+      "semanticCoverage": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts#catches manual logout rejection and leaves the arena signed out",
+      "coverageRelation": "The named assertion executes this lifecycle and observes its owned side-effect port; the registered evidence directly proves the stated constraint.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "Rallar auth logout port",
+        "observableEffect": "One user action produces one revocation attempt and a signed-out local state.",
+        "requiredConstraint": "The logout port is invoked exactly once for the user action.",
+        "failureRationale": "No call skips revocation; repeated calls duplicate a remote side effect."
+      }
+    },
+    {
+      "id": "ar-arena-manual-logout-network-fence",
+      "domain": "AR Eye Hunter manual logout network fencing",
+      "owner": "AR Eye Hunter maintainers",
+      "summary": "Manual logout stops networking immediately while one remote revoke remains pending. Executable assertion: “disables network immediately while manual logout revoke is pending”.",
+      "semanticCoverage": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts#disables network immediately while manual logout revoke is pending",
+      "coverageRelation": "The named assertion executes this lifecycle and observes its owned side-effect port; the registered evidence directly proves the stated constraint.",
+      "interactionRequirement": {
+        "interactionKind": "order",
+        "ownedPort": "Rallar auth logout and Rallar Game stop ports",
+        "observableEffect": "The match stops before the logout promise resolves while only one revoke is in flight.",
+        "requiredConstraint": "One logout request is issued and match networking stops before it settles.",
+        "failureRationale": "Waiting leaves gameplay egress active; duplicate revocation repeats the remote mutation."
+      }
+    },
+    {
+      "id": "ar-arena-pending-logout-egress-fence",
+      "domain": "AR Eye Hunter pending-logout egress fencing",
+      "owner": "AR Eye Hunter maintainers",
+      "summary": "Canvas callbacks captured before logout cannot publish while revocation is pending. Executable assertion: “blocks stale canvas callbacks while manual logout revoke is pending”.",
+      "semanticCoverage": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts#blocks stale canvas callbacks while manual logout revoke is pending",
+      "coverageRelation": "The named assertion executes this lifecycle and observes its owned side-effect port; the registered evidence directly proves the stated constraint.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "Rallar Game event, snapshot, intent, input, presence, and raw realtime egress ports",
+        "observableEffect": "Invoking stale gameplay callbacks during pending logout produces no network egress.",
+        "requiredConstraint": "Every game and raw realtime egress port remains unused until pending logout finishes.",
+        "failureRationale": "Any call would transmit gameplay state after the user initiated logout."
+      }
+    },
+    {
+      "id": "ar-arena-signed-out-diagnostics-fence",
+      "domain": "AR Eye Hunter signed-out diagnostics fencing",
+      "owner": "AR Eye Hunter maintainers",
+      "summary": "Diagnostics refresh remains local after logout. Executable assertion: “does not probe diagnostics transports after logout”.",
+      "semanticCoverage": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts#does not probe diagnostics transports after logout",
+      "coverageRelation": "The named assertion executes this lifecycle and observes its owned side-effect port; the registered evidence directly proves the stated constraint.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "API configuration, ICE candidate, RTC diagnostics, and RTC lane-readiness ports",
+        "observableEffect": "Refreshing diagnostics while signed out performs no network or transport probes.",
+        "requiredConstraint": "All diagnostics transport ports remain unused after logout.",
+        "failureRationale": "Signed-out probes can disclose or recreate connection state after teardown."
+      }
+    },
+    {
+      "id": "ar-arena-stale-director-attempt-fence",
+      "domain": "AR Eye Hunter director appointment lifecycle",
+      "owner": "AR Eye Hunter maintainers",
+      "summary": "A director appointment resolving after room clear cannot refresh diagnostics. Executable assertion: “ignores a pending director appointment after the current room clears”.",
+      "semanticCoverage": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts#ignores a pending director appointment after the current room clears",
+      "coverageRelation": "The named assertion executes this lifecycle and observes its owned side-effect port; the registered evidence directly proves the stated constraint.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "Rallar Game diagnostics port",
+        "observableEffect": "Diagnostics calls and exposed diagnostics stay unchanged after stale resolution.",
+        "requiredConstraint": "Resolving a stale appointment performs no additional diagnostics read.",
+        "failureRationale": "A late read would reintroduce state owned by a room that is no longer current."
+      }
+    },
+    {
+      "id": "ar-arena-signed-out-snapshot-fence",
+      "domain": "AR Eye Hunter signed-out snapshot fencing",
+      "owner": "AR Eye Hunter maintainers",
+      "summary": "A snapshot callback captured before logout cannot publish after logout. Executable assertion: “blocks stale canvas snapshot publication after logout”.",
+      "semanticCoverage": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts#blocks stale canvas snapshot publication after logout",
+      "coverageRelation": "The named assertion executes this lifecycle and observes its owned side-effect port; the registered evidence directly proves the stated constraint.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "Rallar Game snapshot publication port",
+        "observableEffect": "The stale callback leaves snapshot state empty and produces no publication.",
+        "requiredConstraint": "The snapshot publication port remains unused after logout.",
+        "failureRationale": "Publishing after logout leaks stale authoritative state from a retired session."
+      }
+    },
+    {
+      "id": "ar-arena-signed-out-combat-fence",
+      "domain": "AR Eye Hunter signed-out combat fencing",
+      "owner": "AR Eye Hunter maintainers",
+      "summary": "Combat callbacks captured before logout cannot publish after logout. Executable assertion: “blocks stale canvas combat callbacks after logout”.",
+      "semanticCoverage": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts#blocks stale canvas combat callbacks after logout",
+      "coverageRelation": "The named assertion executes this lifecycle and observes its owned side-effect port; the registered evidence directly proves the stated constraint.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "Rallar Game event, snapshot, intent, input, presence, and raw realtime egress ports",
+        "observableEffect": "Stale shot, hit, and pickup callbacks produce no network egress.",
+        "requiredConstraint": "Every game and raw realtime egress port remains unused after logout.",
+        "failureRationale": "Any call would transmit gameplay state from a signed-out session."
+      }
+    },
+    {
+      "id": "ar-arena-create-and-switch-boundary",
+      "domain": "AR Eye Hunter arena room switching",
+      "owner": "AR Eye Hunter maintainers",
+      "summary": "Creating an arena uses atomic create-and-switch rather than create-only. Executable assertion: “creates a new arena by switching rooms and clearing stale remote players”.",
+      "semanticCoverage": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts#creates a new arena by switching rooms and clearing stale remote players",
+      "coverageRelation": "The named assertion executes this lifecycle and observes its owned side-effect port; the registered evidence directly proves the stated constraint.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "Rallar room create-only port",
+        "observableEffect": "The room switches and stale remote state clears without create-only.",
+        "requiredConstraint": "The create-only port remains unused for create-and-switch.",
+        "failureRationale": "Create-only would leave switching and old-room cleanup outside the owning workflow."
+      }
+    },
+    {
+      "id": "ar-arena-offline-owner-election",
+      "domain": "AR Eye Hunter director election",
+      "owner": "AR Eye Hunter maintainers",
+      "summary": "An online member reports capability and participates in election when the owner is offline. Executable assertion: “auto-appoints regular room members when the owner is offline”.",
+      "semanticCoverage": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts#auto-appoints regular room members when the owner is offline",
+      "coverageRelation": "The named assertion executes this lifecycle and observes its owned side-effect port; the registered evidence directly proves the stated constraint.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "Rallar Game capability-report and director-appointment ports",
+        "observableEffect": "Startup reports capability and attempts election, producing a succeeded attempt.",
+        "requiredConstraint": "Both capability report and appointment attempt occur at least once.",
+        "failureRationale": "Omitting either call prevents an ownerless room from recovering director authority."
+      }
+    },
+    {
+      "id": "ar-arena-rallar-game-presence-boundary",
+      "domain": "AR Eye Hunter pose transport ownership",
+      "owner": "AR Eye Hunter maintainers",
+      "summary": "Director poses use Rallar Game presence and never bypass it through raw realtime JSON. Executable assertion: “still publishes the local director pose through Rallar Game presence”.",
+      "semanticCoverage": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts#still publishes the local director pose through Rallar Game presence",
+      "coverageRelation": "The named assertion executes this lifecycle and observes its owned side-effect port; the registered evidence directly proves the stated constraint.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "Raw Rallar realtime JSON port",
+        "observableEffect": "The pose reaches game input and presence while raw motion send stays unused.",
+        "requiredConstraint": "No raw realtime JSON motion send occurs for game-owned presence.",
+        "failureRationale": "A raw send duplicates policy and bypasses the game-owned presence lifecycle."
+      }
+    },
+    {
+      "id": "ar-arena-reliable-snapshot-deduplication",
+      "domain": "AR Eye Hunter reliable snapshot deduplication",
+      "owner": "AR Eye Hunter maintainers",
+      "summary": "Repeated publication of one revision produces one reliable write. Executable assertion: “deduplicates reliable director snapshots by revision”.",
+      "semanticCoverage": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts#deduplicates reliable director snapshots by revision",
+      "coverageRelation": "The named assertion executes this lifecycle and observes its owned side-effect port; the registered evidence directly proves the stated constraint.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "Rallar Game reliable snapshot publication port",
+        "observableEffect": "Two local requests for revision 10 produce one reliable publication.",
+        "requiredConstraint": "A snapshot revision publishes at most once.",
+        "failureRationale": "Duplicate reliable writes waste bandwidth and repeat downstream processing."
+      }
+    },
+    {
+      "id": "shared-web-webllm-runtime-lifecycle",
+      "domain": "Shared-web WebLLM runtime lifecycle",
+      "owner": "Shared Web maintainers",
+      "summary": "One lazily loaded WebLLM runtime serves all requests while each request generates an envelope. Executable assertion: “loads one runtime and validates each generated envelope”.",
+      "semanticCoverage": "packages/tests/shared-web/ai/webllm-rallar-ai-provider.test.ts#loads one runtime and validates each generated envelope",
+      "coverageRelation": "The named assertion executes this lifecycle and observes its owned side-effect port; the registered evidence directly proves the stated constraint.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "Shared-web WebLLM runtime loader and generation port",
+        "observableEffect": "Two provider requests load one runtime and invoke generation twice.",
+        "requiredConstraint": "Runtime loading occurs exactly once and generation occurs once per request.",
+        "failureRationale": "Repeated loading repeats cold-start cost; missing or duplicate generations lose or repeat work."
+      }
+    },
+    {
+      "id": "shared-web-ticket-429-cooldown",
+      "domain": "Shared-web WebSocket ticket cooldown",
+      "owner": "Shared Web maintainers",
+      "summary": "A 429 suppresses another ticket request until Retry-After expires. Executable assertion: “suppresses repeated ws ticket requests after a 429 response”.",
+      "semanticCoverage": "packages/tests/shared-web/auth/websocket-ticket-http-api.test.ts#suppresses repeated ws ticket requests after a 429 response",
+      "coverageRelation": "The named assertion executes this lifecycle and observes its owned side-effect port; the registered evidence directly proves the stated constraint.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "WebSocket ticket HTTP fetch port",
+        "observableEffect": "Fetch stays at one before expiry and reaches two after recovery.",
+        "requiredConstraint": "No second fetch occurs during cooldown and one additional fetch occurs after expiry.",
+        "failureRationale": "An early call violates backoff; a missing later call prevents recovery."
+      }
+    },
+    {
+      "id": "shared-web-ticket-request-id-retry",
+      "domain": "Shared-web WebSocket ticket idempotent retry",
+      "owner": "Shared Web maintainers",
+      "summary": "A retry after a lost response reuses caller-owned request identity. Executable assertion: “reuses a caller-owned request ID when a ws ticket response is lost”.",
+      "semanticCoverage": "packages/tests/shared-web/auth/websocket-ticket-http-api.test.ts#reuses a caller-owned request ID when a ws ticket response is lost",
+      "coverageRelation": "The named assertion executes this lifecycle and observes its owned side-effect port; the registered evidence directly proves the stated constraint.",
+      "interactionRequirement": {
+        "interactionKind": "order",
+        "ownedPort": "WebSocket ticket HTTP request URL",
+        "observableEffect": "The failed attempt and retry target the same request-ID URL in sequence.",
+        "requiredConstraint": "Both ordered attempts use the identical caller-provided request ID.",
+        "failureRationale": "Changing the ID defeats server idempotency and can mint duplicate tickets."
+      }
+    },
+    {
+      "id": "shared-web-ticket-local-rate-limit",
+      "domain": "Shared-web WebSocket ticket local rate limiting",
+      "owner": "Shared Web maintainers",
+      "summary": "The local limiter suppresses a ticket storm before a second API request. Executable assertion: “locally suppresses ticket storms before hitting the API”.",
+      "semanticCoverage": "packages/tests/shared-web/auth/websocket-ticket-http-api.test.ts#locally suppresses ticket storms before hitting the API",
+      "coverageRelation": "The named assertion executes this lifecycle and observes its owned side-effect port; the registered evidence directly proves the stated constraint.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "WebSocket ticket HTTP fetch port",
+        "observableEffect": "The first request reaches fetch and the next rejects locally.",
+        "requiredConstraint": "Only one fetch occurs when the one-request window is exhausted.",
+        "failureRationale": "A second fetch bypasses the client storm guard."
+      }
+    },
+    {
+      "id": "shared-web-ticket-circuit-breaker",
+      "domain": "Shared-web WebSocket ticket circuit breaker",
+      "owner": "Shared Web maintainers",
+      "summary": "A server failure opens the circuit and suppresses the next request before fetch. Executable assertion: “opens a local circuit after server failures and suppresses the next ticket request”.",
+      "semanticCoverage": "packages/tests/shared-web/auth/websocket-ticket-http-api.test.ts#opens a local circuit after server failures and suppresses the next ticket request",
+      "coverageRelation": "The named assertion executes this lifecycle and observes its owned side-effect port; the registered evidence directly proves the stated constraint.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "WebSocket ticket HTTP fetch port",
+        "observableEffect": "One 503 reaches fetch and the next request fails locally.",
+        "requiredConstraint": "Only the first request reaches fetch while the circuit is open.",
+        "failureRationale": "A second fetch bypasses the circuit and loads an unavailable server."
+      }
+    },
+    {
+      "id": "shared-web-ticket-429-circuit-isolation",
+      "domain": "Shared-web WebSocket ticket failure classification",
+      "owner": "Shared Web maintainers",
+      "summary": "Server rate limiting uses cooldown without opening the failure circuit. Executable assertion: “does not trip the circuit breaker for server 429 cooldown responses”.",
+      "semanticCoverage": "packages/tests/shared-web/auth/websocket-ticket-http-api.test.ts#does not trip the circuit breaker for server 429 cooldown responses",
+      "coverageRelation": "The named assertion executes this lifecycle and observes its owned side-effect port; the registered evidence directly proves the stated constraint.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "WebSocket ticket HTTP fetch port",
+        "observableEffect": "A 429 is followed by a successful fetch after cooldown.",
+        "requiredConstraint": "The post-cooldown retry reaches fetch as the second request.",
+        "failureRationale": "Treating 429 as circuit failure suppresses valid recovery."
+      }
+    },
+    {
+      "id": "shared-web-ticket-circuit-diagnostic-precedence",
+      "domain": "Shared-web WebSocket ticket suppression precedence",
+      "owner": "Shared Web maintainers",
+      "summary": "An open circuit remains the suppression reason after repeated calls. Executable assertion: “keeps circuit-open diagnostics ahead of the local rate limiter while open”.",
+      "semanticCoverage": "packages/tests/shared-web/auth/websocket-ticket-http-api.test.ts#keeps circuit-open diagnostics ahead of the local rate limiter while open",
+      "coverageRelation": "The named assertion executes this lifecycle and observes its owned side-effect port; the registered evidence directly proves the stated constraint.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "WebSocket ticket HTTP fetch port",
+        "observableEffect": "One failure opens the circuit and later calls make no network request.",
+        "requiredConstraint": "Fetch remains at one while subsequent requests report circuit-open.",
+        "failureRationale": "Extra fetches bypass the circuit; rate-limit diagnostics obscure active policy."
+      }
+    },
+    {
+      "id": "shared-web-remote-media-attachment-lifecycle",
+      "domain": "Shared-web remote media attachment lifecycle",
+      "owner": "Shared Web maintainers",
+      "summary": "Remote-media registration waits for connection attachment. Executable assertion: “owns middleware registration from connection attach through final unsubscribe”.",
+      "semanticCoverage": "packages/tests/shared-web/media/browser-remote-media-stream-runtime.test.ts#owns middleware registration from connection attach through final unsubscribe",
+      "coverageRelation": "The named assertion executes this lifecycle and observes its owned side-effect port; the registered evidence directly proves the stated constraint.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "RTC remote-stream middleware registration port",
+        "observableEffect": "Subscribing before attachment does not register against an unavailable connection.",
+        "requiredConstraint": "The registration port remains unused until attach supplies middleware.",
+        "failureRationale": "Early registration binds to missing or stale connection state."
+      }
+    },
+    {
+      "id": "shared-web-create-room-failure-atomicity",
+      "domain": "Shared-web create-and-switch room workflow",
+      "owner": "Shared Web maintainers",
+      "summary": "Failed room creation leaves the current room and never starts leave. Executable assertion: “does not leave when create fails”.",
+      "semanticCoverage": "packages/tests/shared-web/rooms/create-and-join-room.test.ts#does not leave when create fails",
+      "coverageRelation": "The named assertion executes this lifecycle and observes its owned side-effect port; the registered evidence directly proves the stated constraint.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "Room workflow leave-state-group port",
+        "observableEffect": "Create rejects while the old room stays current and no leave occurs.",
+        "requiredConstraint": "The leave port remains unused when create fails.",
+        "failureRationale": "Leaving after failed creation strands the caller without either room."
+      }
+    },
+    {
+      "id": "shared-web-join-room-failure-atomicity",
+      "domain": "Shared-web join room workflow",
+      "owner": "Shared Web maintainers",
+      "summary": "Failed room join leaves the current room and never starts leave. Executable assertion: “does not leave when joining the next room fails”.",
+      "semanticCoverage": "packages/tests/shared-web/rooms/join-room.test.ts#does not leave when joining the next room fails",
+      "coverageRelation": "The named assertion executes this lifecycle and observes its owned side-effect port; the registered evidence directly proves the stated constraint.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "Room workflow leave-state-group port",
+        "observableEffect": "Join rejects while the old room stays current and no leave occurs.",
+        "requiredConstraint": "The leave port remains unused when join fails.",
+        "failureRationale": "Leaving after failed join strands the caller outside both rooms."
+      }
+    },
+    {
+      "id": "shared-web-room-reference-validation",
+      "domain": "Shared-web room identity validation",
+      "owner": "Shared Web maintainers",
+      "summary": "Conflicting roomId and roomRef fail before mutation. Executable assertion: “rejects mismatched roomId and roomRef before the workflow”.",
+      "semanticCoverage": "packages/tests/shared-web/rooms/join-room.test.ts#rejects mismatched roomId and roomRef before the workflow",
+      "coverageRelation": "The named assertion executes this lifecycle and observes its owned side-effect port; the registered evidence directly proves the stated constraint.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "Room workflow join-state-group port",
+        "observableEffect": "The facade rejects mismatched identity without invoking join.",
+        "requiredConstraint": "The join port remains unused for mismatched room identifiers.",
+        "failureRationale": "Starting with conflicting identity can join the wrong scoped group."
+      }
+    },
+    {
+      "id": "shared-web-leave-without-current-room",
+      "domain": "Shared-web leave room resolution",
+      "owner": "Shared Web maintainers",
+      "summary": "Leaving without a resolvable room performs no mutation or hydration. Executable assertion: “returns undefined without a workflow when no room can be resolved”.",
+      "semanticCoverage": "packages/tests/shared-web/rooms/leave-room.test.ts#returns undefined without a workflow when no room can be resolved",
+      "coverageRelation": "The named assertion executes this lifecycle and observes its owned side-effect port; the registered evidence directly proves the stated constraint.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "Room workflow leave-state-group and cache hydration ports",
+        "observableEffect": "The request completes as a no-op with an empty workflow log.",
+        "requiredConstraint": "Neither leave nor hydration runs when no room is resolved.",
+        "failureRationale": "Invoking either port would fabricate identity or do unrelated cache work."
+      }
+    },
+    {
+      "id": "shared-web-delta-causal-gap-recovery",
+      "domain": "Shared-web state-cache delta recovery",
+      "owner": "Shared Web maintainers",
+      "summary": "A causal gap triggers one durable floored snapshot read. Executable assertion: “pulls the floored group snapshot when a delta envelope arrives over a causal gap”.",
+      "semanticCoverage": "packages/tests/shared-web/state-cache/browser-state-cache-delta-recovery.test.ts#pulls the floored group snapshot when a delta envelope arrives over a causal gap",
+      "coverageRelation": "The named assertion executes this lifecycle and observes its owned side-effect port; the registered evidence directly proves the stated constraint.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "Group-state floored HTTP read port",
+        "observableEffect": "One read installs the returned server-canonical snapshot.",
+        "requiredConstraint": "Exactly one floored read occurs for the causal-gap envelope.",
+        "failureRationale": "No read leaves the gap unresolved; duplicate reads race cache application."
+      }
+    },
+    {
+      "id": "shared-web-incomparable-state-recovery",
+      "domain": "Shared-web incomparable state recovery",
+      "owner": "Shared Web maintainers",
+      "summary": "An incomparable tuple performs one durable reread before RTC application. Executable assertion: “recovers incomparable group tuples through a durable reread before RTC recomputation”.",
+      "semanticCoverage": "packages/tests/shared-web/state-cache/browser-state-cache-lifecycle.test.ts#recovers incomparable group tuples through a durable reread before RTC recomputation",
+      "coverageRelation": "The named assertion executes this lifecycle and observes its owned side-effect port; the registered evidence directly proves the stated constraint.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "Group snapshot durable reread port",
+        "observableEffect": "One reread supplies the recovered snapshot applied to RTC and repository.",
+        "requiredConstraint": "Exactly one durable reread occurs for the incomparable tuple.",
+        "failureRationale": "No reread guesses across histories; duplicates waste and reorder recovery."
+      }
+    },
+    {
+      "id": "shared-web-left-session-overlay-removal",
+      "domain": "Shared-web state-cache local-session departure",
+      "owner": "Shared Web maintainers",
+      "summary": "A snapshot dropping the current session uses retention-aware delete, not active update. Executable assertion: “removes overlays but retains RTC connections when an active snapshot no longer includes the current session”.",
+      "semanticCoverage": "packages/tests/shared-web/state-cache/browser-state-cache-lifecycle.test.ts#removes overlays but retains RTC connections when an active snapshot no longer includes the current session",
+      "coverageRelation": "The named assertion executes this lifecycle and observes its owned side-effect port; the registered evidence directly proves the stated constraint.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "WebRTC group-manager active-update port",
+        "observableEffect": "The overlay disappears and delete retains connections without accepting active state.",
+        "requiredConstraint": "Active update remains unused for a snapshot excluding the current session.",
+        "failureRationale": "Accepting it as active recreates local membership."
+      }
+    },
+    {
+      "id": "shared-web-directory-only-rtc-reconciliation",
+      "domain": "Shared-web directory-only RTC reconciliation",
+      "owner": "Shared Web maintainers",
+      "summary": "A directory-only snapshot triggers one global RTC reconciliation without per-group mutation. Executable assertion: “reconciles RTC peers when an active directory snapshot excludes the current session”.",
+      "semanticCoverage": "packages/tests/shared-web/state-cache/browser-state-cache-lifecycle.test.ts#reconciles RTC peers when an active directory snapshot excludes the current session",
+      "coverageRelation": "The named assertion executes this lifecycle and observes its owned side-effect port; the registered evidence directly proves the stated constraint.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "WebRTC group-manager update, delete, and global reconciliation ports",
+        "observableEffect": "Active update and delete are skipped while global reconciliation runs once.",
+        "requiredConstraint": "Update and delete remain unused while global reconciliation runs exactly once.",
+        "failureRationale": "Per-group mutation misstates membership; skipped or duplicate reconciliation leaves or repeats peer work."
+      }
+    },
+    {
+      "id": "shared-web-removed-group-cleanup",
+      "domain": "Shared-web removed-group cleanup",
+      "owner": "Shared Web maintainers",
+      "summary": "Removing a cached group deletes RTC tracking without reapplying it. Executable assertion: “cleans up RTC group tracking and notifies listeners when a group snapshot is removed”.",
+      "semanticCoverage": "packages/tests/shared-web/state-cache/browser-state-cache-lifecycle.test.ts#cleans up RTC group tracking and notifies listeners when a group snapshot is removed",
+      "coverageRelation": "The named assertion executes this lifecycle and observes its owned side-effect port; the registered evidence directly proves the stated constraint.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "WebRTC group-manager active-update port",
+        "observableEffect": "Removal deletes tracking and notifies listeners with no active update.",
+        "requiredConstraint": "Active update remains unused during group removal.",
+        "failureRationale": "Reapplying a removed group races deletion and resurrects stale tracking."
+      }
+    },
+    {
+      "id": "shared-web-hydration-incomparable-recovery",
+      "domain": "Shared-web initialized incomparable recovery",
+      "owner": "Shared Web maintainers",
+      "summary": "Initialized lifecycle rereads and recomputes once without applying divergent input. Executable assertion: “retains durable incomparable recovery across initialise and hydrate”.",
+      "semanticCoverage": "packages/tests/shared-web/state-cache/browser-state-cache-lifecycle.test.ts#retains durable incomparable recovery across initialise and hydrate",
+      "coverageRelation": "The named assertion executes this lifecycle and observes its owned side-effect port; the registered evidence directly proves the stated constraint.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "Group snapshot reread, RTC recomputation, and active-update ports",
+        "observableEffect": "Recovered state replaces divergence and drives one recomputation.",
+        "requiredConstraint": "Recovery performs one reread and one recomputation while divergent input never reaches active update.",
+        "failureRationale": "Missing recovery preserves divergence; duplicates race; active update bypasses the oracle."
+      }
+    },
+    {
+      "id": "shared-web-overlay-topology-notification",
+      "domain": "Shared-web overlay topology delivery",
+      "owner": "Shared Web maintainers",
+      "summary": "Every topology envelope notifies RTC while causal rules own cache state. Executable assertion: “applies overlay topology websocket snapshots to the local overlay cache”.",
+      "semanticCoverage": "packages/tests/shared-web/state-cache/browser-state-cache-lifecycle.test.ts#applies overlay topology websocket snapshots to the local overlay cache",
+      "coverageRelation": "The named assertion executes this lifecycle and observes its owned side-effect port; the registered evidence directly proves the stated constraint.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "WebRTC group-manager topology notification port",
+        "observableEffect": "Initial, removal, and stale envelopes each notify; stale cannot restore removed state.",
+        "requiredConstraint": "Notification occurs once per envelope: once after the first and three times after all three.",
+        "failureRationale": "Missing notifications leave RTC stale; duplicates repeat repair."
+      }
+    },
+    {
+      "id": "shared-web-state-delta-resulting-noop",
+      "domain": "Shared-web group-state delta no-op resolution",
+      "owner": "Shared Web maintainers",
+      "summary": "Equal-resulting and summary no-op deltas resolve without a durable read. Executable assertion: “resolves equal-resulting and summary no-op envelopes as typed no-ops before the apply rule”.",
+      "semanticCoverage": "packages/tests/shared-web/state-read/group-state-delta-reconciliation.test.ts#resolves equal-resulting and summary no-op envelopes as typed no-ops before the apply rule",
+      "coverageRelation": "The named assertion executes this lifecycle and observes its owned side-effect port; the registered evidence directly proves the stated constraint.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "Group-state floored HTTP read port",
+        "observableEffect": "Typed no-op results return before apply and no fetch occurs.",
+        "requiredConstraint": "Recovery fetch remains unused for equal-resulting and summary no-ops.",
+        "failureRationale": "Fetching adds latency and can replace equally current state."
+      }
+    },
+    {
+      "id": "shared-web-state-delta-resulting-floor",
+      "domain": "Shared-web group-state resulting-floor recovery",
+      "owner": "Shared Web maintainers",
+      "summary": "A dominated cache not matching the predecessor triggers one floored read. Executable assertion: “pulls at the resulting floor when the cached snapshot is dominated but not the predecessor”.",
+      "semanticCoverage": "packages/tests/shared-web/state-read/group-state-delta-reconciliation.test.ts#pulls at the resulting floor when the cached snapshot is dominated but not the predecessor",
+      "coverageRelation": "The named assertion executes this lifecycle and observes its owned side-effect port; the registered evidence directly proves the stated constraint.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "Group-state floored HTTP read port",
+        "observableEffect": "One request at the resulting floor returns canonical state.",
+        "requiredConstraint": "Exactly one floored recovery fetch occurs.",
+        "failureRationale": "Applying crosses an unproven predecessor; duplicates race reconciliation."
+      }
+    },
+    {
+      "id": "shared-web-state-delta-out-of-order-noop",
+      "domain": "Shared-web out-of-order delta handling",
+      "owner": "Shared Web maintainers",
+      "summary": "A delta older than cache resolves without a durable read. Executable assertion: “resolves an out-of-order envelope after a newer snapshot as a no-op”.",
+      "semanticCoverage": "packages/tests/shared-web/state-read/group-state-delta-reconciliation.test.ts#resolves an out-of-order envelope after a newer snapshot as a no-op",
+      "coverageRelation": "The named assertion executes this lifecycle and observes its owned side-effect port; the registered evidence directly proves the stated constraint.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "Group-state floored HTTP read port",
+        "observableEffect": "Newer cache state remains authoritative and no fetch occurs.",
+        "requiredConstraint": "Recovery fetch remains unused for an envelope dominated by cache.",
+        "failureRationale": "Fetching for stale input adds latency and risks replacing newer state."
+      }
+    },
+    {
+      "id": "shared-web-state-delta-missing-session-recovery",
+      "domain": "Shared-web missing-session delta recovery",
+      "owner": "Shared Web maintainers",
+      "summary": "Missing active-session material triggers one floored read. Executable assertion: “pulls at the floor when an active session record is missing from the delta and the cache”.",
+      "semanticCoverage": "packages/tests/shared-web/state-read/group-state-delta-reconciliation.test.ts#pulls at the floor when an active session record is missing from the delta and the cache",
+      "coverageRelation": "The named assertion executes this lifecycle and observes its owned side-effect port; the registered evidence directly proves the stated constraint.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "Group-state floored HTTP read port",
+        "observableEffect": "One recovery request supplies canonical session state.",
+        "requiredConstraint": "Exactly one floored recovery fetch occurs for the missing session.",
+        "failureRationale": "Applying without recovery creates incomplete membership; duplicates waste work."
+      }
+    },
+    {
+      "id": "shared-web-state-delta-conflict-recovery",
+      "domain": "Shared-web revision-conflict recovery",
+      "owner": "Shared Web maintainers",
+      "summary": "A revision conflict self-heals with one floored read. Executable assertion: “counts a revision conflict from the divergence oracle and self-heals with the floored pull”.",
+      "semanticCoverage": "packages/tests/shared-web/state-read/group-state-delta-reconciliation.test.ts#counts a revision conflict from the divergence oracle and self-heals with the floored pull",
+      "coverageRelation": "The named assertion executes this lifecycle and observes its owned side-effect port; the registered evidence directly proves the stated constraint.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "Group-state floored HTTP read port",
+        "observableEffect": "The conflict produces one recovery request and durable state.",
+        "requiredConstraint": "Exactly one floored recovery fetch occurs for the conflict.",
+        "failureRationale": "No read leaves divergence unresolved; duplicates race self-healing."
+      }
+    },
+    {
+      "id": "shared-web-state-delta-predecessor-apply",
+      "domain": "Shared-web predecessor-matched delta application",
+      "owner": "Shared Web maintainers",
+      "summary": "A predecessor-matched delta applies locally without a durable read. Executable assertion: “applies a delta at the cached predecessor and materializes the server-canonical snapshot”.",
+      "semanticCoverage": "packages/tests/shared-web/state-read/group-state-delta-reconciliation.test.ts#applies a delta at the cached predecessor and materializes the server-canonical snapshot",
+      "coverageRelation": "The named assertion executes this lifecycle and observes its owned side-effect port; the registered evidence directly proves the stated constraint.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "Group-state floored HTTP read port",
+        "observableEffect": "The delta materializes canonical state and no fetch occurs.",
+        "requiredConstraint": "Recovery fetch remains unused when cache matches the delta predecessor.",
+        "failureRationale": "Fetching defeats the valid delta fast path and adds latency."
+      }
+    },
+    {
       "id": "shared-web-app-import-boundary",
       "domain": "Shared-web application import boundary",
       "owner": "Shared Web maintainers",
@@ -664,30 +1287,6 @@ moved or changed test.
       "summary": "Browser entrypoints remain free of server-only dependencies when bundled for application consumers. Executable assertion: “keeps shared-web from declaring graphology directly”.",
       "semanticCoverage": "packages/tests/shared-web/shared-web-browser-bundle-boundaries.test.ts#keeps shared-web from declaring graphology directly",
       "coverageRelation": "The browser bundle suite builds the narrow entrypoints and checks their dependency graph and size; this manifest read establishes the package dependency declaration used by that executable bundle check."
-    },
-    {
-      "id": "shared-web-browser-entrypoints--keeps-mutable-state-cache-access-inside-the-state-store",
-      "domain": "Shared-web public browser entrypoints",
-      "owner": "Shared Web maintainers",
-      "summary": "Published browser entrypoints expose the intended files and remain importable by consumers. Executable assertion: “keeps mutable state-cache access inside the state store”.",
-      "semanticCoverage": "packages/tests/shared-web/shared-web-browser-entrypoints.test.ts#keeps mutable state-cache access inside the state store",
-      "coverageRelation": "The named entrypoint test imports or analyzes the published browser surface and requires the exact internal module inventory represented by this occurrence to remain behind its injected port or public owner."
-    },
-    {
-      "id": "shared-web-browser-entrypoints--keeps-runtime-controllers-independent-from-the-aggregate-contrac",
-      "domain": "Shared-web public browser entrypoints",
-      "owner": "Shared Web maintainers",
-      "summary": "Published browser entrypoints expose the intended files and remain importable by consumers. Executable assertion: “keeps runtime controllers independent from the aggregate contract”.",
-      "semanticCoverage": "packages/tests/shared-web/shared-web-browser-entrypoints.test.ts#keeps runtime controllers independent from the aggregate contract",
-      "coverageRelation": "The named entrypoint test imports or analyzes the published browser surface and requires the exact internal module inventory represented by this occurrence to remain behind its injected port or public owner."
-    },
-    {
-      "id": "shared-web-browser-entrypoints--keeps-runtime-controllers-independent-from-the-compatibility-ent",
-      "domain": "Shared-web public browser entrypoints",
-      "owner": "Shared Web maintainers",
-      "summary": "Published browser entrypoints expose the intended files and remain importable by consumers. Executable assertion: “keeps runtime controllers independent from the compatibility entrypoint”.",
-      "semanticCoverage": "packages/tests/shared-web/shared-web-browser-entrypoints.test.ts#keeps runtime controllers independent from the compatibility entrypoint",
-      "coverageRelation": "The named entrypoint test imports or analyzes the published browser surface and requires the exact internal module inventory represented by this occurrence to remain behind its injected port or public owner."
     },
     {
       "id": "source-analysis-test-interface",
@@ -1951,6 +2550,787 @@ moved or changed test.
       "semanticCoverage": "packages/tests/shared-web/shared-web-app-import-boundaries.test.ts#keeps Relic on its runtime adapter boundary without the broad shared-web barrel"
     },
     {
+      "id": "test-structure-coupling-8fb3ab417bf784ac",
+      "path": "packages/tests/ar-eye-hunter-v1/browser-ai/arena-browser-ai-provider.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "ar-browser-ai-explicit-provider-selection",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "AR Eye Hunter maintainers",
+      "rationale": "The mock-provider factory absence assertion directly proves that the mock-provider factory remains unused after a WebLLM generation failure.",
+      "semanticCoverage": "packages/tests/ar-eye-hunter-v1/browser-ai/arena-browser-ai-provider.test.ts#keeps WebLLM generation failures visible without switching providers"
+    },
+    {
+      "id": "test-structure-coupling-c8b54a0e15713a92",
+      "path": "packages/tests/ar-eye-hunter-v1/browser-ai/arena-webllm-provider.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "ar-webllm-engine-lifecycle",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "AR Eye Hunter maintainers",
+      "rationale": "The one-engine creation count directly proves that one engine is created and one completion runs per request.",
+      "semanticCoverage": "packages/tests/ar-eye-hunter-v1/browser-ai/arena-webllm-provider.test.ts#loads one engine, requests JSON mode, and parses JSON results"
+    },
+    {
+      "id": "test-structure-coupling-7bd8747ffd7352aa",
+      "path": "packages/tests/ar-eye-hunter-v1/browser-ai/arena-webllm-provider.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "ar-webllm-engine-lifecycle",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "AR Eye Hunter maintainers",
+      "rationale": "The two-request completion count directly proves that one engine is created and one completion runs per request.",
+      "semanticCoverage": "packages/tests/ar-eye-hunter-v1/browser-ai/arena-webllm-provider.test.ts#loads one engine, requests JSON mode, and parses JSON results"
+    },
+    {
+      "id": "test-structure-coupling-d3f3345b3e0c0aca",
+      "path": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "ar-arena-reliable-snapshot-coalescing",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "AR Eye Hunter maintainers",
+      "rationale": "The immediate single-publication count directly proves that the first revision publishes immediately and the latest publishes reliably after the interval without the superseded revision.",
+      "semanticCoverage": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts#coalesces rapid reliable director snapshots to the latest revision"
+    },
+    {
+      "id": "test-structure-coupling-1bc723f2706cc67a",
+      "path": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "ar-arena-reliable-snapshot-coalescing",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "AR Eye Hunter maintainers",
+      "rationale": "The unchanged pre-deadline publication count directly proves that the first revision publishes immediately and the latest publishes reliably after the interval without the superseded revision.",
+      "semanticCoverage": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts#coalesces rapid reliable director snapshots to the latest revision"
+    },
+    {
+      "id": "test-structure-coupling-8965491a17b28c8c",
+      "path": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "ar-arena-reliable-snapshot-coalescing",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "AR Eye Hunter maintainers",
+      "rationale": "The post-deadline two-publication count directly proves that the first revision publishes immediately and the latest publishes reliably after the interval without the superseded revision.",
+      "semanticCoverage": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts#coalesces rapid reliable director snapshots to the latest revision"
+    },
+    {
+      "id": "test-structure-coupling-3da9554c3b61b3dd",
+      "path": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "ar-arena-reliable-snapshot-coalescing",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "AR Eye Hunter maintainers",
+      "rationale": "The delayed publication reliable-options assertion directly proves that the first revision publishes immediately and the latest publishes reliably after the interval without the superseded revision.",
+      "semanticCoverage": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts#coalesces rapid reliable director snapshots to the latest revision"
+    },
+    {
+      "id": "test-structure-coupling-ddcc353b38f840bc",
+      "path": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "ar-arena-pending-snapshot-generation-cancellation",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "AR Eye Hunter maintainers",
+      "rationale": "The initial one-publication baseline directly proves that no queued second snapshot publishes after the generation resets.",
+      "semanticCoverage": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts#cancels pending reliable director snapshots when the network generation resets"
+    },
+    {
+      "id": "test-structure-coupling-deb29b8fd46fada2",
+      "path": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "ar-arena-pending-snapshot-generation-cancellation",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "AR Eye Hunter maintainers",
+      "rationale": "The unchanged count after reset and timer expiry directly proves that no queued second snapshot publishes after the generation resets.",
+      "semanticCoverage": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts#cancels pending reliable director snapshots when the network generation resets"
+    },
+    {
+      "id": "test-structure-coupling-84f796b5286f7e78",
+      "path": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "ar-arena-expired-auth-transition",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "AR Eye Hunter maintainers",
+      "rationale": "The explicit-logout absence assertion directly proves that auth expiry does not invoke manual logout.",
+      "semanticCoverage": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts#clears arena state when auth expires outside manual logout"
+    },
+    {
+      "id": "test-structure-coupling-c8cc6ca7cb852a53",
+      "path": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "ar-arena-manual-logout-rejection",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "AR Eye Hunter maintainers",
+      "rationale": "The exactly-once logout assertion directly proves that one user action invokes the logout port exactly once.",
+      "semanticCoverage": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts#catches manual logout rejection and leaves the arena signed out"
+    },
+    {
+      "id": "test-structure-coupling-13076aa50d1ea217",
+      "path": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "ar-arena-manual-logout-network-fence",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "AR Eye Hunter maintainers",
+      "rationale": "The exactly-one pending logout assertion directly proves that one logout is in flight and match networking stops before it settles.",
+      "semanticCoverage": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts#disables network immediately while manual logout revoke is pending"
+    },
+    {
+      "id": "test-structure-coupling-d67b0dbb22713a47",
+      "path": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "ar-arena-manual-logout-network-fence",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "AR Eye Hunter maintainers",
+      "rationale": "The pre-settlement match-stop assertion directly proves that one logout is in flight and match networking stops before it settles.",
+      "semanticCoverage": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts#disables network immediately while manual logout revoke is pending"
+    },
+    {
+      "id": "test-structure-coupling-d3a4e20d284cf55d",
+      "path": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "ar-arena-pending-logout-egress-fence",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "AR Eye Hunter maintainers",
+      "rationale": "The event-publication absence assertion directly proves that all game and raw realtime egress remains unused during pending logout.",
+      "semanticCoverage": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts#blocks stale canvas callbacks while manual logout revoke is pending"
+    },
+    {
+      "id": "test-structure-coupling-055c1e0ac2372b82",
+      "path": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "ar-arena-pending-logout-egress-fence",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "AR Eye Hunter maintainers",
+      "rationale": "The snapshot-publication absence assertion directly proves that all game and raw realtime egress remains unused during pending logout.",
+      "semanticCoverage": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts#blocks stale canvas callbacks while manual logout revoke is pending"
+    },
+    {
+      "id": "test-structure-coupling-beb532cd752c825d",
+      "path": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "ar-arena-pending-logout-egress-fence",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "AR Eye Hunter maintainers",
+      "rationale": "The game-intent absence assertion directly proves that all game and raw realtime egress remains unused during pending logout.",
+      "semanticCoverage": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts#blocks stale canvas callbacks while manual logout revoke is pending"
+    },
+    {
+      "id": "test-structure-coupling-df15c9e78f685c1e",
+      "path": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "ar-arena-pending-logout-egress-fence",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "AR Eye Hunter maintainers",
+      "rationale": "The game-input absence assertion directly proves that all game and raw realtime egress remains unused during pending logout.",
+      "semanticCoverage": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts#blocks stale canvas callbacks while manual logout revoke is pending"
+    },
+    {
+      "id": "test-structure-coupling-d7e8e578c65502fe",
+      "path": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "ar-arena-pending-logout-egress-fence",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "AR Eye Hunter maintainers",
+      "rationale": "The game-presence absence assertion directly proves that all game and raw realtime egress remains unused during pending logout.",
+      "semanticCoverage": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts#blocks stale canvas callbacks while manual logout revoke is pending"
+    },
+    {
+      "id": "test-structure-coupling-3da6902b742cfa96",
+      "path": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "ar-arena-pending-logout-egress-fence",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "AR Eye Hunter maintainers",
+      "rationale": "The raw realtime room-port absence assertion directly proves that all game and raw realtime egress remains unused during pending logout.",
+      "semanticCoverage": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts#blocks stale canvas callbacks while manual logout revoke is pending"
+    },
+    {
+      "id": "test-structure-coupling-edd22a871f21acc5",
+      "path": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "ar-arena-pending-logout-egress-fence",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "AR Eye Hunter maintainers",
+      "rationale": "The raw realtime JSON-send absence assertion directly proves that all game and raw realtime egress remains unused during pending logout.",
+      "semanticCoverage": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts#blocks stale canvas callbacks while manual logout revoke is pending"
+    },
+    {
+      "id": "test-structure-coupling-4f361679b46fee6d",
+      "path": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "ar-arena-signed-out-diagnostics-fence",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "AR Eye Hunter maintainers",
+      "rationale": "The API configuration read absence assertion directly proves that all diagnostics transport ports remain unused after logout.",
+      "semanticCoverage": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts#does not probe diagnostics transports after logout"
+    },
+    {
+      "id": "test-structure-coupling-9ffd9b32eeafe8a5",
+      "path": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "ar-arena-signed-out-diagnostics-fence",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "AR Eye Hunter maintainers",
+      "rationale": "The ICE candidate read absence assertion directly proves that all diagnostics transport ports remain unused after logout.",
+      "semanticCoverage": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts#does not probe diagnostics transports after logout"
+    },
+    {
+      "id": "test-structure-coupling-f666b2b3080c639f",
+      "path": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "ar-arena-signed-out-diagnostics-fence",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "AR Eye Hunter maintainers",
+      "rationale": "The RTC diagnostics absence assertion directly proves that all diagnostics transport ports remain unused after logout.",
+      "semanticCoverage": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts#does not probe diagnostics transports after logout"
+    },
+    {
+      "id": "test-structure-coupling-4bae375e2e93de59",
+      "path": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "ar-arena-signed-out-diagnostics-fence",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "AR Eye Hunter maintainers",
+      "rationale": "The room-lane wait absence assertion directly proves that all diagnostics transport ports remain unused after logout.",
+      "semanticCoverage": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts#does not probe diagnostics transports after logout"
+    },
+    {
+      "id": "test-structure-coupling-6c3ccce322d89ce4",
+      "path": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "ar-arena-stale-director-attempt-fence",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "AR Eye Hunter maintainers",
+      "rationale": "The unchanged diagnostics count directly proves that stale appointment resolution performs no additional diagnostics read.",
+      "semanticCoverage": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts#ignores a pending director appointment after the current room clears"
+    },
+    {
+      "id": "test-structure-coupling-d1dd13ef89b32432",
+      "path": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "ar-arena-signed-out-snapshot-fence",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "AR Eye Hunter maintainers",
+      "rationale": "The signed-out snapshot-publication absence assertion directly proves that snapshot publication remains unused after logout.",
+      "semanticCoverage": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts#blocks stale canvas snapshot publication after logout"
+    },
+    {
+      "id": "test-structure-coupling-dfffce7877dc1c8e",
+      "path": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "ar-arena-signed-out-combat-fence",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "AR Eye Hunter maintainers",
+      "rationale": "The event-publication absence assertion directly proves that all game and raw realtime egress remains unused after logout.",
+      "semanticCoverage": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts#blocks stale canvas combat callbacks after logout"
+    },
+    {
+      "id": "test-structure-coupling-08fc7607c4037299",
+      "path": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "ar-arena-signed-out-combat-fence",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "AR Eye Hunter maintainers",
+      "rationale": "The snapshot-publication absence assertion directly proves that all game and raw realtime egress remains unused after logout.",
+      "semanticCoverage": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts#blocks stale canvas combat callbacks after logout"
+    },
+    {
+      "id": "test-structure-coupling-49bd5bca406b4f70",
+      "path": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "ar-arena-signed-out-combat-fence",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "AR Eye Hunter maintainers",
+      "rationale": "The game-intent absence assertion directly proves that all game and raw realtime egress remains unused after logout.",
+      "semanticCoverage": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts#blocks stale canvas combat callbacks after logout"
+    },
+    {
+      "id": "test-structure-coupling-826d23c83753ba6a",
+      "path": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "ar-arena-signed-out-combat-fence",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "AR Eye Hunter maintainers",
+      "rationale": "The game-input absence assertion directly proves that all game and raw realtime egress remains unused after logout.",
+      "semanticCoverage": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts#blocks stale canvas combat callbacks after logout"
+    },
+    {
+      "id": "test-structure-coupling-83ad6138dc7baf89",
+      "path": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "ar-arena-signed-out-combat-fence",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "AR Eye Hunter maintainers",
+      "rationale": "The game-presence absence assertion directly proves that all game and raw realtime egress remains unused after logout.",
+      "semanticCoverage": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts#blocks stale canvas combat callbacks after logout"
+    },
+    {
+      "id": "test-structure-coupling-e4743fcd4966da2a",
+      "path": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "ar-arena-signed-out-combat-fence",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "AR Eye Hunter maintainers",
+      "rationale": "The raw realtime room-port absence assertion directly proves that all game and raw realtime egress remains unused after logout.",
+      "semanticCoverage": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts#blocks stale canvas combat callbacks after logout"
+    },
+    {
+      "id": "test-structure-coupling-56ec10185434a41c",
+      "path": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "ar-arena-signed-out-combat-fence",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "AR Eye Hunter maintainers",
+      "rationale": "The raw realtime JSON-send absence assertion directly proves that all game and raw realtime egress remains unused after logout.",
+      "semanticCoverage": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts#blocks stale canvas combat callbacks after logout"
+    },
+    {
+      "id": "test-structure-coupling-69f6c6dd1aaada67",
+      "path": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "ar-arena-create-and-switch-boundary",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "AR Eye Hunter maintainers",
+      "rationale": "The create-only port absence assertion directly proves that create-only remains unused during create-and-switch.",
+      "semanticCoverage": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts#creates a new arena by switching rooms and clearing stale remote players"
+    },
+    {
+      "id": "test-structure-coupling-1e082c65080293d4",
+      "path": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "ar-arena-offline-owner-election",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "AR Eye Hunter maintainers",
+      "rationale": "The capability-report invocation assertion directly proves that capability reporting and appointment both occur for an eligible member.",
+      "semanticCoverage": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts#auto-appoints regular room members when the owner is offline"
+    },
+    {
+      "id": "test-structure-coupling-b3578e40d71b81cd",
+      "path": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "ar-arena-offline-owner-election",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "AR Eye Hunter maintainers",
+      "rationale": "The director-appointment invocation assertion directly proves that capability reporting and appointment both occur for an eligible member.",
+      "semanticCoverage": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts#auto-appoints regular room members when the owner is offline"
+    },
+    {
+      "id": "test-structure-coupling-313ee2116e5ba688",
+      "path": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "ar-arena-rallar-game-presence-boundary",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "AR Eye Hunter maintainers",
+      "rationale": "The raw motion-lane send absence assertion directly proves that raw realtime motion send remains unused for game-owned presence.",
+      "semanticCoverage": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts#still publishes the local director pose through Rallar Game presence"
+    },
+    {
+      "id": "test-structure-coupling-f7c28d6e20d2d1f7",
+      "path": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "ar-arena-reliable-snapshot-deduplication",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "AR Eye Hunter maintainers",
+      "rationale": "The single-publication count directly proves that a repeated revision produces one reliable publication.",
+      "semanticCoverage": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts#deduplicates reliable director snapshots by revision"
+    },
+    {
+      "id": "test-structure-coupling-1ad6c91810eec4cf",
+      "path": "packages/tests/shared-web/ai/webllm-rallar-ai-provider.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "shared-web-webllm-runtime-lifecycle",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Shared Web maintainers",
+      "rationale": "The one-runtime load count directly proves that one runtime loads and one generation occurs per request.",
+      "semanticCoverage": "packages/tests/shared-web/ai/webllm-rallar-ai-provider.test.ts#loads one runtime and validates each generated envelope"
+    },
+    {
+      "id": "test-structure-coupling-82150a150dd9cdc9",
+      "path": "packages/tests/shared-web/ai/webllm-rallar-ai-provider.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "shared-web-webllm-runtime-lifecycle",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Shared Web maintainers",
+      "rationale": "The two-request generation count directly proves that one runtime loads and one generation occurs per request.",
+      "semanticCoverage": "packages/tests/shared-web/ai/webllm-rallar-ai-provider.test.ts#loads one runtime and validates each generated envelope"
+    },
+    {
+      "id": "test-structure-coupling-754469ae55dc224e",
+      "path": "packages/tests/shared-web/auth/websocket-ticket-http-api.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "shared-web-ticket-429-cooldown",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Shared Web maintainers",
+      "rationale": "The one-fetch count during cooldown directly proves that no fetch occurs during cooldown and one occurs after expiry.",
+      "semanticCoverage": "packages/tests/shared-web/auth/websocket-ticket-http-api.test.ts#suppresses repeated ws ticket requests after a 429 response"
+    },
+    {
+      "id": "test-structure-coupling-d594acd0cc318bff",
+      "path": "packages/tests/shared-web/auth/websocket-ticket-http-api.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "shared-web-ticket-429-cooldown",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Shared Web maintainers",
+      "rationale": "The two-fetch count after recovery directly proves that no fetch occurs during cooldown and one occurs after expiry.",
+      "semanticCoverage": "packages/tests/shared-web/auth/websocket-ticket-http-api.test.ts#suppresses repeated ws ticket requests after a 429 response"
+    },
+    {
+      "id": "test-structure-coupling-199b77b998e88fb9",
+      "path": "packages/tests/shared-web/auth/websocket-ticket-http-api.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "shared-web-ticket-request-id-retry",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Shared Web maintainers",
+      "rationale": "The ordered identical request-URL pair directly proves that both ordered attempts use the caller-provided request ID.",
+      "semanticCoverage": "packages/tests/shared-web/auth/websocket-ticket-http-api.test.ts#reuses a caller-owned request ID when a ws ticket response is lost"
+    },
+    {
+      "id": "test-structure-coupling-ca6f4205c8df55db",
+      "path": "packages/tests/shared-web/auth/websocket-ticket-http-api.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "shared-web-ticket-local-rate-limit",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Shared Web maintainers",
+      "rationale": "The single-fetch count directly proves that only one fetch occurs when the local window is exhausted.",
+      "semanticCoverage": "packages/tests/shared-web/auth/websocket-ticket-http-api.test.ts#locally suppresses ticket storms before hitting the API"
+    },
+    {
+      "id": "test-structure-coupling-3983fdfe47629f46",
+      "path": "packages/tests/shared-web/auth/websocket-ticket-http-api.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "shared-web-ticket-circuit-breaker",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Shared Web maintainers",
+      "rationale": "The single-fetch count directly proves that only the first request reaches fetch while the circuit is open.",
+      "semanticCoverage": "packages/tests/shared-web/auth/websocket-ticket-http-api.test.ts#opens a local circuit after server failures and suppresses the next ticket request"
+    },
+    {
+      "id": "test-structure-coupling-dc78d510b5a27800",
+      "path": "packages/tests/shared-web/auth/websocket-ticket-http-api.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "shared-web-ticket-429-circuit-isolation",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Shared Web maintainers",
+      "rationale": "The two-fetch recovery count directly proves that the post-cooldown retry reaches fetch as the second request.",
+      "semanticCoverage": "packages/tests/shared-web/auth/websocket-ticket-http-api.test.ts#does not trip the circuit breaker for server 429 cooldown responses"
+    },
+    {
+      "id": "test-structure-coupling-33d4b8eafdb3cd41",
+      "path": "packages/tests/shared-web/auth/websocket-ticket-http-api.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "shared-web-ticket-circuit-diagnostic-precedence",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Shared Web maintainers",
+      "rationale": "The unchanged one-fetch count directly proves that fetch remains at one across repeated circuit-open requests.",
+      "semanticCoverage": "packages/tests/shared-web/auth/websocket-ticket-http-api.test.ts#keeps circuit-open diagnostics ahead of the local rate limiter while open"
+    },
+    {
+      "id": "test-structure-coupling-a90a04906ba9c761",
+      "path": "packages/tests/shared-web/media/browser-remote-media-stream-runtime.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "shared-web-remote-media-attachment-lifecycle",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Shared Web maintainers",
+      "rationale": "The pre-attach registration absence assertion directly proves that registration remains unused until middleware attachment.",
+      "semanticCoverage": "packages/tests/shared-web/media/browser-remote-media-stream-runtime.test.ts#owns middleware registration from connection attach through final unsubscribe"
+    },
+    {
+      "id": "test-structure-coupling-b501ba3cfcd7af87",
+      "path": "packages/tests/shared-web/rooms/create-and-join-room.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "shared-web-create-room-failure-atomicity",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Shared Web maintainers",
+      "rationale": "The leave-step absence assertion directly proves that leave remains unused after create failure.",
+      "semanticCoverage": "packages/tests/shared-web/rooms/create-and-join-room.test.ts#does not leave when create fails"
+    },
+    {
+      "id": "test-structure-coupling-c61c5f883b0852dc",
+      "path": "packages/tests/shared-web/rooms/join-room.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "shared-web-join-room-failure-atomicity",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Shared Web maintainers",
+      "rationale": "The leave-step absence assertion directly proves that leave remains unused after join failure.",
+      "semanticCoverage": "packages/tests/shared-web/rooms/join-room.test.ts#does not leave when joining the next room fails"
+    },
+    {
+      "id": "test-structure-coupling-6a8b145413d657dc",
+      "path": "packages/tests/shared-web/rooms/join-room.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "shared-web-room-reference-validation",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Shared Web maintainers",
+      "rationale": "The join-step absence assertion directly proves that join remains unused for mismatched identity.",
+      "semanticCoverage": "packages/tests/shared-web/rooms/join-room.test.ts#rejects mismatched roomId and roomRef before the workflow"
+    },
+    {
+      "id": "test-structure-coupling-ba2c2e56b2ad2530",
+      "path": "packages/tests/shared-web/rooms/leave-room.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "shared-web-leave-without-current-room",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Shared Web maintainers",
+      "rationale": "The leave-step absence assertion directly proves that neither leave nor hydration runs without a room.",
+      "semanticCoverage": "packages/tests/shared-web/rooms/leave-room.test.ts#returns undefined without a workflow when no room can be resolved"
+    },
+    {
+      "id": "test-structure-coupling-4e2fd8e52aed7476",
+      "path": "packages/tests/shared-web/rooms/leave-room.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "shared-web-leave-without-current-room",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Shared Web maintainers",
+      "rationale": "The hydration-step absence assertion directly proves that neither leave nor hydration runs without a room.",
+      "semanticCoverage": "packages/tests/shared-web/rooms/leave-room.test.ts#returns undefined without a workflow when no room can be resolved"
+    },
+    {
+      "id": "test-structure-coupling-67f803ee1f1dfc75",
+      "path": "packages/tests/shared-web/state-cache/browser-state-cache-delta-recovery.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "shared-web-delta-causal-gap-recovery",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Shared Web maintainers",
+      "rationale": "The exactly-one recovery fetch assertion directly proves that exactly one floored recovery read occurs.",
+      "semanticCoverage": "packages/tests/shared-web/state-cache/browser-state-cache-delta-recovery.test.ts#pulls the floored group snapshot when a delta envelope arrives over a causal gap"
+    },
+    {
+      "id": "test-structure-coupling-cbe469634a266398",
+      "path": "packages/tests/shared-web/state-cache/browser-state-cache-lifecycle.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "shared-web-incomparable-state-recovery",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Shared Web maintainers",
+      "rationale": "The exactly-one reread assertion directly proves that exactly one durable reread occurs for the incomparable tuple.",
+      "semanticCoverage": "packages/tests/shared-web/state-cache/browser-state-cache-lifecycle.test.ts#recovers incomparable group tuples through a durable reread before RTC recomputation"
+    },
+    {
+      "id": "test-structure-coupling-025be7ee49840bd9",
+      "path": "packages/tests/shared-web/state-cache/browser-state-cache-lifecycle.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "shared-web-left-session-overlay-removal",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Shared Web maintainers",
+      "rationale": "The active-update absence assertion directly proves that active update remains unused for local-session departure.",
+      "semanticCoverage": "packages/tests/shared-web/state-cache/browser-state-cache-lifecycle.test.ts#removes overlays but retains RTC connections when an active snapshot no longer includes the current session"
+    },
+    {
+      "id": "test-structure-coupling-e1765609fc916748",
+      "path": "packages/tests/shared-web/state-cache/browser-state-cache-lifecycle.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "shared-web-directory-only-rtc-reconciliation",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Shared Web maintainers",
+      "rationale": "The active-update absence assertion directly proves that update and delete remain unused while global reconciliation runs once.",
+      "semanticCoverage": "packages/tests/shared-web/state-cache/browser-state-cache-lifecycle.test.ts#reconciles RTC peers when an active directory snapshot excludes the current session"
+    },
+    {
+      "id": "test-structure-coupling-497bb478e2668c0b",
+      "path": "packages/tests/shared-web/state-cache/browser-state-cache-lifecycle.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "shared-web-directory-only-rtc-reconciliation",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Shared Web maintainers",
+      "rationale": "The delete absence assertion directly proves that update and delete remain unused while global reconciliation runs once.",
+      "semanticCoverage": "packages/tests/shared-web/state-cache/browser-state-cache-lifecycle.test.ts#reconciles RTC peers when an active directory snapshot excludes the current session"
+    },
+    {
+      "id": "test-structure-coupling-b916315de75a02bd",
+      "path": "packages/tests/shared-web/state-cache/browser-state-cache-lifecycle.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "shared-web-directory-only-rtc-reconciliation",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Shared Web maintainers",
+      "rationale": "The exactly-one global reconciliation assertion directly proves that update and delete remain unused while global reconciliation runs once.",
+      "semanticCoverage": "packages/tests/shared-web/state-cache/browser-state-cache-lifecycle.test.ts#reconciles RTC peers when an active directory snapshot excludes the current session"
+    },
+    {
+      "id": "test-structure-coupling-a11ab393ae38189f",
+      "path": "packages/tests/shared-web/state-cache/browser-state-cache-lifecycle.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "shared-web-removed-group-cleanup",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Shared Web maintainers",
+      "rationale": "The active-update absence assertion directly proves that active update remains unused during group removal.",
+      "semanticCoverage": "packages/tests/shared-web/state-cache/browser-state-cache-lifecycle.test.ts#cleans up RTC group tracking and notifies listeners when a group snapshot is removed"
+    },
+    {
+      "id": "test-structure-coupling-d5f5da64d4239c75",
+      "path": "packages/tests/shared-web/state-cache/browser-state-cache-lifecycle.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "shared-web-hydration-incomparable-recovery",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Shared Web maintainers",
+      "rationale": "The exactly-one durable reread assertion directly proves that one reread and recomputation occur while divergent input is not applied.",
+      "semanticCoverage": "packages/tests/shared-web/state-cache/browser-state-cache-lifecycle.test.ts#retains durable incomparable recovery across initialise and hydrate"
+    },
+    {
+      "id": "test-structure-coupling-1805f0024d06f752",
+      "path": "packages/tests/shared-web/state-cache/browser-state-cache-lifecycle.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "shared-web-hydration-incomparable-recovery",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Shared Web maintainers",
+      "rationale": "The exactly-one RTC recomputation assertion directly proves that one reread and recomputation occur while divergent input is not applied.",
+      "semanticCoverage": "packages/tests/shared-web/state-cache/browser-state-cache-lifecycle.test.ts#retains durable incomparable recovery across initialise and hydrate"
+    },
+    {
+      "id": "test-structure-coupling-f9d11d5598249f3f",
+      "path": "packages/tests/shared-web/state-cache/browser-state-cache-lifecycle.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "shared-web-hydration-incomparable-recovery",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Shared Web maintainers",
+      "rationale": "The divergent active-update absence assertion directly proves that one reread and recomputation occur while divergent input is not applied.",
+      "semanticCoverage": "packages/tests/shared-web/state-cache/browser-state-cache-lifecycle.test.ts#retains durable incomparable recovery across initialise and hydrate"
+    },
+    {
+      "id": "test-structure-coupling-938ac1b9663ee78e",
+      "path": "packages/tests/shared-web/state-cache/browser-state-cache-lifecycle.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "shared-web-overlay-topology-notification",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Shared Web maintainers",
+      "rationale": "The one-notification count after the first envelope directly proves that notification occurs exactly once per topology envelope.",
+      "semanticCoverage": "packages/tests/shared-web/state-cache/browser-state-cache-lifecycle.test.ts#applies overlay topology websocket snapshots to the local overlay cache"
+    },
+    {
+      "id": "test-structure-coupling-62267828560f3742",
+      "path": "packages/tests/shared-web/state-cache/browser-state-cache-lifecycle.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "shared-web-overlay-topology-notification",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Shared Web maintainers",
+      "rationale": "The three-notification count after all envelopes directly proves that notification occurs exactly once per topology envelope.",
+      "semanticCoverage": "packages/tests/shared-web/state-cache/browser-state-cache-lifecycle.test.ts#applies overlay topology websocket snapshots to the local overlay cache"
+    },
+    {
+      "id": "test-structure-coupling-b2dd16cf6147955c",
+      "path": "packages/tests/shared-web/state-read/group-state-delta-reconciliation.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "shared-web-state-delta-resulting-noop",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Shared Web maintainers",
+      "rationale": "The recovery-fetch absence assertion directly proves that recovery fetch remains unused for typed no-ops.",
+      "semanticCoverage": "packages/tests/shared-web/state-read/group-state-delta-reconciliation.test.ts#resolves equal-resulting and summary no-op envelopes as typed no-ops before the apply rule"
+    },
+    {
+      "id": "test-structure-coupling-ad89c9ae9a021e02",
+      "path": "packages/tests/shared-web/state-read/group-state-delta-reconciliation.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "shared-web-state-delta-resulting-floor",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Shared Web maintainers",
+      "rationale": "The exactly-one recovery fetch assertion directly proves that exactly one resulting-floor fetch occurs.",
+      "semanticCoverage": "packages/tests/shared-web/state-read/group-state-delta-reconciliation.test.ts#pulls at the resulting floor when the cached snapshot is dominated but not the predecessor"
+    },
+    {
+      "id": "test-structure-coupling-e73fb539a6935723",
+      "path": "packages/tests/shared-web/state-read/group-state-delta-reconciliation.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "shared-web-state-delta-out-of-order-noop",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Shared Web maintainers",
+      "rationale": "The recovery-fetch absence assertion directly proves that recovery fetch remains unused for stale input.",
+      "semanticCoverage": "packages/tests/shared-web/state-read/group-state-delta-reconciliation.test.ts#resolves an out-of-order envelope after a newer snapshot as a no-op"
+    },
+    {
+      "id": "test-structure-coupling-505ac7ff6ccdc8a1",
+      "path": "packages/tests/shared-web/state-read/group-state-delta-reconciliation.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "shared-web-state-delta-missing-session-recovery",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Shared Web maintainers",
+      "rationale": "The exactly-one recovery fetch assertion directly proves that exactly one missing-session recovery fetch occurs.",
+      "semanticCoverage": "packages/tests/shared-web/state-read/group-state-delta-reconciliation.test.ts#pulls at the floor when an active session record is missing from the delta and the cache"
+    },
+    {
+      "id": "test-structure-coupling-1b3d4d2848352f1b",
+      "path": "packages/tests/shared-web/state-read/group-state-delta-reconciliation.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "shared-web-state-delta-conflict-recovery",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Shared Web maintainers",
+      "rationale": "The exactly-one recovery fetch assertion directly proves that exactly one conflict recovery fetch occurs.",
+      "semanticCoverage": "packages/tests/shared-web/state-read/group-state-delta-reconciliation.test.ts#counts a revision conflict from the divergence oracle and self-heals with the floored pull"
+    },
+    {
+      "id": "test-structure-coupling-8339924aecbb8ee7",
+      "path": "packages/tests/shared-web/state-read/group-state-delta-reconciliation.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "shared-web-state-delta-predecessor-apply",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Shared Web maintainers",
+      "rationale": "The recovery-fetch absence assertion directly proves that recovery fetch remains unused for predecessor-matched application.",
+      "semanticCoverage": "packages/tests/shared-web/state-read/group-state-delta-reconciliation.test.ts#applies a delta at the cached predecessor and materializes the server-canonical snapshot"
+    },
+    {
       "id": "test-structure-coupling-c5144d99d1ea326b",
       "path": "packages/tests/shared-web/shared-web-app-import-boundaries.test.ts",
       "kind": "symbol-assertion",
@@ -1971,39 +3351,6 @@ moved or changed test.
       "owner": "Shared Web maintainers",
       "rationale": "Reads the shared-web package manifest before bundling and confirms graphology is not declared as a direct browser-package dependency.",
       "semanticCoverage": "packages/tests/shared-web/shared-web-browser-bundle-boundaries.test.ts#keeps shared-web from declaring graphology directly"
-    },
-    {
-      "id": "test-structure-coupling-90681dd61a7ee38b",
-      "path": "packages/tests/shared-web/shared-web-browser-entrypoints.test.ts",
-      "kind": "exact-file-tree",
-      "contract": "shared-web-browser-entrypoints--keeps-mutable-state-cache-access-inside-the-state-store",
-      "disposition": "durable-boundary",
-      "boundary": "public",
-      "owner": "Shared Web maintainers",
-      "rationale": "Walks every runtime module outside the state store and rejects direct mutable cache access, including future files in that directory.",
-      "semanticCoverage": "packages/tests/shared-web/shared-web-browser-entrypoints.test.ts#keeps mutable state-cache access inside the state store"
-    },
-    {
-      "id": "test-structure-coupling-a800c69ed23abd0c",
-      "path": "packages/tests/shared-web/shared-web-browser-entrypoints.test.ts",
-      "kind": "exact-file-tree",
-      "contract": "shared-web-browser-entrypoints--keeps-runtime-controllers-independent-from-the-aggregate-contrac",
-      "disposition": "durable-boundary",
-      "boundary": "public",
-      "owner": "Shared Web maintainers",
-      "rationale": "Enumerates runtime controllers and forbids imports from the aggregate contract, preserving their narrower dependency surfaces.",
-      "semanticCoverage": "packages/tests/shared-web/shared-web-browser-entrypoints.test.ts#keeps runtime controllers independent from the aggregate contract"
-    },
-    {
-      "id": "test-structure-coupling-8734e4d033198b85",
-      "path": "packages/tests/shared-web/shared-web-browser-entrypoints.test.ts",
-      "kind": "exact-file-tree",
-      "contract": "shared-web-browser-entrypoints--keeps-runtime-controllers-independent-from-the-compatibility-ent",
-      "disposition": "durable-boundary",
-      "boundary": "public",
-      "owner": "Shared Web maintainers",
-      "rationale": "Scans the complete runtime-controller inventory for compatibility-entrypoint imports that runtime behavior would not reveal.",
-      "semanticCoverage": "packages/tests/shared-web/shared-web-browser-entrypoints.test.ts#keeps runtime controllers independent from the compatibility entrypoint"
     }
   ]
 }

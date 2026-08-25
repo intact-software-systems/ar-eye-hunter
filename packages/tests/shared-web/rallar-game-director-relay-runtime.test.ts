@@ -1,6 +1,7 @@
 import type { RallarDirectorRelayConfig, RallarDirectorRelayHandle } from '@shared-web/browser/rallar.ts';
-import { RallarGameDirectorRelayRuntime } from '@shared-web/game/rallar-game-director-relay-runtime.ts';
-import type { RallarGameEnvelope, RallarGameMatchConfig, RallarGameRallarFacade } from '@shared-web/game/types.ts';
+import { RallarGameDirectorRelayRuntime } from '@shared-web/game/director/rallar-game-director-relay-runtime.ts';
+import type { RallarGameEnvelope } from '@shared-web/game/envelopes.ts';
+import type { RallarGameMatchConfig, RallarGameRallarFacade } from '@shared-web/game/match/rallar-game-match-contracts.ts';
 import { describe, expect, it, vi } from 'vitest';
 
 interface Payload {

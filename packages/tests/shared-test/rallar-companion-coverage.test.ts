@@ -142,7 +142,7 @@ describe('Rallar companion coverage boundaries', () => {
 
         expect(auth?.testFiles).toEqual(
             expect.arrayContaining([
-                'packages/tests/shared-web/rallar-auth-session-contract.test.ts',
+                'packages/tests/shared-web/session/browser-auth-session-contract.test.ts',
                 'packages/tests/shared-web/rallar-startup-lifecycle.test.ts'
             ])
         );
@@ -156,12 +156,12 @@ describe('Rallar companion coverage boundaries', () => {
         ]);
         expect(realtime?.testFiles).toEqual(
             expect.arrayContaining([
-                'packages/tests/shared-web/rallar-message-send.test.ts',
-                'packages/tests/shared-web/rallar-message-channel.test.ts',
-                'packages/tests/shared-web/rallar-realtime-send-listen.test.ts',
-                'packages/tests/shared-web/rooms/rallar-room-realtime-channel.test.ts',
-                'packages/tests/shared-web/rallar-calls.test.ts',
-                'packages/tests/shared-web/rallar-media-sources.test.ts'
+                'packages/tests/shared-web/messages/browser-rallar-message-sender.test.ts',
+                'packages/tests/shared-web/messages/browser-typed-message-channels.test.ts',
+                'packages/tests/shared-web/realtime/browser-realtime-send-receive.test.ts',
+                'packages/tests/shared-web/realtime/browser-room-realtime-runtime.test.ts',
+                'packages/tests/shared-web/calls/rallar-calls.test.ts',
+                'packages/tests/shared-web/media/browser-media-sources.test.ts'
             ])
         );
 

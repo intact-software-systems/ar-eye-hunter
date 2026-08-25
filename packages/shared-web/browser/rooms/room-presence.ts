@@ -1,5 +1,5 @@
+import { normalizeWaitTimeoutMs } from '@shared-web/browser/connection/normalize-wait-timeout-ms.ts';
 import type { RallarOperationOptions } from '@shared-web/browser/rallar-operation-options.ts';
-import { normalizeWaitTimeoutMs } from '@shared-web/browser/rallar-runtime/wait.ts';
 import type { RallarUnsubscribe } from '@shared-web/browser/rallar-shared-contracts.ts';
 import {
     evaluateRallarReadinessExpectation,

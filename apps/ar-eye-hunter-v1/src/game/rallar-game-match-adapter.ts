@@ -1,4 +1,4 @@
-import { DEFAULT_REALTIME_DATA_CHANNEL_LANE } from '@shared-web/browser/middleware.ts';
+import { DEFAULT_REALTIME_DATA_CHANNEL_LANE } from '@shared-web/browser/rallar-realtime.ts';
 import {
     createRallarGameLanePresets,
     createRallarGameMatch,

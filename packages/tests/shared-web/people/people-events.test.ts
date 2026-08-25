@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { RallarMessage } from '@shared-web/browser/rallar-message-contracts.ts';
+import type { RallarMessage } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import { AppTopics } from '@shared/api/api-config.ts';
 import type { ClientEvent } from '@shared/api/client-types.ts';
 
@@ -122,15 +122,18 @@ describe('people events', () => {
 
         expect(roomEventCount).toBe(0);
         expect(peopleEvents).toEqual([]);
-        expect(mocks.hydrateStateCaches).toHaveBeenCalledWith(
-            mocks.context.middleware.webRtcGroupManager,
-            expect.objectContaining({ clientId: 'principal-1', sessionId: 'session-1' }),
-            [clientSnapshot],
-            [groupSnapshot],
-            {
+        expect(mocks.hydrateStateCache).toHaveBeenCalledWith({
+            webRtcGroupManager: mocks.context.middleware.webRtcGroupManager,
+            clientData: expect.objectContaining({
+                clientId: 'principal-1',
+                sessionId: 'session-1'
+            }),
+            clientSnapshots: [clientSnapshot],
+            groupSnapshots: [groupSnapshot],
+            options: {
                 scope: { applicationId: 'app-1', workspaceId: 'workspace-1' }
             }
-        );
+        });
     });
 
     it('lists people events without connecting or hydrating state caches', async () => {
@@ -145,10 +148,10 @@ describe('people events', () => {
             workspaceId: 'people-workspace'
         });
         mocks.listStateClientEvents.mockResolvedValue([event]);
-        mocks.initMiddleware.mockRejectedValue(
+        mocks.initialiseApiMiddleware.mockRejectedValue(
             new Error('People history reads must not initialize middleware')
         );
-        mocks.hydrateStateCaches.mockRejectedValue(
+        mocks.hydrateStateCache.mockRejectedValue(
             new Error('People history reads must not hydrate state')
         );
 
@@ -193,10 +196,10 @@ describe('people events', () => {
             workspaceId: 'default-workspace'
         });
         mocks.listStateClientEventPage.mockResolvedValue(page);
-        mocks.initMiddleware.mockRejectedValue(
+        mocks.initialiseApiMiddleware.mockRejectedValue(
             new Error('People history reads must not initialize middleware')
         );
-        mocks.hydrateStateCaches.mockRejectedValue(
+        mocks.hydrateStateCache.mockRejectedValue(
             new Error('People history reads must not hydrate state')
         );
 

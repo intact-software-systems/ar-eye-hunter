@@ -5,27 +5,27 @@ import type {
     RallarGameAuthorityClientConfig,
     RallarGameAuthorityClientHandle,
     RallarGameAuthorityCommandOptions
-} from './rallar-game-authority-client-contracts.ts';
-import { RallarGameAuthorityClient } from './rallar-game-authority-client.ts';
+} from './authority/rallar-game-authority-client-contracts.ts';
+import { RallarGameAuthorityClient } from './authority/rallar-game-authority-client.ts';
 
 export interface RallarServerGameAuthorityRef extends RallarGameAuthorityRef {
     readonly kind: 'server';
 }
 
-export interface RallarAuthorityBrowserMatchConfig<TCommand, TSnapshot, TEvent, TPresence = unknown>
+export interface RallarAuthorityBrowserMatchConfig<TCommand, TSnapshot, TEvent, TPresence = never>
     extends Omit<RallarGameAuthorityClientConfig<TCommand, TSnapshot, TEvent, TPresence>, 'authority'> {
     readonly authority: RallarServerGameAuthorityRef;
     readonly readStandingRows?: () => readonly RallarMatchStandingRow[];
     readonly compareStandings?: RallarMatchStandingComparator;
 }
 
-export interface RallarAuthorityBrowserMatchDependencies<TCommand, TSnapshot, TEvent, TPresence = unknown> {
+export interface RallarAuthorityBrowserMatchDependencies<TCommand, TSnapshot, TEvent, TPresence = never> {
     readonly createAuthorityClient?: (
         config: RallarGameAuthorityClientConfig<TCommand, TSnapshot, TEvent, TPresence>
     ) => RallarGameAuthorityClientHandle<TCommand, TSnapshot, TEvent, TPresence>;
 }
 
-export interface RallarAuthorityBrowserMatchHandle<TCommand, TSnapshot, TEvent, TPresence = unknown> {
+export interface RallarAuthorityBrowserMatchHandle<TCommand, TSnapshot, TEvent, TPresence = never> {
     readonly client: RallarGameAuthorityClientHandle<TCommand, TSnapshot, TEvent, TPresence>;
     readonly start: RallarGameAuthorityClientHandle<TCommand, TSnapshot, TEvent, TPresence>['start'];
     readonly stop: RallarGameAuthorityClientHandle<TCommand, TSnapshot, TEvent, TPresence>['stop'];
@@ -38,7 +38,7 @@ export interface RallarAuthorityBrowserMatchHandle<TCommand, TSnapshot, TEvent, 
     standings(): ReturnType<typeof deriveRallarMatchStandings>;
 }
 
-export function createRallarAuthorityBrowserMatch<TCommand, TSnapshot, TEvent, TPresence = unknown>(
+export function createRallarAuthorityBrowserMatch<TCommand, TSnapshot, TEvent, TPresence = never>(
     config: RallarAuthorityBrowserMatchConfig<TCommand, TSnapshot, TEvent, TPresence>,
     dependencies: RallarAuthorityBrowserMatchDependencies<TCommand, TSnapshot, TEvent, TPresence> = {}
 ): RallarAuthorityBrowserMatchHandle<TCommand, TSnapshot, TEvent, TPresence> {

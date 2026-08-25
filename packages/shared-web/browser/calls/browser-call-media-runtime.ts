@@ -1,11 +1,14 @@
-import type { RallarMediaPort } from '@shared-web/browser/media/browser-rallar-media-controller.ts';
 import type { RallarCallMediaInput, RallarCallStatus } from '@shared-web/browser/rallar-calls-facade.ts';
-import type { RallarMediaFacade, RallarMediaSourcesFacade } from '@shared-web/browser/rallar-media-facade.ts';
+import type {
+    RallarMediaFacade,
+    RallarMediaSourcesFacade,
+    RallarMediaSourceStatus
+} from '@shared-web/browser/rallar-media-facade.ts';
 
 export namespace BrowserCallMediaRuntime {
     export interface Input {
         readonly media: RallarMediaFacade;
-        readonly mediaController: RallarMediaPort;
+        readSourceStatuses(): readonly RallarMediaSourceStatus[];
     }
 }
 
@@ -51,7 +54,7 @@ export class BrowserCallMediaRuntime {
             localStreamId: this.localStreamId,
             audioEnabled: this.audioEnabled,
             videoEnabled: this.videoEnabled,
-            sources: this.input.mediaController.readSourceStatuses()
+            sources: this.input.readSourceStatuses()
         };
     }
 

@@ -1,5 +1,5 @@
 import type { RallarBlackBoxTestRuntimeEventInput } from '@shared-test/rallar-bb-test/types.ts';
-import type { RallarMessagePayload } from '@shared-web/browser/rallar-message-contracts.ts';
+import type { RallarMessagePayload } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type {
     RallarFacade,
     RallarMessage,

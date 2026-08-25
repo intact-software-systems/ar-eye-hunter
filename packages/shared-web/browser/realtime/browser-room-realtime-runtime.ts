@@ -1,4 +1,4 @@
-import type { ApiMiddleware } from '@shared-web/browser/app-context.ts';
+import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
 import type {
     RallarRealtimeHandler,
     RallarRealtimeJsonSendInput,

@@ -2,8 +2,8 @@ import type {
     RallarDirectorStatus,
     RallarDirectorStatusListener,
     RallarDirectorStatusOptions
-} from '@shared-web/browser/rallar-director-facade.ts';
-import { notifyListener } from '@shared-web/browser/rallar-runtime/subscriptions.ts';
+} from '@shared-web/browser/director/rallar-director-facade.ts';
+import { notifyListener } from '@shared-web/browser/messages/rallar-listener-delivery.ts';
 import type { RallarUnsubscribe } from '@shared-web/browser/rallar-shared-contracts.ts';
 import type { RallarRoomStateStorePort } from '@shared-web/browser/rooms/room-state-store.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
@@ -16,24 +16,26 @@ import {
 } from '@shared/api/group-director.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 
-export interface BrowserDirectorStatusRuntimeInput {
-    readonly roomStateStore: RallarRoomStateStorePort;
-    readSession(): AuthSession | undefined;
-    resolveDefaultRoom(): string | GroupRef | undefined;
-}
+export namespace BrowserDirectorStatusRuntime {
+    export interface Input {
+        readonly roomStateStore: RallarRoomStateStorePort;
+        readSession(): AuthSession | undefined;
+        resolveDefaultRoom(): string | GroupRef | undefined;
+    }
 
-interface DirectorHeartbeat {
-    readonly sessionId: string;
-    readonly epoch: number;
-    readonly atEpochMs: number;
+    export interface Heartbeat {
+        readonly sessionId: string;
+        readonly epoch: number;
+        readonly atEpochMs: number;
+    }
 }
 
 export class BrowserDirectorStatusRuntime {
-    private readonly input: BrowserDirectorStatusRuntimeInput;
+    private readonly input: BrowserDirectorStatusRuntime.Input;
     private readonly listeners = new Set<RallarDirectorStatusListener>();
-    private readonly heartbeatByRoom = new Map<string, DirectorHeartbeat>();
+    private readonly heartbeatByRoom = new Map<string, BrowserDirectorStatusRuntime.Heartbeat>();
 
-    public constructor(input: BrowserDirectorStatusRuntimeInput) {
+    public constructor(input: BrowserDirectorStatusRuntime.Input) {
         this.input = input;
     }
 
@@ -123,7 +125,7 @@ export class BrowserDirectorStatusRuntime {
     private readMatchingHeartbeat(
         roomRef: GroupRef | undefined,
         appointment: RallarGroupDirectorAppointment | undefined
-    ): DirectorHeartbeat | undefined {
+    ): BrowserDirectorStatusRuntime.Heartbeat | undefined {
         const heartbeat = roomRef
             ? this.heartbeatByRoom.get(toRoomKey(roomRef))
             : undefined;

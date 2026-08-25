@@ -1,7 +1,7 @@
 import { vi } from 'vitest';
 
-import type { ApiMiddleware } from '@shared-web/browser/connection/browser-transport-runtime.ts';
-import type { Middleware } from '@shared-web/browser/middleware.ts';
+import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
+import type { RallarBrowserMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
 import { newALBroadcastMessage, newALEventRoute } from '@shared/al-contracts/al-contract.ts';
 import { AppTopics } from '@shared/api/api-config.ts';
 import type { GroupStateDeltaEnvelope } from '@shared/api/group-state-delta.ts';
@@ -10,7 +10,7 @@ import type { StateEventPage } from '@shared/api/state-event-types.ts';
 
 import { createGroupSnapshotFixture } from '../authoritative-group-fixtures.ts';
 
-type ApiIntegrationModule = typeof import('@shared-web/browser/api-integration.ts');
+type StateEventHttpApiModule = typeof import('@shared-web/browser/state-read/state-event-http-api.ts');
 
 export interface RoomEventFixtureInput {
     readonly groupId: string;
@@ -29,11 +29,10 @@ const roomEventMocks = await vi.hoisted(async () => {
     return {
         session: ctx.session,
         ctx,
-        hydrateStateCaches: vi.fn(async (): Promise<void> => undefined),
-        initMiddleware: vi.fn(async (): Promise<ApiMiddleware> => ctx),
-        isMiddlewareReady: vi.fn(() => false),
+        hydrateStateCache: vi.fn(async (): Promise<void> => undefined),
+        initialiseApiMiddleware: vi.fn(async (): Promise<ApiMiddleware> => ctx),
         listStateGroupEvents: vi.fn(async (_groupId: string): Promise<GroupEvent[]> => []),
-        listStateGroupEventPage: vi.fn<ApiIntegrationModule['listStateGroupEventPage']>(
+        listStateGroupEventPage: vi.fn<StateEventHttpApiModule['listStateGroupEventPage']>(
             async (): Promise<StateEventPage<GroupEvent>> => ({
                 events: [],
                 hasMore: false
@@ -45,24 +44,27 @@ const roomEventMocks = await vi.hoisted(async () => {
     };
 });
 
-vi.mock(import('@shared-web/browser/middleware.ts'), () => ({
-    initialiseMiddleware: async (): Promise<Middleware> => roomEventMocks.ctx.middleware
+vi.mock(import('@shared-web/browser/connection/initialise-browser-middleware.ts'), () => ({
+    initialiseMiddleware: async (): Promise<RallarBrowserMiddleware> => roomEventMocks.ctx.middleware
 }));
 
-vi.mock(import('@shared-web/browser/api-integration.ts'), () => ({
+vi.mock(import('@shared-web/browser/state-read/state-event-http-api.ts'), (): Partial<StateEventHttpApiModule> => ({
     listStateClientEventPage: vi.fn(),
     listStateClientEvents: vi.fn(),
     listStateGroupEventPage: roomEventMocks.listStateGroupEventPage,
     listStateGroupEvents: roomEventMocks.listStateGroupEvents
 }));
 
-vi.mock(import('@shared-web/browser/api-workflows.ts'), () => ({
+vi.mock(import('@shared-web/browser/state-read/refresh-state-snapshots.ts'), () => ({
     refreshStateSnapshots: vi.fn(async () => ({ clients: [], groups: [] }))
 }));
 
-vi.mock(import('@shared-web/browser/data-caches.ts'), () => ({
-    hydrateStateCaches: roomEventMocks.hydrateStateCaches,
-    onStateCacheChange: vi.fn(() => vi.fn())
+vi.mock(import('@shared-web/browser/state-cache/browser-state-cache-lifecycle.ts'), () => ({
+    browserStateCacheLifecycle: {
+        hydrate: roomEventMocks.hydrateStateCache,
+        onChange: vi.fn(() => vi.fn()),
+        initialise: vi.fn()
+    }
 }));
 
 vi.mock(import('@shared/api/auth.ts'), () => ({
@@ -89,9 +91,8 @@ export function readRoomEventMocks(): typeof roomEventMocks {
 
 export function resetRoomEventTestRuntime(): void {
     vi.clearAllMocks();
-    roomEventMocks.hydrateStateCaches.mockResolvedValue(undefined);
-    roomEventMocks.initMiddleware.mockResolvedValue(roomEventMocks.ctx);
-    roomEventMocks.isMiddlewareReady.mockReturnValue(false);
+    roomEventMocks.hydrateStateCache.mockResolvedValue(undefined);
+    roomEventMocks.initialiseApiMiddleware.mockResolvedValue(roomEventMocks.ctx);
     roomEventMocks.listStateGroupEvents.mockRejectedValue(new Error('group events not mocked'));
     roomEventMocks.listStateGroupEventPage.mockRejectedValue(
         new Error('group event page not mocked')

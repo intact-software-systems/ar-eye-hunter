@@ -1,15 +1,15 @@
 import type { RallarScopedOperationOptions } from '@shared-web/browser/rallar-connection-facade.ts';
-import {
-    pushOptionalGroupRefIssue,
-    pushOptionalRouteIdIssue,
-    throwIfRallarValidationIssues,
-    throwRallarValidationIssue
-} from '@shared-web/browser/rallar-runtime/validation.ts';
 import type {
     RallarJoinRoomInput,
     RallarJoinRoomOptions,
     RallarRoomTargetInput
 } from '@shared-web/browser/rooms/rallar-room-contracts.ts';
+import {
+    pushOptionalGroupRefIssue,
+    pushOptionalRouteIdIssue,
+    throwIfRallarValidationIssues,
+    throwRallarValidationIssue
+} from '@shared-web/browser/rooms/rallar-room-validation.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import type { RallarValidationIssue } from '@shared/api/rallar-validation.ts';
 
@@ -74,7 +74,12 @@ export function assertValidRoomTarget(
     input: Readonly<{ roomId?: string; roomRef?: GroupRef; }>
 ): void {
     const issues: RallarValidationIssue[] = [];
-    pushOptionalRouteIdIssue(input.roomId, '$.roomId', 'Room ID', issues);
+    pushOptionalRouteIdIssue({
+        value: input.roomId,
+        path: '$.roomId',
+        label: 'Room ID',
+        issues
+    });
     pushOptionalGroupRefIssue(input.roomRef, '$.roomRef', issues);
     if (!input.roomId && !input.roomRef) {
         issues.push({

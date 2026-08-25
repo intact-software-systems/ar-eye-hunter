@@ -29,8 +29,10 @@ Primary browser files:
 
 - `packages/shared-web/browser/rallar.ts`
 - `packages/shared-web/browser/rooms/browser-rallar-rooms.ts`
-- `packages/shared-web/browser/api-workflows.ts`
-- `packages/shared-web/browser/api-integration.ts`
+- `packages/shared-web/browser/rooms/room-group-state-workflows.ts`
+- `packages/shared-web/browser/rooms/room-group-state-mutation-workflows.ts`
+- `packages/shared-web/browser/rooms/room-membership-group-state-workflows.ts`
+- `packages/shared-web/browser/rooms/room-group-state-http-api.ts`
 - `packages/shared-web/browser/rallar-operation-options.ts`
 
 Primary shared/server files:
@@ -46,8 +48,10 @@ Primary shared/server files:
 
 Relevant tests and docs:
 
-- `packages/tests/shared-web/api-workflows.test.ts`
-- `packages/tests/shared-web/rallar-workflow-options-compat.test.ts`
+- `packages/tests/shared-web/rooms/room-group-state-http-workflows.test.ts`
+- `packages/tests/shared-web/rooms/room-membership-group-state-http.test.ts`
+- `packages/tests/shared-web/rallar-operation-options.test.ts`
+- `packages/tests/shared-web/rooms/room-group-state-workflows.test.ts`
 - `packages/tests/shared-server/group-state-service-idempotency.test.ts`
 - `apps/api-v1/test/services/group-state-service.test.ts`
 - `apps/api-v1/test/routes/state-api-routes-hardening.test.ts`

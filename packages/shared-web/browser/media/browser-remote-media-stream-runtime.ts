@@ -1,11 +1,13 @@
-import type { ApiMiddleware } from '@shared-web/browser/app-context.ts';
+import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
 import type { RallarRemoteStream } from '@shared-web/browser/rallar-media-facade.ts';
 import type { RallarUnsubscribe } from '@shared-web/browser/rallar-shared-contracts.ts';
 
 const RALLAR_REMOTE_STREAM_CALLBACK_ID = 'rallar:remote-stream';
 
-export interface BrowserRemoteMediaStreamRuntimeInput {
-    readonly readMiddleware: () => ApiMiddleware | undefined;
+export namespace BrowserRemoteMediaStreamRuntime {
+    export interface Input {
+        readMiddleware(): ApiMiddleware | undefined;
+    }
 }
 
 export class BrowserRemoteMediaStreamRuntime {
@@ -15,9 +17,9 @@ export class BrowserRemoteMediaStreamRuntime {
         ) => void | Promise<void>
     >();
     private callbackRegistered = false;
-    private readonly input: BrowserRemoteMediaStreamRuntimeInput;
+    private readonly input: BrowserRemoteMediaStreamRuntime.Input;
 
-    public constructor(input: BrowserRemoteMediaStreamRuntimeInput) {
+    public constructor(input: BrowserRemoteMediaStreamRuntime.Input) {
         this.input = input;
     }
 

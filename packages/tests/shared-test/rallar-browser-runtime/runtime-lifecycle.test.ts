@@ -156,6 +156,9 @@ it('serializes fresh authentication behind an in-flight connection', async () =>
         expect(facade.records.connectionAttempts).toHaveLength(1);
     });
 
+    if (runtime.authenticate === undefined) {
+        throw new Error('The browser runtime under test does not expose authentication.');
+    }
     const authenticating = runtime.authenticate({
         connection: 'bobHttp',
         actor: 'bob',

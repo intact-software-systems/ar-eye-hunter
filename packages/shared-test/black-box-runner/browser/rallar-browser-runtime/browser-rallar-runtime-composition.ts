@@ -1,35 +1,35 @@
-import type { RallarMessagesOperations } from '@shared-web/browser/messages/browser-rallar-messages-controller.ts';
-import type { RallarAuthFacade } from '@shared-web/browser/rallar-auth-facade.ts';
-import type { RallarConnectionOperations } from '@shared-web/browser/rallar-connection-facade.ts';
-import type { RallarCrdtFacade } from '@shared-web/browser/rallar-crdt.ts';
-import type {
-    RallarDirectorFacade,
-    RallarDirectorRelayConfig,
-    RallarDirectorRelayHandle
-} from '@shared-web/browser/rallar-director-facade.ts';
-import type { RallarRealtimeFacade, RallarWsFacade } from '@shared-web/browser/rallar-realtime-facade.ts';
-import type { RallarRtcFacade } from '@shared-web/browser/rallar-rtc-facade.ts';
 import {
     createBrowserMessagingComposition,
     createBrowserRealtimeCoreComposition
-} from '@shared-web/browser/rallar-runtime/composition/browser-communication-composition.ts';
+} from '@shared-web/browser/composition/browser-communication-composition.ts';
 import {
     registerBrowserStateLifecycle,
     registerBrowserTransportLifecycle
-} from '@shared-web/browser/rallar-runtime/composition/browser-lifecycle-composition.ts';
+} from '@shared-web/browser/composition/browser-lifecycle-composition.ts';
 import {
     createBrowserDirectorComposition,
     createBrowserRoomsComposition
-} from '@shared-web/browser/rallar-runtime/composition/browser-product-composition.ts';
+} from '@shared-web/browser/composition/browser-product-composition.ts';
 import {
     createBrowserRuntimeFoundation,
     createBrowserStateComposition,
     createBrowserStateEventComposition
-} from '@shared-web/browser/rallar-runtime/composition/browser-runtime-composition.ts';
+} from '@shared-web/browser/composition/browser-runtime-composition.ts';
 import {
     createBrowserCrdtComposition,
     createBrowserSessionCoreComposition
-} from '@shared-web/browser/rallar-runtime/composition/browser-session-composition.ts';
+} from '@shared-web/browser/composition/browser-session-composition.ts';
+import type {
+    RallarDirectorFacade,
+    RallarDirectorRelayConfig,
+    RallarDirectorRelayHandle
+} from '@shared-web/browser/director/rallar-director-facade.ts';
+import type { RallarMessagesOperations } from '@shared-web/browser/messages/rallar-message-operations.ts';
+import type { RallarConnectionOperations } from '@shared-web/browser/rallar-connection-facade.ts';
+import type { RallarAuthFacade } from '@shared-web/browser/rallar-core.ts';
+import type { RallarCrdtFacade } from '@shared-web/browser/rallar-crdt.ts';
+import type { RallarRealtimeFacade, RallarWsFacade } from '@shared-web/browser/rallar-realtime-facade.ts';
+import type { RallarRtcFacade } from '@shared-web/browser/rallar-rtc-facade.ts';
 import type { BrowserRallarRooms } from '@shared-web/browser/rooms/browser-rallar-rooms.ts';
 import type { RallarRoomSession } from '@shared-web/browser/rooms/rallar-room-contracts.ts';
 import type { BlackBoxRallarDirectorOutputRecord, BlackBoxRallarEvent } from './contracts.ts';
@@ -129,7 +129,7 @@ export function createBlackBoxBrowserRallarRuntimeDependency(): BlackBoxBrowserR
         state,
         messaging,
         realtime,
-        products: rooms,
+        rooms,
         session: session.session
     });
     registerBlackBoxBrowserRallarLifecycle({
@@ -172,15 +172,15 @@ function registerBlackBoxBrowserRallarLifecycle(
 ): void {
     registerBrowserStateLifecycle({
         lifecycle: input.foundation.lifecycle,
-        directorController: input.director.directorController,
+        directorRelays: input.director.directorRelays,
         stateStore: input.state.stateStore
     });
     registerBrowserTransportLifecycle({
         lifecycle: input.foundation.lifecycle,
-        messagesController: input.messaging.messagesController,
+        messageSubscriptions: input.messaging.messagesController.subscriptions,
         wsInbox: input.stateEvents.wsInbox,
         wsController: input.realtime.wsController,
         realtimeReceive: input.realtime.realtimeReceive,
-        rtcController: input.realtime.rtcController
+        rtcLifecycle: input.realtime.rtcController.lifecycle
     });
 }

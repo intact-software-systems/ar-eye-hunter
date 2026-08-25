@@ -36,15 +36,15 @@ export async function createRoomInvite(
         ...input,
         options,
         execute: async ({ roomId, session, scope, policies }) =>
-            await createStateGroupInvite(
-                roomId,
-                input.principalId,
+            await createStateGroupInvite({
+                groupId: roomId,
+                targetPrincipalId: input.principalId,
                 request,
-                session.clientId,
-                session.sessionId,
+                actorPrincipalId: session.clientId,
+                sessionId: session.sessionId,
                 scope,
                 policies
-            )
+            })
     });
 }
 
@@ -57,14 +57,14 @@ export async function acceptRoomInvite(
         ...input,
         options: input.options ?? {},
         execute: async ({ roomId, session, scope, policies, generationId }) =>
-            await acceptStateGroupInvite(
-                roomId,
-                session.clientId,
-                session.sessionId,
+            await acceptStateGroupInvite({
+                groupId: roomId,
+                actorPrincipalId: session.clientId,
+                sessionId: session.sessionId,
                 generationId,
                 scope,
                 policies
-            )
+            })
     });
 }
 
@@ -107,18 +107,18 @@ export async function setRoomMemberRole(
         ...input,
         options,
         execute: async ({ roomId, session, scope, policies }) =>
-            await setStateGroupMemberRole(
-                roomId,
-                input.principalId,
-                {
+            await setStateGroupMemberRole({
+                groupId: roomId,
+                targetPrincipalId: input.principalId,
+                request: {
                     role: input.role,
                     ...(options.reason === undefined ? {} : { reason: options.reason })
                 },
-                session.clientId,
-                session.sessionId,
+                actorPrincipalId: session.clientId,
+                sessionId: session.sessionId,
                 scope,
                 policies
-            )
+            })
     });
 }
 
@@ -133,17 +133,17 @@ export async function transferRoomOwnership(
         ...input,
         options,
         execute: async ({ roomId, session, scope, policies }) =>
-            await transferStateGroupOwnership(
-                roomId,
-                {
+            await transferStateGroupOwnership({
+                groupId: roomId,
+                request: {
                     newOwnerPrincipalId: input.principalId,
                     ...(options.reason === undefined ? {} : { reason: options.reason })
                 },
-                session.clientId,
-                session.sessionId,
+                actorPrincipalId: session.clientId,
+                sessionId: session.sessionId,
                 scope,
                 policies
-            )
+            })
     });
 }
 
@@ -162,35 +162,35 @@ async function governRoomMember(
         execute: async ({ roomId, session, scope, policies }) => {
             switch (input.action) {
                 case 'remove':
-                    return await removeStateGroupMember(
-                        roomId,
-                        input.principalId,
+                    return await removeStateGroupMember({
+                        groupId: roomId,
+                        targetPrincipalId: input.principalId,
                         request,
-                        session.clientId,
-                        session.sessionId,
+                        actorPrincipalId: session.clientId,
+                        sessionId: session.sessionId,
                         scope,
                         policies
-                    );
+                    });
                 case 'ban':
-                    return await banStateGroupMember(
-                        roomId,
-                        input.principalId,
+                    return await banStateGroupMember({
+                        groupId: roomId,
+                        targetPrincipalId: input.principalId,
                         request,
-                        session.clientId,
-                        session.sessionId,
+                        actorPrincipalId: session.clientId,
+                        sessionId: session.sessionId,
                         scope,
                         policies
-                    );
+                    });
                 case 'unban':
-                    return await unbanStateGroupMember(
-                        roomId,
-                        input.principalId,
+                    return await unbanStateGroupMember({
+                        groupId: roomId,
+                        targetPrincipalId: input.principalId,
                         request,
-                        session.clientId,
-                        session.sessionId,
+                        actorPrincipalId: session.clientId,
+                        sessionId: session.sessionId,
                         scope,
                         policies
-                    );
+                    });
             }
         }
     });

@@ -86,6 +86,9 @@ it('rejects a connected identity change before mutating facade configuration', a
         }
     });
 
+    if (runtime.authenticate === undefined) {
+        throw new Error('The browser runtime under test does not expose authentication.');
+    }
     await expect(runtime.authenticate({
         connection: 'bobHttp',
         actor: 'bob',

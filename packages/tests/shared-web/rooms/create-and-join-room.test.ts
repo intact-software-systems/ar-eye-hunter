@@ -53,19 +53,21 @@ describe('room create operations', () => {
         });
 
         expect(roomWorkflowMocks.createAndJoinStateGroup).toHaveBeenCalledWith(
-            'Custom Room',
-            'principal-1',
-            'session-1',
-            undefined,
-            scope,
-            { command: { timeoutMs: 55 } },
-            'custom-room',
             {
-                description: 'Mission lobby',
-                joinMode: 'open',
-                maxMembers: 8,
-                maxSessionsPerMember: 2,
-                metadata: { map: 'fjord' }
+                displayName: 'Custom Room',
+                principalId: 'principal-1',
+                sessionId: 'session-1',
+                generationId: 'generation-session-1',
+                scope,
+                policies: { command: { timeoutMs: 55 } },
+                requestedGroupId: 'custom-room',
+                options: {
+                    description: 'Mission lobby',
+                    joinMode: 'open',
+                    maxMembers: 8,
+                    maxSessionsPerMember: 2,
+                    metadata: { map: 'fjord' }
+                }
             }
         );
     });

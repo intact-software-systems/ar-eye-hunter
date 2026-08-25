@@ -37,12 +37,14 @@ describe('room leave operations', () => {
         ).resolves.toBe(leftRoom);
 
         expect(roomWorkflowMocks.leaveStateGroup).toHaveBeenCalledWith(
-            'room-1',
-            'principal-1',
-            'session-1',
-            undefined,
-            { applicationId: 'app-1', workspaceId: 'workspace-1' },
-            { command: { signal, timeoutMs: 33 } }
+            {
+                groupId: 'room-1',
+                principalId: 'principal-1',
+                sessionId: 'session-1',
+                generationId: 'generation-session-1',
+                scope: { applicationId: 'app-1', workspaceId: 'workspace-1' },
+                policies: { command: { signal, timeoutMs: 33 } }
+            }
         );
         expect(roomWorkflowMocks.operationLog).toEqual(['leave:room-1', 'hydrate:room-1']);
         expect(facade.rooms.current()).toBeUndefined();
@@ -76,7 +78,7 @@ describe('room leave operations', () => {
         await expect(createRallarFacade().rooms.leave()).resolves.toBeUndefined();
 
         expect(roomWorkflowMocks.leaveStateGroup).not.toHaveBeenCalled();
-        expect(roomWorkflowMocks.hydrateStateCaches).not.toHaveBeenCalled();
+        expect(roomWorkflowMocks.hydrateStateCache).not.toHaveBeenCalled();
         expect(roomWorkflowMocks.operationLog).toEqual([]);
     });
 });
