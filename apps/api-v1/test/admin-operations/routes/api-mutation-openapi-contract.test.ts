@@ -2,7 +2,7 @@ import { decodeJsonWireValue, type JsonWireObject, type JsonWireValue } from '@s
 import { Hono } from 'jsr:@hono/hono@4.11.9';
 import assert from 'node:assert/strict';
 
-import { init } from '../../../src/routes/swagger-routes.ts';
+import { installApiDocumentationRoutes } from '../../../src/routes/swagger-routes.ts';
 
 interface CoveredApiMutation {
     readonly method: 'delete' | 'post' | 'put';
@@ -26,7 +26,10 @@ const COVERED_API_MUTATIONS: readonly CoveredApiMutation[] = [
     { method: 'post', path: `${AUTH_PATH}/logout${REQUEST_PATH}` },
     { method: 'post', path: `${AUTH_PATH}/ws-ticket${REQUEST_PATH}` },
     { method: 'post', path: `${AUTH_PATH}/agent-session-tickets${REQUEST_PATH}` },
-    { method: 'post', path: `${AUTH_PATH}/agent-session-tickets/consume${REQUEST_PATH}` },
+    {
+        method: 'post',
+        path: `${AUTH_PATH}/agent-session-tickets/consume${REQUEST_PATH}`
+    },
     {
         method: 'put',
         path: `${CLIENT_PATH}/{principalId}/principal${REQUEST_PATH}`
@@ -37,10 +40,22 @@ const COVERED_API_MUTATIONS: readonly CoveredApiMutation[] = [
     { method: 'post', path: `${CLIENT_SESSION_PATH}/disconnect${REQUEST_PATH}` },
     { method: 'post', path: `${GROUP_PATH}${REQUEST_PATH}` },
     { method: 'put', path: `${GROUP_ITEM_PATH}${REQUEST_PATH}` },
-    { method: 'post', path: `${GROUP_ITEM_PATH}/director/appoint${REQUEST_PATH}` },
-    { method: 'post', path: `${GROUP_ITEM_PATH}/lifecycle/establish${REQUEST_PATH}` },
-    { method: 'post', path: `${GROUP_ITEM_PATH}/lifecycle/activate${REQUEST_PATH}` },
-    { method: 'post', path: `${GROUP_ITEM_PATH}/lifecycle/reopen${REQUEST_PATH}` },
+    {
+        method: 'post',
+        path: `${GROUP_ITEM_PATH}/director/appoint${REQUEST_PATH}`
+    },
+    {
+        method: 'post',
+        path: `${GROUP_ITEM_PATH}/lifecycle/establish${REQUEST_PATH}`
+    },
+    {
+        method: 'post',
+        path: `${GROUP_ITEM_PATH}/lifecycle/activate${REQUEST_PATH}`
+    },
+    {
+        method: 'post',
+        path: `${GROUP_ITEM_PATH}/lifecycle/reopen${REQUEST_PATH}`
+    },
     { method: 'post', path: `${GROUP_ITEM_PATH}/join${REQUEST_PATH}` },
     {
         method: 'post',
@@ -59,7 +74,10 @@ const COVERED_API_MUTATIONS: readonly CoveredApiMutation[] = [
         path: `${GROUP_ITEM_PATH}/admissions/{principalId}/decline${REQUEST_PATH}`
     },
     { method: 'post', path: `${GROUP_ITEM_PATH}/invites/accept${REQUEST_PATH}` },
-    { method: 'post', path: `${GROUP_ITEM_PATH}/join-code/rotate${REQUEST_PATH}` },
+    {
+        method: 'post',
+        path: `${GROUP_ITEM_PATH}/join-code/rotate${REQUEST_PATH}`
+    },
     {
         method: 'post',
         path: `${GROUP_ITEM_PATH}/members/{principalId}/remove${REQUEST_PATH}`
@@ -77,8 +95,14 @@ const COVERED_API_MUTATIONS: readonly CoveredApiMutation[] = [
         path: `${GROUP_ITEM_PATH}/members/{principalId}/role${REQUEST_PATH}`
     },
     { method: 'post', path: `${GROUP_ITEM_PATH}/owner/transfer${REQUEST_PATH}` },
-    { method: 'put', path: `${GROUP_ITEM_PATH}/members/{principalId}${REQUEST_PATH}` },
-    { method: 'put', path: `${GROUP_ITEM_PATH}/sessions/{sessionId}${REQUEST_PATH}` },
+    {
+        method: 'put',
+        path: `${GROUP_ITEM_PATH}/members/{principalId}${REQUEST_PATH}`
+    },
+    {
+        method: 'put',
+        path: `${GROUP_ITEM_PATH}/sessions/{sessionId}${REQUEST_PATH}`
+    },
     {
         method: 'post',
         path: `${GROUP_ITEM_PATH}/sessions/{sessionId}/heartbeat${REQUEST_PATH}`
@@ -101,20 +125,28 @@ const COVERED_API_MUTATIONS: readonly CoveredApiMutation[] = [
         path: `/api/admin/operations/maintenance/prune-expired${REQUEST_PATH}`
     },
     { method: 'post', path: `/api/admin/operations/crdt/compact${REQUEST_PATH}` },
-    { method: 'post', path: `/api/admin/operations/crdt/lifecycle${REQUEST_PATH}` },
+    {
+        method: 'post',
+        path: `/api/admin/operations/crdt/lifecycle${REQUEST_PATH}`
+    },
     { method: 'post', path: `/api/admin/operations/crdt/erase${REQUEST_PATH}` },
     {
         method: 'post',
         path: `/api/crdt/admin/documents/rebuild-projection${REQUEST_PATH}`
     },
     { method: 'post', path: `/api/crdt/admin/documents/compact${REQUEST_PATH}` },
-    { method: 'post', path: `/api/crdt/admin/documents/lifecycle${REQUEST_PATH}` },
+    {
+        method: 'post',
+        path: `/api/crdt/admin/documents/lifecycle${REQUEST_PATH}`
+    },
     { method: 'post', path: `/api/crdt/admin/documents/erase${REQUEST_PATH}` }
 ];
 
 Deno.test('OpenAPI publishes the reusable strict API mutation request path parameter', async () => {
     const document = await readOpenApiDocument();
-    const parameters = requireObject(requireObject(document.components).parameters);
+    const parameters = requireObject(
+        requireObject(document.components).parameters
+    );
 
     assert.deepEqual(parameters.ApiMutationRequestId, {
         name: 'requestId',
@@ -138,11 +170,17 @@ Deno.test('OpenAPI gives all 47 AppInbox REST mutations path-only request identi
 
     assert.equal(COVERED_API_MUTATIONS.length, 47);
     for (const mutation of COVERED_API_MUTATIONS) {
-        const operation = requireObject(requireObject(paths[mutation.path])[mutation.method]);
+        const operation = requireObject(
+            requireObject(paths[mutation.path])[mutation.method]
+        );
         const parameters = requireArray(operation.parameters);
         const requestIdentityParameters = parameters.filter((parameter) => isReference(parameter, '#/components/parameters/ApiMutationRequestId'));
 
-        assert.equal(requestIdentityParameters.length, 1, `${mutation.method} ${mutation.path}`);
+        assert.equal(
+            requestIdentityParameters.length,
+            1,
+            `${mutation.method} ${mutation.path}`
+        );
         assert.equal(
             parameters.some((parameter) =>
                 isReference(parameter, '#/components/parameters/IdempotencyKey') ||
@@ -181,7 +219,9 @@ Deno.test('OpenAPI gives every covered mutation the canonical failure envelope',
         'retry'
     ]);
     for (const mutation of COVERED_API_MUTATIONS) {
-        const operation = requireObject(requireObject(paths[mutation.path])[mutation.method]);
+        const operation = requireObject(
+            requireObject(paths[mutation.path])[mutation.method]
+        );
         const operationResponses = requireObject(operation.responses);
         for (const [status, responseValue] of Object.entries(operationResponses)) {
             if (!/^[45]\d\d$/.test(status)) {
@@ -191,7 +231,10 @@ Deno.test('OpenAPI gives every covered mutation the canonical failure envelope',
                 requireObject(responseValue).$ref,
                 `${mutation.method} ${mutation.path} ${status}`
             );
-            const responseName = responseReference.replace('#/components/responses/', '');
+            const responseName = responseReference.replace(
+                '#/components/responses/',
+                ''
+            );
             const response = requireObject(responses[responseName]);
             const content = requireObject(response.content);
             const mediaType = requireObject(content['application/json']);
@@ -202,7 +245,8 @@ Deno.test('OpenAPI gives every covered mutation the canonical failure envelope',
             );
             if (status === '429') {
                 assert.equal(
-                    requireObject(requireObject(response.headers)['Retry-After']).description,
+                    requireObject(requireObject(response.headers)['Retry-After'])
+                        .description,
                     'Seconds to wait before retrying the rate-limited request.',
                     `${mutation.method} ${mutation.path} ${status}`
                 );
@@ -212,8 +256,12 @@ Deno.test('OpenAPI gives every covered mutation the canonical failure envelope',
 });
 
 async function readOpenApiDocument(): Promise<JsonWireObject> {
-    const response = await init(new Hono()).request('/api/openapi.json');
-    return requireObject(decodeJsonWireValue(await response.json(), 'OpenAPI response'));
+    const response = await installApiDocumentationRoutes(new Hono()).request(
+        '/api/openapi.json'
+    );
+    return requireObject(
+        decodeJsonWireValue(await response.json(), 'OpenAPI response')
+    );
 }
 
 function assertSemanticBodyOmitsRequestId(
@@ -236,8 +284,16 @@ function assertSemanticBodyOmitsRequestId(
         ? []
         : requireArray(semanticSchema.required);
 
-    assert.equal(properties?.requestId, undefined, `${mutation.method} ${mutation.path}`);
-    assert.equal(required.includes('requestId'), false, `${mutation.method} ${mutation.path}`);
+    assert.equal(
+        properties?.requestId,
+        undefined,
+        `${mutation.method} ${mutation.path}`
+    );
+    assert.equal(
+        required.includes('requestId'),
+        false,
+        `${mutation.method} ${mutation.path}`
+    );
 }
 
 function isReference(value: JsonWireValue, reference: string): boolean {
@@ -257,7 +313,9 @@ function requireObject(value: JsonWireValue | undefined): JsonWireObject {
     return object;
 }
 
-function optionalObject(value: JsonWireValue | undefined): JsonWireObject | undefined {
+function optionalObject(
+    value: JsonWireValue | undefined
+): JsonWireObject | undefined {
     return value !== undefined && isJsonWireObject(value) ? value : undefined;
 }
 
@@ -265,14 +323,19 @@ function isJsonWireObject(value: JsonWireValue): value is JsonWireObject {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function requireArray(value: JsonWireValue | undefined): readonly JsonWireValue[] {
+function requireArray(
+    value: JsonWireValue | undefined
+): readonly JsonWireValue[] {
     if (!Array.isArray(value)) {
         throw new TypeError('Expected an OpenAPI array');
     }
     return value;
 }
 
-function requireString(value: JsonWireValue | undefined, context = 'OpenAPI value'): string {
+function requireString(
+    value: JsonWireValue | undefined,
+    context = 'OpenAPI value'
+): string {
     if (typeof value !== 'string') {
         throw new TypeError(`Expected an OpenAPI string for ${context}`);
     }

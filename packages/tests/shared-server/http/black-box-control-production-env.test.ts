@@ -1,8 +1,9 @@
+import { describe, expect, it } from 'vitest';
+
 import {
     collectBlackBoxControlProductionEnvErrors,
     isBlackBoxControlProductionHardeningEnabled
 } from '@shared-server/http/black-box-control-production-env.ts';
-import { describe, expect, it } from 'vitest';
 
 describe('black-box control production environment validation', () => {
     it('enables hardening only from the explicit black-box process flag', () => {

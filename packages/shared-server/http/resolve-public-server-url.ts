@@ -16,26 +16,6 @@ export function resolvePublicServerUrl(request: Request): string {
     return `${protocol}://${host}`;
 }
 
-export function withPublicOpenApiServer(
-    spec: unknown,
-    request: Request,
-    description: string
-): unknown {
-    if (!spec || typeof spec !== 'object' || Array.isArray(spec)) {
-        return spec;
-    }
-
-    return {
-        ...spec,
-        servers: [
-            {
-                url: resolvePublicServerUrl(request),
-                description
-            }
-        ]
-    };
-}
-
 function firstHeaderValue(value: string | null): string | undefined {
     const first = value?.split(',')[0]?.trim();
     return first ? stripQuotes(first) : undefined;

@@ -1,7 +1,7 @@
 import { Hono } from 'jsr:@hono/hono@4.11.9';
 import assert from 'node:assert/strict';
 
-import { init as installSwaggerRoutes } from '../../src/routes/swagger-routes.ts';
+import { installApiDocumentationRoutes } from '../../src/routes/swagger-routes.ts';
 
 interface OpenApiSchema {
     readonly $ref?: string;
@@ -193,7 +193,9 @@ const GROUP_OPERATION_CONTRACTS: readonly GroupOperationContract[] = [
 Deno.test(
     'group OpenAPI retains every route method, request, and success response contract',
     async () => {
-        const response = await installSwaggerRoutes(new Hono()).request('/api/openapi.json');
+        const response = await installApiDocumentationRoutes(new Hono()).request(
+            '/api/openapi.json'
+        );
         const document = await response.json() as OpenApiDocument;
 
         for (const expected of GROUP_OPERATION_CONTRACTS) {
@@ -202,7 +204,10 @@ Deno.test(
                 : `${expected.path}/requests/{requestId}`;
             const operation = document.paths[routePath]?.[expected.method];
             assert.ok(operation, `${expected.method.toUpperCase()} ${routePath}`);
-            assert.deepEqual(operation.security, [{ bearerAuth: [], clientIdHeader: [] }]);
+            assert.deepEqual(operation.security, [{
+                bearerAuth: [],
+                clientIdHeader: []
+            }]);
             assertOpenApiRequestSchema(operation, expected);
             assertOpenApiResponseSchema(operation, expected);
         }
@@ -233,7 +238,10 @@ function assertOpenApiResponseSchema(
     const expectedReference = expected.responseSchema.reference;
 
     if (expectedReference) {
-        assert.equal(responseSchema?.$ref, `#/components/schemas/${expectedReference}`);
+        assert.equal(
+            responseSchema?.$ref,
+            `#/components/schemas/${expectedReference}`
+        );
     }
     else {
         assert.equal(responseSchema?.type, 'array');

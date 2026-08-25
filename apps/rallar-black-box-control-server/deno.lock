@@ -1,0 +1,68 @@
+{
+  "version": "5",
+  "specifiers": {
+    "jsr:@std/assert@^1.0.18": "1.0.19",
+    "jsr:@std/internal@^1.0.12": "1.0.14"
+  },
+  "jsr": {
+    "@std/assert@1.0.19": {
+      "integrity": "eaada96ee120cb980bc47e040f82814d786fe8162ecc53c91d8df60b8755991e",
+      "dependencies": [
+        "jsr:@std/internal"
+      ]
+    },
+    "@std/internal@1.0.14": {
+      "integrity": "291516b3d4c35024d6ffbc0a9df5bf4c64116e05b50012cf846710152d2ffdf7"
+    }
+  },
+  "workspace": {
+    "links": {
+      "npm:@ar-eye-hunter/relic-hunters@0.1.0": {},
+      "npm:@ar-eye-hunter/shared-graph@0.1.0": {
+        "dependencies": [
+          "npm:@js-temporal/polyfill@~0.5.1",
+          "npm:graphology@0.26.0"
+        ]
+      },
+      "npm:@ar-eye-hunter/shared-rtc-bench@0.1.0": {},
+      "npm:@ar-eye-hunter/shared-server@0.1.0": {},
+      "npm:@ar-eye-hunter/shared-test@0.1.0": {},
+      "npm:@ar-eye-hunter/shared-web@0.1.0": {
+        "dependencies": [
+          "npm:@js-temporal/polyfill@~0.5.1"
+        ]
+      },
+      "npm:ar-eye-hunter-v1@0.1.0": {
+        "dependencies": [
+          "npm:@babylonjs/core@9.17.0",
+          "npm:@js-temporal/polyfill@~0.5.1",
+          "npm:@mlc-ai/web-llm@~0.2.84",
+          "npm:graphology@0.26",
+          "npm:react-dom@^19.2.7",
+          "npm:react@^19.2.7"
+        ]
+      },
+      "npm:ar-platform-monorepo@0.1.0": {},
+      "npm:rallar-black-box-headless@0.1.0": {},
+      "npm:rallar-black-box@0.1.0": {
+        "dependencies": [
+          "npm:@js-temporal/polyfill@~0.5.1",
+          "npm:graphology@0.26",
+          "npm:react-dom@^19.2.7",
+          "npm:react@^19.2.7",
+          "npm:sigma@^3.0.3"
+        ]
+      },
+      "npm:relic-hunters-v1@0.1.0": {
+        "dependencies": [
+          "npm:@babylonjs/core@9.17.0",
+          "npm:@babylonjs/loaders@9.17.0",
+          "npm:@js-temporal/polyfill@~0.5.1",
+          "npm:graphology@0.26",
+          "npm:react-dom@^19.2.7",
+          "npm:react@^19.2.7"
+        ]
+      }
+    }
+  }
+}

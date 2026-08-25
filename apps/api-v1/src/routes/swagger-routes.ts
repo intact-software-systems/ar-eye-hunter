@@ -1,23 +1,23 @@
-import { resolvePublicServerUrl, withPublicOpenApiServer } from '@shared-server/http/public-server-url.ts';
-import { Context, Hono } from 'jsr:@hono/hono@4.11.9';
+import { decodeOpenApiDocument, withPublicOpenApiServer } from '@shared-server/http/public-open-api-server.ts';
+import { decodeJsonWireValue, type JsonWireObject } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
+import { Hono } from 'jsr:@hono/hono@4.11.9';
 import { parse } from 'jsr:@std/yaml@1.0.12';
 
-export { resolvePublicServerUrl };
-
-async function loadOpenApiYaml(): Promise<object> {
-    const document = parse(
-        await Deno.readTextFile(
-            new URL('../../resources/api-v1-openapi.yaml', import.meta.url)
-        )
+async function loadOpenApiYaml(): Promise<JsonWireObject> {
+    return decodeOpenApiDocument(
+        decodeJsonWireValue(
+            parse(
+                await Deno.readTextFile(
+                    new URL('../../resources/api-v1-openapi.yaml', import.meta.url)
+                )
+            ),
+            'API-v1 OpenAPI resource'
+        ),
+        'API-v1 OpenAPI resource'
     );
-    if (!document || typeof document !== 'object' || Array.isArray(document)) {
-        throw new TypeError('API-v1 OpenAPI resource must decode to an object.');
-    }
-    return document;
 }
 
-function swaggerHtml(c: Context): string {
-    const serverUrl = resolvePublicServerUrl(c.req.raw);
+function swaggerHtml(): string {
     const openApiUrl = '/api/openapi.json';
 
     return `
@@ -37,26 +37,7 @@ function swaggerHtml(c: Context): string {
                   window.ui = SwaggerUIBundle({
                         url: '${openApiUrl}',
                         dom_id: '#swagger-ui',
-                        persistAuthorization: true,
-                        requestInterceptor: (req) => {
-                          // Vi sjekker om forespørselen er for selve OpenAPI-filen
-                          if (req.url.endsWith(${JSON.stringify(openApiUrl)})) {
-                            req.userFetch = async (url, options) => {
-                              const res = await fetch(url, options);
-                              const json = await res.json();
-                              
-                              // Vi injiserer/overskriver servers-feltet direkte i JSON-objektet
-                              json.servers = [{ 
-                                url: ${JSON.stringify(serverUrl)}, 
-                                description: 'Rallar server' 
-                              }];
-                              
-                              // Returnerer det modifiserte objektet som om det kom fra serveren slik
-                              return new Response(JSON.stringify(json));
-                            };
-                          }
-                          return req;
-                        }
+                        persistAuthorization: true
                       });
                     };
             </script>
@@ -65,7 +46,7 @@ function swaggerHtml(c: Context): string {
 `;
 }
 
-export function init(app: Hono) {
+export function installApiDocumentationRoutes(app: Hono): Hono {
     app.get(
         '/api/openapi.json',
         async (c) =>
@@ -80,12 +61,12 @@ export function init(app: Hono) {
 
     app.get(
         '/api/docs',
-        (c) => c.html(swaggerHtml(c))
+        (c) => c.html(swaggerHtml())
     );
 
     app.get(
         '/swagger-ui',
-        (c) => c.html(swaggerHtml(c))
+        (c) => c.html(swaggerHtml())
     );
 
     app.get(
