@@ -49,7 +49,7 @@ also invalid, so this document cannot accumulate orphan approvals.
 
 ## Reviewed boundary groups
 
-The current 113 entries were reviewed by independently meaningful behavior,
+The current 107 entries were reviewed by independently meaningful behavior,
 not by vocabulary. The metadata below splits these groups further by exact
 executable assertion so a broad domain label cannot conceal unrelated evidence.
 
@@ -69,7 +69,7 @@ executable assertion so a broad domain label cannot conceal unrelated evidence.
 | State-read convergence recipes                   |       2 | Parsed fixtures carry run-scoped identity and tertiary causal evidence.                                          |
 | Black-box schema and recipe matrix               |      10 | Published fixtures, examples, compatibility corpus, evidence tiers, and catalog promises are validated directly. |
 | State-write recipe evidence                      |       6 | Parsed command/evidence pairs prove digests, revisions, effects, and execution identity.                         |
-| Shared-web package boundaries                    |       9 | Consumer imports, browser bundles, and entrypoint inventories enforce package direction.                         |
+| Shared-web package boundaries                    |       6 | Consumer imports and browser bundles enforce package direction.                                                  |
 | Shared RTC benchmark navigation                  |       9 | Package navigation, accepted-evidence exclusion, and Deno-check participation are published package interfaces.  |
 
 The full current candidate tree validates this registry even when the command
@@ -664,30 +664,6 @@ moved or changed test.
       "summary": "Browser entrypoints remain free of server-only dependencies when bundled for application consumers. Executable assertion: “keeps shared-web from declaring graphology directly”.",
       "semanticCoverage": "packages/tests/shared-web/shared-web-browser-bundle-boundaries.test.ts#keeps shared-web from declaring graphology directly",
       "coverageRelation": "The browser bundle suite builds the narrow entrypoints and checks their dependency graph and size; this manifest read establishes the package dependency declaration used by that executable bundle check."
-    },
-    {
-      "id": "shared-web-browser-entrypoints--keeps-mutable-state-cache-access-inside-the-state-store",
-      "domain": "Shared-web public browser entrypoints",
-      "owner": "Shared Web maintainers",
-      "summary": "Published browser entrypoints expose the intended files and remain importable by consumers. Executable assertion: “keeps mutable state-cache access inside the state store”.",
-      "semanticCoverage": "packages/tests/shared-web/shared-web-browser-entrypoints.test.ts#keeps mutable state-cache access inside the state store",
-      "coverageRelation": "The named entrypoint test imports or analyzes the published browser surface and requires the exact internal module inventory represented by this occurrence to remain behind its injected port or public owner."
-    },
-    {
-      "id": "shared-web-browser-entrypoints--keeps-runtime-controllers-independent-from-the-aggregate-contrac",
-      "domain": "Shared-web public browser entrypoints",
-      "owner": "Shared Web maintainers",
-      "summary": "Published browser entrypoints expose the intended files and remain importable by consumers. Executable assertion: “keeps runtime controllers independent from the aggregate contract”.",
-      "semanticCoverage": "packages/tests/shared-web/shared-web-browser-entrypoints.test.ts#keeps runtime controllers independent from the aggregate contract",
-      "coverageRelation": "The named entrypoint test imports or analyzes the published browser surface and requires the exact internal module inventory represented by this occurrence to remain behind its injected port or public owner."
-    },
-    {
-      "id": "shared-web-browser-entrypoints--keeps-runtime-controllers-independent-from-the-full-facade-entryp",
-      "domain": "Shared-web public browser entrypoints",
-      "owner": "Shared Web maintainers",
-      "summary": "Published browser entrypoints expose the intended files and remain importable by consumers. Executable assertion: “keeps runtime controllers independent from the full facade entrypoint”.",
-      "semanticCoverage": "packages/tests/shared-web/shared-web-browser-entrypoints.test.ts#keeps runtime controllers independent from the full facade entrypoint",
-      "coverageRelation": "The named entrypoint test imports or analyzes the published browser surface and requires the exact internal module inventory represented by this occurrence to remain behind its injected port or public owner."
     },
     {
       "id": "source-analysis-test-interface",
@@ -1971,39 +1947,6 @@ moved or changed test.
       "owner": "Shared Web maintainers",
       "rationale": "Reads the shared-web package manifest before bundling and confirms graphology is not declared as a direct browser-package dependency.",
       "semanticCoverage": "packages/tests/shared-web/shared-web-browser-bundle-boundaries.test.ts#keeps shared-web from declaring graphology directly"
-    },
-    {
-      "id": "test-structure-coupling-90681dd61a7ee38b",
-      "path": "packages/tests/shared-web/shared-web-browser-entrypoints.test.ts",
-      "kind": "exact-file-tree",
-      "contract": "shared-web-browser-entrypoints--keeps-mutable-state-cache-access-inside-the-state-store",
-      "disposition": "durable-boundary",
-      "boundary": "public",
-      "owner": "Shared Web maintainers",
-      "rationale": "Walks every runtime module outside the state store and rejects direct mutable cache access, including future files in that directory.",
-      "semanticCoverage": "packages/tests/shared-web/shared-web-browser-entrypoints.test.ts#keeps mutable state-cache access inside the state store"
-    },
-    {
-      "id": "test-structure-coupling-a800c69ed23abd0c",
-      "path": "packages/tests/shared-web/shared-web-browser-entrypoints.test.ts",
-      "kind": "exact-file-tree",
-      "contract": "shared-web-browser-entrypoints--keeps-runtime-controllers-independent-from-the-aggregate-contrac",
-      "disposition": "durable-boundary",
-      "boundary": "public",
-      "owner": "Shared Web maintainers",
-      "rationale": "Enumerates runtime controllers and forbids imports from the aggregate contract, preserving their narrower dependency surfaces.",
-      "semanticCoverage": "packages/tests/shared-web/shared-web-browser-entrypoints.test.ts#keeps runtime controllers independent from the aggregate contract"
-    },
-    {
-      "id": "test-structure-coupling-8734e4d033198b85",
-      "path": "packages/tests/shared-web/shared-web-browser-entrypoints.test.ts",
-      "kind": "exact-file-tree",
-      "contract": "shared-web-browser-entrypoints--keeps-runtime-controllers-independent-from-the-full-facade-entryp",
-      "disposition": "durable-boundary",
-      "boundary": "public",
-      "owner": "Shared Web maintainers",
-      "rationale": "Scans the complete runtime-controller inventory for full-facade imports that runtime behavior would not reveal.",
-      "semanticCoverage": "packages/tests/shared-web/shared-web-browser-entrypoints.test.ts#keeps runtime controllers independent from the full facade entrypoint"
     }
   ]
 }
