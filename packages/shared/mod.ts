@@ -68,8 +68,9 @@ export * from './services/WebRtcGroupManager.ts';
 export * from './services/WebRtcGroupService.ts';
 export * from './services/WebRtcHeartbeatService.ts';
 export * from './services/WebRtcRxStreamerService.ts';
+export * from './services/ws-queue-box-server/ws-queue-box-server-contracts.ts';
+export * from './services/ws-queue-box-server/ws-queue-box-server-service.ts';
 export * from './services/WsQueueBoxClientService.ts';
-export * from './services/WsQueueBoxServerService.ts';
 
 export * from './webrtc/QRtcClientCallbacks.ts';
 export * from './webrtc/QRtcDataChannel.ts';

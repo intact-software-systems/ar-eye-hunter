@@ -2,18 +2,17 @@ import type { RallarTimingEvent } from '@shared-server/rallar-system/observabili
 import {
     installQueueBoxPubSubBridge,
     toPubSubMessage,
-    toResourceEntryFromPubSubMessage,
-    type QueueBoxPubSubBridge,
-    type QueueBoxPubSubMessage,
     type QueueBoxPubSubWsService
 } from '@shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-bridge.ts';
+import type { QueueBoxPubSubBridge, QueueBoxPubSubMessage } from '@shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-contracts.ts';
+import { toResourceEntryFromPubSubMessage } from '@shared-server/rallar-system/queue-pubsub/to-resource-entry-from-pub-sub-message.ts';
 import { newALBroadcastMessage, newALRoute, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { QueueBoxUtilities } from '@shared/services/QueueBoxUtilities.ts';
-import type { WsServerLiveSendResult } from '@shared/services/ws-queue-box-server-contracts.ts';
+import type { WsServerLiveSendResult } from '@shared/services/ws-queue-box-server/ws-queue-box-server-contracts.ts';
 import { JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.ts';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -21,8 +20,13 @@ type QueueMessageCallback = Parameters<QueueBoxPubSubWsService['onAllInboxMessag
 type ClusterPublisher = Parameters<QueueBoxPubSubWsService['onOutboxClusterPublishDo']>[0];
 
 interface TestQueueBoxPubSubBridge extends QueueBoxPubSubBridge {
-    readonly publish: ReturnType<typeof vi.fn>;
-    readonly subscribe: ReturnType<typeof vi.fn>;
+    readonly published: Array<
+        Readonly<{
+            channel: string;
+            message: QueueBoxPubSubMessage;
+        }>
+    >;
+    readonly subscribedChannels: string[];
     readonly subscriber?: Parameters<QueueBoxPubSubBridge['subscribe']>[1];
 }
 
@@ -118,16 +122,19 @@ describe('QueueBoxPubSubBridge', () => {
         const inboxCallbacks: QueueMessageCallback[] = [];
         const outboxPublishers: ClusterPublisher[] = [];
         const bridge = createBridge();
-        const sendToTargetsWithResult = vi.fn(() => ({
-            status: 'sent-live',
-            recipientCount: 1,
-            sentCount: 1,
-            failedCount: 0
-        }));
+        const deliveredMessages: ALMessage[] = [];
         const wsQBoxServerService = createTestQueueBoxPubSubWsService({
             registerInboxCallback: (callback) => inboxCallbacks.push(callback),
             registerOutboxPublisher: (publisher) => outboxPublishers.push(publisher),
-            sendToTargetsWithResult
+            sendToTargetsWithResult: (message) => {
+                deliveredMessages.push(message);
+                return {
+                    status: 'sent-live',
+                    recipientCount: 1,
+                    sentCount: 1,
+                    failedCount: 0
+                };
+            }
         });
 
         installQueueBoxPubSubBridge({
@@ -142,29 +149,27 @@ describe('QueueBoxPubSubBridge', () => {
         await inboxCallbacks[0].onMessage(message, entry, new JsonWebSocketServer());
         await outboxPublishers[0](message, entry);
 
-        expect(bridge.publish).toHaveBeenCalledTimes(2);
-        expect(bridge.publish).toHaveBeenCalledWith(
-            'queuebox-events',
-            toPubSubMessage({
+        expect(bridge.published).toEqual([
+            {
                 channel: 'queuebox-events',
-                publisherId: 'publisher-1',
-                entry
-            })
-        );
-        expect(bridge.publish).toHaveBeenCalledWith(
-            'queuebox-events',
-            toPubSubMessage({
+                message: toPubSubMessage({
+                    channel: 'queuebox-events',
+                    publisherId: 'publisher-1',
+                    entry
+                })
+            },
+            {
                 channel: 'queuebox-events',
-                publisherId: 'publisher-1',
-                entry,
-                delivery: 'key'
-            })
-        );
-        expect(bridge.subscribe).toHaveBeenCalledWith(
-            'queuebox-events',
-            expect.any(Function)
-        );
-        expect(sendToTargetsWithResult).toHaveBeenCalledWith(message);
+                message: toPubSubMessage({
+                    channel: 'queuebox-events',
+                    publisherId: 'publisher-1',
+                    entry,
+                    delivery: 'key'
+                })
+            }
+        ]);
+        expect(bridge.subscribedChannels).toEqual(['queuebox-events']);
+        expect(deliveredMessages).toEqual([message]);
     });
 
     it('keeps full-entry delivery as the default pub/sub envelope', () => {
@@ -205,8 +210,7 @@ describe('QueueBoxPubSubBridge', () => {
 
     it('enqueues subscribed messages into the local inbox', async () => {
         const bridge = createBridge();
-        const inbox = new InMemoryQueueBox();
-        const enqueueIfAbsent = vi.spyOn(inbox, 'enqueueIfAbsent');
+        const inbox = new RecordingInMemoryQueueBox();
         const wsQBoxServerService = createTestQueueBoxPubSubWsService({ inbox });
 
         installQueueBoxPubSubBridge({
@@ -225,20 +229,18 @@ describe('QueueBoxPubSubBridge', () => {
             })
         );
 
-        expect(enqueueIfAbsent).toHaveBeenCalledTimes(1);
-        expect(enqueueIfAbsent.mock.calls[0][0]).toMatchObject({
+        expect(inbox.enqueuedEntries).toEqual([expect.objectContaining({
             key: entry.key,
             typeId: entry.typeId,
             resource: entry.resource
-        });
+        })]);
     });
 
     it('loads durable queue entries before enqueuing key-only subscribed messages', async () => {
         const bridge = createBridge();
         const entry = createWsEntry();
         const timingEvents: RallarTimingEvent[] = [];
-        const inbox = new InMemoryQueueBox();
-        const enqueueIfAbsent = vi.spyOn(inbox, 'enqueueIfAbsent');
+        const inbox = new RecordingInMemoryQueueBox();
         const getItem = vi.spyOn(inbox, 'getItem').mockResolvedValue(entry);
         const wsQBoxServerService = createTestQueueBoxPubSubWsService({ inbox });
 
@@ -260,7 +262,7 @@ describe('QueueBoxPubSubBridge', () => {
         );
 
         expect(getItem).toHaveBeenCalledWith(entry.key);
-        expect(enqueueIfAbsent).toHaveBeenCalledWith(entry);
+        expect(inbox.enqueuedEntries).toEqual([entry]);
         const receiveEvent = timingEvents.find(
             (event) => event.operation === 'cluster-receive'
         );
@@ -284,25 +286,30 @@ describe('QueueBoxPubSubBridge', () => {
     it('reports only exact durable outbox key receives through the optional wake seam', async () => {
         const bridge = createBridge();
         const entry = createWsOutboxEntry();
-        const onValidatedOutboxKeyReceived = vi.fn();
-        const sendToTargetsWithResult = vi.fn(() => ({
-            status: 'no-recipients',
-            recipientCount: 0,
-            sentCount: 0,
-            failedCount: 0
-        }));
+        const validatedOutboxEntries: ResourceEntry[] = [];
+        const deliveredMessages: ALMessage[] = [];
         const outbox = new InMemoryQueueBox();
         vi.spyOn(outbox, 'getItem').mockResolvedValue(entry);
         const wsQBoxServerService = createTestQueueBoxPubSubWsService({
             outbox,
-            sendToTargetsWithResult
+            sendToTargetsWithResult: (message) => {
+                deliveredMessages.push(message);
+                return {
+                    status: 'no-recipients',
+                    recipientCount: 0,
+                    sentCount: 0,
+                    failedCount: 0
+                };
+            }
         });
         installQueueBoxPubSubBridge({
             wsQBoxServerService,
             bridge,
             channel: 'queuebox-events',
             publisherId: 'publisher-1',
-            onValidatedOutboxKeyReceived
+            onValidatedOutboxKeyReceived: (validatedEntry) => {
+                validatedOutboxEntries.push(validatedEntry);
+            }
         });
 
         await bridge.subscriber?.(
@@ -321,17 +328,18 @@ describe('QueueBoxPubSubBridge', () => {
             })
         );
 
-        expect(onValidatedOutboxKeyReceived).toHaveBeenCalledOnce();
-        expect(onValidatedOutboxKeyReceived).toHaveBeenCalledWith(entry);
-        expect(sendToTargetsWithResult).toHaveBeenCalledTimes(2);
+        expect(validatedOutboxEntries).toEqual([entry]);
+        expect(deliveredMessages).toEqual([
+            decodePersistedALMessage(entry.resource),
+            decodePersistedALMessage(entry.resource)
+        ]);
     });
 
     it('drops missing durable key-only messages with timing details', async () => {
         const bridge = createBridge();
         const entry = createWsEntry();
         const timingEvents: RallarTimingEvent[] = [];
-        const inbox = new InMemoryQueueBox();
-        const enqueueIfAbsent = vi.spyOn(inbox, 'enqueueIfAbsent');
+        const inbox = new RecordingInMemoryQueueBox();
         vi.spyOn(inbox, 'getItem').mockResolvedValue(undefined);
         const wsQBoxServerService = createTestQueueBoxPubSubWsService({ inbox });
 
@@ -352,7 +360,7 @@ describe('QueueBoxPubSubBridge', () => {
             })
         );
 
-        expect(enqueueIfAbsent).not.toHaveBeenCalled();
+        expect(inbox.enqueuedEntries).toEqual([]);
         expect(timingEvents).toContainEqual(
             expect.objectContaining({
                 component: 'queuebox-pubsub',
@@ -370,8 +378,7 @@ describe('QueueBoxPubSubBridge', () => {
         const bridge = createBridge();
         const entry = createWsEntry();
         const timingEvents: RallarTimingEvent[] = [];
-        const inbox = new InMemoryQueueBox();
-        const enqueueIfAbsent = vi.spyOn(inbox, 'enqueueIfAbsent');
+        const inbox = new RecordingInMemoryQueueBox();
         vi.spyOn(inbox, 'getItem').mockResolvedValue({
             ...entry,
             key: { ...entry.key, resourceId: 'different-resource' }
@@ -394,18 +401,18 @@ describe('QueueBoxPubSubBridge', () => {
             })
         );
 
-        expect(enqueueIfAbsent).not.toHaveBeenCalled();
+        expect(inbox.enqueuedEntries).toEqual([]);
         expect(timingEvents).toContainEqual(expect.objectContaining({
             operation: 'key-load-mismatch',
             details: expect.objectContaining({ resourceId: entry.key.resourceId })
         }));
     });
 
-    it('drops malformed envelopes with timing details instead of enqueueing them', async () => {
+    it('drops entry envelopes without the current delivery discriminator', async () => {
         const bridge = createBridge();
+        const entry = createWsEntry();
         const timingEvents: RallarTimingEvent[] = [];
-        const inbox = new InMemoryQueueBox();
-        const enqueueIfAbsent = vi.spyOn(inbox, 'enqueueIfAbsent');
+        const inbox = new RecordingInMemoryQueueBox();
         const wsQBoxServerService = createTestQueueBoxPubSubWsService({ inbox });
 
         installQueueBoxPubSubBridge({
@@ -417,14 +424,14 @@ describe('QueueBoxPubSubBridge', () => {
         });
 
         await bridge.subscriber?.({
+            key: entry.key,
             channel: 'queuebox-events',
             publisherId: 'publisher-2',
             typeId: EnqueuedType.WS_INBOX,
-            delivery: 'entry',
-            payload: JSON.stringify({ ok: true })
-        } as QueueBoxPubSubMessage);
+            payload: entry.resource
+        });
 
-        expect(enqueueIfAbsent).not.toHaveBeenCalled();
+        expect(inbox.enqueuedEntries).toEqual([]);
         expect(timingEvents).toContainEqual(expect.objectContaining({
             component: 'queuebox-pubsub',
             operation: 'drop-malformed',
@@ -443,6 +450,7 @@ describe('QueueBoxPubSubBridge', () => {
                 channel: 'queuebox-events',
                 publisherId: 'publisher-2',
                 typeId: 'custom.type.v1',
+                delivery: 'entry',
                 payload: '{"hello":"world"}'
             })
         ).toThrow(TypeError);
@@ -451,25 +459,32 @@ describe('QueueBoxPubSubBridge', () => {
 
 function createBridge(): TestQueueBoxPubSubBridge {
     let subscriber: Parameters<QueueBoxPubSubBridge['subscribe']>[1] | undefined;
-    const publish = vi.fn(
-        async (_channel: string, _message: QueueBoxPubSubMessage) => undefined
-    );
-    const subscribe = vi.fn(
-        async (
-            _channel: string,
-            onMessage: Parameters<QueueBoxPubSubBridge['subscribe']>[1]
-        ) => {
-            subscriber = onMessage;
-        }
-    );
+    const published: TestQueueBoxPubSubBridge['published'] = [];
+    const subscribedChannels: string[] = [];
 
     return {
-        publish,
-        subscribe,
+        published,
+        subscribedChannels,
+        publish: async (channel, message) => {
+            published.push({ channel, message });
+        },
+        subscribe: async (channel, onMessage) => {
+            subscribedChannels.push(channel);
+            subscriber = onMessage;
+        },
         get subscriber() {
             return subscriber;
         }
     };
+}
+
+class RecordingInMemoryQueueBox extends InMemoryQueueBox {
+    readonly enqueuedEntries: ResourceEntry[] = [];
+
+    override async enqueueIfAbsent(entry: ResourceEntry): Promise<ResourceEntry> {
+        this.enqueuedEntries.push(entry);
+        return await super.enqueueIfAbsent(entry);
+    }
 }
 
 interface CreateTestQueueBoxPubSubWsServiceInput {

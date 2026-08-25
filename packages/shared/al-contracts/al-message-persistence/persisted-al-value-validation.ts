@@ -10,15 +10,33 @@ export interface PersistedALRecord {
     readonly [key: string]: PersistedALValue;
 }
 
+export function decodePersistedALRecord(serialized: string, label: string): PersistedALRecord {
+    return requirePersistedALRecord(JSON.parse(serialized), label);
+}
+
 export function requirePersistedALFields(
     value: PersistedALRecord,
     allowed: readonly string[],
     required: readonly string[]
 ): void {
-    if (Object.keys(value).some((key) => !allowed.includes(key))) {
+    const keys: string[] = [];
+    for (const key of Reflect.ownKeys(value)) {
+        if (typeof key !== 'string') {
+            throw new TypeError('Persisted AL section has a symbol field');
+        }
+        const descriptor = Object.getOwnPropertyDescriptor(value, key);
+        if (
+            !descriptor || !descriptor.enumerable ||
+            !Object.prototype.hasOwnProperty.call(descriptor, 'value')
+        ) {
+            throw new TypeError('Persisted AL section fields must be enumerable data properties');
+        }
+        keys.push(key);
+    }
+    if (keys.some((key) => !allowed.includes(key))) {
         throw new TypeError('Persisted AL section has unknown fields');
     }
-    if (required.some((key) => !Object.hasOwn(value, key))) {
+    if (required.some((key) => !keys.includes(key))) {
         throw new TypeError('Persisted AL section is missing mandatory fields');
     }
 }
@@ -34,7 +52,10 @@ export function requirePersistedALRecord(
 }
 
 function isPersistedALRecord(value: PersistedALValue): value is PersistedALRecord {
-    return value !== null && typeof value === 'object' && !Array.isArray(value);
+    return value !== null &&
+        typeof value === 'object' &&
+        !Array.isArray(value) &&
+        Object.getPrototypeOf(value) === Object.prototype;
 }
 
 export function requirePersistedALNonEmptyString(
@@ -78,21 +99,53 @@ export function requireOptionalPersistedALSafeInteger(
 export function requireOptionalPersistedALStringArray(
     value: PersistedALValue | undefined,
     label: string
-): void {
+): readonly string[] | undefined {
     if (value === undefined) {
-        return;
+        return undefined;
     }
-    if (!Array.isArray(value) || value.some((item) => typeof item !== 'string' || item.length === 0)) {
+    if (!isPersistedALStringArray(value)) {
         throw new TypeError(`Persisted AL ${label} is invalid`);
     }
+    return value;
 }
 
 export function requireOptionalPersistedALUniqueStringArray(
     value: PersistedALValue | undefined,
     label: string
 ): void {
-    requireOptionalPersistedALStringArray(value, label);
-    if (Array.isArray(value) && new Set(value).size !== value.length) {
+    const strings = requireOptionalPersistedALStringArray(value, label);
+    if (strings && new Set(strings).size !== strings.length) {
         throw new TypeError(`Persisted AL ${label} contains duplicates`);
     }
+}
+
+function isPersistedALStringArray(value: PersistedALValue): value is readonly string[] {
+    if (!Array.isArray(value) || Object.getPrototypeOf(value) !== Array.prototype) {
+        return false;
+    }
+    const entryKeys = Reflect.ownKeys(value).filter((key) => key !== 'length');
+    if (entryKeys.length !== value.length) {
+        return false;
+    }
+    return entryKeys.every((key) => {
+        if (typeof key !== 'string' || !isCanonicalArrayIndex(key, value.length)) {
+            return false;
+        }
+        const descriptor = Object.getOwnPropertyDescriptor(value, key);
+        return Boolean(
+            descriptor &&
+                descriptor.enumerable &&
+                Object.prototype.hasOwnProperty.call(descriptor, 'value') &&
+                typeof descriptor.value === 'string' &&
+                descriptor.value.length > 0
+        );
+    });
+}
+
+function isCanonicalArrayIndex(key: string, length: number): boolean {
+    if (!/^(0|[1-9]\d*)$/.test(key)) {
+        return false;
+    }
+    const index = Number(key);
+    return Number.isSafeInteger(index) && index >= 0 && index < length;
 }

@@ -513,12 +513,12 @@ Deno.test(
             const wsServer = new JsonWebSocketServer();
             const wsSocket = new PGliteTestSocket();
             wsServer.addConnection(new ConnectionContext(authority.sessionId, wsSocket));
-            const wsService = new WsQueueBoxServerService(
-                new InMemoryQueueBox(new Map()),
-                new InMemoryQueueBox(new Map()),
-                wsServer,
-                'pglite-ws-ingress'
-            );
+            const wsService = new WsQueueBoxServerService({
+                inbox: new InMemoryQueueBox(new Map()),
+                outbox: new InMemoryQueueBox(new Map()),
+                socket: wsServer,
+                name: 'pglite-ws-ingress'
+            });
             const wsIngressCapturedAt: number[] = [];
             installRtcRttSystemTopic(wsService, {
                 enqueueMutation: async (input) => {

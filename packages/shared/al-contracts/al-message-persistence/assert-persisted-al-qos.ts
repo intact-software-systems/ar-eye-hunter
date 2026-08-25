@@ -36,37 +36,7 @@ const OPTION_KEYS: Readonly<Record<string, readonly string[]>> = {
     ownership: []
 };
 
-export function validatePersistedALDelivery(value: PersistedALValue): void {
-    const delivery = requirePersistedALRecord(value, 'delivery');
-    requirePersistedALFields(
-        delivery,
-        ['ownership', 'reliability', 'ack'],
-        ['reliability', 'ack']
-    );
-    if (
-        delivery.ownership !== undefined &&
-        (
-            typeof delivery.ownership !== 'string' ||
-            !['shared', 'exclusive'].includes(delivery.ownership)
-        )
-    ) {
-        throw new TypeError('Persisted AL delivery ownership is invalid');
-    }
-    if (
-        typeof delivery.reliability !== 'string' ||
-        !['best-effort', 'at-least-once'].includes(delivery.reliability)
-    ) {
-        throw new TypeError('Persisted AL delivery reliability is invalid');
-    }
-    if (
-        typeof delivery.ack !== 'string' ||
-        !['none', 'receiver', 'all-logical-recipients', 'group-leader'].includes(delivery.ack)
-    ) {
-        throw new TypeError('Persisted AL delivery ack is invalid');
-    }
-}
-
-export function validatePersistedALQos(value: PersistedALValue): void {
+export function assertPersistedALQos(value: PersistedALValue): void {
     const qos = requirePersistedALRecord(value, 'qos');
     requirePersistedALFields(qos, Object.keys(ALGORITHMS), []);
     for (const [aspect, allowed] of Object.entries(ALGORITHMS)) {
@@ -81,12 +51,12 @@ export function validatePersistedALQos(value: PersistedALValue): void {
             throw new TypeError(`Persisted AL qos ${aspect} algorithm is invalid`);
         }
         if (requestRecord.opts !== undefined) {
-            validateQosOptions(aspect, requestRecord.opts);
+            assertQosOptions(aspect, requestRecord.opts);
         }
     }
 }
 
-function validateQosOptions(aspect: string, value: PersistedALValue): void {
+function assertQosOptions(aspect: string, value: PersistedALValue): void {
     const options = requirePersistedALRecord(value, `qos ${aspect} options`);
     requirePersistedALFields(options, OPTION_KEYS[aspect] ?? [], []);
     for (const field of ['overlayId', 'semanticKey', 'supersedenceKey', 'replacesMsgId']) {

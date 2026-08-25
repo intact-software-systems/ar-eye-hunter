@@ -34,6 +34,7 @@ import type {
 } from '../configuration/api-v1-configuration.ts';
 import { findCurrentClientSnapshot } from '../crdt/create-api-crdt-document-authorizer.ts';
 import type { ApiV1DatabaseNotificationPort } from '../db/api-v1-database-lifecycle.ts';
+import type { LocalQueuePubSubBus } from '../db/local-queue-pubsub-bridge.ts';
 import { readAuthorisedWsConnectionIdentity } from '../runtime/rtc-topology/authorised-ws-connection-registry.ts';
 import {
     createApiRtcTopologyQueuePubSubBridge
@@ -70,6 +71,7 @@ export interface CreateApiV1RuntimeInput {
     readonly publisherStreamId: string;
     readonly queuePubSubPublisherId: string;
     readonly queuePubSubChannel: string;
+    readonly queuePubSubLocalBus: LocalQueuePubSubBus;
     readonly wsRuntimeName: string;
     readonly authCredentialSecret: string;
     readonly nowEpochMs: () => number;
@@ -103,6 +105,7 @@ interface CreateSharedMiddlewareInput {
     readonly wsRuntimeName: string;
     readonly queuePubSubChannel: string;
     readonly queuePubSubPublisherId: string;
+    readonly queuePubSubLocalBus: LocalQueuePubSubBus;
     readonly databasePubSubMode: ApiV1DatabaseConfiguration['pubSub'];
     readonly databaseNotification: ApiV1DatabaseNotificationPort | null;
     readonly timing: RallarTimingSink;
@@ -186,6 +189,7 @@ export function constructApiV1Runtime(
         wsRuntimeName: input.wsRuntimeName,
         queuePubSubChannel: input.queuePubSubChannel,
         queuePubSubPublisherId: input.queuePubSubPublisherId,
+        queuePubSubLocalBus: input.queuePubSubLocalBus,
         databasePubSubMode: input.databasePubSubMode,
         databaseNotification: input.databaseNotification,
         timing: input.timing
@@ -316,6 +320,7 @@ function createSharedMiddleware(
         queuePubSubBridge: createApiRtcTopologyQueuePubSubBridge({
             mode: input.databasePubSubMode,
             notification: input.databaseNotification,
+            localBus: input.queuePubSubLocalBus,
             channel: input.queuePubSubChannel,
             publisherId: input.queuePubSubPublisherId,
             timing: input.timing,

@@ -1,15 +1,11 @@
-import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { AppTopics, EnqueuedType } from '@shared/api/api-config.ts';
-import { isKeysEqual, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
-
-import { validatePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { toAppQueueCreatedBy, toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
+import { isKeysEqual, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 
 export function isRtcTopologyPublicationOutboxEntry(entry: ResourceEntry): boolean {
     try {
-        const value = JSON.parse(entry.resource);
-        validatePersistedALMessage(value);
-        const message = value as ALMessage;
+        const message = decodePersistedALMessage(entry.resource);
         const targets = message.targets;
         const expiresAtMs = message.constraints?.expiresAtMs;
         if (

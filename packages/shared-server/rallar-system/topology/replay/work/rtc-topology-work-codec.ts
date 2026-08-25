@@ -1,6 +1,6 @@
 import { groupStateGroupStorageKey } from '@shared-server/rallar-system/group-state/persistence/group-state-storage-keys.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
-import { validatePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
+import { decodePersistedALMessageValue } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import { validateAuthoritativeGroupSnapshot } from '@shared/api/authoritative-state-validation.ts';
 import type { CanonicalGroupTopologyConfigPatch } from '@shared/api/graph-topology-management-types.ts';
@@ -24,14 +24,14 @@ import type {
     RtcTopologyRttRefreshWork
 } from '../../mutation/rtc-topology-outbox-work.ts';
 
-export type RtcTopologyWorkEnvelope<T extends object> = Readonly<{
-    type: string;
-    topicId: string;
-    resourceId: string;
-    contextId: string;
-    senderId: string;
-    data: T;
-}>;
+export interface RtcTopologyWorkEnvelope<T extends object> {
+    readonly type: string;
+    readonly topicId: string;
+    readonly resourceId: string;
+    readonly contextId: string;
+    readonly senderId: string;
+    readonly data: T;
+}
 
 export type PersistedRtcTopologyWork =
     & (RtcTopologyGroupRevisionWork | RtcTopologyRttRefreshWork)
@@ -65,12 +65,12 @@ export function readRtcTopologyWorkEnvelope(
     message: ALMessage,
     expectedWorkType: string
 ): RtcTopologyWorkEnvelope<PersistedRtcTopologyWork> {
-    validatePersistedALMessage(message);
+    const persistedMessage = decodePersistedALMessageValue(message);
     const value = decodeJsonWireValue(
-        JSON.parse(message.payload.resource),
+        JSON.parse(persistedMessage.payload.resource),
         'RTC topology work envelope'
     );
-    return readPersistedRtcTopologyWorkEnvelope(value, message, expectedWorkType);
+    return readPersistedRtcTopologyWorkEnvelope(value, persistedMessage, expectedWorkType);
 }
 
 export function toRtcTopologyExecutionId(

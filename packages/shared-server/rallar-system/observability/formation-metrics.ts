@@ -8,7 +8,7 @@ import {
 import type {
     WsDeliveryDiagnosticsEvent,
     WsDeliveryDiagnosticsSink
-} from '@shared/services/ws-queue-box-server-contracts.ts';
+} from '@shared/services/ws-queue-box-server/ws-queue-box-server-contracts.ts';
 
 import { APP_OUTBOX_RTC_TOPOLOGY_TOPIC } from '../topology/mutation/rtc-topology-outbox-entry.ts';
 

@@ -1,5 +1,8 @@
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 
+import { assertPersistedALDelivery } from './al-message-persistence/assert-persisted-al-delivery.ts';
+import { assertPersistedALQos } from './al-message-persistence/assert-persisted-al-qos.ts';
+import { assertPersistedALTargets } from './al-message-persistence/assert-persisted-al-targets.ts';
 import {
     requireOptionalPersistedALNonEmptyString,
     requireOptionalPersistedALSafeInteger,
@@ -11,11 +14,6 @@ import {
     type PersistedALRecord,
     type PersistedALValue
 } from './al-message-persistence/persisted-al-value-validation.ts';
-import {
-    validatePersistedALDelivery,
-    validatePersistedALQos
-} from './al-message-persistence/validate-persisted-al-delivery-and-qos.ts';
-import { validatePersistedALTargets } from './al-message-persistence/validate-persisted-al-targets.ts';
 
 const MESSAGE_SECTIONS = [
     'id',
@@ -32,20 +30,21 @@ const MESSAGE_SECTIONS = [
     'diagnostics'
 ] as const;
 
-/** Validates the complete persisted AL envelope without imposing topic semantics. */
-export function validatePersistedALMessage(
-    value: unknown
-): asserts value is ALMessage {
-    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+/** Decodes the complete persisted AL envelope without imposing topic semantics. */
+export function decodePersistedALMessageValue(value: unknown): ALMessage {
+    if (
+        !value || typeof value !== 'object' || Array.isArray(value) ||
+        Object.getPrototypeOf(value) !== Object.prototype
+    ) {
         throw new TypeError('Persisted AL message is invalid');
     }
     const message = value as PersistedALRecord;
     requirePersistedALFields(message, MESSAGE_SECTIONS, ['id', 'route', 'payload']);
-    validateId(message.id);
-    validateRoute(message.route);
-    validatePayload(message.payload);
+    assertId(message.id);
+    assertRoute(message.route);
+    assertPayload(message.payload);
     if (message.targets !== undefined) {
-        validatePersistedALTargets(message.targets);
+        assertPersistedALTargets(message.targets);
     }
     if (message.forwarding !== undefined) {
         const section = requirePersistedALRecord(message.forwarding, 'forwarding');
@@ -68,7 +67,7 @@ export function validatePersistedALMessage(
         requireOptionalPersistedALSafeInteger(section.seq, 0, 'ordering sequence');
     }
     if (message.delivery !== undefined) {
-        validatePersistedALDelivery(message.delivery);
+        assertPersistedALDelivery(message.delivery);
     }
     if (message.actions !== undefined) {
         const section = requirePersistedALRecord(message.actions, 'actions');
@@ -77,7 +76,7 @@ export function validatePersistedALMessage(
         requireOptionalPersistedALNonEmptyString(section.replyToMsgId, 'action reply id');
     }
     if (message.qos !== undefined) {
-        validatePersistedALQos(message.qos);
+        assertPersistedALQos(message.qos);
     }
     if (message.audit !== undefined) {
         const section = requirePersistedALRecord(message.audit, 'audit');
@@ -90,15 +89,14 @@ export function validatePersistedALMessage(
         requirePersistedALFields(section, ['visitedPeerIds'], []);
         requireOptionalPersistedALStringArray(section.visitedPeerIds, 'diagnostic visited peers');
     }
+    return value as ALMessage;
 }
 
 export function decodePersistedALMessage(serialized: string): ALMessage {
-    const value = JSON.parse(serialized);
-    validatePersistedALMessage(value);
-    return value;
+    return decodePersistedALMessageValue(JSON.parse(serialized));
 }
 
-function validateId(value: PersistedALValue): void {
+function assertId(value: PersistedALValue): void {
     const id = requirePersistedALRecord(value, 'id');
     requirePersistedALFields(
         id,
@@ -115,7 +113,7 @@ function validateId(value: PersistedALValue): void {
     requireOptionalPersistedALNonEmptyString(id.traceId, 'id trace');
 }
 
-function validateRoute(value: PersistedALValue): void {
+function assertRoute(value: PersistedALValue): void {
     const route = requirePersistedALRecord(value, 'route');
     requirePersistedALFields(
         route,
@@ -127,7 +125,7 @@ function validateRoute(value: PersistedALValue): void {
     requirePersistedALNonEmptyString(route.contextId, 'route context');
 }
 
-function validatePayload(value: PersistedALValue): void {
+function assertPayload(value: PersistedALValue): void {
     const payload = requirePersistedALRecord(value, 'payload');
     requirePersistedALFields(
         payload,

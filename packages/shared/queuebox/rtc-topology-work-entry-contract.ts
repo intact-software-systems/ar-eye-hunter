@@ -1,7 +1,11 @@
 import { Temporal } from '@js-temporal/polyfill';
 
-import type { ALMessage } from '../al-contracts/al-contract.ts';
-import { validatePersistedALMessage } from '../al-contracts/al-message-persistence-validation.ts';
+import { decodePersistedALMessage } from '../al-contracts/al-message-persistence-validation.ts';
+import {
+    decodePersistedALRecord,
+    type PersistedALRecord,
+    type PersistedALValue
+} from '../al-contracts/al-message-persistence/persisted-al-value-validation.ts';
 import { EnqueuedType } from '../api/api-config.ts';
 import { toAppQueueKey } from './AppQueueIdentity.ts';
 import { EntityStatus, isKeysEqual, NEVER_EXPIRE_TS, type ResourceEntry } from './ResourceEntry.ts';
@@ -19,15 +23,14 @@ const ENVELOPE_KEYS = [
     'data'
 ] as const;
 
-export function isCanonicalRtcTopologyWorkEntry(
-    entry: ResourceEntry
-): boolean {
+export function isCanonicalRtcTopologyWorkEntry(entry: ResourceEntry): boolean {
     try {
         requireResourceEntryShape(entry);
-        const value: unknown = JSON.parse(entry.resource);
-        validatePersistedALMessage(value);
-        const message = value as ALMessage;
-        const envelope = record(JSON.parse(message.payload.resource));
+        const message = decodePersistedALMessage(entry.resource);
+        const envelope = decodePersistedALRecord(
+            message.payload.resource,
+            'RTC topology work envelope'
+        );
         exactKeys(envelope, ENVELOPE_KEYS);
 
         const senderId = nonEmptyString(envelope.senderId);
@@ -36,7 +39,7 @@ export function isCanonicalRtcTopologyWorkEntry(
             resourceId: nonEmptyString(envelope.resourceId),
             contextId: nonEmptyString(envelope.contextId)
         });
-        const data = record(envelope.data);
+        const data = requirePersistedALRecord(envelope.data);
         if (
             entry.typeId !== EnqueuedType.APP_OUTBOX ||
             entry.key.topicId !== RTC_TOPOLOGY_OUTBOX_TOPIC ||
@@ -79,13 +82,12 @@ export function isCanonicalRtcTopologyWorkEntry(
 }
 
 function requireResourceEntryShape(entry: ResourceEntry): void {
-    const value = record(entry);
     exactKeys(
-        value,
+        entry,
         ['key', 'resource', 'typeId', 'audit', 'status', 'dequeueAudit'],
         ['db']
     );
-    exactKeys(record(entry.key), ['topicId', 'resourceId', 'contextId']);
+    exactKeys(entry.key, ['topicId', 'resourceId', 'contextId']);
     nonEmptyString(entry.key.topicId);
     nonEmptyString(entry.key.resourceId);
     nonEmptyString(entry.key.contextId);
@@ -95,7 +97,7 @@ function requireResourceEntryShape(entry: ResourceEntry): void {
         throw new TypeError('RTC topology work status is invalid');
     }
 
-    exactKeys(record(entry.audit), [
+    exactKeys(entry.audit, [
         'date',
         'createdBy',
         'createdTs',
@@ -107,7 +109,7 @@ function requireResourceEntryShape(entry: ResourceEntry): void {
     requireTemporal(entry.audit.expiryTs, Temporal.Instant);
 
     exactKeys(
-        record(entry.dequeueAudit),
+        entry.dequeueAudit,
         ['attempts'],
         ['startTs', 'endTs', 'nextTs']
     );
@@ -129,20 +131,24 @@ function requireResourceEntryShape(entry: ResourceEntry): void {
         }
     }
     if (entry.db !== undefined) {
-        exactKeys(record(entry.db), ['id']);
+        exactKeys(entry.db, ['id']);
         nonEmptyString(entry.db.id);
     }
 }
 
-function record(value: unknown): Record<string, unknown> {
-    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+function requirePersistedALRecord(value: PersistedALValue): PersistedALRecord {
+    if (!isPersistedALRecord(value)) {
         throw new TypeError('RTC topology work record is invalid');
     }
-    return value as Record<string, unknown>;
+    return value;
+}
+
+function isPersistedALRecord(value: PersistedALValue): value is PersistedALRecord {
+    return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
 function exactKeys(
-    value: Record<string, unknown>,
+    value: object,
     required: readonly string[],
     optional: readonly string[] = []
 ): void {
@@ -155,15 +161,15 @@ function exactKeys(
     }
 }
 
-function nonEmptyString(value: unknown): string {
+function nonEmptyString(value: PersistedALValue | undefined): string {
     if (typeof value !== 'string' || value.length === 0) {
         throw new TypeError('RTC topology work string is invalid');
     }
     return value;
 }
 
-function requireTemporal<T>(
-    value: unknown,
+function requireTemporal<T extends object>(
+    value: object,
     constructor: abstract new(...args: never[]) => T
 ): asserts value is T {
     if (!(value instanceof constructor)) {

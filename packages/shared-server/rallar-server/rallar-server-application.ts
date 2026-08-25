@@ -1,5 +1,5 @@
 import { RepositoryManager } from '@shared/cache/RepositoryManager.ts';
-import type { WsQueueBoxServerService } from '@shared/services/WsQueueBoxServerService.ts';
+import type { WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 import type { AppDataRepository } from '../app-data/app-data-repository.ts';
 import { RallarServerAppData } from '../app-data/rallar-server-app-data.ts';
 import type { RallarServerWsRouterOptions } from '../rallar-system/websocket/router/rallar-server-ws-router-contracts.ts';

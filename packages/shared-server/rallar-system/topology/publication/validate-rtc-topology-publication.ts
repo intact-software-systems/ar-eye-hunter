@@ -1,5 +1,5 @@
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
-import { validatePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
+import { decodePersistedALMessageValue } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { AppTopics } from '@shared/api/api-config.ts';
 import type { GroupRef, GroupStateCausalRevision } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
@@ -54,8 +54,7 @@ export function validateRtcTopologyPublication(
     ) {
         throw new TypeError('RTC topology publication recipients are invalid');
     }
-    validatePersistedALMessage(publication.message);
-    const message = publication.message;
+    const message = decodePersistedALMessageValue(publication.message);
     let snapshot: RallarOverlayTopologySnapshot;
     try {
         snapshot = decodeRtcTopologySnapshot(

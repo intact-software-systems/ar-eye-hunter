@@ -1,23 +1,19 @@
-import type {
-    QueueBoxPubSubBridge,
-    QueueBoxPubSubMessage
-} from '@shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-bridge.ts';
+import type { JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
+import type { QueueBoxPubSubBridge } from '@shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-contracts.ts';
 
-type LocalQueuePubSubSubscriber = Readonly<{
-    ignoredPublisherId?: string;
-    onMessage: (message: QueueBoxPubSubMessage) => Promise<void> | void;
-}>;
+interface LocalQueuePubSubSubscriber {
+    readonly ignoredPublisherId?: string;
+    readonly onMessage: (message: JsonWireValue) => Promise<void> | void;
+}
 
-export type LocalQueuePubSubBus = Readonly<{
-    subscribersByChannel: Map<string, Set<LocalQueuePubSubSubscriber>>;
-}>;
+export interface LocalQueuePubSubBus {
+    readonly subscribersByChannel: Map<string, Set<LocalQueuePubSubSubscriber>>;
+}
 
-export type LocalQueuePubSubBridgeOptions = Readonly<{
-    ignoredPublisherId?: string;
-    bus?: LocalQueuePubSubBus;
-}>;
-
-const defaultBus = createLocalQueuePubSubBus();
+export interface LocalQueuePubSubBridgeOptions {
+    readonly ignoredPublisherId?: string;
+    readonly bus: LocalQueuePubSubBus;
+}
 
 export function createLocalQueuePubSubBus(): LocalQueuePubSubBus {
     return {
@@ -26,13 +22,11 @@ export function createLocalQueuePubSubBus(): LocalQueuePubSubBus {
 }
 
 export function createLocalQueuePubSubBridge(
-    options: LocalQueuePubSubBridgeOptions = {}
+    options: LocalQueuePubSubBridgeOptions
 ): QueueBoxPubSubBridge {
-    const bus = options.bus ?? defaultBus;
-
     return {
         publish: async (channel, message) => {
-            const subscribers = bus.subscribersByChannel.get(channel);
+            const subscribers = options.bus.subscribersByChannel.get(channel);
             if (!subscribers) {
                 return;
             }
@@ -45,10 +39,10 @@ export function createLocalQueuePubSubBridge(
             }
         },
         subscribe: (channel, onMessage) => {
-            let subscribers = bus.subscribersByChannel.get(channel);
+            let subscribers = options.bus.subscribersByChannel.get(channel);
             if (!subscribers) {
                 subscribers = new Set();
-                bus.subscribersByChannel.set(channel, subscribers);
+                options.bus.subscribersByChannel.set(channel, subscribers);
             }
 
             subscribers.add({

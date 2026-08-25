@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { initWsLifecycle } from '@shared-server/rallar-system/websocket/ws-lifecycle-service.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { toKeyAsString, toResourceEntryWithKey } from '@shared/queuebox/ResourceEntry.ts';
-import { WsQueueBoxServerService } from '@shared/services/WsQueueBoxServerService.ts';
+import { WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 import { JsonWebSocketServer, type ConnectionContext } from '@shared/websocket/JsonWebSocketServer.ts';
 
 describe('real websocket close lifecycle retry ownership', () => {
@@ -11,18 +11,18 @@ describe('real websocket close lifecycle retry ownership', () => {
         const server = new JsonWebSocketServer();
         const oldSocket = new CloseSocket();
         const newSocket = new CloseSocket();
-        const service = new WsQueueBoxServerService(
-            new InMemoryQueueBox(new Map()),
-            new InMemoryQueueBox(new Map()),
-            server,
-            'server-1'
-        );
-        const oldFailure = deferred<void>();
-        const oldStarted = deferred<void>();
+        const service = new WsQueueBoxServerService({
+            inbox: new InMemoryQueueBox(new Map()),
+            outbox: new InMemoryQueueBox(new Map()),
+            socket: server,
+            name: 'server-1'
+        });
+        const oldFailure = Promise.withResolvers<void>();
+        const oldStarted = Promise.withResolvers<void>();
         const trusted = new Set(['session-1:generation-old', 'session-1:generation-new']);
         const scheduled: Array<() => Promise<void>> = [];
-        const unhandled: unknown[] = [];
-        const onUnhandled = (reason: unknown) => unhandled.push(reason);
+        const unhandled: Error[] = [];
+        const onUnhandled = (reason: unknown) => unhandled.push(toError(reason));
         const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
         process.on('unhandledRejection', onUnhandled);
 
@@ -93,18 +93,18 @@ describe('real websocket close lifecycle retry ownership', () => {
             1_000
         );
         const durableRows = new InMemoryQueueBox(new Map());
-        const service = new WsQueueBoxServerService(
-            durableRows,
-            new InMemoryQueueBox(new Map()),
-            server,
-            'server-1'
-        );
+        const service = new WsQueueBoxServerService({
+            inbox: durableRows,
+            outbox: new InMemoryQueueBox(new Map()),
+            socket: server,
+            name: 'server-1'
+        });
         const trusted = new Set([closeKey(connection)]);
         const scheduled: Array<() => Promise<void>> = [];
         let clientAttempts = 0;
         const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
-        const unhandled: unknown[] = [];
-        const onUnhandled = (reason: unknown) => unhandled.push(reason);
+        const unhandled: Error[] = [];
+        const onUnhandled = (reason: unknown) => unhandled.push(toError(reason));
         process.on('unhandledRejection', onUnhandled);
 
         try {
@@ -171,12 +171,12 @@ describe('real websocket close lifecycle retry ownership', () => {
         const oldSocket = new CloseSocket();
         const newSocket = new CloseSocket();
         const closed: string[] = [];
-        const service = new WsQueueBoxServerService(
-            new InMemoryQueueBox(new Map()),
-            new InMemoryQueueBox(new Map()),
-            server,
-            'server-1'
-        );
+        const service = new WsQueueBoxServerService({
+            inbox: new InMemoryQueueBox(new Map()),
+            outbox: new InMemoryQueueBox(new Map()),
+            socket: server,
+            name: 'server-1'
+        });
         initWsLifecycle(service, {
             now: () => 1_100,
             enqueueClientSessionDisconnect: (input) => {
@@ -273,16 +273,6 @@ class CloseSocket {
     }
 }
 
-function deferred<T>(): Readonly<{
-    promise: Promise<T>;
-    resolve(value: T): void;
-    reject(reason: unknown): void;
-}> {
-    let resolve!: (value: T) => void;
-    let reject!: (reason: unknown) => void;
-    const promise = new Promise<T>((resolvePromise, rejectPromise) => {
-        resolve = resolvePromise;
-        reject = rejectPromise;
-    });
-    return { promise, resolve, reject };
+function toError(value: unknown): Error {
+    return value instanceof Error ? value : new Error(String(value));
 }

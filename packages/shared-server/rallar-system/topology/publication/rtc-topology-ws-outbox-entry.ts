@@ -3,7 +3,7 @@ import { Temporal } from '@js-temporal/polyfill';
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 
-import { validatePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
+import { decodePersistedALMessageValue } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { toAppQueueCreatedBy, toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
 import { PSqlResourceInboxEntryRepository } from '../../../queuebox/postgres/p-sql-resource-inbox-entry-repository.ts';
@@ -21,14 +21,13 @@ export function computeRtcTopologyPublicationOutbox(
     ) {
         throw new TypeError('RTC topology publication outbox target is invalid');
     }
-    const message = {
+    const message = decodePersistedALMessageValue({
         ...publicationMessage,
         targets: {
             ...publicationMessage.targets,
             recipientPeerIds: [...publication.recipientSessionIds]
         }
-    };
-    validatePersistedALMessage(message);
+    });
     const createdBy = message.audit?.createdBy;
     const expiresAtMs = message.constraints?.expiresAtMs;
     if (

@@ -8,7 +8,7 @@ import {
     type PersistedALValue
 } from './persisted-al-value-validation.ts';
 
-export function validatePersistedALTargets(value: PersistedALValue): void {
+export function assertPersistedALTargets(value: PersistedALValue): void {
     const targets = requirePersistedALRecord(value, 'targets');
     if (targets.mode === 'unicast') {
         requirePersistedALFields(targets, ['mode', 'toPeerId'], ['mode', 'toPeerId']);
@@ -21,7 +21,7 @@ export function validatePersistedALTargets(value: PersistedALValue): void {
             ['mode', 'groupRef', 'membershipEpoch', 'minSnapshotVersion'],
             ['mode', 'groupRef']
         );
-        validateCanonicalGroupRef(targets.groupRef);
+        assertCanonicalGroupRef(targets.groupRef);
         requireOptionalPersistedALSafeInteger(targets.membershipEpoch, 0, 'membership epoch');
         requireOptionalPersistedALSafeInteger(targets.minSnapshotVersion, 1, 'minimum snapshot version');
         return;
@@ -61,17 +61,17 @@ export function validatePersistedALTargets(value: PersistedALValue): void {
         throw new TypeError('Persisted AL principal ref requires principal scope');
     }
     if (targets.groupRef !== undefined) {
-        validateCanonicalGroupRef(targets.groupRef);
+        assertCanonicalGroupRef(targets.groupRef);
     }
     if (targets.principalRef !== undefined) {
-        validateCanonicalPrincipalRef(targets.principalRef);
+        assertCanonicalPrincipalRef(targets.principalRef);
     }
     requireOptionalPersistedALStringArray(targets.exceptPeerIds, 'broadcast exclusions');
     requireOptionalPersistedALUniqueStringArray(targets.recipientPeerIds, 'broadcast fixed recipients');
     requireOptionalPersistedALSafeInteger(targets.minSnapshotVersion, 1, 'minimum snapshot version');
 }
 
-function validateCanonicalGroupRef(value: PersistedALValue | undefined): void {
+function assertCanonicalGroupRef(value: PersistedALValue | undefined): void {
     if (value === undefined) {
         throw new TypeError('Persisted AL group ref is missing');
     }
@@ -89,7 +89,7 @@ function validateCanonicalGroupRef(value: PersistedALValue | undefined): void {
     requirePersistedALNonEmptyString(ref.groupId, 'group id');
 }
 
-function validateCanonicalPrincipalRef(value: PersistedALValue): void {
+function assertCanonicalPrincipalRef(value: PersistedALValue): void {
     const ref = requirePersistedALRecord(value, 'principal ref');
     requirePersistedALFields(
         ref,

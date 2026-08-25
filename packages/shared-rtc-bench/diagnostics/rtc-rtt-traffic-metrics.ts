@@ -147,12 +147,12 @@ const senderSocket = new RtcRttTrafficWebSocket();
 const server = new JsonWebSocketServer();
 server.addConnection(new ConnectionContext(senderSessionId, senderSocket));
 
-const service = new WsQueueBoxServerService(
-    new InMemoryQueueBox(new Map()),
-    new InMemoryQueueBox(new Map()),
-    server,
-    'rtc-rtt-traffic-diagnostic'
-);
+const service = new WsQueueBoxServerService({
+    inbox: new InMemoryQueueBox(new Map()),
+    outbox: new InMemoryQueueBox(new Map()),
+    socket: server,
+    name: 'rtc-rtt-traffic-diagnostic'
+});
 const group = createDeterministicRtcTopologyGroupSnapshot('room-1', sessionIds, Date.now());
 const enqueuedMeasurements: RttMeasurementInfo[] = [];
 installRtcRttSystemTopic(service, {

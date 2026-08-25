@@ -13,11 +13,8 @@ import {
     type ComputedGroupStateSync
 } from '@shared-server/rallar-system/state-sync/state-sync-entry-computation.ts';
 import { writeClientStateSync, writeGroupStateSync } from '@shared-server/rallar-system/state-sync/state-sync-transaction-writer.ts';
-import {
-    computeRtcTopologyEntry,
-    RtcTopologyOutboxWriter,
-    type ComputedRtcTopologyOutbox
-} from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-work.ts';
+import { computeRtcTopologyEntry, type ComputedRtcTopologyOutbox } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-entry.ts';
+import { RtcTopologyOutboxWriter } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-writer.ts';
 import type { ClientEvent, ClientSnapshot } from '@shared/api/client-types.ts';
 import type { GroupStateDeltaEnvelope } from '@shared/api/group-state-delta.ts';
 import { toCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topology-config-canonical.ts';
@@ -26,7 +23,7 @@ import { CircuitBreakerPolicy, EnqueuedType, InMemoryQueueBox, ResilienceDto } f
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
-import { WsQueueBoxServerService } from '@shared/services/WsQueueBoxServerService.ts';
+import { WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 import type { JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.ts';
 import { describe, expect, it, vi } from 'vitest';
 import { createTestGroup } from '../create-test-group.ts';
@@ -480,13 +477,13 @@ describe('direct resource outbox writes', () => {
                 connectionId: 'session-alice'
             }
         ]);
-        const service = new WsQueueBoxServerService(
-            new InMemoryQueueBox(),
-            outbox,
-            socket,
-            'server-1',
-            { targetResolver: { resolveBroadcastRecipients } }
-        );
+        const service = new WsQueueBoxServerService({
+            inbox: new InMemoryQueueBox(),
+            outbox: outbox,
+            socket: socket,
+            name: 'server-1',
+            targetResolver: { resolveBroadcastRecipients }
+        });
 
         expect(socket.sent).toEqual([]);
 
@@ -514,16 +511,14 @@ describe('direct resource outbox writes', () => {
         const socket = createSocket();
         const resolveBroadcastRecipients = vi.fn(() => []);
         const deliveryOutcomes: unknown[] = [];
-        const service = new WsQueueBoxServerService(
-            new InMemoryQueueBox(),
-            outbox,
-            socket,
-            'server-1',
-            {
-                targetResolver: { resolveBroadcastRecipients },
-                outboundDeliveryOutcome: (outcome) => deliveryOutcomes.push(outcome)
-            }
-        );
+        const service = new WsQueueBoxServerService({
+            inbox: new InMemoryQueueBox(),
+            outbox: outbox,
+            socket: socket,
+            name: 'server-1',
+            targetResolver: { resolveBroadcastRecipients },
+            outboundDeliveryOutcome: (outcome) => deliveryOutcomes.push(outcome)
+        });
         await outbox.enqueue(entry);
         await service.dequeueOutbox(WsQueueBoxServerService.OUTBOX_DEQUEUE_TYPES, createResilience());
         vi.useRealTimers();

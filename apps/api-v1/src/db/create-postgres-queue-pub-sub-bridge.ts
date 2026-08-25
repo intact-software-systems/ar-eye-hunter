@@ -1,12 +1,11 @@
+import { decodeJsonWireValue, type JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import type {
     QueueBoxPubSubBridge,
-    QueueBoxPubSubMessage,
-    QueueBoxPubSubMessageKey
+    QueueBoxPubSubMessage
 } from '@shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-contracts.ts';
 import type { ApiV1DatabaseNotificationPort } from './api-v1-database-lifecycle.ts';
 
 export function createPostgresQueuePubSubBridge(
-    publisherId: string,
     notification: ApiV1DatabaseNotificationPort
 ): QueueBoxPubSubBridge {
     return {
@@ -18,10 +17,7 @@ export function createPostgresQueuePubSubBridge(
                 channel,
                 async (payload) => {
                     const message = parsePostgresPubSubMessage(payload);
-                    if (
-                        !isValidPostgresPubSubMessage(message, channel) ||
-                        message.publisherId === publisherId
-                    ) {
+                    if (message === undefined) {
                         return;
                     }
                     await onMessage(message);
@@ -31,9 +27,9 @@ export function createPostgresQueuePubSubBridge(
     };
 }
 
-function parsePostgresPubSubMessage(payload: string): QueueBoxPubSubMessage | undefined {
+function parsePostgresPubSubMessage(payload: string): JsonWireValue | undefined {
     try {
-        return JSON.parse(payload) as QueueBoxPubSubMessage;
+        return decodeJsonWireValue(JSON.parse(payload), 'PostgreSQL QueueBox pub/sub message');
     }
     catch {
         return undefined;
@@ -51,32 +47,4 @@ function toKeyOnlyMessage(
         typeId: message.typeId,
         delivery: 'key'
     };
-}
-
-function isValidPostgresPubSubMessage(
-    value: QueueBoxPubSubMessage | undefined,
-    channel: string
-): value is QueueBoxPubSubMessage {
-    if (!value || typeof value !== 'object') {
-        return false;
-    }
-
-    return value.channel === channel &&
-        typeof value.publisherId === 'string' &&
-        typeof value.typeId === 'string' &&
-        isValidMessageKey(value.key) &&
-        (
-            value.delivery === 'key'
-                ? value.payload === undefined
-                : typeof value.payload === 'string'
-        );
-}
-
-function isValidMessageKey(
-    key: QueueBoxPubSubMessageKey | undefined
-): key is QueueBoxPubSubMessageKey {
-    return !!key &&
-        typeof key.topicId === 'string' &&
-        typeof key.resourceId === 'string' &&
-        typeof key.contextId === 'string';
 }

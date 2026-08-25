@@ -24,7 +24,7 @@ import { toCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topology-
 import type { AuditStamp, GroupSnapshot } from '@shared/api/group-types.ts';
 import { isIdempotentHandlerFinalizedRelease } from '@shared/queuebox/queue-box-types.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
-import { isCanonicalRtcTopologyWorkEntry } from '@shared/queuebox/RtcTopologyWorkEntryContract.ts';
+import { isCanonicalRtcTopologyWorkEntry } from '@shared/queuebox/rtc-topology-work-entry-contract.ts';
 import { createTestGroup } from '../../../../../create-test-group.ts';
 
 const GROUP_REF = {

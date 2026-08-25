@@ -11,10 +11,12 @@ import {
     queuePubSubDeliveryForMode,
     shouldInstallQueuePubSubBridge
 } from '../../db/api-v1-queue-pubsub-bridge.ts';
+import type { LocalQueuePubSubBus } from '../../db/local-queue-pubsub-bridge.ts';
 
 interface CreateApiRtcTopologyQueuePubSubBridgeInput {
     readonly mode: ApiV1DatabaseConfiguration['pubSub'];
     readonly notification: ApiV1DatabaseNotificationPort | null;
+    readonly localBus: LocalQueuePubSubBus;
     readonly channel: string;
     readonly publisherId: string;
     readonly timing: RallarTimingSink;
@@ -30,11 +32,12 @@ export function createApiRtcTopologyQueuePubSubBridge(
         return undefined;
     }
     return {
-        bridge: createApiV1QueuePubSubBridge(
-            input.mode,
-            input.publisherId,
-            input.notification
-        ),
+        bridge: createApiV1QueuePubSubBridge({
+            mode: input.mode,
+            publisherId: input.publisherId,
+            notification: input.notification,
+            localBus: input.localBus
+        }),
         channel: input.channel,
         publisherId: input.publisherId,
         delivery: queuePubSubDeliveryForMode(input.mode),

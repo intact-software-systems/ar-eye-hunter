@@ -1,10 +1,7 @@
 import { Temporal } from '@js-temporal/polyfill';
 import type { RallarTimingEvent } from '@shared-server/rallar-system/observability/timing.ts';
-import {
-    installQueueBoxPubSubBridge,
-    type QueueBoxPubSubBridge,
-    type QueueBoxPubSubMessage
-} from '@shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-bridge.ts';
+import { installQueueBoxPubSubBridge } from '@shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-bridge.ts';
+import type { QueueBoxPubSubBridge, QueueBoxPubSubMessage } from '@shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-contracts.ts';
 import { requeueRemoteWsOutboxDeliveryFailure } from '@shared-server/rallar-system/queue-pubsub/requeue-remote-ws-outbox-delivery-failure.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { ALAdmissionBackendConflictError } from '@shared/alm/ALAdmissionBackendConflictError.ts';
@@ -15,10 +12,23 @@ import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
 import { QueueBoxUtilities } from '@shared/services/QueueBoxUtilities.ts';
-import type { WsOutboxDeliveryOutcome } from '@shared/services/ws-queue-box-server-contracts.ts';
-import { WsQueueBoxServerService } from '@shared/services/WsQueueBoxServerService.ts';
+import type { WsOutboxDeliveryOutcome, WsServerResolvedRecipient } from '@shared/services/ws-queue-box-server/ws-queue-box-server-contracts.ts';
+import { WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 import { ConnectionContext, JsonWebSocketServer, type EncodedJsonWebSocketMessage } from '@shared/websocket/JsonWebSocketServer.ts';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi, type MockInstance } from 'vitest';
+
+interface WsOutboxTestSocket {
+    readonly socket: JsonWebSocketServer;
+    readonly sendEncoded: MockInstance<JsonWebSocketServer['sendEncoded']>;
+    readonly encodedSends: Array<[string, EncodedJsonWebSocketMessage]>;
+}
+
+interface CreateWsOutboxServiceInput {
+    readonly outbox: InMemoryQueueBox;
+    readonly socket: WsOutboxTestSocket;
+    readonly name: string;
+    readonly resolveRecipients: () => readonly WsServerResolvedRecipient[];
+}
 
 describe('durable WS outbox owner misses', () => {
     afterEach(() => {
@@ -36,27 +46,23 @@ describe('durable WS outbox owner misses', () => {
         await outbox.enqueue(entry);
         const ownerSocket = createSocket();
         const misses: WsOutboxDeliveryOutcome[] = [];
-        const nonOwner = new WsQueueBoxServerService(
-            new InMemoryQueueBox(),
-            outbox,
-            createSocket().socket,
-            'server-without-target',
-            {
-                targetResolver: { resolvePeerRecipients: () => [] },
-                outboundDeliveryOutcome: (outcome) => misses.push(outcome)
+        const nonOwner = new WsQueueBoxServerService({
+            inbox: new InMemoryQueueBox(),
+            outbox: outbox,
+            socket: createSocket().socket,
+            name: 'server-without-target',
+            targetResolver: { resolvePeerRecipients: () => [] },
+            outboundDeliveryOutcome: (outcome) => misses.push(outcome)
+        });
+        const owner = new WsQueueBoxServerService({
+            inbox: new InMemoryQueueBox(),
+            outbox: outbox,
+            socket: ownerSocket.socket,
+            name: 'server-with-target',
+            targetResolver: {
+                resolvePeerRecipients: () => [{ peerId: 'writer-session', connectionId: 'writer-session' }]
             }
-        );
-        const owner = new WsQueueBoxServerService(
-            new InMemoryQueueBox(),
-            outbox,
-            ownerSocket.socket,
-            'server-with-target',
-            {
-                targetResolver: {
-                    resolvePeerRecipients: () => [{ peerId: 'writer-session', connectionId: 'writer-session' }]
-                }
-            }
-        );
+        });
 
         await nonOwner.dequeueOutbox(WsQueueBoxServerService.OUTBOX_DEQUEUE_TYPES, createResilience());
 
@@ -97,18 +103,16 @@ describe('durable WS outbox owner misses', () => {
             }
             return await base.claimReadyEffects(...args);
         });
-        const owner = new WsQueueBoxServerService(
-            new InMemoryQueueBox(),
-            outbox,
-            ownerSocket.socket,
-            'server-with-target',
-            {
-                targetResolver: {
-                    resolvePeerRecipients: () => [{ peerId: 'writer-session', connectionId: 'writer-session' }]
-                },
-                outboundStores: { admissionStore }
-            }
-        );
+        const owner = new WsQueueBoxServerService({
+            inbox: new InMemoryQueueBox(),
+            outbox: outbox,
+            socket: ownerSocket.socket,
+            name: 'server-with-target',
+            targetResolver: {
+                resolvePeerRecipients: () => [{ peerId: 'writer-session', connectionId: 'writer-session' }]
+            },
+            outboundStores: { admissionStore }
+        });
 
         await owner.dequeueOutbox(WsQueueBoxServerService.OUTBOX_DEQUEUE_TYPES, createResilience());
         await new Promise((resolve) => setTimeout(resolve, 100));
@@ -125,10 +129,20 @@ describe('durable WS outbox owner misses', () => {
         ));
         const bus = createBridgeBus();
         const ownerSocket = createSocket();
-        const nonOwner = createService(outbox, createSocket(), 'non-owner', () => []);
-        const owner = createService(outbox, ownerSocket, 'owner', () => [
-            { peerId: 'writer-session', connectionId: 'writer-session' }
-        ]);
+        const nonOwner = createService({
+            outbox,
+            socket: createSocket(),
+            name: 'non-owner',
+            resolveRecipients: () => []
+        });
+        const owner = createService({
+            outbox,
+            socket: ownerSocket,
+            name: 'owner',
+            resolveRecipients: () => [
+                { peerId: 'writer-session', connectionId: 'writer-session' }
+            ]
+        });
         installQueueBoxPubSubBridge({
             wsQBoxServerService: nonOwner,
             bridge: bus,
@@ -158,12 +172,22 @@ describe('durable WS outbox owner misses', () => {
         const timing: RallarTimingEvent[] = [];
         const claimantSocket = createSocket();
         const remoteSocket = createSocket();
-        const claimant = createService(outbox, claimantSocket, 'claimant', () => [
-            { peerId: 'local-session', connectionId: 'local-session' }
-        ]);
-        const remote = createService(outbox, remoteSocket, 'remote', () => [
-            { peerId: 'remote-session', connectionId: 'remote-session' }
-        ]);
+        const claimant = createService({
+            outbox,
+            socket: claimantSocket,
+            name: 'claimant',
+            resolveRecipients: () => [
+                { peerId: 'local-session', connectionId: 'local-session' }
+            ]
+        });
+        const remote = createService({
+            outbox,
+            socket: remoteSocket,
+            name: 'remote',
+            resolveRecipients: () => [
+                { peerId: 'remote-session', connectionId: 'remote-session' }
+            ]
+        });
         installQueueBoxPubSubBridge({
             wsQBoxServerService: claimant,
             bridge: bus,
@@ -198,11 +222,21 @@ describe('durable WS outbox owner misses', () => {
     it('gates the first remote publication on the actual listener readiness', async () => {
         const outbox = new InMemoryQueueBox();
         const bus = createDelayedSecondSubscriberBridgeBus();
-        const claimant = createService(outbox, createSocket(), 'claimant', () => []);
+        const claimant = createService({
+            outbox,
+            socket: createSocket(),
+            name: 'claimant',
+            resolveRecipients: () => []
+        });
         const remoteSocket = createSocket();
-        const remote = createService(outbox, remoteSocket, 'remote', () => [
-            { peerId: 'writer-session', connectionId: 'writer-session' }
-        ]);
+        const remote = createService({
+            outbox,
+            socket: remoteSocket,
+            name: 'remote',
+            resolveRecipients: () => [
+                { peerId: 'writer-session', connectionId: 'writer-session' }
+            ]
+        });
         const claimantReadiness = installQueueBoxPubSubBridge({
             wsQBoxServerService: claimant,
             bridge: bus,
@@ -255,7 +289,12 @@ describe('durable WS outbox owner misses', () => {
         const outbox = new InMemoryQueueBox();
         const invalid = { ...createUnicastMessage(), targets: undefined };
         await outbox.enqueue(QueueBoxUtilities.toResourceEntryFromMsg(invalid, EnqueuedType.WS_OUTBOX));
-        const service = createService(outbox, createSocket(), 'claimant', () => []);
+        const service = createService({
+            outbox,
+            socket: createSocket(),
+            name: 'claimant',
+            resolveRecipients: () => []
+        });
         installQueueBoxPubSubBridge({
             wsQBoxServerService: service,
             bridge: createBridgeBus(),
@@ -280,7 +319,12 @@ describe('durable WS outbox owner misses', () => {
             createUnicastMessage(),
             EnqueuedType.WS_OUTBOX
         ));
-        const service = createService(outbox, createSocket(), 'claimant', () => []);
+        const service = createService({
+            outbox,
+            socket: createSocket(),
+            name: 'claimant',
+            resolveRecipients: () => []
+        });
         const bus = {
             ...createBridgeBus(),
             publish: async () => {
@@ -312,14 +356,24 @@ describe('durable WS outbox owner misses', () => {
             const bus: QueueBoxPubSubBridge & { drain?(): Promise<void>; } = race === 'before'
                 ? createBridgeBus()
                 : createFireAndForgetBridgeBus();
-            const claimant = createService(outbox, createSocket(), 'claimant', () => []);
+            const claimant = createService({
+                outbox,
+                socket: createSocket(),
+                name: 'claimant',
+                resolveRecipients: () => []
+            });
             const remoteSocket = createSocket();
             remoteSocket.sendEncoded.mockImplementationOnce(() => {
                 throw new Error('simulated remote socket failure');
             });
-            const remote = createService(outbox, remoteSocket, 'remote', () => [
-                { peerId: 'writer-session', connectionId: 'writer-session' }
-            ]);
+            const remote = createService({
+                outbox,
+                socket: remoteSocket,
+                name: 'remote',
+                resolveRecipients: () => [
+                    { peerId: 'writer-session', connectionId: 'writer-session' }
+                ]
+            });
             const remoteRetryPolicy = {
                 ...createResilience().retryPolicy,
                 delaysAfterAttemptMs: [50, 50],
@@ -387,32 +441,30 @@ function createUnicastMessage(
     };
 }
 
-function createSocket() {
+function createSocket(): WsOutboxTestSocket {
     const socket = new JsonWebSocketServer();
     socket.connections.set(
         'writer-session',
         new ConnectionContext('writer-session', { readyState: 1 } as WebSocket)
     );
-    const send = vi.spyOn(socket, 'send');
     const encodedSends: Array<[string, EncodedJsonWebSocketMessage]> = [];
     const sendEncoded = vi.spyOn(socket, 'sendEncoded').mockImplementation(
         (connectionId: string, encoded: EncodedJsonWebSocketMessage) => {
             encodedSends.push([connectionId, encoded]);
         }
     );
-    return { socket, send, sendEncoded, encodedSends };
+    return { socket, sendEncoded, encodedSends };
 }
 
-function createService(
-    outbox: InMemoryQueueBox,
-    socket: ReturnType<typeof createSocket>,
-    name: string,
-    resolveRecipients: () => readonly { peerId: string; connectionId: string; }[]
-): WsQueueBoxServerService {
-    return new WsQueueBoxServerService(new InMemoryQueueBox(), outbox, socket.socket, name, {
+function createService(input: CreateWsOutboxServiceInput): WsQueueBoxServerService {
+    return new WsQueueBoxServerService({
+        inbox: new InMemoryQueueBox(),
+        outbox: input.outbox,
+        socket: input.socket.socket,
+        name: input.name,
         targetResolver: {
-            resolvePeerRecipients: resolveRecipients,
-            resolveBroadcastRecipients: resolveRecipients
+            resolvePeerRecipients: input.resolveRecipients,
+            resolveBroadcastRecipients: input.resolveRecipients
         }
     });
 }

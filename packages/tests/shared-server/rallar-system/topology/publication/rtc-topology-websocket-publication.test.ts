@@ -11,7 +11,7 @@ import {
 import { installTopologyAppOutbox, type InstallTopologyAppOutboxOptions } from '@shared-server/rallar-system/topology/runtime/install-topology-app-outbox.ts';
 import { RallarRtcTopologyService } from '@shared-server/rallar-system/topology/runtime/rallar-rtc-topology-service.ts';
 import { createWsServerTargetResolver } from '@shared-server/rallar-system/websocket/targets/create-ws-server-target-resolver.ts';
-import { validatePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
+import { decodePersistedALMessageValue } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import type { AuditStamp, GroupSnapshot } from '@shared/api/group-types.ts';
 import {
@@ -43,13 +43,13 @@ describe('RTC topology websocket publication', () => {
         const outsideSocket = new FakeSocket();
         server.addConnection(new ConnectionContext('session-1', recordedSocket));
         server.addConnection(new ConnectionContext('session-2', outsideSocket));
-        const service = new WsQueueBoxServerService(
-            new InMemoryQueueBox(new Map()),
-            new InMemoryQueueBox(new Map()),
-            server,
-            'server-1',
-            { targetResolver: createWsServerTargetResolver(server) }
-        );
+        const service = new WsQueueBoxServerService({
+            inbox: new InMemoryQueueBox(new Map()),
+            outbox: new InMemoryQueueBox(new Map()),
+            socket: server,
+            name: 'server-1',
+            targetResolver: createWsServerTargetResolver(server)
+        });
         const replay = new RtcTopologyReplayEntryHandlerService({
             publications: {
                 findPublication: async () => fixture.publication
@@ -86,12 +86,12 @@ describe('RTC topology websocket publication', () => {
         server.addConnection(new ConnectionContext('session-b', peerSocket));
         server.addConnection(new ConnectionContext('session-c', outsideSocket));
 
-        const service = new WsQueueBoxServerService(
-            new InMemoryQueueBox(new Map()),
-            new InMemoryQueueBox(new Map()),
-            server,
-            'server-1'
-        );
+        const service = new WsQueueBoxServerService({
+            inbox: new InMemoryQueueBox(new Map()),
+            outbox: new InMemoryQueueBox(new Map()),
+            socket: server,
+            name: 'server-1'
+        });
         installTopologyTestTopics(service);
 
         const group = createGroupSnapshot('room-1', ['session-a', 'session-b']);
@@ -136,12 +136,12 @@ describe('RTC topology websocket publication', () => {
             server.addConnection(new ConnectionContext(sessionId, socket));
         }
 
-        const service = new WsQueueBoxServerService(
-            new InMemoryQueueBox(new Map()),
-            new InMemoryQueueBox(new Map()),
-            server,
-            'server-1'
-        );
+        const service = new WsQueueBoxServerService({
+            inbox: new InMemoryQueueBox(new Map()),
+            outbox: new InMemoryQueueBox(new Map()),
+            socket: server,
+            name: 'server-1'
+        });
         const topologyService = new RallarRtcTopologyService();
         const appOutbox = new InMemoryQueueBox(new Map());
         const outboxQueueReader = new OutboxQueueReader(appOutbox);
@@ -247,12 +247,12 @@ describe('RTC topology websocket publication', () => {
         const appOutbox = new InMemoryQueueBox(new Map());
         const runtimeRepository = new FakeRuntimeStateRepository();
         const outboxQueueReader = new OutboxQueueReader(appOutbox);
-        const service = new WsQueueBoxServerService(
-            new InMemoryQueueBox(new Map()),
-            new InMemoryQueueBox(new Map()),
-            server,
-            'server-1'
-        );
+        const service = new WsQueueBoxServerService({
+            inbox: new InMemoryQueueBox(new Map()),
+            outbox: new InMemoryQueueBox(new Map()),
+            socket: server,
+            name: 'server-1'
+        });
         installTopologyTestTopics(service, {
             ...topologyOptions(createTopologyOwners()),
             rtcTopologyAppOutbox: {
@@ -295,12 +295,12 @@ describe('RTC topology websocket publication', () => {
         const appOutbox = new InMemoryQueueBox(new Map());
         const runtimeRepository = new FakeRuntimeStateRepository();
         const outboxQueueReader = new OutboxQueueReader(appOutbox);
-        const service = new WsQueueBoxServerService(
-            new InMemoryQueueBox(new Map()),
-            wsOutbox,
-            server,
-            'server-1'
-        );
+        const service = new WsQueueBoxServerService({
+            inbox: new InMemoryQueueBox(new Map()),
+            outbox: wsOutbox,
+            socket: server,
+            name: 'server-1'
+        });
         installTopologyTestTopics(service, {
             ...topologyOptions(createTopologyOwners()),
             rtcTopologyAppOutbox: {
@@ -440,8 +440,7 @@ class FakeSocket extends EventTarget implements WebSocket {
 
 function parsePersistedMessage(serialized: string): ALMessage {
     const message = JSON.parse(serialized);
-    validatePersistedALMessage(message);
-    return message;
+    return decodePersistedALMessageValue(message);
 }
 function createSockets(sessionIds: readonly string[]): Map<string, FakeSocket> {
     return new Map(sessionIds.map((sessionId) => [sessionId, new FakeSocket()]));

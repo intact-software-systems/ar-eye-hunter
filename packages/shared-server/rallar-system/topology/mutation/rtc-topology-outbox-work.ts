@@ -21,91 +21,81 @@ import {
     toRtcTopologyQueueContextId,
     type RtcTopologyWorkEnvelope
 } from '../replay/work/rtc-topology-work-codec.ts';
-export {
-    createRtcTopologyWorkHandler,
-    type RtcTopologyDeliveryOptions
-} from '../replay/work/create-rtc-topology-work-handler.ts';
-export {
-    APP_OUTBOX_RTC_TOPOLOGY_TOPIC,
-    type ComputedRtcTopologyOutbox,
-    computeRtcTopologyEntry
-} from './rtc-topology-outbox-entry.ts';
-export { RtcTopologyOutboxWriter } from './rtc-topology-outbox-writer.ts';
 import { APP_OUTBOX_RTC_TOPOLOGY_TOPIC } from './rtc-topology-outbox-entry.ts';
 
-export type RtcTopologyGroupRevisionWork = Readonly<{
-    kind: 'group-revision';
-    overlayId: string;
-    groupSnapshot: GroupSnapshot;
-    sourceGroupStateCausalRevision: GroupStateCausalRevision;
-    requestedAtEpochMs: number;
-    requestOptions: CanonicalGroupTopologyConfigPatch;
-    publish: boolean;
-}>;
+export interface RtcTopologyGroupRevisionWork {
+    readonly kind: 'group-revision';
+    readonly overlayId: string;
+    readonly groupSnapshot: GroupSnapshot;
+    readonly sourceGroupStateCausalRevision: GroupStateCausalRevision;
+    readonly requestedAtEpochMs: number;
+    readonly requestOptions: CanonicalGroupTopologyConfigPatch;
+    readonly publish: boolean;
+}
 
-export type RtcTopologyRttRefreshWork = Readonly<{
-    kind: 'rtt-refresh';
-    overlayId: string;
-    groupSnapshot: GroupSnapshot;
-    requestedGroupStateCausalRevision: GroupStateCausalRevision;
-    requestedRttVersion: number;
-    rtt: RttMeasurementInfo;
-    refinementObservationId: string;
-    requestedAtEpochMs: number;
-    requestOptions: CanonicalGroupTopologyConfigPatch;
-    publish: boolean;
-}>;
+export interface RtcTopologyRttRefreshWork {
+    readonly kind: 'rtt-refresh';
+    readonly overlayId: string;
+    readonly groupSnapshot: GroupSnapshot;
+    readonly requestedGroupStateCausalRevision: GroupStateCausalRevision;
+    readonly requestedRttVersion: number;
+    readonly rtt: RttMeasurementInfo;
+    readonly refinementObservationId: string;
+    readonly requestedAtEpochMs: number;
+    readonly requestOptions: CanonicalGroupTopologyConfigPatch;
+    readonly publish: boolean;
+}
 
-export type RtcTopologyStateMutationPublisher = Readonly<{
+export interface RtcTopologyStateMutationPublisher {
     enqueueForStateMutation(
         group: GroupSnapshot,
         deliveryId: string
     ): Promise<RtcTopologyGroupEnqueueResult>;
-}>;
+}
 
-export type RtcTopologyWorkPublisher =
-    & RtcTopologyStateMutationPublisher
-    & Readonly<{
-        enqueueForGroupSnapshot(group: GroupSnapshot): Promise<void>;
-        enqueueForRtt(group: GroupSnapshot, rtt: RttMeasurementInfo, debounceMs: number): Promise<void>;
-        enqueueForRttGroups(
-            rtt: RttMeasurementInfo,
-            groups: readonly GroupSnapshot[],
-            debounceMs: number
-        ): Promise<void>;
-    }>;
+export interface RtcTopologyWorkPublisher extends RtcTopologyStateMutationPublisher {
+    enqueueForGroupSnapshot(group: GroupSnapshot): Promise<void>;
+    enqueueForRtt(group: GroupSnapshot, rtt: RttMeasurementInfo, debounceMs: number): Promise<void>;
+    enqueueForRttGroups(
+        rtt: RttMeasurementInfo,
+        groups: readonly GroupSnapshot[],
+        debounceMs: number
+    ): Promise<void>;
+}
 
-export type RtcTopologyGroupEnqueueResult = Readonly<{
-    effectiveCausalRevision: GroupStateCausalRevision;
-}>;
+export interface RtcTopologyGroupEnqueueResult {
+    readonly effectiveCausalRevision: GroupStateCausalRevision;
+}
 
-export type RtcTopologyWorkRuntime = Readonly<{
-    service: CoalescedAppOutboxWorkService;
-    outboxQueueReader: OutboxQueueReader;
-    publisher: RtcTopologyWorkPublisher;
-    workType: string;
-    topicId: string;
-    senderId: string;
-}>;
+export interface RtcTopologyWorkRuntime {
+    readonly service: CoalescedAppOutboxWorkService;
+    readonly outboxQueueReader: OutboxQueueReader;
+    readonly publisher: RtcTopologyWorkPublisher;
+    readonly workType: string;
+    readonly topicId: string;
+    readonly senderId: string;
+}
 
-type CreateRtcTopologyWorkRuntimeOptions = Readonly<{
-    service: CoalescedAppOutboxWorkService;
-    outboxQueueReader: OutboxQueueReader;
-    senderId: string;
-    workType: string;
-    topicId: string;
-    wake?: () => void;
-    now?: () => number;
-}>;
+interface CreateRtcTopologyWorkRuntimeOptions {
+    readonly service: CoalescedAppOutboxWorkService;
+    readonly outboxQueueReader: OutboxQueueReader;
+    readonly senderId: string;
+    readonly workType: string;
+    readonly topicId: string;
+    readonly wake?: () => void;
+    readonly now?: () => number;
+}
+
+export interface CreateRtcTopologyOutboxPublisherOptions {
+    readonly outboxQueueReader: OutboxQueueReader;
+    readonly senderId?: string;
+    readonly topicId?: string;
+    readonly wake?: () => void;
+    readonly now?: () => number;
+}
 
 export function createRtcTopologyOutboxPublisher(
-    options: Readonly<{
-        outboxQueueReader: OutboxQueueReader;
-        senderId?: string;
-        topicId?: string;
-        wake?: () => void;
-        now?: () => number;
-    }>
+    options: CreateRtcTopologyOutboxPublisherOptions
 ): RtcTopologyWorkRuntime {
     const senderId = options.senderId ?? 'rallar-server';
     return createRtcTopologyWorkRuntime({

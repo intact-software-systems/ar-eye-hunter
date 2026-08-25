@@ -1,19 +1,19 @@
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { ConnectionContext, InMemoryQueueBox, JsonWebSocketServer, newALRoute, newALUntargetedMessage } from '@shared/mod.ts';
-import { WsQueueBoxServerService } from '@shared/services/WsQueueBoxServerService.ts';
+import { WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 import { describe, expect, it, vi } from 'vitest';
 
 describe('WS server inbound identity', () => {
     it('rejects a forged sender and preserves an exact matching non-CRDT message', async () => {
         const server = new JsonWebSocketServer();
         const socket = new FakeSocket();
-        server.addConnection(new ConnectionContext('session-attacker', socket as never));
-        const service = new WsQueueBoxServerService(
-            new InMemoryQueueBox(),
-            new InMemoryQueueBox(),
-            server,
-            'server-1'
-        );
+        server.addConnection(new ConnectionContext('session-attacker', socket));
+        const service = new WsQueueBoxServerService({
+            inbox: new InMemoryQueueBox(),
+            outbox: new InMemoryQueueBox(),
+            socket: server,
+            name: 'server-1'
+        });
         const received: ALMessage[] = [];
         service.onAnyInboxMessageDo('identity-test', {
             onMessage: (message) => {
@@ -36,25 +36,117 @@ describe('WS server inbound identity', () => {
             consoleError.mockRestore();
         }
     });
+
+    it('rejects malformed current envelopes before admission policy runs', async () => {
+        const server = new JsonWebSocketServer();
+        const socket = new FakeSocket();
+        server.addConnection(new ConnectionContext('session-1', socket));
+        const admittedMessages: ALMessage[] = [];
+        new WsQueueBoxServerService({
+            inbox: new InMemoryQueueBox(),
+            outbox: new InMemoryQueueBox(),
+            socket: server,
+            name: 'server-1',
+            admitInboundMessage: (message) => {
+                admittedMessages.push(message);
+                return true;
+            }
+        });
+        const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+        try {
+            await socket.dispatchValue({
+                id: {
+                    v: 2,
+                    msgId: 'malformed-message',
+                    ts: 1,
+                    senderId: 'session-1'
+                },
+                payload: {
+                    typeId: 'test.identity.v1',
+                    resource: '{}'
+                }
+            });
+
+            expect(admittedMessages).toEqual([]);
+        }
+        finally {
+            consoleError.mockRestore();
+        }
+    });
 });
 
-class FakeSocket {
-    readonly readyState = WebSocket.OPEN;
-    private readonly listeners = new Map<string, Array<(event: MessageEvent) => void>>();
+class FakeSocket implements WebSocket {
+    readonly CONNECTING = WebSocket.CONNECTING;
+    readonly OPEN = WebSocket.OPEN;
+    readonly CLOSING = WebSocket.CLOSING;
+    readonly CLOSED = WebSocket.CLOSED;
+    binaryType: BinaryType = 'blob';
+    readonly bufferedAmount = 0;
+    readonly extensions = '';
+    onclose: ((this: WebSocket, event: CloseEvent) => void) | null = null;
+    onerror: ((this: WebSocket, event: Event) => void) | null = null;
+    onmessage: ((this: WebSocket, event: MessageEvent) => void) | null = null;
+    onopen: ((this: WebSocket, event: Event) => void) | null = null;
+    readonly protocol = '';
+    readyState = WebSocket.OPEN;
+    readonly url = 'ws://test.invalid';
+    private readonly listeners = new Map<string, EventListenerOrEventListenerObject[]>();
 
-    addEventListener(type: string, listener: (event: MessageEvent) => void): void {
+    addEventListener(
+        type: string,
+        listener: EventListenerOrEventListenerObject | null
+    ): void {
+        if (!listener) {
+            return;
+        }
         const listeners = this.listeners.get(type) ?? [];
         listeners.push(listener);
         this.listeners.set(type, listeners);
     }
 
-    send(_data: string): void {
+    removeEventListener(
+        type: string,
+        listener: EventListenerOrEventListenerObject | null
+    ): void {
+        if (!listener) {
+            return;
+        }
+        const listeners = this.listeners.get(type) ?? [];
+        this.listeners.set(type, listeners.filter((candidate) => candidate !== listener));
+    }
+
+    dispatchEvent(event: Event): boolean {
+        void this.dispatchListeners(event.type, event);
+        return true;
+    }
+
+    close(): void {
+        this.readyState = WebSocket.CLOSED;
+    }
+
+    send(_data: string | ArrayBufferLike | Blob | ArrayBufferView): void {
     }
 
     async dispatchMessage(message: ALMessage): Promise<void> {
-        const event = { data: JSON.stringify(message) } as MessageEvent;
-        for (const listener of this.listeners.get('message') ?? []) {
-            await listener(event);
+        await this.dispatchValue(message);
+    }
+
+    async dispatchValue(value: object): Promise<void> {
+        await this.dispatchListeners(
+            'message',
+            new MessageEvent('message', { data: JSON.stringify(value) })
+        );
+    }
+
+    private async dispatchListeners(type: string, event: Event): Promise<void> {
+        for (const listener of this.listeners.get(type) ?? []) {
+            if (typeof listener === 'function') {
+                await listener.call(this, event);
+            }
+            else {
+                await listener.handleEvent(event);
+            }
         }
     }
 }

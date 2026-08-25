@@ -1,7 +1,7 @@
 import { isRtcTopologyPublicationOutboxEntry } from '@shared-server/rallar-system/topology/replay/work/is-rtc-topology-publication-outbox-entry.ts';
 import { newALBroadcastMessage, newALRoute } from '@shared/al-contracts/al-contract.ts';
 import { QueueBoxUtilities } from '@shared/services/QueueBoxUtilities.ts';
-import { WsQueueBoxServerService } from '@shared/services/WsQueueBoxServerService.ts';
+import { WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 import { describe, expect, it } from 'vitest';
 
 import { createRtcTopologyReplayFixture } from './rtc-topology-replay-fixture.ts';

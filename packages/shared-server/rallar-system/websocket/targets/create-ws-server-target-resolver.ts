@@ -1,5 +1,8 @@
 import { readALTargetGroupRef, type ALMessage } from '@shared/al-contracts/al-contract.ts';
-import type { WsServerResolvedRecipient, WsServerTargetResolver } from '@shared/services/WsQueueBoxServerService.ts';
+import type {
+    WsServerResolvedRecipient,
+    WsServerTargetResolver
+} from '@shared/services/ws-queue-box-server/ws-queue-box-server-contracts.ts';
 import type { JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.ts';
 import { resolveWsClientTargetRecipients } from './resolve-ws-client-target.ts';
 import { resolveWsCrdtPrincipalTargetRecipients } from './resolve-ws-crdt-principal-target.ts';

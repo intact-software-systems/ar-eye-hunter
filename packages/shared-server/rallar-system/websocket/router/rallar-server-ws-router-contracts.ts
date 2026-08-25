@@ -4,10 +4,10 @@ import type { ALOutboundEnqueueStatus } from '@shared/alm/ALOutboundMessageRunti
 import type { GroupRef } from '@shared/api/group-types.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import type {
-    WsQueueBoxServerService,
     WsServerLiveSendFailure,
     WsServerResolvedRecipient
-} from '@shared/services/WsQueueBoxServerService.ts';
+} from '@shared/services/ws-queue-box-server/ws-queue-box-server-contracts.ts';
+import type { WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 import type { JsonWireValue } from '../../protocol/json-wire-identity.ts';
 
 export type RallarServerWsFanout = 'live-only' | 'outbox' | 'none';

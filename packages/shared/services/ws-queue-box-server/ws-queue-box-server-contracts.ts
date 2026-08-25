@@ -1,9 +1,9 @@
-import { ALMessage } from '../al-contracts/al-contract.ts';
+import type { ALMessage } from '../../al-contracts/al-contract.ts';
 
-export type WsServerResolvedRecipient = Readonly<{
-    peerId: string;
-    connectionId: string;
-}>;
+export interface WsServerResolvedRecipient {
+    readonly peerId: string;
+    readonly connectionId: string;
+}
 
 export type WsServerLiveSendStatus =
     | 'sent-live'
@@ -11,40 +11,40 @@ export type WsServerLiveSendStatus =
     | 'partial-failure'
     | 'failed';
 
-export type WsServerLiveSendFailure = Readonly<{
-    peerId: string;
-    connectionId: string;
-    reason: string;
-}>;
+export interface WsServerLiveSendFailure {
+    readonly peerId: string;
+    readonly connectionId: string;
+    readonly reason: string;
+}
 
-export type WsServerLiveSendResult = Readonly<{
-    status: WsServerLiveSendStatus;
-    message: ALMessage;
-    recipients: readonly WsServerResolvedRecipient[];
-    recipientCount: number;
-    sentCount: number;
-    failedCount: number;
-    failures: readonly WsServerLiveSendFailure[];
-}>;
+export interface WsServerLiveSendResult {
+    readonly status: WsServerLiveSendStatus;
+    readonly message: ALMessage;
+    readonly recipients: readonly WsServerResolvedRecipient[];
+    readonly recipientCount: number;
+    readonly sentCount: number;
+    readonly failedCount: number;
+    readonly failures: readonly WsServerLiveSendFailure[];
+}
 
-export type WsServerTargetResolver = Readonly<{
-    resolvePeerRecipients?: (
+export interface WsServerTargetResolver {
+    readonly resolvePeerRecipients?: (
         peerId: string,
         message: ALMessage
     ) => readonly WsServerResolvedRecipient[];
-    resolveGroupRecipients?: (
+    readonly resolveGroupRecipients?: (
         groupId: string,
         message: ALMessage
     ) => readonly WsServerResolvedRecipient[];
-    resolveBroadcastRecipients?: (
+    readonly resolveBroadcastRecipients?: (
         scope: 'room' | 'world' | 'all' | 'principal',
         message: ALMessage
     ) => readonly WsServerResolvedRecipient[];
-    resolvePeerIdForConnection?: (
+    readonly resolvePeerIdForConnection?: (
         connectionId: string,
         message: ALMessage
     ) => string | undefined;
-}>;
+}
 
 export type WsOutboxDeliveryOutcome =
     | Readonly<{

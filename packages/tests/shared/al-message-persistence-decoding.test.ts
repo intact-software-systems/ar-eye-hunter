@@ -1,7 +1,35 @@
-import { decodePersistedALMessage, validatePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
+import { decodePersistedALMessage, decodePersistedALMessageValue } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { describe, expect, it } from 'vitest';
 
-describe('persisted AL message validation', () => {
+interface MutablePersistedALMessageFixture {
+    id: {
+        v: number;
+        msgId: string;
+        ts: number;
+        senderId: string;
+    };
+    route: {
+        topicId: string;
+        resourceId: string;
+        contextId: string;
+    };
+    targets: {
+        mode: string;
+        scope: string;
+        groupRef?: {
+            applicationId: string;
+            workspaceId: string;
+            groupId: string;
+        };
+        recipientPeerIds?: string[];
+    };
+    payload: {
+        typeId: string;
+        resource: string;
+    };
+}
+
+describe('persisted AL message decoding', () => {
     it.each([
         {
             mode: 'multicast',
@@ -41,7 +69,7 @@ describe('persisted AL message validation', () => {
 
     it('rejects a room broadcast without a group ref', () => {
         expect(() =>
-            validatePersistedALMessage({
+            decodePersistedALMessageValue({
                 id: {
                     v: 2,
                     msgId: 'message-1',
@@ -67,7 +95,7 @@ describe('persisted AL message validation', () => {
 
     it('accepts a canonical fixed recipient audience for a room broadcast', () => {
         expect(() =>
-            validatePersistedALMessage({
+            decodePersistedALMessageValue({
                 id: {
                     v: 2,
                     msgId: 'message-1',
@@ -100,7 +128,7 @@ describe('persisted AL message validation', () => {
 
     it('accepts the current principal broadcast target shape', () => {
         expect(() =>
-            validatePersistedALMessage({
+            decodePersistedALMessageValue({
                 id: {
                     v: 2,
                     msgId: 'message-1',
@@ -151,8 +179,63 @@ describe('persisted AL message validation', () => {
         expect(decodePersistedALMessage(serialized).route.topicId).toBe('topic-1');
         expect(() => decodePersistedALMessage('{"route":{}}')).toThrow(TypeError);
     });
+
+    it('rejects accessor-backed and sparse persisted fields without invoking custom behavior', () => {
+        const accessorBacked = currentPersistedALMessage();
+        let accessorRead = false;
+        Object.defineProperty(accessorBacked, 'route', {
+            enumerable: true,
+            get: () => {
+                accessorRead = true;
+                return {};
+            }
+        });
+
+        expect(() => decodePersistedALMessageValue(accessorBacked)).toThrow(/data properties/);
+        expect(accessorRead).toBe(false);
+
+        const sparseRecipients = ['session-a'];
+        sparseRecipients.length = 2;
+        const sparseAudience = currentPersistedALMessage();
+        sparseAudience.targets = {
+            mode: 'broadcast',
+            scope: 'room',
+            groupRef: {
+                applicationId: 'app-1',
+                workspaceId: 'workspace-1',
+                groupId: 'room-1'
+            },
+            recipientPeerIds: sparseRecipients
+        };
+
+        expect(() => decodePersistedALMessageValue(sparseAudience)).toThrow(/fixed recipients/);
+    });
 });
 
 function expectInvalidPersistedALMessage(value: object, message: RegExp): void {
-    expect(() => validatePersistedALMessage(value)).toThrow(message);
+    expect(() => decodePersistedALMessageValue(value)).toThrow(message);
+}
+
+function currentPersistedALMessage(): MutablePersistedALMessageFixture {
+    return {
+        id: {
+            v: 2,
+            msgId: 'message-1',
+            ts: 1,
+            senderId: 'server-1'
+        },
+        route: {
+            topicId: 'topic-1',
+            resourceId: 'resource-1',
+            contextId: 'context-1'
+        },
+        targets: {
+            mode: 'broadcast',
+            scope: 'all'
+        },
+        payload: {
+            typeId: 'type-1',
+            resource: '{}'
+        }
+    };
 }

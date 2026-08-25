@@ -1,31 +1,24 @@
-import { initWsLifecycle } from '@shared-server/rallar-system/websocket/ws-lifecycle-service.ts';
-import type { WsQueueBoxServerService } from '@shared/services/WsQueueBoxServerService.ts';
+import {
+    initWsLifecycle,
+    type RallarWsLifecycleCloseInput,
+    type RallarWsLifecycleSocketService
+} from '@shared-server/rallar-system/websocket/ws-lifecycle-service.ts';
 import { describe, expect, it, vi } from 'vitest';
 
-type WebSocketLifecycleCallbacks = Readonly<{
-    onClose?: (
-        socket: Readonly<{
-            id: string;
-            generationId: string;
-            generationStartedAtEpochMs: number;
-        }>
-    ) => void | Promise<void>;
-}>;
+interface WebSocketLifecycleCallbacks {
+    onClose?: (socket: WebSocketLifecycleSocket) => void | Promise<void>;
+}
+
+interface WebSocketLifecycleSocket {
+    readonly id: string;
+    readonly generationId: string;
+    readonly generationStartedAtEpochMs: number;
+}
 
 describe('ws lifecycle service', () => {
     it('disconnects client and group session state when the websocket closes', async () => {
         const callbacks = new Map<string, WebSocketLifecycleCallbacks>();
-        const wsQBoxServerService = {
-            socket: {
-                onWebsocketCallbacksDo(
-                    id: string,
-                    callback: WebSocketLifecycleCallbacks
-                ) {
-                    callbacks.set(id, callback);
-                    return this;
-                }
-            }
-        } as unknown as WsQueueBoxServerService;
+        const wsQBoxServerService = createLifecycleSocketService(callbacks);
         const handlers = {
             now: () => 2_000,
             enqueueClientSessionDisconnect: vi.fn(() => Promise.resolve()),
@@ -58,21 +51,19 @@ describe('ws lifecycle service', () => {
         const callbacks = new Map<string, WebSocketLifecycleCallbacks>();
         const failure = new Error('durable client cleanup unavailable');
         const scheduled: Array<() => Promise<void>> = [];
+        const groupCleanupInputs: RallarWsLifecycleCloseInput[] = [];
         const handlers = {
             now: () => 2_000,
             enqueueClientSessionDisconnect: vi.fn(() => Promise.reject(failure)),
-            enqueueGroupSessionCleanup: vi.fn(() => Promise.resolve()),
+            enqueueGroupSessionCleanup: (input: RallarWsLifecycleCloseInput) => {
+                groupCleanupInputs.push(input);
+                return Promise.resolve();
+            },
             hasCloseFacts: () => true,
             releaseCloseFacts: vi.fn(),
             retry: retryConfig(scheduled)
         };
-        const service = {
-            socket: {
-                onWebsocketCallbacksDo(id: string, callback: WebSocketLifecycleCallbacks) {
-                    callbacks.set(id, callback);
-                }
-            }
-        } as unknown as WsQueueBoxServerService;
+        const service = createLifecycleSocketService(callbacks);
         initWsLifecycle(service, handlers);
 
         await callbacks.get('handle-ws-lifecycle')?.onClose?.({
@@ -81,7 +72,13 @@ describe('ws lifecycle service', () => {
             generationStartedAtEpochMs: 1_000
         });
         await flushLifecycle();
-        expect(handlers.enqueueGroupSessionCleanup).toHaveBeenCalledOnce();
+        expect(groupCleanupInputs).toEqual([{
+            sessionId: 'session-1',
+            generationId: 'generation-1',
+            generationStartedAtEpochMs: 1_000,
+            disconnectedAtEpochMs: 2_000,
+            reason: 'socket-closed'
+        }]);
         expect(scheduled).toHaveLength(1);
     });
 
@@ -99,13 +96,7 @@ describe('ws lifecycle service', () => {
             releaseCloseFacts: vi.fn(),
             retry: retryConfig()
         };
-        const service = {
-            socket: {
-                onWebsocketCallbacksDo(id: string, callback: WebSocketLifecycleCallbacks) {
-                    callbacks.set(id, callback);
-                }
-            }
-        } as unknown as WsQueueBoxServerService;
+        const service = createLifecycleSocketService(callbacks);
         initWsLifecycle(service, handlers);
 
         await callbacks.get('handle-ws-lifecycle')?.onClose?.({
@@ -123,6 +114,19 @@ describe('ws lifecycle service', () => {
         expect(captured).toEqual([1_000, 1_001]);
     });
 });
+
+function createLifecycleSocketService(
+    callbacks: Map<string, WebSocketLifecycleCallbacks>
+): RallarWsLifecycleSocketService {
+    return {
+        socket: {
+            onWebsocketCallbacksDo: (id, callback) => {
+                callbacks.set(id, callback);
+            },
+            removeWebsocketCallbackById: (id) => callbacks.delete(id)
+        }
+    };
+}
 
 function retryConfig(scheduled: Array<() => Promise<void>> = []) {
     return {

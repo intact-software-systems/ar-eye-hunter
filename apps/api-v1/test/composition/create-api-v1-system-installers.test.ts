@@ -8,7 +8,7 @@ import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { toResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 import type { OnWebSocketServerMessageCallback } from '@shared/services/InboxOutboxContracts.ts';
-import { WsQueueBoxServerService } from '@shared/services/WsQueueBoxServerService.ts';
+import { WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 import { JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.ts';
 
 import {
@@ -189,12 +189,12 @@ function createRuntime(
     calls: RuntimeCalls = new RuntimeCalls()
 ): TestRuntime {
     return {
-        wsQBoxServerService: new CountingWsQueueBoxServerService(
-            new InMemoryQueueBox(new Map()),
-            new InMemoryQueueBox(new Map()),
-            new JsonWebSocketServer(),
-            'api-v1-system-installers-test'
-        ),
+        wsQBoxServerService: new CountingWsQueueBoxServerService({
+            inbox: new InMemoryQueueBox(new Map()),
+            outbox: new InMemoryQueueBox(new Map()),
+            socket: new JsonWebSocketServer(),
+            name: 'api-v1-system-installers-test'
+        }),
         appClientInboxService: {
             enqueueAuthorisedWsClientDisconnect: (input) => {
                 calls.clientDisconnect = input;

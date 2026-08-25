@@ -1,7 +1,7 @@
 import { Temporal } from '@js-temporal/polyfill';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import * as shared from '@shared/mod.ts';
-import type { WsServerTargetResolver } from '@shared/services/ws-queue-box-server-contracts.ts';
+import type { WsServerTargetResolver } from '@shared/services/ws-queue-box-server/ws-queue-box-server-contracts.ts';
 import { ConnectionContext, JsonWebSocketServer, type EncodedJsonWebSocketMessage } from '@shared/websocket/JsonWebSocketServer.ts';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -9,15 +9,13 @@ describe('WsQueueBoxServerService QoS runtime', () => {
     it('sends volatile targeted unicast messages directly from the server outbox', async () => {
         const socket = createFakeWsServer();
         const outbox = new shared.InMemoryQueueBox(new Map());
-        const service = new shared.WsQueueBoxServerService(
-            new shared.InMemoryQueueBox(new Map()),
-            outbox,
-            socket,
-            'server-1',
-            {
-                targetResolver: createTargetResolver()
-            }
-        );
+        const service = new shared.WsQueueBoxServerService({
+            inbox: new shared.InMemoryQueueBox(new Map()),
+            outbox: outbox,
+            socket: socket,
+            name: 'server-1',
+            targetResolver: createTargetResolver()
+        });
 
         const msg = shared.newALUnicastMessage(
             'server-1',
@@ -47,28 +45,26 @@ describe('WsQueueBoxServerService QoS runtime', () => {
         const socket = createFakeWsServer();
         const outbox = new shared.InMemoryQueueBox(new Map());
         let providerEvaluationCount = 0;
-        const service = new shared.WsQueueBoxServerService(
-            new shared.InMemoryQueueBox(new Map()),
-            outbox,
-            socket,
-            'server-1',
-            {
-                qosProvider: {
-                    defaultsForMessage: () => {
-                        providerEvaluationCount += 1;
-                        return {
-                            durability: {
-                                algo: providerEvaluationCount === 1
-                                    ? 'volatile'
-                                    : 'local-outbox',
-                                opts: {}
-                            }
-                        };
-                    }
-                },
-                targetResolver: createTargetResolver()
-            }
-        );
+        const service = new shared.WsQueueBoxServerService({
+            inbox: new shared.InMemoryQueueBox(new Map()),
+            outbox: outbox,
+            socket: socket,
+            name: 'server-1',
+            qosProvider: {
+                defaultsForMessage: () => {
+                    providerEvaluationCount += 1;
+                    return {
+                        durability: {
+                            algo: providerEvaluationCount === 1
+                                ? 'volatile'
+                                : 'local-outbox',
+                            opts: {}
+                        }
+                    };
+                }
+            },
+            targetResolver: createTargetResolver()
+        });
 
         const msg = shared.newALBroadcastMessage(
             'server-1',
@@ -104,15 +100,13 @@ describe('WsQueueBoxServerService QoS runtime', () => {
             const socket = createFakeWsServer({
                 failingConnectionIds: ['conn-2']
             });
-            const service = new shared.WsQueueBoxServerService(
-                new shared.InMemoryQueueBox(new Map()),
-                new shared.InMemoryQueueBox(new Map()),
-                socket,
-                'server-1',
-                {
-                    targetResolver: createTargetResolver()
-                }
-            );
+            const service = new shared.WsQueueBoxServerService({
+                inbox: new shared.InMemoryQueueBox(new Map()),
+                outbox: new shared.InMemoryQueueBox(new Map()),
+                socket: socket,
+                name: 'server-1',
+                targetResolver: createTargetResolver()
+            });
             const msg = shared.newALBroadcastMessage(
                 'server-1',
                 {
@@ -153,18 +147,16 @@ describe('WsQueueBoxServerService QoS runtime', () => {
     it('treats targeted broadcast messages with no recipients as a successful no-op', async () => {
         const socket = createFakeWsServer();
         const outbox = new shared.InMemoryQueueBox(new Map());
-        const service = new shared.WsQueueBoxServerService(
-            new shared.InMemoryQueueBox(new Map()),
-            outbox,
-            socket,
-            'server-1',
-            {
-                targetResolver: {
-                    ...createTargetResolver(),
-                    resolveBroadcastRecipients: () => []
-                }
+        const service = new shared.WsQueueBoxServerService({
+            inbox: new shared.InMemoryQueueBox(new Map()),
+            outbox: outbox,
+            socket: socket,
+            name: 'server-1',
+            targetResolver: {
+                ...createTargetResolver(),
+                resolveBroadcastRecipients: () => []
             }
-        );
+        });
 
         const msg = shared.newALBroadcastMessage(
             'server-1',
@@ -192,15 +184,13 @@ describe('WsQueueBoxServerService QoS runtime', () => {
     it('routes targeted multicast messages to resolved group recipients', async () => {
         const socket = createFakeWsServer();
         const outbox = new shared.InMemoryQueueBox(new Map());
-        const service = new shared.WsQueueBoxServerService(
-            new shared.InMemoryQueueBox(new Map()),
-            outbox,
-            socket,
-            'server-1',
-            {
-                targetResolver: createTargetResolver()
-            }
-        );
+        const service = new shared.WsQueueBoxServerService({
+            inbox: new shared.InMemoryQueueBox(new Map()),
+            outbox: outbox,
+            socket: socket,
+            name: 'server-1',
+            targetResolver: createTargetResolver()
+        });
 
         const msg = shared.newALMulticastMessage(
             'server-1',
@@ -232,15 +222,13 @@ describe('WsQueueBoxServerService QoS runtime', () => {
     it('persists server outbox entries with the message expiry timestamp', async () => {
         const socket = createFakeWsServer();
         const outbox = new shared.InMemoryQueueBox(new Map());
-        const service = new shared.WsQueueBoxServerService(
-            new shared.InMemoryQueueBox(new Map()),
-            outbox,
-            socket,
-            'server-1',
-            {
-                targetResolver: createTargetResolver()
-            }
-        );
+        const service = new shared.WsQueueBoxServerService({
+            inbox: new shared.InMemoryQueueBox(new Map()),
+            outbox: outbox,
+            socket: socket,
+            name: 'server-1',
+            targetResolver: createTargetResolver()
+        });
         const expiresAtMs = Date.UTC(2027, 0, 1, 0, 5, 0);
         const msg = {
             ...shared.newALUnicastMessage(
@@ -300,15 +288,13 @@ describe('WsQueueBoxServerService QoS runtime', () => {
     it('returns no-route for untargeted outbound messages', async () => {
         const socket = createFakeWsServer();
         const outbox = new shared.InMemoryQueueBox(new Map());
-        const service = new shared.WsQueueBoxServerService(
-            new shared.InMemoryQueueBox(new Map()),
-            outbox,
-            socket,
-            'server-1',
-            {
-                targetResolver: createTargetResolver()
-            }
-        );
+        const service = new shared.WsQueueBoxServerService({
+            inbox: new shared.InMemoryQueueBox(new Map()),
+            outbox: outbox,
+            socket: socket,
+            name: 'server-1',
+            targetResolver: createTargetResolver()
+        });
 
         const msg = shared.newALUntargetedMessage(
             'server-1',
@@ -334,15 +320,13 @@ describe('WsQueueBoxServerService QoS runtime', () => {
     it('drops unresolved queued outbound messages', async () => {
         const socket = createFakeWsServer();
         const outbox = new shared.InMemoryQueueBox(new Map());
-        const service = new shared.WsQueueBoxServerService(
-            new shared.InMemoryQueueBox(new Map()),
-            outbox,
-            socket,
-            'server-1',
-            {
-                targetResolver: createTargetResolver()
-            }
-        );
+        const service = new shared.WsQueueBoxServerService({
+            inbox: new shared.InMemoryQueueBox(new Map()),
+            outbox: outbox,
+            socket: socket,
+            name: 'server-1',
+            targetResolver: createTargetResolver()
+        });
 
         const msg = shared.newALMulticastMessage(
             'server-1',
@@ -384,15 +368,13 @@ describe('WsQueueBoxServerService QoS runtime', () => {
     it('targets server repair retransmits to the requesting recipient', async () => {
         const socket = createFakeWsServer();
         const outbox = new shared.InMemoryQueueBox(new Map());
-        const service = new shared.WsQueueBoxServerService(
-            new shared.InMemoryQueueBox(new Map()),
-            outbox,
-            socket,
-            'server-1',
-            {
-                targetResolver: createTargetResolver()
-            }
-        );
+        const service = new shared.WsQueueBoxServerService({
+            inbox: new shared.InMemoryQueueBox(new Map()),
+            outbox: outbox,
+            socket: socket,
+            name: 'server-1',
+            targetResolver: createTargetResolver()
+        });
 
         const msg = shared.newALMulticastMessage(
             'server-1',
@@ -439,15 +421,13 @@ describe('WsQueueBoxServerService QoS runtime', () => {
 
     it('forwards inbound client unicast messages to the targeted peer', async () => {
         const socket = createFakeWsServer();
-        const service = new shared.WsQueueBoxServerService(
-            new shared.InMemoryQueueBox(new Map()),
-            new shared.InMemoryQueueBox(new Map()),
-            socket,
-            'server-1',
-            {
-                targetResolver: createTargetResolver()
-            }
-        );
+        const service = new shared.WsQueueBoxServerService({
+            inbox: new shared.InMemoryQueueBox(new Map()),
+            outbox: new shared.InMemoryQueueBox(new Map()),
+            socket: socket,
+            name: 'server-1',
+            targetResolver: createTargetResolver()
+        });
 
         let localDeliveries = 0;
         service.onInboxMessageDo(
@@ -483,15 +463,13 @@ describe('WsQueueBoxServerService QoS runtime', () => {
 
     it('forwards inbound room broadcasts to resolved group recipients', async () => {
         const socket = createFakeWsServer();
-        const service = new shared.WsQueueBoxServerService(
-            new shared.InMemoryQueueBox(new Map()),
-            new shared.InMemoryQueueBox(new Map()),
-            socket,
-            'server-1',
-            {
-                targetResolver: createTargetResolver()
-            }
-        );
+        const service = new shared.WsQueueBoxServerService({
+            inbox: new shared.InMemoryQueueBox(new Map()),
+            outbox: new shared.InMemoryQueueBox(new Map()),
+            socket: socket,
+            name: 'server-1',
+            targetResolver: createTargetResolver()
+        });
         const msg = shared.newALBroadcastMessage(
             'peer-1',
             {
@@ -521,16 +499,14 @@ describe('WsQueueBoxServerService QoS runtime', () => {
     // here would deliver messages the authorizer rejects.
     it('skips room-broadcast forwarding when the composition disowns it', async () => {
         const socket = createFakeWsServer();
-        const service = new shared.WsQueueBoxServerService(
-            new shared.InMemoryQueueBox(new Map()),
-            new shared.InMemoryQueueBox(new Map()),
-            socket,
-            'server-1',
-            {
-                targetResolver: createTargetResolver(),
-                forwardsRoomScopedMessages: false
-            }
-        );
+        const service = new shared.WsQueueBoxServerService({
+            inbox: new shared.InMemoryQueueBox(new Map()),
+            outbox: new shared.InMemoryQueueBox(new Map()),
+            socket: socket,
+            name: 'server-1',
+            targetResolver: createTargetResolver(),
+            forwardsRoomScopedMessages: false
+        });
         const msg = shared.newALBroadcastMessage(
             'peer-1',
             {
@@ -551,15 +527,13 @@ describe('WsQueueBoxServerService QoS runtime', () => {
 
     it('suppresses duplicate inbound delivery on the server wrapper', async () => {
         const socket = createFakeWsServer();
-        const service = new shared.WsQueueBoxServerService(
-            new shared.InMemoryQueueBox(new Map()),
-            new shared.InMemoryQueueBox(new Map()),
-            socket,
-            'server-1',
-            {
-                targetResolver: createTargetResolver()
-            }
-        );
+        const service = new shared.WsQueueBoxServerService({
+            inbox: new shared.InMemoryQueueBox(new Map()),
+            outbox: new shared.InMemoryQueueBox(new Map()),
+            socket: socket,
+            name: 'server-1',
+            targetResolver: createTargetResolver()
+        });
 
         const received: string[] = [];
         service.onInboxMessageDo(
@@ -592,15 +566,13 @@ describe('WsQueueBoxServerService QoS runtime', () => {
 
     it('emits nack and repair controls for ordered gaps on inbound server messages', async () => {
         const socket = createFakeWsServer();
-        const service = new shared.WsQueueBoxServerService(
-            new shared.InMemoryQueueBox(new Map()),
-            new shared.InMemoryQueueBox(new Map()),
-            socket,
-            'server-1',
-            {
-                targetResolver: createTargetResolver()
-            }
-        );
+        const service = new shared.WsQueueBoxServerService({
+            inbox: new shared.InMemoryQueueBox(new Map()),
+            outbox: new shared.InMemoryQueueBox(new Map()),
+            socket: socket,
+            name: 'server-1',
+            targetResolver: createTargetResolver()
+        });
 
         const deliveredTexts: string[] = [];
         service.onInboxMessageDo(
