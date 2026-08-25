@@ -195,7 +195,7 @@ Recommended fallback order:
 1. Check the app's generation policy.
 2. Check `provider.capabilities.target` and `supportsJsonSchema`.
 3. Apply an app timeout with `timeoutMs`.
-4. Use the server facade when browser generation is unavailable.
+4. Use the server generation route when browser generation is unavailable.
 5. Surface disabled/unavailable state as application UI, not as a hidden retry
    loop.
 
@@ -275,8 +275,8 @@ inside the current CRDT durability, validation, and hardening boundaries.
 
 ## Local Live Providers
 
-Normal CI should use the mock provider or fake sidecar provider. Live checks are
-local or scheduled:
+Normal CI should use the mock provider or an Ollama adapter with a stubbed fetch
+port. Live checks are local or scheduled:
 
 - Ollama: run a local sidecar on `http://127.0.0.1:11434`, choose a model that
   supports structured JSON well enough for the test schema, and keep the test
