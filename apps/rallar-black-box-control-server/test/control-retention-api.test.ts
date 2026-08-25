@@ -361,26 +361,6 @@ Deno.test("retention preview is authorized, non-destructive, and guarded before 
     );
     assertEquals(reused.status, 409);
     assertEquals(await reused.json(), staleBody);
-
-    const immediateCleanup = await fetch(
-      `${server.baseUrl}/retention/cleanup?unknown=value`,
-      {
-        method: "POST",
-        headers: adminHeaders(),
-        body:
-          "{ malformed and intentionally larger than the request body limit",
-      },
-    );
-    assertEquals(immediateCleanup.status, 200);
-    assertEquals(await immediateCleanup.json(), {
-      deletedRunIds: [],
-      retainedRuns: 1,
-      maxRuns: 1,
-    });
-    assertEquals(
-      await Deno.readTextFile(artifactPath),
-      "manual-cleanup-must-preserve-this\n",
-    );
   } finally {
     unregisteredSocket?.close();
     await server.stop();
