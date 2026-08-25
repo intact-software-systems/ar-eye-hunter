@@ -5,7 +5,7 @@ import type {
     RallarDirectorRelayHandle,
     RallarDirectorRelayMessage,
     RallarDirectorStatus
-} from '@shared-web/browser/rallar-director-facade.ts';
+} from '@shared-web/browser/director/rallar-director-facade.ts';
 import type { RallarMessagePayload } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';

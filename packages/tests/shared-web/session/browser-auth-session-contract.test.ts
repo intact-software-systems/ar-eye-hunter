@@ -4,12 +4,12 @@ import type { RallarWsLifecycleEvent } from '@shared-web/browser/rallar-realtime
 import { Either } from '@shared/resilience/Either.ts';
 import { DEFAULT_RTC_DATA_CHANNEL_LANE_ID, type QRtcPeerDto, type WebRtcPeerConnectionLeft } from '@shared/services/WebRtcConnectionService.ts';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { createAuthSessionApiHttpError, createAuthSessionGroupSnapshot, installGroupSnapshotRepositoryMocks } from './auth-session-contract-fixtures.ts';
-import type * as ContractModules from './auth-session-contract-modules.ts';
-import { createDeferred, createMediaStream, createMediaTrack } from './browser-lifecycle-fixtures.ts';
+import { createAuthSessionApiHttpError, createAuthSessionGroupSnapshot, installGroupSnapshotRepositoryMocks } from '../auth-session-contract-fixtures.ts';
+import type * as ContractModules from '../auth-session-contract-modules.ts';
+import { createDeferred, createMediaStream, createMediaTrack } from '../browser-lifecycle-fixtures.ts';
 
 const mocks = await vi.hoisted(async () => {
-    const { createApiMiddlewareTestDouble } = await import('./api-middleware-test-double.ts');
+    const { createApiMiddlewareTestDouble } = await import('../api-middleware-test-double.ts');
     const ctx = createApiMiddlewareTestDouble();
     const session = ctx.session;
 

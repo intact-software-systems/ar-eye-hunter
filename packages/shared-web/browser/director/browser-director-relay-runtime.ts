@@ -1,7 +1,7 @@
 import type {
     RallarDirectorRelayConfig,
     RallarDirectorRelayHandle
-} from '@shared-web/browser/rallar-director-facade.ts';
+} from '@shared-web/browser/director/rallar-director-facade.ts';
 import type { RallarRealtimeFacade } from '@shared-web/browser/rallar-realtime-facade.ts';
 import type { RallarMessagesOperations } from '@shared-web/browser/messages/rallar-message-operations.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
@@ -9,19 +9,21 @@ import { BrowserDirectorRelaySession } from './browser-director-relay-session.ts
 import type { BrowserDirectorRelayTransport } from './browser-director-relay-transport.ts';
 import type { BrowserDirectorStatusRuntime } from './browser-director-status-runtime.ts';
 
-export interface BrowserDirectorRelayRuntimeInput {
-    readonly status: BrowserDirectorStatusRuntime;
-    readonly transport: BrowserDirectorRelayTransport;
-    readonly messages: RallarMessagesOperations;
-    readonly realtime: RallarRealtimeFacade;
-    readSession(): AuthSession | undefined;
+export namespace BrowserDirectorRelayRuntime {
+    export interface Input {
+        readonly status: BrowserDirectorStatusRuntime;
+        readonly transport: BrowserDirectorRelayTransport;
+        readonly messages: RallarMessagesOperations;
+        readonly realtime: RallarRealtimeFacade;
+        readSession(): AuthSession | undefined;
+    }
 }
 
 export class BrowserDirectorRelayRuntime {
-    private readonly input: BrowserDirectorRelayRuntimeInput;
+    private readonly input: BrowserDirectorRelayRuntime.Input;
     private readonly stops = new Set<() => void>();
 
-    public constructor(input: BrowserDirectorRelayRuntimeInput) {
+    public constructor(input: BrowserDirectorRelayRuntime.Input) {
         this.input = input;
     }
 

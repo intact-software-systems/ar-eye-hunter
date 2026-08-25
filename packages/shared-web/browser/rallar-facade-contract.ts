@@ -8,7 +8,7 @@ import type {
 } from '@shared-web/browser/rallar-connection-facade.ts';
 import type { RallarCrdtFacade } from '@shared-web/browser/rallar-crdt.ts';
 import type { RallarDataFacade } from '@shared-web/browser/rallar-data.ts';
-import type { RallarDirectorFacade } from '@shared-web/browser/rallar-director-facade.ts';
+import type { RallarDirectorFacade } from '@shared-web/browser/director/rallar-director-facade.ts';
 import type { RallarMediaFacade } from '@shared-web/browser/rallar-media-facade.ts';
 import type { RallarMessagesOperations } from '@shared-web/browser/messages/rallar-message-operations.ts';
 import type {
@@ -25,7 +25,7 @@ import type { BrowserRallarRooms } from '@shared-web/browser/rooms/browser-ralla
 export type * from '@shared-web/browser/session/rallar-auth-facade.ts';
 export type * from '@shared-web/browser/rallar-calls-facade.ts';
 export type * from '@shared-web/browser/rallar-connection-facade.ts';
-export type * from '@shared-web/browser/rallar-director-facade.ts';
+export type * from '@shared-web/browser/director/rallar-director-facade.ts';
 export type * from '@shared-web/browser/rallar-media-facade.ts';
 export type * from '@shared-web/browser/messages/rallar-message-contracts.ts';
 export type {

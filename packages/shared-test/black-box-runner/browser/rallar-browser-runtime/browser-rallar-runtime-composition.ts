@@ -2,7 +2,7 @@ import type { RallarMessagesOperations } from '@shared-web/browser/messages/rall
 import type { RallarAuthFacade } from '@shared-web/browser/rallar-core.ts';
 import type { RallarConnectionOperations } from '@shared-web/browser/rallar-connection-facade.ts';
 import type { RallarCrdtFacade } from '@shared-web/browser/rallar-crdt.ts';
-import type { RallarDirectorFacade } from '@shared-web/browser/rallar-director-facade.ts';
+import type { RallarDirectorFacade } from '@shared-web/browser/director/rallar-director-facade.ts';
 import type { RallarRealtimeFacade, RallarWsFacade } from '@shared-web/browser/rallar-realtime-facade.ts';
 import type { RallarRtcFacade } from '@shared-web/browser/rallar-rtc-facade.ts';
 import {
@@ -156,7 +156,7 @@ function registerBlackBoxBrowserRallarLifecycle(
 ): void {
     registerBrowserStateLifecycle({
         lifecycle: input.foundation.lifecycle,
-        directorController: input.director.directorController,
+        directorRelays: input.director.directorRelays,
         stateStore: input.state.stateStore
     });
     registerBrowserTransportLifecycle({

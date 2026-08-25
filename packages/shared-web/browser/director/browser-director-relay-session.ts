@@ -5,7 +5,7 @@ import type {
     RallarDirectorRelayMessage,
     RallarDirectorRelaySendResult,
     RallarDirectorStatus
-} from '@shared-web/browser/rallar-director-facade.ts';
+} from '@shared-web/browser/director/rallar-director-facade.ts';
 import type { RallarMessagePayload } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type { RallarMessagesOperations } from '@shared-web/browser/messages/rallar-message-operations.ts';
 import type { RallarRealtimeFacade } from '@shared-web/browser/rallar-realtime-facade.ts';
@@ -24,25 +24,27 @@ import type { BrowserDirectorStatusRuntime } from './browser-director-status-run
 const RALLAR_DIRECTOR_DEFAULT_TOPIC_ID = 'app.rallar.director';
 const DEFAULT_RALLAR_REALTIME_LANE_ID = 'realtime';
 
-export interface BrowserDirectorRelaySessionInput<TIntent, TOutput, TSnapshot> {
-    readonly config: RallarDirectorRelayConfig<TIntent, TOutput, TSnapshot>;
-    readonly status: BrowserDirectorStatusRuntime;
-    readonly transport: BrowserDirectorRelayTransport;
-    readonly messages: RallarMessagesOperations;
-    readonly realtime: RallarRealtimeFacade;
-    readonly readSession: () => AuthSession | undefined;
-    readonly onStop: (stop: () => void) => void;
-}
+export namespace BrowserDirectorRelaySession {
+    export interface Input<TIntent, TOutput, TSnapshot> {
+        readonly config: RallarDirectorRelayConfig<TIntent, TOutput, TSnapshot>;
+        readonly status: BrowserDirectorStatusRuntime;
+        readonly transport: BrowserDirectorRelayTransport;
+        readonly messages: RallarMessagesOperations;
+        readonly realtime: RallarRealtimeFacade;
+        readSession(): AuthSession | undefined;
+        onStop(stop: () => void): void;
+    }
 
-interface BrowserDirectorRelayInboundMessage<T> {
-    readonly transport: 'rtc' | 'ws';
-    readonly senderId: string;
-    readonly envelope: RallarDirectorRelayEnvelope<T>;
+    export interface InboundMessage<T> {
+        readonly transport: 'rtc' | 'ws';
+        readonly senderId: string;
+        readonly envelope: RallarDirectorRelayEnvelope<T>;
+    }
 }
 
 export class BrowserDirectorRelaySession<TIntent, TOutput, TSnapshot>
     implements RallarDirectorRelayHandle<TIntent, TOutput, TSnapshot> {
-    private readonly input: BrowserDirectorRelaySessionInput<TIntent, TOutput, TSnapshot>;
+    private readonly input: BrowserDirectorRelaySession.Input<TIntent, TOutput, TSnapshot>;
     private readonly laneId: string;
     private readonly topicId: string;
     private readonly heartbeatTypeId: string;
@@ -54,7 +56,7 @@ export class BrowserDirectorRelaySession<TIntent, TOutput, TSnapshot>
     private stopped = false;
 
     public constructor(
-        input: BrowserDirectorRelaySessionInput<TIntent, TOutput, TSnapshot>
+        input: BrowserDirectorRelaySession.Input<TIntent, TOutput, TSnapshot>
     ) {
         this.input = input;
         this.laneId = input.config.laneId ?? DEFAULT_RALLAR_REALTIME_LANE_ID;
@@ -227,7 +229,9 @@ export class BrowserDirectorRelaySession<TIntent, TOutput, TSnapshot>
         }
     }
 
-    private async receive<T>(input: BrowserDirectorRelayInboundMessage<T>): Promise<void> {
+    private async receive(
+        input: BrowserDirectorRelaySession.InboundMessage<RallarMessagePayload>
+    ): Promise<void> {
         if (!isDirectorRelayEnvelope(input.envelope, this.topicId)) {
             return;
         }
@@ -244,7 +248,9 @@ export class BrowserDirectorRelaySession<TIntent, TOutput, TSnapshot>
         });
     }
 
-    private async route<T>(message: RallarDirectorRelayMessage<T>): Promise<void> {
+    private async route(
+        message: RallarDirectorRelayMessage<RallarMessagePayload>
+    ): Promise<void> {
         if (await this.routeObservedMessage(message)) {
             return;
         }
@@ -254,8 +260,8 @@ export class BrowserDirectorRelaySession<TIntent, TOutput, TSnapshot>
         await this.routeDirectorMessage(message);
     }
 
-    private async routeObservedMessage<T>(
-        message: RallarDirectorRelayMessage<T>
+    private async routeObservedMessage(
+        message: RallarDirectorRelayMessage<RallarMessagePayload>
     ): Promise<boolean> {
         if (message.envelope.typeId === this.heartbeatTypeId) {
             recordDirectorRelayHeartbeat(this.input.status, this.status(), message);
@@ -272,8 +278,8 @@ export class BrowserDirectorRelaySession<TIntent, TOutput, TSnapshot>
         return false;
     }
 
-    private async routeDirectorMessage<T>(
-        message: RallarDirectorRelayMessage<T>
+    private async routeDirectorMessage(
+        message: RallarDirectorRelayMessage<RallarMessagePayload>
     ): Promise<void> {
         if (message.envelope.typeId === this.input.config.intentTypeId) {
             await this.receiveIntent(message);
@@ -284,31 +290,35 @@ export class BrowserDirectorRelaySession<TIntent, TOutput, TSnapshot>
         }
     }
 
-    private async receiveOutput<T>(message: RallarDirectorRelayMessage<T>): Promise<void> {
+    private async receiveOutput(
+        message: RallarDirectorRelayMessage<RallarMessagePayload>
+    ): Promise<void> {
         const current = this.status();
         if (!current.isFresh || message.senderId !== current.appointment?.sessionId) {
             return;
         }
         await this.input.config.onOutput?.(
-            message as object as RallarDirectorRelayMessage<TOutput>
+            toTypedRelayMessage<TOutput>(message)
         );
     }
 
-    private async receiveSnapshot<T>(
-        message: RallarDirectorRelayMessage<T>
+    private async receiveSnapshot(
+        message: RallarDirectorRelayMessage<RallarMessagePayload>
     ): Promise<void> {
         const current = this.status();
         if (!current.isFresh || message.senderId !== current.appointment?.sessionId) {
             return;
         }
         await this.input.config.onSnapshot?.(
-            message as object as RallarDirectorRelayMessage<TSnapshot>
+            toTypedRelayMessage<TSnapshot>(message)
         );
     }
 
-    private async receiveIntent<T>(message: RallarDirectorRelayMessage<T>): Promise<void> {
+    private async receiveIntent(
+        message: RallarDirectorRelayMessage<RallarMessagePayload>
+    ): Promise<void> {
         const output = await this.input.config.onIntent?.(
-            message as object as RallarDirectorRelayMessage<TIntent>,
+            toTypedRelayMessage<TIntent>(message),
             this
         );
         const outputs = Array.isArray(output) ? output : output ? [output] : [];
@@ -317,11 +327,11 @@ export class BrowserDirectorRelaySession<TIntent, TOutput, TSnapshot>
         }
     }
 
-    private async receiveSyncRequest<T>(
-        message: RallarDirectorRelayMessage<T>
+    private async receiveSyncRequest(
+        message: RallarDirectorRelayMessage<RallarMessagePayload>
     ): Promise<void> {
         await this.input.config.onSyncRequest?.(
-            message as object as RallarDirectorRelayMessage<RallarMessagePayload>,
+            message,
             this
         );
         if (this.input.config.readSnapshot) {
@@ -386,4 +396,17 @@ export class BrowserDirectorRelaySession<TIntent, TOutput, TSnapshot>
 
 function authEndedResult(): RallarDirectorRelaySendResult {
     return { status: 'no-director', reason: 'Auth session ended.' };
+}
+
+/**
+ * Applies the configured type-id contract after routing has matched that type id.
+ * The payload object is intentionally not copied or transformed.
+ */
+function toTypedRelayMessage<TPayload>(
+    message: RallarDirectorRelayMessage<RallarMessagePayload>
+): RallarDirectorRelayMessage<TPayload>;
+function toTypedRelayMessage(
+    message: RallarDirectorRelayMessage<RallarMessagePayload>
+): RallarDirectorRelayMessage<RallarMessagePayload> {
+    return message;
 }

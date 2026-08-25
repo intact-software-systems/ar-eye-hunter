@@ -4,7 +4,7 @@ import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import { DEFAULT_RTC_DATA_CHANNEL_LANE_ID, type QRtcPeerDto, type WebRtcPeerConnectionLeft } from '@shared/services/WebRtcConnectionService.ts';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { createDirectorGroupSnapshot } from './director-group-snapshot-fixture.ts';
+import { createDirectorGroupSnapshot } from '../director-group-snapshot-fixture.ts';
 
 type StateEventHttpApiModule = typeof import('@shared-web/browser/state-read/state-event-http-api.ts');
 type AuthApiModule = typeof import('@shared-web/browser/auth/session-http-api.ts');
@@ -32,7 +32,7 @@ interface DirectorSnapshot {
 
 const mocks = await vi.hoisted(async () => {
     const { createLightweightBrowserFacadeTestMocks } = await import(
-        './lightweight-browser-facade-test-mocks.ts'
+        '../lightweight-browser-facade-test-mocks.ts'
     );
     return createLightweightBrowserFacadeTestMocks();
 });

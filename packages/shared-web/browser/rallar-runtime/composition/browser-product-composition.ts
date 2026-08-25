@@ -1,11 +1,11 @@
 import { BrowserCallLifecycleRuntime } from '@shared-web/browser/calls/browser-call-lifecycle-runtime.ts';
 import { BrowserCallSignalRuntime } from '@shared-web/browser/calls/browser-call-signal-runtime.ts';
-import {
-    BrowserRallarDirectorController,
-    type RallarDirectorController
-} from '@shared-web/browser/director/browser-rallar-director-controller.ts';
+import { BrowserDirectorAppointmentRuntime } from '@shared-web/browser/director/browser-director-appointment-runtime.ts';
+import { BrowserDirectorRelayRuntime } from '@shared-web/browser/director/browser-director-relay-runtime.ts';
+import { BrowserDirectorRelayTransport } from '@shared-web/browser/director/browser-director-relay-transport.ts';
+import { BrowserDirectorStatusRuntime } from '@shared-web/browser/director/browser-director-status-runtime.ts';
+import type { RallarDirectorFacade } from '@shared-web/browser/director/rallar-director-facade.ts';
 import type { RallarCallsFacade } from '@shared-web/browser/rallar-calls-facade.ts';
-import type { RallarDirectorFacade } from '@shared-web/browser/rallar-director-facade.ts';
 import {
     BrowserRallarPeopleRuntime
 } from '@shared-web/browser/people/browser-rallar-people-runtime.ts';
@@ -38,7 +38,8 @@ export interface BrowserCallsComposition {
 }
 
 export interface BrowserDirectorComposition {
-    readonly directorController: RallarDirectorController;
+    readonly directorRelays: BrowserDirectorRelayRuntime;
+    readonly directorStatus: BrowserDirectorStatusRuntime;
     readonly director: RallarDirectorFacade;
 }
 
@@ -153,24 +154,47 @@ export function createBrowserCallsComposition(
 export function createBrowserDirectorComposition(
     input: CreateBrowserDirectorCompositionInput
 ): BrowserDirectorComposition {
-    const directorController = new BrowserRallarDirectorController({
+    const directorStatus = new BrowserDirectorStatusRuntime({
+        roomStateStore: input.state.roomStateStore,
+        readSession,
+        resolveDefaultRoom: input.state.resolveDefaultRoom
+    });
+    const directorAppointments = new BrowserDirectorAppointmentRuntime({
         roomStateStore: input.state.roomStateStore,
         rooms: input.rooms.rooms,
-        messages: input.messaging.messages,
-        realtime: input.realtime.realtime,
-        readSession,
+        status: directorStatus,
         requireSession: input.session.requireSession,
         connect: async (options) => await input.session.connect(options),
         resolveOperationOptions: input.session.resolveOperationOptions,
         resolveDefaultRoom: input.state.resolveDefaultRoom,
         runAuthAwareOperation: input.session.runAuthAwareOperation,
-        acceptSnapshots: async (snapshotInput) => await input.state.stateStore.acceptSnapshots(snapshotInput),
+        acceptSnapshots: async (snapshotInput) =>
+            await input.state.stateStore.acceptSnapshots(snapshotInput)
+    });
+    const relayTransport = new BrowserDirectorRelayTransport({
+        messages: input.messaging.messages,
+        readSession,
         createTargetedChannel: <T>(definition: RallarTargetedChannelDefinition) =>
             input.realtime.realtimeTargeted.create<T>(definition),
         sendWsUnicast: async (sendInput) =>
             await input.messaging.messagesController.sender.sendWsUnicast(sendInput)
     });
-    const director = directorController.operations;
-    input.state.stateStore.onAfterEmit(() => directorController.onStateChanged());
-    return { directorController, director };
+    const directorRelays = new BrowserDirectorRelayRuntime({
+        status: directorStatus,
+        transport: relayTransport,
+        messages: input.messaging.messages,
+        realtime: input.realtime.realtime,
+        readSession
+    });
+    const director: RallarDirectorFacade = {
+        appoint: async (room, options) =>
+            await directorAppointments.appoint(room, options),
+        resign: async (room, options) =>
+            await directorAppointments.resign(room, options),
+        status: (room, options) => directorStatus.read(room, options),
+        onStatus: (listener) => directorStatus.onStatus(listener),
+        createRelay: (config) => directorRelays.create(config)
+    };
+    input.state.stateStore.onAfterEmit(() => directorStatus.emit());
+    return { directorRelays, directorStatus, director };
 }

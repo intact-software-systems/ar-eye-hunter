@@ -1,4 +1,4 @@
-import type { RallarDirectorController } from '@shared-web/browser/director/browser-rallar-director-controller.ts';
+import type { BrowserDirectorRelayRuntime } from '@shared-web/browser/director/browser-director-relay-runtime.ts';
 import type { BrowserLocalMediaSourceRuntime } from '@shared-web/browser/media/browser-local-media-source-runtime.ts';
 import type { BrowserRemoteMediaStreamRuntime } from '@shared-web/browser/media/browser-remote-media-stream-runtime.ts';
 import type { BrowserRallarMessageSubscriptions } from '@shared-web/browser/messages/browser-rallar-message-subscriptions.ts';
@@ -11,7 +11,7 @@ import type { BrowserWebSocketInbox } from '@shared-web/browser/websocket/browse
 
 export interface RegisterBrowserStateLifecycleInput {
     readonly lifecycle: RallarLifecycleCoordinator;
-    readonly directorController: RallarDirectorController;
+    readonly directorRelays: BrowserDirectorRelayRuntime;
     readonly stateStore: RallarStatePort;
 }
 
@@ -34,7 +34,7 @@ export function registerBrowserStateLifecycle(input: RegisterBrowserStateLifecyc
     input.lifecycle.register({
         id: 'director-relays',
         order: 10,
-        detach: () => input.directorController.stopRelays()
+        detach: () => input.directorRelays.stopAll()
     });
     input.lifecycle.register({
         id: 'state-cache',

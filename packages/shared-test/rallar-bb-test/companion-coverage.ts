@@ -84,7 +84,7 @@ export const RALLAR_COMPANION_COVERAGE_SURFACES: readonly RallarCompanionCoverag
         layer: 'shared-web-facade',
         intent: 'Direct browser facade auth/session behavior, defaults, restore, and start flows.',
         testFiles: [
-            'packages/tests/shared-web/rallar-auth-session-contract.test.ts',
+            'packages/tests/shared-web/session/browser-auth-session-contract.test.ts',
             'packages/tests/shared-web/rallar-startup-lifecycle.test.ts',
             'packages/tests/rallar-black-box/auth-flow.test.ts',
             'packages/tests/shared-test/rallar-bb-browser-adapter-auth.test.ts'

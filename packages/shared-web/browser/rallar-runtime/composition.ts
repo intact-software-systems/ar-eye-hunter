@@ -145,7 +145,7 @@ function registerBrowserFacadeLifecycle(
 ): void {
     registerBrowserStateLifecycle({
         lifecycle: foundation.lifecycle,
-        directorController: compositions.director.directorController,
+        directorRelays: compositions.director.directorRelays,
         stateStore: state.stateStore
     });
     registerBrowserTransportLifecycle({

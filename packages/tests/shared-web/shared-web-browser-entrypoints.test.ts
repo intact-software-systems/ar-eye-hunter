@@ -72,7 +72,7 @@ const PUBLIC_FACADE_MODULES = [
     'packages/shared-web/browser/session/rallar-auth-facade.ts',
     'packages/shared-web/browser/rallar-calls-facade.ts',
     'packages/shared-web/browser/rallar-connection-facade.ts',
-    'packages/shared-web/browser/rallar-director-facade.ts',
+    'packages/shared-web/browser/director/rallar-director-facade.ts',
     'packages/shared-web/browser/rallar-media-facade.ts',
     'packages/shared-web/browser/rallar-realtime-facade.ts',
     'packages/shared-web/browser/rooms/rallar-room-contracts.ts',
