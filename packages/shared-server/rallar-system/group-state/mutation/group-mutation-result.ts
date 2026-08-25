@@ -26,7 +26,7 @@ import type {
     PresenceGuardCandidate
 } from './group-mutation-contracts.ts';
 import { GroupAlreadyExistsError, GroupMutationRejectedError } from './group-mutation-contracts.ts';
-import { groupMutationIdempotencyKey } from './idempotency/group-mutation-idempotency-key.ts';
+import { groupMutationIdempotencyKey } from './group-mutation-idempotency-key.ts';
 
 const DEFAULT_GROUP_JOIN_CODE_TTL_MS = 7 * 24 * 60 * 60 * 1_000;
 

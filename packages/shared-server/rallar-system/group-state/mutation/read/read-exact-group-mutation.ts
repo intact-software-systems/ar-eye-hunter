@@ -4,7 +4,7 @@ import type { RuntimeStateEntry } from '../../../../runtime-state/runtime-state-
 import { GroupStateRepository } from '../../persistence/group-state-repository.ts';
 import type { GroupStateMutationExactReadResult } from '../../persistence/read-exact-group-state-mutation.ts';
 import type { GroupMutationCommand, GroupMutationRead } from '../group-mutation-contracts.ts';
-import { groupMutationIdempotencyKey } from '../idempotency/group-mutation-idempotency-key.ts';
+import { groupMutationIdempotencyKey } from '../group-mutation-idempotency-key.ts';
 import {
     resolveGroupMutationTargetPrincipalId,
     resolveGroupMutationTargetSessionId

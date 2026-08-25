@@ -13,7 +13,7 @@ import type {
     GroupMutationFacts,
     GroupMutationRead
 } from '../group-mutation-contracts.ts';
-import { probeGroupMutationIdempotency } from '../idempotency/probe-group-mutation-idempotency.ts';
+import { probeGroupMutationIdempotency } from '../probe-group-mutation-idempotency.ts';
 import {
     computeDeclineGroupAdmission,
     computeGrantGroupAdmission

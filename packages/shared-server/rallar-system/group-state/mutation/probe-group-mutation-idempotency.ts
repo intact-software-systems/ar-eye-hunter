@@ -1,11 +1,11 @@
-import { validateGroupMutationCommand } from '../command-validation/validate-group-mutation-command.ts';
+import { validateGroupMutationCommand } from './command-validation/validate-group-mutation-command.ts';
 import type {
     GroupMutationCommand,
     GroupMutationIdempotencyProbe,
     GroupMutationRead
-} from '../group-mutation-contracts.ts';
-import { validateCommandHash } from '../result-validation/validate-group-mutation-result.ts';
-import { validateGroupMutationRead } from '../state-validation/validate-group-mutation-read.ts';
+} from './group-mutation-contracts.ts';
+import { validateCommandHash } from './result-validation/validate-group-mutation-result.ts';
+import { validateGroupMutationRead } from './state-validation/validate-group-mutation-read.ts';
 
 export function probeGroupMutationIdempotency(
     command: GroupMutationCommand,

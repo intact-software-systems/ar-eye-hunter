@@ -6,7 +6,7 @@ import {
     isGroupAdmissionDecisionOperation,
     isGroupLifecycleTransitionOperation
 } from '../group-mutation-contracts.ts';
-import { groupMutationIdempotencyKey } from '../idempotency/group-mutation-idempotency-key.ts';
+import { groupMutationIdempotencyKey } from '../group-mutation-idempotency-key.ts';
 import {
     resolveGroupMutationTargetPrincipalId,
     resolveGroupMutationTargetSessionId
