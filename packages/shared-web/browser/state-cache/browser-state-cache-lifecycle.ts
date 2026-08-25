@@ -179,15 +179,13 @@ export class BrowserStateCacheLifecycle implements BrowserStateCacheLifecyclePor
             myOwnClientData.sessionId
         );
         if (
-            this.#observerContext?.webRtcGroupManager === webRtcGroupManager &&
-            this.#observerContext.sessionId === myOwnClientData.sessionId &&
-            isSameStateScope(this.#observerContext.scope, scope) &&
-            isSameBootstrapOverlayPolicy(
-                this.#observerContext.bootstrapOverlayPolicy,
-                bootstrapOverlayPolicy
-            ) &&
-            this.#observerContext.rereadGroupSnapshots ===
+            this.hasMatchingObserverContext(
+                webRtcGroupManager,
+                myOwnClientData.sessionId,
+                scope,
+                bootstrapOverlayPolicy,
                 options.rereadGroupSnapshots
+            )
         ) {
             return;
         }
@@ -201,54 +199,11 @@ export class BrowserStateCacheLifecycle implements BrowserStateCacheLifecyclePor
             rereadGroupSnapshots: options.rereadGroupSnapshots
         };
 
-        const unsubscribeClient = clientStateSnapshotsRepository
-            .onClientStateSnapshotChange((change) => {
-                const snapshot = change.snapshot;
-                if (
-                    change.kind === ObservableValueEventType.Refreshed ||
-                    change.manager !== undefined ||
-                    !snapshot
-                ) {
-                    return;
-                }
-
-                return this.trackStateRepositoryObserverTask((async () => {
-                    await webRtcGroupManager.notifyClientPresenceChanged();
-                    await this.notifyStateCacheChange({
-                        clients: [snapshot],
-                        groups: []
-                    });
-                })());
-            });
-
-        const unsubscribeGroup = groupStateSnapshotsRepository
-            .onGroupStateSnapshotChange((change) => {
-                const snapshot = change.snapshot ?? change.previous;
-                if (
-                    change.kind === ObservableValueEventType.Refreshed ||
-                    change.manager !== undefined ||
-                    !snapshot
-                ) {
-                    return;
-                }
-
-                return this.trackStateRepositoryObserverTask((async () => {
-                    if (change.kind === ObservableValueEventType.Deleted) {
-                        await acceptGroupSnapshotRemoval(snapshot, webRtcGroupManager);
-                    }
-                    else {
-                        await acceptGroupSnapshotUpdate(
-                            snapshot,
-                            webRtcGroupManager,
-                            bootstrapOverlayPolicy
-                        );
-                    }
-                    await this.notifyStateCacheChange({
-                        clients: [],
-                        groups: [snapshot]
-                    });
-                })());
-            });
+        const unsubscribeClient = this.observeClientStateChanges(webRtcGroupManager);
+        const unsubscribeGroup = this.observeGroupStateChanges(
+            webRtcGroupManager,
+            bootstrapOverlayPolicy
+        );
 
         this.#observersUnsubscribe = () => {
             unsubscribeClient();
@@ -261,6 +216,74 @@ export class BrowserStateCacheLifecycle implements BrowserStateCacheLifecyclePor
                 this.#observerContext = undefined;
             }
         };
+    }
+
+    private hasMatchingObserverContext(
+        webRtcGroupManager: WebRtcGroupManager,
+        sessionId: string,
+        scope: StateScope,
+        bootstrapOverlayPolicy: BootstrapOverlayPolicy,
+        rereadGroupSnapshots: StateCacheScopeOptions['rereadGroupSnapshots']
+    ): boolean {
+        const context = this.#observerContext;
+        return context?.webRtcGroupManager === webRtcGroupManager &&
+            context.sessionId === sessionId &&
+            isSameStateScope(context.scope, scope) &&
+            isSameBootstrapOverlayPolicy(
+                context.bootstrapOverlayPolicy,
+                bootstrapOverlayPolicy
+            ) &&
+            context.rereadGroupSnapshots === rereadGroupSnapshots;
+    }
+
+    private observeClientStateChanges(
+        webRtcGroupManager: WebRtcGroupManager
+    ): () => void {
+        return clientStateSnapshotsRepository.onClientStateSnapshotChange((change) => {
+            const snapshot = change.snapshot;
+            if (
+                change.kind === ObservableValueEventType.Refreshed ||
+                change.manager !== undefined ||
+                !snapshot
+            ) {
+                return;
+            }
+
+            return this.trackStateRepositoryObserverTask((async () => {
+                await webRtcGroupManager.notifyClientPresenceChanged();
+                await this.notifyStateCacheChange({ clients: [snapshot], groups: [] });
+            })());
+        });
+    }
+
+    private observeGroupStateChanges(
+        webRtcGroupManager: WebRtcGroupManager,
+        bootstrapOverlayPolicy: BootstrapOverlayPolicy
+    ): () => void {
+        return groupStateSnapshotsRepository.onGroupStateSnapshotChange((change) => {
+            const snapshot = change.snapshot ?? change.previous;
+            if (
+                change.kind === ObservableValueEventType.Refreshed ||
+                change.manager !== undefined ||
+                !snapshot
+            ) {
+                return;
+            }
+
+            return this.trackStateRepositoryObserverTask((async () => {
+                if (change.kind === ObservableValueEventType.Deleted) {
+                    await acceptGroupSnapshotRemoval(snapshot, webRtcGroupManager);
+                }
+                else {
+                    await acceptGroupSnapshotUpdate(
+                        snapshot,
+                        webRtcGroupManager,
+                        bootstrapOverlayPolicy
+                    );
+                }
+                await this.notifyStateCacheChange({ clients: [], groups: [snapshot] });
+            })());
+        });
     }
 
     private trackStateRepositoryObserverTask(task: Promise<void>): Promise<void> {

@@ -46,35 +46,75 @@ export class BrowserCrdtManualSync<TValue, TPayload extends RallarCrdtOperationB
     ): Promise<RallarCrdtSyncResult> {
         const transport = options.transport ?? this.options.transport;
         if (transport === 'local-only') {
-            return this.finish({
-                status: 'local-only',
-                transport,
-                sentUpdateCount: 0,
-                receivedUpdateCount: 0,
-                pendingUpdateCount: this.options.pending.size,
-                dependencyBlockedUpdateCount: this.options.dependencyBlocked.size,
-                reason: options.reason ?? 'Document is opened in local-only mode.'
-            });
+            return this.finishLocalOnlySync(options.reason);
         }
-        if (!this.options.readTransport?.()) {
-            const receivedHttpCatchUp = await this.options.durable.requestOverHttp(
-                options.reason ?? 'manual-sync'
-            );
-            const result: RallarCrdtSyncResult = {
-                status: receivedHttpCatchUp ? 'synced' : 'deferred',
-                transport,
-                sentUpdateCount: 0,
-                receivedUpdateCount: 0,
-                pendingUpdateCount: this.options.pending.size,
-                dependencyBlockedUpdateCount: this.options.dependencyBlocked.size,
-                reason: receivedHttpCatchUp
-                    ? undefined
-                    : 'No CRDT live transport is configured.'
-            };
-            this.options.diagnostics.recordSync(result);
-            return result;
+        const liveTransport = this.options.readTransport?.();
+        if (!liveTransport) {
+            return await this.syncWithoutLiveTransport(transport, options.reason);
         }
+        return await this.syncPendingUpdates(transport, liveTransport, options.reason);
+    }
 
+    private finishLocalOnlySync(reason: string | undefined): RallarCrdtSyncResult {
+        return this.finish({
+            status: 'local-only',
+            transport: 'local-only',
+            sentUpdateCount: 0,
+            receivedUpdateCount: 0,
+            pendingUpdateCount: this.options.pending.size,
+            dependencyBlockedUpdateCount: this.options.dependencyBlocked.size,
+            reason: reason ?? 'Document is opened in local-only mode.'
+        });
+    }
+
+    private async syncWithoutLiveTransport(
+        transport: RallarCrdtTransportStrategy,
+        reason: string | undefined
+    ): Promise<RallarCrdtSyncResult> {
+        const receivedHttpCatchUp = await this.options.durable.requestOverHttp(
+            reason ?? 'manual-sync'
+        );
+        const result: RallarCrdtSyncResult = {
+            status: receivedHttpCatchUp ? 'synced' : 'deferred',
+            transport,
+            sentUpdateCount: 0,
+            receivedUpdateCount: 0,
+            pendingUpdateCount: this.options.pending.size,
+            dependencyBlockedUpdateCount: this.options.dependencyBlocked.size,
+            reason: receivedHttpCatchUp
+                ? undefined
+                : 'No CRDT live transport is configured.'
+        };
+        this.options.diagnostics.recordSync(result);
+        return result;
+    }
+
+    private async syncPendingUpdates(
+        transport: RallarCrdtTransportStrategy,
+        liveTransport: RallarCrdtMessageTransport,
+        reason: string | undefined
+    ): Promise<RallarCrdtSyncResult> {
+        const sendResult = await this.sendPendingUpdates(transport, liveTransport);
+        await this.requestCatchUp(reason ?? 'manual-sync', transport);
+        const status = resolveManualSyncStatus(sendResult);
+        return this.finish({
+            status,
+            transport,
+            sentUpdateCount: sendResult.sentUpdateCount,
+            receivedUpdateCount: 0,
+            pendingUpdateCount: this.options.pending.size,
+            dependencyBlockedUpdateCount: this.options.dependencyBlocked.size,
+            reason: sendResult.deferredReason,
+            error: status === 'failed'
+                ? (sendResult.deferredReason ?? 'CRDT live sync failed.')
+                : undefined
+        });
+    }
+
+    private async sendPendingUpdates(
+        transport: RallarCrdtTransportStrategy,
+        liveTransport: RallarCrdtMessageTransport
+    ) {
         let sentUpdateCount = 0;
         let failedCount = 0;
         let deferredReason: string | undefined;
@@ -82,7 +122,7 @@ export class BrowserCrdtManualSync<TValue, TPayload extends RallarCrdtOperationB
             this.options.diagnostics.rememberRetry();
             const outcome = await sendRallarCrdtLiveUpdate({
                 update,
-                transport: this.options.readTransport(),
+                transport: liveTransport,
                 strategy: transport,
                 policies: this.options.policies
             });
@@ -91,40 +131,17 @@ export class BrowserCrdtManualSync<TValue, TPayload extends RallarCrdtOperationB
             deferredReason ??= outcome.reason;
             this.options.diagnostics.rememberSendOutcome(outcome);
         }
-        if (
-            !(await this.options.durable.requestOverWs(
-                options.reason ?? 'manual-sync',
-                transport
-            ))
-        ) {
-            await this.options.durable.requestOverHttp(
-                options.reason ?? 'manual-sync'
-            );
-        }
-        await this.options.requestLiveCatchUp(
-            options.reason ?? 'manual-sync',
-            transport
-        );
+        return { sentUpdateCount, failedCount, deferredReason };
+    }
 
-        const status = sentUpdateCount > 0
-            ? 'synced'
-            : deferredReason
-            ? 'deferred'
-            : failedCount > 0
-            ? 'failed'
-            : 'synced';
-        return this.finish({
-            status,
-            transport,
-            sentUpdateCount,
-            receivedUpdateCount: 0,
-            pendingUpdateCount: this.options.pending.size,
-            dependencyBlockedUpdateCount: this.options.dependencyBlocked.size,
-            reason: deferredReason,
-            error: status === 'failed'
-                ? (deferredReason ?? 'CRDT live sync failed.')
-                : undefined
-        });
+    private async requestCatchUp(
+        reason: string,
+        transport: RallarCrdtTransportStrategy
+    ): Promise<void> {
+        if (!(await this.options.durable.requestOverWs(reason, transport))) {
+            await this.options.durable.requestOverHttp(reason);
+        }
+        await this.options.requestLiveCatchUp(reason, transport);
     }
 
     private pendingUpdates(): readonly RallarCrdtUpdateEnvelope<TPayload>[] {
@@ -138,4 +155,20 @@ export class BrowserCrdtManualSync<TValue, TPayload extends RallarCrdtOperationB
         this.options.diagnostics.recordSync(result);
         return result;
     }
+}
+
+function resolveManualSyncStatus(
+    sendResult: Readonly<{
+        sentUpdateCount: number;
+        failedCount: number;
+        deferredReason: string | undefined;
+    }>
+): RallarCrdtSyncResult['status'] {
+    if (sendResult.sentUpdateCount > 0) {
+        return 'synced';
+    }
+    if (sendResult.deferredReason) {
+        return 'deferred';
+    }
+    return sendResult.failedCount > 0 ? 'failed' : 'synced';
 }

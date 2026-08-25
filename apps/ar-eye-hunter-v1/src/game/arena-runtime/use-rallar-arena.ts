@@ -20,6 +20,13 @@ import { useArenaConnectionSessionLifecycle } from './transport/use-arena-connec
 import { useArenaNetworkTransportSupport } from './transport/use-arena-network-transport-support.ts';
 import { useArenaRtcLifecycle } from './transport/use-arena-rtc-lifecycle.ts';
 
+interface ArenaConnectionViewInput {
+    readonly state: ReturnType<typeof useArenaRuntimeState>;
+    readonly presence: ReturnType<typeof useArenaPresence>;
+    readonly connectionActions: ReturnType<typeof useArenaConnectionActions>;
+    readonly gameActions: ReturnType<typeof useArenaGameActions>;
+}
+
 export type {
     ArenaConnection,
     ArenaDiagnosticsRefreshOptions,
@@ -69,7 +76,7 @@ export function useRallarArena(): ArenaConnection {
     );
     const gameActions = useArenaGameActions(state, messages, transport);
 
-    return useArenaConnectionView(state, presence, connectionActions, gameActions);
+    return useArenaConnectionView({ state, presence, connectionActions, gameActions });
 }
 
 function useArenaPresence(state: ReturnType<typeof useArenaRuntimeState>) {
@@ -311,14 +318,10 @@ function useArenaGameActions(
     return { presenceActions, combatActions, worldActions };
 }
 
-function useArenaConnectionView(
-    state: ReturnType<typeof useArenaRuntimeState>,
-    presence: ReturnType<typeof useArenaPresence>,
-    connectionActions: ReturnType<typeof useArenaConnectionActions>,
-    gameActions: ReturnType<typeof useArenaGameActions>
-): ArenaConnection {
+function useArenaConnectionView(input: ArenaConnectionViewInput): ArenaConnection {
+    const { state, presence, connectionActions, gameActions } = input;
     return useMemo(
-        () => createArenaConnectionView(state, presence, connectionActions, gameActions),
+        () => createArenaConnectionView(input),
         [
             state.activeEvent,
             state.aiError,
@@ -357,12 +360,8 @@ function useArenaConnectionView(
     );
 }
 
-function createArenaConnectionView(
-    state: ReturnType<typeof useArenaRuntimeState>,
-    presence: ReturnType<typeof useArenaPresence>,
-    connectionActions: ReturnType<typeof useArenaConnectionActions>,
-    gameActions: ReturnType<typeof useArenaGameActions>
-): ArenaConnection {
+function createArenaConnectionView(input: ArenaConnectionViewInput): ArenaConnection {
+    const { state, presence, connectionActions, gameActions } = input;
     return {
         session: state.session,
         connectionState: state.connectionState,

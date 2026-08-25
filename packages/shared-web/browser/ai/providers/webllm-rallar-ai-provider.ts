@@ -3,7 +3,8 @@ import {
     RallarAiError,
     type RallarAiJsonProvider,
     type RallarAiJsonRequest,
-    type RallarAiJsonResult
+    type RallarAiJsonResult,
+    type RallarAiProviderCapabilities
 } from '@shared/rallar-ai/mod.ts';
 
 export type RallarAiWebLlmMessage = Readonly<{
@@ -65,23 +66,12 @@ export type CreateWebLlmRallarAiProviderOptions = Readonly<{
 export function createWebLlmRallarAiProvider(
     options: CreateWebLlmRallarAiProviderOptions
 ): RallarAiJsonProvider {
-    let runtimePromise = options.runtime === undefined
-        ? undefined
-        : Promise.resolve(options.runtime);
-
+    const loadRuntime = createWebLlmRuntimeLoader(options);
     const provider: RallarAiJsonProvider = {
         providerId: options.providerId ?? 'webllm',
         source: 'browser',
         modelId: options.modelId,
-        capabilities: {
-            supportsJsonSchema: options.supportsJsonSchema ?? true,
-            supportsStreaming: false,
-            supportsCancellation: true,
-            maxContextTokens: options.maxContextTokens,
-            maxOutputTokens: options.maxOutputTokens,
-            typicalColdStartMs: options.typicalColdStartMs,
-            target: 'browser'
-        },
+        capabilities: createWebLlmProviderCapabilities(options),
         async generateJson<TValue, TContext>(
             request: RallarAiJsonRequest<TContext>
         ): Promise<RallarAiJsonResult<TValue>> {
@@ -111,7 +101,30 @@ export function createWebLlmRallarAiProvider(
         }
     };
 
-    function loadRuntime(): Promise<RallarAiWebLlmRuntime> {
+    return provider;
+}
+
+function createWebLlmProviderCapabilities(
+    options: CreateWebLlmRallarAiProviderOptions
+): RallarAiProviderCapabilities {
+    return {
+        supportsJsonSchema: options.supportsJsonSchema ?? true,
+        supportsStreaming: false,
+        supportsCancellation: true,
+        maxContextTokens: options.maxContextTokens,
+        maxOutputTokens: options.maxOutputTokens,
+        typicalColdStartMs: options.typicalColdStartMs,
+        target: 'browser' as const
+    };
+}
+
+function createWebLlmRuntimeLoader(
+    options: CreateWebLlmRallarAiProviderOptions
+): () => Promise<RallarAiWebLlmRuntime> {
+    let runtimePromise = options.runtime === undefined
+        ? undefined
+        : Promise.resolve(options.runtime);
+    return () => {
         if (runtimePromise !== undefined) {
             return runtimePromise;
         }
@@ -125,9 +138,7 @@ export function createWebLlmRallarAiProvider(
         }
         runtimePromise = options.loadRuntime();
         return runtimePromise;
-    }
-
-    return provider;
+    };
 }
 
 async function runWebLlmRuntime<TContext>(

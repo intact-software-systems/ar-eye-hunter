@@ -25,60 +25,72 @@ export function createRallarCrdtFacade(
     const now = options.now ?? Date.now;
 
     return {
-        open: async <
-            TValue = RallarCrdtJsonValue,
-            TPayload extends RallarCrdtOperationBatch = RallarCrdtOperationBatch,
-        >(
-            name: string,
-            openOptions: RallarCrdtOpenOptions<TValue, TPayload> = {}
-        ): Promise<RallarCrdtDocument<TValue, TPayload>> => {
-            const ref = toDocumentRef(name, openOptions, options.readDefaults?.());
-            const documentKey = toRallarCrdtDocumentKey(ref);
-            const existing = openDocuments.get(documentKey);
-            if (existing) {
-                return existing as RallarCrdtDocument<TValue, TPayload>;
-            }
-
-            const document = new BrowserRallarCrdtDocument<TValue, TPayload>({
-                ref,
-                documentKey,
-                replicaId: openOptions.replicaId ??
-                    options.createReplicaId?.() ??
-                    createBrowserCrdtRuntimeId('replica'),
-                actorId: openOptions.actorId,
-                sessionId: openOptions.sessionId,
-                schemaVersion: openOptions.schemaVersion ?? 1,
-                initialValue: openOptions.initialValue,
-                persist: openOptions.persist ?? true,
-                tabSync: openOptions.tabSync ?? true,
-                transport: openOptions.transport ?? 'local-only',
-                policies: openOptions.policies ?? [],
-                metrics: openOptions.metrics,
-                encryption: openOptions.encryption,
-                validation: openOptions.validation,
-                durableCatchUp: (openOptions.durableCatchUp ??
-                    options.readDurableCatchUp?.()) as
-                        | RallarCrdtHttpCatchUpClient<TPayload>
-                        | undefined,
-                data: options.data,
-                dbName: openOptions.dbName ?? DEFAULT_RALLAR_CRDT_DB_NAME,
-                readTransport: options.readTransport,
-                now
-            });
-
-            await document.hydrate();
-            openDocuments.set(
-                documentKey,
-                document as RallarCrdtDocument<RallarCrdtJsonValue>
-            );
-            document.onClosed(() => {
-                if (openDocuments.get(documentKey) === document) {
-                    openDocuments.delete(documentKey);
-                }
-            });
-            return document;
-        }
+        open: async (name, openOptions = {}) =>
+            await openRallarCrdtDocument(
+                options,
+                openDocuments,
+                now,
+                name,
+                openOptions
+            )
     };
+}
+
+async function openRallarCrdtDocument<
+    TValue = RallarCrdtJsonValue,
+    TPayload extends RallarCrdtOperationBatch = RallarCrdtOperationBatch,
+>(
+    facadeOptions: RallarCrdtFacadeOptions,
+    openDocuments: Map<string, RallarCrdtDocument<RallarCrdtJsonValue>>,
+    now: () => number,
+    name: string,
+    openOptions: RallarCrdtOpenOptions<TValue, TPayload>
+): Promise<RallarCrdtDocument<TValue, TPayload>> {
+    const ref = toDocumentRef(name, openOptions, facadeOptions.readDefaults?.());
+    const documentKey = toRallarCrdtDocumentKey(ref);
+    const existing = openDocuments.get(documentKey);
+    if (existing) {
+        return existing as RallarCrdtDocument<TValue, TPayload>;
+    }
+
+    const document = new BrowserRallarCrdtDocument<TValue, TPayload>({
+        ref,
+        documentKey,
+        replicaId: openOptions.replicaId ??
+            facadeOptions.createReplicaId?.() ??
+            createBrowserCrdtRuntimeId('replica'),
+        actorId: openOptions.actorId,
+        sessionId: openOptions.sessionId,
+        schemaVersion: openOptions.schemaVersion ?? 1,
+        initialValue: openOptions.initialValue,
+        persist: openOptions.persist ?? true,
+        tabSync: openOptions.tabSync ?? true,
+        transport: openOptions.transport ?? 'local-only',
+        policies: openOptions.policies ?? [],
+        metrics: openOptions.metrics,
+        encryption: openOptions.encryption,
+        validation: openOptions.validation,
+        durableCatchUp: (openOptions.durableCatchUp ??
+            facadeOptions.readDurableCatchUp?.()) as
+                | RallarCrdtHttpCatchUpClient<TPayload>
+                | undefined,
+        data: facadeOptions.data,
+        dbName: openOptions.dbName ?? DEFAULT_RALLAR_CRDT_DB_NAME,
+        readTransport: facadeOptions.readTransport,
+        now
+    });
+
+    await document.hydrate();
+    openDocuments.set(
+        documentKey,
+        document as RallarCrdtDocument<RallarCrdtJsonValue>
+    );
+    document.onClosed(() => {
+        if (openDocuments.get(documentKey) === document) {
+            openDocuments.delete(documentKey);
+        }
+    });
+    return document;
 }
 
 function toDocumentRef<TValue>(

@@ -29,66 +29,80 @@ export type InitHeartbeatOptions = Readonly<{
 
 let activeHeartbeat: HeartbeatHandle | undefined;
 
+class BrowserStateHeartbeatRuntime {
+    public readonly handle: HeartbeatHandle;
+    readonly #clientData: ClientInfo;
+    readonly #options: InitHeartbeatOptions;
+    #stopped = false;
+    #timer: ReturnType<typeof setTimeout> | undefined;
+
+    public constructor(clientData: ClientInfo, options: InitHeartbeatOptions) {
+        this.#clientData = clientData;
+        this.#options = options;
+        this.handle = {
+            sessionId: clientData.sessionId,
+            generationId: crypto.randomUUID(),
+            stop: () => this.stop()
+        };
+    }
+
+    public start(): void {
+        void this.runHeartbeat();
+    }
+
+    private stop(): void {
+        this.#stopped = true;
+        if (this.#timer !== undefined) {
+            clearTimeout(this.#timer);
+            this.#timer = undefined;
+        }
+        if (activeHeartbeat === this.handle) {
+            activeHeartbeat = undefined;
+        }
+    }
+
+    private schedule(delayMsecs: number): void {
+        if (this.#stopped) {
+            return;
+        }
+        this.#timer = setTimeout(() => void this.runHeartbeat(), delayMsecs);
+    }
+
+    private async runHeartbeat(): Promise<void> {
+        try {
+            await refreshHeartbeat(
+                this.#clientData,
+                this.handle.generationId,
+                this.#options
+            );
+            this.schedule(intervalMsecs);
+        }
+        catch (error) {
+            if (isUnauthorizedApiError(error)) {
+                this.handle.stop();
+                await this.#options.onAuthInvalid?.(error);
+                return;
+            }
+            if (!this.#stopped) {
+                console.warn(
+                    `State heartbeat failed for client ${this.#clientData.clientId} session ${this.#clientData.sessionId}:`,
+                    error
+                );
+                this.schedule(retryIntervalMsecs);
+            }
+        }
+    }
+}
+
 export async function initHeartbeat(
     clientData: ClientInfo,
     options: InitHeartbeatOptions = {}
 ): Promise<HeartbeatHandle> {
     activeHeartbeat?.stop();
-
-    let stopped = false;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const generationId = crypto.randomUUID();
-
-    const handle: HeartbeatHandle = {
-        sessionId: clientData.sessionId,
-        generationId,
-        stop() {
-            stopped = true;
-            if (timer !== undefined) {
-                clearTimeout(timer);
-                timer = undefined;
-            }
-            if (activeHeartbeat === handle) {
-                activeHeartbeat = undefined;
-            }
-        }
-    };
-
-    activeHeartbeat = handle;
-
-    const schedule = (delayMsecs: number): void => {
-        if (stopped) {
-            return;
-        }
-        timer = setTimeout(() => {
-            void runHeartbeat();
-        }, delayMsecs);
-    };
-
-    const runHeartbeat = async (): Promise<void> => {
-        try {
-            await refreshHeartbeat(clientData, generationId, options);
-            schedule(intervalMsecs);
-        }
-        catch (error) {
-            if (isUnauthorizedApiError(error)) {
-                handle.stop();
-                await options.onAuthInvalid?.(error);
-                return;
-            }
-
-            if (!stopped) {
-                console.warn(
-                    `State heartbeat failed for client ${clientData.clientId} session ${clientData.sessionId}:`,
-                    error
-                );
-                schedule(retryIntervalMsecs);
-            }
-        }
-    };
-
-    void runHeartbeat();
-    return handle;
+    const runtime = new BrowserStateHeartbeatRuntime(clientData, options);
+    activeHeartbeat = runtime.handle;
+    runtime.start();
+    return runtime.handle;
 }
 
 export function stopHeartbeat(handle: HeartbeatHandle | undefined = activeHeartbeat): void {
