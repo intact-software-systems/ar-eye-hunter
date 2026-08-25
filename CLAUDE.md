@@ -147,12 +147,12 @@ its own `architecture.md` — read it before changing that package's public surf
   tests, and apps: no DOM, no HTTP server, no Postgres, no `graphology`. Owns `api/` HTTP DTOs,
   `al-contracts/` + `alm/` (AL message shapes, QoS, multicast targeting), `queuebox/`,
   `resilience/` (including `Either`), `crdt/`, `rtc/` + `webrtc/`, `rallar-game/`, `rallar-motion/`.
-- **`packages/shared-web`** — browser side. `browser/rallar.ts` is the broad compatibility facade
-  and the canonical browser object; the implementation lives in unexported controllers under
-  `browser/rallar-runtime/` composed by `rallar-runtime/compose.ts`. Narrow entry points
+- **`packages/shared-web`** — browser side. `browser/rallar.ts` is the canonical browser object;
+  the implementation lives in feature-owned controllers under `browser/rallar-runtime/` composed
+  by `rallar-runtime/composition.ts`. Narrow entry points
   (`rallar-core.ts`, `rallar-realtime.ts`, `rallar-data.ts`, `rallar-crdt.ts`,
   `rallar-media-calls.ts`) are preferred for new app code. Controllers must not import the
-  compatibility entry point or the composer; dependencies point inward.
+  aggregate entry point or the composer; dependencies point inward.
 - **`packages/shared-server`** — reusable server domain code, independent of any one HTTP app.
   `rallar-facade/` composes REST/WS/system behavior; `rallar-system/services/` owns client/group
   state, topology, state sync, app-inbox processing, authorization, routing;

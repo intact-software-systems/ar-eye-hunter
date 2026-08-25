@@ -1,5 +1,6 @@
 import type { ApiMiddleware } from '@shared-web/browser/app-context.ts';
 import { toRallarWorkflowPolicies, type RallarOperationOptions } from '@shared-web/browser/rallar-operation-options.ts';
+import type { RallarStateSnapshotAcceptanceInput } from '@shared-web/browser/rallar-runtime/state-store.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { toGroupRefFromScope, toStateScope } from '@shared/api/api-type-utils.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
@@ -20,12 +21,7 @@ export interface LeaveRoomInput {
     readonly resolveOperationScope: (scope?: StateScope) => StateScope | undefined;
     readonly resolveDefaultRoomRef: () => GroupRef | undefined;
     readonly runAuthAwareOperation: <T>(operation: () => Promise<T>) => Promise<T>;
-    readonly acceptSnapshots: (
-        context: ApiMiddleware,
-        clients: readonly ClientSnapshot[],
-        groups: readonly GroupSnapshot[],
-        scope?: StateScope
-    ) => Promise<void>;
+    readonly acceptSnapshots: (input: RallarStateSnapshotAcceptanceInput) => Promise<void>;
 }
 
 export async function leaveRoom(input: LeaveRoomInput): Promise<GroupSnapshot | undefined> {
@@ -59,7 +55,7 @@ export async function leaveRoom(input: LeaveRoomInput): Promise<GroupSnapshot | 
             roomRef ?? roomId,
             leaveOptions.clearCurrent ?? true
         );
-        await input.acceptSnapshots(context, [], [snapshot], scope);
+        await input.acceptSnapshots({ context, clients: [], groups: [snapshot], scope });
         return snapshot;
     });
 }

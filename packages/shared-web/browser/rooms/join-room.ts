@@ -59,7 +59,7 @@ export async function joinRoom(input: JoinRoomInput): Promise<GroupSnapshot> {
             { inviteToken: joinInput.options.inviteToken, joinCode: joinInput.options.joinCode }
         );
         input.stateStore.setCurrentRoom(snapshot);
-        await input.acceptSnapshots(context, [], [snapshot], scope);
+        await input.acceptSnapshots({ context, clients: [], groups: [snapshot], scope });
         await leavePreviousRoomAfterJoin({
             input,
             joinedRoom: snapshot,

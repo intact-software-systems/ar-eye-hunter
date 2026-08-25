@@ -32,25 +32,21 @@ export type RallarWaitForOpenStatus =
     | 'no-lane'
     | 'failed';
 
-export type RallarWaitForOpenOptions = Readonly<{
-    timeoutMs?: number;
-    signal?: AbortSignal;
-}>;
+export interface RallarWaitForOpenOptions {
+    readonly timeoutMs?: number;
+    readonly signal?: AbortSignal;
+}
 
-export type RallarRtcWaitForOpenOptions =
-    & RallarWaitForOpenOptions
-    & Readonly<{
-        laneId?: string;
-        connect?: boolean;
-    }>;
+export interface RallarRtcWaitForOpenOptions extends RallarWaitForOpenOptions {
+    readonly laneId?: string;
+    readonly connect?: boolean;
+}
 
-export type RallarRtcRoomLaneWaitOptions =
-    & RallarWaitForOpenOptions
-    & Readonly<{
-        connect?: boolean;
-        roomRef?: GroupRef;
-        expect?: RallarReadinessExpectation;
-    }>;
+export interface RallarRtcRoomLaneWaitOptions extends RallarWaitForOpenOptions {
+    readonly connect?: boolean;
+    readonly roomRef?: GroupRef;
+    readonly expect?: RallarReadinessExpectation;
+}
 
 export type RallarRtcRoomLaneWaitStatus =
     | 'open'
@@ -74,37 +70,37 @@ export type RallarRoomTransportState =
     | 'degraded'
     | 'failed';
 
-export type RallarRoomTransportStatus = Readonly<{
-    roomRef?: GroupRef;
-    roomId?: string;
-    ws: RallarWsStatus;
-    rtc: Readonly<{
-        desired: boolean;
-        mode: RallarRtcRoomMode;
-        state: RallarRoomTransportState;
-        desiredPeerIds: readonly string[];
-        knownPeerIds: readonly string[];
-        activePeerIds: readonly string[];
-        readyPeerIds: readonly string[];
-        failedPeerIds: readonly string[];
-        laneId: string;
-        lastChangedAtEpochMs?: number;
-        reason?: string;
-    }>;
-}>;
+export interface RallarRoomTransportStatus {
+    readonly roomRef?: GroupRef;
+    readonly roomId?: string;
+    readonly ws: RallarWsStatus;
+    readonly rtc: RallarRtcRoomTransportStatus;
+}
 
-export type RallarRtcRoomTransportOptions =
-    & RallarWaitForOpenOptions
-    & Readonly<{
-        laneId?: string;
-        mode?: RallarRtcRoomMode;
-        minReadyPeers?: number;
-        connect?: boolean;
-    }>;
+export interface RallarRtcRoomTransportStatus {
+    readonly desired: boolean;
+    readonly mode: RallarRtcRoomMode;
+    readonly state: RallarRoomTransportState;
+    readonly desiredPeerIds: readonly string[];
+    readonly knownPeerIds: readonly string[];
+    readonly activePeerIds: readonly string[];
+    readonly readyPeerIds: readonly string[];
+    readonly failedPeerIds: readonly string[];
+    readonly laneId: string;
+    readonly lastChangedAtEpochMs?: number;
+    readonly reason?: string;
+}
 
-export type RallarRtcStatusOptions = Readonly<{
-    laneId?: string;
-}>;
+export interface RallarRtcRoomTransportOptions extends RallarWaitForOpenOptions {
+    readonly laneId?: string;
+    readonly mode?: RallarRtcRoomMode;
+    readonly minReadyPeers?: number;
+    readonly connect?: boolean;
+}
+
+export interface RallarRtcStatusOptions {
+    readonly laneId?: string;
+}
 
 export type RallarRtcStatusSubscriptionOptions =
     & RallarRtcStatusOptions
@@ -125,15 +121,15 @@ export type RallarRtcLifecycleKind =
     | 'lane-close'
     | 'lane-error';
 
-export type RallarRtcLifecycleEvent = Readonly<{
-    kind: RallarRtcLifecycleKind;
-    atEpochMs: number;
-    status: RallarRtcStatus;
-    peerId?: string;
-    laneId?: string;
-    peer?: RallarRtcPeerStatus;
-    lane?: RallarRtcLaneStatus;
-}>;
+export interface RallarRtcLifecycleEvent {
+    readonly kind: RallarRtcLifecycleKind;
+    readonly atEpochMs: number;
+    readonly status: RallarRtcStatus;
+    readonly peerId?: string;
+    readonly laneId?: string;
+    readonly peer?: RallarRtcPeerStatus;
+    readonly lane?: RallarRtcLaneStatus;
+}
 
 export type RallarRtcLifecycleListener = (
     event: RallarRtcLifecycleEvent
@@ -147,161 +143,69 @@ export type RallarRtcRecoveryStatus =
     | 'unsupported'
     | 'failed';
 
-export type RallarRtcRecoveryResult = Readonly<{
-    peerId: string;
-    action: 'restart-ice' | 'reconnect';
-    status: RallarRtcRecoveryStatus;
-    rtcStatus: RallarRtcStatus;
-    reason?: string;
-}>;
+export interface RallarRtcRecoveryResult {
+    readonly peerId: string;
+    readonly action: 'restart-ice' | 'reconnect';
+    readonly status: RallarRtcRecoveryStatus;
+    readonly rtcStatus: RallarRtcStatus;
+    readonly reason?: string;
+}
 
-export type RallarRtcReconnectOptions =
-    & RallarWaitForOpenOptions
-    & Readonly<{
-        laneId?: string;
-    }>;
+export interface RallarRtcReconnectOptions extends RallarWaitForOpenOptions {
+    readonly laneId?: string;
+}
 
-export type RallarRtcWaitForOpenResult = Readonly<{
-    transport: 'rtc';
-    status: RallarWaitForOpenStatus;
-    peerId: string;
-    laneId: string;
-    rtcStatus: RallarRtcStatus;
-    peer?: RallarRtcPeerStatus;
-    lane?: RallarRtcLaneStatus;
-    reason?: string;
-}>;
+export interface RallarRtcWaitForOpenResult {
+    readonly transport: 'rtc';
+    readonly status: RallarWaitForOpenStatus;
+    readonly peerId: string;
+    readonly laneId: string;
+    readonly rtcStatus: RallarRtcStatus;
+    readonly peer?: RallarRtcPeerStatus;
+    readonly lane?: RallarRtcLaneStatus;
+    readonly reason?: string;
+}
 
-export type RallarRtcRoomLaneWaitResult = Readonly<{
-    transport: 'rtc';
-    roomId: string;
-    laneId: string;
-    status: RallarRtcRoomLaneWaitStatus;
-    rtcStatus: RallarRtcStatus;
-    ready: readonly RallarRtcWaitForOpenResult[];
-    notReady: readonly RallarRtcWaitForOpenResult[];
-    readyPeerIds: readonly string[];
-    notReadyPeerIds: readonly string[];
-    missingPeerIds: readonly string[];
-    extraPeerIds: readonly string[];
-    observedCount: number;
-    expectedCount?: number;
-}>;
+export interface RallarRtcRoomLaneWaitResult {
+    readonly transport: 'rtc';
+    readonly roomId: string;
+    readonly laneId: string;
+    readonly status: RallarRtcRoomLaneWaitStatus;
+    readonly rtcStatus: RallarRtcStatus;
+    readonly ready: readonly RallarRtcWaitForOpenResult[];
+    readonly notReady: readonly RallarRtcWaitForOpenResult[];
+    readonly readyPeerIds: readonly string[];
+    readonly notReadyPeerIds: readonly string[];
+    readonly missingPeerIds: readonly string[];
+    readonly extraPeerIds: readonly string[];
+    readonly observedCount: number;
+    readonly expectedCount?: number;
+}
 
-export type RallarRtcFacade = Readonly<{
+export interface RallarRtcFacade {
     status(options?: RallarRtcStatusOptions): RallarRtcStatus;
-    roomStatus(
-        room: string | GroupRef,
-        options?: RallarRtcRoomTransportOptions
-    ): RallarRoomTransportStatus;
-    openRoom(
-        room: string | GroupRef,
-        options?: RallarRtcRoomTransportOptions
-    ): Promise<RallarRoomTransportStatus>;
-    waitForRoom(
-        room: string | GroupRef,
-        options?: RallarRtcRoomTransportOptions
-    ): Promise<RallarRoomTransportStatus>;
-    onStatus(
-        listener: RallarRtcStatusListener,
-        options?: RallarRtcStatusSubscriptionOptions
-    ): RallarUnsubscribe;
-    onLifecycle(
-        listener: RallarRtcLifecycleListener,
-        options?: RallarRtcStatusSubscriptionOptions
-    ): RallarUnsubscribe;
+    roomStatus(room: string | GroupRef, options?: RallarRtcRoomTransportOptions): RallarRoomTransportStatus;
+    openRoom(room: string | GroupRef, options?: RallarRtcRoomTransportOptions): Promise<RallarRoomTransportStatus>;
+    waitForRoom(room: string | GroupRef, options?: RallarRtcRoomTransportOptions): Promise<RallarRoomTransportStatus>;
+    onStatus(listener: RallarRtcStatusListener, options?: RallarRtcStatusSubscriptionOptions): RallarUnsubscribe;
+    onLifecycle(listener: RallarRtcLifecycleListener, options?: RallarRtcStatusSubscriptionOptions): RallarUnsubscribe;
     waitForLane(
         peerId: string,
         laneId: string,
         options?: RallarRtcWaitForOpenOptions
     ): Promise<RallarRtcWaitForOpenResult>;
-    waitForOpen(
-        peerId: string,
-        options?: RallarRtcWaitForOpenOptions
-    ): Promise<RallarRtcWaitForOpenResult>;
+    waitForOpen(peerId: string, options?: RallarRtcWaitForOpenOptions): Promise<RallarRtcWaitForOpenResult>;
     waitForRoomLane(
         room: string | GroupRef,
         laneId: string,
         options?: RallarRtcRoomLaneWaitOptions
     ): Promise<RallarRtcRoomLaneWaitResult>;
-    peer(
-        peerId: string,
-        options?: RallarRtcStatusOptions
-    ): RallarRtcPeerStatus | undefined;
+    peer(peerId: string, options?: RallarRtcStatusOptions): RallarRtcPeerStatus | undefined;
     knownPeerIds(): readonly string[];
     activePeerIds(): readonly string[];
     peerIdsWithNoReconnectableLanes(): readonly string[];
     readyPeerIds(laneId?: string): readonly string[];
-    diagnostics(
-        options?: RallarRtcDiagnosticsOptions
-    ): Promise<RallarRtcDiagnostics>;
+    diagnostics(options?: RallarRtcDiagnosticsOptions): Promise<RallarRtcDiagnostics>;
     restartIce(peerId: string): Promise<RallarRtcRecoveryResult>;
-    reconnectPeer(
-        peerId: string,
-        options?: RallarRtcReconnectOptions
-    ): Promise<RallarRtcRecoveryResult>;
-}>;
-
-export type CreateRallarRtcFacadeOptions = RallarRtcFacade;
-
-export function createRallarRtcFacade(
-    operations: CreateRallarRtcFacadeOptions
-): RallarRtcFacade {
-    return {
-        status: (
-            options: RallarRtcStatusOptions = {}
-        ): RallarRtcStatus => operations.status(options),
-        roomStatus: (
-            room,
-            options: RallarRtcRoomTransportOptions = {}
-        ): RallarRoomTransportStatus => operations.roomStatus(room, options),
-        openRoom: async (
-            room,
-            options: RallarRtcRoomTransportOptions = {}
-        ): Promise<RallarRoomTransportStatus> => await operations.openRoom(room, options),
-        waitForRoom: async (
-            room,
-            options: RallarRtcRoomTransportOptions = {}
-        ): Promise<RallarRoomTransportStatus> => await operations.waitForRoom(room, options),
-        onStatus: (
-            listener,
-            options: RallarRtcStatusSubscriptionOptions = {}
-        ): RallarUnsubscribe => operations.onStatus(listener, options),
-        onLifecycle: (
-            listener,
-            options: RallarRtcStatusSubscriptionOptions = {}
-        ): RallarUnsubscribe => operations.onLifecycle(listener, options),
-        waitForLane: async (
-            peerId,
-            laneId,
-            options: RallarRtcWaitForOpenOptions = {}
-        ): Promise<RallarRtcWaitForOpenResult> => await operations.waitForLane(peerId, laneId, options),
-        waitForOpen: async (
-            peerId,
-            options: RallarRtcWaitForOpenOptions = {}
-        ): Promise<RallarRtcWaitForOpenResult> => await operations.waitForOpen(peerId, options),
-        waitForRoomLane: async (
-            room,
-            laneId,
-            options: RallarRtcRoomLaneWaitOptions = {}
-        ): Promise<RallarRtcRoomLaneWaitResult> => await operations.waitForRoomLane(room, laneId, options),
-        peer: (
-            peerId,
-            options: RallarRtcStatusOptions = {}
-        ): RallarRtcPeerStatus | undefined => operations.peer(peerId, options),
-        knownPeerIds: (): readonly string[] => operations.knownPeerIds(),
-        activePeerIds: (): readonly string[] => operations.activePeerIds(),
-        peerIdsWithNoReconnectableLanes: (): readonly string[] => operations.peerIdsWithNoReconnectableLanes(),
-        readyPeerIds: (laneId?: string): readonly string[] => operations.readyPeerIds(laneId),
-        diagnostics: async (
-            options: RallarRtcDiagnosticsOptions = {}
-        ): Promise<RallarRtcDiagnostics> => await operations.diagnostics(options),
-        restartIce: async (
-            peerId
-        ): Promise<RallarRtcRecoveryResult> => await operations.restartIce(peerId),
-        reconnectPeer: async (
-            peerId,
-            options: RallarRtcReconnectOptions = {}
-        ): Promise<RallarRtcRecoveryResult> => await operations.reconnectPeer(peerId, options)
-    };
+    reconnectPeer(peerId: string, options?: RallarRtcReconnectOptions): Promise<RallarRtcRecoveryResult>;
 }

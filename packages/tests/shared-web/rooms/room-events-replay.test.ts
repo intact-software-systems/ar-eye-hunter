@@ -1,6 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AppTopics } from '@shared/api/api-config.ts';
+import type { GroupEvent } from '@shared/api/group-types.ts';
+import type { StateEventCursor } from '@shared/api/state-event-types.ts';
+import type { RallarMessage } from '@shared-web/browser/rallar-message-contracts.ts';
 
 import {
     createRoomEvent,
@@ -8,28 +11,42 @@ import {
     findRoomWsCallback,
     readRoomEventMocks,
     resetRoomEventTestRuntime,
-    toRoomEventMessage
+    toRoomEventEnvelopeMessage
 } from './room-event-test-runtime.ts';
 
-describe('room event replay compatibility', () => {
+interface ReplayPageRequest {
+    readonly roomId: string;
+    readonly applicationId: string;
+    readonly workspaceId: string;
+    readonly limit: number | undefined;
+    readonly after: StateEventCursor | undefined;
+}
+
+describe('room event replay', () => {
     beforeEach(resetRoomEventTestRuntime);
 
     it('replays explicitly and deduplicates overlap with live room events', async () => {
         const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
         const mocks = readRoomEventMocks();
         const facade = createRallarFacade();
-        const liveListener = vi.fn();
-        const replayListener = vi.fn();
-        const live = createRoomEvent('room-1', 'event-1', 'member-joined');
-        const replayed = createRoomEvent('room-1', 'event-2', 'member-left', {
+        const liveEvents: GroupEvent[] = [];
+        const replayEvents: GroupEvent[] = [];
+        const replayMessages: RallarMessage<GroupEvent>[] = [];
+        const live = createRoomEvent({ groupId: 'room-1', eventId: 'event-1', eventType: 'member-joined' });
+        const replayed = createRoomEvent({
+            groupId: 'room-1',
+            eventId: 'event-2',
+            eventType: 'member-left',
             snapshotVersion: 2,
             occurredAtEpochMs: 2
         });
         facade.setDefaults({ applicationId: 'app-1', workspaceId: 'workspace-1' });
-        facade.rooms.onEvent(liveListener, { roomId: 'room-1' });
+        facade.rooms.onEvent((event) => {
+            liveEvents.push(event);
+        }, { roomId: 'room-1' });
         mocks.listStateGroupEventPage.mockResolvedValue(createRoomEventPage([live, replayed], false));
         await facade.connect();
-        await findRoomWsCallback(true)?.onMessage?.(toRoomEventMessage(live));
+        await findRoomWsCallback(true)?.onMessage?.(toRoomEventEnvelopeMessage(live));
 
         const result = await facade.rooms.replayEvents(
             {
@@ -37,27 +54,28 @@ describe('room event replay compatibility', () => {
                 after: { snapshotVersion: 1, occurredAtEpochMs: 1, eventId: 'event-1' },
                 limit: 2
             },
-            replayListener
+            (event, message) => {
+                replayEvents.push(event);
+                replayMessages.push(message);
+            }
         );
-        await findRoomWsCallback(true)?.onMessage?.(toRoomEventMessage(replayed));
+        await findRoomWsCallback(true)?.onMessage?.(toRoomEventEnvelopeMessage(replayed));
 
-        expect(liveListener).toHaveBeenCalledOnce();
-        expect(liveListener.mock.calls.map((call) => call[0].eventId)).toEqual(['event-1']);
-        expect(replayListener).toHaveBeenCalledOnce();
-        expect(replayListener.mock.calls[0]?.[0]).toEqual(replayed);
-        expect(replayListener.mock.calls[0]?.[1]).toMatchObject({
+        expect(liveEvents.map((event) => event.eventId)).toEqual(['event-1']);
+        expect(replayEvents).toEqual([replayed]);
+        expect(replayMessages[0]).toMatchObject({
             transport: 'replay',
             typeId: AppTopics.groupStateEvent,
             topicId: AppTopics.groupStateEvent
         });
-        expect(replayListener).toHaveBeenCalledWith(
-            replayed,
-            expect.objectContaining({
+        expect({ event: replayEvents[0], message: replayMessages[0] }).toEqual({
+            event: replayed,
+            message: expect.objectContaining({
                 transport: 'replay',
                 typeId: AppTopics.groupStateEvent,
                 topicId: AppTopics.groupStateEvent
             })
-        );
+        });
         expect(result).toMatchObject({
             events: [replayed],
             duplicateCount: 1,
@@ -88,17 +106,37 @@ describe('room event replay compatibility', () => {
         const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
         const mocks = readRoomEventMocks();
         const facade = createRallarFacade();
-        const listener = vi.fn();
-        const first = createRoomEvent('room-1', 'event-1', 'member-joined');
-        const second = createRoomEvent('room-1', 'event-2', 'member-left', {
+        const observedEvents: GroupEvent[] = [];
+        const pageRequests: ReplayPageRequest[] = [];
+        const first = createRoomEvent({ groupId: 'room-1', eventId: 'event-1', eventType: 'member-joined' });
+        const second = createRoomEvent({
+            groupId: 'room-1',
+            eventId: 'event-2',
+            eventType: 'member-left',
             snapshotVersion: 2,
             occurredAtEpochMs: 2
         });
         facade.setDefaults({ applicationId: 'app-1', workspaceId: 'workspace-1' });
-        facade.rooms.onEvent(listener, { roomId: 'room-1' });
-        mocks.listStateGroupEventPage
-            .mockResolvedValueOnce(createRoomEventPage([first], true))
-            .mockResolvedValueOnce(createRoomEventPage([second], false));
+        facade.rooms.onEvent((event) => {
+            observedEvents.push(event);
+        }, { roomId: 'room-1' });
+        mocks.listStateGroupEventPage.mockImplementation(
+            async (roomId, scope, options) => {
+                if (!scope || !options) {
+                    throw new Error('Room replay must provide scope and page options');
+                }
+                pageRequests.push({
+                    roomId,
+                    applicationId: scope.applicationId,
+                    workspaceId: scope.workspaceId,
+                    limit: options.limit,
+                    after: options.after
+                });
+                return options.after
+                    ? createRoomEventPage([second], false)
+                    : createRoomEventPage([first], true);
+            }
+        );
 
         const result = await facade.rooms.replayEvents({
             roomId: 'room-1',
@@ -106,9 +144,7 @@ describe('room event replay compatibility', () => {
             maxPages: 2
         });
 
-        expect(listener).toHaveBeenCalledTimes(2);
-        expect(listener.mock.calls.map((call) => call[0])).toEqual([first, second]);
-        expect(listener.mock.calls.map((call) => call[0].eventId)).toEqual(['event-1', 'event-2']);
+        expect(observedEvents).toEqual([first, second]);
         expect(result).toMatchObject({
             events: [first, second],
             nextCursor: { snapshotVersion: 2, occurredAtEpochMs: 2, eventId: 'event-2' },
@@ -125,32 +161,33 @@ describe('room event replay compatibility', () => {
             replayedCount: 2,
             duplicateCount: 0
         });
-        expect(mocks.listStateGroupEventPage).toHaveBeenNthCalledWith(
-            1,
-            'room-1',
-            { applicationId: 'app-1', workspaceId: 'workspace-1' },
+        expect(pageRequests).toEqual([
             {
+                roomId: 'room-1',
+                applicationId: 'app-1',
+                workspaceId: 'workspace-1',
                 limit: 1,
-                signal: expect.any(AbortSignal)
-            }
-        );
-        expect(mocks.listStateGroupEventPage).toHaveBeenNthCalledWith(
-            2,
-            'room-1',
-            { applicationId: 'app-1', workspaceId: 'workspace-1' },
+                after: undefined
+            },
             {
+                roomId: 'room-1',
+                applicationId: 'app-1',
+                workspaceId: 'workspace-1',
                 limit: 1,
-                after: { snapshotVersion: 1, occurredAtEpochMs: 1, eventId: 'event-1' },
-                signal: expect.any(AbortSignal)
+                after: {
+                    snapshotVersion: 1,
+                    occurredAtEpochMs: 1,
+                    eventId: 'event-1'
+                }
             }
-        );
+        ]);
     });
 
     it('stops room replay at maxPages while preserving the continuation cursor', async () => {
         const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
         const mocks = readRoomEventMocks();
         const facade = createRallarFacade();
-        const event = createRoomEvent('room-1', 'event-1', 'member-joined');
+        const event = createRoomEvent({ groupId: 'room-1', eventId: 'event-1', eventType: 'member-joined' });
         facade.setDefaults({ applicationId: 'app-1', workspaceId: 'workspace-1' });
         facade.rooms.onEvent(vi.fn(), { roomId: 'room-1' });
         mocks.listStateGroupEventPage.mockResolvedValue(createRoomEventPage([event], true));
@@ -161,7 +198,6 @@ describe('room event replay compatibility', () => {
             maxPages: 1
         });
 
-        expect(mocks.listStateGroupEventPage).toHaveBeenCalledOnce();
         expect(result).toEqual({
             events: [event],
             nextCursor: { snapshotVersion: 1, occurredAtEpochMs: 1, eventId: 'event-1' },

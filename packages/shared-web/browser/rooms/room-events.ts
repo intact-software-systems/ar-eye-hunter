@@ -1,5 +1,5 @@
 import * as api from '@shared-web/browser/api-integration.ts';
-import type { RallarMessage } from '@shared-web/browser/rallar-messages-facade.ts';
+import type { RallarMessage, RallarStateEventListener } from '@shared-web/browser/rallar-message-contracts.ts';
 import type { RallarOperationOptions } from '@shared-web/browser/rallar-operation-options.ts';
 import { toRallarMessage } from '@shared-web/browser/rallar-runtime/message-conversion.ts';
 import {
@@ -9,10 +9,12 @@ import {
     toStateEventListRequestOptions
 } from '@shared-web/browser/rallar-runtime/state-events.ts';
 import { notifyStateEventListener } from '@shared-web/browser/rallar-runtime/subscriptions.ts';
+import type { RallarWsInbox } from '@shared-web/browser/rallar-runtime/ws-inbox.ts';
 import type { RallarReplayEventsResult, RallarUnsubscribe } from '@shared-web/browser/rallar-shared-contracts.ts';
 import { newALBroadcastMessage, newALRoute } from '@shared/al-contracts/al-contract.ts';
 import { AppTopics } from '@shared/api/api-config.ts';
 import { validateAuthoritativeGroupEvent } from '@shared/api/authoritative-state-validation.ts';
+import { validateGroupStateDeltaEnvelope } from '@shared/api/group-state-delta.ts';
 import { DEFAULT_STATE_WORKSPACE_ID } from '@shared/api/state-types.ts';
 
 import type {
@@ -20,13 +22,12 @@ import type {
     RallarListRoomEventsOptions,
     RallarReplayRoomEventsInput,
     RallarReplayRoomEventsOptions,
-    RallarRoomEventListener,
     RallarRoomEventOptions
 } from './rallar-room-contracts.ts';
 import type { GroupEvent, GroupRef, StateEventPage, StateScope } from './room-group-state-translation.ts';
 
 interface RallarRoomEventSubscription {
-    readonly listener: RallarRoomEventListener;
+    readonly listener: RallarStateEventListener<GroupEvent>;
     readonly options: RallarRoomEventOptions;
 }
 
@@ -37,14 +38,14 @@ export interface RallarRoomEventsPort {
     listPage(input: RallarListRoomEventsInput): Promise<StateEventPage<GroupEvent>>;
     replay(
         input: RallarReplayRoomEventsInput,
-        listener?: RallarRoomEventListener
+        listener?: RallarStateEventListener<GroupEvent>
     ): Promise<RallarReplayEventsResult<GroupEvent>>;
-    onEvent(listener: RallarRoomEventListener, options: RallarRoomEventOptions): RallarUnsubscribe;
+    onEvent(listener: RallarStateEventListener<GroupEvent>, options: RallarRoomEventOptions): RallarUnsubscribe;
     dispatch(message: UnvalidatedRallarMessage): Promise<void>;
 }
 
 export interface CreateRoomEventsInput {
-    readonly retainWsInboxSubscription: () => RallarUnsubscribe;
+    readonly wsInbox: RallarWsInbox;
     readonly readDefaultScope: () => StateScope | undefined;
     readonly resolveOperationOptions: <T extends RallarOperationOptions>(
         options: T
@@ -61,6 +62,7 @@ class RoomEvents implements RallarRoomEventsPort {
     readonly #subscriptions = new Set<RallarRoomEventSubscription>();
     readonly #seenEventKeys = new Set<string>();
     readonly #input: CreateRoomEventsInput;
+    #stopWsInbox: RallarUnsubscribe | undefined;
 
     constructor(input: CreateRoomEventsInput) {
         this.#input = input;
@@ -106,7 +108,7 @@ class RoomEvents implements RallarRoomEventsPort {
 
     async replay(
         input: RallarReplayRoomEventsInput,
-        listener?: RallarRoomEventListener
+        listener?: RallarStateEventListener<GroupEvent>
     ): Promise<RallarReplayEventsResult<GroupEvent>> {
         const options = toRoomEventListOptions(input);
         const operationOptions = this.#input.resolveOperationOptions(options);
@@ -132,10 +134,10 @@ class RoomEvents implements RallarRoomEventsPort {
         );
     }
 
-    onEvent(listener: RallarRoomEventListener, options: RallarRoomEventOptions): RallarUnsubscribe {
+    onEvent(listener: RallarStateEventListener<GroupEvent>, options: RallarRoomEventOptions): RallarUnsubscribe {
         const subscription = { listener, options };
         this.#subscriptions.add(subscription);
-        const releaseWsInbox = this.#input.retainWsInboxSubscription();
+        this.registerWsInboxSubscription();
         let active = true;
         return () => {
             if (!active) {
@@ -143,7 +145,7 @@ class RoomEvents implements RallarRoomEventsPort {
             }
             active = false;
             this.#subscriptions.delete(subscription);
-            releaseWsInbox();
+            this.unregisterWsInboxSubscriptionIfUnused();
         };
     }
 
@@ -167,7 +169,7 @@ class RoomEvents implements RallarRoomEventsPort {
 
     private async replayEvent(
         event: GroupEvent,
-        listener?: RallarRoomEventListener
+        listener?: RallarStateEventListener<GroupEvent>
     ): Promise<'replayed' | 'duplicate' | 'no-listeners'> {
         if (!isGroupEventPayload(event)) {
             return 'no-listeners';
@@ -199,6 +201,30 @@ class RoomEvents implements RallarRoomEventsPort {
         return [...this.#subscriptions].filter((subscription) =>
             matchesRoomEventSubscription(subscription, event, this.#input.readDefaultScope())
         );
+    }
+
+    private registerWsInboxSubscription(): void {
+        if (this.#stopWsInbox) {
+            return;
+        }
+        this.#stopWsInbox = this.#input.wsInbox.subscribe({
+            id: 'room-events',
+            order: 10,
+            onMessage: async (message) => {
+                const rallarMessage = toRallarMessage('ws', message);
+                if (rallarMessage.typeId === AppTopics.groupStateEvent) {
+                    await this.dispatch(rallarMessage);
+                }
+            }
+        });
+    }
+
+    private unregisterWsInboxSubscriptionIfUnused(): void {
+        if (this.#subscriptions.size > 0) {
+            return;
+        }
+        this.#stopWsInbox?.();
+        this.#stopWsInbox = undefined;
     }
 
     private hasSeen(event: GroupEvent): boolean {
@@ -260,25 +286,14 @@ function isGroupEventPayload(value: unknown): value is GroupEvent {
     }
 }
 
-// Under dual-emit/delta-primary the `group-state.event` payload is a
-// GroupStateDeltaEnvelope wrapping the GroupEvent; legacy rows carry the bare
-// event. The envelope's wrapper keys are disjoint from GroupEvent's, so a
-// light structural check routes both forms to the same validated GroupEvent.
 function resolveDispatchedGroupEvent(value: unknown): GroupEvent | undefined {
-    if (isGroupEventPayload(value)) {
-        return value;
+    try {
+        validateGroupStateDeltaEnvelope(value);
+        return value.event;
     }
-    if (
-        typeof value !== 'object' ||
-        value === null ||
-        Array.isArray(value) ||
-        !('event' in value) ||
-        !('predecessorCausalRevision' in value) ||
-        !('resultingCausalRevision' in value)
-    ) {
+    catch {
         return undefined;
     }
-    return isGroupEventPayload(value.event) ? value.event : undefined;
 }
 
 function isSameStateGroupRef(
@@ -288,9 +303,14 @@ function isSameStateGroupRef(
     return left.groupId === right.groupId && isSameStateScopeValue(left, right);
 }
 
+interface ComparableStateScope {
+    readonly applicationId: string;
+    readonly workspaceId?: string;
+}
+
 function isSameStateScopeValue(
-    value: Pick<StateScope, 'applicationId'> & { workspaceId?: string; },
-    scope?: Pick<StateScope, 'applicationId'> & { workspaceId?: string; }
+    value: ComparableStateScope,
+    scope?: ComparableStateScope
 ): boolean {
     if (!scope) {
         return true;

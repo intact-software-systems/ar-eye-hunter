@@ -15,7 +15,7 @@ describe('repository layout rules', () => {
         expect(Object.values(result.counts).every((count) => count === 0)).toBe(true);
     });
     it('normalizes the repository naming forms mechanically', () => {
-        expect(toKebabCase('RallarRoomsFacade')).toBe('rallar-rooms-facade');
+        expect(toKebabCase('BrowserRallarRooms')).toBe('browser-rallar-rooms');
         expect(toKebabCase('GroupRef')).toBe('group-ref');
         expect(toKebabCase('APIClient')).toBe('api-client');
         expect(toKebabCase('PSqlRepository')).toBe('p-sql-repository');

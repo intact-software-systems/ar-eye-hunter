@@ -5,30 +5,6 @@ export {
 } from '@shared-web/browser/api-client-config.ts';
 
 export {
-    createRallarConnectionFacade
-} from '@shared-web/browser/rallar-connection-facade.ts';
-
-export {
-    createRallarAuthFacade
-} from '@shared-web/browser/rallar-auth-facade.ts';
-
-export {
-    createRallarRoomsFacade
-} from '@shared-web/browser/rooms/rallar-rooms-facade.ts';
-
-export {
-    createRallarPeopleFacade
-} from '@shared-web/browser/rallar-people-facade.ts';
-
-export {
-    createRallarStatsFacade
-} from '@shared-web/browser/rallar-stats-facade.ts';
-
-export {
-    createRallarMessagesFacade
-} from '@shared-web/browser/rallar-messages-facade.ts';
-
-export {
     matchesRallarMessageSelector,
     normalizeRallarMessageSelector
 } from '@shared-web/browser/rallar-message-selectors.ts';
@@ -36,34 +12,11 @@ export {
 export type { RallarApiClientConfig } from '@shared-web/browser/api-client-config.ts';
 
 export type {
-    CreateRallarConnectionFacadeOptions,
-    RallarConnectionFacade
+    RallarConnectionFacade,
+    RallarConnectionOperations
 } from '@shared-web/browser/rallar-connection-facade.ts';
 
-export type {
-    CreateRallarAuthFacadeOptions,
-    RallarAuthFacade
-} from '@shared-web/browser/rallar-auth-facade.ts';
-
-export type {
-    CreateRallarRoomsFacadeOptions,
-    RallarRoomsFacade
-} from '@shared-web/browser/rooms/rallar-rooms-facade.ts';
-
-export type {
-    CreateRallarPeopleFacadeOptions,
-    RallarPeopleFacade
-} from '@shared-web/browser/rallar-people-facade.ts';
-
-export type {
-    CreateRallarStatsFacadeOptions,
-    RallarStatsFacade
-} from '@shared-web/browser/rallar-stats-facade.ts';
-
-export type {
-    CreateRallarMessagesFacadeOptions,
-    RallarMessagesFacade
-} from '@shared-web/browser/rallar-messages-facade.ts';
+export type { RallarAuthFacade } from '@shared-web/browser/rallar-auth-facade.ts';
 
 export type {
     RallarMessageSelector,
@@ -76,14 +29,17 @@ export type {
 } from '@shared-web/browser/rallar-operation-options.ts';
 
 export type {
+    CommandsOrchestrator,
+    CommandsOrchestratorPolicies
+} from '@shared/cache/CommandsOrchestrator.ts';
+
+export type {
     RallarAuthChangeListener,
     RallarAuthChangeReason,
     RallarAuthState,
     RallarConnectStatus,
     RallarCreateRoomInput,
     RallarDefaults,
-    RallarFlow,
-    RallarFlowPolicies,
     RallarJoinRoomOptions,
     RallarLeaveRoomOptions,
     RallarListPeopleEventsOptions,
@@ -94,23 +50,18 @@ export type {
     RallarMessageLane,
     RallarMessageSendBase,
     RallarMessageSendResult,
-    RallarMessageSendStatus,
     RallarMessageTransport,
     RallarOnChangeOptions,
-    RallarPeopleEventListener,
     RallarPeopleEventOptions,
     RallarPeopleState,
     RallarPerson,
-    RallarRefreshOptions,
     RallarRegisterOptions,
     RallarReplayEventsResult,
     RallarReplayPeopleEventsOptions,
     RallarReplayRoomEventsInput,
     RallarReplayRoomEventsOptions,
-    RallarRoomEventListener,
     RallarRoomEventOptions,
     RallarRoomMember,
-    RallarRoomMessageChannel,
     RallarRoomMessageChannelDefinition,
     RallarRoomSession,
     RallarRoomSessionMessageDefinition,

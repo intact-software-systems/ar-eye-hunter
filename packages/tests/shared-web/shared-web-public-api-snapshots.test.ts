@@ -1,25 +1,18 @@
-import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { analyzeSourceFile, type SourceAnalysis } from '../helpers/source-analysis';
+import { collectExportSnapshot, type ExportSnapshot } from './public-api-snapshot-collector.ts';
 
-type ExportSnapshot = Readonly<{
-    values: readonly string[];
-    types: readonly string[];
-    starExports: readonly string[];
-    namespaceExports: readonly string[];
-}>;
-
-type PublicSurfaceSnapshot = Readonly<{
-    filePath: string;
-    resolveStarExports?: boolean;
-    expected: ExportSnapshot;
-}>;
+interface PublicSurfaceSnapshot {
+    readonly filePath: string;
+    readonly resolveStarExports?: boolean;
+    readonly expected: ExportSnapshot;
+}
 
 const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
     {
         filePath: 'packages/shared-web/browser/rallar.ts',
         expected: {
             values: [
+                'createDefaultRallarDataFacade',
                 'createRallarCrdtFacade',
                 'createRallarDataFacade',
                 'createRallarFacade',
@@ -31,6 +24,10 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
                 'rallar'
             ],
             types: [
+                'CommandsOrchestrator',
+                'CommandsOrchestratorPolicies',
+                'CreateRallarDataFacadeInput',
+                'RallarAdvancedFacade',
                 'RallarAuthChangeListener',
                 'RallarAuthChangeReason',
                 'RallarAuthState',
@@ -51,8 +48,8 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
                 'RallarCallStartInput',
                 'RallarCallState',
                 'RallarCallStatus',
-                'RallarCallWaitOptions',
                 'RallarCameraSourceStartOptions',
+                'RallarChannelsFacade',
                 'RallarConnectStatus',
                 'RallarCrdtDocument',
                 'RallarCrdtFacade',
@@ -81,15 +78,12 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
                 'RallarDirectorRelayMessage',
                 'RallarDirectorRelaySendResult',
                 'RallarDirectorRelaySendStatus',
-                'RallarDirectorResignOptions',
                 'RallarDirectorRole',
                 'RallarDirectorState',
                 'RallarDirectorStatus',
                 'RallarDirectorStatusListener',
                 'RallarDirectorStatusOptions',
                 'RallarFacade',
-                'RallarFlow',
-                'RallarFlowPolicies',
                 'RallarIncomingCallInvite',
                 'RallarJoinRoomInput',
                 'RallarJoinRoomOptions',
@@ -111,17 +105,16 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
                 'RallarMessageSelectorInput',
                 'RallarMessageSendBase',
                 'RallarMessageSendResult',
-                'RallarMessageSendStatus',
                 'RallarMessageTransport',
                 'RallarMicrophoneSourceStartOptions',
                 'RallarNormalizedReadinessExpectation',
                 'RallarOnChangeOptions',
                 'RallarOperationOptions',
                 'RallarOperationRetryPredicate',
-                'RallarPeopleEventListener',
                 'RallarPeopleEventOptions',
                 'RallarPeopleState',
                 'RallarPerson',
+                'RallarProductFacade',
                 'RallarReadinessEvaluation',
                 'RallarReadinessExpectation',
                 'RallarReadinessStatus',
@@ -129,27 +122,23 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
                 'RallarRealtimeHandler',
                 'RallarRealtimeHealthOptions',
                 'RallarRealtimeJsonLane',
-                'RallarRealtimeJsonLaneDefaults',
                 'RallarRealtimeJsonLaneSendOptions',
                 'RallarRealtimeJsonSendInput',
                 'RallarRealtimeLaneHealth',
                 'RallarRealtimeMessage',
                 'RallarRealtimeSendOptions',
                 'RallarRealtimeSendResult',
-                'RallarRefreshOptions',
                 'RallarRegisterOptions',
                 'RallarRemoteStream',
                 'RallarReplayEventsResult',
                 'RallarReplayPeopleEventsOptions',
                 'RallarReplayRoomEventsInput',
                 'RallarReplayRoomEventsOptions',
-                'RallarRoomEventListener',
                 'RallarRoomEventOptions',
                 'RallarRoomGovernanceOptions',
                 'RallarRoomInviteOptions',
                 'RallarRoomLifecycleOptions',
                 'RallarRoomMember',
-                'RallarRoomMessageChannel',
                 'RallarRoomMessageChannelDefinition',
                 'RallarRoomPresenceWaitOptions',
                 'RallarRoomPresenceWaitResult',
@@ -197,14 +186,12 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
                 'RallarRtcWaitForOpenResult',
                 'RallarScopedOperationOptions',
                 'RallarScreenSourceStartOptions',
+                'RallarSetRoomMemberRoleInput',
                 'RallarSetupInput',
                 'RallarStartOptions',
                 'RallarStartResult',
                 'RallarStateEventListener',
                 'RallarStateListener',
-                'RallarStatsFacade',
-                'RallarStatsGroupInput',
-                'RallarStatsReadOptions',
                 'RallarSubscriptionScope',
                 'RallarTargetMembership',
                 'RallarTargetSelector',
@@ -224,6 +211,7 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
                 'RallarUpdateRoomInput',
                 'RallarWaitForOpenOptions',
                 'RallarWaitForOpenStatus',
+                'RallarWsFacade',
                 'RallarWsLifecycleEvent',
                 'RallarWsLifecycleKind',
                 'RallarWsLifecycleListener',
@@ -231,7 +219,6 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
                 'RallarWsSendInput',
                 'RallarWsStatus',
                 'RallarWsStatusListener',
-                'RallarWsStatusSubscriptionOptions',
                 'RallarWsWaitForOpenResult'
             ],
             starExports: [],
@@ -243,24 +230,14 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
         expected: {
             values: [
                 'configureApiClient',
-                'createRallarAuthFacade',
-                'createRallarConnectionFacade',
-                'createRallarMessagesFacade',
-                'createRallarPeopleFacade',
-                'createRallarRoomsFacade',
-                'createRallarStatsFacade',
                 'matchesRallarMessageSelector',
                 'normalizeApiBaseUrl',
                 'normalizeRallarMessageSelector',
                 'readApiBaseUrl'
             ],
             types: [
-                'CreateRallarAuthFacadeOptions',
-                'CreateRallarConnectionFacadeOptions',
-                'CreateRallarMessagesFacadeOptions',
-                'CreateRallarPeopleFacadeOptions',
-                'CreateRallarRoomsFacadeOptions',
-                'CreateRallarStatsFacadeOptions',
+                'CommandsOrchestrator',
+                'CommandsOrchestratorPolicies',
                 'RallarApiClientConfig',
                 'RallarAuthChangeListener',
                 'RallarAuthChangeReason',
@@ -268,10 +245,9 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
                 'RallarAuthState',
                 'RallarConnectStatus',
                 'RallarConnectionFacade',
+                'RallarConnectionOperations',
                 'RallarCreateRoomInput',
                 'RallarDefaults',
-                'RallarFlow',
-                'RallarFlowPolicies',
                 'RallarJoinRoomOptions',
                 'RallarLeaveRoomOptions',
                 'RallarListPeopleEventsOptions',
@@ -284,27 +260,20 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
                 'RallarMessageSelectorInput',
                 'RallarMessageSendBase',
                 'RallarMessageSendResult',
-                'RallarMessageSendStatus',
                 'RallarMessageTransport',
-                'RallarMessagesFacade',
                 'RallarOnChangeOptions',
                 'RallarOperationOptions',
                 'RallarOperationRetryPredicate',
-                'RallarPeopleEventListener',
                 'RallarPeopleEventOptions',
-                'RallarPeopleFacade',
                 'RallarPeopleState',
                 'RallarPerson',
-                'RallarRefreshOptions',
                 'RallarRegisterOptions',
                 'RallarReplayEventsResult',
                 'RallarReplayPeopleEventsOptions',
                 'RallarReplayRoomEventsInput',
                 'RallarReplayRoomEventsOptions',
-                'RallarRoomEventListener',
                 'RallarRoomEventOptions',
                 'RallarRoomMember',
-                'RallarRoomMessageChannel',
                 'RallarRoomMessageChannelDefinition',
                 'RallarRoomSession',
                 'RallarRoomSessionMessageDefinition',
@@ -313,7 +282,6 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
                 'RallarRoomSummary',
                 'RallarRoomSwitchOperation',
                 'RallarRoomSwitchPartialFailureError',
-                'RallarRoomsFacade',
                 'RallarRtcSendInput',
                 'RallarScopedOperationOptions',
                 'RallarSetupInput',
@@ -321,7 +289,6 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
                 'RallarStartResult',
                 'RallarStateEventListener',
                 'RallarStateListener',
-                'RallarStatsFacade',
                 'RallarSubscriptionScope',
                 'RallarTypedMessageChannel',
                 'RallarTypedMessageChannelDefinition',
@@ -340,19 +307,13 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
     {
         filePath: 'packages/shared-web/browser/rallar-realtime.ts',
         expected: {
-            values: [
-                'createRallarRealtimeFacade',
-                'createRallarRtcFacade'
-            ],
+            values: [],
             types: [
-                'CreateRallarRealtimeFacadeOptions',
-                'CreateRallarRtcFacadeOptions',
                 'RallarRealtimeBinarySendInput',
                 'RallarRealtimeFacade',
                 'RallarRealtimeHandler',
                 'RallarRealtimeHealthOptions',
                 'RallarRealtimeJsonLane',
-                'RallarRealtimeJsonLaneDefaults',
                 'RallarRealtimeJsonLaneSendOptions',
                 'RallarRealtimeJsonSendInput',
                 'RallarRealtimeLaneHealth',
@@ -396,22 +357,15 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
                 'RallarWaitForOpenOptions',
                 'RallarWaitForOpenStatus'
             ],
-            starExports: [
-                '@shared-web/browser/rallar-core.ts'
-            ],
+            starExports: ['@shared-web/browser/rallar-core.ts'],
             namespaceExports: []
         }
     },
     {
         filePath: 'packages/shared-web/browser/rallar-media-calls.ts',
         expected: {
-            values: [
-                'createRallarCallsFacade',
-                'createRallarMediaFacade'
-            ],
+            values: [],
             types: [
-                'CreateRallarCallsFacadeOptions',
-                'CreateRallarMediaFacadeOptions',
                 'RallarCallDataInput',
                 'RallarCallEndOptions',
                 'RallarCallHandle',
@@ -429,7 +383,6 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
                 'RallarCallStartInput',
                 'RallarCallState',
                 'RallarCallStatus',
-                'RallarCallWaitOptions',
                 'RallarCallsFacade',
                 'RallarCameraSourceStartOptions',
                 'RallarIncomingCallInvite',
@@ -454,15 +407,16 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
         filePath: 'packages/shared-web/browser/rallar-data.ts',
         expected: {
             values: [
+                'createDefaultRallarDataFacade',
                 'createRallarDataFacade',
                 'defineRallarDataStore'
             ],
             types: [
+                'CreateRallarDataFacadeInput',
                 'RallarDataChangeEvent',
                 'RallarDataChangeListener',
                 'RallarDataDurability',
                 'RallarDataFacade',
-                'RallarDataFacadeOptions',
                 'RallarDataHydration',
                 'RallarDataMigration',
                 'RallarDataMigrationContext',
@@ -480,9 +434,7 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
     {
         filePath: 'packages/shared-web/browser/rallar-crdt.ts',
         expected: {
-            values: [
-                'createRallarCrdtFacade'
-            ],
+            values: ['createRallarCrdtFacade'],
             types: [
                 'RallarCrdtCounterAddInput',
                 'RallarCrdtDocument',
@@ -514,9 +466,9 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
                 'DEFAULT_RALLAR_GAME_LANE_IDS',
                 'RALLAR_GAME_CANNOT_HOST_SCORE',
                 'RALLAR_GAME_MISSING_CAPABILITY_SCORE',
+                'RallarGameAuthorityClient',
                 'createRallarAuthorityBrowserMatch',
                 'createRallarBrowserMatch',
-                'createRallarGameAuthorityClient',
                 'createRallarGameEnvelope',
                 'createRallarGameLanePresets',
                 'createRallarGameMatch',
@@ -538,6 +490,7 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
                 'RallarGameAuthorityClientConfig',
                 'RallarGameAuthorityClientHandle',
                 'RallarGameAuthorityClientRallarFacade',
+                'RallarGameAuthorityCommandOptions',
                 'RallarGameAuthorityPeerAssistOptions',
                 'RallarGameCapabilityMessage',
                 'RallarGameDiagnostics',
@@ -580,10 +533,10 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
                 'RallarGameSequenceAcceptResult',
                 'RallarGameSequenceTracker',
                 'RallarGameStatusHandler',
-                'RallarGameTypeIds'
+                'RallarGameTypeIds',
+                'RallarServerGameAuthorityRef'
             ],
             starExports: [
-                './authority-client.ts',
                 './authority-match-support.ts',
                 './diagnostics.ts',
                 './election.ts',
@@ -591,6 +544,8 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
                 './lanes.ts',
                 './match-support.ts',
                 './match.ts',
+                './rallar-game-authority-client-contracts.ts',
+                './rallar-game-authority-client.ts',
                 './types.ts'
             ],
             namespaceExports: []
@@ -645,8 +600,14 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
     {
         filePath: 'packages/shared-web/browser/state-read/diagnostics.ts',
         expected: {
-            values: ['emitBrowserStateReadDiagnostic', 'setBrowserStateReadDiagnosticsSink'],
-            types: ['BrowserStateReadDiagnosticEvent', 'BrowserStateReadDiagnosticsSink'],
+            values: [
+                'emitBrowserStateReadDiagnostic',
+                'setBrowserStateReadDiagnosticsSink'
+            ],
+            types: [
+                'BrowserStateReadDiagnosticEvent',
+                'BrowserStateReadDiagnosticsSink'
+            ],
             starExports: [],
             namespaceExports: []
         }
@@ -719,123 +680,11 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
 describe('shared-web public API snapshots', () => {
     for (const surface of PUBLIC_SURFACES) {
         it(`keeps ${surface.filePath} exports intentional`, () => {
-            expect(collectExportSnapshot(surface.filePath, {
-                resolveStarExports: surface.resolveStarExports === true
-            })).toEqual(surface.expected);
+            expect(
+                collectExportSnapshot(surface.filePath, {
+                    resolveStarExports: surface.resolveStarExports === true
+                })
+            ).toEqual(surface.expected);
         });
     }
 });
-
-function collectExportSnapshot(
-    filePath: string,
-    options: Readonly<{ resolveStarExports: boolean; }>
-): ExportSnapshot {
-    const analysis = readSourceAnalysis(filePath);
-    const direct = collectDirectExports(analysis);
-    if (!options.resolveStarExports) {
-        return direct;
-    }
-
-    const resolved = collectResolvedExports(filePath, new Set([filePath]));
-    return {
-        values: sortUnique([...direct.values, ...resolved.values]),
-        types: sortUnique([...direct.types, ...resolved.types]),
-        starExports: direct.starExports,
-        namespaceExports: direct.namespaceExports
-    };
-}
-
-function collectResolvedExports(
-    filePath: string,
-    seen: Set<string>
-): Pick<ExportSnapshot, 'values' | 'types'> {
-    const analysis = readSourceAnalysis(filePath);
-    const direct = collectDirectExports(analysis);
-    const values = [...direct.values];
-    const types = [...direct.types];
-
-    for (const specifier of direct.starExports) {
-        const resolved = resolveLocalModule(filePath, specifier);
-        if (!resolved || seen.has(resolved)) {
-            continue;
-        }
-
-        seen.add(resolved);
-        const child = collectResolvedExports(resolved, seen);
-        values.push(...child.values);
-        types.push(...child.types);
-    }
-
-    return {
-        values: sortUnique(values),
-        types: sortUnique(types)
-    };
-}
-
-function collectDirectExports(analysis: SourceAnalysis): ExportSnapshot {
-    const values: string[] = [];
-    const types: string[] = [];
-    const starExports: string[] = [];
-    const namespaceExports: string[] = [];
-
-    for (const entry of analysis.exports) {
-        if (entry.kind === 'star' && entry.specifier) {
-            starExports.push(entry.specifier);
-            continue;
-        }
-
-        if (
-            entry.kind === 'namespace' &&
-            entry.exportedName &&
-            entry.specifier
-        ) {
-            namespaceExports.push(
-                `${entry.exportedName} from ${entry.specifier}`
-            );
-            continue;
-        }
-
-        const exportName = entry.kind === 'default'
-            ? entry.localName
-            : entry.exportedName;
-        if (!exportName) {
-            continue;
-        }
-
-        if (entry.typeOnly) {
-            types.push(exportName);
-        }
-        else {
-            values.push(exportName);
-        }
-    }
-
-    return {
-        values: sortUnique(values),
-        types: sortUnique(types),
-        starExports: sortUnique(starExports),
-        namespaceExports: sortUnique(namespaceExports)
-    };
-}
-
-function readSourceAnalysis(filePath: string): SourceAnalysis {
-    return analyzeSourceFile(toAbsolutePath(filePath));
-}
-
-function resolveLocalModule(filePath: string, specifier: string): string | undefined {
-    if (!specifier.startsWith('.')) {
-        return undefined;
-    }
-    return path.relative(
-        process.cwd(),
-        path.resolve(path.dirname(toAbsolutePath(filePath)), specifier)
-    );
-}
-
-function toAbsolutePath(filePath: string): string {
-    return path.resolve(process.cwd(), filePath);
-}
-
-function sortUnique(values: readonly string[]): readonly string[] {
-    return [...new Set(values)].sort();
-}

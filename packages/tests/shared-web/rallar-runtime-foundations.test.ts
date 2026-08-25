@@ -1,23 +1,47 @@
-import { createRallarBrowserFacadeRuntimeContext } from '@shared-web/browser/rallar-runtime-context.ts';
+import { BrowserTransportRuntime } from '@shared-web/browser/connection/browser-transport-runtime.ts';
+import { BrowserFacadeRuntimeState } from '@shared-web/browser/rallar-runtime-context.ts';
 import { createRallarLifecycleCoordinator, type RallarLifecycleParticipant } from '@shared-web/browser/rallar-runtime/lifecycle.ts';
-import { createRallarStateStore } from '@shared-web/browser/rallar-runtime/state-store.ts';
-import { createRallarSubscriptionScope } from '@shared-web/browser/rallar-runtime/subscriptions.ts';
+import { createRallarStateCacheReadPort, RallarStateStore } from '@shared-web/browser/rallar-runtime/state-store.ts';
+import { BrowserRallarSubscriptionScope } from '@shared-web/browser/rallar-runtime/subscriptions.ts';
 import { createRallarWsInbox } from '@shared-web/browser/rallar-runtime/ws-inbox.ts';
-import { createRallarFacade, rallar } from '@shared-web/browser/rallar.ts';
+import { createRallarFacade } from '@shared-web/browser/rallar.ts';
 import { createRoomStateStore } from '@shared-web/browser/rooms/room-state-store.ts';
+import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { describe, expect, it } from 'vitest';
 import { vi } from 'vitest';
 
+import { configureTestCacheRepositories } from '../cache-repository-config.ts';
+
+const wsInboxTestMessage: ALMessage = {
+    id: {
+        v: 2,
+        msgId: 'message-1',
+        ts: 1,
+        senderId: 'sender-1'
+    },
+    route: {
+        topicId: 'test.message',
+        contextId: 'test-context',
+        resourceId: 'test-resource'
+    },
+    payload: {
+        typeId: 'test.message',
+        contentType: 'application/json',
+        resource: '{}'
+    }
+};
+
+interface WsInboxCallbacks {
+    onMessage(message: ALMessage): Promise<void>;
+}
+
 describe('Rallar browser runtime foundations', () => {
-    it('isolates composed facade state from other instances and the singleton', () => {
+    it('isolates composed facade defaults between instances', () => {
         const first = createRallarFacade();
         const second = createRallarFacade();
 
         first.setDefaults({ applicationId: 'isolated-app' });
 
-        expect(first).not.toBe(second);
-        expect(first).not.toBe(rallar);
-        expect(second).not.toBe(rallar);
         expect(first.defaults()?.applicationId).toBe('isolated-app');
         expect(second.defaults()).toBeUndefined();
     });
@@ -70,7 +94,7 @@ describe('Rallar browser runtime foundations', () => {
 
     it('cleans subscription scopes once and immediately cleans late additions', () => {
         const calls: string[] = [];
-        const subscriptions = createRallarSubscriptionScope();
+        const subscriptions = new BrowserRallarSubscriptionScope();
         subscriptions.add(() => calls.push('first'));
         subscriptions.add(undefined);
         subscriptions.add(() => calls.push('second'));
@@ -86,37 +110,40 @@ describe('Rallar browser runtime foundations', () => {
 
     it('emits room, people, then derived state observers', () => {
         const events: string[] = [];
-        const state = createFoundationStateStore();
-        state.onRoomChange(() => {
+        const { roomStateStore, stateStore } = createFoundationStateStore();
+        roomStateStore.onChange(() => {
             events.push('rooms');
         }, { emitCurrent: false });
-        state.onPeopleChange(() => {
+        stateStore.onPeopleChange(() => {
             events.push('people');
         }, { emitCurrent: false });
-        state.onAfterEmit(() => events.push('derived'));
+        stateStore.onAfterEmit(() => events.push('derived'));
 
-        state.emit();
+        stateStore.emit();
 
         expect(events).toEqual(['rooms', 'people', 'derived']);
     });
 
-    it('exposes cache observation through the state port', () => {
-        const state = createFoundationStateStore();
+    it('exposes cache observation through the cache port', () => {
+        const { stateCache } = createFoundationStateStore();
 
-        expect(state).toHaveProperty('onCacheChange', expect.any(Function));
-        const unsubscribe = state.onCacheChange(() => undefined);
+        const unsubscribe = stateCache.onCacheChange(() => undefined);
         expect(unsubscribe).toBeTypeOf('function');
         unsubscribe();
     });
 
     it('multiplexes one WS callback and dispatches handlers in order', async () => {
         const events: string[] = [];
-        let onMessage: ((message: unknown) => Promise<void>) | undefined;
+        let onMessage: ((message: ALMessage) => Promise<void>) | undefined;
+        const subscriptionEvents: string[] = [];
         const queueBox = {
-            onAnyInboxMessageDo: vi.fn((_id, callbacks) => {
+            onAnyInboxMessageDo: (_id: string, callbacks: WsInboxCallbacks) => {
+                subscriptionEvents.push('attached');
                 onMessage = callbacks.onMessage;
-            }),
-            removeAnyInboxMessageCallback: vi.fn()
+            },
+            removeAnyInboxMessageCallback: () => {
+                subscriptionEvents.push('removed');
+            }
         };
         const ctx = { middleware: { webSocketQueueBox: queueBox } } as never;
         const inbox = createRallarWsInbox({ readMiddleware: () => ctx });
@@ -136,35 +163,31 @@ describe('Rallar browser runtime foundations', () => {
             }
         });
 
-        expect(queueBox.onAnyInboxMessageDo).toHaveBeenCalledTimes(1);
-        await onMessage?.({});
+        expect(subscriptionEvents).toEqual(['attached']);
+        await onMessage?.(wsInboxTestMessage);
         expect(events).toEqual(['state-events', 'messages']);
 
         stopState();
-        expect(queueBox.removeAnyInboxMessageCallback).not.toHaveBeenCalled();
+        expect(subscriptionEvents).toEqual(['attached']);
         stopMessages();
-        expect(queueBox.removeAnyInboxMessageCallback).toHaveBeenCalledTimes(1);
+        expect(subscriptionEvents).toEqual(['attached', 'removed']);
     });
 });
 
 function createFoundationStateStore() {
-    const runtime = createRallarBrowserFacadeRuntimeContext({
-        isMiddlewareReady: () => false
-    });
+    configureTestCacheRepositories();
+    const runtime = new BrowserFacadeRuntimeState(new BrowserTransportRuntime());
+    const stateCache = createRallarStateCacheReadPort();
     const roomStateStore = createRoomStateStore({
         runtime,
         readSession: () => undefined,
-        readCachedGroupSnapshots: () => [],
-        findCachedGroupSnapshotByRef: () => undefined,
-        findFirstCachedGroupRefForSession: () => undefined,
-        findCachedClientSnapshot: () => undefined,
-        onCacheChange: () => () => undefined
+        stateCache
     });
-    return createRallarStateStore({
+    const stateStore = new RallarStateStore({
         runtime,
         roomStateStore,
         readSession: () => undefined,
-        readGroupSnapshots: () => [],
-        readClientSnapshots: () => []
+        stateCache
     });
+    return { roomStateStore, stateCache, stateStore };
 }

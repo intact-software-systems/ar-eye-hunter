@@ -7,6 +7,14 @@ import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import { createTestGroup } from '../../create-test-group.ts';
 import { createGroupSnapshotFixture } from '../authoritative-group-fixtures.ts';
 
+interface RoomSnapshotFixtureInput {
+    readonly groupId: string;
+    readonly displayName: string;
+    readonly applicationId?: string;
+    readonly workspaceId?: string;
+    readonly sessionIds?: readonly string[];
+}
+
 const stateMocks = vi.hoisted(() => ({
     session: {
         clientId: 'principal-1',
@@ -67,44 +75,21 @@ describe('room state store summaries', () => {
         stateMocks.repositoriesConfigured = false;
     });
 
-    it('returns empty room state before cache repositories are configured', async () => {
+    it('requires configured cache repositories for room state reads', async () => {
         const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
         const facade = createRallarFacade();
-        const listener = vi.fn();
 
-        expect(facade.rooms.state().rooms).toEqual([]);
-        expect(facade.rooms.state().members).toEqual([]);
-        expect(facade.rooms.state()).toEqual({
-            rooms: [],
-            currentRoomId: undefined,
-            currentRoomRef: undefined,
-            currentRoom: undefined,
-            members: []
-        });
-
-        facade.rooms.onChange(listener);
-
-        expect(listener).toHaveBeenCalledWith(expect.objectContaining({ rooms: [], members: [] }));
-        expect(listener).toHaveBeenCalledOnce();
-        expect(listener).toHaveBeenCalledWith({
-            rooms: [],
-            currentRoomId: undefined,
-            currentRoomRef: undefined,
-            currentRoom: undefined,
-            members: []
-        });
+        expect(() => facade.rooms.state()).toThrow(
+            'Repository not found: shared.repository.test-snapshots'
+        );
     });
 
     it('filters room state by application and workspace scope', async () => {
         const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
         const facade = createRallarFacade();
-        const selected = createRoomSnapshot('selected-room', 'Selected Room');
-        const otherApplication = createRoomSnapshot('other-app-room', 'Other App', {
-            applicationId: 'other-app'
-        });
-        const otherWorkspace = createRoomSnapshot('other-workspace-room', 'Other Workspace', {
-            workspaceId: 'other-workspace'
-        });
+        const selected = createRoomSnapshot({ groupId: 'selected-room', displayName: 'Selected Room' });
+        const otherApplication = createRoomSnapshot({ groupId: 'other-app-room', displayName: 'Other App', applicationId: 'other-app' });
+        const otherWorkspace = createRoomSnapshot({ groupId: 'other-workspace-room', displayName: 'Other Workspace', workspaceId: 'other-workspace' });
         stateMocks.repositoriesConfigured = true;
         stateMocks.groups.push(otherApplication, otherWorkspace, selected);
 
@@ -130,9 +115,9 @@ describe('room state store summaries', () => {
     it('orders active room summaries by display name and omits archived rooms', async () => {
         const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
         const facade = createRallarFacade();
-        const current = createRoomSnapshot('z-room', 'Beta Room');
-        const first = createRoomSnapshot('a-room', 'Alpha Room', {}, []);
-        const archivedBase = createRoomSnapshot('archived-room', 'Archived Room', {}, []);
+        const current = createRoomSnapshot({ groupId: 'z-room', displayName: 'Beta Room' });
+        const first = createRoomSnapshot({ groupId: 'a-room', displayName: 'Alpha Room', sessionIds: [] });
+        const archivedBase = createRoomSnapshot({ groupId: 'archived-room', displayName: 'Archived Room', sessionIds: [] });
         const archived: GroupSnapshot = {
             ...archivedBase,
             group: {
@@ -168,7 +153,7 @@ describe('room state store summaries', () => {
     it('preserves complete summary and current-room state fields', async () => {
         const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
         const facade = createRallarFacade();
-        const current = createRoomSnapshot('z-room', 'Beta Room');
+        const current = createRoomSnapshot({ groupId: 'z-room', displayName: 'Beta Room' });
         stateMocks.repositoriesConfigured = true;
         stateMocks.groups.push(current);
         facade.setDefaults({ applicationId: 'app-1', workspaceId: 'workspace-1' });
@@ -216,16 +201,13 @@ function requireConfiguredRepositories(): void {
 }
 
 function createRoomSnapshot(
-    groupId: string,
-    displayName: string,
-    scope: Readonly<{ applicationId?: string; workspaceId?: string; }> = {},
-    sessionIds: readonly string[] = ['session-1']
+    input: RoomSnapshotFixtureInput
 ): GroupSnapshot {
     const snapshot = createGroupSnapshotFixture({
-        applicationId: scope.applicationId ?? 'app-1',
-        workspaceId: scope.workspaceId ?? 'workspace-1',
-        groupId,
-        sessionIds
+        applicationId: input.applicationId ?? 'app-1',
+        workspaceId: input.workspaceId ?? 'workspace-1',
+        groupId: input.groupId,
+        sessionIds: input.sessionIds ?? ['session-1']
     });
-    return { ...snapshot, group: { ...snapshot.group, displayName } };
+    return { ...snapshot, group: { ...snapshot.group, displayName: input.displayName } };
 }

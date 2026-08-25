@@ -1,45 +1,44 @@
-import type { RallarMessage, RallarStateEventListener } from '@shared-web/browser/rallar-messages-facade.ts';
+import type { RallarMessage, RallarStateEventListener } from '@shared-web/browser/rallar-message-contracts.ts';
 import type {
     RallarStateListener,
     RallarSubscriptionScope,
     RallarUnsubscribe
 } from '@shared-web/browser/rallar-shared-contracts.ts';
 
-export function createRallarSubscriptionScope(): RallarSubscriptionScope {
-    const unsubscribers = new Set<RallarUnsubscribe>();
-    let closed = false;
-    let scope!: RallarSubscriptionScope;
+export class BrowserRallarSubscriptionScope implements RallarSubscriptionScope {
+    private readonly unsubscribers = new Set<RallarUnsubscribe>();
+    private closed = false;
 
-    scope = {
-        add: (unsubscribe): RallarSubscriptionScope => {
-            if (!unsubscribe) {
-                return scope;
-            }
+    add(unsubscribe?: RallarUnsubscribe): RallarSubscriptionScope {
+        if (!unsubscribe) {
+            return this;
+        }
 
-            if (closed) {
-                unsubscribe();
-                return scope;
-            }
+        if (this.closed) {
+            unsubscribe();
+            return this;
+        }
 
-            unsubscribers.add(unsubscribe);
-            return scope;
-        },
-        unsubscribe: (): void => {
-            if (closed) {
-                return;
-            }
+        this.unsubscribers.add(unsubscribe);
+        return this;
+    }
 
-            closed = true;
-            const current = [...unsubscribers];
-            unsubscribers.clear();
-            for (const unsubscribe of current) {
-                unsubscribe();
-            }
-        },
-        size: (): number => unsubscribers.size
-    };
+    unsubscribe(): void {
+        if (this.closed) {
+            return;
+        }
 
-    return scope;
+        this.closed = true;
+        const current = [...this.unsubscribers];
+        this.unsubscribers.clear();
+        for (const unsubscribe of current) {
+            unsubscribe();
+        }
+    }
+
+    size(): number {
+        return this.unsubscribers.size;
+    }
 }
 
 export async function notifyStateEventListener<TEvent>(

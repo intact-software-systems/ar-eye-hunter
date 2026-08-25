@@ -1,14 +1,14 @@
 # Shared-Web Architecture Notes
 
-`packages/shared-web` is the browser-facing Rallar package. It currently has a
-broad compatibility facade at `browser/rallar.ts` plus focused modules for API
-workflows, data, CRDT, middleware, transport engines, RallarAI, and game helpers.
+`packages/shared-web` is the browser-facing Rallar package. It has the broad
+browser facade at `browser/rallar.ts` plus focused modules for API workflows,
+data, CRDT, middleware, transport engines, RallarAI, and game helpers.
 
 ## Current Public Surfaces
 
-- `browser/rallar.ts` is the full compatibility facade and the canonical
-  browser object. Existing apps import `rallar` from here. The beginner path is
-  `rallar.setup(...)`, then `rallar.rooms.enter(...)`, then room-bound
+- `browser/rallar.ts` is the full canonical browser facade and application
+  entry point. The beginner path is `rallar.setup(...)`, then
+  `rallar.rooms.enter(...)`, then room-bound
   `message(...)` or `realtime(...)` channels. New-room flows that should leave
   the previous room use `rallar.rooms.createAndSwitch(...)`.
 - `browser/api-integration.ts` is the low-level browser REST helper layer. It
@@ -17,49 +17,65 @@ workflows, data, CRDT, middleware, transport engines, RallarAI, and game helpers
   serialized DTO contracts from `@shared/api` and supporting authenticated
   `GET`, `PUT`, `POST`, and bodyless `DELETE` calls.
 - `browser/rallar-core.ts` is the narrow core entry point for browser config,
-  connection/startup, auth, rooms, people, message helpers, and WS/RTC message
-  facade factories. It exports the room-session/setup types but does not export
-  the full `rallar` singleton.
+  selectors, and the connection/startup, auth, room, people, and message
+  contracts. It exports the room-session/setup types but does not export the
+  full `rallar` singleton or a forwarding facade factory.
 - `browser/rallar-realtime.ts` builds on the core entry point with realtime
-  send/listen and RTC readiness/status facade factories. It does not export the
-  full `rallar` singleton.
+  send/listen and RTC readiness/status contracts. It does not export the full
+  `rallar` singleton or a forwarding facade factory.
 - `browser/rallar-data.ts` owns local browser data stores.
 - `browser/rallar-crdt.ts` owns browser CRDT documents and transports.
-- `browser/rallar-media-calls.ts` is the narrow calls and media source entry
-  point. It does not export the full `rallar` singleton.
+- `browser/rallar-media-calls.ts` is the type-only calls and media source entry
+  point. It does not export the full `rallar` singleton or a forwarding facade
+  factory.
 - `game/mod.ts` is the browser game helper barrel.
-- `mod.ts` remains the broad shared-web compatibility barrel.
+- `mod.ts` is the broad shared-web package barrel.
 
-New app code should prefer the smallest browser entry point that matches the
-feature area. Existing app imports from `browser/rallar.ts` and `mod.ts` remain
-compatible; migration is intentionally gradual.
+Use the smallest browser entry point that matches the feature area.
 
 ## Browser Facade Runtime
 
-`browser/rallar.ts` is a compatibility entry point. It re-exports the existing
-public contract and delegates construction to `browser/rallar-runtime/compose.ts`.
-The implementation lives in unexported capability controllers under
-`browser/rallar-runtime/`; public barrels and narrow entry points must not
-export these modules.
+`browser/rallar.ts` owns the full browser facade and delegates construction to
+[`createBrowserRallarFacade`](./browser/rallar-runtime/composition.ts#L43).
+Implementation lives in capability controllers under `browser/rallar-runtime/`
+and in feature-owned `browser/calls/`, `browser/connection/`,
+`browser/director/`, `browser/media/`, `browser/messages/`,
+`browser/realtime/`, `browser/rooms/`, `browser/rtc-diagnostics/`,
+`browser/rtc/`, and `browser/session/` modules. Game match lifecycle, egress,
+director, relay, and
+status owners live under `game/`. Public barrels and narrow entry points do not
+export those private runtime owners.
 
-Public capability types are owned by their existing `rallar-*-facade.ts`
-modules. `rallar-shared-contracts.ts` contains only shared subscription and
-listener primitives, while `rallar-facade-contract.ts` composes the aggregate
-`RallarFacade` type and re-exports the compatibility type set.
+Public capability contracts stay beside their canonical browser capability:
+message, people, room, auth, connection, calls, director, realtime, media, and
+Data modules own their vocabulary. `rallar-shared-contracts.ts` contains only
+shared subscription and listener primitives, while
+`rallar-facade-contract.ts` composes the aggregate `RallarFacade` type.
 
 Runtime dependencies point inward from the composer to narrow controller
 ports. State, messages, WS inbox, WS, RTC, realtime, rooms/people/stats,
-media/calls, and director do not import the compatibility entry point or the
+media/calls, and director do not import the full browser facade or the
 composer. Higher-level controllers receive lower-level facade or state ports;
 state notifies director through an after-emit observer, and state events plus
 ordinary WS messages share the ordered WS inbox multiplexer.
 
-Connection and auth are owned by the session controller. Its ordered lifecycle
+`createRallarSessionController` constructs the transport connection lifecycle,
+then the auth-session lifecycle, then the public connection/auth operations.
+The auth owner handles expiry, 401 termination, login/logout, browser-local
+cleanup, and notifications. The connection owner coalesces concurrent
+connect/disconnect work and owns lifecycle attach/detach. Its ordered lifecycle
 participants attach and detach in this fixed order: director cleanup, state
 cache, RTC message inbox, WS inbox, WS status, realtime peer lifecycle, RTC
 status, realtime lanes, and media. Detach is deliberately not reversed.
 Connected notification remains state, then WS, then RTC; disconnected
 notification runs only after middleware shutdown and runtime clearing.
+
+The production-symbol construction, registration, invocation, and cleanup map
+is maintained in [browser/README.md](./browser/README.md). Construction passes
+completed dependencies top-to-bottom with no late-bound state, event, session,
+or startup consumer. `BrowserTransportRuntime` is the single pending/active
+middleware and transport-shutdown owner; `app-context.ts` delegates to it and
+contains no teardown algorithm.
 
 ## Room Transport Product Helpers
 
@@ -115,7 +131,7 @@ notification runs only after middleware shutdown and runtime clearing.
   Its runtime adapter now maps joins through `rallar.rooms.enter` and keeps the
   rest of the game on a small app-owned `roomId` abstraction.
 - `apps/rallar-black-box` intentionally imports the full facade dynamically as a
-  compatibility and conformance target. Its Rallar Server REST workbench now
+  conformance target. Its Rallar Server REST workbench now
   exposes only the scoped graph and topology endpoints.
 - `examples/**` now teach the golden path first: `rallar.setup(...)`,
   `rallar.rooms.enter(...)`, `room.message(...)`, and `room.realtime(...)`.
@@ -139,17 +155,17 @@ The command bundles `browser/rallar.ts`, the narrow browser entry points, and
 sizes. The measurement command is reporting-only; the check command fails when
 an entry exceeds its Brotli budget.
 
-Current browser simplification measurement and budgets:
+Current measured sizes and budgets:
 
 | Entry                           |  Minified |      Gzip |    Brotli |      Budget |
 | ------------------------------- | --------: | --------: | --------: | ----------: |
-| `browser/rallar.ts`             | 648.2 KiB | 165.5 KiB | 137.9 KiB | < 160.0 KiB |
-| `browser/rallar-core.ts`        |   3.2 KiB |   1.0 KiB |   0.9 KiB | < 100.0 KiB |
-| `browser/rallar-realtime.ts`    |   4.3 KiB |   1.2 KiB |   1.1 KiB | < 100.0 KiB |
-| `browser/rallar-data.ts`        |  28.9 KiB |   6.8 KiB |   6.1 KiB |  < 20.0 KiB |
-| `browser/rallar-crdt.ts`        |  73.7 KiB |  17.4 KiB |  15.7 KiB |  < 30.0 KiB |
-| `browser/rallar-media-calls.ts` |   0.5 KiB |   0.3 KiB |   0.2 KiB |  < 10.0 KiB |
-| `shared-web/mod.ts`             | 699.1 KiB | 177.5 KiB | 148.8 KiB |           - |
+| `browser/rallar.ts`             | 763.7 KiB | 194.9 KiB | 160.0 KiB | < 160.0 KiB |
+| `browser/rallar-core.ts`        |   0.5 KiB |   0.3 KiB |   0.3 KiB | < 100.0 KiB |
+| `browser/rallar-realtime.ts`    |   0.5 KiB |   0.3 KiB |   0.3 KiB | < 100.0 KiB |
+| `browser/rallar-data.ts`        |  31.1 KiB |   7.3 KiB |   6.6 KiB |  < 20.0 KiB |
+| `browser/rallar-crdt.ts`        |  74.1 KiB |  17.5 KiB |  15.7 KiB |  < 30.0 KiB |
+| `browser/rallar-media-calls.ts` |   0.0 KiB |   0.0 KiB |   0.0 KiB |  < 10.0 KiB |
+| `shared-web/mod.ts`             | 826.0 KiB | 208.7 KiB | 171.7 KiB |           - |
 
 ## Dependency Boundaries
 
@@ -160,5 +176,5 @@ Current browser simplification measurement and budgets:
   runtime composer.
 - `@js-temporal/polyfill` remains declared by shared-web for now because shared
   queue/runtime modules consumed by the full facade still import Temporal
-  directly. Moving that dependency behind app-level compatibility policy is a
+  directly. Moving that dependency behind app-level dependency policy is a
   separate shared queuebox/resilience refactor.

@@ -1,12 +1,21 @@
-import type {
-    RallarLifecycleCoordinator,
-    RallarLifecycleParticipant
-} from '@shared-web/browser/rallar-runtime/contracts.ts';
+import type { ApiMiddleware } from '@shared-web/browser/app-context.ts';
 
-export type {
-    RallarLifecycleCoordinator,
-    RallarLifecycleParticipant
-} from '@shared-web/browser/rallar-runtime/contracts.ts';
+export interface RallarLifecycleParticipant {
+    readonly id: string;
+    readonly order: number;
+    attach?(ctx: ApiMiddleware): void;
+    connected?(): void;
+    detach?(ctx?: ApiMiddleware): void;
+    disconnected?(): void;
+}
+
+export interface RallarLifecycleCoordinator {
+    register(participant: RallarLifecycleParticipant): void;
+    attach(ctx: ApiMiddleware): void;
+    connected(): void;
+    detach(ctx?: ApiMiddleware): void;
+    disconnected(): void;
+}
 
 export function createRallarLifecycleCoordinator(): RallarLifecycleCoordinator {
     const participants = new Map<string, RallarLifecycleParticipant>();
@@ -34,14 +43,36 @@ export function createRallarLifecycleCoordinator(): RallarLifecycleCoordinator {
             }
         },
         detach: (ctx): void => {
-            for (const participant of ordered()) {
-                participant.detach?.(ctx);
-            }
+            runLifecycleParticipantPhase(ordered(), 'detach', ctx);
         },
         disconnected: (): void => {
-            for (const participant of ordered()) {
+            runLifecycleParticipantPhase(ordered(), 'disconnected');
+        }
+    };
+}
+
+function runLifecycleParticipantPhase(
+    participants: readonly RallarLifecycleParticipant[],
+    phase: 'detach' | 'disconnected',
+    ctx?: ApiMiddleware
+): void {
+    let firstError: Error | undefined;
+    for (const participant of participants) {
+        try {
+            if (phase === 'detach') {
+                participant.detach?.(ctx);
+            }
+            else {
                 participant.disconnected?.();
             }
         }
-    };
+        catch (error) {
+            firstError ??= error instanceof Error
+                ? error
+                : new Error('Rallar lifecycle participant failed.');
+        }
+    }
+    if (firstError !== undefined) {
+        throw firstError;
+    }
 }

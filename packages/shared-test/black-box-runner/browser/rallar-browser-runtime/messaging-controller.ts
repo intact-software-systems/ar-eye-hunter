@@ -1,5 +1,9 @@
-import type { RallarFacade, RallarRealtimeLaneHealth, RallarRealtimeSendResult } from '@shared-web/browser/rallar.ts';
+import type { RallarRealtimeLaneHealth, RallarRealtimeSendResult } from '@shared-web/browser/rallar.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
+import type {
+    BlackBoxBrowserMessagesDependency,
+    BlackBoxBrowserRealtimeDependency
+} from './browser-rallar-runtime-composition.ts';
 import type {
     BlackBoxRallarConnectionConfig,
     BlackBoxRallarEvent,
@@ -52,7 +56,10 @@ export function createBlackBoxRallarMessagingResourceController(
     };
 }
 
-type MessagingFacade = Pick<RallarFacade, 'messages' | 'realtime'>;
+interface MessagingFacade {
+    readonly messages: BlackBoxBrowserMessagesDependency;
+    readonly realtime: BlackBoxBrowserRealtimeDependency;
+}
 
 type ScopeDiagnostics = Readonly<{
     scope?: Readonly<{

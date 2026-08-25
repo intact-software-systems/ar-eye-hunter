@@ -7,13 +7,13 @@ export type RallarCompanionCoverageLayer =
     | 'shared-server-application'
     | 'app-specific';
 
-export type RallarCompanionCoverageSurface = Readonly<{
-    surfaceId: string;
-    layer: RallarCompanionCoverageLayer;
-    intent: string;
-    testFiles: readonly string[];
-    runnerBoundary: string;
-}>;
+export interface RallarCompanionCoverageSurface {
+    readonly surfaceId: string;
+    readonly layer: RallarCompanionCoverageLayer;
+    readonly intent: string;
+    readonly testFiles: readonly string[];
+    readonly runnerBoundary: string;
+}
 
 export const RALLAR_BLACK_BOX_RUNNER_STEP_FAMILIES = [
     'HTTP',
@@ -84,7 +84,6 @@ export const RALLAR_COMPANION_COVERAGE_SURFACES: readonly RallarCompanionCoverag
         layer: 'shared-web-facade',
         intent: 'Direct browser facade auth/session behavior, defaults, restore, and start flows.',
         testFiles: [
-            'packages/tests/shared-web/rallar-auth-facade.test.ts',
             'packages/tests/shared-web/rallar-auth-session-contract.test.ts',
             'packages/tests/shared-web/rallar-startup-lifecycle.test.ts',
             'packages/tests/rallar-black-box/auth-flow.test.ts',
@@ -97,15 +96,12 @@ export const RALLAR_COMPANION_COVERAGE_SURFACES: readonly RallarCompanionCoverag
         layer: 'shared-web-facade',
         intent: 'Direct facade room, people, state refresh, event history, replay, and subscription behavior.',
         testFiles: [
-            'packages/tests/shared-web/rooms/rallar-rooms-facade.test.ts',
-            'packages/tests/shared-web/rallar-people-facade.test.ts',
             'packages/tests/shared-web/rooms/room-state-store.test.ts',
             'packages/tests/shared-web/rooms/room-state-store-current-room.test.ts',
-            'packages/tests/shared-web/people/people-state-compat.test.ts',
             'packages/tests/shared-web/rooms/room-events-list-and-page.test.ts',
             'packages/tests/shared-web/rooms/room-events-replay.test.ts',
             'packages/tests/shared-web/rooms/room-events-subscription.test.ts',
-            'packages/tests/shared-web/people/people-events-compat.test.ts'
+            'packages/tests/shared-web/people/people-events.test.ts'
         ],
         runnerBoundary: 'Use REST/WS observations for room membership; do not add rooms.* or people.* recipe commands.'
     },
@@ -114,16 +110,15 @@ export const RALLAR_COMPANION_COVERAGE_SURFACES: readonly RallarCompanionCoverag
         layer: 'shared-web-facade',
         intent: 'Typed message channels, realtime lanes, RTC waits, and facade default propagation.',
         testFiles: [
-            'packages/tests/shared-web/rallar-message-send-compat.test.ts',
-            'packages/tests/shared-web/rallar-message-channel-compat.test.ts',
-            'packages/tests/shared-web/rallar-realtime-send-listen-compat.test.ts',
+            'packages/tests/shared-web/rallar-message-send.test.ts',
+            'packages/tests/shared-web/rallar-message-channel.test.ts',
+            'packages/tests/shared-web/rallar-realtime-send-listen.test.ts',
             'packages/tests/shared-web/rooms/rallar-room-realtime-channel.test.ts',
-            'packages/tests/shared-web/rallar-realtime-json-lane-compat.test.ts',
-            'packages/tests/shared-web/rallar-rtc-wait-compat.test.ts',
-            'packages/tests/shared-web/rallar-targeted-channel-compat.test.ts',
-            'packages/tests/shared-web/rallar-calls-compat.test.ts',
-            'packages/tests/shared-web/rallar-media-facade.test.ts',
-            'packages/tests/shared-web/rallar-media-sources-compat.test.ts',
+            'packages/tests/shared-web/rallar-realtime-json-lane.test.ts',
+            'packages/tests/shared-web/rallar-rtc-wait.test.ts',
+            'packages/tests/shared-web/rallar-targeted-channel.test.ts',
+            'packages/tests/shared-web/rallar-calls.test.ts',
+            'packages/tests/shared-web/rallar-media-sources.test.ts',
             'packages/tests/shared-web/rallar-flow.test.ts'
         ],
         runnerBoundary:
@@ -189,7 +184,9 @@ export const RALLAR_COMPANION_COVERAGE_SURFACES: readonly RallarCompanionCoverag
 export function rallarCompanionCoverageBySurface(
     surfaceId: string
 ): RallarCompanionCoverageSurface | undefined {
-    return RALLAR_COMPANION_COVERAGE_SURFACES.find((surface) => surface.surfaceId === surfaceId);
+    return RALLAR_COMPANION_COVERAGE_SURFACES.find(
+        (surface) => surface.surfaceId === surfaceId
+    );
 }
 
 export function rallarBlackBoxCommandKinds(): readonly string[] {

@@ -5,7 +5,7 @@ import {
     type RelicServerEvent
 } from '@relic-hunters/mod.ts';
 import {
-    createRallarGameAuthorityClient,
+    RallarGameAuthorityClient,
     type RallarGameAuthorityClientHandle,
     type RallarGameAuthorityClientRallarFacade
 } from '@shared-web/game/mod.ts';
@@ -24,22 +24,37 @@ export const RELIC_AUTHORITY_REF: RallarGameAuthorityRef = {
     epoch: RELIC_PROTOCOL_VERSION
 };
 
-export type RelicAuthorityPresence = Readonly<{
-    protocolVersion: typeof RELIC_PROTOCOL_VERSION;
-    sessionId: string;
-    username: string;
-    roomId?: string;
-    sentAtEpochMs: number;
-}>;
+export interface RelicAuthorityPresence {
+    readonly protocolVersion: typeof RELIC_PROTOCOL_VERSION;
+    readonly sessionId: string;
+    readonly username: string;
+    readonly roomId?: string;
+    readonly sentAtEpochMs: number;
+}
 
 export type RelicAuthoritySnapshotEnvelope = RallarGameAuthorityEnvelope<RelicPublicSnapshot>;
 
-export type RelicAuthorityClientBridge = Readonly<{
+export interface RelicAuthorityClientBridge {
     start(onSnapshot: (event: RelicServerEvent) => void): () => void;
     status(): RallarGameAuthorityClientStatus | undefined;
     publishPresence(session: AuthSession, roomId?: string): Promise<boolean>;
     publishSnapshotRepair(snapshot: RelicPublicSnapshot): Promise<boolean>;
-}>;
+}
+
+interface RelicAuthorityClientBridgeState {
+    client?: RallarGameAuthorityClientHandle<
+        RelicCommand,
+        RelicPublicSnapshot,
+        RelicServerEvent,
+        RelicAuthorityPresence
+    >;
+    activeSnapshotHandler?: (event: RelicServerEvent) => void;
+}
+
+interface EnsureRelicAuthorityClientInput {
+    readonly rallar: RallarGameAuthorityClientRallarFacade;
+    readonly state: RelicAuthorityClientBridgeState;
+}
 
 export function createRelicAuthorityPresence(
     session: AuthSession,
@@ -78,27 +93,25 @@ export function shouldAcceptRelicAuthoritySnapshotRepair(
 export function createRelicAuthorityClientBridge(
     rallar: RallarGameAuthorityClientRallarFacade
 ): RelicAuthorityClientBridge {
-    let client:
-        | RallarGameAuthorityClientHandle<RelicCommand, RelicPublicSnapshot, RelicServerEvent, RelicAuthorityPresence>
-        | undefined;
-    let activeSnapshotHandler: ((event: RelicServerEvent) => void) | undefined;
+    const state: RelicAuthorityClientBridgeState = {};
+    const ensureClient = () => ensureRelicAuthorityClient({ rallar, state });
 
     return {
         start(onSnapshot): () => void {
-            activeSnapshotHandler = onSnapshot;
+            state.activeSnapshotHandler = onSnapshot;
             const handle = ensureClient();
             void handle.start();
             return () => {
-                if (activeSnapshotHandler === onSnapshot) {
-                    activeSnapshotHandler = undefined;
+                if (state.activeSnapshotHandler === onSnapshot) {
+                    state.activeSnapshotHandler = undefined;
                 }
                 handle.stop();
-                if (client === handle) {
-                    client = undefined;
+                if (state.client === handle) {
+                    state.client = undefined;
                 }
             };
         },
-        status: () => client?.status(),
+        status: () => state.client?.status(),
         async publishPresence(session, roomId): Promise<boolean> {
             const handle = ensureClient();
             await handle.start();
@@ -114,38 +127,35 @@ export function createRelicAuthorityClientBridge(
             return result.status === 'sent';
         }
     };
+}
 
-    function ensureClient(): RallarGameAuthorityClientHandle<
+function ensureRelicAuthorityClient(
+    input: EnsureRelicAuthorityClientInput
+): RallarGameAuthorityClientHandle<RelicCommand, RelicPublicSnapshot, RelicServerEvent, RelicAuthorityPresence> {
+    input.state.client ??= new RallarGameAuthorityClient<
         RelicCommand,
         RelicPublicSnapshot,
         RelicServerEvent,
         RelicAuthorityPresence
-    > {
-        client ??= createRallarGameAuthorityClient<
-            RelicCommand,
-            RelicPublicSnapshot,
-            RelicServerEvent,
-            RelicAuthorityPresence
-        >({
-            rallar,
-            protocol: RELIC_AUTHORITY_PROTOCOL,
-            topicId: RELIC_AUTHORITY_TOPIC_ID,
-            authority: RELIC_AUTHORITY_REF,
-            peerAssist: {
-                enabled: true,
-                snapshotRepair: true,
-                acceptSnapshotRepair: (envelope) =>
-                    shouldAcceptRelicAuthoritySnapshotRepair(
-                        envelope,
-                        rallar.rooms.state().currentRoomId
-                    )
-            },
-            onSnapshot: (envelope) => {
-                activeSnapshotHandler?.(
-                    toRelicAuthoritySnapshotEvent(envelope.payload)
-                );
-            }
-        });
-        return client;
-    }
+    >({
+        rallar: input.rallar,
+        protocol: RELIC_AUTHORITY_PROTOCOL,
+        topicId: RELIC_AUTHORITY_TOPIC_ID,
+        authority: RELIC_AUTHORITY_REF,
+        peerAssist: {
+            enabled: true,
+            snapshotRepair: true,
+            acceptSnapshotRepair: (envelope) =>
+                shouldAcceptRelicAuthoritySnapshotRepair(
+                    envelope,
+                    input.rallar.rooms.state().currentRoomId
+                )
+        },
+        onSnapshot: (envelope) => {
+            input.state.activeSnapshotHandler?.(
+                toRelicAuthoritySnapshotEvent(envelope.payload)
+            );
+        }
+    });
+    return input.state.client;
 }

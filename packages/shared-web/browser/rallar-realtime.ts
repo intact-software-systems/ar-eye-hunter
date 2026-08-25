@@ -1,20 +1,10 @@
 export * from '@shared-web/browser/rallar-core.ts';
 
-export {
-    createRallarRealtimeFacade
-} from '@shared-web/browser/rallar-realtime-facade.ts';
-
-export {
-    createRallarRtcFacade
-} from '@shared-web/browser/rallar-rtc-facade.ts';
-
 export type {
-    CreateRallarRealtimeFacadeOptions,
     RallarRealtimeFacade
 } from '@shared-web/browser/rallar-realtime-facade.ts';
 
 export type {
-    CreateRallarRtcFacadeOptions,
     RallarRtcFacade
 } from '@shared-web/browser/rallar-rtc-facade.ts';
 
@@ -23,7 +13,6 @@ export type {
     RallarRealtimeHandler,
     RallarRealtimeHealthOptions,
     RallarRealtimeJsonLane,
-    RallarRealtimeJsonLaneDefaults,
     RallarRealtimeJsonLaneSendOptions,
     RallarRealtimeJsonSendInput,
     RallarRealtimeLaneHealth,

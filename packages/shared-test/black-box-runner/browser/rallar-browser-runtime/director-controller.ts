@@ -1,9 +1,12 @@
 import type {
     RallarDirectorRelayHandle,
     RallarDirectorRelayMessage,
-    RallarDirectorStatus,
-    RallarFacade
+    RallarDirectorStatus
 } from '@shared-web/browser/rallar.ts';
+import type {
+    BlackBoxBrowserDirectorDependency,
+    BlackBoxBrowserRoomsDependency
+} from './browser-rallar-runtime-composition.ts';
 import type {
     BlackBoxRallarConnectionConfig,
     BlackBoxRallarDirectorAppointInput,
@@ -93,7 +96,10 @@ type DirectorRelayState = {
     sequence: number;
 };
 
-type DirectorFacade = Pick<RallarFacade, 'director' | 'rooms'>;
+interface DirectorFacade {
+    readonly director: BlackBoxBrowserDirectorDependency;
+    readonly rooms: BlackBoxBrowserRoomsDependency;
+}
 
 type ScopeDiagnostics = Readonly<{
     scope?: Readonly<{

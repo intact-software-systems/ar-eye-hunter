@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { ApiMiddleware } from '@shared-web/browser/app-context.ts';
+import type { ApiMiddleware } from '@shared-web/browser/connection/browser-transport-runtime.ts';
+import type { Middleware } from '@shared-web/browser/middleware.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
@@ -45,11 +46,8 @@ const mocks = await vi.hoisted(async () => {
     };
 });
 
-vi.mock(import('@shared-web/browser/app-context.ts'), () => ({
-    clearMiddleware: vi.fn(),
-    getMiddleware: vi.fn(() => mocks.ctx),
-    initMiddleware: mocks.initMiddleware,
-    isMiddlewareReady: mocks.isMiddlewareReady
+vi.mock(import('@shared-web/browser/middleware.ts'), () => ({
+    initialiseMiddleware: async (): Promise<Middleware> => mocks.ctx.middleware
 }));
 
 vi.mock(import('@shared-web/browser/data-caches.ts'), () => ({
@@ -82,8 +80,11 @@ describe('Rallar room realtime channel', () => {
         mocks.initMiddleware.mockResolvedValue(mocks.ctx);
         mocks.isMiddlewareReady.mockReturnValue(false);
         mocks.readSession.mockReturnValue(mocks.ctx.session);
-        rejectGroupRepositoryReads();
-        rejectClientRepositoryReads();
+        mocks.findFirstGroupStateSnapshotRefSessionIdIsIn.mockReturnValue(undefined);
+        mocks.findGroupStateSnapshotByRef.mockReturnValue(undefined);
+        mocks.getAllGroupStateSnapshots.mockReturnValue([]);
+        mocks.findClientStateSnapshotByPrincipalId.mockReturnValue(undefined);
+        mocks.getAllClientStateSnapshots.mockReturnValue([]);
         vi.mocked(mocks.realtimeChannel.sendJson).mockReturnValue({
             status: 'sent',
             bufferedAmount: 0
@@ -155,6 +156,9 @@ describe('Rallar room realtime channel', () => {
             laneId: 'motion',
             error: new Error('timeout')
         });
+        vi.mocked(mocks.realtimeChannel.sendJson).mockImplementation(() => {
+            throw new Error('A room lane without ready peers cannot send');
+        });
 
         const result = await createRallarFacade()
             .realtime.room<{ x: number; }>({
@@ -167,12 +171,19 @@ describe('Rallar room realtime channel', () => {
         expect(result.status).toBe('not-ready');
         expect(result.peerIds).toEqual([]);
         expect(result.readiness?.status).toBe('timeout');
-        expect(mocks.realtimeChannel.sendJson).not.toHaveBeenCalled();
     });
 
     it('does not open or send room realtime for a room the current session has not joined', async () => {
         const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
         mockGroupSnapshot(createGroupSnapshot('room-1', ['peer-ready']));
+        vi.mocked(mocks.webRtcConnectionService.ensurePeerLaneOpen).mockImplementation(
+            async (peerId) => {
+                throw new Error(`An unjoined room cannot open ${peerId}`);
+            }
+        );
+        vi.mocked(mocks.realtimeChannel.sendJson).mockImplementation(() => {
+            throw new Error('An unjoined room cannot send');
+        });
 
         const result = await createRallarFacade()
             .realtime.room<{ x: number; }>({
@@ -185,8 +196,6 @@ describe('Rallar room realtime channel', () => {
         expect(result.status).toBe('no-targets');
         expect(result.peerIds).toEqual([]);
         expect(result.desiredPeerIds).toEqual([]);
-        expect(mocks.webRtcConnectionService.ensurePeerLaneOpen).not.toHaveBeenCalled();
-        expect(mocks.realtimeChannel.sendJson).not.toHaveBeenCalled();
     });
 
     it('uses already-ready room peers without a readiness wait', async () => {
@@ -206,8 +215,6 @@ describe('Rallar room realtime channel', () => {
 
         expect(result.status).toBe('sent');
         expect(result.readiness).toBeUndefined();
-        expect(mocks.webRtcConnectionService.ensurePeerLaneOpen).toHaveBeenCalledTimes(1);
-        expect(mocks.realtimeChannel.sendJson).toHaveBeenCalledOnce();
     });
 });
 

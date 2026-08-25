@@ -3,7 +3,7 @@ import type { QRtcDataChannel, RtcDataChannelSendResult } from '@shared/webrtc/Q
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createGroupSnapshotFixture } from './authoritative-group-fixtures.ts';
 
-type AppContextModule = typeof import('@shared-web/browser/app-context.ts');
+type MiddlewareModule = typeof import('@shared-web/browser/middleware.ts');
 type ApiWorkflowsModule = typeof import('@shared-web/browser/api-workflows.ts');
 type DataCachesModule = typeof import('@shared-web/browser/data-caches.ts');
 type AuthModule = typeof import('@shared/api/auth.ts');
@@ -11,50 +11,30 @@ type ClientStateSnapshotsRepositoryModule = typeof import('@shared/repository/cl
 type GroupStateSnapshotsRepositoryModule = typeof import('@shared/repository/group-state-snapshots-repository.ts');
 
 const mocks = await vi.hoisted(async () => {
-    const { createApiMiddlewareTestDouble } = await import(
-        './api-middleware-test-double.ts'
-    );
+    const { createApiMiddlewareTestDouble } = await import('./api-middleware-test-double.ts');
     const ctx = createApiMiddlewareTestDouble();
-    const throwClientRepositoryMissing = () => {
-        throw new Error(
-            'Repository not found: shared.repository.client-state-snapshots'
-        );
-    };
-    const throwGroupRepositoryMissing = () => {
-        throw new Error(
-            'Repository not found: shared.repository.group-state-snapshots'
-        );
-    };
-
     return {
         ctx,
         webRtcConnectionService: ctx.middleware.webRtcConnectionService,
-        throwClientRepositoryMissing,
-        throwGroupRepositoryMissing,
         hydrateStateCaches: vi.fn<DataCachesModule['hydrateStateCaches']>(() => Promise.resolve()),
-        initMiddleware: vi.fn<AppContextModule['initMiddleware']>(() => Promise.resolve(ctx)),
-        isMiddlewareReady: vi.fn<AppContextModule['isMiddlewareReady']>(() => false),
+        initialiseMiddleware: vi.fn<MiddlewareModule['initialiseMiddleware']>(() => Promise.resolve(ctx.middleware)),
         onStateCacheChange: vi.fn<DataCachesModule['onStateCacheChange']>(() => vi.fn()),
         readSession: vi.fn<AuthModule['readSession']>(() => ctx.session),
-        refreshStateSnapshots: vi.fn<ApiWorkflowsModule['refreshStateSnapshots']>(() => Promise.resolve({ clients: [], groups: [] })),
-        clientRepositoryMissing: vi.fn(throwClientRepositoryMissing),
-        findFirstGroupStateSnapshotRefSessionIdIsIn: vi.fn<
-            GroupStateSnapshotsRepositoryModule[
-                'findFirstGroupStateSnapshotRefSessionIdIsIn'
-            ]
-        >(throwGroupRepositoryMissing),
-        findGroupStateSnapshotByRef: vi.fn<GroupStateSnapshotsRepositoryModule['findGroupStateSnapshotByRef']>(throwGroupRepositoryMissing),
-        getAllGroupStateSnapshots: vi.fn<GroupStateSnapshotsRepositoryModule['getAllGroupStateSnapshots']>(throwGroupRepositoryMissing)
+        refreshStateSnapshots: vi.fn<ApiWorkflowsModule['refreshStateSnapshots']>(
+            () => Promise.resolve({ clients: [], groups: [] })
+        ),
+        clientRepositoryMissing: vi.fn(() => undefined),
+        getAllClientStateSnapshots: vi.fn<ClientStateSnapshotsRepositoryModule['getAllClientStateSnapshots']>(() => []),
+        findFirstGroupStateSnapshotRefSessionIdIsIn: vi.fn<GroupStateSnapshotsRepositoryModule['findFirstGroupStateSnapshotRefSessionIdIsIn']>(() => undefined),
+        findGroupStateSnapshotByRef: vi.fn<GroupStateSnapshotsRepositoryModule['findGroupStateSnapshotByRef']>(() => undefined),
+        getAllGroupStateSnapshots: vi.fn<GroupStateSnapshotsRepositoryModule['getAllGroupStateSnapshots']>(() => [])
     };
 });
 
 vi.mock(
-    import('@shared-web/browser/app-context.ts'),
-    (): Partial<AppContextModule> => ({
-        clearMiddleware: vi.fn(),
-        getMiddleware: vi.fn(() => mocks.ctx),
-        initMiddleware: mocks.initMiddleware,
-        isMiddlewareReady: mocks.isMiddlewareReady
+    import('@shared-web/browser/middleware.ts'),
+    (): Partial<MiddlewareModule> => ({
+        initialiseMiddleware: mocks.initialiseMiddleware
     })
 );
 
@@ -84,7 +64,7 @@ vi.mock(
     import('@shared/repository/client-state-snapshots-repository.ts'),
     (): Partial<ClientStateSnapshotsRepositoryModule> => ({
         findClientStateSnapshotByPrincipalId: mocks.clientRepositoryMissing,
-        getAllClientStateSnapshots: mocks.clientRepositoryMissing
+        getAllClientStateSnapshots: mocks.getAllClientStateSnapshots
     })
 );
 
@@ -97,24 +77,23 @@ vi.mock(
     })
 );
 
-describe('Rallar facade defaults compatibility', () => {
-    beforeEach(() => {
+describe('Rallar facade default scope behavior', () => {
+    beforeEach(async () => {
+        (
+            await import('@shared-web/browser/connection/browser-transport-runtime.ts')
+        ).browserTransportRuntime.shutdown('test-reset');
         vi.clearAllMocks();
-        mocks.clientRepositoryMissing.mockImplementation(
-            mocks.throwClientRepositoryMissing
-        );
+        mocks.clientRepositoryMissing.mockReturnValue(undefined);
+        mocks.getAllClientStateSnapshots.mockReturnValue([]);
         mockGroupRepositoryMissing();
         mocks.hydrateStateCaches.mockResolvedValue(undefined);
-        mocks.initMiddleware.mockResolvedValue(mocks.ctx);
-        mocks.isMiddlewareReady.mockReturnValue(false);
+        mocks.initialiseMiddleware.mockResolvedValue(mocks.ctx.middleware);
         mocks.readSession.mockReturnValue(mocks.ctx.session);
         mocks.refreshStateSnapshots.mockResolvedValue({ clients: [], groups: [] });
     });
 
     it('uses facade defaults as the operation scope when no explicit scope is passed', async () => {
-        const { createRallarFacade } = await import(
-            '@shared-web/browser/rallar.ts'
-        );
+        const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
         const facade = createRallarFacade();
 
         facade.setDefaults({
@@ -136,9 +115,7 @@ describe('Rallar facade defaults compatibility', () => {
     });
 
     it('uses facade defaults to build RTC group refs from room id strings', async () => {
-        const { createRallarFacade } = await import(
-            '@shared-web/browser/rallar.ts'
-        );
+        const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
         const facade = createRallarFacade();
         facade.setDefaults({
             applicationId: 'game-app',
@@ -166,9 +143,7 @@ describe('Rallar facade defaults compatibility', () => {
     });
 
     it('uses facade room defaults for RTC and WS sends without per-call room ids', async () => {
-        const { createRallarFacade } = await import(
-            '@shared-web/browser/rallar.ts'
-        );
+        const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
         const facade = createRallarFacade();
         facade.setDefaults({
             applicationId: 'game-app',
@@ -218,9 +193,7 @@ describe('Rallar facade defaults compatibility', () => {
     });
 
     it('uses facade operation and RTC lane defaults for connect and workflows', async () => {
-        const { createRallarFacade } = await import(
-            '@shared-web/browser/rallar.ts'
-        );
+        const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
         const lanes = [
             {
                 id: 'gameplay',
@@ -249,17 +222,21 @@ describe('Rallar facade defaults compatibility', () => {
 
         await facade.people.refresh();
 
-        expect(mocks.initMiddleware).toHaveBeenCalledWith({
-            onAuthInvalid: expect.any(Function),
-            scope: {
-                applicationId: 'default-app',
-                workspaceId: 'default'
-            },
-            timeoutMs: 321,
-            dataChannelLanes: lanes,
-            maxPeerConnections: 12,
-            rttReportingDegreeLimit: 3
-        });
+        expect(mocks.initialiseMiddleware).toHaveBeenCalledWith(
+            mocks.ctx.session,
+            expect.any(String),
+            {
+                onAuthInvalid: expect.any(Function),
+                scope: {
+                    applicationId: 'default-app',
+                    workspaceId: 'default'
+                },
+                timeoutMs: 321,
+                dataChannelLanes: lanes,
+                maxPeerConnections: 12,
+                rttReportingDegreeLimit: 3
+            }
+        );
         expect(mocks.refreshStateSnapshots).toHaveBeenCalledWith(
             {
                 applicationId: 'default-app',
@@ -274,9 +251,7 @@ describe('Rallar facade defaults compatibility', () => {
     });
 
     it('uses facade room and realtime defaults for realtime sends', async () => {
-        const { createRallarFacade } = await import(
-            '@shared-web/browser/rallar.ts'
-        );
+        const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
         const sendResult: RtcDataChannelSendResult = {
             status: 'sent',
             bufferedAmount: 0
@@ -286,13 +261,14 @@ describe('Rallar facade defaults compatibility', () => {
             sendJson
         });
         mockGroupSnapshot(createGroupSnapshot('match-1', ['session-1', 'peer-1']));
-        vi.mocked(mocks.webRtcConnectionService.ensurePeerLaneOpen)
-            .mockResolvedValueOnce({
-                status: 'open',
-                peerId: 'peer-1',
-                laneId: 'gameplay',
-                channel: gameplayChannel
-            });
+        vi.mocked(
+            mocks.webRtcConnectionService.ensurePeerLaneOpen
+        ).mockResolvedValueOnce({
+            status: 'open',
+            peerId: 'peer-1',
+            laneId: 'gameplay',
+            channel: gameplayChannel
+        });
         const facade = createRallarFacade();
         facade.setDefaults({
             applicationId: 'app-1',
@@ -312,14 +288,15 @@ describe('Rallar facade defaults compatibility', () => {
             }
         });
 
-        expect(mocks.webRtcConnectionService.ensurePeerLaneOpen)
-            .toHaveBeenCalledWith(
-                'peer-1',
-                'gameplay',
-                expect.objectContaining({
-                    timeoutMs: 750
-                })
-            );
+        expect(
+            mocks.webRtcConnectionService.ensurePeerLaneOpen
+        ).toHaveBeenCalledWith(
+            'peer-1',
+            'gameplay',
+            expect.objectContaining({
+                timeoutMs: 750
+            })
+        );
         expect(sendJson).toHaveBeenCalledWith(
             {
                 x: 1
@@ -336,15 +313,14 @@ describe('Rallar facade defaults compatibility', () => {
     });
 
     it('uses facade RTC wait defaults when waiting for a lane', async () => {
-        const { createRallarFacade } = await import(
-            '@shared-web/browser/rallar.ts'
-        );
-        vi.mocked(mocks.webRtcConnectionService.ensurePeerLaneOpen)
-            .mockResolvedValueOnce({
-                status: 'open',
-                peerId: 'peer-1',
-                laneId: 'reliable'
-            });
+        const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
+        vi.mocked(
+            mocks.webRtcConnectionService.ensurePeerLaneOpen
+        ).mockResolvedValueOnce({
+            status: 'open',
+            peerId: 'peer-1',
+            laneId: 'reliable'
+        });
         const facade = createRallarFacade();
         facade.setDefaults({
             applicationId: 'app-1',
@@ -357,14 +333,15 @@ describe('Rallar facade defaults compatibility', () => {
         await facade.connect();
         const result = await facade.rtc.waitForOpen('peer-1');
 
-        expect(mocks.webRtcConnectionService.ensurePeerLaneOpen)
-            .toHaveBeenCalledWith(
-                'peer-1',
-                'reliable',
-                expect.objectContaining({
-                    timeoutMs: 333
-                })
-            );
+        expect(
+            mocks.webRtcConnectionService.ensurePeerLaneOpen
+        ).toHaveBeenCalledWith(
+            'peer-1',
+            'reliable',
+            expect.objectContaining({
+                timeoutMs: 333
+            })
+        );
         expect(result).toMatchObject({
             status: 'open',
             peerId: 'peer-1',
@@ -374,15 +351,9 @@ describe('Rallar facade defaults compatibility', () => {
 });
 
 function mockGroupRepositoryMissing(): void {
-    mocks.findFirstGroupStateSnapshotRefSessionIdIsIn.mockImplementation(
-        mocks.throwGroupRepositoryMissing
-    );
-    mocks.findGroupStateSnapshotByRef.mockImplementation(
-        mocks.throwGroupRepositoryMissing
-    );
-    mocks.getAllGroupStateSnapshots.mockImplementation(
-        mocks.throwGroupRepositoryMissing
-    );
+    mocks.findFirstGroupStateSnapshotRefSessionIdIsIn.mockReturnValue(undefined);
+    mocks.findGroupStateSnapshotByRef.mockReturnValue(undefined);
+    mocks.getAllGroupStateSnapshots.mockReturnValue([]);
 }
 
 function mockGroupSnapshot(snapshot: GroupSnapshot): void {
@@ -392,14 +363,15 @@ function mockGroupSnapshot(snapshot: GroupSnapshot): void {
 function mockGroupSnapshots(snapshots: readonly GroupSnapshot[]): void {
     mocks.getAllGroupStateSnapshots.mockImplementation(() => [...snapshots]);
     mocks.findGroupStateSnapshotByRef.mockImplementation((ref) =>
-        snapshots.find((snapshot) =>
-            snapshot.group.groupId === ref.groupId &&
-            snapshot.group.applicationId === ref.applicationId &&
-            snapshot.group.workspaceId === ref.workspaceId
+        snapshots.find(
+            (snapshot) =>
+                snapshot.group.groupId === ref.groupId &&
+                snapshot.group.applicationId === ref.applicationId &&
+                snapshot.group.workspaceId === ref.workspaceId
         )
     );
-    mocks.findFirstGroupStateSnapshotRefSessionIdIsIn.mockImplementation((sessionId) =>
-        snapshots.find((snapshot) => sessionId === snapshot.group.groupId)?.group
+    mocks.findFirstGroupStateSnapshotRefSessionIdIsIn.mockImplementation(
+        (sessionId) => snapshots.find((snapshot) => sessionId === snapshot.group.groupId)?.group
     );
 }
 

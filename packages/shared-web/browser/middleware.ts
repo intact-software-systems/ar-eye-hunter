@@ -32,6 +32,7 @@ import {
 import { JsonWebSocketClient } from '@shared/websocket/JsonWebSocketClient.ts';
 
 import { readSession } from '@shared/api/auth.ts';
+import type { GroupSnapshot } from '@shared/api/group-types.ts';
 
 import { defaultStateScope, readApiConfig, readIceCandidates } from '@shared-web/browser/api-integration.ts';
 import { refreshStateSnapshots } from '@shared-web/browser/api-workflows.ts';
@@ -53,27 +54,34 @@ import * as rtcEngine from '@shared-web/browser/rtc-engine.ts';
 import * as wsEngine from '@shared-web/browser/ws-engine.ts';
 import * as cache from './data-caches.ts';
 
-export type Middleware = {
-    qboxEngine: InboxOutboxEngine;
-    webSocketQueueBox: WsQueueBoxClientService;
-    webRtcConnectionService: WebRtcConnectionService;
-    rtcRxStreamer: WebRtcRxStreamerService;
-    webRtcGroupManager: WebRtcGroupManager;
-    webRtcOverlayMulticastManager: WebRtcOverlayMulticastManager;
-    heartbeat: HeartbeatHandle;
-};
+export interface Middleware {
+    readonly qboxEngine: InboxOutboxEngine;
+    readonly webSocketQueueBox: WsQueueBoxClientService;
+    readonly webRtcConnectionService: WebRtcConnectionService;
+    readonly rtcRxStreamer: WebRtcRxStreamerService;
+    readonly webRtcGroupManager: WebRtcGroupManager;
+    readonly webRtcOverlayMulticastManager: WebRtcOverlayMulticastManager;
+    readonly heartbeat: HeartbeatHandle;
+}
 
-export type MiddlewareInitOptions = Readonly<{
-    signal?: AbortSignal;
-    timeoutMs?: number;
-    dataChannelLanes?: readonly RtcDataChannelLaneConfig[];
-    maxPeerConnections?: number;
-    rttReportingDegreeLimit?: number;
-    bootstrapDegree?: number;
-    scope?: StateScope;
-    onAuthInvalid?: (error: unknown) => void | Promise<void>;
-    outboundDiagnostics?: ALOutboundRuntimeDiagnosticsSink;
-}>;
+export interface MiddlewareInitOptions {
+    readonly signal?: AbortSignal;
+    readonly timeoutMs?: number;
+    readonly dataChannelLanes?: readonly RtcDataChannelLaneConfig[];
+    readonly maxPeerConnections?: number;
+    readonly rttReportingDegreeLimit?: number;
+    readonly bootstrapDegree?: number;
+    readonly scope?: StateScope;
+    readonly onAuthInvalid?: (error: unknown) => void | Promise<void>;
+    readonly outboundDiagnostics?: ALOutboundRuntimeDiagnosticsSink;
+}
+
+export interface ToCreateWsUrlInput {
+    readonly apiConfig: ApiConfig;
+    readonly session: AuthSession;
+    readonly ticket: string;
+    readonly scope?: StateScope;
+}
 
 export const BROWSER_RTT_HEARTBEAT_TTL_MS = 15_000;
 
@@ -94,20 +102,17 @@ export const DEFAULT_REALTIME_DATA_CHANNEL_LANE: RtcDataChannelLaneConfig = {
 };
 
 export function toCreateWsUrl(
-    apiConfig: ApiConfig,
-    session: AuthSession,
-    ticket: string,
-    scope?: StateScope
+    input: ToCreateWsUrlInput
 ): string {
-    const path = apiConfig.endpoints.createWs.replace(
+    const path = input.apiConfig.endpoints.createWs.replace(
         ':id',
-        encodeURIComponent(session.sessionId)
+        encodeURIComponent(input.session.sessionId)
     );
-    const url = new URL(path, apiConfig.wsBaseUrl);
-    url.searchParams.set('ticket', ticket);
-    if (scope) {
-        url.searchParams.set('applicationId', scope.applicationId);
-        url.searchParams.set('workspaceId', scope.workspaceId);
+    const url = new URL(path, input.apiConfig.wsBaseUrl);
+    url.searchParams.set('ticket', input.ticket);
+    if (input.scope) {
+        url.searchParams.set('applicationId', input.scope.applicationId);
+        url.searchParams.set('workspaceId', input.scope.workspaceId);
     }
     return url.toString();
 }
@@ -140,6 +145,35 @@ export function toBrowserRtcInboundPeerCreationDecision(
     };
 }
 
+interface BrowserWebSocketTransport {
+    readonly qboxEngine: InboxOutboxEngine;
+    readonly webSocketQueueBox: WsQueueBoxClientService;
+}
+
+interface BrowserRtcTransport {
+    readonly webRtcConnectionService: WebRtcConnectionService;
+    readonly rtcRxStreamer: WebRtcRxStreamerService;
+    readonly webRtcGroupManager: WebRtcGroupManager;
+    readonly webRtcOverlayMulticastManager: WebRtcOverlayMulticastManager;
+}
+
+interface InitialiseBrowserTransportInput {
+    readonly session: AuthSession;
+    readonly clientData: ClientInfo;
+    readonly options: MiddlewareInitOptions;
+}
+
+interface InitialiseBrowserRtcTransportInput extends InitialiseBrowserTransportInput {
+    readonly rtcSignalingTopicId: string;
+    readonly webSocketTransport: BrowserWebSocketTransport;
+}
+
+interface InitialiseBrowserStateTransportInput extends InitialiseBrowserTransportInput {
+    readonly webSocketQueueBox: WsQueueBoxClientService;
+    readonly webRtcGroupManager: WebRtcGroupManager;
+    readonly bootstrapDegree: number;
+}
+
 export async function initialiseMiddleware(
     session: AuthSession,
     rtcSignalingTopicId: string,
@@ -150,226 +184,24 @@ export async function initialiseMiddleware(
         sessionId: session.sessionId,
         isOnline: true
     };
-    initialiseBrowserCacheRepositories();
-    configureBrowserALRuntimeStores(clientData.sessionId);
-    initBrowserALRuntimeExpiryEviction().catch((error) =>
-        console.error('Failed to initialise browser AL runtime expiry eviction:', error)
-    );
-    initBrowserQueueBoxExpiryEviction().catch((error) =>
-        console.error('Failed to initialise browser queuebox expiry eviction:', error)
-    );
-
-    const apiConfig = await runMiddlewareCommand(
-        (signal) => readApiConfig({ signal }),
-        options
-    );
-
-    const socket = new JsonWebSocketClient(async (connectOptions) => {
-        if (!connectOptions.requestId) {
-            throw new Error('WebSocket connection request identity is missing.');
-        }
-        const wsTicket = await createWebSocketTicket({
-            requestId: connectOptions.requestId,
-            signal: connectOptions.signal
-        });
-        if (wsTicket.sessionId !== session.sessionId) {
-            throw new Error('WebSocket ticket does not match the current session.');
-        }
-
-        return toCreateWsUrl(apiConfig, session, wsTicket.ticket, options.scope);
+    initialiseBrowserRuntimeStores(clientData.sessionId);
+    const transportInput = { session, clientData, options };
+    const webSocketTransport = await initialiseBrowserWebSocketTransport(transportInput);
+    const rtcTransport = await initialiseBrowserRtcTransport({
+        ...transportInput,
+        rtcSignalingTopicId,
+        webSocketTransport
     });
-
-    const qboxEngine: InboxOutboxEngine = qbox.initialiseQBoxEngine();
-
-    const webSocketQueueBox = await wsEngine.initialiseWsEngine(
-        qboxEngine,
-        socket,
-        clientData,
-        toResilienceDto(),
-        {
-            signal: options.signal,
-            connectTimeoutMs: options.timeoutMs ??
-                DEFAULT_WS_QUEUE_BOX_CLIENT_RECONNECT_OPTIONS.connectTimeoutMsecs,
-            newConnectionRequestId: () => crypto.randomUUID(),
-            outboundDiagnostics: options.outboundDiagnostics
-        }
-    )
-        .catch((error) => {
-            console.error('Failed to connect WebSocket client:', error);
-            throw error;
-        });
-
-    const iceCandidates: IceConfig = await runMiddlewareCommand(
-        (signal) => readIceCandidates({ signal }),
-        options
-    );
-
-    const webRtcConnectionService = await rtcEngine
-        .initialiseRtcConnectionService(
-            webSocketQueueBox,
-            qboxEngine,
-            clientData,
-            iceCandidates,
-            'rtc-data-channel',
-            rtcSignalingTopicId,
-            {
-                dataChannelLanes: options.dataChannelLanes ??
-                    [DEFAULT_REALTIME_DATA_CHANNEL_LANE],
-                maxPeerConnections: options.maxPeerConnections
-            }
-        );
-
-    const webRtcOverlayMulticastManager = rtcEngine
-        .initialiseRtcOverlayMulticastManager(
-            webRtcConnectionService,
-            qboxEngine,
-            toResilienceDto(),
-            {
-                outboundDiagnostics: options.outboundDiagnostics
-            }
-        );
-
-    const rtcRxStreamer = rtcEngine.initialiseRtcRxStreamer(
-        webRtcOverlayMulticastManager,
-        qboxEngine,
-        clientData,
-        toResilienceDto()
-    );
-
-    rtcRxStreamer.onRttMeasurementDo(
-        AppTopics.rtt,
-        {
-            onHeartbeat: (rtt: RttMeasurementInfo): Promise<void> => {
-                void webSocketQueueBox.enqueueOutboxIfAbsent(
-                    toBrowserRttHeartbeatMessage(clientData.sessionId, rtt)
-                )
-                    .then((result) => {
-                        if (result.status === 'enqueued' || result.status === 'duplicate') {
-                            qboxEngine.wake();
-                        }
-                    })
-                    .catch((error) => {
-                        console.error('Failed to enqueue RTT heartbeat', error);
-                    });
-
-                return Promise.resolve();
-            }
-        }
-    );
-
-    webRtcConnectionService
-        .onRtcPeerLifecycleDo(
-            'rtc-rx-streamer',
-            {
-                onCreated(peerDto: QRtcPeerDto) {
-                    rtcRxStreamer.addPeer(peerDto);
-                },
-                onDeleted(peerDto: QRtcPeerDto) {
-                    rtcRxStreamer.removePeer(peerDto);
-                }
-            }
-        );
-
     const bootstrapDegree = resolveBootstrapDegree({
         bootstrapDegree: options.bootstrapDegree,
         maxPeerConnections: options.maxPeerConnections
     });
-
-    const webRtcGroupManager = new WebRtcGroupManager(
-        webRtcConnectionService,
-        groupStateSnapshotsRepository.readableGroupStateSnapshotCache(),
-        clientStateSnapshotsRepository.readableClientStateSnapshotCache(),
-        overlaysRepository.readableOverlayCache(),
-        {
-            maxPeerConnections: options.maxPeerConnections,
-            onDesiredPeerIdsChanged: refreshRttReportingPeers
-        }
-    );
-
-    function refreshRttReportingPeers(): void {
-        rtcRxStreamer.setRttReportingPeerIds(
-            webRtcGroupManager.rttReportingPeerIds({
-                degreeLimit: options.rttReportingDegreeLimit
-            })
-        );
-    }
-
-    refreshRttReportingPeers();
-
-    webRtcConnectionService.setInboundPeerCreationPolicy(({ peerId }) =>
-        toBrowserRtcInboundPeerCreationDecision(
-            webRtcGroupManager.isPeerOwnedByAnyGroup(peerId)
-        )
-    );
-
-    const rereadGroupSnapshots = async () =>
-        (await refreshStateSnapshots(options.scope, {
-            command: toCommandOptions(options)
-        })).groups;
-    const stateCacheOptions = {
-        scope: options.scope,
-        rereadGroupSnapshots,
-        groupFormation: {
-            bootstrapDegree
-        }
-    };
-    cache.initialise(
-        webSocketQueueBox,
-        webRtcGroupManager,
-        clientData,
-        stateCacheOptions
-    );
-
-    const {
-        clients: clientSnapshots,
-        groups: groupSnapshots
-    } = await refreshStateSnapshots(options.scope, {
-        command: toCommandOptions(options)
+    await initialiseBrowserStateTransport({
+        ...transportInput,
+        webSocketQueueBox: webSocketTransport.webSocketQueueBox,
+        webRtcGroupManager: rtcTransport.webRtcGroupManager,
+        bootstrapDegree
     });
-
-    await cache.hydrateStateCaches(
-        webRtcGroupManager,
-        clientData,
-        clientSnapshots,
-        groupSnapshots,
-        stateCacheOptions
-    );
-
-    await hydrateGroupTopologyOverlays({
-        groupSnapshots,
-        sessionId: clientData.sessionId,
-        webRtcGroupManager,
-        scope: options.scope ?? defaultStateScope(),
-        apiRequest: { authSession: session }
-    });
-
-    initGroupStateResyncOnReopen({
-        socket: webSocketQueueBox.socket,
-        resyncStateSnapshots: async () => {
-            const refreshed = await refreshStateSnapshots(options.scope, {
-                command: toCommandOptions(options)
-            });
-            await cache.hydrateStateCaches(
-                webRtcGroupManager,
-                clientData,
-                refreshed.clients,
-                refreshed.groups,
-                stateCacheOptions
-            );
-            return refreshed.groups;
-        },
-        resyncGroupTopologies: async (refreshedGroups) => {
-            await hydrateGroupTopologyOverlays({
-                groupSnapshots: refreshedGroups,
-                sessionId: clientData.sessionId,
-                webRtcGroupManager,
-                scope: options.scope ?? defaultStateScope(),
-                apiRequest: { authSession: session }
-            });
-        },
-        isCurrentGeneration: () => readSession()?.sessionId === clientData.sessionId
-    });
-
     const heartbeatHandle = await heartbeat.initHeartbeat(clientData, {
         authSession: session,
         scope: options.scope,
@@ -377,14 +209,268 @@ export async function initialiseMiddleware(
     });
 
     return {
-        qboxEngine: qboxEngine,
-        webSocketQueueBox: webSocketQueueBox,
-        webRtcConnectionService: webRtcConnectionService,
-        rtcRxStreamer: rtcRxStreamer,
-        webRtcGroupManager: webRtcGroupManager,
-        webRtcOverlayMulticastManager: webRtcOverlayMulticastManager,
+        ...webSocketTransport,
+        ...rtcTransport,
         heartbeat: heartbeatHandle
     };
+}
+
+function initialiseBrowserRuntimeStores(sessionId: string): void {
+    initialiseBrowserCacheRepositories();
+    configureBrowserALRuntimeStores(sessionId);
+    initBrowserALRuntimeExpiryEviction().catch((error) =>
+        console.error('Failed to initialise browser AL runtime expiry eviction:', error)
+    );
+    initBrowserQueueBoxExpiryEviction().catch((error) =>
+        console.error('Failed to initialise browser queuebox expiry eviction:', error)
+    );
+}
+
+async function initialiseBrowserWebSocketTransport(
+    input: InitialiseBrowserTransportInput
+): Promise<BrowserWebSocketTransport> {
+    const apiConfig = await runMiddlewareCommand(
+        (signal) => readApiConfig({ signal }),
+        input.options
+    );
+    const socket = createBrowserWebSocketClient(input, apiConfig);
+    const qboxEngine = qbox.initialiseQBoxEngine();
+    const webSocketQueueBox = await wsEngine.initialiseWsEngine(
+        qboxEngine,
+        socket,
+        input.clientData,
+        toResilienceDto(),
+        {
+            signal: input.options.signal,
+            connectTimeoutMs: input.options.timeoutMs ??
+                DEFAULT_WS_QUEUE_BOX_CLIENT_RECONNECT_OPTIONS.connectTimeoutMsecs,
+            newConnectionRequestId: () => crypto.randomUUID(),
+            outboundDiagnostics: input.options.outboundDiagnostics
+        }
+    ).catch((error) => {
+        console.error('Failed to connect WebSocket client:', error);
+        throw error;
+    });
+    return { qboxEngine, webSocketQueueBox };
+}
+
+function createBrowserWebSocketClient(
+    input: InitialiseBrowserTransportInput,
+    apiConfig: ApiConfig
+): JsonWebSocketClient {
+    return new JsonWebSocketClient(async (connectOptions) => {
+        if (!connectOptions.requestId) {
+            throw new Error('WebSocket connection request identity is missing.');
+        }
+        const wsTicket = await createWebSocketTicket({
+            requestId: connectOptions.requestId,
+            signal: connectOptions.signal
+        });
+        if (wsTicket.sessionId !== input.session.sessionId) {
+            throw new Error('WebSocket ticket does not match the current session.');
+        }
+        return toCreateWsUrl({
+            apiConfig,
+            session: input.session,
+            ticket: wsTicket.ticket,
+            scope: input.options.scope
+        });
+    });
+}
+
+async function initialiseBrowserRtcTransport(
+    input: InitialiseBrowserRtcTransportInput
+): Promise<BrowserRtcTransport> {
+    const iceCandidates: IceConfig = await runMiddlewareCommand(
+        (signal) => readIceCandidates({ signal }),
+        input.options
+    );
+    const webRtcConnectionService = await initialiseBrowserRtcConnection(
+        input,
+        iceCandidates
+    );
+    const webRtcOverlayMulticastManager = rtcEngine.initialiseRtcOverlayMulticastManager(
+        webRtcConnectionService,
+        input.webSocketTransport.qboxEngine,
+        toResilienceDto(),
+        { outboundDiagnostics: input.options.outboundDiagnostics }
+    );
+    const rtcRxStreamer = rtcEngine.initialiseRtcRxStreamer(
+        webRtcOverlayMulticastManager,
+        input.webSocketTransport.qboxEngine,
+        input.clientData,
+        toResilienceDto()
+    );
+    registerBrowserRttEgress(input, rtcRxStreamer);
+    registerBrowserRtcPeerStreaming(webRtcConnectionService, rtcRxStreamer);
+    const webRtcGroupManager = createBrowserRtcGroupManager(
+        input,
+        webRtcConnectionService,
+        rtcRxStreamer
+    );
+    return {
+        webRtcConnectionService,
+        rtcRxStreamer,
+        webRtcGroupManager,
+        webRtcOverlayMulticastManager
+    };
+}
+
+function initialiseBrowserRtcConnection(
+    input: InitialiseBrowserRtcTransportInput,
+    iceCandidates: IceConfig
+): Promise<WebRtcConnectionService> {
+    return rtcEngine.initialiseRtcConnectionService(
+        input.webSocketTransport.webSocketQueueBox,
+        input.webSocketTransport.qboxEngine,
+        input.clientData,
+        iceCandidates,
+        'rtc-data-channel',
+        input.rtcSignalingTopicId,
+        {
+            dataChannelLanes: input.options.dataChannelLanes ??
+                [DEFAULT_REALTIME_DATA_CHANNEL_LANE],
+            maxPeerConnections: input.options.maxPeerConnections
+        }
+    );
+}
+
+function registerBrowserRttEgress(
+    input: InitialiseBrowserRtcTransportInput,
+    rtcRxStreamer: WebRtcRxStreamerService
+): void {
+    rtcRxStreamer.onRttMeasurementDo(AppTopics.rtt, {
+        onHeartbeat: (rtt: RttMeasurementInfo): Promise<void> => {
+            const queueBox = input.webSocketTransport;
+            void queueBox.webSocketQueueBox.enqueueOutboxIfAbsent(
+                toBrowserRttHeartbeatMessage(input.clientData.sessionId, rtt)
+            ).then((result) => {
+                if (result.status === 'enqueued' || result.status === 'duplicate') {
+                    queueBox.qboxEngine.wake();
+                }
+            }).catch((error) => {
+                console.error('Failed to enqueue RTT heartbeat', error);
+            });
+            return Promise.resolve();
+        }
+    });
+}
+
+function registerBrowserRtcPeerStreaming(
+    webRtcConnectionService: WebRtcConnectionService,
+    rtcRxStreamer: WebRtcRxStreamerService
+): void {
+    webRtcConnectionService.onRtcPeerLifecycleDo('rtc-rx-streamer', {
+        onCreated(peerDto: QRtcPeerDto) {
+            rtcRxStreamer.addPeer(peerDto);
+        },
+        onDeleted(peerDto: QRtcPeerDto) {
+            rtcRxStreamer.removePeer(peerDto);
+        }
+    });
+}
+
+function createBrowserRtcGroupManager(
+    input: InitialiseBrowserRtcTransportInput,
+    webRtcConnectionService: WebRtcConnectionService,
+    rtcRxStreamer: WebRtcRxStreamerService
+): WebRtcGroupManager {
+    const webRtcGroupManager = new WebRtcGroupManager(
+        webRtcConnectionService,
+        groupStateSnapshotsRepository.readableGroupStateSnapshotCache(),
+        clientStateSnapshotsRepository.readableClientStateSnapshotCache(),
+        overlaysRepository.readableOverlayCache(),
+        {
+            maxPeerConnections: input.options.maxPeerConnections,
+            onDesiredPeerIdsChanged: refreshRttReportingPeers
+        }
+    );
+    function refreshRttReportingPeers(): void {
+        rtcRxStreamer.setRttReportingPeerIds(
+            webRtcGroupManager.rttReportingPeerIds({
+                degreeLimit: input.options.rttReportingDegreeLimit
+            })
+        );
+    }
+    refreshRttReportingPeers();
+    webRtcConnectionService.setInboundPeerCreationPolicy(({ peerId }) =>
+        toBrowserRtcInboundPeerCreationDecision(
+            webRtcGroupManager.isPeerOwnedByAnyGroup(peerId)
+        )
+    );
+    return webRtcGroupManager;
+}
+
+async function initialiseBrowserStateTransport(
+    input: InitialiseBrowserStateTransportInput
+): Promise<void> {
+    const stateCacheOptions: cache.StateCacheScopeOptions = {
+        scope: input.options.scope,
+        rereadGroupSnapshots: async () =>
+            (await refreshStateSnapshots(input.options.scope, {
+                command: toCommandOptions(input.options)
+            })).groups,
+        groupFormation: { bootstrapDegree: input.bootstrapDegree }
+    };
+    cache.initialise(
+        input.webSocketQueueBox,
+        input.webRtcGroupManager,
+        input.clientData,
+        stateCacheOptions
+    );
+    const snapshots = await refreshStateSnapshots(input.options.scope, {
+        command: toCommandOptions(input.options)
+    });
+    await hydrateBrowserStateCaches(input, stateCacheOptions, snapshots);
+    await hydrateBrowserGroupTopologies(input, snapshots.groups);
+    installBrowserStateResync(input, stateCacheOptions);
+}
+
+async function hydrateBrowserStateCaches(
+    input: InitialiseBrowserStateTransportInput,
+    stateCacheOptions: cache.StateCacheScopeOptions,
+    snapshots: Awaited<ReturnType<typeof refreshStateSnapshots>>
+): Promise<void> {
+    await cache.hydrateStateCaches(
+        input.webRtcGroupManager,
+        input.clientData,
+        snapshots.clients,
+        snapshots.groups,
+        stateCacheOptions
+    );
+}
+
+async function hydrateBrowserGroupTopologies(
+    input: InitialiseBrowserStateTransportInput,
+    groupSnapshots: readonly GroupSnapshot[]
+): Promise<void> {
+    await hydrateGroupTopologyOverlays({
+        groupSnapshots,
+        sessionId: input.clientData.sessionId,
+        webRtcGroupManager: input.webRtcGroupManager,
+        scope: input.options.scope ?? defaultStateScope(),
+        apiRequest: { authSession: input.session }
+    });
+}
+
+function installBrowserStateResync(
+    input: InitialiseBrowserStateTransportInput,
+    stateCacheOptions: cache.StateCacheScopeOptions
+): void {
+    initGroupStateResyncOnReopen({
+        socket: input.webSocketQueueBox.socket,
+        resyncStateSnapshots: async () => {
+            const refreshed = await refreshStateSnapshots(input.options.scope, {
+                command: toCommandOptions(input.options)
+            });
+            await hydrateBrowserStateCaches(input, stateCacheOptions, refreshed);
+            return refreshed.groups;
+        },
+        resyncGroupTopologies: async (refreshedGroups) => {
+            await hydrateBrowserGroupTopologies(input, refreshedGroups);
+        },
+        isCurrentGeneration: () => readSession()?.sessionId === input.clientData.sessionId
+    });
 }
 
 function runMiddlewareCommand<T>(

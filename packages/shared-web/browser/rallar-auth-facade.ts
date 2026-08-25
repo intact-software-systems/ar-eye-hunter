@@ -19,21 +19,19 @@ export type RallarAuthChangeReason =
     | 'expired'
     | 'unauthorized';
 
-export type RallarAuthState = Readonly<{
-    authenticated: boolean;
-    reason: RallarAuthChangeReason;
-    session?: AuthSession;
-}>;
+export interface RallarAuthState {
+    readonly authenticated: boolean;
+    readonly reason: RallarAuthChangeReason;
+    readonly session?: AuthSession;
+}
 
 export type RallarAuthChangeListener = RallarStateListener<RallarAuthState>;
 
-export type RallarRegisterOptions =
-    & RallarOperationOptions
-    & Readonly<{
-        adminSession?: AuthSession | null;
-    }>;
+export interface RallarRegisterOptions extends RallarOperationOptions {
+    readonly adminSession?: AuthSession | null;
+}
 
-export type RallarAuthFacade = Readonly<{
+export interface RallarAuthFacade {
     login(
         request: LoginRequest,
         options?: RallarOperationOptions
@@ -53,32 +51,4 @@ export type RallarAuthFacade = Readonly<{
         listener: RallarAuthChangeListener,
         options?: RallarOnChangeOptions
     ): RallarUnsubscribe;
-}>;
-
-export type CreateRallarAuthFacadeOptions = RallarAuthFacade;
-
-export function createRallarAuthFacade(
-    operations: CreateRallarAuthFacadeOptions
-): RallarAuthFacade {
-    return {
-        login: async (
-            request,
-            options = {}
-        ): Promise<LoginResponse> => await operations.login(request, options),
-        register: async (
-            request,
-            options = {}
-        ): Promise<RegisterResponse> => await operations.register(request, options),
-        registerAndLogin: async (
-            request,
-            options = {}
-        ): Promise<LoginResponse> => await operations.registerAndLogin(request, options),
-        logout: async (options = {}): Promise<void> => await operations.logout(options),
-        restore: (): AuthSession | undefined => operations.restore(),
-        isLoggedIn: (): boolean => operations.isLoggedIn(),
-        onChange: (
-            listener,
-            options = {}
-        ): RallarUnsubscribe => operations.onChange(listener, options)
-    };
 }

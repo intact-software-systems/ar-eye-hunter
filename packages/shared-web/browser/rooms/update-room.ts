@@ -2,6 +2,7 @@ import * as api from '@shared-web/browser/api-integration.ts';
 import type { ApiMiddleware } from '@shared-web/browser/app-context.ts';
 import type { RallarScopedOperationOptions } from '@shared-web/browser/rallar-connection-facade.ts';
 import { toRallarWorkflowPolicies, type RallarOperationOptions } from '@shared-web/browser/rallar-operation-options.ts';
+import type { RallarStateSnapshotAcceptanceInput } from '@shared-web/browser/rallar-runtime/state-store.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { toGroupRefFromScope, toStateScope } from '@shared/api/api-type-utils.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
@@ -34,12 +35,7 @@ export interface RunRoomTargetMutationInput {
     ) => T & RallarOperationOptions;
     readonly resolveOperationScope: (scope?: StateScope) => StateScope | undefined;
     readonly runAuthAwareOperation: <T>(operation: () => Promise<T>) => Promise<T>;
-    readonly acceptSnapshots: (
-        context: ApiMiddleware,
-        clients: readonly ClientSnapshot[],
-        groups: readonly GroupSnapshot[],
-        scope?: StateScope
-    ) => Promise<void>;
+    readonly acceptSnapshots: (input: RallarStateSnapshotAcceptanceInput) => Promise<void>;
     readonly execute: (input: RunRoomTargetMutationExecutionInput) => Promise<GroupSnapshot>;
 }
 
@@ -49,6 +45,23 @@ interface RunRoomTargetMutationExecutionInput {
     readonly scope: StateScope;
     readonly policies: CommandsOrchestratorPolicies<StateGroupWorkflowValue>;
     readonly generationId: string;
+}
+
+interface UpdateRoomOperationInput extends Omit<RunRoomTargetMutationInput, 'room' | 'options' | 'execute'> {
+    readonly input: RallarUpdateRoomInput;
+}
+
+interface RoomLifecycleOperationInput extends Omit<RunRoomTargetMutationInput, 'options' | 'execute'> {
+    readonly options?: RallarRoomLifecycleOptions;
+}
+
+interface UpdateRoomMetadataOperationInput extends Omit<RunRoomTargetMutationInput, 'execute'> {
+    readonly room: string | GroupRef;
+    readonly patch: Readonly<Record<string, unknown>>;
+}
+
+interface ChangeRoomLifecycleInput extends RoomLifecycleOperationInput {
+    readonly status: 'archived' | 'deleted';
 }
 
 export async function runRoomTargetMutation(
@@ -70,15 +83,13 @@ export async function runRoomTargetMutation(
             policies: toRallarWorkflowPolicies<StateGroupWorkflowValue>(operationOptions),
             generationId: context.middleware.heartbeat.generationId
         });
-        await input.acceptSnapshots(context, [], [snapshot], scope);
+        await input.acceptSnapshots({ context, clients: [], groups: [snapshot], scope });
         return snapshot;
     });
 }
 
 export async function updateRoom(
-    input: Omit<RunRoomTargetMutationInput, 'room' | 'options' | 'execute'> & {
-        readonly input: RallarUpdateRoomInput;
-    }
+    input: UpdateRoomOperationInput
 ): Promise<GroupSnapshot> {
     const request = toUpdateRoomRequest(input.input);
     return await runRoomTargetMutation({
@@ -98,26 +109,19 @@ export async function updateRoom(
 }
 
 export async function archiveRoom(
-    input: Omit<RunRoomTargetMutationInput, 'options' | 'execute'> & {
-        readonly options?: RallarRoomLifecycleOptions;
-    }
+    input: RoomLifecycleOperationInput
 ): Promise<GroupSnapshot> {
     return await changeRoomLifecycle({ ...input, status: 'archived' });
 }
 
 export async function deleteRoom(
-    input: Omit<RunRoomTargetMutationInput, 'options' | 'execute'> & {
-        readonly options?: RallarRoomLifecycleOptions;
-    }
+    input: RoomLifecycleOperationInput
 ): Promise<GroupSnapshot> {
     return await changeRoomLifecycle({ ...input, status: 'deleted' });
 }
 
 export async function updateRoomMetadata(
-    input: Omit<RunRoomTargetMutationInput, 'execute'> & {
-        readonly room: string | GroupRef;
-        readonly patch: Readonly<Record<string, unknown>>;
-    }
+    input: UpdateRoomMetadataOperationInput
 ): Promise<GroupSnapshot> {
     return await input.runAuthAwareOperation(async () => {
         const operationOptions = input.resolveOperationOptions(input.options);
@@ -140,16 +144,13 @@ export async function updateRoomMetadata(
             scope,
             toRallarWorkflowPolicies(operationOptions)
         );
-        await input.acceptSnapshots(context, [], [snapshot], scope);
+        await input.acceptSnapshots({ context, clients: [], groups: [snapshot], scope });
         return snapshot;
     });
 }
 
 async function changeRoomLifecycle(
-    input: Omit<RunRoomTargetMutationInput, 'options' | 'execute'> & {
-        readonly options?: RallarRoomLifecycleOptions;
-        readonly status: 'archived' | 'deleted';
-    }
+    input: ChangeRoomLifecycleInput
 ): Promise<GroupSnapshot> {
     const options = input.options ?? {};
     const request = options.reason === undefined ? {} : { reason: options.reason };

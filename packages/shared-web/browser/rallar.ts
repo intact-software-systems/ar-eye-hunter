@@ -1,14 +1,13 @@
 import type { RallarFacade } from '@shared-web/browser/rallar-facade-contract.ts';
-import { createBrowserRallarFacade } from '@shared-web/browser/rallar-runtime/compose.ts';
+import { createBrowserRallarFacade } from '@shared-web/browser/rallar-runtime/composition.ts';
 
 export {
+    createDefaultRallarDataFacade,
     createRallarDataFacade,
     defineRallarDataStore
 } from '@shared-web/browser/rallar-data.ts';
 
-export {
-    createRallarCrdtFacade
-} from '@shared-web/browser/rallar-crdt.ts';
+export { createRallarCrdtFacade } from '@shared-web/browser/rallar-crdt.ts';
 
 export {
     matchesRallarMessageSelector,
@@ -30,6 +29,7 @@ export type {
 } from '@shared-web/browser/rallar-crdt.ts';
 
 export type {
+    CreateRallarDataFacadeInput,
     RallarDataChangeEvent,
     RallarDataChangeListener,
     RallarDataDurability,
@@ -50,15 +50,14 @@ export type {
 } from '@shared-web/browser/rallar-message-selectors.ts';
 
 export type {
-    RallarStatsFacade,
-    RallarStatsGroupInput,
-    RallarStatsReadOptions
-} from '@shared-web/browser/rallar-stats-facade.ts';
-
-export type {
     RallarOperationOptions,
     RallarOperationRetryPredicate
 } from '@shared-web/browser/rallar-operation-options.ts';
+
+export type {
+    CommandsOrchestrator,
+    CommandsOrchestratorPolicies
+} from '@shared/cache/CommandsOrchestrator.ts';
 
 export type {
     RallarNormalizedReadinessExpectation,
@@ -68,6 +67,7 @@ export type {
 } from '@shared-web/browser/readiness.ts';
 
 export type {
+    RallarAdvancedFacade,
     RallarAuthChangeListener,
     RallarAuthChangeReason,
     RallarAuthState,
@@ -88,8 +88,8 @@ export type {
     RallarCallStartInput,
     RallarCallState,
     RallarCallStatus,
-    RallarCallWaitOptions,
     RallarCameraSourceStartOptions,
+    RallarChannelsFacade,
     RallarConnectStatus,
     RallarCreateRoomInput,
     RallarDefaults,
@@ -100,15 +100,12 @@ export type {
     RallarDirectorRelayMessage,
     RallarDirectorRelaySendResult,
     RallarDirectorRelaySendStatus,
-    RallarDirectorResignOptions,
     RallarDirectorRole,
     RallarDirectorState,
     RallarDirectorStatus,
     RallarDirectorStatusListener,
     RallarDirectorStatusOptions,
     RallarFacade,
-    RallarFlow,
-    RallarFlowPolicies,
     RallarIncomingCallInvite,
     RallarJoinRoomInput,
     RallarJoinRoomOptions,
@@ -128,39 +125,34 @@ export type {
     RallarMessageLane,
     RallarMessageSendBase,
     RallarMessageSendResult,
-    RallarMessageSendStatus,
     RallarMessageTransport,
     RallarMicrophoneSourceStartOptions,
     RallarOnChangeOptions,
-    RallarPeopleEventListener,
     RallarPeopleEventOptions,
     RallarPeopleState,
     RallarPerson,
+    RallarProductFacade,
     RallarRealtimeBinarySendInput,
     RallarRealtimeHandler,
     RallarRealtimeHealthOptions,
     RallarRealtimeJsonLane,
-    RallarRealtimeJsonLaneDefaults,
     RallarRealtimeJsonLaneSendOptions,
     RallarRealtimeJsonSendInput,
     RallarRealtimeLaneHealth,
     RallarRealtimeMessage,
     RallarRealtimeSendOptions,
     RallarRealtimeSendResult,
-    RallarRefreshOptions,
     RallarRegisterOptions,
     RallarRemoteStream,
     RallarReplayEventsResult,
     RallarReplayPeopleEventsOptions,
     RallarReplayRoomEventsInput,
     RallarReplayRoomEventsOptions,
-    RallarRoomEventListener,
     RallarRoomEventOptions,
     RallarRoomGovernanceOptions,
     RallarRoomInviteOptions,
     RallarRoomLifecycleOptions,
     RallarRoomMember,
-    RallarRoomMessageChannel,
     RallarRoomMessageChannelDefinition,
     RallarRoomPresenceWaitOptions,
     RallarRoomPresenceWaitResult,
@@ -208,6 +200,7 @@ export type {
     RallarRtcWaitForOpenResult,
     RallarScopedOperationOptions,
     RallarScreenSourceStartOptions,
+    RallarSetRoomMemberRoleInput,
     RallarSetupInput,
     RallarStartOptions,
     RallarStartResult,
@@ -232,6 +225,7 @@ export type {
     RallarUpdateRoomInput,
     RallarWaitForOpenOptions,
     RallarWaitForOpenStatus,
+    RallarWsFacade,
     RallarWsLifecycleEvent,
     RallarWsLifecycleKind,
     RallarWsLifecycleListener,
@@ -239,7 +233,6 @@ export type {
     RallarWsSendInput,
     RallarWsStatus,
     RallarWsStatusListener,
-    RallarWsStatusSubscriptionOptions,
     RallarWsWaitForOpenResult
 } from '@shared-web/browser/rallar-facade-contract.ts';
 

@@ -1,9 +1,13 @@
 import type { ApiMiddleware } from '@shared-web/browser/app-context.ts';
 import * as stateCaches from '@shared-web/browser/data-caches.ts';
-import type { RallarPeopleState, RallarPerson } from '@shared-web/browser/rallar-people-facade.ts';
-import type { RallarStatePort, RallarStateRuntimePort } from '@shared-web/browser/rallar-runtime/contracts.ts';
+import type { RallarPeopleState, RallarPerson } from '@shared-web/browser/rallar-people-contracts.ts';
+import type { RallarStateRuntimePort } from '@shared-web/browser/rallar-runtime-context.ts';
 import { notifyListener } from '@shared-web/browser/rallar-runtime/subscriptions.ts';
-import type { RallarStateListener, RallarUnsubscribe } from '@shared-web/browser/rallar-shared-contracts.ts';
+import type {
+    RallarOnChangeOptions,
+    RallarStateListener,
+    RallarUnsubscribe
+} from '@shared-web/browser/rallar-shared-contracts.ts';
 import type { RallarRoomStateStorePort } from '@shared-web/browser/rooms/room-state-store.ts';
 import type { AuthSession, ClientInfo } from '@shared/api/api-config.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
@@ -13,27 +17,68 @@ import { DEFAULT_STATE_WORKSPACE_ID, type StateScope } from '@shared/api/state-t
 import * as clientStateSnapshotsRepository from '@shared/repository/client-state-snapshots-repository.ts';
 import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
 
-export interface CreateRallarStateStoreInput {
-    readonly runtime: RallarStateRuntimePort;
-    readonly roomStateStore: RallarRoomStateStorePort;
-    readonly readSession: () => AuthSession | undefined;
-    readonly readGroupSnapshots?: () => readonly GroupSnapshot[];
-    readonly findGroupSnapshotByRef?: (roomRef: GroupRef) => GroupSnapshot | undefined;
-    readonly findFirstGroupRefForSession?: (sessionId: string) => GroupRef | undefined;
-    readonly readClientSnapshots?: () => readonly ClientSnapshot[];
-    readonly findClientSnapshot?: (principalId: string) => ClientSnapshot | undefined;
+interface BrowserStateScopeValue extends Pick<StateScope, 'applicationId'> {
+    readonly workspaceId?: string;
 }
 
-export function createRallarStateStore(input: CreateRallarStateStoreInput): RallarStatePort {
-    return new RallarStateStore(input);
+export interface RallarStateCacheReadPort {
+    onCacheChange(listener: () => void | Promise<void>): RallarUnsubscribe;
+    readGroupSnapshots(): readonly GroupSnapshot[];
+    findGroupSnapshotByRef(roomRef: GroupRef): GroupSnapshot | undefined;
+    findFirstGroupRefForSession(sessionId: string): GroupRef | undefined;
+    readClientSnapshots(): readonly ClientSnapshot[];
+    findClientSnapshot(principalId: string): ClientSnapshot | undefined;
 }
 
-class RallarStateStore implements RallarStatePort {
+export interface RallarStateSnapshotAcceptanceInput {
+    readonly context: ApiMiddleware;
+    readonly clients: readonly ClientSnapshot[];
+    readonly groups: readonly GroupSnapshot[];
+    readonly scope?: StateScope;
+}
+
+export interface RallarStatePort {
+    attachCache(): void;
+    detachCache(): void;
+    acceptSnapshots(input: RallarStateSnapshotAcceptanceInput): Promise<void>;
+    emit(): void;
+    onAfterEmit(listener: () => void): RallarUnsubscribe;
+    peopleState(): RallarPeopleState;
+    person(principalId: string): RallarPerson | undefined;
+    onPeopleChange(
+        listener: RallarStateListener<RallarPeopleState>,
+        options?: RallarOnChangeOptions
+    ): RallarUnsubscribe;
+}
+
+export function createRallarStateCacheReadPort(): RallarStateCacheReadPort {
+    return {
+        onCacheChange: (listener) => stateCaches.onStateCacheChange(listener),
+        readGroupSnapshots: () => groupStateSnapshotsRepository.getAllGroupStateSnapshots(),
+        findGroupSnapshotByRef: (roomRef) => groupStateSnapshotsRepository.findGroupStateSnapshotByRef(roomRef),
+        findFirstGroupRefForSession: (sessionId) =>
+            groupStateSnapshotsRepository.findFirstGroupStateSnapshotRefSessionIdIsIn(sessionId),
+        readClientSnapshots: () => clientStateSnapshotsRepository.getAllClientStateSnapshots(),
+        findClientSnapshot: (principalId) =>
+            clientStateSnapshotsRepository.findClientStateSnapshotByPrincipalId(principalId)
+    };
+}
+
+export namespace RallarStateStore {
+    export interface Input {
+        readonly runtime: RallarStateRuntimePort;
+        readonly roomStateStore: RallarRoomStateStorePort;
+        readonly readSession: () => AuthSession | undefined;
+        readonly stateCache: RallarStateCacheReadPort;
+    }
+}
+
+export class RallarStateStore implements RallarStatePort {
     readonly #peopleStateListeners = new Set<RallarStateListener<RallarPeopleState>>();
     readonly #afterEmitListeners = new Set<() => void>();
-    readonly #input: CreateRallarStateStoreInput;
+    readonly #input: RallarStateStore.Input;
 
-    constructor(input: CreateRallarStateStoreInput) {
+    constructor(input: RallarStateStore.Input) {
         this.#input = input;
     }
 
@@ -50,22 +95,13 @@ class RallarStateStore implements RallarStatePort {
         this.#input.runtime.setStateCacheUnsubscribe(undefined);
     }
 
-    onCacheChange(listener: () => void | Promise<void>): RallarUnsubscribe {
-        return stateCaches.onStateCacheChange(listener);
-    }
-
-    async acceptSnapshots(
-        context: ApiMiddleware,
-        clients: readonly ClientSnapshot[],
-        groups: readonly GroupSnapshot[],
-        scope?: StateScope
-    ): Promise<void> {
+    async acceptSnapshots(input: RallarStateSnapshotAcceptanceInput): Promise<void> {
         await stateCaches.hydrateStateCaches(
-            context.middleware.webRtcGroupManager,
-            toClientInfo(context.session),
-            clients,
-            groups,
-            { scope }
+            input.context.middleware.webRtcGroupManager,
+            toClientInfo(input.context.session),
+            input.clients,
+            input.groups,
+            { scope: input.scope }
         );
         this.emit();
     }
@@ -87,8 +123,6 @@ class RallarStateStore implements RallarStatePort {
         return () => this.#afterEmitListeners.delete(listener);
     }
 
-    roomState = (): ReturnType<RallarRoomStateStorePort['state']> => this.#input.roomStateStore.state();
-
     peopleState(): RallarPeopleState {
         const clients = this.readClientSnapshots().sort((left, right) =>
             toPersonName(left).localeCompare(toPersonName(right))
@@ -101,12 +135,9 @@ class RallarStateStore implements RallarStatePort {
         return snapshot ? toPerson(snapshot) : undefined;
     }
 
-    onRoomChange = (...args: Parameters<RallarRoomStateStorePort['onChange']>): RallarUnsubscribe =>
-        this.#input.roomStateStore.onChange(...args);
-
     onPeopleChange(
         listener: RallarStateListener<RallarPeopleState>,
-        options: Readonly<{ emitCurrent?: boolean; }> = {}
+        options: RallarOnChangeOptions = {}
     ): RallarUnsubscribe {
         this.#peopleStateListeners.add(listener);
         if (options.emitCurrent ?? true) {
@@ -115,87 +146,19 @@ class RallarStateStore implements RallarStatePort {
         return () => this.#peopleStateListeners.delete(listener);
     }
 
-    resolveCurrentRoomRef = (): GroupRef | undefined => this.#input.roomStateStore.resolveCurrentRoomRef();
-
-    readGroupSnapshots = (): GroupSnapshot[] => this.#input.roomStateStore.readGroupSnapshots();
-
-    findGroupSnapshot = (room: string | GroupRef | undefined): GroupSnapshot | undefined =>
-        this.#input.roomStateStore.findGroupSnapshot(room);
-
-    resolveRoomMinSnapshotVersion = (
-        room: string | GroupRef | undefined,
-        explicitMinSnapshotVersion?: number
-    ): number | undefined => this.#input.roomStateStore.resolveRoomMinSnapshotVersion(room, explicitMinSnapshotVersion);
-
-    setCurrentRoom = (snapshot: GroupSnapshot): void => this.#input.roomStateStore.setCurrentRoom(snapshot);
-
-    clearCurrentRoomIfMatches = (room: string | GroupRef, clearCurrent: boolean): void =>
-        this.#input.roomStateStore.clearCurrentRoomIfMatches(room, clearCurrent);
-
-    toRoomId = (room: string | GroupRef | undefined): string | undefined => this.#input.roomStateStore.toRoomId(room);
-
-    resolveRoomRef = (room: string | GroupRef | undefined): GroupRef | undefined =>
-        this.#input.roomStateStore.resolveRoomRef(room);
-
-    resolveGroupRefFromRoomId = (roomId: string, scope?: StateScope): GroupRef | undefined =>
-        this.#input.roomStateStore.resolveGroupRefFromRoomId(roomId, scope);
-
-    readCachedGroupSnapshots(): readonly GroupSnapshot[] {
-        return this.#input.readGroupSnapshots
-            ? this.#input.readGroupSnapshots()
-            : readRallarCacheOrDefault(
-                () => groupStateSnapshotsRepository.getAllGroupStateSnapshots(),
-                []
-            );
-    }
-
-    findCachedGroupSnapshotByRef(roomRef: GroupRef): GroupSnapshot | undefined {
-        return this.#input.findGroupSnapshotByRef
-            ? this.#input.findGroupSnapshotByRef(roomRef)
-            : readRallarCacheOrDefault(
-                () => groupStateSnapshotsRepository.findGroupStateSnapshotByRef(roomRef),
-                undefined
-            );
-    }
-
-    findFirstCachedGroupRefForSession(sessionId: string): GroupRef | undefined {
-        return this.#input.findFirstGroupRefForSession
-            ? this.#input.findFirstGroupRefForSession(sessionId)
-            : readRallarCacheOrDefault(
-                () => groupStateSnapshotsRepository.findFirstGroupStateSnapshotRefSessionIdIsIn(sessionId),
-                undefined
-            );
-    }
-
-    readCachedClientSnapshots(): readonly ClientSnapshot[] {
-        return this.#input.readClientSnapshots
-            ? this.#input.readClientSnapshots()
-            : readRallarCacheOrDefault(
-                () => clientStateSnapshotsRepository.getAllClientStateSnapshots(),
-                []
-            );
-    }
-
-    findCachedClientSnapshot(principalId: string): ClientSnapshot | undefined {
-        return this.#input.findClientSnapshot
-            ? this.#input.findClientSnapshot(principalId)
-            : readRallarCacheOrDefault(
-                () => clientStateSnapshotsRepository.findClientStateSnapshotByPrincipalId(principalId),
-                undefined
-            );
-    }
-
     private readClientSnapshots(): ClientSnapshot[] {
-        return [...this.readCachedClientSnapshots()].filter((snapshot) => this.isInDefaultScope(snapshot.principal));
+        return [...this.#input.stateCache.readClientSnapshots()].filter((snapshot) =>
+            this.isInDefaultScope(snapshot.principal)
+        );
     }
 
     private findClientSnapshot(principalId: string): ClientSnapshot | undefined {
-        const snapshot = this.findCachedClientSnapshot(principalId);
+        const snapshot = this.#input.stateCache.findClientSnapshot(principalId);
         return snapshot && this.isInDefaultScope(snapshot.principal) ? snapshot : undefined;
     }
 
     private isInDefaultScope(
-        value: Pick<StateScope, 'applicationId'> & { workspaceId?: string; }
+        value: BrowserStateScopeValue
     ): boolean {
         return isSameStateScopeValue(value, this.#input.runtime.readDefaultScope());
     }
@@ -227,28 +190,8 @@ function toPersonName(snapshot: ClientSnapshot): string {
     );
 }
 
-function readRallarCacheOrDefault<T>(supplier: () => T, fallback: T): T {
-    try {
-        return supplier();
-    }
-    catch (error) {
-        if (isUnconfiguredRallarCacheError(error)) {
-            return fallback;
-        }
-        throw error;
-    }
-}
-
-function isUnconfiguredRallarCacheError(error: unknown): boolean {
-    const message = error instanceof Error ? error.message : String(error);
-    return (
-        message.includes('Repository not found: shared.repository.') ||
-        message.includes('snapshot repository is not configured')
-    );
-}
-
 function isSameStateScopeValue(
-    value: Pick<StateScope, 'applicationId'> & { workspaceId?: string; },
+    value: BrowserStateScopeValue,
     scope?: StateScope
 ): boolean {
     if (!scope) {

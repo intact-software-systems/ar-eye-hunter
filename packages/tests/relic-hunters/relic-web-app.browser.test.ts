@@ -10,12 +10,13 @@ import {
     type RelicGameState,
     type RelicPublicSnapshot
 } from '@relic-hunters/mod.ts';
-import type { RallarWsSendInput } from '@shared-web/browser/rallar-messages-facade.ts';
+import type { RallarWsSendInput } from '@shared-web/browser/rallar-message-contracts.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { clearSession, writeSession } from '@shared/api/auth.ts';
 import { act, createElement, type ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { createTimedOutRoundSnapshots } from './relic-timeout-snapshot-fixture.ts';
 
 const rallarMock = vi.hoisted(() => ({
     session: undefined as AuthSession | undefined,
@@ -46,7 +47,11 @@ const rallarMock = vi.hoisted(() => ({
 }));
 
 const soundMock = vi.hoisted(() => ({
-    startAmbientSound: vi.fn(() => true),
+    ambientStartCount: 0,
+    startAmbientSound: vi.fn(() => {
+        soundMock.ambientStartCount += 1;
+        return true;
+    }),
     stopAmbientSound: vi.fn(),
     isAmbientSoundPlaying: vi.fn(() => false),
     playActionSound: vi.fn(),
@@ -238,6 +243,7 @@ describe('Relic Hunters browser app', () => {
         vi.unstubAllGlobals();
         installMemoryLocalStorage();
         vi.clearAllMocks();
+        soundMock.ambientStartCount = 0;
         rallarMock.session = session();
         rallarMock.roomState = roomState(1);
         rallarMock.connectCalls = 0;
@@ -286,7 +292,7 @@ describe('Relic Hunters browser app', () => {
             atmosphereButtons()[0].dispatchEvent(new MouseEvent('click', { bubbles: true }));
         });
 
-        expect(soundMock.startAmbientSound).toHaveBeenCalledTimes(1);
+        expect(soundMock.ambientStartCount).toBe(1);
     });
 
     it('updates the visible expedition when a Rallar WebSocket snapshot event arrives', async () => {
@@ -493,7 +499,7 @@ describe('Relic Hunters browser app', () => {
     });
 
     it('repairs a timed-out force-resolved round from authoritative snapshot polling', async () => {
-        const { timedOut, resolved } = timedOutRoundSnapshots();
+        const { timedOut, resolved } = createTimedOutRoundSnapshots();
         writeSession(session());
         rallarMock.roomState = roomState(2);
         const fetchMock = stubSnapshotFetchSequence(timedOut, resolved);
@@ -744,69 +750,6 @@ function generatedSnapshotWithPlayers(): RelicPublicSnapshot {
     }).state;
 
     return toPublicRelicSnapshot(state);
-}
-
-function timedOutRoundSnapshots(): Readonly<{
-    timedOut: RelicPublicSnapshot;
-    resolved: RelicPublicSnapshot;
-}> {
-    const now = Date.now();
-    const roundStartedAt = now - 90_000;
-    let state: RelicGameState = createRelicGame('room-1', 'room-1', roundStartedAt - 5);
-    state = applyRelicCommand(state, {
-        protocolVersion: RELIC_PROTOCOL_VERSION,
-        kind: 'join-expedition',
-        gameId: 'room-1',
-        username: 'Alice',
-        characterId: 'kael-ironstride'
-    }, {
-        senderId: 'alice-session',
-        now: () => roundStartedAt - 4
-    }).state;
-    state = applyRelicCommand(state, {
-        protocolVersion: RELIC_PROTOCOL_VERSION,
-        kind: 'join-expedition',
-        gameId: 'room-1',
-        username: 'Bob',
-        characterId: 'nyra-vale'
-    }, {
-        senderId: 'bob-session',
-        now: () => roundStartedAt - 3
-    }).state;
-    state = applyRelicCommand(state, {
-        protocolVersion: RELIC_PROTOCOL_VERSION,
-        kind: 'start-expedition',
-        gameId: 'room-1',
-        username: 'Alice'
-    }, {
-        senderId: 'alice-session',
-        now: () => roundStartedAt
-    }).state;
-    state = applyRelicCommand(state, {
-        protocolVersion: RELIC_PROTOCOL_VERSION,
-        kind: 'submit-action',
-        gameId: 'room-1',
-        username: 'Alice',
-        action: { kind: 'move', targetRoomId: 'hallway' }
-    }, {
-        senderId: 'alice-session',
-        now: () => roundStartedAt + 1
-    }).state;
-
-    const timedOut = toPublicRelicSnapshot(state);
-    const resolved = toPublicRelicSnapshot(
-        applyRelicCommand(state, {
-            protocolVersion: RELIC_PROTOCOL_VERSION,
-            kind: 'force-resolve-round',
-            gameId: 'room-1',
-            username: 'Alice'
-        }, {
-            senderId: 'alice-session',
-            now: () => now
-        }).state
-    );
-
-    return { timedOut, resolved };
 }
 
 async function waitFor(assertion: () => boolean, attempts = 20): Promise<void> {

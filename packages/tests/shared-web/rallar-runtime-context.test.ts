@@ -1,12 +1,12 @@
-import type { ApiMiddleware } from '@shared-web/browser/app-context.ts';
-import { createRallarBrowserFacadeRuntimeContext, type RallarBrowserRuntimeDefaults } from '@shared-web/browser/rallar-runtime-context.ts';
+import { BrowserTransportRuntime } from '@shared-web/browser/connection/browser-transport-runtime.ts';
+import type { RallarDefaults } from '@shared-web/browser/rallar-connection-facade.ts';
+import { BrowserFacadeRuntimeState } from '@shared-web/browser/rallar-runtime-context.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import type { RtcDataChannelLaneConfig } from '@shared/services/WebRtcConnectionService.ts';
 import { describe, expect, it, vi } from 'vitest';
-import { createApiMiddlewareTestDouble } from './api-middleware-test-double.ts';
 import { createGroupSnapshotFixture } from './authoritative-group-fixtures.ts';
 
-type RoomDefaults = NonNullable<RallarBrowserRuntimeDefaults['room']>;
+type RoomDefaults = NonNullable<RallarDefaults['room']>;
 
 type MutableRoomDefaults = {
     -readonly [K in keyof RoomDefaults]: RoomDefaults[K];
@@ -19,7 +19,7 @@ describe('Rallar browser facade runtime context', () => {
         const lanes: readonly RtcDataChannelLaneConfig[] = [
             { id: 'motion', label: 'rtc-motion' }
         ];
-        const context = createRallarBrowserFacadeRuntimeContext();
+        const context = new BrowserFacadeRuntimeState(new BrowserTransportRuntime());
 
         context.setDefaults({
             applicationId: 'app-1',
@@ -90,8 +90,8 @@ describe('Rallar browser facade runtime context', () => {
     });
 
     it('keeps current room and connection state isolated per context', () => {
-        const first = createRallarBrowserFacadeRuntimeContext();
-        const second = createRallarBrowserFacadeRuntimeContext();
+        const first = new BrowserFacadeRuntimeState(new BrowserTransportRuntime());
+        const second = new BrowserFacadeRuntimeState(new BrowserTransportRuntime());
 
         first.setCurrentRoom(createGroupSnapshot('room-1'));
         first.setConnectState('connected');
@@ -109,23 +109,13 @@ describe('Rallar browser facade runtime context', () => {
         expect(second.readConnectState()).toBe('idle');
     });
 
-    it('reads middleware lazily and reports missing middleware through require', () => {
-        const middleware = createMiddleware('session-1');
-        let ready = false;
-        const context = createRallarBrowserFacadeRuntimeContext({
-            isMiddlewareReady: () => ready,
-            getMiddleware: () => middleware
-        });
+    it('reports missing middleware through its transport runtime', () => {
+        const context = new BrowserFacadeRuntimeState(new BrowserTransportRuntime());
 
         expect(context.readMiddleware()).toBeUndefined();
         expect(() => context.requireMiddleware()).toThrow(
             'Rallar is not connected. Call rallar.connect() first.'
         );
-
-        ready = true;
-
-        expect(context.readMiddleware()).toBe(middleware);
-        expect(context.requireMiddleware()).toBe(middleware);
     });
 });
 
@@ -144,16 +134,4 @@ function createGroupSnapshot(groupId: string): GroupSnapshot {
             metadataVersion: 1
         }
     };
-}
-
-function createMiddleware(sessionId: string): ApiMiddleware {
-    return createApiMiddlewareTestDouble({
-        session: {
-            clientId: 'client-1',
-            sessionId,
-            username: 'user-1',
-            accessToken: 'token-1',
-            expiresAtEpochMs: Date.now() + 60_000
-        }
-    });
 }

@@ -9,11 +9,20 @@ describe('room event history compatibility', () => {
         const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
         const mocks = readRoomEventMocks();
         const facade = createRallarFacade();
-        const event = createRoomEvent('room-1', 'event-1', 'member-joined', {
+        const event = createRoomEvent({
+            groupId: 'room-1',
+            eventId: 'event-1',
+            eventType: 'member-joined',
             applicationId: 'room-app',
             workspaceId: 'room-workspace'
         });
         mocks.listStateGroupEvents.mockResolvedValue([event]);
+        mocks.initMiddleware.mockRejectedValue(
+            new Error('Room history reads must not initialize middleware')
+        );
+        mocks.hydrateStateCaches.mockRejectedValue(
+            new Error('Room history reads must not hydrate state')
+        );
 
         await expect(
             facade.rooms.listEvents({
@@ -28,8 +37,6 @@ describe('room event history compatibility', () => {
             })
         ).resolves.toEqual([event]);
 
-        expect(mocks.initMiddleware).not.toHaveBeenCalled();
-        expect(mocks.hydrateStateCaches).not.toHaveBeenCalled();
         expect(mocks.listStateGroupEvents).toHaveBeenCalledWith(
             'room-1',
             { applicationId: 'room-app', workspaceId: 'room-workspace' },
@@ -45,16 +52,18 @@ describe('room event history compatibility', () => {
         const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
         const mocks = readRoomEventMocks();
         const facade = createRallarFacade();
-        const event = createRoomEvent('room-1', 'event-1', 'member-joined');
+        const event = createRoomEvent({ groupId: 'room-1', eventId: 'event-1', eventType: 'member-joined' });
         facade.setDefaults({
             applicationId: 'default-app',
             workspaceId: 'default-workspace'
         });
         mocks.listStateGroupEvents.mockResolvedValue([event]);
+        mocks.initMiddleware.mockRejectedValue(
+            new Error('Room history reads must not initialize middleware')
+        );
 
         await expect(facade.rooms.listEvents('room-1')).resolves.toEqual([event]);
 
-        expect(mocks.initMiddleware).not.toHaveBeenCalled();
         expect(mocks.listStateGroupEvents).toHaveBeenCalledWith(
             'room-1',
             { applicationId: 'default-app', workspaceId: 'default-workspace' },
@@ -66,7 +75,10 @@ describe('room event history compatibility', () => {
         const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
         const mocks = readRoomEventMocks();
         const facade = createRallarFacade();
-        const event = createRoomEvent('room-1', 'event-2', 'member-left', {
+        const event = createRoomEvent({
+            groupId: 'room-1',
+            eventId: 'event-2',
+            eventType: 'member-left',
             snapshotVersion: 2,
             occurredAtEpochMs: 2_000
         });
@@ -81,6 +93,12 @@ describe('room event history compatibility', () => {
             workspaceId: 'default-workspace'
         });
         mocks.listStateGroupEventPage.mockResolvedValue(page);
+        mocks.initMiddleware.mockRejectedValue(
+            new Error('Room history reads must not initialize middleware')
+        );
+        mocks.hydrateStateCaches.mockRejectedValue(
+            new Error('Room history reads must not hydrate state')
+        );
 
         await expect(
             facade.rooms.listEventPage({
@@ -99,8 +117,6 @@ describe('room event history compatibility', () => {
             hasMore: false
         });
 
-        expect(mocks.initMiddleware).not.toHaveBeenCalled();
-        expect(mocks.hydrateStateCaches).not.toHaveBeenCalled();
         expect(mocks.listStateGroupEventPage).toHaveBeenCalledWith(
             'room-1',
             { applicationId: 'default-app', workspaceId: 'default-workspace' },

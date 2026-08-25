@@ -7,6 +7,8 @@ import {
     runDirectRallarWsSubscribe,
     type DirectRallarFacade
 } from '../../../apps/rallar-black-box/src/direct-rallar-operations.ts';
+import type { RallarMessagePayload } from '../../../packages/shared-web/browser/rallar-message-contracts.ts';
+import type { RallarMessage, RallarMessageHandler, RallarMessageSendResult } from '../../../packages/shared-web/browser/rallar.ts';
 import type { AuthSession } from '../../../packages/shared/api/api-config.ts';
 
 const session: AuthSession = {
@@ -75,6 +77,42 @@ describe('direct Rallar operations', () => {
         expect(result.events.at(-1)?.topic).toBe('rallar.direct.ws.send.failed');
     });
 
+    it.each([
+        ['undefined', undefined],
+        ['function', () => undefined],
+        ['symbol', Symbol('unsupported')],
+        ['bigint', BigInt(1)]
+    ])('rejects an unsupported %s WS payload before loading the facade', async (_label, payload) => {
+        let loadCalled = false;
+
+        const result = await runDirectRallarWsSend(
+            {
+                providerMode: 'browser-rallar',
+                apiBaseUrl: 'http://localhost:8080',
+                applicationId: 'app-1',
+                workspaceId: 'workspace-1',
+                roomId: 'bb-group',
+                actor: 'alice',
+                authSession: session
+            },
+            {
+                scope: 'room',
+                typeId: 'manual.message',
+                topicId: 'room.manual.message',
+                payload
+            },
+            async () => {
+                loadCalled = true;
+                throw new Error('should not load facade');
+            }
+        );
+
+        expect(loadCalled).toBe(false);
+        expect(result.status).toBe('failed');
+        expect(result.error?.message).toContain('object, array, string, number, boolean, or null');
+        expect(result.events.at(-1)?.topic).toBe('rallar.direct.ws.send.failed');
+    });
+
     it('rejects invalid direct room ids before loading the facade', async () => {
         let loadCalled = false;
 
@@ -137,12 +175,18 @@ describe('direct Rallar operations', () => {
             },
             rooms: {
                 current() {
-                    return {
-                        groupId: 'bb-group'
-                    };
+                    return toTestDouble<NonNullable<ReturnType<DirectRallarFacade['rooms']['current']>>>({
+                        group: toTestDouble<NonNullable<ReturnType<DirectRallarFacade['rooms']['current']>>['group']>({
+                            groupId: 'bb-group'
+                        })
+                    });
                 },
                 list() {
-                    return [{ groupId: 'bb-group' }];
+                    return [
+                        toTestDouble<ReturnType<DirectRallarFacade['rooms']['list']>[number]>({
+                            roomId: 'bb-group'
+                        })
+                    ];
                 },
                 async create() {
                     throw new Error('unused');
@@ -153,7 +197,11 @@ describe('direct Rallar operations', () => {
             },
             people: {
                 list() {
-                    return [{ principalId: 'alice-client' }];
+                    return [
+                        toTestDouble<ReturnType<DirectRallarFacade['people']['list']>[number]>({
+                            principalId: 'alice-client'
+                        })
+                    ];
                 }
             },
             messages: {
@@ -168,16 +216,16 @@ describe('direct Rallar operations', () => {
             },
             ws: {
                 status() {
-                    return {
+                    return toTestDouble<ReturnType<DirectRallarFacade['ws']['status']>>({
                         readyState: 'open'
-                    };
+                    });
                 }
             },
             rtc: {
                 status() {
-                    return {
+                    return toTestDouble<ReturnType<DirectRallarFacade['rtc']['status']>>({
                         readyPeerIds: ['bob-session']
-                    };
+                    });
                 }
             }
         };
@@ -228,6 +276,9 @@ describe('direct Rallar operations', () => {
             setDefaults(defaults) {
                 calls.push(`defaults:${String(defaults?.applicationId)}`);
             },
+            defaults() {
+                return undefined;
+            },
             async start() {
                 calls.push('start');
                 return {
@@ -257,22 +308,28 @@ describe('direct Rallar operations', () => {
                     return [];
                 },
                 async create(input) {
-                    const record = input as Record<string, unknown>;
-                    calls.push(`create:${String(record.groupId)}:${String(record.displayName)}`);
-                    return {
-                        group: {
-                            groupId: record.groupId,
-                            displayName: record.displayName
-                        }
-                    };
+                    const groupId = typeof input === 'string' ? input : input.groupId ?? input.displayName;
+                    const displayName = typeof input === 'string' ? input : input.displayName;
+                    calls.push(`create:${groupId}:${displayName}`);
+                    return toTestDouble<Awaited<ReturnType<DirectRallarFacade['rooms']['create']>>>({
+                        group: toTestDouble<Awaited<ReturnType<DirectRallarFacade['rooms']['create']>>['group']>({
+                            groupId,
+                            displayName
+                        })
+                    });
                 },
-                async join(roomId) {
+                async join(room) {
+                    const roomId = typeof room === 'string'
+                        ? room
+                        : 'groupId' in room
+                        ? room.groupId
+                        : room.roomId ?? 'missing-room';
                     calls.push(`join:${roomId}`);
-                    return {
-                        group: {
+                    return toTestDouble<Awaited<ReturnType<DirectRallarFacade['rooms']['join']>>>({
+                        group: toTestDouble<Awaited<ReturnType<DirectRallarFacade['rooms']['join']>>['group']>({
                             groupId: roomId
-                        }
-                    };
+                        })
+                    });
                 }
             },
             people: {
@@ -292,14 +349,14 @@ describe('direct Rallar operations', () => {
             },
             ws: {
                 status() {
-                    return {
+                    return toTestDouble<ReturnType<DirectRallarFacade['ws']['status']>>({
                         readyState: 'open'
-                    };
+                    });
                 }
             },
             rtc: {
                 status() {
-                    return {};
+                    return toTestDouble<ReturnType<DirectRallarFacade['rtc']['status']>>({});
                 }
             }
         };
@@ -344,13 +401,16 @@ describe('direct Rallar operations', () => {
 
     it('subscribes and sends WS messages through direct Rallar operations', async () => {
         const calls: string[] = [];
-        let subscribedHandler: ((message: Record<string, unknown>) => void | Promise<void>) | undefined;
+        let subscribedHandler: RallarMessageHandler<RallarMessagePayload> | undefined;
         const facade: DirectRallarFacade = {
             configure(config) {
                 calls.push(`configure:${config.apiBaseUrl}`);
             },
             setDefaults(defaults) {
                 calls.push(`defaults:${String(defaults?.applicationId)}`);
+            },
+            defaults() {
+                return undefined;
             },
             async start() {
                 calls.push('start');
@@ -383,13 +443,18 @@ describe('direct Rallar operations', () => {
                 async create() {
                     throw new Error('unused');
                 },
-                async join(roomId) {
+                async join(room) {
+                    const roomId = typeof room === 'string'
+                        ? room
+                        : 'groupId' in room
+                        ? room.groupId
+                        : room.roomId ?? 'missing-room';
                     calls.push(`join:${roomId}`);
-                    return {
-                        group: {
+                    return toTestDouble<Awaited<ReturnType<DirectRallarFacade['rooms']['join']>>>({
+                        group: toTestDouble<Awaited<ReturnType<DirectRallarFacade['rooms']['join']>>['group']>({
                             groupId: roomId
-                        }
-                    };
+                        })
+                    });
                 }
             },
             people: {
@@ -401,13 +466,18 @@ describe('direct Rallar operations', () => {
                 ws: {
                     async send(input) {
                         calls.push(`send:${String(input.roomId)}:${String(input.typeId)}`);
-                        return {
+                        return toTestDouble<RallarMessageSendResult>({
+                            transport: 'ws',
                             status: 'enqueued',
-                            message: input
-                        };
+                            message: toTestDouble<RallarMessageSendResult['message']>({}),
+                            entries: []
+                        });
                     },
                     onMessage(selector, handler) {
-                        calls.push(`subscribe:${String(selector.topicId)}:${String(selector.typeId)}`);
+                        const selectorLabel = typeof selector === 'string'
+                            ? selector
+                            : `${String(selector.topicId)}:${String(selector.typeId)}`;
+                        calls.push(`subscribe:${selectorLabel}`);
                         subscribedHandler = handler;
                         return () => calls.push('unsubscribe');
                     }
@@ -415,14 +485,14 @@ describe('direct Rallar operations', () => {
             },
             ws: {
                 status() {
-                    return {
+                    return toTestDouble<ReturnType<DirectRallarFacade['ws']['status']>>({
                         readyState: 'open'
-                    };
+                    });
                 }
             },
             rtc: {
                 status() {
-                    return {};
+                    return toTestDouble<ReturnType<DirectRallarFacade['rtc']['status']>>({});
                 }
             }
         };
@@ -446,13 +516,13 @@ describe('direct Rallar operations', () => {
             },
             async () => facade
         );
-        await subscribedHandler?.({
+        await subscribedHandler?.(toTestDouble<RallarMessage<RallarMessagePayload>>({
             typeId: 'room.manual.message',
             topicId: 'room.manual.message',
             payload: {
                 text: 'hello'
             }
-        });
+        }));
         const sendResult = await runDirectRallarWsSend(
             context,
             {
@@ -490,3 +560,7 @@ describe('direct Rallar operations', () => {
         expect(sendResult.events.every((event) => event.transport === 'ws')).toBe(true);
     });
 });
+
+function toTestDouble<T>(members: Partial<T>): T {
+    return members as T;
+}

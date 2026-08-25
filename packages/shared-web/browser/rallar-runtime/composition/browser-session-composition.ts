@@ -1,17 +1,13 @@
-import { createRallarAuthFacade, type RallarAuthFacade } from '@shared-web/browser/rallar-auth-facade.ts';
-import {
-    createRallarConnectionFacade,
-    type RallarConnectionFacade
-} from '@shared-web/browser/rallar-connection-facade.ts';
+import type { RallarAuthFacade } from '@shared-web/browser/rallar-auth-facade.ts';
+import type { RallarConnectionOperations } from '@shared-web/browser/rallar-connection-facade.ts';
 import { createRallarCrdtFacade, type RallarCrdtFacade } from '@shared-web/browser/rallar-crdt.ts';
 import { createRallarDataFacade, type RallarDataFacade } from '@shared-web/browser/rallar-data.ts';
 import type {
     RallarAuthRuntimePort,
-    RallarConnectionRuntimePort,
-    RallarLifecycleCoordinator,
-    RallarStatePort,
-    RallarStateRuntimePort
-} from '@shared-web/browser/rallar-runtime/contracts.ts';
+    RallarBrowserFacadeRuntimeContext,
+    RallarConnectionRuntimePort
+} from '@shared-web/browser/rallar-runtime-context.ts';
+import type { RallarLifecycleCoordinator } from '@shared-web/browser/rallar-runtime/lifecycle.ts';
 import {
     createRallarSessionController,
     type RallarSessionController
@@ -20,68 +16,116 @@ import {
     createRallarStartupController,
     type RallarStartupController
 } from '@shared-web/browser/rallar-runtime/startup.ts';
+import {
+    createRallarSessionIdentity,
+    type RallarSessionIdentity
+} from '@shared-web/browser/session/session-identity.ts';
+import { readSession } from '@shared/api/auth.ts';
+import { defaultRepositoryManager } from '@shared/cache/defaultRepositoryManager.ts';
 
 import type { BrowserMessagingComposition } from './browser-communication-composition.ts';
 import type { BrowserRoomPeopleStatsComposition } from './browser-product-composition.ts';
-import type { BrowserStateComposition } from './browser-runtime-composition.ts';
+import type { BrowserRuntimeFoundation, BrowserStateComposition } from './browser-runtime-composition.ts';
 
-export interface BrowserSessionComposition {
+export interface BrowserSessionCoreComposition {
     readonly data: RallarDataFacade;
-    readonly sessionController: RallarSessionController;
-    readonly connection: RallarConnectionFacade;
+    readonly identity: RallarSessionIdentity;
+    readonly session: RallarSessionController;
+    readonly connection: RallarConnectionOperations;
     readonly auth: RallarAuthFacade;
-    readonly startupController: RallarStartupController;
+}
+
+export interface BrowserStartupComposition {
+    readonly startup: RallarStartupController;
+}
+
+export interface BrowserCrdtComposition {
     readonly crdt: RallarCrdtFacade;
 }
 
-export interface CreateBrowserSessionCompositionInput {
-    readonly connectionRuntime: RallarConnectionRuntimePort;
-    readonly authRuntime: RallarAuthRuntimePort;
-    readonly stateRuntime: RallarStateRuntimePort;
-    readonly lifecycle: RallarLifecycleCoordinator;
+export interface BrowserSessionProductComposition extends BrowserStartupComposition, BrowserCrdtComposition {}
+
+export interface CreateBrowserSessionCoreCompositionInput {
+    readonly foundation: BrowserRuntimeFoundation;
     readonly state: BrowserStateComposition;
-    readonly messaging: BrowserMessagingComposition;
-    readonly products: BrowserRoomPeopleStatsComposition;
-    readonly bindSessionController: (sessionController: RallarSessionController) => void;
 }
 
-export function createBrowserSessionComposition(
-    input: CreateBrowserSessionCompositionInput
-): BrowserSessionComposition {
-    let sessionController!: RallarSessionController;
-    let startupController!: RallarStartupController;
+export interface CreateBrowserStartupCompositionInput {
+    readonly session: BrowserSessionCoreComposition;
+    readonly products: BrowserRoomPeopleStatsComposition;
+}
+
+export interface CreateBrowserCrdtCompositionInput {
+    readonly session: BrowserSessionCoreComposition;
+    readonly state: BrowserStateComposition;
+    readonly messaging: BrowserMessagingComposition;
+}
+
+export interface CreateBrowserSessionProductCompositionInput
+    extends CreateBrowserStartupCompositionInput, CreateBrowserCrdtCompositionInput {}
+
+export function createBrowserSessionCoreComposition(
+    input: CreateBrowserSessionCoreCompositionInput
+): BrowserSessionCoreComposition {
+    const identity = createRallarSessionIdentity({ readSession });
     const data = createRallarDataFacade({
-        resolveScopeKey: (scope) => sessionController.resolveDataScopeKey(String(scope))
+        manager: defaultRepositoryManager,
+        resolveScopeKey: identity.resolveDataScopeKey
     });
-    sessionController = createRallarSessionController({
-        connectionRuntime: input.connectionRuntime,
-        authRuntime: input.authRuntime,
-        stateRuntime: input.stateRuntime,
-        lifecycle: input.lifecycle,
-        start: async (options) => await startupController.start(options),
+    const session = createRallarSessionController({
+        connectionRuntime: input.foundation.connectionRuntime,
+        transportRuntime: input.foundation.transportRuntime,
+        authRuntime: input.foundation.authRuntime,
+        stateRuntime: input.foundation.runtime,
+        lifecycle: input.foundation.lifecycle,
         emitState: () => input.state.stateStore.emit(),
-        closeDataScopes: async (session) => {
+        closeDataScopes: async (authSession) => {
             await Promise.all([
-                data.closeScope(`session:${session.sessionId}`),
-                data.closeScope(`principal:${session.clientId}`)
+                data.closeScope(`session:${authSession.sessionId}`),
+                data.closeScope(`principal:${authSession.clientId}`)
             ]);
         }
     });
-    input.bindSessionController(sessionController);
-    const connection = createRallarConnectionFacade(sessionController.connectionOperations);
-    const auth = createRallarAuthFacade(sessionController.authOperations);
-    startupController = createRallarStartupController({
-        connection,
-        auth,
+
+    return {
+        data,
+        identity,
+        session,
+        connection: session.connectionOperations,
+        auth: session.authOperations
+    };
+}
+
+export function createBrowserStartupComposition(
+    input: CreateBrowserStartupCompositionInput
+): BrowserStartupComposition {
+    const startup = createRallarStartupController({
+        connection: input.session.connection,
+        auth: input.session.auth,
         rooms: input.products.rooms,
         people: input.products.people,
-        waitForAuthEnd: () => sessionController.waitForAuthEnd(),
-        resolveOperationOptions: (options) => sessionController.resolveOperationOptions(options)
+        waitForAuthEnd: input.session.session.waitForAuthEnd,
+        resolveOperationOptions: input.session.session.resolveOperationOptions
     });
+    return { startup };
+}
+
+export function createBrowserCrdtComposition(
+    input: CreateBrowserCrdtCompositionInput
+): BrowserCrdtComposition {
     const crdt = createRallarCrdtFacade({
-        data,
+        data: input.session.data,
         readDefaults: input.state.readDefaults,
         readTransport: () => input.messaging.messagesController.toCrdtMessageTransport()
     });
-    return { data, sessionController, connection, auth, startupController, crdt };
+    return { crdt };
+}
+
+export function createBrowserSessionProductComposition(
+    input: CreateBrowserSessionProductCompositionInput
+): BrowserSessionProductComposition {
+    return {
+        ...createBrowserStartupComposition(input),
+        ...createBrowserCrdtComposition(input)
+    };
 }

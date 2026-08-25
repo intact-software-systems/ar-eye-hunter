@@ -10,6 +10,7 @@ import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import { isGroupActive, isSessionInGroup, readGroupVersion } from '@shared/api/group-client-views.ts';
 import { DEFAULT_STATE_WORKSPACE_ID } from '@shared/api/state-types.ts';
 
+import type { RallarStateCacheReadPort } from '../rallar-runtime/state-store.ts';
 import type { RallarRoomState } from './rallar-room-contracts.ts';
 import {
     toRallarRoomState,
@@ -41,7 +42,6 @@ export interface RallarRoomStateStorePort {
 }
 
 export interface RallarRoomStateRuntimePort {
-    currentRoomId(): string | undefined;
     currentRoomRef(): GroupRef | undefined;
     setCurrentRoom(snapshot: GroupSnapshot): void;
     clearCurrentRoomIfMatches(room: string | GroupRef, clearCurrent: boolean): void;
@@ -52,11 +52,7 @@ export interface RallarRoomStateRuntimePort {
 export interface CreateRoomStateStoreInput {
     readonly runtime: RallarRoomStateRuntimePort;
     readonly readSession: () => AuthSession | undefined;
-    readonly readCachedGroupSnapshots: () => readonly GroupSnapshot[];
-    readonly findCachedGroupSnapshotByRef: (roomRef: GroupRef) => GroupSnapshot | undefined;
-    readonly findFirstCachedGroupRefForSession: (sessionId: string) => GroupRef | undefined;
-    readonly findCachedClientSnapshot: (principalId: string) => ClientSnapshot | undefined;
-    readonly onCacheChange: (listener: () => void | Promise<void>) => RallarUnsubscribe;
+    readonly stateCache: RallarStateCacheReadPort;
 }
 
 export function createRoomStateStore(input: CreateRoomStateStoreInput): RallarRoomStateStorePort {
@@ -102,7 +98,7 @@ class RoomStateStore implements RallarRoomStateStorePort {
     }
 
     onCacheChange(listener: () => void | Promise<void>): RallarUnsubscribe {
-        return this.#input.onCacheChange(listener);
+        return this.#input.stateCache.onCacheChange(listener);
     }
 
     resolveCurrentRoomRef(): GroupRef | undefined {
@@ -121,21 +117,13 @@ class RoomStateStore implements RallarRoomStateStorePort {
             return currentRoomSnapshot.group;
         }
 
-        const currentRoomId = this.#input.runtime.currentRoomId();
-        const legacyCurrentRoomSnapshot = this.findGroupSnapshot(currentRoomId);
-        if (
-            legacyCurrentRoomSnapshot &&
-            isGroupActive(legacyCurrentRoomSnapshot) &&
-            isSessionInGroup(legacyCurrentRoomSnapshot, session.sessionId)
-        ) {
-            return legacyCurrentRoomSnapshot.group;
-        }
-
         return this.findFirstGroupSnapshotRefForSession(session.sessionId);
     }
 
     readGroupSnapshots(): GroupSnapshot[] {
-        return [...this.#input.readCachedGroupSnapshots()].filter((snapshot) => this.isInDefaultScope(snapshot.group));
+        return [...this.#input.stateCache.readGroupSnapshots()].filter((snapshot) =>
+            this.isInDefaultScope(snapshot.group)
+        );
     }
 
     findGroupSnapshot(room: string | GroupRef | undefined): GroupSnapshot | undefined {
@@ -143,12 +131,12 @@ class RoomStateStore implements RallarRoomStateStorePort {
             return undefined;
         }
         if (typeof room !== 'string') {
-            return this.#input.findCachedGroupSnapshotByRef(room);
+            return this.#input.stateCache.findGroupSnapshotByRef(room);
         }
 
         const scopedRef = this.resolveGroupRefFromRoomId(room);
         const scopedSnapshot = scopedRef
-            ? this.#input.findCachedGroupSnapshotByRef(scopedRef)
+            ? this.#input.stateCache.findGroupSnapshotByRef(scopedRef)
             : undefined;
         if (scopedSnapshot) {
             return scopedSnapshot;
@@ -205,13 +193,13 @@ class RoomStateStore implements RallarRoomStateStorePort {
             return [];
         }
         return currentRoom.members.flatMap((member) => {
-            const snapshot = this.#input.findCachedClientSnapshot(member.principalId);
+            const snapshot = this.#input.stateCache.findClientSnapshot(member.principalId);
             return snapshot && this.isInDefaultScope(snapshot.principal) ? [snapshot] : [];
         });
     }
 
     private findFirstGroupSnapshotRefForSession(sessionId: string): GroupRef | undefined {
-        const fromRepository = this.#input.findFirstCachedGroupRefForSession(sessionId);
+        const fromRepository = this.#input.stateCache.findFirstGroupRefForSession(sessionId);
         if (fromRepository && this.isInDefaultScope(fromRepository)) {
             return fromRepository;
         }
