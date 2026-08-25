@@ -31,372 +31,373 @@ export type {
 
 export function useRallarArena(): ArenaConnection {
     const state = useArenaRuntimeState();
-    const {
-        activeEvent,
-        activeMatchRoomIdRef,
-        aiError,
-        aiStatus,
-        arenaMatchRef,
-        arenaSnapshot,
-        arenaSnapshotRef,
-        bumpNetworkGeneration,
-        clearPendingReliableArenaSnapshot,
-        clearRoomScopedArenaState,
-        connectionState,
-        currentNetworkSignal,
-        diagnosticsRefreshRef,
-        directorAttempt,
-        directorAttemptRef,
-        directorStatus,
-        directorStatusRef,
-        error,
-        gameDiagnostics,
-        httpDiagnostics,
-        isCurrentNetworkGeneration,
-        isNetworkEnabled,
-        localAvatarProfileRef,
-        networkGenerationRef,
-        pickupAcceptances,
-        poseSendBudget,
-        presenceDirectorLabelRef,
-        presenceInitializedRef,
-        presenceLinkRef,
-        presenceNotices,
-        presencePlayersRef,
-        reliableSnapshotLastSentAtRef,
-        reliableSnapshotLastSentRevisionRef,
-        reliableSnapshotPendingRef,
-        reliableSnapshotTimerRef,
-        remoteEvents,
-        remotePlayerHits,
-        remotePlayers,
-        remoteShots,
-        resetForSignedOutAuth,
-        roomId,
-        roomIdRef,
-        rooms,
-        rtcLanes,
-        session,
-        sessionRef,
-        setActiveEvent,
-        setAiError,
-        setAiStatus,
-        setArenaSnapshot,
-        setConnectionState,
-        setDirectorAttempt,
-        setDirectorStatus,
-        setError,
-        setGameDiagnostics,
-        setHttpDiagnostics,
-        setPickupAcceptances,
-        setPresenceNotices,
-        setRemoteEvents,
-        setRemotePlayerHits,
-        setRemotePlayers,
-        setRemoteShots,
-        setRoomId,
-        setRooms,
-        setRtcLanes,
-        setSession,
-        setTransportDiagnostics,
-        snapshotLaneReadySyncKeyRef,
-        transportDiagnostics,
-        transportDiagnosticsRef
-    } = state;
-
-    const { dismissPresenceNotice, linkState } = useArenaPresenceLifecycle({
-        connectionState,
-        directorStatus,
-        isNetworkEnabled,
-        presenceDirectorLabelRef,
-        presenceInitializedRef,
-        presenceLinkRef,
-        presenceNotices,
-        presencePlayersRef,
-        remotePlayers,
-        roomId,
-        rtcLanes,
-        session,
-        setPresenceNotices,
-        transportDiagnostics
-    });
+    const presence = useArenaPresence(state);
     useArenaAvatarProfile({
-        arenaSnapshotRef,
-        isCurrentNetworkGeneration,
-        localAvatarProfileRef,
-        networkGenerationRef,
-        roomId,
-        session
+        arenaSnapshotRef: state.arenaSnapshotRef,
+        isCurrentNetworkGeneration: state.isCurrentNetworkGeneration,
+        localAvatarProfileRef: state.localAvatarProfileRef,
+        networkGenerationRef: state.networkGenerationRef,
+        roomId: state.roomId,
+        session: state.session
     });
+    const transport = useArenaSnapshotTransport(state);
+    const messages = useArenaMessageHandlers(state);
+    const connect = useArenaConnectionLifecycle(state, messages);
+    const attemptDirectorAppointment = useArenaMatchLifecycles(
+        state,
+        messages,
+        transport
+    );
+    useArenaAiDirectorLifecycle({
+        arenaMatchRef: state.arenaMatchRef,
+        arenaSnapshotRef: state.arenaSnapshotRef,
+        connectionState: state.connectionState,
+        directorStatus: state.directorStatus,
+        isCurrentNetworkGeneration: state.isCurrentNetworkGeneration,
+        networkGenerationRef: state.networkGenerationRef,
+        roomId: state.roomId,
+        runBestEffortNetworkTask: transport.runBestEffortNetworkTask,
+        setActiveEvent: state.setActiveEvent,
+        setAiError: state.setAiError,
+        setAiStatus: state.setAiStatus,
+        setRemoteEvents: state.setRemoteEvents
+    });
+    const connectionActions = useArenaConnectionActions(
+        state,
+        connect,
+        attemptDirectorAppointment
+    );
+    const gameActions = useArenaGameActions(state, messages, transport);
 
-    const { runBestEffortNetworkTask, scheduleReliableArenaSnapshot } = useArenaNetworkTransportSupport({
-        arenaMatchRef,
-        arenaSnapshotRef,
-        clearPendingReliableArenaSnapshot,
-        directorStatusRef,
-        isCurrentNetworkGeneration,
-        localAvatarProfileRef,
-        networkGenerationRef,
-        reliableSnapshotLastSentAtRef,
-        reliableSnapshotLastSentRevisionRef,
-        reliableSnapshotPendingRef,
-        reliableSnapshotTimerRef,
-        roomId,
-        roomIdRef,
-        session,
-        setTransportDiagnostics
+    return useArenaConnectionView(state, presence, connectionActions, gameActions);
+}
+
+function useArenaPresence(state: ReturnType<typeof useArenaRuntimeState>) {
+    return useArenaPresenceLifecycle({
+        connectionState: state.connectionState,
+        directorStatus: state.directorStatus,
+        isNetworkEnabled: state.isNetworkEnabled,
+        presenceDirectorLabelRef: state.presenceDirectorLabelRef,
+        presenceInitializedRef: state.presenceInitializedRef,
+        presenceLinkRef: state.presenceLinkRef,
+        presenceNotices: state.presenceNotices,
+        presencePlayersRef: state.presencePlayersRef,
+        remotePlayers: state.remotePlayers,
+        roomId: state.roomId,
+        rtcLanes: state.rtcLanes,
+        session: state.session,
+        setPresenceNotices: state.setPresenceNotices,
+        transportDiagnostics: state.transportDiagnostics
     });
-    const { acceptPlayerHit, acceptPickup, acceptEyeAttack, acceptMatchStartIntent } = useArenaStateAcceptance({
-        arenaMatchRef,
-        arenaSnapshotRef,
-        roomIdRef,
-        setActiveEvent,
-        setArenaSnapshot,
-        setPickupAcceptances,
-        setRemoteEvents,
-        setRemotePlayerHits
+}
+
+function useArenaSnapshotTransport(state: ReturnType<typeof useArenaRuntimeState>) {
+    return useArenaNetworkTransportSupport({
+        arenaMatchRef: state.arenaMatchRef,
+        clearPendingReliableArenaSnapshot: state.clearPendingReliableArenaSnapshot,
+        directorStatusRef: state.directorStatusRef,
+        isCurrentNetworkGeneration: state.isCurrentNetworkGeneration,
+        networkGenerationRef: state.networkGenerationRef,
+        reliableSnapshotLastSentAtRef: state.reliableSnapshotLastSentAtRef,
+        reliableSnapshotLastSentRevisionRef: state.reliableSnapshotLastSentRevisionRef,
+        reliableSnapshotPendingRef: state.reliableSnapshotPendingRef,
+        reliableSnapshotTimerRef: state.reliableSnapshotTimerRef,
+        roomIdRef: state.roomIdRef,
+        setTransportDiagnostics: state.setTransportDiagnostics
+    });
+}
+
+function useArenaMessageHandlers(state: ReturnType<typeof useArenaRuntimeState>) {
+    const stateAcceptance = useArenaStateAcceptance({
+        arenaMatchRef: state.arenaMatchRef,
+        arenaSnapshotRef: state.arenaSnapshotRef,
+        roomIdRef: state.roomIdRef,
+        setActiveEvent: state.setActiveEvent,
+        setArenaSnapshot: state.setArenaSnapshot,
+        setPickupAcceptances: state.setPickupAcceptances,
+        setRemoteEvents: state.setRemoteEvents,
+        setRemotePlayerHits: state.setRemotePlayerHits
     });
     const acceptDirectorOutput = useArenaDirectorMessageHandler({
-        acceptEyeAttack,
-        acceptPickup,
-        acceptPlayerHit,
-        arenaSnapshotRef,
-        roomIdRef,
-        sessionRef,
-        setActiveEvent,
-        setArenaSnapshot,
-        setRemoteEvents,
-        setRemotePlayers,
-        setRemoteShots
+        acceptEyeAttack: stateAcceptance.acceptEyeAttack,
+        acceptPickup: stateAcceptance.acceptPickup,
+        acceptPlayerHit: stateAcceptance.acceptPlayerHit,
+        arenaSnapshotRef: state.arenaSnapshotRef,
+        roomIdRef: state.roomIdRef,
+        sessionRef: state.sessionRef,
+        setActiveEvent: state.setActiveEvent,
+        setArenaSnapshot: state.setArenaSnapshot,
+        setRemoteEvents: state.setRemoteEvents,
+        setRemotePlayers: state.setRemotePlayers,
+        setRemoteShots: state.setRemoteShots
     });
-    const { acceptMotionMessage, acceptRealtimeMessage } = useArenaPeerMessageHandlers({
-        acceptEyeAttack,
-        acceptPickup,
-        acceptPlayerHit,
-        sessionRef,
-        setActiveEvent,
-        setArenaSnapshot,
-        setRemoteEvents,
-        setRemotePlayers,
-        setRemoteShots
+    const peerMessages = useArenaPeerMessageHandlers({
+        acceptEyeAttack: stateAcceptance.acceptEyeAttack,
+        acceptPickup: stateAcceptance.acceptPickup,
+        acceptPlayerHit: stateAcceptance.acceptPlayerHit,
+        sessionRef: state.sessionRef,
+        setActiveEvent: state.setActiveEvent,
+        setArenaSnapshot: state.setArenaSnapshot,
+        setRemoteEvents: state.setRemoteEvents,
+        setRemotePlayers: state.setRemotePlayers,
+        setRemoteShots: state.setRemoteShots
     });
 
+    return { ...stateAcceptance, ...peerMessages, acceptDirectorOutput };
+}
+
+function useArenaConnectionLifecycle(
+    state: ReturnType<typeof useArenaRuntimeState>,
+    messages: ReturnType<typeof useArenaMessageHandlers>
+) {
     const { connect } = useArenaConnectionSessionLifecycle({
-        acceptMotionMessage,
-        acceptRealtimeMessage,
-        bumpNetworkGeneration,
-        connectionState,
-        currentNetworkSignal,
-        isCurrentNetworkGeneration,
-        roomIdRef,
-        setConnectionState,
-        setDirectorStatus,
-        setError,
-        setRemotePlayers,
-        setRoomId,
-        setRooms,
-        setSession
+        acceptMotionMessage: messages.acceptMotionMessage,
+        acceptRealtimeMessage: messages.acceptRealtimeMessage,
+        bumpNetworkGeneration: state.bumpNetworkGeneration,
+        connectionState: state.connectionState,
+        currentNetworkSignal: state.currentNetworkSignal,
+        isCurrentNetworkGeneration: state.isCurrentNetworkGeneration,
+        roomIdRef: state.roomIdRef,
+        setConnectionState: state.setConnectionState,
+        setDirectorStatus: state.setDirectorStatus,
+        setError: state.setError,
+        setRemotePlayers: state.setRemotePlayers,
+        setRoomId: state.setRoomId,
+        setRooms: state.setRooms,
+        setSession: state.setSession
     });
+    return connect;
+}
+
+function useArenaMatchLifecycles(
+    state: ReturnType<typeof useArenaRuntimeState>,
+    messages: ReturnType<typeof useArenaMessageHandlers>,
+    transport: ReturnType<typeof useArenaSnapshotTransport>
+) {
     useArenaRtcLifecycle({
-        arenaMatchRef,
-        connectionState,
-        isCurrentNetworkGeneration,
-        isNetworkEnabled,
-        networkGenerationRef,
-        roomId,
-        rtcLanes,
-        runBestEffortNetworkTask,
-        setGameDiagnostics,
-        setRtcLanes,
-        snapshotLaneReadySyncKeyRef
+        arenaMatchRef: state.arenaMatchRef,
+        connectionState: state.connectionState,
+        isCurrentNetworkGeneration: state.isCurrentNetworkGeneration,
+        isNetworkEnabled: state.isNetworkEnabled,
+        networkGenerationRef: state.networkGenerationRef,
+        roomId: state.roomId,
+        rtcLanes: state.rtcLanes,
+        runBestEffortNetworkTask: transport.runBestEffortNetworkTask,
+        setGameDiagnostics: state.setGameDiagnostics,
+        setRtcLanes: state.setRtcLanes,
+        snapshotLaneReadySyncKeyRef: state.snapshotLaneReadySyncKeyRef
     });
     const { attemptDirectorAppointment } = useArenaDirectorAppointment({
-        arenaMatchRef,
-        isCurrentNetworkGeneration,
-        networkGenerationRef,
-        roomIdRef,
-        setDirectorAttempt,
-        setDirectorStatus,
-        setGameDiagnostics
+        arenaMatchRef: state.arenaMatchRef,
+        isCurrentNetworkGeneration: state.isCurrentNetworkGeneration,
+        networkGenerationRef: state.networkGenerationRef,
+        roomIdRef: state.roomIdRef,
+        setDirectorAttempt: state.setDirectorAttempt,
+        setDirectorStatus: state.setDirectorStatus,
+        setGameDiagnostics: state.setGameDiagnostics
     });
-    useArenaMatchRuntime({
-        acceptDirectorOutput,
-        acceptMatchStartIntent,
-        acceptMotionMessage,
-        acceptPickup,
-        acceptPlayerHit,
-        activeMatchRoomIdRef,
-        arenaMatchRef,
-        arenaSnapshotRef,
-        bumpNetworkGeneration,
-        connectionState,
-        isCurrentNetworkGeneration,
-        networkGenerationRef,
-        roomId,
-        roomIdRef,
-        runBestEffortNetworkTask,
-        setActiveEvent,
-        setArenaSnapshot,
-        setDirectorStatus,
-        setError,
-        setGameDiagnostics,
-        setRemoteEvents
-    }, attemptDirectorAppointment);
-    useArenaAiDirectorLifecycle({
-        arenaMatchRef,
-        arenaSnapshotRef,
-        connectionState,
-        directorStatus,
-        isCurrentNetworkGeneration,
-        networkGenerationRef,
-        roomId,
-        runBestEffortNetworkTask,
-        setActiveEvent,
-        setAiError,
-        setAiStatus,
-        setRemoteEvents
-    });
+    useArenaMatchRuntime(
+        {
+            acceptDirectorOutput: messages.acceptDirectorOutput,
+            acceptMatchStartIntent: messages.acceptMatchStartIntent,
+            acceptMotionMessage: messages.acceptMotionMessage,
+            acceptPickup: messages.acceptPickup,
+            acceptPlayerHit: messages.acceptPlayerHit,
+            activeMatchRoomIdRef: state.activeMatchRoomIdRef,
+            arenaMatchRef: state.arenaMatchRef,
+            arenaSnapshotRef: state.arenaSnapshotRef,
+            bumpNetworkGeneration: state.bumpNetworkGeneration,
+            connectionState: state.connectionState,
+            isCurrentNetworkGeneration: state.isCurrentNetworkGeneration,
+            networkGenerationRef: state.networkGenerationRef,
+            roomId: state.roomId,
+            roomIdRef: state.roomIdRef,
+            runBestEffortNetworkTask: transport.runBestEffortNetworkTask,
+            setActiveEvent: state.setActiveEvent,
+            setArenaSnapshot: state.setArenaSnapshot,
+            setDirectorStatus: state.setDirectorStatus,
+            setError: state.setError,
+            setGameDiagnostics: state.setGameDiagnostics,
+            setRemoteEvents: state.setRemoteEvents
+        },
+        attemptDirectorAppointment
+    );
+    return attemptDirectorAppointment;
+}
 
+function useArenaConnectionActions(
+    state: ReturnType<typeof useArenaRuntimeState>,
+    connect: ReturnType<typeof useArenaConnectionLifecycle>,
+    attemptDirectorAppointment: ReturnType<typeof useArenaMatchLifecycles>
+) {
     const sessionActions = useArenaSessionActions({
         attemptDirectorAppointment,
-        clearRoomScopedArenaState,
+        clearRoomScopedArenaState: state.clearRoomScopedArenaState,
         connect,
-        connectionState,
-        directorAttemptRef,
-        directorStatusRef,
-        isNetworkEnabled,
-        resetForSignedOutAuth,
-        roomId,
-        roomIdRef,
-        rooms,
-        sessionRef,
-        setConnectionState,
-        setError,
-        setRoomId,
-        setRooms,
-        setSession
+        connectionState: state.connectionState,
+        directorAttemptRef: state.directorAttemptRef,
+        directorStatusRef: state.directorStatusRef,
+        isNetworkEnabled: state.isNetworkEnabled,
+        resetForSignedOutAuth: state.resetForSignedOutAuth,
+        roomId: state.roomId,
+        roomIdRef: state.roomIdRef,
+        rooms: state.rooms,
+        sessionRef: state.sessionRef,
+        setConnectionState: state.setConnectionState,
+        setError: state.setError,
+        setRoomId: state.setRoomId,
+        setRooms: state.setRooms,
+        setSession: state.setSession
     });
     const diagnosticActions = useArenaDiagnosticActions({
-        arenaMatchRef,
-        currentNetworkSignal,
-        diagnosticsRefreshRef,
-        isCurrentNetworkGeneration,
-        isNetworkEnabled,
-        networkGenerationRef,
-        sessionRef,
-        setGameDiagnostics,
-        setHttpDiagnostics,
-        setPresenceNotices,
-        setRtcLanes,
-        setTransportDiagnostics,
-        transportDiagnosticsRef
+        arenaMatchRef: state.arenaMatchRef,
+        currentNetworkSignal: state.currentNetworkSignal,
+        diagnosticsRefreshRef: state.diagnosticsRefreshRef,
+        isCurrentNetworkGeneration: state.isCurrentNetworkGeneration,
+        isNetworkEnabled: state.isNetworkEnabled,
+        networkGenerationRef: state.networkGenerationRef,
+        sessionRef: state.sessionRef,
+        setGameDiagnostics: state.setGameDiagnostics,
+        setHttpDiagnostics: state.setHttpDiagnostics,
+        setPresenceNotices: state.setPresenceNotices,
+        setRtcLanes: state.setRtcLanes,
+        setTransportDiagnostics: state.setTransportDiagnostics,
+        transportDiagnosticsRef: state.transportDiagnosticsRef
     });
+    return { sessionActions, diagnosticActions };
+}
+
+function useArenaGameActions(
+    state: ReturnType<typeof useArenaRuntimeState>,
+    messages: ReturnType<typeof useArenaMessageHandlers>,
+    transport: ReturnType<typeof useArenaSnapshotTransport>
+) {
     const presenceActions = useArenaPresenceActions({
-        arenaMatchRef,
-        isNetworkEnabled,
-        localAvatarProfileRef,
-        networkGenerationRef,
-        poseSendBudget,
-        roomIdRef,
-        runBestEffortNetworkTask,
-        sessionRef
+        arenaMatchRef: state.arenaMatchRef,
+        isNetworkEnabled: state.isNetworkEnabled,
+        localAvatarProfileRef: state.localAvatarProfileRef,
+        networkGenerationRef: state.networkGenerationRef,
+        poseSendBudget: state.poseSendBudget,
+        roomIdRef: state.roomIdRef,
+        runBestEffortNetworkTask: transport.runBestEffortNetworkTask,
+        sessionRef: state.sessionRef
     });
     const combatActions = useArenaCombatActions({
-        acceptPlayerHit,
-        arenaMatchRef,
-        arenaSnapshotRef,
-        directorStatusRef,
-        isNetworkEnabled,
-        networkGenerationRef,
-        roomIdRef,
-        runBestEffortNetworkTask,
-        sessionRef,
-        setArenaSnapshot
+        acceptPlayerHit: messages.acceptPlayerHit,
+        arenaMatchRef: state.arenaMatchRef,
+        arenaSnapshotRef: state.arenaSnapshotRef,
+        directorStatusRef: state.directorStatusRef,
+        isNetworkEnabled: state.isNetworkEnabled,
+        networkGenerationRef: state.networkGenerationRef,
+        roomIdRef: state.roomIdRef,
+        runBestEffortNetworkTask: transport.runBestEffortNetworkTask,
+        sessionRef: state.sessionRef,
+        setArenaSnapshot: state.setArenaSnapshot
     });
     const worldActions = useArenaWorldActions({
-        acceptMatchStartIntent,
-        acceptPickup,
-        arenaMatchRef,
-        arenaSnapshotRef,
-        directorStatusRef,
-        isNetworkEnabled,
-        networkGenerationRef,
-        roomIdRef,
-        runBestEffortNetworkTask,
-        scheduleReliableArenaSnapshot,
-        sessionRef,
-        setArenaSnapshot
+        acceptMatchStartIntent: messages.acceptMatchStartIntent,
+        acceptPickup: messages.acceptPickup,
+        arenaMatchRef: state.arenaMatchRef,
+        arenaSnapshotRef: state.arenaSnapshotRef,
+        directorStatusRef: state.directorStatusRef,
+        isNetworkEnabled: state.isNetworkEnabled,
+        networkGenerationRef: state.networkGenerationRef,
+        roomIdRef: state.roomIdRef,
+        runBestEffortNetworkTask: transport.runBestEffortNetworkTask,
+        scheduleReliableArenaSnapshot: transport.scheduleReliableArenaSnapshot,
+        sessionRef: state.sessionRef,
+        setArenaSnapshot: state.setArenaSnapshot
     });
+    return { presenceActions, combatActions, worldActions };
+}
 
-    return useMemo(() => ({
-        session,
-        connectionState,
-        error,
-        roomId,
-        rooms,
-        directorStatus,
-        rtcLanes,
-        directorAttempt,
-        gameDiagnostics,
-        transportDiagnostics,
-        httpDiagnostics,
-        linkState,
-        presenceNotices,
+function useArenaConnectionView(
+    state: ReturnType<typeof useArenaRuntimeState>,
+    presence: ReturnType<typeof useArenaPresence>,
+    connectionActions: ReturnType<typeof useArenaConnectionActions>,
+    gameActions: ReturnType<typeof useArenaGameActions>
+): ArenaConnection {
+    return useMemo(
+        () => createArenaConnectionView(state, presence, connectionActions, gameActions),
+        [
+            state.activeEvent,
+            state.aiError,
+            state.aiStatus,
+            state.arenaMatchRef,
+            state.arenaSnapshot,
+            state.connectionState,
+            state.directorAttempt,
+            state.directorStatus,
+            state.error,
+            state.gameDiagnostics,
+            state.httpDiagnostics,
+            state.isNetworkEnabled,
+            state.networkGenerationRef,
+            state.pickupAcceptances,
+            state.presenceNotices,
+            state.remoteEvents,
+            state.remotePlayerHits,
+            state.remotePlayers,
+            state.remoteShots,
+            state.roomId,
+            state.roomIdRef,
+            state.rooms,
+            state.rtcLanes,
+            state.session,
+            state.sessionRef,
+            state.transportDiagnostics,
+            presence.dismissPresenceNotice,
+            presence.linkState,
+            connectionActions.diagnosticActions,
+            connectionActions.sessionActions,
+            gameActions.combatActions,
+            gameActions.presenceActions,
+            gameActions.worldActions
+        ]
+    );
+}
+
+function createArenaConnectionView(
+    state: ReturnType<typeof useArenaRuntimeState>,
+    presence: ReturnType<typeof useArenaPresence>,
+    connectionActions: ReturnType<typeof useArenaConnectionActions>,
+    gameActions: ReturnType<typeof useArenaGameActions>
+): ArenaConnection {
+    return {
+        session: state.session,
+        connectionState: state.connectionState,
+        error: state.error,
+        roomId: state.roomId,
+        rooms: state.rooms,
+        directorStatus: state.directorStatus,
+        rtcLanes: state.rtcLanes,
+        directorAttempt: state.directorAttempt,
+        gameDiagnostics: state.gameDiagnostics,
+        transportDiagnostics: state.transportDiagnostics,
+        httpDiagnostics: state.httpDiagnostics,
+        linkState: presence.linkState,
+        presenceNotices: state.presenceNotices,
         authStorageKind: readAuthSessionStorageKind(),
-        authGeneration: networkGenerationRef.current,
-        networkEnabled: isNetworkEnabled(),
-        logoutQuiesced: connectionState === 'signed-out' &&
-            !sessionRef.current &&
-            !roomIdRef.current &&
-            !arenaMatchRef.current,
-        aiStatus,
-        aiError,
-        activeEvent,
-        arenaSnapshot,
-        remoteEvents,
-        remotePlayers,
-        remoteShots,
-        remotePlayerHits,
-        pickupAcceptances,
-        ...sessionActions,
-        ...diagnosticActions,
-        dismissPresenceNotice,
-        ...presenceActions,
-        ...combatActions,
-        ...worldActions
-    }), [
-        activeEvent,
-        aiError,
-        aiStatus,
-        arenaMatchRef,
-        arenaSnapshot,
-        combatActions,
-        connectionState,
-        diagnosticActions,
-        directorAttempt,
-        directorStatus,
-        dismissPresenceNotice,
-        error,
-        gameDiagnostics,
-        httpDiagnostics,
-        isNetworkEnabled,
-        linkState,
-        networkGenerationRef,
-        pickupAcceptances,
-        presenceActions,
-        presenceNotices,
-        remoteEvents,
-        remotePlayerHits,
-        remotePlayers,
-        remoteShots,
-        roomId,
-        roomIdRef,
-        rooms,
-        rtcLanes,
-        session,
-        sessionActions,
-        sessionRef,
-        transportDiagnostics,
-        worldActions
-    ]);
+        authGeneration: state.networkGenerationRef.current,
+        networkEnabled: state.isNetworkEnabled(),
+        logoutQuiesced: state.connectionState === 'signed-out' &&
+            !state.sessionRef.current &&
+            !state.roomIdRef.current &&
+            !state.arenaMatchRef.current,
+        aiStatus: state.aiStatus,
+        aiError: state.aiError,
+        activeEvent: state.activeEvent,
+        arenaSnapshot: state.arenaSnapshot,
+        remoteEvents: state.remoteEvents,
+        remotePlayers: state.remotePlayers,
+        remoteShots: state.remoteShots,
+        remotePlayerHits: state.remotePlayerHits,
+        pickupAcceptances: state.pickupAcceptances,
+        ...connectionActions.sessionActions,
+        ...connectionActions.diagnosticActions,
+        dismissPresenceNotice: presence.dismissPresenceNotice,
+        ...gameActions.presenceActions,
+        ...gameActions.combatActions,
+        ...gameActions.worldActions
+    };
 }

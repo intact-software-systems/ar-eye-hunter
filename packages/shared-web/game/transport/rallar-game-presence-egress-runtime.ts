@@ -40,7 +40,7 @@ export namespace RallarGamePresenceEgressRuntime {
         ): RallarGameEnvelope<T>;
     }
 
-    export interface FallbackInput<TPresence> {
+    export interface RecoveryInput<TPresence> {
         readonly room: RoomTarget;
         readonly envelope: RallarGameEnvelope<TPresence>;
         readonly laneId: string;
@@ -86,12 +86,14 @@ export class RallarGamePresenceEgressRuntime<TInput, TIntent, TSnapshot, TEvent,
         const key = options.key ?? `presence:${envelope.senderId}`;
         const maxAgeMs = options.maxAgeMs ?? 250;
         const openTimeoutMs = options.openTimeoutMs ?? 500;
-        const realtime = await this.input.config.rallar.realtime.room({
-            laneId,
-            roomId: room.roomRef ? undefined : room.roomId,
-            roomRef: room.roomRef,
-            openTimeoutMs
-        }).send(envelope, { key, maxAgeMs });
+        const realtime = await this.input.config.rallar.realtime
+            .room({
+                laneId,
+                roomId: room.roomRef ? undefined : room.roomId,
+                roomRef: room.roomRef,
+                openTimeoutMs
+            })
+            .send(envelope, { key, maxAgeMs });
 
         const roomResult = toRallarGameRoomRealtimeSendResult(realtime);
         if (roomResult.status === 'sent' || roomResult.status === 'partial') {
@@ -101,7 +103,7 @@ export class RallarGamePresenceEgressRuntime<TInput, TIntent, TSnapshot, TEvent,
             return roomResult;
         }
 
-        return await this.sendFallback({
+        return await this.sendRecovery({
             room,
             envelope,
             laneId,
@@ -113,19 +115,22 @@ export class RallarGamePresenceEgressRuntime<TInput, TIntent, TSnapshot, TEvent,
         });
     }
 
-    private async sendFallback(
-        input: RallarGamePresenceEgressRuntime.FallbackInput<TPresence>
+    private async sendRecovery(
+        input: RallarGamePresenceEgressRuntime.RecoveryInput<TPresence>
     ): Promise<RallarGameSendResult> {
         const roomScopedPeerIds = uniqueSorted([
             ...input.realtime.desiredPeerIds,
-            ...this.input.config.rallar.rooms.state().members
-                .filter((member) => member.isOnline)
+            ...this.input.config.rallar.rooms
+                .state()
+                .members.filter((member) => member.isOnline)
                 .flatMap((member) => member.sessionIds)
         ]);
         const roomScopedPeerIdSet = new Set(roomScopedPeerIds);
         const readiness = this.input.readPeerReadiness();
         const readyPeerIds = uniqueSorted([
-            ...(readiness?.laneIds.includes(input.laneId) ? readiness.readyPeerIds : []),
+            ...(readiness?.laneIds.includes(input.laneId)
+                ? readiness.readyPeerIds
+                : []),
             ...(this.safeReadRtcStatus(input.laneId)?.readyPeerIds ?? [])
         ])
             .filter((peerId) => peerId !== this.input.readLocalPeerId())
@@ -145,7 +150,8 @@ export class RallarGamePresenceEgressRuntime<TInput, TIntent, TSnapshot, TEvent,
             openTimeoutMs: input.openTimeoutMs
         });
         const realtimeResult = toRallarGameRealtimeSendResult(realtimeSend);
-        return realtimeResult.status === 'sent' || realtimeResult.status === 'partial'
+        return realtimeResult.status === 'sent' ||
+                realtimeResult.status === 'partial'
             ? realtimeResult
             : input.roomResult;
     }

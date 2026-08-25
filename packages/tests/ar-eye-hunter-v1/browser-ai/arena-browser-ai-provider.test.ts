@@ -1,4 +1,4 @@
-import { createRallarAiJsonResult, createRallarAiMockProvider, type RallarAiJsonProvider, type RallarAiJsonRequest } from '@shared/rallar-ai/mod.ts';
+import { createRallarAiMockProvider, type RallarAiJsonProvider, type RallarAiJsonRequest } from '@shared/rallar-ai/mod.ts';
 import { describe, expect, it, vi } from 'vitest';
 
 import { DEFAULT_ARENA_WEBLLM_MODEL_ID, type ArenaBrowserAiConfig } from '../../../../apps/ar-eye-hunter-v1/src/game/browser-ai/arena-browser-ai-config.ts';
@@ -8,7 +8,7 @@ describe('AR Eye Hunter browser AI provider selection', () => {
     it('selects WebLLM when configured and WebGPU is available', () => {
         const webLlmProvider = fakeProvider('webllm-provider');
         const selection = createArenaBrowserAiProvider({
-            config: webLlmConfig('mock'),
+            config: webLlmConfig(),
             createMockProvider: () => fakeProvider('mock-provider'),
             createWebLlmProvider: vi.fn(() => webLlmProvider),
             hasWebGpu: () => true
@@ -20,57 +20,35 @@ describe('AR Eye Hunter browser AI provider selection', () => {
         expect(selection.reason).toBeUndefined();
     });
 
-    it('falls back to mock when WebLLM generation fails after selection', async () => {
-        const fallbackSpy = vi.fn();
+    it('keeps WebLLM generation failures visible without switching providers', async () => {
+        const createMockProvider = vi.fn(() => fakeProvider('mock-provider'));
         const request: RallarAiJsonRequest = {
-            requestId: 'selection-fallback',
+            requestId: 'selection-failure',
             schemaId: 'ar-eye-hunter.selection-test',
             schemaVersion: '1',
             schema: { type: 'object' },
             prompt: 'Return JSON.'
         };
         const selection = createArenaBrowserAiProvider({
-            config: webLlmConfig('mock'),
-            createMockProvider: () =>
-                createRallarAiMockProvider({
-                    providerId: 'mock-provider',
-                    value: { fallback: true }
-                }),
+            config: webLlmConfig(),
+            createMockProvider,
             createWebLlmProvider: vi.fn(() => throwingProvider('webllm-provider')),
-            hasWebGpu: () => true,
-            onFallback: fallbackSpy
+            hasWebGpu: () => true
         });
 
         expect(selection.status).toBe('ready');
         if (selection.status !== 'ready') {
             throw new Error('The browser AI selection did not become ready.');
         }
-        const result = await selection.provider.generateJson(request);
-
-        expect(result.value).toEqual({ fallback: true });
-        expect(result.providerId).toBe('mock-provider');
-        expect(fallbackSpy).toHaveBeenCalledWith('model failed');
+        await expect(selection.provider.generateJson(request)).rejects.toThrow(
+            'model failed'
+        );
+        expect(createMockProvider).not.toHaveBeenCalled();
     });
 
-    it('falls back to mock when WebGPU is unavailable and fallback is enabled', () => {
-        const mockProvider = fakeProvider('mock-provider');
+    it('returns unavailable when WebGPU is unavailable', () => {
         const selection = createArenaBrowserAiProvider({
-            config: webLlmConfig('mock'),
-            createMockProvider: () => mockProvider,
-            createWebLlmProvider: vi.fn(() => fakeProvider('webllm-provider')),
-            hasWebGpu: () => false
-        });
-
-        expect(selection.status).toBe('ready');
-        expect(selection.mode).toBe('mock');
-        expect(selection.provider).toBe(mockProvider);
-        expect(selection.fallback).toBe(true);
-        expect(selection.reason).toContain('WebGPU');
-    });
-
-    it('returns unavailable when WebGPU is unavailable and fallback is disabled', () => {
-        const selection = createArenaBrowserAiProvider({
-            config: webLlmConfig('off'),
+            config: webLlmConfig(),
             createMockProvider: () => fakeProvider('mock-provider'),
             createWebLlmProvider: vi.fn(() => fakeProvider('webllm-provider')),
             hasWebGpu: () => false
@@ -80,18 +58,37 @@ describe('AR Eye Hunter browser AI provider selection', () => {
             status: 'unavailable',
             mode: 'webllm',
             provider: undefined,
-            fallback: false,
             reason: 'WebGPU is unavailable in this browser.'
+        });
+    });
+
+    it('selects the mock provider only when mock mode is explicit', () => {
+        const mockProvider = createRallarAiMockProvider({
+            providerId: 'mock-provider'
+        });
+        const selection = createArenaBrowserAiProvider({
+            config: {
+                enabled: true,
+                mode: 'mock',
+                modelId: DEFAULT_ARENA_WEBLLM_MODEL_ID
+            },
+            createMockProvider: () => mockProvider,
+            hasWebGpu: () => false
+        });
+
+        expect(selection).toMatchObject({
+            status: 'ready',
+            mode: 'mock',
+            provider: mockProvider
         });
     });
 });
 
-function webLlmConfig(fallbackMode: 'mock' | 'off'): ArenaBrowserAiConfig {
+function webLlmConfig(): ArenaBrowserAiConfig {
     return {
         enabled: true,
         mode: 'webllm',
-        modelId: DEFAULT_ARENA_WEBLLM_MODEL_ID,
-        fallbackMode
+        modelId: DEFAULT_ARENA_WEBLLM_MODEL_ID
     };
 }
 
@@ -114,11 +111,7 @@ function throwingProvider(providerId: string): RallarAiJsonProvider {
             target: 'browser'
         },
         async generateJson(request) {
-            void createRallarAiJsonResult({
-                request,
-                provider: this,
-                value: {}
-            });
+            void request;
             throw new Error('model failed');
         }
     };

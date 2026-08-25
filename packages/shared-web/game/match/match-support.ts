@@ -39,15 +39,59 @@ export type RallarBrowserMatchHandle<TCommand, TSnapshot, TEvent, TPresence = TC
     submitCommand(command: TCommand): Promise<RallarGameSendResult>;
     participants: typeof deriveRallarMatchParticipants;
     standings(): ReturnType<typeof deriveRallarMatchStandings>;
-    finalizeResult<TSummary>(summary: TSummary): RallarRoomTrustedMatchResult<TSummary>;
+    finalizeResult<TSummary>(
+        summary: TSummary
+    ): RallarRoomTrustedMatchResult<TSummary>;
 }>;
+
+interface FinalizeRallarBrowserMatchResultInput<TCommand, TSnapshot, TEvent, TPresence, TSummary> {
+    readonly config: RallarBrowserMatchConfig<TCommand, TSnapshot, TEvent, TPresence>;
+    readonly game: RallarGameMatchHandle<TCommand, TCommand, TSnapshot, TEvent, TPresence>;
+    readonly summary: TSummary;
+    readonly nowEpochMs: () => number;
+    readonly resultId: () => string;
+    readonly standings: ReturnType<typeof deriveRallarMatchStandings>;
+}
 
 export function createRallarBrowserMatch<TCommand, TSnapshot, TEvent, TPresence = TCommand>(
     config: RallarBrowserMatchConfig<TCommand, TSnapshot, TEvent, TPresence>,
     dependencies: RallarBrowserMatchDependencies<TCommand, TSnapshot, TEvent, TPresence> = {}
 ): RallarBrowserMatchHandle<TCommand, TSnapshot, TEvent, TPresence> {
     const createGameMatch = dependencies.createGameMatch ?? createRallarGameMatch;
-    const gameConfig: RallarGameMatchConfig<TCommand, TCommand, TSnapshot, TEvent, TPresence> = {
+    const game = createGameMatch(toRallarGameMatchConfig(config));
+    const nowEpochMs = dependencies.nowEpochMs ?? Date.now;
+    const resultId = dependencies.resultId ?? (() => `${config.matchId}:${nowEpochMs()}`);
+    const deriveStandings = () =>
+        deriveRallarMatchStandings({
+            rows: config.readStandingRows?.() ?? [],
+            compare: config.compareStandings
+        });
+
+    return {
+        game,
+        start: game.start,
+        stop: game.stop,
+        status: game.status,
+        diagnostics: game.diagnostics,
+        submitCommand: (command) => game.sendIntent(command),
+        participants: deriveRallarMatchParticipants,
+        standings: deriveStandings,
+        finalizeResult: (summary) =>
+            finalizeRallarBrowserMatchResult({
+                config,
+                game,
+                summary,
+                nowEpochMs,
+                resultId,
+                standings: deriveStandings()
+            })
+    };
+}
+
+function toRallarGameMatchConfig<TCommand, TSnapshot, TEvent, TPresence>(
+    config: RallarBrowserMatchConfig<TCommand, TSnapshot, TEvent, TPresence>
+): RallarGameMatchConfig<TCommand, TCommand, TSnapshot, TEvent, TPresence> {
+    return {
         rallar: config.rallar,
         protocol: config.protocol,
         topicId: config.topicId,
@@ -72,70 +116,53 @@ export function createRallarBrowserMatch<TCommand, TSnapshot, TEvent, TPresence 
         onEvent: config.onEvent,
         onSyncRequest: config.onSyncRequest
     };
-    const game = createGameMatch(gameConfig);
-    const nowEpochMs = dependencies.nowEpochMs ?? Date.now;
-    const resultId = dependencies.resultId ??
-        (() => `${config.matchId}:${nowEpochMs()}`);
-    const deriveStandings = () =>
-        deriveRallarMatchStandings({
-            rows: config.readStandingRows?.() ?? [],
-            compare: config.compareStandings
-        });
+}
 
-    return {
-        game,
-        start: game.start,
-        stop: game.stop,
-        status: game.status,
-        diagnostics: game.diagnostics,
-        submitCommand: (command) => game.sendIntent(command),
-        participants: deriveRallarMatchParticipants,
-        standings: deriveStandings,
-        finalizeResult: (summary) => {
-            const status = game.status();
-            const roomRef = status.roomRef ??
-                config.roomRef ??
-                config.rallar.rooms.state().currentRoomRef;
-            if (!roomRef) {
-                throw new Error('Cannot finalize a Rallar match result without a roomRef.');
-            }
-            const directorStatus = config.rallar.director.status(roomRef);
-            const appointment = directorStatus.appointment;
-            if (!appointment || !directorStatus.isFresh) {
-                throw new Error(
-                    'Cannot finalize a room-trusted Rallar match result without a fresh director appointment.'
-                );
-            }
-            const session = config.rallar.session();
-            if (
-                !session ||
-                !directorStatus.isDirector ||
-                appointment.sessionId !== session.sessionId ||
-                appointment.principalId !== session.clientId
-            ) {
-                throw new Error(
-                    'Cannot finalize a room-trusted Rallar match result unless the local session holds the director appointment.'
-                );
-            }
+function finalizeRallarBrowserMatchResult<TCommand, TSnapshot, TEvent, TPresence, TSummary>(
+    input: FinalizeRallarBrowserMatchResultInput<TCommand, TSnapshot, TEvent, TPresence, TSummary>
+): RallarRoomTrustedMatchResult<TSummary> {
+    const { config, game } = input;
+    const roomRef = game.status().roomRef ??
+        config.roomRef ??
+        config.rallar.rooms.state().currentRoomRef;
+    if (!roomRef) {
+        throw new Error('Cannot finalize a Rallar match result without a roomRef.');
+    }
+    const directorStatus = config.rallar.director.status(roomRef);
+    const appointment = directorStatus.appointment;
+    if (!appointment || !directorStatus.isFresh) {
+        throw new Error(
+            'Cannot finalize a room-trusted Rallar match result without a fresh director appointment.'
+        );
+    }
+    const session = config.rallar.session();
+    if (
+        !session ||
+        !directorStatus.isDirector ||
+        appointment.sessionId !== session.sessionId ||
+        appointment.principalId !== session.clientId
+    ) {
+        throw new Error(
+            'Cannot finalize a room-trusted Rallar match result unless the local session holds the director appointment.'
+        );
+    }
 
-            return createRallarMatchResult({
-                resultId: resultId(),
-                matchId: config.matchId,
-                roomRef,
-                protocol: config.protocol,
-                authority: {
-                    kind: 'browser-director',
-                    id: appointment.sessionId,
-                    epoch: appointment.epoch,
-                    principalId: appointment.principalId,
-                    sessionId: appointment.sessionId
-                },
-                trust: 'room-trusted',
-                startedAtEpochMs: config.startedAtEpochMs,
-                finishedAtEpochMs: nowEpochMs(),
-                standings: deriveStandings(),
-                summary
-            });
-        }
-    };
+    return createRallarMatchResult({
+        resultId: input.resultId(),
+        matchId: config.matchId,
+        roomRef,
+        protocol: config.protocol,
+        authority: {
+            kind: 'browser-director',
+            id: appointment.sessionId,
+            epoch: appointment.epoch,
+            principalId: appointment.principalId,
+            sessionId: appointment.sessionId
+        },
+        trust: 'room-trusted',
+        startedAtEpochMs: config.startedAtEpochMs,
+        finishedAtEpochMs: input.nowEpochMs(),
+        standings: input.standings,
+        summary: input.summary
+    });
 }

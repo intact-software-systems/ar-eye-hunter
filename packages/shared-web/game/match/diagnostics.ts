@@ -71,7 +71,9 @@ export function deriveRallarGameDiagnostics(
         ...(input.peerReadiness?.readyPeerIds ?? []),
         ...(input.rtcStatus?.readyPeerIds ?? [])
     ]);
-    const notReadyPeerIds = uniqueSorted(input.peerReadiness?.notReadyPeerIds ?? []);
+    const notReadyPeerIds = uniqueSorted(
+        input.peerReadiness?.notReadyPeerIds ?? []
+    );
     const knownPeerIds = uniqueSorted([
         ...(input.rtcStatus?.knownPeerIds ?? []),
         ...readyPeerIds,
@@ -114,6 +116,16 @@ export function deriveRallarGameDiagnostics(
 }
 
 function deriveIssues(input: RallarGameDiagnosticsInput): readonly string[] {
+    return uniqueSorted([
+        ...deriveMatchStatusIssues(input),
+        ...deriveTransportIssues(input),
+        ...deriveAuthorityIssues(input)
+    ]);
+}
+
+function deriveMatchStatusIssues(
+    input: RallarGameDiagnosticsInput
+): readonly string[] {
     const issues: string[] = [];
 
     if (!input.status.roomId) {
@@ -134,6 +146,14 @@ function deriveIssues(input: RallarGameDiagnosticsInput): readonly string[] {
     if (input.status.recovery.status === 'recovering') {
         issues.push('recovering');
     }
+
+    return issues;
+}
+
+function deriveTransportIssues(
+    input: RallarGameDiagnosticsInput
+): readonly string[] {
+    const issues: string[] = [];
 
     if (input.wsStatus && !input.wsStatus.isOpen) {
         issues.push('ws-not-open');
@@ -165,6 +185,14 @@ function deriveIssues(input: RallarGameDiagnosticsInput): readonly string[] {
         issues.push(`lane-${input.peerReadiness.status}`);
     }
 
+    return issues;
+}
+
+function deriveAuthorityIssues(
+    input: RallarGameDiagnosticsInput
+): readonly string[] {
+    const issues: string[] = [];
+
     if (input.election && !input.election.host) {
         issues.push('no-electable-host');
     }
@@ -177,7 +205,7 @@ function deriveIssues(input: RallarGameDiagnosticsInput): readonly string[] {
         issues.push('director-eligibility-not-ready');
     }
 
-    return uniqueSorted(issues);
+    return issues;
 }
 
 function uniqueSorted(values: readonly string[]): readonly string[] {

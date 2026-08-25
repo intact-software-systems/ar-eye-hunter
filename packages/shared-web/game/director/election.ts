@@ -57,7 +57,11 @@ export function scoreRallarGameHostCapability(
     const hardwareConcurrency = clamp(capability.hardwareConcurrency ?? 2, 1, 64);
     const deviceMemoryGb = clamp(capability.deviceMemoryGb ?? 2, 0.5, 128);
     const rttMs = clamp(capability.rttMs ?? 150, 0, 2_000);
-    const previousDisconnects = clamp(capability.previousDisconnects ?? 0, 0, 100);
+    const previousDisconnects = clamp(
+        capability.previousDisconnects ?? 0,
+        0,
+        100
+    );
 
     return Math.round(
         fps * 2 +
@@ -75,8 +79,7 @@ export function electRallarGameHost(
     input: RallarGameHostElectionInput
 ): RallarGameHostElectionResult {
     const nowEpochMs = input.nowEpochMs ?? Date.now();
-    const capabilityTtlMs = input.capabilityTtlMs ??
-        DEFAULT_RALLAR_GAME_CAPABILITY_TTL_MS;
+    const capabilityTtlMs = input.capabilityTtlMs ?? DEFAULT_RALLAR_GAME_CAPABILITY_TTL_MS;
     const capabilities = latestCapabilitiesByPeer(input.capabilities ?? []);
     const scoreHost = input.scoreHost ?? scoreRallarGameHostCapability;
     const peerIds = [...new Set(input.peerIds)].sort(comparePeerIds);
@@ -88,11 +91,11 @@ export function electRallarGameHost(
                 : false;
 
             if (!capability) {
-                return fallbackCandidate(peerId, 'missing-capability');
+                return unverifiedCandidate(peerId, 'missing-capability');
             }
 
             if (!fresh) {
-                return fallbackCandidate(peerId, 'stale-capability');
+                return unverifiedCandidate(peerId, 'stale-capability');
             }
 
             if (capability.canHost === false) {
@@ -125,7 +128,7 @@ export function electRallarGameHost(
     };
 }
 
-function fallbackCandidate(
+function unverifiedCandidate(
     peerId: string,
     reason: Extract<RallarGameHostCandidateReason, 'missing-capability' | 'stale-capability'>
 ): RallarGameHostCandidate {
