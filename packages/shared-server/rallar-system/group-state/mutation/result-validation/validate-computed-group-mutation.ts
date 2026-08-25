@@ -5,7 +5,7 @@ import type {
     GroupMutationFacts,
     GroupMutationRead
 } from '../group-mutation-contracts.ts';
-import { validateComputedWrite } from './validate-computed-group-mutation-write.ts';
+import { validateComputedGroupMutationWrite } from './validate-computed-group-mutation-write.ts';
 import { validateCommandHash, validateMutationReceipt } from './validate-group-mutation-result.ts';
 
 export interface ValidateComputedMutationShapeInput {
@@ -33,7 +33,7 @@ export function validateComputedMutationShape({
             return;
         case 'write':
             validateWriteOutcomeKeys(value);
-            validateComputedWrite({ command, read, facts, computed });
+            validateComputedGroupMutationWrite({ command, read, facts, computed });
             return;
     }
 }
@@ -119,4 +119,3 @@ function validateWriteOutcomeKeys(value: object): void {
 
 export { validateComputedMutationShape as validateComputedGroupMutation };
 export { validateComputedRosterFacts } from '../state-validation/validate-computed-roster-facts.ts';
-export { validateComputedOutboxEntries } from './validate-computed-group-mutation-write.ts';

@@ -1,11 +1,11 @@
 import type { GroupPresenceSession, GroupRef } from '@shared/api/group-types.ts';
 
-import { validateRuntimeEntryValue } from '../mutation/state-validation/validate-group-mutation-read.ts';
 import {
     groupStateMemberStorageKey,
     groupStatePresenceAdmissionStorageKey,
     groupStatePresenceSessionStorageKey
 } from '../persistence/group-state-storage-keys.ts';
+import { validateGroupStateRuntimeEntry } from '../persistence/validate-group-state-runtime-entry.ts';
 import {
     validatePresenceAdmission,
     validatePresenceSession
@@ -37,7 +37,7 @@ export function validateGroupPresenceSummaryReadCollections(
 function validateGroupPresenceSummaryMembers(ref: GroupRef, read: GroupPresenceSummaryRead): void {
     const memberIds = new Set<string>();
     for (const stored of read.members) {
-        validateRuntimeEntryValue(
+        validateGroupStateRuntimeEntry(
             stored,
             'Stored summary member',
             groupStateMemberStorageKey({ ...ref, principalId: stored.value.principalId })
@@ -68,7 +68,7 @@ function validateGroupPresenceSummaryAdmissions(
     const admissionPrincipals = new Set<string>();
     const admittedSessionOwners = new Map<string, string>();
     for (const stored of admissions) {
-        validateRuntimeEntryValue(
+        validateGroupStateRuntimeEntry(
             stored,
             'Stored summary admission',
             groupStatePresenceAdmissionStorageKey({ ...ref, principalId: stored.value.principalId })
@@ -94,7 +94,7 @@ function validateGroupPresenceSummarySessions(
 ): Map<string, GroupPresenceSession> {
     const sessionsById = new Map<string, GroupPresenceSession>();
     for (const stored of presenceSessions) {
-        validateRuntimeEntryValue(
+        validateGroupStateRuntimeEntry(
             stored,
             'Stored summary presence session',
             groupStatePresenceSessionStorageKey({ ...ref, sessionId: stored.value.sessionId })

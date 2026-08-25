@@ -13,9 +13,9 @@ import type {
 import { computeGroupMutation } from '../orchestration/compute-group-mutation.ts';
 import {
     validateComputedMutationShape,
-    validateComputedOutboxEntries,
     validateComputedRosterFacts
 } from '../result-validation/validate-computed-group-mutation.ts';
+import { validateComputedGroupMutationOutbox } from '../result-validation/validate-computed-group-mutation-outbox.ts';
 import { validateGroupMutationFacts } from './validate-group-mutation-facts.ts';
 import { validateGroupMutationRead } from './validate-group-mutation-read.ts';
 
@@ -59,7 +59,7 @@ export function validateGroupMutation(
         if (input.computed.presenceAdmission) {
             validatePresenceAdmission(input.computed.presenceAdmission.value);
         }
-        validateComputedOutboxEntries({
+        validateComputedGroupMutationOutbox({
             command: input.command,
             read: input.read,
             facts: input.facts,

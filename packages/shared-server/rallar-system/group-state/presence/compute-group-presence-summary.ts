@@ -16,11 +16,11 @@ import {
     requirePositiveSafeInteger
 } from '../group-state-validation-primitives.ts';
 import { presenceAdmissionIdentity } from '../mutation/presence/compute-group-presence-admission.ts';
-import { validateRuntimeEntryValue } from '../mutation/state-validation/validate-group-mutation-read.ts';
 import {
     groupStateGroupStorageKey,
     groupStatePresenceSummaryStorageKey
 } from '../persistence/group-state-storage-keys.ts';
+import { validateGroupStateRuntimeEntry } from '../persistence/validate-group-state-runtime-entry.ts';
 import { validatePresenceSummaryValue } from '../persistence/validate-persisted-group-presence.ts';
 import { validateStoredGroup } from '../persistence/validate-persisted-group.ts';
 import { validateGroupPresenceSummaryReadCollections } from './validate-group-presence-summary-read-collections.ts';
@@ -119,11 +119,15 @@ export function validateGroupPresenceSummary(
         ['group', 'members', 'admissions', 'presenceSessions', 'current'],
         'Group presence summary read'
     );
-    validateRuntimeEntryValue(read.group, 'Stored summary group', groupStateGroupStorageKey(ref));
+    validateGroupStateRuntimeEntry(
+        read.group,
+        'Stored summary group',
+        groupStateGroupStorageKey(ref)
+    );
     validateStoredGroup(read.group.value, ref);
     validateGroupPresenceSummaryReadCollections(ref, read);
     if (read.current) {
-        validateRuntimeEntryValue(
+        validateGroupStateRuntimeEntry(
             read.current,
             'Stored current presence summary',
             groupStatePresenceSummaryStorageKey(ref)

@@ -9,6 +9,7 @@ import {
     type RuntimeStateConditionalWriteResult,
     type RuntimeStateRepositoryLike
 } from '../../../runtime-state/runtime-state-repository.ts';
+import { decodeJsonWireValue } from '../../protocol/json-wire-identity.ts';
 import type { GroupStateEventStore } from '../../state-events/group-state-event-store.ts';
 import type { StateEventListQuery } from '../../state-events/state-event-listing.ts';
 import type { GroupMutationIdempotencyRecord } from '../mutation/group-mutation-contracts.ts';
@@ -149,8 +150,8 @@ export function materializeGroupStateAuthorityGuard(
     };
 }
 
-export function canonicalStoredGroup(
-    stored: RuntimeStateEntryValue<unknown>,
+export function canonicalStoredGroup<StoredValue>(
+    stored: RuntimeStateEntryValue<StoredValue>,
     expectedScope: GroupScope
 ): RuntimeStateEntryValue<Group> {
     let decoded: GroupRef;
@@ -221,7 +222,7 @@ function assertGroupStateAuthorityGuard(
     let value: Group;
     try {
         value = decodeStoredGroupStateValue(
-            JSON.parse(entry.value) as unknown,
+            decodeJsonWireValue(JSON.parse(entry.value), 'Stored authority-fence group'),
             guard.groupRef,
             entry.key,
             decodePersistedGroup,

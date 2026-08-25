@@ -27,10 +27,10 @@ import {
     computeUpsertMember
 } from '../membership/compute-group-membership-mutation.ts';
 import {
-    computeConnectPresence,
-    computeDisconnectPresence,
-    computeHeartbeatPresence
-} from '../presence/compute-group-presence-mutation.ts';
+    computeConnectGroupPresence
+} from '../presence/compute-connect-group-presence.ts';
+import { computeDisconnectGroupPresence } from '../presence/compute-disconnect-group-presence.ts';
+import { computeHeartbeatGroupPresence } from '../presence/compute-heartbeat-group-presence.ts';
 import { validateGroupMutationFacts } from '../state-validation/validate-group-mutation-facts.ts';
 import { validateGroupMutationRead } from '../state-validation/validate-group-mutation-read.ts';
 
@@ -88,10 +88,10 @@ export function computeGroupMutation(
         case 'upsertMember':
             return computeUpsertMember(command, read, facts);
         case 'connectPresence':
-            return computeConnectPresence(command, read, facts);
+            return computeConnectGroupPresence(command, read, facts);
         case 'heartbeatPresence':
-            return computeHeartbeatPresence(command, read, facts);
+            return computeHeartbeatGroupPresence(command, read, facts);
         case 'disconnectPresence':
-            return computeDisconnectPresence(command, read, facts);
+            return computeDisconnectGroupPresence(command, read, facts);
     }
 }

@@ -1,131 +1,30 @@
-import type { GroupMember, GroupRef } from '@shared/api/group-types.ts';
-import { jsonEquals } from '@shared/repository/state-utils.ts';
-import type { RuntimeStateEntryValue } from '../../../../runtime-state/runtime-state-json-store.ts';
+import type { GroupRef } from '@shared/api/group-types.ts';
 
 import {
     assertExactKeys,
     assertRequiredKeys,
-    requireJsonSafe,
-    requireNonEmptyString,
-    requireNonNegativeSafeInteger,
-    requireOneOf,
-    requireRecord
+    requireJsonSafe
 } from '../../group-state-validation-primitives.ts';
 import {
     groupStateGroupStorageKey,
     groupStateIdempotencyStorageKey,
-    groupStateMemberStorageKey,
-    groupStatePresenceAdmissionStorageKey,
     groupStatePresenceSessionStorageKey,
     groupStatePresenceSummaryStorageKey
 } from '../../persistence/group-state-storage-keys.ts';
+import { validateGroupStateRuntimeEntry } from '../../persistence/validate-group-state-runtime-entry.ts';
 import {
-    validatePresenceAdmission,
     validatePresenceSession,
     validatePresenceSummaryValue
 } from '../../persistence/validate-persisted-group-presence.ts';
-import { validateStoredGroup, validateStoredMember } from '../../persistence/validate-persisted-group.ts';
+import { validateStoredGroup } from '../../persistence/validate-persisted-group.ts';
 import { validateGroupExpiredStateAuthority } from '../../presence/group-expired-state-authority.ts';
 import type { GroupMutationCommand, GroupMutationRead } from '../group-mutation-contracts.ts';
-import {
-    isGroupAdmissionDecisionOperation,
-    isGroupAdmissionPolicyReadOperation,
-    isGroupLifecycleTransitionOperation
-} from '../group-mutation-contracts.ts';
 import { groupMutationIdempotencyKey } from '../group-mutation-idempotency-key.ts';
-import {
-    resolveGroupMutationReadIdentities,
-    type GroupMutationReadIdentities
-} from '../read/resolve-group-mutation-read-identities.ts';
+import { resolveGroupMutationReadIdentities } from '../read/resolve-group-mutation-read-identities.ts';
 import { validateGroupMutationIdempotencyRecord } from '../result-validation/validate-group-mutation-result.ts';
-
-interface AdmissionReadValidationInput {
-    readonly read: GroupMutationRead;
-    readonly command: GroupMutationCommand;
-    readonly ref: GroupRef;
-    readonly identities: GroupMutationReadIdentities;
-}
-
-export function validateGroupMutationRead(
-    read: GroupMutationRead,
-    command: GroupMutationCommand
-): void {
-    const ref = command.aggregateRef;
-    validateReadShape(read);
-    validateStoredGroupRead(read, ref);
-    const identities = resolveGroupMutationReadIdentities(read, command);
-    validateMemberReads(read, ref, identities);
-    validateTargetPresenceRead(read, ref, identities);
-    validateGroupExpiredStateAuthority({
-        ref,
-        targetSessionId: identities.targetSessionId,
-        group: read.group,
-        expiredGroupEntry: read.expiredGroupEntry,
-        targetPresence: read.targetPresence,
-        expiredTargetPresenceEntry: read.expiredTargetPresenceEntry
-    });
-    validateAdmissionReads({ read, command, ref, identities });
-    validateAuthorityPresenceReads(read, ref);
-    validateSummaryAndIdempotencyReads(read, command, ref);
-    validateLifecyclePolicyRead(read, command);
-    validateActiveMemberPrincipalIdsRead(read, command);
-}
-
-/**
- * The policy read is loaded exactly for the lifecycle transition operations
- * and the admission-consulting operations (plan decision 5.1); anywhere else
- * its presence would mean the read step loaded state the operation must not
- * depend on.
- */
-function validateLifecyclePolicyRead(read: GroupMutationRead, command: GroupMutationCommand): void {
-    if (
-        isGroupLifecycleTransitionOperation(command.operation) ||
-        isGroupAdmissionPolicyReadOperation(command.operation)
-    ) {
-        if (read.lifecyclePolicy === null) {
-            throw new TypeError('Group mutation read is missing the lifecycle policy read');
-        }
-        requireOneOf(
-            read.lifecyclePolicy.status,
-            ['absent', 'present', 'corrupt'],
-            'Group mutation lifecycle policy status'
-        );
-        return;
-    }
-    if (read.lifecyclePolicy !== null) {
-        throw new TypeError('Group mutation read must not carry a lifecycle policy for this operation');
-    }
-}
-
-/**
- * The roster read exists exactly for the lifecycle transition operations,
- * which pin the formation electorate at the epoch boundary, and the admission
- * grant/decline operations, whose manager resolution needs every candidate;
- * anywhere else its presence would mean the read step loaded state the
- * operation must not depend on.
- */
-function validateActiveMemberPrincipalIdsRead(
-    read: GroupMutationRead,
-    command: GroupMutationCommand
-): void {
-    if (
-        isGroupLifecycleTransitionOperation(command.operation) ||
-        isGroupAdmissionDecisionOperation(command.operation)
-    ) {
-        if (read.activeMemberPrincipalIds === null) {
-            throw new TypeError('Group mutation read is missing the active member principal ids');
-        }
-        for (const principalId of read.activeMemberPrincipalIds) {
-            requireNonEmptyString(principalId, 'Group mutation active member principal id');
-        }
-        return;
-    }
-    if (read.activeMemberPrincipalIds !== null) {
-        throw new TypeError(
-            'Group mutation read must not carry active member principal ids for this operation'
-        );
-    }
-}
+import { validateGroupMutationAuthorityReads } from './validate-group-mutation-authority-reads.ts';
+import { validateGroupMutationMemberReads } from './validate-group-mutation-member-reads.ts';
+import { validateGroupMutationOperationReads } from './validate-group-mutation-operation-reads.ts';
 
 const GROUP_MUTATION_READ_KEYS = [
     'idempotency',
@@ -151,6 +50,34 @@ const GROUP_MUTATION_READ_KEYS = [
     'activeMemberPrincipalIds'
 ] as const;
 
+export function validateGroupMutationRead(
+    read: GroupMutationRead,
+    command: GroupMutationCommand
+): void {
+    const ref = command.aggregateRef;
+    validateReadShape(read);
+    validateStoredGroupRead(read, ref);
+    const identities = resolveGroupMutationReadIdentities(read, command);
+    validateGroupMutationMemberReads(read, ref, identities);
+    validateTargetPresenceRead({
+        read,
+        ref,
+        targetSessionId: identities.targetSessionId,
+        targetPrincipalId: identities.targetPrincipalId
+    });
+    validateGroupExpiredStateAuthority({
+        ref,
+        targetSessionId: identities.targetSessionId,
+        group: read.group,
+        expiredGroupEntry: read.expiredGroupEntry,
+        targetPresence: read.targetPresence,
+        expiredTargetPresenceEntry: read.expiredTargetPresenceEntry
+    });
+    validateGroupMutationAuthorityReads({ read, command, ref, identities });
+    validateSummaryAndIdempotencyReads(read, command, ref);
+    validateGroupMutationOperationReads(read, command);
+}
+
 function validateReadShape(read: GroupMutationRead): void {
     requireJsonSafe(read, 'Group mutation read');
     assertExactKeys(read, GROUP_MUTATION_READ_KEYS, 'Group mutation read');
@@ -158,192 +85,45 @@ function validateReadShape(read: GroupMutationRead): void {
 }
 
 function validateStoredGroupRead(read: GroupMutationRead, ref: GroupRef): void {
-    if (read.group) {
-        validateRuntimeEntryValue(read.group, 'Stored group', groupStateGroupStorageKey(ref));
-        validateStoredGroup(read.group.value, ref);
+    if (!read.group) {
+        return;
     }
+    validateGroupStateRuntimeEntry(
+        read.group,
+        'Stored group',
+        groupStateGroupStorageKey(ref)
+    );
+    validateStoredGroup(read.group.value, ref);
 }
 
-function validateMemberReads(
-    read: GroupMutationRead,
-    ref: GroupRef,
-    identities: GroupMutationReadIdentities
-): void {
-    validateMemberReadPair({
-        member: read.actorMember,
-        stored: read.actorMemberEntry,
-        ref,
-        expectedPrincipalId: identities.actorPrincipalId,
-        label: 'Actor member'
-    });
-    validateMemberReadPair({
-        member: read.targetMember,
-        stored: read.targetMemberEntry,
-        ref,
-        expectedPrincipalId: identities.targetPrincipalId,
-        label: 'Target member'
-    });
-    validateMemberReadPair({
-        member: read.authorityMember,
-        stored: read.authorityMemberEntry,
-        ref,
-        expectedPrincipalId: identities.ownerPrincipalId,
-        label: 'Authority member'
-    });
-    validateMemberReadPair({
-        member: read.directorMember,
-        stored: read.directorMemberEntry,
-        ref,
-        expectedPrincipalId: identities.directorPrincipalId,
-        label: 'Director member'
-    });
+interface ValidateTargetPresenceReadInput {
+    readonly read: GroupMutationRead;
+    readonly ref: GroupRef;
+    readonly targetSessionId: string | null;
+    readonly targetPrincipalId: string | null;
 }
 
-function validateTargetPresenceRead(
-    read: GroupMutationRead,
-    ref: GroupRef,
-    identities: GroupMutationReadIdentities
-): void {
-    const { targetSessionId, targetPrincipalId } = identities;
-    if (read.targetPresence) {
-        if (targetSessionId === null || read.targetPresence.value.sessionId !== targetSessionId) {
-            throw new TypeError('Stored target presence session differs from command slot identity');
-        }
-        if (targetPrincipalId === null || read.targetPresence.value.principalId !== targetPrincipalId) {
-            throw new TypeError('Stored target presence principal differs from command slot identity');
-        }
-        validateRuntimeEntryValue(
-            read.targetPresence,
-            'Stored target presence',
-            groupStatePresenceSessionStorageKey({ ...ref, sessionId: targetSessionId })
-        );
-        validatePresenceSession(read.targetPresence.value, ref, 'Stored target presence');
-    }
-}
-
-function validateAdmissionReads({
+function validateTargetPresenceRead({
     read,
-    command,
     ref,
-    identities
-}: AdmissionReadValidationInput): void {
-    const authorityAdmissionPrincipalId = command.operation === 'appointDirector' ? identities.ownerPrincipalId : null;
-    const directorAdmissionPrincipalId = command.operation === 'appointDirector'
-        ? identities.directorPrincipalId
-        : null;
-    for (
-        const [label, admission, expectedPrincipalId] of [
-            ['Target admission', read.targetAdmission, identities.targetPrincipalId],
-            ['Authority admission', read.authorityAdmission, authorityAdmissionPrincipalId],
-            ['Director admission', read.directorAdmission, directorAdmissionPrincipalId]
-        ] as const
-    ) {
-        if (!admission) {
-            continue;
-        }
-        if (expectedPrincipalId === null || admission.value.principalId !== expectedPrincipalId) {
-            throw new TypeError(`${label} principal differs from command slot identity`);
-        }
-        validateRuntimeEntryValue(
-            admission,
-            label,
-            groupStatePresenceAdmissionStorageKey({
-                ...ref,
-                principalId: expectedPrincipalId
-            })
-        );
-        validatePresenceAdmission(admission.value, ref);
+    targetSessionId,
+    targetPrincipalId
+}: ValidateTargetPresenceReadInput): void {
+    if (!read.targetPresence) {
+        return;
     }
-}
-
-function validateAuthorityPresenceReads(read: GroupMutationRead, ref: GroupRef): void {
-    if (
-        !Array.isArray(read.authorityPresenceSessions) ||
-        !Array.isArray(read.authorityPresenceSessionEntries)
-    ) {
-        throw new TypeError('Authority presence sessions must be arrays');
+    if (targetSessionId === null || read.targetPresence.value.sessionId !== targetSessionId) {
+        throw new TypeError('Stored target presence session differs from command slot identity');
     }
-    if (read.authorityPresenceSessions.length !== read.authorityPresenceSessionEntries.length) {
-        throw new TypeError('Authority presence sessions differ from stored entries');
+    if (targetPrincipalId === null || read.targetPresence.value.principalId !== targetPrincipalId) {
+        throw new TypeError('Stored target presence principal differs from command slot identity');
     }
-    const referencedAuthoritySessions = collectReferencedAuthoritySessions(read);
-    validateAuthorityPresenceEntries(read, ref, referencedAuthoritySessions);
-}
-
-interface ReferencedAuthoritySession {
-    readonly principalId: string;
-    readonly generationId: string;
-    readonly generationVersion: number;
-    readonly connectedAtEpochMs: number;
-}
-
-function collectReferencedAuthoritySessions(
-    read: GroupMutationRead
-): ReadonlyMap<string, ReferencedAuthoritySession> {
-    const referencedAuthoritySessions = new Map<string, ReferencedAuthoritySession>();
-    for (const admission of [read.authorityAdmission, read.directorAdmission]) {
-        if (!admission) {
-            continue;
-        }
-        for (const session of admission.value.admittedSessions) {
-            const existing = referencedAuthoritySessions.get(session.sessionId);
-            if (existing && existing.principalId !== admission.value.principalId) {
-                throw new TypeError(
-                    'Stored authority presence session is referenced by multiple principals'
-                );
-            }
-            if (
-                existing &&
-                (existing.generationId !== session.generationId ||
-                    existing.generationVersion !== session.generationVersion ||
-                    existing.connectedAtEpochMs !== session.connectedAtEpochMs)
-            ) {
-                throw new TypeError(
-                    'Stored authority presence session has conflicting admission generations'
-                );
-            }
-            referencedAuthoritySessions.set(session.sessionId, {
-                principalId: admission.value.principalId,
-                generationId: session.generationId,
-                generationVersion: session.generationVersion,
-                connectedAtEpochMs: session.connectedAtEpochMs
-            });
-        }
-    }
-    return referencedAuthoritySessions;
-}
-
-function validateAuthorityPresenceEntries(
-    read: GroupMutationRead,
-    ref: GroupRef,
-    referencedAuthoritySessions: ReadonlyMap<string, ReferencedAuthoritySession>
-): void {
-    read.authorityPresenceSessionEntries.forEach((entry, index) => {
-        const expected = referencedAuthoritySessions.get(entry.value.sessionId);
-        if (
-            !expected ||
-            expected.principalId !== entry.value.principalId ||
-            expected.generationId !== entry.value.generationId ||
-            expected.generationVersion !== entry.value.generationVersion ||
-            expected.connectedAtEpochMs !== entry.value.connectedAtEpochMs
-        ) {
-            throw new TypeError(
-                'Stored authority presence is not referenced by its corresponding admission'
-            );
-        }
-        validateRuntimeEntryValue(
-            entry,
-            'Stored authority presence',
-            groupStatePresenceSessionStorageKey({
-                ...ref,
-                sessionId: entry.value.sessionId
-            })
-        );
-        validatePresenceSession(entry.value, ref, 'Stored authority presence');
-        if (!jsonEquals(entry.value, read.authorityPresenceSessions[index])) {
-            throw new TypeError('Authority presence session differs from stored entry');
-        }
-    });
+    validateGroupStateRuntimeEntry(
+        read.targetPresence,
+        'Stored target presence',
+        groupStatePresenceSessionStorageKey({ ...ref, sessionId: targetSessionId })
+    );
+    validatePresenceSession(read.targetPresence.value, ref, 'Stored target presence');
 }
 
 function validateSummaryAndIdempotencyReads(
@@ -352,104 +132,24 @@ function validateSummaryAndIdempotencyReads(
     ref: GroupRef
 ): void {
     if (read.presenceSummary) {
-        validateRuntimeEntryValue(
+        validateGroupStateRuntimeEntry(
             read.presenceSummary,
             'Stored presence summary',
             groupStatePresenceSummaryStorageKey(ref)
         );
         validatePresenceSummaryValue(read.presenceSummary.value, ref);
     }
-    if (read.idempotency) {
-        const idempotencyKey = groupMutationIdempotencyKey(command);
-        if (idempotencyKey === null || read.idempotency.value.requestId !== idempotencyKey) {
-            throw new TypeError('Stored group idempotency request differs from command identity');
-        }
-        validateRuntimeEntryValue(
-            read.idempotency,
-            'Stored group idempotency',
-            groupStateIdempotencyStorageKey(ref, idempotencyKey)
-        );
-        validateGroupMutationIdempotencyRecord(read.idempotency.value, ref);
-    }
-}
-
-export function validateRuntimeEntryValue<T>(
-    stored: RuntimeStateEntryValue<T>,
-    label: string,
-    expectedKey?: string
-): void {
-    const wrapper = requireRecord(stored, label);
-    assertExactKeys(wrapper, ['entry', 'value'], label);
-    assertRequiredKeys(wrapper, ['entry', 'value'], label);
-    const entry = requireRecord(wrapper.entry, `${label} entry`);
-    assertExactKeys(
-        entry,
-        ['key', 'value', 'expireAtTimestamp', 'updatedTimestamp', 'revision'],
-        `${label} entry`
-    );
-    assertRequiredKeys(
-        entry,
-        ['key', 'value', 'expireAtTimestamp', 'updatedTimestamp', 'revision'],
-        `${label} entry`
-    );
-    requireNonEmptyString(entry.key, `${label} entry key`);
-    if (expectedKey !== undefined && entry.key !== expectedKey) {
-        throw new TypeError(`${label} entry key is not canonical for its identity`);
-    }
-    if (typeof entry.value !== 'string') {
-        throw new TypeError(`${label} entry value must be serialized JSON`);
-    }
-    if (!Number.isSafeInteger(entry.expireAtTimestamp) || (entry.expireAtTimestamp as number) < 0) {
-        throw new TypeError(`${label} expiry must be a non-negative safe integer`);
-    }
-    requireNonNegativeSafeInteger(entry.revision, `${label} revision`);
-    requireNonEmptyString(entry.updatedTimestamp, `${label} updatedTimestamp`);
-    if (Number.isNaN(Date.parse(entry.updatedTimestamp as string))) {
-        throw new TypeError(`${label} updatedTimestamp must be an ISO timestamp`);
-    }
-    let parsed: unknown;
-    try {
-        parsed = JSON.parse(entry.value as string);
-    }
-    catch {
-        throw new TypeError(`${label} entry value must be valid JSON`);
-    }
-    if (!jsonEquals(parsed, wrapper.value)) {
-        throw new TypeError(`${label} entry value differs from parsed value`);
-    }
-}
-
-interface ValidateMemberReadPairInput {
-    readonly member: GroupMember | null;
-    readonly stored: RuntimeStateEntryValue<GroupMember> | null;
-    readonly ref: GroupRef;
-    readonly expectedPrincipalId: string | null;
-    readonly label: string;
-}
-
-export function validateMemberReadPair({
-    member,
-    stored,
-    ref,
-    expectedPrincipalId,
-    label
-}: ValidateMemberReadPairInput): void {
-    if ((member === null) !== (stored === null)) {
-        throw new TypeError(`${label} differs from stored entry presence`);
-    }
-    if (!member || !stored) {
+    if (!read.idempotency) {
         return;
     }
-    if (expectedPrincipalId === null || member.principalId !== expectedPrincipalId) {
-        throw new TypeError(`${label} principal differs from command slot identity`);
+    const idempotencyKey = groupMutationIdempotencyKey(command);
+    if (idempotencyKey === null || read.idempotency.value.requestId !== idempotencyKey) {
+        throw new TypeError('Stored group idempotency request differs from command identity');
     }
-    validateRuntimeEntryValue(
-        stored,
-        `Stored ${label.toLowerCase()}`,
-        groupStateMemberStorageKey({ ...ref, principalId: expectedPrincipalId })
+    validateGroupStateRuntimeEntry(
+        read.idempotency,
+        'Stored group idempotency',
+        groupStateIdempotencyStorageKey(ref, idempotencyKey)
     );
-    validateStoredMember(stored.value, ref, label);
-    if (!jsonEquals(member, stored.value)) {
-        throw new TypeError(`${label} differs from stored entry value`);
-    }
+    validateGroupMutationIdempotencyRecord(read.idempotency.value, ref);
 }
