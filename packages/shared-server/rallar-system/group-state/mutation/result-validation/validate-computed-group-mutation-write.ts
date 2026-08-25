@@ -1,10 +1,11 @@
+import { validateAuthoritativeGroupEvent } from '@shared/api/authoritative-state-validation.ts';
+import { createDefaultGroupLifecyclePolicy } from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
+import type { Group } from '@shared/api/group-types.ts';
 import type { MutationActor } from '@shared/api/mutation-actor.ts';
+import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { computeGroupPresenceSummaryEntry } from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
 import { jsonEquals } from '@shared/repository/state-utils.ts';
 
-import { createDefaultGroupLifecyclePolicy } from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
-import type { Group } from '@shared/api/group-types.ts';
-import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { computeFormationTimerEntries } from '../../formation-timer-outbox-entry.ts';
 import {
     assertExactKeys,
@@ -12,7 +13,6 @@ import {
     requireNonNegativeSafeInteger,
     requireOneOf
 } from '../../group-state-validation-primitives.ts';
-import { validateGroupEvent } from '../../persistence/persisted-group-event.ts';
 import {
     validatePresenceAdmission,
     validatePresenceSession,
@@ -241,7 +241,7 @@ function validateComputedEventAndReceipt({
     facts,
     computed
 }: ValidateComputedWriteInput): void {
-    validateGroupEvent(computed.event, command.aggregateRef, 'Group mutation computed event');
+    validateAuthoritativeGroupEvent(computed.event, command.aggregateRef);
     if (
         computed.event.eventId !== facts.eventId ||
         computed.event.occurredAtEpochMs !== facts.nowEpochMs ||

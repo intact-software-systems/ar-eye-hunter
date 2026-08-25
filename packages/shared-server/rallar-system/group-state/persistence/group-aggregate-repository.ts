@@ -1,3 +1,4 @@
+import { validateAuthoritativeGroupEvent } from '@shared/api/authoritative-state-validation.ts';
 import type { Group, GroupEvent, GroupRef, GroupScope } from '@shared/api/group-types.ts';
 import type { StateEventPage } from '@shared/api/state-event-types.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
@@ -28,7 +29,6 @@ import {
     groupStateGroupStorageKey,
     groupStateIdempotencyStorageKey
 } from './group-state-storage-keys.ts';
-import { validatePersistedGroupEvent } from './persisted-group-event.ts';
 import { validatePersistedGroup } from './validate-persisted-group.ts';
 
 export class GroupAggregateRepository extends RuntimeStateJsonStore {
@@ -95,7 +95,7 @@ export class GroupAggregateRepository extends RuntimeStateJsonStore {
     }
 
     async appendEvent(event: GroupEvent): Promise<void> {
-        validatePersistedGroupEvent(event, event);
+        validateAuthoritativeGroupEvent(event, event);
         await this.events.appendGroupEvent(event);
     }
 

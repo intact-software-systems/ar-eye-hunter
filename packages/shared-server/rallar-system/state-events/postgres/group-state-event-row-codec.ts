@@ -1,8 +1,7 @@
+import { validateAuthoritativeGroupEvent } from '@shared/api/authoritative-state-validation.ts';
 import type { GroupEvent, GroupRef } from '@shared/api/group-types.ts';
-import {
-    decodePersistedGroupEvent,
-    validatePersistedGroupEvent
-} from '../../group-state/persistence/persisted-group-event.ts';
+
+import { decodeJsonWireValue } from '../../protocol/json-wire-identity.ts';
 
 import { groupStateEventWorkspaceKey } from './group-state-event-workspace-key.ts';
 
@@ -34,7 +33,7 @@ export function assertPersistableGroupStateEvent(
     expected: GroupRef
 ): void {
     try {
-        validatePersistedGroupEvent(event, expected);
+        validateAuthoritativeGroupEvent(event, expected);
     }
     catch (error) {
         throw new GroupStateEventRepositoryInvariantCorruptionError(
@@ -81,7 +80,9 @@ export function toValidatedGroupStateEvent(
 
 function decodeGroupStateEventJson(eventJson: string, expected: GroupRef): GroupEvent {
     try {
-        return decodePersistedGroupEvent(JSON.parse(eventJson), expected);
+        const event = decodeJsonWireValue(JSON.parse(eventJson), 'Stored group event');
+        validateAuthoritativeGroupEvent(event, expected);
+        return event;
     }
     catch (error) {
         throw new GroupStateEventRepositoryInvariantCorruptionError(
