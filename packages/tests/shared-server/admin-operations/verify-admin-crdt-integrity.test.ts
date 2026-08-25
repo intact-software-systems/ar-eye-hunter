@@ -26,6 +26,7 @@ describe('VerifyAdminCrdtIntegrity', () => {
                     return Promise.resolve({
                         document,
                         documentKey: 'app-1/workspace-1/room/map/doc-1',
+                        checkedUpdateCount: 0,
                         valid: true,
                         issues: [],
                         sequenceGaps: [],
