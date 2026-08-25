@@ -8,7 +8,8 @@ import {
     type RallarAiGenerationPolicy,
     type RallarAiJsonProvider,
     type RallarAiJsonRequest,
-    type RallarAiJsonResult
+    type RallarAiJsonResult,
+    type RallarAiJsonValue
 } from '@shared/rallar-ai/mod.ts';
 import type {
     CreateRallarServerAiOptions,
@@ -16,7 +17,7 @@ import type {
     RallarServerAiLimits,
     RallarServerAiRequestContext
 } from './rallar-ai-server.ts';
-import type { RallarServerAiBoundaryValue, RallarServerAiValue } from './rallar-server-ai-boundary-value.ts';
+import type { RallarServerAiBoundaryValue } from './rallar-server-ai-boundary-value.ts';
 
 interface CreateRallarServerAiGenerationInput {
     readonly provider: RallarAiJsonProvider;
@@ -27,16 +28,16 @@ interface CreateRallarServerAiGenerationInput {
     readonly limits: Required<RallarServerAiLimits>;
 }
 
-interface ValidateAndReportGenerationResultInput<TValue, TContext> {
+interface ValidateAndReportGenerationResultInput<TValue extends RallarAiJsonValue> {
     readonly generation: CreateRallarServerAiGenerationInput;
-    readonly request: RallarAiJsonRequest<TContext>;
+    readonly request: RallarAiJsonRequest;
     readonly result: RallarAiJsonResult<TValue>;
     readonly startedAtEpochMs: number;
 }
 
-interface EmitFailureDiagnosticInput<TContext> {
+interface EmitFailureDiagnosticInput {
     readonly generation: CreateRallarServerAiGenerationInput;
-    readonly request: RallarAiJsonRequest<TContext>;
+    readonly request: RallarAiJsonRequest;
     readonly error: Error;
     readonly startedAtEpochMs: number;
 }
@@ -46,8 +47,8 @@ export function createRallarServerAiGeneration(
 ): RallarServerAiFacade['generateJson'] {
     let activeGenerations = 0;
 
-    return async <TValue = RallarServerAiValue, TContext = RallarServerAiValue>(
-        request: RallarAiJsonRequest<TContext>,
+    return async <TValue extends RallarAiJsonValue = RallarAiJsonValue>(
+        request: RallarAiJsonRequest,
         context: RallarServerAiRequestContext = {}
     ): Promise<RallarAiJsonResult<TValue>> => {
         assertServerPolicy(input.policy, input.provider);
@@ -77,7 +78,7 @@ export function createRallarServerAiGeneration(
 
         try {
             await emitGenerationStarted(input, request);
-            const result = await generateWithTimeout<TValue, TContext>(
+            const result = await generateWithTimeout<TValue>(
                 input.provider,
                 providerRequest,
                 input.policy.timeoutMs ?? request.timeoutMs
@@ -106,9 +107,9 @@ export function createRallarServerAiGeneration(
     };
 }
 
-async function emitGenerationStarted<TContext>(
+async function emitGenerationStarted(
     input: CreateRallarServerAiGenerationInput,
-    request: RallarAiJsonRequest<TContext>
+    request: RallarAiJsonRequest
 ): Promise<void> {
     for (const kind of ['generation-requested', 'provider-started'] as const) {
         await emitRallarAiDiagnostic(
@@ -125,8 +126,8 @@ async function emitGenerationStarted<TContext>(
     }
 }
 
-async function validateAndReportGenerationResult<TValue, TContext>(
-    input: ValidateAndReportGenerationResultInput<TValue, TContext>
+async function validateAndReportGenerationResult<TValue extends RallarAiJsonValue>(
+    input: ValidateAndReportGenerationResultInput<TValue>
 ): Promise<void> {
     const { generation, request, result, startedAtEpochMs } = input;
     if (!result.validation.ok) {
@@ -235,13 +236,13 @@ function assertRequestWithinLimits(
     }
 }
 
-async function generateWithTimeout<TValue, TContext>(
+async function generateWithTimeout<TValue extends RallarAiJsonValue>(
     provider: RallarAiJsonProvider,
-    request: RallarAiJsonRequest<TContext>,
+    request: RallarAiJsonRequest,
     timeoutMs?: number
 ): Promise<RallarAiJsonResult<TValue>> {
     if (timeoutMs === undefined) {
-        return await provider.generateJson<TValue, TContext>(request);
+        return await provider.generateJson<TValue>(request);
     }
 
     const controller = new AbortController();
@@ -257,7 +258,7 @@ async function generateWithTimeout<TValue, TContext>(
     }, timeoutMs);
 
     try {
-        return await provider.generateJson<TValue, TContext>({
+        return await provider.generateJson<TValue>({
             ...request,
             signal: controller.signal,
             timeoutMs
@@ -275,8 +276,8 @@ async function generateWithTimeout<TValue, TContext>(
     }
 }
 
-async function emitFailureDiagnostic<TContext>(
-    input: EmitFailureDiagnosticInput<TContext>
+async function emitFailureDiagnostic(
+    input: EmitFailureDiagnosticInput
 ): Promise<void> {
     const { generation, request, error, startedAtEpochMs } = input;
     const aiError = error instanceof RallarAiError ? error : undefined;

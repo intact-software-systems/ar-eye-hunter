@@ -1,28 +1,26 @@
-import type { AppDataEntry, AppDataRepositoryLike } from './AppDataRepository.ts';
-import { isAppDataPageRepository } from './AppDataRepository.ts';
+import type { AppDataEntry, AppDataRepository } from './app-data-repository.ts';
+
+export interface ReadAppDataEntriesInput {
+    readonly repository: AppDataRepository;
+    readonly namespace: string;
+    readonly storeName: string;
+    readonly keyPrefix?: string;
+    readonly pageSize?: number;
+}
 
 export const APP_DATA_ENTRY_READ_PAGE_SIZE = 1_000;
 
 export async function* readAppDataEntries(
-    repository: AppDataRepositoryLike,
-    namespace: string,
-    storeName: string,
-    keyPrefix?: string,
-    pageSize: number = APP_DATA_ENTRY_READ_PAGE_SIZE
+    input: ReadAppDataEntriesInput
 ): AsyncGenerator<AppDataEntry> {
-    if (!isAppDataPageRepository(repository)) {
-        for (const entry of await repository.findEntries(namespace, storeName, keyPrefix)) {
-            yield entry;
-        }
-        return;
-    }
-
-    const limit = Math.max(1, Math.floor(pageSize));
+    const limit = Math.max(1, Math.floor(input.pageSize ?? APP_DATA_ENTRY_READ_PAGE_SIZE));
     let afterKey: string | undefined;
 
     while (true) {
-        const page = await repository.findEntriesPage(namespace, storeName, {
-            keyPrefix,
+        const page = await input.repository.findEntriesPage({
+            namespace: input.namespace,
+            storeName: input.storeName,
+            keyPrefix: input.keyPrefix,
             afterKey,
             limit
         });

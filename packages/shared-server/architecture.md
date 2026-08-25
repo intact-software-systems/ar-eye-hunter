@@ -9,12 +9,13 @@ deployment settings around these shared domain owners.
 
 - `mod.ts` is a curated package barrel for useful current cross-package
   contracts. In-repo implementations import canonical owners directly.
-- `rallar-facade/` composes reusable REST, WebSocket, system, and data behavior.
+- `rallar-server/rallar-server-application.ts` owns reusable application construction and exposes the real WebSocket
+  router and app-data owner directly.
 - `rallar-system/` is organized by domain and lifecycle owner: AppInbox,
   client/group/auth/CRDT state, topology, RTC-RTT, state sync, WebSocket,
   presence, observability, and queue pub/sub.
-- `runtime-state/` exposes conditional and transactional capabilities;
-  `postgres/` supplies the concrete Postgres adapters.
+- `runtime-state/` exposes conditional and transactional capabilities. Concrete Postgres adapters live beside their
+  owning features; `postgres/` owns shared SQL infrastructure.
 
 Persistent authority keeps client/group snapshots in `runtime_state_store`
 and state-event logs in `client_state_events` and `group_state_events`.

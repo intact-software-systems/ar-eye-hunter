@@ -1,5 +1,4 @@
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
-import type { RallarServerSystemInstallers } from '@shared-server/rallar-facade/rallar-server.ts';
 import { installChatWsTopic } from '@shared-server/rallar-system/communication/install-chat-ws-topic.ts';
 import { installRtcSignalingWsTopic } from '@shared-server/rallar-system/communication/install-rtc-signaling-ws-topic.ts';
 import { createCrdtWsMutationIngress } from '@shared-server/rallar-system/crdt/inbox/create-crdt-ws-mutation-ingress.ts';
@@ -72,7 +71,7 @@ export interface ApiV1SystemInstallerRuntime {
 }
 
 export interface ApiV1SystemInstallers<Runtime extends ApiV1SystemInstallerRuntime> {
-    readonly installDefaultMiddlewareTopics: (
+    readonly installSystemTopics: (
         runtime: Runtime,
         ws: RallarServerWsRouter
     ) => void;
@@ -118,7 +117,7 @@ export interface ApiV1SystemInstallerOperations<
 
 export function createApiV1SystemInstallers(
     input: CreateApiV1SystemInstallersInput
-): RallarServerSystemInstallers<ApiV1Runtime> {
+): ApiV1SystemInstallers<ApiV1Runtime> {
     return constructApiV1SystemInstallers<ApiV1Runtime, ApiV1TopologyServices>(
         input,
         PRODUCTION_OPERATIONS
@@ -134,7 +133,7 @@ export function constructApiV1SystemInstallers<
 ): ApiV1SystemInstallers<Runtime> {
     let systemTopicsInstalled = false;
     return {
-        installDefaultMiddlewareTopics: (runtime, ws) => {
+        installSystemTopics: (runtime, ws) => {
             if (systemTopicsInstalled) {
                 throw new Error('API-v1 system topics already installed.');
             }

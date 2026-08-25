@@ -30,7 +30,7 @@ Deno.test('system topic installation rejects a second start before mutating inst
     );
     const ws = new RallarServerWsRouter(runtime.wsQBoxServerService);
 
-    installers.installDefaultMiddlewareTopics?.(runtime, ws);
+    installers.installSystemTopics(runtime, ws);
     const installedEvents = [
         'topology-app-outbox',
         'chat',
@@ -45,7 +45,7 @@ Deno.test('system topic installation rejects a second start before mutating inst
     assert.equal(runtime.wsQBoxServerService.anyInboxRegistrationCount, 1);
 
     assert.throws(
-        () => installers.installDefaultMiddlewareTopics?.(runtime, ws),
+        () => installers.installSystemTopics(runtime, ws),
         /system topics already installed/i
     );
     assert.deepEqual(events, installedEvents);
@@ -62,7 +62,7 @@ Deno.test('system topics fail before installation when CRDT ingress is absent', 
 
     assert.throws(
         () =>
-            installers.installDefaultMiddlewareTopics?.(
+            installers.installSystemTopics(
                 runtime,
                 new RallarServerWsRouter(runtime.wsQBoxServerService)
             ),

@@ -1,42 +1,66 @@
 import type {
     AppDataConditionalDeleteResult,
     AppDataConditionalInsertResult,
-    AppDataConditionalRepositoryLike,
     AppDataConditionalWriteResult,
+    AppDataDeleteExpiredInput,
+    AppDataDeleteIfRevisionInput,
     AppDataEntry,
-    AppDataEntryPageOptions,
+    AppDataEntryPageInput,
+    AppDataKey,
+    AppDataRepository,
     AppDataUpsertIfRevisionInput,
     AppDataUpsertInput
-} from '@shared-server/app-data/AppDataRepository.ts';
-import { createRallarServerApplication } from '@shared-server/rallar-facade/rallar-server-application.ts';
-import { RallarServerDataFacade } from '@shared-server/rallar-facade/rallar-server.ts';
+} from '@shared-server/app-data/app-data-repository.ts';
+import type { AppDataValueCodec } from '@shared-server/app-data/app-data-value-codec.ts';
+import { RallarServerAppData } from '@shared-server/app-data/rallar-server-app-data.ts';
+import type { JsonWireObject, JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import { RepositoryManager } from '@shared/cache/RepositoryManager.ts';
-import type { WsQueueBoxServerService } from '@shared/services/WsQueueBoxServerService.ts';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 interface Todo {
-    title: string;
-    done: boolean;
+    readonly title: string;
+    readonly done: boolean;
 }
+
+interface Counter {
+    readonly count: number;
+}
+
+const TODO_CODEC = createTodoCodec(1);
+const TODO_SCHEMA_2_CODEC = createTodoCodec(2);
+const COUNTER_CODEC: AppDataValueCodec<Counter> = {
+    schemaVersion: 1,
+    encode: (value) => ({ count: value.count }),
+    decode: (value) => {
+        if (!isJsonWireObject(value) || typeof value.count !== 'number') {
+            throw new TypeError('Counter app data must contain a numeric count.');
+        }
+        return { count: value.count };
+    }
+};
 
 describe('Rallar server app data stores', () => {
     afterEach(() => {
         vi.useRealTimers();
     });
 
-    it('requires an app data repository before opening stores', async () => {
-        const facade = new RallarServerDataFacade(new RepositoryManager());
+    it('rejects invalid codec schema versions when defining stores', () => {
+        const appData = createAppData(new FakeAppDataRepository());
 
-        await expect(facade.open<Todo>('todos')).rejects.toThrow(
-            'Rallar server app data repository is not configured.'
+        expect(() =>
+            appData.define('todos', {
+                codec: { ...TODO_CODEC, schemaVersion: -1 }
+            })
+        ).toThrow(
+            'Rallar server app data codec schemaVersion must be a non-negative integer.'
         );
     });
 
     it('stores custom data in memory and through the repository', async () => {
         const repository = new FakeAppDataRepository();
         const manager = new RepositoryManager();
-        const facade = new RallarServerDataFacade(manager, repository);
-        const todos = await facade.open<Todo>('todos');
+        const appData = createAppData(repository, manager);
+        const todos = await appData.open('todos', { codec: TODO_CODEC });
 
         await todos.set('1', {
             title: 'Implement server data stores',
@@ -57,35 +81,30 @@ describe('Rallar server app data stores', () => {
                 done: false
             }]
         ]);
-        expect(facade.lookupStore<Todo>('todos')?.repositoryId).toBe(
+        expect(appData.lookup('todos', { codec: TODO_CODEC })?.repositoryId).toBe(
             todos.repositoryId
         );
         expect(manager.has(todos.repositoryId)).toBe(true);
     });
 
     it('reuses opened stores and keeps key prefixes isolated', async () => {
-        const facade = new RallarServerDataFacade(
-            new RepositoryManager(),
-            new FakeAppDataRepository()
-        );
-        const todos = await facade.open<Todo>('todos', {
-            schemaVersion: 1
-        });
+        const appData = createAppData(new FakeAppDataRepository());
+        const todos = await appData.open('todos', { codec: TODO_CODEC });
 
         expect(
-            (await facade.open<Todo>('todos', { schemaVersion: 1 })).repositoryId
+            (await appData.open('todos', { codec: TODO_CODEC })).repositoryId
         ).toBe(todos.repositoryId);
         await expect(
-            facade.open<Todo>('todos', {
-                schemaVersion: 2
+            appData.open('todos', {
+                codec: TODO_SCHEMA_2_CODEC
             })
         ).rejects.toThrow(
             'Rallar server app data store already opened with different options'
         );
 
-        const archived = await facade.open<Todo>('todos', {
-            keyPrefix: 'archived:',
-            schemaVersion: 1
+        const archived = await appData.open('todos', {
+            codec: TODO_CODEC,
+            keyPrefix: 'archived:'
         });
 
         expect(archived.repositoryId).not.toBe(todos.repositoryId);
@@ -96,11 +115,9 @@ describe('Rallar server app data stores', () => {
         vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
 
         const repository = new FakeAppDataRepository();
-        const facade = new RallarServerDataFacade(
-            new RepositoryManager(),
-            repository
-        );
-        const todos = await facade.open<Todo>('todos', {
+        const appData = createAppData(repository);
+        const todos = await appData.open('todos', {
+            codec: TODO_CODEC,
             ttlMs: 1_000
         });
 
@@ -112,10 +129,32 @@ describe('Rallar server app data stores', () => {
 
         expect(todos.read('1')).toBeUndefined();
         expect(await todos.get('1')).toBeUndefined();
-        expect(await repository.findEntry('app', 'todos', '1')).toBeUndefined();
+        expect(
+            await repository.findEntry({
+                namespace: 'app',
+                storeName: 'todos',
+                key: '1'
+            })
+        ).toBeUndefined();
     });
 
-    it('migrates legacy values with a lightweight callback and persists the result', async () => {
+    it('returns immediate-expiry creations without retaining them in memory', async () => {
+        const todos = await createAppData(new FakeAppDataRepository()).open('todos', {
+            codec: TODO_CODEC,
+            ttlMs: 0
+        });
+
+        await expect(todos.setIfAbsent('1', () => ({
+            title: 'Immediate expiry',
+            done: false
+        }))).resolves.toEqual({
+            title: 'Immediate expiry',
+            done: false
+        });
+        expect(todos.read('1')).toBeUndefined();
+    });
+
+    it('rejects persisted values from a different schema version without mutating them', async () => {
         vi.useFakeTimers({ toFake: ['Date'] });
         vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
 
@@ -123,88 +162,71 @@ describe('Rallar server app data stores', () => {
         repository.seed({
             namespace: 'app',
             storeName: 'todos',
-            key: 'legacy',
+            key: 'old-schema',
             value: {
-                text: 'Migrated todo'
+                title: 'Old schema todo',
+                done: false
             },
             schemaVersion: 1,
             expireAtTimestamp: Date.now() + 60_000,
             updatedTimestamp: new Date().toISOString(),
             revision: 0
         });
-        const facade = new RallarServerDataFacade(
-            new RepositoryManager(),
-            repository
-        );
-        const todos = await facade.open<Todo>('todos', {
-            schemaVersion: 2,
-            migrate: (value, context) => {
-                expect(context).toMatchObject({
-                    key: 'legacy',
-                    fromVersion: 1,
-                    toVersion: 2
-                });
-                return {
-                    title: (value as { text: string; }).text,
-                    done: false
-                };
-            }
-        });
+        const appData = createAppData(repository);
+        const todos = await appData.open('todos', { codec: TODO_SCHEMA_2_CODEC });
 
-        expect(await todos.get('legacy')).toEqual({
-            title: 'Migrated todo',
-            done: false
-        });
-        expect(await repository.findEntry('app', 'todos', 'legacy')).toMatchObject({
+        await expect(todos.get('old-schema')).rejects.toThrow(
+            'App data value app/todos/old-schema has schema version 1; expected 2.'
+        );
+        expect(
+            await repository.findEntry({
+                namespace: 'app',
+                storeName: 'todos',
+                key: 'old-schema'
+            })
+        ).toMatchObject({
             value: {
-                title: 'Migrated todo',
+                title: 'Old schema todo',
                 done: false
             },
-            schemaVersion: 2,
-            revision: 1
+            schemaVersion: 1,
+            revision: 0
         });
     });
 
-    it('propagates app data repositories through server applications', async () => {
+    it('rejects malformed current-schema values without replacing the cached value', async () => {
         const repository = new FakeAppDataRepository();
-        const runtime = {
-            wsQBoxServerService: {
-                name: 'server-1',
-                onAnyInboxMessageDo: vi.fn().mockReturnThis(),
-                removeAnyInboxMessageCallback: vi.fn()
-            } as unknown as WsQueueBoxServerService
-        };
-        const server = createRallarServerApplication<typeof runtime, Record<string, never>>({
-            runtime,
-            appData: {
-                repository
-            }
+        const todos = await createAppData(repository).open('todos', {
+            codec: TODO_CODEC
         });
-        const todos = await server.data.open<Todo>('todos');
-
         await todos.set('1', {
-            title: 'From application facade',
-            done: true
+            title: 'Cached value',
+            done: false
+        });
+        repository.seed({
+            namespace: 'app',
+            storeName: 'todos',
+            key: '1',
+            value: { title: 'Malformed value' },
+            schemaVersion: 1,
+            expireAtTimestamp: Date.now() + 60_000,
+            updatedTimestamp: new Date().toISOString(),
+            revision: 1
         });
 
-        expect(await repository.findEntry('app', 'todos', '1')).toMatchObject({
-            value: {
-                title: 'From application facade',
-                done: true
-            }
+        await expect(todos.get('1')).rejects.toThrow(
+            'App data value app/todos/1 does not match its current codec.'
+        );
+        expect(todos.read('1')).toEqual({
+            title: 'Cached value',
+            done: false
         });
     });
 
     it('keeps read as memory-only but refreshes get from the repository by default', async () => {
         const repository = new FakeAppDataRepository();
-        const left = await new RallarServerDataFacade(
-            new RepositoryManager(),
-            repository
-        ).open<Todo>('todos');
-        const right = await new RallarServerDataFacade(
-            new RepositoryManager(),
-            repository
-        ).open<Todo>('todos');
+        const left = await createAppData(repository).open('todos', { codec: TODO_CODEC });
+        const right = await createAppData(repository).open('todos', { codec: TODO_CODEC });
 
         await left.set('1', {
             title: 'Initial',
@@ -230,16 +252,11 @@ describe('Rallar server app data stores', () => {
         });
     });
 
-    it('allows cache-first server reads as an explicit compatibility mode', async () => {
+    it('uses cached values when cache-first reads are requested explicitly', async () => {
         const repository = new FakeAppDataRepository();
-        const left = await new RallarServerDataFacade(
-            new RepositoryManager(),
-            repository
-        ).open<Todo>('todos');
-        const right = await new RallarServerDataFacade(
-            new RepositoryManager(),
-            repository
-        ).open<Todo>('todos', {
+        const left = await createAppData(repository).open('todos', { codec: TODO_CODEC });
+        const right = await createAppData(repository).open('todos', {
+            codec: TODO_CODEC,
             readConsistency: 'cache-first'
         });
 
@@ -264,14 +281,8 @@ describe('Rallar server app data stores', () => {
 
     it('does not let compareAndSet overwrite a newer repository revision', async () => {
         const repository = new FakeAppDataRepository();
-        const left = await new RallarServerDataFacade(
-            new RepositoryManager(),
-            repository
-        ).open<Todo>('todos');
-        const right = await new RallarServerDataFacade(
-            new RepositoryManager(),
-            repository
-        ).open<Todo>('todos');
+        const left = await createAppData(repository).open('todos', { codec: TODO_CODEC });
+        const right = await createAppData(repository).open('todos', { codec: TODO_CODEC });
 
         await left.set('1', {
             title: 'Initial',
@@ -295,14 +306,8 @@ describe('Rallar server app data stores', () => {
 
     it('uses insert-if-absent so concurrent creators observe one winner', async () => {
         const repository = new FakeAppDataRepository();
-        const left = await new RallarServerDataFacade(
-            new RepositoryManager(),
-            repository
-        ).open<Todo>('todos');
-        const right = await new RallarServerDataFacade(
-            new RepositoryManager(),
-            repository
-        ).open<Todo>('todos');
+        const left = await createAppData(repository).open('todos', { codec: TODO_CODEC });
+        const right = await createAppData(repository).open('todos', { codec: TODO_CODEC });
 
         const [leftValue, rightValue] = await Promise.all([
             left.setIfAbsent('1', () => ({
@@ -337,27 +342,23 @@ describe('Rallar server app data stores', () => {
             });
         }
 
-        const todos = await new RallarServerDataFacade(
-            new RepositoryManager(),
-            repository
-        ).open<Todo>('todos', {
+        const todos = await createAppData(repository).open('todos', {
+            codec: TODO_CODEC,
             keyPrefix: 'bulk:'
         });
 
         await todos.hydrate();
 
         expect(todos.readEntries()).toHaveLength(1_001);
-        expect(repository.findEntriesCalls).toBe(0);
         expect(repository.findEntriesPageCalls).toBe(2);
         expect(repository.maxRowsReturnedPerFindEntriesPage).toBe(1_000);
     });
 
     it('retries updateOrCreate after a revision conflict', async () => {
         const repository = new FakeAppDataRepository();
-        const counters = await new RallarServerDataFacade(
-            new RepositoryManager(),
-            repository
-        ).open<{ count: number; }>('counters');
+        const counters = await createAppData(repository).open('counters', {
+            codec: COUNTER_CODEC
+        });
 
         await counters.set('count', { count: 0 });
         repository.conflictNextUpsertWith({
@@ -378,16 +379,15 @@ describe('Rallar server app data stores', () => {
     });
 });
 
-class FakeAppDataRepository implements AppDataConditionalRepositoryLike {
+class FakeAppDataRepository implements AppDataRepository {
     private readonly data = new Map<string, AppDataEntry>();
     private nextUpsertConflict?: AppDataUpsertInput;
-    findEntriesCalls = 0;
     findEntriesPageCalls = 0;
     maxRowsReturnedPerFindEntriesPage = 0;
 
     seed(entry: AppDataEntry): void {
         this.data.set(
-            this.toCompositeKey(entry.namespace, entry.storeName, entry.key),
+            this.toCompositeKey(entry),
             entry
         );
     }
@@ -396,32 +396,15 @@ class FakeAppDataRepository implements AppDataConditionalRepositoryLike {
         this.nextUpsertConflict = input;
     }
 
-    async findEntry(
-        namespace: string,
-        storeName: string,
-        key: string
-    ): Promise<AppDataEntry | undefined> {
-        return this.data.get(this.toCompositeKey(namespace, storeName, key));
+    async findEntry(input: AppDataKey): Promise<AppDataEntry | undefined> {
+        return this.data.get(this.toCompositeKey(input));
     }
 
-    async findEntries(
-        namespace: string,
-        storeName: string,
-        keyPrefix?: string
-    ): Promise<readonly AppDataEntry[]> {
-        this.findEntriesCalls += 1;
-        return this.listEntries(namespace, storeName, keyPrefix);
-    }
-
-    async findEntriesPage(
-        namespace: string,
-        storeName: string,
-        options: AppDataEntryPageOptions
-    ): Promise<readonly AppDataEntry[]> {
+    async findEntriesPage(input: AppDataEntryPageInput): Promise<readonly AppDataEntry[]> {
         this.findEntriesPageCalls += 1;
-        const rows = this.listEntries(namespace, storeName, options.keyPrefix)
-            .filter((entry) => options.afterKey === undefined || entry.key > options.afterKey)
-            .slice(0, Math.max(1, Math.floor(options.limit)));
+        const rows = this.listEntries(input)
+            .filter((entry) => input.afterKey === undefined || entry.key > input.afterKey)
+            .slice(0, Math.max(1, Math.floor(input.limit)));
         this.maxRowsReturnedPerFindEntriesPage = Math.max(
             this.maxRowsReturnedPerFindEntriesPage,
             rows.length
@@ -429,16 +412,12 @@ class FakeAppDataRepository implements AppDataConditionalRepositoryLike {
         return rows;
     }
 
-    private listEntries(
-        namespace: string,
-        storeName: string,
-        keyPrefix?: string
-    ): readonly AppDataEntry[] {
+    private listEntries(input: AppDataEntryPageInput): readonly AppDataEntry[] {
         return [...this.data.values()]
             .filter((entry) =>
-                entry.namespace === namespace &&
-                entry.storeName === storeName &&
-                (keyPrefix === undefined || entry.key.startsWith(keyPrefix))
+                entry.namespace === input.namespace &&
+                entry.storeName === input.storeName &&
+                (input.keyPrefix === undefined || entry.key.startsWith(input.keyPrefix))
             )
             .sort((left, right) => left.key.localeCompare(right.key));
     }
@@ -447,79 +426,62 @@ class FakeAppDataRepository implements AppDataConditionalRepositoryLike {
         this.writeInput(input);
     }
 
-    async insertIfAbsent<V = unknown>(
-        input: AppDataUpsertInput<V>
-    ): Promise<AppDataConditionalInsertResult<V>> {
-        const compositeKey = this.toCompositeKey(
-            input.namespace,
-            input.storeName,
-            input.key
-        );
+    async insertIfAbsent(
+        input: AppDataUpsertInput
+    ): Promise<AppDataConditionalInsertResult> {
+        const compositeKey = this.toCompositeKey(input);
         const current = this.data.get(compositeKey);
         if (current) {
             return {
                 status: 'exists',
-                current: current as AppDataEntry<V>
+                current
             };
         }
 
         const entry = this.writeInput(input, 0);
         return {
             status: 'inserted',
-            entry: entry as AppDataEntry<V>
+            entry
         };
     }
 
-    async upsertIfRevision<V = unknown>(
-        input: AppDataUpsertIfRevisionInput<V>
-    ): Promise<AppDataConditionalWriteResult<V>> {
+    async upsertIfRevision(
+        input: AppDataUpsertIfRevisionInput
+    ): Promise<AppDataConditionalWriteResult> {
         if (this.nextUpsertConflict) {
             const conflictInput = this.nextUpsertConflict;
             this.nextUpsertConflict = undefined;
             const current = this.writeInput(conflictInput);
             return {
                 status: 'conflict',
-                current: current as AppDataEntry<V>
+                current
             };
         }
 
-        const compositeKey = this.toCompositeKey(
-            input.namespace,
-            input.storeName,
-            input.key
-        );
+        const compositeKey = this.toCompositeKey(input);
         const current = this.data.get(compositeKey);
         if (!current || current.revision !== input.expectedRevision) {
             return {
                 status: 'conflict',
-                current: current as AppDataEntry<V> | undefined
+                current
             };
         }
 
         const entry = this.writeInput(input, current.revision + 1);
         return {
             status: 'written',
-            entry: entry as AppDataEntry<V>
+            entry
         };
     }
 
-    async deleteByKey(
-        namespace: string,
-        storeName: string,
-        key: string
-    ): Promise<boolean> {
-        return this.data.delete(this.toCompositeKey(namespace, storeName, key));
+    async deleteByKey(input: AppDataKey): Promise<boolean> {
+        return this.data.delete(this.toCompositeKey(input));
     }
 
-    async deleteIfRevision(
-        namespace: string,
-        storeName: string,
-        key: string,
-        expectedRevision: number
-    ): Promise<AppDataConditionalDeleteResult> {
-        const compositeKey = this.toCompositeKey(namespace, storeName, key);
+    async deleteIfRevision(input: AppDataDeleteIfRevisionInput): Promise<AppDataConditionalDeleteResult> {
+        const compositeKey = this.toCompositeKey(input);
         const current = this.data.get(compositeKey);
-        if (!current || current.revision !== expectedRevision) {
+        if (!current || current.revision !== input.expectedRevision) {
             return {
                 status: 'conflict',
                 current
@@ -533,13 +495,13 @@ class FakeAppDataRepository implements AppDataConditionalRepositoryLike {
         };
     }
 
-    async deleteExpired(namespace: string, storeName?: string): Promise<number> {
+    async deleteExpired(input: AppDataDeleteExpiredInput): Promise<number> {
         let removed = 0;
         for (const [key, entry] of this.data.entries()) {
             if (
-                entry.namespace === namespace &&
-                (storeName === undefined || entry.storeName === storeName) &&
-                entry.expireAtTimestamp <= Date.now()
+                entry.namespace === input.namespace &&
+                (input.storeName === undefined || entry.storeName === input.storeName) &&
+                entry.expireAtTimestamp <= input.expireAtOrBeforeTimestamp
             ) {
                 this.data.delete(key);
                 removed += 1;
@@ -549,16 +511,12 @@ class FakeAppDataRepository implements AppDataConditionalRepositoryLike {
         return removed;
     }
 
-    private toCompositeKey(namespace: string, storeName: string, key: string): string {
-        return `${namespace}:${storeName}:${key}`;
+    private toCompositeKey(input: AppDataKey): string {
+        return `${input.namespace}:${input.storeName}:${input.key}`;
     }
 
     private writeInput(input: AppDataUpsertInput, revision?: number): AppDataEntry {
-        const compositeKey = this.toCompositeKey(
-            input.namespace,
-            input.storeName,
-            input.key
-        );
+        const compositeKey = this.toCompositeKey(input);
         const current = this.data.get(compositeKey);
         const entry = {
             namespace: input.namespace,
@@ -573,4 +531,44 @@ class FakeAppDataRepository implements AppDataConditionalRepositoryLike {
         this.data.set(compositeKey, entry);
         return entry;
     }
+}
+
+function createAppData(
+    repository: AppDataRepository,
+    repositories: RepositoryManager = new RepositoryManager()
+): RallarServerAppData {
+    return new RallarServerAppData({
+        repositories,
+        repository,
+        nowEpochMs: Date.now
+    });
+}
+
+function createTodoCodec(schemaVersion: number): AppDataValueCodec<Todo> {
+    return {
+        schemaVersion,
+        encode: (value) => ({
+            title: value.title,
+            done: value.done
+        }),
+        decode: decodeTodo
+    };
+}
+
+function decodeTodo(value: JsonWireValue): Todo {
+    if (
+        !isJsonWireObject(value) ||
+        typeof value.title !== 'string' ||
+        typeof value.done !== 'boolean'
+    ) {
+        throw new TypeError('Todo app data must contain title and done fields.');
+    }
+    return {
+        title: value.title,
+        done: value.done
+    };
+}
+
+function isJsonWireObject(value: JsonWireValue): value is JsonWireObject {
+    return value !== null && typeof value === 'object' && !Array.isArray(value);
 }

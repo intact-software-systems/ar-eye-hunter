@@ -6,9 +6,10 @@ import type {
     RallarAiGenerationPolicy,
     RallarAiJsonProvider,
     RallarAiJsonRequest,
-    RallarAiJsonResult
+    RallarAiJsonResult,
+    RallarAiJsonValue
 } from '@shared/rallar-ai/mod.ts';
-import type { RallarServerAppDataStoreOptions } from '../app-data/RallarServerAppData.ts';
+import type { AppDataValueCodec } from '../app-data/app-data-value-codec.ts';
 import type {
     RallarServerWsFanout,
     RallarServerWsHandler,
@@ -21,7 +22,7 @@ import { DEFAULT_SERVER_AI_LIMITS, DEFAULT_SERVER_AI_POLICY } from './rallar-ai-
 import { createRallarServerAiGeneration } from './rallar-ai-server-generation.ts';
 import { createRallarServerAiIngress } from './rallar-ai-server-ingress.ts';
 import { createRallarServerAiBroadcast, createRallarServerAiPersistence } from './rallar-ai-server-publication.ts';
-import type { RallarServerAiBoundaryValue, RallarServerAiValue } from './rallar-server-ai-boundary-value.ts';
+import type { RallarServerAiBoundaryValue } from './rallar-server-ai-boundary-value.ts';
 
 interface RallarServerAiDataStore<V> {
     set(key: string, value: V): Promise<void>;
@@ -42,13 +43,17 @@ interface RallarServerAiWebSocketFacade {
 interface RallarServerAiDataFacade {
     open<V>(
         input: string,
-        options?: RallarServerAppDataStoreOptions<V>
+        options: Readonly<{
+            codec: AppDataValueCodec<V>;
+            namespace?: string;
+            ttlMs?: number;
+        }>
     ): Promise<RallarServerAiDataStore<V>>;
 }
 
 export interface RallarServerAiRallar {
     readonly ws: RallarServerAiWebSocketFacade;
-    readonly data?: RallarServerAiDataFacade;
+    readonly appData?: RallarServerAiDataFacade;
 }
 
 export interface RallarServerAiRequestContext {
@@ -80,7 +85,7 @@ export interface CreateRallarServerAiOptions {
     readonly serverSenderId?: string;
 }
 
-interface RallarServerAiBroadcastBase<TValue> {
+interface RallarServerAiBroadcastBase<TValue extends RallarAiJsonValue> {
     readonly result: RallarAiJsonResult<TValue>;
     readonly actorId?: string;
     readonly topicId?: string;
@@ -89,14 +94,14 @@ interface RallarServerAiBroadcastBase<TValue> {
     readonly fanout?: RallarServerWsFanout;
 }
 
-export type RallarServerAiBroadcastInput<TValue = RallarServerAiValue> =
+export type RallarServerAiBroadcastInput<TValue extends RallarAiJsonValue = RallarAiJsonValue> =
     & RallarServerAiBroadcastBase<TValue>
     & (
         | Readonly<{ scope?: 'room'; roomRef: GroupRef; }>
         | Readonly<{ scope: 'world' | 'all'; roomRef?: never; }>
     );
 
-export interface RallarServerAiPersistInput<TValue = RallarServerAiValue> {
+export interface RallarServerAiPersistInput<TValue extends RallarAiJsonValue = RallarAiJsonValue> {
     readonly result: RallarAiJsonResult<TValue>;
     readonly actorId?: string;
     readonly roomId?: string;
@@ -112,7 +117,7 @@ export interface RallarServerAiRestGenerateInput {
     readonly roomId?: string;
 }
 
-export interface RallarServerAiRestGenerateResponse<TValue = RallarServerAiValue> {
+export interface RallarServerAiRestGenerateResponse<TValue extends RallarAiJsonValue = RallarAiJsonValue> {
     readonly status: number;
     readonly headers: Readonly<Record<string, string>>;
     readonly body:
@@ -154,17 +159,17 @@ export interface RallarServerAiGenerationTopicOptions {
 }
 
 export interface RallarServerAiFacade {
-    generateJson<TValue = RallarServerAiValue, TContext = RallarServerAiValue>(
-        request: RallarAiJsonRequest<TContext>,
+    generateJson<TValue extends RallarAiJsonValue = RallarAiJsonValue>(
+        request: RallarAiJsonRequest,
         context?: RallarServerAiRequestContext
     ): Promise<RallarAiJsonResult<TValue>>;
-    broadcastJson<TValue = RallarServerAiValue>(
+    broadcastJson<TValue extends RallarAiJsonValue = RallarAiJsonValue>(
         input: RallarServerAiBroadcastInput<TValue>
     ): Promise<RallarServerWsPublishResult>;
-    persistJson<TValue = RallarServerAiValue>(
+    persistJson<TValue extends RallarAiJsonValue = RallarAiJsonValue>(
         input: RallarServerAiPersistInput<TValue>
     ): Promise<void>;
-    handleRestGenerateJson<TValue = RallarServerAiValue>(
+    handleRestGenerateJson<TValue extends RallarAiJsonValue = RallarAiJsonValue>(
         input: RallarServerAiRestGenerateInput
     ): Promise<RallarServerAiRestGenerateResponse<TValue>>;
     createRestRouteInstaller(

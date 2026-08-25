@@ -5,8 +5,12 @@ send commands through REST or a validated WS topic; the server mutates durable
 app data, then publishes a room snapshot to the players in that room.
 
 ```ts
-import type { RallarServerApplication } from '@shared-server/rallar-facade/rallar-server-application.ts';
-import type { RallarServerRuntime } from '@shared-server/rallar-facade/rallar-server.ts';
+import type { AppDataValueCodec } from '@shared-server/app-data/app-data-value-codec.ts';
+import type {
+    RallarServerApplication,
+    RallarServerRuntime
+} from '@shared-server/rallar-server/rallar-server-application.ts';
+import type { JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import { newALBroadcastMessage, newALRoute } from '@shared/al-contracts/al-contract.ts';
 
 interface GameCommand {
@@ -25,12 +29,18 @@ interface GameState {
 
 type GameSnapshot = Pick<GameState, 'gameId' | 'revision' | 'readyPeerIds'>;
 
+const GAME_STATE_CODEC: AppDataValueCodec<GameState> = {
+    schemaVersion: 1,
+    encode: (value) => ({ ...value }),
+    decode: decodeGameState
+};
+
 export async function installGameAuthority(
     rallar: RallarServerApplication<RallarServerRuntime, unknown>
 ) {
-    const games = await rallar.data.open<GameState>('demo-games', {
+    const games = await rallar.appData.open('demo-games', {
         namespace: 'demo-game',
-        schemaVersion: 1,
+        codec: GAME_STATE_CODEC,
         readConsistency: 'fresh',
         maxConflictRetries: 8
     });
@@ -137,6 +147,30 @@ export async function installGameAuthority(
                 }
                 : undefined;
         }
+    };
+}
+
+function decodeGameState(value: JsonWireValue): GameState {
+    if (
+        value === null ||
+        Array.isArray(value) ||
+        typeof value !== 'object' ||
+        typeof value.gameId !== 'string' ||
+        typeof value.roomId !== 'string' ||
+        typeof value.revision !== 'number' ||
+        !Array.isArray(value.readyPeerIds) ||
+        !value.readyPeerIds.every((entry) => typeof entry === 'string') ||
+        !Array.isArray(value.events) ||
+        !value.events.every((entry) => typeof entry === 'string')
+    ) {
+        throw new TypeError('Game state is malformed.');
+    }
+    return {
+        gameId: value.gameId,
+        roomId: value.roomId,
+        revision: value.revision,
+        readyPeerIds: value.readyPeerIds,
+        events: value.events
     };
 }
 

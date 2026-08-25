@@ -216,13 +216,14 @@ function createFakeRallar(): Readonly<{
         | undefined;
 
     const rallar = {
-        data: {
-            open: (name: string, options: unknown) => {
+        appData: {
+            open: (
+                name: string,
+                options: Parameters<Parameters<typeof installRelicHunterGame>[0]['appData']['open']>[1]
+            ) => {
                 expect(name).toBe('relic-hunter-games');
-                expect(options).toEqual({
-                    namespace: 'relic-hunter-v1',
-                    schemaVersion: 1
-                });
+                expect(options.namespace).toBe('relic-hunter-v1');
+                expect(options.codec.schemaVersion).toBe(1);
                 return Promise.resolve({
                     get: (key: string) => Promise.resolve(store.get(key)),
                     set: (key: string, value: RelicGameState) => {
@@ -246,7 +247,7 @@ function createFakeRallar(): Readonly<{
                 topicDefinition = definition;
             },
             on: (
-                _selector: unknown,
+                _selector: Parameters<Parameters<typeof installRelicHunterGame>[0]['ws']['on']>[0],
                 handler: (
                     message: { payload: RelicCommand; },
                     context: { senderId: string; }
@@ -254,12 +255,12 @@ function createFakeRallar(): Readonly<{
             ) => {
                 commandHandler = handler;
             },
-            publish: (message: PublishedMessage['message'], fanout: string) => {
-                published.push({ message, fanout });
+            publish: (message: PublishedMessage['message'], fanout?: string) => {
+                published.push({ message, fanout: fanout ?? 'live-only' });
                 return Promise.resolve();
             }
         }
-    } as unknown as Parameters<typeof installRelicHunterGame>[0];
+    };
 
     return {
         rallar,

@@ -141,11 +141,12 @@ export const RALLAR_COMPANION_COVERAGE_SURFACES: readonly RallarCompanionCoverag
         layer: 'shared-server-application',
         intent: 'Server application behavior for application data and REST, plus WebSocket topic routing.',
         testFiles: [
-            'packages/tests/shared-server/rallar-server-app-data.test.ts',
-            'packages/tests/shared-server/rallar-server-application.test.ts',
+            'packages/tests/shared-server/app-data/rallar-server-app-data.test.ts',
+            'packages/tests/shared-server/rallar-server/rallar-server-application.test.ts',
             'packages/tests/shared-server/rallar-system/rallar-server-ws-router.test.ts'
         ],
-        runnerBoundary: 'Black-box recipes call public REST/WS endpoints; they do not expose server application or router methods.'
+        runnerBoundary:
+            'Black-box recipes call public REST/WS endpoints; they do not expose server application or router methods.'
     },
     {
         surfaceId: 'remote-browser-command-bridge',

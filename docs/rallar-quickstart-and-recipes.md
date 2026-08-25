@@ -600,16 +600,21 @@ const runtime = createRallarMiddleware({
 
 const server = createRallarServerApplication({
     runtime,
-    routes: {
-        ws: installWsRoutes,
+    repositories,
+    appDataRepository,
+    nowEpochMs: Date.now,
+    ws: {},
+    systemInstallers,
+    routeInstallers: {
+        webSocket: installWsRoutes,
         rest: [installAuthRoutes, installStateRoutes]
     }
 });
 
-server.system.useDefaultMiddlewareTopics().useWebSocketLifecycle();
-
-server.ws.mount(app);
-server.rest.mount(app);
+server.installSystemTopics();
+server.installWebSocketLifecycle();
+server.mountWebSocket(app);
+server.mountRest(app);
 server.start();
 ```
 

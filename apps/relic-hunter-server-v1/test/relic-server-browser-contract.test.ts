@@ -8,6 +8,7 @@ import {
     type RelicGameState,
     type RelicServerEvent
 } from '@relic-hunters/mod.ts';
+import { decodeJsonWireValue, type JsonWireObject, type JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import { expect } from '@std/expect';
 import { describe, it } from '@std/testing/bdd';
 import { installRelicHunterGame } from '../src/relic-game-service.ts';
@@ -22,7 +23,7 @@ describe('Relic Hunter server browser contract', () => {
         await service.applyCommand(joinCommand(), 'alice-session');
 
         const message = fake.published[0].message;
-        const browserPayload = JSON.parse(message.payload.resource) as RelicServerEvent;
+        const browserPayload = decodeRelicServerEvent(message.payload.resource);
 
         expect(message.route.topicId).toBe(RELIC_TOPICS.snapshot);
         expect(message.route.contextId).toBe('room-1');
@@ -62,7 +63,7 @@ function createFakeRallar(): Readonly<{
     > = [];
 
     const rallar = {
-        data: {
+        appData: {
             open: () =>
                 Promise.resolve({
                     get: (key: string) => Promise.resolve(store.get(key)),
@@ -94,9 +95,33 @@ function createFakeRallar(): Readonly<{
                 return Promise.resolve();
             }
         }
-    } as unknown as Parameters<typeof installRelicHunterGame>[0];
+    };
 
     return { rallar, published };
+}
+
+function decodeRelicServerEvent(resource: string): RelicServerEvent {
+    const value = decodeJsonWireValue(
+        JSON.parse(resource),
+        'Published Relic server event'
+    );
+    if (
+        !isJsonWireObject(value) ||
+        value.protocolVersion !== RELIC_PROTOCOL_VERSION ||
+        typeof value.gameId !== 'string' ||
+        !isRelicSnapshot(value.snapshot)
+    ) {
+        throw new TypeError('Published Relic server event is malformed.');
+    }
+    return {
+        protocolVersion: RELIC_PROTOCOL_VERSION,
+        gameId: value.gameId,
+        snapshot: value.snapshot
+    };
+}
+
+function isJsonWireObject(value: JsonWireValue): value is JsonWireObject {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 function joinCommand(): RelicCommand {

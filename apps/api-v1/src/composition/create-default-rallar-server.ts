@@ -1,7 +1,7 @@
 import type { Hono } from 'jsr:@hono/hono@4.11.9';
 
-import { PSqlAppDataRepository } from '@shared-server/postgres/app-data/PSqlAppDataRepository.ts';
-import type { RallarServerApplication } from '@shared-server/rallar-facade/rallar-server-application.ts';
+import { PSqlAppDataRepository } from '@shared-server/app-data/postgres/p-sql-app-data-repository.ts';
+import type { RallarServerApplication } from '@shared-server/rallar-server/rallar-server-application.ts';
 import { AuthUserRepository } from '@shared-server/rallar-system/auth/persistence/auth-user-repository.ts';
 import { PSqlCrdtLogRepository } from '@shared-server/rallar-system/crdt/persistence/psql-crdt-log-repository.ts';
 import type { RallarServerWsRouterOptions } from '@shared-server/rallar-system/websocket/router/rallar-server-ws-router-contracts.ts';
@@ -189,6 +189,7 @@ function constructDefaultRallarServer(
         runtime,
         repositories: defaultRepositoryManager,
         appDataRepository: new PSqlAppDataRepository(database),
+        nowEpochMs,
         ws: {
             authorizeRoomMessage: createApiV1RoomWsAuthorizer(runtime.groupStateService, {
                 readLifecyclePolicy: (ref) => topology.groupStateRepository.readLifecyclePolicy(ref)

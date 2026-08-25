@@ -1,15 +1,20 @@
 export * from './al-runtime/postgres/create-p-sql-al-runtime-stores.ts';
 export * from './al-runtime/postgres/p-sql-inbound-admission-backend.ts';
 export * from './al-runtime/postgres/p-sql-outbound-admission-backend.ts';
-export * from './app-data/AppDataRepository.ts';
-export * from './app-data/RallarServerAppData.ts';
+export * from './app-data/app-data-corruption-error.ts';
+export * from './app-data/app-data-repository.ts';
+export * from './app-data/app-data-store-definition.ts';
+export * from './app-data/app-data-value-codec.ts';
+export * from './app-data/postgres/p-sql-app-data-repository.ts';
+export * from './app-data/rallar-server-app-data-conflict-error.ts';
+export * from './app-data/rallar-server-app-data-store.ts';
+export * from './app-data/rallar-server-app-data.ts';
 export * from './game/mod.ts';
 export * from './http/rate-limit-service.ts';
 export * from './http/request-auth-service.ts';
 export * from './postgres/admin-operations/p-sql-admin-operations-pruner.ts';
 export * from './postgres/admin-operations/PSqlAdminOperationsStatsReader.ts';
 export * from './postgres/admin-support/PSqlAdminSupportReader.ts';
-export * from './postgres/app-data/PSqlAppDataRepository.ts';
 export * from './postgres/p-sql-sql.ts';
 export * from './postgres/run-in-p-sql-transaction.ts';
 export * from './queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
@@ -17,8 +22,7 @@ export * from './queuebox/postgres/p-sql-queue-box.ts';
 export * from './queuebox/postgres/p-sql-results-queue-box.ts';
 export * from './queuebox/postgres/resource-inbox-results-repository.ts';
 export * from './rallar-ai/mod.ts';
-export * from './rallar-facade/rallar-server-application.ts';
-export * from './rallar-facade/rallar-server.ts';
+export * from './rallar-server/rallar-server-application.ts';
 export * from './rallar-system/admin-operations/admin-operations-service.ts';
 export * from './rallar-system/admin-support/admin-support-contracts.ts';
 export * from './rallar-system/admin-support/create-admin-support-use-cases.ts';
@@ -33,10 +37,6 @@ export * from './rallar-system/app-inbox/app-inbox-queue-client.ts';
 export * from './rallar-system/app-inbox/app-inbox-retry-finalization.ts';
 export * from './rallar-system/app-outbox/app-outbox-type.ts';
 export * from './rallar-system/app-outbox/coalesced-app-outbox-work-service.ts';
-export {
-    type AuthMutationService,
-    createAuthMutationService
-} from './rallar-system/auth/auth-mutation-service.ts';
 export * from './rallar-system/auth/auth-mutation-service.ts';
 export * from './rallar-system/auth/credentials/auth-credential-issuer.ts';
 export { hashAuthSecret } from './rallar-system/auth/credentials/hash-auth-secret.ts';
