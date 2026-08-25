@@ -52,7 +52,8 @@ export interface ApiV1RouteInstallerRuntime extends ApiV1StateSnapshotRouteRunti
     readonly appAuthInboxService: configRoutes.ConfigRouteDependencies['appAuthInbox'];
     readonly appClientInboxService: Pick<
         ApiV1Runtime['appClientInboxService'],
-        'enqueueAuthorisedWsClientConnect' | 'processAuthenticatedEntryUntilCompletion'
+        | 'enqueueAuthorisedWsClientConnect'
+        | 'processAuthenticatedEntryUntilCompletion'
     >;
     readonly topologyInboxService: Pick<
         ApiV1Runtime['topologyInboxService'],
@@ -123,7 +124,9 @@ interface ApiV1RouteConstruction<
 > {
     readonly input: CreateApiV1RouteInstallersInput<Runtime, Topology>;
     readonly operations: ApiV1RouteInstallerOperations<Runtime>;
-    readonly requireSession: (request: ApiV1RouteAuthRequest) => Promise<IssuedAuthSession>;
+    readonly requireSession: (
+        request: ApiV1RouteAuthRequest
+    ) => Promise<IssuedAuthSession>;
     readonly snapshots: ReturnType<typeof createStateSnapshotReadRouteRegistrars>;
     readonly authorizeCrdtDocumentAccess: ReturnType<typeof createApiCrdtDocumentAccessAuthorizer>;
 }
@@ -239,7 +242,10 @@ function createApiV1StateRouteInstallers<
         (app) =>
             graphTopologyRoutes.registerGraphTopologyRoutes(app, {
                 groupStateService: snapshots.graphGroupStateService,
-                graphDiagnostics: { readScopedGlobalGraphDiagnostic, readGroupGraphDiagnostic },
+                graphDiagnostics: {
+                    readScopedGlobalGraphDiagnostic,
+                    readGroupGraphDiagnostic
+                },
                 topologyQuery: input.topology.topologyQuery,
                 topologyPlanning: input.topology.topologyPlanning,
                 processTopologyAppInbox: (authority, enqueue) =>
@@ -291,7 +297,7 @@ function createApiV1AdministrationRouteInstallers<
                 support: input.admin.support,
                 requireApiAuthSession: requireSession
             }),
-        swaggerRoutes.init
+        swaggerRoutes.installApiDocumentationRoutes
     ];
 }
 

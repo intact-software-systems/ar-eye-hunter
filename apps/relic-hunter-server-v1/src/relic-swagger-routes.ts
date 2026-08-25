@@ -1,19 +1,24 @@
-import { resolvePublicServerUrl, withPublicOpenApiServer } from '@shared-server/http/public-server-url.ts';
+import { decodeOpenApiDocument, withPublicOpenApiServer } from '@shared-server/http/public-open-api-server.ts';
+import type { JsonWireObject } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import { parse } from '@std/yaml';
-import type { Context, Hono } from 'hono';
+import type { Hono } from 'hono';
 
 const OPENAPI_URL = '/api/relic/openapi.json';
 
-async function loadRelicOpenApiYaml(): Promise<unknown> {
+async function loadRelicOpenApiYaml(): Promise<JsonWireObject> {
     const yamlText = await Deno.readTextFile(
-        new URL('../resources/relic-hunter-server-v1-openapi.yaml', import.meta.url)
+        new URL(
+            '../resources/relic-hunter-server-v1-openapi.yaml',
+            import.meta.url
+        )
     );
-    return parse(yamlText);
+    return decodeOpenApiDocument(
+        parse(yamlText),
+        'Relic Hunter OpenAPI resource'
+    );
 }
 
-function swaggerHtml(c: Context): string {
-    const serverUrl = resolvePublicServerUrl(c.req.raw);
-
+function swaggerHtml(): string {
     return `
         <!doctype html>
         <html lang="en">
@@ -31,21 +36,7 @@ function swaggerHtml(c: Context): string {
                   window.ui = SwaggerUIBundle({
                         url: '${OPENAPI_URL}',
                         dom_id: '#swagger-ui',
-                        persistAuthorization: true,
-                        requestInterceptor: (req) => {
-                          if (req.url.endsWith(${JSON.stringify(OPENAPI_URL)})) {
-                            req.userFetch = async (url, options) => {
-                              const res = await fetch(url, options);
-                              const json = await res.json();
-                              json.servers = [{
-                                url: ${JSON.stringify(serverUrl)},
-                                description: 'Relic Hunter server'
-                              }];
-                              return new Response(JSON.stringify(json));
-                            };
-                          }
-                          return req;
-                        }
+                        persistAuthorization: true
                       });
                     };
             </script>
@@ -69,7 +60,7 @@ export function initRelicSwaggerRoutes(app: Hono): Hono {
 
     app.get(
         '/api/relic/docs',
-        (c) => c.html(swaggerHtml(c))
+        (c) => c.html(swaggerHtml())
     );
 
     return app;

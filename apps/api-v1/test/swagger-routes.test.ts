@@ -1,6 +1,8 @@
+import { resolvePublicServerUrl } from '@shared-server/http/public-server-url.ts';
+import type { JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import { Hono } from 'jsr:@hono/hono@4.11.9';
 import assert from 'node:assert/strict';
-import { init, resolvePublicServerUrl } from '../src/routes/swagger-routes.ts';
+import { installApiDocumentationRoutes } from '../src/routes/swagger-routes.ts';
 
 const SCOPED_GROUP_PATH = '/api/state/apps/{applicationId}/workspaces/{workspaceId}' +
     '/groups/{groupId}';
@@ -18,7 +20,10 @@ Deno.test('swagger public server URL trusts proxy HTTPS headers', () => {
         }
     });
 
-    assert.equal(resolvePublicServerUrl(request), 'https://api.rallar.intactss.com');
+    assert.equal(
+        resolvePublicServerUrl(request),
+        'https://api.rallar.intactss.com'
+    );
 });
 
 Deno.test('swagger public server URL falls back to request origin', () => {
@@ -28,20 +33,22 @@ Deno.test('swagger public server URL falls back to request origin', () => {
 });
 
 Deno.test('OpenAPI JSON route publishes the forwarded HTTPS server URL', async () => {
-    const app = init(new Hono());
+    const app = installApiDocumentationRoutes(new Hono());
     const response = await app.request('/api/openapi.json', {
         headers: {
             'x-forwarded-proto': 'https',
             'x-forwarded-host': 'api.rallar.intactss.com'
         }
     });
-    const json = await response.json() as { servers?: readonly { url: string; }[]; };
+    const json = await response.json() as {
+        servers?: readonly { url: string; }[];
+    };
 
     assert.equal(json.servers?.[0]?.url, 'https://api.rallar.intactss.com');
 });
 
 Deno.test('OpenAPI JSON includes black-box auth support contracts', async () => {
-    const app = init(new Hono());
+    const app = installApiDocumentationRoutes(new Hono());
     const response = await app.request('/api/openapi.json');
     const json = await response.json() as {
         paths: Record<string, {
@@ -51,7 +58,7 @@ Deno.test('OpenAPI JSON includes black-box auth support contracts', async () => 
             parameters: Record<string, { required?: boolean; name?: string; in?: string; }>;
             schemas: Record<string, {
                 required?: string[];
-                properties?: Record<string, unknown>;
+                properties?: Record<string, JsonWireValue>;
             }>;
         };
     };
@@ -67,17 +74,20 @@ Deno.test('OpenAPI JSON includes black-box auth support contracts', async () => 
         ['200', '400', '401']
     );
     assert.ok(
-        json.paths['/api/auth/agent-session-tickets/consume/requests/{requestId}']?.post
+        json.paths['/api/auth/agent-session-tickets/consume/requests/{requestId}']
+            ?.post
             ?.responses?.['200'],
         'POST consume agent session ticket missing response 200'
     );
     assert.ok(
-        json.paths['/api/auth/agent-session-tickets/consume/requests/{requestId}']?.post
+        json.paths['/api/auth/agent-session-tickets/consume/requests/{requestId}']
+            ?.post
             ?.responses?.['400'],
         'POST consume agent session ticket missing response 400'
     );
     assert.ok(
-        json.paths['/api/auth/agent-session-tickets/consume/requests/{requestId}']?.post
+        json.paths['/api/auth/agent-session-tickets/consume/requests/{requestId}']
+            ?.post
             ?.responses?.['404'],
         'POST consume agent session ticket missing response 404'
     );
@@ -96,7 +106,7 @@ Deno.test('OpenAPI JSON includes black-box auth support contracts', async () => 
 });
 
 Deno.test('OpenAPI JSON requires an explicit nullable registration display name', async () => {
-    const app = init(new Hono());
+    const app = installApiDocumentationRoutes(new Hono());
     const response = await app.request('/api/openapi.json');
     const json = await response.json() as {
         components: {
@@ -113,13 +123,13 @@ Deno.test('OpenAPI JSON requires an explicit nullable registration display name'
 });
 
 Deno.test('OpenAPI JSON exposes mandatory convergent group state fields', async () => {
-    const app = init(new Hono());
+    const app = installApiDocumentationRoutes(new Hono());
     const response = await app.request('/api/openapi.json');
     const json = await response.json() as {
         components: {
             schemas: Record<string, {
                 required?: string[];
-                properties?: Record<string, unknown>;
+                properties?: Record<string, JsonWireValue>;
             }>;
         };
     };
@@ -136,7 +146,9 @@ Deno.test('OpenAPI JSON exposes mandatory convergent group state fields', async 
     assert.ok(schemas.GroupSnapshot.required?.includes('causalRevision'));
     assert.ok(schemas.GroupSnapshot.properties?.causalRevision);
     assert.ok(schemas.GroupPresenceSession.required?.includes('generationId'));
-    assert.ok(schemas.GroupPresenceSession.required?.includes('generationVersion'));
+    assert.ok(
+        schemas.GroupPresenceSession.required?.includes('generationVersion')
+    );
     assert.deepEqual(schemas.GroupJoinCodeResponse.required, [
         'joinCode',
         'expiresAtEpochMs',
@@ -156,9 +168,16 @@ Deno.test('OpenAPI JSON exposes mandatory convergent group state fields', async 
 });
 
 Deno.test('OpenAPI JSON exposes point-read floors, headers, and status boundaries', async () => {
-    const response = await init(new Hono()).request('/api/openapi.json');
+    const response = await installApiDocumentationRoutes(new Hono()).request(
+        '/api/openapi.json'
+    );
     const json = await response.json() as {
-        paths: Record<string, { get?: { parameters?: Array<{ $ref?: string; }>; responses?: Record<string, unknown>; }; }>;
+        paths: Record<string, {
+            get?: {
+                parameters?: Array<{ $ref?: string; }>;
+                responses?: Record<string, JsonWireValue>;
+            };
+        }>;
     };
     const clientPath = '/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{principalId}';
     const groupPath = '/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}';
@@ -196,7 +215,7 @@ Deno.test('OpenAPI JSON exposes point-read floors, headers, and status boundarie
 });
 
 Deno.test('OpenAPI JSON includes scoped graph and topology management contracts', async () => {
-    const app = init(new Hono());
+    const app = installApiDocumentationRoutes(new Hono());
     const response = await app.request('/api/openapi.json');
     const json = await response.json() as {
         paths: Record<string, {
@@ -212,11 +231,11 @@ Deno.test('OpenAPI JSON includes scoped graph and topology management contracts'
                 name?: string;
                 in?: string;
                 description?: string;
-                schema?: Record<string, unknown>;
+                schema?: Record<string, JsonWireValue>;
             }>;
             schemas: Record<string, {
                 required?: string[];
-                properties?: Record<string, unknown>;
+                properties?: Record<string, JsonWireValue>;
                 enum?: string[];
                 minimum?: number;
             }>;
@@ -350,20 +369,37 @@ Deno.test('OpenAPI JSON includes scoped graph and topology management contracts'
             'meshParamK'
         ]
     ) {
-        assert.equal(topologyPatch.properties[field]?.nullable, true, `${field} clear contract`);
+        assert.equal(
+            topologyPatch.properties[field]?.nullable,
+            true,
+            `${field} clear contract`
+        );
     }
     assert.deepEqual(
         json.components.schemas.ApiMutationFailure.required,
-        ['type', 'version', 'code', 'status', 'message', 'issues', 'denial', 'retry']
+        [
+            'type',
+            'version',
+            'code',
+            'status',
+            'message',
+            'issues',
+            'denial',
+            'retry'
+        ]
     );
-    const mutationFailureVersion = json.components.schemas.ApiMutationFailure.properties?.version as {
-        enum?: string[];
-    };
+    const mutationFailureVersion = json.components.schemas.ApiMutationFailure
+        .properties?.version as {
+            enum?: string[];
+        };
     assert.deepEqual(mutationFailureVersion.enum, ['canonical.v2']);
 
     assertAuthContract(
         'GET scoped global graph',
-        json.paths['/api/state/apps/{applicationId}/workspaces/{workspaceId}/graphs/global']
+        json
+            .paths[
+                '/api/state/apps/{applicationId}/workspaces/{workspaceId}/graphs/global'
+            ]
             .get,
         ['200', '401']
     );
@@ -416,7 +452,10 @@ Deno.test('OpenAPI JSON includes scoped graph and topology management contracts'
 
     assert.deepEqual(
         parameterRefs(
-            json.paths['/api/state/apps/{applicationId}/workspaces/{workspaceId}/graphs/global']
+            json
+                .paths[
+                    '/api/state/apps/{applicationId}/workspaces/{workspaceId}/graphs/global'
+                ]
                 .get
         ),
         [
@@ -471,7 +510,7 @@ Deno.test('OpenAPI JSON includes scoped graph and topology management contracts'
 });
 
 Deno.test('OpenAPI JSON includes admin operations contracts', async () => {
-    const app = init(new Hono());
+    const app = installApiDocumentationRoutes(new Hono());
     const response = await app.request('/api/openapi.json');
     const json = await response.json() as {
         paths: Record<string, {
@@ -479,7 +518,7 @@ Deno.test('OpenAPI JSON includes admin operations contracts', async () => {
             post?: OpenApiOperation;
         }>;
         components: {
-            schemas: Record<string, unknown>;
+            schemas: Record<string, JsonWireValue>;
         };
     };
 
@@ -489,13 +528,22 @@ Deno.test('OpenAPI JSON includes admin operations contracts', async () => {
             ['/api/admin/operations/queues', 'get'],
             ['/api/admin/operations/realtime', 'get'],
             ['/api/admin/operations/state', 'get'],
-            ['/api/admin/operations/state/apps/{applicationId}/workspaces/{workspaceId}', 'get'],
+            [
+                '/api/admin/operations/state/apps/{applicationId}/workspaces/{workspaceId}',
+                'get'
+            ],
             ['/api/admin/operations/crdt', 'get'],
-            ['/api/admin/operations/crdt/apps/{applicationId}/workspaces/{workspaceId}', 'get'],
+            [
+                '/api/admin/operations/crdt/apps/{applicationId}/workspaces/{workspaceId}',
+                'get'
+            ],
             ['/api/admin/operations/system', 'get'],
             ['/api/admin/operations/metrics/reset', 'post'],
             ['/api/admin/operations/topology/recompute/requests/{requestId}', 'post'],
-            ['/api/admin/operations/maintenance/prune-expired/requests/{requestId}', 'post'],
+            [
+                '/api/admin/operations/maintenance/prune-expired/requests/{requestId}',
+                'post'
+            ],
             ['/api/admin/operations/crdt/integrity', 'post'],
             ['/api/admin/operations/crdt/debug-export', 'post'],
             ['/api/admin/operations/crdt/compact/requests/{requestId}', 'post'],
@@ -503,12 +551,19 @@ Deno.test('OpenAPI JSON includes admin operations contracts', async () => {
             ['/api/admin/operations/crdt/erase/requests/{requestId}', 'post']
         ] as const
     ) {
-        assert.ok(json.paths[path]?.[method], `missing ${method.toUpperCase()} ${path}`);
-        assertAuthContract(`${method.toUpperCase()} ${path}`, json.paths[path]?.[method], [
-            '200',
-            '401',
-            '403'
-        ]);
+        assert.ok(
+            json.paths[path]?.[method],
+            `missing ${method.toUpperCase()} ${path}`
+        );
+        assertAuthContract(
+            `${method.toUpperCase()} ${path}`,
+            json.paths[path]?.[method],
+            [
+                '200',
+                '401',
+                '403'
+            ]
+        );
     }
 
     assert.ok(json.components.schemas.AdminOperationsOverviewResponse);
@@ -517,14 +572,14 @@ Deno.test('OpenAPI JSON includes admin operations contracts', async () => {
 });
 
 Deno.test('OpenAPI JSON includes admin support contracts', async () => {
-    const app = init(new Hono());
+    const app = installApiDocumentationRoutes(new Hono());
     const response = await app.request('/api/openapi.json');
     const json = await response.json() as {
         paths: Record<string, {
             post?: OpenApiOperation;
         }>;
         components: {
-            schemas: Record<string, unknown>;
+            schemas: Record<string, JsonWireValue>;
         };
     };
 
@@ -561,14 +616,14 @@ Deno.test('OpenAPI JSON includes admin support contracts', async () => {
 });
 
 Deno.test('OpenAPI JSON includes SPA statistics contracts', async () => {
-    const app = init(new Hono());
+    const app = installApiDocumentationRoutes(new Hono());
     const response = await app.request('/api/openapi.json');
     const json = await response.json() as {
         paths: Record<string, {
             get?: OpenApiOperation;
         }>;
         components: {
-            schemas: Record<string, unknown>;
+            schemas: Record<string, JsonWireValue>;
         };
     };
 
@@ -587,7 +642,9 @@ Deno.test('OpenAPI JSON includes SPA statistics contracts', async () => {
         ]);
         assert.equal(
             json.paths[path]?.get?.responses?.['200'] &&
-                JSON.stringify(json.paths[path]?.get?.responses?.['200']).includes('no-store'),
+                JSON.stringify(json.paths[path]?.get?.responses?.['200']).includes(
+                    'no-store'
+                ),
             true,
             `GET ${path} should document no-store actor-specific responses`
         );
@@ -601,13 +658,14 @@ Deno.test('OpenAPI JSON includes SPA statistics contracts', async () => {
     assert.ok(json.components.schemas.WorkspaceSpaStatisticsResponse);
     assert.ok(json.components.schemas.GroupSpaStatisticsResponse);
     assert.ok(json.components.schemas.MyRealtimeSpaStatisticsResponse);
-    const groupStatsResponse = json.components.schemas.GroupSpaStatisticsResponse as {
-        properties?: Record<string, {
-            allOf?: unknown[];
-            required?: string[];
-            properties?: Record<string, unknown>;
-        }>;
-    };
+    const groupStatsResponse = json.components.schemas
+        .GroupSpaStatisticsResponse as {
+            properties?: Record<string, {
+                allOf?: JsonWireValue[];
+                required?: string[];
+                properties?: Record<string, JsonWireValue>;
+            }>;
+        };
     const groupStatsGroup = groupStatsResponse.properties?.group;
     assert.equal(groupStatsGroup?.allOf, undefined);
     assert.deepEqual(groupStatsGroup?.required, [
@@ -653,7 +711,10 @@ Deno.test(
         );
 
         assert.match(apiReference, /\/api\/admin\/operations\/overview/);
-        assert.match(apiReference, /\/api\/admin\/operations\/maintenance\/prune-expired/);
+        assert.match(
+            apiReference,
+            /\/api\/admin\/operations\/maintenance\/prune-expired/
+        );
         assert.match(apiReference, /payloads redacted/i);
         assert.match(envDocs, /admin operations/);
         assert.match(envDocs, /platform-admin allow-list/i);
@@ -706,6 +767,9 @@ function assertAuthContract(
     );
 
     for (const code of expectedResponseCodes) {
-        assert.ok(operation?.responses?.[code], `${label} missing response ${code}`);
+        assert.ok(
+            operation?.responses?.[code],
+            `${label} missing response ${code}`
+        );
     }
 }
