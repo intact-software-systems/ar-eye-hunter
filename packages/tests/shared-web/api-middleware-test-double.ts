@@ -60,10 +60,10 @@ export function createDefaultTestSession(): AuthSession {
     };
 }
 
-// The seven RallarBrowserMiddleware members are concrete service classes holding private state, so a double can
-// only supply the public members the browser facade actually calls. This is the single place in the
-// test tree that asserts that partial shape onto the real service type: every default below and
-// every override key is still checked against the production signatures.
+// Six service-valued RallarBrowserMiddleware members are concrete classes holding private state,
+// so their doubles supply only the public members the browser facade calls. This is the single
+// place in the test tree that asserts those partial shapes onto their real service types. Every
+// override remains checked against the production signature, while heartbeat is complete below.
 function toServiceTestDouble<TService>(members: Partial<TService>): TService {
     return members as TService;
 }
