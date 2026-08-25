@@ -4,8 +4,8 @@ import { DEFAULT_RTC_DATA_CHANNEL_LANE_ID, type QRtcPeerDto } from '@shared/serv
 import type { QRtcDataChannel, RtcDataChannelHealth } from '@shared/webrtc/QRtcDataChannel.ts';
 import type { QRtcPeerConnection } from '@shared/webrtc/QRtcPeerConnection.ts';
 import { vi } from 'vitest';
-import type * as ContractModules from './auth-session-contract-modules.ts';
-import { createGroupSnapshotFixture } from './authoritative-group-fixtures.ts';
+import type * as ContractModules from '../auth-session-contract-modules.ts';
+import { createGroupSnapshotFixture } from '../authoritative-group-fixtures.ts';
 
 interface ChannelHealthFixtureInput {
     readonly peerId: string;
@@ -24,7 +24,7 @@ const GROUP_REPOSITORY_MISSING_MESSAGE = 'Repository not found: shared.repositor
 
 const mocks = await vi.hoisted(async () => {
     const { createApiMiddlewareTestDouble } = await import(
-        './api-middleware-test-double.ts'
+        '../api-middleware-test-double.ts'
     );
     const ctx = createApiMiddlewareTestDouble();
     const throwClientRepositoryMissing = (): never => {

@@ -15,7 +15,7 @@ interface GameplayPosition {
 
 const mocks = await vi.hoisted(async () => {
     const { createApiMiddlewareTestDouble } = await import(
-        './api-middleware-test-double.ts'
+        '../api-middleware-test-double.ts'
     );
     const ctx = createApiMiddlewareTestDouble();
     const throwClientRepositoryMissing = () => {

@@ -4,8 +4,8 @@ import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import { DEFAULT_RTC_DATA_CHANNEL_LANE_ID } from '@shared/services/WebRtcConnectionService.ts';
 import type { QRtcDataChannel, RtcDataChannelSendOptions, RtcDataChannelSendResult } from '@shared/webrtc/QRtcDataChannel.ts';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { createGroupSnapshotFixture } from './authoritative-group-fixtures.ts';
-import { createDirectorGroupSnapshot } from './director-group-snapshot-fixture.ts';
+import { createGroupSnapshotFixture } from '../authoritative-group-fixtures.ts';
+import { createDirectorGroupSnapshot } from '../director-group-snapshot-fixture.ts';
 
 type MiddlewareModule = typeof import('@shared-web/browser/middleware.ts');
 type StateEventHttpApiModule = typeof import('@shared-web/browser/state-read/state-event-http-api.ts');
@@ -36,7 +36,7 @@ interface GroupSnapshotFixtureScope {
 
 const mocks = await vi.hoisted(async () => {
     const { createLightweightBrowserFacadeTestMocks } = await import(
-        './lightweight-browser-facade-test-mocks.ts'
+        '../lightweight-browser-facade-test-mocks.ts'
     );
     return createLightweightBrowserFacadeTestMocks();
 });
@@ -153,7 +153,7 @@ describe('Rallar targeted channel', () => {
         };
         const realtimeChannel = {
             sendJson: vi.fn(
-                (_data: unknown, _options?: RtcDataChannelSendOptions) => sent
+                (_data: PositionUpdate, _options?: RtcDataChannelSendOptions) => sent
             )
         };
         const laneOpenRequests: Array<{
@@ -234,7 +234,7 @@ describe('Rallar targeted channel', () => {
         };
         const realtimeChannel = {
             sendJson: vi.fn(
-                (_data: unknown, _options?: RtcDataChannelSendOptions) => sent
+                (_data: PositionUpdate, _options?: RtcDataChannelSendOptions) => sent
             )
         };
         vi.mocked(mocks.webRtcConnectionService.ensurePeerLaneOpen)
@@ -406,60 +406,4 @@ function createGroupSnapshot(
         groupId,
         sessionIds
     });
-}
-
-function createMediaTrack(
-    id: string,
-    kind: 'audio' | 'video'
-): MediaStreamTrack {
-    const listeners = new Set<EventListenerOrEventListenerObject>();
-    const track = {
-        id,
-        kind,
-        enabled: true,
-        readyState: 'live',
-        addEventListener: vi.fn((
-            type: string,
-            listener: EventListenerOrEventListenerObject
-        ) => {
-            if (type === 'ended') {
-                listeners.add(listener);
-            }
-        }),
-        removeEventListener: vi.fn((
-            type: string,
-            listener: EventListenerOrEventListenerObject
-        ) => {
-            if (type === 'ended') {
-                listeners.delete(listener);
-            }
-        }),
-        stop: vi.fn(() => {
-            track.readyState = 'ended';
-            const event = { type: 'ended' } as Event;
-            for (const listener of listeners) {
-                if (typeof listener === 'function') {
-                    listener(event);
-                }
-                else {
-                    listener.handleEvent(event);
-                }
-            }
-        })
-    };
-
-    return track as unknown as MediaStreamTrack;
-}
-
-function createMediaStream(
-    id: string,
-    tracks: readonly MediaStreamTrack[]
-): MediaStream {
-    return {
-        id,
-        active: tracks.some((track) => track.readyState !== 'ended'),
-        getTracks: vi.fn(() => [...tracks]),
-        getAudioTracks: vi.fn(() => tracks.filter((track) => track.kind === 'audio')),
-        getVideoTracks: vi.fn(() => tracks.filter((track) => track.kind === 'video'))
-    } as unknown as MediaStream;
 }

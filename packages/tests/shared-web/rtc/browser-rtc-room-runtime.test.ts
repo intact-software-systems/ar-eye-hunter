@@ -1,7 +1,7 @@
 import type { StateCacheChangeListener } from '@shared-web/browser/state-cache/browser-state-cache-lifecycle.ts';
 import { DEFAULT_RTC_DATA_CHANNEL_LANE_ID } from '@shared/services/WebRtcConnectionService.ts';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { createGroupSnapshot, mockGroupSnapshot, mockGroupSnapshots, readRtcWaitMocks, resetRtcWaitTestRuntime } from './rallar-rtc-wait-test-runtime.ts';
+import { createGroupSnapshot, mockGroupSnapshot, mockGroupSnapshots, readRtcWaitMocks, resetRtcWaitTestRuntime } from './browser-rtc-wait-test-runtime.ts';
 
 const mocks = readRtcWaitMocks();
 

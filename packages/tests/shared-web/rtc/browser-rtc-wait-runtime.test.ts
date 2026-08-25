@@ -1,8 +1,8 @@
 import { DEFAULT_RTC_DATA_CHANNEL_LANE_ID } from '@shared/services/WebRtcConnectionService.ts';
 import type { QRtcDataChannel } from '@shared/webrtc/QRtcDataChannel.ts';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { createDeferred } from './browser-lifecycle-fixtures.ts';
-import { createChannelHealth, createPeerTestDouble, readRtcWaitMocks, resetRtcWaitTestRuntime, toTestDouble } from './rallar-rtc-wait-test-runtime.ts';
+import { createDeferred } from '../browser-lifecycle-fixtures.ts';
+import { createChannelHealth, createPeerTestDouble, readRtcWaitMocks, resetRtcWaitTestRuntime, toTestDouble } from './browser-rtc-wait-test-runtime.ts';
 
 const mocks = readRtcWaitMocks();
 

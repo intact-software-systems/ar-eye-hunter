@@ -15,7 +15,7 @@ type GroupStateSnapshotsModule = typeof import('@shared/repository/group-state-s
 
 const mocks = await vi.hoisted(async () => {
     const { createApiMiddlewareTestDouble } = await import(
-        './api-middleware-test-double.ts'
+        '../api-middleware-test-double.ts'
     );
     const ctx = createApiMiddlewareTestDouble();
 
@@ -185,7 +185,9 @@ describe('Rallar RTC diagnostics', () => {
                 localStream: {
                     id: 'local-stream'
                 },
-                remoteStreams: new Map([['remote-stream', {}]])
+                remoteStreams: new Map([
+                    ['remote-stream', { id: 'remote-stream' }]
+                ])
             },
             lanes: new Map([
                 ['reliable', vi.fn(() => reliableHealth)],
@@ -281,7 +283,7 @@ describe('Rallar RTC diagnostics', () => {
             reconnectAttemptsInFlight: 1,
             hasReconnectTimer: true
         });
-        const stats = new Map<string, Record<string, unknown>>([
+        const stats = new Map<string, RtcStatsFixture>([
             ['pair-1', {
                 id: 'pair-1',
                 type: 'candidate-pair',
@@ -426,11 +428,12 @@ describe('Rallar RTC diagnostics', () => {
 });
 
 type RtcPeerConnectionStatus = QRtcPeerDto['connection']['status'];
+type RtcStatsFixture = Readonly<Record<string, string | number | boolean>>;
 
 interface RtcPeerConnectionTestDoubleMembers {
     readonly localDescription?: Pick<RTCSessionDescription, 'type'>;
     readonly remoteDescription?: Pick<RTCSessionDescription, 'type'>;
-    readonly getStats?: () => Promise<ReadonlyMap<string, Record<string, unknown>>>;
+    readonly getStats?: () => Promise<ReadonlyMap<string, RtcStatsFixture>>;
 }
 
 type RtcPeerConnectionTestDouble =
@@ -449,7 +452,7 @@ type RtcPeerConnectionTestDouble =
 interface RtcPeerStatusTestDoubleMembers {
     readonly pc?: RtcPeerConnectionTestDouble;
     readonly localStream?: Pick<MediaStream, 'id'>;
-    readonly remoteStreams?: ReadonlyMap<string, unknown>;
+    readonly remoteStreams?: ReadonlyMap<string, Pick<MediaStream, 'id'>>;
 }
 
 type RtcPeerStatusTestDouble =
@@ -488,7 +491,7 @@ function toRtcPeerTestDouble(input: RtcPeerTestDoubleInput): QRtcPeerDto {
                 { readHealth }
             ])
         )
-    } as unknown as QRtcPeerDto;
+    } as object as QRtcPeerDto;
 }
 
 function createChannelHealth(input: ChannelHealthFixtureInput): RtcDataChannelHealth {

@@ -1,3 +1,7 @@
+import type {
+    RallarRtcLifecycleEvent,
+    RallarRtcStatus
+} from '@shared-web/browser/rallar-rtc-facade.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import { DEFAULT_RTC_DATA_CHANNEL_LANE_ID, type QRtcPeerDto } from '@shared/services/WebRtcConnectionService.ts';
 import type { QRtcClientCallbacks } from '@shared/webrtc/QRtcClientCallbacks.ts';
@@ -22,7 +26,7 @@ const GROUP_REPOSITORY_MISSING_MESSAGE = 'Repository not found: shared.repositor
 
 const mocks = await vi.hoisted(async () => {
     const { createApiMiddlewareTestDouble } = await import(
-        './api-middleware-test-double.ts'
+        '../api-middleware-test-double.ts'
     );
     const ctx = createApiMiddlewareTestDouble();
     const throwClientRepositoryMissing = (): never => {
@@ -425,8 +429,8 @@ describe('Rallar RTC recovery', () => {
             }
         );
         const facade = createRallarFacade();
-        const statuses: unknown[] = [];
-        const lifecycles: unknown[] = [];
+        const statuses: RallarRtcStatus[] = [];
+        const lifecycles: RallarRtcLifecycleEvent[] = [];
 
         const unsubscribeStatus = facade.rtc.onStatus(
             (status) => {
@@ -547,7 +551,7 @@ describe('Rallar RTC recovery', () => {
         mocks.webRtcConnectionService.readyPeerIdsForLane.mockReturnValue(['peer-1']);
         mocks.webRtcConnectionService.readPeer.mockReturnValue(peer);
         const facade = createRallarFacade();
-        const lifecycles: unknown[] = [];
+        const lifecycles: RallarRtcLifecycleEvent[] = [];
 
         facade.rtc.onLifecycle(
             (event) => {
@@ -606,7 +610,7 @@ describe('Rallar RTC recovery', () => {
         mocks.webRtcConnectionService.activePeerIds.mockReturnValue(['peer-1']);
         mocks.webRtcConnectionService.readPeer.mockReturnValue(peer);
         const facade = createRallarFacade();
-        const lifecycles: unknown[] = [];
+        const lifecycles: RallarRtcLifecycleEvent[] = [];
 
         facade.rtc.onLifecycle(
             (event) => {
