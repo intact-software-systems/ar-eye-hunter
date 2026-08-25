@@ -171,19 +171,97 @@ function hasExactAdminMutationSubmission(
     const facts = readLiveFunctionFacts(owner);
     const submissions = facts.calls.filter((call) => isCallNamed(call, 'writeHttpAdminCommandUntilCompletion'));
     const submission = submissions[0];
-    const materialize = readObjectFunctionProperty(asNodes(submission?.arguments)[0], 'materialize');
+    const reservation = submission
+        ? traceCrdtAdminCommandReservation(program, submission)
+        : undefined;
     return (
         submissions.length === 1 &&
-        hasExactLiveOperationCall({
-            root: owner,
-            callName: 'writeHttpAdminCommandUntilCompletion',
-            expectedOperationValues: ['member:mutation.operation']
+        reservation !== undefined &&
+        hasSingleLiveCallWithArgument({
+            root: reservation.materialize,
+            callName: 'createCrdtAdminCommand',
+            argumentPath: 'input.mutation'
         }) &&
-        materialize !== undefined &&
-        hasSingleLiveCall(materialize, 'createCrdtAdminCommand') &&
         facts.calls.every((call) => !isCallNamed(call, 'writeCrdtCommandUntilCompletion')) &&
         ['rebuild-projection', 'compact', 'lifecycle', 'erase'].includes(operation)
     );
+}
+
+interface CrdtAdminCommandReservationTrace {
+    readonly materialize: MutationRoutingAstNode;
+}
+
+interface SingleLiveCallWithArgumentInput {
+    readonly root: MutationRoutingAstNode;
+    readonly callName: string;
+    readonly argumentPath: string;
+}
+
+function traceCrdtAdminCommandReservation(
+    program: MutationRoutingAstNode,
+    submission: MutationRoutingAstNode
+): CrdtAdminCommandReservationTrace | undefined {
+    const reservationCall = unwrapExpression(asNodes(submission.arguments)[0]);
+    if (!reservationCall || !isCallNamed(reservationCall, 'createCrdtAdminCommandReservation')) {
+        return undefined;
+    }
+    const reservationInputs = asNodes(reservationCall.arguments);
+    const reservationInput = reservationInputs[0];
+    const builders = findFunctionLikes(program, 'createCrdtAdminCommandReservation');
+    const builder = builders[0];
+    if (
+        reservationInputs.length !== 1 ||
+        reservationInput?.type !== 'ObjectExpression' ||
+        builders.length !== 1 ||
+        !builder ||
+        readEffectiveOperation(readObjectPropertyValue(reservationInput, 'mutation')) !==
+            'member:mutation.operation'
+    ) {
+        return undefined;
+    }
+    const reservation = readFunctionReturnObject(builder);
+    const materialize = readObjectFunctionProperty(reservation, 'materialize');
+    if (
+        !reservation ||
+        readMemberPath(readObjectPropertyValue(reservation, 'operation')) !==
+            'input.mutation.operation' ||
+        !materialize
+    ) {
+        return undefined;
+    }
+    return {
+        materialize
+    };
+}
+
+function readFunctionReturnObject(
+    owner: MutationRoutingAstNode
+): MutationRoutingAstNode | undefined {
+    const body = asNode(owner.body);
+    if (body?.type !== 'BlockStatement') {
+        return undefined;
+    }
+    const completion = readStatementListCompletion(asNodes(body.body));
+    const returned = completion.kind === 'return'
+        ? unwrapExpression(completion.value)
+        : undefined;
+    return returned?.type === 'ObjectExpression' ? returned : undefined;
+}
+
+function readObjectPropertyValue(
+    object: MutationRoutingAstNode | undefined,
+    propertyName: string
+): MutationRoutingAstNode | undefined {
+    if (object?.type !== 'ObjectExpression') {
+        return undefined;
+    }
+    const properties = asNodes(object.properties).filter(
+        (property) => !property.computed && readName(asNode(property.key)) === propertyName
+    );
+    if (properties.length !== 1 || properties[0]?.type !== 'ObjectProperty') {
+        return undefined;
+    }
+    return asNode(properties[0].value);
 }
 
 function readObjectFunctionProperty(
@@ -571,6 +649,18 @@ function hasExactNestedOperationCall(input: ExactLiveOperationCallInput): boolea
 function hasSingleLiveCall(root: MutationRoutingAstNode, callName: string): boolean {
     return (
         readLiveFunctionFacts(root).calls.filter((call) => isCallNamed(call, callName)).length === 1
+    );
+}
+
+function hasSingleLiveCallWithArgument(
+    input: SingleLiveCallWithArgumentInput
+): boolean {
+    const calls = readLiveFunctionFacts(input.root).calls.filter(
+        (call) => isCallNamed(call, input.callName)
+    );
+    return (
+        calls.length === 1 &&
+        readMemberPath(asNodes(calls[0]?.arguments)[0]) === input.argumentPath
     );
 }
 

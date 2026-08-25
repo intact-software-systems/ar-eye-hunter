@@ -302,9 +302,9 @@ async function createCrdtAdminCommand(
             const common = toCrdtAdminCommandCommon({ mutation: input, request, capturedAtEpochMs });
             return await createCrdtMutationCommand({
                 ...common,
-                operation: input.operation,
+                ...lifecycleActions,
                 lifecycle,
-                ...lifecycleActions
+                operation: input.operation
             });
         }
         case 'erase': {
