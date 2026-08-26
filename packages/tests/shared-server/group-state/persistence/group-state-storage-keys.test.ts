@@ -15,7 +15,7 @@ import { createTestGroupStateRepository } from '@shared-test/shared-server/creat
 import type { AuditStamp, Group, GroupMember, GroupPresenceAdmission, GroupPresenceSession } from '@shared/api/group-types.ts';
 import { describe, expect, it, vi } from 'vitest';
 import { createTestGroup } from '../../../create-test-group.ts';
-import { FakeRuntimeStateRepository } from '../../fake-runtime-state-repository.ts';
+import { FakeRuntimeStateRepository } from '../../runtime-state/test-support/fake-runtime-state-repository.ts';
 import { groupMemberStorageKey, groupRef, groupStorageKey, storedEntry } from '../mutation/group-mutation-test-runtime.ts';
 
 describe('GroupStateRepository persistence', () => {

@@ -7,7 +7,7 @@ import type { RallarTimingEvent } from '@shared-server/rallar-system/observabili
 import type { ClientStateService } from '@shared-server/rallar-system/client-state/client-state-service-contracts.ts';
 import type { ClientMutationCommand } from '@shared-server/rallar-system/client-state/mutation/client-mutation-contracts.ts';
 
-import { FakeRuntimeStateRepository } from '../fake-runtime-state-repository.ts';
+import { FakeRuntimeStateRepository } from '../runtime-state/test-support/fake-runtime-state-repository.ts';
 import { CLIENT_MUTATION_SERVICE_SCOPE } from './client-state-service-test-fixtures.ts';
 import { createClientStateTestDriver as createClientStateService } from './client-state-test-runtime.ts';
 

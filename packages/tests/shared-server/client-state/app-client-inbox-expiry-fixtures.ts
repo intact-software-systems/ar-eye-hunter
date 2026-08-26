@@ -9,7 +9,7 @@ import {
     type ResourceEntry
 } from '@shared/queuebox/ResourceEntry.ts';
 
-import { FakeRuntimeStateRepository } from '../fake-runtime-state-repository.ts';
+import { FakeRuntimeStateRepository } from '../runtime-state/test-support/fake-runtime-state-repository.ts';
 
 export class ClientExpiryTestResourceInbox extends InMemoryQueueBox {
     private readonly materializations = new Map<string, Promise<ResourceEntry>>();

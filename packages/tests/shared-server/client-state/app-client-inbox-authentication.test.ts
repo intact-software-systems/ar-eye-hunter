@@ -17,17 +17,17 @@ import { toClientMutationCommand } from '@shared-server/rallar-system/client-sta
 import { toUpsertClientPrincipalMutationInput } from '@shared-server/rallar-system/client-state/mutation/command-input/to-upsert-client-principal-mutation-input.ts';
 import { ClientStateRepository } from '@shared-server/rallar-system/client-state/persistence/client-state-repository.ts';
 
-import { createAppInboxTestDatabase } from '../app-inbox-test-database.ts';
-import { FakeRuntimeStateRepository } from '../fake-runtime-state-repository.ts';
+import { createAppInboxTestDatabase } from '../rallar-system/app-inbox/test-support/app-inbox-test-database.ts';
+import { FakeRuntimeStateRepository } from '../runtime-state/test-support/fake-runtime-state-repository.ts';
 import {
     CLIENT_STATE_TEST_SCOPE as SCOPE,
-    createClientStateServiceStub,
     createResilience,
     issuedSession,
     processAuthenticatedClientMutation,
     readEntries
 } from './app-client-inbox-mutation-test-harness.ts';
 import { TestResourceInbox, TestResourceInboxResults } from './app-client-inbox-resource-fixtures.ts';
+import { createDefaultClientStateServiceStub } from './test-support/client-state-service-stub.ts';
 
 describe('AppClientInbox authentication', () => {
     it('returns the exact terminal left for a malformed completed client result', async () => {
@@ -41,7 +41,7 @@ describe('AppClientInbox authentication', () => {
                 resourceInboxRepository: queue,
                 resourceInboxResultsRepository: results,
                 database,
-                clientStateService: createClientStateServiceStub()
+                clientStateService: createDefaultClientStateServiceStub()
             },
             { serviceId: 'server-12345678' }
         );
@@ -107,7 +107,7 @@ describe('AppClientInbox authentication', () => {
                 resourceInboxRepository: queue,
                 resourceInboxResultsRepository: new TestResourceInboxResults(),
                 database: createAppInboxTestDatabase(queue, new TestResourceInboxResults()),
-                clientStateService: createClientStateServiceStub()
+                clientStateService: createDefaultClientStateServiceStub()
             },
             { serviceId: 'server-12345678' }
         );

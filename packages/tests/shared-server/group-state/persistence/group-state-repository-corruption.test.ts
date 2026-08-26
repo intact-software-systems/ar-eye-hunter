@@ -19,9 +19,9 @@ import { validatePersistedGroupMember } from '@shared-server/rallar-system/group
 import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import type { AuditStamp, Group, GroupMember, GroupPresenceAdmission, GroupPresenceSession, GroupPresenceSummary, GroupRef } from '@shared/api/group-types.ts';
 import { describe, expect, expectTypeOf, it } from 'vitest';
-import { FakeRuntimeStateRepository } from '../../fake-runtime-state-repository.ts';
-import { createCorruptionMutationRead } from '../../group-state-persistence-mutation-read-fixtures.ts';
+import { FakeRuntimeStateRepository } from '../../runtime-state/test-support/fake-runtime-state-repository.ts';
 import { groupMemberStorageKey, groupRef, groupStorageKey, storedEntry } from '../mutation/group-mutation-test-runtime.ts';
+import { createCorruptionMutationRead } from './group-state-persistence-mutation-read-fixtures.ts';
 
 describe('GroupStateRepository persistence', () => {
     it('rejects contradictory persisted terminal member audits', () => {

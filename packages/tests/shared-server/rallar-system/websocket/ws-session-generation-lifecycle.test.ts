@@ -1,7 +1,7 @@
 import { createWsSessionGenerationLifecycleService } from '@shared-server/rallar-system/websocket/ws-session-generation-lifecycle.ts';
 import { describe, expect, it } from 'vitest';
 
-import { FakeRuntimeStateRepository } from '../../fake-runtime-state-repository.ts';
+import { FakeRuntimeStateRepository } from '../../runtime-state/test-support/fake-runtime-state-repository.ts';
 
 describe('WebSocket session generation lifecycle persisted state', () => {
     it('rejects a version-3 row whose JSON expiry differs from its RuntimeState expiry', async () => {

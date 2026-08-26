@@ -11,9 +11,9 @@ import { PSqlGroupStateEventRepository } from '@shared-server/rallar-system/stat
 import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/topology/config/persistence/group-topology-config-repository.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
-import { expectPendingDirectResourceOutboxEvidence, findDirectResourceOutboxEvidence } from '../../../direct-resource-outbox-evidence.ts';
-import { findSingleRetriedAppInboxAttemptSequence } from '../../../fixtures/postgres-app-inbox-worker-runtime.ts';
-import { toOwnedAppInboxResourceIds } from '../../../postgres-app-inbox-attempt-evidence.ts';
+import { findSingleRetriedAppInboxAttemptSequence } from '../../../integration/postgres/test-support/postgres-app-inbox-attempt-observation.ts';
+import { toOwnedAppInboxResourceIds } from '../../app-inbox/postgres/postgres-app-inbox-attempt-evidence.ts';
+import { expectPendingDirectResourceOutboxEvidence, findDirectResourceOutboxEvidence } from '../../app-outbox/direct-resource-outbox-evidence.ts';
 import {
     cleanupTopologyApplicationRows,
     createPostgresSql as createSql,

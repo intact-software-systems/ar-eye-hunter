@@ -3,7 +3,7 @@ import { RTC_RTT_ENDPOINT_ADMISSION_NAMESPACE, RTC_RTT_LATEST_NAMESPACE } from '
 import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
 import { describe, expect, it, vi } from 'vitest';
 
-import { FakeRuntimeStateRepository } from '../../../fake-runtime-state-repository.ts';
+import { FakeRuntimeStateRepository } from '../../../runtime-state/test-support/fake-runtime-state-repository.ts';
 
 describe('RTC RTT repository reads and writes', () => {
     it('keeps latest RTT measurements by sorted pair and expires stale entries', async () => {

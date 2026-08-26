@@ -6,10 +6,14 @@ import { AppAuthInboxService } from '@shared-server/rallar-system/auth/inbox/app
 import type { Either } from '@shared/resilience/Either.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 
-import { createAppInboxTestResilience, TestResourceInbox, TestResourceInboxResults } from '../app-inbox-resource-fixtures.ts';
-import type { AppInboxTestDatabase, AppInboxTestDatabaseOptions } from '../app-inbox-test-database-contracts.ts';
-import { createAppInboxTestDatabase } from '../app-inbox-test-database.ts';
-import type { FakeRuntimeStateRepository } from '../fake-runtime-state-repository.ts';
+import {
+    createAppInboxTestResilience,
+    TestResourceInbox,
+    TestResourceInboxResults
+} from '../rallar-system/app-inbox/test-support/app-inbox-resource-fixtures.ts';
+import type { AppInboxTestDatabase, AppInboxTestDatabaseOptions } from '../rallar-system/app-inbox/test-support/app-inbox-test-database-contracts.ts';
+import { createAppInboxTestDatabase } from '../rallar-system/app-inbox/test-support/app-inbox-test-database.ts';
+import type { FakeRuntimeStateRepository } from '../runtime-state/test-support/fake-runtime-state-repository.ts';
 
 export interface AuthInboxTestHarness {
     readonly queue: TestResourceInbox;

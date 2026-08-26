@@ -2,7 +2,7 @@ import { DEFAULT_RALLAR_GROUP_DIRECTOR_HEARTBEAT_TTL_MS } from '@shared/api/grou
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 import { describe, expect, it } from 'vitest';
-import { createAppInboxTestDatabase } from '../../app-inbox-test-database.ts';
+import { createAppInboxTestDatabase } from '../../rallar-system/app-inbox/test-support/app-inbox-test-database.ts';
 
 import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import type { AuthenticatedGroupMutationEnqueue } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-contracts.ts';

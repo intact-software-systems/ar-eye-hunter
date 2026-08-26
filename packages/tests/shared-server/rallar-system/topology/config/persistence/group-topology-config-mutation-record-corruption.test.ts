@@ -5,7 +5,7 @@ import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/topo
 import { GROUP_TOPOLOGY_CONFIG_MUTATION_NAMESPACE } from '@shared-server/rallar-system/topology/config/persistence/group-topology-config-runtime-namespaces.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 
-import { FakeRuntimeStateRepository } from '../../../../fake-runtime-state-repository.ts';
+import { FakeRuntimeStateRepository } from '../../../../runtime-state/test-support/fake-runtime-state-repository.ts';
 import { createTopologyTestEffectiveConfig, createTopologyTestGroupRef } from './group-topology-config-persistence-test-fixtures.ts';
 
 describe('group topology config mutation record corruption', () => {

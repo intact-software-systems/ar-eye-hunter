@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { GroupStateService } from '@shared-server/rallar-system/group-state/group-state-service-contracts.ts';
 import type { RallarTimingEvent, RallarTimingSink } from '@shared-server/rallar-system/observability/timing.ts';
-import { FakeRuntimeStateRepository } from '../fake-runtime-state-repository.ts';
+import { FakeRuntimeStateRepository } from '../runtime-state/test-support/fake-runtime-state-repository.ts';
 import {
     createGroupStateServiceTimingFake,
     invokeEveryTimedGroupStateOperation,

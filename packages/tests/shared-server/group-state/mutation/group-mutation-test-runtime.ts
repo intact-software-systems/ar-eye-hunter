@@ -13,7 +13,7 @@ import type { RuntimeStateEntry, RuntimeStateOptimisticTransactionalRepositoryLi
 import { TestGroupStateEventStore } from '@shared-test/shared-server/test-group-state-event-store.ts';
 import type { GroupEvent, GroupPresenceSession, GroupRef } from '@shared/api/group-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
-import { FakeRuntimeStateRepository } from '../../fake-runtime-state-repository.ts';
+import { FakeRuntimeStateRepository } from '../../runtime-state/test-support/fake-runtime-state-repository.ts';
 
 export const SCOPE: StateScope = {
     applicationId: 'app-1',

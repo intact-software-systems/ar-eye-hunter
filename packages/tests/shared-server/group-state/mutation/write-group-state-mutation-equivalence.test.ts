@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { RuntimeStateOptimisticTransactionalRepositoryLike } from '@shared-server/runtime-state/runtime-state-repository.ts';
 import { TestGroupStateEventStore } from '@shared-test/shared-server/test-group-state-event-store.ts';
-import { FakeRuntimeStateRepository } from '../../fake-runtime-state-repository.ts';
+import { FakeRuntimeStateRepository } from '../../runtime-state/test-support/fake-runtime-state-repository.ts';
 import { createTestGroupStateService } from '../group-state-test-runtime.ts';
 import { ApplyingGuardedBatchRepository, OrderedGroupEventStore } from './group-mutation-test-runtime.ts';
 

@@ -9,8 +9,8 @@ import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/topo
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import type { EffectiveGroupTopologyConfig } from '@shared/api/graph-topology-management-types.ts';
 import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
-import { expectPendingDirectResourceOutboxEvidence, findDirectResourceOutboxEvidence } from '../../../direct-resource-outbox-evidence.ts';
-import { toOwnedAppInboxResourceIds } from '../../../postgres-app-inbox-attempt-evidence.ts';
+import { toOwnedAppInboxResourceIds } from '../../app-inbox/postgres/postgres-app-inbox-attempt-evidence.ts';
+import { expectPendingDirectResourceOutboxEvidence, findDirectResourceOutboxEvidence } from '../../app-outbox/direct-resource-outbox-evidence.ts';
 import {
     cleanupTopologyApplicationRows,
     createPostgresSql,

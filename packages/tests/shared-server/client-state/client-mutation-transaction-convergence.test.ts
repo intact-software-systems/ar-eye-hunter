@@ -36,7 +36,7 @@ import { createTestClientStateRepository } from '@shared-test/shared-server/crea
 import type { ClientPrincipalRef, ClientSession } from '@shared/api/client-types.ts';
 import type { ConnectClientSessionRequest, StateScope } from '@shared/api/state-types.ts';
 import { describe, expect, expectTypeOf, it, vi } from 'vitest';
-import { FakeRuntimeStateRepository } from '../fake-runtime-state-repository.ts';
+import { FakeRuntimeStateRepository } from '../runtime-state/test-support/fake-runtime-state-repository.ts';
 import {
     AggregateBarrierRepository,
     AlwaysConflictingPrincipalRepository,

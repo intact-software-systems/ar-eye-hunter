@@ -19,7 +19,7 @@ import { describe, expect, it } from 'vitest';
 
 import { findCurrentClientSnapshot } from '../../../../../apps/api-v1/src/crdt/create-api-crdt-document-authorizer.ts';
 import { configureTestCacheRepositories } from '../../../cache-repository-config.ts';
-import { FakeRuntimeStateRepository } from '../../fake-runtime-state-repository.ts';
+import { FakeRuntimeStateRepository } from '../../runtime-state/test-support/fake-runtime-state-repository.ts';
 
 const NOW = Date.now();
 const COLD_CACHE_FANOUT_BEHAVIOR = 'fails closed while cold, then expands omitted-workspace ' + 'principal to all current sessions';

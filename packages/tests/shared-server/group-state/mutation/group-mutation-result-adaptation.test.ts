@@ -3,7 +3,7 @@ import { type GroupStateMutationCommand } from '@shared-server/rallar-system/gro
 import { TestGroupStateEventStore } from '@shared-test/shared-server/test-group-state-event-store.ts';
 import type { CreateGroupRequest } from '@shared/api/state-types.ts';
 import { describe, expect, it } from 'vitest';
-import { FakeRuntimeStateRepository } from '../../fake-runtime-state-repository.ts';
+import { FakeRuntimeStateRepository } from '../../runtime-state/test-support/fake-runtime-state-repository.ts';
 import { GroupStateTestMutationExecutor } from '../group-state-test-mutation-executor.ts';
 import { createTestAuthSession, createTestGroupStateRuntime, type TestGroupStateRuntime } from '../group-state-test-runtime.ts';
 import { SCOPE } from './group-mutation-test-runtime.ts';

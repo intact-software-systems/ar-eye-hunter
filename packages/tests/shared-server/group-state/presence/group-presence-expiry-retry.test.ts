@@ -3,7 +3,7 @@ import { GroupStateRepository } from '@shared-server/rallar-system/group-state/p
 import { RuntimeStateRetryExhaustedError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
 import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import { describe, expect, it, vi } from 'vitest';
-import { FakeRuntimeStateRepository } from '../../fake-runtime-state-repository.ts';
+import { FakeRuntimeStateRepository } from '../../runtime-state/test-support/fake-runtime-state-repository.ts';
 import { GroupBarrierRepository } from '../group-state-concurrency-test-runtime.ts';
 import { createTestGroupStateRuntime } from '../group-state-test-runtime.ts';
 import { groupRef, SCOPE } from '../mutation/group-mutation-test-runtime.ts';

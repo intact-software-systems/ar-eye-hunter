@@ -1,6 +1,6 @@
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import { hashMutationCommand, type JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
-import type { RtcRttMutationCommand, RtcRttMutationComputed } from '@shared-server/rallar-system/rtc-rtt/mutation/rtc-rtt-mutation-contracts.ts';
+import type { RtcRttMutationCommand } from '@shared-server/rallar-system/rtc-rtt/mutation/rtc-rtt-mutation-contracts.ts';
 import { toRtcRttMutationReceiptId, toRtcRttTopologyOutboxId } from '@shared-server/rallar-system/rtc-rtt/mutation/rtc-rtt-mutation-identifiers.ts';
 import { writeRtcRttMutation } from '@shared-server/rallar-system/rtc-rtt/mutation/write-rtc-rtt-mutation.ts';
 import { DEFAULT_RTC_RTT_MUTATION_RETENTION_MS } from '@shared-server/rallar-system/rtc-rtt/persistence/rtc-rtt-persistence-validation.ts';
@@ -15,13 +15,12 @@ import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import { describe, expect, it, vi } from 'vitest';
 
-import { FakeRuntimeStateRepository } from '../../../fake-runtime-state-repository.ts';
+import { FakeRuntimeStateRepository } from '../../../runtime-state/test-support/fake-runtime-state-repository.ts';
 import {
+    createMutableRttWriteCandidate,
     createRttGroupSnapshot,
-    createValidRttWriteCandidate,
     executeRtcRttMutation,
-    rttWriteCandidateCorruptions,
-    type MutableRttWriteCandidate
+    rttWriteCandidateCorruptions
 } from './rtc-rtt-persistence-test-fixtures.ts';
 
 describe('RTC RTT repository convergence', () => {
@@ -105,15 +104,12 @@ describe('RTC RTT repository convergence', () => {
         'rejects $label before opening the RTT write transaction',
         async ({ corrupt }) => {
             const transaction = createUnopenedTransactionSql();
-            const malformed = corrupt(
-                structuredClone(createValidRttWriteCandidate()) as unknown as MutableRttWriteCandidate
-            );
+            const malformed = corrupt(createMutableRttWriteCandidate());
 
             await expect(
-                writeRtcRttMutation({
+                validateAndWriteUntrustedRtcRttMutation({
                     transaction,
-                    repositoryOptions: { now: () => 2 },
-                    computed: malformed as unknown as Extract<RtcRttMutationComputed, { outcome: 'write'; }>,
+                    computed: malformed,
                     outboxWriter: new RtcTopologyOutboxWriter({ recordWrite: () => undefined })
                 })
             ).rejects.toBeInstanceOf(TypeError);
@@ -573,10 +569,7 @@ describe('RTC RTT repository convergence', () => {
                 const runtimeRepository = new FakeRuntimeStateRepository();
                 const repository = new RtcRttRepository(runtimeRepository, {
                     now: () => 10_000
-                }) as RtcRttRepository & {
-                    listMutationReceiptEntries(): Promise<readonly unknown[]>;
-                    listMutationReceiptEntriesPage(input: { limit: number; }): Promise<readonly unknown[]>;
-                };
+                });
                 const rtt = {
                     sessionIdFrom: 'session-a',
                     sessionIdTo: 'session-b',
@@ -776,6 +769,23 @@ describe('RTC RTT repository convergence', () => {
         await expect(repository.findMeasurement('session-a', 'session-b')).resolves.toBeUndefined();
     });
 });
+
+interface ValidateAndWriteUntrustedRtcRttMutationInput {
+    readonly transaction: PSqlSql;
+    readonly computed: object;
+    readonly outboxWriter: RtcTopologyOutboxWriter;
+}
+
+async function validateAndWriteUntrustedRtcRttMutation(
+    input: ValidateAndWriteUntrustedRtcRttMutationInput
+): Promise<void> {
+    await Reflect.apply(writeRtcRttMutation, undefined, [{
+        transaction: input.transaction,
+        repositoryOptions: { now: () => 2 },
+        computed: input.computed,
+        outboxWriter: input.outboxWriter
+    }]);
+}
 
 function createUnopenedTransactionSql(): PSqlSql {
     return Object.assign(

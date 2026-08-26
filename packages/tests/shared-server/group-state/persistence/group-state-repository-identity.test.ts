@@ -6,9 +6,9 @@ import type { JsonWireValue } from '@shared-server/rallar-system/protocol/json-w
 import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import type { AuditStamp, Group } from '@shared/api/group-types.ts';
 import { describe, expect, it, vi } from 'vitest';
-import { FakeRuntimeStateRepository } from '../../fake-runtime-state-repository.ts';
-import { createIdentityMutationRead } from '../../group-state-persistence-mutation-read-fixtures.ts';
+import { FakeRuntimeStateRepository } from '../../runtime-state/test-support/fake-runtime-state-repository.ts';
 import { groupMemberStorageKey, groupRef, groupStorageKey, storedEntry } from '../mutation/group-mutation-test-runtime.ts';
+import { createIdentityMutationRead } from './group-state-persistence-mutation-read-fixtures.ts';
 
 describe('GroupStateRepository persistence', () => {
     it('keeps absent and explicit sentinel workspaces isolated at the repository boundary', async () => {

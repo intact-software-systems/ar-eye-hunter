@@ -1,0 +1,205 @@
+import { type ClientStateService } from '@shared-server/rallar-system/client-state/client-state-service-contracts.ts';
+import { createCachedClientStateService } from '@shared-server/rallar-system/client-state/snapshot/cached-client-state-service.ts';
+import { createCachedGroupStateService } from '@shared-server/rallar-system/group-state/snapshot/cached-group-state-service.ts';
+import type { ClientSnapshot } from '@shared/api/client-types.ts';
+import type { AuditStamp, GroupSnapshot } from '@shared/api/group-types.ts';
+import { StateSnapshotRevisionConflictError } from '@shared/repository/state-snapshot-revision.ts';
+import { describe, expect, it, vi } from 'vitest';
+import { createTestGroup } from '../../../create-test-group.ts';
+import { createClientStateServiceStub } from '../../client-state/test-support/client-state-service-stub.ts';
+import { createGroupStateServiceStub } from './test-support/group-state-service-stub.ts';
+
+describe('cached state services', () => {
+    it('does not expose a direct group mutation from its durable dependency', () => {
+        const durable = {
+            ...createGroupStateServiceStub(),
+            createGroup: vi.fn()
+        };
+        const service = createCachedGroupStateService({
+            durable,
+            cache: {
+                findOrLoadByRef: vi.fn(),
+                observe: vi.fn()
+            }
+        });
+
+        expect('createGroup' in service).toBe(false);
+    });
+
+    it('reads current group authority durably without caching an equal-revision projection', async () => {
+        const revisioned = createGroupSnapshot(4);
+        const observe = vi.fn();
+        const findOrLoadByRef = vi.fn();
+        const durable = {
+            ...createGroupStateServiceStub(),
+            readSnapshot: vi.fn().mockResolvedValue(revisioned)
+        };
+        const service = createCachedGroupStateService({
+            durable,
+            cache: {
+                findOrLoadByRef,
+                observe
+            }
+        });
+
+        const result = await service.readCurrentSnapshot(revisioned.group);
+
+        expect(durable.readSnapshot).toHaveBeenCalledWith(revisioned.group);
+        expect(findOrLoadByRef).not.toHaveBeenCalled();
+        expect(observe).not.toHaveBeenCalled();
+        expect(result).toBe(revisioned);
+    });
+
+    it('does not expose direct group presence mutations', () => {
+        const durable = {
+            ...createGroupStateServiceStub(),
+            connectPresenceSession: vi.fn(),
+            heartbeatPresenceSession: vi.fn(),
+            disconnectPresenceSession: vi.fn()
+        };
+        const service = createCachedGroupStateService({
+            durable,
+            cache: {
+                findOrLoadByRef: vi.fn(),
+                observe: vi.fn()
+            }
+        });
+
+        expect('connectPresenceSession' in service).toBe(false);
+        expect('heartbeatPresenceSession' in service).toBe(false);
+        expect('disconnectPresenceSession' in service).toBe(false);
+    });
+
+    it('keeps explicit canonical group observation fail-closed', async () => {
+        const snapshot = createGroupSnapshot(6);
+        const conflict = new StateSnapshotRevisionConflictError(
+            'Group',
+            snapshot.group.snapshotVersion
+        );
+        const service = createCachedGroupStateService({
+            durable: createGroupStateServiceStub(),
+            cache: {
+                findOrLoadByRef: vi.fn(),
+                observe: vi.fn(() => {
+                    throw conflict;
+                })
+            }
+        });
+
+        await expect(service.observeSnapshot(snapshot)).rejects.toBe(conflict);
+    });
+
+    it('uses client read-through state and explicitly observes committed snapshots', async () => {
+        const snapshot = createClientSnapshot(2);
+        const findOrLoadByRef = vi.fn().mockResolvedValue(snapshot);
+        const observe = vi.fn();
+        const durable = createClientStateServiceStub({
+            readSnapshot: vi.fn()
+        });
+        const service = createCachedClientStateService({
+            durable,
+            cache: { findOrLoadByRef, observe }
+        });
+
+        await expect(service.readSnapshot(snapshot.principal)).resolves.toBe(snapshot);
+        await expect(service.observeSnapshot(snapshot)).resolves.toBe(snapshot);
+
+        expect(findOrLoadByRef).toHaveBeenCalledWith(snapshot.principal);
+        expect(observe).toHaveBeenCalledWith(snapshot);
+    });
+
+    it('reads current client authority durably without touching the cache', async () => {
+        type DurableCurrentClientReader = Readonly<{
+            readCurrentSnapshot?: ClientStateService['readSnapshot'];
+        }>;
+        const snapshot = createClientSnapshot(3);
+        const findOrLoadByRef = vi.fn();
+        const observe = vi.fn();
+        const durable = createClientStateServiceStub({
+            readSnapshot: vi.fn().mockResolvedValue(snapshot)
+        });
+        const service = createCachedClientStateService({
+            durable,
+            cache: { findOrLoadByRef, observe }
+        }) as DurableCurrentClientReader;
+
+        await expect(
+            service.readCurrentSnapshot?.(snapshot.principal)
+        ).resolves.toBe(snapshot);
+        expect(durable.readSnapshot).toHaveBeenCalledOnce();
+        expect(durable.readSnapshot).toHaveBeenCalledWith(snapshot.principal);
+        expect(findOrLoadByRef).not.toHaveBeenCalled();
+        expect(observe).not.toHaveBeenCalled();
+    });
+});
+
+function createGroupSnapshot(groupRevision: number): GroupSnapshot {
+    const audit = createAuditStamp(1);
+    return {
+        causalRevision: {
+            groupRevision,
+            presenceRevision: 1
+        },
+        group: createTestGroup({
+            applicationId: 'app-1',
+            workspaceId: 'workspace-1',
+            groupId: 'group-1',
+            displayName: 'Group 1',
+            snapshotVersion: 1,
+            metadataVersion: 1,
+            rosterVersion: 1,
+            presenceVersion: 1,
+            activeMemberCount: 0,
+            ownerPrincipalId: 'alice',
+            created: audit,
+            updated: audit
+        }),
+        members: [],
+        activeSessions: [],
+        memberCount: 0,
+        onlineMemberCount: 0
+    };
+}
+
+function createClientSnapshot(stateRevision: number): ClientSnapshot {
+    const audit = createAuditStamp(1);
+    return {
+        stateRevision,
+        principal: {
+            applicationId: 'app-1',
+            workspaceId: 'workspace-1',
+            principalId: 'alice',
+            username: 'alice',
+            displayName: 'Alice',
+            avatarUrl: null,
+            authProvider: null,
+            externalSubjectId: null,
+            status: 'active',
+            disabled: null,
+            deleted: null,
+            roles: [],
+            metadata: {},
+            snapshotVersion: 1,
+            profileVersion: 1,
+            presenceVersion: 1,
+            created: audit,
+            updated: audit,
+            lastSeenAtEpochMs: null
+        },
+        instances: [],
+        activeSessions: [],
+        isOnline: false,
+        activeSessionCount: 0,
+        lastSeenAtEpochMs: null
+    };
+}
+
+function createAuditStamp(atEpochMs: number): AuditStamp {
+    return {
+        atEpochMs,
+        actor: { kind: 'service', serviceId: 'test' },
+        reason: null,
+        traceId: null,
+        requestId: null
+    };
+}

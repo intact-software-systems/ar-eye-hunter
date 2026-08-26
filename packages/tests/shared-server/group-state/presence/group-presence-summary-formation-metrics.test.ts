@@ -8,8 +8,8 @@ import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
 import { describe, expect, it, vi } from 'vitest';
-import { createAppInboxTestDatabase } from '../../app-inbox-test-database.ts';
-import { FakeRuntimeStateRepository } from '../../fake-runtime-state-repository.ts';
+import { createAppInboxTestDatabase } from '../../rallar-system/app-inbox/test-support/app-inbox-test-database.ts';
+import { FakeRuntimeStateRepository } from '../../runtime-state/test-support/fake-runtime-state-repository.ts';
 import { TestResourceInbox, TestResourceInboxResults } from '../inbox/group-state-inbox-resource-fixtures.ts';
 
 const BASE_EPOCH_MS = Date.now();

@@ -12,9 +12,13 @@ import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 
-import { createAppInboxTestResilience, TestResourceInbox, TestResourceInboxResults } from '../app-inbox-resource-fixtures.ts';
-import { createAppInboxTestDatabase } from '../app-inbox-test-database.ts';
-import { FakeRuntimeStateRepository } from '../fake-runtime-state-repository.ts';
+import {
+    createAppInboxTestResilience,
+    TestResourceInbox,
+    TestResourceInboxResults
+} from '../rallar-system/app-inbox/test-support/app-inbox-resource-fixtures.ts';
+import { createAppInboxTestDatabase } from '../rallar-system/app-inbox/test-support/app-inbox-test-database.ts';
+import { FakeRuntimeStateRepository } from '../runtime-state/test-support/fake-runtime-state-repository.ts';
 
 const SERVICE_ID = 'server-12345678';
 

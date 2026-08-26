@@ -7,14 +7,14 @@ import { AppClientInboxService } from '@shared-server/rallar-system/client-state
 
 import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import { toUpsertClientPrincipalMutationInput } from '@shared-server/rallar-system/client-state/mutation/command-input/to-upsert-client-principal-mutation-input.ts';
+import { decodeJsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 
 import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
 
-import { createAppInboxTestDatabase } from '../app-inbox-test-database.ts';
-import { FakeRuntimeStateRepository } from '../fake-runtime-state-repository.ts';
+import { createAppInboxTestDatabase } from '../rallar-system/app-inbox/test-support/app-inbox-test-database.ts';
+import { FakeRuntimeStateRepository } from '../runtime-state/test-support/fake-runtime-state-repository.ts';
 import {
     createAutoAuthorizingClientStateService,
-    createClientStateServiceStub,
     createResilience,
     issuedSession,
     processAppInbox,
@@ -24,6 +24,7 @@ import {
 import { TestResourceInbox, TestResourceInboxResults } from './app-client-inbox-resource-fixtures.ts';
 import { createRollbackHarness, processRollbackMutation } from './client-mutation-rollback-test-harness.ts';
 import { createHandlerHarness } from './client-mutation-transaction-boundary-fixture.ts';
+import { createClientStateServiceStub } from './test-support/client-state-service-stub.ts';
 
 const SCOPE = { applicationId: 'ar-eye-hunter', workspaceId: 'default' } as const;
 const EXPECTED_DURABLE_JSON = '{"status":"ok","result":{"snapshot":{"snapshotVersion":4,"stateRevision":3},' +
@@ -51,7 +52,14 @@ describe('client mutation transaction and outbox', () => {
         const persisted = await harness.results.findByKey(harness.context.entry.key);
         expect(persisted?.status).toBe(EntityStatus.COMPLETED);
         expect(persisted?.resource).toBe(EXPECTED_DURABLE_JSON);
-        expect(Object.keys(JSON.parse(persisted!.resource) as Record<string, unknown>)).toEqual([
+        if (!persisted) {
+            throw new Error('Expected the committed AppInbox result');
+        }
+        const persistedResult = decodeJsonWireValue(JSON.parse(persisted.resource), 'Committed AppInbox result');
+        if (persistedResult === null || typeof persistedResult !== 'object' || Array.isArray(persistedResult)) {
+            throw new TypeError('Expected committed AppInbox result to be an object');
+        }
+        expect(Object.keys(persistedResult)).toEqual([
             'status',
             'result'
         ]);

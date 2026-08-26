@@ -8,11 +8,12 @@ import { type AppInboxFailure } from '@shared-server/rallar-system/app-inbox/app
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
 import { PSqlGroupStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-group-state-event-repository.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
-import type { GroupTopologyConfigMutationReceipt } from '@shared/api/graph-topology-management-types.ts';
+import type { GroupTopologyConfigMutationReceipt, GroupTopologyConfigPatch } from '@shared/api/graph-topology-management-types.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import { createTestGroup } from '../../../../create-test-group.ts';
 
-import type { PersistedAppInboxAttempt } from '../../../fixtures/postgres-app-inbox-worker-runtime.ts';
+import type { PersistedAppInboxAttempt } from '../../../integration/postgres/test-support/postgres-app-inbox-attempt-observation.ts';
+import { toPSqlSql } from '../../../integration/postgres/test-support/postgres-sql-adapter.ts';
 
 export type PostgresSql = PSqlSql & Readonly<{ end(): Promise<void>; }>;
 
@@ -31,7 +32,7 @@ export interface TopologyAppInboxWorkerInput {
     readonly request: Readonly<{
         requestId: string;
         updatedByPrincipalId: string;
-        config: Readonly<Record<string, unknown>>;
+        config: GroupTopologyConfigPatch;
         expiresAtEpochMs?: number;
     }>;
 }
@@ -78,12 +79,15 @@ const APP_INBOX_WORKER_PATH = fileURLToPath(
     new URL('./postgres-topology-app-inbox-worker.ts', import.meta.url)
 );
 const APP_OUTBOX_WORKER_PATH = fileURLToPath(
-    new URL('../../../fixtures/postgres-topology-app-outbox-worker.ts', import.meta.url)
+    new URL('../../../integration/postgres/test-support/postgres-topology-app-outbox-worker.ts', import.meta.url)
 );
 
 export async function createPostgresSql(databaseUrl: string): Promise<PostgresSql> {
     const postgres = await import('postgres');
-    return postgres.default(databaseUrl, { max: 2, idle_timeout: 1 }) as unknown as PostgresSql;
+    const rawSql = postgres.default(databaseUrl, { max: 2, idle_timeout: 1 });
+    return Object.assign(toPSqlSql(rawSql), {
+        end: async (): Promise<void> => await rawSql.end()
+    });
 }
 
 export async function seedTopologyGroup(sql: PSqlSql, snapshot: GroupSnapshot): Promise<void> {
@@ -118,10 +122,10 @@ export async function readTopologyWorkerTrace(traceFilePath: string): Promise<To
     return JSON.parse(await readFile(traceFilePath, 'utf8')) as TopologyWorkerTrace;
 }
 
-export async function waitForTopologyWorkerParticipants(
+export async function waitForTopologyWorkerParticipants<T>(
     readyDirectoryPath: string,
     participantCount: number,
-    workers: readonly Promise<unknown>[]
+    workers: readonly Promise<T>[]
 ): Promise<void> {
     const waitForMarkers = async (): Promise<void> => {
         const deadline = Date.now() + 15_000;

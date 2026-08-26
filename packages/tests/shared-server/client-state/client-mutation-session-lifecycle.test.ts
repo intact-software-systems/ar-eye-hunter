@@ -10,7 +10,7 @@ import { computeClientSessionHeartbeat } from '@shared-server/rallar-system/clie
 import { ClientStateRepository } from '@shared-server/rallar-system/client-state/persistence/client-state-repository.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 
-import { FakeRuntimeStateRepository } from '../fake-runtime-state-repository.ts';
+import { FakeRuntimeStateRepository } from '../runtime-state/test-support/fake-runtime-state-repository.ts';
 
 import {
     connectCommand,
@@ -188,7 +188,12 @@ describe('client mutation durable session ordering', () => {
 
     it('advances causal state revision for a heartbeat-only snapshot change', async () => {
         const runtimeRepository = new FakeRuntimeStateRepository();
-        await seedConnectedSession(runtimeRepository, 'alice', 'alice-browser', 'session-1');
+        await seedConnectedSession({
+            runtimeRepository,
+            principalId: 'alice',
+            clientInstanceId: 'alice-browser',
+            sessionId: 'session-1'
+        });
         const repository = createTestClientStateRepository(runtimeRepository);
         const principalRef = toClientPrincipalRef('alice');
         const before = await repository.readSnapshot(principalRef);
@@ -234,7 +239,13 @@ describe('client mutation session concurrency', () => {
 
     it('keeps a reconnect when stale expiry races the reused session id', async () => {
         const runtime = new AggregateBarrierRepository();
-        await connect(runtime, 'session-a', 'generation-1', BASE_EPOCH_MS, BASE_EPOCH_MS + 500);
+        await connect({
+            runtime,
+            sessionId: 'session-a',
+            generationId: 'generation-1',
+            nowEpochMs: BASE_EPOCH_MS,
+            expiresAtEpochMs: BASE_EPOCH_MS + 500
+        });
         const firstRead = runtime.armPrincipalReadBarrier(2, true);
         const expiry = createService(runtime, BASE_EPOCH_MS + 1_000).expireExpiredSessions(
             BASE_EPOCH_MS + 1_000
@@ -278,8 +289,8 @@ describe('client mutation session concurrency', () => {
 
 async function expectIndependentHeartbeatRebase(): Promise<AggregateBarrierRepository> {
     const runtime = new AggregateBarrierRepository();
-    await connect(runtime, 'session-a', 'generation-a', BASE_EPOCH_MS);
-    await connect(runtime, 'session-b', 'generation-b', BASE_EPOCH_MS + 100);
+    await connect({ runtime, sessionId: 'session-a', generationId: 'generation-a', nowEpochMs: BASE_EPOCH_MS });
+    await connect({ runtime, sessionId: 'session-b', generationId: 'generation-b', nowEpochMs: BASE_EPOCH_MS + 100 });
     const before = await snapshot(runtime, 'alice');
     runtime.armPrincipalReadBarrier(2);
     await Promise.all([

@@ -19,8 +19,8 @@ import { createGroupStateService } from '@shared-server/rallar-system/group-stat
 import { GroupStateInboxHandler } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-handler.ts';
 import type { GroupStateInboxDurableResult } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-result.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
-import { createAppInboxTestDatabase, type AppInboxTestDatabaseStage } from '../../app-inbox-test-database.ts';
-import { FakeRuntimeStateRepository } from '../../fake-runtime-state-repository.ts';
+import { createAppInboxTestDatabase, type AppInboxTestDatabaseStage } from '../../rallar-system/app-inbox/test-support/app-inbox-test-database.ts';
+import { FakeRuntimeStateRepository } from '../../runtime-state/test-support/fake-runtime-state-repository.ts';
 import { authSession } from '../group-state-test-runtime.ts';
 import { TestResourceInbox, TestResourceInboxResults } from './group-state-inbox-resource-fixtures.ts';
 

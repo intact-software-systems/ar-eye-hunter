@@ -4,7 +4,7 @@ import { requireApiAuthSession, requireWsAuthSession } from '@shared-server/http
 import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
 import { Either } from '@shared/resilience/Either.ts';
 
-import { FakeRuntimeStateRepository } from '../fake-runtime-state-repository.ts';
+import { FakeRuntimeStateRepository } from '../runtime-state/test-support/fake-runtime-state-repository.ts';
 
 it('validates bearer tokens against x-client-id', async () => {
     const repository = new AuthSessionRepository(new FakeRuntimeStateRepository());

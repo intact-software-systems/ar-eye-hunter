@@ -9,8 +9,8 @@ import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
 import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.ts';
 import { describe, expect, it } from 'vitest';
 import { configureTestCacheRepositories } from '../../cache-repository-config.ts';
-import { createClientSnapshot } from '../rest-state-snapshot-read-test-fixtures.ts';
 import { createRallarMiddlewareTestRuntime } from './middleware/rallar-middleware-test-runtime.ts';
+import { createClientSnapshot } from './state-sync/http/rest-state-snapshot-read-test-fixtures.ts';
 
 describe('state-sync websocket ingress', () => {
     it('does not trust exact-valid client snapshots or events from a websocket', async () => {

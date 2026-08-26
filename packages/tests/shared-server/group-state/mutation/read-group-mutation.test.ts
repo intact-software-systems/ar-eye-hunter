@@ -12,8 +12,8 @@ import type { RuntimeStateEntry } from '@shared-server/runtime-state/runtime-sta
 import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import { describe, expect, it } from 'vitest';
-import { FakeRuntimeStateRepository } from '../../fake-runtime-state-repository.ts';
-import { ReadBatchFakeRuntimeStateRepository } from '../../read-batch-fake-runtime-state-repository.ts';
+import { FakeRuntimeStateRepository } from '../../runtime-state/test-support/fake-runtime-state-repository.ts';
+import { ReadBatchFakeRuntimeStateRepository } from '../../runtime-state/test-support/read-batch-fake-runtime-state-repository.ts';
 import { createTestGroupStateService } from '../group-state-test-runtime.ts';
 
 const SCOPE: StateScope = {

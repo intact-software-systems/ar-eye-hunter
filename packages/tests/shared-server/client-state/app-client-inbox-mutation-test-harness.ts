@@ -1,5 +1,4 @@
 import { Temporal } from '@js-temporal/polyfill';
-import { vi } from 'vitest';
 
 import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
 import { type IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
@@ -24,10 +23,8 @@ import { AppClientInboxService } from '@shared-server/rallar-system/client-state
 import { toAuthenticatedClientMutationContextId } from '@shared-server/rallar-system/client-state/inbox/authenticated-client-mutation-ingress.ts';
 import type { ClientStateEventStore } from '@shared-server/rallar-system/state-events/client-state-event-store.ts';
 
-import { createWsSessionGenerationLifecycleService } from '@shared-server/rallar-system/websocket/ws-session-generation-lifecycle.ts';
-
-import { createAppInboxTestDatabase } from '../app-inbox-test-database.ts';
-import { FakeRuntimeStateRepository } from '../fake-runtime-state-repository.ts';
+import { createAppInboxTestDatabase } from '../rallar-system/app-inbox/test-support/app-inbox-test-database.ts';
+import { FakeRuntimeStateRepository } from '../runtime-state/test-support/fake-runtime-state-repository.ts';
 import { TestResourceInbox, TestResourceInboxResults } from './app-client-inbox-resource-fixtures.ts';
 
 export const CLIENT_STATE_TEST_SCOPE: StateScope = {
@@ -202,31 +199,6 @@ export async function readEntries(queue: InMemoryQueueBox): Promise<ResourceEntr
     const entries = await Promise.all((await queue.getAllKeys()).map((key) => queue.getItem(key)));
 
     return entries.filter((entry): entry is ResourceEntry => entry !== undefined);
-}
-
-export function createClientStateServiceStub(
-    overrides: Partial<ClientStateService> = {}
-): ClientStateService {
-    return {
-        sessionGenerationLifecycle: createWsSessionGenerationLifecycleService(
-            new FakeRuntimeStateRepository()
-        ),
-        listSnapshots: vi.fn(),
-        readSnapshot: vi.fn(),
-        readPresenceSnapshot: vi.fn(),
-        listEvents: vi.fn(),
-        listRecentEvents: vi.fn(),
-        listEventPage: vi.fn(),
-        read: vi.fn(),
-        compute: vi.fn(),
-        validate: vi.fn(),
-        write: vi.fn(),
-        listExpiredSessionCandidates: vi.fn(async () => []),
-        findSessionBySessionId: vi.fn(),
-        readIssuedAuthSession: vi.fn(),
-        observeSnapshot: vi.fn(async (snapshot) => snapshot),
-        ...overrides
-    };
 }
 
 export function createAutoAuthorizingClientStateService(

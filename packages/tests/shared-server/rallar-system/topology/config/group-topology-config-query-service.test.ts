@@ -6,7 +6,7 @@ import { createGroupTopologyRuntimeOwners } from '@shared-server/rallar-system/t
 import { RallarRtcTopologyService } from '@shared-server/rallar-system/topology/runtime/rallar-rtc-topology-service.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 
-import { FakeRuntimeStateRepository } from '../../../fake-runtime-state-repository.ts';
+import { FakeRuntimeStateRepository } from '../../../runtime-state/test-support/fake-runtime-state-repository.ts';
 import { createTopologyTestEffectiveConfig, createTopologyTestGroupRef } from './persistence/group-topology-config-persistence-test-fixtures.ts';
 
 const GROUP_REF = createTopologyTestGroupRef('workspace-1');

@@ -28,8 +28,8 @@ import {
 } from '@shared-server/rallar-system/admin-operations/prune/admin-prune-progress.ts';
 import { AppInboxIdempotencyConflictError, AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import type { RallarTimingEvent } from '@shared-server/rallar-system/observability/timing.ts';
-import { createAppInboxTestDatabase } from '../app-inbox-test-database.ts';
 import { createResilience, TestResourceInbox, TestResourceInboxResults, waitForQueueEntry } from '../group-state/inbox/group-state-inbox-test-runtime.ts';
+import { createAppInboxTestDatabase } from '../rallar-system/app-inbox/test-support/app-inbox-test-database.ts';
 
 const INITIAL_TIME_EPOCH_MS = 1_800_000_000_000;
 const RETRY_EXPIRY_OFFSET_MS = 900_000;

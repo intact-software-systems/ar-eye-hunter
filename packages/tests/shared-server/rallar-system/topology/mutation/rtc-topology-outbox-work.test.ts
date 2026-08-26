@@ -28,7 +28,7 @@ import { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
 import { readFileSync } from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
 import { createTestGroup } from '../../../../create-test-group.ts';
-import { createAppInboxTestDatabase } from '../../../app-inbox-test-database.ts';
+import { createAppInboxTestDatabase } from '../../app-inbox/test-support/app-inbox-test-database.ts';
 
 interface StoredRtcTopologyEnvelope {
     readonly resourceId: string;
@@ -41,7 +41,7 @@ interface EnqueueAndReserveRttInput {
     readonly group: GroupSnapshot;
     readonly version: number;
 }
-import { FakeRuntimeStateRepository } from '../../../fake-runtime-state-repository.ts';
+import { FakeRuntimeStateRepository } from '../../../runtime-state/test-support/fake-runtime-state-repository.ts';
 
 describe('RTC topology APP_OUTBOX work', () => {
     it('lets ResourceInbox retry the handler-owned write and reservation-fenced completion transaction', () => {

@@ -12,7 +12,7 @@ import {
 } from '@shared/repository/client-state-snapshots-repository.ts';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { configureTestCacheRepositories } from '../../cache-repository-config.ts';
-import { FakeRuntimeStateRepository } from '../fake-runtime-state-repository.ts';
+import { FakeRuntimeStateRepository } from '../runtime-state/test-support/fake-runtime-state-repository.ts';
 
 interface CreateClientSnapshotFixtureInput {
     readonly principalId: string;

@@ -2,7 +2,7 @@ import { RtcRttRepository } from '@shared-server/rallar-system/rtc-rtt/persisten
 import { RTC_RTT_ENDPOINT_ADMISSION_NAMESPACE, RTC_RTT_LATEST_NAMESPACE } from '@shared-server/rallar-system/rtc-rtt/persistence/rtc-rtt-runtime-namespaces.ts';
 import { describe, expect, it, vi } from 'vitest';
 
-import { FakeRuntimeStateRepository } from '../../../fake-runtime-state-repository.ts';
+import { FakeRuntimeStateRepository } from '../../../runtime-state/test-support/fake-runtime-state-repository.ts';
 
 describe('RTC RTT persistence corruption', () => {
     it('rejects wrong-pair RTT rows before expiry across direct, list, and page reads', async () => {
@@ -10,12 +10,7 @@ describe('RTC RTT persistence corruption', () => {
         vi.setSystemTime(10_000);
         try {
             const runtimeRepository = new FakeRuntimeStateRepository();
-            const repository = new RtcRttRepository(runtimeRepository) as RtcRttRepository & {
-                listMeasurementEntriesPage(input: {
-                    afterKey?: string;
-                    limit: number;
-                }): Promise<readonly unknown[]>;
-            };
+            const repository = new RtcRttRepository(runtimeRepository);
             const requestedKey = repository.measurementKey('session-a', 'session-b');
             await runtimeRepository.upsert(
                 RTC_RTT_LATEST_NAMESPACE,

@@ -6,7 +6,7 @@ import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgre
 import type { AuditStamp, Group, GroupMember, GroupPresenceSession, GroupRef } from '@shared/api/group-types.ts';
 import { createTestGroup } from '../../../create-test-group.ts';
 
-import { createRuntimeStatePostgresSql, type PostgresSql } from '../../postgres-runtime-state-client-fixtures.ts';
+import { createRuntimeStatePostgresSql, type PostgresSql } from '../../runtime-state/postgres/postgres-runtime-state-client-fixtures.ts';
 
 const POSTGRES_INTEGRATION_ENABLED = readEnv('RALLAR_POSTGRES_INTEGRATION') === '1';
 const postgresIt = POSTGRES_INTEGRATION_ENABLED ? it : it.skip;
@@ -184,12 +184,12 @@ describe('Postgres runtime-state prefix selection', () => {
                 'group-state:sessions',
                 `${scopePrefix}group=room-1:session=alice-session`,
                 JSON.stringify(
-                    activePresenceFixture(
-                        { applicationId, workspaceId, groupId: 'room-1' },
-                        'alice',
-                        'alice-session',
-                        liveSessionExpiry
-                    )
+                    activePresenceFixture({
+                        ref: { applicationId, workspaceId, groupId: 'room-1' },
+                        principalId: 'alice',
+                        sessionId: 'alice-session',
+                        expiresAtEpochMs: liveSessionExpiry
+                    })
                 ),
                 FUTURE_MS
             );
@@ -306,12 +306,15 @@ function activeMemberFixture(ref: GroupRef, principalId: string): GroupMember {
     };
 }
 
-function activePresenceFixture(
-    ref: GroupRef,
-    principalId: string,
-    sessionId: string,
-    expiresAtEpochMs: number
-): GroupPresenceSession {
+interface ActivePresenceFixtureInput {
+    readonly ref: GroupRef;
+    readonly principalId: string;
+    readonly sessionId: string;
+    readonly expiresAtEpochMs: number;
+}
+
+function activePresenceFixture(input: ActivePresenceFixtureInput): GroupPresenceSession {
+    const { ref, principalId, sessionId, expiresAtEpochMs } = input;
     const connectedAtEpochMs = expiresAtEpochMs - 60_000;
     return {
         ...ref,

@@ -9,7 +9,7 @@ import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/opt
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 
 import { createTestGroup } from '../../../../create-test-group.ts';
-import { FakeRuntimeStateRepository } from '../../../fake-runtime-state-repository.ts';
+import { FakeRuntimeStateRepository } from '../../../runtime-state/test-support/fake-runtime-state-repository.ts';
 
 export type TestExecuteRtcRttMutationInput = Readonly<{
     repository: RtcRttRepository;
@@ -182,32 +182,12 @@ export function createRttGroupSnapshot(
     };
 }
 
-export type MutableRttWriteCandidate = Record<string, unknown> & {
-    affectedGroups: unknown[];
-    endpointGuards: Array<
-        Record<string, unknown> & {
-            endpointId: string;
-            expectedRevision: number | null;
-            expireAtTimestamp: number;
-            value: Record<string, unknown> & {
-                endpointId: string;
-                peers: Array<
-                    Record<string, unknown> & {
-                        peerSessionId: string;
-                        expiresAtEpochMs: number;
-                    }
-                >;
-            };
-        }
-    >;
-    measurementGuard: Record<string, unknown> & {
-        expectedRevision: number | null;
-        purgeAfterEpochMs: number;
-        value: Record<string, unknown>;
-    };
-    receipt: Record<string, unknown> & { outboxIds: string[]; };
-    senderId: string;
-};
+type DeepMutable<Value> = Value extends readonly (infer Entry)[] ? DeepMutable<Entry>[] :
+    Value extends object ? { -readonly [Key in keyof Value]: DeepMutable<Value[Key]>; } :
+    Value;
+
+type RttWriteCandidate = Extract<RtcRttMutationComputed, { outcome: 'write'; }>;
+export type MutableRttWriteCandidate = DeepMutable<RttWriteCandidate>;
 
 export function createValidRttWriteCandidate(): Extract<RtcRttMutationComputed, { outcome: 'write'; }> {
     const computed = computeRtcRttMutation({
@@ -245,15 +225,19 @@ export function createValidRttWriteCandidate(): Extract<RtcRttMutationComputed, 
     return computed;
 }
 
+export function createMutableRttWriteCandidate(): MutableRttWriteCandidate {
+    return structuredClone(createValidRttWriteCandidate()) as MutableRttWriteCandidate;
+}
+
 export const rttWriteCandidateCorruptions: readonly Readonly<{
     label: string;
-    corrupt(candidate: MutableRttWriteCandidate): MutableRttWriteCandidate;
+    corrupt(candidate: MutableRttWriteCandidate): object;
 }>[] = [
     {
         label: 'a missing endpoint guard field',
         corrupt: (candidate) => {
-            delete (candidate as Record<string, unknown>).endpointGuards;
-            return candidate;
+            const { endpointGuards: _removedEndpointGuards, ...withoutEndpointGuards } = candidate;
+            return withoutEndpointGuards;
         }
     },
     {
@@ -291,10 +275,10 @@ export const rttWriteCandidateCorruptions: readonly Readonly<{
     },
     {
         label: 'an extra endpoint guard field',
-        corrupt: (candidate) => {
-            candidate.endpointGuards[0]!.unexpected = true;
-            return candidate;
-        }
+        corrupt: (candidate) => ({
+            ...candidate,
+            endpointGuards: candidate.endpointGuards.map((guard, index) => index === 0 ? { ...guard, unexpected: true } : guard)
+        })
     },
     {
         label: 'an invalid endpoint expected revision',
@@ -363,16 +347,19 @@ export const rttWriteCandidateCorruptions: readonly Readonly<{
     {
         label: 'a missing measurement guard field',
         corrupt: (candidate) => {
-            delete (candidate.measurementGuard as Record<string, unknown>).expectedRevision;
-            return candidate;
+            const {
+                expectedRevision: _removedExpectedRevision,
+                ...measurementGuardWithoutExpectedRevision
+            } = candidate.measurementGuard;
+            return { ...candidate, measurementGuard: measurementGuardWithoutExpectedRevision };
         }
     },
     {
         label: 'an extra measurement guard field',
-        corrupt: (candidate) => {
-            candidate.measurementGuard.unexpected = true;
-            return candidate;
-        }
+        corrupt: (candidate) => ({
+            ...candidate,
+            measurementGuard: { ...candidate.measurementGuard, unexpected: true }
+        })
     },
     {
         label: 'an invalid measurement expected revision',

@@ -11,9 +11,9 @@ import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/topo
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import type { Group } from '@shared/api/group-types.ts';
 import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
-import { expectPendingDirectResourceOutboxEvidence, findDirectResourceOutboxEvidence } from '../../../direct-resource-outbox-evidence.ts';
-import { findSingleRetriedAppInboxAttemptSequence } from '../../../fixtures/postgres-app-inbox-worker-runtime.ts';
-import { toOwnedAppInboxResourceIds } from '../../../postgres-app-inbox-attempt-evidence.ts';
+import { findSingleRetriedAppInboxAttemptSequence } from '../../../integration/postgres/test-support/postgres-app-inbox-attempt-observation.ts';
+import { toOwnedAppInboxResourceIds } from '../../app-inbox/postgres/postgres-app-inbox-attempt-evidence.ts';
+import { expectPendingDirectResourceOutboxEvidence, findDirectResourceOutboxEvidence } from '../../app-outbox/direct-resource-outbox-evidence.ts';
 import {
     cleanupTopologyApplicationRows,
     createPostgresSql,
@@ -37,10 +37,16 @@ describe('Postgres topology AppInbox concurrency', () => {
             const sql = await createPostgresSql(databaseUrl);
             const tmpDirPath = await mkdtemp(path.join(tmpdir(), 'rallar-topology-config-race-'));
             const releaseFilePath = path.join(tmpDirPath, 'release');
-            const inputs = topologyInputs(applicationId, groupRef, tmpDirPath, releaseFilePath, [
-                { requestId: `${applicationId}-a`, config: { topologyKind: 'tree' } },
-                { requestId: `${applicationId}-b`, config: { topologyKind: 'mesh' } }
-            ]);
+            const inputs = topologyInputs({
+                applicationId,
+                groupRef,
+                tmpDirPath,
+                releaseFilePath,
+                requests: [
+                    { requestId: `${applicationId}-a`, config: { topologyKind: 'tree' } },
+                    { requestId: `${applicationId}-b`, config: { topologyKind: 'mesh' } }
+                ]
+            });
             const workers: Promise<Awaited<ReturnType<typeof spawnTopologyAppInboxWorker>>>[] = [];
             try {
                 await seedTopologyGroup(sql, topologyGroupSnapshot(groupRef));
@@ -180,16 +186,19 @@ describe('Postgres topology AppInbox concurrency', () => {
     );
 });
 
-function topologyInputs(
-    applicationId: string,
-    groupRef: TopologyAppInboxWorkerInput['groupRef'],
-    tmpDirPath: string,
-    releaseFilePath: string,
-    requests: readonly Readonly<{
+interface TopologyInputsInput {
+    readonly applicationId: string;
+    readonly groupRef: TopologyAppInboxWorkerInput['groupRef'];
+    readonly tmpDirPath: string;
+    readonly releaseFilePath: string;
+    readonly requests: readonly Readonly<{
         requestId: string;
-        config: Readonly<Record<string, unknown>>;
-    }>[]
-): readonly TopologyAppInboxWorkerInput[] {
+        config: TopologyAppInboxWorkerInput['request']['config'];
+    }>[];
+}
+
+function topologyInputs(input: TopologyInputsInput): readonly TopologyAppInboxWorkerInput[] {
+    const { applicationId, groupRef, tmpDirPath, releaseFilePath, requests } = input;
     const readyDirectoryPath = path.join(tmpDirPath, 'ready');
     return requests.map((request, index) => ({
         command: 'put-config',

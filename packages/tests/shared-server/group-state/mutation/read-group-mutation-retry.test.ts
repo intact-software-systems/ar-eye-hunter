@@ -1,7 +1,7 @@
 import { createGroupStateRuntime } from '@shared-server/rallar-system/group-state/group-state-service.ts';
 import { InMemoryGroupStateEventStore } from '@shared-server/rallar-system/state-events/in-memory-group-state-event-store.ts';
 import { describe, expect, it } from 'vitest';
-import { FakeRuntimeStateRepository } from '../../fake-runtime-state-repository.ts';
+import { FakeRuntimeStateRepository } from '../../runtime-state/test-support/fake-runtime-state-repository.ts';
 
 describe('GroupStateService retry ownership', () => {
     it('exposes single-attempt phases and leaves complete retries to AppGroupInbox', () => {

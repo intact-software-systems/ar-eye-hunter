@@ -32,7 +32,7 @@ import { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
 import { describe, expect, it, vi } from 'vitest';
 import { configureTestCacheRepositories } from '../../../../cache-repository-config.ts';
 import { createTestGroup } from '../../../../create-test-group.ts';
-import { FakeRuntimeStateRepository } from '../../../fake-runtime-state-repository.ts';
+import { FakeRuntimeStateRepository } from '../../../runtime-state/test-support/fake-runtime-state-repository.ts';
 import { createRtcTopologyReplayFixture } from '../replay/consumer/rtc-topology-replay-fixture.ts';
 
 describe('RTC topology websocket publication', () => {

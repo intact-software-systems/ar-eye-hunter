@@ -7,7 +7,7 @@ import {
 } from '@shared-server/rallar-system/topology/replay/work/rtc-topology-input-fingerprint.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 
-import { FakeRuntimeStateRepository } from '../../../../fake-runtime-state-repository.ts';
+import { FakeRuntimeStateRepository } from '../../../../runtime-state/test-support/fake-runtime-state-repository.ts';
 
 const GROUP_REF = {
     applicationId: 'app-1',

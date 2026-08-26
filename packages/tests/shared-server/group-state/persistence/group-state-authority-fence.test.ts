@@ -7,7 +7,7 @@ import { createTestGroupStateRepository } from '@shared-test/shared-server/creat
 import type { Group, GroupMember, GroupRef } from '@shared/api/group-types.ts';
 import { describe, expect, it } from 'vitest';
 import { createTestGroup } from '../../../create-test-group.ts';
-import { FakeRuntimeStateRepository } from '../../fake-runtime-state-repository.ts';
+import { FakeRuntimeStateRepository } from '../../runtime-state/test-support/fake-runtime-state-repository.ts';
 
 describe('GroupStateRepository authority fence', () => {
     it('preserves the exact raw group bytes, physical expiry, and every domain field', async () => {

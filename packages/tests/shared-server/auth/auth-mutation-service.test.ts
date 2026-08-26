@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { createAuthMutationService, type AuthMutationService } from '@shared-server/rallar-system/auth/auth-mutation-service.ts';
 
-import { FakeRuntimeStateRepository } from '../fake-runtime-state-repository.ts';
+import { FakeRuntimeStateRepository } from '../runtime-state/test-support/fake-runtime-state-repository.ts';
 
 describe('auth mutation service phases', () => {
     it('preserves the direct read, compute, validate, and no-op write phase returns', async () => {

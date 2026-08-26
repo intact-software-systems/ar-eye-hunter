@@ -12,7 +12,7 @@ import {
 import type { RuntimeStateEntryValue } from '@shared-server/runtime-state/runtime-state-json-store.ts';
 import type { RuntimeStateEntry } from '@shared-server/runtime-state/runtime-state-repository.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
-import { ReadBatchFakeRuntimeStateRepository } from '../../../../read-batch-fake-runtime-state-repository.ts';
+import { ReadBatchFakeRuntimeStateRepository } from '../../../../runtime-state/test-support/read-batch-fake-runtime-state-repository.ts';
 
 const GROUP_REF: GroupRef = {
     applicationId: 'app-1',

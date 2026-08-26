@@ -12,7 +12,7 @@ import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/opt
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 import { describe, expect, it, vi } from 'vitest';
 
-import { FakeRuntimeStateRepository } from '../../../fake-runtime-state-repository.ts';
+import { FakeRuntimeStateRepository } from '../../../runtime-state/test-support/fake-runtime-state-repository.ts';
 import {
     createGroupRef,
     createPublication,

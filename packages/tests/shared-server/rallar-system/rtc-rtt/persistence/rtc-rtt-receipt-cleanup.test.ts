@@ -4,7 +4,8 @@ import { DEFAULT_RTC_RTT_MUTATION_RETENTION_MS } from '@shared-server/rallar-sys
 import {
     cleanupExpiredRtcRttReceipts,
     initRtcRttReceiptFamilyCleanup,
-    RtcRttReceiptFamilyCleanupError
+    RtcRttReceiptFamilyCleanupError,
+    type RtcRttReceiptFamilyCleanupTimerHandle
 } from '@shared-server/rallar-system/rtc-rtt/persistence/rtc-rtt-receipt-cleanup.ts';
 import { RtcRttRepository } from '@shared-server/rallar-system/rtc-rtt/persistence/rtc-rtt-repository.ts';
 import {
@@ -14,7 +15,7 @@ import {
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
-import { FakeRuntimeStateRepository } from '../../../fake-runtime-state-repository.ts';
+import { FakeRuntimeStateRepository } from '../../../runtime-state/test-support/fake-runtime-state-repository.ts';
 
 describe('RTC RTT receipt cleanup ownership', () => {
     it('deletes an expired receipt', async () => {
@@ -98,8 +99,8 @@ describe('RTC RTT receipt cleanup ownership', () => {
                 handle: object;
             }>
         > = [];
-        const cancelled: unknown[] = [];
-        const errors: unknown[] = [];
+        const cancelled: RtcRttReceiptFamilyCleanupTimerHandle[] = [];
+        const errors: Error[] = [];
         const handle = initRtcRttReceiptFamilyCleanup(repository, {
             intervalMs: 123,
             schedule: (callback, delayMs) => {

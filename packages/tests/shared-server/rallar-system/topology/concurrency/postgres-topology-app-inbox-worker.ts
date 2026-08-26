@@ -22,13 +22,12 @@ import { toTopologyAppInboxCommand } from '@shared-server/rallar-system/topology
 
 import {
     createPostgresAppInboxWorkerRuntime,
-    waitForPostgresWorkerBarrier,
     type PostgresAppInboxWorkerRuntime,
     type PostgresAppInboxWorkerTrace,
-    type TopologyReadBarrierPrimitive,
-    type WorkerBarrier
-} from '../../../fixtures/postgres-app-inbox-worker-runtime.ts';
-import { toPSqlSql } from '../../../fixtures/postgres-sql-adapter.ts';
+    type TopologyReadBarrierPrimitive
+} from '../../../integration/postgres/test-support/postgres-app-inbox-worker-runtime.ts';
+import { toPSqlSql } from '../../../integration/postgres/test-support/postgres-sql-adapter.ts';
+import { waitForPostgresWorkerBarrier, type WorkerBarrier } from '../../../integration/postgres/test-support/postgres-worker-barrier.ts';
 
 interface WorkerInput {
     readonly command: 'put-config' | 'put-override';

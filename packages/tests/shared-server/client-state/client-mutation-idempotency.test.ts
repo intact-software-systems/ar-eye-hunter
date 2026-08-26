@@ -16,8 +16,8 @@ import type { ClientStateWritten } from '@shared-server/rallar-system/client-sta
 
 import { ClientMutationIdempotencyConflictError } from '@shared-server/rallar-system/client-state/mutation/result-validation/validate-client-mutation.ts';
 
-import { createAppInboxTestDatabase } from '../app-inbox-test-database.ts';
-import { FakeRuntimeStateRepository } from '../fake-runtime-state-repository.ts';
+import { createAppInboxTestDatabase } from '../rallar-system/app-inbox/test-support/app-inbox-test-database.ts';
+import { FakeRuntimeStateRepository } from '../runtime-state/test-support/fake-runtime-state-repository.ts';
 import {
     CLIENT_STATE_TEST_SCOPE as APP_SCOPE,
     createAutoAuthorizingClientStateService,

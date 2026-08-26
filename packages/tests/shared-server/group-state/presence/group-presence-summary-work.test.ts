@@ -1,12 +1,13 @@
 import { Temporal } from '@js-temporal/polyfill';
 import { GroupPresenceSummaryWork } from '@shared-server/rallar-system/group-state/presence/group-presence-summary-worker.ts';
+import { decodeJsonWireValue, type JsonWireObject, type JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { computeGroupPresenceSummaryEntry, type GroupPresenceSummaryWorkData } from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
 import { describe, expect, it, vi } from 'vitest';
-import { FakeRuntimeStateRepository } from '../../fake-runtime-state-repository.ts';
+import { FakeRuntimeStateRepository } from '../../runtime-state/test-support/fake-runtime-state-repository.ts';
 import { GroupBarrierRepository } from '../group-state-concurrency-test-runtime.ts';
 
 type ReservedSummary = Readonly<{
@@ -67,17 +68,17 @@ const INVALID_SUMMARY_SCENARIOS: readonly InvalidSummaryScenario[] = [
     })),
     workScenario('divergent event identity', (work) => ({
         ...work,
-        event: {
+        event: decodeJsonWireValue({
             ...CANONICAL_SUMMARY_WORK.event,
             groupId: 'wrong-event-group'
-        }
+        }, 'Divergent group presence summary event')
     })),
     workScenario('divergent event body', (work) => ({
         ...work,
-        event: {
+        event: decodeJsonWireValue({
             ...CANONICAL_SUMMARY_WORK.event,
             occurredAtEpochMs: CANONICAL_SUMMARY_WORK.createdAtEpochMs + 1
-        }
+        }, 'Divergent group presence summary event')
     })),
     messageScenario('message timestamp mismatch', (message) => ({
         ...message,
@@ -269,10 +270,10 @@ function messageScenario(
 
 function envelopeScenario(
     name: string,
-    update: (envelope: Record<string, unknown>) => Record<string, unknown>
+    update: (envelope: JsonWireObject) => JsonWireObject
 ): InvalidSummaryScenario {
     return messageScenario(name, (message) => {
-        const envelope = JSON.parse(message.payload.resource) as Record<string, unknown>;
+        const envelope = decodeJsonWireObject(JSON.parse(message.payload.resource), 'Group presence summary envelope');
         return {
             ...message,
             payload: {
@@ -285,12 +286,24 @@ function envelopeScenario(
 
 function workScenario(
     name: string,
-    update: (work: Record<string, unknown>) => Record<string, unknown>
+    update: (work: JsonWireObject) => JsonWireObject
 ): InvalidSummaryScenario {
     return envelopeScenario(name, (envelope) => ({
         ...envelope,
-        data: update(envelope.data as Record<string, unknown>)
+        data: update(decodeJsonWireObject(envelope.data, 'Group presence summary work'))
     }));
+}
+
+function decodeJsonWireObject(value: unknown, label: string): JsonWireObject {
+    const decoded = decodeJsonWireValue(value, label);
+    if (!isJsonWireObject(decoded)) {
+        throw new TypeError(`${label} must be an object`);
+    }
+    return decoded;
+}
+
+function isJsonWireObject(value: JsonWireValue): value is JsonWireObject {
+    return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
 function entryScenario(
