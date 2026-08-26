@@ -5,15 +5,15 @@ import { resourceInboxRetryExpiryAtEpochMs } from '@shared/queuebox/ResourceInbo
 
 import { type IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
 
-import type { AuthenticatedGroupMutationEnqueue } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-contracts.ts';
+import type {
+    AuthenticatedGroupMutationEnqueue,
+    GroupCreateAppInboxPayload,
+    GroupPresenceConnectAppInboxPayload
+} from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-contracts.ts';
 
 import { AppInboxType, type AppInboxEnqueueInput } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import { requireGroupStateWritten } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-result-codec.ts';
-import {
-    type GroupCreateAppInboxPayload,
-    type GroupPresenceConnectAppInboxPayload,
-    type GroupStateInboxService
-} from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-service.ts';
+import type { GroupStateInboxService } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-service.ts';
 
 import { toAuthorisedWsClientConnectEnqueue } from '@shared-server/rallar-system/client-state/inbox/authorised-ws-client-app-inbox.ts';
 

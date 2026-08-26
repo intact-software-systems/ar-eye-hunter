@@ -1,6 +1,6 @@
 import type { AdminOperationMutationRequest } from '@shared-server/rallar-system/admin-operations/admin-operation-request.ts';
 import type { AdminOperationUseCases } from '@shared-server/rallar-system/admin-operations/admin-operation-use-cases.ts';
-import type { AdminPruneEnqueueResult } from '@shared-server/rallar-system/admin-operations/inbox/app-admin-inbox-service.ts';
+import type { AdminPruneEnqueueResult } from '@shared-server/rallar-system/admin-operations/inbox/admin-prune-inbox-codec.ts';
 import type { IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
 import type {
     CrdtAdminCompactResult,

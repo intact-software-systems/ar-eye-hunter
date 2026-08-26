@@ -21,7 +21,7 @@ import type {
     AdminOperationWriteRequest
 } from './admin-operation-request.ts';
 import type { ExportAdminCrdtDebug } from './export-admin-crdt-debug.ts';
-import type { AdminPruneEnqueueResult } from './inbox/app-admin-inbox-service.ts';
+import type { AdminPruneEnqueueResult } from './inbox/admin-prune-inbox-codec.ts';
 import type { VerifyAdminCrdtIntegrity } from './verify-admin-crdt-integrity.ts';
 
 export interface AdminOperationUseCase<TInput, TResponse> {

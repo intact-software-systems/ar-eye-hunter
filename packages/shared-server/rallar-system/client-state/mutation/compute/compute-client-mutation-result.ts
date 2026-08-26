@@ -10,13 +10,13 @@ import {
     type ComputedClientStateSync
 } from '../../../state-sync/state-sync-entry-computation.ts';
 import { compareClientStateInstanceStorageKeys } from '../../persistence/client-state-instance-storage-key.ts';
+import type { ClientMutationReceipt } from '../../persistence/client-state-persistence-contracts.ts';
 import { compareClientStateSessionStorageKeys } from '../../persistence/client-state-session-storage-key.ts';
 import { ClientMutationRejectedError } from '../../validation/client-mutation-rejection.ts';
 import type {
     ClientMutationCommand,
     ClientMutationComputed,
     ClientMutationRead,
-    ClientMutationReceipt,
     ConditionalCandidate
 } from '../client-mutation-contracts.ts';
 import { toClientMutationActor } from './compute-client-mutation-state.ts';

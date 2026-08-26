@@ -1,5 +1,6 @@
 import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import {
+    AUTHENTICATED_GROUP_INBOX_TYPES,
     type GroupAdmissionDeclineAppInboxPayload,
     type GroupAdmissionGrantAppInboxPayload,
     type GroupCreateAppInboxPayload,
@@ -16,10 +17,9 @@ import {
     type GroupPresenceDisconnectAppInboxPayload,
     type GroupPresenceHeartbeatAppInboxPayload,
     type GroupUpdateAppInboxPayload
-} from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-service.ts';
+} from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-contracts.ts';
 import { describe, expect, it } from 'vitest';
 
-import * as GroupStateInboxModule from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-service.ts';
 import {
     createGovernedOperationCase,
     createInviteOperationCase,
@@ -55,7 +55,7 @@ describe('GroupStateInboxService authenticated authority', () => {
     });
 
     it('advertises every authenticated group operation covered by the real handler matrix', () => {
-        expect(Reflect.get(GroupStateInboxModule, 'AUTHENTICATED_GROUP_INBOX_TYPES')).toEqual([
+        expect(AUTHENTICATED_GROUP_INBOX_TYPES).toEqual([
             AppInboxType.GROUP_CREATE,
             AppInboxType.GROUP_UPDATE,
             AppInboxType.GROUP_DIRECTOR_APPOINT,

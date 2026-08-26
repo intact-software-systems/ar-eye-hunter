@@ -4,17 +4,17 @@ import type { StateScope } from '@shared/api/state-types.ts';
 
 import { type IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
 
-import type { AuthenticatedGroupMutationEnqueue } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-contracts.ts';
+import type {
+    AuthenticatedGroupMutationEnqueue,
+    GroupCreateAppInboxPayload,
+    GroupPresenceConnectAppInboxPayload
+} from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-contracts.ts';
 
 import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import { type AppInboxEnqueueInput } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import { AppClientInboxService } from '@shared-server/rallar-system/client-state/inbox/app-client-inbox-service.ts';
 import { requireGroupStateWritten } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-result-codec.ts';
-import {
-    GroupStateInboxService,
-    type GroupCreateAppInboxPayload,
-    type GroupPresenceConnectAppInboxPayload
-} from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-service.ts';
+import { GroupStateInboxService } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-service.ts';
 
 import { toAuthorisedWsClientConnectEnqueue } from '@shared-server/rallar-system/client-state/inbox/authorised-ws-client-app-inbox.ts';
 

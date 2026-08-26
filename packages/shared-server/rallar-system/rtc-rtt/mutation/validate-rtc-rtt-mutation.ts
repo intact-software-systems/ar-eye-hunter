@@ -1,6 +1,6 @@
 import { compareRtcTopologyIdentifiers } from '../../topology/persistence/rtc-topology-identifiers.ts';
 import { rtcTopologySemanticEqual } from '../../topology/persistence/rtc-topology-semantic-equal.ts';
-import { RTC_RTT_MUTATION_RETENTION_MS } from '../persistence/rtc-rtt-persistence-validation.ts';
+import { RTC_RTT_MUTATION_RETENTION_MS } from '../persistence/rtc-rtt-persistence-validation-primitives.ts';
 import { computeRtcRttMutation } from './compute-rtc-rtt-mutation.ts';
 import type {
     RtcRttMutationCommand,

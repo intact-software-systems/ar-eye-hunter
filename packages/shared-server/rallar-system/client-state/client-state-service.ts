@@ -7,7 +7,7 @@ import { createTimedClientStateService } from './client-state-service-timing.ts'
 import { computeClientMutation } from './mutation/compute/compute-client-mutation.ts';
 import { readClientMutation } from './mutation/read-client-mutation.ts';
 import { validateClientMutation } from './mutation/result-validation/validate-client-mutation.ts';
-import { writeClientMutation } from './mutation/write/write-client-mutation.ts';
+import { writeClientMutation } from './mutation/write-client-mutation.ts';
 import {
     ClientStateRepository,
     createTransactionBoundClientStateRepository

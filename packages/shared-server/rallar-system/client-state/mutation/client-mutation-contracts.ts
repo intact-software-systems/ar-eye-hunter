@@ -21,11 +21,6 @@ import type {
     ClientMutationReceipt
 } from '../persistence/client-state-persistence-contracts.ts';
 
-export type {
-    ClientMutationIdempotencyRecord,
-    ClientMutationReceipt
-} from '../persistence/client-state-persistence-contracts.ts';
-
 export type NullableActorInput = Readonly<{
     actorPrincipalId: string | null;
     actorSessionId: string | null;

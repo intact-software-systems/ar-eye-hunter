@@ -3,7 +3,7 @@ import { hashMutationCommand, type JsonWireValue } from '@shared-server/rallar-s
 import type { RtcRttMutationCommand } from '@shared-server/rallar-system/rtc-rtt/mutation/rtc-rtt-mutation-contracts.ts';
 import { toRtcRttMutationReceiptId, toRtcRttTopologyOutboxId } from '@shared-server/rallar-system/rtc-rtt/mutation/rtc-rtt-mutation-identifiers.ts';
 import { writeRtcRttMutation } from '@shared-server/rallar-system/rtc-rtt/mutation/write-rtc-rtt-mutation.ts';
-import { DEFAULT_RTC_RTT_MUTATION_RETENTION_MS } from '@shared-server/rallar-system/rtc-rtt/persistence/rtc-rtt-persistence-validation.ts';
+import { DEFAULT_RTC_RTT_MUTATION_RETENTION_MS } from '@shared-server/rallar-system/rtc-rtt/persistence/rtc-rtt-persistence-validation-primitives.ts';
 import { RtcRttRepository } from '@shared-server/rallar-system/rtc-rtt/persistence/rtc-rtt-repository.ts';
 import {
     RTC_RTT_ENDPOINT_ADMISSION_NAMESPACE,
@@ -20,7 +20,8 @@ import {
     createMutableRttWriteCandidate,
     createRttGroupSnapshot,
     executeRtcRttMutation,
-    rttWriteCandidateCorruptions
+    rttWriteCandidateCorruptions,
+    type TestRtcRttLifecycleFacts
 } from './rtc-rtt-persistence-test-fixtures.ts';
 
 describe('RTC RTT repository convergence', () => {
@@ -30,18 +31,15 @@ describe('RTC RTT repository convergence', () => {
             now: () => 1
         });
         let waiting = 0;
-        let release!: () => void;
-        const together = new Promise<void>((resolve) => {
-            release = resolve;
-        });
+        const together = Promise.withResolvers<void>();
         const originalList = repository.listMeasurementEntries.bind(repository);
         vi.spyOn(repository, 'listMeasurementEntries').mockImplementation(async () => {
             const values = await originalList();
             waiting += 1;
             if (waiting === 2) {
-                release();
+                together.resolve();
             }
-            await together;
+            await together.promise;
             return values;
         });
         const groupAB = createRttGroupSnapshot('room-ab', ['session-a', 'session-b']);
@@ -525,17 +523,16 @@ describe('RTC RTT repository convergence', () => {
             degreeLimit: 1
         };
         let waiting = 0;
-        let release!: () => void;
-        const together = new Promise<void>((resolve) => (release = resolve));
+        const together = Promise.withResolvers<void>();
         const originalList = repository.listMeasurementEntries.bind(repository);
         vi.spyOn(repository, 'listMeasurementEntries').mockImplementation(async () => {
             const values = await originalList();
             waiting += 1;
             if (waiting === 2) {
-                release();
+                together.resolve();
             }
             if (waiting <= 2) {
-                await together;
+                await together.promise;
             }
             return values;
         });
@@ -639,7 +636,7 @@ describe('RTC RTT repository convergence', () => {
             })
             .mockImplementation(originalBegin);
         const requestedAtEpochMs = [1, 6];
-        const readFacts = () => {
+        const readFacts = (): TestRtcRttLifecycleFacts => {
             const requestedAt = requestedAtEpochMs.shift();
             if (requestedAt === undefined) {
                 throw new Error('facts exhausted');
@@ -722,7 +719,7 @@ describe('RTC RTT repository convergence', () => {
             }))
         };
         const commands = [initial, futureConnection];
-        const readCommand = () => {
+        const readCommand = (): RtcRttMutationCommand => {
             const group = commands.shift();
             if (!group) {
                 throw new Error('commands exhausted');

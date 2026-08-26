@@ -3,34 +3,36 @@ import { computeRtcRttMutation } from '@shared-server/rallar-system/rtc-rtt/muta
 import { readRtcRttMutation } from '@shared-server/rallar-system/rtc-rtt/mutation/read-rtc-rtt-mutation.ts';
 import type { RtcRttMutationCommand, RtcRttMutationComputed } from '@shared-server/rallar-system/rtc-rtt/mutation/rtc-rtt-mutation-contracts.ts';
 import { validateRtcRttMutation } from '@shared-server/rallar-system/rtc-rtt/mutation/validate-rtc-rtt-mutation.ts';
-import { DEFAULT_RTC_RTT_MUTATION_RETENTION_MS } from '@shared-server/rallar-system/rtc-rtt/persistence/rtc-rtt-persistence-validation.ts';
+import { DEFAULT_RTC_RTT_MUTATION_RETENTION_MS } from '@shared-server/rallar-system/rtc-rtt/persistence/rtc-rtt-persistence-validation-primitives.ts';
 import { RtcRttRepository } from '@shared-server/rallar-system/rtc-rtt/persistence/rtc-rtt-repository.ts';
 import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
-import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
+import type { AuditStamp, GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 
 import { createTestGroup } from '../../../../create-test-group.ts';
 import { FakeRuntimeStateRepository } from '../../../runtime-state/test-support/fake-runtime-state-repository.ts';
+
+export interface TestRtcRttLifecycleFacts {
+    readonly requestedAtEpochMs: number;
+    readonly purgeAfterEpochMs: number;
+}
 
 export type TestExecuteRtcRttMutationInput = Readonly<{
     repository: RtcRttRepository;
     runtime: FakeRuntimeStateRepository;
     command: RtcRttMutationCommand;
-    readFacts: () =>
-        | Readonly<{
-            requestedAtEpochMs: number;
-            purgeAfterEpochMs: number;
-        }>
-        | Promise<
-            Readonly<{
-                requestedAtEpochMs: number;
-                purgeAfterEpochMs: number;
-            }>
-        >;
+    readFacts: () => TestRtcRttLifecycleFacts | Promise<TestRtcRttLifecycleFacts>;
     readCommand?: () => RtcRttMutationCommand | Promise<RtcRttMutationCommand>;
     sleep?: (delayMs: number) => Promise<void>;
 }>;
 
-export async function executeRtcRttMutation(input: TestExecuteRtcRttMutationInput) {
+export interface TestExecuteRtcRttMutationResult {
+    readonly computed: RtcRttMutationComputed;
+    readonly updated: boolean;
+}
+
+export async function executeRtcRttMutation(
+    input: TestExecuteRtcRttMutationInput
+): Promise<TestExecuteRtcRttMutationResult> {
     const request = {
         rtt: input.command.rtt,
         alSenderId: input.command.alSenderId
@@ -115,7 +117,7 @@ export function createGroupRef(): GroupRef {
     };
 }
 
-export function createPrincipalAuditStamp(atEpochMs: number, principalId: string) {
+export function createPrincipalAuditStamp(atEpochMs: number, principalId: string): AuditStamp {
     return {
         atEpochMs,
         actor: { kind: 'principal' as const, principalId },

@@ -4,19 +4,6 @@ import { PSqlResourceInboxFinalizationRepository } from './p-sql-resource-inbox-
 import { PSqlResourceInboxReservationRepository } from './p-sql-resource-inbox-reservation-repository.ts';
 import { PSqlResourceInboxMaintenance } from './resource-inbox-maintenance.ts';
 
-export {
-    PSqlResourceInboxEntryRepository,
-    ResourceInboxInvariantCorruptionError
-} from './p-sql-resource-inbox-entry-repository.ts';
-export {
-    PSqlResourceInboxFinalizationRepository
-} from './p-sql-resource-inbox-finalization-repository.ts';
-export {
-    PSqlResourceInboxReservationRepository,
-    type StartProcessingEntitySkipped
-} from './p-sql-resource-inbox-reservation-repository.ts';
-export { PSqlResourceInboxMaintenance } from './resource-inbox-maintenance.ts';
-
 export interface PSqlResourceInboxRepository {
     readonly entries: PSqlResourceInboxEntryRepository;
     readonly reservations: PSqlResourceInboxReservationRepository;

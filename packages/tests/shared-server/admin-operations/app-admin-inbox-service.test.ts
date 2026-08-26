@@ -15,11 +15,9 @@ import type { JsonWireValue } from '@shared-server/rallar-system/protocol/json-w
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 
-import {
-    AppAdminInboxService,
-    createAdminPruneIdempotencyIdentity,
-    type AdminPruneEnqueueResult
-} from '@shared-server/rallar-system/admin-operations/inbox/app-admin-inbox-service.ts';
+import { type AdminPruneEnqueueResult } from '@shared-server/rallar-system/admin-operations/inbox/admin-prune-inbox-codec.ts';
+import { createAdminPruneIdempotencyIdentity } from '@shared-server/rallar-system/admin-operations/inbox/admin-prune-inbox-identity.ts';
+import { AppAdminInboxService, type AdminPruneAuthority } from '@shared-server/rallar-system/admin-operations/inbox/app-admin-inbox-service.ts';
 import { decodeAdminPruneWork } from '@shared-server/rallar-system/admin-operations/prune/admin-prune-page-codec.ts';
 import {
     ADMIN_PRUNE_AGGREGATE_TOPIC,
@@ -62,6 +60,11 @@ interface MalformedAdminPruneResultCase {
 
 interface AdminPruneRequestFixture extends AdminPruneExpiredRequest {
     readonly requestId: string;
+}
+
+interface AdminPruneInput {
+    readonly requestId: string;
+    readonly request: AdminPruneExpiredRequest;
 }
 
 describe('AppAdminInboxService initial prune command', () => {
@@ -877,9 +880,7 @@ function defaultAdminPruneCategories(): readonly AdminPruneExpiredCategory[] {
     return ADMIN_PRUNE_EXPIRED_CATEGORIES.filter(isNotAppDataCategory);
 }
 
-function toPruneInput(
-    fixture: AdminPruneRequestFixture
-): Readonly<{ requestId: string; request: AdminPruneExpiredRequest; }> {
+function toPruneInput(fixture: AdminPruneRequestFixture): AdminPruneInput {
     const { requestId, ...request } = fixture;
     return { requestId, request };
 }
@@ -960,7 +961,7 @@ function createAdminInboxHarness(options: CreateAdminInboxHarnessOptions = {}): 
         events.push('semantic-identity-completed');
         return identity;
     };
-    const readAuthority = async () => {
+    const readAuthority = async (): Promise<AdminPruneAuthority> => {
         authorityReads += 1;
         events.push('current-authority');
         return {

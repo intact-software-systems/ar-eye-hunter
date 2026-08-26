@@ -19,10 +19,10 @@ import type {
     ClientMutationCommand,
     ClientMutationComputed,
     ClientMutationComputedWrite,
-    ClientMutationRead,
-    ClientMutationReceipt
+    ClientMutationRead
 } from './mutation/client-mutation-contracts.ts';
 import { assertNeverClientMutationComputed } from './mutation/compute/compute-client-mutation-result.ts';
+import type { ClientMutationReceipt } from './persistence/client-state-persistence-contracts.ts';
 
 export type RegisterAuthorisedWsClientInput = Readonly<{
     applicationId?: string;

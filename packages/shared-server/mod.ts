@@ -190,23 +190,21 @@ export type {
 } from './rallar-system/middleware/rallar-middleware-runtime.ts';
 
 export { GroupTopologyConfigRepository } from './rallar-system/topology/config/persistence/group-topology-config-repository.ts';
+export { planRallarRtcTopologySnapshot } from './rallar-system/topology/planning/plan-rallar-rtc-topology-snapshot.ts';
 export { createGroupTopologyRuntimeOwners } from './rallar-system/topology/runtime/create-group-topology-runtime-owners.ts';
 export type {
     CreateGroupTopologyRuntimeOwnersInput,
     GroupTopologyRuntimeOwners
 } from './rallar-system/topology/runtime/create-group-topology-runtime-owners.ts';
-export {
-    planRallarRtcTopologySnapshot,
-    RallarRtcTopologyService
-} from './rallar-system/topology/runtime/rallar-rtc-topology-service.ts';
+export { RallarRtcTopologyService } from './rallar-system/topology/runtime/rallar-rtc-topology-service.ts';
 export type {
-    RallarRtcTopologyRttQueueResult,
     RallarRtcTopologyServiceOptions,
     RallarRtcTopologyUpdateOptions,
     RallarRtcTopologyUpdateResult,
     RtcTopologyKindHysteresisWidths,
     RtcTopologyPlanningIntent
 } from './rallar-system/topology/runtime/rallar-rtc-topology-service.ts';
+export type { RallarRtcTopologyRttQueueResult } from './rallar-system/topology/runtime/rtc-topology-rtt-rebuild-scheduler.ts';
 
 export type {
     RallarServerWsAuthorizer,

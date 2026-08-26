@@ -1,6 +1,6 @@
 import { toRtcRttMutationReceiptId } from '@shared-server/rallar-system/rtc-rtt/mutation/rtc-rtt-mutation-identifiers.ts';
 import type { RtcRttMutationReceipt } from '@shared-server/rallar-system/rtc-rtt/persistence/rtc-rtt-persistence-contracts.ts';
-import { DEFAULT_RTC_RTT_MUTATION_RETENTION_MS } from '@shared-server/rallar-system/rtc-rtt/persistence/rtc-rtt-persistence-validation.ts';
+import { DEFAULT_RTC_RTT_MUTATION_RETENTION_MS } from '@shared-server/rallar-system/rtc-rtt/persistence/rtc-rtt-persistence-validation-primitives.ts';
 import {
     cleanupExpiredRtcRttReceipts,
     initRtcRttReceiptFamilyCleanup,
@@ -15,6 +15,13 @@ import {
 import { describe, expect, it } from 'vitest';
 
 import { FakeRuntimeStateRepository } from '../../../runtime-state/test-support/fake-runtime-state-repository.ts';
+
+interface RtcRttReceiptHarness {
+    readonly runtime: FakeRuntimeStateRepository;
+    readonly repository: RtcRttRepository;
+    readonly receipt: RtcRttMutationReceipt;
+    readonly expireAtEpochMs: number;
+}
 
 describe('RTC RTT receipt cleanup ownership', () => {
     it('deletes an expired receipt', async () => {
@@ -101,11 +108,8 @@ describe('RTC RTT receipt cleanup ownership', () => {
 
     it('continues periodic family cleanup after an error without overlapping runs', async () => {
         const failure = new Error('one corrupt family');
-        let resolveSecond!: (removed: number) => void;
-        const secondRun = new Promise<number>((resolve) => {
-            resolveSecond = resolve;
-        });
-        const repository = new SequencedCleanupRtcRttRepository(failure, secondRun);
+        const secondRun = Promise.withResolvers<number>();
+        const repository = new SequencedCleanupRtcRttRepository(failure, secondRun.promise);
         const scheduled: Array<
             Readonly<{
                 callback: () => void;
@@ -128,7 +132,7 @@ describe('RTC RTT receipt cleanup ownership', () => {
         await Promise.resolve();
         expect(scheduled).toHaveLength(1);
 
-        resolveSecond(1);
+        secondRun.resolve(1);
         await Promise.resolve();
         await Promise.resolve();
         expect(scheduled).toHaveLength(2);
@@ -159,14 +163,9 @@ class SequencedCleanupRtcRttRepository extends RtcRttRepository {
     }
 }
 
-async function createReceiptHarness(input: { readonly nowOffsetFromExpiry: number; }): Promise<
-    Readonly<{
-        runtime: FakeRuntimeStateRepository;
-        repository: RtcRttRepository;
-        receipt: RtcRttMutationReceipt;
-        expireAtEpochMs: number;
-    }>
-> {
+async function createReceiptHarness(
+    input: Readonly<{ nowOffsetFromExpiry: number; }>
+): Promise<RtcRttReceiptHarness> {
     const acceptedAtEpochMs = 1;
     const expireAtEpochMs = acceptedAtEpochMs + DEFAULT_RTC_RTT_MUTATION_RETENTION_MS;
     const runtime = new FakeRuntimeStateRepository();

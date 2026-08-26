@@ -7,7 +7,7 @@ const rtcMutationRoot = `${systemRoot}/rtc-rtt/mutation`;
 export const authoritativeMutationRuntimeSourcePaths = [
     `${systemRoot}/app-inbox/app-inbox-queue-client.ts`,
     `${systemRoot}/client-state/client-state-service.ts`,
-    `${systemRoot}/client-state/mutation/write/write-client-mutation.ts`,
+    `${systemRoot}/client-state/mutation/write-client-mutation.ts`,
     `${systemRoot}/client-state/inbox/client-state-inbox-handler.ts`,
     `${groupStateRoot}/group-mutation-authority.ts`,
     `${groupStateRoot}/group-mutation-command.ts`,

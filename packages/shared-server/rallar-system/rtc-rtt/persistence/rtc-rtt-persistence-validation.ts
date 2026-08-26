@@ -14,11 +14,6 @@ import {
     validateRtcRttFamilyExpiry
 } from './rtc-rtt-persistence-validation-primitives.ts';
 
-export {
-    DEFAULT_RTC_RTT_MUTATION_RETENTION_MS,
-    RTC_RTT_MUTATION_RETENTION_MS
-} from './rtc-rtt-persistence-validation-primitives.ts';
-
 type RtcRttMutationReceiptContract = Readonly<{
     receiptId: string;
     commandId: string;

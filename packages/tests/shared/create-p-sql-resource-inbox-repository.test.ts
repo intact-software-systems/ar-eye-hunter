@@ -1,10 +1,8 @@
-import {
-    createPSqlResourceInboxRepository,
-    PSqlResourceInboxEntryRepository,
-    PSqlResourceInboxFinalizationRepository,
-    PSqlResourceInboxMaintenance,
-    PSqlResourceInboxReservationRepository
-} from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
+import { createPSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
+import { PSqlResourceInboxEntryRepository } from '@shared-server/queuebox/postgres/p-sql-resource-inbox-entry-repository.ts';
+import { PSqlResourceInboxFinalizationRepository } from '@shared-server/queuebox/postgres/p-sql-resource-inbox-finalization-repository.ts';
+import { PSqlResourceInboxReservationRepository } from '@shared-server/queuebox/postgres/p-sql-resource-inbox-reservation-repository.ts';
+import { PSqlResourceInboxMaintenance } from '@shared-server/queuebox/postgres/resource-inbox-maintenance.ts';
 import { describe, expect, it, vi } from 'vitest';
 
 describe('PostgreSQL resource inbox ownership', () => {

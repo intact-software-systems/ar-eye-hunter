@@ -1,3 +1,4 @@
+import type { GroupTopologyConfigMutationReceipt } from '@shared/api/graph-topology-management-types.ts';
 import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
 import type { GroupStateRepository } from '../../group-state/persistence/group-state-repository.ts';
 import type { RtcTopologyOutboxWriter } from '../mutation/rtc-topology-outbox-writer.ts';
@@ -127,7 +128,7 @@ export class GroupTopologyConfigMutationService {
     async write(
         transaction: PSqlSql,
         computed: Extract<mutationContracts.GroupTopologyConfigMutationComputed, { outcome: 'write' | 'claim'; }>
-    ): Promise<mutationContracts.GroupTopologyConfigMutationReceipt> {
+    ): Promise<GroupTopologyConfigMutationReceipt> {
         return await writeTopologyConfigMutation({
             transaction,
             computed,

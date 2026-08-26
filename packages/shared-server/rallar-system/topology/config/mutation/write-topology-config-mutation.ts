@@ -1,3 +1,4 @@
+import type { GroupTopologyConfigMutationReceipt } from '@shared/api/graph-topology-management-types.ts';
 import type { PSqlSql } from '../../../../postgres/p-sql-sql.ts';
 import { RuntimeStateWriteConflictError } from '../../../../runtime-state/optimistic-runtime-state-write.ts';
 import { PSqlRuntimeStateRepository } from '../../../../runtime-state/postgres/p-sql-runtime-state-repository.ts';
@@ -19,7 +20,7 @@ export interface WriteTopologyConfigMutationInput {
 
 export async function writeTopologyConfigMutation(
     input: WriteTopologyConfigMutationInput
-): Promise<mutationContracts.GroupTopologyConfigMutationReceipt> {
+): Promise<GroupTopologyConfigMutationReceipt> {
     const { transaction, computed } = input;
     const runtime = new PSqlRuntimeStateRepository(transaction);
     const repository = new GroupTopologyConfigRepository(runtime);

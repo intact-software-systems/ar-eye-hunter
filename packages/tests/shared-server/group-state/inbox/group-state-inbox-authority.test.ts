@@ -14,15 +14,15 @@ import type { JsonWireValue } from '@shared-server/rallar-system/protocol/json-w
 import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import { type GroupStateWritten } from '@shared-server/rallar-system/group-state/group-state-service-contracts.ts';
 import { createGroupStateService } from '@shared-server/rallar-system/group-state/group-state-service.ts';
-import type { AuthenticatedGroupMutationEnqueue } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-contracts.ts';
 import {
-    GroupStateInboxService,
+    type AuthenticatedGroupMutationEnqueue,
     type GroupCreateAppInboxPayload,
     type GroupMemberUpsertAppInboxPayload,
     type GroupPresenceConnectAppInboxPayload,
     type GroupPresenceHeartbeatAppInboxPayload,
     type GroupUpdateAppInboxPayload
-} from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-service.ts';
+} from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-contracts.ts';
+import { GroupStateInboxService } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-service.ts';
 import { InMemoryGroupStateEventStore } from '@shared-server/rallar-system/state-events/in-memory-group-state-event-store.ts';
 
 import { type GroupMutationReceipt } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';

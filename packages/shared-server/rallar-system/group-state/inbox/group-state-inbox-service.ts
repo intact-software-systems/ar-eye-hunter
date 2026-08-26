@@ -40,33 +40,6 @@ import { decodeGroupStateInboxDurableResult } from './group-state-inbox-result-c
 import type { GroupStateInboxDurableResult } from './group-state-inbox-result.ts';
 import { toGroupMutationDescriptor } from './to-group-mutation-descriptor.ts';
 
-export {
-    AUTHENTICATED_GROUP_INBOX_TYPES,
-    type GroupAdmissionDeclineAppInboxPayload,
-    type GroupAdmissionGrantAppInboxPayload,
-    type GroupCreateAppInboxPayload,
-    type GroupDirectorAppointAppInboxPayload,
-    type GroupInviteAcceptAppInboxPayload,
-    type GroupInviteCreateAppInboxPayload,
-    type GroupInviteRevokeAppInboxPayload,
-    type GroupJoinAppInboxPayload,
-    type GroupJoinCodeRotateAppInboxPayload,
-    type GroupMemberBanAppInboxPayload,
-    type GroupMemberRemoveAppInboxPayload,
-    type GroupMemberRoleSetAppInboxPayload,
-    type GroupMemberUnbanAppInboxPayload,
-    type GroupMemberUpsertAppInboxPayload,
-    type GroupOwnershipTransferAppInboxPayload,
-    type GroupPresenceConnectAppInboxPayload,
-    type GroupPresenceDisconnectAppInboxPayload,
-    type GroupPresenceHeartbeatAppInboxPayload,
-    type GroupUpdateAppInboxPayload
-} from './group-state-inbox-contracts.ts';
-
-export type {
-    GroupPresenceSessionCleanupAppInboxPayload
-} from '../presence/group-presence-session-cleanup-app-inbox-payload.ts';
-
 export namespace GroupStateInboxService {
     export interface Dependencies {
         readonly inboxQueueReader: InboxQueueReader;

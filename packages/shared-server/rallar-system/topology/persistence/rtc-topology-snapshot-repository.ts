@@ -13,23 +13,11 @@ import type {
     RuntimeStateEntryPageOptions,
     RuntimeStateRepositoryLike
 } from '../../../runtime-state/runtime-state-repository.ts';
-import {
-    isRuntimeStateConditionalRepositoryLike,
-    isRuntimeStateTransactionalRepositoryLike
-} from '../../../runtime-state/runtime-state-repository.ts';
 import { decodeJsonWireValue } from '../../protocol/json-wire-identity.ts';
 import { decodeRtcTopologySnapshot } from './decode-rtc-topology-snapshot.ts';
 import { RtcTopologyRepositoryInvariantCorruptionError } from './rtc-topology-errors.ts';
 import { rtcTopologySemanticEqual } from './rtc-topology-semantic-equal.ts';
 import { decideTopologySnapshot, type RtcTopologySnapshotObservation } from './rtc-topology-snapshot-contract.ts';
-
-export {
-    RtcTopologyRepositoryInvariantCorruptionError,
-    RtcTopologySnapshotRevisionConflictError
-} from './rtc-topology-errors.ts';
-export {
-    type RtcTopologySnapshotObservation
-} from './rtc-topology-snapshot-contract.ts';
 
 export const RTC_TOPOLOGY_SNAPSHOTS_NAMESPACE = 'rtc-topology:snapshots';
 
@@ -122,8 +110,7 @@ export class RtcTopologySnapshotRepository extends RuntimeStateJsonStore {
     }
 
     async observeSnapshot(
-        snapshot: RallarOverlayTopologySnapshot,
-        _purgeAfterEpochMs: number = this.neverExpireAtTimestamp()
+        snapshot: RallarOverlayTopologySnapshot
     ): Promise<RtcTopologySnapshotObservation> {
         const current = await this.findSnapshotEntry(snapshot.groupRef);
         const observation = decideTopologySnapshot(current?.value, snapshot);
