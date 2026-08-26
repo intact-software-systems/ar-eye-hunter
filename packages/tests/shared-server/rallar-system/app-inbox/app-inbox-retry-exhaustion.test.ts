@@ -1,8 +1,5 @@
 import { AppInboxReservationConflictError, AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
-import {
-    createAppInboxRetryExhaustionHandler,
-    createAppInboxRetryExhaustionRecoveryHandler
-} from '@shared-server/rallar-system/app-inbox/app-inbox-retry-finalization.ts';
+import { createAppInboxRetryFinalizer } from '@shared-server/rallar-system/app-inbox/app-inbox-retry-finalization.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import { DequeueResourceEntryController, type ResourceInboxRetryExhaustion } from '@shared/queuebox/DequeueResourceEntryController.ts';
 import { EntityStatus, toKeyAsString, type Key } from '@shared/queuebox/ResourceEntry.ts';
@@ -23,7 +20,7 @@ describe('AppInbox retry exhaustion', () => {
         const harness = createAtomicHarness({ attempts: 20 });
         const telemetry: ResourceInboxRetryExhaustion[] = [];
         const releasedEntryKeys: Key[] = [];
-        const onRetryExhausted = createAppInboxRetryExhaustionHandler({
+        const onRetryExhausted = createAppInboxRetryFinalizer({
             database: harness.database.sql
         });
         let reserved = false;
@@ -186,15 +183,14 @@ describe('AppInbox retry exhaustion', () => {
                 entryResource: resource,
                 entryTopicId: topicId
             });
+            const finalizeRetry = createAppInboxRetryFinalizer({
+                database: harness.database.sql
+            });
             if (lane === 'initial') {
-                await createAppInboxRetryExhaustionHandler({
-                    database: harness.database.sql
-                })(toExhaustion(harness.entry));
+                await finalizeRetry(toExhaustion(harness.entry));
             }
             else {
-                await createAppInboxRetryExhaustionRecoveryHandler({
-                    database: harness.database.sql
-                })(toRecovery(harness.entry, attempts));
+                await finalizeRetry(toRecovery(harness.entry, attempts));
             }
 
             const stored = harness.database.state.results.get(toKeyAsString(harness.entry.key));
@@ -220,7 +216,7 @@ describe('AppInbox retry exhaustion', () => {
 
     it('rolls back a lost recovery reservation and finalizes its successor', async () => {
         const harness = createAtomicHarness({ attempts: 21, loseReservation: true });
-        const recover = createAppInboxRetryExhaustionRecoveryHandler({
+        const recover = createAppInboxRetryFinalizer({
             database: harness.database.sql
         });
 
