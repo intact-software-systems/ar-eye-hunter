@@ -255,8 +255,6 @@ class RuntimeStatePrefixBenchRepository implements RuntimeStateTransactionalRepo
     async deleteExpired(): Promise<number> {
         return 0;
     }
-
-    async lockKey(): Promise<void> {}
 }
 
 async function benchRuntimePrefix(results: BenchResult[]): Promise<void> {

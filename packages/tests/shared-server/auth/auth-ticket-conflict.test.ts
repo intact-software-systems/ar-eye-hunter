@@ -96,7 +96,6 @@ async function selectsSingleConcurrentWinner(): Promise<void> {
 
     expect(consumeResults.filter((result) => result.right !== undefined)).toHaveLength(1);
     expect(consumeResults.filter((result) => result.left?.status === 404)).toHaveLength(1);
-    expect(runtimeRepository.locks).toEqual([]);
 }
 
 async function expectSingleRegistrationWinner(

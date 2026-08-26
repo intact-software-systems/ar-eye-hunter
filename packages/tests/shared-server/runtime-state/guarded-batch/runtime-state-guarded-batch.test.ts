@@ -376,7 +376,7 @@ describe('runtime-state guarded batches', () => {
             expect(cteSource).toMatch(/authority/iu);
         }
         expect(query.source).not.toMatch(
-            /for\s+update|pg_advisory|lockKey/iu
+            /for\s+update|pg_advisory/iu
         );
         for (
             const secret of [

@@ -72,20 +72,16 @@ describe('RTC topology publication repository', () => {
         ).resolves.toEqual({ publication, inserted: false });
     });
 
-    it('claims immutable publications without invoking an application lock', async () => {
+    it('claims an immutable publication with its snapshot guard', async () => {
         const runtimeRepository = new FakeRuntimeStateRepository();
-        vi.spyOn(runtimeRepository, 'lockKey').mockRejectedValue(
-            new Error('targeted publication locks are forbidden')
-        );
         const repository = new RtcTopologyPublicationRepository(runtimeRepository);
         const snapshot = createTopologySnapshot(createGroupRef(), 1);
-        const publication = createPublication(snapshot, 'work-no-lock');
+        const publication = createPublication(snapshot, 'work-snapshot-guard');
 
         await expect(putOrLoadTopologyPublication(repository, publication, snapshot)).resolves.toEqual({
             publication,
             inserted: true
         });
-        expect(runtimeRepository.locks).toEqual([]);
     });
 
     it('accepts documented optional AL envelope sections on durable publications', async () => {
@@ -148,9 +144,8 @@ describe('RTC topology publication repository', () => {
         });
     });
 
-    it('lets exactly one immutable publication claim a work id without locks', async () => {
+    it('lets exactly one immutable publication claim a work id under concurrency', async () => {
         const runtimeRepository = new FakeRuntimeStateRepository();
-        vi.spyOn(runtimeRepository, 'lockKey').mockResolvedValue();
         const repository = new RtcTopologyPublicationRepository(runtimeRepository);
         const first = createPublication(createTopologySnapshot(createGroupRef(), 1), 'work-race');
         const secondSnapshot = {
@@ -202,7 +197,6 @@ describe('RTC topology publication repository', () => {
         expect(results.find((result) => result.status === 'rejected')).toMatchObject({
             reason: { code: 'rtc-topology-publication-collision' }
         });
-        expect(runtimeRepository.locks).toEqual([]);
     });
 
     it('requests recomputation when the topology predecessor moves before commit', async () => {

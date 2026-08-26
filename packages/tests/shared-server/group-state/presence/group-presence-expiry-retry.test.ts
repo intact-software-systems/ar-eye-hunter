@@ -123,7 +123,6 @@ describe('group presence expiry retry', () => {
         expect(events).toHaveLength(1);
         expect(events[0]?.reason).toBe('expired');
         expect(events[0]?.requestId).toContain('expire-group-presence');
-        expect(runtime.locks).toEqual([]);
     });
 
     it('rebases socket cleanup observations at different times without idempotency conflict', async () => {
@@ -161,7 +160,6 @@ describe('group presence expiry retry', () => {
         expect(results).toHaveLength(2);
         expect(events).toHaveLength(1);
         expect(events[0]?.requestId).toContain('cleanup-group-presence-session');
-        expect(runtime.locks).toEqual([]);
     });
 
     it('replays exact duplicate expiry work with one terminal effect', async () => {
@@ -196,7 +194,6 @@ describe('group presence expiry retry', () => {
         expect(events).toHaveLength(1);
         expect(events[0]?.requestId).toContain('expire-group-presence');
         expect(runtime.conditionalOperations[0]).toBe('delete:group-state:sessions');
-        expect(runtime.locks).toEqual([]);
     });
 
     it('re-reads expiry state and exposes bounded exhaustion after delete conflicts', async () => {

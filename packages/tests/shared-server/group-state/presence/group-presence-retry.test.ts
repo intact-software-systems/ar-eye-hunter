@@ -126,8 +126,6 @@ describe('Group presence lifecycle retry', () => {
             lastHeartbeatAtEpochMs: expiresAtEpochMs - 1_000,
             expiresAtEpochMs
         });
-        runtimeRepository.locks.splice(0);
-
         const now = expiresAtEpochMs + 1;
         const runtime = createTestGroupStateRuntime({
             runtimeRepository,
@@ -161,7 +159,6 @@ describe('Group presence lifecycle retry', () => {
             'session-connected',
             'session-disconnected'
         ]);
-        expect(runtimeRepository.locks).toEqual([]);
     });
 
     it('does not let a late heartbeat revive a terminal generation', async () => {

@@ -43,7 +43,7 @@ describe('RTC topology snapshot repository', () => {
         expect('putSnapshot' in repository).toBe(false);
     });
 
-    it('stores topology snapshots without invoking application locks', async () => {
+    it('stores topology snapshots with a revision guard', async () => {
         const runtimeRepository = new FakeRuntimeStateRepository();
         const repository = new RtcTopologySnapshotRepository(runtimeRepository);
         const groupRef = createGroupRef();
@@ -52,7 +52,6 @@ describe('RTC topology snapshot repository', () => {
         await expect(repository.observeSnapshot(snapshot)).resolves.toBe('inserted');
 
         expect(await repository.findSnapshot(groupRef)).toEqual(snapshot);
-        expect(runtimeRepository.locks).toEqual([]);
     });
 
     it('treats reordered topology object keys as one semantic tuple across decision and CAS', async () => {
@@ -92,7 +91,7 @@ describe('RTC topology snapshot repository', () => {
         ).resolves.toEqual(beforeDuplicate);
     });
 
-    it('lets exactly one snapshot planner claim an absent predecessor without locks', async () => {
+    it('lets exactly one snapshot planner claim an absent predecessor under concurrency', async () => {
         const runtimeRepository = new FakeRuntimeStateRepository();
         const repository = new RtcTopologySnapshotRepository(runtimeRepository);
         const groupRef = createGroupRef();
@@ -127,7 +126,6 @@ describe('RTC topology snapshot repository', () => {
 
         expect(results.filter((result) => result.status === 'accepted')).toHaveLength(1);
         expect(results.filter((result) => result.status !== 'accepted')).toHaveLength(1);
-        expect(runtimeRepository.locks).toEqual([]);
     });
 
     it('observes topology snapshots monotonically by source revision before version', async () => {

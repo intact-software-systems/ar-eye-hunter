@@ -224,7 +224,7 @@ it('rejects explicit predecessor rows after the current storage cutover', async 
     }
 });
 
-it('allows exactly one websocket-ticket consumer without a domain lock', async () => {
+it('allows exactly one websocket-ticket consumer under concurrency', async () => {
     const runtime = new FakeRuntimeStateRepository();
     const repository = new AuthSessionRepository(runtime);
     const expiresAtEpochMs = Date.now() + 60_000;
@@ -250,7 +250,6 @@ it('allows exactly one websocket-ticket consumer without a domain lock', async (
     ]);
 
     expect(results.filter((result) => result !== undefined)).toHaveLength(1);
-    expect(runtime.locks).toEqual([]);
 });
 
 it('persists only ticket digests and canonical ticket records', async () => {

@@ -196,8 +196,6 @@ it('does not rewrite an expired session when a late disconnect cleanup arrives',
     const runtimeRepository = new FakeRuntimeStateRepository();
     const expiresAtEpochMs = Date.now() - 1_000;
     await seedConnectedSession(runtimeRepository, expiresAtEpochMs);
-    runtimeRepository.locks.splice(0);
-
     const now = expiresAtEpochMs + 1;
     const service = createClientStatePhaseTestDriver(runtimeRepository, () => now);
     const principalRef = toClientPrincipalRef('alice');
@@ -234,7 +232,6 @@ it('does not rewrite an expired session when a late disconnect cleanup arrives',
         'session-connected',
         'session-expired'
     ]);
-    expect(runtimeRepository.locks).toEqual([]);
 });
 
 it('ignores a late heartbeat from an expired connection generation', async () => {

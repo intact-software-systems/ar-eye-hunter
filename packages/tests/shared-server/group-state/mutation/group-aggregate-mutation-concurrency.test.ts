@@ -46,7 +46,6 @@ describe('convergent group and presence state', () => {
         const snapshot = await requireSnapshot(runtime, 'capacity-room');
         expect(snapshot.memberCount).toBe(2);
         expect(snapshot.group.snapshotVersion).toBe(2);
-        expect(runtime.locks).toEqual([]);
     });
 
     it('converges join versus ban under either valid serialization order', async () => {
