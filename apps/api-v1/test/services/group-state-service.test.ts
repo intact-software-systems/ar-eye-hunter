@@ -10,7 +10,7 @@ import {
     createTestGroupStateRuntime,
     type GroupStateTestService,
     type TestGroupStateMaintenanceService
-} from '../../../../packages/tests/shared-server/group-state/group-state-test-runtime.ts';
+} from '../../../../packages/tests/shared-server/rallar-system/group-state/group-state-test-runtime.ts';
 import { FakeRuntimeStateRepository } from '../../../../packages/tests/shared-server/runtime-state/test-support/fake-runtime-state-repository.ts';
 
 const TEST_SCOPE: StateScope = {

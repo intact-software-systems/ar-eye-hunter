@@ -52,7 +52,7 @@ Relevant tests and docs:
 - `packages/tests/shared-web/rooms/room-membership-group-state-http.test.ts`
 - `packages/tests/shared-web/rallar-operation-options.test.ts`
 - `packages/tests/shared-web/rooms/room-group-state-workflows.test.ts`
-- `packages/tests/shared-server/group-state-service-idempotency.test.ts`
+- `packages/tests/shared-server/rallar-system/group-state/group-state-service-idempotency.test.ts`
 - `apps/api-v1/test/services/group-state-service.test.ts`
 - `apps/api-v1/test/routes/state-api-routes-hardening.test.ts`
 - `docs/rallar-api-reference.md`

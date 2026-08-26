@@ -13,7 +13,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { createTestGroup } from '../../../../create-test-group.ts';
-import { createTestGroupStateRuntime } from '../../../group-state/group-state-test-runtime.ts';
+import { createTestGroupStateRuntime } from '../../../rallar-system/group-state/group-state-test-runtime.ts';
 
 import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import { requireGroupMutationReceipt } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-result-codec.ts';

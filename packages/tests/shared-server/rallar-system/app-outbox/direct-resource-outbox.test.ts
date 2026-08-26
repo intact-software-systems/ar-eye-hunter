@@ -28,7 +28,7 @@ import { WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws
 import { JsonWebSocketServer, type EncodedJsonWebSocketMessage } from '@shared/websocket/JsonWebSocketServer.ts';
 import { describe, expect, it, vi } from 'vitest';
 import { createTestGroup } from '../../../create-test-group.ts';
-import { createDeltaEnvelopeFixture } from '../../group-state/presence/group-state-delta-envelope-fixtures.ts';
+import { createDeltaEnvelopeFixture } from '../group-state/presence/group-state-delta-envelope-fixtures.ts';
 import { createOpenTestWebSocket } from '../websocket/test-support/open-test-websocket.ts';
 
 const CREATED_AT_EPOCH_MS = 1_800_000_000_000;

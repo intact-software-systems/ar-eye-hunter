@@ -12,7 +12,7 @@ import { TestClientStateEventStore } from '@shared-test/shared-server/test-clien
 import type { ClientEvent, ClientSnapshot } from '@shared/api/client-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import assert from 'node:assert/strict';
-import { createClientStateTestDriver as createClientStateService } from '../../../../packages/tests/shared-server/client-state/client-state-test-runtime.ts';
+import { createClientStateTestDriver as createClientStateService } from '../../../../packages/tests/shared-server/rallar-system/client-state/client-state-test-runtime.ts';
 
 const TEST_SCOPE: StateScope = {
     applicationId: 'app-1',

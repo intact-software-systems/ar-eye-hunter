@@ -138,7 +138,7 @@ gate as an operator escape hatch.
 
 The safety baseline is never phase-gated: membership mutations, presence, and WS connectivity work
 in every state, including a group that never leaves `forming` (membership and presence:
-`packages/tests/shared-server/group-state/group-lifecycle-safety-baseline.test.ts`; WS connectivity
+`packages/tests/shared-server/rallar-system/group-state/group-lifecycle-safety-baseline.test.ts`; WS connectivity
 while forming: the `openAliceWs` and `formingTopologyHydrationArrives` steps of
 `api-v1-group-lifecycle-transitions` and the `…SendReachesAliceWhileForming` relays of
 `api-v1-group-data-policy`). Phases gate establishment work and the app-visible `active` signal,

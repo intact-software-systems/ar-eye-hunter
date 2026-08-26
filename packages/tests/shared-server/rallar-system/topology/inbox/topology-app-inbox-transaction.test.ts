@@ -36,7 +36,7 @@ import {
     type TopologyAppInboxResult
 } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-handler.ts';
 import { TopologyInboxService } from '@shared-server/rallar-system/topology/inbox/topology-inbox-service.ts';
-import { authSession } from '../../../group-state/group-state-test-runtime.ts';
+import { authSession } from '../../group-state/group-state-test-runtime.ts';
 import {
     createAuthorityHarness,
     createResilience,
@@ -44,7 +44,7 @@ import {
     SCOPE,
     waitForQueueEntry,
     type AuthorityHarness
-} from '../../../group-state/inbox/group-state-inbox-test-runtime.ts';
+} from '../../group-state/inbox/group-state-inbox-test-runtime.ts';
 
 const GROUP_REF: GroupRef = {
     ...SCOPE,
