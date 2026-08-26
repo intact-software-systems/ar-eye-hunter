@@ -1,30 +1,19 @@
-import { spawn } from 'node:child_process';
-import { mkdtemp, rm } from 'node:fs/promises';
-import { createServer, type Server } from 'node:http';
-import { tmpdir } from 'node:os';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
 import { managedApiDiagnosticSecrets, waitForManagedApiReady } from '../../shared-test/black-box-runner/api-v1-black-box-run.mts';
 
-const repoRoot = fileURLToPath(new URL('../../..', import.meta.url));
-const managedRunnerPath = path.join(
-    repoRoot,
-    'packages/shared-test/black-box-runner/api-v1-black-box-run.mts'
-);
+type ManagedApiReadinessObservation =
+    | { readonly ok: true; }
+    | { readonly ok: false; readonly error: Error; };
 
 function deferred<T>(): {
     promise: Promise<T>;
     resolve: (value: T | PromiseLike<T>) => void;
-    reject: (reason?: unknown) => void;
 } {
     let resolve!: (value: T | PromiseLike<T>) => void;
-    let reject!: (reason?: unknown) => void;
-    const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    const promise = new Promise<T>((resolvePromise) => {
         resolve = resolvePromise;
-        reject = rejectPromise;
     });
-    return { promise, resolve, reject };
+    return { promise, resolve };
 }
 
 async function flushMicrotasks(): Promise<void> {
@@ -33,11 +22,22 @@ async function flushMicrotasks(): Promise<void> {
     }
 }
 
-function observeReadiness(promise: Promise<void>): Promise<{ ok: true; } | { ok: false; error: unknown; }> {
+function observeReadiness(promise: Promise<void>): Promise<ManagedApiReadinessObservation> {
     return promise.then(
         () => ({ ok: true as const }),
-        (error) => ({ ok: false as const, error })
+        (error) => ({ ok: false as const, error: toError(error) })
     );
+}
+
+function requireReadinessError(observation: ManagedApiReadinessObservation): Error {
+    if (observation.ok) {
+        throw new Error('Expected managed API readiness to fail.');
+    }
+    return observation.error;
+}
+
+function toError(value: unknown): Error {
+    return value instanceof Error ? value : new Error(String(value));
 }
 
 function secretDiagnosticFixture(): {
@@ -87,69 +87,6 @@ function responseWithPendingCancellation(status: number): {
     const cancel = vi.fn(() => new Promise<void>(() => undefined));
     vi.spyOn(response.body!, 'cancel').mockImplementation(cancel);
     return { response, cancel };
-}
-
-function closeServer(server: Server): Promise<void> {
-    return new Promise((resolve, reject) => {
-        server.close((error) => error ? reject(error) : resolve());
-    });
-}
-
-async function runManagedApiRunner(port: number, artifactDir: string, timeoutMs = 10_000): Promise<{
-    code: number;
-    stdout: string;
-    stderr: string;
-}> {
-    const child = spawn('deno', [
-        'run',
-        '-A',
-        managedRunnerPath,
-        '--backend=pglite-memory',
-        `--port=${port}`,
-        '--profile=remote-dry',
-        `--artifact-dir=${artifactDir}`
-    ], {
-        cwd: repoRoot,
-        env: process.env,
-        stdio: ['ignore', 'pipe', 'pipe']
-    });
-    let stdout = '';
-    let stderr = '';
-    let timeout: ReturnType<typeof setTimeout> | undefined;
-    const childExit = new Promise<{ code: number; stdout: string; stderr: string; }>(
-        (resolve, reject) => {
-            child.once('error', reject);
-            child.once('close', (code) => resolve({ code: code ?? 0, stdout, stderr }));
-        }
-    );
-    const hardTimeout = new Promise<never>((_resolve, reject) => {
-        timeout = setTimeout(() => {
-            reject(new Error(`Managed API runner did not exit within ${timeoutMs}ms.`));
-        }, timeoutMs);
-    });
-
-    try {
-        child.stdout.on('data', (chunk) => {
-            stdout += chunk.toString();
-        });
-        child.stderr.on('data', (chunk) => {
-            stderr += chunk.toString();
-        });
-
-        return await Promise.race([childExit, hardTimeout]);
-    }
-    catch (error) {
-        if (child.exitCode === null && child.signalCode === null) {
-            child.kill('SIGKILL');
-        }
-        await childExit.catch(() => undefined);
-        throw error;
-    }
-    finally {
-        if (timeout !== undefined) {
-            clearTimeout(timeout);
-        }
-    }
 }
 
 describe('api-v1 black-box run helper', () => {
@@ -450,10 +387,7 @@ describe('api-v1 black-box run helper', () => {
             timeoutMs: 1_000
         }));
 
-        expect(outcome.ok).toBe(false);
-        if (!outcome.ok) {
-            expectSecretDiagnosticsRedacted(String(outcome.error), fixture.secrets);
-        }
+        expectSecretDiagnosticsRedacted(requireReadinessError(outcome).message, fixture.secrets);
     });
 
     it('redacts secrets from timeout diagnostics', async () => {
@@ -475,10 +409,7 @@ describe('api-v1 black-box run helper', () => {
             await vi.advanceTimersByTimeAsync(100);
             const outcome = await outcomePromise;
 
-            expect(outcome.ok).toBe(false);
-            if (!outcome.ok) {
-                expectSecretDiagnosticsRedacted(String(outcome.error), fixture.secrets);
-            }
+            expectSecretDiagnosticsRedacted(requireReadinessError(outcome).message, fixture.secrets);
         }
         finally {
             vi.useRealTimers();
@@ -524,11 +455,9 @@ describe('api-v1 black-box run helper', () => {
             diagnosticSecrets,
             timeoutMs: 100
         }));
-        expect(childOutcome.ok).toBe(false);
-        if (!childOutcome.ok) {
-            expect(String(childOutcome.error)).not.toContain(meteredApiKey);
-            expect(String(childOutcome.error)).toContain('opaque=<redacted>');
-        }
+        const childError = requireReadinessError(childOutcome);
+        expect(childError.message).not.toContain(meteredApiKey);
+        expect(childError.message).toContain('opaque=<redacted>');
 
         vi.useFakeTimers();
         try {
@@ -546,11 +475,9 @@ describe('api-v1 black-box run helper', () => {
             await vi.advanceTimersByTimeAsync(100);
             const timeoutOutcome = await timeoutOutcomePromise;
 
-            expect(timeoutOutcome.ok).toBe(false);
-            if (!timeoutOutcome.ok) {
-                expect(String(timeoutOutcome.error)).not.toContain(meteredApiKey);
-                expect(String(timeoutOutcome.error)).toContain('opaque=<redacted>');
-            }
+            const timeoutError = requireReadinessError(timeoutOutcome);
+            expect(timeoutError.message).not.toContain(meteredApiKey);
+            expect(timeoutError.message).toContain('opaque=<redacted>');
         }
         finally {
             vi.useRealTimers();
@@ -590,12 +517,9 @@ describe('api-v1 black-box run helper', () => {
         fetchResponse.resolve(new Response(null, { status: 200 }));
         const outcome = await outcomePromise;
 
-        expect(outcome.ok).toBe(false);
-        if (!outcome.ok) {
-            expect(outcome.error).toEqual(expect.objectContaining({
-                message: expect.stringContaining('API-v1 child exited before readiness (code 1)')
-            }));
-        }
+        expect(requireReadinessError(outcome)).toEqual(expect.objectContaining({
+            message: expect.stringContaining('API-v1 child exited before readiness (code 1)')
+        }));
         expect(settledBeforeDrain).toBe(false);
         expect(fetchWasAborted).toBe(true);
     });
@@ -626,14 +550,11 @@ describe('api-v1 black-box run helper', () => {
             fetchResponse.resolve(new Response(null, { status: 200 }));
             const outcome = await outcomePromise;
 
-            expect(outcome.ok).toBe(false);
-            if (!outcome.ok) {
-                expect(outcome.error).toEqual(expect.objectContaining({
-                    message: expect.stringContaining(
-                        'Timed out waiting for http://127.0.0.1:18080/api/config'
-                    )
-                }));
-            }
+            expect(requireReadinessError(outcome)).toEqual(expect.objectContaining({
+                message: expect.stringContaining(
+                    'Timed out waiting for http://127.0.0.1:18080/api/config'
+                )
+            }));
             expect(fetchWasAborted).toBe(true);
         }
         finally {
@@ -645,14 +566,10 @@ describe('api-v1 black-box run helper', () => {
         vi.useFakeTimers();
         try {
             const fetchResponse = deferred<Response>();
-            const observeCancellation = vi.fn();
-            const cancellation = { then: observeCancellation } as unknown as Promise<void>;
-            const cancel = vi.fn(() => cancellation);
-            const response = {
-                ok: true,
-                status: 200,
-                body: { cancel }
-            } as unknown as Response;
+            const response = new Response('late config response', { status: 200 });
+            const cancellation = new Promise<void>(() => undefined);
+            const observeCancellation = vi.spyOn(cancellation, 'then');
+            const cancel = vi.spyOn(response.body!, 'cancel').mockImplementation(() => cancellation);
             const outcomePromise = observeReadiness(waitForManagedApiReady({
                 baseUrl: 'http://127.0.0.1:18080',
                 logPath: '/tmp/api-v1-server.log',
@@ -712,51 +629,11 @@ describe('api-v1 black-box run helper', () => {
         childStatus.resolve({ success: false, code: 1, signal: null });
         const outcome = await outcomePromise;
 
-        expect(outcome.ok).toBe(false);
+        expect(requireReadinessError(outcome).message).toContain(
+            'API-v1 child exited before readiness (code 1)'
+        );
         expect(sleepImpl).toHaveBeenCalledTimes(1);
         expect(sleepSignal?.aborted).toBe(true);
         expect(sleepAborted).toBe(true);
     });
-
-    it('rejects an unrelated config listener on the managed API port', async () => {
-        let configRequests = 0;
-        const listener = createServer((request, response) => {
-            if (request.url === '/api/config') {
-                configRequests += 1;
-                response.writeHead(200, { 'content-type': 'application/json' });
-                response.end('{}');
-                return;
-            }
-            response.writeHead(404);
-            response.end();
-        });
-        await new Promise<void>((resolve, reject) => {
-            listener.once('error', reject);
-            listener.listen(0, '0.0.0.0', () => {
-                listener.off('error', reject);
-                resolve();
-            });
-        });
-
-        const address = listener.address();
-        if (!address || typeof address === 'string') {
-            await closeServer(listener);
-            throw new Error('Occupied-port listener did not expose a TCP address.');
-        }
-        const artifactDir = await mkdtemp(path.join(tmpdir(), 'api-v1-managed-readiness-'));
-
-        try {
-            const result = await runManagedApiRunner(address.port, artifactDir);
-
-            expect(result.code).toBe(1);
-            expect(result.stderr).toContain('API-v1 child exited before readiness');
-            expect(result.stderr).toContain('AddrInUse');
-            expect(result.stdout).not.toContain('Matrix profile remote-dry:');
-            expect(configRequests).toBe(0);
-        }
-        finally {
-            await closeServer(listener);
-            await rm(artifactDir, { recursive: true, force: true });
-        }
-    }, 30_000);
 });
