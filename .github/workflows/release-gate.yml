@@ -44,7 +44,7 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v7
         with:
-          ref: ${{ inputs.candidate_ref }}
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.sha || inputs.candidate_ref }}
           fetch-depth: 0
 
       - name: Setup Node

@@ -100,6 +100,9 @@ describe('GitHub Actions runtime governance', () => {
         );
         expect(trustedCacheStep).toContain('uses: actions/cache@v6');
         expect(releaseGate).not.toContain('lookup-only:');
+        expect(releaseGate).toContain(
+            'ref: ${{ github.event_name == \'workflow_dispatch\' && github.sha || inputs.candidate_ref }}'
+        );
     });
 
     it('uses the exact merge base when the trusted base tip has diverged', async () => {
