@@ -77,9 +77,29 @@ describe('GitHub Actions runtime governance', () => {
         expect(releaseGate.slice(navigationIndex - 120, navigationIndex + 120)).not.toContain(
             'continue-on-error'
         );
-        expect(releaseGate).toContain(
-            'lookup-only: ${{ github.event_name == \'pull_request\' }}'
+    });
+
+    it('restores pull-request Deno caches without permitting pull requests to save them', async () => {
+        const releaseGate = await readFile(
+            path.join(repoRoot, '.github/workflows/release-gate.yml'),
+            'utf8'
         );
+        const pullRequestCacheStep = getWorkflowStep(
+            releaseGate,
+            'Restore Deno cache for pull requests'
+        );
+        const trustedCacheStep = getWorkflowStep(releaseGate, 'Cache Deno for trusted runs');
+
+        expect(pullRequestCacheStep).toContain(
+            'if: ${{ github.event_name == \'pull_request\' }}'
+        );
+        expect(pullRequestCacheStep).toContain('uses: actions/cache/restore@v6');
+        expect(pullRequestCacheStep).not.toContain('uses: actions/cache@v6');
+        expect(trustedCacheStep).toContain(
+            'if: ${{ github.event_name != \'pull_request\' }}'
+        );
+        expect(trustedCacheStep).toContain('uses: actions/cache@v6');
+        expect(releaseGate).not.toContain('lookup-only:');
     });
 
     it('uses the exact merge base when the trusted base tip has diverged', async () => {
@@ -169,4 +189,15 @@ describe('GitHub Actions runtime governance', () => {
 
 function runGit(root: string, args: readonly string[]): string {
     return execFileSync('git', args, { cwd: root, encoding: 'utf8' });
+}
+
+function getWorkflowStep(source: string, stepName: string): string {
+    const marker = `      - name: ${stepName}`;
+    const start = source.indexOf(marker);
+    if (start === -1) {
+        return '';
+    }
+
+    const nextStep = source.indexOf('\n      - name:', start + marker.length);
+    return source.slice(start, nextStep === -1 ? undefined : nextStep);
 }

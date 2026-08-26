@@ -59,7 +59,20 @@ jobs:
         with:
           deno-version: v2.x
 
-      - name: Cache Deno
+      # Pull requests may restore trusted entries, but only trusted runs may save cache state.
+      - name: Restore Deno cache for pull requests
+        if: ${{ github.event_name == 'pull_request' }}
+        uses: actions/cache/restore@v6
+        with:
+          path: |
+            ~/.cache/deno
+            ~/.deno
+          key: ${{ runner.os }}-deno-${{ hashFiles('deno.lock', 'apps/**/deno.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-deno-
+
+      - name: Cache Deno for trusted runs
+        if: ${{ github.event_name != 'pull_request' }}
         uses: actions/cache@v6
         with:
           path: |
@@ -68,8 +81,6 @@ jobs:
           key: ${{ runner.os }}-deno-${{ hashFiles('deno.lock', 'apps/**/deno.lock') }}
           restore-keys: |
             ${{ runner.os }}-deno-
-          # Pull requests may restore trusted cache entries, but PR-controlled code must not save them.
-          lookup-only: ${{ github.event_name == 'pull_request' }}
 
       - name: Install dependencies
         run: npm ci
