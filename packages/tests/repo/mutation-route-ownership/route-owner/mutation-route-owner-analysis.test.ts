@@ -34,7 +34,8 @@ describe('Mutation route owner analysis contracts', () => {
         expect(helpers.map((helper) => [helper.id?.name, helper.params.length])).toEqual([
             ['toAuthorisedWsClientConnectEnqueue', 1],
             ['toAuthorisedWsClientDisconnectEnqueue', 1],
-            ['toAuthorisedWsClientScope', 1]
+            ['toAuthorisedWsClientScope', 1],
+            ['toAuthorisedWsClientConnection', 1]
         ]);
         expect(read(AUTHORISED_WS_HELPER)).toContain(
             'interface ToAuthorisedWsClientConnectEnqueueInput'

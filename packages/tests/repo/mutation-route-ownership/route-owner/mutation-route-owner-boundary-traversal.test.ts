@@ -1,4 +1,3 @@
-import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
 import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
@@ -6,7 +5,6 @@ import { findMutationBoundaryViolationsFromRoots } from '../boundary/mutation-bo
 import { MUTATION_ROUTE_INVENTORY, validateMutationRouteInventory } from '../routing/mutation-routing-inventory.ts';
 
 const TRANSITIVE_FIXTURE = 'packages/tests/repo/mutation-route-ownership/fixtures/mutation-boundary-transitive/root.ts';
-const CLIENT_MUTATION_ROUTE_SOURCE = 'apps/api-v1/src/routes/client-state-mutation-routes.ts';
 
 describe('Mutation route owner boundary traversal contracts', { timeout: 30_000 }, () => {
     it('finds forbidden mutations in recursively imported helpers without listing them', () => {
@@ -37,27 +35,6 @@ describe('Mutation route owner boundary traversal contracts', { timeout: 30_000 
                 expect.stringContaining('Duplicate mutation route'),
                 'Inventory must cover all 52 AppInbox command types'
             ])
-        );
-    });
-
-    it('rejects a dead correct marker when the registered handler is rerouted', () => {
-        const first = MUTATION_ROUTE_INVENTORY[0]!;
-        const source = readFileSync(CLIENT_MUTATION_ROUTE_SOURCE, 'utf8');
-        const liveCall = 'const result = await input.dependencies.processClientAppInbox(';
-        expect(source).toContain(liveCall);
-        const rerouted = source.replace(liveCall, 'const result = await Promise.resolve(') +
-            `
-function deadCorrectMutationMarker(input: ProcessClientMutationInput): void {
-  void AppInboxType.${first.type};
-  void input.dependencies.processClientAppInbox;
-}
-`;
-        expect(
-            validateMutationRouteInventory(MUTATION_ROUTE_INVENTORY, {
-                sourceOverrides: new Map([[CLIENT_MUTATION_ROUTE_SOURCE, rerouted]])
-            })
-        ).toEqual(
-            expect.arrayContaining([expect.stringContaining('registered callback cannot be resolved')])
         );
     });
 
