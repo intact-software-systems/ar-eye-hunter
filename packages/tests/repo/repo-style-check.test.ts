@@ -425,6 +425,37 @@ describe('repo style checker', () => {
         expect(strictResult.status).toBe(1);
         expect(`${strictResult.stdout}${strictResult.stderr}`).toContain('strict mode is not available');
     });
+
+    it('runs navigation details as a dedicated non-blocking report over repeated roots', () => {
+        const firstRoot = createFixture({
+            'group-registration.ts': navigationRegistrationFixture('GROUP_UPDATE')
+        });
+        const secondRoot = createFixture({
+            'auth-registration.ts': navigationRegistrationFixture('AUTH_USER_REGISTER')
+        });
+
+        const result = executeChecker(
+            firstRoot,
+            '--root',
+            secondRoot,
+            '--navigation-details'
+        );
+
+        expect(result.status, result.stderr).toBe(0);
+        expect(result.stdout).toContain('repo-style-check: NAVIGATION WARN');
+        expect(result.stdout).toContain('navigation.registration-indirection=2');
+        expect(result.stdout).not.toContain('Layout summary:');
+    });
+
+    it('fails navigation reporting for invalid CLI arguments', () => {
+        const fixtureRoot = createFixture({
+            'group-registration.ts': navigationRegistrationFixture('GROUP_UPDATE')
+        });
+        const result = executeChecker(fixtureRoot, '--navigation-details', '--unknown-option');
+
+        expect(result.status).toBe(1);
+        expect(`${result.stdout}${result.stderr}`).toContain('unknown argument: --unknown-option');
+    });
 });
 
 function createFixture(files: Readonly<Record<string, string>>): string {
@@ -452,4 +483,21 @@ function executeChecker(fixtureRoot: string, ...extraArgs: string[]) {
         cwd: repoRoot,
         encoding: 'utf8'
     });
+}
+
+function navigationRegistrationFixture(typeName: string): string {
+    return `
+        enum AppInboxType { ${typeName} = '${typeName}' }
+        interface AppInboxHandlerRegistry {
+            registerHandler(input: {
+                readonly type: AppInboxType;
+                readonly handle: (input: unknown) => Promise<unknown>;
+            }): void;
+        }
+        declare const registry: AppInboxHandlerRegistry;
+        async function handle(input: unknown): Promise<unknown> { return input; }
+        for (const type of [AppInboxType.${typeName}]) {
+            registry.registerHandler({ type, handle });
+        }
+    `;
 }

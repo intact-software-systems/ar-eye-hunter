@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import path from 'node:path';
 
+import { formatNavigationReport, scanNavigationProject } from './repo-style-check/navigation-rules.mjs';
 import {
     activeLayoutRuleIds,
     collectProductionSources,
@@ -8,15 +9,25 @@ import {
     scanProductionSources
 } from './repo-style-check/repository-scan.mjs';
 
-const args = new Set(process.argv.slice(2));
-const explicitRoots = readExplicitRoots(process.argv);
-const defaultMode = explicitRoots.length === 0;
-const requestedRoots = defaultMode
-    ? [path.resolve(process.cwd(), 'apps'), path.resolve(process.cwd(), 'packages')]
-    : explicitRoots;
 const maxDisplayedFindingCount = 200;
+const supportedFlags = new Set([
+    '--cognitive-metrics',
+    '--construction-details',
+    '--layout-details',
+    '--layout-only',
+    '--navigation-details',
+    '--object-interfaces',
+    '--output-contracts',
+    '--strict'
+]);
 
 async function main() {
+    const { args, explicitRoots } = readArguments(process.argv.slice(2));
+    const defaultMode = explicitRoots.length === 0;
+    const requestedRoots = defaultMode
+        ? [path.resolve(process.cwd(), 'apps'), path.resolve(process.cwd(), 'packages')]
+        : explicitRoots;
+
     if (args.has('--strict')) {
         console.error(
             'repo-style-check failed: strict mode is not available until warning debt is reviewed.'
@@ -39,6 +50,26 @@ async function main() {
         console.warn(
             'repo-style-check: INFO - use --root . when reviewing production support code too.'
         );
+    }
+
+    if (args.has('--navigation-details')) {
+        if (args.size > 1) {
+            throw new Error('--navigation-details is a dedicated report mode.');
+        }
+        const sources = await collectProductionSources(scanRoots);
+        const result = scanNavigationProject({
+            repoRoot: path.resolve(process.cwd()),
+            sources,
+            scanRoots
+        });
+        console.log(
+            formatNavigationReport(result, {
+                scanRoots,
+                maximumDetails: maxDisplayedFindingCount
+            })
+        );
+        process.exitCode = 0;
+        return;
     }
 
     const options = {
@@ -66,14 +97,26 @@ async function main() {
     process.exitCode = 0;
 }
 
-function readExplicitRoots(argv) {
+function readArguments(argv) {
+    const args = new Set();
     const roots = [];
-    for (let index = 0; index < argv.length - 1; index += 1) {
-        if (argv[index] === '--root') {
-            roots.push(path.resolve(argv[index + 1]));
+    for (let index = 0; index < argv.length; index += 1) {
+        const argument = argv[index];
+        if (argument === '--root') {
+            const root = argv[index + 1];
+            if (root === undefined || root.startsWith('--')) {
+                throw new Error('--root requires a path.');
+            }
+            roots.push(path.resolve(root));
+            index += 1;
+            continue;
         }
+        if (!supportedFlags.has(argument)) {
+            throw new Error(`unknown argument: ${argument}`);
+        }
+        args.add(argument);
     }
-    return roots;
+    return { args, explicitRoots: roots };
 }
 
 function printFindings(input) {
