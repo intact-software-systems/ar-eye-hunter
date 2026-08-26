@@ -1,12 +1,14 @@
 import type {
     RuntimeStateGuardedBatch,
-    RuntimeStateGuardedBatchResult
+    RuntimeStateGuardedBatchResult,
+    RuntimeStateGuardedBatchTransaction
 } from '@shared-server/runtime-state/guarded-batch/runtime-state-guarded-batch.ts';
 import type {
     RuntimeStateConditionalDeleteResult,
     RuntimeStateConditionalWriteResult,
     RuntimeStateEntry,
-    RuntimeStateOptimisticTransactionalRepositoryLike
+    RuntimeStateGuardedBatchTransactionalRepositoryLike,
+    RuntimeStateOptimisticTransactionRepositoryLike
 } from '@shared-server/runtime-state/runtime-state-repository.ts';
 import {
     assertRuntimeStateExpectedRevision,
@@ -43,7 +45,8 @@ export function createTransactionBoundPSqlRuntimeStateRepository(
     });
 }
 
-export class PSqlRuntimeStateRepository implements RuntimeStateOptimisticTransactionalRepositoryLike {
+export class PSqlRuntimeStateRepository
+    implements RuntimeStateGuardedBatchTransactionalRepositoryLike, RuntimeStateGuardedBatchTransaction {
     private readonly sqlState: RuntimeStateSqlState;
 
     public readonly sql: PSqlSql;
@@ -56,10 +59,6 @@ export class PSqlRuntimeStateRepository implements RuntimeStateOptimisticTransac
         };
     }
 
-    get runtimeStateGuardedBatchCapability(): boolean {
-        return this.sqlState.kind === 'transaction';
-    }
-
     async readRuntimeStateBatch(
         selectors: readonly RuntimeStateReadBatchSelector[]
     ): Promise<readonly RuntimeStateReadBatchSelection[]> {
@@ -68,7 +67,7 @@ export class PSqlRuntimeStateRepository implements RuntimeStateOptimisticTransac
 
     async begin<T>(
         fn: (
-            repository: RuntimeStateOptimisticTransactionalRepositoryLike
+            repository: RuntimeStateOptimisticTransactionRepositoryLike
         ) => Promise<T>
     ): Promise<T> {
         if (this.sqlState.kind === 'transaction') {

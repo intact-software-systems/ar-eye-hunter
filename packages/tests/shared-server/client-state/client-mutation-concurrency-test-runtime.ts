@@ -3,7 +3,8 @@ import type { RallarTimingEvent } from '@shared-server/rallar-system/observabili
 import type {
     RuntimeStateConditionalWriteResult,
     RuntimeStateEntry,
-    RuntimeStateOptimisticTransactionalRepositoryLike
+    RuntimeStateOptimisticTransactionalRepositoryLike,
+    RuntimeStateOptimisticTransactionRepositoryLike
 } from '@shared-server/runtime-state/runtime-state-repository.ts';
 import { createTestClientStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 
@@ -53,7 +54,7 @@ export class AggregateBarrierRepository extends FakeRuntimeStateRepository {
     }
 
     override async begin<T>(
-        fn: (repository: RuntimeStateOptimisticTransactionalRepositoryLike) => Promise<T>
+        fn: (repository: RuntimeStateOptimisticTransactionRepositoryLike) => Promise<T>
     ): Promise<T> {
         let release!: () => void;
         const previous = this.aggregateTransactionTail;
@@ -92,7 +93,7 @@ export class AlwaysConflictingPrincipalRepository extends AggregateBarrierReposi
     transactionBeginCount = 0;
 
     override async begin<T>(
-        fn: (repository: RuntimeStateOptimisticTransactionalRepositoryLike) => Promise<T>
+        fn: (repository: RuntimeStateOptimisticTransactionRepositoryLike) => Promise<T>
     ): Promise<T> {
         this.transactionBeginCount += 1;
         return await super.begin(fn);
@@ -118,7 +119,7 @@ export class StatementRecordingRepository extends AggregateBarrierRepository {
     private transactionDepth = 0;
 
     override async begin<T>(
-        fn: (repository: RuntimeStateOptimisticTransactionalRepositoryLike) => Promise<T>
+        fn: (repository: RuntimeStateOptimisticTransactionRepositoryLike) => Promise<T>
     ): Promise<T> {
         this.transactionBeginCount += 1;
         this.transactionDepth += 1;

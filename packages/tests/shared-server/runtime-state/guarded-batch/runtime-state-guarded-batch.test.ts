@@ -1,9 +1,5 @@
 import type { PSqlParameter, PSqlRows, PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
-import {
-    isRuntimeStateGuardedBatchRepositoryLike,
-    type RuntimeStateGuardedBatch,
-    type RuntimeStateGuardedBatchResult
-} from '@shared-server/runtime-state/guarded-batch/runtime-state-guarded-batch.ts';
+import { type RuntimeStateGuardedBatch, type RuntimeStateGuardedBatchResult } from '@shared-server/runtime-state/guarded-batch/runtime-state-guarded-batch.ts';
 import { validateRuntimeStateGuardedBatchResult } from '@shared-server/runtime-state/guarded-batch/validate-runtime-state-guarded-batch-result.ts';
 import { validateRuntimeStateGuardedBatch } from '@shared-server/runtime-state/guarded-batch/validate-runtime-state-guarded-batch.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
@@ -301,36 +297,19 @@ describe('runtime-state guarded batches', () => {
         ).toThrow(/revision/iu);
     });
 
-    it('exposes guarded batches only on transaction-scoped PostgreSQL repositories', async () => {
+    it('runs guarded batches through the required transaction repository contract', async () => {
         const captured: CapturedQuery[] = [];
         const sql = createTransactionalSql(captured, []);
         const repository = new PSqlRuntimeStateRepository(sql);
 
-        expect(isRuntimeStateGuardedBatchRepositoryLike(repository)).toBe(false);
         await expect(repository.executeGuardedBatch(createBatch())).rejects.toThrow(
             /transaction/iu
         );
 
         await repository.begin(async (transactionRepository) => {
-            expect(isRuntimeStateGuardedBatchRepositoryLike(transactionRepository))
-                .toBe(true);
+            await transactionRepository.executeGuardedBatch(createBatch());
         });
-        expect(captured).toEqual([]);
-    });
-
-    it('rejects malformed guarded-batch capabilities without throwing', () => {
-        for (
-            const candidate of [
-                null,
-                {},
-                { runtimeStateGuardedBatchCapability: false, executeGuardedBatch() {} },
-                { runtimeStateGuardedBatchCapability: true, executeGuardedBatch: null }
-            ]
-        ) {
-            expect(() => isRuntimeStateGuardedBatchRepositoryLike(candidate))
-                .not.toThrow();
-            expect(isRuntimeStateGuardedBatchRepositoryLike(candidate)).toBe(false);
-        }
+        expect(captured).toHaveLength(1);
     });
 
     it('uses one fixed parameterized guard-dependent statement without lock syntax', async () => {
@@ -364,9 +343,6 @@ describe('runtime-state guarded batches', () => {
         const repository = new PSqlRuntimeStateRepository(sql);
 
         const result = await repository.begin(async (transactionRepository) => {
-            if (!isRuntimeStateGuardedBatchRepositoryLike(transactionRepository)) {
-                throw new Error('Expected guarded batch capability.');
-            }
             return await transactionRepository.executeGuardedBatch(batch);
         });
 
@@ -474,9 +450,6 @@ describe('runtime-state guarded batches', () => {
         );
 
         await expect(repository.begin(async (transactionRepository) => {
-            if (!isRuntimeStateGuardedBatchRepositoryLike(transactionRepository)) {
-                throw new Error('Expected guarded batch capability.');
-            }
             return await transactionRepository.executeGuardedBatch(createBatch());
         })).rejects.toThrow(/guarded batch database result/iu);
     });

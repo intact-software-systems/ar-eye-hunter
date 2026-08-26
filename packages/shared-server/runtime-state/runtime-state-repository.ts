@@ -1,3 +1,4 @@
+import type { RuntimeStateGuardedBatchTransaction } from './guarded-batch/runtime-state-guarded-batch.ts';
 import type {
     RuntimeStateReadBatchSelection,
     RuntimeStateReadBatchSelector
@@ -77,6 +78,27 @@ export type RuntimeStateOptimisticTransactionalRepositoryLike =
         begin<T>(
             fn: (
                 repository: RuntimeStateOptimisticTransactionalRepositoryLike
+            ) => Promise<T>
+        ): Promise<T>;
+    }>;
+
+export type RuntimeStateOptimisticTransactionRepositoryLike =
+    & Omit<RuntimeStateOptimisticTransactionalRepositoryLike, 'begin'>
+    & RuntimeStateGuardedBatchTransaction
+    & Readonly<{
+        begin<T>(
+            fn: (
+                repository: RuntimeStateOptimisticTransactionRepositoryLike
+            ) => Promise<T>
+        ): Promise<T>;
+    }>;
+
+export type RuntimeStateGuardedBatchTransactionalRepositoryLike =
+    & Omit<RuntimeStateOptimisticTransactionalRepositoryLike, 'begin'>
+    & Readonly<{
+        begin<T>(
+            fn: (
+                repository: RuntimeStateOptimisticTransactionRepositoryLike
             ) => Promise<T>
         ): Promise<T>;
     }>;

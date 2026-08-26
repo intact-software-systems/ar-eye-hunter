@@ -1,16 +1,14 @@
 // deno-lint-ignore-file require-await
-import type { RuntimeStateReadBatchSelection, RuntimeStateReadBatchSelector } from '@shared-server/runtime-state/read-batch/runtime-state-read-batch.ts';
-import { selectRuntimeStateReadBatch } from '@shared-server/runtime-state/read-batch/select-runtime-state-read-batch.ts';
 import type {
     RuntimeStateConditionalDeleteResult,
     RuntimeStateConditionalWriteResult,
     RuntimeStateEntry,
-    RuntimeStateEntryPageOptions,
-    RuntimeStateOptimisticTransactionalRepositoryLike
+    RuntimeStateEntryPageOptions
 } from '@shared-server/runtime-state/runtime-state-repository.ts';
 
-export class FakeRuntimeStateRepository implements RuntimeStateOptimisticTransactionalRepositoryLike {
-    readonly data = new Map<string, RuntimeStateEntry>();
+import * as RuntimeStateTestSupport from '../shared-server/runtime-state/test-support/fake-runtime-state-repository.ts';
+
+export class FakeRuntimeStateRepository extends RuntimeStateTestSupport.FakeRuntimeStateRepository {
     readonly lockedKeys: Array<Readonly<{ namespace: string; key: string; }>> = [];
     readonly conditionalWrites: Array<
         Readonly<{
@@ -33,59 +31,15 @@ export class FakeRuntimeStateRepository implements RuntimeStateOptimisticTransac
     errorNextConditionalWrite: Error | undefined;
     conflictCount = 0;
 
-    async begin<T>(
-        fn: (repository: RuntimeStateOptimisticTransactionalRepositoryLike) => Promise<T>
-    ): Promise<T> {
-        return await fn(this);
-    }
-
-    async findEntry(namespace: string, key: string): Promise<RuntimeStateEntry | undefined> {
-        const entry = this.data.get(this.toKey(namespace, key));
-        return entry ? { ...entry } : undefined;
-    }
-
-    async findAllEntries(namespace: string): Promise<readonly RuntimeStateEntry[]> {
-        return [...this.data.entries()]
-            .filter(([compositeKey]) => this.toNamespace(compositeKey) === namespace)
-            .map(([, entry]) => ({ ...entry }));
-    }
-
-    async readRuntimeStateBatch(
-        selectors: readonly RuntimeStateReadBatchSelector[]
-    ): Promise<readonly RuntimeStateReadBatchSelection[]> {
-        return selectRuntimeStateReadBatch(
-            [...this.data].map(([compositeKey, entry]) => ({
-                namespace: this.toNamespace(compositeKey),
-                entry
-            })),
-            selectors
-        );
-    }
-
-    async findEntriesByPrefix(
+    override async findEntriesByPrefix(
         namespace: string,
         keyPrefix: string
     ): Promise<readonly RuntimeStateEntry[]> {
         this.findEntriesByPrefixCalls.push({ namespace, keyPrefix });
-        return this.findPrefixEntries(namespace, keyPrefix);
+        return await super.findEntriesByPrefix(namespace, keyPrefix);
     }
 
-    async findEntriesByKeys(
-        namespace: string,
-        keys: readonly string[]
-    ): Promise<readonly RuntimeStateEntry[]> {
-        const keySet = new Set(keys);
-        return [...this.data.entries()]
-            .filter(
-                ([compositeKey]) =>
-                    this.toNamespace(compositeKey) === namespace &&
-                    keySet.has(this.toStoreKey(compositeKey))
-            )
-            .map(([, entry]) => ({ ...entry }))
-            .sort((left, right) => left.key.localeCompare(right.key));
-    }
-
-    async findEntriesByPrefixPage(
+    override async findEntriesByPrefixPage(
         namespace: string,
         keyPrefix: string,
         options: RuntimeStateEntryPageOptions
@@ -96,8 +50,8 @@ export class FakeRuntimeStateRepository implements RuntimeStateOptimisticTransac
             afterKey: options.afterKey,
             limit: options.limit
         });
-
-        return this.findPrefixEntries(namespace, keyPrefix)
+        const entries = await super.findEntriesByPrefix(namespace, keyPrefix);
+        return entries
             .filter((entry) =>
                 options.afterKey === undefined ||
                 entry.key.localeCompare(options.afterKey) > 0
@@ -105,46 +59,7 @@ export class FakeRuntimeStateRepository implements RuntimeStateOptimisticTransac
             .slice(0, options.limit);
     }
 
-    async upsert(
-        namespace: string,
-        key: string,
-        value: string,
-        expireAtTimestamp: number
-    ): Promise<void> {
-        const compositeKey = this.toKey(namespace, key);
-        const current = this.data.get(compositeKey);
-        this.data.set(compositeKey, {
-            key,
-            value,
-            expireAtTimestamp,
-            updatedTimestamp: new Date().toISOString(),
-            revision: current ? current.revision + 1 : 0
-        });
-    }
-
-    async deleteByKey(namespace: string, key: string): Promise<void> {
-        this.data.delete(this.toKey(namespace, key));
-    }
-
-    async deleteExpired(namespace: string): Promise<number> {
-        let deleted = 0;
-        for (const [compositeKey, entry] of this.data.entries()) {
-            if (this.toNamespace(compositeKey) !== namespace) {
-                continue;
-            }
-
-            if (entry.expireAtTimestamp > Date.now()) {
-                continue;
-            }
-
-            this.data.delete(compositeKey);
-            deleted += 1;
-        }
-
-        return deleted;
-    }
-
-    async insertIfAbsent(
+    override async insertIfAbsent(
         namespace: string,
         key: string,
         value: string,
@@ -166,21 +81,10 @@ export class FakeRuntimeStateRepository implements RuntimeStateOptimisticTransac
             this.conflictCount += 1;
             return { status: 'conflict' };
         }
-        const compositeKey = this.toKey(namespace, key);
-        if (this.data.has(compositeKey)) {
-            return { status: 'conflict' };
-        }
-        this.data.set(compositeKey, {
-            key,
-            value,
-            expireAtTimestamp,
-            updatedTimestamp: new Date().toISOString(),
-            revision: 0
-        });
-        return { status: 'applied', revision: 0 };
+        return await super.insertIfAbsent(namespace, key, value, expireAtTimestamp);
     }
 
-    async upsertIfRevision(
+    override async upsertIfRevision(
         namespace: string,
         key: string,
         value: string,
@@ -193,23 +97,16 @@ export class FakeRuntimeStateRepository implements RuntimeStateOptimisticTransac
             key,
             expectedRevision
         });
-        const compositeKey = this.toKey(namespace, key);
-        const current = this.data.get(compositeKey);
-        if (!current || current.revision !== expectedRevision) {
-            return { status: 'conflict' };
-        }
-        const revision = current.revision + 1;
-        this.data.set(compositeKey, {
+        return await super.upsertIfRevision(
+            namespace,
             key,
             value,
             expireAtTimestamp,
-            updatedTimestamp: new Date().toISOString(),
-            revision
-        });
-        return { status: 'applied', revision };
+            expectedRevision
+        );
     }
 
-    async deleteIfRevision(
+    override async deleteIfRevision(
         namespace: string,
         key: string,
         expectedRevision: number
@@ -220,42 +117,10 @@ export class FakeRuntimeStateRepository implements RuntimeStateOptimisticTransac
             key,
             expectedRevision
         });
-        const compositeKey = this.toKey(namespace, key);
-        const current = this.data.get(compositeKey);
-        if (!current || current.revision !== expectedRevision) {
-            return { status: 'conflict' };
-        }
-        this.data.delete(compositeKey);
-        return { status: 'applied' };
+        return await super.deleteIfRevision(namespace, key, expectedRevision);
     }
 
-    async lockKey(namespace: string, key: string): Promise<void> {
+    override async lockKey(namespace: string, key: string): Promise<void> {
         this.lockedKeys.push({ namespace, key });
-    }
-
-    private toKey(namespace: string, key: string): string {
-        return `${namespace}::${key}`;
-    }
-
-    private findPrefixEntries(
-        namespace: string,
-        keyPrefix: string
-    ): RuntimeStateEntry[] {
-        return [...this.data.entries()]
-            .filter(
-                ([compositeKey]) =>
-                    this.toNamespace(compositeKey) === namespace &&
-                    this.toStoreKey(compositeKey).startsWith(keyPrefix)
-            )
-            .map(([, entry]) => ({ ...entry }))
-            .sort((left, right) => left.key.localeCompare(right.key));
-    }
-
-    private toNamespace(compositeKey: string): string {
-        return compositeKey.split('::', 1)[0] ?? '';
-    }
-
-    private toStoreKey(compositeKey: string): string {
-        return compositeKey.slice(this.toNamespace(compositeKey).length + 2);
     }
 }

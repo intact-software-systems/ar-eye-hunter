@@ -1,9 +1,5 @@
 import { decodeJsonWireValue, type JsonWireObject, type JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
-import {
-    isRuntimeStateGuardedBatchRepositoryLike,
-    type RuntimeStateGuardedBatch,
-    type RuntimeStateGuardedBatchResult
-} from '@shared-server/runtime-state/guarded-batch/runtime-state-guarded-batch.ts';
+import { type RuntimeStateGuardedBatch, type RuntimeStateGuardedBatchResult } from '@shared-server/runtime-state/guarded-batch/runtime-state-guarded-batch.ts';
 import { validateRuntimeStateGuardedBatch } from '@shared-server/runtime-state/guarded-batch/validate-runtime-state-guarded-batch.ts';
 import type { RuntimeStateGuardedBatchDatabaseRow } from '@shared-server/runtime-state/postgres/decode-runtime-state-guarded-batch-rows.ts';
 import type { AppInboxTestSqlExecution } from './app-inbox-test-database-contracts.ts';
@@ -15,7 +11,7 @@ export async function tryExecuteRuntimeStateGuardedBatch(
     if (!query.includes('with guard_input as') || !query.includes('effect_input as')) {
         return undefined;
     }
-    if (!isRuntimeStateGuardedBatchRepositoryLike(runtime)) {
+    if (!runtime) {
         throw new Error('Guarded runtime-state SQL requires a transaction runtime');
     }
     const batch = decodeRuntimeStateGuardedBatchSqlValues(values);

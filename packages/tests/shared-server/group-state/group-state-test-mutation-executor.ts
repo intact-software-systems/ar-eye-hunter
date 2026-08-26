@@ -21,15 +21,15 @@ import { validateGroupMutation } from '@shared-server/rallar-system/group-state/
 import { materializeGroupStateGuardedBatch } from '@shared-server/rallar-system/group-state/mutation/write/write-group-mutation.ts';
 import { GroupLifecyclePolicyRepository } from '@shared-server/rallar-system/group-state/persistence/group-lifecycle-policy-repository.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
-import { hashMutationCommand, type JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
+import { decodeJsonWireValue, hashMutationCommand } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import type { GroupStateEventStore } from '@shared-server/rallar-system/state-events/group-state-event-store.ts';
-import {
-    isRuntimeStateGuardedBatchRepositoryLike,
-    type RuntimeStateGuardedBatchRepositoryLike
-} from '@shared-server/runtime-state/guarded-batch/runtime-state-guarded-batch.ts';
+import type { RuntimeStateGuardedBatchTransaction } from '@shared-server/runtime-state/guarded-batch/runtime-state-guarded-batch.ts';
 import { validateRuntimeStateGuardedBatchResult } from '@shared-server/runtime-state/guarded-batch/validate-runtime-state-guarded-batch-result.ts';
 import { RuntimeStateRetryExhaustedError, RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
-import type { RuntimeStateOptimisticTransactionalRepositoryLike } from '@shared-server/runtime-state/runtime-state-repository.ts';
+import type {
+    RuntimeStateGuardedBatchTransactionalRepositoryLike,
+    RuntimeStateOptimisticTransactionalRepositoryLike
+} from '@shared-server/runtime-state/runtime-state-repository.ts';
 import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import type { GroupEvent } from '@shared/api/group-types.ts';
 
@@ -38,16 +38,16 @@ export type GroupStateTestMutationResult =
     | GroupMutationReceipt
     | GroupStateWritten;
 
-type GroupStateTestMutationExecutorDependencies = Readonly<{
-    durableService: GroupStateService;
-    runtimeRepository: RuntimeStateOptimisticTransactionalRepositoryLike;
-    groupStateEventStoreFor: (
+interface GroupStateTestMutationExecutorDependencies {
+    readonly durableService: GroupStateService;
+    readonly runtimeRepository: RuntimeStateGuardedBatchTransactionalRepositoryLike;
+    readonly groupStateEventStoreFor: (
         runtime: RuntimeStateOptimisticTransactionalRepositoryLike
     ) => GroupStateEventStore;
-    serviceId: string;
-    randomId: () => string;
-    sleep?: (delayMs: number) => Promise<void>;
-}>;
+    readonly serviceId: string;
+    readonly randomId: () => string;
+    readonly sleep?: (delayMs: number) => Promise<void>;
+}
 
 type GroupStateTestMaintenanceCommand = ReturnType<typeof toExpiryCommand> | ReturnType<typeof toSessionCleanupCommand>;
 
@@ -96,7 +96,9 @@ export class GroupStateTestMutationExecutor {
         authority: GroupMutationFacts['internalAuthority'],
         atEpochMs: number
     ): Promise<Exclude<GroupMutationComputed, { outcome: 'idempotency-conflict'; }>> {
-        const commandHash = await hashMutationCommand(command as JsonWireValue);
+        const commandHash = await hashMutationCommand(
+            decodeJsonWireValue(command, 'Group maintenance command')
+        );
         let computed: GroupMutationComputed | undefined;
         for (let attempt = 1; attempt <= 3; attempt += 1) {
             const read = await readGroupMutation(this.repository(), command);
@@ -192,9 +194,6 @@ export class GroupStateTestMutationExecutor {
     private async writeComputed(computed: GroupMutationComputedWrite): Promise<GroupMutationReceipt> {
         await this.dependencies.runtimeRepository.begin(async (transaction) => {
             const repository = this.repository(transaction);
-            if (!isRuntimeStateGuardedBatchRepositoryLike(transaction)) {
-                throw new TypeError('Group-state test mutations require guarded batch support');
-            }
             await writeGuardedBatch(transaction, computed);
             if (computed.lifecyclePolicy !== null) {
                 await new GroupLifecyclePolicyRepository(transaction).writePolicy(computed.receipt.aggregateRef, computed.lifecyclePolicy);
@@ -229,7 +228,7 @@ export class GroupStateTestMutationExecutor {
     }
 }
 
-async function writeGuardedBatch(transaction: RuntimeStateGuardedBatchRepositoryLike, computed: GroupMutationComputedWrite): Promise<void> {
+async function writeGuardedBatch(transaction: RuntimeStateGuardedBatchTransaction, computed: GroupMutationComputedWrite): Promise<void> {
     const materialized = materializeGroupStateGuardedBatch(computed);
     const result = validateRuntimeStateGuardedBatchResult(
         materialized,

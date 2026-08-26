@@ -15,7 +15,8 @@ import type {
     RuntimeStateConditionalWriteResult,
     RuntimeStateEntry,
     RuntimeStateEntryPageOptions,
-    RuntimeStateOptimisticTransactionalRepositoryLike
+    RuntimeStateGuardedBatchTransactionalRepositoryLike,
+    RuntimeStateOptimisticTransactionRepositoryLike
 } from '@shared-server/runtime-state/runtime-state-repository.ts';
 import { assertRuntimeStateExpectedRevision, assertRuntimeStateUpsertExpectedRevision } from '@shared-server/runtime-state/runtime-state-repository.ts';
 import type { TestClientStateEventStoreOwner, TestGroupStateEventStoreOwner } from '@shared-test/shared-server/create-test-state-repositories.ts';
@@ -23,7 +24,7 @@ import { TestClientStateEventStore } from '@shared-test/shared-server/test-clien
 import { TestGroupStateEventStore } from '@shared-test/shared-server/test-group-state-event-store.ts';
 
 export class FakeRuntimeStateRepository
-    implements RuntimeStateOptimisticTransactionalRepositoryLike, TestClientStateEventStoreOwner, TestGroupStateEventStoreOwner {
+    implements RuntimeStateGuardedBatchTransactionalRepositoryLike, TestClientStateEventStoreOwner, TestGroupStateEventStoreOwner {
     readonly data = new Map<string, RuntimeStateEntry>();
     readonly locks: Array<Readonly<{ namespace: string; key: string; }>> = [];
     readonly clientStateEventStore = new TestClientStateEventStore();
@@ -38,13 +39,9 @@ export class FakeRuntimeStateRepository
     private activeTransactionCount = 0;
     private transactionTail: Promise<void> = Promise.resolve();
 
-    get runtimeStateGuardedBatchCapability(): true | false {
-        return this.activeTransactionCount > 0;
-    }
-
     async begin<T>(
         fn: (
-            repository: RuntimeStateOptimisticTransactionalRepositoryLike
+            repository: RuntimeStateOptimisticTransactionRepositoryLike
         ) => Promise<T>
     ): Promise<T> {
         if (this.serializeTransactions) {
@@ -64,7 +61,7 @@ export class FakeRuntimeStateRepository
 
     private async beginUnserialized<T>(
         fn: (
-            repository: RuntimeStateOptimisticTransactionalRepositoryLike
+            repository: RuntimeStateOptimisticTransactionRepositoryLike
         ) => Promise<T>
     ): Promise<T> {
         const before = new Map(this.data);
@@ -253,7 +250,7 @@ export class FakeRuntimeStateRepository
     async executeGuardedBatch(
         input: RuntimeStateGuardedBatch
     ): Promise<RuntimeStateGuardedBatchResult> {
-        if (!this.runtimeStateGuardedBatchCapability) {
+        if (this.activeTransactionCount === 0) {
             throw new Error('Guarded runtime state batch requires an active transaction');
         }
         const batch = validateRuntimeStateGuardedBatch(input);

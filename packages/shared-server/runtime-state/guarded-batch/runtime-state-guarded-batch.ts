@@ -116,21 +116,8 @@ export interface RuntimeStateGuardedBatchResult {
     readonly effects: readonly RuntimeStateGuardedBatchEffectResult[];
 }
 
-export interface RuntimeStateGuardedBatchRepositoryLike {
-    readonly runtimeStateGuardedBatchCapability: true;
+export interface RuntimeStateGuardedBatchTransaction {
     executeGuardedBatch(
         batch: RuntimeStateGuardedBatch
     ): Promise<RuntimeStateGuardedBatchResult>;
-}
-
-export function isRuntimeStateGuardedBatchRepositoryLike(
-    repository: unknown
-): repository is RuntimeStateGuardedBatchRepositoryLike {
-    if (typeof repository !== 'object' || repository === null) {
-        return false;
-    }
-    return 'runtimeStateGuardedBatchCapability' in repository &&
-        repository.runtimeStateGuardedBatchCapability === true &&
-        'executeGuardedBatch' in repository &&
-        typeof repository.executeGuardedBatch === 'function';
 }

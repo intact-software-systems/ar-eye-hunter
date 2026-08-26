@@ -1,5 +1,8 @@
 import type { PSqlParameter, PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
-import type { RuntimeStateOptimisticTransactionalRepositoryLike } from '@shared-server/runtime-state/runtime-state-repository.ts';
+import type {
+    RuntimeStateGuardedBatchTransactionalRepositoryLike,
+    RuntimeStateOptimisticTransactionRepositoryLike
+} from '@shared-server/runtime-state/runtime-state-repository.ts';
 import type { TestClientStateEventStore } from '@shared-test/shared-server/test-client-state-event-store.ts';
 import type { TestGroupStateEventStore } from '@shared-test/shared-server/test-group-state-event-store.ts';
 import type { ClientEvent } from '@shared/api/client-types.ts';
@@ -17,7 +20,7 @@ export type AppInboxTestDatabase =
 export type AppInboxTestDatabaseStage = 'resource-result-replace' | 'reservation-finish' | 'transaction-commit-return';
 
 export interface AppInboxTestDatabaseOptions {
-    readonly runtimeRepository?: RuntimeStateOptimisticTransactionalRepositoryLike;
+    readonly runtimeRepository?: RuntimeStateGuardedBatchTransactionalRepositoryLike;
     readonly clientEventStore?: TestClientStateEventStore;
     readonly withTransaction?: <T>(write: () => Promise<T>) => Promise<T>;
     readonly shouldFailOutboxWrite?: () => boolean;
@@ -52,7 +55,7 @@ export interface AppInboxTestPendingWrites {
 export interface AppInboxTestSqlExecution {
     readonly query: string;
     readonly values: readonly PSqlParameter[];
-    readonly runtime: RuntimeStateOptimisticTransactionalRepositoryLike | undefined;
+    readonly runtime: RuntimeStateOptimisticTransactionRepositoryLike | undefined;
     readonly repositories: AppInboxTestResourceRepositories;
     readonly options: AppInboxTestDatabaseOptions;
     readonly state: AppInboxTestDatabaseState;
