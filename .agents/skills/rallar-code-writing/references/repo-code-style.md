@@ -113,6 +113,37 @@ named effect ports. Reaching one is a boundary fact, not an ambiguous business
 implementation pivot. The concrete adapter may still need its own focused probe
 when that effect implementation changes.
 
+Functional core, explicit imperative shell, named functional composition where
+it makes failure flow clearer. This is an ownership rule, not a syntax rule:
+imperative sequencing may be the clearest shell, while named `Either` or
+pipeline edges may be the clearest expression of expected failure.
+
+Do not erase a fixed, meaningful operation inventory unless the generic owner
+contributes semantics that justify doing so. A callable collection remains a
+truthful boundary when it is runtime-extensible, intentionally declarative data,
+or its owner defines ordering, scheduling, lifecycle, retry, cleanup, or failure
+semantics. Listener registries, lifecycle participants, middleware, plugins,
+cleanup stacks, and named strategy tables are therefore not violations merely
+because they invoke entries generically.
+
+When an application composition root fixes distinct operations, converts them
+to anonymous entries of one callable type, and passes them to an owner that only
+invokes each entry, keep the inventory concrete through direct named calls or one
+named aggregate. Follow transparent wrappers to the first real decision or
+effect; adding a name around the same erased inventory does not restore
+navigability. If static analysis cannot prove whether membership or invocation
+semantics are runtime-owned, classify the edge for manual review instead of as a
+violation. Never auto-fix a callable-inventory finding.
+
+The navigation report uses three dispositions: high-confidence findings,
+legitimate boundaries, and unknown/manual review. The detailed report remains
+observational. The changed-range gate blocks only new or worsened high-confidence
+registration-indirection and unnamed-deferred-edge findings in changed product
+code under `apps/**` or `packages/**`. Existing high-confidence debt does not
+block an unrelated change; legitimate boundaries and unknown/manual-review
+classifications never block. Analyzer errors remain fatal, and the analyzer
+never fixes or rewrites code.
+
 ## Production code, tests, and legacy
 
 Production code is the primary design artifact; tests are secondary evidence.

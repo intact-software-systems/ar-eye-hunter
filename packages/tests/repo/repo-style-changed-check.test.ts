@@ -206,6 +206,98 @@ describe('changed repository style checker', () => {
         expect(result.stdout).toContain('has 4 parameters');
     });
 
+    it('fails when a change introduces high-confidence registration indirection', () => {
+        const fixture = createGitFixture({
+            'apps/example/group-registration.ts': concreteNavigationRegistrationSource()
+        });
+        commitAll(fixture, 'base');
+        writeFixture(
+            fixture,
+            'apps/example/group-registration.ts',
+            indirectNavigationRegistrationSource()
+        );
+
+        const result = runChangedChecker(fixture);
+
+        expect(result.status, result.stdout).toBe(1);
+        expect(result.stdout).toContain('navigation.registration-indirection');
+        expect(result.stdout).toContain('new or worsened repository style finding');
+    });
+
+    it('does not gate a pre-existing high-confidence navigation finding', () => {
+        const fixture = createGitFixture({
+            'apps/example/group-registration.ts': indirectNavigationRegistrationSource()
+        });
+        commitAll(fixture, 'base');
+        appendSource(
+            fixture,
+            'apps/example/group-registration.ts',
+            '\nconst unrelatedValue = true;\n'
+        );
+
+        const result = runChangedChecker(fixture);
+
+        expect(result.status, result.stdout).toBe(0);
+        expect(result.stdout).toContain('PASS: no new repository style findings');
+    });
+
+    it('fails when a change erases a fixed operation inventory behind mountRest', () => {
+        const fixture = createGitFixture({
+            'apps/example/rest-routes.ts': concreteRestMountSource()
+        });
+        commitAll(fixture, 'base');
+        writeFixture(fixture, 'apps/example/rest-routes.ts', erasedRestMountSource());
+
+        const result = runChangedChecker(fixture);
+
+        expect(result.status, result.stdout).toBe(1);
+        expect(result.stdout).toContain('navigation.unnamed-deferred-edge');
+        expect(result.stdout).toContain('fixed operation inventory');
+    });
+
+    it('keeps unknown navigation classifications observational in changed code', () => {
+        const fixture = createGitFixture({
+            'apps/example/rest-routes.ts': 'export const before = true;\n'
+        });
+        commitAll(fixture, 'base');
+        writeFixture(fixture, 'apps/example/rest-routes.ts', unresolvedRestMountSource());
+
+        const result = runChangedChecker(fixture);
+
+        expect(result.status, result.stdout).toBe(0);
+        expect(result.stdout).toContain('PASS: no new repository style findings');
+    });
+
+    it('keeps interface pivots observational in changed code', () => {
+        const fixture = createGitFixture({
+            'apps/example/group-registration.ts': concreteNavigationRegistrationSource()
+        });
+        commitAll(fixture, 'base');
+        writeFixture(
+            fixture,
+            'apps/example/group-registration.ts',
+            interfacePivotRegistrationSource()
+        );
+
+        const result = runChangedChecker(fixture);
+
+        expect(result.status, result.stdout).toBe(0);
+        expect(result.stdout).toContain('PASS: no new repository style findings');
+    });
+
+    it('limits navigation enforcement to product code under apps and packages', () => {
+        const fixture = createGitFixture({
+            'scripts/rest-routes.ts': concreteRestMountSource()
+        });
+        commitAll(fixture, 'base');
+        writeFixture(fixture, 'scripts/rest-routes.ts', erasedRestMountSource());
+
+        const result = runChangedChecker(fixture);
+
+        expect(result.status, result.stdout).toBe(0);
+        expect(result.stdout).toContain('PASS: no new repository style findings');
+    });
+
     it('tolerates in-band growth of a file over the navigation backstop', () => {
         const fixture = createGitFixture({
             'apps/example/legacy-large.ts': linesSource(1300)
@@ -493,6 +585,100 @@ function forwardCaptureSource(): string {
         '  service = createService();',
         '  return consumer;',
         '}'
+    ].join('\n');
+}
+
+function concreteNavigationRegistrationSource(): string {
+    return [
+        'type Handler = () => void;',
+        'interface AppInboxHandlerRegistry {',
+        '  registerHandler(input: { readonly type: string; readonly handle: Handler }): void;',
+        '}',
+        'declare const registry: AppInboxHandlerRegistry;',
+        'function handleGroupUpdate(): void {}',
+        'registry.registerHandler({ type: \'GROUP_UPDATE\', handle: handleGroupUpdate });'
+    ].join('\n');
+}
+
+function indirectNavigationRegistrationSource(): string {
+    return [
+        'type Handler = () => void;',
+        'interface AppInboxHandlerRegistry {',
+        '  registerHandler(input: { readonly type: string; readonly handle: Handler }): void;',
+        '}',
+        'declare const registry: AppInboxHandlerRegistry;',
+        'function handleGroupUpdate(): void {}',
+        'for (const type of [\'GROUP_UPDATE\']) {',
+        '  registry.registerHandler({ type, handle: handleGroupUpdate });',
+        '}'
+    ].join('\n');
+}
+
+function interfacePivotRegistrationSource(): string {
+    return [
+        'interface MutationInput { readonly value: string; }',
+        'interface MutationResult { readonly value: string; }',
+        'type Handler = (input: MutationInput) => Promise<MutationResult>;',
+        'interface AppInboxHandlerRegistry {',
+        '  registerHandler(input: { readonly type: string; readonly handle: Handler }): void;',
+        '}',
+        'interface GroupMutationService {',
+        '  compute(input: MutationInput): Promise<MutationResult>;',
+        '}',
+        'async function computeFirst(input: MutationInput): Promise<MutationResult> { return input; }',
+        'async function computeSecond(input: MutationInput): Promise<MutationResult> { return input; }',
+        'const firstService: GroupMutationService = { compute: computeFirst };',
+        'const secondService: GroupMutationService = { compute: computeSecond };',
+        'declare const registry: AppInboxHandlerRegistry;',
+        'declare const service: GroupMutationService;',
+        'async function handleGroupUpdate(input: MutationInput): Promise<MutationResult> {',
+        '  return service.compute(input);',
+        '}',
+        'registry.registerHandler({ type: \'GROUP_UPDATE\', handle: handleGroupUpdate });'
+    ].join('\n');
+}
+
+function concreteRestMountSource(): string {
+    return [
+        'interface App {}',
+        'declare const app: App;',
+        'function registerGroupRoutes(_app: App): void {}',
+        'function registerClientRoutes(_app: App): void {}',
+        'function mountRest(target: App): void {',
+        '  registerGroupRoutes(target);',
+        '  registerClientRoutes(target);',
+        '}',
+        'mountRest(app);'
+    ].join('\n');
+}
+
+function erasedRestMountSource(): string {
+    return [
+        'interface App {}',
+        'type RouteInstaller = (app: App) => void;',
+        'declare const app: App;',
+        'function registerGroupRoutes(_app: App): void {}',
+        'function registerClientRoutes(_app: App): void {}',
+        'function mountRest(target: App, installers: readonly RouteInstaller[]): void {',
+        '  for (const install of installers) install(target);',
+        '}',
+        'mountRest(app, [',
+        '  (target) => registerGroupRoutes(target),',
+        '  (target) => registerClientRoutes(target)',
+        ']);'
+    ].join('\n');
+}
+
+function unresolvedRestMountSource(): string {
+    return [
+        'interface App {}',
+        'type RouteInstaller = (app: App) => void;',
+        'declare const app: App;',
+        'declare const installers: readonly RouteInstaller[];',
+        'function mountRest(): void {',
+        '  for (const install of installers) install(app);',
+        '}',
+        'mountRest();'
     ].join('\n');
 }
 

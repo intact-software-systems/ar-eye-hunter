@@ -57,8 +57,11 @@ When authoritative mutation control flow changes, run
 `npm run check:repo-style:navigation-details` for the affected roots and perform
 the manual 5/5 cold probe from concrete registration through operation entry,
 policy, first write guard, durable result, and after-commit effect. Navigation
-findings are observation-only during calibration; an analyzer execution failure
-or a landmark that remains unreachable after consolidation fails validation.
+details remain observational, but the changed-range gate rejects new or worsened
+high-confidence registration-indirection and unnamed-deferred-edge findings.
+Legitimate and unknown/manual classifications remain non-blocking. An analyzer
+execution failure or a landmark that remains unreachable after consolidation
+fails validation.
 
 ## Selection Rules
 

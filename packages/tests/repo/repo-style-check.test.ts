@@ -172,6 +172,29 @@ describe('repo style checker', () => {
         expect(runChecker(fixtureRoot)).toContain('PASS (no issues found in this run)');
     });
 
+    it('does not report synthetic TypeScript inside a multiline template literal', () => {
+        const fixtureRoot = createFixture({
+            'message.ts': [
+                'const syntheticTypeScript = `',
+                'interface Handler { handle(input: unknown): unknown; }',
+                '`;'
+            ].join('\n')
+        });
+
+        expect(runChecker(fixtureRoot)).toContain('PASS (no issues found in this run)');
+    });
+
+    it('still reports unknown inside a multiline template interpolation', () => {
+        const fixtureRoot = createFixture({
+            'message.ts': [
+                'declare const input: string;',
+                'const message = `value: ${input as unknown}`;'
+            ].join('\n')
+        });
+
+        expect(runChecker(fixtureRoot)).toContain('[boundary.unknown]');
+    });
+
     it('counts an else-if branch once in estimated cyclomatic complexity', () => {
         const fixtureRoot = createFixture({
             'route.ts': [

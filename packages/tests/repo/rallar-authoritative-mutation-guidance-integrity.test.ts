@@ -243,6 +243,33 @@ describe('authoritative mutation guidance integrity', () => {
         }
     });
 
+    it('qualifies functional-shell guidance by callable ownership instead of syntax', () => {
+        const codeWriting = readRepo('.agents/skills/rallar-code-writing/SKILL.md');
+        const codeStyle = readRepo('.agents/skills/rallar-code-writing/references/repo-code-style.md');
+
+        expectAllNormalized(codeWriting, [
+            'Functional core, explicit imperative shell, named functional composition where it makes failure flow clearer',
+            'A callable collection is not itself an indirection violation',
+            'If classification is uncertain, report it; do not mechanically refactor it',
+            'new or worsened high-confidence registration-indirection and unnamed-deferred-edge findings'
+        ]);
+        expectAllNormalized(codeStyle, [
+            'Functional core, explicit imperative shell, named functional composition where it makes failure flow clearer',
+            'Do not erase a fixed, meaningful operation inventory unless the generic owner contributes semantics that justify doing so',
+            'runtime-extensible',
+            'declarative data',
+            'ordering, scheduling, lifecycle, retry, cleanup, or failure semantics',
+            'transparent wrappers',
+            'Never auto-fix a callable-inventory finding',
+            'Existing high-confidence debt does not block an unrelated change',
+            'legitimate boundaries and unknown/manual-review classifications never block'
+        ]);
+        expect(codeWriting).not.toContain('Disallow erased inventory');
+        expect(codeStyle).not.toContain('Disallow erased inventory');
+        expect(codeWriting).not.toContain('value or failure flow clearer');
+        expect(codeStyle).not.toContain('value or failure flow clearer');
+    });
+
     it.each([
         '.agents/skills/rallar-testing/SKILL.md',
         '.agents/skills/rallar-testing/references/test-commands.md',

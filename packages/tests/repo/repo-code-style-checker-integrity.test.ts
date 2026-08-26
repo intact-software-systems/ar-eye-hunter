@@ -3,7 +3,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import { constructionRuleIds } from '../../../scripts/repo-style-check/construction-rules.mjs';
-import { navigationRuleIds } from '../../../scripts/repo-style-check/navigation-rules.mjs';
+import { navigationClassifications, navigationRuleIds } from '../../../scripts/repo-style-check/navigation-rules.mjs';
 import { typeOrganizationRuleIds } from '../../../scripts/repo-style-check/type-organization-rules.mjs';
 
 const repoRoot = process.cwd();
@@ -50,18 +50,24 @@ describe('repo code style checker integrity', () => {
         });
     });
 
-    it('keeps IDE navigation reporting observational and wired into governance', () => {
+    it('keeps IDE navigation reporting and changed-range enforcement wired into governance', () => {
         const packageJson = readJson('package.json') as {
             scripts?: Readonly<Record<string, string>>;
         };
         const governanceCommand = packageJson.scripts?.['test:repo-governance'] ?? '';
         const checker = readRepo('scripts/repo-style-check.mjs');
+        const changedChecker = readRepo('scripts/check-changed-repo-style.mjs');
         const humanGuide = readRepo('docs/repo-human-style-guide.md');
 
         expect(navigationRuleIds).toEqual({
             registrationIndirection: 'navigation.registration-indirection',
             unnamedDeferredEdge: 'navigation.unnamed-deferred-edge',
             interfacePivot: 'navigation.interface-pivot'
+        });
+        expect(navigationClassifications).toEqual({
+            highConfidenceFinding: 'high-confidence-finding',
+            legitimateBoundary: 'legitimate-boundary',
+            manualReview: 'unknown/manual-review'
         });
         expect(packageJson.scripts).toHaveProperty(
             'check:repo-style:navigation-details',
@@ -74,12 +80,20 @@ describe('repo code style checker integrity', () => {
         expect(readRepo('scripts/repo-style-check/navigation-rules.mjs')).toContain(
             'import { extractRouteHandlerRanges } from \'./factory-route-rules.mjs\';'
         );
+        expectAll(changedChecker, [
+            'scanHighConfidenceNavigationFindings',
+            'navigationClassifications.highConfidenceFinding'
+        ]);
         expectAll(humanGuide, [
             'npm run check:repo-style:navigation-details',
             '`navigation.registration-indirection`',
             '`navigation.unnamed-deferred-edge`',
             '`navigation.interface-pivot`',
-            'observation-only'
+            'high-confidence finding',
+            'legitimate dynamic boundary',
+            'unknown/manual review',
+            'new or worsened high-confidence',
+            'Existing findings do not block'
         ]);
     });
 

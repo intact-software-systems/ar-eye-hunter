@@ -72,7 +72,7 @@ npx vitest run \
 
 ## IDE causal-navigation observation
 
-When authoritative mutation control flow changes, run the non-blocking project
+When authoritative mutation control flow changes, run the observational project
 report with the smallest useful repeated roots:
 
 ```bash
@@ -84,7 +84,10 @@ Then perform the manual 5/5 cold probe using only Go to Definition and Find
 Usages. The five landmarks are concrete operation entry, domain or update policy,
 first conditional write guard, exact durable result, and after-commit effect.
 Record search escapes, ambiguous pivots, and named deferred boundaries. The
-report remains observation-only; analyzer execution failure is still fatal.
+report remains observational. The changed-range gate rejects only new or
+worsened high-confidence registration-indirection and unnamed-deferred-edge
+findings; legitimate and unknown/manual classifications remain non-blocking.
+Analyzer execution failure is still fatal.
 
 ## Type Checks And Builds
 

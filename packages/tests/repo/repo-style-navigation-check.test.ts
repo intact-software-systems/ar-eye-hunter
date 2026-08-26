@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
-import { formatNavigationReport, navigationRuleIds, scanNavigationProject } from '../../../scripts/repo-style-check/navigation-rules.mjs';
+import {
+    formatNavigationReport,
+    navigationClassifications,
+    navigationRuleIds,
+    scanNavigationProject
+} from '../../../scripts/repo-style-check/navigation-rules.mjs';
 
 const repoRoot = '/virtual/repository';
 const registryContract = `
@@ -27,6 +32,15 @@ describe('IDE causal navigation analyzer', () => {
         });
     });
 
+    it('keeps the three navigation classifications stable', () => {
+        expect(Object.isFrozen(navigationClassifications)).toBe(true);
+        expect(navigationClassifications).toEqual({
+            highConfidenceFinding: 'high-confidence-finding',
+            legitimateBoundary: 'legitimate-boundary',
+            manualReview: 'unknown/manual-review'
+        });
+    });
+
     it('accepts a concrete AppInbox type with a resolvable named handler', () => {
         const result = scan(`
             ${registryContract}
@@ -40,6 +54,22 @@ describe('IDE causal navigation analyzer', () => {
         `);
 
         expect(result.findings).toEqual([]);
+    });
+
+    it('does not seed navigation from an unrelated registerHandler method', () => {
+        const result = scan(`
+            interface Plugin { readonly id: string; }
+            interface PluginRegistry {
+                registerHandler(plugin: Plugin): void;
+            }
+            declare const registry: PluginRegistry;
+            declare const plugin: Plugin;
+            registry.registerHandler(plugin);
+        `);
+
+        expect(result.findings).toEqual([]);
+        expect(result.boundaryFacts).toEqual([]);
+        expect(result.diagnostics).toEqual([]);
     });
 
     it('reports an AppInbox registration hidden behind a generic type loop', () => {
@@ -114,6 +144,415 @@ describe('IDE causal navigation analyzer', () => {
         expect(collectionResult.findings).toEqual([]);
     });
 
+    it('reports a fixed anonymous route inventory erased by mountRest', () => {
+        const result = scan(`
+            interface App {}
+            type RouteInstaller = (app: App) => void;
+            interface RouteInstallers {
+                readonly rest: readonly RouteInstaller[];
+            }
+            class Application {
+                private restMounted = false;
+                constructor(private readonly routeInstallers: RouteInstallers) {}
+                mountRest(app: App): void {
+                    if (!this.restMounted) {
+                        for (const install of this.routeInstallers.rest) {
+                            install(app);
+                        }
+                        this.restMounted = true;
+                    }
+                }
+            }
+            function registerGroupRoutes(_app: App): void {}
+            function registerClientRoutes(_app: App): void {}
+            function createRouteInstallers(): RouteInstallers {
+                return {
+                    rest: [
+                        (app) => registerGroupRoutes(app),
+                        (app) => registerClientRoutes(app)
+                    ]
+                };
+            }
+            declare const app: App;
+            const application = new Application(createRouteInstallers());
+            application.mountRest(app);
+        `);
+
+        expect(result.findings).toEqual([
+            expect.objectContaining({
+                ruleId: navigationRuleIds.unnamedDeferredEdge,
+                classification: navigationClassifications.highConfidenceFinding
+            })
+        ]);
+    });
+
+    it('proves a fixed inventory across structurally compatible route contracts', () => {
+        const result = scan(`
+            interface App {}
+            type SharedRouteInstaller<TApp> = (app: TApp) => void;
+            interface SharedRouteInstallers<TApp> {
+                readonly rest: readonly SharedRouteInstaller<TApp>[];
+            }
+            interface ApiRouteInstallers {
+                readonly rest: readonly SharedRouteInstaller<App>[];
+            }
+            class Application {
+                constructor(private readonly routeInstallers: SharedRouteInstallers<App>) {}
+                mountRest(app: App): void {
+                    for (const install of this.routeInstallers.rest) install(app);
+                }
+            }
+            function registerGroupRoutes(_app: App): void {}
+            function createApiRouteInstallers(): ApiRouteInstallers {
+                return { rest: [(app) => registerGroupRoutes(app)] };
+            }
+            const routeInstallers: SharedRouteInstallers<App> = createApiRouteInstallers();
+            declare const app: App;
+            new Application(routeInstallers).mountRest(app);
+        `);
+
+        expect(result.findings).toEqual([
+            expect.objectContaining({
+                ruleId: navigationRuleIds.unnamedDeferredEdge,
+                classification: navigationClassifications.highConfidenceFinding
+            })
+        ]);
+        expect(result.diagnostics).toEqual([]);
+    });
+
+    it('leaves multiple structurally compatible inventories for manual review', () => {
+        const result = scan(`
+            interface App {}
+            type SharedRouteInstaller<TApp> = (app: TApp) => void;
+            interface SharedRouteInstallers<TApp> {
+                readonly rest: readonly SharedRouteInstaller<TApp>[];
+            }
+            interface ApiRouteInstallers {
+                readonly rest: readonly SharedRouteInstaller<App>[];
+            }
+            class Application {
+                constructor(private readonly routeInstallers: SharedRouteInstallers<App>) {}
+                mountRest(app: App): void {
+                    for (const install of this.routeInstallers.rest) install(app);
+                }
+            }
+            function registerGroupRoutes(_app: App): void {}
+            function registerClientRoutes(_app: App): void {}
+            function createPrimaryRoutes(): ApiRouteInstallers {
+                return { rest: [(app) => registerGroupRoutes(app)] };
+            }
+            function createSecondaryRoutes(): ApiRouteInstallers {
+                return { rest: [(app) => registerClientRoutes(app)] };
+            }
+            declare const app: App;
+            new Application(createPrimaryRoutes()).mountRest(app);
+        `);
+
+        expect(result.findings).toEqual([]);
+        expect(result.diagnostics).toEqual([
+            expect.objectContaining({
+                classification: navigationClassifications.manualReview
+            })
+        ]);
+    });
+
+    it('follows a transparent wrapper and still reports its fixed anonymous inventory', () => {
+        const result = scan(`
+            interface App {}
+            type RouteInstaller = (app: App) => void;
+            function invokeRouteInstallers(
+                installers: readonly RouteInstaller[],
+                app: App
+            ): void {
+                for (const install of installers) {
+                    install(app);
+                }
+            }
+            function mountRest(app: App, installers: readonly RouteInstaller[]): void {
+                invokeRouteInstallers(installers, app);
+            }
+            function registerGroupRoutes(_app: App): void {}
+            function registerClientRoutes(_app: App): void {}
+            declare const app: App;
+            mountRest(app, [
+                (target) => registerGroupRoutes(target),
+                (target) => registerClientRoutes(target)
+            ]);
+        `);
+
+        expect(result.findings).toEqual([
+            expect.objectContaining({
+                ruleId: navigationRuleIds.unnamedDeferredEdge,
+                classification: navigationClassifications.highConfidenceFinding
+            })
+        ]);
+    });
+
+    it('accepts one named aggregate that keeps a fixed route inventory concrete', () => {
+        const result = scan(`
+            interface App {}
+            interface RouteInstallers {
+                registerRestRoutes(app: App): void;
+            }
+            class Application {
+                constructor(private readonly routeInstallers: RouteInstallers) {}
+                mountRest(app: App): void {
+                    this.routeInstallers.registerRestRoutes(app);
+                }
+            }
+            function registerGroupRoutes(_app: App): void {}
+            function registerClientRoutes(_app: App): void {}
+            function registerRestRoutes(app: App): void {
+                registerGroupRoutes(app);
+                registerClientRoutes(app);
+            }
+            const routeInstallers: RouteInstallers = { registerRestRoutes };
+            declare const app: App;
+            new Application(routeInstallers).mountRest(app);
+        `);
+
+        expect(result.findings).toEqual([]);
+        expect(result.diagnostics).toEqual([]);
+    });
+
+    it('classifies runtime-owned callable collections as legitimate dynamic boundaries', () => {
+        const result = scan(`
+            type Listener = (event: string) => void;
+            type Stop = () => void;
+            interface Plugin { install(app: unknown): void; }
+            interface Middleware { use(app: unknown): void; }
+            interface LifecycleParticipant { attach(): void; }
+
+            const listeners = new Set<Listener>();
+            const stops: Stop[] = [];
+            const plugins = new Map<string, Plugin>();
+            const middleware: Middleware[] = [];
+            const participants = new Map<string, LifecycleParticipant>();
+
+            export function subscribe(listener: Listener): void { listeners.add(listener); }
+            export function addStop(stop: Stop): void { stops.push(stop); }
+            export function registerPlugin(id: string, plugin: Plugin): void { plugins.set(id, plugin); }
+            export function registerMiddleware(entry: Middleware): void { middleware.push(entry); }
+            export function registerParticipant(id: string, participant: LifecycleParticipant): void {
+                participants.set(id, participant);
+            }
+
+            export function emit(event: string): void {
+                for (const listener of listeners) listener(event);
+            }
+            export function stopAll(): void {
+                for (const stop of stops) stop();
+            }
+            export function installPlugins(app: unknown): void {
+                for (const plugin of plugins.values()) plugin.install(app);
+            }
+            export function installMiddleware(app: unknown): void {
+                for (const entry of middleware) entry.use(app);
+            }
+            export function attachParticipants(): void {
+                for (const participant of participants.values()) participant.attach();
+            }
+        `);
+
+        expect(result.findings).toEqual([]);
+        expect(result.diagnostics).toEqual([]);
+        expect(result.boundaryFacts).toHaveLength(5);
+        expect(result.boundaryFacts).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({
+                    boundaryKind: 'dynamic',
+                    classification: navigationClassifications.legitimateBoundary
+                })
+            ])
+        );
+    });
+
+    it('classifies named plugin factories as a legitimate declarative boundary', () => {
+        const result = scan(`
+            interface App {}
+            interface Plugin { install(app: App): void; }
+            declare const app: App;
+            function createAuthPlugin(): Plugin {
+                return { install: () => undefined };
+            }
+            function createLogPlugin(): Plugin {
+                return { install: () => undefined };
+            }
+            const plugins: readonly Plugin[] = [createAuthPlugin(), createLogPlugin()];
+            export function installPlugins(): void {
+                for (const plugin of plugins) plugin.install(app);
+            }
+        `);
+
+        expect(result.findings).toEqual([]);
+        expect(result.diagnostics).toEqual([]);
+        expect(result.boundaryFacts).toEqual([
+            expect.objectContaining({
+                boundaryKind: 'declarative',
+                classification: navigationClassifications.legitimateBoundary
+            })
+        ]);
+    });
+
+    it('does not mistake concrete protocol-object iteration for a callable inventory', () => {
+        const result = scan(`
+            interface MediaTrack {
+                addEventListener(name: string, listener: () => void): void;
+            }
+            interface DataChannel {
+                onRtcCallbacksDo(id: string, callbacks: { onOpen(): void }): void;
+            }
+            declare function readTracks(): readonly MediaTrack[];
+            declare function readChannels(): readonly DataChannel[];
+            export function registerEndedCallbacks(): void {
+                for (const track of readTracks()) {
+                    track.addEventListener('ended', () => undefined);
+                }
+            }
+            export function registerPeerCallbacks(): void {
+                for (const channel of readChannels()) {
+                    channel.onRtcCallbacksDo('peer', { onOpen: () => undefined });
+                }
+            }
+        `);
+
+        expect(result.findings).toEqual([]);
+        expect(result.boundaryFacts).toEqual([]);
+        expect(result.diagnostics).toEqual([]);
+    });
+
+    it('classifies named declarative callable tables as legitimate boundaries', () => {
+        const result = scan(`
+            type Validator = (input: string) => readonly string[];
+            function validateName(input: string): readonly string[] {
+                return input.length > 0 ? [] : ['name'];
+            }
+            function validateLength(input: string): readonly string[] {
+                return input.length < 20 ? [] : ['length'];
+            }
+            const validators: readonly Validator[] = [validateName, validateLength];
+            export function validateAll(input: string): readonly string[] {
+                const issues: string[] = [];
+                for (const validate of validators) issues.push(...validate(input));
+                return issues;
+            }
+        `);
+
+        expect(result.findings).toEqual([]);
+        expect(result.diagnostics).toEqual([]);
+        expect(result.boundaryFacts).toEqual([
+            expect.objectContaining({
+                boundaryKind: 'declarative',
+                classification: navigationClassifications.legitimateBoundary
+            })
+        ]);
+    });
+
+    it('reports a fixed anonymous inventory assembled with composition-time push', () => {
+        const result = scan(`
+            interface App {}
+            type RouteInstaller = (app: App) => void;
+            declare const app: App;
+            function registerGroupRoutes(_app: App): void {}
+            function registerClientRoutes(_app: App): void {}
+            function createRouteInstallers(): readonly RouteInstaller[] {
+                const assembled: RouteInstaller[] = [];
+                assembled.push(
+                    (target) => registerGroupRoutes(target),
+                    (target) => registerClientRoutes(target)
+                );
+                return assembled;
+            }
+            const installers = createRouteInstallers();
+            export function mountRest(): void {
+                for (const install of installers) install(app);
+            }
+        `);
+
+        expect(result.findings).toEqual([
+            expect.objectContaining({
+                ruleId: navigationRuleIds.unnamedDeferredEdge,
+                classification: navigationClassifications.highConfidenceFinding
+            })
+        ]);
+    });
+
+    it('follows factory parameters used to assemble a fixed anonymous inventory', () => {
+        const result = scan(`
+            interface App {}
+            type RouteInstaller = (app: App) => void;
+            declare const app: App;
+            function registerGroupRoutes(_app: App): void {}
+            function registerClientRoutes(_app: App): void {}
+            function createRouteInstallers(
+                first: RouteInstaller,
+                second: RouteInstaller
+            ): readonly RouteInstaller[] {
+                const assembled: RouteInstaller[] = [];
+                assembled.push(first, second);
+                return assembled;
+            }
+            const installers = createRouteInstallers(
+                (target) => registerGroupRoutes(target),
+                (target) => registerClientRoutes(target)
+            );
+            export function mountRest(): void {
+                installers.forEach((install) => install(app));
+            }
+        `);
+
+        expect(result.findings).toEqual([
+            expect.objectContaining({
+                ruleId: navigationRuleIds.unnamedDeferredEdge,
+                classification: navigationClassifications.highConfidenceFinding
+            })
+        ]);
+    });
+
+    it('reports a fixed anonymous inventory invoked through forEach', () => {
+        const result = scan(`
+            interface App {}
+            type RouteInstaller = (app: App) => void;
+            declare const app: App;
+            function registerGroupRoutes(_app: App): void {}
+            function registerClientRoutes(_app: App): void {}
+            const installers: readonly RouteInstaller[] = [
+                (target) => registerGroupRoutes(target),
+                (target) => registerClientRoutes(target)
+            ];
+            export function mountRest(): void {
+                installers.forEach((install) => install(app));
+            }
+        `);
+
+        expect(result.findings).toEqual([
+            expect.objectContaining({
+                ruleId: navigationRuleIds.unnamedDeferredEdge,
+                classification: navigationClassifications.highConfidenceFinding
+            })
+        ]);
+    });
+
+    it('leaves an unresolved mount inventory for manual review', () => {
+        const result = scan(`
+            interface App {}
+            type RouteInstaller = (app: App) => void;
+            declare const installers: readonly RouteInstaller[];
+            declare const app: App;
+            export function mountRest(): void {
+                for (const install of installers) install(app);
+            }
+            mountRest();
+        `);
+
+        expect(result.findings).toEqual([]);
+        expect(result.diagnostics).toEqual([
+            expect.objectContaining({
+                classification: navigationClassifications.manualReview
+            })
+        ]);
+    });
+
     it('reports a type-only business-service pivot with multiple production candidates', () => {
         const result = scan(`
             ${registryContract}
@@ -140,6 +579,9 @@ describe('IDE causal navigation analyzer', () => {
 
         expect(ruleIds(result)).toEqual([navigationRuleIds.interfacePivot]);
         expect(result.findings[0]?.message).toContain('GroupMutationService.compute');
+        expect(result.findings[0]?.classification).toBe(
+            navigationClassifications.manualReview
+        );
     });
 
     it('follows a unique production implementation exposed by Find Usages', () => {
@@ -213,6 +655,7 @@ describe('IDE causal navigation analyzer', () => {
             'EnqueueResourceEntryController.enqueueOrUpdate',
             'RuntimeOptions.nowEpochMs'
         ]);
+        expect(result.boundaryFacts.every((fact) => fact.classification === navigationClassifications.legitimateBoundary)).toBe(true);
     });
 
     it('accepts visible inline transaction work', () => {
@@ -546,6 +989,10 @@ describe('IDE causal navigation analyzer', () => {
         expect(output.match(/NAVIGATION WARN:/gu)).toHaveLength(200);
         expect(output).toContain('5 additional navigation details not displayed');
         expect(output).toContain('navigation.registration-indirection=205');
+        expect(output).toContain('[high-confidence-finding]');
+        expect(output).toContain(
+            'Navigation classifications: high-confidence-finding=205, legitimate-boundary=0, unknown/manual-review=0'
+        );
     });
 
     it('applies the shared detail cap to diagnostics as well as findings and facts', () => {
@@ -564,6 +1011,9 @@ describe('IDE causal navigation analyzer', () => {
 
         expect(output.match(/NAVIGATION DIAGNOSTIC:/gu)).toHaveLength(200);
         expect(output).toContain('5 additional navigation details not displayed');
+        expect(output).toContain(
+            'Navigation classifications: high-confidence-finding=0, legitimate-boundary=0, unknown/manual-review=205'
+        );
     });
 
     it('surfaces project-construction failures as analyzer errors', () => {

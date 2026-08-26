@@ -3,6 +3,7 @@ import { createRequire } from 'node:module';
 import path from 'node:path';
 
 import { extractRouteHandlerRanges } from './factory-route-rules.mjs';
+import { readCallableInventoryObservations } from './navigation-callable-inventories.mjs';
 
 const require = createRequire(import.meta.url);
 const maximumTraversalDepth = 24;
@@ -33,6 +34,7 @@ const clockMethodNames = new Set(['now', 'nowEpochMs']);
 const deferredBoundaryOwnerPattern = /Callbacks?$/u;
 const deferredCallableTypePattern = /(?:Callback|Handler|Observer|Predicate)$/u;
 const translationBoundaryOwnerPattern = /(?:Codec|Decoder)$/u;
+const appInboxHandlerRegistryPattern = /\bAppInboxHandlerRegistry\b/u;
 
 let memoizedTsMorph;
 
@@ -40,6 +42,12 @@ export const navigationRuleIds = Object.freeze({
     registrationIndirection: 'navigation.registration-indirection',
     unnamedDeferredEdge: 'navigation.unnamed-deferred-edge',
     interfacePivot: 'navigation.interface-pivot'
+});
+
+export const navigationClassifications = Object.freeze({
+    highConfidenceFinding: 'high-confidence-finding',
+    legitimateBoundary: 'legitimate-boundary',
+    manualReview: 'unknown/manual-review'
 });
 
 export function scanNavigationProject(input) {
@@ -77,7 +85,7 @@ export function formatNavigationReport(result, options) {
         const displayedFindings = result.findings.slice(0, maximumDetails);
         for (const finding of displayedFindings) {
             lines.push(`NAVIGATION WARN: ${finding.file}:${finding.line}`);
-            lines.push(`  - [${finding.ruleId}] ${finding.message}`);
+            lines.push(`  - [${findingClassification(finding)}] [${finding.ruleId}] ${finding.message}`);
         }
         displayedDetails += displayedFindings.length;
     }
@@ -86,14 +94,19 @@ export function formatNavigationReport(result, options) {
     const displayedFacts = result.boundaryFacts.slice(0, remainingDetailCapacity);
     for (const fact of displayedFacts) {
         lines.push(`NAVIGATION BOUNDARY: ${fact.file}:${fact.line}`);
-        lines.push(`  - ${fact.boundary} is a named ${boundaryKindLabel(fact.boundaryKind)}.`);
+        lines.push(
+            `  - [${fact.classification ?? navigationClassifications.legitimateBoundary}] ` +
+                `${fact.boundary} is a named ${boundaryKindLabel(fact.boundaryKind)}.`
+        );
     }
     displayedDetails += displayedFacts.length;
     remainingDetailCapacity = Math.max(0, maximumDetails - displayedDetails);
     const displayedDiagnostics = result.diagnostics.slice(0, remainingDetailCapacity);
     for (const diagnostic of displayedDiagnostics) {
         lines.push(`NAVIGATION DIAGNOSTIC: ${diagnostic.file}:${diagnostic.line}`);
-        lines.push(`  - ${diagnostic.message}`);
+        lines.push(
+            `  - [${diagnostic.classification ?? navigationClassifications.manualReview}] ${diagnostic.message}`
+        );
     }
     displayedDetails += displayedDiagnostics.length;
     const totalDetails = result.findings.length +
@@ -112,6 +125,12 @@ export function formatNavigationReport(result, options) {
                 .join(', ')
     );
     lines.push(`Navigation boundaries: ${result.boundaryFacts.length} named boundaries.`);
+    lines.push(
+        'Navigation classifications: ' +
+            Object.values(navigationClassifications)
+                .map((classification) => `${classification}=${classificationCount(result, classification)}`)
+                .join(', ')
+    );
     lines.push(`Navigation roots: ${options.scanRoots.join(', ')}.`);
     return lines.join('\n');
 }
@@ -170,6 +189,7 @@ function scanSourceFile(state, sourceFile) {
     const routeHandlerBodyStarts = new Set(
         extractRouteHandlerRanges(sourceFile.getFullText()).map(({ start }) => start)
     );
+    scanCallableInventories(state, sourceFile, new Map());
     for (const call of sourceFile.getDescendantsOfKind(SyntaxKind.CallExpression)) {
         if (isRegisterHandlerCall(call)) {
             scanRegistration(state, call);
@@ -177,7 +197,21 @@ function scanSourceFile(state, sourceFile) {
         }
         if (isDiscoveredRouteRegistration(call, routeHandlerBodyStarts)) {
             scanRouteRegistration(state, call);
+            continue;
         }
+        if (isRouteMountCall(call)) {
+            scanRouteMount(state, call);
+        }
+    }
+}
+
+function scanRouteMount(state, call) {
+    for (const target of resolveCallTargets(state, call, new Map())) {
+        walkCallable(state, {
+            callable: target.callable,
+            depth: 0,
+            bindings: target.bindings
+        });
     }
 }
 
@@ -261,6 +295,7 @@ function walkCallable(state, { callable, depth, bindings }) {
         return;
     }
     state.minimumDepthByTraversal.set(key, depth);
+    scanCallableInventories(state, callable, bindings);
 
     for (const call of directCallsIn(callable)) {
         analyzeCallBoundary(state, call, bindings);
@@ -279,6 +314,33 @@ function walkCallable(state, { callable, depth, bindings }) {
             });
         }
         scanDeferredArguments(state, { call, depth, bindings });
+    }
+}
+
+function scanCallableInventories(state, node, bindings) {
+    const observations = readCallableInventoryObservations(
+        node,
+        (expression) => resolveBoundExpression(expression, bindings)
+    );
+    for (const observation of observations) {
+        if (observation.disposition === 'fixed-anonymous') {
+            addFinding(state, {
+                node: observation.node,
+                ruleId: navigationRuleIds.unnamedDeferredEdge,
+                message:
+                    'A fixed operation inventory is erased behind a transparent generic invocation; expose direct named operations or one named aggregate.'
+            });
+            continue;
+        }
+        if (observation.disposition === 'legitimate') {
+            addBoundaryFact(state, observation);
+            continue;
+        }
+        addDiagnostic(
+            state,
+            observation.node,
+            'Callable operation inventory could not be classified as fixed or runtime-owned; manual review is required.'
+        );
     }
 }
 
@@ -675,6 +737,12 @@ function isNamedDeferredCallableType(signature) {
 }
 
 function boundaryKindLabel(kind) {
+    if (kind === 'dynamic') {
+        return 'runtime-owned callable boundary';
+    }
+    if (kind === 'declarative') {
+        return 'declarative callable boundary';
+    }
     if (kind === 'deferred') {
         return 'deferred boundary';
     }
@@ -714,7 +782,19 @@ function readPropertyInitializer(objectLiteral, propertyName) {
 }
 
 function isRegisterHandlerCall(call) {
-    return expressionName(call.getExpression()) === 'registerHandler';
+    const expression = call.getExpression();
+    if (expressionName(expression) !== 'registerHandler') {
+        return false;
+    }
+    const receiverType = expression.getExpression?.().getType?.().getText?.() ?? '';
+    return appInboxHandlerRegistryPattern.test(receiverType) ||
+        resolveExpressionDeclarations(expression).some((declaration) =>
+            appInboxHandlerRegistryPattern.test(declarationOwnerName(declaration))
+        );
+}
+
+function isRouteMountCall(call) {
+    return /^mount(?:Http|Rest|Routes?)$/u.test(expressionName(call.getExpression()));
 }
 
 function isDiscoveredRouteRegistration(call, routeHandlerBodyStarts) {
@@ -785,6 +865,9 @@ function addFinding(state, { node, ruleId, message }) {
         ...location,
         ruleId,
         message,
+        classification: ruleId === navigationRuleIds.interfacePivot
+            ? navigationClassifications.manualReview
+            : navigationClassifications.highConfidenceFinding,
         kind: 'warn'
     });
 }
@@ -794,7 +877,8 @@ function addBoundaryFact(state, { node, boundary, boundaryKind }) {
     state.boundaryFacts.set(`${boundary}:${location.file}:${location.line}`, {
         ...location,
         boundary,
-        boundaryKind
+        boundaryKind,
+        classification: navigationClassifications.legitimateBoundary
     });
 }
 
@@ -802,8 +886,27 @@ function addDiagnostic(state, node, message) {
     const location = nodeLocation(node);
     state.diagnostics.set(`${location.file}:${location.line}:${message}`, {
         ...location,
-        message
+        message,
+        classification: navigationClassifications.manualReview
     });
+}
+
+function classificationCount(result, classification) {
+    const findingCount = result.findings.filter((finding) => findingClassification(finding) === classification).length;
+    const boundaryCount = classification === navigationClassifications.legitimateBoundary
+        ? result.boundaryFacts.length
+        : 0;
+    const diagnosticCount = classification === navigationClassifications.manualReview
+        ? result.diagnostics.length
+        : 0;
+    return findingCount + boundaryCount + diagnosticCount;
+}
+
+function findingClassification(finding) {
+    return finding.classification ??
+        (finding.ruleId === navigationRuleIds.interfacePivot
+            ? navigationClassifications.manualReview
+            : navigationClassifications.highConfidenceFinding);
 }
 
 function nodeLocation(node) {
