@@ -1,50 +1,23 @@
-import { AppInboxType, type AppInboxEnqueueInput } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
-import type { AppInboxFailure } from '@shared-server/rallar-system/app-inbox/app-inbox-failure.ts';
 import { type IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
 import type { ClientStateService } from '@shared-server/rallar-system/client-state/client-state-service-contracts.ts';
-import type { ClientStateWritten } from '@shared-server/rallar-system/client-state/client-state-service-contracts.ts';
-import {
-    type ClientInstanceUpsertAppInboxPayload,
-    type ClientPrincipalUpsertAppInboxPayload,
-    type ClientSessionConnectAppInboxPayload,
-    type ClientSessionDisconnectAppInboxPayload,
-    type ClientSessionHeartbeatAppInboxPayload
-} from '@shared-server/rallar-system/client-state/inbox/app-client-inbox-contracts.ts';
-import {
-    toAuthenticatedClientMutationContextId
-} from '@shared-server/rallar-system/client-state/inbox/authenticated-client-mutation-ingress.ts';
-import { validateClientMutationRequest } from '@shared-server/rallar-system/client-state/mutation/command-validation/validate-client-mutation-request.ts';
-import { ClientMutationRejectedError } from '@shared-server/rallar-system/client-state/validation/client-mutation-rejection.ts';
-import {
-    decodeJsonWireValue,
-    type JsonWireObject,
-    type JsonWireValue
-} from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import {
     readStateEventListQuery,
     type StateEventListQuery
 } from '@shared-server/rallar-system/state-events/state-event-listing.ts';
-import {
-    type StateSyncCacheHydrationInput,
-    type StateSyncCacheHydrationResult
-} from '@shared-server/rallar-system/state-sync/state-sync-cache-hydration.ts';
 import type { ClientEvent, ClientPrincipalRef, ClientSnapshot } from '@shared/api/client-types.ts';
-import type { StateScope } from '@shared/api/state-types.ts';
-import type { Either } from '@shared/resilience/Either.ts';
-import { Hono, type Context } from 'jsr:@hono/hono@4.11.9';
+import { Hono } from 'jsr:@hono/hono@4.11.9';
 import { authorizationDenied } from '../services/request-auth-service.ts';
-import { toApiMutationFailureResponse, toApiMutationRouteFailure } from './api-mutation-route-failure.ts';
-import { readApiMutationRouteRequestId } from './api-mutation-route-ingress.ts';
+import {
+    registerClientStateMutationRoutes,
+    type ClientStateMutationRouteDependencies
+} from './client-state-mutation-routes.ts';
 import {
     readCurrentClientSnapshot,
     registerClientStatePointReadRoute,
     type ClientStatePointRead
 } from './client-state-point-read-route.ts';
+import { readClientStateRouteScope } from './read-client-state-route-scope.ts';
 import { toClientStateRouteErrorResponse } from './to-client-state-route-error-response.ts';
-
-const CLIENT_PRINCIPAL_PATH = '/api/state/apps/:applicationId/workspaces/:workspaceId/clients/:principalId';
-const CLIENT_INSTANCE_PATH = `${CLIENT_PRINCIPAL_PATH}/instances/:clientInstanceId`;
-const CLIENT_SESSION_PATH = `${CLIENT_INSTANCE_PATH}/sessions/:sessionId`;
 
 export type ClientStateRouteService =
     & Pick<
@@ -60,25 +33,13 @@ export type ClientStateRouteService =
         readCurrentSnapshot?(ref: ClientPrincipalRef): Promise<ClientSnapshot | undefined>;
     }>;
 
-export type ProcessClientAppInbox = <V>(
-    enqueue: AppInboxEnqueueInput<V>,
-    authority: IssuedAuthSession
-) => Promise<Either<AppInboxFailure, ClientStateWritten>>;
-
-export type ClientStateRouteDependencies = Readonly<{
-    clientStateService: ClientStateRouteService;
-    requireApiAuthSession: (
-        req: {
-            header(name: string): string | undefined;
-        }
-    ) => Promise<IssuedAuthSession>;
-    hydrateStateSyncSnapshotCaches: (
-        input: StateSyncCacheHydrationInput
-    ) => Promise<StateSyncCacheHydrationResult>;
-    processClientAppInbox: ProcessClientAppInbox;
-    readClientSnapshot: ClientStatePointRead;
-    strictReadAuthorization: boolean;
-}>;
+export type ClientStateRouteDependencies =
+    & ClientStateMutationRouteDependencies
+    & Readonly<{
+        clientStateService: ClientStateRouteService;
+        readClientSnapshot: ClientStatePointRead;
+        strictReadAuthorization: boolean;
+    }>;
 
 export function registerClientStateRoutes(
     app: Hono,
@@ -90,7 +51,7 @@ export function registerClientStateRoutes(
         '/api/state/apps/:applicationId/workspaces/:workspaceId/clients',
         async (c) => {
             try {
-                const scope = toScope(c);
+                const scope = readClientStateRouteScope(c);
                 const authSession = await readStrictReadAuthSession(c.req, deps);
                 const snapshots = authSession
                     ? [
@@ -131,7 +92,7 @@ export function registerClientStateRoutes(
                 const principalId = c.req.param('principalId');
                 await assertCanReadClientState(c.req, deps, principalId);
                 const snapshot = await deps.clientStateService.readPresenceSnapshot({
-                    ...toScope(c),
+                    ...readClientStateRouteScope(c),
                     principalId
                 });
 
@@ -155,7 +116,7 @@ export function registerClientStateRoutes(
                 const principalId = c.req.param('principalId');
                 await assertCanReadClientState(c.req, deps, principalId);
                 const ref = {
-                    ...toScope(c),
+                    ...readClientStateRouteScope(c),
                     principalId
                 };
                 const query = readStateEventListQuery(
@@ -189,7 +150,7 @@ export function registerClientStateRoutes(
                 return c.json(
                     await deps.clientStateService.listEventPage(
                         {
-                            ...toScope(c),
+                            ...readClientStateRouteScope(c),
                             principalId
                         },
                         readStateEventListQuery(
@@ -207,237 +168,7 @@ export function registerClientStateRoutes(
         }
     );
 
-    app.put(
-        `${CLIENT_PRINCIPAL_PATH}/principal/requests/:requestId`,
-        (context) => handleClientPrincipalUpsert(context, deps)
-    );
-
-    app.put(
-        `${CLIENT_INSTANCE_PATH}/requests/:requestId`,
-        (context) => handleClientInstanceUpsert(context, deps)
-    );
-
-    app.put(
-        `${CLIENT_SESSION_PATH}/requests/:requestId`,
-        (context) => handleClientSessionConnect(context, deps)
-    );
-
-    app.post(
-        `${CLIENT_SESSION_PATH}/heartbeat/requests/:requestId`,
-        (context) => handleClientSessionHeartbeat(context, deps)
-    );
-
-    app.post(
-        `${CLIENT_SESSION_PATH}/disconnect/requests/:requestId`,
-        (context) => handleClientSessionDisconnect(context, deps)
-    );
-}
-
-async function handleClientPrincipalUpsert(
-    context: Context,
-    dependencies: ClientStateRouteDependencies
-): Promise<Response> {
-    try {
-        const authSession = await dependencies.requireApiAuthSession(context.req);
-        const scope = toScope(context);
-        const principalId = context.req.param('principalId');
-        assertSelfPrincipal(authSession.clientId, principalId);
-        const requestBody = await readRequestWithRequestId(context);
-        validateClientMutationRequest('upsertPrincipal', requestBody);
-        const request = withActor(requestBody, authSession);
-        const snapshot = await processClientAppInbox<ClientPrincipalUpsertAppInboxPayload>(
-            dependencies,
-            {
-                type: AppInboxType.CLIENT_PRINCIPAL_UPSERT,
-                topicId: AppInboxType.CLIENT_PRINCIPAL_UPSERT,
-                resourceId: request.requestId,
-                contextId: toAuthenticatedClientMutationContextId({
-                    scope,
-                    principalId,
-                    callerClientId: authSession.clientId,
-                    callerSessionId: authSession.sessionId
-                }),
-                senderId: authSession.clientId,
-                data: { scope, principalId, request }
-            },
-            authSession
-        );
-        return context.json(snapshot);
-    }
-    catch (error) {
-        return toApiMutationFailureResponse(
-            context,
-            error instanceof Error ? error : new Error(String(error))
-        );
-    }
-}
-
-async function handleClientInstanceUpsert(
-    context: Context,
-    dependencies: ClientStateRouteDependencies
-): Promise<Response> {
-    try {
-        const authSession = await dependencies.requireApiAuthSession(context.req);
-        const scope = toScope(context);
-        const principalId = context.req.param('principalId');
-        const clientInstanceId = context.req.param('clientInstanceId');
-        assertSelfPrincipal(authSession.clientId, principalId);
-        const requestBody = await readRequestWithRequestId(context);
-        validateClientMutationRequest('upsertInstance', requestBody);
-        const request = withActor(requestBody, authSession);
-        const snapshot = await processClientAppInbox<ClientInstanceUpsertAppInboxPayload>(
-            dependencies,
-            {
-                type: AppInboxType.CLIENT_INSTANCE_UPSERT,
-                topicId: AppInboxType.CLIENT_INSTANCE_UPSERT,
-                resourceId: request.requestId,
-                contextId: toAuthenticatedClientMutationContextId({
-                    scope,
-                    principalId,
-                    callerClientId: authSession.clientId,
-                    callerSessionId: authSession.sessionId
-                }),
-                senderId: authSession.clientId,
-                data: { scope, principalId, clientInstanceId, request }
-            },
-            authSession
-        );
-        return context.json(snapshot);
-    }
-    catch (error) {
-        return toApiMutationFailureResponse(
-            context,
-            error instanceof Error ? error : new Error(String(error))
-        );
-    }
-}
-
-async function handleClientSessionConnect(
-    context: Context,
-    dependencies: ClientStateRouteDependencies
-): Promise<Response> {
-    try {
-        const authSession = await dependencies.requireApiAuthSession(context.req);
-        const { scope, principalId, clientInstanceId, sessionId } = readClientSessionRoute(context);
-        assertSelfSession(authSession, principalId, sessionId);
-        const requestBody = await readRequestWithRequestId(context);
-        validateClientMutationRequest('connectSession', requestBody);
-        const request = withActor(requestBody, authSession);
-        const snapshot = await processClientAppInbox<ClientSessionConnectAppInboxPayload>(
-            dependencies,
-            {
-                type: AppInboxType.CLIENT_SESSION_CONNECT,
-                topicId: AppInboxType.CLIENT_SESSION_CONNECT,
-                resourceId: request.requestId,
-                contextId: toAuthenticatedClientMutationContextId({
-                    scope,
-                    principalId,
-                    callerClientId: authSession.clientId,
-                    callerSessionId: authSession.sessionId
-                }),
-                senderId: authSession.clientId,
-                data: { scope, principalId, clientInstanceId, sessionId, request }
-            },
-            authSession
-        );
-        return context.json(snapshot);
-    }
-    catch (error) {
-        return toApiMutationFailureResponse(
-            context,
-            error instanceof Error ? error : new Error(String(error))
-        );
-    }
-}
-
-async function handleClientSessionHeartbeat(
-    context: Context,
-    dependencies: ClientStateRouteDependencies
-): Promise<Response> {
-    try {
-        const authSession = await dependencies.requireApiAuthSession(context.req);
-        const { scope, principalId, clientInstanceId, sessionId } = readClientSessionRoute(context);
-        assertSelfSession(authSession, principalId, sessionId);
-        const requestBody = await readRequestWithRequestId(context);
-        validateClientMutationRequest('heartbeatSession', requestBody);
-        const request = withActor(requestBody, authSession);
-        const snapshot = await processClientAppInbox<ClientSessionHeartbeatAppInboxPayload>(
-            dependencies,
-            {
-                type: AppInboxType.CLIENT_SESSION_HEARTBEAT,
-                topicId: AppInboxType.CLIENT_SESSION_HEARTBEAT,
-                resourceId: request.requestId,
-                contextId: toAuthenticatedClientMutationContextId({
-                    scope,
-                    principalId,
-                    callerClientId: authSession.clientId,
-                    callerSessionId: authSession.sessionId
-                }),
-                senderId: authSession.clientId,
-                data: { scope, principalId, clientInstanceId, sessionId, request }
-            },
-            authSession
-        );
-        return context.json(snapshot);
-    }
-    catch (error) {
-        return toApiMutationFailureResponse(
-            context,
-            error instanceof Error ? error : new Error(String(error))
-        );
-    }
-}
-
-async function handleClientSessionDisconnect(
-    context: Context,
-    dependencies: ClientStateRouteDependencies
-): Promise<Response> {
-    try {
-        const authSession = await dependencies.requireApiAuthSession(context.req);
-        const { scope, principalId, clientInstanceId, sessionId } = readClientSessionRoute(context);
-        assertSelfSession(authSession, principalId, sessionId);
-        const requestBody = await readRequestWithRequestId(context);
-        validateClientMutationRequest('disconnectSession', requestBody);
-        const request = withActor(requestBody, authSession);
-        const snapshot = await processClientAppInbox<ClientSessionDisconnectAppInboxPayload>(
-            dependencies,
-            {
-                type: AppInboxType.CLIENT_SESSION_DISCONNECT,
-                topicId: AppInboxType.CLIENT_SESSION_DISCONNECT,
-                resourceId: request.requestId,
-                contextId: toAuthenticatedClientMutationContextId({
-                    scope,
-                    principalId,
-                    callerClientId: authSession.clientId,
-                    callerSessionId: authSession.sessionId
-                }),
-                senderId: authSession.clientId,
-                data: { scope, principalId, clientInstanceId, sessionId, request }
-            },
-            authSession
-        );
-        return context.json(snapshot);
-    }
-    catch (error) {
-        return toApiMutationFailureResponse(
-            context,
-            error instanceof Error ? error : new Error(String(error))
-        );
-    }
-}
-
-function readClientSessionRoute(context: Context): Readonly<{
-    scope: StateScope;
-    principalId: string;
-    clientInstanceId: string;
-    sessionId: string;
-}> {
-    return {
-        scope: toScope(context),
-        principalId: context.req.param('principalId'),
-        clientInstanceId: context.req.param('clientInstanceId'),
-        sessionId: context.req.param('sessionId')
-    };
+    registerClientStateMutationRoutes(app, deps);
 }
 
 async function listRecentClientEventsForArrayRoute(
@@ -490,125 +221,4 @@ function hydrateClientSnapshots(
 
 function isDefined<T>(value: T | undefined): value is T {
     return value !== undefined;
-}
-
-async function processClientAppInbox<V>(
-    deps: ClientStateRouteDependencies,
-    enqueue: AppInboxEnqueueInput<V>,
-    authority: IssuedAuthSession
-): Promise<ClientSnapshot> {
-    const result = await deps.processClientAppInbox(enqueue, authority);
-    if (result.left !== undefined) {
-        throw toApiMutationRouteFailure(result.left);
-    }
-    const written = result.right;
-    if (written === undefined) {
-        throw new Error('Client AppInbox mutation result is unavailable');
-    }
-    const snapshot = requireClientStateWrittenSnapshot(written);
-    await hydrateClientMutationSnapshot(deps, snapshot);
-    return snapshot;
-}
-
-async function hydrateClientMutationSnapshot(
-    deps: ClientStateRouteDependencies,
-    snapshot: ClientSnapshot
-): Promise<void> {
-    try {
-        await deps.hydrateStateSyncSnapshotCaches({ clients: [snapshot] });
-    }
-    catch (error) {
-        console.warn('Failed to hydrate client mutation snapshot cache', error);
-    }
-}
-
-function requireClientStateWrittenSnapshot(
-    written: ClientStateWritten
-): ClientSnapshot {
-    return written.result.snapshot;
-}
-
-interface ClientMutationRequestBody extends JsonWireObject {
-    readonly requestId: string;
-}
-
-async function readRequestWithRequestId(c: Context): Promise<ClientMutationRequestBody> {
-    const requestBody = decodeJsonWireValue(await c.req.json(), 'Client request');
-    if (!isClientMutationRequestBody(requestBody)) {
-        throw new ClientMutationRejectedError('Client request must be a plain object');
-    }
-    const requestId = readApiMutationRouteRequestId({
-        requestId: c.req.param('requestId'),
-        idempotencyKey: c.req.header('idempotency-key'),
-        mutationBody: requestBody
-    });
-
-    return {
-        ...requestBody,
-        requestId: String(requestId)
-    };
-}
-
-function isClientMutationRequestBody(value: JsonWireValue): value is JsonWireObject {
-    return value !== null && typeof value === 'object' && !Array.isArray(value);
-}
-
-function toScope(c: {
-    req: {
-        param(key: 'applicationId' | 'workspaceId'): string;
-    };
-}): StateScope {
-    return {
-        applicationId: c.req.param('applicationId'),
-        workspaceId: c.req.param('workspaceId')
-    };
-}
-
-type AuthenticatedClientMutationRequest<T extends JsonWireObject> =
-    & T
-    & Readonly<{
-        actorPrincipalId: string;
-        actorSessionId: string;
-    }>;
-
-function withActor<T extends JsonWireObject>(
-    request: T,
-    authSession: {
-        clientId: string;
-        sessionId: string;
-    }
-): AuthenticatedClientMutationRequest<T> {
-    return {
-        ...request,
-        actorPrincipalId: authSession.clientId,
-        actorSessionId: authSession.sessionId
-    };
-}
-
-function assertSelfPrincipal(
-    clientId: string,
-    principalId: string
-): void {
-    if (clientId !== principalId) {
-        throw authorizationDenied(
-            'Forbidden: principal id does not match authenticated client'
-        );
-    }
-}
-
-function assertSelfSession(
-    authSession: {
-        clientId: string;
-        sessionId: string;
-    },
-    principalId: string,
-    sessionId: string
-): void {
-    assertSelfPrincipal(authSession.clientId, principalId);
-
-    if (authSession.sessionId !== sessionId) {
-        throw authorizationDenied(
-            'Forbidden: session id does not match authenticated session'
-        );
-    }
 }

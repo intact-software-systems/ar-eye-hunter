@@ -1,5 +1,9 @@
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
-import type { JsonWireValue } from '../protocol/json-wire-identity.ts';
+import {
+    decodeJsonWireText,
+    type JsonWireObject,
+    type JsonWireValue
+} from '../protocol/json-wire-identity.ts';
 import { AppInboxTypeUnavailableError, decodeAppInboxEnqueue } from './app-inbox-command-decoding.ts';
 import { AppInboxType, type AppInboxEnqueueInput } from './app-inbox-contracts.ts';
 
@@ -9,7 +13,7 @@ interface ValidAppInboxCommandIdentity {
         operation: AppInboxType;
         operationSource: 'command';
     }>;
-    readonly command: AppInboxEnqueueInput<JsonWireValue>;
+    readonly command: AppInboxEnqueueInput;
 }
 
 interface InvalidAppInboxCommandIdentity {
@@ -90,16 +94,16 @@ export function validateAppInboxCommandIdentity(
 export function validatePersistedAppInboxCommandIdentity(
     input: Readonly<{ topicId: string; resource: string; }>
 ): AppInboxCommandIdentityValidation {
-    let outer: unknown;
+    let outer: JsonWireValue;
     try {
-        outer = JSON.parse(input.resource);
+        outer = decodeJsonWireText(input.resource, 'Persisted AppInbox queue entry');
     }
     catch {
         return toInvalidIdentity(input.topicId, 'corrupt');
     }
     if (
-        !isRecord(outer) ||
-        !isRecord(outer.payload) ||
+        !isJsonWireObject(outer) ||
+        !isJsonWireObject(outer.payload) ||
         typeof outer.payload.typeId !== 'string' ||
         typeof outer.payload.resource !== 'string'
     ) {
@@ -107,9 +111,11 @@ export function validatePersistedAppInboxCommandIdentity(
     }
     const dispatchedOperation = outer.payload.typeId;
 
-    let command: AppInboxEnqueueInput<JsonWireValue>;
+    let command: AppInboxEnqueueInput;
     try {
-        command = decodeAppInboxEnqueue(JSON.parse(outer.payload.resource));
+        command = decodeAppInboxEnqueue(
+            decodeJsonWireText(outer.payload.resource, 'Persisted AppInbox command')
+        );
     }
     catch (error) {
         return toInvalidIdentity(
@@ -118,21 +124,21 @@ export function validatePersistedAppInboxCommandIdentity(
         );
     }
     if (
-        !APP_INBOX_OPERATIONS.has(dispatchedOperation) ||
-        !APP_INBOX_OPERATIONS.has(command.type)
+        !isAppInboxType(dispatchedOperation) ||
+        !isAppInboxType(command.type)
     ) {
         return toInvalidIdentity(input.topicId, 'unavailable');
     }
     if (
         dispatchedOperation !== command.type ||
-        !isOperationForTopic(dispatchedOperation as AppInboxType, input.topicId)
+        !isOperationForTopic(dispatchedOperation, input.topicId)
     ) {
         return toInvalidIdentity(input.topicId, 'corrupt');
     }
     return {
         valid: true,
         identity: {
-            operation: dispatchedOperation as AppInboxType,
+            operation: dispatchedOperation,
             operationSource: 'command'
         },
         command
@@ -169,6 +175,14 @@ function isOperationForTopic(
         : topicId === APP_INBOX_CLIENT_TOPIC && operation.startsWith('CLIENT_');
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-    return value !== null && typeof value === 'object' && !Array.isArray(value);
+function isAppInboxType(value: string): value is AppInboxType {
+    return APP_INBOX_OPERATIONS.has(value);
+}
+
+function isJsonWireObject(value: JsonWireValue | undefined): value is JsonWireObject {
+    return value !== undefined && value !== null && typeof value === 'object' && !isJsonWireArray(value);
+}
+
+function isJsonWireArray(value: JsonWireValue): value is readonly JsonWireValue[] {
+    return Array.isArray(value);
 }

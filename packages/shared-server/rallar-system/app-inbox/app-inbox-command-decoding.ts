@@ -1,6 +1,11 @@
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
-import { requireExactOptionalKeys, requireRecord, requireString } from '../protocol/exact-object-decoding.ts';
-import { decodeJsonWireValue, type JsonWireValue } from '../protocol/json-wire-identity.ts';
+import { requireExactOptionalKeys, requireString } from '../protocol/exact-object-decoding.ts';
+import {
+    decodeJsonWireText,
+    decodeJsonWireValue,
+    type JsonWireObject,
+    type JsonWireValue
+} from '../protocol/json-wire-identity.ts';
 import { AppInboxType, type AppInboxEnqueueInput } from './app-inbox-contracts.ts';
 
 const APP_INBOX_TYPES = new Set<string>(Object.values(AppInboxType));
@@ -14,9 +19,9 @@ export class AppInboxTypeUnavailableError extends TypeError {
 
 export function decodeAppInboxEnqueue(
     value: unknown
-): AppInboxEnqueueInput<JsonWireValue> {
+): AppInboxEnqueueInput {
     const wire = decodeJsonWireValue(value, 'AppInbox enqueue');
-    const enqueue = requireRecord(wire, 'AppInbox enqueue');
+    const enqueue = requireAppInboxWireObject(wire, 'AppInbox enqueue');
     requireExactOptionalKeys({
         value: enqueue,
         required: ['type', 'data'],
@@ -39,24 +44,38 @@ export function decodeAppInboxEnqueue(
         ...(typeof enqueue.contextId === 'string' ? { contextId: enqueue.contextId } : {}),
         ...(typeof enqueue.senderId === 'string' ? { senderId: enqueue.senderId } : {}),
         ...(Object.prototype.hasOwnProperty.call(enqueue, 'authority')
-            ? {
-                authority: decodeJsonWireValue(
-                    enqueue.authority,
-                    'AppInbox enqueue authority'
-                )
-            }
+            ? { authority: enqueue.authority }
             : {}),
-        data: decodeJsonWireValue(enqueue.data, 'AppInbox enqueue data')
+        data: enqueue.data
     };
+}
+
+function requireAppInboxWireObject(value: JsonWireValue, label: string): JsonWireObject {
+    if (value === null || typeof value !== 'object' || isJsonWireArray(value)) {
+        throw new TypeError(`${label} must be an exact object`);
+    }
+    return value;
+}
+
+function isJsonWireArray(value: JsonWireValue): value is readonly JsonWireValue[] {
+    return Array.isArray(value);
 }
 
 export function decodePersistedAppInboxEnqueue(
     entry: ResourceEntry
-): AppInboxEnqueueInput<JsonWireValue> {
-    const message = requireRecord(JSON.parse(entry.resource), 'Persisted AppInbox message');
-    const payload = requireRecord(message.payload, 'Persisted AppInbox message payload');
+): AppInboxEnqueueInput {
+    const message = requireAppInboxWireObject(
+        decodeJsonWireText(entry.resource, 'Persisted AppInbox message'),
+        'Persisted AppInbox message'
+    );
+    const payload = requireAppInboxWireObject(
+        message.payload,
+        'Persisted AppInbox message payload'
+    );
     if (typeof payload.resource !== 'string') {
         throw new TypeError('Persisted AppInbox message resource is invalid');
     }
-    return decodeAppInboxEnqueue(JSON.parse(payload.resource));
+    return decodeAppInboxEnqueue(
+        decodeJsonWireText(payload.resource, 'Persisted AppInbox command')
+    );
 }

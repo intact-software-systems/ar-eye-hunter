@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { AppInboxType, type AppInboxEnqueueInput } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
+import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import { type GroupMutationDescriptor } from '@shared-server/rallar-system/group-state/group-state-service-contracts.ts';
 import type { AuthenticatedGroupMutationEnqueue } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-contracts.ts';
 import { toGroupMutationDescriptor } from '@shared-server/rallar-system/group-state/inbox/to-group-mutation-descriptor.ts';
@@ -31,8 +31,16 @@ describe('GroupStateInboxService authenticated mutation descriptors', () => {
 
 interface DescriptorCase {
     readonly name: string;
-    readonly enqueue: AppInboxEnqueueInput<unknown>;
+    readonly enqueue: DescriptorEnqueue;
     readonly descriptor: GroupMutationDescriptor;
+}
+
+interface DescriptorEnqueue {
+    readonly type: AppInboxType;
+    readonly resourceId: string;
+    readonly contextId: string;
+    readonly senderId: string;
+    readonly data: AuthenticatedGroupMutationEnqueue['data'];
 }
 
 function descriptorCase(...input: DescriptorCaseArguments): DescriptorCase {
@@ -53,7 +61,7 @@ function descriptorCase(...input: DescriptorCaseArguments): DescriptorCase {
 type DescriptorCaseArguments = readonly [
     name: string,
     type: AppInboxType,
-    data: Record<string, unknown>,
+    data: AuthenticatedGroupMutationEnqueue['data'],
     operation: GroupMutationDescriptor['operation'],
     request: GroupMutationDescriptor['request'],
     targetPrincipalId?: string | null,

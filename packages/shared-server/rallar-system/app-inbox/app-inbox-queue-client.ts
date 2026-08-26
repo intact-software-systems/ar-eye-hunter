@@ -5,7 +5,6 @@ import { Either } from '@shared/resilience/Either.ts';
 import type { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 import { timeRallarAsync, type RallarTimingDetails, type RallarTimingSink } from '../observability/timing.ts';
 import { serializeCanonicalMutationCommand, type JsonWireValue } from '../protocol/json-wire-identity.ts';
-import { decodeAppInboxEnqueue } from './app-inbox-command-decoding.ts';
 import type { AppInboxEnqueueInput, AppInboxMessageContext } from './app-inbox-contracts.ts';
 import { toUnavailableAppInboxFailure, type AppInboxFailure } from './app-inbox-failure.ts';
 import { normalizeAppInboxOptions, type AppInboxOptions, type NormalizedAppInboxOptions } from './app-inbox-options.ts';
@@ -78,22 +77,22 @@ export class AppInboxQueueClient {
             { serviceId: config.serviceId }
         );
     }
-    async persistReservedEntryAuthority<Authority, Result>(
+    async persistReservedEntryAuthority<Result>(
         context: AppInboxMessageContext<Result>,
-        authority: Authority
+        authority: JsonWireValue
     ): Promise<void> {
         await this.reservationClient.persistAuthority(context, authority);
     }
 
-    async reserveMaterializedEntry<V>(
-        placeholder: AppInboxEnqueueInput<null>,
-        materialize: () => Promise<AppInboxEnqueueInput<V>>
+    async reserveMaterializedEntry(
+        placeholder: AppInboxEnqueueInput,
+        materialize: () => Promise<AppInboxEnqueueInput>
     ): Promise<MaterializedAppInboxReservation> {
         return await this.reservationClient.reserveMaterializedEntry(placeholder, materialize);
     }
 
-    async waitForReservedEntryResult<V, R>(
-        enqueue: AppInboxEnqueueInput<V>,
+    async waitForReservedEntryResult<R>(
+        enqueue: AppInboxEnqueueInput,
         decodeResult: AppInboxResultDecoder<R>,
         wakeOwningQueue: boolean
     ): Promise<Either<AppInboxFailure, R>> {
@@ -110,7 +109,7 @@ export class AppInboxQueueClient {
         );
     }
 
-    public processEntryNoWaiting<V>(enqueue: AppInboxEnqueueInput<V>): void {
+    public processEntryNoWaiting(enqueue: AppInboxEnqueueInput): void {
         this.processEntryUntilCompletionInternal(
             enqueue,
             false,
@@ -132,27 +131,26 @@ export class AppInboxQueueClient {
         });
     }
 
-    public async enqueue<V>(enqueue: AppInboxEnqueueInput<V>): Promise<ResourceEntry> {
-        const wireEnqueue = decodeAppInboxEnqueue(enqueue);
-        const key = this.toKey(wireEnqueue);
+    public async enqueue(enqueue: AppInboxEnqueueInput): Promise<ResourceEntry> {
+        const key = this.toKey(enqueue);
         const receivedIdentity = serializeCanonicalMutationCommand(
-            toLogicalAppInboxCommand(wireEnqueue)
+            toLogicalAppInboxCommand(enqueue)
         );
         const entry = await this.inbox.enqueueIfAbsent(
             newALUntargetedMessage(
                 toAppQueueCreatedBy(this.serviceId),
                 newALRoute(key.topicId, key.contextId, key.resourceId),
-                wireEnqueue.type.toString(),
-                wireEnqueue
+                enqueue.type.toString(),
+                enqueue
             )
         );
         this.wakeOwningQueue?.();
-        await assertMatchingAppInboxCommand(entry, wireEnqueue, receivedIdentity);
+        await assertMatchingAppInboxCommand(entry, enqueue, receivedIdentity);
         return entry;
     }
 
-    public async processEntryUntilCompletion<V>(
-        enqueue: AppInboxEnqueueInput<V>
+    public async processEntryUntilCompletion(
+        enqueue: AppInboxEnqueueInput
     ): Promise<Either<AppInboxFailure, JsonWireValue>> {
         return await this.processEntryUntilCompletionInternal(
             enqueue,
@@ -172,11 +170,11 @@ export class AppInboxQueueClient {
         );
     }
 
-    public async processEntryUntilCompletionResult<V, R>(
-        enqueue: AppInboxEnqueueInput<V>,
+    public async processEntryUntilCompletionResult<R>(
+        enqueue: AppInboxEnqueueInput,
         decodeResult: AppInboxResultDecoder<R>
     ): Promise<Either<AppInboxFailure, R>> {
-        return await this.processEntryUntilCompletionInternal<V, R>(
+        return await this.processEntryUntilCompletionInternal<R>(
             enqueue,
             true,
             true,
@@ -194,8 +192,8 @@ export class AppInboxQueueClient {
         );
     }
 
-    async processEntryUntilCompletionIfResult<V, R>(
-        enqueue: AppInboxEnqueueInput<V>,
+    async processEntryUntilCompletionIfResult<R>(
+        enqueue: AppInboxEnqueueInput,
         enqueueIf: (entry: ResourceEntry) => boolean,
         decodeResult: AppInboxResultDecoder<R>
     ): Promise<Either<AppInboxFailure, R>> {
@@ -218,21 +216,20 @@ export class AppInboxQueueClient {
         );
     }
 
-    private async processEntryUntilCompletionInternal<V, R>(
-        enqueue: AppInboxEnqueueInput<V>,
+    private async processEntryUntilCompletionInternal<R>(
+        enqueue: AppInboxEnqueueInput,
         waitForCompletion: boolean,
         enforceCommandIdentity: boolean,
         enqueuer: (
             key: Key,
-            wireEnqueue: AppInboxEnqueueInput<JsonWireValue>
+            wireEnqueue: AppInboxEnqueueInput
         ) => Promise<ResourceEntry | undefined>,
         decodeResult: AppInboxResultDecoder<R>,
         strictQueueIdentity = false
     ): Promise<Either<AppInboxFailure, R>> {
-        const wireEnqueue = decodeAppInboxEnqueue(enqueue);
-        const key: Key = this.toKey(wireEnqueue, strictQueueIdentity);
+        const key: Key = this.toKey(enqueue, strictQueueIdentity);
         const receivedCommandIdentity = enforceCommandIdentity
-            ? serializeCanonicalMutationCommand(toLogicalAppInboxCommand(wireEnqueue))
+            ? serializeCanonicalMutationCommand(toLogicalAppInboxCommand(enqueue))
             : undefined;
 
         return await timeRallarAsync(
@@ -256,7 +253,7 @@ export class AppInboxQueueClient {
                     'enqueue',
                     enqueue,
                     key,
-                    async () => await enqueuer(key, wireEnqueue)
+                    async () => await enqueuer(key, enqueue)
                 );
                 if (entry) {
                     this.wakeOwningQueue?.();
@@ -265,21 +262,21 @@ export class AppInboxQueueClient {
                     if (!receivedCommandIdentity) {
                         throw new Error('App inbox command identity was not captured');
                     }
-                    await assertMatchingAppInboxCommand(entry, wireEnqueue, receivedCommandIdentity);
+                    await assertMatchingAppInboxCommand(entry, enqueue, receivedCommandIdentity);
                 }
 
                 if (!waitForCompletion) {
                     return Either.ofLeft(toUnavailableAppInboxFailure());
                 }
 
-                return await this.resultWaiter.waitForResult(wireEnqueue, key, decodeResult);
+                return await this.resultWaiter.waitForResult(enqueue, key, decodeResult);
             }
         );
     }
 
-    private async timePhase<T, V>(
+    private async timePhase<T>(
         operation: string,
-        enqueue: AppInboxEnqueueInput<V>,
+        enqueue: AppInboxEnqueueInput,
         key: Key,
         action: () => Promise<T>,
         details: RallarTimingDetails = {}
@@ -304,7 +301,7 @@ export class AppInboxQueueClient {
         );
     }
 
-    private toTimingDetails<V>(enqueue: AppInboxEnqueueInput<V>, key: Key): RallarTimingDetails {
+    private toTimingDetails(enqueue: AppInboxEnqueueInput, key: Key): RallarTimingDetails {
         return {
             type: enqueue.type,
             topicId: key.topicId,
@@ -317,7 +314,7 @@ export class AppInboxQueueClient {
         return this.optionsInput.nowEpochMs?.() ?? Date.now();
     }
 
-    private toKey<V>(enqueue: AppInboxEnqueueInput<V>, strictQueueIdentity = false): Key {
+    private toKey(enqueue: AppInboxEnqueueInput, strictQueueIdentity = false): Key {
         return toPhysicalAppInboxQueueKey(enqueue, this.defaultTopicId, strictQueueIdentity);
     }
 }

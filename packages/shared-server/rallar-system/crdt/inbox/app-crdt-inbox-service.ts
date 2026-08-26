@@ -17,7 +17,10 @@ import type { AppInboxFailure } from '../../app-inbox/app-inbox-failure.ts';
 import { AppInboxHandlerRegistry } from '../../app-inbox/app-inbox-handler-registry.ts';
 import type { AppInboxOptions } from '../../app-inbox/app-inbox-options.ts';
 import { AppInboxQueueClient } from '../../app-inbox/app-inbox-queue-client.ts';
-import { encodeAppInboxResult } from '../../app-inbox/app-inbox-registration-codecs.ts';
+import {
+    encodeAppInboxCommand,
+    encodeAppInboxResult
+} from '../../app-inbox/app-inbox-registration-codecs.ts';
 import type { RallarTimingSink } from '../../observability/timing.ts';
 import { createCrdtMutationCommand, decodeCrdtMutationCommand } from '../mutation/crdt-mutation-command-codec.ts';
 import {
@@ -148,7 +151,7 @@ export class AppCrdtInboxService {
                 resourceId: decoded.deliveryId,
                 contextId: decoded.documentKey,
                 senderId: decoded.actor.sessionId,
-                data: decoded
+                data: encodeAppInboxCommand(decoded, 'CRDT AppInbox command')
             },
             decodeCrdtMutationResult
         );
@@ -174,7 +177,10 @@ export class AppCrdtInboxService {
                 type,
                 ...key,
                 senderId: reservation.callerId,
-                data: await reservation.materialize()
+                data: encodeAppInboxCommand(
+                    await reservation.materialize(),
+                    'Reserved CRDT AppInbox command'
+                )
             })
         );
         const command = decodeCrdtMutationCommand(reserved.enqueue.data);
@@ -211,7 +217,7 @@ export class AppCrdtInboxService {
             resourceId: decoded.deliveryId,
             contextId: decoded.documentKey,
             senderId: decoded.actor.sessionId,
-            data: decoded
+            data: encodeAppInboxCommand(decoded, 'CRDT AppInbox command')
         });
     }
 
@@ -240,7 +246,7 @@ export class AppCrdtInboxService {
             resourceId: command.deliveryId,
             contextId: command.documentKey,
             senderId: command.actor.sessionId,
-            data: command
+            data: encodeAppInboxCommand(command, 'CRDT append AppInbox command')
         });
         return command;
     }

@@ -10,7 +10,10 @@ import { AppInboxHandlerRegistry } from '../../app-inbox/app-inbox-handler-regis
 import type { AppInboxOptions } from '../../app-inbox/app-inbox-options.ts';
 import type { AppInboxEntryRepository, AppInboxResultRepository } from '../../app-inbox/app-inbox-persistence-ports.ts';
 import { AppInboxQueueClient, SIMPLER_CLIENT_STATE_APP_INBOX_TOPIC } from '../../app-inbox/app-inbox-queue-client.ts';
-import { encodeAppInboxResult } from '../../app-inbox/app-inbox-registration-codecs.ts';
+import {
+    encodeAppInboxCommand,
+    encodeAppInboxResult
+} from '../../app-inbox/app-inbox-registration-codecs.ts';
 import type { RallarTimingSink } from '../../observability/timing.ts';
 import type { ClientStateService, ClientStateWritten } from '../client-state-service-contracts.ts';
 import {
@@ -130,8 +133,8 @@ export class AppClientInboxService {
         this.handlers.assertRegistrationComplete(CLIENT_STATE_INBOX_REGISTRATION_TYPES);
     }
 
-    public async processAuthenticatedEntryUntilCompletion<V>(
-        enqueue: AppInboxEnqueueInput<V>,
+    public async processAuthenticatedEntryUntilCompletion(
+        enqueue: AppInboxEnqueueInput,
         authority: IssuedAuthSession
     ): Promise<Either<AppInboxFailure, ClientStateWritten>> {
         const ingress = readAuthenticatedClientMutationIngress(enqueue);
@@ -335,7 +338,7 @@ export class AppClientInboxService {
     private toExpiredSessionsEnqueue(
         atEpochMs: number,
         resourceId: string = 'expire-client-sessions'
-    ): AppInboxEnqueueInput<ClientExpiredSessionsAppInboxPayload> {
+    ): AppInboxEnqueueInput {
         return {
             type: AppInboxType.CLIENT_EXPIRED_SESSIONS,
             topicId: AppInboxType.CLIENT_EXPIRED_SESSIONS,
@@ -343,7 +346,10 @@ export class AppClientInboxService {
             contextId: 'expire-client-sessions',
             senderId: this.serviceId,
             authority: toClientMutationSystemAuthority(this.serviceId),
-            data: { atEpochMs }
+            data: encodeAppInboxCommand(
+                { atEpochMs } satisfies ClientExpiredSessionsAppInboxPayload,
+                'Expired client sessions AppInbox command'
+            )
         };
     }
 }

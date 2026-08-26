@@ -2,13 +2,16 @@ import { Either } from '@shared/resilience/Either.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 
 import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
-import { AppInboxType } from '../../app-inbox/app-inbox-contracts.ts';
+import { AppInboxType, type AppInboxEnqueueInput } from '../../app-inbox/app-inbox-contracts.ts';
 import { type AppInboxFailure } from '../../app-inbox/app-inbox-failure.ts';
 import { AppInboxHandlerRegistry } from '../../app-inbox/app-inbox-handler-registry.ts';
 import type { AppInboxOptions } from '../../app-inbox/app-inbox-options.ts';
 import type { AppInboxEntryRepository, AppInboxResultRepository } from '../../app-inbox/app-inbox-persistence-ports.ts';
 import { AppInboxQueueClient, SIMPLER_GROUP_STATE_APP_INBOX_TOPIC } from '../../app-inbox/app-inbox-queue-client.ts';
-import { encodeAppInboxResult } from '../../app-inbox/app-inbox-registration-codecs.ts';
+import {
+    encodeAppInboxCommand,
+    encodeAppInboxResult
+} from '../../app-inbox/app-inbox-registration-codecs.ts';
 import type { IssuedAuthSession } from '../../auth/persistence/auth-session-types.ts';
 import type { GroupFormationGroupMutationSink } from '../../observability/formation-metrics.ts';
 import type { RallarTimingSink } from '../../observability/timing.ts';
@@ -31,9 +34,7 @@ import { decodeGroupStateAppInboxCommand } from './decode-group-state-app-inbox-
 import {
     GROUP_MUTATION_INBOX_TYPES,
     isAuthenticatedGroupMutationEnqueue,
-    type AuthenticatedGroupMutationEnqueue,
-    type AuthenticatedGroupMutationInboxType,
-    type AuthenticatedGroupMutationPayloadByType
+    type AuthenticatedGroupMutationEnqueue
 } from './group-state-inbox-contracts.ts';
 import { GroupStateInboxHandler } from './group-state-inbox-handler.ts';
 import { decodeGroupStateInboxDurableResult } from './group-state-inbox-result-codec.ts';
@@ -110,7 +111,10 @@ export class GroupStateInboxService {
             prepareMutation: (descriptor, authority) =>
                 this.groupStateService.prepareAppInboxMutation(descriptor, authority),
             persistPreparation: (context, preparation) =>
-                this.queueClient.persistReservedEntryAuthority(context, preparation)
+                this.queueClient.persistReservedEntryAuthority(
+                    context,
+                    encodeAppInboxCommand(preparation, 'Group mutation AppInbox authority')
+                )
         });
         this.registerMessageHandlers();
         this.handlers.assertRegistrationComplete(GROUP_MUTATION_INBOX_TYPES);
@@ -162,16 +166,16 @@ export class GroupStateInboxService {
         authority: IssuedAuthSession
     ): Promise<Either<AppInboxFailure, GroupStateInboxDurableResult>> {
         const prepared = await this.prepareAuthenticatedGroupMutation(enqueue, authority);
-        return await this.queueClient.processEntryUntilCompletionResult<
-            AuthenticatedGroupMutationPayloadByType[AuthenticatedGroupMutationInboxType],
-            GroupStateInboxDurableResult
-        >(prepared, (value) => decodeGroupStateInboxDurableResult(value, enqueue.type));
+        return await this.queueClient.processEntryUntilCompletionResult<GroupStateInboxDurableResult>(
+            prepared,
+            (value) => decodeGroupStateInboxDurableResult(value, enqueue.type)
+        );
     }
 
     private async prepareAuthenticatedGroupMutation(
         enqueue: AuthenticatedGroupMutationEnqueue,
         authority: IssuedAuthSession
-    ): Promise<AuthenticatedGroupMutationEnqueue> {
+    ): Promise<AppInboxEnqueueInput> {
         if (!isAuthenticatedGroupMutationEnqueue(enqueue)) {
             throw new GroupMutationAuthorizationError(
                 'App inbox type is not an authenticated group mutation.'
@@ -181,7 +185,11 @@ export class GroupStateInboxService {
             toGroupMutationDescriptor(enqueue),
             authority
         );
-        return { ...enqueue, authority: authorized };
+        return {
+            ...enqueue,
+            authority: encodeAppInboxCommand(authorized, 'Group mutation AppInbox authority'),
+            data: encodeAppInboxCommand(enqueue.data, 'Group mutation AppInbox command')
+        };
     }
 
     private registerMessageHandlers(): void {

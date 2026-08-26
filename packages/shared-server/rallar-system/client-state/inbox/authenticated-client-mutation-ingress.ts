@@ -31,8 +31,8 @@ interface ClientIngressRecord {
     readonly [key: string]: ClientIngressValue;
 }
 
-export function readAuthenticatedClientMutationIngress<Payload>(
-    enqueue: AppInboxEnqueueInput<Payload>
+export function readAuthenticatedClientMutationIngress(
+    enqueue: AppInboxEnqueueInput
 ): AuthenticatedClientMutationIngress {
     const data = requireClientIngressRecord(enqueue.data, 'Client mutation payload');
     const scope = readClientIngressScope(data.scope);

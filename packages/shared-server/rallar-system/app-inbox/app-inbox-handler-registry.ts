@@ -113,7 +113,7 @@ export class AppInboxHandlerRegistry {
         entry: ResourceEntry
     ): Promise<void> {
         const type = registration.type;
-        const fallbackEnqueue: AppInboxEnqueueInput<JsonWireValue> = {
+        const fallbackEnqueue: AppInboxEnqueueInput = {
             type,
             resourceId: entry.key.resourceId,
             contextId: entry.key.contextId,
@@ -236,8 +236,8 @@ export class AppInboxHandlerRegistry {
         }
     }
 
-    private recordQueueRetryTiming<V>(
-        enqueue: AppInboxEnqueueInput<V>,
+    private recordQueueRetryTiming(
+        enqueue: AppInboxEnqueueInput,
         entry: ResourceEntry,
         classification: Extract<AppInboxErrorClassification, { kind: 'retryable'; }>,
         error: unknown
@@ -269,9 +269,9 @@ export class AppInboxHandlerRegistry {
         });
     }
 
-    private async timePhase<T, V>(
+    private async timePhase<T>(
         operation: string,
-        enqueue: AppInboxEnqueueInput<V>,
+        enqueue: AppInboxEnqueueInput,
         key: Key,
         action: () => Promise<T>,
         details: RallarTimingDetails = {}
@@ -292,7 +292,7 @@ export class AppInboxHandlerRegistry {
         );
     }
 
-    private toTimingDetails<V>(enqueue: AppInboxEnqueueInput<V>, key: Key): RallarTimingDetails {
+    private toTimingDetails(enqueue: AppInboxEnqueueInput, key: Key): RallarTimingDetails {
         return {
             type: enqueue.type,
             topicId: key.topicId,

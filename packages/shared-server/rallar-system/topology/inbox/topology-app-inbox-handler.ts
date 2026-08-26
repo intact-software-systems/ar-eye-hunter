@@ -128,10 +128,10 @@ export class TopologyAppInboxHandler {
         this.dependencies = dependencies;
     }
 
-    async createAuthenticatedEnqueue<V>(
-        enqueue: AppInboxEnqueueInput<V>,
+    async createAuthenticatedEnqueue(
+        enqueue: AppInboxEnqueueInput,
         authority: IssuedAuthSession
-    ): Promise<AppInboxEnqueueInput<V>> {
+    ): Promise<AppInboxEnqueueInput> {
         return await createAuthenticatedTopologyEnqueue({
             enqueue,
             claimedAuthority: authority,
@@ -152,10 +152,10 @@ export class TopologyAppInboxHandler {
         });
     }
 
-    async createAuthenticatedEnqueueFromValidatedSession<V>(
-        enqueue: AppInboxEnqueueInput<V>,
+    async createAuthenticatedEnqueueFromValidatedSession(
+        enqueue: AppInboxEnqueueInput,
         currentSession: PersistedAuthSession
-    ): Promise<AppInboxEnqueueInput<V>> {
+    ): Promise<AppInboxEnqueueInput> {
         return await createAuthenticatedTopologyEnqueueFromValidatedSession({
             enqueue,
             currentSession

@@ -54,8 +54,8 @@ export class AppInboxResultWaiter {
         this.options = config.options;
     }
 
-    async waitForResult<Command, Result>(
-        enqueue: AppInboxEnqueueInput<Command>,
+    async waitForResult<Result>(
+        enqueue: AppInboxEnqueueInput,
         key: Key,
         decodeResult: AppInboxResultDecoder<Result>
     ): Promise<Either<AppInboxFailure, Result>> {
@@ -104,8 +104,8 @@ export class AppInboxResultWaiter {
         }
     }
 
-    private async waitForCompletion<Command>(
-        enqueue: AppInboxEnqueueInput<Command>,
+    private async waitForCompletion(
+        enqueue: AppInboxEnqueueInput,
         key: Key
     ): Promise<boolean> {
         try {
@@ -157,8 +157,8 @@ export class AppInboxResultWaiter {
         }
     }
 
-    private toWaitPolicy<Command>(
-        enqueue: AppInboxEnqueueInput<Command>,
+    private toWaitPolicy(
+        enqueue: AppInboxEnqueueInput,
         key: Key
     ): TryWithPolicy {
         let policy = TryWithPolicy.defaults()
@@ -196,9 +196,9 @@ export class AppInboxResultWaiter {
         return policy;
     }
 
-    private async timePhase<Result, Command>(
+    private async timePhase<Result>(
         operation: string,
-        enqueue: AppInboxEnqueueInput<Command>,
+        enqueue: AppInboxEnqueueInput,
         key: Key,
         action: () => Promise<Result>,
         details: RallarTimingDetails = {}
@@ -220,8 +220,8 @@ export class AppInboxResultWaiter {
     }
 }
 
-function toTimingDetails<Command>(
-    enqueue: AppInboxEnqueueInput<Command>,
+function toTimingDetails(
+    enqueue: AppInboxEnqueueInput,
     key: Key
 ): RallarTimingDetails {
     return {

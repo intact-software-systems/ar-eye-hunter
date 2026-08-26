@@ -2,6 +2,7 @@ import { type IssuedAuthSession } from '@shared-server/rallar-system/auth/persis
 import { DEFAULT_STATE_APPLICATION_ID, DEFAULT_STATE_WORKSPACE_ID, type StateScope } from '@shared/api/state-types.ts';
 import { type AppInboxEnqueueInput } from '../../app-inbox/app-inbox-contracts.ts';
 import { AppInboxType } from '../../app-inbox/app-inbox-contracts.ts';
+import { encodeAppInboxCommand } from '../../app-inbox/app-inbox-registration-codecs.ts';
 import type { RegisterAuthorisedWsClientInput } from '../client-state-service-contracts.ts';
 import { toClientMutationIssuedSessionAuthority } from '../mutation/client-mutation-authority.ts';
 import type {
@@ -23,7 +24,7 @@ export interface ToAuthorisedWsClientDisconnectEnqueueInput {
 
 export function toAuthorisedWsClientConnectEnqueue(
     input: ToAuthorisedWsClientConnectEnqueueInput
-): AppInboxEnqueueInput<ClientAuthorisedWsSessionConnectAppInboxPayload> {
+): AppInboxEnqueueInput {
     const connection = toAuthorisedWsClientConnection(input);
     return {
         type: AppInboxType.CLIENT_AUTHORISED_WS_CONNECT,
@@ -35,13 +36,13 @@ export function toAuthorisedWsClientConnectEnqueue(
             connection.scope,
             'connectAuthorisedWsSession'
         ),
-        data: connection
+        data: encodeAppInboxCommand(connection, 'Authorized WebSocket connect AppInbox command')
     };
 }
 
 export function toAuthorisedWsClientDisconnectEnqueue(
     input: ToAuthorisedWsClientDisconnectEnqueueInput
-): AppInboxEnqueueInput<ClientAuthorisedWsSessionDisconnectAppInboxPayload> {
+): AppInboxEnqueueInput {
     const connection = input.connection;
     return {
         type: AppInboxType.CLIENT_AUTHORISED_WS_DISCONNECT,
@@ -57,11 +58,14 @@ export function toAuthorisedWsClientDisconnectEnqueue(
             connection.scope,
             'disconnectAuthorisedWsSession'
         ),
-        data: {
-            connection,
-            disconnectedAtEpochMs: input.disconnectedAtEpochMs,
-            reason: input.reason
-        }
+        data: encodeAppInboxCommand(
+            {
+                connection,
+                disconnectedAtEpochMs: input.disconnectedAtEpochMs,
+                reason: input.reason
+            } satisfies ClientAuthorisedWsSessionDisconnectAppInboxPayload,
+            'Authorized WebSocket disconnect AppInbox command'
+        )
     };
 }
 
@@ -74,7 +78,7 @@ export function toAuthorisedWsClientScope(
     };
 }
 
-function toAuthorisedWsClientConnection(
+export function toAuthorisedWsClientConnection(
     input: ToAuthorisedWsClientConnectEnqueueInput
 ): ClientAuthorisedWsSessionConnectAppInboxPayload {
     const scope = toAuthorisedWsClientScope(input.input);

@@ -13,7 +13,10 @@ import { AppInboxHandlerRegistry } from '../../app-inbox/app-inbox-handler-regis
 import type { AppInboxOptions } from '../../app-inbox/app-inbox-options.ts';
 import type { AppInboxEntryRepository, AppInboxResultRepository } from '../../app-inbox/app-inbox-persistence-ports.ts';
 import { AppInboxQueueClient, SIMPLER_GROUP_STATE_APP_INBOX_TOPIC } from '../../app-inbox/app-inbox-queue-client.ts';
-import { encodeAppInboxResult } from '../../app-inbox/app-inbox-registration-codecs.ts';
+import {
+    encodeAppInboxCommand,
+    encodeAppInboxResult
+} from '../../app-inbox/app-inbox-registration-codecs.ts';
 import type { IssuedAuthSession } from '../../auth/persistence/auth-session-types.ts';
 import type { GroupStateService } from '../../group-state/group-state-service-contracts.ts';
 import type { RallarTimingSink } from '../../observability/timing.ts';
@@ -122,15 +125,15 @@ export class TopologyInboxService {
         handlers.assertRegistrationComplete(TOPOLOGY_CONFIG_INBOX_TYPES);
     }
 
-    async processAuthenticatedEntryUntilCompletion<V>(
-        enqueue: AppInboxEnqueueInput<V>,
+    async processAuthenticatedEntryUntilCompletion(
+        enqueue: AppInboxEnqueueInput,
         authority: IssuedAuthSession
     ): Promise<Either<AppInboxFailure, TopologyAppInboxResult>> {
         return await this.processAuthenticatedEntryUntilCompletionResult(enqueue, authority);
     }
 
-    async processAuthenticatedEntryUntilCompletionResult<V>(
-        enqueue: AppInboxEnqueueInput<V>,
+    async processAuthenticatedEntryUntilCompletionResult(
+        enqueue: AppInboxEnqueueInput,
         authority: IssuedAuthSession
     ): Promise<Either<AppInboxFailure, TopologyAppInboxResult>> {
         if (!isTopologyConfigInboxType(enqueue.type)) {
@@ -169,7 +172,10 @@ export class TopologyInboxService {
                         type,
                         ...key,
                         senderId: reservation.callerId,
-                        data: await reservation.materialize()
+                        data: encodeAppInboxCommand(
+                            await reservation.materialize(),
+                            'Topology AppInbox command'
+                        )
                     },
                     currentSession
                 )

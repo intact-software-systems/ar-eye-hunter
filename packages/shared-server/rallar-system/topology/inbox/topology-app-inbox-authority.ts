@@ -1,4 +1,5 @@
 import { type AppInboxEnqueueInput } from '../../app-inbox/app-inbox-contracts.ts';
+import { encodeAppInboxCommand } from '../../app-inbox/app-inbox-registration-codecs.ts';
 import type { IssuedAuthSession } from '../../auth/persistence/auth-session-types.ts';
 import type { PersistedAuthSession } from '../../auth/persistence/persisted-auth-session.ts';
 import { authSessionProofSecret } from '../../auth/sessions/auth-session-proof-secret.ts';
@@ -21,8 +22,8 @@ import {
     type TopologyMutationAuthorityProof
 } from './topology-mutation-authority-proof.ts';
 
-export interface CreateAuthenticatedTopologyEnqueueInput<V> {
-    readonly enqueue: AppInboxEnqueueInput<V>;
+export interface CreateAuthenticatedTopologyEnqueueInput {
+    readonly enqueue: AppInboxEnqueueInput;
     readonly claimedAuthority: IssuedAuthSession;
     readonly groupStateService: Pick<GroupStateService, 'readIssuedAuthSession'>;
     readonly nowEpochMs: () => number;
@@ -41,9 +42,9 @@ export interface ValidateCurrentTopologySessionInput {
     readonly nowEpochMs: () => number;
 }
 
-export async function createAuthenticatedTopologyEnqueue<V>(
-    input: CreateAuthenticatedTopologyEnqueueInput<V>
-): Promise<AppInboxEnqueueInput<V>> {
+export async function createAuthenticatedTopologyEnqueue(
+    input: CreateAuthenticatedTopologyEnqueueInput
+): Promise<AppInboxEnqueueInput> {
     const command = await readAuthenticatedTopologyCommand(input.enqueue, input.claimedAuthority);
     const currentSession = await validateCurrentTopologySession({
         principalId: command.actor.principalId,
@@ -57,12 +58,12 @@ export async function createAuthenticatedTopologyEnqueue<V>(
     });
 }
 
-export async function createAuthenticatedTopologyEnqueueFromValidatedSession<V>(
+export async function createAuthenticatedTopologyEnqueueFromValidatedSession(
     input: Readonly<{
-        enqueue: AppInboxEnqueueInput<V>;
+        enqueue: AppInboxEnqueueInput;
         currentSession: PersistedAuthSession;
     }>
-): Promise<AppInboxEnqueueInput<V>> {
+): Promise<AppInboxEnqueueInput> {
     const command = await readTopologyCommandForValidatedSession(input.enqueue, {
         principalId: input.currentSession.clientId,
         sessionId: input.currentSession.sessionId
@@ -74,7 +75,10 @@ export async function createAuthenticatedTopologyEnqueueFromValidatedSession<V>(
     const authority: TopologyAppInboxAuthority = command.operation === 'reconfigureTopology'
         ? { kind: 'topology-reconfigure', proof, command }
         : { kind: 'topology-config', proof, command };
-    return { ...input.enqueue, authority };
+    return {
+        ...input.enqueue,
+        authority: encodeAppInboxCommand(authority, 'Topology AppInbox authority')
+    };
 }
 
 export function decodeTopologyAppInboxAuthority(value: unknown): TopologyAppInboxAuthority {

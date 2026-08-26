@@ -4,6 +4,7 @@ import { toResultsDomain } from '@shared-server/queuebox/postgres/resource-inbox
 import { AppInboxType, type AppInboxEnqueueInput, type AppInboxMessageContext } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import { AppInboxHandlerRegistry } from '@shared-server/rallar-system/app-inbox/app-inbox-handler-registry.ts';
 import { AppInboxQueueClient } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-client.ts';
+import { encodeAppInboxCommand } from '@shared-server/rallar-system/app-inbox/app-inbox-registration-codecs.ts';
 import type { GroupMemberUpsertAppInboxPayload } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-contracts.ts';
 import { ClientStateEventCollisionError } from '@shared-server/rallar-system/state-events/client-state-event-store.ts';
 import { GroupStateEventCollisionError } from '@shared-server/rallar-system/state-events/group-state-event-store.ts';
@@ -273,7 +274,7 @@ describe('AppInboxQueueClient', () => {
         const queue = new TestResourceInbox();
         const reader = new InboxQueueReader(queue);
         const results = new TestResourceInboxResults();
-        const handledPayloads: GroupMemberUpsertAppInboxPayload[] = [];
+        const handledPayloads: JsonWireValue[] = [];
         const service = new TestAppInboxRuntime(
             {
                 inboxQueueReader: reader,
@@ -293,26 +294,29 @@ describe('AppInboxQueueClient', () => {
             }
         );
         service.onStateMessage(AppInboxType.CLIENT_PRINCIPAL_UPSERT, async (data) => {
-            const payload = data as GroupMemberUpsertAppInboxPayload;
-            handledPayloads.push(payload);
-            return { accepted: payload };
+            handledPayloads.push(data);
+            return { accepted: data };
         });
+        const currentCommand = {
+            scope: SCOPE,
+            groupId: 'group-1',
+            principalId: 'alice',
+            request: {
+                status: 'active' as const,
+                actorPrincipalId: 'alice',
+                requestId: 'sparse-member-upsert'
+            }
+        } satisfies GroupMemberUpsertAppInboxPayload;
         const current = {
             type: AppInboxType.CLIENT_PRINCIPAL_UPSERT,
             resourceId: 'sparse-member-upsert',
             contextId: 'ar-eye-hunter:default:group-1',
             senderId: 'alice',
-            data: {
-                scope: SCOPE,
-                groupId: 'group-1',
-                principalId: 'alice',
-                request: {
-                    status: 'active' as const,
-                    actorPrincipalId: 'alice',
-                    requestId: 'sparse-member-upsert'
-                }
-            }
-        } satisfies AppInboxEnqueueInput<GroupMemberUpsertAppInboxPayload>;
+            data: encodeAppInboxCommand(
+                currentCommand,
+                'Group member upsert test command'
+            )
+        } satisfies AppInboxEnqueueInput;
 
         const pending = service.processEntryUntilCompletion(current);
         await reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
@@ -321,71 +325,71 @@ describe('AppInboxQueueClient', () => {
         await expect(
             service.processEntryUntilCompletion({
                 ...current,
-                data: {
-                    principalId: 'alice',
-                    request: {
-                        requestId: 'sparse-member-upsert',
-                        actorPrincipalId: 'alice',
-                        status: 'active'
-                    },
-                    groupId: 'group-1',
-                    scope: { workspaceId: 'default', applicationId: 'ar-eye-hunter' }
-                }
+                data: encodeAppInboxCommand(
+                    {
+                        principalId: 'alice',
+                        request: {
+                            requestId: 'sparse-member-upsert',
+                            actorPrincipalId: 'alice',
+                            status: 'active'
+                        },
+                        groupId: 'group-1',
+                        scope: { workspaceId: 'default', applicationId: 'ar-eye-hunter' }
+                    } satisfies GroupMemberUpsertAppInboxPayload,
+                    'Reordered group member upsert test command'
+                )
             })
         ).resolves.toEqual(first);
         await expect(
             service.processEntryUntilCompletion({
                 ...current,
-                data: {
-                    ...current.data,
-                    request: { ...current.data.request, status: 'left' }
-                }
+                data: encodeAppInboxCommand(
+                    {
+                        ...currentCommand,
+                        request: { ...currentCommand.request, status: 'left' }
+                    },
+                    'Changed group member upsert test command'
+                )
             })
         ).rejects.toMatchObject({ status: 409 });
         let getterCalls = 0;
-        const unsafe = {
-            ...current,
-            resourceId: 'unsafe-member-upsert',
-            data: {
-                ...current.data,
-                request: { ...current.data.request }
-            }
+        const unsafeCommand = {
+            ...currentCommand,
+            request: { ...currentCommand.request }
         };
-        Object.defineProperty(unsafe.data.request, 'role', {
+        Object.defineProperty(unsafeCommand.request, 'role', {
             enumerable: true,
             get: () => {
                 getterCalls += 1;
                 return 'member';
             }
         });
-        await expect(service.processEntryUntilCompletion(unsafe)).rejects.toThrow(
-            /JSON-safe/u
-        );
+        expect(() =>
+            encodeAppInboxCommand(unsafeCommand, 'Unsafe accessor AppInbox command')
+        ).toThrow(/JSON-safe/u);
         expect(getterCalls).toBe(0);
-        await expect(
-            service.processEntryUntilCompletion({
-                ...current,
-                resourceId: 'unsafe-array',
-                data: { ...current.data, unsafe: [undefined] }
-            })
-        ).rejects.toThrow(/JSON-safe/u);
+        expect(() =>
+            encodeAppInboxCommand(
+                { ...currentCommand, unsafe: [undefined] },
+                'Unsafe array AppInbox command'
+            )
+        ).toThrow(/JSON-safe/u);
         const cycle: Record<string, object> = {};
         cycle.self = cycle;
         for (
-            const [resourceId, value] of [
+            const [label, value] of [
                 ['unsafe-function', () => undefined],
                 ['unsafe-bigint', 1n],
                 ['unsafe-cycle', cycle],
                 ['unsafe-nonfinite', Number.POSITIVE_INFINITY]
             ] as const
         ) {
-            await expect(
-                service.processEntryUntilCompletion({
-                    ...current,
-                    resourceId,
-                    data: { ...current.data, unsafe: value }
-                })
-            ).rejects.toThrow(/JSON-safe/u);
+            expect(() =>
+                encodeAppInboxCommand(
+                    { ...currentCommand, unsafe: value },
+                    `Unsafe ${label} AppInbox command`
+                )
+            ).toThrow(/JSON-safe/u);
         }
         expect(handledPayloads).toEqual([current.data]);
     });
@@ -427,7 +431,7 @@ describe('AppInboxQueueClient', () => {
             resourceId: 'proto-command',
             contextId: 'app:workspace:alice',
             senderId: 'alice',
-            data: firstData
+            data: encodeAppInboxCommand(firstData, 'Prototype-key AppInbox command')
         } as const;
 
         const pending = service.processEntryUntilCompletion(input);
@@ -441,7 +445,7 @@ describe('AppInboxQueueClient', () => {
         await expect(
             service.processEntryUntilCompletion({
                 ...input,
-                data: reorderedData
+                data: encodeAppInboxCommand(reorderedData, 'Reordered prototype-key AppInbox command')
             })
         ).resolves.toEqual(first);
         const changedData: ProtoPayload = JSON.parse(
@@ -451,7 +455,7 @@ describe('AppInboxQueueClient', () => {
         await expect(
             service.processEntryUntilCompletion({
                 ...input,
-                data: changedData
+                data: encodeAppInboxCommand(changedData, 'Changed prototype-key AppInbox command')
             })
         ).rejects.toMatchObject({ status: 409 });
 
@@ -512,15 +516,12 @@ describe('AppInboxQueueClient', () => {
         const unsafeValues = [accessor, cycle, 1n, () => undefined, Number.NaN, [undefined]] as const;
 
         for (const [index, unsafe] of unsafeValues.entries()) {
-            await expect(
-                service.processEntryUntilCompletion({
-                    type: AppInboxType.CLIENT_PRINCIPAL_UPSERT,
-                    resourceId: `unsafe-first-${index}`,
-                    contextId: 'app:workspace:alice',
-                    senderId: 'alice',
-                    data: { unsafe }
-                })
-            ).rejects.toThrow(/JSON-safe/u);
+            expect(() =>
+                encodeAppInboxCommand(
+                    { unsafe },
+                    `Unsafe AppInbox command ${index}`
+                )
+            ).toThrow(/JSON-safe/u);
             expect(await readEntries(queue)).toHaveLength(0);
         }
         expect(getterCalls).toBe(0);
@@ -743,8 +744,8 @@ describe('AppInboxQueueClient', () => {
 });
 
 interface BeginMaterializedReservationInput {
-    readonly placeholder: AppInboxEnqueueInput<null>;
-    readonly materialize: () => Promise<AppInboxEnqueueInput<JsonWireValue>>;
+    readonly placeholder: AppInboxEnqueueInput;
+    readonly materialize: () => Promise<AppInboxEnqueueInput>;
 }
 
 interface MaterializedTestReservation {

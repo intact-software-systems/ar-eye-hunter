@@ -12,7 +12,7 @@ import { GroupPresenceSummaryWork } from '@shared-server/rallar-system/group-sta
 
 import { GROUP_PRESENCE_SUMMARY_TOPIC as APP_OUTBOX_GROUP_PRESENCE_SUMMARY_TOPIC } from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
 
-import { toAuthorisedWsClientConnectEnqueue } from '@shared-server/rallar-system/client-state/inbox/authorised-ws-client-app-inbox.ts';
+import { toAuthorisedWsClientConnection } from '@shared-server/rallar-system/client-state/inbox/authorised-ws-client-app-inbox.ts';
 import type { PGliteSql } from '../../src/db/pglite-sql-adapter.ts';
 import { toResilienceDto } from '../api-v1-test-queue-resilience.ts';
 import { waitForPGliteQueueRow } from './pglite-app-inbox-test-runtime.ts';
@@ -42,7 +42,7 @@ Deno.test('PGlite client connect conflicts when close commits after lifecycle re
         await pause.reached;
 
         await harness.client.enqueueAuthorisedWsClientDisconnect({
-            connection: toAuthorisedWsClientConnectEnqueue(connectInput).data,
+            connection: toAuthorisedWsClientConnection(connectInput),
             disconnectedAtEpochMs: connectedAtEpochMs + 1,
             reason: 'socket-closed'
         });
@@ -103,11 +103,11 @@ Deno.test('PGlite group connect conflicts when cleanup commits after lifecycle r
         await pause.reached;
 
         await harness.group.enqueueGroupSessionCleanup({
-            connection: toAuthorisedWsClientConnectEnqueue({
+            connection: toAuthorisedWsClientConnection({
                 authSession: harness.authority,
                 generationId: wsGenerationId,
                 input: { ...SCOPE, connectedAtEpochMs: wsStartedAtEpochMs }
-            }).data,
+            }),
             disconnectedAtEpochMs: wsStartedAtEpochMs + 1,
             reason: 'socket-closed'
         });
@@ -220,7 +220,7 @@ Deno.test('PGlite client close tombstone suppresses a delayed AppInbox connect r
         const connectEntry = await harness.client.enqueueAuthorisedWsClientConnect(connectInput);
         await delay(sql, connectEntry.key);
         await harness.client.enqueueAuthorisedWsClientDisconnect({
-            connection: toAuthorisedWsClientConnectEnqueue(connectInput).data,
+            connection: toAuthorisedWsClientConnection(connectInput),
             disconnectedAtEpochMs: connectedAtEpochMs + 1,
             reason: 'socket-closed'
         });
@@ -275,11 +275,11 @@ Deno.test('PGlite group cleanup tombstone suppresses a delayed presence connect 
         await delay(sql, connectKey);
         assert.equal(
             await harness.group.enqueueGroupSessionCleanup({
-                connection: toAuthorisedWsClientConnectEnqueue({
+                connection: toAuthorisedWsClientConnection({
                     authSession: harness.authority,
                     generationId: wsGenerationId,
                     input: { ...SCOPE, connectedAtEpochMs: wsStartedAtEpochMs }
-                }).data,
+                }),
                 disconnectedAtEpochMs: wsStartedAtEpochMs + 1,
                 reason: 'socket-closed'
             }),
@@ -349,11 +349,11 @@ Deno.test('PGlite lost-close group guard has bounded physical expiry before clea
         assert.ok(expectedExpiry < FUTURE_MS);
 
         await harness.group.enqueueGroupSessionCleanup({
-            connection: toAuthorisedWsClientConnectEnqueue({
+            connection: toAuthorisedWsClientConnection({
                 authSession: harness.authority,
                 generationId: 'different-ws-generation',
                 input: { ...SCOPE, connectedAtEpochMs: wsStartedAtEpochMs }
-            }).data,
+            }),
             disconnectedAtEpochMs: wsStartedAtEpochMs + 100,
             reason: 'socket-closed'
         });

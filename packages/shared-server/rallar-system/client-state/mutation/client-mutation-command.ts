@@ -1,4 +1,7 @@
-import { hashMutationCommand, type JsonWireValue } from '../../protocol/json-wire-identity.ts';
+import {
+    encodeJsonWireValue,
+    hashMutationCommand
+} from '../../protocol/json-wire-identity.ts';
 
 import type {
     ClientMutationAuthority,
@@ -15,14 +18,19 @@ export async function toClientMutationCommand(
     facts: ClientMutationPersistedFacts,
     authority: ClientMutationAuthority
 ): Promise<ClientMutationCommand> {
-    const command = {
+    const command: ClientMutationCommand = {
         ...input,
         authority,
         facts: {
             ...facts,
-            commandHash: await hashMutationCommand({ ...input, authority } as JsonWireValue)
+            commandHash: await hashMutationCommand(
+                encodeJsonWireValue(
+                    { ...input, authority },
+                    'Client mutation command identity'
+                )
+            )
         }
-    } as ClientMutationCommand;
+    };
     validateClientMutationCommand(command);
     return command;
 }

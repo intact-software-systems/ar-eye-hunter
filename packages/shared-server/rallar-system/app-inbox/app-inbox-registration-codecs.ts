@@ -1,4 +1,8 @@
-import { decodeJsonWireValue, type JsonWireValue } from '../protocol/json-wire-identity.ts';
+import {
+    decodeJsonWireValue,
+    encodeJsonWireValue,
+    type JsonWireValue
+} from '../protocol/json-wire-identity.ts';
 
 export function decodeNullAppInboxCommand(value: JsonWireValue): null {
     if (value !== null) {
@@ -7,9 +11,16 @@ export function decodeNullAppInboxCommand(value: JsonWireValue): null {
     return null;
 }
 
+export function encodeAppInboxCommand<Command>(
+    command: Command,
+    label: string
+): JsonWireValue {
+    return encodeJsonWireValue(command, label);
+}
+
 export function encodeAppInboxResult<Result>(
     result: Result,
     label: string
 ): JsonWireValue {
-    return decodeJsonWireValue(result, label);
+    return encodeJsonWireValue(result, label);
 }

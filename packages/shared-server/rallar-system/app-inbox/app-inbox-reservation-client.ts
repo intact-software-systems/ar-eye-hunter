@@ -2,7 +2,6 @@ import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import type { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 import type { JsonWireValue } from '../protocol/json-wire-identity.ts';
-import { decodeAppInboxEnqueue } from './app-inbox-command-decoding.ts';
 import { validateAppInboxCommandIdentity } from './app-inbox-command-identity.ts';
 import {
     AppInboxIdempotencyConflictError,
@@ -13,7 +12,7 @@ import {
 import { toAppInboxResourceEntry } from './app-inbox-queue-entry.ts';
 
 export interface MaterializedAppInboxReservation {
-    readonly enqueue: AppInboxEnqueueInput<JsonWireValue>;
+    readonly enqueue: AppInboxEnqueueInput;
     readonly winner: boolean;
 }
 
@@ -49,11 +48,11 @@ export class AppInboxReservationClient {
         this.serviceId = config.serviceId;
     }
 
-    async persistAuthority<Authority, Result>(
+    async persistAuthority<Result>(
         context: AppInboxMessageContext<Result>,
-        authority: Authority
+        authority: JsonWireValue
     ): Promise<void> {
-        const enqueue = decodeAppInboxEnqueue({ ...context.enqueue, authority });
+        const enqueue = { ...context.enqueue, authority };
         const message: ALMessage = {
             ...context.message,
             payload: {
@@ -79,9 +78,9 @@ export class AppInboxReservationClient {
         }
     }
 
-    async reserveMaterializedEntry<Command>(
-        placeholder: AppInboxEnqueueInput<null>,
-        materialize: () => Promise<AppInboxEnqueueInput<Command>>
+    async reserveMaterializedEntry(
+        placeholder: AppInboxEnqueueInput,
+        materialize: () => Promise<AppInboxEnqueueInput>
     ): Promise<MaterializedAppInboxReservation> {
         let winner = false;
         const entry = await this.repository.writeMaterializedIfAbsentOrReplaceExpired(

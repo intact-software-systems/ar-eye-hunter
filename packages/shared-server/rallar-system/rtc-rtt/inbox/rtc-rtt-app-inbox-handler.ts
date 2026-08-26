@@ -37,7 +37,7 @@ export class RtcRttAppInboxHandler {
 
     async createEnqueue(
         input: CreateRtcRttAppInboxEnqueueInput
-    ): Promise<AppInboxEnqueueInput<RtcRttAppInboxCommand>> {
+    ): Promise<AppInboxEnqueueInput> {
         return await createRtcRttDurableEnqueue({
             request: input,
             groupStateService: this.dependencies.groupStateService,

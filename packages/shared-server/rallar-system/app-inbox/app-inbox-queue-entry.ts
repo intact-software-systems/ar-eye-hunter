@@ -2,20 +2,18 @@ import { newALRoute, newALUntargetedMessage } from '@shared/al-contracts/al-cont
 import { toAppQueueCreatedBy, toAppQueueKey, toStrictAppInboxQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 import type { Key, ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { QueueBoxUtilities } from '@shared/services/QueueBoxUtilities.ts';
-import { decodeAppInboxEnqueue } from './app-inbox-command-decoding.ts';
 import type { AppInboxEnqueueInput } from './app-inbox-contracts.ts';
 
-export function toAppInboxResourceEntry<Command>(
-    enqueue: AppInboxEnqueueInput<Command>,
+export function toAppInboxResourceEntry(
+    enqueue: AppInboxEnqueueInput,
     serviceId: string
 ): ResourceEntry {
-    const wire = decodeAppInboxEnqueue(enqueue);
     const key = toPhysicalAppInboxQueueKey(
         {
-            ...wire,
-            topicId: wire.topicId ?? '',
-            resourceId: wire.resourceId ?? '',
-            contextId: wire.contextId ?? ''
+            ...enqueue,
+            topicId: enqueue.topicId ?? '',
+            resourceId: enqueue.resourceId ?? '',
+            contextId: enqueue.contextId ?? ''
         },
         '',
         true
@@ -24,15 +22,15 @@ export function toAppInboxResourceEntry<Command>(
         newALUntargetedMessage(
             toAppQueueCreatedBy(serviceId),
             newALRoute(key.topicId, key.contextId, key.resourceId),
-            wire.type,
-            wire
+            enqueue.type,
+            enqueue
         ),
         'APP_INBOX'
     );
 }
 
-export function toPhysicalAppInboxQueueKey<Command>(
-    enqueue: AppInboxEnqueueInput<Command>,
+export function toPhysicalAppInboxQueueKey(
+    enqueue: AppInboxEnqueueInput,
     defaultTopicId = '',
     strictQueueIdentity = false
 ): Key {

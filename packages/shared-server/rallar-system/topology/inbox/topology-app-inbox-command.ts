@@ -116,8 +116,8 @@ async function hashTopologyHttpMutationSemantic(
     });
 }
 
-export async function readAuthenticatedTopologyCommand<V>(
-    enqueue: AppInboxEnqueueInput<V>,
+export async function readAuthenticatedTopologyCommand(
+    enqueue: AppInboxEnqueueInput,
     authority: IssuedAuthSession
 ): Promise<TopologyAppInboxCommand> {
     return await readTopologyCommandForValidatedSession(enqueue, {
@@ -126,8 +126,8 @@ export async function readAuthenticatedTopologyCommand<V>(
     });
 }
 
-export async function readTopologyCommandForValidatedSession<V>(
-    enqueue: AppInboxEnqueueInput<V>,
+export async function readTopologyCommandForValidatedSession(
+    enqueue: AppInboxEnqueueInput,
     expectedActor: Readonly<{ principalId: string; sessionId: string; }>
 ): Promise<TopologyAppInboxCommand> {
     const command = readDurableTopologyAppInboxCommand(enqueue.data);

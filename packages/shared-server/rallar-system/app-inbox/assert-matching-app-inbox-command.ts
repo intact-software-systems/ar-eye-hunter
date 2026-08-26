@@ -10,10 +10,10 @@ import { toLogicalAppInboxCommand } from './logical-app-inbox-command.ts';
 
 export async function assertMatchingAppInboxCommand(
     entry: ResourceEntry,
-    incoming: AppInboxEnqueueInput<JsonWireValue>,
+    incoming: AppInboxEnqueueInput,
     receivedCommandIdentity: string
 ): Promise<void> {
-    let existing: AppInboxEnqueueInput<JsonWireValue>;
+    let existing: AppInboxEnqueueInput;
     try {
         existing = decodePersistedAppInboxEnqueue(entry);
     }
