@@ -101,6 +101,7 @@ runtime
     -> AppInboxQueueClient reserve/enqueue/wait
     -> QueueBox application-inbox task
     -> InboxQueueReader invokes the registered callback once per reserved attempt
+    -> AppInboxHandlerRegistry.handleRegisteredMessage
     -> validateAppInboxCommandIdentity
     -> registration.decodeCommand(JsonWireValue)
     -> domain handler read/compute/validate
@@ -119,7 +120,8 @@ The QueueBox retry controller may reserve the entry again under the current
 attempt policy. Each attempt re-enters the registered handler and therefore
 re-reads current authority. Terminal classification persists one typed
 `AppInboxFailure`; retryable failures return to QueueBox without manufacturing a
-terminal result.
+terminal result. Initial retry exhaustion and finalization recovery both invoke
+the single `createAppInboxRetryFinalizer` transaction owner.
 
 Domain entry owners are located here:
 
