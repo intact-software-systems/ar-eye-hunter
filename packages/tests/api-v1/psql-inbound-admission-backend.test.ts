@@ -60,7 +60,7 @@ describe('PSqlInboundAdmissionBackend', () => {
         ]);
     });
 
-    it('conditionally advances the sender version without a domain lock', async () => {
+    it('conditionally advances the sender version with durable inbox effects', async () => {
         const repository = new FakeRuntimeStateRepository();
         const namespace = 'psql-test:inbound:admission';
         const store = createALInboundAdmissionStore({
@@ -84,7 +84,6 @@ describe('PSqlInboundAdmissionBackend', () => {
         });
 
         expect(status).toBe('committed');
-        expect(repository.lockedKeys).toEqual([]);
         expect(repository.conditionalWrites.length).toBeGreaterThan(0);
 
         const versionEntry = await repository.findEntry(namespace, `${namespace}:version:peer-1`);
@@ -117,15 +116,11 @@ describe('PSqlInboundAdmissionBackend', () => {
                 }
             ]
         });
-        repository.lockedKeys.length = 0;
-
         const acceptance = await store.acceptControlMessage(
             newALAckControlMessage('peer-2', 'self', 'msg-1', 'delivered')
         );
 
         expect(acceptance.handled).toBe(true);
-        expect(repository.lockedKeys).toEqual([]);
-
         const versionEntry = await repository.findEntry(namespace, `${namespace}:version:peer-1`);
         expect(JSON.parse(versionEntry!.value)).toEqual({
             senderId: 'peer-1',
@@ -218,8 +213,6 @@ describe('PSqlOutboundAdmissionBackend', () => {
         });
 
         expect(status).toBe('committed');
-        expect(repository.lockedKeys).toEqual([]);
-
         const versionEntry = await repository.findEntry(namespace, `${namespace}:version:self`);
         expect(JSON.parse(versionEntry!.value)).toEqual({
             senderId: 'self',
@@ -240,7 +233,6 @@ describe('PSqlOutboundAdmissionBackend', () => {
             }
         });
 
-        repository.lockedKeys.length = 0;
         const claimed = await store.claimReadyEffects<TestPreparedOutboundSend>(
             'worker-1',
             1,
@@ -250,8 +242,6 @@ describe('PSqlOutboundAdmissionBackend', () => {
 
         expect(claimed).toHaveLength(1);
         expect(claimed[0].effectId).toBe(effectId);
-        expect(repository.lockedKeys).toEqual([]);
-
         await store.completeEffect(effectId, 'worker-1');
         expect(
             await repository.findEntry(namespace, `${namespace}:effect:${effectId}`)
@@ -281,15 +271,11 @@ describe('PSqlOutboundAdmissionBackend', () => {
             ],
             durableEffects: []
         });
-        repository.lockedKeys.length = 0;
-
         const acceptance = await store.acceptControlMessage(
             newALAckControlMessage('peer-1', 'self', msg.id.msgId)
         );
 
         expect(acceptance.handled).toBe(true);
-        expect(repository.lockedKeys).toEqual([]);
-
         const versionEntry = await repository.findEntry(namespace, `${namespace}:version:self`);
         expect(JSON.parse(versionEntry!.value)).toEqual({
             senderId: 'self',

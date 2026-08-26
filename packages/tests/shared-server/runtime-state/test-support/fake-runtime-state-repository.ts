@@ -26,7 +26,6 @@ import { TestGroupStateEventStore } from '@shared-test/shared-server/test-group-
 export class FakeRuntimeStateRepository
     implements RuntimeStateGuardedBatchTransactionalRepositoryLike, TestClientStateEventStoreOwner, TestGroupStateEventStoreOwner {
     readonly data = new Map<string, RuntimeStateEntry>();
-    readonly locks: Array<Readonly<{ namespace: string; key: string; }>> = [];
     readonly clientStateEventStore = new TestClientStateEventStore();
     readonly groupStateEventStore = new TestGroupStateEventStore();
     beforeUpsert?: (namespace: string, key: string) => void | Promise<void>;
@@ -297,11 +296,6 @@ export class FakeRuntimeStateRepository
         }
 
         return Promise.resolve(deleted);
-    }
-
-    lockKey(namespace: string, key: string): Promise<void> {
-        this.locks.push({ namespace, key });
-        return Promise.resolve();
     }
 
     private toKey(namespace: string, key: string): string {

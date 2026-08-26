@@ -26,7 +26,6 @@ import {
 describe('RTC RTT repository convergence', () => {
     it('optimistically admits only one of two endpoint-cap races', async () => {
         const runtimeRepository = new FakeRuntimeStateRepository();
-        vi.spyOn(runtimeRepository, 'lockKey').mockResolvedValue();
         const repository = new RtcRttRepository(runtimeRepository, {
             now: () => 1
         });
@@ -97,7 +96,6 @@ describe('RTC RTT repository convergence', () => {
 
         expect(results.filter((result) => result.updated)).toHaveLength(1);
         expect(await repository.listMeasurements()).toHaveLength(1);
-        expect(runtimeRepository.locks).toEqual([]);
     });
 
     it.each(rttWriteCandidateCorruptions)(

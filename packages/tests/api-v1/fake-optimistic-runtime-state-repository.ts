@@ -9,7 +9,6 @@ import type {
 import * as RuntimeStateTestSupport from '../shared-server/runtime-state/test-support/fake-runtime-state-repository.ts';
 
 export class FakeRuntimeStateRepository extends RuntimeStateTestSupport.FakeRuntimeStateRepository {
-    readonly lockedKeys: Array<Readonly<{ namespace: string; key: string; }>> = [];
     readonly conditionalWrites: Array<
         Readonly<{
             operation: 'insert' | 'replace' | 'delete';
@@ -118,9 +117,5 @@ export class FakeRuntimeStateRepository extends RuntimeStateTestSupport.FakeRunt
             expectedRevision
         });
         return await super.deleteIfRevision(namespace, key, expectedRevision);
-    }
-
-    override async lockKey(namespace: string, key: string): Promise<void> {
-        this.lockedKeys.push({ namespace, key });
     }
 }

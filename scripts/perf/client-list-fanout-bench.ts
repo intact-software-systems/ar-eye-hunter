@@ -10,6 +10,7 @@ import type {
     RuntimeStateConditionalDeleteResult,
     RuntimeStateConditionalWriteResult,
     RuntimeStateEntry,
+    RuntimeStateEntryPageOptions,
     RuntimeStateOptimisticTransactionalRepositoryLike
 } from '@shared-server/runtime-state/runtime-state-repository.ts';
 import type { AuditStamp, ClientInstance, ClientPrincipal, ClientSession } from '@shared/api/client-types.ts';
@@ -183,6 +184,25 @@ class CountingRuntimeStateRepository implements RuntimeStateOptimisticTransactio
         return Promise.resolve(rows);
     }
 
+    findEntriesByPrefixPage(
+        namespace: string,
+        keyPrefix: string,
+        options: RuntimeStateEntryPageOptions
+    ): Promise<readonly RuntimeStateEntry[]> {
+        const rows = [...this.data.entries()]
+            .filter(
+                ([compositeKey]) =>
+                    this.toNamespace(compositeKey) === namespace &&
+                    this.toStoreKey(compositeKey).startsWith(keyPrefix) &&
+                    (options.afterKey === undefined ||
+                        this.toStoreKey(compositeKey) > options.afterKey)
+            )
+            .map(([, entry]) => ({ ...entry }))
+            .sort((left, right) => left.key.localeCompare(right.key))
+            .slice(0, options.limit);
+        return Promise.resolve(rows);
+    }
+
     findEntriesByKeys(
         namespace: string,
         keys: readonly string[]
@@ -290,10 +310,6 @@ class CountingRuntimeStateRepository implements RuntimeStateOptimisticTransactio
             }
         }
         return Promise.resolve(deleted);
-    }
-
-    lockKey(_namespace: string, _key: string): Promise<void> {
-        return Promise.resolve();
     }
 
     resetCounters(): void {

@@ -5,6 +5,7 @@ import type {
     RuntimeStateConditionalDeleteResult,
     RuntimeStateConditionalWriteResult,
     RuntimeStateEntry,
+    RuntimeStateEntryPageOptions,
     RuntimeStateOptimisticTransactionalRepositoryLike
 } from '@shared-server/runtime-state/runtime-state-repository.ts';
 import { TestClientStateEventStore } from '@shared-test/shared-server/test-client-state-event-store.ts';
@@ -427,6 +428,16 @@ class FakeRuntimeStateRepository implements RuntimeStateOptimisticTransactionalR
         );
     }
 
+    async findEntriesByPrefixPage(
+        namespace: string,
+        keyPrefix: string,
+        options: RuntimeStateEntryPageOptions
+    ): Promise<readonly RuntimeStateEntry[]> {
+        return (await this.findEntriesByPrefix(namespace, keyPrefix))
+            .filter((entry) => options.afterKey === undefined || entry.key > options.afterKey)
+            .slice(0, options.limit);
+    }
+
     findEntriesByKeys(
         namespace: string,
         keys: readonly string[]
@@ -539,9 +550,6 @@ class FakeRuntimeStateRepository implements RuntimeStateOptimisticTransactionalR
         }
 
         return Promise.resolve(deleted);
-    }
-
-    async lockKey(_namespace: string, _key: string): Promise<void> {
     }
 
     private toKey(namespace: string, key: string): string {

@@ -5,6 +5,7 @@ import type {
 import { selectRuntimeStateReadBatch } from '@shared-server/runtime-state/read-batch/select-runtime-state-read-batch.ts';
 import type {
     RuntimeStateEntry,
+    RuntimeStateEntryPageOptions,
     RuntimeStateRepositoryLike
 } from '@shared-server/runtime-state/runtime-state-repository.ts';
 
@@ -23,6 +24,19 @@ export class SyntheticRtcRttRuntimeStateRepository implements RuntimeStateReposi
                 .map(([, entry]) => ({ ...entry }))
                 .sort((left, right) => left.key.localeCompare(right.key))
         );
+    }
+
+    async findEntriesByPrefixPage(
+        namespace: string,
+        keyPrefix: string,
+        options: RuntimeStateEntryPageOptions
+    ): Promise<readonly RuntimeStateEntry[]> {
+        return (await this.findAllEntries(namespace))
+            .filter((entry) =>
+                entry.key.startsWith(keyPrefix) &&
+                (options.afterKey === undefined || entry.key > options.afterKey)
+            )
+            .slice(0, options.limit);
     }
 
     readRuntimeStateBatch(

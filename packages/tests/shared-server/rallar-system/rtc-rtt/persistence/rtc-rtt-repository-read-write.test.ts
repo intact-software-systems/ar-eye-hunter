@@ -46,8 +46,6 @@ describe('RTC RTT repository reads and writes', () => {
             expect(await repository.listMeasurementsForSessionIds(['session-a', 'session-c'])).toEqual(
                 []
             );
-            expect(runtimeRepository.locks).toEqual([]);
-
             now = 1_051;
             vi.setSystemTime(now);
             expect(await repository.findMeasurement('session-a', 'session-b')).toBeUndefined();
@@ -57,7 +55,7 @@ describe('RTC RTT repository reads and writes', () => {
         }
     });
 
-    it('accepts a newer RTT without invoking an application lock', async () => {
+    it('accepts a newer RTT with its revision guard', async () => {
         const runtimeRepository = new FakeRuntimeStateRepository();
         const repository = new RtcRttRepository(runtimeRepository, {
             now: () => 1
@@ -72,7 +70,6 @@ describe('RTC RTT repository reads and writes', () => {
                 version: 1
             })
         ).resolves.toBe(true);
-        expect(runtimeRepository.locks).toEqual([]);
     });
 
     it('fails closed when the single-attempt RTT write sees equal-version divergence', async () => {

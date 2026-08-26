@@ -1705,8 +1705,6 @@ class FakeRuntimeStateRepository implements RuntimeStateTransactionalRepositoryL
         return deleted;
     }
 
-    async lockKey(_namespace: string, _key: string): Promise<void> {}
-
     findStoredEntry(namespace: string): RuntimeStateEntry | undefined {
         return [...this.data.entries()].find(
             ([compositeKey]) => this.toNamespace(compositeKey) === namespace

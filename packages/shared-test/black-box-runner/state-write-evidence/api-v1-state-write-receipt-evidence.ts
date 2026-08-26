@@ -110,6 +110,9 @@ function createStateWriteEvidenceRuntimeStateRepository(
         findAllEntries: async () => {
             throw unsupportedRuntimeStateEvidenceOperation('findAllEntries');
         },
+        findEntriesByPrefixPage: async () => {
+            throw unsupportedRuntimeStateEvidenceOperation('findEntriesByPrefixPage');
+        },
         readRuntimeStateBatch: async (
             selectors: readonly RuntimeStateReadBatchSelector[]
         ): Promise<readonly RuntimeStateReadBatchSelection[]> => await readRuntimeStateBatch(sql, selectors),

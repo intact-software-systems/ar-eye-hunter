@@ -378,5 +378,4 @@ async function expectTerminalDisconnect(runtime: AggregateBarrierRepository): Pr
             (event) => event.requestId === 'disconnect-terminal'
         )
     ).toHaveLength(1);
-    expect(runtime.locks).toEqual([]);
 }

@@ -10,7 +10,7 @@ import { GroupTopologyPlanningService } from '@shared-server/rallar-system/topol
 import { RallarRtcTopologyService } from '@shared-server/rallar-system/topology/runtime/rallar-rtc-topology-service.ts';
 import type { RuntimeStateReadBatchSelection, RuntimeStateReadBatchSelector } from '@shared-server/runtime-state/read-batch/runtime-state-read-batch.ts';
 import { selectRuntimeStateReadBatch } from '@shared-server/runtime-state/read-batch/select-runtime-state-read-batch.ts';
-import type { RuntimeStateEntry, RuntimeStateRepositoryLike } from '@shared-server/runtime-state/runtime-state-repository.ts';
+import type { RuntimeStateEntry, RuntimeStateEntryPageOptions, RuntimeStateRepositoryLike } from '@shared-server/runtime-state/runtime-state-repository.ts';
 import type { GroupPresenceSession, GroupSnapshot } from '@shared/api/group-types.ts';
 
 import { createTestGroup } from '../../../../packages/tests/create-test-group.ts';
@@ -183,6 +183,19 @@ class MemoryRuntimeStateRepository implements RuntimeStateRepositoryLike {
                 .filter(([key]) => key.startsWith(`${namespace}:`))
                 .map(([, entry]) => entry)
         );
+    }
+
+    async findEntriesByPrefixPage(
+        namespace: string,
+        keyPrefix: string,
+        options: RuntimeStateEntryPageOptions
+    ): Promise<readonly RuntimeStateEntry[]> {
+        return (await this.findAllEntries(namespace))
+            .filter((entry) =>
+                entry.key.startsWith(keyPrefix) &&
+                (options.afterKey === undefined || entry.key > options.afterKey)
+            )
+            .slice(0, options.limit);
     }
 
     readRuntimeStateBatch(
