@@ -3,7 +3,11 @@ import {
     RUNTIME_STATE_PREFIX_READ_PAGE_SIZE
 } from '@shared-server/al-runtime/postgres/read-runtime-state-entries-by-prefix.ts';
 import { readRateLimiter } from '@shared-server/http/rate-limit-service.ts';
-import { listRecentStateEvents } from '@shared-server/rallar-system/state-events/state-event-listing.ts';
+import type { JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
+import {
+    listRecentStateEvents,
+    type StateEventListable
+} from '@shared-server/rallar-system/state-events/state-event-listing.ts';
 import { resolveStateSyncRecipients } from '@shared-server/rallar-system/state-sync/state-sync-routing.ts';
 import type {
     RuntimeStateReadBatchSelection,
@@ -15,24 +19,28 @@ import type {
     RuntimeStateEntryPageOptions,
     RuntimeStateTransactionalRepositoryLike
 } from '@shared-server/runtime-state/runtime-state-repository.ts';
+import { newALBroadcastMessage, newALEventRoute } from '@shared/al-contracts/al-contract.ts';
 import { AppTopics } from '@shared/api/api-config.ts';
-import type { ClientSnapshot } from '@shared/api/client-types.ts';
+import type { AuditStamp as ClientAuditStamp, ClientSnapshot } from '@shared/api/client-types.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { LatestRepository } from '@shared/cache/LatestRepository.ts';
 import { ObservableLatestRepository } from '@shared/cache/ObservableLatestRepository.ts';
 import { RateLimiterPolicy } from '@shared/resilience/Resilience.ts';
+import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.ts';
 
-type JsonRecord = Record<string, unknown>;
+interface BenchDetails {
+    [key: string]: JsonWireValue | undefined;
+}
 
-type BenchResult = {
+interface BenchResult {
     name: string;
     sizeLabel: string;
     run: number;
     durationMs: number;
     memoryBefore: Deno.MemoryUsage;
     memoryAfter: Deno.MemoryUsage;
-    details: JsonRecord;
-};
+    details: BenchDetails;
+}
 
 const OUT = Deno.args.find((arg) => arg.startsWith('--out='))?.slice('--out='.length) ??
     'tmp/perf/results/runtime-validation-bench.json';
@@ -41,9 +49,19 @@ const MODE = Deno.args.find((arg) => arg.startsWith('--mode='))?.slice('--mode='
 const RUNS = Number(Deno.args.find((arg) => arg.startsWith('--runs='))?.slice('--runs='.length) ?? '3');
 
 const gc = () => {
-    const maybeGc = (globalThis as unknown as { gc?: () => void; }).gc;
-    maybeGc?.();
+    readOptionalGarbageCollector(globalThis)?.();
 };
+
+function readOptionalGarbageCollector(runtime: typeof globalThis): (() => void) | undefined {
+    if (!('gc' in runtime)) {
+        return undefined;
+    }
+    const garbageCollector = runtime.gc;
+    if (typeof garbageCollector !== 'function') {
+        return undefined;
+    }
+    return () => garbageCollector();
+}
 
 function now(): number {
     return performance.now();
@@ -54,12 +72,12 @@ function memory(): Deno.MemoryUsage {
     return Deno.memoryUsage();
 }
 
-async function measure(
+async function measure<TResult>(
     name: string,
     sizeLabel: string,
     run: number,
-    details: JsonRecord,
-    action: () => unknown | Promise<unknown>
+    details: BenchDetails,
+    action: () => TResult | Promise<TResult>
 ): Promise<BenchResult> {
     const memoryBefore = memory();
     const start = now();
@@ -93,7 +111,7 @@ async function waitUntil(
     }
 }
 
-function makeEvent(index: number): JsonRecord {
+function makeEvent(index: number): JsonWireValue {
     return {
         eventId: `event-${String(index).padStart(8, '0')}`,
         eventType: index % 5 === 0 ? 'presence' : 'snapshot',
@@ -110,8 +128,8 @@ function makeEvent(index: number): JsonRecord {
 }
 
 function runEagerEventPipeline(rowJson: readonly string[], limit: number): number {
-    const parsed = rowJson.map((value) => JSON.parse(value));
-    return listRecentStateEvents(parsed as never[], { limit }).length;
+    const parsed = rowJson.map(decodeBenchmarkStateEvent);
+    return listRecentStateEvents(parsed, { limit }).length;
 }
 
 function runPagedEventPipeline(rowJson: readonly string[], limit: number): number {
@@ -122,8 +140,32 @@ function runPagedEventPipeline(rowJson: readonly string[], limit: number): numbe
 
 function runRecentEventPipeline(rowJson: readonly string[], limit: number): number {
     const recentRows = rowJson.slice(-limit);
-    const parsed = recentRows.map((value) => JSON.parse(value));
-    return listRecentStateEvents(parsed as never[], { limit }).length;
+    const parsed = recentRows.map(decodeBenchmarkStateEvent);
+    return listRecentStateEvents(parsed, { limit }).length;
+}
+
+function decodeBenchmarkStateEvent(rowJson: string): StateEventListable {
+    return decodeBenchmarkStateEventValue(JSON.parse(rowJson));
+}
+
+function decodeBenchmarkStateEventValue(value: unknown): StateEventListable {
+    if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+        throw new TypeError('Benchmark state event must be an object');
+    }
+    if (
+        !('eventId' in value) || typeof value.eventId !== 'string' ||
+        !('eventType' in value) || typeof value.eventType !== 'string' ||
+        !('snapshotVersion' in value) || typeof value.snapshotVersion !== 'number' ||
+        !('occurredAtEpochMs' in value) || typeof value.occurredAtEpochMs !== 'number'
+    ) {
+        throw new TypeError('Benchmark state event is missing its ordering fields');
+    }
+    return {
+        eventId: value.eventId,
+        eventType: value.eventType,
+        snapshotVersion: value.snapshotVersion,
+        occurredAtEpochMs: value.occurredAtEpochMs
+    };
 }
 
 function makeRuntimeStateEntries(size: number): readonly RuntimeStateEntry[] {
@@ -266,7 +308,7 @@ async function benchRuntimePrefix(results: BenchResult[]): Promise<void> {
         const entries = makeRuntimeStateEntries(size);
         for (let run = 1; run <= RUNS; run++) {
             const fullRepo = new RuntimeStatePrefixBenchRepository(entries, namespace);
-            const fullDetails: JsonRecord = {
+            const fullDetails: BenchDetails = {
                 rows: size,
                 pageSize: undefined
             };
@@ -293,7 +335,7 @@ async function benchRuntimePrefix(results: BenchResult[]): Promise<void> {
             );
 
             const pagedRepo = new RuntimeStatePrefixBenchRepository(entries, namespace);
-            const pagedDetails: JsonRecord = {
+            const pagedDetails: BenchDetails = {
                 rows: size,
                 pageSize: RUNTIME_STATE_PREFIX_READ_PAGE_SIZE
             };
@@ -370,7 +412,7 @@ async function benchCacheRetention(results: BenchResult[]): Promise<void> {
     const sizes = [1_000, 10_000, 100_000];
     for (const size of sizes) {
         for (let run = 1; run <= RUNS; run++) {
-            const repo = new ObservableLatestRepository<string, JsonRecord>({ ttlMs: 0 });
+            const repo = new ObservableLatestRepository<string, JsonWireValue>({ ttlMs: 0 });
             results.push(
                 await measure(
                     'cache.observable-expired-retained-before-delete',
@@ -425,7 +467,7 @@ async function benchCacheRetention(results: BenchResult[]): Promise<void> {
                 }
             });
 
-            const autoRepo = new ObservableLatestRepository<string, JsonRecord>({
+            const autoRepo = new ObservableLatestRepository<string, JsonWireValue>({
                 ttlMs: 0,
                 deleteExpiredIntervalMs: 1
             });
@@ -495,58 +537,86 @@ async function benchRateLimiter(results: BenchResult[]): Promise<void> {
     }
 }
 
-class FakeSocket {
-    readyState: number = WebSocket.OPEN;
+class BenchmarkSocket extends EventTarget implements WebSocket {
+    readonly CONNECTING = WebSocket.CONNECTING;
+    readonly OPEN = WebSocket.OPEN;
+    readonly CLOSING = WebSocket.CLOSING;
+    readonly CLOSED = WebSocket.CLOSED;
+    readonly binaryType: BinaryType = 'blob';
+    readonly bufferedAmount = 0;
+    readonly extensions = '';
+    readonly protocol = '';
+    readonly readyState = WebSocket.OPEN;
+    readonly url = 'ws://runtime-validation-benchmark';
+    onclose = null;
+    onerror = null;
+    onmessage = null;
+    onopen = null;
     sentBytes = 0;
     sentCount = 0;
-    addEventListener(_type: string, _listener: unknown): void {}
-    close(): void {
-        this.readyState = WebSocket.CLOSED;
-    }
-    send(data: string): void {
-        this.sentBytes += data.length;
+
+    close(): void {}
+
+    send(data: string | ArrayBufferLike | Blob | ArrayBufferView): void {
+        this.sentBytes += typeof data === 'string'
+            ? data.length
+            : data instanceof Blob
+            ? data.size
+            : data.byteLength;
         this.sentCount += 1;
     }
 }
 
-type EncodedFakeSocketMessage = Readonly<{
-    text: string;
-}>;
-
 function makeClientSnapshot(index: number, sessionsPerClient: number, liveUntil: number): ClientSnapshot {
+    const principalId = `principal-${index}`;
+    const audit = makeAuditStamp();
     return {
+        stateRevision: index + 1,
         principal: {
             applicationId: 'app',
             workspaceId: 'workspace',
-            principalId: `principal-${index}`,
-            username: `principal-${index}`,
+            principalId,
+            username: principalId,
+            displayName: principalId,
+            avatarUrl: null,
+            authProvider: null,
+            externalSubjectId: null,
             status: 'active',
+            disabled: null,
+            deleted: null,
             roles: [],
             metadata: {},
             snapshotVersion: index + 1,
             profileVersion: index + 1,
             presenceVersion: index + 1,
-            created: { atEpochMs: 1, byServiceId: 'perf' },
-            updated: { atEpochMs: 1, byServiceId: 'perf' }
+            created: audit,
+            updated: audit,
+            lastSeenAtEpochMs: liveUntil - 1_000
         },
         instances: [],
         activeSessions: Array.from({ length: sessionsPerClient }, (_, sessionIndex) => ({
             applicationId: 'app',
             workspaceId: 'workspace',
-            principalId: `principal-${index}`,
+            principalId,
             clientInstanceId: `instance-${index}`,
             sessionId: `session-${index}-${sessionIndex}`,
+            generationId: `generation-${index}-${sessionIndex}`,
+            generationVersion: 1,
             status: 'active',
+            disconnectedAtEpochMs: null,
+            disconnectReason: null,
             presenceState: 'online',
             transport: 'ws',
+            connectionId: `session-${index}-${sessionIndex}`,
             connectedAtEpochMs: 1_700_000_000_000,
             authenticatedAtEpochMs: 1_700_000_000_000,
             lastHeartbeatAtEpochMs: liveUntil - 1_000,
             expiresAtEpochMs: liveUntil
         })),
         isOnline: true,
-        activeSessionCount: sessionsPerClient
-    } as unknown as ClientSnapshot;
+        activeSessionCount: sessionsPerClient,
+        lastSeenAtEpochMs: liveUntil - 1_000
+    };
 }
 
 function makeGroupSnapshot(
@@ -555,88 +625,103 @@ function makeGroupSnapshot(
     sessionsPerClient: number,
     liveUntil: number
 ): GroupSnapshot {
+    const ref = {
+        applicationId: 'app',
+        workspaceId: 'workspace',
+        groupId: `group-${groupIndex}`
+    };
+    const audit = makeAuditStamp();
     return {
+        causalRevision: {
+            groupRevision: groupIndex + 1,
+            presenceRevision: groupIndex + 1
+        },
         group: {
-            applicationId: 'app',
-            workspaceId: 'workspace',
-            groupId: `group-${groupIndex}`,
+            ...ref,
+            slug: null,
             displayName: `Group ${groupIndex}`,
+            description: null,
             kind: 'room',
             status: 'active',
+            archived: null,
+            deleted: null,
             joinMode: 'open',
+            maxMembers: null,
+            maxSessionsPerMember: null,
             metadata: {},
+            activeMemberCount: memberCount,
+            ownerPrincipalId: 'principal-0',
             snapshotVersion: groupIndex + 1,
             metadataVersion: groupIndex + 1,
             rosterVersion: groupIndex + 1,
             presenceVersion: groupIndex + 1,
-            created: { atEpochMs: 1, byServiceId: 'perf' },
-            updated: { atEpochMs: 1, byServiceId: 'perf' }
+            created: audit,
+            updated: audit,
+            expiresAtEpochMs: null,
+            emptySinceEpochMs: null,
+            purgeAfterEpochMs: null,
+            lifecycleState: 'active',
+            formationEpoch: 1,
+            formationAttemptCount: 1,
+            lastFormationOutcome: {
+                outcome: 'activated',
+                observedRate: 1,
+                atEpochMs: audit.atEpochMs,
+                formationEpoch: 1
+            },
+            establishmentStartedAtEpochMs: audit.atEpochMs,
+            formationElectorate: Array.from(
+                { length: memberCount },
+                (_, index) => `principal-${index}`
+            )
         },
         members: Array.from({ length: memberCount }, (_, index) => ({
-            applicationId: 'app',
-            workspaceId: 'workspace',
-            groupId: `group-${groupIndex}`,
+            ...ref,
             principalId: `principal-${index}`,
-            role: 'member',
+            role: index === 0 ? 'owner' : 'member',
             status: 'active',
-            joined: { atEpochMs: 1_700_000_000_000, byServiceId: 'perf' },
-            updated: { atEpochMs: 1_700_000_000_000, byServiceId: 'perf' }
+            joined: audit,
+            updated: audit,
+            invitedByPrincipalId: null,
+            invitationExpiresAtEpochMs: null,
+            left: null,
+            removed: null,
+            banned: null
         })),
         activeSessions: Array.from({ length: memberCount * sessionsPerClient }, (_, index) => ({
-            applicationId: 'app',
-            workspaceId: 'workspace',
-            groupId: `group-${groupIndex}`,
+            ...ref,
             sessionId: `session-${Math.floor(index / sessionsPerClient)}-${index % sessionsPerClient}`,
             principalId: `principal-${Math.floor(index / sessionsPerClient)}`,
+            generationId: `generation-${index}`,
+            generationVersion: 1,
+            status: 'active',
+            disconnectedAtEpochMs: null,
+            disconnectReason: null,
             connectedAtEpochMs: 1_700_000_000_000,
             lastHeartbeatAtEpochMs: liveUntil - 1_000,
             expiresAtEpochMs: liveUntil
         })),
         memberCount,
         onlineMemberCount: memberCount
-    } as unknown as GroupSnapshot;
+    };
 }
 
-function makeWsServer(connectionIds: readonly string[]): {
-    connections: Map<string, { id: string; socket: FakeSocket; isOpen: boolean; }>;
-    broadcast: (data: unknown, filter?: (ctx: { id: string; isOpen: boolean; }) => boolean) => number;
-    encode: (data: unknown) => EncodedFakeSocketMessage;
-    sendEncoded: (connectionId: string, encoded: EncodedFakeSocketMessage) => void;
-} {
-    const connections = new Map<string, { id: string; socket: FakeSocket; isOpen: boolean; }>();
-    for (const id of connectionIds) {
-        connections.set(id, { id, socket: new FakeSocket(), isOpen: true });
-    }
+function makeAuditStamp(): ClientAuditStamp {
     return {
-        connections,
-        encode(data: unknown): EncodedFakeSocketMessage {
-            return {
-                text: JSON.stringify(data)
-            };
-        },
-        sendEncoded(connectionId: string, encoded: EncodedFakeSocketMessage): void {
-            const ctx = connections.get(connectionId);
-            if (!ctx || !ctx.isOpen) {
-                throw new Error(`Connection not open: ${connectionId}`);
-            }
-            ctx.socket.send(encoded.text);
-        },
-        broadcast(data: unknown, filter?: (ctx: { id: string; isOpen: boolean; }) => boolean): number {
-            const encoded = JSON.stringify(data);
-            let count = 0;
-            for (const ctx of connections.values()) {
-                if (!ctx.isOpen) {
-                    continue;
-                }
-                if (filter && !filter(ctx)) {
-                    continue;
-                }
-                ctx.socket.send(encoded);
-                count += 1;
-            }
-            return count;
-        }
+        atEpochMs: 1_700_000_000_000,
+        actor: { kind: 'service', serviceId: 'runtime-validation-benchmark' },
+        reason: null,
+        traceId: null,
+        requestId: null
     };
+}
+
+function makeWsServer(connectionIds: readonly string[]): JsonWebSocketServer {
+    const server = new JsonWebSocketServer();
+    for (const id of connectionIds) {
+        server.addConnection(new ConnectionContext(id, new BenchmarkSocket()));
+    }
+    return server;
 }
 
 async function benchStateSync(results: BenchResult[]): Promise<void> {
@@ -662,13 +747,18 @@ async function benchStateSync(results: BenchResult[]): Promise<void> {
             size.sessionsPerClient,
             liveUntilEpochMs
         );
-        const message = {
-            id: 'message-1',
-            payload: {
-                typeId: AppTopics.groupStateSnapshot,
-                resource: JSON.stringify(groupSnapshot)
-            }
-        };
+        const message = newALBroadcastMessage(
+            'runtime-validation-benchmark',
+            newALEventRoute(
+                AppTopics.groupStateSnapshot,
+                groupSnapshot.group.groupId,
+                groupSnapshot.group.groupId
+            ),
+            'room',
+            AppTopics.groupStateSnapshot,
+            groupSnapshot,
+            { groupRef: groupSnapshot.group }
+        );
 
         for (let run = 1; run <= RUNS; run++) {
             results.push(
@@ -685,8 +775,8 @@ async function benchStateSync(results: BenchResult[]): Promise<void> {
                     },
                     () => {
                         const recipients = resolveStateSyncRecipients(
-                            webSocketServer as never,
-                            message as never,
+                            webSocketServer,
+                            message,
                             {
                                 readClientSnapshots: () => clientSnapshots,
                                 now: () => nowEpochMs
@@ -762,7 +852,7 @@ async function benchLatestRepositoryCleanup(results: BenchResult[]): Promise<voi
     const sizes = [1_000, 10_000, 100_000];
     for (const size of sizes) {
         for (let run = 1; run <= RUNS; run++) {
-            const repo = new LatestRepository<string, JsonRecord>({ ttlMs: 0 });
+            const repo = new LatestRepository<string, JsonWireValue>({ ttlMs: 0 });
             for (let i = 0; i < size; i++) {
                 repo.set(`key-${i}`, { i });
             }
@@ -781,7 +871,7 @@ async function benchLatestRepositoryCleanup(results: BenchResult[]): Promise<voi
 }
 
 async function benchCacheLeakChurn(results: BenchResult[]): Promise<void> {
-    const repo = new ObservableLatestRepository<string, JsonRecord>({ ttlMs: 0 });
+    const repo = new ObservableLatestRepository<string, JsonWireValue>({ ttlMs: 0 });
     const batchSize = 10_000;
     const batches = 10;
     for (let batch = 1; batch <= batches; batch++) {
@@ -842,7 +932,7 @@ async function benchCacheLeakChurn(results: BenchResult[]): Promise<void> {
 }
 
 async function benchCacheAutoEvictionChurn(results: BenchResult[]): Promise<void> {
-    const repo = new ObservableLatestRepository<string, JsonRecord>({
+    const repo = new ObservableLatestRepository<string, JsonWireValue>({
         ttlMs: 0,
         deleteExpiredIntervalMs: 1
     });
