@@ -1,6 +1,6 @@
 import type { GroupRef } from '@shared/api/group-types.ts';
-import { canonicalJson } from './mutation/group-state-crypto.ts';
 
+import { serializeCanonicalJson } from '../protocol/canonical-json.ts';
 import type { GroupMutationCommand } from './mutation/group-mutation-contracts.ts';
 
 /**
@@ -97,5 +97,5 @@ function groupFormationCriterionRequestId(
     groupRef: GroupRef,
     formationEpoch: number
 ): string {
-    return `formation-criterion:v1:${decision}:${canonicalJson({ groupRef, formationEpoch })}`;
+    return `formation-criterion:v1:${decision}:${serializeCanonicalJson({ groupRef, formationEpoch })}`;
 }

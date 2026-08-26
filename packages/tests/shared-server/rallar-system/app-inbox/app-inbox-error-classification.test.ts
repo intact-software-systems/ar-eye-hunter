@@ -61,17 +61,38 @@ describe('AppInbox error classification', () => {
         });
     });
 
-    it('fails closed when typed policy details are not JSON-safe', () => {
+    it('serializes current JSON-safe policy denial details', () => {
         const classification = classifyAppInboxError(
             new GroupPolicyDeniedError({
                 allowed: false,
                 code: 'group-policy-denied',
                 message: 'The mutation is forbidden',
-                details: { amount: 1n }
+                details: { visibility: 'summary' }
             })
         );
 
         expect(classification).toMatchObject({
+            kind: 'terminal',
+            code: 'group-policy-denied',
+            result: {
+                code: 'group-policy-denied',
+                status: 403,
+                denial: {
+                    details: { visibility: 'summary' }
+                }
+            }
+        });
+    });
+
+    it('fails closed when a JavaScript caller forges non-JSON policy details', () => {
+        const forgedError = Reflect.construct(GroupPolicyDeniedError, [{
+            allowed: false,
+            code: 'group-policy-denied',
+            message: 'The mutation is forbidden',
+            details: { amount: 1n }
+        }]);
+
+        expect(classifyAppInboxError(forgedError)).toMatchObject({
             kind: 'terminal',
             code: 'app-inbox-failure-metadata-invalid',
             result: {

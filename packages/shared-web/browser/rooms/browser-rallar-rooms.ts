@@ -21,6 +21,7 @@ import { emitBrowserStateReadDiagnostic } from '@shared-web/browser/state-read/d
 import { readStateGroupSnapshot, type StateGroupSnapshotRead } from '@shared-web/browser/state-read/point-read.ts';
 import { refreshStateSnapshots } from '@shared-web/browser/state-read/refresh-state-snapshots.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
+import type { ApiJsonObject } from '@shared/api/api-json-value.ts';
 import { toGroupRefFromScope, toStateScope } from '@shared/api/api-type-utils.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import { Command } from '@shared/cache/Command.ts';
@@ -147,7 +148,7 @@ export interface BrowserRallarRooms {
     ): Promise<GroupSnapshot>;
     updateMetadata(
         room: string | GroupRef,
-        patch: Readonly<Record<string, unknown>>,
+        patch: ApiJsonObject,
         options?: RallarScopedOperationOptions
     ): Promise<GroupSnapshot>;
     waitForPresence(

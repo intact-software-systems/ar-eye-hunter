@@ -30,9 +30,8 @@ import {
     type TransferStateGroupOwnershipBody,
     type UnbanStateGroupMemberBody
 } from './room-group-state-translation.ts';
-import type { StateGroupWorkflowValue } from './room-group-state-workflows.ts';
 
-interface RoomActorWorkflowInput<TWorkflowValue = StateGroupWorkflowValue> {
+interface RoomActorWorkflowInput<TWorkflowValue = GroupSnapshot> {
     readonly groupId: string;
     readonly actorPrincipalId: string;
     readonly sessionId: string;
@@ -122,7 +121,7 @@ export async function acceptStateGroupInvite(
     const scope = input.scope ?? defaultStateScope();
     const acceptRequestId = toApiMutationWorkflowRequestId();
     const presenceRequestId = toApiMutationWorkflowRequestId();
-    const flow = CommandsOrchestrator.withPolicies<'accepted' | 'joined', StateGroupWorkflowValue>(
+    const flow = CommandsOrchestrator.withPolicies<'accepted' | 'joined', GroupSnapshot>(
         input.policies ?? {}
     );
     const results = await flow
@@ -271,7 +270,7 @@ async function runGroupSnapshotCommand(
     operation: (requestId: string, signal?: AbortSignal) => Promise<GroupSnapshot>
 ): Promise<GroupSnapshot> {
     const requestId = toApiMutationWorkflowRequestId();
-    const commandOptions = (input.policies?.command ?? {}) as CommandOptions<GroupSnapshot>;
+    const commandOptions: CommandOptions<GroupSnapshot> = input.policies?.command ?? {};
     return await new Command<GroupSnapshot>(
         (signal) => operation(requestId, signal),
         commandOptions

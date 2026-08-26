@@ -1,5 +1,5 @@
+import { sha256CanonicalJson } from '../protocol/canonical-json.ts';
 import type { GroupMutationDescriptor } from './group-state-service-contracts.ts';
-import { sha256CanonicalJson } from './mutation/group-state-crypto.ts';
 
 const GROUP_APP_INBOX_COMMAND_ID_PREFIX = 'group-app-inbox:';
 

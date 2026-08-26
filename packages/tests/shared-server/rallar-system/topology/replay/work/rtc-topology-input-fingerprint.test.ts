@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { groupStateGroupStorageKey } from '@shared-server/rallar-system/group-state/persistence/aggregate/group-aggregate-storage-keys.ts';
+import { RtcTopologyRepositoryInvariantCorruptionError } from '@shared-server/rallar-system/topology/persistence/rtc-topology-errors.ts';
 import {
     RTC_TOPOLOGY_INPUT_FINGERPRINTS_NAMESPACE,
     RtcTopologyInputFingerprintRepository
@@ -43,7 +44,7 @@ describe('RTC topology input fingerprint persistence', () => {
             label: 'an invalid digest',
             value: { groupRef: GROUP_REF, fingerprint: 'not-a-digest' }
         }
-    ])('treats $label as a rebuild miss without deleting the row', async ({ value }) => {
+    ])('rejects $label at the current fingerprint corruption boundary', async ({ value }) => {
         const runtime = new FakeRuntimeStateRepository();
         const repository = new RtcTopologyInputFingerprintRepository(runtime);
         const key = groupStateGroupStorageKey(GROUP_REF);
@@ -54,10 +55,28 @@ describe('RTC topology input fingerprint persistence', () => {
             NEVER_EXPIRE_AT_TIMESTAMP
         );
 
-        await expect(repository.findFingerprint(GROUP_REF)).resolves.toBeNull();
+        await expect(repository.findFingerprint(GROUP_REF)).rejects.toBeInstanceOf(
+            RtcTopologyRepositoryInvariantCorruptionError
+        );
         await expect(
             runtime.findEntry(RTC_TOPOLOGY_INPUT_FINGERPRINTS_NAMESPACE, key)
         ).resolves.toBeDefined();
+    });
+
+    it('rejects malformed stored JSON at the current fingerprint corruption boundary', async () => {
+        const runtime = new FakeRuntimeStateRepository();
+        const repository = new RtcTopologyInputFingerprintRepository(runtime);
+        const key = groupStateGroupStorageKey(GROUP_REF);
+        await runtime.upsert(
+            RTC_TOPOLOGY_INPUT_FINGERPRINTS_NAMESPACE,
+            key,
+            '{',
+            NEVER_EXPIRE_AT_TIMESTAMP
+        );
+
+        await expect(repository.findFingerprint(GROUP_REF)).rejects.toBeInstanceOf(
+            RtcTopologyRepositoryInvariantCorruptionError
+        );
     });
 
     it('rejects an invalid fingerprint before writing', async () => {

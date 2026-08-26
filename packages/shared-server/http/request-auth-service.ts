@@ -12,6 +12,10 @@ export interface ApiAuthCredentialProof {
 
 export type RequestAuthFailureKind = 'authentication' | 'authorization';
 
+export interface RequestAuthErrorResponse {
+    readonly error: string;
+}
+
 export class RequestAuthFailure extends Error {
     readonly kind: RequestAuthFailureKind;
     readonly code: string;
@@ -121,7 +125,7 @@ export function toAuthSession(session: IssuedAuthSession): AuthSession {
 
 export function toAuthErrorResponse(
     c: {
-        json(value: unknown, status?: number): Response;
+        json(value: RequestAuthErrorResponse, status?: number): Response;
     },
     error: unknown
 ): Response {
@@ -135,10 +139,14 @@ export function toAuthErrorResponse(
 const AUTH_ERROR_STATUSES: readonly number[] = [400, 401, 403, 404, 409, 429, 503];
 
 function readExplicitAuthErrorStatus(error: object | null): number | undefined {
-    if (!error || !('status' in error)) {
+    if (!error) {
         return undefined;
     }
-    const status = Number((error as { status?: number | string; }).status);
+    const descriptor = Object.getOwnPropertyDescriptor(error, 'status');
+    if (!descriptor || !Object.prototype.hasOwnProperty.call(descriptor, 'value')) {
+        return undefined;
+    }
+    const status = Number(descriptor.value);
     return AUTH_ERROR_STATUSES.includes(status) ? status : undefined;
 }
 

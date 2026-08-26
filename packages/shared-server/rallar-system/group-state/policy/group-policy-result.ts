@@ -1,3 +1,4 @@
+import type { ApiJsonObject } from '@shared/api/api-json-value.ts';
 import type { GroupPolicyDenied, GroupPolicyReasonCode, GroupPolicyResult } from '@shared/api/group-policy-types.ts';
 
 export interface GroupPolicyActor {
@@ -26,7 +27,7 @@ export function isGroupPolicyDeniedError(error: unknown): error is GroupPolicyDe
 export function denyGroupPolicy(
     code: GroupPolicyReasonCode,
     message: string,
-    details?: Record<string, unknown>
+    details?: ApiJsonObject
 ): GroupPolicyDenied {
     return { allowed: false, code, message, details };
 }

@@ -6,8 +6,9 @@ import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvid
 import { groupStateGroupStorageKey } from '@shared-server/rallar-system/group-state/persistence/aggregate/group-aggregate-storage-keys.ts';
 import { RuntimeStateJsonStore } from '../../../../runtime-state/runtime-state-json-store.ts';
 import type { RuntimeStateRepositoryLike } from '../../../../runtime-state/runtime-state-repository.ts';
-import { sha256CanonicalJson } from '../../../group-state/mutation/group-state-crypto.ts';
-import type { JsonWireObject, JsonWireValue } from '../../../protocol/json-wire-identity.ts';
+import { sha256CanonicalJson } from '../../../protocol/canonical-json.ts';
+import { decodeJsonWireValue, type JsonWireObject, type JsonWireValue } from '../../../protocol/json-wire-identity.ts';
+import { RtcTopologyRepositoryInvariantCorruptionError } from '../../persistence/rtc-topology-errors.ts';
 import { compareRtcTopologyIdentifiers } from '../../persistence/rtc-topology-identifiers.ts';
 import type { GroupTopologyPlanningAuthority } from '../../planning/group-topology-planning-authority.ts';
 import type { RtcTopologyKindHysteresisWidths } from '../../runtime/rallar-rtc-topology-service.ts';
@@ -66,18 +67,30 @@ export class RtcTopologyInputFingerprintRepository extends RuntimeStateJsonStore
         this.runtimeRepository = runtimeRepository;
     }
 
-    /**
-     * Absent, foreign-scope, or malformed rows read as null so the fingerprint
-     * gate fails open into a normal rebuild instead of a wrong skip.
-     */
     async findFingerprint(ref: GroupRef): Promise<string | null> {
-        const stored = await this.getJsonValue(
+        const storageKey = groupStateGroupStorageKey(ref);
+        const entry = await this.runtimeRepository.findEntry(
             RTC_TOPOLOGY_INPUT_FINGERPRINTS_NAMESPACE,
-            groupStateGroupStorageKey(ref)
+            storageKey
         );
-        return stored === undefined
-            ? null
-            : decodeStoredRtcTopologyInputFingerprint(stored, ref)?.fingerprint ?? null;
+        if (!entry || entry.expireAtTimestamp <= Date.now()) {
+            return null;
+        }
+        try {
+            const stored = decodeJsonWireValue(
+                JSON.parse(entry.value),
+                'Stored RTC topology input fingerprint'
+            );
+            return decodeStoredRtcTopologyInputFingerprint(stored, ref).fingerprint;
+        }
+        catch (error) {
+            throw new RtcTopologyRepositoryInvariantCorruptionError(
+                storageKey,
+                error instanceof Error
+                    ? error.message
+                    : 'Stored RTC topology input fingerprint is invalid'
+            );
+        }
     }
 
     async putFingerprint(ref: GroupRef, fingerprint: string): Promise<void> {
@@ -104,17 +117,22 @@ export class RtcTopologyInputFingerprintRepository extends RuntimeStateJsonStore
 function decodeStoredRtcTopologyInputFingerprint(
     value: JsonWireValue,
     expectedRef: GroupRef
-): StoredRtcTopologyInputFingerprint | null {
+): StoredRtcTopologyInputFingerprint {
+    if (!isExactJsonWireObject(value, ['groupRef', 'fingerprint'])) {
+        throw new TypeError('Stored RTC topology input fingerprint fields are invalid');
+    }
+    if (!isExactJsonWireObject(value.groupRef, ['applicationId', 'workspaceId', 'groupId'])) {
+        throw new TypeError('Stored RTC topology input fingerprint group identity is invalid');
+    }
     if (
-        !isExactJsonWireObject(value, ['groupRef', 'fingerprint']) ||
-        !isExactJsonWireObject(value.groupRef, ['applicationId', 'workspaceId', 'groupId']) ||
         value.groupRef.applicationId !== expectedRef.applicationId ||
         value.groupRef.workspaceId !== expectedRef.workspaceId ||
-        value.groupRef.groupId !== expectedRef.groupId ||
-        typeof value.fingerprint !== 'string' ||
-        !/^sha256:[0-9a-f]{64}$/.test(value.fingerprint)
+        value.groupRef.groupId !== expectedRef.groupId
     ) {
-        return null;
+        throw new TypeError('Stored RTC topology input fingerprint group identity is inconsistent');
+    }
+    if (typeof value.fingerprint !== 'string' || !/^sha256:[0-9a-f]{64}$/.test(value.fingerprint)) {
+        throw new TypeError('Stored RTC topology input fingerprint digest is invalid');
     }
     return {
         groupRef: {

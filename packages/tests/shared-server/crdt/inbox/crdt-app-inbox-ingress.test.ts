@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { RALLAR_CRDT_OPERATION_VERSION, RALLAR_CRDT_PROTOCOL_VERSION, type RallarCrdtDocumentRef, type RallarCrdtUpdateEnvelope } from '@shared/crdt/mod.ts';
+import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { resourceInboxRetryExpiryAtEpochMs } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
@@ -47,11 +48,11 @@ describe('CRDT production AppInbox ingress', () => {
         }
     });
 
-    it('uses trusted ingress time and a bounded expiry instead of update-authored time', async () => {
+    it('uses trusted ingress time, bounded expiry, and canonical queue identity', async () => {
         const reader = new CapturingInboxReader(false);
         const service = appCrdt(reader);
         const semantic = update('stable-update');
-        const deliveryId = 'legacy-crdt-delivery-abcdefghijklmnopqrstuvwxyz-0123456789';
+        const deliveryId = 'current-crdt-delivery-abcdefghijklmnopqrstuvwxyz-0123456789';
 
         await service.createAndEnqueueAppend(
             input({ updateEnvelope: semantic, receivedAtEpochMs: 1_000, deliveryId })
@@ -59,11 +60,12 @@ describe('CRDT production AppInbox ingress', () => {
         await vi.waitFor(() => expect(reader.messages).toHaveLength(1));
 
         const command = JSON.parse(reader.messages[0]!.payload.resource).data;
-        expect(reader.messages[0]!.route).toEqual({
+        expect(reader.messages[0]!.route).toEqual(toAppQueueKey({
             topicId: CRDT_APP_INBOX_TOPIC,
-            resourceId: 'legacy-crdt-delivery-a-1bav1zw2g77k7',
-            contextId: 'crdt-v1-app-1-workspac-7aih2jth9k1c'
-        });
+            resourceId: deliveryId,
+            contextId: command.documentKey
+        }));
+        expect(reader.messages[0]!.route.resourceId).toHaveLength(36);
         expect(command.capturedAtEpochMs).toBe(1_000);
         expect(command.expireAtEpochMs).toBe(resourceInboxRetryExpiryAtEpochMs(1_000));
         expect(command.capturedAtEpochMs).not.toBe(semantic.createdAtEpochMs);

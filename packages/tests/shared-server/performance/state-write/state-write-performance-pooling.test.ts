@@ -86,9 +86,9 @@ describe('API-v1 state-write order-balanced pooling', { timeout: 120_000 }, () =
         expectSamplesPreserved(pooled.candidate, sources.candidateFirst, sources.candidateSecond);
     });
 
-    it('keeps the legacy API result exact through the explicit-position entry point', () => {
+    it('keeps the default A-B-B-A result exact through the explicit-position entry point', () => {
         const input = createPoolingInput();
-        expect(poolApiV1StateWriteResultsForPositions(input, LEGACY_SOURCE_POSITIONS)).toEqual(
+        expect(poolApiV1StateWriteResultsForPositions(input, DEFAULT_SOURCE_POSITIONS)).toEqual(
             poolApiV1StateWriteResults(input)
         );
     });
@@ -97,7 +97,7 @@ describe('API-v1 state-write order-balanced pooling', { timeout: 120_000 }, () =
         for (const [expected, mutate] of explicitPositionFailures()) {
             const input = createPoolingInput();
             const descriptors: MutableSourcePositionDescriptor[] = structuredClone([
-                ...LEGACY_SOURCE_POSITIONS
+                ...DEFAULT_SOURCE_POSITIONS
             ]);
             mutate({ descriptors, input });
             expect(() => poolApiV1StateWriteResultsForPositions(input, descriptors)).toThrow(expected);
@@ -277,7 +277,7 @@ interface PoolingInput {
     expectedCandidateCommit: string;
     sources: Record<string, PoolingSourceText>;
 }
-const LEGACY_SOURCE_POSITIONS = [
+const DEFAULT_SOURCE_POSITIONS = [
     { key: 'approvedBaseFirst', position: 1, role: 'approved-base' },
     { key: 'candidateFirst', position: 2, role: 'candidate' },
     { key: 'candidateSecond', position: 3, role: 'candidate' },

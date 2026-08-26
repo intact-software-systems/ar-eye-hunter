@@ -16,7 +16,10 @@ import {
 } from '@shared-server/rallar-system/client-state/persistence/client-state-principal-storage-key.ts';
 import { clientStateSessionStorageKey } from '@shared-server/rallar-system/client-state/persistence/client-state-session-storage-key.ts';
 import { ClientMutationRejectedError } from '@shared-server/rallar-system/client-state/validation/client-mutation-rejection.ts';
-import { hashMutationCommand, type JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
+import {
+    decodeJsonWireValue,
+    hashMutationCommand
+} from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import type { ClientSession } from '@shared/api/client-types.ts';
 import type { ConnectClientSessionRequest } from '@shared/api/state-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
@@ -67,12 +70,12 @@ describe('client mutation command and request projection', () => {
 
     it('rejects non-JSON principal metadata before command identity is computed', () => {
         expect(() =>
-            toUpsertClientPrincipalMutationInput({
+            Reflect.apply(toUpsertClientPrincipalMutationInput, undefined, [{
                 scope,
                 principalId: 'alice',
                 request: { username: 'alice', metadata: { createdAt: new Date(0) } },
                 defaultCommandId: 'principal-invalid-metadata'
-            })
+            }])
         ).toThrow(ClientMutationRejectedError);
     });
 
@@ -114,7 +117,9 @@ describe('client mutation command and request projection', () => {
 
         expect(command.facts).toEqual({
             ...facts,
-            commandHash: await hashMutationCommand({ ...input, authority } as JsonWireValue)
+            commandHash: await hashMutationCommand(
+                decodeJsonWireValue({ ...input, authority }, 'Client mutation command identity')
+            )
         });
         expect(command.input.instanceCapabilities).toEqual(['rtc']);
         expect(command.input.principalRoles).toEqual(['member']);

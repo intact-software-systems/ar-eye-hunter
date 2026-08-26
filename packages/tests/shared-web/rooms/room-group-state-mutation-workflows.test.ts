@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { configureApiClient } from '@shared-web/browser/api-client-config.ts';
 import * as mutationWorkflows from '@shared-web/browser/rooms/room-group-state-mutation-workflows.ts';
 import { rotateStateGroupJoinCode } from '@shared-web/browser/rooms/room-membership-group-state-workflows.ts';
+import type { ApiJsonObject } from '@shared/api/api-json-value.ts';
 import { readGroupCausalRevision } from '@shared/api/group-client-views.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 
@@ -239,7 +240,7 @@ function stubFetch(fetchCalls: FetchCall[], handler: (call: FetchCall) => Respon
     });
 }
 
-function roomSnapshot(groupId: string, metadata: Record<string, unknown> = {}): GroupSnapshot {
+function roomSnapshot(groupId: string, metadata: ApiJsonObject = {}): GroupSnapshot {
     const snapshot = createGroupSnapshotFixture({
         applicationId: 'rallar-server',
         workspaceId: 'default',

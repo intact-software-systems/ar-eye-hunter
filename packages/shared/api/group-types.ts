@@ -1,3 +1,4 @@
+import type { ApiJsonObject } from './api-json-value.ts';
 import type { GroupFormationOutcome, GroupLifecycleState } from './group-lifecycle/group-lifecycle-policy.ts';
 import type { MutationActor } from './mutation-actor.ts';
 
@@ -45,7 +46,7 @@ type GroupBase =
         joinMode: GroupJoinMode;
         maxMembers: number | null;
         maxSessionsPerMember: number | null;
-        metadata: Record<string, unknown>;
+        metadata: ApiJsonObject;
 
         /** Guarded roster facts maintained with every authoritative group write. */
         activeMemberCount: number;
@@ -279,5 +280,5 @@ export type GroupEvent =
         reason: string | null;
         traceId: string | null;
         requestId: string | null;
-        payload: Record<string, unknown>;
+        payload: ApiJsonObject;
     }>;
