@@ -377,6 +377,33 @@ justified import renames, and namespace-before-class ordering.
 
 ### Optional noisy checks
 
+Run the observation-only IDE causal-navigation report when reviewing authoritative
+mutation control flow or API-v1 route entry paths:
+
+```bash
+npm run check:repo-style:navigation-details
+```
+
+Use repeated `--root` arguments for focused calibration. The report recognizes
+concrete AppInbox registrations and Hono route handlers, follows resolvable named
+callables across files, and reports these stable signals:
+
+- `navigation.registration-indirection` for registrations whose concrete type is
+  hidden behind an indirect registration shape;
+- `navigation.unnamed-deferred-edge` for deferred work without visible inline
+  work or a transparent edge to a concrete named callable; and
+- `navigation.interface-pivot` when a business call resolves only to a type
+  signature and Find Usages exposes multiple production candidates.
+
+Repository, transaction-writer, queue, clock, gateway, and sink contracts are
+printed as named effect-port facts rather than interface-pivot findings. Named
+callback contracts and decoder strategies are likewise printed as deferred and
+translation boundary facts, because they are not competing business owners.
+Findings remain non-blocking during calibration and the command exits successfully
+when they exist. Invalid arguments, project construction failures, and analyzer
+errors fail the command. Output is deterministic and capped at 200 detailed
+entries; per-rule counts retain the complete totals.
+
 Run detailed construction-shape checks when reviewing late binding, callback
 depth, or boundary-free wrappers:
 

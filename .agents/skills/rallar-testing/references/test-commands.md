@@ -70,6 +70,22 @@ npx vitest run \
   packages/tests/repo/mutation-route-ownership/authoritative/authoritative-mutation-read-compute-validate-write.test.ts
 ```
 
+## IDE causal-navigation observation
+
+When authoritative mutation control flow changes, run the non-blocking project
+report with the smallest useful repeated roots:
+
+```bash
+npm run check:repo-style:navigation-details
+npm run check:repo-style:navigation-details -- --root packages/shared-server/rallar-system/group-state --root apps/api-v1/src
+```
+
+Then perform the manual 5/5 cold probe using only Go to Definition and Find
+Usages. The five landmarks are concrete operation entry, domain or update policy,
+first conditional write guard, exact durable result, and after-commit effect.
+Record search escapes, ambiguous pivots, and named deferred boundaries. The
+report remains observation-only; analyzer execution failure is still fatal.
+
 ## Type Checks And Builds
 
 ```bash

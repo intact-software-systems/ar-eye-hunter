@@ -53,6 +53,13 @@ idempotency, corruption, and final-convergence behaviors. Focused tests must
 exercise the real conditional-write boundary; lock acquisition or waiting is
 not an acceptance criterion.
 
+When authoritative mutation control flow changes, run
+`npm run check:repo-style:navigation-details` for the affected roots and perform
+the manual 5/5 cold probe from concrete registration through operation entry,
+policy, first write guard, durable result, and after-commit effect. Navigation
+findings are observation-only during calibration; an analyzer execution failure
+or a landmark that remains unreachable after consolidation fails validation.
+
 ## Selection Rules
 
 - Use behavior-named test modules. Historical task numbers, correction waves,

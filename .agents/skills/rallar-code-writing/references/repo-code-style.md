@@ -10,6 +10,7 @@ restating a different version of these rules.
 
 - [First principle: code is for human developers](#first-principle-code-is-for-human-developers)
 - [Minimum cognitive indirection](#minimum-cognitive-indirection)
+- [IDE causal navigation](#ide-causal-navigation)
 - [Production code, tests, and legacy](#production-code-tests-and-legacy)
 - [Scope and adoption](#scope-and-adoption)
 - [Touched-file standards closure](#touched-file-standards-closure)
@@ -72,6 +73,45 @@ layer must name its boundary, preserve the dataflow and failure semantics, and
 make the canonical owner easier to locate. A helper, alias, adapter, callback,
 or file split that merely moves work elsewhere is cognitive overhead, not an
 abstraction benefit.
+
+## IDE causal navigation
+
+An authoritative mutation must expose a causal path that an unfamiliar developer
+can follow with ordinary IDE symbol navigation. Start a cold probe at a concrete
+registration and use only Go to Definition and Find Usages to reach these five
+landmarks:
+
+1. the concrete operation entry;
+2. the domain or update policy;
+3. the first conditional write guard;
+4. the exact durable result; and
+5. the after-commit effect.
+
+When a mutation intentionally has no after-commit effect, the fifth landmark is
+the explicit commit return whose control flow proves that absence.
+
+The probe scores one point for each reachable landmark. A 5/5 result means the
+causal path is IDE-navigable; it does not claim that the implementation is
+otherwise correct or simple. Record search escapes, ambiguous pivots, and named
+deferred boundaries encountered. A search escape is any need to search for
+an implementation name or inspect a directory manually. An ambiguous pivot is a
+type-only definition whose Find Usages result offers multiple plausible business
+implementations. A named deferred boundary is a transaction, queue, callback,
+or effect edge whose callable owner is visible even though invocation occurs
+later.
+
+There is no global call-depth limit. Semantic depth remains governed by the
+decision-depth and cognitive-indirection rules; the probe measures whether each
+edge can be followed, not whether all valid designs have the same shape. Functional
+style keeps named functions passed to `Either` or pipeline operators as navigable edges. Functional
+composition does not need to be replaced by controllers, classes, or fluent APIs.
+Inline work is acceptable when its decision and effect flow are visible at the
+boundary.
+
+Repository, transaction-writer, queue, clock, gateway, and sink contracts are
+named effect ports. Reaching one is a boundary fact, not an ambiguous business
+implementation pivot. The concrete adapter may still need its own focused probe
+when that effect implementation changes.
 
 ## Production code, tests, and legacy
 

@@ -235,6 +235,13 @@ changes, check both browser and server consumers. Report passed, failed, and
 skipped commands in the completion handoff. For written or multi-slice work,
 `adaptive-plan-execution` owns working-plan and proportional-validation judgment.
 
+When authoritative mutation control flow changes, also run
+`npm run check:repo-style:navigation-details` with the smallest useful repeated
+`--root` scope and perform the manual 5/5 cold probe from the concrete
+registration. The report is observation-only: classify its navigation findings,
+but treat analyzer execution failure and a failed post-consolidation cold probe
+as real validation failures.
+
 For every construction-detail warning in changed production code, record its
 path, rule, and symbol plus one human disposition: resolved throughout the
 touched file or demonstrated false positive. The review rule is that silence or

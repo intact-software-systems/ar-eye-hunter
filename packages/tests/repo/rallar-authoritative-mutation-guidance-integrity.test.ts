@@ -206,6 +206,43 @@ describe('authoritative mutation guidance integrity', () => {
         ]);
     });
 
+    it('requires the IDE causal-navigation cold probe for changed mutation control flow', () => {
+        const codeWriting = readRepo('.agents/skills/rallar-code-writing/SKILL.md');
+        const codeStyle = readRepo('.agents/skills/rallar-code-writing/references/repo-code-style.md');
+        const serviceWriting = readRepo(canonicalServiceWritingPath);
+        const testing = readRepo('.agents/skills/rallar-testing/SKILL.md');
+        const testCommands = readRepo('.agents/skills/rallar-testing/references/test-commands.md');
+
+        expectAllNormalized(codeStyle, [
+            'IDE causal navigation',
+            'Go to Definition and Find Usages',
+            'concrete operation entry',
+            'domain or update policy',
+            'first conditional write guard',
+            'exact durable result',
+            'after-commit effect',
+            'search escapes',
+            'ambiguous pivots',
+            'named deferred boundaries',
+            'no global call-depth limit',
+            'named functions passed to `Either` or pipeline operators'
+        ]);
+        expectAllNormalized(serviceWriting, [
+            '5/5 cold probe',
+            'concrete AppInbox registration',
+            'first conditional write guard',
+            'exact durable result',
+            'after-commit effect'
+        ]);
+        for (const source of [codeWriting, testing, testCommands]) {
+            expectAllNormalized(source, [
+                'npm run check:repo-style:navigation-details',
+                'authoritative mutation control flow',
+                '5/5 cold probe'
+            ]);
+        }
+    });
+
     it.each([
         '.agents/skills/rallar-testing/SKILL.md',
         '.agents/skills/rallar-testing/references/test-commands.md',
