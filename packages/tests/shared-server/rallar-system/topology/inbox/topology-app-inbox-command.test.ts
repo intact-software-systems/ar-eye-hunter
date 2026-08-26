@@ -1,9 +1,10 @@
 import { describe, expect, expectTypeOf, it } from 'vitest';
 
-import { serializeCanonicalJsonWire, toJsonWireAppInboxEnqueue } from '@shared-server/rallar-system/app-inbox/app-inbox-command-wire.ts';
-import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
+import { decodeAppInboxEnqueue } from '@shared-server/rallar-system/app-inbox/app-inbox-command-decoding.ts';
+import { AppInboxType, type AppInboxEnqueueInput } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import { toLogicalAppInboxCommand } from '@shared-server/rallar-system/app-inbox/logical-app-inbox-command.ts';
 import type { IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
+import { serializeCanonicalMutationCommand } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import { toTopologyAppInboxCommand } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-command.ts';
 import {
     readAuthenticatedTopologyCommand,
@@ -330,8 +331,12 @@ async function topologyCommand(capturedAtEpochMs: number) {
     });
 }
 
-function logicalIdentity(enqueue: Parameters<typeof toJsonWireAppInboxEnqueue>[0]): string {
-    return serializeCanonicalJsonWire(toLogicalAppInboxCommand(toJsonWireAppInboxEnqueue(enqueue)));
+function logicalIdentity<Command, Authority>(
+    enqueue: AppInboxEnqueueInput<Command, Authority>
+): string {
+    return serializeCanonicalMutationCommand(
+        toLogicalAppInboxCommand(decodeAppInboxEnqueue(enqueue))
+    );
 }
 
 function topologyAuthority(command: TopologyAppInboxCommand): IssuedAuthSession {

@@ -2,7 +2,7 @@ import { Temporal } from '@js-temporal/polyfill';
 import { describe, expect, it } from 'vitest';
 
 import type { PSqlParameter, PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
-import { toJsonWireAppInboxEnqueue } from '@shared-server/rallar-system/app-inbox/app-inbox-command-wire.ts';
+import { decodeAppInboxEnqueue } from '@shared-server/rallar-system/app-inbox/app-inbox-command-decoding.ts';
 import { AppInboxType, type AppInboxMessageContext } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import { encodeAppInboxResult } from '@shared-server/rallar-system/app-inbox/app-inbox-registration-codecs.ts';
 import type { AppInboxMutationTransactionWriter } from '@shared-server/rallar-system/app-inbox/app-inbox-transaction-writer.ts';
@@ -277,7 +277,7 @@ function inactiveConnectContext(): AppInboxMessageContext<GroupStateInboxDurable
         causalToken: 'causal-token',
         queueResourceId: 'inactive-queue-resource'
     };
-    const enqueue = toJsonWireAppInboxEnqueue({
+    const enqueue = decodeAppInboxEnqueue({
         type: AppInboxType.GROUP_PRESENCE_CONNECT,
         resourceId: 'inactive-command',
         contextId: 'inactive-group',

@@ -1,9 +1,13 @@
 import { type AppInboxEnqueueInput } from '../../app-inbox/app-inbox-contracts.ts';
 import { AppInboxType } from '../../app-inbox/app-inbox-contracts.ts';
-import { hashCanonicalCommand } from '../../app-inbox/hash-canonical-command.ts';
 import { GroupMutationAuthorizationError } from '../../group-state/group-mutation-authority.ts';
 import type { GroupStateService } from '../../group-state/group-state-service-contracts.ts';
-import { decodeJsonWireValue, type JsonWireObject, type JsonWireValue } from '../../protocol/json-wire-identity.ts';
+import {
+    decodeJsonWireValue,
+    hashMutationCommand,
+    type JsonWireObject,
+    type JsonWireValue
+} from '../../protocol/json-wire-identity.ts';
 import {
     constantTimeTopologyProofEqual,
     decodeTopologyMutationAuthorityProof
@@ -49,7 +53,7 @@ export async function createRtcRttDurableEnqueue(
             sessionId: session.sessionId
         },
         requestId,
-        mutationCommandHash: await hashCanonicalCommand(stableRequest),
+        mutationCommandHash: await hashMutationCommand(stableRequest),
         capturedAtEpochMs: input.request.capturedAtEpochMs,
         rtt: input.request.rtt
     } as const;
@@ -61,7 +65,7 @@ export async function createRtcRttDurableEnqueue(
     } as const;
     const command: RtcRttAppInboxCommand = {
         ...commandWithoutHash,
-        commandHash: await hashCanonicalCommand(stableCommand)
+        commandHash: await hashMutationCommand(stableCommand)
     };
     const proof = await createTopologyMutationAuthorityProof(session, command.commandHash);
     return {
@@ -174,10 +178,10 @@ async function verifyRtcRttCommandHashes(command: RtcRttAppInboxCommand): Promis
         rtt: command.rtt
     };
     if (
-        (await hashCanonicalCommand(
+        (await hashMutationCommand(
                 decodeJsonWireValue(canonicalStableCommand, 'RTC RTT stable command')
             )) !== command.commandHash ||
-        (await hashCanonicalCommand(decodeJsonWireValue({
+        (await hashMutationCommand(decodeJsonWireValue({
                 rtt: command.rtt,
                 alSenderId: command.actor.sessionId
             }, 'RTC RTT mutation command'))) !== command.mutationCommandHash

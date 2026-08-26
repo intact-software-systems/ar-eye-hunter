@@ -2,8 +2,8 @@ import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import type { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 import type { JsonWireValue } from '../protocol/json-wire-identity.ts';
+import { decodeAppInboxEnqueue } from './app-inbox-command-decoding.ts';
 import { validateAppInboxCommandIdentity } from './app-inbox-command-identity.ts';
-import { toJsonWireAppInboxEnqueue } from './app-inbox-command-wire.ts';
 import {
     AppInboxIdempotencyConflictError,
     AppInboxReservationConflictError,
@@ -53,7 +53,7 @@ export class AppInboxReservationClient {
         context: AppInboxMessageContext<Result>,
         authority: Authority
     ): Promise<void> {
-        const enqueue = toJsonWireAppInboxEnqueue({ ...context.enqueue, authority });
+        const enqueue = decodeAppInboxEnqueue({ ...context.enqueue, authority });
         const message: ALMessage = {
             ...context.message,
             payload: {

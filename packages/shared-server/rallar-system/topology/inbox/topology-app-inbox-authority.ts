@@ -1,11 +1,15 @@
 import { type AppInboxEnqueueInput } from '../../app-inbox/app-inbox-contracts.ts';
-import { hashCanonicalCommand } from '../../app-inbox/hash-canonical-command.ts';
 import type { IssuedAuthSession } from '../../auth/persistence/auth-session-types.ts';
 import type { PersistedAuthSession } from '../../auth/persistence/persisted-auth-session.ts';
 import { authSessionProofSecret } from '../../auth/sessions/auth-session-proof-secret.ts';
 import { GroupMutationAuthorizationError } from '../../group-state/group-mutation-authority.ts';
 import type { GroupStateService } from '../../group-state/group-state-service-contracts.ts';
-import { decodeJsonWireValue, type JsonWireObject, type JsonWireValue } from '../../protocol/json-wire-identity.ts';
+import {
+    decodeJsonWireValue,
+    hashMutationCommand,
+    type JsonWireObject,
+    type JsonWireValue
+} from '../../protocol/json-wire-identity.ts';
 import {
     readAuthenticatedTopologyCommand,
     readDurableTopologyAppInboxCommand,
@@ -121,7 +125,7 @@ export async function verifyTopologyAppInboxAuthority(
     }
     const command = input.authority.command;
     if (
-        (await hashCanonicalCommand({
+        (await hashMutationCommand({
             actor: command.actor,
             groupRef: command.groupRef,
             requestId: command.requestId,

@@ -7,10 +7,14 @@ import {
 
 import { type AppInboxEnqueueInput } from '../../app-inbox/app-inbox-contracts.ts';
 import { AppInboxType } from '../../app-inbox/app-inbox-contracts.ts';
-import { hashCanonicalCommand } from '../../app-inbox/hash-canonical-command.ts';
 import type { IssuedAuthSession } from '../../auth/persistence/auth-session-types.ts';
 import { GroupMutationAuthorizationError } from '../../group-state/group-mutation-authority.ts';
-import { decodeJsonWireValue, type JsonWireObject, type JsonWireValue } from '../../protocol/json-wire-identity.ts';
+import {
+    decodeJsonWireValue,
+    hashMutationCommand,
+    type JsonWireObject,
+    type JsonWireValue
+} from '../../protocol/json-wire-identity.ts';
 import type { GroupTopologyConfigMutationCommand } from '../config/mutation/group-topology-config-mutation-contracts.ts';
 import type {
     CreateTopologyAppInboxCommandInput,
@@ -64,7 +68,7 @@ export async function toTopologyAppInboxCommand(
             groupRef,
             requestId: input.requestId,
             capturedAtEpochMs: input.capturedAtEpochMs,
-            commandHash: await hashCanonicalCommand(stableCommand)
+            commandHash: await hashMutationCommand(stableCommand)
         },
         payload
     );
@@ -103,7 +107,7 @@ async function hashTopologyHttpMutationSemantic(
         payload: TopologyAppInboxPayload;
     }>
 ): Promise<string> {
-    return await hashCanonicalCommand({
+    return await hashMutationCommand({
         operation: input.payload.operation,
         requestId: input.requestId,
         callerId: input.principalId,
@@ -143,7 +147,7 @@ export async function readTopologyCommandForValidatedSession<V>(
         operation: command.operation,
         payload: command.payload
     };
-    if ((await hashCanonicalCommand(stableCommand)) !== command.commandHash) {
+    if ((await hashMutationCommand(stableCommand)) !== command.commandHash) {
         throw new GroupMutationAuthorizationError('Topology AppInbox command hash is invalid.');
     }
     return command;

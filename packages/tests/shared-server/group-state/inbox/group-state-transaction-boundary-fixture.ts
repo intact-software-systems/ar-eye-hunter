@@ -6,7 +6,7 @@ import type { CreateGroupRequest } from '@shared/api/state-types.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 
-import { toJsonWireAppInboxEnqueue } from '@shared-server/rallar-system/app-inbox/app-inbox-command-wire.ts';
+import { decodeAppInboxEnqueue } from '@shared-server/rallar-system/app-inbox/app-inbox-command-decoding.ts';
 import { AppInboxType, type AppInboxMessageContext } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import { SIMPLER_GROUP_STATE_APP_INBOX_TOPIC } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-client.ts';
 import { encodeAppInboxResult } from '@shared-server/rallar-system/app-inbox/app-inbox-registration-codecs.ts';
@@ -195,7 +195,7 @@ async function createReservedContext(
     queue: TestResourceInbox,
     authority: GroupMutationPreparation
 ): Promise<AppInboxMessageContext<GroupStateInboxDurableResult>> {
-    const enqueue = toJsonWireAppInboxEnqueue({
+    const enqueue = decodeAppInboxEnqueue({
         type: AppInboxType.GROUP_CREATE,
         resourceId: REQUEST_ID,
         contextId: `${SCOPE.applicationId}:${SCOPE.workspaceId}:${GROUP_ID}`,

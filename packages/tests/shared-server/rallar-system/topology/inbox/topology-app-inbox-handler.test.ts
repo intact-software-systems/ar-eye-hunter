@@ -18,7 +18,7 @@ import type { GroupStateService } from '@shared-server/rallar-system/group-state
 
 import type { GroupStateAuthorityGuard } from '@shared-server/rallar-system/group-state/persistence/group-state-persistence-contracts.ts';
 
-import { toJsonWireAppInboxEnqueue } from '@shared-server/rallar-system/app-inbox/app-inbox-command-wire.ts';
+import { decodeAppInboxEnqueue } from '@shared-server/rallar-system/app-inbox/app-inbox-command-decoding.ts';
 import { AppInboxType, type AppInboxEnqueueInput, type AppInboxMessageContext } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import { encodeAppInboxResult } from '@shared-server/rallar-system/app-inbox/app-inbox-registration-codecs.ts';
 import type { ComputedRtcTopologyOutbox } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-entry.ts';
@@ -321,7 +321,7 @@ function sessionReader(
 function createMessageContext(
     enqueue: AppInboxEnqueueInput<TopologyAppInboxCommand>
 ): AppInboxMessageContext<TopologyAppInboxResult> {
-    const wireEnqueue = toJsonWireAppInboxEnqueue(enqueue);
+    const wireEnqueue = decodeAppInboxEnqueue(enqueue);
     const message = newALUntargetedMessage(
         'topology-handler-test',
         newALRoute(

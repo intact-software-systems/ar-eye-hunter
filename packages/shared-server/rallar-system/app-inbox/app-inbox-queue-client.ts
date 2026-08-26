@@ -1,13 +1,13 @@
 import { newALRoute, newALUntargetedMessage } from '@shared/al-contracts/al-contract.ts';
-import { toAppQueueCreatedBy as toAppInboxQueueCreatedBy } from '@shared/queuebox/AppQueueIdentity.ts';
-import { EntityStatus, Key, ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import { toAppQueueCreatedBy } from '@shared/queuebox/AppQueueIdentity.ts';
+import type { Key, ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { Either } from '@shared/resilience/Either.ts';
-import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
-import type { AppInboxEnqueueInput, AppInboxMessageContext } from '../app-inbox/app-inbox-contracts.ts';
-import { toUnavailableAppInboxFailure, type AppInboxFailure } from '../app-inbox/app-inbox-failure.ts';
+import type { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 import { timeRallarAsync, type RallarTimingDetails, type RallarTimingSink } from '../observability/timing.ts';
-import type { JsonWireValue } from '../protocol/json-wire-identity.ts';
-import { serializeCanonicalJsonWire, toJsonWireAppInboxEnqueue } from './app-inbox-command-wire.ts';
+import { serializeCanonicalMutationCommand, type JsonWireValue } from '../protocol/json-wire-identity.ts';
+import { decodeAppInboxEnqueue } from './app-inbox-command-decoding.ts';
+import type { AppInboxEnqueueInput, AppInboxMessageContext } from './app-inbox-contracts.ts';
+import { toUnavailableAppInboxFailure, type AppInboxFailure } from './app-inbox-failure.ts';
 import { normalizeAppInboxOptions, type AppInboxOptions, type NormalizedAppInboxOptions } from './app-inbox-options.ts';
 import type { AppInboxEntryRepository, AppInboxResultRepository } from './app-inbox-persistence-ports.ts';
 import { toPhysicalAppInboxQueueKey } from './app-inbox-queue-entry.ts';
@@ -118,7 +118,7 @@ export class AppInboxQueueClient {
             async (key, wireEnqueue) => {
                 return await this.inbox.enqueueIfAbsent(
                     newALUntargetedMessage(
-                        toAppInboxQueueCreatedBy(this.serviceId),
+                        toAppQueueCreatedBy(this.serviceId),
                         newALRoute(key.topicId, key.contextId, key.resourceId),
                         wireEnqueue.type.toString(),
                         wireEnqueue
@@ -126,18 +126,20 @@ export class AppInboxQueueClient {
                 );
             },
             decodeJsonWireResult
-        ).catch((err) => {
-            console.error(`Error processing entry without waiting: ${err}`);
+        ).catch((error: unknown) => {
+            console.error(`Error processing entry without waiting: ${String(error)}`);
         });
     }
 
     public async enqueue<V>(enqueue: AppInboxEnqueueInput<V>): Promise<ResourceEntry> {
-        const wireEnqueue = toJsonWireAppInboxEnqueue(enqueue);
+        const wireEnqueue = decodeAppInboxEnqueue(enqueue);
         const key = this.toKey(wireEnqueue);
-        const receivedIdentity = serializeCanonicalJsonWire(toLogicalAppInboxCommand(wireEnqueue));
+        const receivedIdentity = serializeCanonicalMutationCommand(
+            toLogicalAppInboxCommand(wireEnqueue)
+        );
         const entry = await this.inbox.enqueueIfAbsent(
             newALUntargetedMessage(
-                toAppInboxQueueCreatedBy(this.serviceId),
+                toAppQueueCreatedBy(this.serviceId),
                 newALRoute(key.topicId, key.contextId, key.resourceId),
                 wireEnqueue.type.toString(),
                 wireEnqueue
@@ -146,32 +148,6 @@ export class AppInboxQueueClient {
         this.wakeOwningQueue?.();
         await assertMatchingAppInboxCommand(entry, wireEnqueue, receivedIdentity);
         return entry;
-    }
-
-    // use this from client/group cleanup of expired
-    public processEntryNoWaitingIf<V>(
-        enqueue: AppInboxEnqueueInput<V>,
-        enqueueIf: (entry: ResourceEntry) => boolean
-    ): void {
-        this.processEntryUntilCompletionInternal(
-            enqueue,
-            false,
-            false,
-            async (key, wireEnqueue) => {
-                return await this.inbox.enqueueIf(
-                    newALUntargetedMessage(
-                        toAppInboxQueueCreatedBy(this.serviceId),
-                        newALRoute(key.topicId, key.contextId, key.resourceId),
-                        wireEnqueue.type.toString(),
-                        wireEnqueue
-                    ),
-                    enqueueIf
-                );
-            },
-            decodeJsonWireResult
-        ).catch((err) => {
-            console.error(`Error processing entry without waiting: ${err}`);
-        });
     }
 
     public async processEntryUntilCompletion<V>(
@@ -184,7 +160,7 @@ export class AppInboxQueueClient {
             async (key, wireEnqueue) => {
                 return await this.inbox.enqueueIfAbsent(
                     newALUntargetedMessage(
-                        toAppInboxQueueCreatedBy(this.serviceId),
+                        toAppQueueCreatedBy(this.serviceId),
                         newALRoute(key.topicId, key.contextId, key.resourceId),
                         wireEnqueue.type.toString(),
                         wireEnqueue
@@ -195,7 +171,7 @@ export class AppInboxQueueClient {
         );
     }
 
-    public async processEntryUntilCompletionResult<V, R = V>(
+    public async processEntryUntilCompletionResult<V, R>(
         enqueue: AppInboxEnqueueInput<V>,
         decodeResult: AppInboxResultDecoder<R>
     ): Promise<Either<AppInboxFailure, R>> {
@@ -206,7 +182,7 @@ export class AppInboxQueueClient {
             async (key, wireEnqueue) => {
                 return await this.inbox.enqueueIfAbsent(
                     newALUntargetedMessage(
-                        toAppInboxQueueCreatedBy(this.serviceId),
+                        toAppQueueCreatedBy(this.serviceId),
                         newALRoute(key.topicId, key.contextId, key.resourceId),
                         wireEnqueue.type.toString(),
                         wireEnqueue
@@ -214,29 +190,6 @@ export class AppInboxQueueClient {
                 );
             },
             decodeResult
-        );
-    }
-
-    public async processEntryUntilCompletionIf<V>(
-        enqueue: AppInboxEnqueueInput<V>,
-        enqueueIf: (entry: ResourceEntry) => boolean
-    ): Promise<Either<AppInboxFailure, JsonWireValue>> {
-        return await this.processEntryUntilCompletionInternal(
-            enqueue,
-            true,
-            false,
-            async (key, wireEnqueue) => {
-                return await this.inbox.enqueueIf(
-                    newALUntargetedMessage(
-                        toAppInboxQueueCreatedBy(this.serviceId),
-                        newALRoute(key.topicId, key.contextId, key.resourceId),
-                        wireEnqueue.type.toString(),
-                        wireEnqueue
-                    ),
-                    enqueueIf
-                );
-            },
-            decodeJsonWireResult
         );
     }
 
@@ -252,7 +205,7 @@ export class AppInboxQueueClient {
             async (key, wireEnqueue) => {
                 return await this.inbox.enqueueIf(
                     newALUntargetedMessage(
-                        toAppInboxQueueCreatedBy(this.serviceId),
+                        toAppQueueCreatedBy(this.serviceId),
                         newALRoute(key.topicId, key.contextId, key.resourceId),
                         wireEnqueue.type.toString(),
                         wireEnqueue
@@ -264,7 +217,7 @@ export class AppInboxQueueClient {
         );
     }
 
-    private async processEntryUntilCompletionInternal<V, R = V>(
+    private async processEntryUntilCompletionInternal<V, R>(
         enqueue: AppInboxEnqueueInput<V>,
         waitForCompletion: boolean,
         enforceCommandIdentity: boolean,
@@ -275,10 +228,10 @@ export class AppInboxQueueClient {
         decodeResult: AppInboxResultDecoder<R>,
         strictQueueIdentity = false
     ): Promise<Either<AppInboxFailure, R>> {
-        const wireEnqueue = toJsonWireAppInboxEnqueue(enqueue);
+        const wireEnqueue = decodeAppInboxEnqueue(enqueue);
         const key: Key = this.toKey(wireEnqueue, strictQueueIdentity);
         const receivedCommandIdentity = enforceCommandIdentity
-            ? serializeCanonicalJsonWire(toLogicalAppInboxCommand(wireEnqueue))
+            ? serializeCanonicalMutationCommand(toLogicalAppInboxCommand(wireEnqueue))
             : undefined;
 
         return await timeRallarAsync(
