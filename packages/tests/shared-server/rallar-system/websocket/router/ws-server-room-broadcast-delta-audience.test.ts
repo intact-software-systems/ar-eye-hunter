@@ -11,7 +11,7 @@ import {
     DELTA_ENVELOPE_FIXTURE_GROUP_REF,
     DELTA_ENVELOPE_FIXTURE_NOW,
     readFixtureConnectionIds
-} from '../../../group-state/presence/group-state-delta-envelope-fixtures.ts';
+} from '../../group-state/presence/group-state-delta-envelope-fixtures.ts';
 
 const ALICE = { principalId: 'alice', sessionId: 'alice-session', role: 'owner' } as const;
 const JOINING = { principalId: 'joining', sessionId: 'joining-session', role: 'member' } as const;

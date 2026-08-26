@@ -1,5 +1,6 @@
 import { Temporal } from '@js-temporal/polyfill';
 
+import type { ALTargets } from '@shared/al-contracts/al-contract.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import {
     RALLAR_CRDT_APPEND_RESPONSE_TYPE_ID,
@@ -154,7 +155,7 @@ function toWsOutbox(input: WsOutboxInput): ResourceEntry {
     });
 }
 
-function toTargets(command: CrdtAppendCommand, effect: 'reply' | 'fanout') {
+function toTargets(command: CrdtAppendCommand, effect: 'reply' | 'fanout'): ALTargets {
     if (effect === 'reply' || command.responseAudience.kind === 'principal') {
         return {
             mode: 'unicast' as const,

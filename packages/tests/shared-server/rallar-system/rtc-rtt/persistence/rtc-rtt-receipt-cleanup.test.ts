@@ -1,6 +1,6 @@
 import { toRtcRttMutationReceiptId } from '@shared-server/rallar-system/rtc-rtt/mutation/rtc-rtt-mutation-identifiers.ts';
 import type { RtcRttMutationReceipt } from '@shared-server/rallar-system/rtc-rtt/persistence/rtc-rtt-persistence-contracts.ts';
-import { DEFAULT_RTC_RTT_MUTATION_RETENTION_MS } from '@shared-server/rallar-system/rtc-rtt/persistence/rtc-rtt-persistence-validation-primitives.ts';
+import { RTC_RTT_MUTATION_RETENTION_MS } from '@shared-server/rallar-system/rtc-rtt/persistence/rtc-rtt-persistence-validation-primitives.ts';
 import {
     cleanupExpiredRtcRttReceipts,
     initRtcRttReceiptFamilyCleanup,
@@ -167,7 +167,7 @@ async function createReceiptHarness(
     input: Readonly<{ nowOffsetFromExpiry: number; }>
 ): Promise<RtcRttReceiptHarness> {
     const acceptedAtEpochMs = 1;
-    const expireAtEpochMs = acceptedAtEpochMs + DEFAULT_RTC_RTT_MUTATION_RETENTION_MS;
+    const expireAtEpochMs = acceptedAtEpochMs + RTC_RTT_MUTATION_RETENTION_MS;
     const runtime = new FakeRuntimeStateRepository();
     const repository = new RtcRttRepository(runtime, {
         now: () => expireAtEpochMs + input.nowOffsetFromExpiry

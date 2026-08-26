@@ -11,7 +11,7 @@ import type { AuditStamp, GroupMember, GroupPresenceSession, GroupSnapshot } fro
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 
 import { createTestGroup } from '../../../create-test-group.ts';
-import { createAuthorityHarness, createResilience, SCOPE } from '../../group-state/inbox/group-state-inbox-test-runtime.ts';
+import { createAuthorityHarness, createResilience, SCOPE } from '../group-state/inbox/group-state-inbox-test-runtime.ts';
 
 describe('durable RTC RTT refinement work', () => {
     it('preserves the accepted RTT observation in final topology work', async () => {

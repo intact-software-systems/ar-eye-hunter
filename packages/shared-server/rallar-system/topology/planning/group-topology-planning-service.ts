@@ -14,7 +14,7 @@ import type { GroupTopologyConfigQueryService } from '../config/group-topology-c
 import type { GroupTopologyServerOptions } from '../config/group-topology-config.ts';
 import { GroupTopologyValidationError } from '../group-topology-errors.ts';
 import { compareRtcTopologyIdentifiers } from '../persistence/rtc-topology-identifiers.ts';
-import { DEFAULT_RTC_TOPOLOGY_PUBLICATION_RETENTION_MS } from '../publication/rtc-topology-publication-repository-contracts.ts';
+import { RTC_TOPOLOGY_REPLAY_RETENTION_MS } from '../replay/consumer/rtc-topology-replay-policy.ts';
 import {
     RallarRtcTopologyService,
     type RallarRtcTopologyUpdateResult,
@@ -297,7 +297,7 @@ export class GroupTopologyPlanningService {
             materializeRtcOverlayTopologyBroadcastMessage(group, result.snapshot, {
                 workId: crypto.randomUUID(),
                 createdAtEpochMs,
-                expiresAtEpochMs: createdAtEpochMs + DEFAULT_RTC_TOPOLOGY_PUBLICATION_RETENTION_MS
+                expiresAtEpochMs: createdAtEpochMs + RTC_TOPOLOGY_REPLAY_RETENTION_MS
             }),
             result.snapshot
         );

@@ -186,12 +186,17 @@ The server facade is intentionally small: default topics, lifecycle hooks,
 user topics, publishing, status, and app data. Evidence:
 `packages/shared-server/rallar-server/rallar-server-application.ts`.
 
-The real API-v1 server is much heavier. `createRallarServer` wires middleware,
-room authorization, app data, CRDT topics, WS lifecycle, REST routes, Swagger,
-and state routes. Evidence: `apps/api-v1/src/composition/create-rallar-server.ts` lines
-49-133. `initialise()` wires Postgres/PGlite repositories, QueueBox, WebSocket
-server, AL runtime stores, state sync publishers, inbox services, pub/sub, and
-presence expiry. Evidence: `apps/api-v1/src/middleware.ts` lines 60-164.
+The real API-v1 server is much heavier. `createRallarServer` delegates the
+application surface to `RallarServerApplication`; system and route installers
+then own WebSocket lifecycle, system topics, REST, Swagger, and state routes.
+Evidence: `apps/api-v1/src/composition/create-rallar-server.ts` and
+`packages/shared-server/rallar-server/rallar-server-application.ts`.
+`createApiV1Runtime` constructs the mutation repositories, QueueBox,
+WebSocket server, AL runtime stores, topology runtime, state selectors,
+inbox services, pub/sub, expiry, and presence reconciliation before the
+application starts. Evidence:
+`apps/api-v1/src/composition/create-api-v1-runtime.ts` and
+`packages/shared-server/rallar-system/middleware/create-rallar-middleware.ts`.
 
 Product judgment: the facade is promising, but external users need a server
 preset, not a tour of internals. Today the server story still feels like "use
@@ -445,9 +450,9 @@ replay, and production support.
    Replace internal import examples with stable package names, install commands,
    versioning, and public API guarantees.
 
-2. Add a server preset.
-   Create a `createDefaultRallarServer(...)` or equivalent that hides the
-   common Hono/Postgres/PGlite setup for normal users.
+2. Productize the existing server preset.
+   Document and harden `createDefaultRallarServer(...)` as the supported path
+   that hides the common Hono/Postgres/PGlite setup for normal users.
 
 3. Ship one golden sample app.
    A tiny chat/presence app or browser game should be the canonical "Rallar in

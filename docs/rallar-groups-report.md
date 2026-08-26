@@ -43,7 +43,7 @@ Primary shared/server files:
 - `packages/shared-server/rallar-system/group-state/group-state-service.ts`
 - `packages/shared-server/rallar-system/websocket/ws-topic-room-authorizer.ts`
 - `packages/shared-server/rallar-system/state-sync/state-sync-routing.ts`
-- `apps/api-v1/src/routes/group-state-routes.ts`
+- `apps/api-v1/src/group-state/register-group-state-routes.ts`
 - `apps/api-v1/src/main.ts`
 
 Relevant tests and docs:
@@ -52,9 +52,9 @@ Relevant tests and docs:
 - `packages/tests/shared-web/rooms/room-membership-group-state-http.test.ts`
 - `packages/tests/shared-web/rallar-operation-options.test.ts`
 - `packages/tests/shared-web/rooms/room-group-state-workflows.test.ts`
-- `packages/tests/shared-server/group-state-service-idempotency.test.ts`
+- `packages/tests/shared-server/rallar-system/group-state/group-state-service-idempotency.test.ts`
 - `apps/api-v1/test/services/group-state-service.test.ts`
-- `apps/api-v1/test/routes/state-api-routes-hardening.test.ts`
+- `apps/api-v1/test/routes/state-api-cross-feature-routes.test.ts`
 - `docs/rallar-api-reference.md`
 
 ## Current Browser Group Model
@@ -124,7 +124,7 @@ API-v1 mounts `/api/state/*` behind authentication in `main.ts`. Group route
 membership filtering is stricter only when `RALLAR_STATE_STRICT_READ_AUTH` is
 enabled. With strict reads enabled, group snapshot and event reads require the
 caller to be an active member. With strict reads disabled, authenticated state
-reads preserve the broader legacy behavior.
+reads use the broader authenticated-read policy.
 
 State-sync routing is more selective than non-strict REST reads: group snapshots
 and events route only to active or invited members in the same scope, with live

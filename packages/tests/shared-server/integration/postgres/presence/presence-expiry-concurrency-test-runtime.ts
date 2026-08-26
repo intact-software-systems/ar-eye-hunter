@@ -8,9 +8,9 @@ import { createRequire } from 'node:module';
 import { PSqlGroupStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-group-state-event-repository.ts';
 
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
-import { createTestGroupStateRuntime } from '../../../group-state/group-state-test-runtime.ts';
+import { createTestGroupStateRuntime } from '../../../rallar-system/group-state/group-state-test-runtime.ts';
 
-import { createPostgresClientPhaseDriver } from '../../../client-state/postgres-client-mutation-test-driver.ts';
+import { createPostgresClientPhaseDriver } from '../../../rallar-system/client-state/postgres-client-mutation-test-driver.ts';
 
 import { createPostgresTestRequestIdFactory } from '../test-support/create-postgres-test-request-id-factory.ts';
 type PostgresSql =

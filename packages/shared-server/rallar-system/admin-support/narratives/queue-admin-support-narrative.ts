@@ -11,7 +11,7 @@ import type { Key } from '@shared/queuebox/ResourceEntry.ts';
 import { decodeJsonWireValue } from '../../protocol/json-wire-identity.ts';
 import type { AdminSupportQueueEntryRead } from '../admin-support-contracts.ts';
 import { adminSupportNarrativeBase, type AdminSupportNarrativeBase } from './admin-support-narrative-base.ts';
-import { toAdminSupportTimelineItem as toTimeline } from './admin-support-timeline.ts';
+import { toAdminSupportTimelineItem } from './admin-support-timeline.ts';
 
 interface ProjectQueueAdminSupportInput extends AdminSupportNarrativeBase {
     readonly queueKey: Key;
@@ -154,31 +154,31 @@ function entryTimeline(
         return [];
     }
     return [
-        toTimeline({
+        toAdminSupportTimelineItem({
             atEpochMs: entry.createdAtEpochMs,
             source: entry.source,
             eventType: `${prefix}.created`,
             summary: 'Queue row was created.'
         }),
-        toTimeline({
+        toAdminSupportTimelineItem({
             atEpochMs: entry.startedAtEpochMs,
             source: entry.source,
             eventType: `${prefix}.started`,
             summary: 'Queue row processing started.'
         }),
-        toTimeline({
+        toAdminSupportTimelineItem({
             atEpochMs: entry.endedAtEpochMs,
             source: entry.source,
             eventType: `${prefix}.ended`,
             summary: 'Queue row processing ended.'
         }),
-        toTimeline({
+        toAdminSupportTimelineItem({
             atEpochMs: entry.nextRetryAtEpochMs,
             source: entry.source,
             eventType: `${prefix}.next-retry`,
             summary: 'Queue row is scheduled for retry.'
         }),
-        toTimeline({
+        toAdminSupportTimelineItem({
             atEpochMs: entry.expiresAtEpochMs,
             source: entry.source,
             eventType: `${prefix}.expires`,

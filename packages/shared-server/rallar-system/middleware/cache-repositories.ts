@@ -44,5 +44,3 @@ export function initialiseRallarServerCacheRepositories(
         }
     });
 }
-
-export const initialiseServerCacheRepositories = initialiseRallarServerCacheRepositories;

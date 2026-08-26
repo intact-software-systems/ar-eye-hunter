@@ -3,7 +3,7 @@ import { hashMutationCommand, type JsonWireValue } from '@shared-server/rallar-s
 import type { RtcRttMutationCommand } from '@shared-server/rallar-system/rtc-rtt/mutation/rtc-rtt-mutation-contracts.ts';
 import { toRtcRttMutationReceiptId, toRtcRttTopologyOutboxId } from '@shared-server/rallar-system/rtc-rtt/mutation/rtc-rtt-mutation-identifiers.ts';
 import { writeRtcRttMutation } from '@shared-server/rallar-system/rtc-rtt/mutation/write-rtc-rtt-mutation.ts';
-import { DEFAULT_RTC_RTT_MUTATION_RETENTION_MS } from '@shared-server/rallar-system/rtc-rtt/persistence/rtc-rtt-persistence-validation-primitives.ts';
+import { RTC_RTT_MUTATION_RETENTION_MS } from '@shared-server/rallar-system/rtc-rtt/persistence/rtc-rtt-persistence-validation-primitives.ts';
 import { RtcRttRepository } from '@shared-server/rallar-system/rtc-rtt/persistence/rtc-rtt-repository.ts';
 import {
     RTC_RTT_ENDPOINT_ADMISSION_NAMESPACE,
@@ -360,7 +360,7 @@ describe('RTC RTT repository convergence', () => {
                     outboxIds: [toRtcRttTopologyOutboxId(receiptId, affectedGroupRef, commandHash)],
                     commandHash
                 }),
-                1 + DEFAULT_RTC_RTT_MUTATION_RETENTION_MS
+                1 + RTC_RTT_MUTATION_RETENTION_MS
             );
             const now = () => {
                 throw new Error('RTT receipt replay clock');

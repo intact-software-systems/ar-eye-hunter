@@ -46,10 +46,13 @@ direct capability owners are:
 - API administration routes:
   `apps/api-v1/src/crdt/register-crdt-admin-routes.ts`
 
-The colocated package map at
-`packages/shared-server/rallar-system/crdt/README.md` describes the complete
+The shared-server package map and navigation guides describe the complete
 runtime paths, including read-only catch-up and optional external audit
-delivery.
+delivery:
+
+- `packages/shared-server/README.md`
+- `packages/shared-server/docs/runtime-navigation.md`
+- `packages/shared-server/docs/persistence-and-replay.md`
 
 ## When To Use It
 

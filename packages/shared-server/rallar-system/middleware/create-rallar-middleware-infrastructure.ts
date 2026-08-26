@@ -6,7 +6,7 @@ import { JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.ts';
 import { installQueueBoxPubSubBridge } from '../queue-pubsub/queue-box-pub-sub-bridge.ts';
 import { decodeStateSyncMessage } from '../state-sync/state-sync-payload.ts';
 import { createWsServerTargetResolver } from '../websocket/targets/create-ws-server-target-resolver.ts';
-import { initialiseServerCacheRepositories } from './cache-repositories.ts';
+import { initialiseRallarServerCacheRepositories } from './cache-repositories.ts';
 import type {
     CreateRallarMiddlewareOptions,
     RallarMiddlewareInfrastructure
@@ -16,7 +16,7 @@ export function createRallarMiddlewareInfrastructure(
     options: CreateRallarMiddlewareOptions,
     wakeQueueEngine: () => void
 ): RallarMiddlewareInfrastructure {
-    initialiseServerCacheRepositories();
+    initialiseRallarServerCacheRepositories();
     const webSocketServer = options.webSocketServer ?? new JsonWebSocketServer();
     const targetResolver = options.targetResolver ??
         createWsServerTargetResolver(webSocketServer, {

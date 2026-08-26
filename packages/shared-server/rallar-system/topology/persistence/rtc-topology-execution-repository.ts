@@ -1,6 +1,5 @@
 import {
     createRtcTopologyExecutionReceipt,
-    DEFAULT_RTC_TOPOLOGY_PUBLICATION_RETENTION_MS,
     hashRtcTopologyExecutionCommand
 } from '@shared-server/rallar-system/topology/publication/rtc-topology-publication-repository-contracts.ts';
 import { RtcTopologyPublicationRepository } from '@shared-server/rallar-system/topology/publication/rtc-topology-publication-repository.ts';
@@ -17,6 +16,7 @@ import {
     type RtcTopologyMutationComputed,
     type RtcTopologyMutationRead
 } from '../mutation/rtc-topology-mutations.ts';
+import { RTC_TOPOLOGY_REPLAY_RETENTION_MS } from '../replay/consumer/rtc-topology-replay-policy.ts';
 import { RtcTopologyInputFingerprintRepository } from '../replay/work/rtc-topology-input-fingerprint.ts';
 import { RtcTopologyRepositoryInvariantCorruptionError } from './rtc-topology-errors.ts';
 import { rtcTopologySemanticEqual } from './rtc-topology-semantic-equal.ts';
@@ -44,7 +44,7 @@ export class RtcTopologyExecutionRepository {
 
     constructor(
         runtimeRepository: RuntimeStateOptimisticTransactionalRepositoryLike,
-        publicationRetentionMs: number = DEFAULT_RTC_TOPOLOGY_PUBLICATION_RETENTION_MS,
+        publicationRetentionMs: number = RTC_TOPOLOGY_REPLAY_RETENTION_MS,
         now: () => number = () => Date.now()
     ) {
         this.runtimeRepository = runtimeRepository;
@@ -55,19 +55,9 @@ export class RtcTopologyExecutionRepository {
     async findPublicationForWork(
         groupRef: GroupRef,
         workId: string
-    ): Promise<RtcTopologyPublication | undefined>;
-    async findPublicationForWork(
-        workId: string
-    ): Promise<RtcTopologyPublication | undefined>;
-    async findPublicationForWork(
-        groupRefOrWorkId: GroupRef | string,
-        maybeWorkId?: string
     ): Promise<RtcTopologyPublication | undefined> {
-        return typeof groupRefOrWorkId === 'string'
-            ? await this.publications(this.runtimeRepository)
-                .findPublicationForWork(groupRefOrWorkId)
-            : await this.publications(this.runtimeRepository)
-                .findPublicationForWork(groupRefOrWorkId, maybeWorkId!);
+        return await this.publications(this.runtimeRepository)
+            .findPublicationForWork(groupRef, workId);
     }
 
     async findSnapshot(

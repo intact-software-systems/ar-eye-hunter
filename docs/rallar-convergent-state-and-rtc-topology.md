@@ -107,7 +107,7 @@ writes use conditional insert/update/delete fencing. Advisory and CRDT
 document-row locks are not approved queue-claim exceptions.
 
 Authoritative persisted and shared contracts use mandatory fields by default.
-Sparse input and migration types remain separate.
+Sparse request/input types remain separate from persisted shapes.
 
 Expiry is a causal delete, not cleanup after a trustworthy read. A reader that
 saw an expired revision may delete only that revision, so it cannot remove a
@@ -344,7 +344,7 @@ transaction. A publication contains:
 
 Publication and work-index records use the existing runtime-state store and a
 24-hour retention window. Exact-key validation uses the existing composite
-primary key, so no SQL migration is required. Publication identity contains the
+primary key, so no dedicated publication table is required. Publication identity contains the
 work execution id and the accepted `(sourceGroupStateCausalRevision, overlayVersion)`
 tuple. `createdAtEpochMs` comes from the work's immutable request time.
 
@@ -649,7 +649,7 @@ Focused concurrency coverage lives in:
 - `packages/tests/shared-server/rallar-system/rtc-rtt/persistence/rtc-rtt-repository-read-write.test.ts`
 - `packages/tests/shared-server/rallar-system/rtc-rtt/persistence/rtc-rtt-repository-convergence.test.ts`
 - `packages/tests/shared-server/rallar-system/rtc-rtt/persistence/rtc-rtt-persistence-corruption.test.ts`
-- `packages/tests/shared-server/rallar-system/topology/persistence/rtc-topology-snapshot-repository.test.ts`
+- `packages/tests/shared-server/rallar-system/topology/rtc-topology-snapshot-repository.test.ts`
 - `packages/tests/shared-server/rallar-system/topology/publication/rtc-topology-publication-repository.test.ts`
 - `packages/tests/shared-server/rallar-system/topology/runtime/rtc-topology-runtime-integration.test.ts`
 - `packages/tests/shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-bridge.test.ts`

@@ -99,7 +99,8 @@ Every transition writes the aggregate under compare-and-set, bumps `snapshotVers
 
 ### Who may command a transition
 
-`canCommandGroupLifecycleTransition` in `packages/shared-server/rallar-system/group-policy.ts`
+`canCommandGroupLifecycleTransition` in
+`packages/shared-server/rallar-system/group-state/policy/group-lifecycle-policy.ts`
 decides in order: the actor must be an active member (`member-not-active`, or the blocked-member
 denials), then the policy's `establishment.initiator` decides authority, then the transition must be
 legal from the current state.
@@ -138,7 +139,7 @@ gate as an operator escape hatch.
 
 The safety baseline is never phase-gated: membership mutations, presence, and WS connectivity work
 in every state, including a group that never leaves `forming` (membership and presence:
-`packages/tests/shared-server/group-state/group-lifecycle-safety-baseline.test.ts`; WS connectivity
+`packages/tests/shared-server/rallar-system/group-state/group-lifecycle-safety-baseline.test.ts`; WS connectivity
 while forming: the `openAliceWs` and `formingTopologyHydrationArrives` steps of
 `api-v1-group-lifecycle-transitions` and the `…SendReachesAliceWhileForming` relays of
 `api-v1-group-data-policy`). Phases gate establishment work and the app-visible `active` signal,
@@ -281,7 +282,7 @@ managers. An unreadable stored policy never reads as permissive.
 
 Admission is a consent-and-timing overlay on the existing join gate. `joinMode` remains the
 credential — how a principal proves entitlement (`open`, `invite-only`, `code`) — and
-`canJoinGroup` in `group-policy.ts` still runs first with its business-status guard, blocked-member
+`canJoinGroup` in `group-state/policy/group-membership-admission-policy.ts` still runs first with its business-status guard, blocked-member
 denials, and `maxMembers` cap. Only a join that passes it reaches the admission decision.
 
 ### The decision
@@ -496,7 +497,7 @@ exhausting both attempts and re-opening as a joinable lobby (`allOrNothingFloorR
 ### One evaluator, two producers
 
 `computeFormationCriterionCommand`
-(`packages/shared-server/rallar-system/topology/replay/compute-formation-criterion-command.ts`)
+(`packages/shared-server/rallar-system/topology/replay/work/compute-formation-criterion-command.ts`)
 is the single evaluation function: it returns `null` unless the group is `establishing` or
 `reconfiguring`, reads the policy (corrupt → `null`; absent → optimistic, whose `manual` mode waits),
 derives readiness from the supplied plan and evidence, evaluates the criterion, and returns the
@@ -585,20 +586,20 @@ durable AppInbox RTT mutation composed in
 `apps/api-v1/src/composition/create-api-v1-topology-services.ts` — the path api-v1 takes for every
 report on every SQL backend, because its system-topic installer always declares the durable topology
 repositories — resolves the group's effective topology configuration under the server reporting
-option (`readRttReportingDegreeLimit`), so a configured `RALLAR_RTC_RTT_REPORTING_DEGREE_LIMIT` still
-wins and otherwise the group's effective `degreeLimit` is the limit; the in-memory topic branch in
-`init-rtc-rtt-topic.ts` resolves it the same way through the `readGroupRttReportingDegreeLimit` hook
-in `init-rtc-rtt-topic.ts`, for compositions without durable topology repositories. A report whose
-endpoints both hold live sessions in several groups is accepted under the largest of those groups'
-limits. The managed burst recipes rely on this by raising the group's topology `degreeLimit` (24 at
-N=20, 54 at N=50) before the burst. `docs/rallar-rtc-rtt-reporting.md` owns the wider reporting
-flow.
+option (`readRttReportingDegreeLimit`). API-v1 has one current path: the RTC-RTT system-topic
+installer decodes the message and enqueues the durable mutation; the AppInbox handler reads the
+candidate groups and their current topology policy inputs. A configured
+`RALLAR_RTC_RTT_REPORTING_DEGREE_LIMIT` wins. Lower-level compositions that omit that server option
+fall back to each group's effective `degreeLimit`. A report whose endpoints both hold live sessions
+in several groups is accepted under the largest resolved limit. Managed burst environments must
+raise both the topology degree and the server RTT-reporting degree when the plan needs more than the
+default five reporting peers. `docs/rallar-rtc-rtt-reporting.md` owns the wider reporting flow.
 
 ## Pre-Activation Data Gating
 
 `data.preActivationAppData: 'blocked-until-active'` gates WS-relayed, room-scoped application data
 until the group's `lifecycleState` is `active`. It is one added denial at the existing per-message
-predicate: `canSendGroupMessage` in `group-policy.ts` denies `group-data-blocked-until-active` when
+predicate: `canSendGroupMessage` in `group-state/policy/group-message-policy.ts` denies `group-data-blocked-until-active` when
 the resolved value is `blocked-until-active` and the group is not `active` — so `forming`,
 `establishing`, and `reconfiguring` all block, which is the meaning `reconfiguring` exists to carry.
 
@@ -822,8 +823,12 @@ writing this document:
   (`resolve-group-lifecycle-managers.ts`), and the view contract (`group-formation-view.ts`).
 - `packages/shared/api/group-types.ts` and `group-policy-types.ts`: the aggregate fields, the
   `pending` member status, event types, and the `GroupPolicyReasonCode` vocabulary.
-- `packages/shared-server/rallar-system/group-policy.ts`: the gates — `canJoinGroup`,
-  `canCommandGroupLifecycleTransition`, `canDecideGroupAdmission`, `canSendGroupMessage`.
+- `packages/shared-server/rallar-system/group-state/policy/group-membership-admission-policy.ts`:
+  `canJoinGroup` and `canDecideGroupAdmission`.
+- `packages/shared-server/rallar-system/group-state/policy/group-lifecycle-policy.ts`:
+  `canCommandGroupLifecycleTransition`.
+- `packages/shared-server/rallar-system/group-state/policy/group-message-policy.ts`:
+  `canSendGroupMessage`.
 - `packages/shared-server/rallar-system/group-state/mutation/aggregate/compute-lifecycle-transition.ts`:
   the transition compute, electorate re-pin, outcome recording, and timer arming.
 - `packages/shared-server/rallar-system/group-state/mutation/membership/compute-group-admission-mutation.ts`
@@ -834,7 +839,7 @@ writing this document:
   commands.
 - `packages/shared-server/rallar-system/group-state/persistence/group-lifecycle-policy-repository.ts`:
   policy storage and the absent/present/corrupt read.
-- `packages/shared-server/rallar-system/topology/replay/compute-formation-criterion-command.ts`,
+- `packages/shared-server/rallar-system/topology/replay/work/compute-formation-criterion-command.ts`,
   `create-rtc-topology-work-handler.ts`, `create-formation-timer-work-handler.ts`: the evaluator, the
   evidence-leg petition and the damped edge-trigger, the planning work handler that calls them, and
   the time leg.

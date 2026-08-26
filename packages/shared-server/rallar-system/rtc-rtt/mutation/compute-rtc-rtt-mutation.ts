@@ -6,8 +6,8 @@ import { compareRtcTopologyIdentifiers } from '../../topology/persistence/rtc-to
 import { rtcTopologySemanticEqual } from '../../topology/persistence/rtc-topology-semantic-equal.ts';
 import type { RtcRttEndpointAdmission } from '../persistence/rtc-rtt-persistence-contracts.ts';
 import {
-    canonicalRtcRttAffectedGroups as canonicalAffectedGroups,
-    canonicalRtcRttGroupRef as canonicalGroupRef,
+    canonicalRtcRttAffectedGroups,
+    canonicalRtcRttGroupRef,
     readRtcRttExpiredAuthority
 } from '../policy/read-rtc-rtt-expired-authority.ts';
 import { evaluateRtcRttMeasurement } from '../policy/rtc-rtt-measurement-policy.ts';
@@ -96,7 +96,7 @@ export function computeRtcRttMutation(
         requestedAtEpochMs: authority.facts.requestedAtEpochMs,
         existingMeasurements: authorityRead.measurements.map(({ value }) => value)
     });
-    const affectedGroups = canonicalAffectedGroups(acceptance.affectedGroups);
+    const affectedGroups = canonicalRtcRttAffectedGroups(acceptance.affectedGroups);
     if (!acceptance.accepted) {
         return {
             outcome: 'rejected',
@@ -165,7 +165,7 @@ export function computeRtcRttMutation(
         };
     });
     const receiptId = toRtcRttMutationReceiptId(authority.command.rtt);
-    const affectedGroupRefs = affectedGroups.map((group) => canonicalGroupRef(group.group));
+    const affectedGroupRefs = affectedGroups.map((group) => canonicalRtcRttGroupRef(group.group));
     const outboxIds = affectedGroups.map((group) =>
         toRtcRttTopologyOutboxId(receiptId, group.group, input.facts.commandHash)
     );

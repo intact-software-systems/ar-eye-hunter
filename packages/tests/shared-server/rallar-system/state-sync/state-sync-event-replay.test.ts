@@ -5,8 +5,8 @@ import type { ClientEvent, ClientPrincipalRef } from '@shared/api/client-types.t
 import type { GroupEvent, GroupRef } from '@shared/api/group-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import { describe, expect, it } from 'vitest';
-import { createClientStateTestDriver as createClientStateService } from '../../client-state/client-state-test-runtime.ts';
-import { createTestGroupStateService as createGroupStateService } from '../../group-state/group-state-test-runtime.ts';
+import { createClientStateTestDriver as createClientStateService } from '../client-state/client-state-test-runtime.ts';
+import { createTestGroupStateService as createGroupStateService } from '../group-state/group-state-test-runtime.ts';
 import { FakeRuntimeStateRepository } from '../../runtime-state/test-support/fake-runtime-state-repository.ts';
 
 const SCOPE: StateScope = {

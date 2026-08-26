@@ -6,7 +6,7 @@ import type { AuditStamp, GroupRef, GroupSnapshot } from '@shared/api/group-type
 import { StateSnapshotRevisionConflictError } from '@shared/repository/state-snapshot-revision.ts';
 import { describe, expect, it } from 'vitest';
 import { createTestGroup } from '../../../create-test-group.ts';
-import { createClientStateServiceStub } from '../../client-state/test-support/client-state-service-stub.ts';
+import { createClientStateServiceStub } from '../client-state/client-state-service-stub.ts';
 import { createGroupStateServiceStub } from './test-support/group-state-service-stub.ts';
 
 describe('cached state services', () => {
