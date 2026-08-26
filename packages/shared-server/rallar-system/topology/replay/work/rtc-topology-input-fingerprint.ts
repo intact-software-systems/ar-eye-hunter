@@ -7,6 +7,7 @@ import { groupStateGroupStorageKey } from '@shared-server/rallar-system/group-st
 import { RuntimeStateJsonStore } from '../../../../runtime-state/runtime-state-json-store.ts';
 import type { RuntimeStateRepositoryLike } from '../../../../runtime-state/runtime-state-repository.ts';
 import { sha256CanonicalJson } from '../../../group-state/mutation/group-state-crypto.ts';
+import type { JsonWireObject, JsonWireValue } from '../../../protocol/json-wire-identity.ts';
 import { compareRtcTopologyIdentifiers } from '../../persistence/rtc-topology-identifiers.ts';
 import type { GroupTopologyPlanningAuthority } from '../../planning/group-topology-planning-authority.ts';
 import type { RtcTopologyKindHysteresisWidths } from '../../runtime/rallar-rtc-topology-service.ts';
@@ -70,21 +71,13 @@ export class RtcTopologyInputFingerprintRepository extends RuntimeStateJsonStore
      * gate fails open into a normal rebuild instead of a wrong skip.
      */
     async findFingerprint(ref: GroupRef): Promise<string | null> {
-        const stored = await this.getValue<StoredRtcTopologyInputFingerprint>(
+        const stored = await this.getJsonValue(
             RTC_TOPOLOGY_INPUT_FINGERPRINTS_NAMESPACE,
             groupStateGroupStorageKey(ref)
         );
-        if (
-            !stored ||
-            typeof stored.fingerprint !== 'string' ||
-            !/^sha256:[0-9a-f]{64}$/.test(stored.fingerprint) ||
-            stored.groupRef?.applicationId !== ref.applicationId ||
-            stored.groupRef?.workspaceId !== ref.workspaceId ||
-            stored.groupRef?.groupId !== ref.groupId
-        ) {
-            return null;
-        }
-        return stored.fingerprint;
+        return stored === undefined
+            ? null
+            : decodeStoredRtcTopologyInputFingerprint(stored, ref)?.fingerprint ?? null;
     }
 
     async putFingerprint(ref: GroupRef, fingerprint: string): Promise<void> {
@@ -106,4 +99,42 @@ export class RtcTopologyInputFingerprintRepository extends RuntimeStateJsonStore
             NEVER_EXPIRE_AT_TIMESTAMP
         );
     }
+}
+
+function decodeStoredRtcTopologyInputFingerprint(
+    value: JsonWireValue,
+    expectedRef: GroupRef
+): StoredRtcTopologyInputFingerprint | null {
+    if (
+        !isExactJsonWireObject(value, ['groupRef', 'fingerprint']) ||
+        !isExactJsonWireObject(value.groupRef, ['applicationId', 'workspaceId', 'groupId']) ||
+        value.groupRef.applicationId !== expectedRef.applicationId ||
+        value.groupRef.workspaceId !== expectedRef.workspaceId ||
+        value.groupRef.groupId !== expectedRef.groupId ||
+        typeof value.fingerprint !== 'string' ||
+        !/^sha256:[0-9a-f]{64}$/.test(value.fingerprint)
+    ) {
+        return null;
+    }
+    return {
+        groupRef: {
+            applicationId: value.groupRef.applicationId,
+            workspaceId: value.groupRef.workspaceId,
+            groupId: value.groupRef.groupId
+        },
+        fingerprint: value.fingerprint
+    };
+}
+
+function isExactJsonWireObject(
+    value: JsonWireValue,
+    keys: readonly string[]
+): value is JsonWireObject {
+    if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+        return false;
+    }
+    const actualKeys = Object.keys(value).toSorted();
+    const expectedKeys = keys.toSorted();
+    return actualKeys.length === expectedKeys.length &&
+        actualKeys.every((key, index) => key === expectedKeys[index]);
 }

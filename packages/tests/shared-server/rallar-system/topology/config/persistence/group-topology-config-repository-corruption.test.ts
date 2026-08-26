@@ -316,6 +316,6 @@ function createExpiredMutationRecordSeed(
 
 class ExposedLiveValueRepository extends GroupTopologyConfigRepository {
     readLiveValue(namespace: string, entry: RuntimeStateEntry) {
-        return this.toLiveEntryValue<unknown>(namespace, entry);
+        return this.toLiveJsonEntryValue(namespace, entry);
     }
 }

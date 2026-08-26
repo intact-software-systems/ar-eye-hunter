@@ -69,7 +69,7 @@ export class ClientStateRepositoryReads extends RuntimeStateJsonStore {
         ref: ClientPrincipalRef,
         requestId: string
     ): Promise<RuntimeStateEntryValue<ClientMutationIdempotencyRecord> | undefined> {
-        const stored = await this.getEntryValue<JsonWireValue>(
+        const stored = await this.getJsonEntryValue(
             CLIENT_STATE_IDEMPOTENT_NAMESPACE,
             clientStateIdempotencyStorageKey(ref, requestId)
         );
@@ -83,7 +83,7 @@ export class ClientStateRepositoryReads extends RuntimeStateJsonStore {
     async findPrincipalEntry(
         ref: ClientPrincipalRef
     ): Promise<RuntimeStateEntryValue<ClientPrincipal> | undefined> {
-        const stored = await this.getEntryValue<JsonWireValue>(
+        const stored = await this.getJsonEntryValue(
             CLIENT_STATE_PRINCIPALS_NAMESPACE,
             clientStatePrincipalStorageKey(ref)
         );
@@ -103,7 +103,7 @@ export class ClientStateRepositoryReads extends RuntimeStateJsonStore {
     async findInstanceEntry(
         ref: ClientInstanceRef
     ): Promise<RuntimeStateEntryValue<ClientInstance> | undefined> {
-        const stored = await this.getEntryValue<JsonWireValue>(
+        const stored = await this.getJsonEntryValue(
             CLIENT_STATE_INSTANCES_NAMESPACE,
             clientStateInstanceStorageKey(ref)
         );
@@ -130,7 +130,7 @@ export class ClientStateRepositoryReads extends RuntimeStateJsonStore {
     }
 
     async readSessionEntry(ref: ClientSessionRef): Promise<RuntimeStateEntryRead<ClientSession>> {
-        const stored = await this.getEntryRead<JsonWireValue>(
+        const stored = await this.getJsonEntryRead(
             CLIENT_STATE_SESSIONS_NAMESPACE,
             clientStateSessionStorageKey(ref)
         );
@@ -200,7 +200,7 @@ export class ClientStateRepositoryReads extends RuntimeStateJsonStore {
         keyPrefix: string,
         expected: ClientScope
     ): Promise<readonly RuntimeStateEntryValue<ClientPrincipal>[]> {
-        const stored = await this.listEntryValues<JsonWireValue>(
+        const stored = await this.listJsonEntryValues(
             CLIENT_STATE_PRINCIPALS_NAMESPACE,
             keyPrefix
         );
@@ -211,7 +211,7 @@ export class ClientStateRepositoryReads extends RuntimeStateJsonStore {
         keyPrefix?: string,
         expected?: ClientScope | ClientPrincipalRef
     ): Promise<readonly RuntimeStateEntryValue<ClientInstance>[]> {
-        const stored = await this.listEntryValues<JsonWireValue>(
+        const stored = await this.listJsonEntryValues(
             CLIENT_STATE_INSTANCES_NAMESPACE,
             keyPrefix
         );
@@ -222,7 +222,7 @@ export class ClientStateRepositoryReads extends RuntimeStateJsonStore {
         keyPrefix?: string,
         expected?: ClientScope | ClientPrincipalRef | ClientInstanceRef
     ): Promise<readonly RuntimeStateEntryValue<ClientSession>[]> {
-        const stored = await this.listEntryValues<JsonWireValue>(
+        const stored = await this.listJsonEntryValues(
             CLIENT_STATE_SESSIONS_NAMESPACE,
             keyPrefix
         );

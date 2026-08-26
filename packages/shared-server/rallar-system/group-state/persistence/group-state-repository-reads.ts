@@ -9,7 +9,9 @@ import type {
 } from '@shared/api/group-types.ts';
 
 import type { RuntimeStateEntryRead, RuntimeStateEntryValue } from '../../../runtime-state/runtime-state-json-store.ts';
+import type { JsonWireValue } from '../../protocol/json-wire-identity.ts';
 import type { GroupMutationIdempotencyRecord } from '../mutation/group-mutation-contracts.ts';
+import { validateGroupMutationIdempotencyRecord } from '../mutation/result-validation/validate-group-mutation-result.ts';
 import { assertStoredIdempotency, canonicalStoredGroup } from './group-aggregate-repository.ts';
 import { canonicalStoredMember } from './group-membership-repository.ts';
 import {
@@ -47,15 +49,15 @@ export class GroupStateRepositoryReads extends GroupStateSnapshotRepository {
         return await readGroupStateMutationExactEntries(
             this.repository,
             input,
-            async (namespace, entry) => await this.toLiveEntryValue<unknown>(namespace, entry),
+            async (namespace, entry) => await this.toLiveJsonEntryValue(namespace, entry),
             {
                 group: (entry) => canonicalStoredGroup(entry, input.aggregateRef),
                 presenceSummary: (entry) => canonicalStoredSummary(entry, input.aggregateRef),
-                idempotency: (requestId, entry) => {
-                    const stored = entry as RuntimeStateEntryValue<GroupMutationIdempotencyRecord>;
-                    assertStoredIdempotency(stored, { ...input.aggregateRef, requestId });
-                    return stored;
-                },
+                idempotency: (requestId, entry) =>
+                    canonicalStoredIdempotency(entry, {
+                        ...input.aggregateRef,
+                        requestId
+                    }),
                 member: (principalId, entry) =>
                     canonicalStoredMember(entry, {
                         ...input.aggregateRef,
@@ -86,14 +88,13 @@ export class GroupStateRepositoryReads extends GroupStateSnapshotRepository {
         ref: GroupRef,
         requestId: string
     ): Promise<RuntimeStateEntryValue<GroupMutationIdempotencyRecord> | undefined> {
-        const stored = await this.getEntryValue<GroupMutationIdempotencyRecord>(
+        const stored = await this.getJsonEntryValue(
             IDEMPOTENT_NAMESPACE,
             groupStateIdempotencyStorageKey(ref, requestId)
         );
-        if (stored) {
-            assertStoredIdempotency(stored, { ...ref, requestId });
-        }
-        return stored;
+        return stored
+            ? canonicalStoredIdempotency(stored, { ...ref, requestId })
+            : undefined;
     }
 
     override async findGroupEntry(ref: GroupRef): Promise<RuntimeStateEntryValue<Group> | undefined> {
@@ -101,7 +102,7 @@ export class GroupStateRepositoryReads extends GroupStateSnapshotRepository {
     }
 
     async readGroupEntry(ref: GroupRef): Promise<RuntimeStateEntryRead<Group>> {
-        const stored = await this.getEntryRead<unknown>(
+        const stored = await this.getJsonEntryRead(
             GROUPS_NAMESPACE,
             groupStateGroupStorageKey(ref)
         );
@@ -131,7 +132,7 @@ export class GroupStateRepositoryReads extends GroupStateSnapshotRepository {
     }
 
     async listGroups(scope: GroupScope): Promise<readonly Group[]> {
-        const stored = await this.listEntryValues<unknown>(
+        const stored = await this.listJsonEntryValues(
             GROUPS_NAMESPACE,
             `${groupStateScopeStorageKey(scope)}:`
         );
@@ -151,7 +152,7 @@ export class GroupStateRepositoryReads extends GroupStateSnapshotRepository {
     async findMemberEntry(
         ref: GroupRef & Readonly<{ principalId: string; }>
     ): Promise<RuntimeStateEntryValue<GroupMember> | undefined> {
-        const stored = await this.getEntryValue<unknown>(
+        const stored = await this.getJsonEntryValue(
             MEMBERS_NAMESPACE,
             groupStateMemberStorageKey(ref)
         );
@@ -163,7 +164,7 @@ export class GroupStateRepositoryReads extends GroupStateSnapshotRepository {
     }
 
     async listMemberEntries(ref: GroupRef): Promise<readonly RuntimeStateEntryValue<GroupMember>[]> {
-        const stored = await this.listEntryValues<unknown>(
+        const stored = await this.listJsonEntryValues(
             MEMBERS_NAMESPACE,
             `${groupStateGroupStorageKey(ref)}:`
         );
@@ -179,7 +180,7 @@ export class GroupStateRepositoryReads extends GroupStateSnapshotRepository {
     async readPresenceEntry(
         ref: GroupRef & Readonly<{ sessionId: string; }>
     ): Promise<RuntimeStateEntryRead<GroupPresenceSession>> {
-        const stored = await this.getEntryRead<unknown>(
+        const stored = await this.getJsonEntryRead(
             SESSIONS_NAMESPACE,
             groupStatePresenceSessionStorageKey(ref)
         );
@@ -202,7 +203,7 @@ export class GroupStateRepositoryReads extends GroupStateSnapshotRepository {
     async listPresenceSessionEntries(
         ref: GroupRef
     ): Promise<readonly RuntimeStateEntryValue<GroupPresenceSession>[]> {
-        const stored = await this.listEntryValues<unknown>(
+        const stored = await this.listJsonEntryValues(
             SESSIONS_NAMESPACE,
             `${groupStateGroupStorageKey(ref)}:`
         );
@@ -212,7 +213,7 @@ export class GroupStateRepositoryReads extends GroupStateSnapshotRepository {
     async findPresenceAdmissionEntry(
         ref: GroupRef & Readonly<{ principalId: string; }>
     ): Promise<RuntimeStateEntryValue<GroupPresenceAdmission> | undefined> {
-        const stored = await this.getEntryValue<unknown>(
+        const stored = await this.getJsonEntryValue(
             PRESENCE_ADMISSIONS_NAMESPACE,
             groupStatePresenceAdmissionStorageKey(ref)
         );
@@ -226,7 +227,7 @@ export class GroupStateRepositoryReads extends GroupStateSnapshotRepository {
     async listPresenceAdmissionEntries(
         ref: GroupRef
     ): Promise<readonly RuntimeStateEntryValue<GroupPresenceAdmission>[]> {
-        const stored = await this.listEntryValues<unknown>(
+        const stored = await this.listJsonEntryValues(
             PRESENCE_ADMISSIONS_NAMESPACE,
             `${groupStateGroupStorageKey(ref)}:`
         );
@@ -234,17 +235,27 @@ export class GroupStateRepositoryReads extends GroupStateSnapshotRepository {
     }
 
     async listAllPresenceSessions(): Promise<readonly GroupPresenceSession[]> {
-        const stored = await this.listEntryValues<unknown>(SESSIONS_NAMESPACE);
+        const stored = await this.listJsonEntryValues(SESSIONS_NAMESPACE);
         return stored.map((entry) => canonicalStoredSession(entry).value);
     }
 
     override async findPresenceSummaryEntry(
         ref: GroupRef
     ): Promise<RuntimeStateEntryValue<GroupPresenceSummary> | undefined> {
-        const stored = await this.getEntryValue<unknown>(
+        const stored = await this.getJsonEntryValue(
             PRESENCE_SUMMARIES_NAMESPACE,
             groupStateGroupStorageKey(ref)
         );
         return stored ? canonicalStoredSummary(stored, ref) : undefined;
     }
+}
+
+function canonicalStoredIdempotency(
+    stored: RuntimeStateEntryValue<JsonWireValue>,
+    expected: GroupRef & Readonly<{ requestId: string; }>
+): RuntimeStateEntryValue<GroupMutationIdempotencyRecord> {
+    validateGroupMutationIdempotencyRecord(stored.value, expected);
+    const decoded = { entry: stored.entry, value: stored.value };
+    assertStoredIdempotency(decoded, expected);
+    return decoded;
 }

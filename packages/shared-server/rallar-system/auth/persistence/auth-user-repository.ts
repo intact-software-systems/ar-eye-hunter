@@ -61,7 +61,7 @@ export class AuthUserRepository extends RuntimeStateJsonStore {
     async findByNormalizedUsernameEntry(
         normalizedUsername: string
     ): Promise<RuntimeStateEntryValue<PersistedAuthUser> | undefined> {
-        const stored = await this.getEntryValue<JsonWireValue>(
+        const stored = await this.getJsonEntryValue(
             AUTH_USERS_BY_USERNAME_NAMESPACE,
             this.normalizedUsernameKey(normalizedUsername)
         );
@@ -82,7 +82,7 @@ export class AuthUserRepository extends RuntimeStateJsonStore {
     async findByClientIdEntry(
         clientId: string
     ): Promise<RuntimeStateEntryValue<PersistedAuthUser> | undefined> {
-        const stored = await this.getEntryValue<JsonWireValue>(
+        const stored = await this.getJsonEntryValue(
             AUTH_USERS_BY_CLIENT_ID_NAMESPACE,
             this.clientIdKey(clientId)
         );

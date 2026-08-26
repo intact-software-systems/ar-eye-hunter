@@ -1,17 +1,17 @@
 import type { GroupLifecyclePolicy } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
-import { validateGroupLifecyclePolicy } from '@shared/api/group-lifecycle/validate-group-lifecycle-policy.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 
 import { RuntimeStateJsonStore } from '../../../runtime-state/runtime-state-json-store.ts';
 import type { RuntimeStateRepositoryLike } from '../../../runtime-state/runtime-state-repository.ts';
+import { decodeJsonWireValue } from '../../protocol/json-wire-identity.ts';
+import {
+    decodeCurrentGroupLifecyclePolicy,
+    decodeStoredGroupLifecyclePolicy,
+    type StoredGroupLifecyclePolicy
+} from './decode-stored-group-lifecycle-policy.ts';
 import { groupStateGroupStorageKey } from './group-state-storage-keys.ts';
 
 export const GROUP_LIFECYCLE_POLICIES_NAMESPACE = 'group-state:lifecycle-policies';
-
-type StoredGroupLifecyclePolicy = Readonly<{
-    groupRef: GroupRef;
-    policy: GroupLifecyclePolicy;
-}>;
 
 /**
  * `absent` and `corrupt` are separate outcomes on purpose. A neighbouring store
@@ -34,48 +34,36 @@ export class GroupLifecyclePolicyRepository extends RuntimeStateJsonStore {
     }
 
     async readPolicy(ref: GroupRef): Promise<GroupLifecyclePolicyRead> {
-        const stored = await this.getValue<StoredGroupLifecyclePolicy>(
+        const stored = await this.getJsonValue(
             GROUP_LIFECYCLE_POLICIES_NAMESPACE,
             groupStateGroupStorageKey(ref)
         );
         if (stored === undefined) {
             return { status: 'absent' };
         }
-        if (!isSameGroupRef(stored.groupRef, ref)) {
+        try {
+            const decoded = decodeStoredGroupLifecyclePolicy(stored, ref);
+            return { status: 'present', policy: decoded.policy };
+        }
+        catch (error) {
             return {
                 status: 'corrupt',
-                reason: 'stored policy identity differs from the requested group'
+                reason: error instanceof Error ? error.message : 'Stored group lifecycle policy is invalid'
             };
         }
-        if (stored.policy === null || typeof stored.policy !== 'object') {
-            return { status: 'corrupt', reason: 'stored policy is not an object' };
-        }
-
-        return validateGroupLifecyclePolicy(stored.policy).fold<GroupLifecyclePolicyRead>(
-            (issues) => ({
-                status: 'corrupt',
-                reason: 'stored policy is no longer coherent: ' + issues.map((issue) => issue.code).join(', ')
-            }),
-            (policy) => ({ status: 'present', policy })
-        );
     }
 
     async writePolicy(ref: GroupRef, policy: GroupLifecyclePolicy): Promise<void> {
+        const currentPolicy = decodeCurrentGroupLifecyclePolicy(
+            decodeJsonWireValue(policy, 'Group lifecycle policy')
+        );
         await this.putValue(
             GROUP_LIFECYCLE_POLICIES_NAMESPACE,
             groupStateGroupStorageKey(ref),
             {
                 groupRef: ref,
-                policy
+                policy: currentPolicy
             } satisfies StoredGroupLifecyclePolicy
         );
     }
-}
-
-function isSameGroupRef(left: GroupRef | undefined, right: GroupRef): boolean {
-    return (
-        left?.applicationId === right.applicationId &&
-        left?.workspaceId === right.workspaceId &&
-        left?.groupId === right.groupId
-    );
 }

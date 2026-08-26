@@ -40,7 +40,7 @@ describe('decodeRtcSignalingRoute', () => {
             ...replacement
         };
         let serialized = JSON.stringify(message);
-        if (Object.hasOwn(replacement, 'toId') && replacement.toId === undefined) {
+        if ('toId' in replacement && replacement.toId === undefined) {
             const { toId: _missingRecipient, ...withoutRecipient } = message;
             serialized = JSON.stringify(withoutRecipient);
         }

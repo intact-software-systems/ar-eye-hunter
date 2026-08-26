@@ -3,21 +3,12 @@ import {
     type RallarWsLifecycleCloseInput,
     type RallarWsLifecycleSocketService
 } from '@shared-server/rallar-system/websocket/ws-lifecycle-service.ts';
+import { ConnectionContext, type WebSocketServerCallbacks } from '@shared/websocket/JsonWebSocketServer.ts';
 import { describe, expect, it, vi } from 'vitest';
-
-interface WebSocketLifecycleCallbacks {
-    onClose?: (socket: WebSocketLifecycleSocket) => void | Promise<void>;
-}
-
-interface WebSocketLifecycleSocket {
-    readonly id: string;
-    readonly generationId: string;
-    readonly generationStartedAtEpochMs: number;
-}
 
 describe('ws lifecycle service', () => {
     it('disconnects client and group session state when the websocket closes', async () => {
-        const callbacks = new Map<string, WebSocketLifecycleCallbacks>();
+        const callbacks = new Map<string, WebSocketServerCallbacks>();
         const wsQBoxServerService = createLifecycleSocketService(callbacks);
         const handlers = {
             now: () => 2_000,
@@ -29,11 +20,10 @@ describe('ws lifecycle service', () => {
         };
 
         initWsLifecycle(wsQBoxServerService, handlers);
-        await callbacks.get('handle-ws-lifecycle')?.onClose?.({
-            id: 'session-1',
-            generationId: 'generation-1',
-            generationStartedAtEpochMs: 1_000
-        });
+        await callbacks.get('handle-ws-lifecycle')?.onClose?.(
+            createConnection('session-1', 'generation-1', 1_000),
+            new CloseEvent('close')
+        );
         await flushLifecycle();
 
         const closeFacts = {
@@ -48,7 +38,7 @@ describe('ws lifecycle service', () => {
     });
 
     it('schedules durable enqueue failure after attempting both cleanup commands', async () => {
-        const callbacks = new Map<string, WebSocketLifecycleCallbacks>();
+        const callbacks = new Map<string, WebSocketServerCallbacks>();
         const failure = new Error('durable client cleanup unavailable');
         const scheduled: Array<() => Promise<void>> = [];
         const groupCleanupInputs: RallarWsLifecycleCloseInput[] = [];
@@ -66,11 +56,10 @@ describe('ws lifecycle service', () => {
         const service = createLifecycleSocketService(callbacks);
         initWsLifecycle(service, handlers);
 
-        await callbacks.get('handle-ws-lifecycle')?.onClose?.({
-            id: 'session-1',
-            generationId: 'generation-1',
-            generationStartedAtEpochMs: 1_000
-        });
+        await callbacks.get('handle-ws-lifecycle')?.onClose?.(
+            createConnection('session-1', 'generation-1', 1_000),
+            new CloseEvent('close')
+        );
         await flushLifecycle();
         expect(groupCleanupInputs).toEqual([{
             sessionId: 'session-1',
@@ -83,7 +72,7 @@ describe('ws lifecycle service', () => {
     });
 
     it('clamps close capture time to each monotonic websocket generation start', async () => {
-        const callbacks = new Map<string, WebSocketLifecycleCallbacks>();
+        const callbacks = new Map<string, WebSocketServerCallbacks>();
         const captured: number[] = [];
         const handlers = {
             now: () => 900,
@@ -99,24 +88,22 @@ describe('ws lifecycle service', () => {
         const service = createLifecycleSocketService(callbacks);
         initWsLifecycle(service, handlers);
 
-        await callbacks.get('handle-ws-lifecycle')?.onClose?.({
-            id: 'session-1',
-            generationId: 'generation-a',
-            generationStartedAtEpochMs: 1_000
-        });
+        await callbacks.get('handle-ws-lifecycle')?.onClose?.(
+            createConnection('session-1', 'generation-a', 1_000),
+            new CloseEvent('close')
+        );
         await flushLifecycle();
-        await callbacks.get('handle-ws-lifecycle')?.onClose?.({
-            id: 'session-1',
-            generationId: 'generation-b',
-            generationStartedAtEpochMs: 1_001
-        });
+        await callbacks.get('handle-ws-lifecycle')?.onClose?.(
+            createConnection('session-1', 'generation-b', 1_001),
+            new CloseEvent('close')
+        );
 
         expect(captured).toEqual([1_000, 1_001]);
     });
 });
 
 function createLifecycleSocketService(
-    callbacks: Map<string, WebSocketLifecycleCallbacks>
+    callbacks: Map<string, WebSocketServerCallbacks>
 ): RallarWsLifecycleSocketService {
     return {
         socket: {
@@ -126,6 +113,40 @@ function createLifecycleSocketService(
             removeWebsocketCallbackById: (id) => callbacks.delete(id)
         }
     };
+}
+
+function createConnection(
+    id: string,
+    generationId: string,
+    generationStartedAtEpochMs: number
+): ConnectionContext {
+    return new ConnectionContext(
+        id,
+        new LifecycleTestWebSocket(),
+        generationId,
+        generationStartedAtEpochMs
+    );
+}
+
+class LifecycleTestWebSocket extends EventTarget implements WebSocket {
+    readonly CONNECTING = WebSocket.CONNECTING;
+    readonly OPEN = WebSocket.OPEN;
+    readonly CLOSING = WebSocket.CLOSING;
+    readonly CLOSED = WebSocket.CLOSED;
+    readonly binaryType: BinaryType = 'blob';
+    readonly bufferedAmount = 0;
+    readonly extensions = '';
+    readonly protocol = '';
+    readonly readyState = WebSocket.OPEN;
+    readonly url = 'ws://lifecycle-test';
+    onclose = null;
+    onerror = null;
+    onmessage = null;
+    onopen = null;
+
+    close(): void {}
+
+    send(): void {}
 }
 
 function retryConfig(scheduled: Array<() => Promise<void>> = []) {

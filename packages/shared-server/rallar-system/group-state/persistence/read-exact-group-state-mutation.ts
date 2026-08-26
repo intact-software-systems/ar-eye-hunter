@@ -13,6 +13,7 @@ import {
 import { type RuntimeStateReadBatchSelector } from '../../../runtime-state/read-batch/runtime-state-read-batch.ts';
 import type { RuntimeStateEntryValue } from '../../../runtime-state/runtime-state-json-store.ts';
 import type { RuntimeStateEntry, RuntimeStateRepositoryLike } from '../../../runtime-state/runtime-state-repository.ts';
+import type { JsonWireValue } from '../../protocol/json-wire-identity.ts';
 import type { GroupMutationIdempotencyRecord } from '../mutation/group-mutation-contracts.ts';
 import {
     GROUPS_NAMESPACE,
@@ -60,25 +61,25 @@ export type GroupStateMutationExactReadResult =
     }>;
 
 export type GroupStateMutationExactReadDecoders = Readonly<{
-    group(entry: RuntimeStateEntryValue<unknown>): RuntimeStateEntryValue<Group>;
+    group(entry: RuntimeStateEntryValue<JsonWireValue>): RuntimeStateEntryValue<Group>;
     presenceSummary(
-        entry: RuntimeStateEntryValue<unknown>
+        entry: RuntimeStateEntryValue<JsonWireValue>
     ): RuntimeStateEntryValue<GroupPresenceSummary>;
     idempotency(
         requestId: string,
-        entry: RuntimeStateEntryValue<unknown>
+        entry: RuntimeStateEntryValue<JsonWireValue>
     ): RuntimeStateEntryValue<GroupMutationIdempotencyRecord>;
     member(
         principalId: string,
-        entry: RuntimeStateEntryValue<unknown>
+        entry: RuntimeStateEntryValue<JsonWireValue>
     ): RuntimeStateEntryValue<GroupMember>;
     presenceSession(
         sessionId: string,
-        entry: RuntimeStateEntryValue<unknown>
+        entry: RuntimeStateEntryValue<JsonWireValue>
     ): RuntimeStateEntryValue<GroupPresenceSession>;
     admission(
         principalId: string,
-        entry: RuntimeStateEntryValue<unknown>
+        entry: RuntimeStateEntryValue<JsonWireValue>
     ): RuntimeStateEntryValue<GroupPresenceAdmission>;
 }>;
 
@@ -119,7 +120,7 @@ export async function readGroupStateMutationExactEntries(
     toLiveEntryValue: (
         namespace: string,
         entry: RuntimeStateEntry
-    ) => Promise<RuntimeStateEntryValue<unknown> | undefined>,
+    ) => Promise<RuntimeStateEntryValue<JsonWireValue> | undefined>,
     decoders: GroupStateMutationExactReadDecoders
 ): Promise<GroupStateMutationExactReadResult> {
     const requestIds = requireUniqueDenseStrings(input.requestIds, 'request IDs');
@@ -148,7 +149,7 @@ export async function readGroupStateMutationExactEntries(
 
 function toExactReadResult(
     slots: readonly ReadSlot[],
-    selections: readonly RuntimeStateReadBatchLiveSelection<unknown>[],
+    selections: readonly RuntimeStateReadBatchLiveSelection<JsonWireValue>[],
     decoders: GroupStateMutationExactReadDecoders
 ): Extract<GroupStateMutationExactReadResult, { status: 'stable'; }> {
     const result: ExactReadAccumulator = {

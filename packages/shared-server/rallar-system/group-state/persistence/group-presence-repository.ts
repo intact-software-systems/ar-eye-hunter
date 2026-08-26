@@ -12,6 +12,7 @@ import type {
     RuntimeStateRepositoryLike
 } from '../../../runtime-state/runtime-state-repository.ts';
 import { toSessionPurgeAfterEpochMs } from '../../presence/session-expiry.ts';
+import type { JsonWireValue } from '../../protocol/json-wire-identity.ts';
 import {
     decodePersistedGroupPresenceAdmission,
     decodePersistedGroupPresenceSession,
@@ -149,7 +150,7 @@ export class GroupPresenceRepository extends RuntimeStateJsonStore {
 }
 
 export function canonicalStoredSession(
-    stored: RuntimeStateEntryValue<unknown>,
+    stored: RuntimeStateEntryValue<JsonWireValue>,
     expected?: GroupRef & Readonly<{ sessionId?: string; }>
 ): RuntimeStateEntryValue<GroupPresenceSession> {
     const decoded = decodeStoredGroupStateKey(
@@ -175,7 +176,7 @@ export function canonicalStoredSession(
 }
 
 export function canonicalStoredAdmission(
-    stored: RuntimeStateEntryValue<unknown>,
+    stored: RuntimeStateEntryValue<JsonWireValue>,
     expected?: GroupRef & Readonly<{ principalId?: string; }>
 ): RuntimeStateEntryValue<GroupPresenceAdmission> {
     const decoded = decodeStoredGroupStateKey(
@@ -201,7 +202,7 @@ export function canonicalStoredAdmission(
 }
 
 export function canonicalStoredSummary(
-    stored: RuntimeStateEntryValue<unknown>,
+    stored: RuntimeStateEntryValue<JsonWireValue>,
     expected: GroupRef
 ): RuntimeStateEntryValue<GroupPresenceSummary> {
     const decoded = decodeStoredGroupStateKey(stored.entry.key, decodeGroupStateGroupStorageKey);

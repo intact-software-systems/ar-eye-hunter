@@ -128,12 +128,7 @@ describe('QueueBoxPubSubBridge', () => {
             registerOutboxPublisher: (publisher) => outboxPublishers.push(publisher),
             sendToTargetsWithResult: (message) => {
                 deliveredMessages.push(message);
-                return {
-                    status: 'sent-live',
-                    recipientCount: 1,
-                    sentCount: 1,
-                    failedCount: 0
-                };
+                return sentLiveResult(message);
             }
         });
 
@@ -294,12 +289,7 @@ describe('QueueBoxPubSubBridge', () => {
             outbox,
             sendToTargetsWithResult: (message) => {
                 deliveredMessages.push(message);
-                return {
-                    status: 'no-recipients',
-                    recipientCount: 0,
-                    sentCount: 0,
-                    failedCount: 0
-                };
+                return noRecipientLiveSendResult(message);
             }
         });
         installQueueBoxPubSubBridge({
@@ -512,16 +502,36 @@ function createTestQueueBoxPubSubWsService(
             return service;
         },
         sendToTargetsWithResult(message) {
-            return input.sendToTargetsWithResult?.(message) ?? {
-                status: 'no-recipients',
-                recipientCount: 0,
-                sentCount: 0,
-                failedCount: 0
-            };
+            return input.sendToTargetsWithResult?.(message) ?? noRecipientLiveSendResult(message);
         }
     };
 
     return service;
+}
+
+function sentLiveResult(message: ALMessage): WsServerLiveSendResult {
+    const recipient = { peerId: 'peer-1', connectionId: 'connection-1' };
+    return {
+        status: 'sent-live',
+        message,
+        recipients: [recipient],
+        recipientCount: 1,
+        sentCount: 1,
+        failedCount: 0,
+        failures: []
+    };
+}
+
+function noRecipientLiveSendResult(message: ALMessage): WsServerLiveSendResult {
+    return {
+        status: 'no-recipients',
+        message,
+        recipients: [],
+        recipientCount: 0,
+        sentCount: 0,
+        failedCount: 0,
+        failures: []
+    };
 }
 
 function createWsEntry(): ResourceEntry {

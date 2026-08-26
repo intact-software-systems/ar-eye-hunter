@@ -80,6 +80,54 @@ describe('GroupLifecyclePolicyRepository', () => {
         expect((await repository.readPolicy(GROUP)).status).toBe('corrupt');
     });
 
+    it('rejects extra persisted policy fields', async () => {
+        const repository = createRepository();
+        const policy = createDefaultGroupLifecyclePolicy();
+
+        await storeRaw(repository, GROUP, {
+            groupRef: GROUP,
+            policy: { ...policy, unexpected: true }
+        });
+
+        expect(await repository.readPolicy(GROUP)).toMatchObject({ status: 'corrupt' });
+    });
+
+    it('rejects an incomplete persisted policy', async () => {
+        const repository = createRepository();
+        const { data: _missingData, ...incomplete } = createDefaultGroupLifecyclePolicy();
+
+        await storeRaw(repository, GROUP, { groupRef: GROUP, policy: incomplete });
+
+        expect(await repository.readPolicy(GROUP)).toMatchObject({ status: 'corrupt' });
+    });
+
+    it('rejects persisted values outside the current policy bounds', async () => {
+        const repository = createRepository();
+        const policy = createDefaultGroupLifecyclePolicy();
+
+        await storeRaw(repository, GROUP, {
+            groupRef: GROUP,
+            policy: {
+                ...policy,
+                activation: { ...policy.activation, successRate: 2 }
+            }
+        });
+
+        expect(await repository.readPolicy(GROUP)).toMatchObject({ status: 'corrupt' });
+    });
+
+    it('rejects an extra persisted row field', async () => {
+        const repository = createRepository();
+
+        await storeRaw(repository, GROUP, {
+            groupRef: GROUP,
+            policy: createDefaultGroupLifecyclePolicy(),
+            unexpected: true
+        });
+
+        expect(await repository.readPolicy(GROUP)).toMatchObject({ status: 'corrupt' });
+    });
+
     // A policy stored under rules it no longer satisfies is reported rather
     // than served. The enforcement point decides what to do; storage does not
     // quietly substitute a permissive default.

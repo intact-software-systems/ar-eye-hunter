@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import type { JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/topology/config/persistence/group-topology-config-repository.ts';
 import {
     GROUP_TOPOLOGY_CONFIG_GENERATION_NAMESPACE,
@@ -105,11 +106,11 @@ describe('group topology mutation exact read', () => {
 });
 
 class EqualRevisionInvariantChangeRepository extends GroupTopologyConfigRepository {
-    protected override async toLiveEntryValue<T>(
+    protected override async toLiveJsonEntryValue(
         namespace: string,
         entry: RuntimeStateEntry
-    ): Promise<RuntimeStateEntryValue<T> | undefined> {
-        const live = await super.toLiveEntryValue<T>(namespace, entry);
+    ): Promise<RuntimeStateEntryValue<JsonWireValue> | undefined> {
+        const live = await super.toLiveJsonEntryValue(namespace, entry);
         if (live === undefined || namespace !== GROUP_TOPOLOGY_CONFIG_INVARIANT_GENERATION_NAMESPACE) {
             return live;
         }

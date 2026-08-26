@@ -7,16 +7,15 @@ import type {
     RuntimeStateEntryPageOptions,
     RuntimeStateRepositoryLike
 } from '../../../../runtime-state/runtime-state-repository.ts';
+import type { JsonWireValue } from '../../../protocol/json-wire-identity.ts';
 import type { GroupTopologyConfigGenerationTarget } from '../mutation/group-topology-config-mutation-contracts.ts';
-import {
-    decodeCanonicalGroupTopologyGenerationSourceEntry,
-    readGroupTopologyJsonValue
-} from './group-topology-config-persistence-codec.ts';
+import { readGroupTopologyJsonValue } from './group-topology-config-json-decoding.ts';
 import type {
     GroupTopologyConfigGenerationSource,
     GroupTopologyConfigGenerationSourceEntry
 } from './group-topology-config-repository-contracts.ts';
 import { groupTopologyConfigSourceNamespace } from './group-topology-config-runtime-namespaces.ts';
+import { decodeCanonicalGroupTopologyGenerationSourceEntry } from './group-topology-config-source-codec.ts';
 import {
     groupTopologyConfigStorageKey,
     groupTopologyGenerationSourceStorageKey,
@@ -98,13 +97,13 @@ export class GroupTopologyConfigSourceRepository extends RuntimeStateJsonStore {
         return groupTopologyInvariantGenerationStorageKey(ref);
     }
 
-    protected override async toLiveEntryValue<T>(
+    protected override async toLiveJsonEntryValue(
         namespace: string,
         entry: RuntimeStateEntry
-    ): Promise<RuntimeStateEntryValue<T> | undefined> {
+    ): Promise<RuntimeStateEntryValue<JsonWireValue> | undefined> {
         return await readGroupTopologyJsonValue(
             entry,
-            async () => await super.toLiveEntryValue<T>(namespace, entry)
+            async () => await super.toLiveJsonEntryValue(namespace, entry)
         );
     }
 

@@ -119,7 +119,7 @@ class FakeSocket implements WebSocket {
     onmessage: ((this: WebSocket, event: MessageEvent) => void) | null = null;
     onopen: ((this: WebSocket, event: Event) => void) | null = null;
     readonly protocol = '';
-    readyState = WebSocket.OPEN;
+    readyState: WebSocket['readyState'] = WebSocket.OPEN;
     readonly url = 'ws://test.invalid';
     private readonly listeners = new Map<string, EventListenerOrEventListenerObject[]>();
 

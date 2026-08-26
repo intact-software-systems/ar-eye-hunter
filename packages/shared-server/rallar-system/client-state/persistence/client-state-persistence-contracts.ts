@@ -2,6 +2,7 @@ import type { ClientPrincipal, ClientSnapshot } from '@shared/api/client-types.t
 
 import type { RuntimeStateEntryValue } from '../../../runtime-state/runtime-state-json-store.ts';
 import type { RuntimeStateEntry } from '../../../runtime-state/runtime-state-repository.ts';
+import { decodeJsonWireValue, type JsonWireValue } from '../../protocol/json-wire-identity.ts';
 export type ClientPrincipalSnapshotRead = Readonly<{
     principal: RuntimeStateEntryValue<ClientPrincipal>;
     snapshot: ClientSnapshot;
@@ -43,23 +44,23 @@ export class ClientStateRepositoryInvariantCorruptionError extends Error {
     }
 }
 
-export async function toLiveClientStateEntryValue<T>(
+export async function toLiveClientStateEntryValue(
     entry: RuntimeStateEntry
-): Promise<RuntimeStateEntryValue<T> | undefined> {
+): Promise<RuntimeStateEntryValue<JsonWireValue> | undefined> {
     if (entry.expireAtTimestamp <= Date.now()) {
         return undefined;
     }
     try {
-        return { entry, value: JSON.parse(entry.value) as T };
+        return {
+            entry,
+            value: decodeJsonWireValue(JSON.parse(entry.value), 'Stored client-state value')
+        };
     }
     catch (error) {
-        if (error instanceof SyntaxError) {
-            throw new ClientStateRepositoryInvariantCorruptionError(
-                entry.key,
-                `Stored client-state JSON is invalid: ${error.message}`
-            );
-        }
-        throw error;
+        throw new ClientStateRepositoryInvariantCorruptionError(
+            entry.key,
+            `Stored client-state JSON is invalid: ${error instanceof Error ? error.message : String(error)}`
+        );
     }
 }
 

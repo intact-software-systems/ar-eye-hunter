@@ -1,6 +1,7 @@
 import type { GroupMember, GroupRef } from '@shared/api/group-types.ts';
 import { RuntimeStateJsonStore, type RuntimeStateEntryValue } from '../../../runtime-state/runtime-state-json-store.ts';
 import type { RuntimeStateRepositoryLike } from '../../../runtime-state/runtime-state-repository.ts';
+import type { JsonWireValue } from '../../protocol/json-wire-identity.ts';
 import { decodePersistedGroupMember } from './group-state-persistence-codec.ts';
 import {
     assertGroupRefIdentity,
@@ -29,7 +30,7 @@ export class GroupMembershipRepository extends RuntimeStateJsonStore {
 }
 
 export function canonicalStoredMember(
-    stored: RuntimeStateEntryValue<unknown>,
+    stored: RuntimeStateEntryValue<JsonWireValue>,
     expected?: GroupRef & Readonly<{ principalId?: string; }>
 ): RuntimeStateEntryValue<GroupMember> {
     const decoded = decodeStoredGroupStateKey(stored.entry.key, decodeGroupStateMemberStorageKey);

@@ -1,4 +1,5 @@
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
+import type { JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import { waitForRuntimeStateWriteRetry } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import { selectRuntimeStateReadBatch } from '@shared-server/runtime-state/read-batch/select-runtime-state-read-batch.ts';
@@ -32,11 +33,11 @@ describe('runtime-state conditional writes', () => {
             };
 
             const values = readKind === 'get'
-                ? [await store.readEntry<{ version: string; }>('state', 'key')]
-                    .filter((value): value is RuntimeStateEntryValue<{ version: string; }> => value !== undefined)
+                ? [await store.readEntry('state', 'key')]
+                    .filter((value): value is RuntimeStateEntryValue<JsonWireValue> => value !== undefined)
                 : readKind === 'list'
-                ? await store.readEntries<{ version: string; }>('state')
-                : await store.readEntriesByKeys<{ version: string; }>(
+                ? await store.readEntries('state')
+                : await store.readEntriesByKeys(
                     'state',
                     ['key']
                 );
@@ -68,6 +69,21 @@ describe('runtime-state conditional writes', () => {
         await expect(repository.findEntry('state', 'key')).resolves.toEqual(before);
         expect(store.retryAttempts).toEqual([]);
         expect(store.retryDelays).toEqual([]);
+    });
+
+    it('rejects parsed values that are not valid JSON wire values', async () => {
+        const repository = new FakeRuntimeStateRepository();
+        const store = new ExposedRuntimeStateJsonStore(repository);
+        await repository.insertIfAbsent(
+            'state',
+            'non-finite',
+            '{"value":1e400}',
+            NEVER_EXPIRE_AT_TIMESTAMP
+        );
+
+        await expect(store.read('state', 'non-finite')).rejects.toThrow(
+            'Stored runtime state value must be JSON-safe'
+        );
     });
 
     it('serializes once and delegates protected JSON writes conditionally', async () => {
@@ -551,28 +567,28 @@ class ExposedRuntimeStateJsonStore extends RuntimeStateJsonStore {
     readonly retryAttempts: Array<0 | 1 | 2> = [];
     readonly retryDelays: number[] = [];
 
-    read<T>(namespace: string, key: string): Promise<T | undefined> {
-        return this.getValue<T>(namespace, key);
+    read(namespace: string, key: string): Promise<JsonWireValue | undefined> {
+        return this.getJsonValue(namespace, key);
     }
 
-    readEntry<T>(
+    readEntry(
         namespace: string,
         key: string
-    ): Promise<RuntimeStateEntryValue<T> | undefined> {
-        return this.getEntryValue<T>(namespace, key);
+    ): Promise<RuntimeStateEntryValue<JsonWireValue> | undefined> {
+        return this.getJsonEntryValue(namespace, key);
     }
 
-    readEntries<T>(
+    readEntries(
         namespace: string
-    ): Promise<readonly RuntimeStateEntryValue<T>[]> {
-        return this.listEntryValues<T>(namespace);
+    ): Promise<readonly RuntimeStateEntryValue<JsonWireValue>[]> {
+        return this.listJsonEntryValues(namespace);
     }
 
-    readEntriesByKeys<T>(
+    readEntriesByKeys(
         namespace: string,
         keys: readonly string[]
-    ): Promise<readonly RuntimeStateEntryValue<T>[]> {
-        return this.listEntryValuesByKeys<T>(namespace, keys);
+    ): Promise<readonly RuntimeStateEntryValue<JsonWireValue>[]> {
+        return this.listJsonEntryValuesByKeys(namespace, keys);
     }
 
     insert(

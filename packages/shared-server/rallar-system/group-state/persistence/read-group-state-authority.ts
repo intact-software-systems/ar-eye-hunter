@@ -3,6 +3,7 @@ import { resolveRuntimeStateReadBatchLiveValues } from '../../../runtime-state/r
 import { type RuntimeStateReadBatchSelector } from '../../../runtime-state/read-batch/runtime-state-read-batch.ts';
 import type { RuntimeStateEntryValue } from '../../../runtime-state/runtime-state-json-store.ts';
 import type { RuntimeStateEntry, RuntimeStateRepositoryLike } from '../../../runtime-state/runtime-state-repository.ts';
+import type { JsonWireValue } from '../../protocol/json-wire-identity.ts';
 import {
     GROUPS_NAMESPACE,
     MEMBERS_NAMESPACE,
@@ -15,10 +16,10 @@ export type GroupStateAuthorityBatchRead =
     | Readonly<{ status: 'concurrent-change'; }>
     | Readonly<{
         status: 'stable';
-        group: RuntimeStateEntryValue<unknown> | undefined;
-        members: readonly RuntimeStateEntryValue<unknown>[];
-        summary: RuntimeStateEntryValue<unknown> | undefined;
-        sessions: readonly RuntimeStateEntryValue<unknown>[];
+        group: RuntimeStateEntryValue<JsonWireValue> | undefined;
+        members: readonly RuntimeStateEntryValue<JsonWireValue>[];
+        summary: RuntimeStateEntryValue<JsonWireValue> | undefined;
+        sessions: readonly RuntimeStateEntryValue<JsonWireValue>[];
     }>;
 
 export async function readGroupStateAuthorityBatch(
@@ -27,7 +28,7 @@ export async function readGroupStateAuthorityBatch(
     toLiveEntryValue: (
         namespace: string,
         entry: RuntimeStateEntry
-    ) => Promise<RuntimeStateEntryValue<unknown> | undefined>
+    ) => Promise<RuntimeStateEntryValue<JsonWireValue> | undefined>
 ): Promise<GroupStateAuthorityBatchRead> {
     const groupKey = groupStateGroupStorageKey(ref);
     const childPrefix = `${groupKey}:`;
