@@ -68,6 +68,8 @@ jobs:
           key: ${{ runner.os }}-deno-${{ hashFiles('deno.lock', 'apps/**/deno.lock') }}
           restore-keys: |
             ${{ runner.os }}-deno-
+          # Pull requests may restore trusted cache entries, but PR-controlled code must not save them.
+          lookup-only: ${{ github.event_name == 'pull_request' }}
 
       - name: Install dependencies
         run: npm ci

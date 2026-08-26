@@ -77,6 +77,9 @@ describe('GitHub Actions runtime governance', () => {
         expect(releaseGate.slice(navigationIndex - 120, navigationIndex + 120)).not.toContain(
             'continue-on-error'
         );
+        expect(releaseGate).toContain(
+            'lookup-only: ${{ github.event_name == \'pull_request\' }}'
+        );
     });
 
     it('uses the exact merge base when the trusted base tip has diverged', async () => {
