@@ -16,6 +16,7 @@ import {
     type RallarCrdtSyncResponseEnvelope,
     type RallarCrdtUpdateEnvelope
 } from '@shared/crdt/mod.ts';
+import type { JsonWireValue } from '../../protocol/json-wire-identity.ts';
 
 import type {
     RallarServerWsHandler,
@@ -104,7 +105,7 @@ interface CreateRallarCrdtTopicDefinitionInput {
 
 function createRallarCrdtTopicDefinition(
     input: CreateRallarCrdtTopicDefinitionInput
-): RallarServerWsTopicDefinition {
+): RallarServerWsTopicDefinition<JsonWireValue> {
     const typeId = toTypeId(input.kind);
     const maxPayloadBytes = input.kind === 'update'
         ? (input.options.maxUpdateBytes ?? RALLAR_CRDT_SERVER_DEFAULT_MAX_UPDATE_BYTES)
@@ -145,7 +146,7 @@ function createRallarCrdtTopicDefinition(
 
 function createAcceptedEnvelopeHandler(
     options: RallarCrdtServerTopicBridgeOptions
-): RallarServerWsHandler {
+): RallarServerWsHandler<JsonWireValue> {
     return async (message, context) => {
         const kind = toEnvelopeKind(message.raw.payload.typeId);
         if (!kind) {
