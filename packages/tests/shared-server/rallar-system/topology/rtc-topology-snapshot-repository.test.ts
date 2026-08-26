@@ -12,7 +12,7 @@ import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/opt
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 import { describe, expect, it, vi } from 'vitest';
 
-import { FakeRuntimeStateRepository } from '../../../runtime-state/test-support/fake-runtime-state-repository.ts';
+import { FakeRuntimeStateRepository } from '../../runtime-state/test-support/fake-runtime-state-repository.ts';
 import {
     createGroupRef,
     createPublication,
@@ -20,7 +20,7 @@ import {
     putOrLoadTopologyPublication,
     reorderJsonObjectKeys,
     topologyInvariantCases
-} from '../rtc-topology-repository-test-fixtures.ts';
+} from './rtc-topology-repository-test-fixtures.ts';
 
 describe('RTC topology snapshot repository', () => {
     it('rejects extra persisted snapshot fields before topology decisions run', () => {
