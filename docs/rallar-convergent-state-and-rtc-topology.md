@@ -634,7 +634,7 @@ deployment boundary described by this architecture.
 
 Focused concurrency coverage lives in:
 
-- `packages/tests/shared-server/authoritative-mutation-read-compute-validate-write.test.ts`
+- `packages/tests/repo/mutation-route-ownership/authoritative/authoritative-mutation-read-compute-validate-write.test.ts`
 - `packages/tests/shared-server/cached-state-services.test.ts`
 - `packages/tests/shared-server/rtc-topology-outbox-work.test.ts`
 - `packages/tests/shared-server/rtc-topology-delivery-log.test.ts`
