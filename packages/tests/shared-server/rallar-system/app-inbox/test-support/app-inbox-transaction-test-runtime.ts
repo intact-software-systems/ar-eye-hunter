@@ -26,7 +26,7 @@ const NOW_EPOCH_MS = Date.parse('2026-07-22T12:00:00.000Z');
 type PSqlValues = Parameters<PSqlSql>[0];
 
 interface RegisteredHandlerHarness {
-    readonly enqueue: AppInboxMessageContext['enqueue'];
+    readonly enqueue: AppInboxMessageContext<JsonWireValue>['enqueue'];
     readonly queue: RegisteredHandlerInbox;
     readonly readEntry: () => Promise<ResourceEntry | undefined>;
     readonly reader: InboxQueueReader;
@@ -42,7 +42,7 @@ interface AtomicState {
 }
 
 interface AtomicHarness {
-    readonly context: AppInboxMessageContext;
+    readonly context: AppInboxMessageContext<JsonWireValue>;
     readonly database: AtomicDatabase;
     readonly entry: ResourceEntry;
     readonly service: AtomicAppInboxService;
@@ -83,7 +83,7 @@ class AtomicAppInboxService {
         return await this.handlerRegistry.writeMutation(context, write);
     }
 
-    async fail(context: AppInboxMessageContext, error: JsonWireValue): Promise<void> {
+    async fail(context: AppInboxMessageContext<JsonWireValue>, error: JsonWireValue): Promise<void> {
         await this.handlerRegistry.transactionWriter.writeTerminalFailure(context, error);
     }
 
@@ -118,7 +118,7 @@ class AtomicAppInboxService {
         return this.queueClient.processEntryUntilCompletion<V>(input);
     }
 
-    processEntryNoWaiting(input: AppInboxMessageContext['enqueue']): void {
+    processEntryNoWaiting(input: AppInboxMessageContext<JsonWireValue>['enqueue']): void {
         this.queueClient.processEntryNoWaiting(input);
     }
 }
@@ -499,7 +499,7 @@ export function createAtomicHarness(
         contextId: entry.key.contextId,
         data: { requestId: entry.key.resourceId }
     } as const;
-    const context: AppInboxMessageContext = {
+    const context: AppInboxMessageContext<JsonWireValue> = {
         enqueue,
         message: newALUntargetedMessage(
             'server-1',

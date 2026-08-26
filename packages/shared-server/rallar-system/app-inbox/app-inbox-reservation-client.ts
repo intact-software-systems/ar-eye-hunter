@@ -13,7 +13,7 @@ import {
 import { toAppInboxResourceEntry } from './app-inbox-queue-entry.ts';
 
 export interface MaterializedAppInboxReservation {
-    readonly enqueue: AppInboxEnqueueInput<JsonWireValue, JsonWireValue>;
+    readonly enqueue: AppInboxEnqueueInput<JsonWireValue>;
     readonly winner: boolean;
 }
 

@@ -68,11 +68,12 @@ export async function createRtcRttDurableEnqueue(
         commandHash: await hashMutationCommand(stableCommand)
     };
     const proof = await createTopologyMutationAuthorityProof(session, command.commandHash);
+    const authority = { kind: 'rtc-rtt', proof, command } satisfies RtcRttAppInboxAuthority;
     return {
         type: AppInboxType.RTC_RTT_SUBMIT,
         resourceId: requestId,
         data: command,
-        authority: { kind: 'rtc-rtt', proof, command } satisfies RtcRttAppInboxAuthority
+        authority: decodeJsonWireValue(authority, 'RTC RTT AppInbox authority')
     };
 }
 

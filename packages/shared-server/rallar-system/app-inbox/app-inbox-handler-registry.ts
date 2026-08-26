@@ -113,7 +113,7 @@ export class AppInboxHandlerRegistry {
         entry: ResourceEntry
     ): Promise<void> {
         const type = registration.type;
-        const fallbackEnqueue: AppInboxEnqueueInput<JsonWireValue, JsonWireValue> = {
+        const fallbackEnqueue: AppInboxEnqueueInput<JsonWireValue> = {
             type,
             resourceId: entry.key.resourceId,
             contextId: entry.key.contextId,

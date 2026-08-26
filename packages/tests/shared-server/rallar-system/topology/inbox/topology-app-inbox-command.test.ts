@@ -331,9 +331,7 @@ async function topologyCommand(capturedAtEpochMs: number) {
     });
 }
 
-function logicalIdentity<Command, Authority>(
-    enqueue: AppInboxEnqueueInput<Command, Authority>
-): string {
+function logicalIdentity<Command>(enqueue: AppInboxEnqueueInput<Command>): string {
     return serializeCanonicalMutationCommand(
         toLogicalAppInboxCommand(decodeAppInboxEnqueue(enqueue))
     );

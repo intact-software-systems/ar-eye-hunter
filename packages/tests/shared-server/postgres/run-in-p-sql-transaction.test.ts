@@ -131,7 +131,7 @@ describe('Postgres transaction write boundary', () => {
             contextId: incomingEntry.key.contextId,
             data: { requestId: incomingEntry.key.resourceId }
         } as const;
-        const context: AppInboxMessageContext = {
+        const context: AppInboxMessageContext<JsonWireValue> = {
             enqueue,
             message: newALUntargetedMessage(
                 'server-1',

@@ -19,7 +19,7 @@ export interface LogicalAppInboxCommand {
 }
 
 export function toLogicalAppInboxCommand(
-    enqueue: AppInboxEnqueueInput<JsonWireValue, JsonWireValue>
+    enqueue: AppInboxEnqueueInput<JsonWireValue>
 ): JsonWireValue {
     const stableAuth = toStableAuthCommand(enqueue.type, enqueue.data);
     if (stableAuth) {

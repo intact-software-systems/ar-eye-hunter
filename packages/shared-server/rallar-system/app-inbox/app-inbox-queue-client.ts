@@ -223,7 +223,7 @@ export class AppInboxQueueClient {
         enforceCommandIdentity: boolean,
         enqueuer: (
             key: Key,
-            wireEnqueue: AppInboxEnqueueInput<JsonWireValue, JsonWireValue>
+            wireEnqueue: AppInboxEnqueueInput<JsonWireValue>
         ) => Promise<ResourceEntry | undefined>,
         decodeResult: AppInboxResultDecoder<R>,
         strictQueueIdentity = false

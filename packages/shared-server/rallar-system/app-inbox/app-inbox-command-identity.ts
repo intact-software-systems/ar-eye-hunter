@@ -9,7 +9,7 @@ interface ValidAppInboxCommandIdentity {
         operation: AppInboxType;
         operationSource: 'command';
     }>;
-    readonly command: AppInboxEnqueueInput<JsonWireValue, JsonWireValue>;
+    readonly command: AppInboxEnqueueInput<JsonWireValue>;
 }
 
 interface InvalidAppInboxCommandIdentity {
@@ -107,7 +107,7 @@ export function validatePersistedAppInboxCommandIdentity(
     }
     const dispatchedOperation = outer.payload.typeId;
 
-    let command: AppInboxEnqueueInput<JsonWireValue, JsonWireValue>;
+    let command: AppInboxEnqueueInput<JsonWireValue>;
     try {
         command = decodeAppInboxEnqueue(JSON.parse(outer.payload.resource));
     }
