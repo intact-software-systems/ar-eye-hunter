@@ -1,5 +1,6 @@
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import { validatePersistedAppInboxCommandIdentity } from '@shared-server/rallar-system/app-inbox/app-inbox-command-identity.ts';
+import type { JsonWireObject, JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
@@ -67,8 +68,8 @@ export async function readOwnedAppInboxResourceIds(
     });
 }
 
-function decodeAppInboxRequestIdentity(value: unknown): AppInboxRequestIdentity | null {
-    if (!isRecord(value) || !isRecord(value.scope) || !isRecord(value.request)) {
+function decodeAppInboxRequestIdentity(value: JsonWireValue): AppInboxRequestIdentity | null {
+    if (!isJsonWireObject(value) || !isJsonWireObject(value.scope) || !isJsonWireObject(value.request)) {
         return null;
     }
     const { applicationId, workspaceId } = value.scope;
@@ -87,6 +88,6 @@ function isSameScope(left: StateScope, right: StateScope): boolean {
     return left.applicationId === right.applicationId && left.workspaceId === right.workspaceId;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
+function isJsonWireObject(value: JsonWireValue): value is JsonWireObject {
     return value !== null && typeof value === 'object' && !Array.isArray(value);
 }

@@ -2,12 +2,12 @@ import { AppTopics, EnqueuedType } from '@shared/api/api-config.ts';
 import { GROUP_PRESENCE_SUMMARY_TOPIC } from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { describe, expect, it } from 'vitest';
-import { expectWorkerOutboxLifecycleEvidence } from './postgres-worker-outbox-evidence.ts';
+import { assertWorkerOutboxLifecycle } from './worker-outbox-lifecycle-assertions.ts';
 
 describe('Postgres worker direct ResourceInbox outbox lifecycle', () => {
     it('validates receipt-linked client WS and group APP lifecycle entries', () => {
         expect(() =>
-            expectWorkerOutboxLifecycleEvidence({
+            assertWorkerOutboxLifecycle({
                 entries: [
                     entry({
                         resourceId: 'client-snapshot',
@@ -32,7 +32,7 @@ describe('Postgres worker direct ResourceInbox outbox lifecycle', () => {
         ).not.toThrow();
 
         expect(() =>
-            expectWorkerOutboxLifecycleEvidence({
+            assertWorkerOutboxLifecycle({
                 entries: [
                     entry({
                         resourceId: 'group-summary',
@@ -52,7 +52,7 @@ describe('Postgres worker direct ResourceInbox outbox lifecycle', () => {
 
     it('rejects an effect whose receipt-linked entry has the wrong direct outbox type', () => {
         expect(() =>
-            expectWorkerOutboxLifecycleEvidence({
+            assertWorkerOutboxLifecycle({
                 entries: [
                     entry({
                         resourceId: 'client-snapshot',

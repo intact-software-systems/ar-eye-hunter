@@ -3,10 +3,10 @@ import { AppTopics, EnqueuedType } from '@shared/api/api-config.ts';
 import { GROUP_PRESENCE_SUMMARY_TOPIC } from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import {
-    expectDirectResourceOutboxLifecycle,
-    type DirectResourceOutboxEvidence,
+    assertDirectResourceOutboxLifecycle,
+    type DirectResourceOutboxEntry,
     type DirectResourceOutboxLifecycleExpectation
-} from '../direct-resource-outbox-evidence.ts';
+} from '../direct-resource-outbox-lifecycle.ts';
 
 export type WorkerOutboxReceipt = Readonly<{
     outboxIds: readonly string[];
@@ -19,7 +19,7 @@ export type WorkerOutboxEffect =
     | 'principal-state:event'
     | 'group-presence-summary';
 
-export type DirectResourceInboxRowEvidence = Readonly<{
+export type DirectResourceInboxRow = Readonly<{
     ri_resource_id: string;
     ri_topic_id: string;
     ri_type_id: string;
@@ -27,14 +27,14 @@ export type DirectResourceInboxRowEvidence = Readonly<{
     ri_resource: string;
 }>;
 
-export interface ExpectWorkerOutboxLifecycleEvidenceInput {
-    readonly entries: readonly DirectResourceOutboxEvidence[];
+export interface AssertWorkerOutboxLifecycleInput {
+    readonly entries: readonly DirectResourceOutboxEntry[];
     readonly outputs: readonly WorkerOutboxReceipt[];
     readonly kind: WorkerOutboxKind;
     readonly effects: readonly WorkerOutboxEffect[];
 }
 
-export function expectWorkerOutboxLifecycleEvidence(input: ExpectWorkerOutboxLifecycleEvidenceInput): void {
+export function assertWorkerOutboxLifecycle(input: AssertWorkerOutboxLifecycleInput): void {
     const { entries, outputs, kind, effects } = input;
     const expectedEntries = outputs.flatMap((output) => {
         if (output.domainStatus !== 'applied') {
@@ -51,14 +51,14 @@ export function expectWorkerOutboxLifecycleEvidence(input: ExpectWorkerOutboxLif
     if (new Set(resourceIds).size !== resourceIds.length) {
         throw new Error('Worker receipts must retain distinct direct outbox resource ids');
     }
-    expectDirectResourceOutboxLifecycle(entries, {
+    assertDirectResourceOutboxLifecycle(entries, {
         entries: expectedEntries,
         appToWsLinks: []
     });
 }
 
-export function expectGroupPresenceSummaryAppToWsLifecycleEvidence(
-    rows: readonly DirectResourceInboxRowEvidence[],
+export function assertGroupPresenceSummaryAppToWsLifecycle(
+    rows: readonly DirectResourceInboxRow[],
     appResourceIds: readonly string[]
 ): void {
     const entries = rows.map((row) => ({
@@ -102,10 +102,10 @@ export function expectGroupPresenceSummaryAppToWsLifecycleEvidence(
             });
         }
     }
-    expectDirectResourceOutboxLifecycle(entries, { entries: expectedEntries, appToWsLinks });
+    assertDirectResourceOutboxLifecycle(entries, { entries: expectedEntries, appToWsLinks });
 }
 
-function commandIdFromGroupPresenceSummaryEntry(entry: DirectResourceOutboxEvidence): string {
+function commandIdFromGroupPresenceSummaryEntry(entry: DirectResourceOutboxEntry): string {
     try {
         const message = decodeJsonWireObject(JSON.parse(entry.resource), 'APP_OUTBOX message');
         const payload = decodeJsonWireObject(message.payload, 'APP_OUTBOX payload');
@@ -143,7 +143,7 @@ function readJsonWireString(value: JsonWireValue | undefined, label: string): st
 }
 
 function expectedGroupPresenceSummaryWsEntries(
-    entries: readonly DirectResourceOutboxEvidence[],
+    entries: readonly DirectResourceOutboxEntry[],
     commandId: string
 ): readonly Readonly<{
     resourceId: string;

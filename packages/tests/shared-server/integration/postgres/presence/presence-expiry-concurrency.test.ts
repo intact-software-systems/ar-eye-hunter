@@ -17,8 +17,8 @@ import { createTestGroupStateRuntime } from '../../../group-state/group-state-te
 
 import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import { requireGroupMutationReceipt } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-result-codec.ts';
-import { findDirectResourceOutboxEvidence } from '../../../rallar-system/app-outbox/direct-resource-outbox-evidence.ts';
-import { expectWorkerOutboxLifecycleEvidence } from '../../../rallar-system/app-outbox/postgres/postgres-worker-outbox-evidence.ts';
+import { readDirectResourceOutboxEntries } from '../../../rallar-system/app-outbox/direct-resource-outbox-lifecycle.ts';
+import { assertWorkerOutboxLifecycle } from '../../../rallar-system/app-outbox/postgres/worker-outbox-lifecycle-assertions.ts';
 import { createPostgresAppInboxWorkerRuntime, createPostgresAppInboxWorkerTrace } from '../test-support/postgres-app-inbox-worker-runtime.ts';
 import {
     createPostgresAppInboxTestAuthority,
@@ -740,8 +740,8 @@ describe('Postgres presence expiry concurrency', () => {
                 if (!receipt) {
                     throw new Error('Expected accepted last-slot receipt');
                 }
-                expectWorkerOutboxLifecycleEvidence({
-                    entries: await findDirectResourceOutboxEvidence(setupSql, receipt.outboxIds),
+                assertWorkerOutboxLifecycle({
+                    entries: await readDirectResourceOutboxEntries(setupSql, receipt.outboxIds),
                     outputs: [{ outboxIds: receipt.outboxIds, domainStatus: 'applied' }],
                     kind: 'group',
                     effects: ['group-presence-summary']
@@ -885,8 +885,8 @@ describe('Postgres presence expiry concurrency', () => {
 
                 const outboxIds = heartbeats.flatMap((receipt) => receipt.outboxIds);
                 expect(outboxIds).toHaveLength(sessionCount);
-                expectWorkerOutboxLifecycleEvidence({
-                    entries: await findDirectResourceOutboxEvidence(setupSql, outboxIds),
+                assertWorkerOutboxLifecycle({
+                    entries: await readDirectResourceOutboxEntries(setupSql, outboxIds),
                     outputs: heartbeats.map((receipt) => ({
                         outboxIds: receipt.outboxIds,
                         domainStatus: receipt.outcome

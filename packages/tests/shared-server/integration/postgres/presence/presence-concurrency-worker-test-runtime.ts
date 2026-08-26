@@ -7,9 +7,9 @@ import { fileURLToPath } from 'node:url';
 import { expect } from 'vitest';
 
 import type { JsonWireObject, JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
-import { readOwnedAppInboxResourceIds } from '../../../rallar-system/app-inbox/postgres/postgres-app-inbox-attempt-evidence.ts';
-import { findDirectResourceOutboxEvidence } from '../../../rallar-system/app-outbox/direct-resource-outbox-evidence.ts';
-import { expectWorkerOutboxLifecycleEvidence, type WorkerOutboxEffect } from '../../../rallar-system/app-outbox/postgres/postgres-worker-outbox-evidence.ts';
+import { readOwnedAppInboxResourceIds } from '../../../rallar-system/app-inbox/postgres/read-owned-app-inbox-resource-ids.ts';
+import { readDirectResourceOutboxEntries } from '../../../rallar-system/app-outbox/direct-resource-outbox-lifecycle.ts';
+import { assertWorkerOutboxLifecycle, type WorkerOutboxEffect } from '../../../rallar-system/app-outbox/postgres/worker-outbox-lifecycle-assertions.ts';
 import { findSingleRetriedAppInboxAttemptSequence } from '../test-support/postgres-app-inbox-attempt-observation.ts';
 import { waitForPostgresAppInboxWorkerParticipants } from '../test-support/postgres-worker-barrier.ts';
 export interface WorkerBarrier {
@@ -232,8 +232,8 @@ export async function expectPendingWorkerOutboxes(
     input: ExpectPendingWorkerOutboxesInput
 ): Promise<void> {
     const outboxIds = input.outputs.flatMap((output) => output.outboxIds);
-    expectWorkerOutboxLifecycleEvidence({
-        entries: await findDirectResourceOutboxEvidence(input.sql, outboxIds),
+    assertWorkerOutboxLifecycle({
+        entries: await readDirectResourceOutboxEntries(input.sql, outboxIds),
         outputs: input.outputs,
         kind: input.kind,
         effects: input.effects

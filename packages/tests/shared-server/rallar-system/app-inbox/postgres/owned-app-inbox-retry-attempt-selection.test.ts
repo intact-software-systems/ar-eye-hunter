@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { findSingleRetriedAppInboxAttemptSequence } from '../../../integration/postgres/test-support/postgres-app-inbox-attempt-observation.ts';
-import { toOwnedAppInboxResourceIds } from './postgres-app-inbox-attempt-evidence.ts';
+import { toOwnedAppInboxResourceIds } from './read-owned-app-inbox-resource-ids.ts';
 
 describe('owned Postgres AppInbox retry attempt selection', () => {
     it('selects the retry sequence from the two owned commands only', () => {

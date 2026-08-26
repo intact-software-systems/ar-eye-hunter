@@ -12,8 +12,8 @@ import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgre
 import type { Group } from '@shared/api/group-types.ts';
 import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 import { findSingleRetriedAppInboxAttemptSequence } from '../../../integration/postgres/test-support/postgres-app-inbox-attempt-observation.ts';
-import { toOwnedAppInboxResourceIds } from '../../app-inbox/postgres/postgres-app-inbox-attempt-evidence.ts';
-import { expectPendingDirectResourceOutboxEvidence, findDirectResourceOutboxEvidence } from '../../app-outbox/direct-resource-outbox-evidence.ts';
+import { toOwnedAppInboxResourceIds } from '../../app-inbox/postgres/read-owned-app-inbox-resource-ids.ts';
+import { assertPendingDirectResourceOutboxEntries, readDirectResourceOutboxEntries } from '../../app-outbox/direct-resource-outbox-lifecycle.ts';
 import {
     cleanupTopologyApplicationRows,
     createPostgresSql,
@@ -96,8 +96,8 @@ describe('Postgres topology AppInbox concurrency', () => {
                     .map(
                         (resourceId) => toAppQueueKey({ resourceId, topicId: '', contextId: '' }).resourceId
                     );
-                expectPendingDirectResourceOutboxEvidence(
-                    await findDirectResourceOutboxEvidence(sql, outboxIds),
+                assertPendingDirectResourceOutboxEntries(
+                    await readDirectResourceOutboxEntries(sql, outboxIds),
                     outboxIds
                 );
             }

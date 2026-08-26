@@ -10,7 +10,7 @@ type DirectOutboxRow = Readonly<{
     ri_resource: string;
 }>;
 
-export type DirectResourceOutboxEvidence = Readonly<{
+export type DirectResourceOutboxEntry = Readonly<{
     resourceId: string;
     topicId: string;
     typeId: string;
@@ -18,7 +18,7 @@ export type DirectResourceOutboxEvidence = Readonly<{
     resource: string;
 }>;
 
-export type ExpectedDirectResourceOutboxEvidence = Readonly<{
+export type ExpectedDirectResourceOutboxEntry = Readonly<{
     resourceId: string;
     topicId: string;
     typeId: string;
@@ -33,14 +33,14 @@ export type ExpectedAppOutboxWsLink = Readonly<{
 }>;
 
 export type DirectResourceOutboxLifecycleExpectation = Readonly<{
-    entries: readonly ExpectedDirectResourceOutboxEvidence[];
+    entries: readonly ExpectedDirectResourceOutboxEntry[];
     appToWsLinks: readonly ExpectedAppOutboxWsLink[];
 }>;
 
-export async function findDirectResourceOutboxEvidence(
+export async function readDirectResourceOutboxEntries(
     sql: PSqlSql,
     resourceIds: readonly string[]
-): Promise<readonly DirectResourceOutboxEvidence[]> {
+): Promise<readonly DirectResourceOutboxEntry[]> {
     const uniqueResourceIds = [...new Set(resourceIds)];
     const rows = await Promise.all(uniqueResourceIds.map(async (resourceId) =>
         await sql<DirectOutboxRow[]>`
@@ -58,8 +58,8 @@ export async function findDirectResourceOutboxEvidence(
     }));
 }
 
-export function expectPendingDirectResourceOutboxEvidence(
-    entries: readonly DirectResourceOutboxEvidence[],
+export function assertPendingDirectResourceOutboxEntries(
+    entries: readonly DirectResourceOutboxEntry[],
     resourceIds: readonly string[]
 ): void {
     const byResourceId = new Map(entries.map((entry) => [entry.resourceId, entry]));
@@ -80,9 +80,9 @@ export function expectPendingDirectResourceOutboxEvidence(
     }
 }
 
-export function expectDirectResourceOutboxEvidence(
-    entries: readonly DirectResourceOutboxEvidence[],
-    expectedEntries: readonly ExpectedDirectResourceOutboxEvidence[]
+export function assertDirectResourceOutboxEntries(
+    entries: readonly DirectResourceOutboxEntry[],
+    expectedEntries: readonly ExpectedDirectResourceOutboxEntry[]
 ): void {
     const byResourceId = new Map(entries.map((entry) => [entry.resourceId, entry]));
     for (const expected of expectedEntries) {
@@ -107,9 +107,9 @@ export function expectDirectResourceOutboxEvidence(
     }
 }
 
-export function expectAppOutboxWsLink(
-    appEntry: DirectResourceOutboxEvidence,
-    wsEntry: DirectResourceOutboxEvidence,
+export function assertAppOutboxWsLink(
+    appEntry: DirectResourceOutboxEntry,
+    wsEntry: DirectResourceOutboxEntry,
     linkIdentity = appEntry.resourceId
 ): void {
     if (appEntry.typeId !== EnqueuedType.APP_OUTBOX) {
@@ -123,11 +123,11 @@ export function expectAppOutboxWsLink(
     }
 }
 
-export function expectDirectResourceOutboxLifecycle(
-    entries: readonly DirectResourceOutboxEvidence[],
+export function assertDirectResourceOutboxLifecycle(
+    entries: readonly DirectResourceOutboxEntry[],
     expected: DirectResourceOutboxLifecycleExpectation
 ): void {
-    expectDirectResourceOutboxEvidence(entries, expected.entries);
+    assertDirectResourceOutboxEntries(entries, expected.entries);
     const byResourceId = new Map(entries.map((entry) => [entry.resourceId, entry]));
     for (const link of expected.appToWsLinks) {
         const appEntry = byResourceId.get(link.appResourceId);
@@ -135,6 +135,6 @@ export function expectDirectResourceOutboxLifecycle(
         if (!appEntry || !wsEntry) {
             throw new Error(`Missing APP_OUTBOX/WS_OUTBOX link: ${link.appResourceId}`);
         }
-        expectAppOutboxWsLink(appEntry, wsEntry, link.linkIdentity);
+        assertAppOutboxWsLink(appEntry, wsEntry, link.linkIdentity);
     }
 }

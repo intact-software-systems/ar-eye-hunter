@@ -1,12 +1,12 @@
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { describe, expect, it } from 'vitest';
-import { expectAppOutboxWsLink, expectDirectResourceOutboxEvidence, expectDirectResourceOutboxLifecycle } from './direct-resource-outbox-evidence.ts';
+import { assertAppOutboxWsLink, assertDirectResourceOutboxEntries, assertDirectResourceOutboxLifecycle } from './direct-resource-outbox-lifecycle.ts';
 
 describe('direct ResourceInbox outbox lifecycle', () => {
     it('requires exact APP_OUTBOX identity, topic, payload, and lifecycle', () => {
         expect(() =>
-            expectDirectResourceOutboxEvidence([{
+            assertDirectResourceOutboxEntries([{
                 resourceId: 'command:topology',
                 topicId: 'app-outbox.rtc-topology',
                 typeId: EnqueuedType.APP_OUTBOX,
@@ -21,7 +21,7 @@ describe('direct ResourceInbox outbox lifecycle', () => {
             }])
         ).not.toThrow();
         expect(() =>
-            expectDirectResourceOutboxEvidence([], [{
+            assertDirectResourceOutboxEntries([], [{
                 resourceId: 'command:topology',
                 topicId: 'app-outbox.rtc-topology',
                 typeId: EnqueuedType.APP_OUTBOX,
@@ -33,7 +33,7 @@ describe('direct ResourceInbox outbox lifecycle', () => {
 
     it('requires a WS_OUTBOX payload to link its APP_OUTBOX resource identity', () => {
         expect(() =>
-            expectAppOutboxWsLink({
+            assertAppOutboxWsLink({
                 resourceId: 'app-work',
                 topicId: 'app-outbox.rtc-topology',
                 typeId: EnqueuedType.APP_OUTBOX,
@@ -51,7 +51,7 @@ describe('direct ResourceInbox outbox lifecycle', () => {
 
     it('checks APP-to-WS receipt linkage as part of a complete lifecycle', () => {
         expect(() =>
-            expectDirectResourceOutboxLifecycle([{
+            assertDirectResourceOutboxLifecycle([{
                 resourceId: 'app-work',
                 topicId: 'app-outbox.rtc-topology',
                 typeId: EnqueuedType.APP_OUTBOX,

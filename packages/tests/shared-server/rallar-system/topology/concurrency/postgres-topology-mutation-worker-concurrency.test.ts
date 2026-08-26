@@ -12,8 +12,8 @@ import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/topo
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 import { findSingleRetriedAppInboxAttemptSequence } from '../../../integration/postgres/test-support/postgres-app-inbox-attempt-observation.ts';
-import { toOwnedAppInboxResourceIds } from '../../app-inbox/postgres/postgres-app-inbox-attempt-evidence.ts';
-import { expectPendingDirectResourceOutboxEvidence, findDirectResourceOutboxEvidence } from '../../app-outbox/direct-resource-outbox-evidence.ts';
+import { toOwnedAppInboxResourceIds } from '../../app-inbox/postgres/read-owned-app-inbox-resource-ids.ts';
+import { assertPendingDirectResourceOutboxEntries, readDirectResourceOutboxEntries } from '../../app-outbox/direct-resource-outbox-lifecycle.ts';
 import {
     cleanupTopologyApplicationRows,
     createPostgresSql as createSql,
@@ -257,8 +257,8 @@ async function expectPendingTopologyWorkerOutboxes(
             }).resourceId
     );
     expect(new Set(outboxIds).size).toBe(outboxIds.length);
-    expectPendingDirectResourceOutboxEvidence(
-        await findDirectResourceOutboxEvidence(sql, outboxIds),
+    assertPendingDirectResourceOutboxEntries(
+        await readDirectResourceOutboxEntries(sql, outboxIds),
         outboxIds
     );
 }
