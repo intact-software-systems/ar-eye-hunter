@@ -5,12 +5,11 @@ import type { PersistedAuthSession } from '../../auth/persistence/persisted-auth
 import { authSessionProofSecret } from '../../auth/sessions/auth-session-proof-secret.ts';
 import { GroupMutationAuthorizationError } from '../../group-state/group-mutation-authority.ts';
 import type { GroupStateService } from '../../group-state/group-state-service-contracts.ts';
+import { decodeJsonWireValue, type JsonWireObject, type JsonWireValue } from '../../protocol/json-wire-identity.ts';
 import {
-    isTopologyRecord,
     readAuthenticatedTopologyCommand,
     readDurableTopologyAppInboxCommand,
-    readTopologyCommandForValidatedSession,
-    requireExactTopologyKeys
+    readTopologyCommandForValidatedSession
 } from './topology-app-inbox-command.ts';
 import type { TopologyAppInboxAuthority, TopologyAppInboxCommand } from './topology-app-inbox-contracts.ts';
 import {
@@ -76,16 +75,24 @@ export async function createAuthenticatedTopologyEnqueueFromValidatedSession<V>(
 
 export function decodeTopologyAppInboxAuthority(value: unknown): TopologyAppInboxAuthority {
     try {
-        if (!isTopologyRecord(value)) {
-            throw new TypeError('authority is not a record');
-        }
-        requireExactTopologyKeys(value, ['kind', 'proof', 'command']);
-        if (value.kind !== 'topology-config' && value.kind !== 'topology-reconfigure') {
+        const authority = requireTopologyAuthorityObject(
+            decodeJsonWireValue(value, 'Topology AppInbox authority'),
+            'Topology AppInbox authority'
+        );
+        requireExactTopologyAuthorityKeys(
+            authority,
+            ['kind', 'proof', 'command'],
+            'Topology AppInbox authority'
+        );
+        if (authority.kind !== 'topology-config' && authority.kind !== 'topology-reconfigure') {
             throw new TypeError('authority kind is invalid');
         }
-        validateTopologyMutationAuthorityProof(value.proof);
-        readDurableTopologyAppInboxCommand(value.command);
-        return value as TopologyAppInboxAuthority;
+        const proof = decodeTopologyMutationAuthorityProof(authority.proof);
+        const command = readDurableTopologyAppInboxCommand(authority.command);
+        if (authority.kind === 'topology-config') {
+            return { kind: authority.kind, proof, command };
+        }
+        return { kind: authority.kind, proof, command };
     }
     catch {
         throw new GroupMutationAuthorizationError('Topology AppInbox durable authority is malformed.');
@@ -126,13 +133,14 @@ export async function verifyTopologyAppInboxAuthority(
     }
 }
 
-export function validateTopologyMutationAuthorityProof(
+export function decodeTopologyMutationAuthorityProof(
     value: unknown
-): asserts value is TopologyMutationAuthorityProof {
-    if (!isTopologyRecord(value)) {
-        throw new TypeError('authority proof is invalid');
-    }
-    requireExactTopologyKeys(value, [
+): TopologyMutationAuthorityProof {
+    const proof = requireTopologyAuthorityObject(
+        decodeJsonWireValue(value, 'Topology mutation authority proof'),
+        'Topology mutation authority proof'
+    );
+    requireExactTopologyAuthorityKeys(proof, [
         'version',
         'principalId',
         'sessionId',
@@ -140,18 +148,25 @@ export function validateTopologyMutationAuthorityProof(
         'sessionExpiresAtEpochMs',
         'commandHash',
         'commandMac'
-    ]);
-    if (
-        value.version !== 1 ||
-        typeof value.principalId !== 'string' ||
-        typeof value.sessionId !== 'string' ||
-        !Number.isSafeInteger(value.sessionIssuedAtEpochMs) ||
-        !Number.isSafeInteger(value.sessionExpiresAtEpochMs) ||
-        typeof value.commandHash !== 'string' ||
-        typeof value.commandMac !== 'string'
-    ) {
+    ], 'Topology mutation authority proof');
+    if (proof.version !== 1) {
         throw new TypeError('authority proof fields are invalid');
     }
+    return {
+        version: proof.version,
+        principalId: readTopologyAuthorityString(proof.principalId, 'principalId'),
+        sessionId: readTopologyAuthorityString(proof.sessionId, 'sessionId'),
+        sessionIssuedAtEpochMs: readTopologyAuthorityEpoch(
+            proof.sessionIssuedAtEpochMs,
+            'sessionIssuedAtEpochMs'
+        ),
+        sessionExpiresAtEpochMs: readTopologyAuthorityEpoch(
+            proof.sessionExpiresAtEpochMs,
+            'sessionExpiresAtEpochMs'
+        ),
+        commandHash: readTopologyAuthorityString(proof.commandHash, 'commandHash'),
+        commandMac: readTopologyAuthorityString(proof.commandMac, 'commandMac')
+    };
 }
 
 export function constantTimeTopologyProofEqual(left: string, right: string): boolean {
@@ -200,6 +215,54 @@ function isCurrentTopologyAuthoritySession(
             input.authority.command.actor.principalId === input.authority.proof.principalId &&
             input.authority.command.commandHash === input.authority.proof.commandHash
     );
+}
+
+function requireTopologyAuthorityObject(
+    value: JsonWireValue | undefined,
+    label: string
+): JsonWireObject {
+    if (!isTopologyAuthorityObject(value)) {
+        throw new TypeError(`${label} must be an exact object`);
+    }
+    return value;
+}
+
+function isTopologyAuthorityObject(
+    value: JsonWireValue | undefined
+): value is JsonWireObject {
+    return value !== undefined && value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function requireExactTopologyAuthorityKeys(
+    value: JsonWireObject,
+    expected: readonly string[],
+    label: string
+): void {
+    const actual = Object.keys(value).toSorted();
+    const required = [...expected].toSorted();
+    if (actual.length !== required.length || actual.some((key, index) => key !== required[index])) {
+        throw new TypeError(`${label} fields are invalid`);
+    }
+}
+
+function readTopologyAuthorityString(
+    value: JsonWireValue | undefined,
+    label: string
+): string {
+    if (typeof value !== 'string' || value.length === 0) {
+        throw new TypeError(`Topology mutation authority proof ${label} is invalid`);
+    }
+    return value;
+}
+
+function readTopologyAuthorityEpoch(
+    value: JsonWireValue | undefined,
+    label: string
+): number {
+    if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) {
+        throw new TypeError(`Topology mutation authority proof ${label} is invalid`);
+    }
+    return value;
 }
 
 export type { TopologyMutationAuthorityProof };

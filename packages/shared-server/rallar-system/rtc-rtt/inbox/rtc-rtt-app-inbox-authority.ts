@@ -6,7 +6,7 @@ import type { GroupStateService } from '../../group-state/group-state-service-co
 import { decodeJsonWireValue, type JsonWireObject, type JsonWireValue } from '../../protocol/json-wire-identity.ts';
 import {
     constantTimeTopologyProofEqual,
-    validateTopologyMutationAuthorityProof
+    decodeTopologyMutationAuthorityProof
 } from '../../topology/inbox/topology-app-inbox-authority.ts';
 import { createTopologyMutationAuthorityProof } from '../../topology/inbox/topology-mutation-authority-proof.ts';
 import { toRtcRttMutationReceiptId } from '../mutation/rtc-rtt-mutation-identifiers.ts';
@@ -81,8 +81,7 @@ export function decodeRtcRttAppInboxAuthority(
         if (authority.kind !== 'rtc-rtt') {
             throw new TypeError('authority kind is invalid');
         }
-        const proof = authority.proof;
-        validateTopologyMutationAuthorityProof(proof);
+        const proof = decodeTopologyMutationAuthorityProof(authority.proof);
         return {
             kind: 'rtc-rtt',
             proof,

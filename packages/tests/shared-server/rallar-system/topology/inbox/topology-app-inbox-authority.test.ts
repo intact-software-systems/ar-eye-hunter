@@ -114,6 +114,19 @@ describe('topology AppInbox authority', () => {
         expect(() => decodeTopologyAppInboxAuthority({ ...authority, unexpected: true })).toThrow(
             /durable authority is malformed/i
         );
+        expect(() =>
+            decodeTopologyAppInboxAuthority({
+                ...authority,
+                proof: { ...authority.proof, sessionIssuedAtEpochMs: -1 }
+            })
+        ).toThrow(/durable authority is malformed/i);
+        const nonPlainAuthority = Object.assign(
+            Object.create({ predecessorAuthority: true }),
+            authority
+        );
+        expect(() => decodeTopologyAppInboxAuthority(nonPlainAuthority)).toThrow(
+            /durable authority is malformed/i
+        );
     });
 
     it('compares equal proofs and rejects first, last, and length differences', () => {
