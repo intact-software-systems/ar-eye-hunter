@@ -24,7 +24,7 @@ const appInboxGuidanceVocabulary = [
 ] as const;
 const currentAppInboxGuidancePaths = [
     canonicalServiceWritingPath,
-    'packages/shared-server/architecture.md',
+    'packages/shared-server/README.md',
     'apps/api-v1/README.md',
     'docs/rallar-api-reference.md',
     'docs/rallar-convergent-state-and-rtc-topology.md',
@@ -39,7 +39,7 @@ const canonicalSnapshotOrderingGuidancePaths = [
 ] as const;
 const postCommitAudienceGuidancePaths = [
     'apps/api-v1/README.md',
-    'packages/shared-server/architecture.md',
+    'packages/shared-server/README.md',
     'docs/rallar-api-reference.md',
     'docs/rallar-convergent-state-and-rtc-topology.md'
 ] as const;
@@ -51,7 +51,7 @@ const repositoryReadGuidancePaths = [
     'docs/rallar-crdt-production-hardening-runbook.md'
 ] as const;
 const downstreamQueueGuidancePaths = [
-    'packages/shared-server/architecture.md',
+    'packages/shared-server/docs/persistence-and-replay.md',
     'docs/rallar-convergent-state-and-rtc-topology.md'
 ] as const;
 const mediumScaleRequirements = [
@@ -241,9 +241,9 @@ describe('authoritative mutation guidance integrity', () => {
         expectAllNormalized(realtime, [
             'group-state/**',
             'topology/inbox/**',
-            'rtc-topology/inbox/**',
-            'services/**',
-            'compatibility-only'
+            'rtc-rtt/inbox/**',
+            'websocket/router/**',
+            'create-api-v1-system-installers.ts'
         ]);
     });
 

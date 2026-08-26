@@ -140,8 +140,9 @@ with `listen EPERM` even when the code is healthy.
 ## Architecture
 
 `packages/**` is the reusable product surface; `apps/**` are consumers. Preserve existing public
-exports and app import paths unless the task explicitly asks for a breaking change. Each package has
-its own `architecture.md` — read it before changing that package's public surface.
+exports and app import paths unless the task explicitly asks for a breaking change. Read the
+package's current README and linked docs before changing its public surface; historical plans and
+deleted architecture notes are not current authority.
 
 - **`packages/shared`** — runtime-agnostic contracts and primitives. Safe from browser, server,
   tests, and apps: no DOM, no HTTP server, no Postgres, no `graphology`. Owns `api/` HTTP DTOs,
@@ -154,10 +155,11 @@ its own `architecture.md` — read it before changing that package's public surf
   `rallar-media-calls.ts`) are preferred for new app code. Controllers must not import the
   aggregate entry point or the composer; dependencies point inward.
 - **`packages/shared-server`** — reusable server domain code, independent of any one HTTP app.
-  `rallar-facade/` composes REST/WS/system behavior; `rallar-system/services/` owns client/group
-  state, topology, state sync, app-inbox processing, authorization, routing;
-  `rallar-system/repositories/` owns durable state and queue contracts; `postgres/` supplies
-  concrete adapters.
+  `rallar-server/` owns final application assembly; `rallar-system/` contains feature-owned
+  AppInbox, client/group/auth/CRDT, topology, RTC-RTT, state-sync, WebSocket, presence, and admin
+  behavior. Concrete PostgreSQL adapters live beside the feature that owns their row shape;
+  `postgres/` retains only the shared SQL port and transaction helper. Start at
+  `packages/shared-server/README.md` and its two linked runtime/persistence documents.
 - **`packages/shared-graph`** — the only place `graphology` belongs. Topology generation, Vivaldi
   RTT helpers, graph CRDT.
 - **`packages/shared-test`** — `black-box-runner/` (provider-neutral JSON recipe runner: HTTP, WS,
