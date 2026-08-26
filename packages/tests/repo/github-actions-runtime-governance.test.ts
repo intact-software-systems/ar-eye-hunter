@@ -58,6 +58,27 @@ describe('GitHub Actions runtime governance', () => {
         expect(releaseGate).not.toContain('npm run check:test-structure-coupling');
     });
 
+    it('observes IDE navigation after dependency installation without weakening failures', async () => {
+        const releaseGate = await readFile(
+            path.join(repoRoot, '.github/workflows/release-gate.yml'),
+            'utf8'
+        );
+        const installIndex = releaseGate.indexOf('run: npm ci');
+        const navigationIndex = releaseGate.indexOf(
+            'run: npm run check:repo-style:navigation-details'
+        );
+        const changedStyleIndex = releaseGate.indexOf(
+            'node scripts/check-changed-repo-style.mjs'
+        );
+
+        expect(installIndex).toBeGreaterThan(-1);
+        expect(navigationIndex).toBeGreaterThan(installIndex);
+        expect(changedStyleIndex).toBeGreaterThan(navigationIndex);
+        expect(releaseGate.slice(navigationIndex - 120, navigationIndex + 120)).not.toContain(
+            'continue-on-error'
+        );
+    });
+
     it('uses the exact merge base when the trusted base tip has diverged', async () => {
         const fixtureRoot = mkdtempSync(path.join(tmpdir(), 'rallar-changed-review-range-'));
         try {

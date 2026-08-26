@@ -72,6 +72,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Report IDE navigation details
+        run: npm run check:repo-style:navigation-details
+
       - name: Resolve immutable changed-review range
         id: changed_review_range
         if: ${{ inputs.changed_repo_style_base != '' }}
