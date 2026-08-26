@@ -21,8 +21,8 @@ import type {
 } from '../group-mutation-contracts.ts';
 import { GroupMutationRejectedError } from '../group-mutation-contracts.ts';
 import { noOp, requireGroup } from '../group-mutation-result.ts';
-import { computeGroupPresenceWrite } from './compute-group-presence-write.ts';
 import { computeConnectPresenceAdmission } from './compute-group-presence-admission.ts';
+import { computeGroupPresenceWrite } from './compute-group-presence-write.ts';
 
 const DEFAULT_GROUP_SESSION_TTL_MS = 24 * 60 * 60 * 1_000;
 

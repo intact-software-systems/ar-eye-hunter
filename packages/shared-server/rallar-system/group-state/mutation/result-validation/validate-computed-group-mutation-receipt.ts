@@ -1,11 +1,8 @@
 import { jsonEquals } from '@shared/repository/state-utils.ts';
 
 import { groupMutationIdempotencyKey } from '../group-mutation-idempotency-key.ts';
-import {
-    validateGroupMutationIdempotencyRecord,
-    validateMutationReceipt
-} from './validate-group-mutation-result.ts';
 import type { ValidateComputedGroupMutationWriteInput } from './validate-computed-group-mutation-write.ts';
+import { validateGroupMutationIdempotencyRecord, validateMutationReceipt } from './validate-group-mutation-result.ts';
 
 export function validateComputedGroupMutationReceipt({
     command,

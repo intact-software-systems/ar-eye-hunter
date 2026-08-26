@@ -1,10 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { decodeExactSnapshotEnvelope } from '@shared-server/rallar-system/crdt/mutation/decoding/decode-exact-snapshot-envelope.ts';
-import {
-    RALLAR_CRDT_PROTOCOL_VERSION,
-    type RallarCrdtDocumentRef
-} from '@shared/crdt/mod.ts';
+import { RALLAR_CRDT_PROTOCOL_VERSION, type RallarCrdtDocumentRef } from '@shared/crdt/mod.ts';
 
 const DOCUMENT: RallarCrdtDocumentRef = {
     applicationId: 'app-1',

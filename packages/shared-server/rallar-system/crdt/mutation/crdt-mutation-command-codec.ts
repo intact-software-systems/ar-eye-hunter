@@ -1,28 +1,19 @@
 import { hashRallarCrdtJson, toRallarCrdtDocumentKey, type RallarCrdtDocumentRef } from '@shared/crdt/mod.ts';
 
-import {
-    requireEpoch,
-    requireExactKeys,
-    requireOneOf,
-    requireString
-} from '../../protocol/exact-object-decoding.ts';
-import {
-    decodeJsonWireValue,
-    type JsonWireObject,
-    type JsonWireValue
-} from '../../protocol/json-wire-identity.ts';
+import { requireEpoch, requireExactKeys, requireOneOf, requireString } from '../../protocol/exact-object-decoding.ts';
+import { decodeJsonWireValue, type JsonWireObject, type JsonWireValue } from '../../protocol/json-wire-identity.ts';
 import type {
     CrdtLifecycleFieldAction,
     CrdtMutationCommand,
     CreateCrdtMutationCommandInput
 } from './crdt-mutation-contracts.ts';
+import { decodeExactUpdateEnvelope } from './decode-exact-update-envelope.ts';
 import { decodeExactDocumentRef } from './decoding/decode-exact-document-ref.ts';
 import { decodeExactProjectionIds } from './decoding/decode-exact-projection-ids.ts';
 import { decodeExactQuotaPolicy } from './decoding/decode-exact-quota-policy.ts';
 import { decodeExactRetentionPolicy } from './decoding/decode-exact-retention-policy.ts';
 import { decodeExactSnapshotEnvelope } from './decoding/decode-exact-snapshot-envelope.ts';
 import { requireCrdtJsonWireObject } from './decoding/require-crdt-json-wire-object.ts';
-import { decodeExactUpdateEnvelope } from './decode-exact-update-envelope.ts';
 import { requireCrdtCanonicalSnapshotReason, toCrdtCanonicalSnapshotEnvelope } from './to-crdt-canonical-snapshot.ts';
 
 export async function createCrdtMutationCommand(

@@ -12,17 +12,13 @@ import {
     requireOneOf,
     requireString
 } from '../../protocol/exact-object-decoding.ts';
-import {
-    decodeJsonWireValue,
-    type JsonWireObject,
-    type JsonWireValue
-} from '../../protocol/json-wire-identity.ts';
+import { decodeJsonWireValue, type JsonWireObject, type JsonWireValue } from '../../protocol/json-wire-identity.ts';
+import { decodeExactUpdateEnvelope } from './decode-exact-update-envelope.ts';
 import { decodeExactDocumentMetadata } from './decoding/decode-exact-document-metadata.ts';
 import { decodeExactDocumentRef } from './decoding/decode-exact-document-ref.ts';
 import { decodeExactSnapshotEnvelope } from './decoding/decode-exact-snapshot-envelope.ts';
 import { decodeExactTrustedAppendMetadata } from './decoding/decode-exact-trusted-append-metadata.ts';
 import { requireCrdtJsonWireObject } from './decoding/require-crdt-json-wire-object.ts';
-import { decodeExactUpdateEnvelope } from './decode-exact-update-envelope.ts';
 
 export function decodeExactDebugBundle(value: unknown): RallarCrdtDebugBundle {
     const bundle = requireCrdtJsonWireObject(

@@ -18,21 +18,10 @@ import {
     type CrdtMutationRead,
     type CrdtMutationRepository
 } from '../mutation/crdt-mutation-contracts.ts';
-import {
-    evaluateCrdtMutationFeatureDecision
-} from '../mutation/evaluate-crdt-mutation-feature-decision.ts';
-import {
-    decodeCrdtDocumentRow,
-    type CrdtDocumentRow
-} from './row-decoding/decode-crdt-document-row.ts';
-import {
-    decodeCrdtSnapshotRow,
-    type CrdtSnapshotRow
-} from './row-decoding/decode-crdt-snapshot-row.ts';
-import {
-    decodeCrdtUpdateRow,
-    type CrdtUpdateRow
-} from './row-decoding/decode-crdt-update-row.ts';
+import { evaluateCrdtMutationFeatureDecision } from '../mutation/evaluate-crdt-mutation-feature-decision.ts';
+import { decodeCrdtDocumentRow, type CrdtDocumentRow } from './row-decoding/decode-crdt-document-row.ts';
+import { decodeCrdtSnapshotRow, type CrdtSnapshotRow } from './row-decoding/decode-crdt-snapshot-row.ts';
+import { decodeCrdtUpdateRow, type CrdtUpdateRow } from './row-decoding/decode-crdt-update-row.ts';
 
 export interface CrdtMutationAuthorityDecision {
     readonly allowed: boolean;

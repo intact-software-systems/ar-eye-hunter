@@ -1,10 +1,7 @@
 import type { RallarCrdtQuotaPolicy } from '@shared/crdt/mod.ts';
 
+import { requireExactOptionalKeys, requirePositiveInteger } from '../../../protocol/exact-object-decoding.ts';
 import type { JsonWireValue } from '../../../protocol/json-wire-identity.ts';
-import {
-    requireExactOptionalKeys,
-    requirePositiveInteger
-} from '../../../protocol/exact-object-decoding.ts';
 import { requireCrdtJsonWireObject } from './require-crdt-json-wire-object.ts';
 
 export function decodeExactQuotaPolicy(value: JsonWireValue): RallarCrdtQuotaPolicy {

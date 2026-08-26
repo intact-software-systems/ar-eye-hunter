@@ -1,10 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { decodeCrdtAuditEvent } from '@shared-server/rallar-system/crdt/mutation/decoding/decode-crdt-audit-event.ts';
-import {
-    toRallarCrdtDocumentKey,
-    type RallarCrdtDocumentRef
-} from '@shared/crdt/mod.ts';
+import { toRallarCrdtDocumentKey, type RallarCrdtDocumentRef } from '@shared/crdt/mod.ts';
 
 const DOCUMENT: RallarCrdtDocumentRef = {
     applicationId: 'app-1',

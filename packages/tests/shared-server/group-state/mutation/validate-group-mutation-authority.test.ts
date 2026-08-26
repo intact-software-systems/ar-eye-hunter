@@ -1,8 +1,5 @@
 import { validateGroupMutationAuthority } from '@shared-server/rallar-system/group-state/mutation/command-validation/validate-group-mutation-authority.ts';
-import type {
-    GroupMutationCommand,
-    GroupMutationFacts
-} from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
+import type { GroupMutationCommand, GroupMutationFacts } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
 import { describe, expect, it } from 'vitest';
 
 describe('group mutation authority validation', () => {

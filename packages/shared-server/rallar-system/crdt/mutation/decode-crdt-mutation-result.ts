@@ -1,17 +1,6 @@
-import {
-    requireExactKeys,
-    requireOneOf,
-    requireString
-} from '../../protocol/exact-object-decoding.ts';
-import {
-    decodeJsonWireValue,
-    type JsonWireObject,
-    type JsonWireValue
-} from '../../protocol/json-wire-identity.ts';
-import type {
-    CrdtMutationCommand,
-    CrdtMutationResult
-} from './crdt-mutation-contracts.ts';
+import { requireExactKeys, requireOneOf, requireString } from '../../protocol/exact-object-decoding.ts';
+import { decodeJsonWireValue, type JsonWireObject, type JsonWireValue } from '../../protocol/json-wire-identity.ts';
+import type { CrdtMutationCommand, CrdtMutationResult } from './crdt-mutation-contracts.ts';
 import { requireCrdtJsonWireObject } from './decoding/require-crdt-json-wire-object.ts';
 import { decodeCrdtAppendMutationResult } from './result-decoding/decode-crdt-append-mutation-result.ts';
 import { decodeCrdtCompactMutationResult } from './result-decoding/decode-crdt-compact-mutation-result.ts';
@@ -26,16 +15,14 @@ interface DecodedCrdtMutationResultEnvelopeBase {
     readonly documentKey: string;
 }
 
-export interface DecodedAcceptedCrdtMutationResultEnvelope
-    extends DecodedCrdtMutationResultEnvelopeBase {
+export interface DecodedAcceptedCrdtMutationResultEnvelope extends DecodedCrdtMutationResultEnvelopeBase {
     readonly status: 'accepted';
     readonly documentRevision: number;
     readonly appendSequence: number;
     readonly code: null;
 }
 
-export interface DecodedReplayCrdtMutationResultEnvelope
-    extends DecodedCrdtMutationResultEnvelopeBase {
+export interface DecodedReplayCrdtMutationResultEnvelope extends DecodedCrdtMutationResultEnvelopeBase {
     readonly operation: 'append';
     readonly status: 'replay';
     readonly documentRevision: number;
@@ -43,8 +30,7 @@ export interface DecodedReplayCrdtMutationResultEnvelope
     readonly code: null;
 }
 
-export interface DecodedRejectedCrdtMutationResultEnvelope
-    extends DecodedCrdtMutationResultEnvelopeBase {
+export interface DecodedRejectedCrdtMutationResultEnvelope extends DecodedCrdtMutationResultEnvelopeBase {
     readonly status: 'rejected';
     readonly documentRevision: number | null;
     readonly appendSequence: null;

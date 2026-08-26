@@ -11,8 +11,8 @@ import type {
     GroupMutationRead
 } from '../group-mutation-contracts.ts';
 import { computeGroupMutation } from '../orchestration/compute-group-mutation.ts';
-import { validateComputedGroupMutation } from '../result-validation/validate-computed-group-mutation.ts';
 import { validateComputedGroupMutationOutbox } from '../result-validation/validate-computed-group-mutation-outbox.ts';
+import { validateComputedGroupMutation } from '../result-validation/validate-computed-group-mutation.ts';
 import { validateComputedRosterFacts } from './validate-computed-roster-facts.ts';
 import { validateGroupMutationFacts } from './validate-group-mutation-facts.ts';
 import { validateGroupMutationRead } from './validate-group-mutation-read.ts';

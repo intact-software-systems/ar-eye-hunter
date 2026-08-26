@@ -13,7 +13,6 @@ import type {
     GroupMutationFacts,
     GroupMutationRead
 } from '../group-mutation-contracts.ts';
-import { probeGroupMutationIdempotency } from '../probe-group-mutation-idempotency.ts';
 import {
     computeDeclineGroupAdmission,
     computeGrantGroupAdmission
@@ -26,11 +25,10 @@ import {
     computeTransfer,
     computeUpsertMember
 } from '../membership/compute-group-membership-mutation.ts';
-import {
-    computeConnectGroupPresence
-} from '../presence/compute-connect-group-presence.ts';
+import { computeConnectGroupPresence } from '../presence/compute-connect-group-presence.ts';
 import { computeDisconnectGroupPresence } from '../presence/compute-disconnect-group-presence.ts';
 import { computeHeartbeatGroupPresence } from '../presence/compute-heartbeat-group-presence.ts';
+import { probeGroupMutationIdempotency } from '../probe-group-mutation-idempotency.ts';
 import { validateGroupMutationFacts } from '../state-validation/validate-group-mutation-facts.ts';
 import { validateGroupMutationRead } from '../state-validation/validate-group-mutation-read.ts';
 

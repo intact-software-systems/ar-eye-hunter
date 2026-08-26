@@ -1,6 +1,5 @@
 import type { RallarCrdtTrustedAppendMetadata } from '@shared/crdt/mod.ts';
 
-import type { JsonWireValue } from '../../../protocol/json-wire-identity.ts';
 import {
     requireEpoch,
     requireExactKeys,
@@ -8,6 +7,7 @@ import {
     requirePositiveInteger,
     requireString
 } from '../../../protocol/exact-object-decoding.ts';
+import type { JsonWireValue } from '../../../protocol/json-wire-identity.ts';
 import { requireCrdtJsonWireObject } from './require-crdt-json-wire-object.ts';
 
 export function decodeExactTrustedAppendMetadata(value: JsonWireValue): RallarCrdtTrustedAppendMetadata {

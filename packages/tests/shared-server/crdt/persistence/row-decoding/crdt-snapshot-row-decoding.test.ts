@@ -1,14 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import {
-    decodeCrdtSnapshotRow,
-    type CrdtSnapshotRow
-} from '@shared-server/rallar-system/crdt/persistence/row-decoding/decode-crdt-snapshot-row.ts';
-import {
-    RALLAR_CRDT_PROTOCOL_VERSION,
-    toRallarCrdtDocumentKey,
-    type RallarCrdtDocumentRef
-} from '@shared/crdt/mod.ts';
+import { decodeCrdtSnapshotRow, type CrdtSnapshotRow } from '@shared-server/rallar-system/crdt/persistence/row-decoding/decode-crdt-snapshot-row.ts';
+import { RALLAR_CRDT_PROTOCOL_VERSION, toRallarCrdtDocumentKey, type RallarCrdtDocumentRef } from '@shared/crdt/mod.ts';
 
 const DOCUMENT: RallarCrdtDocumentRef = {
     applicationId: 'app-1',

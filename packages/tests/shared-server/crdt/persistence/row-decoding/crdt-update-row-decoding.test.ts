@@ -1,9 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import {
-    decodeCrdtUpdateRow,
-    type CrdtUpdateRow
-} from '@shared-server/rallar-system/crdt/persistence/row-decoding/decode-crdt-update-row.ts';
+import { decodeCrdtUpdateRow, type CrdtUpdateRow } from '@shared-server/rallar-system/crdt/persistence/row-decoding/decode-crdt-update-row.ts';
 import {
     hashRallarCrdtUpdateEnvelope,
     RALLAR_CRDT_OPERATION_VERSION,

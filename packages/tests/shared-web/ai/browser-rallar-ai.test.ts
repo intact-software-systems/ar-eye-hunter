@@ -340,5 +340,4 @@ describe('Rallar browser AI facade', () => {
         });
         expect(rallar.store.set).toHaveBeenCalledWith('result-1', result);
     });
-
 });

@@ -1,18 +1,12 @@
-import {
-    validateRallarCrdtSnapshotEnvelope,
-    type RallarCrdtSnapshotEnvelope
-} from '@shared/crdt/mod.ts';
+import { validateRallarCrdtSnapshotEnvelope, type RallarCrdtSnapshotEnvelope } from '@shared/crdt/mod.ts';
 
-import type {
-    JsonWireObject,
-    JsonWireValue
-} from '../../../protocol/json-wire-identity.ts';
 import {
     requireEpoch,
     requireExactOptionalKeys,
     requirePositiveInteger,
     requireString
 } from '../../../protocol/exact-object-decoding.ts';
+import type { JsonWireObject, JsonWireValue } from '../../../protocol/json-wire-identity.ts';
 import { decodeExactDocumentRef } from './decode-exact-document-ref.ts';
 import { decodeExactEncryptedEnvelopeShape } from './decode-exact-operation-shapes.ts';
 import {

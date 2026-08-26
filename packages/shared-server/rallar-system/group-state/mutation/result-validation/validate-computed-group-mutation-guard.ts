@@ -49,10 +49,7 @@ export function validateComputedGroupMutationGuard({
 interface ValidateComputedGroupGuardInput {
     readonly command: ValidateComputedGroupMutationWriteInput['command'];
     readonly read: ValidateComputedGroupMutationWriteInput['read'];
-    readonly guard: Extract<
-        ValidateComputedGroupMutationWriteInput['computed']['guard'],
-        { kind: 'group'; }
-    >;
+    readonly guard: Extract<ValidateComputedGroupMutationWriteInput['computed']['guard'], { kind: 'group'; }>;
 }
 
 function validateComputedGroupGuard({
@@ -79,10 +76,7 @@ interface ValidateComputedPresenceGuardInput {
     readonly command: ValidateComputedGroupMutationWriteInput['command'];
     readonly read: ValidateComputedGroupMutationWriteInput['read'];
     readonly facts: ValidateComputedGroupMutationWriteInput['facts'];
-    readonly guard: Extract<
-        ValidateComputedGroupMutationWriteInput['computed']['guard'],
-        { kind: 'presence'; }
-    >;
+    readonly guard: Extract<ValidateComputedGroupMutationWriteInput['computed']['guard'], { kind: 'presence'; }>;
 }
 
 function validateComputedPresenceGuard({

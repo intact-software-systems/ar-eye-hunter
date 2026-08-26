@@ -1,17 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
-import { decodeJsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import { decodeExactDocumentMetadata } from '@shared-server/rallar-system/crdt/mutation/decoding/decode-exact-document-metadata.ts';
 import { decodeExactDocumentRef } from '@shared-server/rallar-system/crdt/mutation/decoding/decode-exact-document-ref.ts';
 import { decodeExactProjectionIds } from '@shared-server/rallar-system/crdt/mutation/decoding/decode-exact-projection-ids.ts';
 import { decodeExactQuotaPolicy } from '@shared-server/rallar-system/crdt/mutation/decoding/decode-exact-quota-policy.ts';
 import { decodeExactRetentionPolicy } from '@shared-server/rallar-system/crdt/mutation/decoding/decode-exact-retention-policy.ts';
 import { decodeExactTrustedAppendMetadata } from '@shared-server/rallar-system/crdt/mutation/decoding/decode-exact-trusted-append-metadata.ts';
-import {
-    toRallarCrdtDocumentKey,
-    type RallarCrdtDocumentMetadata,
-    type RallarCrdtDocumentRef
-} from '@shared/crdt/mod.ts';
+import { decodeJsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
+import { toRallarCrdtDocumentKey, type RallarCrdtDocumentMetadata, type RallarCrdtDocumentRef } from '@shared/crdt/mod.ts';
 
 const DOCUMENT: RallarCrdtDocumentRef = {
     applicationId: 'app-1',

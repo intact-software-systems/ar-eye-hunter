@@ -1,7 +1,7 @@
 import { createDefaultGroupLifecyclePolicy } from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
 import type { Group } from '@shared/api/group-types.ts';
-import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { computeGroupPresenceSummaryEntry } from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
+import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { jsonEquals } from '@shared/repository/state-utils.ts';
 
 import { computeFormationTimerEntries } from '../../formation-timer-outbox-entry.ts';

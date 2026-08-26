@@ -3,9 +3,9 @@ import { toRallarCrdtDocumentKey } from '@shared/crdt/mod.ts';
 import type { JsonWireObject } from '../../../protocol/json-wire-identity.ts';
 import type { CrdtEraseMutationResult } from '../crdt-mutation-contracts.ts';
 import type { DecodedCrdtMutationResultEnvelope } from '../decode-crdt-mutation-result.ts';
+import { decodeExactDebugBundle } from '../decode-exact-debug-bundle.ts';
 import { decodeExactDocumentMetadata } from '../decoding/decode-exact-document-metadata.ts';
 import { requireCrdtJsonWireObject } from '../decoding/require-crdt-json-wire-object.ts';
-import { decodeExactDebugBundle } from '../decode-exact-debug-bundle.ts';
 import { decodeExactErasureAuditEvent } from './decode-exact-erasure-audit-event.ts';
 import { decodeExactErasureRequest } from './decode-exact-erasure-request.ts';
 

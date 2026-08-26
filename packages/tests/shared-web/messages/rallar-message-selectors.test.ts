@@ -99,5 +99,4 @@ describe('Rallar message selectors', () => {
         expect(readRallarMessageRoomId(roomBroadcast)).toBe('room-2');
         expect(readRallarMessageRoomId(worldBroadcast)).toBeUndefined();
     });
-
 });

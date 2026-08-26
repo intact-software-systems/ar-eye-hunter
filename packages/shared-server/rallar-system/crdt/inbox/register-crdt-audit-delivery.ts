@@ -1,8 +1,8 @@
 import type { RallarCrdtAuditSink } from '@shared/crdt/mod.ts';
 import type { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
 
-import { decodeCrdtAuditEvent } from '../mutation/decoding/decode-crdt-audit-event.ts';
 import { CRDT_AUDIT_APP_OUTBOX_TYPE } from '../mutation/create-crdt-mutation-outbox.ts';
+import { decodeCrdtAuditEvent } from '../mutation/decoding/decode-crdt-audit-event.ts';
 
 export interface RegisterCrdtAuditDeliveryInput {
     readonly outboxQueueReader: OutboxQueueReader;

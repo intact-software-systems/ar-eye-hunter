@@ -5,22 +5,15 @@ import {
     type RallarCrdtValidationResult
 } from '@shared/crdt/mod.ts';
 
-import {
-    requireExactKeys,
-    requireOneOf,
-    requireString
-} from '../../../protocol/exact-object-decoding.ts';
-import type {
-    JsonWireObject,
-    JsonWireValue
-} from '../../../protocol/json-wire-identity.ts';
+import { requireExactKeys, requireOneOf, requireString } from '../../../protocol/exact-object-decoding.ts';
+import type { JsonWireObject, JsonWireValue } from '../../../protocol/json-wire-identity.ts';
 import { appendRejectionReason, isAppendRejectionRetryable, toAppendRejectionCode } from '../crdt-append-rejection.ts';
 import type { CrdtAppendMutationResult } from '../crdt-mutation-contracts.ts';
 import type { DecodedCrdtMutationResultEnvelope } from '../decode-crdt-mutation-result.ts';
+import { decodeExactUpdateEnvelope } from '../decode-exact-update-envelope.ts';
 import { decodeExactDocumentMetadata } from '../decoding/decode-exact-document-metadata.ts';
 import { decodeExactTrustedAppendMetadata } from '../decoding/decode-exact-trusted-append-metadata.ts';
 import { requireCrdtJsonWireObject } from '../decoding/require-crdt-json-wire-object.ts';
-import { decodeExactUpdateEnvelope } from '../decode-exact-update-envelope.ts';
 import { decodeExactValidationResult } from './decode-exact-validation-result.ts';
 
 export interface DecodeCrdtAppendMutationResultInput {

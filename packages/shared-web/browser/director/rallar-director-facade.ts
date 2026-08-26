@@ -1,5 +1,8 @@
+import type {
+    RallarMessagePayload,
+    RallarMessageSendResult
+} from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type { RallarScopedOperationOptions } from '@shared-web/browser/rallar-connection-facade.ts';
-import type { RallarMessagePayload, RallarMessageSendResult } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type { RallarTargetedSendResult } from '@shared-web/browser/rallar-realtime-facade.ts';
 import type { RallarUnsubscribe } from '@shared-web/browser/rallar-shared-contracts.ts';
 import type { RallarGroupDirectorAppointment, RallarGroupDirectorFreshness } from '@shared/api/group-director.ts';

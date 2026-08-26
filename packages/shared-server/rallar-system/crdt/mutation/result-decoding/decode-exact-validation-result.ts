@@ -1,12 +1,6 @@
-import type {
-    RallarCrdtValidationIssue,
-    RallarCrdtValidationResult
-} from '@shared/crdt/mod.ts';
+import type { RallarCrdtValidationIssue, RallarCrdtValidationResult } from '@shared/crdt/mod.ts';
 
-import {
-    requireExactKeys,
-    requireString
-} from '../../../protocol/exact-object-decoding.ts';
+import { requireExactKeys, requireString } from '../../../protocol/exact-object-decoding.ts';
 import type { JsonWireValue } from '../../../protocol/json-wire-identity.ts';
 import { requireCrdtJsonWireObject } from '../decoding/require-crdt-json-wire-object.ts';
 

@@ -1,7 +1,4 @@
-import type {
-    JsonWireObject,
-    JsonWireValue
-} from '../../../protocol/json-wire-identity.ts';
+import type { JsonWireObject, JsonWireValue } from '../../../protocol/json-wire-identity.ts';
 
 export function requireCrdtJsonWireObject(
     value: JsonWireValue | undefined,

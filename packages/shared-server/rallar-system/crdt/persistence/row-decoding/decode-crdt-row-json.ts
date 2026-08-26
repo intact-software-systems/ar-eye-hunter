@@ -1,7 +1,4 @@
-import {
-    decodeJsonWireValue,
-    type JsonWireValue
-} from '../../../protocol/json-wire-identity.ts';
+import { decodeJsonWireValue, type JsonWireValue } from '../../../protocol/json-wire-identity.ts';
 
 export function decodeCrdtRowJson(value: string, label: string): JsonWireValue {
     try {

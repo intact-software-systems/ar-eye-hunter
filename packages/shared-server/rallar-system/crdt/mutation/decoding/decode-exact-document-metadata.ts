@@ -1,9 +1,5 @@
-import {
-    toRallarCrdtDocumentKey,
-    type RallarCrdtDocumentMetadata
-} from '@shared/crdt/mod.ts';
+import { toRallarCrdtDocumentKey, type RallarCrdtDocumentMetadata } from '@shared/crdt/mod.ts';
 
-import type { JsonWireValue } from '../../../protocol/json-wire-identity.ts';
 import {
     requireEpoch,
     requireExactKeys,
@@ -12,6 +8,7 @@ import {
     requirePositiveInteger,
     requireString
 } from '../../../protocol/exact-object-decoding.ts';
+import type { JsonWireValue } from '../../../protocol/json-wire-identity.ts';
 import { decodeExactDocumentRef } from './decode-exact-document-ref.ts';
 import { decodeExactProjectionIds } from './decode-exact-projection-ids.ts';
 import { decodeExactQuotaPolicy } from './decode-exact-quota-policy.ts';

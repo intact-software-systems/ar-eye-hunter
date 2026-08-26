@@ -6,10 +6,7 @@ import type { DecodedCrdtMutationResultEnvelope } from '../decode-crdt-mutation-
 import { decodeExactDocumentMetadata } from '../decoding/decode-exact-document-metadata.ts';
 import { decodeExactSnapshotEnvelope } from '../decoding/decode-exact-snapshot-envelope.ts';
 import { requireCrdtJsonWireObject } from '../decoding/require-crdt-json-wire-object.ts';
-import {
-    requireCrdtCanonicalSnapshotReason,
-    toCrdtCanonicalSnapshotEnvelope
-} from '../to-crdt-canonical-snapshot.ts';
+import { requireCrdtCanonicalSnapshotReason, toCrdtCanonicalSnapshotEnvelope } from '../to-crdt-canonical-snapshot.ts';
 
 export interface DecodeCrdtCompactMutationResultInput {
     readonly fields: JsonWireObject;

@@ -1,7 +1,4 @@
-import {
-    toRallarCrdtDocumentKey,
-    type RallarCrdtDocumentRef
-} from '@shared/crdt/mod.ts';
+import { toRallarCrdtDocumentKey, type RallarCrdtDocumentRef } from '@shared/crdt/mod.ts';
 
 import type { CrdtCanonicalSnapshotEnvelope } from '../../mutation/crdt-mutation-contracts.ts';
 import { decodeExactSnapshotEnvelope } from '../../mutation/decoding/decode-exact-snapshot-envelope.ts';

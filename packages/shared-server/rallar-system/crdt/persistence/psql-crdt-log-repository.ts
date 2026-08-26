@@ -32,14 +32,8 @@ import {
     decodeStoredCrdtDocumentRow,
     type CrdtDocumentRow
 } from './row-decoding/decode-crdt-document-row.ts';
-import {
-    decodeCrdtSnapshotRow,
-    type CrdtSnapshotRow
-} from './row-decoding/decode-crdt-snapshot-row.ts';
-import {
-    decodeCrdtUpdateRow,
-    type CrdtUpdateRow
-} from './row-decoding/decode-crdt-update-row.ts';
+import { decodeCrdtSnapshotRow, type CrdtSnapshotRow } from './row-decoding/decode-crdt-snapshot-row.ts';
+import { decodeCrdtUpdateRow, type CrdtUpdateRow } from './row-decoding/decode-crdt-update-row.ts';
 
 export interface PSqlCrdtLogRepositoryOptions {
     readonly now?: () => number;
@@ -90,9 +84,7 @@ export class PSqlCrdtLogRepository implements RallarCrdtAdminReadRepository {
             throw new TypeError('CRDT persisted update has no document');
         }
         const selected = rows.slice(0, limit);
-        const records = selected.map((row) =>
-            decodeCrdtUpdateRow({ row, document: input.document })
-        );
+        const records = selected.map((row) => decodeCrdtUpdateRow({ row, document: input.document }));
         const lastSequence = records.at(-1)?.append.appendSequence;
 
         return {

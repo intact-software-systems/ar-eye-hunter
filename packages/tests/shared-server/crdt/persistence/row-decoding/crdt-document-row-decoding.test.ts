@@ -1,14 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import {
-    decodeCrdtDocumentRow,
-    type CrdtDocumentRow
-} from '@shared-server/rallar-system/crdt/persistence/row-decoding/decode-crdt-document-row.ts';
-import {
-    toRallarCrdtDocumentKey,
-    type RallarCrdtDocumentMetadata,
-    type RallarCrdtDocumentRef
-} from '@shared/crdt/mod.ts';
+import { decodeCrdtDocumentRow, type CrdtDocumentRow } from '@shared-server/rallar-system/crdt/persistence/row-decoding/decode-crdt-document-row.ts';
+import { toRallarCrdtDocumentKey, type RallarCrdtDocumentMetadata, type RallarCrdtDocumentRef } from '@shared/crdt/mod.ts';
 
 const DOCUMENT: RallarCrdtDocumentRef = {
     applicationId: 'app-1',

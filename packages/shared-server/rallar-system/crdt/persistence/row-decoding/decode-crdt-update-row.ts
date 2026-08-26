@@ -6,8 +6,8 @@ import {
 } from '@shared/crdt/mod.ts';
 
 import { decodeJsonWireValue } from '../../../protocol/json-wire-identity.ts';
-import { decodeExactTrustedAppendMetadata } from '../../mutation/decoding/decode-exact-trusted-append-metadata.ts';
 import { decodeExactUpdateEnvelope } from '../../mutation/decode-exact-update-envelope.ts';
+import { decodeExactTrustedAppendMetadata } from '../../mutation/decoding/decode-exact-trusted-append-metadata.ts';
 import { decodeCrdtRowJson } from './decode-crdt-row-json.ts';
 
 export interface CrdtUpdateRow {

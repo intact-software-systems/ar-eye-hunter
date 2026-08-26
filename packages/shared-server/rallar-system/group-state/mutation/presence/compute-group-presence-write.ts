@@ -6,8 +6,8 @@ import type {
     GroupMutationComputed,
     GroupMutationFacts,
     GroupMutationRead,
-    PresenceGuardCandidate,
-    PresenceAdmissionCandidate
+    PresenceAdmissionCandidate,
+    PresenceGuardCandidate
 } from '../group-mutation-contracts.ts';
 import { computeGroupMutationWriteResult, requireGroup } from '../group-mutation-result.ts';
 

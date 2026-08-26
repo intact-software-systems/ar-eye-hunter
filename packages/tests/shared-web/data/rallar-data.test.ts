@@ -9,12 +9,7 @@ import { RepositoryManager } from '@shared/cache/RepositoryManager.ts';
 import { IndexedDbStringPersistenceProvider } from '@shared/persistence/IndexedDbStringPersistenceProvider.ts';
 import { afterEach, describe, expect, it } from 'vitest';
 
-import {
-    FakeBroadcastChannel,
-    resolveTestDataScopeKey,
-    type Todo,
-    waitFor
-} from './rallar-data-test-runtime.ts';
+import { FakeBroadcastChannel, resolveTestDataScopeKey, waitFor, type Todo } from './rallar-data-test-runtime.ts';
 
 describe('Rallar data stores', () => {
     const originalBroadcastChannel = globalThis.BroadcastChannel;

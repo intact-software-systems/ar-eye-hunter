@@ -1,7 +1,4 @@
-import {
-    validateRallarCrdtDocumentRef,
-    type RallarCrdtDocumentRef
-} from '@shared/crdt/mod.ts';
+import { validateRallarCrdtDocumentRef, type RallarCrdtDocumentRef } from '@shared/crdt/mod.ts';
 
 import { requireExactKeys } from '../../../protocol/exact-object-decoding.ts';
 import type { JsonWireValue } from '../../../protocol/json-wire-identity.ts';
