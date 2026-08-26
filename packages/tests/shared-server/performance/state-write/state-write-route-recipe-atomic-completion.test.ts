@@ -8,7 +8,7 @@ const recipeRoot = new URL(
     import.meta.url
 );
 
-it('requires route recipes to assert durable AppInbox completion', () => {
+it('requires state-write route recipes to assert durable AppInbox completion', () => {
     for (
         const recipePath of [
             'api-v1-state-write-convergence.json',

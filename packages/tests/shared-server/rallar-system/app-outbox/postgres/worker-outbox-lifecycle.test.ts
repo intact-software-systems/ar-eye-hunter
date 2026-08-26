@@ -4,7 +4,7 @@ import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { describe, expect, it } from 'vitest';
 import { expectWorkerOutboxLifecycleEvidence } from './postgres-worker-outbox-evidence.ts';
 
-describe('Postgres worker direct ResourceInbox evidence', () => {
+describe('Postgres worker direct ResourceInbox outbox lifecycle', () => {
     it('validates receipt-linked client WS and group APP lifecycle entries', () => {
         expect(() =>
             expectWorkerOutboxLifecycleEvidence({

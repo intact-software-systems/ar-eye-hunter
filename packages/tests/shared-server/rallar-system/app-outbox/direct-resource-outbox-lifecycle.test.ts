@@ -3,7 +3,7 @@ import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { describe, expect, it } from 'vitest';
 import { expectAppOutboxWsLink, expectDirectResourceOutboxEvidence, expectDirectResourceOutboxLifecycle } from './direct-resource-outbox-evidence.ts';
 
-describe('direct resource outbox evidence', () => {
+describe('direct ResourceInbox outbox lifecycle', () => {
     it('requires exact APP_OUTBOX identity, topic, payload, and lifecycle', () => {
         expect(() =>
             expectDirectResourceOutboxEvidence([{
