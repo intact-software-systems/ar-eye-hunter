@@ -17,32 +17,26 @@ browser to immediately close every inactive peer. RTT reporting uses
 than it actively measures.
 
 The default RTT reporting degree is `5`, matching the default RTC topology
-`degreeLimit`. API-v1 ignores an invalid, zero, negative, or fractional
-`RALLAR_RTC_RTT_REPORTING_DEGREE_LIMIT` as if it were unset, so the effective
-topology `degreeLimit` governs instead; the shared
-`normalizeRttReportingDegreeLimit` falls back to `5` only when the number it is
-actually handed is not a positive integer. When the server option is omitted,
-it falls back to the effective topology `degreeLimit`.
+`degreeLimit`. API-v1 configuration requires
+`RALLAR_RTC_RTT_REPORTING_DEGREE_LIMIT` to be a positive integer; invalid,
+zero, negative, or fractional values fail configuration decoding. In a
+lower-level shared-server composition where the server option is omitted,
+`normalizeRttReportingDegreeLimit` falls back to the effective topology
+`degreeLimit`, then to `5` if that fallback is invalid.
 
-On the server that fallback is resolved per group, not once per process. The
-durable AppInbox RTT mutation composed in
-`apps/api-v1/src/composition/create-api-v1-topology-services.ts` — the only
-acceptance path API-v1 uses, on every database backend, because its
-system-topic installer always declares the durable topology repositories — and
-the read-side planning filter both call `readRttReportingDegreeLimit` with the
-group's effective topology configuration (server defaults, durable per-group
-config, temporary override) under the server reporting option. The in-memory
-topic branch in `init-rtc-rtt-topic.ts` resolves the limit the same way through
-the `readGroupRttReportingDegreeLimit` hook in
-`packages/shared-server/rallar-system/rtc-rtt/topic/init-rtc-rtt-topic.ts`, for compositions
-without durable topology repositories. An explicitly configured
-`RALLAR_RTC_RTT_REPORTING_DEGREE_LIMIT` therefore still wins; otherwise a
-group's effective `degreeLimit` is its reporting limit, and raising it through
-the group's topology config also raises the evidence the server will store for
-that group. A report whose endpoints both hold live sessions in several groups
-is accepted under the largest of those groups' limits. Acceptance and planning
-agreeing per group is what lets formation readiness cover a plan whose degree
-exceeds the server default; see
+On the server that fallback is resolved per group, not once per process.
+RTC-RTT has one API-v1 acceptance path on every database backend.
+`install-rtc-rtt-system-topic.ts` decodes the WebSocket payload and enqueues a
+durable AppInbox mutation. `rtc-rtt-app-inbox-handler.ts` verifies its authority
+and asks `create-api-v1-topology-services.ts` for the candidate groups, overlay
+snapshots, and reporting degree. The read-side planning filter uses the same
+`readRttReportingDegreeLimit` policy. An explicitly configured
+`RALLAR_RTC_RTT_REPORTING_DEGREE_LIMIT` therefore wins. Shared-server
+compositions that omit the option fall back to each group's effective
+`degreeLimit`. A report whose endpoints both hold live sessions in several
+groups is accepted under the largest resolved limit. Acceptance and planning
+agreeing on this policy is what lets formation readiness cover a plan whose
+degree exceeds the server default; see
 `docs/rallar-group-formation-architecture.md`.
 
 API-v1 reads the server runtime option from:
@@ -120,9 +114,10 @@ share a stable pair identity while still carrying versioned updates.
 
 ## Server Acceptance
 
-Browser RTT reports are proposals. The server remains authoritative and runs
-the same acceptance policy for in-memory and runtime-state storage before it
-updates repositories, Vivaldi state, or topology queues.
+Browser RTT reports are proposals. The server remains authoritative. The
+durable AppInbox mutation validates policy before it writes the current
+runtime-state measurement, receipt, endpoint admission, and topology outbox
+work in one transaction.
 
 The RTT topic rejects a report with one of these policy reasons:
 
@@ -137,28 +132,23 @@ The RTT topic rejects a report with one of these policy reasons:
 - `over-degree`: accepting the pair would put either endpoint over the
   reporting degree limit across accepted latest RTT pairs.
 
-Accepted measurements keep the existing latest-pair semantics. The key is an
-unordered session pair, newer versions win, and TTL remains in the existing
-repository path. A stale or duplicate version is treated as a storage no-op:
-it is not a policy rejection, and it does not update repositories, Vivaldi
-state, global graph cache work, or topology recompute queues.
-
-Without runtime-state storage, accepted measurements are stored in the shared
-in-memory RTT repository with `rttRepository.setRtt(...)`. With runtime-state
-storage, accepted measurements are written to
-`RtcRttRepository.putMeasurementIfNewerWithEndpointLocks(...)` in the durable
-`rtc-rtt:latest` namespace and mirrored into the in-memory repository. That
-path rechecks policy inside deterministic endpoint and pair locks before
-writing.
+Accepted measurements use latest-pair semantics. The key is an unordered
+session pair, newer versions win, and current runtime-state rows expire under
+the RTC-RTT retention policy. A stale or duplicate version is a no-op: it does
+not write measurement, receipt, endpoint admission, or topology work. The
+mutation guards the pair and both endpoint-admission rows so concurrent reports
+cannot exceed the reporting degree.
 
 ## How RTT Affects Topology
 
-`RallarRtcTopologyService` is the supported API used by composition, benchmarks, and RTT topic
-scheduling to build overlay topology snapshots for active groups. `RtcTopologyPlanner` owns kind
+`RallarRtcTopologyService` is the supported API used by composition, benchmarks, and topology work
+to build overlay topology snapshots for active groups. `RtcTopologyPlanner` owns kind
 selection and the no-RTT-versus-weighted planning decision; `createRtcRoomGraph` owns weighted
 sparse/complete graph construction. The default active topology degree limit is `5`, configurable
-through `RALLAR_RTC_TOPOLOGY_DEGREE_LIMIT` in API-v1. The RTT reporting limit defaults to that
-effective topology degree unless `RALLAR_RTC_RTT_REPORTING_DEGREE_LIMIT` is set.
+through `RALLAR_RTC_TOPOLOGY_DEGREE_LIMIT` in API-v1. The API-v1 RTT reporting limit also defaults
+to `5` and is configured independently through `RALLAR_RTC_RTT_REPORTING_DEGREE_LIMIT`.
+Lower-level shared-server compositions fall back to the effective topology degree only when the
+reporting option is omitted.
 
 For small rooms, the service selects `star` topology. For rooms at or above
 `treeMinSize`, default `5`, it selects `tree`. For rooms at or above
@@ -194,45 +184,16 @@ browser converts each snapshot into local `OverlayInfo`, including
 `overlay.nextHopSessionIds` as both the steady-state desired RTC peer signal
 and the preferred RTT reporting set.
 
-Durable config and temporary override PUT/DELETE routes commit their optimistic
-state change and queued `rtc-topology-recompute` intent atomically, adding the
-first-writer idempotency record when `requestId` is supplied. Every response
-includes a receipt. A retained config/override generation record keeps receipt
-versions monotonic across physical deletion and override TTL expiry. A retained
-group invariant generation serializes config and override decisions before
-either can expose an invalid effective combination. Startup and first-access
-backfill preserve config/override version floors before expiry cleanup, while
-effective reads bracket the pair with the invariant generation. All topology
-records use the canonical optional-workspace group-state key codec. Legacy
-ambiguous topology source keys require the explicit offline
-`migrateLegacyGroupTopologyConfigKeys` operation with old writers stopped;
-ordinary startup and first access fail closed without moving them, and expiry
-eviction stays disabled until startup backfill succeeds. Physical expiry is a
-validated storage invariant: durable config and retained request/generation
-rows are non-expiring, and override expiry must equal the value's
-`expiresAtEpochMs`; malformed scope, child, JSON, or expiry metadata fails
-before lazy deletion. Every retry re-evaluates active/unexpired group lifecycle
-at a fresh attempt time for owners and platform admins alike. Stored write time
-and relative override TTL remain fixed to the first non-replay attempt; a retry
-after that expiry is rejected instead of extending or committing it. The
-idempotency row stores only command identity plus the compact receipt. PUT
-receipts must be applied, while DELETE can retain a legitimate no-op receipt;
-mandatory nullable receipt timestamps reconstruct accepted PUT responses on
-replay. Applied receipts also carry the mandatory five-field
-`acceptedCausalRevision`; replay recomputes the deterministic
-`rtc-topology-recompute` outbox identity from it and rejects a changed
-`outboxId`. The topology transaction first CAS-touches the exact raw group row
-used for lifecycle and actor authorization. That authority fence preserves all
-group domain fields and its physical expiry, while advancing the causal group
-revision used by the accepted outbox. A fence conflict rolls back topology,
-idempotency, and outbox writes and reruns the full read/policy path. A no-op
-receipt uses `acceptedCausalRevision: null` and queues no topology effect.
-A request-id-bearing no-op still applies the fence before its idempotency claim;
-the cached group domain view remains semantically unchanged, and a
-minimum-revision read refreshes the causal-only advance when required.
-DELETE uses
-`Idempotency-Key` on REST (or `requestId` in the shared browser options) for
-stable replay. They return after commit; outbox work performs recompute and
+Durable config and temporary override PUT/DELETE routes go through AppInbox.
+They atomically apply the optimistic state change, current idempotency receipt,
+group-authority fence, generation guards, and queued `rtc-topology-recompute`
+intent. Current stored rows use the canonical scoped group identity. Exact
+decoders reject malformed scope, JSON, revision, causal receipt, or expiry
+metadata at the corruption boundary; there is no runtime migration or alternate
+key reader. Every retry re-reads active group lifecycle and authority. A
+conflict rolls back the whole transaction and retries the complete
+read/compute/validate/write flow. No-op receipts queue no topology effect.
+Successful routes return after commit; outbox work performs recompute and
 publication asynchronously and can retry independently.
 
 API-v1 explicit REST reconfigure uses the shared recompute path that WS group snapshots,
@@ -268,9 +229,8 @@ can still arrive in bursts when many clients open lanes, so existing
 `rttRebuildDebounceMs`, runtime-state locks, and coalesced app-inbox work
 remain useful.
 
-Runtime-state and in-memory modes share the same acceptance policy. App-inbox
-topology recompute reads the same filtered latest RTT set when runtime-state
-repositories are configured.
+AppInbox topology recompute reads the current filtered RTC-RTT measurements
+from the runtime-state repository.
 
 Star topology remains constrained by the topology selection thresholds in the
 default configuration: star is used for fewer than five sessions, so each
@@ -297,11 +257,13 @@ diagnostics before treating it as a production shape.
   durable runtime-state latest RTT repository.
 - `packages/shared-server/rallar-system/rtc-rtt/policy/rtc-rtt-measurement-policy.ts`:
   server-side acceptance policy and rejection reasons.
-- `packages/shared-server/rallar-system/rtc-rtt/topic/init-rtc-rtt-topic.ts`:
-  server RTT decoding, durable-versus-in-memory handoff, Vivaldi update, and
-  topology refresh scheduling.
 - `packages/shared-server/rallar-system/rtc-rtt/topic/install-rtc-rtt-system-topic.ts`:
-  RTC RTT topic registration.
+  exact RTC RTT decoding and durable mutation enqueue.
+- `packages/shared-server/rallar-system/rtc-rtt/inbox/rtc-rtt-app-inbox-handler.ts`:
+  authority verification and read/compute/validate/write mutation entry.
+- `apps/api-v1/src/composition/create-api-v1-topology-services.ts`:
+  candidate-group, topology-policy, measurement persistence, and topology
+  refresh dependencies.
 - `packages/shared-server/rallar-system/topology/runtime/rallar-rtc-topology-service.ts`:
   supported topology API and process-lifecycle coordination.
 - `packages/shared-server/rallar-system/topology/planning/rtc-topology-planner.ts`:
@@ -318,5 +280,6 @@ diagnostics before treating it as a production shape.
   predicted graph builders.
 - `packages/shared/api/overlay-topology.ts`: overlay snapshot and per-session
   `OverlayInfo` conversion.
-- `apps/api-v1/src/services/rtc-topology-config.ts`: API-v1 environment-backed
-  topology and RTT reporting options.
+- `apps/api-v1/src/configuration/api-v1-configuration.ts` and
+  `apps/api-v1/src/configuration/decode-api-v1-configuration.ts`: current
+  API-v1 topology and RTT reporting configuration contract and validation.

@@ -221,6 +221,7 @@ describe('RTC topology publication repository', () => {
         });
         expect(
             await new RtcTopologyPublicationRepository(runtimeRepository).findPublicationForWork(
+                candidate.groupRef,
                 'work-stale'
             )
         ).toBeUndefined();

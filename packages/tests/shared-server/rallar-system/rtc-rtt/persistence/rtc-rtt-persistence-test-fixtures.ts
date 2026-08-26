@@ -3,7 +3,7 @@ import { computeRtcRttMutation } from '@shared-server/rallar-system/rtc-rtt/muta
 import { readRtcRttMutation } from '@shared-server/rallar-system/rtc-rtt/mutation/read-rtc-rtt-mutation.ts';
 import type { RtcRttMutationCommand, RtcRttMutationComputed } from '@shared-server/rallar-system/rtc-rtt/mutation/rtc-rtt-mutation-contracts.ts';
 import { validateRtcRttMutation } from '@shared-server/rallar-system/rtc-rtt/mutation/validate-rtc-rtt-mutation.ts';
-import { DEFAULT_RTC_RTT_MUTATION_RETENTION_MS } from '@shared-server/rallar-system/rtc-rtt/persistence/rtc-rtt-persistence-validation-primitives.ts';
+import { RTC_RTT_MUTATION_RETENTION_MS } from '@shared-server/rallar-system/rtc-rtt/persistence/rtc-rtt-persistence-validation-primitives.ts';
 import { RtcRttRepository } from '@shared-server/rallar-system/rtc-rtt/persistence/rtc-rtt-repository.ts';
 import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
 import type { AuditStamp, GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
@@ -85,7 +85,7 @@ export async function executeRtcRttMutation(
                     requireTestRttWrite(
                         await input.repository.insertMutationReceipt(
                             computed.receipt,
-                            computed.receipt.acceptedAtEpochMs + DEFAULT_RTC_RTT_MUTATION_RETENTION_MS
+                            computed.receipt.acceptedAtEpochMs + RTC_RTT_MUTATION_RETENTION_MS
                         )
                     );
                 });

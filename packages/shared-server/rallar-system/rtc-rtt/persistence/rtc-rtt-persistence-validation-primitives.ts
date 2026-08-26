@@ -2,7 +2,6 @@ import { compareRtcTopologyIdentifiers } from '../../topology/persistence/rtc-to
 import { rtcTopologySemanticEqual } from '../../topology/persistence/rtc-topology-semantic-equal.ts';
 
 export const RTC_RTT_MUTATION_RETENTION_MS = 24 * 60 * 60 * 1_000;
-export const DEFAULT_RTC_RTT_MUTATION_RETENTION_MS = RTC_RTT_MUTATION_RETENTION_MS;
 
 export function readRtcRttPersistedRecord(value: unknown, label: string): Record<string, unknown> {
     if (!value || typeof value !== 'object' || Array.isArray(value)) {

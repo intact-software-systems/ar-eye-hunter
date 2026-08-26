@@ -1,15 +1,8 @@
 import { ClientStateRepository } from '@shared-server/rallar-system/client-state/persistence/client-state-repository.ts';
-import {
-    createClientStateSnapshotReadThroughCache,
-    toClientStateSnapshotRepositoryKey
-} from '@shared-server/rallar-system/client-state/snapshot/client-state-snapshot-read-through-cache.ts';
+import { createClientStateSnapshotReadThroughCache } from '@shared-server/rallar-system/client-state/snapshot/client-state-snapshot-read-through-cache.ts';
 import { createTestClientStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import type { AuditStamp, ClientInstance, ClientPrincipal, ClientSession, ClientSnapshot } from '@shared/api/client-types.ts';
-import {
-    findClientStateSnapshotByPrincipalId,
-    findClientStateSnapshotByRef,
-    toClientStateSnapshotRepositoryKey as toSharedClientStateSnapshotRepositoryKey
-} from '@shared/repository/client-state-snapshots-repository.ts';
+import { findClientStateSnapshotByPrincipalId, findClientStateSnapshotByRef } from '@shared/repository/client-state-snapshots-repository.ts';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { configureTestCacheRepositories } from '../../../cache-repository-config.ts';
 import { FakeRuntimeStateRepository } from '../../runtime-state/test-support/fake-runtime-state-repository.ts';
@@ -25,19 +18,6 @@ interface CreateClientSnapshotFixtureInput {
 describe('ClientStateSnapshotReadThroughCache', () => {
     afterEach(() => {
         vi.useRealTimers();
-    });
-
-    it('uses the canonical shared cache identity', () => {
-        const ref = {
-            applicationId: 'app-1',
-            workspaceId: 'workspace-a',
-            principalId: 'alice'
-        };
-
-        expect(toClientStateSnapshotRepositoryKey).not.toBe(toSharedClientStateSnapshotRepositoryKey);
-        const expectedKey = '["client-state-snapshot","app-1","workspace-a","alice"]';
-        expect(toClientStateSnapshotRepositoryKey(ref)).toBe(expectedKey);
-        expect(toSharedClientStateSnapshotRepositoryKey(ref)).toBe(expectedKey);
     });
 
     it('hydrates a cold client snapshot cache from durable state', async () => {

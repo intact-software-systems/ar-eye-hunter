@@ -13,7 +13,7 @@ import type {
     RallarCrdtIntegrityReport
 } from '@shared/crdt/mod.ts';
 import { adminSupportNarrativeBase, type AdminSupportNarrativeBase } from './admin-support-narrative-base.ts';
-import { toAdminSupportTimelineItem as toTimeline } from './admin-support-timeline.ts';
+import { toAdminSupportTimelineItem } from './admin-support-timeline.ts';
 
 interface ProjectCrdtAdminSupportInput extends AdminSupportNarrativeBase {
     readonly request: AdminSupportExplainCrdtDocumentRequest;
@@ -162,25 +162,25 @@ function crdtTimeline(
         return [];
     }
     return [
-        toTimeline({
+        toAdminSupportTimelineItem({
             atEpochMs: metadata.createdAtEpochMs,
             source: 'crdt-admin-log',
             eventType: 'crdt.created',
             summary: 'CRDT document metadata was created.'
         }),
-        toTimeline({
+        toAdminSupportTimelineItem({
             atEpochMs: metadata.updatedAtEpochMs,
             source: 'crdt-admin-log',
             eventType: 'crdt.updated',
             summary: 'CRDT document metadata was updated.'
         }),
-        toTimeline({
+        toAdminSupportTimelineItem({
             atEpochMs: metadata.archivedAtEpochMs ?? undefined,
             source: 'crdt-admin-log',
             eventType: 'crdt.archived',
             summary: 'CRDT document was archived.'
         }),
-        toTimeline({
+        toAdminSupportTimelineItem({
             atEpochMs: metadata.destroyedAtEpochMs ?? undefined,
             source: 'crdt-admin-log',
             eventType: 'crdt.destroyed',

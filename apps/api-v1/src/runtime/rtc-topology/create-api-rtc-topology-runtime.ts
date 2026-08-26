@@ -6,7 +6,6 @@ import {
 import {
     RtcTopologySnapshotRepository
 } from '@shared-server/rallar-system/topology/persistence/rtc-topology-snapshot-repository.ts';
-import { DEFAULT_RTC_TOPOLOGY_PUBLICATION_RETENTION_MS } from '@shared-server/rallar-system/topology/publication/rtc-topology-publication-repository-contracts.ts';
 import { RtcTopologyPublicationRepository } from '@shared-server/rallar-system/topology/publication/rtc-topology-publication-repository.ts';
 import {
     createRtcTopologyReplayDiagnostics,

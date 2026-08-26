@@ -18,7 +18,7 @@ import {
 } from './mutation/client-mutation-contracts.ts';
 import { requireEnum } from './validation/client-enum-validation.ts';
 import { requireJsonRecord } from './validation/client-json-validation.ts';
-import { rejectClientMutation as reject } from './validation/client-mutation-rejection.ts';
+import { rejectClientMutation } from './validation/client-mutation-rejection.ts';
 import {
     decodeClientValidationRecord,
     requireAllowedKeys,
@@ -107,16 +107,16 @@ function validateClientPrincipalLifecycle(
         principal.status === 'active' &&
         (principal.disabled !== null || principal.deleted !== null)
     ) {
-        reject(`${label} active lifecycle fields must be null`);
+        rejectClientMutation(`${label} active lifecycle fields must be null`);
     }
     if (
         principal.status === 'disabled' &&
         (principal.disabled === null || principal.deleted !== null)
     ) {
-        reject(`${label} disabled lifecycle fields are invalid`);
+        rejectClientMutation(`${label} disabled lifecycle fields are invalid`);
     }
     if (principal.status === 'deleted' && principal.deleted === null) {
-        reject(`${label} deleted lifecycle audit is required`);
+        rejectClientMutation(`${label} deleted lifecycle audit is required`);
     }
 }
 
@@ -155,7 +155,7 @@ export function validateClientInstance(
         validateClientAudit(instance.revoked, `${label}.revoked`);
     }
     if ((instance.status === 'active') !== (instance.revoked === null)) {
-        reject(`${label} revoked lifecycle field differs from status`);
+        rejectClientMutation(`${label} revoked lifecycle field differs from status`);
     }
 }
 
@@ -238,28 +238,28 @@ function validateClientSessionLifecycle(
         session.status === 'active' &&
         (session.disconnectedAtEpochMs !== null || session.disconnectReason !== null)
     ) {
-        reject(`${label} active disconnect fields must be null`);
+        rejectClientMutation(`${label} active disconnect fields must be null`);
     }
     if (
         session.status !== 'active' &&
         (session.disconnectedAtEpochMs === null || session.disconnectReason === null)
     ) {
-        reject(`${label} terminal status requires disconnect fields`);
+        rejectClientMutation(`${label} terminal status requires disconnect fields`);
     }
     if (timestamps.authenticatedAtEpochMs > timestamps.connectedAtEpochMs) {
-        reject(`${label}.authenticatedAtEpochMs must not follow connectedAtEpochMs`);
+        rejectClientMutation(`${label}.authenticatedAtEpochMs must not follow connectedAtEpochMs`);
     }
     if (timestamps.connectedAtEpochMs > timestamps.lastHeartbeatAtEpochMs) {
-        reject(`${label}.lastHeartbeatAtEpochMs must not predate connectedAtEpochMs`);
+        rejectClientMutation(`${label}.lastHeartbeatAtEpochMs must not predate connectedAtEpochMs`);
     }
     if (timestamps.lastHeartbeatAtEpochMs > timestamps.expiresAtEpochMs) {
-        reject(`${label}.expiresAtEpochMs must not predate lastHeartbeatAtEpochMs`);
+        rejectClientMutation(`${label}.expiresAtEpochMs must not predate lastHeartbeatAtEpochMs`);
     }
     if (
         timestamps.disconnectedAtEpochMs !== null &&
         timestamps.disconnectedAtEpochMs < timestamps.lastHeartbeatAtEpochMs
     ) {
-        reject(`${label}.disconnectedAtEpochMs must not predate lastHeartbeatAtEpochMs`);
+        rejectClientMutation(`${label}.disconnectedAtEpochMs must not predate lastHeartbeatAtEpochMs`);
     }
 }
 
@@ -334,5 +334,5 @@ export function validateClientMutationActor(
         requireNonEmptyString(actor.serviceId, `${label}.serviceId`);
         return;
     }
-    reject(`${label}.kind is invalid`);
+    rejectClientMutation(`${label}.kind is invalid`);
 }

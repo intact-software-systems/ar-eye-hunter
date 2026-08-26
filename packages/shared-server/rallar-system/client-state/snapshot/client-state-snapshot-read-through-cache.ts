@@ -7,7 +7,7 @@ import {
     fromClientStateSnapshotRepositoryKey,
     observeClientStateSnapshot,
     removeClientStateSnapshotIfUnchanged,
-    toClientStateSnapshotRepositoryKey as toSharedClientStateSnapshotRepositoryKey
+    toClientStateSnapshotRepositoryKey
 } from '@shared/repository/client-state-snapshots-repository.ts';
 import type { StateSnapshotObservation } from '@shared/repository/state-snapshot-revision.ts';
 import { isClientSnapshotPresenceFresh, type RallarSnapshotPresenceClock } from '../../presence/snapshot-presence.ts';
@@ -181,10 +181,6 @@ export function createClientStateSnapshotReadThroughCache(
     options: ClientStateSnapshotReadThroughCacheOptions
 ): ClientStateSnapshotReadThroughCache {
     return new ClientStateSnapshotReadThroughCache(options);
-}
-
-export function toClientStateSnapshotRepositoryKey(ref: ClientPrincipalRef): string {
-    return toSharedClientStateSnapshotRepositoryKey(ref);
 }
 
 function toClientPrincipalRef(key: string): ClientPrincipalRef {

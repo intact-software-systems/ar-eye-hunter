@@ -11,9 +11,9 @@ import type {
 } from '../../../runtime-state/runtime-state-repository.ts';
 import { rtcTopologySemanticEqual } from '../persistence/rtc-topology-semantic-equal.ts';
 import { RtcTopologySnapshotRepository } from '../persistence/rtc-topology-snapshot-repository.ts';
+import { RTC_TOPOLOGY_REPLAY_RETENTION_MS } from '../replay/consumer/rtc-topology-replay-policy.ts';
 import {
     createRtcTopologyExecutionReceipt,
-    DEFAULT_RTC_TOPOLOGY_PUBLICATION_RETENTION_MS,
     hashRtcTopologyExecutionCommand,
     RTC_TOPOLOGY_PUBLICATION_WORK_INDEX_NAMESPACE,
     RTC_TOPOLOGY_PUBLICATIONS_NAMESPACE,
@@ -43,7 +43,7 @@ export class RtcTopologyPublicationRepository extends RuntimeStateJsonStore {
 
     constructor(
         runtimeRepository: RuntimeStateRepositoryLike,
-        retentionMs: number = DEFAULT_RTC_TOPOLOGY_PUBLICATION_RETENTION_MS,
+        retentionMs: number = RTC_TOPOLOGY_REPLAY_RETENTION_MS,
         now: () => number = () => Date.now()
     ) {
         super(runtimeRepository);
@@ -55,34 +55,17 @@ export class RtcTopologyPublicationRepository extends RuntimeStateJsonStore {
     async findPublication(
         groupRef: GroupRef,
         publicationId: string
-    ): Promise<RtcTopologyPublication | undefined>;
-    async findPublication(publicationId: string): Promise<RtcTopologyPublication | undefined>;
-    async findPublication(
-        groupRefOrPublicationId: GroupRef | string,
-        maybePublicationId?: string
     ): Promise<RtcTopologyPublication | undefined> {
-        if (typeof groupRefOrPublicationId === 'string') {
-            const entries = await this.listPublicationEntries();
-            const matches = entries.filter(({ value }) => value.publicationId === groupRefOrPublicationId);
-            if (matches.length > 1) {
-                throw publicationCorruption(
-                    groupRefOrPublicationId,
-                    'RTC topology publication id resolves multiple scopes'
-                );
-            }
-            return matches[0]?.value;
-        }
-        const publicationId = maybePublicationId!;
         const entry = await this.runtimeRepository.findEntry(
             RTC_TOPOLOGY_PUBLICATIONS_NAMESPACE,
-            this.publicationKey(groupRefOrPublicationId, publicationId)
+            this.publicationKey(groupRef, publicationId)
         );
         if (!entry) {
             return undefined;
         }
         return (await this.toLivePublicationEntry(
             entry,
-            groupRefOrPublicationId,
+            groupRef,
             publicationId
         ))?.value;
     }
@@ -90,31 +73,8 @@ export class RtcTopologyPublicationRepository extends RuntimeStateJsonStore {
     async findPublicationForWork(
         groupRef: GroupRef,
         workId: string
-    ): Promise<RtcTopologyPublication | undefined>;
-    async findPublicationForWork(workId: string): Promise<RtcTopologyPublication | undefined>;
-    async findPublicationForWork(
-        groupRefOrWorkId: GroupRef | string,
-        maybeWorkId?: string
     ): Promise<RtcTopologyPublication | undefined> {
-        if (typeof groupRefOrWorkId === 'string') {
-            const claims = await this.listWorkClaimEntries();
-            const matches = claims.filter(({ value }) => value.workId === groupRefOrWorkId);
-            if (matches.length > 1) {
-                throw publicationCorruption(
-                    groupRefOrWorkId,
-                    'RTC topology work id resolves multiple scopes'
-                );
-            }
-            const claim = matches[0]?.value;
-            return claim
-                ? (await this.findClaimedPublicationForWork(claim.groupRef, claim.workId))?.publication
-                : undefined;
-        }
-        const groupRef = groupRefOrWorkId;
-        if (maybeWorkId === undefined) {
-            throw new TypeError('RTC topology work id is required');
-        }
-        return (await this.findClaimedPublicationForWork(groupRef, maybeWorkId))?.publication;
+        return (await this.findClaimedPublicationForWork(groupRef, workId))?.publication;
     }
 
     async findClaimedPublicationForWork(
