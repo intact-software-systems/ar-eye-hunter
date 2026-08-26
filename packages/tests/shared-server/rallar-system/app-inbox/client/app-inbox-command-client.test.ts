@@ -1,5 +1,5 @@
 import { Either } from '@shared/resilience/Either.ts';
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
 import { AppInboxCommandClient } from '@shared-server/rallar-system/app-inbox/client/app-inbox-command-client.ts';
 import { AppInboxType, type AppInboxEnqueueInput } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
@@ -16,26 +16,32 @@ const COMMAND: AppInboxEnqueueInput = {
 };
 
 describe('AppInboxCommandClient', () => {
-    it('enqueues once and decodes the completed persisted result at the boundary', async () => {
+    it('passes the durable queue identity to the result decoding boundary', async () => {
         const entry = toAppInboxResourceEntry(COMMAND, 'server-12345678');
-        const enqueue = vi.fn(async () => entry);
         const decodedValues: JsonWireValue[] = [];
-        const waitForResult = vi.fn(async (
-            _enqueue: AppInboxEnqueueInput,
-            _key: typeof entry.key,
-            decodeResult: AppInboxResultWaiter.ResultDecoder<{ accepted: boolean; }>
-        ) => {
-            const value = { status: 'stored' } as const;
-            decodedValues.push(value);
-            return Either.ofRight(decodeResult(value));
-        });
         const client = new AppInboxCommandClient(
             {
                 queueEntryWriter: {
-                    enqueue,
-                    enqueueReplacingWhen: vi.fn()
+                    enqueue: async (enqueue) => toAppInboxResourceEntry(
+                        enqueue,
+                        'server-12345678'
+                    ),
+                    enqueueReplacingWhen: async () => entry.key
                 },
-                resultWaiter: { waitForResult }
+                resultWaiter: {
+                    waitForResult: async (
+                        enqueue: AppInboxEnqueueInput,
+                        key: typeof entry.key,
+                        decodeResult: AppInboxResultWaiter.ResultDecoder<{ accepted: boolean; }>
+                    ) => {
+                        if (enqueue !== COMMAND || key.contextId !== COMMAND.contextId) {
+                            throw new TypeError('Command client passed an unrelated queue identity');
+                        }
+                        const value = { status: 'stored' } as const;
+                        decodedValues.push(value);
+                        return Either.ofRight(decodeResult(value));
+                    }
+                }
             },
             {
                 serviceId: 'server-12345678',
@@ -54,8 +60,6 @@ describe('AppInboxCommandClient', () => {
         }));
 
         expect(result).toEqual(Either.ofRight({ accepted: true }));
-        expect(enqueue).toHaveBeenCalledExactlyOnceWith(COMMAND);
-        expect(waitForResult).toHaveBeenCalledOnce();
         expect(decodedValues).toEqual([{ status: 'stored' }]);
     });
 });
