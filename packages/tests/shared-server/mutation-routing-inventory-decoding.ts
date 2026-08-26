@@ -28,7 +28,7 @@ const PATHS = {
     l: 'packages/shared-server/rallar-system/websocket/ws-lifecycle-service.ts',
     e: 'packages/shared-server/rallar-system/group-state/presence/' +
         'reconcile-expired-group-presence.ts',
-    s: 'packages/shared-server/rallar-system/rtc-rtt/topic/init-rtc-rtt-topic.ts',
+    s: 'packages/shared-server/rallar-system/rtc-rtt/topic/install-rtc-rtt-system-topic.ts',
     d: 'packages/shared-server/rallar-system/crdt/realtime/install-rallar-crdt-ws-topics.ts',
     gi: 'packages/shared-server/rallar-system/group-state/inbox/group-state-inbox-service.ts',
     ci: 'apps/api-v1/src/composition/create-api-v1-system-installers.ts'

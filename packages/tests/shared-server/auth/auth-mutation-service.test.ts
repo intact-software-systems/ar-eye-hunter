@@ -1,15 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
-import { createAuthMutationService as createPublicAuthMutationService } from '@shared-server/mod.ts';
 import { createAuthMutationService, type AuthMutationService } from '@shared-server/rallar-system/auth/auth-mutation-service.ts';
 
 import { FakeRuntimeStateRepository } from '../fake-runtime-state-repository.ts';
-
-describe('auth mutation service ownership', () => {
-    it('keeps the package root on a direct canonical service export', () => {
-        expect(createPublicAuthMutationService).toBe(createAuthMutationService);
-    });
-});
 
 describe('auth mutation service phases', () => {
     it('preserves the direct read, compute, validate, and no-op write phase returns', async () => {

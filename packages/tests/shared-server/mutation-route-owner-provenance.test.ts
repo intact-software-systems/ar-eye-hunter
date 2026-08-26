@@ -57,10 +57,10 @@ it('rejects a dead correct type after an HTTP handler is given the wrong handoff
 it('rejects a rerouted websocket callback even when dead markers remain', () => {
     const item = requireEntry(AppInboxType.RTC_RTT_SUBMIT, 'WS_INBOX');
     const source = readFileSync(item.sourcePath, 'utf8');
-    const mutated = source.replace('await options.enqueueRtcRttMutation({', 'await Promise.resolve({') +
+    const mutated = source.replace('await options.enqueueMutation({', 'await Promise.resolve({') +
         `
-function deadWsHandoff(enqueueRtcRttMutation: (...args: never[]) => unknown): void {
-  void enqueueRtcRttMutation;
+function deadWsHandoff(enqueueMutation: (...args: never[]) => unknown): void {
+  void enqueueMutation;
   void AppInboxType.RTC_RTT_SUBMIT;
 }
 `;

@@ -1,4 +1,4 @@
-import { hydrateStateSyncSnapshotCaches } from '@shared-server/mod.ts';
+import { hydrateStateSyncSnapshotCaches } from '@shared-server/rallar-system/state-sync/state-sync-cache-hydration.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import type { AuditStamp, GroupSnapshot } from '@shared/api/group-types.ts';
 import { findClientStateSnapshotByPrincipalId } from '@shared/repository/client-state-snapshots-repository.ts';

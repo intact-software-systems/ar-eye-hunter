@@ -6,7 +6,6 @@ import * as boundaryAnalysis from './mutation-boundary-analysis.ts';
 import { MUTATION_ROUTE_INVENTORY, validateMutationRouteInventory } from './mutation-routing-inventory.ts';
 
 const TRANSITIVE_FIXTURE = 'packages/tests/shared-server/fixtures/mutation-boundary-transitive/root.ts';
-const BARREL_FIXTURES = 'packages/tests/shared-server/fixtures/mutation-boundary-barrel';
 
 describe('Mutation route owner boundary traversal contracts', { timeout: 30_000 }, () => {
     it('finds forbidden mutations in recursively imported helpers without listing them', () => {
@@ -30,23 +29,6 @@ describe('Mutation route owner boundary traversal contracts', { timeout: 30_000 
                 directMutatorCalls: ['connectSession']
             })
         ]);
-    });
-
-    it('resolves mutable repository capabilities through the shared-server barrel', () => {
-        const forbidden = ['direct.ts', 'alias.ts', 'namespace.ts'].map(
-            (name) => `${BARREL_FIXTURES}/${name}`
-        );
-        for (const root of forbidden) {
-            expect(boundaryAnalysis.findMutationBoundaryViolationsFromRoots([root]), root).toEqual([
-                expect.objectContaining({
-                    filePath: root,
-                    directMutatorCalls: ['ClientStateRepository.insertPrincipal']
-                })
-            ]);
-        }
-        expect(
-            boundaryAnalysis.findMutationBoundaryViolationsFromRoots([`${BARREL_FIXTURES}/read-only.ts`])
-        ).toEqual([]);
     });
 
     it('always rejects incomplete and duplicate inventories', () => {

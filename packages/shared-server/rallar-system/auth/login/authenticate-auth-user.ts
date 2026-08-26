@@ -1,26 +1,32 @@
 import type { LoginRequest } from '@shared/api/api-config.ts';
 
+import type { RuntimeStateEntryValue } from '../../../runtime-state/runtime-state-json-store.ts';
 import { normalizeAuthUsername } from '../credentials/normalize-auth-username.ts';
 import type { AuthSessionAuthority } from '../mutation/auth-mutation-contracts.ts';
-import { AuthUserRepository } from '../persistence/auth-user-repository.ts';
 import type { PersistedAuthUser } from '../persistence/persisted-auth-user.ts';
 
-export type AuthenticatedUserIdentity = Readonly<{
-    clientId: string;
-    username: string;
-    authority: AuthSessionAuthority;
-}>;
+export interface AuthenticatedUserIdentity {
+    readonly clientId: string;
+    readonly username: string;
+    readonly authority: AuthSessionAuthority;
+}
 
-export type LoginClientData = Readonly<{
-    clientId: string;
-    username: string;
-    password: string;
-}>;
+export interface LoginClientData {
+    readonly clientId: string;
+    readonly username: string;
+    readonly password: string;
+}
 
-export type LoginAuthUserOptions = Readonly<{
-    userRepository: AuthUserRepository;
-    staticClients?: readonly LoginClientData[];
-}>;
+export interface AuthUserLoginRepository {
+    findByNormalizedUsernameEntry(
+        normalizedUsername: string
+    ): Promise<RuntimeStateEntryValue<PersistedAuthUser> | undefined>;
+}
+
+export interface LoginAuthUserOptions {
+    readonly userRepository: AuthUserLoginRepository;
+    readonly staticClients?: readonly LoginClientData[];
+}
 
 const PASSWORD_ALGORITHM = 'pbkdf2-sha256' as const;
 const PASSWORD_HASH_BITS = 256;

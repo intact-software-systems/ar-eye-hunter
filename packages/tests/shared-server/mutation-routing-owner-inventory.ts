@@ -776,7 +776,7 @@ export const MUTATION_ROUTE_INVENTORY_ROWS: readonly MutationRouteInventoryRow[]
         source: 's',
         registrationMarker: 'AppTopics.rtt',
         enqueueSource: 's',
-        enqueueMarker: 'enqueueRtcRttMutation',
+        enqueueMarker: 'options.enqueueMutation',
         ownerSource: 'R',
         owner: 'RtcRttAppInboxHandler.processMutation',
         typeOwnerSource: 'S',

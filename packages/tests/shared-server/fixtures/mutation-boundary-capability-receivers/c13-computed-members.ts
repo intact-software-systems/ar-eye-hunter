@@ -1,4 +1,4 @@
-import type { ClientStateRepository } from '@shared-server/mod.ts';
+import type { ClientStateRepository } from '@shared-server/rallar-system/client-state/persistence/client-state-repository.ts';
 import * as factories from './factory-capability-provider.ts';
 
 declare const enabled: boolean;

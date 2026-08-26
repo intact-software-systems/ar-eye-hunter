@@ -1,4 +1,3 @@
-import { toClientStateSnapshotRepositoryKey as toPackageClientStateSnapshotRepositoryKey } from '@shared-server/mod.ts';
 import { ClientStateRepository } from '@shared-server/rallar-system/client-state/persistence/client-state-repository.ts';
 import {
     createClientStateSnapshotReadThroughCache,
@@ -28,7 +27,7 @@ describe('ClientStateSnapshotReadThroughCache', () => {
         vi.useRealTimers();
     });
 
-    it('keeps package and shared cache-key behavior aligned', () => {
+    it('uses the canonical shared cache identity', () => {
         const ref = {
             applicationId: 'app-1',
             workspaceId: 'workspace-a',
@@ -37,7 +36,6 @@ describe('ClientStateSnapshotReadThroughCache', () => {
 
         expect(toClientStateSnapshotRepositoryKey).not.toBe(toSharedClientStateSnapshotRepositoryKey);
         const expectedKey = '["client-state-snapshot","app-1","workspace-a","alice"]';
-        expect(toPackageClientStateSnapshotRepositoryKey(ref)).toBe(expectedKey);
         expect(toClientStateSnapshotRepositoryKey(ref)).toBe(expectedKey);
         expect(toSharedClientStateSnapshotRepositoryKey(ref)).toBe(expectedKey);
     });

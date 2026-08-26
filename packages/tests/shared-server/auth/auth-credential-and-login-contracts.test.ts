@@ -1,30 +1,16 @@
 import { describe, expect, it } from 'vitest';
 
-import {
-    authenticateAuthUser as authenticatePublicAuthUser,
-    createHmacAuthCredentialIssuer as createPublicCredentialIssuer,
-    hashAuthSecret as hashPublicAuthSecret,
-    prepareAuthUserRegistration as preparePublicAuthUserRegistration
-} from '@shared-server/mod.ts';
 import { createHmacAuthCredentialIssuer } from '@shared-server/rallar-system/auth/credentials/auth-credential-issuer.ts';
-import { hashAuthSecret } from '@shared-server/rallar-system/auth/credentials/hash-auth-secret.ts';
-import { authenticateAuthUser, type LoginAuthUserOptions } from '@shared-server/rallar-system/auth/login/authenticate-auth-user.ts';
+import { authenticateAuthUser, type AuthUserLoginRepository } from '@shared-server/rallar-system/auth/login/authenticate-auth-user.ts';
 import { prepareAuthUserRegistration } from '@shared-server/rallar-system/auth/login/prepare-auth-user-registration.ts';
+import type { PersistedAuthUser } from '@shared-server/rallar-system/auth/persistence/persisted-auth-user.ts';
+import type { RuntimeStateEntryValue } from '@shared-server/runtime-state/runtime-state-json-store.ts';
 
 const credentialSecret = 'auth-task-one-secret-0123456789abcdef';
 const credentialDomainCase = 'catches a credential issuer that changes the locked HMAC domain, purpose, or identity';
 const registrationShapeCase = 'catches registration that changes password metadata or emits an incomplete user';
-const wrongPasswordOrderCase = 'catches wrong-password login that reads revision before predecessor password rejection';
-const disabledLoginOrderCase = 'catches disabled login that reads password or revision before predecessor status evaluation';
-
-describe('auth public credential exports', () => {
-    it('catches package exports that no longer resolve to canonical runtime owners', () => {
-        expect(createPublicCredentialIssuer).toBe(createHmacAuthCredentialIssuer);
-        expect(authenticatePublicAuthUser).toBe(authenticateAuthUser);
-        expect(preparePublicAuthUserRegistration).toBe(prepareAuthUserRegistration);
-        expect(hashPublicAuthSecret).toBe(hashAuthSecret);
-    });
-});
+const wrongPasswordOrderCase = 'rejects a wrong password before reading session authority revision';
+const disabledLoginOrderCase = 'rejects a disabled user before reading credentials or revision';
 
 describe('auth credential issuer', () => {
     it(credentialDomainCase, async () => {
@@ -72,12 +58,9 @@ describe('auth registered login', () => {
             { username: 'Alice', password: 'secret' },
             { clientId: 'client-1', capturedAtEpochMs: 1_000 }
         );
-        const userRepository = {
-            findByNormalizedUsernameEntry: async () => ({
-                entry: { revision: 7 },
-                value: registered
-            })
-        } as unknown as LoginAuthUserOptions['userRepository'];
+        const userRepository: AuthUserLoginRepository = {
+            findByNormalizedUsernameEntry: async () => storedAuthUser(registered)
+        };
 
         await expect(
             authenticateAuthUser({ username: 'ALICE', password: 'secret' }, { userRepository })
@@ -104,7 +87,8 @@ describe('auth login accessor evaluation order', () => {
             { clientId: 'client-1', capturedAtEpochMs: 1_000 }
         );
         const reads: string[] = [];
-        const userRepository = {
+        const stored = storedAuthUser(registered);
+        const userRepository: AuthUserLoginRepository = {
             findByNormalizedUsernameEntry: async () => ({
                 get value() {
                     reads.push('value');
@@ -112,10 +96,10 @@ describe('auth login accessor evaluation order', () => {
                 },
                 get entry() {
                     reads.push('revision');
-                    throw new Error('Wrong-password authentication must not read revision');
+                    return stored.entry;
                 }
             })
-        } as unknown as LoginAuthUserOptions['userRepository'];
+        };
 
         await expect(
             authenticateAuthUser({ username: 'active-user', password: 'wrong' }, { userRepository })
@@ -124,24 +108,32 @@ describe('auth login accessor evaluation order', () => {
     });
 
     it(disabledLoginOrderCase, async () => {
+        const registered = await prepareAuthUserRegistration(
+            { username: 'disabled-user', password: 'secret' },
+            { clientId: 'client-1', capturedAtEpochMs: 1_000 }
+        );
         const reads: string[] = [];
-        const userRepository = {
+        const disabled: PersistedAuthUser = {
+            ...registered,
+            get status(): 'disabled' {
+                reads.push('status');
+                return 'disabled';
+            }
+        };
+        const stored = storedAuthUser(disabled);
+        reads.length = 0;
+        const userRepository: AuthUserLoginRepository = {
             findByNormalizedUsernameEntry: async () => ({
                 get value() {
                     reads.push('value');
-                    return {
-                        get status() {
-                            reads.push('status');
-                            return 'disabled';
-                        }
-                    };
+                    return disabled;
                 },
                 get entry() {
                     reads.push('revision');
-                    return { revision: 7 };
+                    return stored.entry;
                 }
             })
-        } as unknown as LoginAuthUserOptions['userRepository'];
+        };
         const loginRequest = {
             username: 'disabled-user',
             get password() {
@@ -154,3 +146,16 @@ describe('auth login accessor evaluation order', () => {
         expect(reads).toEqual(['value', 'status']);
     });
 });
+
+function storedAuthUser(value: PersistedAuthUser): RuntimeStateEntryValue<PersistedAuthUser> {
+    return {
+        entry: {
+            key: `username=${encodeURIComponent(value.normalizedUsername)}`,
+            value: JSON.stringify(value),
+            expireAtTimestamp: 253_402_300_799_999,
+            updatedTimestamp: '1970-01-01T00:00:01.000Z',
+            revision: 7
+        },
+        value
+    };
+}
