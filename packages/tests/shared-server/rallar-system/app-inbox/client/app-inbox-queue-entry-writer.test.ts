@@ -1,7 +1,7 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
+import { AppInboxQueueEntryWriter } from '@shared-server/rallar-system/app-inbox/client/app-inbox-queue-entry-writer.ts';
 import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
-import { AppInboxQueueClient, SIMPLER_CLIENT_STATE_APP_INBOX_TOPIC } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-client.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { EntityStatus, isExpiredResourceEntry, toKeyAsString, type Key, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
@@ -63,7 +63,7 @@ describe('AppInbox durable enqueue', () => {
 
         expect(entry).toBe(await queue.getItem(entry.key));
         expect(entry.key).toEqual({
-            topicId: SIMPLER_CLIENT_STATE_APP_INBOX_TOPIC,
+            topicId: 'app-inbox.client-state',
             resourceId: COMMAND.resourceId,
             contextId: COMMAND.contextId
         });
@@ -95,22 +95,51 @@ describe('AppInbox durable enqueue', () => {
         expect(duplicate).toBe(first);
         expect(wakeSignals).toBe(2);
     });
+
+    it('replaces completed coalesced work and wakes only when work changes', async () => {
+        const queue = new DurableEnqueueQueue(new Map());
+        let wakeSignals = 0;
+        const service = createService(queue, () => {
+            wakeSignals += 1;
+        });
+
+        const firstKey = await service.enqueueReplacingWhen(
+            COMMAND,
+            (entry) => entry.status === EntityStatus.COMPLETED
+        );
+        const activeKey = await service.enqueueReplacingWhen(
+            { ...COMMAND, data: { ...COMMAND.data, principalId: 'replacement' } },
+            (entry) => entry.status === EntityStatus.COMPLETED
+        );
+        const active = await queue.getItem(firstKey);
+        if (active === undefined) {
+            throw new Error('Expected coalesced AppInbox entry');
+        }
+        await queue.enqueue({ ...active, status: EntityStatus.COMPLETED });
+        const completedKey = await service.enqueueReplacingWhen(
+            { ...COMMAND, data: { ...COMMAND.data, principalId: 'replacement' } },
+            (entry) => entry.status === EntityStatus.COMPLETED
+        );
+
+        expect(activeKey).toEqual(firstKey);
+        expect(completedKey).toEqual(firstKey);
+        expect(wakeSignals).toBe(2);
+        expect(JSON.parse((await queue.getItem(firstKey))?.resource ?? '')).toMatchObject({
+            payload: {
+                resource: expect.stringContaining('replacement')
+            }
+        });
+    });
 });
 
-function createService(queue: DurableEnqueueQueue, wakeQueue?: () => void): AppInboxQueueClient {
-    const results = {
-        replace: async (entry: ResourceEntry) => entry,
-        findByKey: (_key: Key) => Promise.resolve(undefined)
-    };
-    return new AppInboxQueueClient(
+function createService(queue: DurableEnqueueQueue, wakeQueue?: () => void): AppInboxQueueEntryWriter {
+    return new AppInboxQueueEntryWriter(
         {
-            inboxQueueReader: new InboxQueueReader(queue),
-            resourceInboxRepository: queue,
-            resourceInboxResultsRepository: results
+            inboxQueueReader: new InboxQueueReader(queue)
         },
         {
             serviceId: 'server-12345678',
-            defaultTopicId: SIMPLER_CLIENT_STATE_APP_INBOX_TOPIC,
+            defaultTopicId: 'app-inbox.client-state',
             wakeOwningQueue: wakeQueue
         }
     );

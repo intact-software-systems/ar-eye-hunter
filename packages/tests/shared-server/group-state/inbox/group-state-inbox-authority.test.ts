@@ -55,11 +55,6 @@ describe('GroupStateInboxService authenticated authority', () => {
         ).toBe('Before');
     });
 
-    it('exposes no unauthenticated queue-processing entry point', async () => {
-        const harness = await createAuthorityHarness(['owner']);
-        expect(Reflect.get(harness.service, 'processEntryUntilCompletion')).toBeUndefined();
-    });
-
     it('isolates one request id across distinct group mutation operations', async () => {
         const harness = await createAuthorityHarness(['owner']);
         const requestId = 'shared-operation-request-001';

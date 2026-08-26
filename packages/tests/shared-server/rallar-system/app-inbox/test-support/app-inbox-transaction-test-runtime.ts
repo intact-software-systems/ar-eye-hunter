@@ -2,14 +2,18 @@ import { Temporal } from '@js-temporal/polyfill';
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import type { AppInboxEnqueueInput } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import { AppInboxType, type AppInboxMessageContext } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
-import { AppInboxQueueClient } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-client.ts';
+import type { AppInboxOptions } from '@shared-server/rallar-system/app-inbox/app-inbox-options.ts';
+import type { AppInboxEntryRepository, AppInboxResultRepository } from '@shared-server/rallar-system/app-inbox/app-inbox-persistence-ports.ts';
+import type { AppInboxCommandClient } from '@shared-server/rallar-system/app-inbox/client/app-inbox-command-client.ts';
+import type { AppInboxQueueEntryWriter } from '@shared-server/rallar-system/app-inbox/client/app-inbox-queue-entry-writer.ts';
+import { createAppInboxClientRuntime } from '@shared-server/rallar-system/app-inbox/client/create-app-inbox-client-runtime.ts';
 import type { AppInboxHandlerRegistration } from '@shared-server/rallar-system/app-inbox/handler/app-inbox-handler-registration.ts';
 import { AppInboxHandlerRegistry } from '@shared-server/rallar-system/app-inbox/handler/app-inbox-handler-registry.ts';
 import { createAppInboxHandlerRuntime } from '@shared-server/rallar-system/app-inbox/handler/app-inbox-handler-runtime.ts';
 import { AppInboxTransactionWriter } from '@shared-server/rallar-system/app-inbox/handler/app-inbox-transaction-writer.ts';
 import { newALRoute, newALUntargetedMessage } from '@shared/al-contracts/al-contract.ts';
 
-import type { RallarTimingEvent } from '@shared-server/rallar-system/observability/timing.ts';
+import type { RallarTimingEvent, RallarTimingSink } from '@shared-server/rallar-system/observability/timing.ts';
 import { decodeJsonWireValue, type JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import { Reservator } from '@shared/queuebox/DequeueController.ts';
@@ -65,16 +69,43 @@ interface AtomicResultRow {
     readonly expire_ts: string;
 }
 
+interface AtomicAppInboxDependencies {
+    readonly inboxQueueReader: InboxQueueReader;
+    readonly resourceInboxRepository: AppInboxEntryRepository;
+    readonly resourceInboxResultsRepository: AppInboxResultRepository;
+    readonly database: PSqlSql;
+}
+
+interface AtomicAppInboxConfig {
+    readonly serviceId: string;
+    readonly defaultTopicId: string;
+    readonly timing?: RallarTimingSink;
+    readonly options?: AppInboxOptions;
+    readonly wakeOwningQueue?: () => void;
+}
+
 class AtomicAppInboxService {
-    private readonly queueClient: AppInboxQueueClient;
+    private readonly commandClient: AppInboxCommandClient;
+    private readonly queueEntryWriter: AppInboxQueueEntryWriter;
     private readonly handlerRegistry: AppInboxHandlerRegistry;
     private readonly transactionWriter: AppInboxTransactionWriter;
 
     constructor(
-        dependencies: AppInboxQueueClient.Dependencies & Readonly<{ database: PSqlSql; }>,
-        config: AppInboxQueueClient.Config
+        dependencies: AtomicAppInboxDependencies,
+        config: AtomicAppInboxConfig
     ) {
-        this.queueClient = new AppInboxQueueClient(dependencies, config);
+        const clientRuntime = createAppInboxClientRuntime({
+            inboxQueueReader: dependencies.inboxQueueReader,
+            resourceInboxRepository: dependencies.resourceInboxRepository,
+            resourceInboxResultsRepository: dependencies.resourceInboxResultsRepository,
+            serviceId: config.serviceId,
+            defaultTopicId: config.defaultTopicId,
+            timing: config.timing,
+            options: config.options,
+            wakeOwningQueue: config.wakeOwningQueue
+        });
+        this.commandClient = clientRuntime.commandClient;
+        this.queueEntryWriter = clientRuntime.queueEntryWriter;
         const handlerRuntime = createAppInboxHandlerRuntime({
             inboxQueueReader: dependencies.inboxQueueReader,
             resultRepository: dependencies.resourceInboxResultsRepository,
@@ -123,14 +154,16 @@ class AtomicAppInboxService {
         this.handlerRegistry.assertRegistrationComplete(expectedTypes);
     }
 
-    processEntryUntilCompletion(
+    enqueueAndWait(
         input: AppInboxEnqueueInput
     ) {
-        return this.queueClient.processEntryUntilCompletion(input);
+        return this.commandClient.enqueueAndWait(input);
     }
 
-    processEntryNoWaiting(input: AppInboxMessageContext<JsonWireValue>['enqueue']): void {
-        this.queueClient.processEntryNoWaiting(input);
+    enqueueWithoutWaiting(input: AppInboxMessageContext<JsonWireValue>['enqueue']): void {
+        void this.queueEntryWriter.enqueue(input).catch((error) => {
+            console.error('Error enqueueing test AppInbox command without waiting', error);
+        });
     }
 }
 

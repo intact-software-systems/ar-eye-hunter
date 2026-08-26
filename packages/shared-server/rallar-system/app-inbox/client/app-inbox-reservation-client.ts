@@ -1,22 +1,24 @@
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
-import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import { EntityStatus, type Key, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import type { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
-import type { JsonWireValue } from '../protocol/json-wire-identity.ts';
-import { validateAppInboxCommandIdentity } from './app-inbox-command-identity.ts';
+
+import type { JsonWireValue } from '../../protocol/json-wire-identity.ts';
+import { validateAppInboxCommandIdentity } from '../app-inbox-command-identity.ts';
 import {
     AppInboxIdempotencyConflictError,
     AppInboxReservationConflictError,
     type AppInboxEnqueueInput,
     type AppInboxMessageContext
-} from './app-inbox-contracts.ts';
-import { toAppInboxResourceEntry } from './app-inbox-queue-entry.ts';
-
-export interface MaterializedAppInboxReservation {
-    readonly enqueue: AppInboxEnqueueInput;
-    readonly winner: boolean;
-}
+} from '../app-inbox-contracts.ts';
+import { toAppInboxResourceEntry } from '../app-inbox-queue-entry.ts';
 
 export namespace AppInboxReservationClient {
+    export interface MaterializedReservation {
+        readonly enqueue: AppInboxEnqueueInput;
+        readonly key: Key;
+        readonly winner: boolean;
+    }
+
     export interface Repository {
         writeMaterializedIfAbsentOrReplaceExpired(
             placeholder: ResourceEntry,
@@ -81,7 +83,7 @@ export class AppInboxReservationClient {
     async reserveMaterializedEntry(
         placeholder: AppInboxEnqueueInput,
         materialize: () => Promise<AppInboxEnqueueInput>
-    ): Promise<MaterializedAppInboxReservation> {
+    ): Promise<AppInboxReservationClient.MaterializedReservation> {
         let winner = false;
         const entry = await this.repository.writeMaterializedIfAbsentOrReplaceExpired(
             toAppInboxResourceEntry(placeholder, `${this.serviceId}:fact-reservation`),
@@ -100,6 +102,7 @@ export class AppInboxReservationClient {
         }
         return {
             enqueue: validation.command,
+            key: entry.key,
             winner
         };
     }

@@ -39,7 +39,7 @@ describe('AppInboxHandlerExecutor registered handler finalization', () => {
                 }))
         );
 
-        const pending = harness.service.processEntryUntilCompletion(harness.enqueue);
+        const pending = harness.service.enqueueAndWait(harness.enqueue);
         await harness.reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
 
         await expect(pending).resolves.toMatchObject({
@@ -65,7 +65,7 @@ describe('AppInboxHandlerExecutor registered handler finalization', () => {
             throw new Error('secret-after-commit');
         });
 
-        const pending = harness.service.processEntryUntilCompletion(harness.enqueue);
+        const pending = harness.service.enqueueAndWait(harness.enqueue);
         await harness.reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
 
         await expect(pending).resolves.toMatchObject({
@@ -91,7 +91,7 @@ describe('AppInboxHandlerExecutor registered handler finalization', () => {
             handle: async () => ({ outcome: 'accepted' as const })
         });
 
-        const pending = harness.service.processEntryUntilCompletion(harness.enqueue);
+        const pending = harness.service.enqueueAndWait(harness.enqueue);
         await harness.reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
 
         await expect(pending).resolves.toMatchObject({
@@ -115,7 +115,7 @@ describe('AppInboxHandlerExecutor registered handler finalization', () => {
             }
         });
 
-        const pending = harness.service.processEntryUntilCompletion(harness.enqueue);
+        const pending = harness.service.enqueueAndWait(harness.enqueue);
         await harness.reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
 
         await expect(pending).resolves.toMatchObject({
@@ -133,7 +133,7 @@ describe('AppInboxHandlerExecutor registered handler finalization', () => {
             return { status: 'unexpected' };
         };
         harness.service.onStateMessage(AppInboxType.GROUP_CREATE, handler);
-        harness.service.processEntryNoWaiting(harness.enqueue);
+        harness.service.enqueueWithoutWaiting(harness.enqueue);
         const entry = await waitForRegisteredHandlerEntry(harness.queue);
         const message = JSON.parse(entry.resource) as {
             payload: { resource: string; };
@@ -250,7 +250,7 @@ describe('AppInboxHandlerExecutor registered handler finalization', () => {
                     return { status: 'accepted' };
                 });
             harness.service.onStateMessage(outerType as AppInboxType, handler);
-            harness.service.processEntryNoWaiting(harness.enqueue);
+            harness.service.enqueueWithoutWaiting(harness.enqueue);
             const entry = await waitForRegisteredHandlerEntry(harness.queue);
             await harness.queue.enqueue({
                 ...entry,
@@ -303,7 +303,7 @@ describe('AppInboxHandlerExecutor registered handler finalization', () => {
                 return { status: 'accepted' };
             });
         harness.service.onStateMessage(AppInboxType.GROUP_UPDATE, handler);
-        harness.service.processEntryNoWaiting(harness.enqueue);
+        harness.service.enqueueWithoutWaiting(harness.enqueue);
         const entry = await waitForRegisteredHandlerEntry(harness.queue);
         await harness.queue.enqueue({
             ...entry,

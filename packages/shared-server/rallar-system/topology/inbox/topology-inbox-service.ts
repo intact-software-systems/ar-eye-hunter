@@ -11,7 +11,11 @@ import {
 import { type AppInboxFailure } from '../../app-inbox/app-inbox-failure.ts';
 import type { AppInboxOptions } from '../../app-inbox/app-inbox-options.ts';
 import type { AppInboxEntryRepository, AppInboxResultRepository } from '../../app-inbox/app-inbox-persistence-ports.ts';
-import { AppInboxQueueClient, SIMPLER_GROUP_STATE_APP_INBOX_TOPIC } from '../../app-inbox/app-inbox-queue-client.ts';
+import { GROUP_STATE_APP_INBOX_TOPIC } from '../../app-inbox/app-inbox-topics.ts';
+import type { AppInboxCommandClient } from '../../app-inbox/client/app-inbox-command-client.ts';
+import type { AppInboxReservationClient } from '../../app-inbox/client/app-inbox-reservation-client.ts';
+import type { AppInboxResultWaiter } from '../../app-inbox/client/app-inbox-result-waiter.ts';
+import { createAppInboxClientRuntime } from '../../app-inbox/client/create-app-inbox-client-runtime.ts';
 import { encodeAppInboxCommand, encodeAppInboxResult } from '../../app-inbox/app-inbox-registration-codecs.ts';
 import { createAppInboxHandlerRuntime } from '../../app-inbox/handler/app-inbox-handler-runtime.ts';
 import type { IssuedAuthSession } from '../../auth/persistence/auth-session-types.ts';
@@ -71,27 +75,28 @@ export namespace TopologyInboxService {
 }
 
 export class TopologyInboxService {
-    private readonly queueClient: AppInboxQueueClient;
+    private readonly commandClient: AppInboxCommandClient;
+    private readonly reservationClient: AppInboxReservationClient;
+    private readonly resultWaiter: AppInboxResultWaiter;
     private readonly handler: TopologyAppInboxHandler;
 
     constructor(
         dependencies: TopologyInboxService.Dependencies,
         config: TopologyInboxService.Config
     ) {
-        this.queueClient = new AppInboxQueueClient(
-            {
-                inboxQueueReader: dependencies.inboxQueueReader,
-                resourceInboxRepository: dependencies.resourceInboxRepository,
-                resourceInboxResultsRepository: dependencies.resourceInboxResultsRepository
-            },
-            {
-                serviceId: config.serviceId,
-                defaultTopicId: SIMPLER_GROUP_STATE_APP_INBOX_TOPIC,
-                timing: config.timing,
-                options: config.options,
-                wakeOwningQueue: config.wakeOwningQueue
-            }
-        );
+        const clientRuntime = createAppInboxClientRuntime({
+            inboxQueueReader: dependencies.inboxQueueReader,
+            resourceInboxRepository: dependencies.resourceInboxRepository,
+            resourceInboxResultsRepository: dependencies.resourceInboxResultsRepository,
+            serviceId: config.serviceId,
+            defaultTopicId: GROUP_STATE_APP_INBOX_TOPIC,
+            timing: config.timing,
+            options: config.options,
+            wakeOwningQueue: config.wakeOwningQueue
+        });
+        this.commandClient = clientRuntime.commandClient;
+        this.reservationClient = clientRuntime.reservationClient;
+        this.resultWaiter = clientRuntime.resultWaiter;
         const handlerRuntime = createAppInboxHandlerRuntime({
             inboxQueueReader: dependencies.inboxQueueReader,
             resultRepository: dependencies.resourceInboxResultsRepository,
@@ -104,7 +109,7 @@ export class TopologyInboxService {
         this.handler = new TopologyAppInboxHandler({
             groupStateService: dependencies.groupStateService,
             transactionWriter: handlerRuntime.transactionWriter,
-            nowEpochMs: () => this.queueClient.nowEpochMs(),
+            nowEpochMs: config.options?.nowEpochMs ?? Date.now,
             wakeQueue: config.wakeOwningQueue
         });
         for (const type of TOPOLOGY_CONFIG_INBOX_TYPES) {
@@ -133,7 +138,7 @@ export class TopologyInboxService {
         if (!isTopologyConfigInboxType(enqueue.type)) {
             throw new TypeError('Topology AppInbox type is required');
         }
-        return await this.queueClient.processEntryUntilCompletionResult(
+        return await this.commandClient.enqueueAndWaitForResult(
             await this.handler.createAuthenticatedEnqueue(enqueue, authority),
             decodeTopologyAppInboxResult
         );
@@ -153,7 +158,7 @@ export class TopologyInboxService {
             resourceId: reservation.requestId,
             contextId: toTopologyHttpMutationContextId(reservation.groupRef, reservation.callerId)
         });
-        const reserved = await this.queueClient.reserveMaterializedEntry(
+        const reserved = await this.reservationClient.reserveMaterializedEntry(
             {
                 type,
                 ...key,
@@ -193,10 +198,9 @@ export class TopologyInboxService {
                 reservation.semanticHash
             );
         }
-        return await this.queueClient.waitForReservedEntryResult(
-            reserved.enqueue,
-            decodeTopologyAppInboxResult,
-            reserved.winner
+        return await this.resultWaiter.waitForReservedResult(
+            reserved,
+            decodeTopologyAppInboxResult
         );
     }
 }

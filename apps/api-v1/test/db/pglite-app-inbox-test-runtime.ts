@@ -7,7 +7,8 @@ import {
 import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
 import { ResourceInboxResultsRepository } from '@shared-server/queuebox/postgres/resource-inbox-results-repository.ts';
 import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
-import { AppInboxQueueClient } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-client.ts';
+import { GROUP_STATE_APP_INBOX_TOPIC } from '@shared-server/rallar-system/app-inbox/app-inbox-topics.ts';
+import { createAppInboxClientRuntime } from '@shared-server/rallar-system/app-inbox/client/create-app-inbox-client-runtime.ts';
 import type { JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import { EntityStatus, toResourceEntryWithUpdatedResource } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
@@ -37,29 +38,26 @@ export async function readPGliteAppInboxFailure(
 ) {
     const inbox = createPSqlResourceInboxRepository(sql);
     const results = new ResourceInboxResultsRepository(sql);
-    const service = new AppInboxQueueClient(
-        {
-            inboxQueueReader: new InboxQueueReader(new PSqlQueueBox(inbox)),
-            resourceInboxRepository: inbox.entries,
-            resourceInboxResultsRepository: results
-        },
-        {
-            serviceId: 'pglite-failure-reader',
-            options: {
-                waitMaxElapsedMsecs: 5_000,
-                waitRetryIntervalMsecs: 1,
-                waitMaxRetryIntervalMsecs: 2,
-                waitJitterRatio: 0
-            }
+    const service = createAppInboxClientRuntime({
+        inboxQueueReader: new InboxQueueReader(new PSqlQueueBox(inbox)),
+        resourceInboxRepository: inbox.entries,
+        resourceInboxResultsRepository: results,
+        serviceId: 'pglite-failure-reader',
+        defaultTopicId: GROUP_STATE_APP_INBOX_TOPIC,
+        options: {
+            waitMaxElapsedMsecs: 5_000,
+            waitRetryIntervalMsecs: 1,
+            waitMaxRetryIntervalMsecs: 2,
+            waitJitterRatio: 0
         }
-    );
+    }).commandClient;
     const enqueue = {
         type: AppInboxType.CLIENT_PRINCIPAL_UPSERT,
         resourceId,
         contextId: 'failure-context',
         data: { requestId: resourceId }
     } as const;
-    const typedPending = service.processEntryUntilCompletionResult(enqueue, (value) => value);
+    const typedPending = service.enqueueAndWaitForResult(enqueue, (value) => value);
     await waitForPGliteQueueRow(sql, 'APP_INBOX', 'NEW');
     const key = {
         topicId: 'app-inbox.group-state',

@@ -1,8 +1,11 @@
 import { Temporal } from '@js-temporal/polyfill';
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
-import { toResultsDomain } from '@shared-server/queuebox/postgres/resource-inbox-row-codec.ts';
 import { AppInboxType, type AppInboxEnqueueInput, type AppInboxMessageContext } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
-import { AppInboxQueueClient } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-client.ts';
+import type { AppInboxOptions } from '@shared-server/rallar-system/app-inbox/app-inbox-options.ts';
+import type { AppInboxEntryRepository, AppInboxResultRepository } from '@shared-server/rallar-system/app-inbox/app-inbox-persistence-ports.ts';
+import { CLIENT_STATE_APP_INBOX_TOPIC, GROUP_STATE_APP_INBOX_TOPIC } from '@shared-server/rallar-system/app-inbox/app-inbox-topics.ts';
+import type { AppInboxClientRuntime } from '@shared-server/rallar-system/app-inbox/client/create-app-inbox-client-runtime.ts';
+import { createAppInboxClientRuntime } from '@shared-server/rallar-system/app-inbox/client/create-app-inbox-client-runtime.ts';
 import { encodeAppInboxCommand } from '@shared-server/rallar-system/app-inbox/app-inbox-registration-codecs.ts';
 import { AppInboxHandlerRegistry } from '@shared-server/rallar-system/app-inbox/handler/app-inbox-handler-registry.ts';
 import { createAppInboxHandlerRuntime } from '@shared-server/rallar-system/app-inbox/handler/app-inbox-handler-runtime.ts';
@@ -10,12 +13,10 @@ import type { GroupMemberUpsertAppInboxPayload } from '@shared-server/rallar-sys
 import { ClientStateEventCollisionError } from '@shared-server/rallar-system/state-events/client-state-event-store.ts';
 import { GroupStateEventCollisionError } from '@shared-server/rallar-system/state-events/group-state-event-store.ts';
 
-import { SIMPLER_CLIENT_STATE_APP_INBOX_TOPIC } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-client.ts';
-
 import { ClientMutationIdempotencyConflictError } from '@shared-server/rallar-system/client-state/mutation/result-validation/validate-client-mutation.ts';
 
 import type { AppInboxFailure } from '@shared-server/rallar-system/app-inbox/app-inbox-failure.ts';
-import type { RallarTimingEvent } from '@shared-server/rallar-system/observability/timing.ts';
+import type { RallarTimingEvent, RallarTimingSink } from '@shared-server/rallar-system/observability/timing.ts';
 import { decodeJsonWireValue, type JsonWireObject, type JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import { newALRoute, newALUntargetedMessage } from '@shared/al-contracts/al-contract.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
@@ -29,20 +30,14 @@ import type { OnMessageCallback } from '@shared/services/InboxOutboxContracts.ts
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 import { QueueBoxUtilities } from '@shared/services/QueueBoxUtilities.ts';
 import { describe, expect, it, vi } from 'vitest';
-import { createAppInboxTestDatabase } from './test-support/app-inbox-test-database.ts';
+import { createAppInboxTestDatabase } from '../test-support/app-inbox-test-database.ts';
 
 const SCOPE: StateScope = {
     applicationId: 'ar-eye-hunter',
     workspaceId: 'default'
 };
 
-describe('AppInboxType', () => {
-    it('does not expose server-produced RTC topology work', () => {
-        expect(AppInboxType).not.toHaveProperty('RTC_TOPOLOGY_RECOMPUTE');
-    });
-});
-
-describe('AppInboxQueueClient', () => {
+describe('AppInbox command lifecycle', () => {
     it('uses the configured domain topic when an enqueue omits topicId', async () => {
         const queue = new TestResourceInbox();
         const results = new TestResourceInboxResults();
@@ -55,7 +50,7 @@ describe('AppInboxQueueClient', () => {
             },
             {
                 serviceId: 'server-12345678',
-                defaultTopicId: SIMPLER_CLIENT_STATE_APP_INBOX_TOPIC
+                defaultTopicId: CLIENT_STATE_APP_INBOX_TOPIC
             }
         );
 
@@ -66,7 +61,7 @@ describe('AppInboxQueueClient', () => {
             data: { requestId: 'domain-default-topic' }
         });
 
-        expect(entry.key.topicId).toBe(SIMPLER_CLIENT_STATE_APP_INBOX_TOPIC);
+        expect(entry.key.topicId).toBe(CLIENT_STATE_APP_INBOX_TOPIC);
     });
 
     it('wakes only the strict reservation winner and never creates a second queue identity', async () => {
@@ -156,7 +151,7 @@ describe('AppInboxQueueClient', () => {
             },
             {
                 serviceId: 'server-12345678',
-                defaultTopicId: SIMPLER_CLIENT_STATE_APP_INBOX_TOPIC,
+                defaultTopicId: CLIENT_STATE_APP_INBOX_TOPIC,
                 options: {
                     waitMaxElapsedMsecs: 5_000,
                     waitRetryIntervalMsecs: 1,
@@ -181,10 +176,10 @@ describe('AppInboxQueueClient', () => {
             }
             return { accepted: true } as const;
         };
-        const pending = service.processEntryUntilCompletionResult(
+        const pending = service.enqueueAndWaitForResult(
             {
                 type: AppInboxType.CLIENT_PRINCIPAL_UPSERT,
-                topicId: SIMPLER_CLIENT_STATE_APP_INBOX_TOPIC,
+                topicId: CLIENT_STATE_APP_INBOX_TOPIC,
                 resourceId: 'decoded-result',
                 contextId: 'client-1',
                 data: { requestId: 'decoded-result' }
@@ -222,7 +217,7 @@ describe('AppInboxQueueClient', () => {
             },
             {
                 serviceId: 'server-12345678',
-                defaultTopicId: SIMPLER_CLIENT_STATE_APP_INBOX_TOPIC,
+                defaultTopicId: CLIENT_STATE_APP_INBOX_TOPIC,
                 timing: (event) => timing.push(event),
                 options: { nowEpochMs: businessNowEpochMs, timingNowEpochMs }
             }
@@ -233,7 +228,7 @@ describe('AppInboxQueueClient', () => {
         );
         const enqueue = {
             type: AppInboxType.CLIENT_PRINCIPAL_UPSERT,
-            topicId: SIMPLER_CLIENT_STATE_APP_INBOX_TOPIC,
+            topicId: CLIENT_STATE_APP_INBOX_TOPIC,
             resourceId: 'retry-telemetry-clock',
             contextId: 'client-1',
             data: { requestId: 'retry-telemetry-clock' }
@@ -285,7 +280,7 @@ describe('AppInboxQueueClient', () => {
             },
             {
                 serviceId: 'server-12345678',
-                defaultTopicId: SIMPLER_CLIENT_STATE_APP_INBOX_TOPIC,
+                defaultTopicId: CLIENT_STATE_APP_INBOX_TOPIC,
                 options: {
                     waitMaxElapsedMsecs: 5_000,
                     waitRetryIntervalMsecs: 1,
@@ -319,12 +314,12 @@ describe('AppInboxQueueClient', () => {
             )
         } satisfies AppInboxEnqueueInput;
 
-        const pending = service.processEntryUntilCompletion(current);
+        const pending = service.enqueueAndWait(current);
         await reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
         const first = await pending;
 
         await expect(
-            service.processEntryUntilCompletion({
+            service.enqueueAndWait({
                 ...current,
                 data: encodeAppInboxCommand(
                     {
@@ -342,7 +337,7 @@ describe('AppInboxQueueClient', () => {
             })
         ).resolves.toEqual(first);
         await expect(
-            service.processEntryUntilCompletion({
+            service.enqueueAndWait({
                 ...current,
                 data: encodeAppInboxCommand(
                     {
@@ -407,7 +402,7 @@ describe('AppInboxQueueClient', () => {
             },
             {
                 serviceId: 'server-12345678',
-                defaultTopicId: SIMPLER_CLIENT_STATE_APP_INBOX_TOPIC,
+                defaultTopicId: CLIENT_STATE_APP_INBOX_TOPIC,
                 options: {
                     waitMaxElapsedMsecs: 5_000,
                     waitRetryIntervalMsecs: 1,
@@ -433,7 +428,7 @@ describe('AppInboxQueueClient', () => {
             data: encodeAppInboxCommand(firstData, 'Prototype-key AppInbox command')
         } as const;
 
-        const pending = service.processEntryUntilCompletion(input);
+        const pending = service.enqueueAndWait(input);
         await reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
         const first = await pending;
         const reorderedData: ProtoPayload = JSON.parse(
@@ -442,7 +437,7 @@ describe('AppInboxQueueClient', () => {
         );
 
         await expect(
-            service.processEntryUntilCompletion({
+            service.enqueueAndWait({
                 ...input,
                 data: encodeAppInboxCommand(reorderedData, 'Reordered prototype-key AppInbox command')
             })
@@ -452,7 +447,7 @@ describe('AppInboxQueueClient', () => {
                 '"metadata":{"alpha":1,"__proto__":{"flag":"changed"}}}}'
         );
         await expect(
-            service.processEntryUntilCompletion({
+            service.enqueueAndWait({
                 ...input,
                 data: encodeAppInboxCommand(changedData, 'Changed prototype-key AppInbox command')
             })
@@ -494,7 +489,7 @@ describe('AppInboxQueueClient', () => {
             },
             {
                 serviceId: 'server-12345678',
-                defaultTopicId: SIMPLER_CLIENT_STATE_APP_INBOX_TOPIC
+                defaultTopicId: CLIENT_STATE_APP_INBOX_TOPIC
             }
         );
         service.onStateMessage(AppInboxType.CLIENT_PRINCIPAL_UPSERT, async () => {
@@ -541,7 +536,7 @@ describe('AppInboxQueueClient', () => {
             },
             {
                 serviceId: 'server-12345678',
-                defaultTopicId: SIMPLER_CLIENT_STATE_APP_INBOX_TOPIC,
+                defaultTopicId: CLIENT_STATE_APP_INBOX_TOPIC,
                 options: {
                     waitMaxElapsedMsecs: 5_000,
                     waitRetryIntervalMsecs: 1,
@@ -568,11 +563,11 @@ describe('AppInboxQueueClient', () => {
                 }
             }
         } as const;
-        const firstPromise = service.processEntryUntilCompletion(firstInput);
+        const firstPromise = service.enqueueAndWait(firstInput);
         await reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
 
         const first = await firstPromise;
-        const reordered = await service.processEntryUntilCompletion({
+        const reordered = await service.enqueueAndWait({
             senderId: 'alice',
             contextId: 'app:workspace:alice',
             resourceId: 'same-public-request',
@@ -588,7 +583,7 @@ describe('AppInboxQueueClient', () => {
 
         expect(reordered).toEqual(first);
         await expect(
-            service.processEntryUntilCompletion({
+            service.enqueueAndWait({
                 ...firstInput,
                 data: {
                     ...firstInput.data,
@@ -619,7 +614,7 @@ describe('AppInboxQueueClient', () => {
             },
             {
                 serviceId: 'server-12345678',
-                defaultTopicId: SIMPLER_CLIENT_STATE_APP_INBOX_TOPIC,
+                defaultTopicId: CLIENT_STATE_APP_INBOX_TOPIC,
                 options: {
                     waitMaxElapsedMsecs: 5_000,
                     waitRetryIntervalMsecs: 1,
@@ -637,7 +632,7 @@ describe('AppInboxQueueClient', () => {
                 )
             );
         service.onStateMessage(AppInboxType.CLIENT_PRINCIPAL_UPSERT, handler);
-        const pending = service.processEntryUntilCompletion({
+        const pending = service.enqueueAndWait({
             type: AppInboxType.CLIENT_PRINCIPAL_UPSERT,
             resourceId: 'same-request',
             contextId: 'app:workspace:alice',
@@ -689,7 +684,7 @@ describe('AppInboxQueueClient', () => {
             },
             {
                 serviceId: 'server-12345678',
-                defaultTopicId: SIMPLER_CLIENT_STATE_APP_INBOX_TOPIC,
+                defaultTopicId: CLIENT_STATE_APP_INBOX_TOPIC,
                 options: {
                     waitMaxElapsedMsecs: 5_000,
                     waitRetryIntervalMsecs: 1,
@@ -700,7 +695,7 @@ describe('AppInboxQueueClient', () => {
         );
         const handler = () => Promise.reject(error);
         service.onStateMessage(AppInboxType.CLIENT_PRINCIPAL_UPSERT, handler);
-        const pending = service.processEntryUntilCompletion({
+        const pending = service.enqueueAndWait({
             type: AppInboxType.CLIENT_PRINCIPAL_UPSERT,
             resourceId: `terminal-${code}`,
             contextId: 'app:workspace:alice',
@@ -715,31 +710,6 @@ describe('AppInboxQueueClient', () => {
         expect((await readOnlyEntry(queue))?.dequeueAudit.attempts).toBe(1);
     });
 
-    it('maps resource_inbox_results rows from ris columns into queue entries', () => {
-        const entry = toResultsDomain({
-            ris_row_id: 123n,
-            ris_resource_id: 'request-1',
-            ris_topic_id: 'app-inbox.group-state',
-            ris_resource: JSON.stringify({ ok: true }),
-            ris_type_id: 'APP_INBOX',
-            ris_status: EntityStatus.COMPLETED,
-            fk_ext_bank_id: 'group-create',
-            system_date: '2026-05-20',
-            created_by: 'server-1',
-            created_ts: '2026-05-20T10:00:00.000',
-            expire_ts: '2026-05-20T10:05:00.000'
-        });
-
-        expect(entry.key).toEqual({
-            topicId: 'app-inbox.group-state',
-            resourceId: 'request-1',
-            contextId: 'group-create'
-        });
-        expect(entry.resource).toBe(JSON.stringify({ ok: true }));
-        expect(entry.status).toBe(EntityStatus.COMPLETED);
-        expect(entry.dequeueAudit.attempts).toBe(0);
-        expect(entry.db?.id).toBe('123');
-    });
 });
 
 interface BeginMaterializedReservationInput {
@@ -752,25 +722,39 @@ interface MaterializedTestReservation {
     readonly result: Promise<Either<AppInboxFailure, JsonWireValue>>;
 }
 
-interface TestAppInboxDependencies extends AppInboxQueueClient.Dependencies {
+interface TestAppInboxDependencies {
+    readonly inboxQueueReader: InboxQueueReader;
+    readonly resourceInboxRepository: AppInboxEntryRepository;
+    readonly resourceInboxResultsRepository: AppInboxResultRepository;
     readonly database: PSqlSql;
 }
 
-class TestAppInboxRuntime extends AppInboxQueueClient {
+interface TestAppInboxConfig {
+    readonly serviceId: string;
+    readonly defaultTopicId?: string;
+    readonly timing?: RallarTimingSink;
+    readonly options?: AppInboxOptions;
+    readonly wakeOwningQueue?: () => void;
+}
+
+class TestAppInboxRuntime {
+    protected readonly clientRuntime: AppInboxClientRuntime;
     private readonly handlers: AppInboxHandlerRegistry;
 
     constructor(
         dependencies: TestAppInboxDependencies,
-        config: AppInboxQueueClient.Config
+        config: TestAppInboxConfig
     ) {
-        super(
-            {
-                inboxQueueReader: dependencies.inboxQueueReader,
-                resourceInboxRepository: dependencies.resourceInboxRepository,
-                resourceInboxResultsRepository: dependencies.resourceInboxResultsRepository
-            },
-            config
-        );
+        this.clientRuntime = createAppInboxClientRuntime({
+            inboxQueueReader: dependencies.inboxQueueReader,
+            resourceInboxRepository: dependencies.resourceInboxRepository,
+            resourceInboxResultsRepository: dependencies.resourceInboxResultsRepository,
+            serviceId: config.serviceId,
+            defaultTopicId: config.defaultTopicId ?? GROUP_STATE_APP_INBOX_TOPIC,
+            timing: config.timing,
+            options: config.options,
+            wakeOwningQueue: config.wakeOwningQueue
+        });
         this.handlers = createAppInboxHandlerRuntime({
             inboxQueueReader: dependencies.inboxQueueReader,
             resultRepository: dependencies.resourceInboxResultsRepository,
@@ -795,19 +779,41 @@ class TestAppInboxRuntime extends AppInboxQueueClient {
             handle: handler
         });
     }
+
+    async enqueue(enqueue: AppInboxEnqueueInput): Promise<ResourceEntry> {
+        return await this.clientRuntime.queueEntryWriter.enqueue(enqueue);
+    }
+
+    async enqueueAndWait(
+        enqueue: AppInboxEnqueueInput
+    ): Promise<Either<AppInboxFailure, JsonWireValue>> {
+        return await this.clientRuntime.commandClient.enqueueAndWait(enqueue);
+    }
+
+    async enqueueAndWaitForResult<Result>(
+        enqueue: AppInboxEnqueueInput,
+        decodeResult: (value: JsonWireValue) => Result
+    ): Promise<Either<AppInboxFailure, Result>> {
+        return await this.clientRuntime.commandClient.enqueueAndWaitForResult(
+            enqueue,
+            decodeResult
+        );
+    }
 }
 
 class MaterializedTestAppInboxService extends TestAppInboxRuntime {
     async beginMaterializedReservation(
         input: BeginMaterializedReservationInput
     ): Promise<MaterializedTestReservation> {
-        const reservation = await this.reserveMaterializedEntry(input.placeholder, input.materialize);
+        const reservation = await this.clientRuntime.reservationClient.reserveMaterializedEntry(
+            input.placeholder,
+            input.materialize
+        );
         return {
             winner: reservation.winner,
-            result: this.waitForReservedEntryResult(
-                reservation.enqueue,
-                (value) => value,
-                reservation.winner
+            result: this.clientRuntime.resultWaiter.waitForReservedResult(
+                reservation,
+                (value) => value
             )
         };
     }

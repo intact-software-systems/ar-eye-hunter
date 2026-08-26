@@ -6,7 +6,9 @@ import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
 import { AppInboxType } from '../../app-inbox/app-inbox-contracts.ts';
 import type { AppInboxOptions } from '../../app-inbox/app-inbox-options.ts';
 import type { AppInboxEntryRepository, AppInboxResultRepository } from '../../app-inbox/app-inbox-persistence-ports.ts';
-import { AppInboxQueueClient, SIMPLER_GROUP_STATE_APP_INBOX_TOPIC } from '../../app-inbox/app-inbox-queue-client.ts';
+import { GROUP_STATE_APP_INBOX_TOPIC } from '../../app-inbox/app-inbox-topics.ts';
+import type { AppInboxQueueEntryWriter } from '../../app-inbox/client/app-inbox-queue-entry-writer.ts';
+import { createAppInboxClientRuntime } from '../../app-inbox/client/create-app-inbox-client-runtime.ts';
 import { encodeAppInboxResult } from '../../app-inbox/app-inbox-registration-codecs.ts';
 import { createAppInboxHandlerRuntime } from '../../app-inbox/handler/app-inbox-handler-runtime.ts';
 import type { GroupStateService } from '../../group-state/group-state-service-contracts.ts';
@@ -34,27 +36,23 @@ export namespace RtcRttInboxService {
 }
 
 export class RtcRttInboxService {
-    private readonly queueClient: AppInboxQueueClient;
+    private readonly queueEntryWriter: AppInboxQueueEntryWriter;
     private readonly handler: RtcRttAppInboxHandler;
 
     constructor(
         dependencies: RtcRttInboxService.Dependencies,
         config: RtcRttInboxService.Config
     ) {
-        this.queueClient = new AppInboxQueueClient(
-            {
-                inboxQueueReader: dependencies.inboxQueueReader,
-                resourceInboxRepository: dependencies.resourceInboxRepository,
-                resourceInboxResultsRepository: dependencies.resourceInboxResultsRepository
-            },
-            {
-                serviceId: config.serviceId,
-                defaultTopicId: SIMPLER_GROUP_STATE_APP_INBOX_TOPIC,
-                timing: config.timing,
-                options: config.options,
-                wakeOwningQueue: config.wakeOwningQueue
-            }
-        );
+        this.queueEntryWriter = createAppInboxClientRuntime({
+            inboxQueueReader: dependencies.inboxQueueReader,
+            resourceInboxRepository: dependencies.resourceInboxRepository,
+            resourceInboxResultsRepository: dependencies.resourceInboxResultsRepository,
+            serviceId: config.serviceId,
+            defaultTopicId: GROUP_STATE_APP_INBOX_TOPIC,
+            timing: config.timing,
+            options: config.options,
+            wakeOwningQueue: config.wakeOwningQueue
+        }).queueEntryWriter;
         const handlerRuntime = createAppInboxHandlerRuntime({
             inboxQueueReader: dependencies.inboxQueueReader,
             resultRepository: dependencies.resourceInboxResultsRepository,
@@ -68,7 +66,7 @@ export class RtcRttInboxService {
             groupStateService: dependencies.groupStateService,
             writeMutation: async (context, write) =>
                 await handlerRuntime.transactionWriter.writeMutation(context, write),
-            nowEpochMs: () => this.queueClient.nowEpochMs(),
+            nowEpochMs: config.options?.nowEpochMs ?? Date.now,
             wakeQueue: config.wakeOwningQueue
         });
         handlers.registerHandler({
@@ -88,6 +86,6 @@ export class RtcRttInboxService {
             capturedAtEpochMs: number;
         }>
     ): Promise<ResourceEntry> {
-        return await this.queueClient.enqueue(await this.handler.createEnqueue(input));
+        return await this.queueEntryWriter.enqueue(await this.handler.createEnqueue(input));
     }
 }

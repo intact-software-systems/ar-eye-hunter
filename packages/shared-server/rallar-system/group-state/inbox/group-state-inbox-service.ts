@@ -6,7 +6,11 @@ import { AppInboxType, type AppInboxEnqueueInput } from '../../app-inbox/app-inb
 import { type AppInboxFailure } from '../../app-inbox/app-inbox-failure.ts';
 import type { AppInboxOptions } from '../../app-inbox/app-inbox-options.ts';
 import type { AppInboxEntryRepository, AppInboxResultRepository } from '../../app-inbox/app-inbox-persistence-ports.ts';
-import { AppInboxQueueClient, SIMPLER_GROUP_STATE_APP_INBOX_TOPIC } from '../../app-inbox/app-inbox-queue-client.ts';
+import { GROUP_STATE_APP_INBOX_TOPIC } from '../../app-inbox/app-inbox-topics.ts';
+import type { AppInboxCommandClient } from '../../app-inbox/client/app-inbox-command-client.ts';
+import type { AppInboxQueueEntryWriter } from '../../app-inbox/client/app-inbox-queue-entry-writer.ts';
+import type { AppInboxReservationClient } from '../../app-inbox/client/app-inbox-reservation-client.ts';
+import { createAppInboxClientRuntime } from '../../app-inbox/client/create-app-inbox-client-runtime.ts';
 import { encodeAppInboxCommand, encodeAppInboxResult } from '../../app-inbox/app-inbox-registration-codecs.ts';
 import { AppInboxHandlerRegistry } from '../../app-inbox/handler/app-inbox-handler-registry.ts';
 import { createAppInboxHandlerRuntime } from '../../app-inbox/handler/app-inbox-handler-runtime.ts';
@@ -59,7 +63,9 @@ export namespace GroupStateInboxService {
 }
 
 export class GroupStateInboxService {
-    private readonly queueClient: AppInboxQueueClient;
+    private readonly commandClient: AppInboxCommandClient;
+    private readonly queueEntryWriter: AppInboxQueueEntryWriter;
+    private readonly reservationClient: AppInboxReservationClient;
     private readonly handlers: AppInboxHandlerRegistry;
     private readonly transactionWriter: AppInboxTransactionWriter;
     private readonly groupStateInboxHandler: GroupStateInboxHandler;
@@ -72,20 +78,19 @@ export class GroupStateInboxService {
         dependencies: GroupStateInboxService.Dependencies,
         config: GroupStateInboxService.Config
     ) {
-        this.queueClient = new AppInboxQueueClient(
-            {
-                inboxQueueReader: dependencies.inboxQueueReader,
-                resourceInboxRepository: dependencies.resourceInboxRepository,
-                resourceInboxResultsRepository: dependencies.resourceInboxResultsRepository
-            },
-            {
-                serviceId: config.serviceId,
-                defaultTopicId: SIMPLER_GROUP_STATE_APP_INBOX_TOPIC,
-                timing: config.timing,
-                options: config.options,
-                wakeOwningQueue: config.wakeOwningQueue
-            }
-        );
+        const clientRuntime = createAppInboxClientRuntime({
+            inboxQueueReader: dependencies.inboxQueueReader,
+            resourceInboxRepository: dependencies.resourceInboxRepository,
+            resourceInboxResultsRepository: dependencies.resourceInboxResultsRepository,
+            serviceId: config.serviceId,
+            defaultTopicId: GROUP_STATE_APP_INBOX_TOPIC,
+            timing: config.timing,
+            options: config.options,
+            wakeOwningQueue: config.wakeOwningQueue
+        });
+        this.commandClient = clientRuntime.commandClient;
+        this.queueEntryWriter = clientRuntime.queueEntryWriter;
+        this.reservationClient = clientRuntime.reservationClient;
         const handlerRuntime = createAppInboxHandlerRuntime({
             inboxQueueReader: dependencies.inboxQueueReader,
             resultRepository: dependencies.resourceInboxResultsRepository,
@@ -109,7 +114,7 @@ export class GroupStateInboxService {
             prepareMutation: (descriptor, authority) =>
                 this.groupStateService.prepareAppInboxMutation(descriptor, authority),
             persistPreparation: (context, preparation) =>
-                this.queueClient.persistReservedEntryAuthority(
+                this.reservationClient.persistAuthority(
                     context,
                     encodeAppInboxCommand(preparation, 'Group mutation AppInbox authority')
                 )
@@ -121,7 +126,7 @@ export class GroupStateInboxService {
     async enqueueExpiredPresenceSessions(atEpochMs: number): Promise<number> {
         const preparations = await this.groupStateService.prepareExpiredPresenceMutations(atEpochMs);
         for (const preparation of preparations) {
-            await this.queueClient.enqueue(toExpiredPresenceEnqueue(preparation));
+            await this.queueEntryWriter.enqueue(toExpiredPresenceEnqueue(preparation));
         }
         return preparations.length;
     }
@@ -134,7 +139,7 @@ export class GroupStateInboxService {
             command,
             atEpochMs
         );
-        await this.queueClient.enqueue({
+        await this.queueEntryWriter.enqueue({
             type: AppInboxType.GROUP_FORMATION_CRITERION,
             resourceId: preparation.queueResourceId,
             authority: decodeJsonWireValue(
@@ -148,7 +153,7 @@ export class GroupStateInboxService {
     async enqueueGroupSessionCleanup(
         input: GroupPresenceSessionCleanupAppInboxPayload
     ): Promise<number> {
-        await this.queueClient.enqueue(toGroupSessionCleanupEnqueue(input, this.serviceId));
+        await this.queueEntryWriter.enqueue(toGroupSessionCleanupEnqueue(input, this.serviceId));
         return 1;
     }
 
@@ -164,7 +169,7 @@ export class GroupStateInboxService {
         authority: IssuedAuthSession
     ): Promise<Either<AppInboxFailure, GroupStateInboxDurableResult>> {
         const prepared = await this.prepareAuthenticatedGroupMutation(enqueue, authority);
-        return await this.queueClient.processEntryUntilCompletionResult<GroupStateInboxDurableResult>(
+        return await this.commandClient.enqueueAndWaitForResult<GroupStateInboxDurableResult>(
             prepared,
             (value) => decodeGroupStateInboxDurableResult(value, enqueue.type)
         );
