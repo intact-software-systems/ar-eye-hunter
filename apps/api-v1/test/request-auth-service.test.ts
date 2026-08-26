@@ -1,7 +1,11 @@
 import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
 import type { RuntimeStateReadBatchSelection, RuntimeStateReadBatchSelector } from '@shared-server/runtime-state/read-batch/runtime-state-read-batch.ts';
 import { selectRuntimeStateReadBatch } from '@shared-server/runtime-state/read-batch/select-runtime-state-read-batch.ts';
-import type { RuntimeStateEntry, RuntimeStateTransactionalRepositoryLike } from '@shared-server/runtime-state/runtime-state-repository.ts';
+import type {
+    RuntimeStateEntry,
+    RuntimeStateEntryPageOptions,
+    RuntimeStateTransactionalRepositoryLike
+} from '@shared-server/runtime-state/runtime-state-repository.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import assert from 'node:assert/strict';
 import { requireApiAuthSession, requireWsAuthSession } from '../src/services/request-auth-service.ts';
@@ -184,6 +188,16 @@ class FakeRuntimeStateRepository implements RuntimeStateTransactionalRepositoryL
         );
     }
 
+    async findEntriesByPrefixPage(
+        namespace: string,
+        keyPrefix: string,
+        options: RuntimeStateEntryPageOptions
+    ): Promise<readonly RuntimeStateEntry[]> {
+        return (await this.findEntriesByPrefix(namespace, keyPrefix))
+            .filter((entry) => options.afterKey === undefined || entry.key > options.afterKey)
+            .slice(0, options.limit);
+    }
+
     findEntriesByKeys(
         namespace: string,
         keys: readonly string[]
@@ -240,9 +254,6 @@ class FakeRuntimeStateRepository implements RuntimeStateTransactionalRepositoryL
         }
 
         return Promise.resolve(deleted);
-    }
-
-    async lockKey(_namespace: string, _key: string): Promise<void> {
     }
 
     private toKey(namespace: string, key: string): string {

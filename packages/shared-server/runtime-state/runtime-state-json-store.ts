@@ -3,7 +3,6 @@ import { decodeJsonWireValue, type JsonWireValue } from '../rallar-system/protoc
 import type { RuntimeStateReadBatchSelector } from './read-batch/runtime-state-read-batch.ts';
 import {
     isRuntimeStateConditionalRepositoryLike,
-    isRuntimeStatePrefixPageRepositoryLike,
     type RuntimeStateConditionalDeleteResult,
     type RuntimeStateConditionalRepositoryLike,
     type RuntimeStateConditionalWriteResult,
@@ -172,24 +171,14 @@ export class RuntimeStateJsonStore {
         options: RuntimeStateEntryPageOptions
     ): Promise<readonly RuntimeStateEntry[]> {
         const limit = Math.max(1, Math.floor(options.limit));
-
-        if (isRuntimeStatePrefixPageRepositoryLike(this.repository)) {
-            return await this.repository.findEntriesByPrefixPage(
-                namespace,
-                keyPrefix,
-                {
-                    afterKey: options.afterKey,
-                    limit
-                }
-            );
-        }
-
-        return (await this.listEntries(namespace, keyPrefix))
-            .filter((entry) =>
-                options.afterKey === undefined ||
-                entry.key.localeCompare(options.afterKey) > 0
-            )
-            .slice(0, limit);
+        return await this.repository.findEntriesByPrefixPage(
+            namespace,
+            keyPrefix,
+            {
+                afterKey: options.afterKey,
+                limit
+            }
+        );
     }
 
     protected async toLiveJsonValues(

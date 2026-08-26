@@ -221,6 +221,10 @@ class UnusedRuntimeStateRepository implements RuntimeStateRepositoryLike {
         return rejectUnusedOperation();
     }
 
+    findEntriesByPrefixPage(): Promise<never> {
+        return rejectUnusedOperation();
+    }
+
     readRuntimeStateBatch(
         _selectors: readonly RuntimeStateReadBatchSelector[]
     ): Promise<readonly RuntimeStateReadBatchSelection[]> {

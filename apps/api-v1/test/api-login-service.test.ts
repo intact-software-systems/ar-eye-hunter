@@ -1,7 +1,11 @@
 import { AuthUserRepository } from '@shared-server/rallar-system/auth/persistence/auth-user-repository.ts';
 import type { RuntimeStateReadBatchSelection, RuntimeStateReadBatchSelector } from '@shared-server/runtime-state/read-batch/runtime-state-read-batch.ts';
 import { selectRuntimeStateReadBatch } from '@shared-server/runtime-state/read-batch/select-runtime-state-read-batch.ts';
-import type { RuntimeStateEntry, RuntimeStateTransactionalRepositoryLike } from '@shared-server/runtime-state/runtime-state-repository.ts';
+import type {
+    RuntimeStateEntry,
+    RuntimeStateEntryPageOptions,
+    RuntimeStateTransactionalRepositoryLike
+} from '@shared-server/runtime-state/runtime-state-repository.ts';
 import assert from 'node:assert/strict';
 import { login, register } from '../src/services/api-login-service.ts';
 
@@ -23,7 +27,6 @@ Deno.test('register prepares a mandatory user command without writing before App
     assert.equal(registered.username, 'new-user');
     assert.equal(registered.displayName, 'New User');
     assert.equal(registered.createdAtEpochMs, 1_234);
-    assert.equal(registered.displayName, 'New User');
     assert.equal(runtimeRepository.data.size, 0);
 
     const userRepository = new AuthUserRepository(runtimeRepository);
@@ -165,6 +168,16 @@ class FakeRuntimeStateRepository implements RuntimeStateTransactionalRepositoryL
         );
     }
 
+    async findEntriesByPrefixPage(
+        namespace: string,
+        keyPrefix: string,
+        options: RuntimeStateEntryPageOptions
+    ): Promise<readonly RuntimeStateEntry[]> {
+        return (await this.findEntriesByPrefix(namespace, keyPrefix))
+            .filter((entry) => options.afterKey === undefined || entry.key > options.afterKey)
+            .slice(0, options.limit);
+    }
+
     findEntriesByKeys(
         namespace: string,
         keys: readonly string[]
@@ -221,9 +234,6 @@ class FakeRuntimeStateRepository implements RuntimeStateTransactionalRepositoryL
         }
 
         return Promise.resolve(deleted);
-    }
-
-    async lockKey(_namespace: string, _key: string): Promise<void> {
     }
 
     private toKey(namespace: string, key: string): string {

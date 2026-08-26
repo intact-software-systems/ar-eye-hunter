@@ -140,6 +140,14 @@ function createRepository(): RuntimeStateRepositoryLike {
                 .filter((entry): entry is RuntimeStateEntry => entry !== undefined)
                 .sort((left, right) => left.key.localeCompare(right.key));
         },
+        async findEntriesByPrefixPage(namespace, keyPrefix, options) {
+            return (await this.findAllEntries(namespace))
+                .filter((entry) =>
+                    entry.key.startsWith(keyPrefix) &&
+                    (options.afterKey === undefined || entry.key > options.afterKey)
+                )
+                .slice(0, options.limit);
+        },
         async readRuntimeStateBatch(selectors) {
             const namespaces = new Set(selectors.map((selector) => selector.namespace));
             return selectRuntimeStateReadBatch(

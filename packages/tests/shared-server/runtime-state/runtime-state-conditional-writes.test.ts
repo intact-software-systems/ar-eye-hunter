@@ -116,6 +116,7 @@ describe('runtime-state conditional writes', () => {
         const repository: RuntimeStateRepositoryLike = {
             findEntry: () => Promise.resolve(undefined),
             findAllEntries: () => Promise.resolve([]),
+            findEntriesByPrefixPage: () => Promise.resolve([]),
             readRuntimeStateBatch: (selectors) =>
                 Promise.resolve(
                     selectRuntimeStateReadBatch([], selectors)
@@ -163,6 +164,7 @@ describe('runtime-state conditional writes', () => {
         const repository: RuntimeStateRepositoryLike = {
             findEntry: () => Promise.resolve(expiredEntry),
             findAllEntries: () => Promise.resolve([expiredEntry]),
+            findEntriesByPrefixPage: () => Promise.resolve([expiredEntry]),
             readRuntimeStateBatch: (selectors) =>
                 Promise.resolve(
                     selectRuntimeStateReadBatch(
@@ -234,6 +236,7 @@ describe('runtime-state conditional writes', () => {
         const baseRepository: RuntimeStateRepositoryLike = {
             findEntry: () => Promise.resolve(undefined),
             findAllEntries: () => Promise.resolve([]),
+            findEntriesByPrefixPage: () => Promise.resolve([]),
             readRuntimeStateBatch: (selectors) =>
                 Promise.resolve(
                     selectRuntimeStateReadBatch([], selectors)

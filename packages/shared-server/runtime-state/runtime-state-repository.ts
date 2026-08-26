@@ -20,6 +20,11 @@ export interface RuntimeStateEntryPageOptions {
 export interface RuntimeStateRepositoryLike {
     findEntry(namespace: string, key: string): Promise<RuntimeStateEntry | undefined>;
     findAllEntries(namespace: string): Promise<readonly RuntimeStateEntry[]>;
+    findEntriesByPrefixPage(
+        namespace: string,
+        keyPrefix: string,
+        options: RuntimeStateEntryPageOptions
+    ): Promise<readonly RuntimeStateEntry[]>;
     readRuntimeStateBatch(
         selectors: readonly RuntimeStateReadBatchSelector[]
     ): Promise<readonly RuntimeStateReadBatchSelection[]>;
@@ -103,14 +108,6 @@ export type RuntimeStateGuardedBatchTransactionalRepositoryLike =
         ): Promise<T>;
     }>;
 
-export interface RuntimeStatePrefixPageRepositoryLike {
-    findEntriesByPrefixPage(
-        namespace: string,
-        keyPrefix: string,
-        options: RuntimeStateEntryPageOptions
-    ): Promise<readonly RuntimeStateEntry[]>;
-}
-
 export function isRuntimeStateTransactionalRepositoryLike(
     repository: RuntimeStateRepositoryLike
 ): repository is RuntimeStateTransactionalRepositoryLike {
@@ -155,12 +152,6 @@ export function assertRuntimeStateUpsertExpectedRevision(
         Number.MAX_SAFE_INTEGER - 1,
         'runtime state upsert expected revision'
     );
-}
-
-export function isRuntimeStatePrefixPageRepositoryLike(
-    repository: RuntimeStateRepositoryLike
-): repository is RuntimeStateRepositoryLike & RuntimeStatePrefixPageRepositoryLike {
-    return 'findEntriesByPrefixPage' in repository;
 }
 
 function assertRuntimeStateExpectedRevisionWithinLimit(
