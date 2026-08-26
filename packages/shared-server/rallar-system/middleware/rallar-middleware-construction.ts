@@ -6,9 +6,9 @@ import type { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 import type { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
 import type {
     WsDeliveryDiagnosticsSink,
-    WsQueueBoxServerService,
     WsServerTargetResolver
-} from '@shared/services/WsQueueBoxServerService.ts';
+} from '@shared/services/ws-queue-box-server/ws-queue-box-server-contracts.ts';
+import type { WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 import type { JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.ts';
 
 import type { AppClientInboxService } from '../client-state/inbox/app-client-inbox-service.ts';

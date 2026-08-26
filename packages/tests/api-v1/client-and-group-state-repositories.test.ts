@@ -2,12 +2,10 @@ import {
     ClientStateRepository,
     ClientStateRepositoryInvariantCorruptionError
 } from '@shared-server/rallar-system/client-state/persistence/client-state-repository.ts';
+import { groupStateGroupStorageKey } from '@shared-server/rallar-system/group-state/persistence/aggregate/group-aggregate-storage-keys.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
-import {
-    groupStateGroupStorageKey,
-    groupStateMemberStorageKey,
-    groupStatePresenceSessionStorageKey
-} from '@shared-server/rallar-system/group-state/persistence/group-state-storage-keys.ts';
+import { groupStateMemberStorageKey } from '@shared-server/rallar-system/group-state/persistence/membership/group-membership-storage-key.ts';
+import { groupStatePresenceSessionStorageKey } from '@shared-server/rallar-system/group-state/persistence/presence/group-presence-storage-keys.ts';
 import { readStateEventListQuery } from '@shared-server/rallar-system/state-events/state-event-listing.ts';
 import type { RuntimeStateReadBatchSelection, RuntimeStateReadBatchSelector } from '@shared-server/runtime-state/read-batch/runtime-state-read-batch.ts';
 import { selectRuntimeStateReadBatch } from '@shared-server/runtime-state/read-batch/select-runtime-state-read-batch.ts';
@@ -375,16 +373,16 @@ describe('ClientStateRepository', () => {
             principalId: 'principal-1'
         };
         await clientRepository.appendEvent(
-            createClientEvent('evt-1', 1_000, 'session-connected')
+            createClientEvent('evt-1', 1_000, { eventType: 'session-connected' })
         );
         await clientRepository.appendEvent(
-            createClientEvent('evt-2', 2_000, 'session-disconnected')
+            createClientEvent('evt-2', 2_000, { eventType: 'session-disconnected' })
         );
         await clientRepository.appendEvent(
-            createClientEvent('evt-3', 3_000, 'session-connected')
+            createClientEvent('evt-3', 3_000, { eventType: 'session-connected' })
         );
         await clientRepository.appendEvent(
-            createClientEvent('evt-4', 4_000, 'session-disconnected')
+            createClientEvent('evt-4', 4_000, { eventType: 'session-disconnected' })
         );
 
         const firstPage = await clientRepository.listEventPage(
@@ -422,13 +420,22 @@ describe('ClientStateRepository', () => {
             principalId: 'principal-1'
         };
         await clientRepository.appendEvent(
-            createClientEvent('evt-late-snapshot', 1_000, 'session-connected', 30)
+            createClientEvent('evt-late-snapshot', 1_000, {
+                eventType: 'session-connected',
+                snapshotVersion: 30
+            })
         );
         await clientRepository.appendEvent(
-            createClientEvent('evt-early-snapshot', 2_000, 'session-connected', 10)
+            createClientEvent('evt-early-snapshot', 2_000, {
+                eventType: 'session-connected',
+                snapshotVersion: 10
+            })
         );
         await clientRepository.appendEvent(
-            createClientEvent('evt-middle-snapshot', 3_000, 'session-connected', 20)
+            createClientEvent('evt-middle-snapshot', 3_000, {
+                eventType: 'session-connected',
+                snapshotVersion: 20
+            })
         );
 
         const firstPage = await clientRepository.listEventPage(ref, { limit: 2 });
@@ -923,16 +930,7 @@ describe('GroupStateRepository', () => {
         }
 
         repository.resetCounters();
-        const page = await (groupRepository as unknown as {
-            listSnapshotsPage(
-                scope: { applicationId: string; workspaceId: string; },
-                options: { limit: number; }
-            ): Promise<{
-                snapshots: readonly { group: { groupId: string; }; }[];
-                scannedGroupCount: number;
-                hasMore: boolean;
-            }>;
-        }).listSnapshotsPage({
+        const page = await groupRepository.listSnapshotsPage({
             applicationId: 'app-1',
             workspaceId: 'workspace-1'
         }, {
@@ -970,17 +968,7 @@ describe('GroupStateRepository', () => {
         await putGroupFixture(groupRepository, createGroup('group-0002'));
         await putGroupFixture(groupRepository, createGroup('group-0003'));
 
-        const page = await (groupRepository as unknown as {
-            listSnapshotsPage(
-                scope: { applicationId: string; workspaceId: string; },
-                options: { limit: number; }
-            ): Promise<{
-                snapshots: readonly { group: { groupId: string; }; }[];
-                scannedGroupCount: number;
-                hasMore: boolean;
-                nextGroupKey?: string;
-            }>;
-        }).listSnapshotsPage({
+        const page = await groupRepository.listSnapshotsPage({
             applicationId: 'app-1',
             workspaceId: 'workspace-1'
         }, {
@@ -1070,16 +1058,7 @@ describe('GroupStateRepository', () => {
             workspaceId: 'workspace-10'
         });
 
-        const page = await (groupRepository as unknown as {
-            listSnapshotsPage(
-                scope: { applicationId: string; workspaceId: string; },
-                options: { limit: number; }
-            ): Promise<{
-                snapshots: readonly { group: { groupId: string; workspaceId: string; }; }[];
-                scannedGroupCount: number;
-                hasMore: boolean;
-            }>;
-        }).listSnapshotsPage({
+        const page = await groupRepository.listSnapshotsPage({
             applicationId: 'app-1',
             workspaceId: 'workspace-1'
         }, {
@@ -1260,21 +1239,25 @@ function createClientSession(
     };
 }
 
+interface ClientEventFixtureOptions {
+    readonly eventType?: ClientEvent['eventType'];
+    readonly snapshotVersion?: number;
+}
+
 function createClientEvent(
     eventId: string,
     occurredAtEpochMs: number,
-    eventType: ClientEvent['eventType'] = 'session-connected',
-    snapshotVersion = occurredAtEpochMs
+    options: ClientEventFixtureOptions = {}
 ): ClientEvent {
     return {
         applicationId: 'app-1',
         workspaceId: 'workspace-1',
         principalId: 'principal-1',
         eventId,
-        eventType,
+        eventType: options.eventType ?? 'session-connected',
         clientInstanceId: 'instance-a',
         sessionId: 'session-a',
-        snapshotVersion,
+        snapshotVersion: options.snapshotVersion ?? occurredAtEpochMs,
         occurredAtEpochMs,
         actor: { kind: 'service', serviceId: 'seed' },
         reason: null,

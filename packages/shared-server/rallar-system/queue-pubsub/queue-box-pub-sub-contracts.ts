@@ -1,74 +1,115 @@
-export type QueueBoxPubSubMessageKey = Readonly<{
-    topicId: string;
-    resourceId: string;
-    contextId: string;
-}>;
+import type { JsonWireObject, JsonWireValue } from '../protocol/json-wire-identity.ts';
+
+export interface QueueBoxPubSubMessageKey extends JsonWireObject {
+    readonly topicId: string;
+    readonly resourceId: string;
+    readonly contextId: string;
+}
 
 export type QueueBoxPubSubDelivery = 'entry' | 'key';
 
-type QueueBoxPubSubMessageBase = Readonly<{
-    key: QueueBoxPubSubMessageKey;
-    channel: string;
-    publisherId: string;
-    typeId: string;
-}>;
+interface QueueBoxPubSubMessageBase extends JsonWireObject {
+    readonly key: QueueBoxPubSubMessageKey;
+    readonly channel: string;
+    readonly publisherId: string;
+    readonly typeId: string;
+}
 
-export type QueueBoxPubSubEntryMessage =
-    & QueueBoxPubSubMessageBase
-    & Readonly<{
-        delivery?: 'entry';
-        payload: string;
-    }>;
+export interface QueueBoxPubSubEntryMessage extends QueueBoxPubSubMessageBase {
+    readonly delivery: 'entry';
+    readonly payload: string;
+}
 
-export type QueueBoxPubSubKeyMessage =
-    & QueueBoxPubSubMessageBase
-    & Readonly<{
-        delivery: 'key';
-        payload?: undefined;
-    }>;
+export interface QueueBoxPubSubKeyMessage extends QueueBoxPubSubMessageBase {
+    readonly delivery: 'key';
+}
 
 export type QueueBoxPubSubMessage =
     | QueueBoxPubSubEntryMessage
     | QueueBoxPubSubKeyMessage;
 
-export type QueueBoxPubSubBridge = Readonly<{
+export interface QueueBoxPubSubBridge {
     publish(channel: string, message: QueueBoxPubSubMessage): Promise<void>;
     subscribe(
         channel: string,
-        onMessage: (message: QueueBoxPubSubMessage) => Promise<void> | void
+        onMessage: (message: JsonWireValue) => Promise<void> | void
     ): Promise<void>;
-}>;
-
-export function isValidQueueBoxPubSubMessage(
-    message: QueueBoxPubSubMessage,
-    expectedChannel: string
-): boolean {
-    if (!message || typeof message !== 'object') {
-        return false;
-    }
-    if (message.channel !== expectedChannel) {
-        return false;
-    }
-    if (
-        typeof message.publisherId !== 'string' ||
-        typeof message.typeId !== 'string' ||
-        !isValidQueueBoxPubSubMessageKey(message.key)
-    ) {
-        return false;
-    }
-    if (message.delivery === 'key') {
-        return message.payload === undefined;
-    }
-
-    return (message.delivery === undefined || message.delivery === 'entry') &&
-        typeof message.payload === 'string';
 }
 
-function isValidQueueBoxPubSubMessageKey(
-    key: QueueBoxPubSubMessageKey | undefined
-): key is QueueBoxPubSubMessageKey {
-    return !!key &&
-        typeof key.topicId === 'string' &&
-        typeof key.resourceId === 'string' &&
-        typeof key.contextId === 'string';
+export function decodeQueueBoxPubSubMessage(
+    message: JsonWireValue,
+    expectedChannel: string
+): QueueBoxPubSubMessage | undefined {
+    if (!isJsonWireObject(message)) {
+        return undefined;
+    }
+    const key = decodeQueueBoxPubSubMessageKey(message.key);
+    if (
+        message.channel !== expectedChannel ||
+        !isNonEmptyString(message.publisherId) ||
+        !isNonEmptyString(message.typeId) ||
+        !key
+    ) {
+        return undefined;
+    }
+    if (message.delivery === 'key') {
+        return hasExactKeys(message, ['key', 'channel', 'publisherId', 'typeId', 'delivery'])
+            ? {
+                key,
+                channel: message.channel,
+                publisherId: message.publisherId,
+                typeId: message.typeId,
+                delivery: 'key'
+            }
+            : undefined;
+    }
+    return message.delivery === 'entry' &&
+            isNonEmptyString(message.payload) &&
+            hasExactKeys(message, ['key', 'channel', 'publisherId', 'typeId', 'delivery', 'payload'])
+        ? {
+            key,
+            channel: message.channel,
+            publisherId: message.publisherId,
+            typeId: message.typeId,
+            delivery: 'entry',
+            payload: message.payload
+        }
+        : undefined;
+}
+
+function decodeQueueBoxPubSubMessageKey(
+    key: JsonWireValue
+): QueueBoxPubSubMessageKey | undefined {
+    if (
+        !isJsonWireObject(key) ||
+        !hasExactKeys(key, ['topicId', 'resourceId', 'contextId']) ||
+        !isNonEmptyString(key.topicId) ||
+        !isNonEmptyString(key.resourceId) ||
+        !isNonEmptyString(key.contextId)
+    ) {
+        return undefined;
+    }
+    return {
+        topicId: key.topicId,
+        resourceId: key.resourceId,
+        contextId: key.contextId
+    };
+}
+
+function isJsonWireObject(value: JsonWireValue): value is JsonWireObject {
+    return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function hasExactKeys(
+    value: JsonWireObject,
+    expected: readonly string[]
+): boolean {
+    const actual = Object.keys(value).toSorted();
+    const sortedExpected = expected.toSorted();
+    return actual.length === expected.length &&
+        actual.every((key, index) => key === sortedExpected[index]);
+}
+
+function isNonEmptyString(value: JsonWireValue): value is string {
+    return typeof value === 'string' && value.length > 0;
 }

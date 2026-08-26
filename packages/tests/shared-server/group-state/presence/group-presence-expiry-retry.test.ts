@@ -2,8 +2,8 @@ import { groupStateMaintenanceRequestId } from '@shared-server/rallar-system/gro
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
 import { RuntimeStateRetryExhaustedError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
 import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
-import { describe, expect, it, vi } from 'vitest';
-import { FakeRuntimeStateRepository } from '../../fake-runtime-state-repository.ts';
+import { describe, expect, it } from 'vitest';
+import { FakeRuntimeStateRepository } from '../../runtime-state/test-support/fake-runtime-state-repository.ts';
 import { GroupBarrierRepository } from '../group-state-concurrency-test-runtime.ts';
 import { createTestGroupStateRuntime } from '../group-state-test-runtime.ts';
 import { groupRef, SCOPE } from '../mutation/group-mutation-test-runtime.ts';
@@ -218,7 +218,11 @@ describe('group presence expiry retry', () => {
         );
         runtime.resetGuards();
         runtime.failNextPresenceDelete(3);
-        const sleep = vi.fn((_delayMs: number) => Promise.resolve());
+        const retryDelays: number[] = [];
+        const sleep = (delayMs: number): Promise<void> => {
+            retryDelays.push(delayMs);
+            return Promise.resolve();
+        };
 
         await expect(
             createMaintenance(runtime, BASE_EPOCH_MS + 3_000, sleep).expireExpiredPresenceSessions(
@@ -226,7 +230,7 @@ describe('group presence expiry retry', () => {
             )
         ).rejects.toBeInstanceOf(RuntimeStateRetryExhaustedError);
 
-        expect(sleep.mock.calls.map(([delay]) => delay)).toEqual([2, 8]);
+        expect(retryDelays).toEqual([2, 8]);
         expect(runtime.conditionalOperations).toEqual([
             'delete:group-state:sessions',
             'delete:group-state:sessions',

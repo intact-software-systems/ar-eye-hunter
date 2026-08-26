@@ -1,37 +1,37 @@
+import { groupStateGroupStorageKey } from '@shared-server/rallar-system/group-state/persistence/aggregate/group-aggregate-storage-keys.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { decodePersistedALMessageValue } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import { validateAuthoritativeGroupSnapshot } from '@shared/api/authoritative-state-validation.ts';
 import type { CanonicalGroupTopologyConfigPatch } from '@shared/api/graph-topology-management-types.ts';
 import { readGroupCausalRevision } from '@shared/api/group-client-views.ts';
 import { readCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topology-config-canonical.ts';
 import type { GroupRef, GroupSnapshot, GroupStateCausalRevision } from '@shared/api/group-types.ts';
-import { validateRtcRttMeasurement } from '../../../rtc-rtt/persistence/rtc-rtt-persistence-validation.ts';
-
-import { groupStateGroupStorageKey } from '@shared-server/rallar-system/group-state/persistence/group-state-storage-keys.ts';
-import { validatePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 import {
     COALESCED_APP_OUTBOX_WORK_FIELD,
     type CoalescedAppOutboxWorkMetadata
 } from '../../../app-outbox/coalesced-app-outbox-work-service.ts';
+import { decodeJsonWireValue, type JsonWireObject, type JsonWireValue } from '../../../protocol/json-wire-identity.ts';
 import {
     readRtcRttTopologyOutboxIdentity,
     toRtcRttMutationReceiptId,
     type RtcRttTopologyOutboxIdentity
 } from '../../../rtc-rtt/mutation/rtc-rtt-mutation-identifiers.ts';
+import { validateRtcRttMeasurement } from '../../../rtc-rtt/persistence/rtc-rtt-persistence-validation.ts';
 import type {
     RtcTopologyGroupRevisionWork,
     RtcTopologyRttRefreshWork
 } from '../../mutation/rtc-topology-outbox-work.ts';
 
-export type RtcTopologyWorkEnvelope<T extends object> = Readonly<{
-    type: string;
-    topicId: string;
-    resourceId: string;
-    contextId: string;
-    senderId: string;
-    data: T;
-}>;
+export interface RtcTopologyWorkEnvelope<T extends object> {
+    readonly type: string;
+    readonly topicId: string;
+    readonly resourceId: string;
+    readonly contextId: string;
+    readonly senderId: string;
+    readonly data: T;
+}
 
 export type PersistedRtcTopologyWork =
     & (RtcTopologyGroupRevisionWork | RtcTopologyRttRefreshWork)
@@ -39,14 +39,8 @@ export type PersistedRtcTopologyWork =
         [COALESCED_APP_OUTBOX_WORK_FIELD]?: CoalescedAppOutboxWorkMetadata;
     }>;
 
-type WorkBoundaryValue = null | boolean | number | string | WorkBoundaryRecord | readonly WorkBoundaryValue[];
-
-interface WorkBoundaryRecord {
-    readonly [key: string]: WorkBoundaryValue;
-}
-
 interface RequireWorkKeysInput {
-    readonly value: WorkBoundaryRecord;
+    readonly value: JsonWireObject;
     readonly required: readonly string[];
     readonly allowed: readonly string[];
     readonly label: string;
@@ -61,7 +55,7 @@ interface RtcTopologyCommonWork {
 }
 
 interface ReadRtcTopologyWorkVariantInput {
-    readonly work: WorkBoundaryRecord;
+    readonly work: JsonWireObject;
     readonly commonKeys: readonly string[];
     readonly commonWork: RtcTopologyCommonWork;
     readonly durableIdentity: RtcRttTopologyOutboxIdentity | null;
@@ -71,9 +65,12 @@ export function readRtcTopologyWorkEnvelope(
     message: ALMessage,
     expectedWorkType: string
 ): RtcTopologyWorkEnvelope<PersistedRtcTopologyWork> {
-    validatePersistedALMessage(message);
-    const value = JSON.parse(message.payload.resource) as WorkBoundaryValue;
-    return readPersistedRtcTopologyWorkEnvelope(value, message, expectedWorkType);
+    const persistedMessage = decodePersistedALMessageValue(message);
+    const value = decodeJsonWireValue(
+        JSON.parse(persistedMessage.payload.resource),
+        'RTC topology work envelope'
+    );
+    return readPersistedRtcTopologyWorkEnvelope(value, persistedMessage, expectedWorkType);
 }
 
 export function toRtcTopologyExecutionId(
@@ -88,18 +85,12 @@ export function toRtcTopologyExecutionId(
     ].join(':');
 }
 
-export function parsePersistedRtcTopologyALMessage(serialized: string): ALMessage {
-    const value = JSON.parse(serialized) as WorkBoundaryValue;
-    validatePersistedALMessage(value);
-    return value;
-}
-
 export function toRtcTopologyQueueContextId(groupRef: GroupRef): string {
     return groupStateGroupStorageKey(groupRef);
 }
 
 function readPersistedRtcTopologyWorkEnvelope(
-    value: WorkBoundaryValue,
+    value: JsonWireValue,
     message: ALMessage,
     expectedWorkType: string
 ): RtcTopologyWorkEnvelope<PersistedRtcTopologyWork> {
@@ -143,7 +134,7 @@ function readPersistedRtcTopologyWorkEnvelope(
 }
 
 function readPersistedRtcTopologyWork(
-    envelope: WorkBoundaryRecord,
+    envelope: JsonWireObject,
     resourceId: string,
     contextId: string
 ): PersistedRtcTopologyWork {
@@ -171,7 +162,7 @@ function readPersistedRtcTopologyWork(
 }
 
 function readCommonRtcTopologyWork(
-    work: WorkBoundaryRecord,
+    work: JsonWireObject,
     contextId: string
 ): RtcTopologyCommonWork {
     requireWorkString(work.overlayId, 'RTC topology work overlayId');
@@ -275,7 +266,7 @@ function readRttRefreshWork(input: ReadRtcTopologyWorkVariantInput): PersistedRt
 }
 
 function readWorkGroupCausalRevision(
-    value: WorkBoundaryValue,
+    value: JsonWireValue,
     label: string
 ): GroupStateCausalRevision {
     const revision = requireWorkRecord(value, label);
@@ -307,7 +298,7 @@ function validateWorkGroupCausalRevision(
 }
 
 function readOptionalCoalescedWorkMetadata(
-    work: WorkBoundaryRecord
+    work: JsonWireObject
 ): CoalescedAppOutboxWorkMetadata | undefined {
     return Object.hasOwn(work, COALESCED_APP_OUTBOX_WORK_FIELD)
         ? readCoalescedWorkMetadata(work[COALESCED_APP_OUTBOX_WORK_FIELD])
@@ -318,7 +309,7 @@ function optionalCoalescedMetadata(metadata: CoalescedAppOutboxWorkMetadata | un
     return metadata ? { [COALESCED_APP_OUTBOX_WORK_FIELD]: metadata } : {};
 }
 
-function readCoalescedWorkMetadata(value: WorkBoundaryValue): CoalescedAppOutboxWorkMetadata {
+function readCoalescedWorkMetadata(value: JsonWireValue): CoalescedAppOutboxWorkMetadata {
     const metadata = requireWorkRecord(value, 'RTC topology coalescing metadata');
     requireWorkKeys({
         value: metadata,
@@ -340,18 +331,18 @@ function readCoalescedWorkMetadata(value: WorkBoundaryValue): CoalescedAppOutbox
     };
 }
 
-function isNonEmptyStringArray(value: WorkBoundaryValue): value is readonly string[] {
+function isNonEmptyStringArray(value: JsonWireValue): value is readonly string[] {
     return Array.isArray(value) && value.every((item) => typeof item === 'string' && item.length > 0);
 }
 
-function requireWorkRecord(value: WorkBoundaryValue, label: string): WorkBoundaryRecord {
+function requireWorkRecord(value: JsonWireValue, label: string): JsonWireObject {
     if (!isWorkBoundaryRecord(value)) {
         throw new TypeError(`${label} must be an object`);
     }
     return value;
 }
 
-function isWorkBoundaryRecord(value: WorkBoundaryValue): value is WorkBoundaryRecord {
+function isWorkBoundaryRecord(value: JsonWireValue): value is JsonWireObject {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
@@ -368,13 +359,13 @@ function requireWorkKeys(input: RequireWorkKeysInput): void {
     }
 }
 
-function requireWorkString(value: WorkBoundaryValue, label: string): asserts value is string {
+function requireWorkString(value: JsonWireValue, label: string): asserts value is string {
     if (typeof value !== 'string' || value.length === 0) {
         throw new TypeError(`${label} is invalid`);
     }
 }
 
-function requireWorkInteger(value: WorkBoundaryValue, label: string): asserts value is number {
+function requireWorkInteger(value: JsonWireValue, label: string): asserts value is number {
     if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) {
         throw new TypeError(`${label} is invalid`);
     }

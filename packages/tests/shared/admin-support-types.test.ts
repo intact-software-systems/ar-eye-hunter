@@ -4,7 +4,7 @@ import {
     ADMIN_SUPPORT_SUGGESTED_ACTION_SEVERITIES,
     type AdminSupportExplainQueueItemRequest,
     type AdminSupportNarrativeResponse
-} from '@shared/api/admin-support-types.ts';
+} from '@shared/api/admin-support/admin-support-types.ts';
 import { describe, expect, it } from 'vitest';
 
 describe('admin support public API contracts', () => {

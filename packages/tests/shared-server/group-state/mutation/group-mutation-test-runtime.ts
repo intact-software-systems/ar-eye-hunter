@@ -9,11 +9,15 @@ import {
 import { validateRuntimeStateGuardedBatchResult } from '@shared-server/runtime-state/guarded-batch/validate-runtime-state-guarded-batch-result.ts';
 import { validateRuntimeStateGuardedBatch } from '@shared-server/runtime-state/guarded-batch/validate-runtime-state-guarded-batch.ts';
 import type { RuntimeStateReadBatchSelection, RuntimeStateReadBatchSelector } from '@shared-server/runtime-state/read-batch/runtime-state-read-batch.ts';
-import type { RuntimeStateEntry, RuntimeStateOptimisticTransactionalRepositoryLike } from '@shared-server/runtime-state/runtime-state-repository.ts';
+import type {
+    RuntimeStateEntry,
+    RuntimeStateOptimisticTransactionalRepositoryLike,
+    RuntimeStateOptimisticTransactionRepositoryLike
+} from '@shared-server/runtime-state/runtime-state-repository.ts';
 import { TestGroupStateEventStore } from '@shared-test/shared-server/test-group-state-event-store.ts';
 import type { GroupEvent, GroupPresenceSession, GroupRef } from '@shared/api/group-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
-import { FakeRuntimeStateRepository } from '../../fake-runtime-state-repository.ts';
+import { FakeRuntimeStateRepository } from '../../runtime-state/test-support/fake-runtime-state-repository.ts';
 
 export const SCOPE: StateScope = {
     applicationId: 'app-1',
@@ -93,10 +97,6 @@ export class ApplyingGuardedBatchRepository extends FakeRuntimeStateRepository {
         return this.transactionDepth;
     }
 
-    get runtimeStateGuardedBatchCapability(): true | false {
-        return this.transactionDepth > 0;
-    }
-
     forceNextConflict(target: 'guard' | string): void {
         this.forcedConflicts.push(target);
     }
@@ -167,7 +167,7 @@ export class ApplyingGuardedBatchRepository extends FakeRuntimeStateRepository {
     }
 
     override async begin<T>(
-        fn: (repository: RuntimeStateOptimisticTransactionalRepositoryLike) => Promise<T>
+        fn: (repository: RuntimeStateOptimisticTransactionRepositoryLike) => Promise<T>
     ): Promise<T> {
         this.beginCount += 1;
         const result = await super.begin(async () => {
@@ -186,7 +186,7 @@ export class ApplyingGuardedBatchRepository extends FakeRuntimeStateRepository {
     async executeGuardedBatch(
         input: RuntimeStateGuardedBatch
     ): Promise<RuntimeStateGuardedBatchResult> {
-        if (!this.runtimeStateGuardedBatchCapability) {
+        if (this.transactionDepth === 0) {
             throw new Error('Guarded batch requires an active transaction');
         }
         const batch = validateRuntimeStateGuardedBatch(input);

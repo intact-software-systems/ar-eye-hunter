@@ -1,3 +1,4 @@
+import type { ApiJsonObject } from '@shared/api/api-json-value.ts';
 import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import { isGroupActive, isSessionInGroup, readGroupDisplayName, readGroupId } from '@shared/api/group-client-views.ts';
@@ -105,8 +106,8 @@ export interface ToRoomLifecycleGroupStateRequestInput
     readonly status: 'archived' | 'deleted';
 }
 export interface ToRoomMetadataGroupStateRequestInput extends RoomGroupStateMutationActorInput {
-    readonly currentMetadata: Readonly<Record<string, unknown>>;
-    readonly patch: Readonly<Record<string, unknown>>;
+    readonly currentMetadata: ApiJsonObject;
+    readonly patch: ApiJsonObject;
 }
 interface RoomGroupStateMutationAuditFields {
     readonly reason?: string;

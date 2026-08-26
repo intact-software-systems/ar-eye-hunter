@@ -5,12 +5,10 @@ import assert from 'node:assert/strict';
 import { ClientStateRepository } from '@shared-server/rallar-system/client-state/persistence/client-state-repository.ts';
 import { mutationDescriptor } from '@shared-server/rallar-system/group-state/group-mutation-authority.ts';
 import { createGroupStateService } from '@shared-server/rallar-system/group-state/group-state-service.ts';
+import { groupStateGroupStorageKey } from '@shared-server/rallar-system/group-state/persistence/aggregate/group-aggregate-storage-keys.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
-import {
-    groupStateGroupStorageKey,
-    groupStateMemberStorageKey,
-    groupStatePresenceSessionStorageKey
-} from '@shared-server/rallar-system/group-state/persistence/group-state-storage-keys.ts';
+import { groupStateMemberStorageKey } from '@shared-server/rallar-system/group-state/persistence/membership/group-membership-storage-key.ts';
+import { groupStatePresenceSessionStorageKey } from '@shared-server/rallar-system/group-state/persistence/presence/group-presence-storage-keys.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import { toPersistedAuthSessionFixture, withPGliteSql } from './pglite-auth-test-harness.ts';
 import { applyPGliteGroupMutation, canonicalAuditStamp, groupFixture } from './pglite-state-mutation-test-runtime.ts';

@@ -1,4 +1,5 @@
 import type { AuthSession } from './api-config.ts';
+import type { ApiJsonObject, ApiJsonValue } from './api-json-value.ts';
 import type { GroupMember, GroupMemberStatus, GroupRef, GroupRole, GroupSnapshot } from './group-types.ts';
 
 export const RALLAR_GROUP_DIRECTOR_METADATA_KEY = 'rallarDirector';
@@ -40,10 +41,10 @@ export type RallarGroupDirectorMetadataPatch = Readonly<{
 }>;
 
 export function readRallarGroupDirectorAppointment(
-    metadata: Readonly<Record<string, unknown>> | undefined
+    metadata: ApiJsonObject | undefined
 ): RallarGroupDirectorAppointment | undefined {
     const value = metadata?.[RALLAR_GROUP_DIRECTOR_METADATA_KEY];
-    if (!isRecord(value)) {
+    if (!isApiJsonObject(value)) {
         return undefined;
     }
 
@@ -102,7 +103,7 @@ export function createRallarGroupDirectorAppointment(
 }
 
 export function normalizeRallarGroupDirectorHeartbeatTtlMs(
-    value: unknown
+    value: number
 ): number {
     if (!isValidRallarGroupDirectorHeartbeatTtlMs(value)) {
         throw new TypeError('Invalid director heartbeat TTL.');
@@ -112,10 +113,10 @@ export function normalizeRallarGroupDirectorHeartbeatTtlMs(
 }
 
 export function mergeRallarGroupDirectorMetadata(
-    metadata: Readonly<Record<string, unknown>> | undefined,
+    metadata: ApiJsonObject | undefined,
     appointment: RallarGroupDirectorAppointment | undefined
-): Record<string, unknown> {
-    const next: Record<string, unknown> = { ...(metadata ?? {}) };
+): ApiJsonObject {
+    const next: Record<string, ApiJsonValue> = { ...(metadata ?? {}) };
     if (appointment) {
         next[RALLAR_GROUP_DIRECTOR_METADATA_KEY] = appointment;
     }
@@ -280,11 +281,11 @@ export function toRallarGroupDirectorRoomRef(
     return snapshot?.group;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
+function isApiJsonObject(value: ApiJsonValue | undefined): value is ApiJsonObject {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function isValidRallarGroupDirectorHeartbeatTtlMs(value: unknown): value is number {
+function isValidRallarGroupDirectorHeartbeatTtlMs(value: ApiJsonValue | undefined): value is number {
     return typeof value === 'number' &&
         Number.isFinite(value) &&
         Math.floor(value) >= 1;

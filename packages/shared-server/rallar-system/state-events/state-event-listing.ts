@@ -2,15 +2,15 @@ import type { StateEventCursor, StateEventPage } from '@shared/api/state-event-t
 
 import { compareStateEventOrder, toStateEventCursor } from './state-event-ordering.ts';
 
-export interface StateEventListQuery<TEventType extends string = string> {
-    readonly eventTypes?: readonly TEventType[];
+export interface StateEventListQuery {
+    readonly eventTypes?: readonly string[];
     readonly limit?: number;
     readonly after?: StateEventCursor;
 }
 
-export interface StateEventListable<TEventType extends string = string> {
+export interface StateEventListable {
     readonly eventId: string;
-    readonly eventType: TEventType;
+    readonly eventType: string;
     readonly snapshotVersion: number;
     readonly occurredAtEpochMs: number;
 }
@@ -34,12 +34,9 @@ export function readStateEventListQuery(
     };
 }
 
-export function listRecentStateEvents<
-    TEvent extends StateEventListable<TEventType>,
-    TEventType extends string = string,
->(
+export function listRecentStateEvents<TEvent extends StateEventListable>(
     events: readonly TEvent[],
-    query: StateEventListQuery<TEventType> = {}
+    query: StateEventListQuery = {}
 ): readonly TEvent[] {
     const eventTypes = query.eventTypes && query.eventTypes.length > 0
         ? new Set<string>(query.eventTypes)
@@ -52,9 +49,9 @@ export function listRecentStateEvents<
     return filtered.slice(-limit);
 }
 
-export function listStateEventsPage<TEvent extends StateEventListable<TEventType>, TEventType extends string = string>(
+export function listStateEventsPage<TEvent extends StateEventListable>(
     events: readonly TEvent[],
-    query: StateEventListQuery<TEventType> = {}
+    query: StateEventListQuery = {}
 ): StateEventPage<TEvent> {
     const eventTypes = query.eventTypes && query.eventTypes.length > 0
         ? new Set<string>(query.eventTypes)

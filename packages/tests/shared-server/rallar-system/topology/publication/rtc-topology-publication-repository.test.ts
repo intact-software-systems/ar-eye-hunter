@@ -11,7 +11,7 @@ import { type RtcTopologyPublication } from '@shared-server/rallar-system/topolo
 import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
 import { describe, expect, it, vi } from 'vitest';
 
-import { FakeRuntimeStateRepository } from '../../../fake-runtime-state-repository.ts';
+import { FakeRuntimeStateRepository } from '../../../runtime-state/test-support/fake-runtime-state-repository.ts';
 import {
     corruptTopologyExecutionReceipt,
     createGroupRef,

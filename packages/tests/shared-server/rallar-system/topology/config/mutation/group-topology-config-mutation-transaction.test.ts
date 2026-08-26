@@ -8,7 +8,7 @@ import type { GroupTopologyConfigMutationCommand } from '@shared-server/rallar-s
 import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/topology/config/persistence/group-topology-config-repository.ts';
 import { RtcTopologyOutboxWriter } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-writer.ts';
 
-import { FakeRuntimeStateRepository } from '../../../../fake-runtime-state-repository.ts';
+import { FakeRuntimeStateRepository } from '../../../../runtime-state/test-support/fake-runtime-state-repository.ts';
 
 const GROUP_REF = {
     applicationId: 'topology-app',

@@ -14,6 +14,7 @@ import type {
     RuntimeStateEntry,
     RuntimeStateRepositoryLike
 } from '../../../../runtime-state/runtime-state-repository.ts';
+import type { JsonWireValue } from '../../../protocol/json-wire-identity.ts';
 import type {
     GroupTopologyConfigGeneration,
     GroupTopologyConfigGenerationTarget,
@@ -37,7 +38,7 @@ export type GroupTopologyMutationExactReadLocations = Readonly<{
 
 type ExactReadDecoder<T> = Readonly<{
     validateRaw(entry: RuntimeStateEntry): void;
-    decodeLive(entry: RuntimeStateEntryValue<unknown>): RuntimeStateEntryValue<T>;
+    decodeLive(entry: RuntimeStateEntryValue<JsonWireValue>): RuntimeStateEntryValue<T>;
 }>;
 
 export type GroupTopologyMutationExactReadDecoders = Readonly<{
@@ -72,33 +73,37 @@ export type GroupTopologyMutationExactReadCodecs = Readonly<{
         ref: GroupRef
     ): void;
     decodeConfigLive(
-        stored: RuntimeStateEntryValue<unknown>,
+        stored: RuntimeStateEntryValue<JsonWireValue>,
         ref: GroupRef
     ): RuntimeStateEntryValue<StoredGroupTopologyConfig>;
     decodeOverrideLive(
-        stored: RuntimeStateEntryValue<unknown>,
+        stored: RuntimeStateEntryValue<JsonWireValue>,
         ref: GroupRef
     ): RuntimeStateEntryValue<StoredGroupTopologyOverride>;
     validateInvariantRaw(entry: RuntimeStateEntry, ref: GroupRef): void;
-    validateInvariantLive(entry: RuntimeStateEntry, value: unknown, ref: GroupRef): void;
+    decodeInvariantLive(
+        entry: RuntimeStateEntry,
+        value: JsonWireValue,
+        ref: GroupRef
+    ): GroupTopologyConfigInvariantGeneration;
     validateGenerationRaw(
         entry: RuntimeStateEntry,
         ref: GroupRef,
         target: GroupTopologyConfigGenerationTarget
     ): void;
-    validateGenerationLive(
+    decodeGenerationLive(
         entry: RuntimeStateEntry,
-        value: unknown,
+        value: JsonWireValue,
         ref: GroupRef,
         target: GroupTopologyConfigGenerationTarget
-    ): void;
+    ): GroupTopologyConfigGeneration;
     validateMutationRaw(entry: RuntimeStateEntry, ref: GroupRef, requestId: string): void;
-    validateMutationLive(
+    decodeMutationLive(
         entry: RuntimeStateEntry,
-        value: unknown,
+        value: JsonWireValue,
         ref: GroupRef,
         requestId: string
-    ): void;
+    ): GroupTopologyConfigMutationRecord;
     assertRetained(entry: RuntimeStateEntry, label: string): void;
 }>;
 
@@ -114,12 +119,17 @@ export type GroupTopologyMutationExactReadResult =
         idempotency: RuntimeStateEntryValue<GroupTopologyConfigMutationRecord> | null;
     }>;
 
+export interface CreateGroupTopologyMutationExactReadLocationsInput {
+    readonly keyProvider: GroupTopologyMutationExactReadKeyProvider;
+    readonly namespaces: GroupTopologyMutationExactReadNamespaces;
+    readonly ref: GroupRef;
+    readonly requestId: string | null;
+}
+
 export function createGroupTopologyMutationExactReadLocations(
-    keyProvider: GroupTopologyMutationExactReadKeyProvider,
-    namespaces: GroupTopologyMutationExactReadNamespaces,
-    ref: GroupRef,
-    requestId: string | null
+    input: CreateGroupTopologyMutationExactReadLocationsInput
 ): GroupTopologyMutationExactReadLocations {
+    const { keyProvider, namespaces, ref, requestId } = input;
     return {
         invariant: {
             namespace: namespaces.invariant,
@@ -163,8 +173,8 @@ export function createGroupTopologyMutationExactReadDecoders(
             codecs.assertRetained(entry, 'target generation');
         },
         decodeLive: (stored) => {
-            codecs.validateGenerationLive(stored.entry, stored.value, ref, target);
-            return stored as RuntimeStateEntryValue<GroupTopologyConfigGeneration>;
+            const value = codecs.decodeGenerationLive(stored.entry, stored.value, ref, target);
+            return { entry: stored.entry, value };
         }
     });
     return {
@@ -174,8 +184,8 @@ export function createGroupTopologyMutationExactReadDecoders(
                 codecs.assertRetained(entry, 'invariant generation');
             },
             decodeLive: (stored) => {
-                codecs.validateInvariantLive(stored.entry, stored.value, ref);
-                return stored as RuntimeStateEntryValue<GroupTopologyConfigInvariantGeneration>;
+                const value = codecs.decodeInvariantLive(stored.entry, stored.value, ref);
+                return { entry: stored.entry, value };
             }
         },
         config: {
@@ -195,8 +205,13 @@ export function createGroupTopologyMutationExactReadDecoders(
                 codecs.assertRetained(entry, 'mutation record');
             },
             decodeLive: (stored) => {
-                codecs.validateMutationLive(stored.entry, stored.value, ref, requireRequestId(requestId));
-                return stored as RuntimeStateEntryValue<GroupTopologyConfigMutationRecord>;
+                const value = codecs.decodeMutationLive(
+                    stored.entry,
+                    stored.value,
+                    ref,
+                    requireRequestId(requestId)
+                );
+                return { entry: stored.entry, value };
             }
         }
     };
@@ -208,7 +223,7 @@ export async function readGroupTopologyMutationExactEntries(
     toLiveEntryValue: (
         namespace: string,
         entry: RuntimeStateEntry
-    ) => Promise<RuntimeStateEntryValue<unknown> | undefined>,
+    ) => Promise<RuntimeStateEntryValue<JsonWireValue> | undefined>,
     decoders: GroupTopologyMutationExactReadDecoders
 ): Promise<GroupTopologyMutationExactReadResult> {
     const selectors = createExactReadSelectors(locations);
@@ -289,7 +304,7 @@ function prevalidateSelection<T>(
 function decodeSelection<T>(
     selection: Readonly<{
         selectorId: string;
-        entries: readonly RuntimeStateEntryValue<unknown>[];
+        entries: readonly RuntimeStateEntryValue<JsonWireValue>[];
     }>,
     decoder: ExactReadDecoder<T>
 ): RuntimeStateEntryValue<T> | null {

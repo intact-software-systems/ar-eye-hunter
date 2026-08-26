@@ -1,3 +1,5 @@
+import { serializeCanonicalJson, sha256CanonicalJson } from './canonical-json.ts';
+
 export type JsonWireValue = null | boolean | number | string | readonly JsonWireValue[] | JsonWireObject;
 
 export type JsonWireObject = Readonly<{
@@ -15,14 +17,7 @@ export function decodeJsonWireValue(value: unknown, label = 'JSON wire value'): 
 
 export async function hashMutationCommand(command: JsonWireValue): Promise<string> {
     assertJsonWireValue(command, 'Mutation command');
-    const digest = await globalThis.crypto.subtle.digest(
-        'SHA-256',
-        new TextEncoder().encode(serializeCanonicalMutationCommand(command))
-    );
-    const hex = Array.from(new Uint8Array(digest))
-        .map((byte) => byte.toString(16).padStart(2, '0'))
-        .join('');
-    return `sha256:${hex}`;
+    return `sha256:${await sha256CanonicalJson(command)}`;
 }
 
 export function serializeCanonicalMutationCommand(command: JsonWireValue): string {
@@ -149,24 +144,4 @@ function isCanonicalArrayIndex(key: string, length: number): boolean {
     }
     const index = Number(key);
     return Number.isSafeInteger(index) && index >= 0 && index < length;
-}
-
-function serializeCanonicalJson(value: JsonWireValue): string {
-    if (value === null || typeof value !== 'object') {
-        return JSON.stringify(value) as string;
-    }
-    if (Array.isArray(value)) {
-        return `[${value.map(serializeCanonicalJson).join(',')}]`;
-    }
-    const record = value as JsonWireObject;
-    return `{${
-        Object.keys(record)
-            .sort(compareJsonKeys)
-            .map((key) => `${JSON.stringify(key)}:${serializeCanonicalJson(record[key]!)}`)
-            .join(',')
-    }}`;
-}
-
-function compareJsonKeys(left: string, right: string): number {
-    return left < right ? -1 : left > right ? 1 : 0;
 }

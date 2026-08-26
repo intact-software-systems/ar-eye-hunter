@@ -1,4 +1,5 @@
 import type { PSqlRows } from '../../postgres/p-sql-sql.ts';
+import type { JsonWireValue } from '../../rallar-system/protocol/json-wire-identity.ts';
 import {
     type RuntimeStateReadBatchSelection,
     type RuntimeStateReadBatchSelector
@@ -9,7 +10,7 @@ import { decodeRuntimeStateReadBatchDriverValue } from './decode-runtime-state-r
 import { toExclusivePrefixEnd } from './runtime-state-sql-values.ts';
 
 interface PSqlRuntimeStateReadBatchRow {
-    readonly selections: unknown;
+    readonly selections: JsonWireValue | string;
 }
 
 interface PSqlRuntimeStateReadBatchSelector {

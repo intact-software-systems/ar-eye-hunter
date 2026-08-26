@@ -18,16 +18,16 @@ import { AppInboxQueueClient } from '@shared-server/rallar-system/app-inbox/app-
 import type { ClientStateService, ClientStateWritten } from '@shared-server/rallar-system/client-state/client-state-service-contracts.ts';
 import { AppClientInboxService } from '@shared-server/rallar-system/client-state/inbox/app-client-inbox-service.ts';
 
-import { createAppInboxTestDatabase } from '../app-inbox-test-database.ts';
-import { FakeRuntimeStateRepository } from '../fake-runtime-state-repository.ts';
+import { createAppInboxTestDatabase } from '../rallar-system/app-inbox/test-support/app-inbox-test-database.ts';
+import { FakeRuntimeStateRepository } from '../runtime-state/test-support/fake-runtime-state-repository.ts';
 import {
     CLIENT_STATE_TEST_SCOPE as SCOPE,
     createAutoAuthorizingClientStateService,
-    createClientStateServiceStub,
     processAppInbox,
     requireRightSnapshot
 } from './app-client-inbox-mutation-test-harness.ts';
 import { TestResourceInbox, TestResourceInboxResults } from './app-client-inbox-resource-fixtures.ts';
+import { createClientStateServiceStub, createDefaultClientStateServiceStub } from './test-support/client-state-service-stub.ts';
 
 describe('AppClientInbox operation matrix', () => {
     it('finishes construction only after all eight client handlers are registered', () => {
@@ -46,7 +46,7 @@ function createClientInboxServiceForRegistration(): AppClientInboxService {
             resourceInboxRepository: queue,
             resourceInboxResultsRepository: results,
             database: createAppInboxTestDatabase(queue, results),
-            clientStateService: createClientStateServiceStub()
+            clientStateService: createDefaultClientStateServiceStub()
         },
         {
             serviceId: 'client-registration-service'

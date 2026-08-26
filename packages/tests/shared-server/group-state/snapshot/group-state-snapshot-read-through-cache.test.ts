@@ -1,4 +1,4 @@
-import { type GroupSnapshotPageOptions, type GroupStateService } from '@shared-server/rallar-system/group-state/group-state-service-contracts.ts';
+import { type GroupSnapshotPageOptions } from '@shared-server/rallar-system/group-state/group-state-service-contracts.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
 import { GroupPresenceSummaryWork } from '@shared-server/rallar-system/group-state/presence/group-presence-summary-worker.ts';
 import { createCachedGroupStateService } from '@shared-server/rallar-system/group-state/snapshot/cached-group-state-service.ts';
@@ -11,7 +11,8 @@ import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
 import { describe, expect, it } from 'vitest';
 import { configureTestCacheRepositories } from '../../../cache-repository-config.ts';
-import { FakeRuntimeStateRepository } from '../../fake-runtime-state-repository.ts';
+import { createGroupStateServiceStub } from '../../rallar-system/state-sync/test-support/group-state-service-stub.ts';
+import { FakeRuntimeStateRepository } from '../../runtime-state/test-support/fake-runtime-state-repository.ts';
 import { createGroupSnapshot } from './group-state-snapshot-test-fixtures.ts';
 
 interface CacheConvergenceCommandConstruction {
@@ -92,10 +93,11 @@ describe('GroupStateSnapshotReadThroughCache', () => {
         }
 
         const durable = {
+            ...createGroupStateServiceStub(),
             readSnapshot: (groupRef: GroupRef) => repository.readSnapshot(groupRef),
             listSnapshots: (scope: GroupScope) => repository.listSnapshots(scope),
             listSnapshotsPage: (scope: GroupScope, options: GroupSnapshotPageOptions) => repository.listSnapshotsPage(scope, options)
-        } as unknown as GroupStateService;
+        };
         const service = createCachedGroupStateService({
             durable,
             cache: {

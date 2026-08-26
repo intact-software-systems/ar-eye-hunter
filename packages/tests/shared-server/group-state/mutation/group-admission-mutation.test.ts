@@ -2,7 +2,7 @@ import { GroupStateRepository } from '@shared-server/rallar-system/group-state/p
 import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import type { GroupAdmissionPolicy } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import { describe, expect, it } from 'vitest';
-import { FakeRuntimeStateRepository } from '../../fake-runtime-state-repository.ts';
+import { FakeRuntimeStateRepository } from '../../runtime-state/test-support/fake-runtime-state-repository.ts';
 import { createTestGroupStateService } from '../group-state-test-runtime.ts';
 
 import { groupRef, SCOPE } from './group-mutation-test-runtime.ts';

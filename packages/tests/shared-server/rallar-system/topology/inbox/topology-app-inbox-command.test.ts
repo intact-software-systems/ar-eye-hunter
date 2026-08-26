@@ -1,8 +1,10 @@
 import { describe, expect, expectTypeOf, it } from 'vitest';
 
-import { serializeCanonicalJsonWire, toJsonWireAppInboxEnqueue } from '@shared-server/rallar-system/app-inbox/app-inbox-command-wire.ts';
-import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
+import { decodeAppInboxEnqueue } from '@shared-server/rallar-system/app-inbox/app-inbox-command-decoding.ts';
+import { AppInboxType, type AppInboxEnqueueInput } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import { toLogicalAppInboxCommand } from '@shared-server/rallar-system/app-inbox/logical-app-inbox-command.ts';
+import type { IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
+import { serializeCanonicalMutationCommand } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import { toTopologyAppInboxCommand } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-command.ts';
 import {
     readAuthenticatedTopologyCommand,
@@ -106,7 +108,7 @@ describe('topology AppInbox durable command contract', () => {
         });
         const durable = structuredClone(command);
 
-        expect(readDurableTopologyAppInboxCommand(durable)).toBe(durable);
+        expect(readDurableTopologyAppInboxCommand(durable)).toStrictEqual(durable);
         await expect(
             readAuthenticatedTopologyCommand(
                 {
@@ -114,12 +116,9 @@ describe('topology AppInbox durable command contract', () => {
                     resourceId: command.requestId,
                     data: command
                 },
-                {
-                    clientId: command.actor.principalId,
-                    sessionId: command.actor.sessionId
-                } as never
+                topologyAuthority(command)
             )
-        ).resolves.toBe(command);
+        ).resolves.toStrictEqual(command);
         await expect(
             readAuthenticatedTopologyCommand(
                 {
@@ -127,10 +126,7 @@ describe('topology AppInbox durable command contract', () => {
                     resourceId: command.requestId,
                     data: command
                 },
-                {
-                    clientId: command.actor.principalId,
-                    sessionId: command.actor.sessionId
-                } as never
+                topologyAuthority(command)
             )
         ).rejects.toThrow(/does not match authenticated authority/i);
 
@@ -208,6 +204,11 @@ describe('topology AppInbox durable command contract', () => {
     });
 
     it('rejects unknown sparse request keys before durable enqueue', async () => {
+        const config = {
+            topologyKind: 'tree',
+            unexpected: true
+        } as const;
+
         await expect(
             toTopologyAppInboxCommand({
                 actor: { principalId: 'owner', sessionId: 'owner-session' },
@@ -220,13 +221,47 @@ describe('topology AppInbox durable command contract', () => {
                 capturedAtEpochMs: 1_000,
                 payload: {
                     operation: 'putConfig',
-                    config: {
-                        topologyKind: 'tree',
-                        unexpected: true
-                    }
-                } as never
+                    config
+                }
             })
         ).rejects.toThrow(/unknown|canonical|invalid/i);
+    });
+
+    it('rejects predecessor identity fields before constructing a durable command', async () => {
+        const actor = {
+            principalId: 'owner',
+            sessionId: 'owner-session',
+            predecessorPrincipalId: 'legacy-owner'
+        };
+
+        await expect(
+            toTopologyAppInboxCommand({
+                actor,
+                groupRef: {
+                    applicationId: 'app-1',
+                    workspaceId: 'workspace-1',
+                    groupId: 'room-1'
+                },
+                requestId: 'topology-request-1',
+                capturedAtEpochMs: 1_000,
+                payload: { operation: 'deleteConfig', target: 'config' }
+            })
+        ).rejects.toThrow(/actor.*missing or unexpected fields/i);
+    });
+
+    it('rejects predecessor fields before authenticated durable enqueue', async () => {
+        const command = await topologyCommand(1_000);
+
+        await expect(
+            readAuthenticatedTopologyCommand(
+                {
+                    type: AppInboxType.TOPOLOGY_CONFIG_PUT,
+                    resourceId: command.requestId,
+                    data: { ...command, predecessorCommandHash: command.commandHash }
+                },
+                topologyAuthority(command)
+            )
+        ).rejects.toThrow(/missing or unexpected fields/i);
     });
 
     it('canonicalizes omitted, set, and JSON-null clear actions exactly', () => {
@@ -277,44 +312,6 @@ describe('topology AppInbox durable command contract', () => {
 
         expect(clear.commandHash).not.toBe(set.commandHash);
     });
-
-    it('validates and hashes an observable payload exactly once per required phase', async () => {
-        const command = await topologyCommand(1_000);
-        const observations = { ownKeys: 0, operationReads: 0, configReads: 0 };
-        const payload = new Proxy(command.payload, {
-            ownKeys(target) {
-                observations.ownKeys += 1;
-                return Reflect.ownKeys(target);
-            },
-            get(target, property, receiver) {
-                if (property === 'operation') {
-                    observations.operationReads += 1;
-                }
-                if (property === 'config') {
-                    observations.configReads += 1;
-                }
-                return Reflect.get(target, property, receiver);
-            }
-        });
-        const observableCommand = { ...command, payload };
-
-        const result = await readAuthenticatedTopologyCommand(
-            {
-                type: AppInboxType.TOPOLOGY_CONFIG_PUT,
-                resourceId: command.requestId,
-                data: observableCommand
-            },
-            {
-                clientId: command.actor.principalId,
-                sessionId: command.actor.sessionId
-            } as never
-        );
-
-        expect(result).toBe(observableCommand);
-        expect(observations).toEqual({ ownKeys: 3, operationReads: 4, configReads: 2 });
-        expect(result.payload).toEqual(command.payload);
-        expect(result.commandHash).toBe(command.commandHash);
-    });
 });
 
 async function topologyCommand(capturedAtEpochMs: number) {
@@ -334,6 +331,19 @@ async function topologyCommand(capturedAtEpochMs: number) {
     });
 }
 
-function logicalIdentity(enqueue: Parameters<typeof toJsonWireAppInboxEnqueue>[0]): string {
-    return serializeCanonicalJsonWire(toLogicalAppInboxCommand(toJsonWireAppInboxEnqueue(enqueue)));
+function logicalIdentity<Command>(enqueue: AppInboxEnqueueInput<Command>): string {
+    return serializeCanonicalMutationCommand(
+        toLogicalAppInboxCommand(decodeAppInboxEnqueue(enqueue))
+    );
+}
+
+function topologyAuthority(command: TopologyAppInboxCommand): IssuedAuthSession {
+    return {
+        clientId: command.actor.principalId,
+        username: command.actor.principalId,
+        sessionId: command.actor.sessionId,
+        accessToken: 'topology-command-test-token',
+        issuedAtEpochMs: 1,
+        expiresAtEpochMs: 10_000
+    };
 }

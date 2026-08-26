@@ -4,7 +4,7 @@ import type { ClientPrincipalRef, ClientSnapshot } from '@shared/api/client-type
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import * as clientStateSnapshotsRepository from '@shared/repository/client-state-snapshots-repository.ts';
 import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
-import type { WsServerResolvedRecipient } from '@shared/services/WsQueueBoxServerService.ts';
+import type { WsServerResolvedRecipient } from '@shared/services/ws-queue-box-server/ws-queue-box-server-contracts.ts';
 import type { JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.ts';
 import {
     isClientSnapshotSessionLive,

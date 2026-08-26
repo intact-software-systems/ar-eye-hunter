@@ -18,8 +18,8 @@ import type { ClientStateWritten } from '@shared-server/rallar-system/client-sta
 import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import { TestClientStateEventStore } from '@shared-test/shared-server/test-client-state-event-store.ts';
 
-import { createAppInboxTestDatabase } from '../app-inbox-test-database.ts';
-import { FakeRuntimeStateRepository } from '../fake-runtime-state-repository.ts';
+import { createAppInboxTestDatabase } from '../rallar-system/app-inbox/test-support/app-inbox-test-database.ts';
+import { FakeRuntimeStateRepository } from '../runtime-state/test-support/fake-runtime-state-repository.ts';
 import { createAutoAuthorizingClientStateService, processAppInbox } from './app-client-inbox-mutation-test-harness.ts';
 import { TestResourceInbox, TestResourceInboxResults } from './app-client-inbox-resource-fixtures.ts';
 

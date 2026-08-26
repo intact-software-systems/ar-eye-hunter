@@ -1,6 +1,7 @@
 import { Temporal } from '@js-temporal/polyfill';
 
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import { validateAuthoritativeGroupSnapshot } from '@shared/api/authoritative-state-validation.ts';
@@ -12,7 +13,6 @@ import {
 import type { GroupRef, GroupSnapshot, GroupStateCausalRevision } from '@shared/api/group-types.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 
-import { groupStateGroupStorageKey } from '@shared-server/rallar-system/group-state/persistence/group-state-storage-keys.ts';
 import { toAppQueueCreatedBy, toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 import { AppOutboxType } from '../../../app-outbox/app-outbox-type.ts';
 import {
@@ -23,6 +23,7 @@ import {
     type CoalescedAppOutboxWorkEnvelope,
     type ComputedCoalescedAppOutboxWork
 } from '../../../app-outbox/coalesced-app-outbox-work-service.ts';
+import { groupStateGroupStorageKey } from '../../../group-state/persistence/aggregate/group-aggregate-storage-keys.ts';
 import { APP_OUTBOX_RTC_TOPOLOGY_TOPIC } from '../../mutation/rtc-topology-outbox-entry.ts';
 import type { RtcTopologyGroupRevisionWork } from '../../mutation/rtc-topology-outbox-work.ts';
 import type { PersistedRtcTopologyWork } from './rtc-topology-work-codec.ts';
@@ -46,7 +47,7 @@ export function toRtcTopologyCoalescedGroupRevisionResourceId(overlayId: string)
 export function computeCoalescedRtcTopologyGroupRevisionWork(
     input: RtcTopologyCoalescedGroupRevisionInput
 ): ComputedCoalescedAppOutboxWork {
-    validateCoalescedGroupRevisionInput(input);
+    assertCoalescedGroupRevisionInput(input);
     const overlayId = toScopedOverlayId(input.aggregateRef);
     const incoming: CoalescedAppOutboxWorkData<RtcTopologyGroupRevisionWork> = {
         kind: 'group-revision',
@@ -127,7 +128,7 @@ export function computeCoalescedRtcTopologyGroupRevisionWork(
  * and due times live in the coalesced metadata, not the message identity.
  */
 function readPreviousMessageIdentity(previousEntry: ResourceEntry): CoalescedMessageIdentity {
-    const message = JSON.parse(previousEntry.resource) as ALMessage;
+    const message = decodePersistedALMessage(previousEntry.resource);
     return {
         tsEpochMs: message.id.ts,
         expiresAtEpochMs: message.constraints?.expiresAtMs ?? null
@@ -287,7 +288,7 @@ function toCoalescedGroupRevisionEntry(
     };
 }
 
-function validateCoalescedGroupRevisionInput(input: RtcTopologyCoalescedGroupRevisionInput): void {
+function assertCoalescedGroupRevisionInput(input: RtcTopologyCoalescedGroupRevisionInput): void {
     const snapshot = input.groupSnapshot;
     validateAuthoritativeGroupSnapshot(snapshot);
     if (

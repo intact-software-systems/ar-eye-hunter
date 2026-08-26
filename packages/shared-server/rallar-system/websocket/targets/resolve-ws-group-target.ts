@@ -2,7 +2,7 @@ import { readALTargetGroupRef, type ALMessage } from '@shared/al-contracts/al-co
 import { isSameGroupScope } from '@shared/api/api-type-utils.ts';
 import { compareGroupCausalRevision, readGroupCausalRevision } from '@shared/api/group-client-views.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
-import type { WsServerResolvedRecipient } from '@shared/services/WsQueueBoxServerService.ts';
+import type { WsServerResolvedRecipient } from '@shared/services/ws-queue-box-server/ws-queue-box-server-contracts.ts';
 import type { JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.ts';
 import { isGroupSnapshotSessionLive } from '../../presence/snapshot-presence.ts';
 import { decodeStateSyncMessage, type StateSyncDecodeResult } from '../../state-sync/state-sync-payload.ts';

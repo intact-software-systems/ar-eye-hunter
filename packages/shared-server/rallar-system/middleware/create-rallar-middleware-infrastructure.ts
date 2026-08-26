@@ -1,6 +1,6 @@
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 import { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
-import { WsQueueBoxServerService } from '@shared/services/WsQueueBoxServerService.ts';
+import { WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 import { JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.ts';
 
 import { installQueueBoxPubSubBridge } from '../queue-pubsub/queue-box-pub-sub-bridge.ts';
@@ -26,20 +26,18 @@ export function createRallarMiddlewareInfrastructure(
             resolveGroupRef: options.resolveGroupRef,
             now: options.now
         });
-    const wsQBoxServerService = new WsQueueBoxServerService(
-        options.inbox,
-        options.outbox ?? options.inbox,
-        webSocketServer,
-        options.wsRuntimeName ?? 'default-qbox-server',
-        {
-            targetResolver,
-            inboundStores: options.inboundStores,
-            outboundStores: options.outboundStores,
-            deliveryDiagnostics: options.wsDeliveryDiagnostics,
-            admitInboundMessage: (message) => decodeStateSyncMessage(message).kind === 'unsupported',
-            forwardsRoomScopedMessages: false
-        }
-    );
+    const wsQBoxServerService = new WsQueueBoxServerService({
+        inbox: options.inbox,
+        outbox: options.outbox ?? options.inbox,
+        socket: webSocketServer,
+        name: options.wsRuntimeName ?? 'default-qbox-server',
+        targetResolver,
+        inboundStores: options.inboundStores,
+        outboundStores: options.outboundStores,
+        deliveryDiagnostics: options.wsDeliveryDiagnostics,
+        admitInboundMessage: (message) => decodeStateSyncMessage(message).kind === 'unsupported',
+        forwardsRoomScopedMessages: false
+    });
     const queuePubSubBridgeReadiness = options.queuePubSubBridge
         ? installQueueBoxPubSubBridge({
             ...options.queuePubSubBridge,

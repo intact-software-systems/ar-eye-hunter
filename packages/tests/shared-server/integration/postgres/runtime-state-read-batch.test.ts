@@ -2,7 +2,7 @@ import type { PSqlParameter, PSqlRows, PSqlSql } from '@shared-server/postgres/p
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import type { RuntimeStateReadBatchSelector } from '@shared-server/runtime-state/read-batch/runtime-state-read-batch.ts';
 import { describe, expect, it } from 'vitest';
-import { createRuntimeStatePostgresSql } from '../../postgres-runtime-state-client-fixtures.ts';
+import { createRuntimeStatePostgresSql } from '../../runtime-state/postgres/postgres-runtime-state-client-fixtures.ts';
 
 const POSTGRES_INTEGRATION_ENABLED = readEnv('RALLAR_POSTGRES_INTEGRATION') === '1';
 const postgresIt = POSTGRES_INTEGRATION_ENABLED ? it : it.skip;

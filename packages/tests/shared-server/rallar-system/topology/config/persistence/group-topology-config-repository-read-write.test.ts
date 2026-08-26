@@ -1,15 +1,16 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { groupStateGroupStorageKey } from '@shared-server/rallar-system/group-state/persistence/group-state-storage-keys.ts';
+import { groupStateGroupStorageKey } from '@shared-server/rallar-system/group-state/persistence/aggregate/group-aggregate-storage-keys.ts';
 import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/topology/config/persistence/group-topology-config-repository.ts';
 import {
     GROUP_TOPOLOGY_CONFIG_NAMESPACE,
     GROUP_TOPOLOGY_OVERRIDE_NAMESPACE
 } from '@shared-server/rallar-system/topology/config/persistence/group-topology-config-runtime-namespaces.ts';
+import type { StoredGroupTopologyConfig, StoredGroupTopologyOverride } from '@shared/api/graph-topology-management-types.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 
-import { FakeRuntimeStateRepository } from '../../../../fake-runtime-state-repository.ts';
+import { FakeRuntimeStateRepository } from '../../../../runtime-state/test-support/fake-runtime-state-repository.ts';
 import { createTopologyTestEffectiveConfig, createTopologyTestGroupRef } from './group-topology-config-persistence-test-fixtures.ts';
 
 describe('group topology config repository reads and writes', () => {
@@ -246,7 +247,17 @@ describe('group topology config repository reads and writes', () => {
     });
 });
 
-function createFullGroupRefPersistenceScenario() {
+interface FullGroupRefPersistenceScenario {
+    readonly runtimeRepository: FakeRuntimeStateRepository;
+    readonly repository: GroupTopologyConfigRepository;
+    readonly groupRef: GroupRef;
+    readonly sameGroupOtherWorkspace: GroupRef;
+    readonly durable: StoredGroupTopologyConfig;
+    readonly otherWorkspaceDurable: StoredGroupTopologyConfig;
+    readonly override: StoredGroupTopologyOverride;
+}
+
+function createFullGroupRefPersistenceScenario(): FullGroupRefPersistenceScenario {
     const runtimeRepository = new FakeRuntimeStateRepository();
     const repository = new GroupTopologyConfigRepository(runtimeRepository);
     const groupRef = createTopologyTestGroupRef('workspace-1');

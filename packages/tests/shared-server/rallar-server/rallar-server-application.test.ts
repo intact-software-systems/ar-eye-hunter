@@ -14,7 +14,7 @@ import type {
 import { createRallarServerApplication } from '@shared-server/mod.ts';
 import { RepositoryManager } from '@shared/cache/RepositoryManager.ts';
 import { InMemoryQueueBox, JsonWebSocketServer } from '@shared/mod.ts';
-import { WsQueueBoxServerService } from '@shared/services/WsQueueBoxServerService.ts';
+import { WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 import { describe, expect, it } from 'vitest';
 
 interface App {
@@ -25,12 +25,12 @@ interface App {
 describe('RallarServerApplication', () => {
     it('exposes direct owners and invokes each explicit application phase once', async () => {
         const events: string[] = [];
-        const service = new RecordingWsQueueBoxServerService(
-            new InMemoryQueueBox(),
-            new InMemoryQueueBox(),
-            new JsonWebSocketServer(),
-            'server-1'
-        );
+        const service = new RecordingWsQueueBoxServerService({
+            inbox: new InMemoryQueueBox(),
+            outbox: new InMemoryQueueBox(),
+            socket: new JsonWebSocketServer(),
+            name: 'server-1'
+        });
         const runtime = {
             wsQBoxServerService: service,
             qboxEngine: {

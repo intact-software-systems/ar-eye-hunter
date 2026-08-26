@@ -3,7 +3,7 @@ import { RallarServerAppData } from '@shared-server/app-data/rallar-server-app-d
 import type { JsonWireObject, JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import { RepositoryManager } from '@shared/cache/RepositoryManager.ts';
 import { describe, expect, it } from 'vitest';
-import { createRuntimeStatePostgresSql } from '../../postgres-runtime-state-client-fixtures.ts';
+import { createRuntimeStatePostgresSql } from '../../runtime-state/postgres/postgres-runtime-state-client-fixtures.ts';
 
 interface GlobalEnv {
     Deno?: Readonly<{

@@ -17,19 +17,18 @@ import { createTestGroupStateRuntime } from '../../../group-state/group-state-te
 
 import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import { requireGroupMutationReceipt } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-result-codec.ts';
-import { findDirectResourceOutboxEvidence } from '../../../direct-resource-outbox-evidence.ts';
+import { readDirectResourceOutboxEntries } from '../../../rallar-system/app-outbox/direct-resource-outbox-lifecycle.ts';
+import { assertWorkerOutboxLifecycle } from '../../../rallar-system/app-outbox/postgres/worker-outbox-lifecycle-assertions.ts';
+import { createPostgresAppInboxWorkerRuntime, createPostgresAppInboxWorkerTrace } from '../test-support/postgres-app-inbox-worker-runtime.ts';
 import {
-    createPostgresAppInboxTestAuthority as testAuthority,
-    createPostgresAppInboxWorkerRuntime,
-    createPostgresAppInboxWorkerTrace as appInboxTrace,
-    groupAppInboxStart as groupInboxStart,
-    runGroupAppInbox as runGroupInbox,
+    createPostgresAppInboxTestAuthority,
+    groupAppInboxStart,
+    runGroupAppInbox,
     toAuthenticatedGroupAppInboxEnqueue,
     toGroupAppInboxStorageCommandId,
-    unwrapAppInboxResult as unwrapAppInbox,
-    waitForPostgresAppInboxWorkerParticipants
-} from '../../../fixtures/postgres-app-inbox-worker-runtime.ts';
-import { expectWorkerOutboxLifecycleEvidence } from '../../../postgres-worker-outbox-evidence.ts';
+    unwrapAppInboxResult
+} from '../test-support/postgres-group-app-inbox-mutation.ts';
+import { waitForPostgresAppInboxWorkerParticipants } from '../test-support/postgres-worker-barrier.ts';
 
 import {
     assertIndependentBarrierWorkers,
@@ -57,7 +56,7 @@ import {
     toRuntimeRepository
 } from './presence-expiry-concurrency-test-runtime.ts';
 
-import { createPostgresTestRequestIdFactory } from '../../../fixtures/create-postgres-test-request-id-factory.ts';
+import { createPostgresTestRequestIdFactory } from '../test-support/create-postgres-test-request-id-factory.ts';
 
 const POSTGRES_INTEGRATION_ENABLED = process.env.RALLAR_POSTGRES_INTEGRATION === '1';
 const postgresIt = POSTGRES_INTEGRATION_ENABLED ? it : it.skip;
@@ -649,18 +648,18 @@ describe('Postgres presence expiry concurrency', () => {
                     serviceId: 'last-slot-left',
                     atEpochMs: atEpochMs + 1_000,
                     beforeMutationTransaction: () => barrier.arrive(),
-                    trace: appInboxTrace()
+                    trace: createPostgresAppInboxWorkerTrace()
                 });
                 const right = createPostgresAppInboxWorkerRuntime({
                     sql: rightSql,
                     serviceId: 'last-slot-right',
                     atEpochMs: atEpochMs + 1_001,
                     beforeMutationTransaction: () => barrier.arrive(),
-                    trace: appInboxTrace()
+                    trace: createPostgresAppInboxWorkerTrace()
                 });
                 const authorities = [
-                    testAuthority('bob', 'bob-session'),
-                    testAuthority('carol', 'carol-session')
+                    createPostgresAppInboxTestAuthority('bob', 'bob-session'),
+                    createPostgresAppInboxTestAuthority('carol', 'carol-session')
                 ] as const;
                 await Promise.all([
                     left.authSessions.putSession(authorities[0]),
@@ -699,7 +698,7 @@ describe('Postgres presence expiry concurrency', () => {
                     }
                 ] as const;
                 const results = await Promise.allSettled(
-                    contenderInputs.map(async (input) => await runGroupInbox(input))
+                    contenderInputs.map(async (input) => await runGroupAppInbox(input))
                 );
 
                 expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
@@ -741,12 +740,12 @@ describe('Postgres presence expiry concurrency', () => {
                 if (!receipt) {
                     throw new Error('Expected accepted last-slot receipt');
                 }
-                expectWorkerOutboxLifecycleEvidence(
-                    await findDirectResourceOutboxEvidence(setupSql, receipt.outboxIds),
-                    [{ outboxIds: receipt.outboxIds, domainStatus: 'applied' }],
-                    'group',
-                    ['group-presence-summary']
-                );
+                assertWorkerOutboxLifecycle({
+                    entries: await readDirectResourceOutboxEntries(setupSql, receipt.outboxIds),
+                    outputs: [{ outboxIds: receipt.outboxIds, domainStatus: 'applied' }],
+                    kind: 'group',
+                    effects: ['group-presence-summary']
+                });
             }
             finally {
                 await cleanupRuntimeState(setupSql, scope.applicationId);
@@ -821,21 +820,21 @@ describe('Postgres presence expiry concurrency', () => {
                     sql: leftSql,
                     serviceId: 'heartbeat-100-left',
                     atEpochMs: atEpochMs + 1_000,
-                    trace: appInboxTrace()
+                    trace: createPostgresAppInboxWorkerTrace()
                 });
                 const right = createPostgresAppInboxWorkerRuntime({
                     sql: rightSql,
                     serviceId: 'heartbeat-100-right',
                     atEpochMs: atEpochMs + 1_000,
-                    trace: appInboxTrace()
+                    trace: createPostgresAppInboxWorkerTrace()
                 });
                 const heartbeatRequestIds = Array.from({ length: sessionCount }, (_, index) => requestIdFor(`postgres-heartbeat-${index}`));
-                const authorities = heartbeatRequestIds.map((_, index) => testAuthority(`member-${index}`, `session-${index}`));
+                const authorities = heartbeatRequestIds.map((_, index) => createPostgresAppInboxTestAuthority(`member-${index}`, `session-${index}`));
                 await Promise.all(
                     authorities.map((authority, index) => (index % 2 === 0 ? left : right).authSessions.putSession(authority))
                 );
                 const starts = heartbeatRequestIds.map((requestId, index) =>
-                    groupInboxStart({
+                    groupAppInboxStart({
                         runtime: index % 2 === 0 ? left : right,
                         authority: requireArrayEntry(authorities, index, 'heartbeat authority'),
                         type: AppInboxType.GROUP_PRESENCE_HEARTBEAT,
@@ -860,7 +859,7 @@ describe('Postgres presence expiry concurrency', () => {
                     right.runUntilAllCompletion(starts.filter((_, index) => index % 2 === 1))
                 ]);
                 const heartbeats = [...leftResults, ...rightResults]
-                    .map(unwrapAppInbox)
+                    .map(unwrapAppInboxResult)
                     .map(requireGroupMutationReceipt);
                 expect(heartbeats).toHaveLength(sessionCount);
 
@@ -886,15 +885,15 @@ describe('Postgres presence expiry concurrency', () => {
 
                 const outboxIds = heartbeats.flatMap((receipt) => receipt.outboxIds);
                 expect(outboxIds).toHaveLength(sessionCount);
-                expectWorkerOutboxLifecycleEvidence(
-                    await findDirectResourceOutboxEvidence(setupSql, outboxIds),
-                    heartbeats.map((receipt) => ({
+                assertWorkerOutboxLifecycle({
+                    entries: await readDirectResourceOutboxEntries(setupSql, outboxIds),
+                    outputs: heartbeats.map((receipt) => ({
                         outboxIds: receipt.outboxIds,
                         domainStatus: receipt.outcome
                     })),
-                    'group',
-                    ['group-presence-summary']
-                );
+                    kind: 'group',
+                    effects: ['group-presence-summary']
+                });
             }
             finally {
                 await cleanupRuntimeState(setupSql, scope.applicationId);

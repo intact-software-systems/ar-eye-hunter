@@ -1,4 +1,5 @@
 import type { AdminOperationUseCases } from '@shared-server/rallar-system/admin-operations/admin-operation-use-cases.ts';
+import type { AdminSupportUseCases } from '@shared-server/rallar-system/admin-support/admin-support-contracts.ts';
 import type { Hono } from 'jsr:@hono/hono@4.11.9';
 
 import { readGroupGraphDiagnostic, readScopedGlobalGraphDiagnostic } from '@shared-graph/graph-diagnostics-service.ts';
@@ -74,7 +75,7 @@ export interface ApiV1RouteInstallerTopology {
 
 export interface ApiV1RouteInstallerAdminServices {
     readonly operations: AdminOperationUseCases;
-    readonly support: adminSupportRoutes.AdminSupportRouteUseCases;
+    readonly support: AdminSupportUseCases;
     readonly statistics: spaStatisticsRoutes.SpaStatisticsRouteService;
 }
 
@@ -290,7 +291,7 @@ function createApiV1AdministrationRouteInstallers<
                 requireApiAuthSession: requireSession
             }),
         (app) =>
-            adminSupportRoutes.init(app, {
+            adminSupportRoutes.registerAdminSupportRoutes(app, {
                 adminClientIds: input.topology.adminClientIds,
                 support: input.admin.support,
                 requireApiAuthSession: requireSession

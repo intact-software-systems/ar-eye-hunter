@@ -1,3 +1,5 @@
+import type { ApiJsonObject } from './api-json-value.ts';
+
 export const GROUP_POLICY_REASON_CODES = [
     'group-policy-denied',
     'group-invite-required',
@@ -28,7 +30,7 @@ export type GroupPolicyDenied = Readonly<{
     allowed: false;
     code: GroupPolicyReasonCode;
     message: string;
-    details?: Record<string, unknown>;
+    details?: ApiJsonObject;
 }>;
 
 export type GroupPolicyResult =

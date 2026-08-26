@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
+import type { JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import { GroupTopologyConfigRepositoryInvariantCorruptionError } from '@shared-server/rallar-system/topology/config/persistence/group-topology-config-repository-contracts.ts';
 import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/topology/config/persistence/group-topology-config-repository.ts';
 import {
@@ -12,7 +13,7 @@ import {
 import type { RuntimeStateEntry } from '@shared-server/runtime-state/runtime-state-repository.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 
-import { FakeRuntimeStateRepository } from '../../../../fake-runtime-state-repository.ts';
+import { FakeRuntimeStateRepository } from '../../../../runtime-state/test-support/fake-runtime-state-repository.ts';
 import { createTopologyTestEffectiveConfig, createTopologyTestGroupRef } from './group-topology-config-persistence-test-fixtures.ts';
 
 describe('group topology config repository corruption handling', () => {
@@ -243,8 +244,8 @@ type ExpiredCorruptionBoundary = 'mutation record' | 'target generation' | 'inva
 interface ExpiredCorruptionSeed {
     readonly namespace: string;
     readonly key: string;
-    readonly value: unknown;
-    readonly read: () => Promise<unknown>;
+    readonly value: JsonWireValue;
+    readonly read: () => Promise<void>;
 }
 
 function createExpiredCorruptionScenario(boundary: ExpiredCorruptionBoundary) {
@@ -252,16 +253,19 @@ function createExpiredCorruptionScenario(boundary: ExpiredCorruptionBoundary) {
     const repository = new GroupTopologyConfigRepository(runtimeRepository);
     const groupRef = createTopologyTestGroupRef('workspace-1');
     const wrongRef = createTopologyTestGroupRef('workspace-2');
-    const seeded = createExpiredCorruptionSeed(repository, groupRef, wrongRef, boundary);
+    const seeded = createExpiredCorruptionSeed({ repository, groupRef, wrongRef, boundary });
     return { runtimeRepository, seeded };
 }
 
-function createExpiredCorruptionSeed(
-    repository: GroupTopologyConfigRepository,
-    groupRef: ReturnType<typeof createTopologyTestGroupRef>,
-    wrongRef: ReturnType<typeof createTopologyTestGroupRef>,
-    boundary: ExpiredCorruptionBoundary
-): ExpiredCorruptionSeed {
+interface CreateExpiredCorruptionSeedInput {
+    readonly repository: GroupTopologyConfigRepository;
+    readonly groupRef: ReturnType<typeof createTopologyTestGroupRef>;
+    readonly wrongRef: ReturnType<typeof createTopologyTestGroupRef>;
+    readonly boundary: ExpiredCorruptionBoundary;
+}
+
+function createExpiredCorruptionSeed(input: CreateExpiredCorruptionSeedInput): ExpiredCorruptionSeed {
+    const { repository, groupRef, wrongRef, boundary } = input;
     if (boundary === 'mutation record') {
         return createExpiredMutationRecordSeed(repository, groupRef);
     }
@@ -270,14 +274,18 @@ function createExpiredCorruptionSeed(
             namespace: GROUP_TOPOLOGY_CONFIG_GENERATION_NAMESPACE,
             key: repository.generationKey(groupRef, 'config'),
             value: { groupRef, target: 'override', version: 1 },
-            read: () => repository.findGenerationEntry(groupRef, 'config')
+            read: async () => {
+                await repository.findGenerationEntry(groupRef, 'config');
+            }
         };
     }
     return {
         namespace: GROUP_TOPOLOGY_CONFIG_INVARIANT_GENERATION_NAMESPACE,
         key: repository.invariantGenerationKey(groupRef),
         value: { groupRef: wrongRef, version: 1 },
-        read: () => repository.findInvariantGenerationEntry(groupRef)
+        read: async () => {
+            await repository.findInvariantGenerationEntry(groupRef);
+        }
     };
 }
 
@@ -310,12 +318,14 @@ function createExpiredMutationRecordSeed(
                 acceptedCausalRevision: null
             }
         },
-        read: () => repository.findMutationRecord(groupRef, 'expected-request')
+        read: async () => {
+            await repository.findMutationRecord(groupRef, 'expected-request');
+        }
     };
 }
 
 class ExposedLiveValueRepository extends GroupTopologyConfigRepository {
     readLiveValue(namespace: string, entry: RuntimeStateEntry) {
-        return this.toLiveEntryValue<unknown>(namespace, entry);
+        return this.toLiveJsonEntryValue(namespace, entry);
     }
 }

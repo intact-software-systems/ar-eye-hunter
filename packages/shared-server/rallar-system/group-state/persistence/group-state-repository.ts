@@ -10,7 +10,7 @@ import type {
 import type { StateEventPage } from '@shared/api/state-event-types.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
-import { PSqlRuntimeStateRepository } from '../../../runtime-state/postgres/p-sql-runtime-state-repository.ts';
+import { createTransactionBoundPSqlRuntimeStateRepository } from '../../../runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import type {
     RuntimeStateConditionalDeleteResult,
     RuntimeStateConditionalWriteResult,
@@ -20,17 +20,17 @@ import type { GroupStateEventStore } from '../../state-events/group-state-event-
 import { PSqlGroupStateEventRepository } from '../../state-events/postgres/p-sql-group-state-event-repository.ts';
 import type { StateEventListQuery } from '../../state-events/state-event-listing.ts';
 import type { GroupMutationIdempotencyRecord } from '../mutation/group-mutation-contracts.ts';
-import { GroupAggregateRepository } from './group-aggregate-repository.ts';
-import { GroupMembershipRepository } from './group-membership-repository.ts';
-import { GroupPresenceRepository } from './group-presence-repository.ts';
+import { GroupAggregateRepository } from './aggregate/group-aggregate-repository.ts';
 import type { GroupStateAuthorityGuard } from './group-state-persistence-contracts.ts';
 import { GroupStateRepositoryReads } from './group-state-repository-reads.ts';
+import { GroupMembershipRepository } from './membership/group-membership-repository.ts';
+import { GroupPresenceRepository } from './presence/group-presence-repository.ts';
 
 export function createTransactionBoundGroupStateRepository(
     transaction: PSqlSql
 ): GroupStateRepository {
     return new GroupStateRepository(
-        new PSqlRuntimeStateRepository(transaction),
+        createTransactionBoundPSqlRuntimeStateRepository(transaction),
         new PSqlGroupStateEventRepository(transaction)
     );
 }

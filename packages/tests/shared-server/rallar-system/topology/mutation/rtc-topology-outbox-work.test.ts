@@ -7,28 +7,41 @@ import { RtcRttRefinementGate } from '@shared-server/rallar-system/rtc-rtt/topic
 import { RtcRttRefinementService } from '@shared-server/rallar-system/rtc-rtt/topic/rtc-rtt-refinement-service.ts';
 import {
     createRtcTopologyOutboxPublisher,
-    createRtcTopologyWorkHandler,
     type RtcTopologyGroupRevisionWork,
     type RtcTopologyRttRefreshWork
 } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-work.ts';
 import { RtcTopologyExecutionRepository } from '@shared-server/rallar-system/topology/persistence/rtc-topology-execution-repository.ts';
 import { RtcTopologySnapshotRepository } from '@shared-server/rallar-system/topology/persistence/rtc-topology-snapshot-repository.ts';
-import { parsePersistedRtcTopologyALMessage, readRtcTopologyWorkEnvelope } from '@shared-server/rallar-system/topology/replay/work/rtc-topology-work-codec.ts';
+import { createRtcTopologyWorkHandler } from '@shared-server/rallar-system/topology/replay/work/create-rtc-topology-work-handler.ts';
+import { readRtcTopologyWorkEnvelope } from '@shared-server/rallar-system/topology/replay/work/rtc-topology-work-codec.ts';
 import { createGroupTopologyRuntimeOwners } from '@shared-server/rallar-system/topology/runtime/create-group-topology-runtime-owners.ts';
 import { RallarRtcTopologyService } from '@shared-server/rallar-system/topology/runtime/rallar-rtc-topology-service.ts';
 import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
+import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import type { RttMeasurementInfo } from '@shared/api/api-config.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import { createDefaultGroupLifecyclePolicy } from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
-import type { GroupPresenceSummary, GroupRef, GroupSnapshot, GroupStateCausalRevision } from '@shared/api/group-types.ts';
+import type { AuditStamp, GroupPresenceSummary, GroupRef, GroupSnapshot, GroupStateCausalRevision } from '@shared/api/group-types.ts';
 import { EntityStatus, InMemoryQueueBox, type ALMessage } from '@shared/mod.ts';
 import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 import { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
 import { readFileSync } from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
 import { createTestGroup } from '../../../../create-test-group.ts';
-import { createAppInboxTestDatabase } from '../../../app-inbox-test-database.ts';
-import { FakeRuntimeStateRepository } from '../../../fake-runtime-state-repository.ts';
+import { createAppInboxTestDatabase } from '../../app-inbox/test-support/app-inbox-test-database.ts';
+
+interface StoredRtcTopologyEnvelope {
+    readonly resourceId: string;
+    readonly data: RtcTopologyGroupRevisionWork | RtcTopologyRttRefreshWork;
+}
+
+interface EnqueueAndReserveRttInput {
+    readonly queue: InMemoryQueueBox;
+    readonly runtime: ReturnType<typeof createRtcTopologyOutboxPublisher>;
+    readonly group: GroupSnapshot;
+    readonly version: number;
+}
+import { FakeRuntimeStateRepository } from '../../../runtime-state/test-support/fake-runtime-state-repository.ts';
 
 describe('RTC topology APP_OUTBOX work', () => {
     it('lets ResourceInbox retry the handler-owned write and reservation-fenced completion transaction', () => {
@@ -665,10 +678,15 @@ describe('RTC topology APP_OUTBOX work', () => {
         const group = createGroupSnapshot(3);
 
         for (const version of [1, 2]) {
-            const entry = await enqueueAndReserveRtt(queue, runtime, group, version);
+            const entry = await enqueueAndReserveRtt({ queue, runtime, group, version });
             await expect(handler.onMessage(JSON.parse(entry.resource), entry)).resolves.toBeUndefined();
         }
-        const qualifying = await enqueueAndReserveRtt(queue, runtime, group, 3);
+        const qualifying = await enqueueAndReserveRtt({
+            queue,
+            runtime,
+            group,
+            version: 3
+        });
         await expect(handler.onMessage(JSON.parse(qualifying.resource), qualifying)).rejects.toBe(
             planned
         );
@@ -776,7 +794,12 @@ describe('RTC topology APP_OUTBOX work', () => {
             }
         });
 
-        const entry = await enqueueAndReserveRtt(queue, runtime, group, 1);
+        const entry = await enqueueAndReserveRtt({
+            queue,
+            runtime,
+            group,
+            version: 1
+        });
         await expect(handler.onMessage(JSON.parse(entry.resource), entry)).resolves.toBeUndefined();
 
         expect(submittedCommands).toEqual([
@@ -820,7 +843,12 @@ describe('RTC topology APP_OUTBOX work', () => {
             executionRepository: new RtcTopologyExecutionRepository(new FakeRuntimeStateRepository()),
             rttRefinementService: refinement
         });
-        const canonical = await enqueueAndReserveRtt(queue, runtime, createGroupSnapshot(3), 1);
+        const canonical = await enqueueAndReserveRtt({
+            queue,
+            runtime,
+            group: createGroupSnapshot(3),
+            version: 1
+        });
         await expect(handler.onMessage(JSON.parse(canonical.resource), canonical)).rejects.toBe(
             planned
         );
@@ -840,21 +868,18 @@ async function entriesIn(queue: InMemoryQueueBox) {
 function readWork(entry: {
     resource: string;
 }): RtcTopologyGroupRevisionWork | RtcTopologyRttRefreshWork {
-    const message = parsePersistedRtcTopologyALMessage(entry.resource);
+    const message = decodePersistedALMessage(entry.resource);
     return readRtcTopologyWorkEnvelope(message, message.payload.typeId).data;
 }
 
-function readEnvelope(entry: { resource: string; }): {
-    resourceId: string;
-    data: RtcTopologyGroupRevisionWork | RtcTopologyRttRefreshWork;
-} {
-    const message = parsePersistedRtcTopologyALMessage(entry.resource);
+function readEnvelope(entry: { resource: string; }): StoredRtcTopologyEnvelope {
+    const message = decodePersistedALMessage(entry.resource);
     const envelope = readRtcTopologyWorkEnvelope(message, message.payload.typeId);
     return { resourceId: envelope.resourceId, data: envelope.data };
 }
 
 function readStoredALMessage(entry: { resource: string; }): ALMessage {
-    return parsePersistedRtcTopologyALMessage(entry.resource);
+    return decodePersistedALMessage(entry.resource);
 }
 
 function readJsonObject(serialized: string, label: string): JsonWireObject {
@@ -885,12 +910,8 @@ function rtt(sessionIdFrom: string, sessionIdTo: string, version: number) {
     };
 }
 
-async function enqueueAndReserveRtt(
-    queue: InMemoryQueueBox,
-    runtime: ReturnType<typeof createRtcTopologyOutboxPublisher>,
-    group: GroupSnapshot,
-    version: number
-) {
+async function enqueueAndReserveRtt(input: EnqueueAndReserveRttInput) {
+    const { queue, runtime, group, version } = input;
     await runtime.publisher.enqueueForRtt(group, rtt('session-a', 'session-b', version), 0);
     const reserved = await queue.reserveEntries(
         OutboxQueueReader.OUTBOX_DEQUEUE_TYPES,
@@ -973,7 +994,7 @@ function createGroupSnapshotWithCausalRevision(
     };
 }
 
-function createAuditStamp(atEpochMs: number) {
+function createAuditStamp(atEpochMs: number): AuditStamp {
     return {
         atEpochMs,
         actor: { kind: 'service' as const, serviceId: 'test' },

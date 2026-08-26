@@ -2,6 +2,7 @@ import { defaultStateScope } from '@shared-web/browser/api/state-http-path.ts';
 import { roomGroupStateHttpApi } from '@shared-web/browser/rooms/room-group-state-http-api.ts';
 import { findStateGroup } from '@shared-web/browser/state-read/state-snapshot-http-api.ts';
 import { toApiMutationWorkflowRequestId } from '@shared-web/browser/state-read/state-workflow-support.ts';
+import type { ApiJsonObject } from '@shared/api/api-json-value.ts';
 import { Command, type CommandOptions } from '@shared/cache/Command.ts';
 import type { CommandsOrchestratorPolicies } from '@shared/cache/CommandsOrchestrator.ts';
 
@@ -13,7 +14,6 @@ import {
     type StateScope,
     type UpdateStateGroupBody
 } from './room-group-state-translation.ts';
-import type { StateGroupWorkflowValue } from './room-group-state-workflows.ts';
 
 interface UpdateStateGroupLifecycleInput extends RoomLifecycleWorkflowInput {
     readonly status: 'archived' | 'deleted';
@@ -25,16 +25,16 @@ export interface RoomLifecycleWorkflowInput {
     readonly principalId: string;
     readonly sessionId: string;
     readonly scope?: StateScope;
-    readonly policies?: CommandsOrchestratorPolicies<StateGroupWorkflowValue>;
+    readonly policies?: CommandsOrchestratorPolicies<GroupSnapshot>;
 }
 
 export interface UpdateStateGroupMetadataInput {
     readonly groupId: string;
-    readonly patch: Readonly<Record<string, unknown>>;
+    readonly patch: ApiJsonObject;
     readonly principalId: string;
     readonly sessionId: string;
     readonly scope?: StateScope;
-    readonly policies?: CommandsOrchestratorPolicies<StateGroupWorkflowValue>;
+    readonly policies?: CommandsOrchestratorPolicies<GroupSnapshot>;
 }
 
 export interface UpdateStateGroupDetailsInput {
@@ -43,7 +43,7 @@ export interface UpdateStateGroupDetailsInput {
     readonly principalId: string;
     readonly sessionId: string;
     readonly scope?: StateScope;
-    readonly policies?: CommandsOrchestratorPolicies<StateGroupWorkflowValue>;
+    readonly policies?: CommandsOrchestratorPolicies<GroupSnapshot>;
 }
 
 export async function updateStateGroupMetadata(
@@ -51,7 +51,7 @@ export async function updateStateGroupMetadata(
 ): Promise<GroupSnapshot> {
     const scope = input.scope ?? defaultStateScope();
     const requestId = toApiMutationWorkflowRequestId();
-    const commandOptions = (input.policies?.command ?? {}) as CommandOptions<GroupSnapshot>;
+    const commandOptions: CommandOptions<GroupSnapshot> = input.policies?.command ?? {};
     const current = await new Command<GroupSnapshot>(
         (signal) => findStateGroup(input.groupId, scope, { signal }),
         commandOptions
@@ -80,7 +80,7 @@ export async function updateStateGroupDetails(
 ): Promise<GroupSnapshot> {
     const scope = input.scope ?? defaultStateScope();
     const requestId = toApiMutationWorkflowRequestId();
-    const commandOptions = (input.policies?.command ?? {}) as CommandOptions<GroupSnapshot>;
+    const commandOptions: CommandOptions<GroupSnapshot> = input.policies?.command ?? {};
     const updateRequest = toUpdateGroupStateRequest({
         request: input.request,
         actorPrincipalId: input.principalId,
@@ -122,7 +122,7 @@ async function updateStateGroupLifecycle(
 ): Promise<GroupSnapshot> {
     const scope = input.scope ?? defaultStateScope();
     const requestId = toApiMutationWorkflowRequestId();
-    const commandOptions = (input.policies?.command ?? {}) as CommandOptions<GroupSnapshot>;
+    const commandOptions: CommandOptions<GroupSnapshot> = input.policies?.command ?? {};
     const lifecycleRequest = toRoomLifecycleGroupStateRequest({
         request: input.request,
         status: input.status,

@@ -12,6 +12,7 @@ import { encodeAppInboxResult } from '../../app-inbox/app-inbox-registration-cod
 import type { IssuedAuthSession } from '../../auth/persistence/auth-session-types.ts';
 import type { GroupFormationGroupMutationSink } from '../../observability/formation-metrics.ts';
 import type { RallarTimingSink } from '../../observability/timing.ts';
+import { decodeJsonWireValue } from '../../protocol/json-wire-identity.ts';
 import { GroupMutationAuthorizationError } from '../group-mutation-authority.ts';
 import type { GroupStateService } from '../group-state-service-contracts.ts';
 import type { GroupMutationCommand } from '../mutation/group-mutation-contracts.ts';
@@ -161,7 +162,10 @@ export class GroupStateInboxService {
         await this.queueClient.enqueue({
             type: AppInboxType.GROUP_FORMATION_CRITERION,
             resourceId: preparation.queueResourceId,
-            authority: preparation,
+            authority: decodeJsonWireValue(
+                preparation,
+                'Group formation AppInbox authority'
+            ),
             data: { commandId: preparation.command.commandId }
         });
     }

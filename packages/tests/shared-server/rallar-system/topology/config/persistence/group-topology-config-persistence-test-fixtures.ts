@@ -2,7 +2,7 @@ import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/topo
 import type { RuntimeStateEntry } from '@shared-server/runtime-state/runtime-state-repository.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 
-import { FakeRuntimeStateRepository } from '../../../../fake-runtime-state-repository.ts';
+import { FakeRuntimeStateRepository } from '../../../../runtime-state/test-support/fake-runtime-state-repository.ts';
 
 export function createTopologyTestGroupRef(workspaceId: string): GroupRef {
     return {

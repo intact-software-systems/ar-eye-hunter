@@ -7,10 +7,9 @@ import {
 export function decodeRuntimeStateReadBatchDriverValue(
     input: unknown
 ): JsonWireValue {
-    const parsed = decodeJsonWireValue(
-        typeof input === 'string' ? parsePayload(input) : input,
-        'runtime state read batch database JSON'
-    );
+    const parsed = typeof input === 'string'
+        ? parsePayload(input)
+        : decodeJsonWireValue(input, 'runtime state read batch database JSON');
     if (!Array.isArray(parsed)) {
         return parsed;
     }
@@ -34,9 +33,12 @@ export function decodeRuntimeStateReadBatchDriverValue(
     });
 }
 
-function parsePayload(input: string): unknown {
+function parsePayload(input: string): JsonWireValue {
     try {
-        return JSON.parse(input);
+        return decodeJsonWireValue(
+            JSON.parse(input),
+            'runtime state read batch database JSON'
+        );
     }
     catch (caught) {
         const error = caught instanceof Error ? caught : new Error(String(caught));

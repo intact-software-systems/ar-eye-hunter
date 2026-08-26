@@ -1,16 +1,12 @@
 import type { GroupRef } from '@shared/api/group-types.ts';
 
+import { assertExactKeys, assertRequiredKeys, requireJsonSafe } from '../../group-state-validation-primitives.ts';
+import { groupStateGroupStorageKey } from '../../persistence/aggregate/group-aggregate-storage-keys.ts';
+import { groupStateIdempotencyStorageKey } from '../../persistence/idempotency/group-idempotency-storage-key.ts';
 import {
-    assertExactKeys,
-    assertRequiredKeys,
-    requireJsonSafe
-} from '../../group-state-validation-primitives.ts';
-import {
-    groupStateGroupStorageKey,
-    groupStateIdempotencyStorageKey,
     groupStatePresenceSessionStorageKey,
     groupStatePresenceSummaryStorageKey
-} from '../../persistence/group-state-storage-keys.ts';
+} from '../../persistence/presence/group-presence-storage-keys.ts';
 import { validateGroupStateRuntimeEntry } from '../../persistence/validate-group-state-runtime-entry.ts';
 import {
     validatePresenceSession,

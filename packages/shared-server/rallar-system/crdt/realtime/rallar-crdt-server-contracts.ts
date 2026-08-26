@@ -12,6 +12,7 @@ import type {
     RallarCrdtUpdateEnvelope,
     RallarCrdtValidationOptions
 } from '@shared/crdt/mod.ts';
+import type { JsonWireValue } from '../../protocol/json-wire-identity.ts';
 
 import type {
     RallarServerWsFanout,
@@ -122,7 +123,7 @@ export interface RallarCrdtServerPrincipalFanoutInput {
 
 export interface RallarCrdtServerTopicBridge {
     readonly topicIds: readonly string[];
-    readonly definitions: readonly RallarServerWsTopicDefinition[];
+    readonly definitions: readonly RallarServerWsTopicDefinition<JsonWireValue>[];
     readonly unsubscribeHandlers: () => void;
 }
 

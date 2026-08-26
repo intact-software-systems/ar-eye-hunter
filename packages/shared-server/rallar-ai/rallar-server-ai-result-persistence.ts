@@ -37,7 +37,7 @@ export interface CreateRallarServerAiResultPersistenceInput {
     readonly diagnostics?: RallarAiDiagnosticsSink;
 }
 
-export interface RallarServerAiResultPersistenceInput<TValue extends RallarAiJsonValue = RallarAiJsonValue> {
+export interface RallarServerAiResultPersistenceInput<TValue extends RallarAiJsonValue> {
     readonly result: RallarAiJsonResult<TValue>;
     readonly actorId?: string;
     readonly roomId?: string;

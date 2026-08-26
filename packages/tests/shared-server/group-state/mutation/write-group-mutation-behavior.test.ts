@@ -1,6 +1,6 @@
 import { mutationDescriptor } from '@shared-server/rallar-system/group-state/group-mutation-authority.ts';
 import { materializeGroupStateGuardedBatch } from '@shared-server/rallar-system/group-state/mutation/write/write-group-mutation.ts';
-import { groupStateGroupStorageKey } from '@shared-server/rallar-system/group-state/persistence/group-state-storage-keys.ts';
+import { groupStateGroupStorageKey } from '@shared-server/rallar-system/group-state/persistence/aggregate/group-aggregate-storage-keys.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 import { describe, expect, it } from 'vitest';
 import { createTestAuthSession, createTestGroupStateRuntime } from '../group-state-test-runtime.ts';
@@ -57,7 +57,7 @@ describe('GroupStateService guarded batch write boundary', () => {
         }
 
         const materialized = materializeGroupStateGuardedBatch(computed);
-        expect(materialized.batch.guard).toEqual({
+        expect(materialized.guard).toEqual({
             operation: 'update',
             namespace: 'group-state:groups',
             key: groupStateGroupStorageKey(computed.guard.value),
@@ -65,7 +65,7 @@ describe('GroupStateService guarded batch write boundary', () => {
             value: JSON.stringify(computed.guard.value),
             expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
         });
-        expect(materialized.batch.effects.map(({ effectId }) => effectId)).toEqual(['receipt']);
+        expect(materialized.effects.map(({ effectId }) => effectId)).toEqual(['receipt']);
         expect(computed.outboxEntries).toHaveLength(1);
         expect(computed.outboxEntries[0]?.typeId).toBe('APP_OUTBOX');
     });

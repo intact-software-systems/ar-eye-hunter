@@ -2,6 +2,7 @@ import { resourceInboxRetryExpiryAtEpochMs } from '@shared/queuebox/ResourceInbo
 import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
 import { type AppInboxEnqueueInput } from '../../app-inbox/app-inbox-contracts.ts';
 import { AppInboxType } from '../../app-inbox/app-inbox-contracts.ts';
+import { decodeJsonWireValue } from '../../protocol/json-wire-identity.ts';
 import type {
     WsSessionGenerationCloseFacts,
     WsSessionGenerationLifecycleComputed,
@@ -73,7 +74,10 @@ export function toExpiredPresenceEnqueue(
     return {
         type: AppInboxType.GROUP_PRESENCE_EXPIRE,
         resourceId: preparation.queueResourceId,
-        authority: preparation,
+        authority: decodeJsonWireValue(
+            preparation,
+            'Expired group presence AppInbox authority'
+        ),
         data: { commandId: preparation.command.commandId }
     };
 }

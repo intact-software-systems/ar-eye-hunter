@@ -8,7 +8,7 @@ import {
 import { validateStateWritePoolingSource } from './validate-state-write-pooling-source.mjs';
 
 export const ORDER_BALANCED_STATE_WRITE_PROTOCOL = 'rallar.api-v1.state-write.order-balanced-abba.v1';
-const LEGACY_SOURCE_POSITIONS = [
+const DEFAULT_SOURCE_POSITIONS = [
     { key: 'approvedBaseFirst', position: 1, role: 'approved-base' },
     { key: 'candidateFirst', position: 2, role: 'candidate' },
     { key: 'candidateSecond', position: 3, role: 'candidate' },
@@ -16,7 +16,7 @@ const LEGACY_SOURCE_POSITIONS = [
 ];
 
 export function poolApiV1StateWriteResults(input) {
-    return poolStateWriteResults(input, LEGACY_SOURCE_POSITIONS, 'A-B-B-A');
+    return poolStateWriteResults(input, DEFAULT_SOURCE_POSITIONS, 'A-B-B-A');
 }
 
 export function poolApiV1StateWriteResultsForPositions(input, sourcePositions) {

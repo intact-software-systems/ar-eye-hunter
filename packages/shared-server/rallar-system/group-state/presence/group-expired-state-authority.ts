@@ -1,10 +1,8 @@
 import type { GroupRef } from '@shared/api/group-types.ts';
 import { validateRuntimeStateExpiredAuthority } from '../../../runtime-state/runtime-state-expired-entry.ts';
 import type { RuntimeStateEntry } from '../../../runtime-state/runtime-state-repository.ts';
-import {
-    groupStateGroupStorageKey,
-    groupStatePresenceSessionStorageKey
-} from '../persistence/group-state-storage-keys.ts';
+import { groupStateGroupStorageKey } from '../persistence/aggregate/group-aggregate-storage-keys.ts';
+import { groupStatePresenceSessionStorageKey } from '../persistence/presence/group-presence-storage-keys.ts';
 
 export function validateGroupExpiredStateAuthority(
     input: Readonly<{

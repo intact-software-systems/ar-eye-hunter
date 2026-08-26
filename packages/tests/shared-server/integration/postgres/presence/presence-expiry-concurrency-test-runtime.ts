@@ -12,7 +12,7 @@ import { createTestGroupStateRuntime } from '../../../group-state/group-state-te
 
 import { createPostgresClientPhaseDriver } from '../../../client-state/postgres-client-mutation-test-driver.ts';
 
-import { createPostgresTestRequestIdFactory } from '../../../fixtures/create-postgres-test-request-id-factory.ts';
+import { createPostgresTestRequestIdFactory } from '../test-support/create-postgres-test-request-id-factory.ts';
 type PostgresSql =
     & PSqlSql
     & Readonly<{

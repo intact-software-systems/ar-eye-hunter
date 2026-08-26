@@ -17,7 +17,10 @@ import { createGroupStateService } from '@shared-server/rallar-system/group-stat
 import type { GroupMutationReceipt } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
 import type { GroupStateEventStore } from '@shared-server/rallar-system/state-events/group-state-event-store.ts';
-import type { RuntimeStateOptimisticTransactionalRepositoryLike } from '@shared-server/runtime-state/runtime-state-repository.ts';
+import type {
+    RuntimeStateGuardedBatchTransactionalRepositoryLike,
+    RuntimeStateOptimisticTransactionalRepositoryLike
+} from '@shared-server/runtime-state/runtime-state-repository.ts';
 import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import type { GroupPresenceSession } from '@shared/api/group-types.ts';
 import { persistAuthSession } from '../auth/auth-test-fixtures.ts';
@@ -86,8 +89,9 @@ export interface AuthSessionInput {
 }
 
 type TestGroupStateServiceDependencies =
-    & Omit<GroupStateServiceDependencies, 'authSessionRepository' | 'groupStateEventStore'>
+    & Omit<GroupStateServiceDependencies, 'authSessionRepository' | 'groupStateEventStore' | 'runtimeRepository'>
     & Readonly<{
+        runtimeRepository: RuntimeStateGuardedBatchTransactionalRepositoryLike;
         groupStateEventStoreFor?: (
             runtime: RuntimeStateOptimisticTransactionalRepositoryLike
         ) => GroupStateEventStore;

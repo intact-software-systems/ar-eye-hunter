@@ -79,8 +79,6 @@ export interface GroupTopologyConfigMutationFacts extends GroupTopologyConfigMut
     readonly attemptCount: number;
 }
 
-export type GroupTopologyConfigOutboxInput = ComputedRtcTopologyOutbox;
-
 export type TopologyConfigWriteGuard =
     | Readonly<{
         target: 'config';
@@ -125,7 +123,7 @@ export interface GroupTopologyConfigMutationWriteComputed {
     readonly generationGuard: TopologyConfigGenerationGuard;
     readonly receipt: GroupTopologyConfigMutationReceipt;
     readonly idempotency: GroupTopologyConfigMutationRecord | null;
-    readonly outbox: GroupTopologyConfigOutboxInput;
+    readonly outbox: ComputedRtcTopologyOutbox;
     readonly result: GroupTopologyConfigMutationAcceptedResult;
 }
 

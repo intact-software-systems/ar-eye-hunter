@@ -1,6 +1,6 @@
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { RALLAR_CRDT_UPDATE_TYPE_ID } from '@shared/crdt/mod.ts';
-import type { WsServerResolvedRecipient } from '@shared/services/WsQueueBoxServerService.ts';
+import type { WsServerResolvedRecipient } from '@shared/services/ws-queue-box-server/ws-queue-box-server-contracts.ts';
 import type { JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.ts';
 import { isClientSnapshotSessionLive } from '../../presence/snapshot-presence.ts';
 import { decodeJsonWireValue, type JsonWireObject, type JsonWireValue } from '../../protocol/json-wire-identity.ts';

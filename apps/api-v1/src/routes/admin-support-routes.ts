@@ -1,135 +1,143 @@
+import type {
+    AdminSupportUseCases,
+    AdminSupportWriteInput
+} from '@shared-server/rallar-system/admin-support/admin-support-contracts.ts';
+import { decodeJsonWireValue, type JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
+import type { AdminSupportNarrativeResponse } from '@shared/api/admin-support/admin-support-types.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { Hono, type Context } from 'jsr:@hono/hono@4.11.9';
+
 import {
     requireApiAdminSession as defaultRequireApiAdminSession,
     type ApiAdminAuthDependencies
 } from '../services/admin-auth-service.ts';
+import {
+    decodeAdminSupportExplainClientRequest,
+    decodeAdminSupportExplainCrdtDocumentRequest,
+    decodeAdminSupportExplainGroupRequest,
+    decodeAdminSupportExplainQueueItemRequest,
+    decodeAdminSupportExplainRequestRequest
+} from './admin-support-request-decoding.ts';
 
-export type AdminSupportWriteInput<TRequest> = Readonly<{
-    adminSession: AuthSession;
-    request: TRequest;
-}>;
+export interface AdminSupportRouteDependencies extends ApiAdminAuthDependencies {
+    readonly support: AdminSupportUseCases;
+    readonly requireApiAdminSession?: (
+        request: { header(name: string): string | undefined; },
+        dependencies: ApiAdminAuthDependencies
+    ) => Promise<AuthSession>;
+}
 
-export type AdminSupportRouteUseCases = Readonly<{
-    explainClient(input: AdminSupportWriteInput<unknown>): Promise<unknown>;
-    explainGroup(input: AdminSupportWriteInput<unknown>): Promise<unknown>;
-    explainRequest(input: AdminSupportWriteInput<unknown>): Promise<unknown>;
-    explainCrdtDocument(input: AdminSupportWriteInput<unknown>): Promise<unknown>;
-    explainQueueItem(input: AdminSupportWriteInput<unknown>): Promise<unknown>;
-}>;
+interface AdminSupportRouteRequest<TRequest> {
+    readonly decode: (value: JsonWireValue) => TRequest;
+    readonly write: (
+        input: AdminSupportWriteInput<TRequest>
+    ) => Promise<AdminSupportNarrativeResponse>;
+}
 
-export type AdminSupportRouteDependencies = Readonly<
-    ApiAdminAuthDependencies & {
-        support: AdminSupportRouteUseCases;
-        requireApiAdminSession?: (
-            req: { header(name: string): string | undefined; },
-            dependencies: ApiAdminAuthDependencies
-        ) => Promise<AuthSession>;
-    }
->;
-
-export function init(
+export function registerAdminSupportRoutes(
     app: Hono,
     dependencies: AdminSupportRouteDependencies
 ): void {
-    const deps = dependencies;
-
     app.post(
         '/api/admin/support/explain/client',
-        (c) =>
-            withAdminJson(
-                c,
-                deps,
-                (adminSession, request) => deps.support.explainClient({ adminSession, request })
-            )
+        (context) =>
+            respondToAdminSupportRequest(context, dependencies, {
+                decode: decodeAdminSupportExplainClientRequest,
+                write: (input) => dependencies.support.explainClient(input)
+            })
     );
 
     app.post(
         '/api/admin/support/explain/group',
-        (c) =>
-            withAdminJson(
-                c,
-                deps,
-                (adminSession, request) => deps.support.explainGroup({ adminSession, request })
-            )
+        (context) =>
+            respondToAdminSupportRequest(context, dependencies, {
+                decode: decodeAdminSupportExplainGroupRequest,
+                write: (input) => dependencies.support.explainGroup(input)
+            })
     );
 
     app.post(
         '/api/admin/support/explain/request',
-        (c) =>
-            withAdminJson(
-                c,
-                deps,
-                (adminSession, request) => deps.support.explainRequest({ adminSession, request })
-            )
+        (context) =>
+            respondToAdminSupportRequest(context, dependencies, {
+                decode: decodeAdminSupportExplainRequestRequest,
+                write: (input) => dependencies.support.explainRequest(input)
+            })
     );
 
     app.post(
         '/api/admin/support/explain/crdt-document',
-        (c) =>
-            withAdminJson(
-                c,
-                deps,
-                (adminSession, request) => deps.support.explainCrdtDocument({ adminSession, request })
-            )
+        (context) =>
+            respondToAdminSupportRequest(context, dependencies, {
+                decode: decodeAdminSupportExplainCrdtDocumentRequest,
+                write: (input) => dependencies.support.explainCrdtDocument(input)
+            })
     );
 
     app.post(
         '/api/admin/support/explain/queue-item',
-        (c) =>
-            withAdminJson(
-                c,
-                deps,
-                (adminSession, request) => deps.support.explainQueueItem({ adminSession, request })
-            )
+        (context) =>
+            respondToAdminSupportRequest(context, dependencies, {
+                decode: decodeAdminSupportExplainQueueItemRequest,
+                write: (input) => dependencies.support.explainQueueItem(input)
+            })
     );
 }
 
-async function withAdminJson(
-    c: Context,
-    deps: AdminSupportRouteDependencies,
-    execute: (session: AuthSession, request: unknown) => Promise<unknown>
+async function respondToAdminSupportRequest<TRequest>(
+    context: Context,
+    dependencies: AdminSupportRouteDependencies,
+    routeRequest: AdminSupportRouteRequest<TRequest>
 ): Promise<Response> {
     try {
-        const adminSession = await requireAdminSession(c, deps);
-        return c.json(await execute(adminSession, await readOptionalJsonBody(c)));
+        const adminSession = await requireAdminSession(context, dependencies);
+        const request = routeRequest.decode(await readOptionalJsonBody(context));
+        return context.json(await routeRequest.write({ adminSession, request }));
     }
     catch (error) {
-        return toErrorResponse(c, error);
+        return toErrorResponse(context, error);
     }
 }
 
 async function requireAdminSession(
-    c: Context,
-    deps: AdminSupportRouteDependencies
+    context: Context,
+    dependencies: AdminSupportRouteDependencies
 ): Promise<AuthSession> {
-    return await (deps.requireApiAdminSession ?? defaultRequireApiAdminSession)(
-        c.req,
+    return await (dependencies.requireApiAdminSession ?? defaultRequireApiAdminSession)(
+        context.req,
         {
-            adminClientIds: deps.adminClientIds,
-            requireApiAuthSession: deps.requireApiAuthSession
+            adminClientIds: dependencies.adminClientIds,
+            requireApiAuthSession: dependencies.requireApiAuthSession
         }
     );
 }
 
-async function readOptionalJsonBody(c: Context): Promise<unknown> {
-    const contentType = c.req.header('content-type') ?? '';
+async function readOptionalJsonBody(context: Context): Promise<JsonWireValue> {
+    const contentType = context.req.header('content-type') ?? '';
     if (!contentType.toLowerCase().includes('application/json')) {
         return {};
     }
 
     try {
-        return await c.req.json();
+        return decodeJsonWireValue(
+            await context.req.json(),
+            'Admin support request body'
+        );
     }
-    catch {
-        const error = new Error('Malformed JSON request body') as Error & { status: number; };
-        error.status = 400;
+    catch (error) {
+        if (error instanceof SyntaxError) {
+            const malformedJsonError = new Error('Malformed JSON request body') as Error & {
+                status: number;
+            };
+            malformedJsonError.status = 400;
+            throw malformedJsonError;
+        }
         throw error;
     }
 }
 
 function toErrorResponse(
-    c: { json(value: unknown, status?: number): Response; },
+    context: { json(value: { readonly error: string; }, status?: number): Response; },
     error: unknown
 ): Response {
     const message = error instanceof Error ? error.message : String(error);
@@ -145,10 +153,10 @@ function toErrorResponse(
         ? 409
         : 400;
 
-    return c.json({ error: message }, status);
+    return context.json({ error: message }, status);
 }
 
 function isStatusError(error: unknown): error is Error & { status: number; } {
     return error instanceof Error &&
-        typeof (error as { status?: unknown; }).status === 'number';
+        typeof (error as Error & { status?: number; }).status === 'number';
 }

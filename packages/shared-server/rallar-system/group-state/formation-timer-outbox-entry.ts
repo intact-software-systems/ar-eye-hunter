@@ -15,7 +15,7 @@ import type {
     GroupMutationFacts
 } from './mutation/group-mutation-contracts.ts';
 
-import { groupStateGroupStorageKey } from './persistence/group-state-storage-keys.ts';
+import { groupStateGroupStorageKey } from './persistence/aggregate/group-aggregate-storage-keys.ts';
 
 export const APP_OUTBOX_FORMATION_TIMER_TOPIC = 'app-outbox.formation-timer';
 

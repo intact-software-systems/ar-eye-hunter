@@ -6,7 +6,7 @@ import type { CreateGroupRequest } from '@shared/api/state-types.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 
-import { toJsonWireAppInboxEnqueue } from '@shared-server/rallar-system/app-inbox/app-inbox-command-wire.ts';
+import { decodeAppInboxEnqueue } from '@shared-server/rallar-system/app-inbox/app-inbox-command-decoding.ts';
 import { AppInboxType, type AppInboxMessageContext } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import { SIMPLER_GROUP_STATE_APP_INBOX_TOPIC } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-client.ts';
 import { encodeAppInboxResult } from '@shared-server/rallar-system/app-inbox/app-inbox-registration-codecs.ts';
@@ -19,8 +19,8 @@ import { createGroupStateService } from '@shared-server/rallar-system/group-stat
 import { GroupStateInboxHandler } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-handler.ts';
 import type { GroupStateInboxDurableResult } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-result.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
-import { createAppInboxTestDatabase, type AppInboxTestDatabaseStage } from '../../app-inbox-test-database.ts';
-import { FakeRuntimeStateRepository } from '../../fake-runtime-state-repository.ts';
+import { createAppInboxTestDatabase, type AppInboxTestDatabaseStage } from '../../rallar-system/app-inbox/test-support/app-inbox-test-database.ts';
+import { FakeRuntimeStateRepository } from '../../runtime-state/test-support/fake-runtime-state-repository.ts';
 import { authSession } from '../group-state-test-runtime.ts';
 import { TestResourceInbox, TestResourceInboxResults } from './group-state-inbox-resource-fixtures.ts';
 
@@ -195,7 +195,7 @@ async function createReservedContext(
     queue: TestResourceInbox,
     authority: GroupMutationPreparation
 ): Promise<AppInboxMessageContext<GroupStateInboxDurableResult>> {
-    const enqueue = toJsonWireAppInboxEnqueue({
+    const enqueue = decodeAppInboxEnqueue({
         type: AppInboxType.GROUP_CREATE,
         resourceId: REQUEST_ID,
         contextId: `${SCOPE.applicationId}:${SCOPE.workspaceId}:${GROUP_ID}`,

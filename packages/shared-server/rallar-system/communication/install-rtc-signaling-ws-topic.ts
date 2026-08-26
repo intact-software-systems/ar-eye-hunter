@@ -1,9 +1,10 @@
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { AppTopics } from '@shared/api/api-config.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
-import type { WsQueueBoxServerService } from '@shared/services/WsQueueBoxServerService.ts';
-import type { QRtcSignalingMessage } from '@shared/webrtc/QRtcSignalingContracts.ts';
+import type { WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 import type { JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.ts';
+
+import { decodeRtcSignalingRoute } from './decode-rtc-signaling-route.ts';
 
 export function installRtcSignalingWsTopic(service: WsQueueBoxServerService): void {
     service.onInboxMessageDo(AppTopics.rtcSignaling, {
@@ -15,11 +16,8 @@ export function installRtcSignalingWsTopic(service: WsQueueBoxServerService): vo
             if (message.route.topicId !== AppTopics.rtcSignaling) {
                 return Promise.resolve();
             }
-            const signaling = JSON.parse(message.payload.resource) as QRtcSignalingMessage;
-            if (!signaling || typeof signaling.toId !== 'string') {
-                throw new TypeError('Invalid RTC signaling message');
-            }
-            server.send(signaling.toId, message);
+            const route = decodeRtcSignalingRoute(message.payload.resource);
+            server.send(route.toId, message);
             return Promise.resolve();
         }
     });

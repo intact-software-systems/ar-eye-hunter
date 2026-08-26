@@ -10,6 +10,7 @@ import { toClientSnapshotLastSeenAtEpochMs } from '@shared/api/group-client-view
 
 import type { RuntimeStateEntryValue } from '../../../runtime-state/runtime-state-json-store.ts';
 import type { RuntimeStateEntry, RuntimeStateRepositoryLike } from '../../../runtime-state/runtime-state-repository.ts';
+import type { JsonWireValue } from '../../protocol/json-wire-identity.ts';
 import type { ClientStateEventStore } from '../../state-events/client-state-event-store.ts';
 import { readStableStateSnapshot } from '../../state-events/state-snapshot-read.ts';
 import { toClientPresenceState } from '../client-presence-state.ts';
@@ -118,12 +119,12 @@ export class ClientStateSnapshotRepository extends ClientStateRepositoryReads {
         });
     }
 
-    protected override async toLiveEntryValue<T>(
+    protected override async toLiveJsonEntryValue(
         namespace: string,
         entry: RuntimeStateEntry
-    ): Promise<RuntimeStateEntryValue<T> | undefined> {
+    ): Promise<RuntimeStateEntryValue<JsonWireValue> | undefined> {
         void namespace;
-        return await toLiveClientStateEntryValue<T>(entry);
+        return await toLiveClientStateEntryValue(entry);
     }
 }
 

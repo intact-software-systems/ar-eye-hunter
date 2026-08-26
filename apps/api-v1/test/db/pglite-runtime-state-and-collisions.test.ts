@@ -21,11 +21,7 @@ import { createGroupTopologyMutationOwners } from '@shared-server/rallar-system/
 import { RtcTopologyOutboxWriter } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-writer.ts';
 import { createGroupTopologyRuntimeOwners } from '@shared-server/rallar-system/topology/runtime/create-group-topology-runtime-owners.ts';
 import { RallarRtcTopologyService } from '@shared-server/rallar-system/topology/runtime/rallar-rtc-topology-service.ts';
-import {
-    isRuntimeStateGuardedBatchRepositoryLike,
-    type RuntimeStateGuardedBatch,
-    type RuntimeStateGuardedBatchResult
-} from '@shared-server/runtime-state/guarded-batch/runtime-state-guarded-batch.ts';
+import { type RuntimeStateGuardedBatch, type RuntimeStateGuardedBatchResult } from '@shared-server/runtime-state/guarded-batch/runtime-state-guarded-batch.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import type { ClientEvent } from '@shared/api/client-types.ts';
@@ -236,13 +232,6 @@ Deno.test(
             };
 
             const insertResult = await repository.begin(async (transactionRepository) => {
-                assert.equal(
-                    isRuntimeStateGuardedBatchRepositoryLike(transactionRepository),
-                    true
-                );
-                if (!isRuntimeStateGuardedBatchRepositoryLike(transactionRepository)) {
-                    throw new Error('Expected guarded runtime-state batch capability.');
-                }
                 return await transactionRepository.executeGuardedBatch(insertBatch);
             });
 
@@ -316,9 +305,6 @@ Deno.test(
             };
             assert.deepEqual(
                 await repository.begin(async (transactionRepository) => {
-                    if (!isRuntimeStateGuardedBatchRepositoryLike(transactionRepository)) {
-                        throw new Error('Expected guarded runtime-state batch capability.');
-                    }
                     return await transactionRepository.executeGuardedBatch(updateBatch);
                 }),
                 {
@@ -358,9 +344,6 @@ Deno.test(
             };
             assert.deepEqual(
                 await repository.begin(async (transactionRepository) => {
-                    if (!isRuntimeStateGuardedBatchRepositoryLike(transactionRepository)) {
-                        throw new Error('Expected guarded runtime-state batch capability.');
-                    }
                     return await transactionRepository.executeGuardedBatch(deleteBatch);
                 }),
                 {
@@ -419,9 +402,6 @@ Deno.test(
             };
 
             const result = await repository.begin(async (transactionRepository) => {
-                if (!isRuntimeStateGuardedBatchRepositoryLike(transactionRepository)) {
-                    throw new Error('Expected guarded runtime-state batch capability.');
-                }
                 return await transactionRepository.executeGuardedBatch(batch);
             });
 
@@ -477,9 +457,6 @@ Deno.test(
             );
 
             await repository.begin(async (transactionRepository) => {
-                if (!isRuntimeStateGuardedBatchRepositoryLike(transactionRepository)) {
-                    throw new Error('Expected guarded runtime-state batch capability.');
-                }
                 await transactionRepository.executeGuardedBatch({
                     guard: {
                         operation: 'insert',
@@ -531,9 +508,6 @@ Deno.test(
             await assert.rejects(
                 async () => {
                     await repository.begin(async (transactionRepository) => {
-                        if (!isRuntimeStateGuardedBatchRepositoryLike(transactionRepository)) {
-                            throw new Error('Expected guarded runtime-state batch capability.');
-                        }
                         observedResult = await transactionRepository.executeGuardedBatch({
                             guard: {
                                 operation: 'update',

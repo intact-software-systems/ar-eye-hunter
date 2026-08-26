@@ -4,7 +4,7 @@ import { requireApiAuthSession } from '@shared-server/http/request-auth-service.
 import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
 import { authSessionProofSecret } from '@shared-server/rallar-system/auth/sessions/auth-session-proof-secret.ts';
 
-import { FakeRuntimeStateRepository } from '../fake-runtime-state-repository.ts';
+import { FakeRuntimeStateRepository } from '../runtime-state/test-support/fake-runtime-state-repository.ts';
 
 describe('auth request proof digests', () => {
     it('returns the exact persisted digest proof without rehashing it', async () => {

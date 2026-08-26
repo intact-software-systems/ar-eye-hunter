@@ -18,7 +18,7 @@ import { createGroupTopologyRuntimeOwners } from '@shared-server/rallar-system/t
 
 import { RallarRtcTopologyService } from '@shared-server/rallar-system/topology/runtime/rallar-rtc-topology-service.ts';
 
-import { toJsonWireAppInboxEnqueue } from '@shared-server/rallar-system/app-inbox/app-inbox-command-wire.ts';
+import { decodeAppInboxEnqueue } from '@shared-server/rallar-system/app-inbox/app-inbox-command-decoding.ts';
 import { AppInboxType, type AppInboxMessageContext } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import { encodeAppInboxResult } from '@shared-server/rallar-system/app-inbox/app-inbox-registration-codecs.ts';
 import { computeRtcTopologyEntry } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-entry.ts';
@@ -378,7 +378,7 @@ describe('topology AppInbox transaction and idempotency', () => {
             groupStateService: harness.groupStateService,
             nowEpochMs: () => harness.nowEpochMs
         });
-        const wireEnqueue = toJsonWireAppInboxEnqueue(enqueue);
+        const wireEnqueue = decodeAppInboxEnqueue(enqueue);
         const message = newALUntargetedMessage(
             'topology-transaction-test',
             newALRoute(

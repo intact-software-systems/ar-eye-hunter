@@ -4,6 +4,7 @@ import type { RallarScopedOperationOptions } from '@shared-web/browser/rallar-co
 import { toRallarWorkflowPolicies, type RallarOperationOptions } from '@shared-web/browser/rallar-operation-options.ts';
 import type { RallarStateSnapshotAcceptanceInput } from '@shared-web/browser/state-cache/rallar-state-store.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
+import type { ApiJsonObject } from '@shared/api/api-json-value.ts';
 import { toGroupRefFromScope, toStateScope } from '@shared/api/api-type-utils.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import type { CommandsOrchestratorPolicies } from '@shared/cache/CommandsOrchestrator.ts';
@@ -20,7 +21,6 @@ import {
     updateStateGroupMetadata
 } from './room-group-state-mutation-workflows.ts';
 import type { GroupRef, GroupSnapshot, StateScope, UpdateStateGroupBody } from './room-group-state-translation.ts';
-import type { StateGroupWorkflowValue } from './room-group-state-workflows.ts';
 import type { RallarRoomStateStorePort } from './room-state-store.ts';
 import { toRoomTarget } from './room-target.ts';
 
@@ -43,7 +43,7 @@ interface RunRoomTargetMutationExecutionInput {
     readonly roomId: string;
     readonly session: AuthSession;
     readonly scope: StateScope;
-    readonly policies: CommandsOrchestratorPolicies<StateGroupWorkflowValue>;
+    readonly policies: CommandsOrchestratorPolicies<GroupSnapshot>;
     readonly generationId: string;
 }
 
@@ -57,7 +57,7 @@ interface RoomLifecycleOperationInput extends Omit<RunRoomTargetMutationInput, '
 
 interface UpdateRoomMetadataOperationInput extends Omit<RunRoomTargetMutationInput, 'execute'> {
     readonly room: string | GroupRef;
-    readonly patch: Readonly<Record<string, unknown>>;
+    readonly patch: ApiJsonObject;
 }
 
 interface ChangeRoomLifecycleInput extends RoomLifecycleOperationInput {
@@ -80,7 +80,7 @@ export async function runRoomTargetMutation(
             roomId: target.roomId,
             session,
             scope,
-            policies: toRallarWorkflowPolicies<StateGroupWorkflowValue>(operationOptions),
+            policies: toRallarWorkflowPolicies<GroupSnapshot>(operationOptions),
             generationId: context.middleware.heartbeat.generationId
         });
         await input.acceptSnapshots({ context, clients: [], groups: [snapshot], scope });

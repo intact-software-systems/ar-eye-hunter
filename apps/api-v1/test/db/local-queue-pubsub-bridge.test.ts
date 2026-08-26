@@ -1,6 +1,11 @@
-import type { QueueBoxPubSubMessage } from '@shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-bridge.ts';
+import type { JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
+import type { QueueBoxPubSubMessage } from '@shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-contracts.ts';
 import assert from 'node:assert/strict';
 import { createDisabledQueuePubSubBridge, createLocalQueuePubSubBridge, createLocalQueuePubSubBus } from '../../src/db/local-queue-pubsub-bridge.ts';
+
+interface CreateQueueBoxPubSubMessageOptions {
+    readonly publisherId: string;
+}
 
 Deno.test('local queue pub/sub bridge delivers messages across publishers on the same bus', async () => {
     const bus = createLocalQueuePubSubBus();
@@ -12,8 +17,8 @@ Deno.test('local queue pub/sub bridge delivers messages across publishers on the
         ignoredPublisherId: 'publisher-b',
         bus
     });
-    const receivedByA: QueueBoxPubSubMessage[] = [];
-    const receivedByB: QueueBoxPubSubMessage[] = [];
+    const receivedByA: JsonWireValue[] = [];
+    const receivedByB: JsonWireValue[] = [];
 
     await localA.subscribe('ws-channel', (message) => {
         receivedByA.push(message);
@@ -22,19 +27,21 @@ Deno.test('local queue pub/sub bridge delivers messages across publishers on the
         receivedByB.push(message);
     });
 
-    await localA.publish('ws-channel', createMessage({ publisherId: 'publisher-a' }));
-    assert.equal(receivedByA.length, 0);
-    assert.equal(receivedByB.length, 1);
+    const messageFromA = createMessage({ publisherId: 'publisher-a' });
+    await localA.publish('ws-channel', messageFromA);
+    assert.deepEqual(receivedByA, []);
+    assert.deepEqual(receivedByB, [messageFromA]);
 
-    await localB.publish('ws-channel', createMessage({ publisherId: 'publisher-b' }));
-    assert.equal(receivedByA.length, 1);
-    assert.equal(receivedByB.length, 1);
+    const messageFromB = createMessage({ publisherId: 'publisher-b' });
+    await localB.publish('ws-channel', messageFromB);
+    assert.deepEqual(receivedByA, [messageFromB]);
+    assert.deepEqual(receivedByB, [messageFromA]);
 });
 
 Deno.test('local queue pub/sub bridge isolates channels', async () => {
     const bus = createLocalQueuePubSubBus();
     const bridge = createLocalQueuePubSubBridge({ bus });
-    const received: QueueBoxPubSubMessage[] = [];
+    const received: JsonWireValue[] = [];
 
     await bridge.subscribe('expected-channel', (message) => {
         received.push(message);
@@ -44,9 +51,26 @@ Deno.test('local queue pub/sub bridge isolates channels', async () => {
     assert.deepEqual(received, []);
 });
 
+Deno.test('local queue pub/sub bridge keeps independently composed buses isolated', async () => {
+    const publisher = createLocalQueuePubSubBridge({
+        bus: createLocalQueuePubSubBus()
+    });
+    const isolated = createLocalQueuePubSubBridge({
+        bus: createLocalQueuePubSubBus()
+    });
+    const received: JsonWireValue[] = [];
+
+    await isolated.subscribe('ws-channel', (message) => {
+        received.push(message);
+    });
+    await publisher.publish('ws-channel', createMessage({ publisherId: 'remote' }));
+
+    assert.deepEqual(received, []);
+});
+
 Deno.test('disabled queue pub/sub bridge does not publish or subscribe', async () => {
     const bridge = createDisabledQueuePubSubBridge();
-    const received: QueueBoxPubSubMessage[] = [];
+    const received: JsonWireValue[] = [];
 
     await bridge.subscribe('ws-channel', (message) => {
         received.push(message);
@@ -57,7 +81,7 @@ Deno.test('disabled queue pub/sub bridge does not publish or subscribe', async (
 });
 
 function createMessage(
-    options: Readonly<{ publisherId: string; }>
+    options: CreateQueueBoxPubSubMessageOptions
 ): QueueBoxPubSubMessage {
     return {
         key: {
@@ -68,6 +92,7 @@ function createMessage(
         channel: 'ws-channel',
         publisherId: options.publisherId,
         typeId: 'WS_INBOX',
+        delivery: 'entry',
         payload: JSON.stringify({ ok: true })
     };
 }

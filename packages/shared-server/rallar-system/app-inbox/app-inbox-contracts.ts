@@ -59,23 +59,23 @@ export const AppInboxType = {
 
 export type AppInboxType = (typeof AppInboxType)[keyof typeof AppInboxType];
 
-export interface AppInboxEnqueueInput<V, Authority = unknown> {
+export interface AppInboxEnqueueInput<V> {
     readonly type: AppInboxType;
     readonly topicId?: string;
     readonly resourceId?: string;
     readonly contextId?: string;
     readonly senderId?: string;
-    readonly authority?: Authority;
+    readonly authority?: JsonWireValue;
     readonly data: V;
 }
 
 export type AppInboxExecutionMetadata = Readonly<{
-    enqueue: AppInboxEnqueueInput<JsonWireValue, JsonWireValue>;
+    enqueue: AppInboxEnqueueInput<JsonWireValue>;
     message: ALMessage;
     entry: ResourceEntry;
 }>;
 
-export type AppInboxMessageContext<Result = JsonWireValue> =
+export type AppInboxMessageContext<Result> =
     & AppInboxExecutionMetadata
     & Readonly<{
         encodeResult: (result: Result) => JsonWireValue;

@@ -2,7 +2,7 @@ import type { ResilienceDto } from '@shared/queuebox/DequeueResourceEntryControl
 import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 import { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
-import { WsQueueBoxServerService } from '@shared/services/WsQueueBoxServerService.ts';
+import { WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 
 export interface RegisterRallarMiddlewareQueueTasksInput {
     readonly wsQBoxServerService: WsQueueBoxServerService;

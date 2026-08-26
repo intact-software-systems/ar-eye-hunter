@@ -6,7 +6,7 @@ import { createTestGroupStateRepository } from '@shared-test/shared-server/creat
 import type { GroupRef } from '@shared/api/group-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import { describe, expect, it, vi } from 'vitest';
-import { FakeRuntimeStateRepository } from '../fake-runtime-state-repository.ts';
+import { FakeRuntimeStateRepository } from '../runtime-state/test-support/fake-runtime-state-repository.ts';
 import { createTestGroupStateRuntime, createTestGroupStateService as createGroupStateService } from './group-state-test-runtime.ts';
 import { SCOPE, seedGroup, toGroupRef } from './presence/group-presence-retry-test-runtime.ts';
 

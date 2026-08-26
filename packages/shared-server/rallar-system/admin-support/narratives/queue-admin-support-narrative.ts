@@ -1,12 +1,14 @@
 import type {
     AdminSupportExplainRequestRequest,
     AdminSupportFact,
+    AdminSupportJsonObject,
     AdminSupportNarrativeResponse,
     AdminSupportSuggestedAction,
     AdminSupportTimelineItem,
     AdminSupportWarning
-} from '@shared/api/admin-support-types.ts';
+} from '@shared/api/admin-support/admin-support-types.ts';
 import type { Key } from '@shared/queuebox/ResourceEntry.ts';
+import { decodeJsonWireValue } from '../../protocol/json-wire-identity.ts';
 import type { AdminSupportQueueEntryRead } from '../admin-support-contracts.ts';
 import { adminSupportNarrativeBase, type AdminSupportNarrativeBase } from './admin-support-narrative-base.ts';
 import { toAdminSupportTimelineItem as toTimeline } from './admin-support-timeline.ts';
@@ -227,10 +229,10 @@ function queueSuggestedActions(
     return actions;
 }
 
-function readPayloadMetadata(payload: string): Readonly<Record<string, unknown>> {
+function readPayloadMetadata(payload: string): AdminSupportJsonObject {
     const byteLength = new TextEncoder().encode(payload).length;
     try {
-        const parsed = JSON.parse(payload) as unknown;
+        const parsed = decodeJsonWireValue(JSON.parse(payload), 'QueueBox payload');
         if (Array.isArray(parsed)) {
             return {
                 byteLength,
@@ -238,7 +240,7 @@ function readPayloadMetadata(payload: string): Readonly<Record<string, unknown>>
                 itemCount: parsed.length
             };
         }
-        if (parsed && typeof parsed === 'object') {
+        if (parsed !== null && typeof parsed === 'object') {
             return {
                 byteLength,
                 jsonKind: 'object',
@@ -247,7 +249,7 @@ function readPayloadMetadata(payload: string): Readonly<Record<string, unknown>>
         }
         return {
             byteLength,
-            jsonKind: typeof parsed
+            jsonKind: parsed === null ? 'null' : typeof parsed
         };
     }
     catch {

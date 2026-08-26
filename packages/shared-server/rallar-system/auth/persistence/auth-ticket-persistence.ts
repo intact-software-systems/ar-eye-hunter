@@ -143,7 +143,7 @@ export class AuthTicketPersistence extends RuntimeStateJsonStore {
     async readWebSocketTicketByDigestEntry(
         ticketDigest: string
     ): Promise<RuntimeStateEntryRead<PersistedWebSocketTicket>> {
-        const read = await this.getEntryRead<JsonWireValue>(
+        const read = await this.getJsonEntryRead(
             WS_AUTH_TICKETS_NAMESPACE,
             authTicketDigestKey(ticketDigest)
         );
@@ -209,7 +209,7 @@ export class AuthTicketPersistence extends RuntimeStateJsonStore {
     async readAgentSessionTicketByDigestEntry(
         ticketDigest: string
     ): Promise<RuntimeStateEntryRead<PersistedAgentSessionTicket>> {
-        const read = await this.getEntryRead<JsonWireValue>(
+        const read = await this.getJsonEntryRead(
             AGENT_SESSION_TICKETS_NAMESPACE,
             authTicketDigestKey(ticketDigest)
         );

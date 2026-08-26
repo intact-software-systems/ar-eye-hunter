@@ -5,7 +5,7 @@ import type {
     AdminSupportSuggestedAction,
     AdminSupportTimelineItem,
     AdminSupportWarning
-} from '@shared/api/admin-support-types.ts';
+} from '@shared/api/admin-support/admin-support-types.ts';
 import type {
     RallarCrdtDebugBundle,
     RallarCrdtDocumentMetadata,

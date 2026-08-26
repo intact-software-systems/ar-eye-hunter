@@ -1,44 +1,40 @@
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
-import { GroupLifecyclePolicyRepository } from '../../persistence/group-lifecycle-policy-repository.ts';
-
 import type { PSqlSql } from '../../../../postgres/p-sql-sql.ts';
 import { PSqlResourceInboxEntryRepository } from '../../../../queuebox/postgres/p-sql-resource-inbox-entry-repository.ts';
 import {
-    isRuntimeStateGuardedBatchRepositoryLike,
     type RuntimeStateGuardedBatch,
     type RuntimeStateGuardedBatchEffect,
     type RuntimeStateGuardedBatchGuard
 } from '../../../../runtime-state/guarded-batch/runtime-state-guarded-batch.ts';
 import { validateRuntimeStateGuardedBatchResult } from '../../../../runtime-state/guarded-batch/validate-runtime-state-guarded-batch-result.ts';
 import { validateRuntimeStateGuardedBatch } from '../../../../runtime-state/guarded-batch/validate-runtime-state-guarded-batch.ts';
+import { RuntimeStateWriteConflictError } from '../../../../runtime-state/optimistic-runtime-state-write.ts';
 import {
-    requireConditionalWrite,
-    RuntimeStateWriteConflictError
-} from '../../../../runtime-state/optimistic-runtime-state-write.ts';
-import { PSqlRuntimeStateRepository } from '../../../../runtime-state/postgres/p-sql-runtime-state-repository.ts';
+    createTransactionBoundPSqlRuntimeStateRepository,
+    type PSqlRuntimeStateRepository
+} from '../../../../runtime-state/postgres/p-sql-runtime-state-repository.ts';
+import {
+    groupStateInsertGroupDescriptor,
+    groupStateUpdateGroupDescriptor
+} from '../../persistence/aggregate/group-aggregate-write-descriptors.ts';
+import { GroupLifecyclePolicyRepository } from '../../persistence/group-lifecycle-policy-repository.ts';
 import { createTransactionBoundGroupStateRepository } from '../../persistence/group-state-repository.ts';
+import { groupStateInsertIdempotencyDescriptor } from '../../persistence/idempotency/group-idempotency-write-descriptor.ts';
+import { groupStateMemberPutDescriptor } from '../../persistence/membership/group-state-member-put-descriptor.ts';
 import {
     groupStateDeletePresenceDescriptor,
-    groupStateInsertGroupDescriptor,
-    groupStateInsertIdempotencyDescriptor,
     groupStateInsertPresenceAdmissionDescriptor,
     groupStateInsertPresenceDescriptor,
     groupStateInsertPresenceSummaryDescriptor,
-    groupStateMemberPutDescriptor,
-    groupStateUpdateGroupDescriptor,
     groupStateUpdatePresenceAdmissionDescriptor,
     groupStateUpdatePresenceDescriptor,
     groupStateUpdatePresenceSummaryDescriptor
-} from '../../persistence/group-state-write-descriptors.ts';
+} from '../../persistence/presence/group-presence-write-descriptors.ts';
 import type { GroupMutationComputedWrite, GroupMutationReceipt } from '../group-mutation-contracts.ts';
-
-export interface MaterializedGroupStateGuardedBatch {
-    readonly batch: RuntimeStateGuardedBatch;
-}
 
 export function materializeGroupStateGuardedBatch(
     computed: GroupMutationComputedWrite
-): MaterializedGroupStateGuardedBatch {
+): RuntimeStateGuardedBatch {
     const effects: RuntimeStateGuardedBatchEffect[] = [];
 
     if (computed.presenceAdmission) {
@@ -80,28 +76,21 @@ export function materializeGroupStateGuardedBatch(
         });
     }
 
-    return {
-        batch: validateRuntimeStateGuardedBatch({
-            guard: materializeGuard(computed),
-            effects
-        })
-    };
+    return validateRuntimeStateGuardedBatch({
+        guard: materializeGuard(computed),
+        effects
+    });
 }
 
 export async function writeGroupMutation(
     transaction: PSqlSql,
     computed: GroupMutationComputedWrite
 ): Promise<GroupMutationReceipt> {
-    const materialized = materializeGroupStateGuardedBatch(computed);
-    const runtime = new PSqlRuntimeStateRepository(transaction);
+    const batch = materializeGroupStateGuardedBatch(computed);
+    const runtime = createTransactionBoundPSqlRuntimeStateRepository(transaction);
     const repository = createTransactionBoundGroupStateRepository(transaction);
 
-    if (isRuntimeStateGuardedBatchRepositoryLike(runtime)) {
-        await executeGuardedGroupMutationBatch(runtime, materialized.batch);
-    }
-    else {
-        await executeSequentialGroupMutationWrites(repository, computed);
-    }
+    await executeGuardedGroupMutationBatch(runtime, batch);
 
     if (computed.lifecyclePolicy !== null) {
         await new GroupLifecyclePolicyRepository(runtime).writePolicy(
@@ -134,67 +123,6 @@ async function executeGuardedGroupMutationBatch(
             throw new RuntimeStateWriteConflictError();
         }
     }
-}
-
-type TransactionBoundGroupStateRepository = ReturnType<typeof createTransactionBoundGroupStateRepository>;
-
-async function executeSequentialGroupMutationWrites(
-    repository: TransactionBoundGroupStateRepository,
-    computed: GroupMutationComputedWrite
-): Promise<void> {
-    await writeSequentialGroupMutationGuard(repository, computed);
-    if (computed.presenceAdmission) {
-        requireConditionalWrite(
-            computed.presenceAdmission.operation === 'insert'
-                ? await repository.insertPresenceAdmission(computed.presenceAdmission.value)
-                : await repository.updatePresenceAdmission(
-                    computed.presenceAdmission.value,
-                    computed.presenceAdmission.expectedRevision
-                )
-        );
-    }
-    for (const member of computed.members) {
-        await repository.putMember(member);
-    }
-    if (computed.initialPresenceSummary) {
-        const summary = computed.initialPresenceSummary;
-        requireConditionalWrite(
-            summary.operation === 'insert'
-                ? await repository.insertPresenceSummary(summary.value)
-                : await repository.updatePresenceSummary(summary.value, summary.expectedRevision)
-        );
-    }
-    if (computed.idempotency) {
-        requireConditionalWrite(
-            await repository.insertIdempotentGroupMutationReceipt(
-                computed.receipt.aggregateRef,
-                computed.idempotency.requestId,
-                computed.idempotency
-            )
-        );
-    }
-}
-
-async function writeSequentialGroupMutationGuard(
-    repository: TransactionBoundGroupStateRepository,
-    computed: GroupMutationComputedWrite
-): Promise<void> {
-    // Aggregate/session ownership is always the first database statement.
-    if (computed.guard.kind === 'group') {
-        requireConditionalWrite(
-            computed.guard.operation === 'insert'
-                ? await repository.insertGroup(computed.guard.value)
-                : await repository.updateGroup(computed.guard.value, computed.guard.expectedRevision)
-        );
-        return;
-    }
-    requireConditionalWrite(
-        computed.guard.operation === 'insert'
-            ? await repository.insertPresence(computed.guard.value)
-            : computed.guard.operation === 'update'
-            ? await repository.updatePresence(computed.guard.value, computed.guard.expectedRevision)
-            : await repository.deletePresence(computed.guard.value, computed.guard.expectedRevision)
-    );
 }
 
 function materializeGuard(computed: GroupMutationComputedWrite): RuntimeStateGuardedBatchGuard {

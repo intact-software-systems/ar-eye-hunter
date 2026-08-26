@@ -31,16 +31,16 @@ rg -n "GroupRef|groupRef|groupId|roomId|createAndSwitch|createAndJoin|joinRoom|w
 - Canonical topology inbox handling:
   `packages/shared-server/rallar-system/topology/inbox/**`.
 - Durable RTC topology delivery replay and reconnect/gap hydration:
-  `packages/shared-server/rallar-system/topology/replay/**`; use its
-  `README.md` navigation map before changing ownership or lifecycle.
+  `packages/shared-server/rallar-system/topology/replay/**`; use
+  `packages/shared-server/docs/persistence-and-replay.md` before changing
+  ownership or lifecycle.
 - Canonical RTC RTT inbox handling:
-  `packages/shared-server/rallar-system/rtc-topology/inbox/**`.
-- For group-state, topology inbox, and RTC RTT inbox capabilities,
-  `packages/shared-server/rallar-system/services/**` paths are compatibility-only
-  exports or composition surfaces, not canonical implementation owners. Do not
-  add a new canonical implementation for these capabilities under `services/**`.
-- State sync routing/publication: `packages/shared-server/rallar-system/state-sync-*`.
-- WS topic routing: `packages/shared-server/rallar-facade/ws-topic-router.ts` and `packages/shared-server/rallar-system/ws-system-topics.ts`.
+  `packages/shared-server/rallar-system/rtc-rtt/inbox/**`.
+- State sync routing/publication:
+  `packages/shared-server/rallar-system/state-sync/**`.
+- WS topic routing:
+  `packages/shared-server/rallar-system/websocket/router/**`; API-v1 feature
+  registration lives in `apps/api-v1/src/composition/create-api-v1-system-installers.ts`.
 - RTC topology/graph: the canonical inbox path above, the owning topology
   feature modules, and `packages/shared-graph`.
 

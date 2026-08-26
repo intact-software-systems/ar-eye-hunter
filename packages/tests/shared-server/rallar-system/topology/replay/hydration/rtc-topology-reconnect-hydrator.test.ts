@@ -1,6 +1,6 @@
 import { RtcTopologyReconnectHydrator } from '@shared-server/rallar-system/topology/replay/hydration/rtc-topology-reconnect-hydrator.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
-import { validatePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
+import { decodePersistedALMessageValue } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.ts';
@@ -376,8 +376,7 @@ function createHarness(overrides: HarnessOverrides = {}) {
         sentMessages(context: ConnectionContext): readonly ALMessage[] {
             return requireHarnessWebSocket(webSockets, context).sent.map((text) => {
                 const message = JSON.parse(text);
-                validatePersistedALMessage(message);
-                return message;
+                return decodePersistedALMessageValue(message);
             });
         }
     };

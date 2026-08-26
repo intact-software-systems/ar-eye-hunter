@@ -8,19 +8,15 @@ import type {
     RegisterResponse,
     WebSocketTicketResponse
 } from '@shared/api/api-config.ts';
-import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
+import { toAppQueueCreatedBy, toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import type { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 import { QueueBoxUtilities } from '@shared/services/QueueBoxUtilities.ts';
 
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
-import {
-    toAppQueueCreatedBy as toAppInboxQueueCreatedBy,
-    toAppQueueKey as toAppInboxQueueKey
-} from '@shared/queuebox/AppQueueIdentity.ts';
+import { decodeAppInboxEnqueue } from '../../app-inbox/app-inbox-command-decoding.ts';
 import { validateAppInboxCommandIdentity } from '../../app-inbox/app-inbox-command-identity.ts';
-import { toJsonWireAppInboxEnqueue } from '../../app-inbox/app-inbox-command-wire.ts';
 import {
     AppInboxIdempotencyConflictError,
     AppInboxType,
@@ -378,7 +374,7 @@ export class AppAuthInboxService {
         }>
     ): Promise<Either<AppInboxFailure, LogoutResponse> | null> {
         const presentedDigest = await hashAuthSecret(input.accessToken);
-        const physicalRequestId = toAppInboxQueueKey({
+        const physicalRequestId = toAppQueueKey({
             topicId: AppInboxType.AUTH_SESSION_LOGOUT,
             resourceId: input.requestId,
             contextId: ''
@@ -548,7 +544,7 @@ export class AppAuthInboxService {
         input: AppAuthInboxService.RequestIdentity & Readonly<{ ticket: string; }>
     ): Promise<Either<AppInboxFailure, ConsumeAgentSessionTicketResponse>> {
         const ticketDigest = await hashAuthSecret(input.ticket);
-        const physicalRequestId = toAppInboxQueueKey({
+        const physicalRequestId = toAppQueueKey({
             topicId: AppInboxType.AUTH_AGENT_SESSION_TICKET_CONSUME,
             resourceId: input.requestId,
             contextId: ''
@@ -655,15 +651,15 @@ function toAuthIntentEnqueue(intent: AuthMutationIntent): AppInboxEnqueueInput<A
 }
 
 function toAuthInboxEntry(enqueue: AppInboxEnqueueInput<AuthMutationIntent | null>): ResourceEntry {
-    const wire = toJsonWireAppInboxEnqueue(enqueue);
-    const key = toAppInboxQueueKey({
+    const wire = decodeAppInboxEnqueue(enqueue);
+    const key = toAppQueueKey({
         topicId: wire.topicId!,
         contextId: wire.contextId!,
         resourceId: wire.resourceId!
     });
     return QueueBoxUtilities.toResourceEntryFromMsg(
         newALUntargetedMessage(
-            toAppInboxQueueCreatedBy('auth-fact-reservation'),
+            toAppQueueCreatedBy('auth-fact-reservation'),
             newALRoute(key.topicId, key.contextId, key.resourceId),
             wire.type,
             wire

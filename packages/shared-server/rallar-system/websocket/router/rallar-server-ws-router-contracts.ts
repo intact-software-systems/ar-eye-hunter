@@ -4,10 +4,10 @@ import type { ALOutboundEnqueueStatus } from '@shared/alm/ALOutboundMessageRunti
 import type { GroupRef } from '@shared/api/group-types.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import type {
-    WsQueueBoxServerService,
     WsServerLiveSendFailure,
     WsServerResolvedRecipient
-} from '@shared/services/WsQueueBoxServerService.ts';
+} from '@shared/services/ws-queue-box-server/ws-queue-box-server-contracts.ts';
+import type { WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 import type { JsonWireValue } from '../../protocol/json-wire-identity.ts';
 
 export type RallarServerWsFanout = 'live-only' | 'outbox' | 'none';
@@ -55,7 +55,7 @@ export interface RallarServerWsSelector {
     readonly typeId?: string;
 }
 
-export interface RallarServerWsMessage<T extends RallarServerWsPayload = JsonWireValue> {
+export interface RallarServerWsMessage<T extends RallarServerWsPayload> {
     readonly payload: T;
     readonly raw: ALMessage;
     readonly receivedAtEpochMs: number;
@@ -66,7 +66,7 @@ export type RallarServerWsValidator = (
     context: RallarServerWsMessageContext
 ) => boolean | Promise<boolean>;
 
-export type RallarServerWsAuthorizer<T extends RallarServerWsPayload = JsonWireValue> = (
+export type RallarServerWsAuthorizer<T extends RallarServerWsPayload> = (
     message: RallarServerWsMessage<T>,
     context: RallarServerWsMessageContext
 ) => boolean | Promise<boolean>;
@@ -104,18 +104,17 @@ export type RallarServerWsRoomAuthorizer = (
     input: RallarServerWsRoomAuthorizationInput
 ) => RallarServerWsRoomAuthorizationDecision | Promise<RallarServerWsRoomAuthorizationDecision>;
 
-export type RallarServerWsHandler<T extends RallarServerWsPayload = JsonWireValue> = (
+export type RallarServerWsHandler<T extends RallarServerWsPayload> = (
     message: RallarServerWsMessage<T>,
     context: RallarServerWsMessageContext
 ) => void | Promise<void>;
 
-export interface RallarServerWsTopicDefinition<T extends RallarServerWsPayload = JsonWireValue>
-    extends RallarServerWsTopicMetadata {
+export interface RallarServerWsTopicDefinition<T extends RallarServerWsPayload> extends RallarServerWsTopicMetadata {
     readonly validate?: RallarServerWsValidator;
     readonly authorize?: RallarServerWsAuthorizer<T>;
 }
 
-export interface RallarServerWsProxyRule<T extends RallarServerWsPayload = JsonWireValue> {
+export interface RallarServerWsProxyRule<T extends RallarServerWsPayload> {
     readonly id?: string;
     readonly from: RallarServerWsSelector;
     readonly authorize?: RallarServerWsAuthorizer<T>;

@@ -4,7 +4,7 @@ import { authenticateAuthUser } from '@shared-server/rallar-system/auth/login/au
 import { prepareAuthUserRegistration } from '@shared-server/rallar-system/auth/login/prepare-auth-user-registration.ts';
 import { AuthUserRepository } from '@shared-server/rallar-system/auth/persistence/auth-user-repository.ts';
 
-import { FakeRuntimeStateRepository } from '../fake-runtime-state-repository.ts';
+import { FakeRuntimeStateRepository } from '../runtime-state/test-support/fake-runtime-state-repository.ts';
 
 it('prepares a complete persisted user without writing it', async () => {
     const runtimeRepository = new FakeRuntimeStateRepository();

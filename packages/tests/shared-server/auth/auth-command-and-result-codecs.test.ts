@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
 import { decodePersistedAuthSession } from '@shared-server/rallar-system/auth/persistence/persisted-auth-session.ts';
 
-import { FakeRuntimeStateRepository } from '../fake-runtime-state-repository.ts';
+import { FakeRuntimeStateRepository } from '../runtime-state/test-support/fake-runtime-state-repository.ts';
 
 describe('auth persisted session codecs', () => {
     it('strictly decodes token-free persisted auth sessions', () => {

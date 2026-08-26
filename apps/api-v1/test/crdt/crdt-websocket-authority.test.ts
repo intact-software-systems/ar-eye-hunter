@@ -14,7 +14,7 @@ import {
 import { ConnectionContext, JsonWebSocketServer } from '@shared/mod.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
-import { WsQueueBoxServerService } from '@shared/services/WsQueueBoxServerService.ts';
+import { WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 
 import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
 import { installRallarCrdtWsTopics } from '@shared-server/rallar-system/crdt/realtime/install-rallar-crdt-ws-topics.ts';
@@ -193,12 +193,12 @@ async function createFixture(
     const queue = new InMemoryQueueBox();
     const socketServer = new JsonWebSocketServer();
     const sockets = new Map<string, FakeSocket>();
-    const wsService = new WsQueueBoxServerService(
-        queue,
-        queue,
-        socketServer,
-        'server-1'
-    );
+    const wsService = new WsQueueBoxServerService({
+        inbox: queue,
+        outbox: queue,
+        socket: socketServer,
+        name: 'server-1'
+    });
     const router = new RallarServerWsRouter(wsService).install();
     installRallarCrdtWsTopics(router, {
         mutationIngress: createCrdtWsMutationIngress(service),

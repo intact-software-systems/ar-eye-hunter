@@ -35,7 +35,7 @@ import type {
 import type { ClientPrincipalRef, ClientSession } from '@shared/api/client-types.ts';
 import type { ConnectClientSessionRequest, StateScope } from '@shared/api/state-types.ts';
 import { describe, expect, expectTypeOf, it, vi } from 'vitest';
-import { FakeRuntimeStateRepository } from '../fake-runtime-state-repository.ts';
+import { FakeRuntimeStateRepository } from '../runtime-state/test-support/fake-runtime-state-repository.ts';
 import {
     AggregateBarrierRepository,
     AlwaysConflictingPrincipalRepository,
@@ -110,12 +110,12 @@ function expectInvalidLifecycleCommands(): void {
         })
     ];
     for (const command of invalidCommands) {
-        let error: unknown;
+        let error: Error | undefined;
         try {
             validateClientMutationCommand(command);
         }
         catch (caught) {
-            error = caught;
+            error = toError(caught);
         }
         expect(error).toMatchObject({ code: 'client-mutation-rejected', status: 400 });
     }
@@ -197,7 +197,7 @@ async function expectMalformedHeartbeatRejection(): Promise<void> {
 
 async function expectCorruptStoredSessionRejection(): Promise<void> {
     const runtime = new AggregateBarrierRepository();
-    await connect(runtime, 'corrupt-session', 'corrupt-generation', BASE_EPOCH_MS);
+    await connect({ runtime, sessionId: 'corrupt-session', generationId: 'corrupt-generation', nowEpochMs: BASE_EPOCH_MS });
     const storedSession = [...runtime.data.entries()].find(([, stored]) => {
         try {
             return JSON.parse(stored.value).generationId === 'corrupt-generation';
@@ -251,7 +251,7 @@ function heartbeatCorruptCommand(): ClientMutationCommand {
     ) as ClientMutationCommand;
 }
 
-function storedEntry(value: unknown) {
+function storedEntry<Value>(value: Value) {
     return {
         entry: {
             key: 'stored',
@@ -262,4 +262,8 @@ function storedEntry(value: unknown) {
         },
         value
     };
+}
+
+function toError(value: unknown): Error {
+    return value instanceof Error ? value : new Error(String(value));
 }

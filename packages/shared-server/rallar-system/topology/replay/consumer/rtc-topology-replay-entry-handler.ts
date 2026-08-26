@@ -3,9 +3,9 @@ import { AppTopics } from '@shared/api/api-config.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import type { Key, ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
-import type { WsServerLiveSendStatus } from '@shared/services/ws-queue-box-server-contracts.ts';
+import type { WsServerLiveSendStatus } from '@shared/services/ws-queue-box-server/ws-queue-box-server-contracts.ts';
 
-import { validatePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
+import { decodePersistedALMessageValue } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { toCanonicalRtcTopologyGroupIdentity } from '../../persistence/rtc-topology-identifiers.ts';
 import type { RtcTopologyPublication } from '../../publication/rtc-topology-publication.ts';
 import type { RtcTopologyDeliveryLogEntry } from '../delivery/rtc-topology-delivery-contracts.ts';
@@ -143,8 +143,7 @@ export function materializeRtcTopologyCurrentRepairMessage(
         },
         audit: { createdBy: 'rallar-server', createdTs: databaseNowEpochMs }
     };
-    validatePersistedALMessage(message);
-    return message;
+    return decodePersistedALMessageValue(message);
 }
 
 function throwIfAborted(signal: AbortSignal): void {

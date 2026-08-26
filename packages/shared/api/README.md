@@ -30,7 +30,7 @@ validation.
    audience — with
    [validateGroupStateDeltaEnvelope](./group-state-delta.ts#validateGroupStateDeltaEnvelope)
    as its exact-shape validator.
-5. [WsDeliveryDiagnosticsEvent](../services/ws-queue-box-server-contracts.ts#WsDeliveryDiagnosticsEvent)
+5. [WsDeliveryDiagnosticsEvent](../services/ws-queue-box-server/ws-queue-box-server-contracts.ts#WsDeliveryDiagnosticsEvent)
    is the per-send delivery diagnostics contract feeding the formation metrics
    recorder, and
    [RallarGroupFormationMetrics](../rtc/group-formation-metrics.ts#RallarGroupFormationMetrics)

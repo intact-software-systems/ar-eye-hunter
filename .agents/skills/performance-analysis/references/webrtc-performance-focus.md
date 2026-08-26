@@ -320,19 +320,16 @@ Browser facade and runtime:
 
 Server/room/signaling/topology:
 
-- `packages/shared-server/rallar-system/ws-system-topics.ts`
-- `packages/shared-server/rallar-system/services/rallar-rtc-topology-service.ts`
-- `packages/shared-server/rallar-system/services/group-state-service.ts`
-- `packages/shared-server/rallar-system/services/client-state-service.ts`
-- `packages/shared-server/rallar-system/services/ws-lifecycle-service.ts`
-- `packages/shared-server/rallar-system/services/AppClientInboxService.ts`
-- `packages/shared-server/rallar-system/services/AppGroupInboxService.ts`
-- `packages/shared-server/rallar-system/services/CoalescedAppOutboxWorkService.ts`
-- `packages/shared-server/rallar-system/repositories/RtcTopologySnapshotRepository.ts`
-- `packages/shared-server/rallar-system/rtc-topology/persistence/rtc-rtt-repository.ts`
-- `packages/shared-server/rallar-system/rtc-topology/policy/rtc-rtt-measurement-policy.ts`
-- `packages/shared-server/rallar-system/rtc-topology/topic/init-rtc-rtt-topic.ts`
-- `packages/shared-server/rallar-system/pubsub/QueueBoxPubSubBridge.ts`
+- `packages/shared-server/rallar-system/websocket/router/`
+- `packages/shared-server/rallar-system/websocket/ws-lifecycle-service.ts`
+- `packages/shared-server/rallar-system/communication/`
+- `packages/shared-server/rallar-system/client-state/`
+- `packages/shared-server/rallar-system/group-state/`
+- `packages/shared-server/rallar-system/app-outbox/`
+- `packages/shared-server/rallar-system/topology/`
+- `packages/shared-server/rallar-system/rtc-rtt/`
+- `packages/shared-server/rallar-system/queue-pubsub/`
+- `apps/api-v1/src/composition/create-api-v1-system-installers.ts`
 - `apps/api-v1/src/routes/ice-route.ts`
 - `apps/api-v1/src/routes/ws-routes.ts`
 - `apps/api-v1/src/services/ws-topic-room-authorizer.ts`
@@ -359,11 +356,14 @@ Tests and perf harnesses:
 - `packages/tests/shared/webrtc-group-service.test.ts`
 - `packages/tests/shared/webrtc-group-manager.test.ts`
 - `packages/tests/shared/websocket-webrtc.test.ts`
-- `packages/tests/shared-web/rallar-rtc-diagnostics-compat.test.ts`
-- `packages/tests/shared-web/rallar-rtc-recovery-compat.test.ts`
-- `packages/tests/shared-web/rallar-rtc-wait-compat.test.ts`
-- `packages/tests/shared-web/rallar-media-sources-compat.test.ts`
-- `packages/tests/shared-server/ws-system-topics-rtc-topology.test.ts`
+- `packages/tests/shared-web/rtc-diagnostics/browser-rtc-diagnostics-runtime.test.ts`
+- `packages/tests/shared-web/rtc/browser-rtc-recovery-runtime.test.ts`
+- `packages/tests/shared-web/rtc/browser-rtc-wait-runtime.test.ts`
+- `packages/tests/shared-web/media/browser-media-sources.test.ts`
+- `packages/tests/shared-server/rallar-system/communication/`
+- `packages/tests/shared-server/rallar-system/websocket/`
+- `packages/tests/shared-server/rallar-system/topology/`
+- `packages/tests/shared-server/rallar-system/rtc-rtt/`
 - `scripts/perf/README.md`
 - `scripts/perf/rtc-*.ts`
 - `scripts/perf/webrtc-*.ts`
@@ -379,8 +379,8 @@ Focused static/unit checks:
 ```sh
 npm run test:unit
 vitest run packages/tests/shared/webrtc-connection-service.test.ts packages/tests/shared/webrtc-rx-streamer-service.test.ts packages/tests/shared/webrtc-heartbeat.test.ts packages/tests/shared/webrtc-group-service.test.ts packages/tests/shared/webrtc-group-manager.test.ts packages/tests/shared/websocket-webrtc.test.ts
-vitest run packages/tests/shared-web/rallar-rtc-diagnostics-compat.test.ts packages/tests/shared-web/rallar-rtc-recovery-compat.test.ts packages/tests/shared-web/rallar-rtc-wait-compat.test.ts packages/tests/shared-web/rallar-media-sources-compat.test.ts
-vitest run packages/tests/shared-server/ws-system-topics-rtc-topology.test.ts
+vitest run packages/tests/shared-web/rtc-diagnostics/browser-rtc-diagnostics-runtime.test.ts packages/tests/shared-web/rtc/browser-rtc-recovery-runtime.test.ts packages/tests/shared-web/rtc/browser-rtc-wait-runtime.test.ts packages/tests/shared-web/media/browser-media-sources.test.ts
+vitest run packages/tests/shared-server/rallar-system/communication packages/tests/shared-server/rallar-system/websocket packages/tests/shared-server/rallar-system/rtc-rtt
 ```
 
 Black-box/browser RTC scenarios:

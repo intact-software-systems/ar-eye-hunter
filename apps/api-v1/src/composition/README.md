@@ -32,9 +32,10 @@ in this order:
 7. The required-input [`createRallarServer`](./create-rallar-server.ts) performs the single final
    `createRallarServerApplication` call. It reads no environment, chooses no defaults, and creates
    no services.
-8. `main.ts` invokes the system installers and mounts the routes. It waits for database and runtime
-   readiness before binding the HTTP server, then starts queue workers under the resolved replay
-   policy.
+8. `main.ts` invokes the system installers and mounts the routes. `startApiProcess` binds the HTTP
+   server, awaits database and runtime readiness, then starts queue workers under the resolved
+   replay policy. A readiness failure shuts the bound server and all constructed runtime owners
+   before startup returns.
 
 The Relic server starts at [`apps/relic-hunter-server-v1/src/main.ts`](../../../relic-hunter-server-v1/src/main.ts)
 and supplies the same required API-v1 configuration and database-lifecycle owners with its
@@ -51,8 +52,9 @@ intentional WebSocket options.
 - System WebSocket topics use the same completed runtime and topology services. WebSocket close
   handling translates close facts into client-disconnect and group-session-cleanup AppInbox work.
 - Database construction establishes SQL readiness before composition returns. Runtime readiness
-  then combines the remaining startup owners. API-v1 binds HTTP and starts queue workers only after
-  that readiness succeeds and the replay configuration permits them.
+  then combines the remaining startup owners. API-v1 binds HTTP before awaiting that barrier but
+  does not start queue workers or report successful startup until readiness succeeds and the replay
+  configuration permits them.
 - Process unload and RTC delivery health failure both call `rallar.runtime.backgroundTasks.stop()`.
   Startup failure invokes the same owner. The lifecycle snapshots and clears registered stops,
   stops runtime-state expiry, runs captured stops sequentially in reverse registration order, and

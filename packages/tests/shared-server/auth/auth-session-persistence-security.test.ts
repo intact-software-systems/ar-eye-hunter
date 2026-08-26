@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
 
-import { FakeRuntimeStateRepository } from '../fake-runtime-state-repository.ts';
+import { FakeRuntimeStateRepository } from '../runtime-state/test-support/fake-runtime-state-repository.ts';
 
 const corruptCanonicalSessionCase = 'catches a corrupted canonical session returned as a miss instead of failing closed';
 

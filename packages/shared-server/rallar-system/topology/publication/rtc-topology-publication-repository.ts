@@ -339,7 +339,7 @@ export class RtcTopologyPublicationRepository extends RuntimeStateJsonStore {
         if (value.publicationId !== decoded.value) {
             throw publicationCorruption(entry.key, 'publication value differs from key');
         }
-        const live = await this.toLiveEntryValue<RtcTopologyPublication>(
+        const live = await this.toLiveJsonEntryValue(
             RTC_TOPOLOGY_PUBLICATIONS_NAMESPACE,
             entry
         );
@@ -371,7 +371,7 @@ export class RtcTopologyPublicationRepository extends RuntimeStateJsonStore {
         if (value.workId !== decoded.value) {
             throw publicationCorruption(entry.key, 'work claim differs from key');
         }
-        const live = await this.toLiveEntryValue<RtcTopologyPublicationWorkClaim>(
+        const live = await this.toLiveJsonEntryValue(
             RTC_TOPOLOGY_PUBLICATION_WORK_INDEX_NAMESPACE,
             entry
         );

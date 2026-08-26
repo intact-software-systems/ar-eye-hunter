@@ -1,12 +1,13 @@
 import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import { describe, expect, it } from 'vitest';
 
+import type { GroupMutationIdempotencyRecord } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
+import { groupStateIdempotencyStorageKey } from '@shared-server/rallar-system/group-state/persistence/idempotency/group-idempotency-storage-key.ts';
 import {
-    groupStateIdempotencyStorageKey,
     groupStatePresenceAdmissionStorageKey,
     groupStatePresenceSessionStorageKey
-} from '@shared-server/rallar-system/group-state/persistence/group-state-storage-keys.ts';
+} from '@shared-server/rallar-system/group-state/persistence/presence/group-presence-storage-keys.ts';
 import { toSessionPurgeAfterEpochMs } from '@shared-server/rallar-system/presence/session-expiry.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
@@ -250,7 +251,11 @@ describe('GroupStateService guarded presence batch', () => {
     });
 });
 
-function exactReceiptEffect(ref: GroupRef, requestId: string, value: unknown) {
+function exactReceiptEffect(
+    ref: GroupRef,
+    requestId: string,
+    value: GroupMutationIdempotencyRecord
+) {
     return {
         effectId: 'receipt',
         operation: 'insert',

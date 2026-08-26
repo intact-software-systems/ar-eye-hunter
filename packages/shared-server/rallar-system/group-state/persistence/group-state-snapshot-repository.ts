@@ -9,8 +9,15 @@ import type {
 } from '@shared/api/group-types.ts';
 import { RuntimeStateJsonStore, type RuntimeStateEntryValue } from '../../../runtime-state/runtime-state-json-store.ts';
 import type { RuntimeStateEntry, RuntimeStateRepositoryLike } from '../../../runtime-state/runtime-state-repository.ts';
+import type { JsonWireValue } from '../../protocol/json-wire-identity.ts';
 import { readStableStateSnapshot } from '../../state-events/state-snapshot-read.ts';
 import type { GroupSnapshotPage, GroupSnapshotPageOptions } from '../group-state-service-contracts.ts';
+import { canonicalStoredGroup, toGroupStateAuthorityGuard } from './aggregate/group-aggregate-repository.ts';
+import {
+    decodeGroupStateGroupStorageKey,
+    groupStateGroupStorageKey,
+    groupStateScopeStorageKey
+} from './aggregate/group-aggregate-storage-keys.ts';
 import {
     assembleGroupStateSnapshot,
     collectGroupStateValuesByGroupId,
@@ -19,9 +26,6 @@ import {
     type GroupStateSnapshotPageGroup,
     type GroupStateSnapshotPageScan
 } from './assemble-group-state-snapshot.ts';
-import { canonicalStoredGroup, toGroupStateAuthorityGuard } from './group-aggregate-repository.ts';
-import { canonicalStoredMember } from './group-membership-repository.ts';
-import { canonicalStoredSession, canonicalStoredSummary } from './group-presence-repository.ts';
 import {
     assertDecodedGroupScope,
     decodeStoredGroupStateKey,
@@ -35,13 +39,10 @@ import {
     PRESENCE_SUMMARIES_NAMESPACE,
     SESSIONS_NAMESPACE
 } from './group-state-runtime-namespaces.ts';
-import {
-    decodeGroupStateGroupStorageKey,
-    decodeGroupStateMemberStorageKey,
-    decodeGroupStatePresenceSessionStorageKey,
-    groupStateGroupStorageKey,
-    groupStateScopeStorageKey
-} from './group-state-storage-keys.ts';
+import { canonicalStoredMember } from './membership/group-membership-repository.ts';
+import { decodeGroupStateMemberStorageKey } from './membership/group-membership-storage-key.ts';
+import { canonicalStoredSession, canonicalStoredSummary } from './presence/group-presence-repository.ts';
+import { decodeGroupStatePresenceSessionStorageKey } from './presence/group-presence-storage-keys.ts';
 import { readGroupStateAuthorityBatch } from './read-group-state-authority.ts';
 
 export abstract class GroupStateSnapshotRepository extends RuntimeStateJsonStore {
@@ -87,13 +88,13 @@ export abstract class GroupStateSnapshotRepository extends RuntimeStateJsonStore
 
     private async readScopeSnapshot(scope: GroupScope): Promise<GroupStateScopeSnapshotRead> {
         const keyPrefix = `${groupStateScopeStorageKey(scope)}:`;
-        const groupsBeforeRaw = await this.listEntryValues<unknown>(GROUPS_NAMESPACE, keyPrefix);
+        const groupsBeforeRaw = await this.listJsonEntryValues(GROUPS_NAMESPACE, keyPrefix);
         const [memberEntriesRaw, summaryEntriesRaw, sessionEntriesRaw] = await Promise.all([
-            this.listEntryValues<unknown>(MEMBERS_NAMESPACE, keyPrefix),
-            this.listEntryValues<unknown>(PRESENCE_SUMMARIES_NAMESPACE, keyPrefix),
-            this.listEntryValues<unknown>(SESSIONS_NAMESPACE, keyPrefix)
+            this.listJsonEntryValues(MEMBERS_NAMESPACE, keyPrefix),
+            this.listJsonEntryValues(PRESENCE_SUMMARIES_NAMESPACE, keyPrefix),
+            this.listJsonEntryValues(SESSIONS_NAMESPACE, keyPrefix)
         ]);
-        const groupsAfterRaw = await this.listEntryValues<unknown>(GROUPS_NAMESPACE, keyPrefix);
+        const groupsAfterRaw = await this.listJsonEntryValues(GROUPS_NAMESPACE, keyPrefix);
         const groupsBefore = groupsBeforeRaw.map((stored) => canonicalStoredGroup(stored, scope));
         const groupsAfter = groupsAfterRaw.map((stored) => canonicalStoredGroup(stored, scope));
         const members = memberEntriesRaw.map((stored) => {
@@ -143,7 +144,7 @@ export abstract class GroupStateSnapshotRepository extends RuntimeStateJsonStore
                 return { entry, group, members, summary: summary?.value, sessions };
             })
         );
-        const groupsAfterRaw = await this.listEntryValuesByKeys<unknown>(
+        const groupsAfterRaw = await this.listJsonEntryValuesByKeys(
             GROUPS_NAMESPACE,
             pageGroups.map(({ entry }) => entry.key)
         );
@@ -198,7 +199,7 @@ export abstract class GroupStateSnapshotRepository extends RuntimeStateJsonStore
             }
             for (const entry of groupEntries) {
                 afterKey = entry.key;
-                const groupValue = await this.toLiveValue<unknown>(GROUPS_NAMESPACE, entry);
+                const groupValue = await this.toLiveJsonValue(GROUPS_NAMESPACE, entry);
                 if (groupValue === undefined) {
                     continue;
                 }
@@ -228,7 +229,7 @@ export abstract class GroupStateSnapshotRepository extends RuntimeStateJsonStore
         const batch = await readGroupStateAuthorityBatch(
             this.repository,
             ref,
-            async (namespace, entry) => await this.toLiveEntryValue<unknown>(namespace, entry)
+            async (namespace, entry) => await this.toLiveJsonEntryValue(namespace, entry)
         );
         if (batch.status === 'stable') {
             if (batch.group === undefined) {
@@ -278,12 +279,12 @@ export abstract class GroupStateSnapshotRepository extends RuntimeStateJsonStore
         });
     }
 
-    protected override async toLiveEntryValue<T>(
+    protected override async toLiveJsonEntryValue(
         namespace: string,
         entry: RuntimeStateEntry
-    ): Promise<RuntimeStateEntryValue<T> | undefined> {
+    ): Promise<RuntimeStateEntryValue<JsonWireValue> | undefined> {
         void namespace;
-        return await toLiveGroupStateEntryValue<T>(entry);
+        return await toLiveGroupStateEntryValue(entry);
     }
 
     private toSnapshot(input: GroupStateSnapshotAssemblyInput): GroupSnapshot {

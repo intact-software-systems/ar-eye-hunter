@@ -1,3 +1,4 @@
+import type { ApiJsonObject } from './api-json-value.ts';
 import type {
     ClientInstanceStatus,
     ClientPlatform,
@@ -34,7 +35,7 @@ export type UpsertClientPrincipalRequest =
         authProvider?: string;
         externalSubjectId?: string;
         roles?: readonly string[];
-        metadata?: Record<string, unknown>;
+        metadata?: ApiJsonObject;
         lastSeenAtEpochMs?: number;
     }>;
 
@@ -91,7 +92,7 @@ export type CreateGroupRequest =
         joinMode?: GroupJoinMode;
         maxMembers?: number;
         maxSessionsPerMember?: number;
-        metadata?: Record<string, unknown>;
+        metadata?: ApiJsonObject;
         createdByPrincipalId: string;
         expiresAtEpochMs?: number;
         purgeAfterEpochMs?: number;
@@ -109,7 +110,7 @@ export type UpdateGroupRequest =
         joinMode?: GroupJoinMode;
         maxMembers?: number;
         maxSessionsPerMember?: number;
-        metadata?: Record<string, unknown>;
+        metadata?: ApiJsonObject;
         expiresAtEpochMs?: number;
         emptySinceEpochMs?: number;
         purgeAfterEpochMs?: number;
@@ -211,5 +212,5 @@ export type StateErrorResponse = Readonly<{
     error: string;
     code?: string;
     message?: string;
-    details?: Record<string, unknown>;
+    details?: ApiJsonObject;
 }>;

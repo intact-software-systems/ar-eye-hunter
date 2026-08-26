@@ -2,16 +2,34 @@ import { spawn } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 
+import type { JsonWireObject } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
+import type { GroupTopologyConfigPatch } from '@shared/api/graph-topology-management-types.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 
-export interface TopologyMutationWorkerInput {
-    readonly command: 'topology-config-put' | 'topology-config-delete';
-    readonly groupRef: GroupRef;
-    readonly atEpochMs: number;
-    readonly traceFilePath: string;
-    readonly barrier: Readonly<{ readyDirectoryPath: string; releaseFilePath: string; }>;
-    readonly request: Readonly<Record<string, unknown>>;
+interface TopologyMutationWorkerRequest {
+    readonly requestId?: string;
+    readonly updatedByPrincipalId: string;
 }
+
+type TopologyMutationWorkerInput =
+    & Readonly<{
+        groupRef: GroupRef;
+        atEpochMs: number;
+        traceFilePath: string;
+        barrier: Readonly<{ readyDirectoryPath: string; releaseFilePath: string; }>;
+    }>
+    & (
+        | Readonly<{
+            command: 'topology-config-put';
+            request: TopologyMutationWorkerRequest & Readonly<{ config: GroupTopologyConfigPatch; }>;
+        }>
+        | Readonly<{
+            command: 'topology-config-delete';
+            request: TopologyMutationWorkerRequest;
+        }>
+    );
+
+export type { TopologyMutationWorkerInput };
 
 export interface TopologyMutationWorkerOutput {
     readonly operation: TopologyMutationWorkerInput['command'];
@@ -19,7 +37,7 @@ export interface TopologyMutationWorkerOutput {
     readonly commandHash: string;
     readonly attemptCount: number;
     readonly acceptedStorageRevision: number | null;
-    readonly acceptedCausalRevision: Readonly<Record<string, unknown>> | null;
+    readonly acceptedCausalRevision: JsonWireObject | null;
     readonly acceptedVersion: number | null;
     readonly outboxIds: readonly string[];
     readonly domainStatus: 'applied' | 'no-op' | 'rejected';
@@ -45,7 +63,7 @@ const ROOT_DENO_CONFIG_PATH = fileURLToPath(
     new URL('../../../../../../deno.json', import.meta.url)
 );
 const STATE_MUTATION_WORKER_PATH = fileURLToPath(
-    new URL('../../../fixtures/postgres-expiry-worker.ts', import.meta.url)
+    new URL('../../../integration/postgres/test-support/postgres-expiry-worker.ts', import.meta.url)
 );
 
 export function spawnTopologyMutationWorker(

@@ -4,11 +4,12 @@ import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import type { Either } from '@shared/resilience/Either.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 import { describe, expect, it, vi } from 'vitest';
-import { createAppInboxTestDatabase, type AppInboxTestDatabase } from '../../app-inbox-test-database.ts';
+import { createAppInboxTestDatabase, type AppInboxTestDatabase } from '../../rallar-system/app-inbox/test-support/app-inbox-test-database.ts';
 
 import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
 
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
+import type { JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 
 import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import { type GroupStateWritten } from '@shared-server/rallar-system/group-state/group-state-service-contracts.ts';
@@ -25,7 +26,7 @@ import {
 import { InMemoryGroupStateEventStore } from '@shared-server/rallar-system/state-events/in-memory-group-state-event-store.ts';
 
 import { type GroupMutationReceipt } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
-import { FakeRuntimeStateRepository } from '../../fake-runtime-state-repository.ts';
+import { FakeRuntimeStateRepository } from '../../runtime-state/test-support/fake-runtime-state-repository.ts';
 import { authSession } from '../group-state-test-runtime.ts';
 import {
     createAuthorityHarness,
@@ -171,6 +172,64 @@ describe('GroupStateInboxService authenticated authority', () => {
             await harness.repository.readSnapshot({
                 ...SCOPE,
                 groupId: 'raw-extra-proof'
+            })
+        ).toBeUndefined();
+    });
+
+    it('rejects a dequeued user command whose authority descriptor has predecessor fields', async () => {
+        const harness = await createAuthorityHarness(['owner']);
+        const input: AuthenticatedGroupMutationEnqueue = {
+            type: AppInboxType.GROUP_CREATE,
+            resourceId: 'raw-extra-descriptor-request',
+            contextId: 'ar-eye-hunter:default:raw-extra-descriptor-request',
+            senderId: 'owner',
+            data: {
+                scope: SCOPE,
+                request: {
+                    groupId: 'raw-extra-descriptor-request',
+                    displayName: 'Must Not Exist',
+                    kind: 'room',
+                    joinMode: 'open',
+                    createdByPrincipalId: 'owner',
+                    actorPrincipalId: 'owner',
+                    actorSessionId: 'owner-session',
+                    requestId: 'raw-extra-descriptor-request'
+                }
+            }
+        };
+
+        const pending = harness.service.processAuthenticatedGroupEntryUntilCompletion(
+            input,
+            harness.sessions.owner
+        );
+        await waitForQueueEntry(harness.queue);
+        const entry = (await harness.queueEntries()).find(
+            (candidate) => candidate.status === EntityStatus.NEW
+        );
+        if (!entry) {
+            throw new Error('Expected queued authenticated group command');
+        }
+        const message = JSON.parse(entry.resource) as {
+            payload: { resource: string; };
+        };
+        const command = JSON.parse(message.payload.resource) as {
+            authority: { descriptor: { request: Record<string, JsonWireValue>; }; };
+        };
+        command.authority.descriptor.request.predecessorActorId = 'owner';
+        message.payload.resource = JSON.stringify(command);
+        await harness.queue.enqueue({
+            ...entry,
+            resource: JSON.stringify(message)
+        });
+        await harness.reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
+
+        expect((await pending).left?.message).toContain(
+            'authenticated group mutation intent is malformed'
+        );
+        expect(
+            await harness.repository.readSnapshot({
+                ...SCOPE,
+                groupId: 'raw-extra-descriptor-request'
             })
         ).toBeUndefined();
     });

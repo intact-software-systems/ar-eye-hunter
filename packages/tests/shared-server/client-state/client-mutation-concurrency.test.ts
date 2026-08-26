@@ -49,7 +49,7 @@ function deepFreeze<T>(value: T): T {
 describe('client mutation stable-read concurrency', () => {
     it('reads the principal guard and snapshot from one stable aggregate observation', async () => {
         const runtime = new PrincipalChangeAfterFirstReadRepository();
-        await connect(runtime, 'session-a', 'generation-a', BASE_EPOCH_MS);
+        await connect({ runtime, sessionId: 'session-a', generationId: 'generation-a', nowEpochMs: BASE_EPOCH_MS });
         const repository = createTestClientStateRepository(runtime);
         const session = await repository.findSession({
             ...principalRef('alice'),

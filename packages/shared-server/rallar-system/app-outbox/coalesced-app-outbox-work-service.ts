@@ -1,5 +1,6 @@
 import { Temporal } from '@js-temporal/polyfill';
 import { newALRoute, newALUntargetedMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import { toAppQueueCreatedBy, toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 import {
@@ -34,39 +35,39 @@ export type CoalescedAppOutboxWorkMerge<T extends object> = (
     previousEntry: ResourceEntry
 ) => CoalescedAppOutboxWorkData<T>;
 
-export type CoalescedAppOutboxWorkEnqueueInput<T extends object> = Readonly<{
-    type: string;
-    topicId: string;
-    resourceId: string;
-    contextId: string;
-    senderId?: string;
-    data: T;
-    reason?: string;
-    requestedAtEpochMs?: number;
-    dueAtEpochMs?: number;
-    merge?: CoalescedAppOutboxWorkMerge<T>;
-}>;
+export interface CoalescedAppOutboxWorkEnqueueInput<T extends object> {
+    readonly type: string;
+    readonly topicId: string;
+    readonly resourceId: string;
+    readonly contextId: string;
+    readonly senderId?: string;
+    readonly data: T;
+    readonly reason?: string;
+    readonly requestedAtEpochMs?: number;
+    readonly dueAtEpochMs?: number;
+    readonly merge?: CoalescedAppOutboxWorkMerge<T>;
+}
 
-export type CoalescedAppOutboxWorkEnqueueResult<T extends object> = Readonly<{
-    action: 'inserted' | 'updated' | 'unchanged';
-    entry: ResourceEntry;
-    previous?: ResourceEntry;
-    envelope: CoalescedAppOutboxWorkEnvelope<T>;
-    blockedByReserved: boolean;
-}>;
+export interface CoalescedAppOutboxWorkEnqueueResult<T extends object> {
+    readonly action: 'inserted' | 'updated' | 'unchanged';
+    readonly entry: ResourceEntry;
+    readonly previous?: ResourceEntry;
+    readonly envelope: CoalescedAppOutboxWorkEnvelope<T>;
+    readonly blockedByReserved: boolean;
+}
 
-export type ComputedCoalescedAppOutboxWork = Readonly<{
-    expectedEntry: ResourceEntry | null;
-    entry: ResourceEntry;
-    successorEntry: ResourceEntry;
-}>;
+export interface ComputedCoalescedAppOutboxWork {
+    readonly expectedEntry: ResourceEntry | null;
+    readonly entry: ResourceEntry;
+    readonly successorEntry: ResourceEntry;
+}
 
-export type CoalescedAppOutboxWorkWriteResult = Readonly<{
-    action: 'inserted' | 'matched' | 'updated' | 'successor';
-    entry: ResourceEntry;
-    previous: ResourceEntry | null;
-    blockedByReserved: boolean;
-}>;
+export interface CoalescedAppOutboxWorkWriteResult {
+    readonly action: 'inserted' | 'matched' | 'updated' | 'successor';
+    readonly entry: ResourceEntry;
+    readonly previous: ResourceEntry | null;
+    readonly blockedByReserved: boolean;
+}
 
 export class CoalescedAppOutboxWorkService {
     private readonly outbox: OutboxQueueReader;
@@ -175,7 +176,7 @@ export class CoalescedAppOutboxWorkService {
         const result = await this.outbox.outbox.enqueueOrUpdate(
             initialEntry,
             (previous) => {
-                const previousEnvelope = this.tryReadEnvelope<T>(previous);
+                const previousEnvelope = tryReadCoalescedAppOutboxWorkEnvelope<T>(previous);
                 if (!previousEnvelope) {
                     return initialEntry;
                 }
@@ -242,7 +243,7 @@ export class CoalescedAppOutboxWorkService {
     readEnvelope<T extends object>(
         entry: ResourceEntry
     ): CoalescedAppOutboxWorkEnvelope<T> {
-        const envelope = this.tryReadEnvelope<T>(entry);
+        const envelope = tryReadCoalescedAppOutboxWorkEnvelope<T>(entry);
         if (!envelope) {
             throw new Error(
                 `Resource entry is not a coalesced app outbox work item: ${JSON.stringify(entry.key)}`
@@ -253,7 +254,7 @@ export class CoalescedAppOutboxWorkService {
     }
 
     readMessage(entry: ResourceEntry): ALMessage {
-        return JSON.parse(entry.resource) as ALMessage;
+        return decodePersistedALMessage(entry.resource);
     }
 
     readGeneration(entry: ResourceEntry): number {
@@ -317,8 +318,8 @@ export class CoalescedAppOutboxWorkService {
         entry: ResourceEntry,
         previous: ResourceEntry
     ): ResourceEntry {
-        const message = JSON.parse(entry.resource) as ALMessage;
-        const previousMessage = JSON.parse(previous.resource) as ALMessage;
+        const message = decodePersistedALMessage(entry.resource);
+        const previousMessage = decodePersistedALMessage(previous.resource);
         const identityPreserved: ALMessage = {
             ...message,
             id: { ...message.id, ts: previousMessage.id.ts },
@@ -348,12 +349,6 @@ export class CoalescedAppOutboxWorkService {
                     : Temporal.Instant.fromEpochMilliseconds(dueAtEpochMs)
             }
         };
-    }
-
-    private tryReadEnvelope<T extends object>(
-        entry: ResourceEntry
-    ): CoalescedAppOutboxWorkEnvelope<T> | undefined {
-        return tryReadCoalescedAppOutboxWorkEnvelope<T>(entry);
     }
 }
 

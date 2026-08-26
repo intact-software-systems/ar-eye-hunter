@@ -18,8 +18,7 @@ import type { TopologyAppInboxMutationOwners } from '@shared-server/rallar-syste
 import type { TopologyInboxService } from '@shared-server/rallar-system/topology/inbox/topology-inbox-service.ts';
 import type { GroupTopologyMutationOwners } from '@shared-server/rallar-system/topology/mutation/create-group-topology-mutation-owners.ts';
 import {
-    createRtcTopologyOutboxPublisher,
-    createRtcTopologyWorkHandler
+    createRtcTopologyOutboxPublisher
 } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-work.ts';
 import { RtcTopologyOutboxWriter } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-writer.ts';
 import { RtcTopologyExecutionRepository } from '@shared-server/rallar-system/topology/persistence/rtc-topology-execution-repository.ts';
@@ -28,6 +27,7 @@ import { RtcTopologySnapshotRepository } from '@shared-server/rallar-system/topo
 import { materializeRtcOverlayTopologyBroadcastMessage } from '@shared-server/rallar-system/topology/planning/materialize-rtc-overlay-topology-broadcast-message.ts';
 import { computeRtcTopologyPublicationOutbox } from '@shared-server/rallar-system/topology/publication/rtc-topology-ws-outbox-entry.ts';
 import { PSqlRtcTopologyDeliveryRepository } from '@shared-server/rallar-system/topology/replay/postgres/p-sql-rtc-topology-delivery-repository.ts';
+import { createRtcTopologyWorkHandler } from '@shared-server/rallar-system/topology/replay/work/create-rtc-topology-work-handler.ts';
 import {
     createGroupTopologyRuntimeOwners
 } from '@shared-server/rallar-system/topology/runtime/create-group-topology-runtime-owners.ts';
@@ -35,7 +35,7 @@ import { RallarRtcTopologyService } from '@shared-server/rallar-system/topology/
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 
-import { validatePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
+import { decodePersistedALMessageValue } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import { toCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topology-config-canonical.ts';
 import type { Group, GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
@@ -580,8 +580,7 @@ export function advanceCoalescedGeneration(
 
 function readALMessage(source: string): ALMessage {
     const value = JSON.parse(source);
-    validatePersistedALMessage(value);
-    return value;
+    return decodePersistedALMessageValue(value);
 }
 
 function readResourceInboxKeyFields(source: string): ResourceInboxKeyFields {

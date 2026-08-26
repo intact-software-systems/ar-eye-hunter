@@ -9,6 +9,7 @@ import type { ApiV1Runtime } from '../../src/composition/api-v1-runtime.ts';
 import type { ApiV1MutationRuntime } from '../../src/composition/create-api-v1-mutation-runtime.ts';
 import { constructApiV1Runtime, type ApiV1RuntimeConstructionOperations, type CreateApiV1RuntimeInput } from '../../src/composition/create-api-v1-runtime.ts';
 import type { ApiV1TopologyServices } from '../../src/composition/create-api-v1-topology-services.ts';
+import { createLocalQueuePubSubBus } from '../../src/db/local-queue-pubsub-bridge.ts';
 import { toResilienceDto } from '../api-v1-test-queue-resilience.ts';
 
 Deno.test('runtime construction preserves the owned startup sequence', () => {
@@ -80,6 +81,7 @@ function createInput(events: string[]): CreateApiV1RuntimeInput {
         publisherStreamId: 'stream-test',
         queuePubSubPublisherId: 'publisher-test',
         queuePubSubChannel: 'channel-test',
+        queuePubSubLocalBus: createLocalQueuePubSubBus(),
         wsRuntimeName: 'ws-test',
         authCredentialSecret: 'a'.repeat(32),
         nowEpochMs: () => 1_000,

@@ -5,7 +5,7 @@ import { toCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topology-
 import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
 import { RuntimeStateWriteConflictError } from '../../../runtime-state/optimistic-runtime-state-write.ts';
 import { PSqlRuntimeStateRepository } from '../../../runtime-state/postgres/p-sql-runtime-state-repository.ts';
-import { advanceGroupStateAuthorityFence } from '../../group-state/persistence/group-aggregate-repository.ts';
+import { advanceGroupStateAuthorityFence } from '../../group-state/persistence/aggregate/group-aggregate-repository.ts';
 import type { GroupStateRepository } from '../../group-state/persistence/group-state-repository.ts';
 import { canUpdateGroupSnapshot } from '../../group-state/policy/group-governance-policy.ts';
 import { canMutateActiveGroup } from '../../group-state/policy/group-lifecycle-policy.ts';

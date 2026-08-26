@@ -5,7 +5,7 @@ import { ClientMutationIdempotencyConflictError } from '@shared-server/rallar-sy
 import { ClientStateRepository } from '@shared-server/rallar-system/client-state/persistence/client-state-repository.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 
-import { FakeRuntimeStateRepository } from '../fake-runtime-state-repository.ts';
+import { FakeRuntimeStateRepository } from '../runtime-state/test-support/fake-runtime-state-repository.ts';
 import { CLIENT_MUTATION_SERVICE_SCOPE as SCOPE, toClientPrincipalRef } from './client-state-service-test-fixtures.ts';
 import { createClientStateTestDriver as createClientStateService, getClientStateTestOutbox } from './client-state-test-runtime.ts';
 

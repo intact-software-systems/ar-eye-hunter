@@ -16,7 +16,7 @@ import { EntityStatus, NEVER_EXPIRE_TS, toKeyAsString, type ResourceEntry } from
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 
 import type { ClientMutationComputed } from '@shared-server/rallar-system/client-state/mutation/client-mutation-contracts.ts';
-import { createAppInboxTestDatabase } from '../app-inbox-test-database.ts';
+import { createAppInboxTestDatabase } from '../rallar-system/app-inbox/test-support/app-inbox-test-database.ts';
 
 const SCOPE = { applicationId: 'ar-eye-hunter', workspaceId: 'default' } as const;
 const EXPECTED_DURABLE_JSON = '{"status":"ok","result":{"right":{"snapshot":{"snapshotVersion":4,"stateRevision":3},' + '"event":{"eventId":"event-4"}}}}';

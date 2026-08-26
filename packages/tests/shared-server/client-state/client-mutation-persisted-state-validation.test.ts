@@ -26,6 +26,7 @@ import { clientStateSessionStorageKey } from '@shared-server/rallar-system/clien
 import { ClientMutationRejectedError } from '@shared-server/rallar-system/client-state/validation/client-mutation-rejection.ts';
 import type { RallarTimingEvent } from '@shared-server/rallar-system/observability/timing.ts';
 import { toClientSessionExpiryCandidate } from '@shared-server/rallar-system/presence/session-expiry.ts';
+import { decodeJsonWireValue, type JsonWireObject, type JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
 import type { RuntimeStateReadBatchSelection, RuntimeStateReadBatchSelector } from '@shared-server/runtime-state/read-batch/runtime-state-read-batch.ts';
 import type {
@@ -38,7 +39,7 @@ import { TestClientStateEventStore } from '@shared-test/shared-server/test-clien
 import type { ClientEvent, ClientPrincipalRef, ClientSession } from '@shared/api/client-types.ts';
 import type { ConnectClientSessionRequest, StateScope } from '@shared/api/state-types.ts';
 import { describe, expect, expectTypeOf, it, vi } from 'vitest';
-import { FakeRuntimeStateRepository } from '../fake-runtime-state-repository.ts';
+import { FakeRuntimeStateRepository } from '../runtime-state/test-support/fake-runtime-state-repository.ts';
 import {
     AggregateBarrierRepository,
     AlwaysConflictingPrincipalRepository,
@@ -70,7 +71,7 @@ import {
 describe('client mutation persisted-state validation', () => {
     it('fails closed when a direct persisted principal read omits its workspace identity', async () => {
         const runtime = new AggregateBarrierRepository();
-        await connect(runtime, 'principal-session', 'principal-generation', BASE_EPOCH_MS);
+        await connect({ runtime, sessionId: 'principal-session', generationId: 'principal-generation', nowEpochMs: BASE_EPOCH_MS });
         await removePersistedWorkspaceId(runtime, 'client-state:principals');
 
         await expect(
@@ -80,7 +81,7 @@ describe('client mutation persisted-state validation', () => {
 
     it('fails closed when a persisted instance list entry omits its workspace identity', async () => {
         const runtime = new AggregateBarrierRepository();
-        await connect(runtime, 'instance-session', 'instance-generation', BASE_EPOCH_MS);
+        await connect({ runtime, sessionId: 'instance-session', generationId: 'instance-generation', nowEpochMs: BASE_EPOCH_MS });
         await removePersistedWorkspaceId(runtime, 'client-state:instances');
 
         await expect(
@@ -90,7 +91,7 @@ describe('client mutation persisted-state validation', () => {
 
     it('fails closed when a persisted session snapshot entry omits its workspace identity', async () => {
         const runtime = new AggregateBarrierRepository();
-        await connect(runtime, 'snapshot-session', 'snapshot-generation', BASE_EPOCH_MS);
+        await connect({ runtime, sessionId: 'snapshot-session', generationId: 'snapshot-generation', nowEpochMs: BASE_EPOCH_MS });
         await removePersistedWorkspaceId(runtime, 'client-state:sessions');
 
         await expect(
@@ -125,7 +126,7 @@ describe('client mutation persisted-state validation', () => {
 
     it('fails closed when an active persisted session has no matching instance', async () => {
         const runtime = new AggregateBarrierRepository();
-        await connect(runtime, 'orphan-session', 'orphan-generation', BASE_EPOCH_MS);
+        await connect({ runtime, sessionId: 'orphan-session', generationId: 'orphan-generation', nowEpochMs: BASE_EPOCH_MS });
         const [instance] = await runtime.findAllEntries('client-state:instances');
         if (!instance) {
             throw new Error('Expected a stored client instance');
@@ -139,7 +140,7 @@ describe('client mutation persisted-state validation', () => {
 
     it('fails closed when persisted active session ids collide across instances', async () => {
         const runtime = new AggregateBarrierRepository();
-        await connect(runtime, 'shared-session', 'browser-generation', BASE_EPOCH_MS);
+        await connect({ runtime, sessionId: 'shared-session', generationId: 'browser-generation', nowEpochMs: BASE_EPOCH_MS });
         await createService(runtime, BASE_EPOCH_MS + 1).upsertInstance(SCOPE, 'alice', 'phone', {
             platform: 'web',
             requestId: 'register-phone'
@@ -167,7 +168,7 @@ describe('client mutation persisted-state validation', () => {
 
     it('fails closed when a persistence list repeats a client instance', async () => {
         const runtime = new DuplicatingClientInstanceRepository();
-        await connect(runtime, 'instance-session', 'instance-generation', BASE_EPOCH_MS);
+        await connect({ runtime, sessionId: 'instance-session', generationId: 'instance-generation', nowEpochMs: BASE_EPOCH_MS });
 
         await expect(
             createTestClientStateRepository(runtime).readSnapshot(principalRef('alice'))
@@ -303,9 +304,9 @@ describe('client mutation persisted-state validation', () => {
     it('rejects malformed read entries and computed authoritative candidates', () => {
         const command = validPrincipalCommand();
         expect(() =>
-            computeClientMutation({
+            validateUntrustedClientMutationComputeInput({
                 command,
-                read: [] as unknown as ClientMutationRead
+                read: []
             })
         ).toThrow(ClientMutationRejectedError);
 
@@ -330,10 +331,8 @@ describe('client mutation persisted-state validation', () => {
             expiredSessionEntry: null,
             snapshot: null,
             receiptEvent: null
-        } as unknown as ClientMutationRead;
-        expect(() => computeClientMutation({ command, read: invalidRead })).toThrow(
-            ClientMutationRejectedError
-        );
+        };
+        expect(() => validateUntrustedClientMutationComputeInput({ command, read: invalidRead })).toThrow(ClientMutationRejectedError);
 
         const read: ClientMutationRead = {
             authoritySession: validAuthoritySession(),
@@ -346,13 +345,18 @@ describe('client mutation persisted-state validation', () => {
             receiptEvent: null
         };
         const computed = computeClientMutation({ command, read });
-        const invalidComputed = structuredClone(computed) as Record<string, unknown>;
-        (invalidComputed.receipt as Record<string, unknown>).snapshotVersion = -1;
+        if (!('receipt' in computed)) {
+            throw new Error('Expected principal command to compute a receipt');
+        }
+        const invalidComputed = {
+            ...computed,
+            receipt: { ...computed.receipt, snapshotVersion: -1 }
+        };
         expect(() =>
             validateClientMutation({
                 command,
                 read,
-                computed: invalidComputed as unknown as typeof computed
+                computed: invalidComputed
             })
         ).toThrow(ClientMutationRejectedError);
     });
@@ -391,7 +395,10 @@ async function removePersistedWorkspaceId(
     if (!entry) {
         throw new Error(`Expected a stored client-state ${namespace} entry`);
     }
-    const persisted = JSON.parse(entry.value) as Record<string, unknown>;
+    const persisted = decodeJsonWireValue(JSON.parse(entry.value), `Stored client-state ${namespace} entry`);
+    if (!isJsonWireObject(persisted)) {
+        throw new TypeError(`Expected stored client-state ${namespace} entry to be an object`);
+    }
     const { workspaceId: ignoredWorkspaceId, ...persistedWithoutWorkspaceId } = persisted;
     void ignoredWorkspaceId;
     await runtime.upsert(
@@ -400,4 +407,12 @@ async function removePersistedWorkspaceId(
         JSON.stringify(persistedWithoutWorkspaceId),
         Number.MAX_SAFE_INTEGER
     );
+}
+
+function validateUntrustedClientMutationComputeInput(input: unknown): void {
+    Reflect.apply(computeClientMutation, undefined, [input]);
+}
+
+function isJsonWireObject(value: JsonWireValue): value is JsonWireObject {
+    return value !== null && typeof value === 'object' && !Array.isArray(value);
 }

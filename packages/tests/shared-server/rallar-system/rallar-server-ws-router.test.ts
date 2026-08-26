@@ -495,15 +495,13 @@ function createRouter(
     const socket = createFakeWsServer();
     const inbox = new InMemoryQueueBox(new Map());
     const outbox = new InMemoryQueueBox(new Map());
-    const service = new RecordingWsQueueBoxServerService(
-        inbox,
-        outbox,
-        socket as never,
-        'server-1',
-        {
-            targetResolver: createTargetResolver()
-        }
-    );
+    const service = new RecordingWsQueueBoxServerService({
+        inbox: inbox,
+        outbox: outbox,
+        socket: socket as never,
+        name: 'server-1',
+        targetResolver: createTargetResolver()
+    });
     const router = new RallarServerWsRouter(service, options);
 
     return {
@@ -543,15 +541,13 @@ function createPublicRouterFixture(
     });
     const inbox = new InMemoryQueueBox(new Map());
     const outbox = new InMemoryQueueBox(new Map());
-    const service = new WsQueueBoxServerService(
-        inbox,
-        outbox,
-        socket as never,
-        'server-1',
-        {
-            targetResolver: options.targetResolver ?? createTargetResolver()
-        }
-    );
+    const service = new WsQueueBoxServerService({
+        inbox: inbox,
+        outbox: outbox,
+        socket: socket as never,
+        name: 'server-1',
+        targetResolver: options.targetResolver ?? createTargetResolver()
+    });
     const qboxEngine = {
         wakeRequested: false,
         start() {},

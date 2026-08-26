@@ -15,9 +15,9 @@ import { RallarRtcTopologyService } from '@shared-server/rallar-system/topology/
 import { createTestClientStateRepository, createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import type { QueueBoxResourceEntryRepository } from '@shared/queuebox/queue-box-types.ts';
 
-import { createAppInboxTestDatabase } from '../../app-inbox-test-database.ts';
-import { FakeRuntimeStateRepository } from '../../fake-runtime-state-repository.ts';
 import { TestResourceInbox, TestResourceInboxResults } from '../../group-state/inbox/group-state-inbox-resource-fixtures.ts';
+import { FakeRuntimeStateRepository } from '../../runtime-state/test-support/fake-runtime-state-repository.ts';
+import { createAppInboxTestDatabase } from '../app-inbox/test-support/app-inbox-test-database.ts';
 
 const TEST_SERVICE_ID = 'rallar-middleware-test';
 

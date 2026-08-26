@@ -1,4 +1,5 @@
-import { hashMutationCommand, type JsonWireValue } from '../protocol/json-wire-identity.ts';
+import { sha256CanonicalJson } from '../protocol/canonical-json.ts';
+import { decodeJsonWireValue, hashMutationCommand } from '../protocol/json-wire-identity.ts';
 import { createWsSessionGenerationLifecycleService } from '../websocket/ws-session-generation-lifecycle.ts';
 import {
     authorizeGroupMutation,
@@ -19,7 +20,6 @@ import {
 import { createTimedGroupStateService } from './group-state-service-timing.ts';
 import { validateGroupMutationCommand } from './mutation/command-validation/validate-group-mutation-command.ts';
 import type { GroupMutationCommand, GroupMutationFacts } from './mutation/group-mutation-contracts.ts';
-import { sha256CanonicalJson } from './mutation/group-state-crypto.ts';
 import { computeGroupMutation } from './mutation/orchestration/compute-group-mutation.ts';
 import { readGroupMutation } from './mutation/read/read-group-mutation.ts';
 import { validateGroupMutation } from './mutation/state-validation/validate-group-mutation.ts';
@@ -119,7 +119,9 @@ function createInternalMutationPreparer(
 ): InternalMutationPreparer {
     return async (command, internalAuthority, atEpochMs) => {
         validateGroupMutationCommand(command);
-        const commandHash = await hashMutationCommand(command as JsonWireValue);
+        const commandHash = await hashMutationCommand(
+            decodeJsonWireValue(command, 'Internal group mutation command')
+        );
         const facts: Omit<GroupMutationFacts, 'attemptCount'> = {
             nowEpochMs: atEpochMs,
             expireAtEpochMs: GROUP_MUTATION_QUEUE_EXPIRE_AT_EPOCH_MS,

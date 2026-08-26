@@ -7,7 +7,8 @@ import type { GroupPolicyCapacityConfig } from '@shared-server/rallar-system/gro
 import type { IssuedAuthSession } from '../auth/persistence/auth-session-types.ts';
 import type { PersistedAuthSession } from '../auth/persistence/persisted-auth-session.ts';
 import { authSessionProofSecret } from '../auth/sessions/auth-session-proof-secret.ts';
-import { hashMutationCommand, type JsonWireValue } from '../protocol/json-wire-identity.ts';
+import { serializeCanonicalJson, sha256CanonicalJson } from '../protocol/canonical-json.ts';
+import { decodeJsonWireValue, hashMutationCommand } from '../protocol/json-wire-identity.ts';
 import { toAggregateMutationCommand, toMembershipMutationCommand } from './group-mutation-command.ts';
 import { toPresenceMutationCommand } from './group-presence-mutation-command.ts';
 import {
@@ -21,13 +22,7 @@ import {
 } from './group-state-service-contracts.ts';
 import { validateGroupMutationCommand } from './mutation/command-validation/validate-group-mutation-command.ts';
 import { type GroupMutationCommand, type GroupMutationFacts } from './mutation/group-mutation-contracts.ts';
-import {
-    canonicalJson,
-    constantTimeHexEqual,
-    constantTimeSecretEqual,
-    hmacSha256Hex,
-    sha256CanonicalJson
-} from './mutation/group-state-crypto.ts';
+import { constantTimeHexEqual, constantTimeSecretEqual, hmacSha256Hex } from './mutation/group-state-crypto.ts';
 import { isScopedGroupMutationCommandId, toScopedGroupMutationCommandId } from './scoped-group-mutation-command-id.ts';
 import { toLifecycleMutationCommand } from './to-lifecycle-mutation-command.ts';
 
@@ -107,7 +102,9 @@ async function prepareAuthorizedGroupMutation(
         useScopedCommandId
     );
     const { command } = materialized;
-    const commandHash = await hashMutationCommand(materialized.semanticCommand as JsonWireValue);
+    const commandHash = await hashMutationCommand(
+        decodeJsonWireValue(materialized.semanticCommand, 'Group semantic mutation command')
+    );
     const resolvedJoinCode = resolveCommandJoinCode(command, commandHash);
     const facts: Omit<GroupMutationFacts, 'attemptCount'> = {
         nowEpochMs: dependencies.now(),
@@ -184,7 +181,7 @@ export async function verifyPreparedGroupMutationAuthority(
         authority: prepared.authorityProof,
         nowEpochMs: dependencies.now()
     });
-    if (canonicalJson(verified.descriptor) !== canonicalJson(prepared.descriptor)) {
+    if (serializeCanonicalJson(verified.descriptor) !== serializeCanonicalJson(prepared.descriptor)) {
         throw new GroupMutationAuthorizationError(
             'Authenticated mutation descriptor changed before execution.'
         );
@@ -196,9 +193,11 @@ export async function verifyPreparedGroupMutationAuthority(
         isScopedGroupMutationCommandId(prepared.command.commandId)
     );
     const { command } = materialized;
-    const commandHash = await hashMutationCommand(materialized.semanticCommand as JsonWireValue);
+    const commandHash = await hashMutationCommand(
+        decodeJsonWireValue(materialized.semanticCommand, 'Group semantic mutation command')
+    );
     if (
-        canonicalJson(command) !== canonicalJson(prepared.command) ||
+        serializeCanonicalJson(command) !== serializeCanonicalJson(prepared.command) ||
         commandHash !== prepared.facts.commandHash ||
         prepared.facts.authenticatedAuthority?.principalId !== verified.session.clientId ||
         prepared.facts.authenticatedAuthority?.sessionId !== verified.session.sessionId
@@ -391,7 +390,7 @@ async function createGroupMutationAuthorityProof(
         sessionExpiresAtEpochMs: session.expiresAtEpochMs,
         commandMac: await hmacSha256Hex(
             await authSessionProofSecret(session),
-            canonicalJson({ purpose: 'rallar-group-mutation-authority', version: 1, descriptor })
+            serializeCanonicalJson({ purpose: 'rallar-group-mutation-authority', version: 1, descriptor })
         )
     };
 }

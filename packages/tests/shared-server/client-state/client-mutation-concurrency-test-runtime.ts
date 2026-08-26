@@ -3,11 +3,12 @@ import type { RallarTimingEvent } from '@shared-server/rallar-system/observabili
 import type {
     RuntimeStateConditionalWriteResult,
     RuntimeStateEntry,
-    RuntimeStateOptimisticTransactionalRepositoryLike
+    RuntimeStateOptimisticTransactionalRepositoryLike,
+    RuntimeStateOptimisticTransactionRepositoryLike
 } from '@shared-server/runtime-state/runtime-state-repository.ts';
 import { createTestClientStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 
-import { FakeRuntimeStateRepository } from '../fake-runtime-state-repository.ts';
+import { FakeRuntimeStateRepository } from '../runtime-state/test-support/fake-runtime-state-repository.ts';
 import { CLIENT_MUTATION_TEST_SCOPE as SCOPE, clientMutationPrincipalRef as principalRef } from './client-mutation-validation-test-fixtures.ts';
 import { createClientStateTestDriver as createClientStateService, getClientStateTestOutbox } from './client-state-test-runtime.ts';
 
@@ -53,7 +54,7 @@ export class AggregateBarrierRepository extends FakeRuntimeStateRepository {
     }
 
     override async begin<T>(
-        fn: (repository: RuntimeStateOptimisticTransactionalRepositoryLike) => Promise<T>
+        fn: (repository: RuntimeStateOptimisticTransactionRepositoryLike) => Promise<T>
     ): Promise<T> {
         let release!: () => void;
         const previous = this.aggregateTransactionTail;
@@ -92,7 +93,7 @@ export class AlwaysConflictingPrincipalRepository extends AggregateBarrierReposi
     transactionBeginCount = 0;
 
     override async begin<T>(
-        fn: (repository: RuntimeStateOptimisticTransactionalRepositoryLike) => Promise<T>
+        fn: (repository: RuntimeStateOptimisticTransactionRepositoryLike) => Promise<T>
     ): Promise<T> {
         this.transactionBeginCount += 1;
         return await super.begin(fn);
@@ -118,7 +119,7 @@ export class StatementRecordingRepository extends AggregateBarrierRepository {
     private transactionDepth = 0;
 
     override async begin<T>(
-        fn: (repository: RuntimeStateOptimisticTransactionalRepositoryLike) => Promise<T>
+        fn: (repository: RuntimeStateOptimisticTransactionRepositoryLike) => Promise<T>
     ): Promise<T> {
         this.transactionBeginCount += 1;
         this.transactionDepth += 1;
@@ -176,13 +177,22 @@ export function createService(
     });
 }
 
-export async function connect(
-    runtime: AggregateBarrierRepository,
-    sessionId: string,
-    generationId: string,
-    nowEpochMs: number,
-    expiresAtEpochMs = CLIENT_MUTATION_BASE_EPOCH_MS + 50_000
-): Promise<void> {
+export interface ConnectInput {
+    readonly runtime: AggregateBarrierRepository;
+    readonly sessionId: string;
+    readonly generationId: string;
+    readonly nowEpochMs: number;
+    readonly expiresAtEpochMs?: number;
+}
+
+export async function connect(input: ConnectInput): Promise<void> {
+    const {
+        runtime,
+        sessionId,
+        generationId,
+        nowEpochMs,
+        expiresAtEpochMs = CLIENT_MUTATION_BASE_EPOCH_MS + 50_000
+    } = input;
     await createService(runtime, nowEpochMs).connectSession(SCOPE, 'alice', 'browser', sessionId, {
         generationId,
         connectionId: generationId,

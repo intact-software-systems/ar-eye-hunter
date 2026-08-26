@@ -112,7 +112,7 @@ export class AuthSessionPersistence extends RuntimeStateJsonStore {
     async readSessionByAccessTokenDigestEntry(
         accessTokenDigest: string
     ): Promise<RuntimeStateEntryRead<PersistedAuthSession>> {
-        const read = await this.getEntryRead<JsonWireValue>(
+        const read = await this.getJsonEntryRead(
             AUTH_SESSIONS_BY_TOKEN_NAMESPACE,
             authTokenDigestKey(accessTokenDigest)
         );
@@ -135,7 +135,7 @@ export class AuthSessionPersistence extends RuntimeStateJsonStore {
     async readSessionBySessionIdEntry(
         sessionId: string
     ): Promise<RuntimeStateEntryRead<PersistedAuthSession>> {
-        const read = await this.getEntryRead<JsonWireValue>(
+        const read = await this.getJsonEntryRead(
             AUTH_SESSIONS_BY_SESSION_NAMESPACE,
             authSessionKey(sessionId)
         );

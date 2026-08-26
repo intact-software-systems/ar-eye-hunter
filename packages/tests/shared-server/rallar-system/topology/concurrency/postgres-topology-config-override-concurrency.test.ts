@@ -9,8 +9,8 @@ import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/topo
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import type { EffectiveGroupTopologyConfig } from '@shared/api/graph-topology-management-types.ts';
 import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
-import { expectPendingDirectResourceOutboxEvidence, findDirectResourceOutboxEvidence } from '../../../direct-resource-outbox-evidence.ts';
-import { toOwnedAppInboxResourceIds } from '../../../postgres-app-inbox-attempt-evidence.ts';
+import { toOwnedAppInboxResourceIds } from '../../app-inbox/postgres/read-owned-app-inbox-resource-ids.ts';
+import { assertPendingDirectResourceOutboxEntries, readDirectResourceOutboxEntries } from '../../app-outbox/direct-resource-outbox-lifecycle.ts';
 import {
     cleanupTopologyApplicationRows,
     createPostgresSql,
@@ -157,7 +157,7 @@ async function expectConfigWinnerOutcome(outcome: ObservedMixedTopologyOutcome):
         DURABLE_CONFIG
     );
     expectAppliedReceipt(configOutput, configInput, DURABLE_CONFIG);
-    await expectMutationAndOutboxEvidence(outcome, [configOutput], [overrideInput.request.requestId]);
+    await assertMutationAndPendingOutbox(outcome, [configOutput], [overrideInput.request.requestId]);
     await expect(
         outcome.repository.findInvariantGenerationEntry(configInput.groupRef)
     ).resolves.toMatchObject({ value: { version: 1 }, entry: { revision: 0 } });
@@ -194,7 +194,7 @@ async function expectCompleteOverrideWinnerOutcome(
     ).toEqual(COMPLETE_OVERRIDE);
     expectAppliedReceipt(configOutput, configInput, DURABLE_CONFIG);
     expectAppliedReceipt(overrideOutput, overrideInput, COMPLETE_OVERRIDE);
-    await expectMutationAndOutboxEvidence(outcome, [configOutput, overrideOutput], []);
+    await assertMutationAndPendingOutbox(outcome, [configOutput, overrideOutput], []);
     await expect(
         outcome.repository.findInvariantGenerationEntry(configInput.groupRef)
     ).resolves.toMatchObject({ value: { version: 2 }, entry: { revision: 1 } });
@@ -268,7 +268,7 @@ function readAttemptsForRequest(
         .sort((left, right) => left.attempt - right.attempt);
 }
 
-async function expectMutationAndOutboxEvidence(
+async function assertMutationAndPendingOutbox(
     outcome: ObservedMixedTopologyOutcome,
     applied: readonly TopologyAppInboxWorkerOutput[],
     rejectedRequestIds: readonly string[]
@@ -284,8 +284,8 @@ async function expectMutationAndOutboxEvidence(
         ).resolves.toBeUndefined();
     }
     const outboxIds = applied.flatMap(({ outboxIds }) => outboxIds).map(toStoredOutboxId);
-    expectPendingDirectResourceOutboxEvidence(
-        await findDirectResourceOutboxEvidence(outcome.sql, outboxIds),
+    assertPendingDirectResourceOutboxEntries(
+        await readDirectResourceOutboxEntries(outcome.sql, outboxIds),
         outboxIds
     );
 }

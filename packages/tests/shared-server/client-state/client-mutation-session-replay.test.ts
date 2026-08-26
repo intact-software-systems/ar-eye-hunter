@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 
 import { ClientStateRepository } from '@shared-server/rallar-system/client-state/persistence/client-state-repository.ts';
 
-import { FakeRuntimeStateRepository } from '../fake-runtime-state-repository.ts';
+import { FakeRuntimeStateRepository } from '../runtime-state/test-support/fake-runtime-state-repository.ts';
 import { CLIENT_MUTATION_SERVICE_SCOPE as SCOPE, seedConnectedSession, toClientPrincipalRef } from './client-state-service-test-fixtures.ts';
 import { createClientStateTestDriver as createClientStateService } from './client-state-test-runtime.ts';
 
@@ -111,7 +111,12 @@ async function runConnectReplay() {
 
 async function runDisconnectReplay() {
     const runtimeRepository = new FakeRuntimeStateRepository();
-    await seedConnectedSession(runtimeRepository, 'alice', 'alice-browser', 'session-1');
+    await seedConnectedSession({
+        runtimeRepository,
+        principalId: 'alice',
+        clientInstanceId: 'alice-browser',
+        sessionId: 'session-1'
+    });
     let now = 4_000;
     const service = createClientStateService({
         runtimeRepository,

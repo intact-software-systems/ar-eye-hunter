@@ -12,7 +12,7 @@ import {
 } from './GroupPresenceSummaryEntryContract.ts';
 import * as Resource from './ResourceEntry.ts';
 import { ResourceEntry, type Key } from './ResourceEntry.ts';
-import { isCanonicalRtcTopologyWorkEntry } from './RtcTopologyWorkEntryContract.ts';
+import { isCanonicalRtcTopologyWorkEntry } from './rtc-topology-work-entry-contract.ts';
 
 export type { PersistenceProvider } from '../persistence/PersistenceProvider.ts';
 

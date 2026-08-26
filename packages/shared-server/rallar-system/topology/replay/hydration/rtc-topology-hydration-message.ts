@@ -1,5 +1,5 @@
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
-import { validatePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
+import { decodePersistedALMessageValue } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { AppTopics } from '@shared/api/api-config.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import type { ConnectionContext } from '@shared/websocket/JsonWebSocketServer.ts';
@@ -50,6 +50,5 @@ export function materializeRtcTopologyHydrationMessage(
         },
         audit: { createdBy: 'rallar-server', createdTs: nowEpochMs }
     };
-    validatePersistedALMessage(message);
-    return message;
+    return decodePersistedALMessageValue(message);
 }

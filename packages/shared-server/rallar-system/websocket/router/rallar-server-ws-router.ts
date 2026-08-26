@@ -9,7 +9,7 @@ import {
     RALLAR_USER_WS_TOPIC_PREFIXES
 } from '@shared/api/rallar-validation.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
-import type { WsQueueBoxServerService } from '@shared/services/WsQueueBoxServerService.ts';
+import type { WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 import type { JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.ts';
 import type { JsonWireValue } from '../../protocol/json-wire-identity.ts';
 import { decodeStateSyncMessage } from '../../state-sync/state-sync-payload.ts';

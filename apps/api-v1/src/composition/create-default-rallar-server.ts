@@ -11,6 +11,7 @@ import type { ApiV1Configuration } from '../configuration/api-v1-configuration.t
 import { toApiV1PublicConfiguration } from '../configuration/to-api-v1-public-configuration.ts';
 import { createCrdtAdminMutations } from '../crdt/create-crdt-admin-mutations.ts';
 import type { ApiV1DatabaseLifecycle } from '../db/api-v1-database-lifecycle.ts';
+import { createLocalQueuePubSubBus } from '../db/local-queue-pubsub-bridge.ts';
 import { toResilienceDto } from '../middleware-resilience.ts';
 import { myPublisherId, myRtcTopologyStreamId, myServerId } from '../runtime/runtime-identity.ts';
 import { createRuntimeStateExpiryLifecycle } from '../services/runtime-state-expiry-startup.ts';
@@ -83,6 +84,7 @@ function constructDefaultRallarServer(
         publisherStreamId: myRtcTopologyStreamId,
         queuePubSubPublisherId: myPublisherId,
         queuePubSubChannel: 'ws-channel',
+        queuePubSubLocalBus: createLocalQueuePubSubBus(),
         wsRuntimeName: 'default-qbox-server',
         authCredentialSecret: configuration.authentication.credentialSecret,
         nowEpochMs,
@@ -151,11 +153,7 @@ function constructDefaultRallarServer(
         nowEpochMs,
         topology,
         crdtLogRepository,
-        crdtPolicies: configuration.crdt.documentTypePolicies,
-        globalGraphRecomputeLimit: {
-            windowMs: configuration.topology.recompute.globalWindowMs,
-            maxPerWindow: configuration.topology.recompute.globalMaxPerWindow
-        }
+        crdtPolicies: configuration.crdt.documentTypePolicies
     });
     const routeInstallers = createApiV1RouteInstallers({
         runtime,

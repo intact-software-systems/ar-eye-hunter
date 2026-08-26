@@ -14,7 +14,7 @@ export class AppInboxTypeUnavailableError extends TypeError {
 
 export function decodeAppInboxEnqueue(
     value: unknown
-): AppInboxEnqueueInput<JsonWireValue, JsonWireValue> {
+): AppInboxEnqueueInput<JsonWireValue> {
     const wire = decodeJsonWireValue(value, 'AppInbox enqueue');
     const enqueue = requireRecord(wire, 'AppInbox enqueue');
     requireExactOptionalKeys({
@@ -52,7 +52,7 @@ export function decodeAppInboxEnqueue(
 
 export function decodePersistedAppInboxEnqueue(
     entry: ResourceEntry
-): AppInboxEnqueueInput<JsonWireValue, JsonWireValue> {
+): AppInboxEnqueueInput<JsonWireValue> {
     const message = requireRecord(JSON.parse(entry.resource), 'Persisted AppInbox message');
     const payload = requireRecord(message.payload, 'Persisted AppInbox message payload');
     if (typeof payload.resource !== 'string') {

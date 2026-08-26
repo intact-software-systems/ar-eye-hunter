@@ -12,7 +12,7 @@ import {
     toResourceEntryWithUpdatedResource,
     type ResourceEntry
 } from '@shared/queuebox/ResourceEntry.ts';
-import { timeRallarAsync, type RallarTimingSink } from '../observability/timing.ts';
+import { timeRallarAsync, type RallarTimingDetails, type RallarTimingSink } from '../observability/timing.ts';
 import { validateAppInboxCommandIdentity } from './app-inbox-command-identity.ts';
 import { AppInboxReservationConflictError } from './app-inbox-contracts.ts';
 import type { AppInboxFailure } from './app-inbox-failure.ts';
@@ -21,98 +21,114 @@ export type AppInboxRetryFinalization =
     | ResourceInboxRetryExhaustion
     | ResourceInboxRetryExhaustionRecovery;
 
-export function createAppInboxRetryExhaustionHandler(
-    options: Readonly<{
-        database: PSqlSql;
-        timing?: RallarTimingSink;
-    }>
-): (exhaustion: ResourceInboxRetryExhaustion) => Promise<ResourceEntry> {
-    return createFinalizer(options);
+export interface AppInboxRetryFinalizerDependencies {
+    readonly database: PSqlSql;
+    readonly timing?: RallarTimingSink;
 }
 
-export function createAppInboxRetryExhaustionRecoveryHandler(
-    options: Readonly<{
-        database: PSqlSql;
-        timing?: RallarTimingSink;
-    }>
-): (exhaustion: ResourceInboxRetryExhaustionRecovery) => Promise<ResourceEntry> {
-    return createFinalizer(options);
+interface AppInboxRetryFinalizationWork {
+    readonly finalization: AppInboxRetryFinalization;
+    readonly finalizedAtEpochMs: number;
+    readonly diagnostics: AppInboxFailure;
+    readonly timingDetails: RallarTimingDetails;
 }
 
-function createFinalizer(
-    options: Readonly<{
-        database: PSqlSql;
-        timing?: RallarTimingSink;
-    }>
-): (exhaustion: AppInboxRetryFinalization) => Promise<ResourceEntry> {
-    return async (exhaustion) => {
-        if (exhaustion.reservationAttempt < exhaustion.processingAttempts) {
+export function createAppInboxRetryFinalizer(
+    dependencies: AppInboxRetryFinalizerDependencies
+): (finalization: AppInboxRetryFinalization) => Promise<ResourceEntry> {
+    return async (finalization) => {
+        if (finalization.reservationAttempt < finalization.processingAttempts) {
             throw new RangeError(
                 'App inbox exhaustion reservation precedes the processing retry limit'
             );
         }
-        const finalizedAtEpochMs = toFinalizedAtEpochMs(exhaustion);
-        const diagnostics = toDiagnostics(exhaustion);
-        const details = {
-            processingAttempts: exhaustion.processingAttempts,
-            reservationAttempt: exhaustion.reservationAttempt,
-            selectedLane: exhaustion.lane,
-            classification: exhaustion.classification,
-            exhaustion: exhaustion.exhausted,
-            queueAgeMs: exhaustion.queueAgeMs,
-            dueAgeMs: exhaustion.dueAgeMs,
-            source: exhaustion.failure.source
-        } as const;
+        const work = createAppInboxRetryFinalizationWork(finalization);
         return await timeRallarAsync(
-            options.timing,
+            dependencies.timing,
             {
                 component: 'app-inbox-phase',
                 operation: 'transaction',
-                requestId: exhaustion.entry.key.resourceId,
-                details
+                requestId: finalization.entry.key.resourceId,
+                details: work.timingDetails
             },
-            async () =>
-                await runInPSqlTransaction(options.database, async (transaction) => {
-                    const finalization = new PSqlResourceInboxFinalizationRepository(transaction);
-                    const results = new ResourceInboxResultsRepository(transaction);
-                    await timeRallarAsync(
-                        options.timing,
-                        {
-                            component: 'app-inbox-phase',
-                            operation: 'write',
-                            requestId: exhaustion.entry.key.resourceId,
-                            details
-                        },
-                        async () => {
-                            await results.replace(toResourceEntryWithUpdatedResource(
-                                exhaustion.entry,
-                                EntityStatus.FAILED,
-                                diagnostics
-                            ));
-                            const finished = await finalization.finishReserved(
-                                exhaustion.entry.key,
-                                exhaustion.reservationAttempt,
-                                EntityStatus.FAILED,
-                                new Date(finalizedAtEpochMs)
-                            );
-                            if (!finished) {
-                                throw new AppInboxReservationConflictError(exhaustion.entry.key);
-                            }
-                        }
-                    );
-                    return {
-                        ...exhaustion.entry,
-                        status: EntityStatus.FAILED,
-                        dequeueAudit: {
-                            ...exhaustion.entry.dequeueAudit,
-                            endTs: Temporal.Instant.fromEpochMilliseconds(
-                                finalizedAtEpochMs
-                            ),
-                            nextTs: undefined
-                        }
-                    };
-                })
+            async () => await finalizeAppInboxRetry(dependencies, work)
         );
+    };
+}
+
+function createAppInboxRetryFinalizationWork(
+    finalization: AppInboxRetryFinalization
+): AppInboxRetryFinalizationWork {
+    return {
+        finalization,
+        finalizedAtEpochMs: toFinalizedAtEpochMs(finalization),
+        diagnostics: toDiagnostics(finalization),
+        timingDetails: {
+            processingAttempts: finalization.processingAttempts,
+            reservationAttempt: finalization.reservationAttempt,
+            selectedLane: finalization.lane,
+            classification: finalization.classification,
+            exhaustion: finalization.exhausted,
+            queueAgeMs: finalization.queueAgeMs,
+            dueAgeMs: finalization.dueAgeMs,
+            source: finalization.failure.source
+        }
+    };
+}
+
+async function finalizeAppInboxRetry(
+    dependencies: AppInboxRetryFinalizerDependencies,
+    work: AppInboxRetryFinalizationWork
+): Promise<ResourceEntry> {
+    return await runInPSqlTransaction(dependencies.database, async (transaction) => {
+        await writeAppInboxRetryFinalization(dependencies.timing, transaction, work);
+        return toFinalizedAppInboxEntry(work);
+    });
+}
+
+async function writeAppInboxRetryFinalization(
+    timing: RallarTimingSink | undefined,
+    transaction: PSqlSql,
+    work: AppInboxRetryFinalizationWork
+): Promise<void> {
+    const finalizationRepository = new PSqlResourceInboxFinalizationRepository(transaction);
+    const results = new ResourceInboxResultsRepository(transaction);
+    await timeRallarAsync(
+        timing,
+        {
+            component: 'app-inbox-phase',
+            operation: 'write',
+            requestId: work.finalization.entry.key.resourceId,
+            details: work.timingDetails
+        },
+        async () => {
+            await results.replace(toResourceEntryWithUpdatedResource(
+                work.finalization.entry,
+                EntityStatus.FAILED,
+                work.diagnostics
+            ));
+            const finished = await finalizationRepository.finishReserved(
+                work.finalization.entry.key,
+                work.finalization.reservationAttempt,
+                EntityStatus.FAILED,
+                new Date(work.finalizedAtEpochMs)
+            );
+            if (!finished) {
+                throw new AppInboxReservationConflictError(work.finalization.entry.key);
+            }
+        }
+    );
+}
+
+function toFinalizedAppInboxEntry(work: AppInboxRetryFinalizationWork): ResourceEntry {
+    return {
+        ...work.finalization.entry,
+        status: EntityStatus.FAILED,
+        dequeueAudit: {
+            ...work.finalization.entry.dequeueAudit,
+            endTs: Temporal.Instant.fromEpochMilliseconds(work.finalizedAtEpochMs),
+            nextTs: undefined
+        }
     };
 }
 

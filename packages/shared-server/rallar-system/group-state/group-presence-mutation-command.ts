@@ -6,10 +6,15 @@ import type {
 } from '@shared/api/state-types.ts';
 import { NonRetryableException } from '@shared/queuebox/DequeueResourceEntryController.ts';
 
+import { serializeCanonicalJson } from '../protocol/canonical-json.ts';
 import { toGroupMutationActorInput, toGroupMutationIdentity } from './group-mutation-command.ts';
 import type { GroupMutationDescriptor } from './group-state-service-contracts.ts';
 import type { GroupMutationCommand } from './mutation/group-mutation-contracts.ts';
-import { canonicalJson } from './mutation/group-state-crypto.ts';
+
+type GroupPresenceMutationRequest =
+    | ConnectGroupPresenceSessionRequest
+    | DisconnectGroupPresenceSessionRequest
+    | HeartbeatGroupPresenceSessionRequest;
 
 export function toPresenceMutationCommand(
     descriptor: GroupMutationDescriptor,
@@ -40,8 +45,10 @@ function toConnectPresenceCommand(
     sessionId: string,
     randomId: () => string
 ): GroupMutationCommand {
-    const request = descriptor.request as ConnectGroupPresenceSessionRequest;
-    requireGenerationId(request.generationId);
+    const request = readGroupPresenceMutationRequest(descriptor);
+    if (typeof request.principalId !== 'string' || request.principalId.length === 0) {
+        throw new NonRetryableException('Group presence principal id is required');
+    }
     return {
         operation: 'connectPresence',
         aggregateRef: { ...descriptor.scope, groupId: descriptor.groupId },
@@ -50,7 +57,9 @@ function toConnectPresenceCommand(
         input: {
             principalId: request.principalId,
             generationId: request.generationId,
-            connectedAtEpochMs: request.connectedAtEpochMs ?? null,
+            connectedAtEpochMs: 'connectedAtEpochMs' in request
+                ? (request.connectedAtEpochMs ?? null)
+                : null,
             lastHeartbeatAtEpochMs: request.lastHeartbeatAtEpochMs ?? null,
             expiresAtEpochMs: request.expiresAtEpochMs ?? null,
             ...toGroupMutationActorInput(request),
@@ -64,8 +73,7 @@ function toHeartbeatPresenceCommand(
     sessionId: string,
     randomId: () => string
 ): GroupMutationCommand {
-    const request = descriptor.request as HeartbeatGroupPresenceSessionRequest;
-    requireGenerationId(request.generationId);
+    const request = readGroupPresenceMutationRequest(descriptor);
     return {
         operation: 'heartbeatPresence',
         aggregateRef: { ...descriptor.scope, groupId: descriptor.groupId },
@@ -86,8 +94,7 @@ function toDisconnectPresenceCommand(
     sessionId: string,
     randomId: () => string
 ): GroupMutationCommand {
-    const request = descriptor.request as DisconnectGroupPresenceSessionRequest;
-    requireGenerationId(request.generationId);
+    const request = readGroupPresenceMutationRequest(descriptor);
     return {
         operation: 'disconnectPresence',
         aggregateRef: { ...descriptor.scope, groupId: descriptor.groupId },
@@ -98,7 +105,9 @@ function toDisconnectPresenceCommand(
             generationId: request.generationId,
             generationVersion: null,
             observedExpiresAtEpochMs: null,
-            disconnectedAtEpochMs: request.disconnectedAtEpochMs ?? null,
+            disconnectedAtEpochMs: 'disconnectedAtEpochMs' in request
+                ? (request.disconnectedAtEpochMs ?? null)
+                : null,
             lastHeartbeatAtEpochMs: request.lastHeartbeatAtEpochMs ?? null,
             expiresAtEpochMs: request.expiresAtEpochMs ?? null,
             ...toGroupMutationActorInput(request)
@@ -176,11 +185,19 @@ export function groupStateMaintenanceRequestId(
     semanticCommand: GroupMaintenanceSemanticCommand
 ): string {
     const domain = authority === 'expiry' ? 'expire-group-presence' : 'cleanup-group-presence-session';
-    return `${domain}:v1:${canonicalJson(semanticCommand)}`;
+    return `${domain}:v1:${serializeCanonicalJson(semanticCommand)}`;
 }
 
-function requireGenerationId(value: string): void {
-    if (typeof value !== 'string' || value.length === 0) {
+function readGroupPresenceMutationRequest(
+    descriptor: GroupMutationDescriptor
+): GroupPresenceMutationRequest {
+    const request = descriptor.request;
+    if (
+        !('generationId' in request) ||
+        typeof request.generationId !== 'string' ||
+        request.generationId.length === 0
+    ) {
         throw new NonRetryableException('Group presence generation id is required');
     }
+    return request;
 }

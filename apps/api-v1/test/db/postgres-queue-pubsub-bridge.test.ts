@@ -1,7 +1,20 @@
-import type { QueueBoxPubSubMessage } from '@shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-bridge.ts';
+import type { JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
+import type { QueueBoxPubSubMessage } from '@shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-contracts.ts';
 import assert from 'node:assert/strict';
 import { queuePubSubDeliveryForMode } from '../../src/db/api-v1-queue-pubsub-bridge.ts';
 import { createPostgresQueuePubSubBridge } from '../../src/db/create-postgres-queue-pub-sub-bridge.ts';
+
+interface RecordedPostgresNotification {
+    readonly channel: string;
+    readonly message: object;
+}
+
+interface CreateQueueBoxPubSubMessageOptions {
+    readonly channel?: string;
+    readonly publisherId: string;
+    readonly delivery?: 'entry' | 'key';
+    readonly payload?: string;
+}
 
 Deno.test('api-v1 queue pub/sub config uses key delivery only for postgres', () => {
     assert.equal(queuePubSubDeliveryForMode('postgres'), 'key');
@@ -10,13 +23,8 @@ Deno.test('api-v1 queue pub/sub config uses key delivery only for postgres', () 
 });
 
 Deno.test('postgres queue pub/sub bridge publishes key-only envelopes', async () => {
-    const notifications: Array<
-        Readonly<{
-            channel: string;
-            message: object;
-        }>
-    > = [];
-    const bridge = createPostgresQueuePubSubBridge('publisher-local', {
+    const notifications: RecordedPostgresNotification[] = [];
+    const bridge = createPostgresQueuePubSubBridge({
         notify: (channel, message) => {
             notifications.push({ channel, message });
             return Promise.resolve();
@@ -49,27 +57,21 @@ Deno.test('postgres queue pub/sub bridge publishes key-only envelopes', async ()
     assert.equal('payload' in notifications[0].message, false);
 });
 
-Deno.test('postgres queue pub/sub bridge ignores malformed and wrong-channel payloads', async () => {
-    const received: QueueBoxPubSubMessage[] = [];
-    const bridge = createPostgresQueuePubSubBridge('publisher-local', {
+Deno.test('postgres queue pub/sub bridge forwards JSON wire values and rejects invalid JSON', async () => {
+    const received: JsonWireValue[] = [];
+    const accepted = createMessage({
+        channel: 'ws-channel',
+        publisherId: 'publisher-remote',
+        delivery: 'key'
+    });
+    const unexpected = { ...accepted, unexpected: true };
+    const bridge = createPostgresQueuePubSubBridge({
         notify: () => Promise.resolve(),
         listen: async (_channel, onMessage) => {
+            await onMessage('not-json');
             await onMessage('{"channel":"ws-channel"}');
-            await onMessage(
-                JSON.stringify(createMessage({
-                    channel: 'other-channel',
-                    publisherId: 'publisher-remote'
-                }))
-            );
-            await onMessage(
-                JSON.stringify(createMessage({
-                    channel: 'ws-channel',
-                    publisherId: 'publisher-remote',
-                    delivery: 'key',
-                    payload: undefined
-                }))
-            );
-            await onMessage(JSON.stringify(createMessage({ publisherId: 'publisher-local' })));
+            await onMessage(JSON.stringify(unexpected));
+            await onMessage(JSON.stringify(accepted));
         }
     });
 
@@ -77,18 +79,11 @@ Deno.test('postgres queue pub/sub bridge ignores malformed and wrong-channel pay
         received.push(message);
     });
 
-    assert.equal(received.length, 1);
-    assert.equal(received[0].delivery, 'key');
-    assert.equal(received[0].channel, 'ws-channel');
+    assert.deepEqual(received, [{ channel: 'ws-channel' }, unexpected, accepted]);
 });
 
 function createMessage(
-    options: Readonly<{
-        channel?: string;
-        publisherId: string;
-        delivery?: 'entry' | 'key';
-        payload?: string;
-    }>
+    options: CreateQueueBoxPubSubMessageOptions
 ): QueueBoxPubSubMessage {
     const base = {
         key: {

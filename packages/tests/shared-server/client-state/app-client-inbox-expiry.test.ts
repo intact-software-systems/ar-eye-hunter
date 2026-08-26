@@ -13,9 +13,9 @@ import type { ClientPrincipalRef } from '@shared/api/client-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 
-import { createAppInboxTestResilience } from '../app-inbox-resource-fixtures.ts';
-import { createAppInboxTestDatabase } from '../app-inbox-test-database.ts';
-import { FakeRuntimeStateRepository } from '../fake-runtime-state-repository.ts';
+import { createAppInboxTestResilience } from '../rallar-system/app-inbox/test-support/app-inbox-resource-fixtures.ts';
+import { createAppInboxTestDatabase } from '../rallar-system/app-inbox/test-support/app-inbox-test-database.ts';
+import { FakeRuntimeStateRepository } from '../runtime-state/test-support/fake-runtime-state-repository.ts';
 import {
     ClientExpiryTestResourceInbox,
     ClientExpiryTestResourceInboxResults,
@@ -24,8 +24,8 @@ import {
     readClientExpiryTestEnqueueData,
     readClientExpiryTestEntries
 } from './app-client-inbox-expiry-fixtures.ts';
-import { createClientStateServiceStub } from './app-client-inbox-mutation-test-harness.ts';
 import { createClientStatePhaseTestDriver } from './client-state-test-runtime.ts';
+import { createClientStateServiceStub } from './test-support/client-state-service-stub.ts';
 
 const SCOPE: StateScope = { applicationId: 'ar-eye-hunter', workspaceId: 'default' };
 

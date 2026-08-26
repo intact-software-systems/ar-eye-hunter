@@ -9,7 +9,7 @@ import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
 import type { Either } from '@shared/resilience/Either.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 import { expect } from 'vitest';
-import { createAppInboxTestDatabase, type AppInboxTestDatabase } from '../../app-inbox-test-database.ts';
+import { createAppInboxTestDatabase, type AppInboxTestDatabase } from '../../rallar-system/app-inbox/test-support/app-inbox-test-database.ts';
 
 import type { IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
 
@@ -28,7 +28,7 @@ import { createGroupStateService } from '@shared-server/rallar-system/group-stat
 import type { GroupCreateAppInboxPayload } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-contracts.ts';
 import { GroupStateInboxService } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-service.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
-import { FakeRuntimeStateRepository } from '../../fake-runtime-state-repository.ts';
+import { FakeRuntimeStateRepository } from '../../runtime-state/test-support/fake-runtime-state-repository.ts';
 import { authSession } from '../group-state-test-runtime.ts';
 import { TestResourceInbox, TestResourceInboxResults } from './group-state-inbox-resource-fixtures.ts';
 

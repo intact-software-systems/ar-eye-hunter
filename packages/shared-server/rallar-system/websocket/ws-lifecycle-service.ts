@@ -1,4 +1,4 @@
-import { WsQueueBoxServerService } from '@shared/services/WsQueueBoxServerService.ts';
+import type { WebSocketServerCallbacks } from '@shared/websocket/JsonWebSocketServer.ts';
 
 export interface RallarWsLifecycleCloseInput {
     readonly sessionId: string;
@@ -15,8 +15,8 @@ export interface RallarWsLifecycleRetryConfig {
 
 export interface RallarWsLifecycleHandlers {
     now(): number;
-    enqueueClientSessionDisconnect(input: RallarWsLifecycleCloseInput): Promise<unknown>;
-    enqueueGroupSessionCleanup(input: RallarWsLifecycleCloseInput): Promise<unknown>;
+    enqueueClientSessionDisconnect(input: RallarWsLifecycleCloseInput): Promise<void>;
+    enqueueGroupSessionCleanup(input: RallarWsLifecycleCloseInput): Promise<void>;
     hasCloseFacts(input: RallarWsLifecycleCloseInput): boolean;
     releaseCloseFacts(input: RallarWsLifecycleCloseInput): void;
     readonly retry: RallarWsLifecycleRetryConfig;
@@ -28,6 +28,13 @@ export interface RallarWsLifecycleRuntime {
     stop(): void;
 }
 
+export interface RallarWsLifecycleSocketService {
+    readonly socket: {
+        onWebsocketCallbacksDo(id: string, callbacks: WebSocketServerCallbacks): void;
+        removeWebsocketCallbackById(id: string): boolean;
+    };
+}
+
 interface PendingClose {
     readonly input: RallarWsLifecycleCloseInput;
     readonly attempts: number;
@@ -35,82 +42,77 @@ interface PendingClose {
     readonly token: object;
 }
 
+const WS_LIFECYCLE_CALLBACK_ID = 'handle-ws-lifecycle';
+
 export function initWsLifecycle(
-    wsQBoxServerService: WsQueueBoxServerService,
+    wsQBoxServerService: RallarWsLifecycleSocketService,
     handlers: RallarWsLifecycleHandlers
 ): RallarWsLifecycleRuntime {
-    validateRetryConfig(handlers.retry);
-    const pending = new Map<string, PendingClose>();
-    let stopped = false;
+    return new WsLifecycleCloseRuntime(wsQBoxServerService, handlers);
+}
 
-    const release = (input: RallarWsLifecycleCloseInput): void => {
-        const existing = pending.get(closeKey(input));
-        existing?.cancelScheduledRetry?.();
-        pending.delete(closeKey(input));
-        handlers.releaseCloseFacts(input);
-    };
-    const schedule = (entry: PendingClose): void => {
-        const current = pending.get(closeKey(entry.input));
-        if (
-            stopped || current?.token !== entry.token ||
-            !handlers.hasCloseFacts(entry.input)
-        ) {
-            return;
+class WsLifecycleCloseRuntime implements RallarWsLifecycleRuntime {
+    private readonly wsQBoxServerService: RallarWsLifecycleSocketService;
+    private readonly handlers: RallarWsLifecycleHandlers;
+    private readonly pending = new Map<string, PendingClose>();
+    private stopped = false;
+
+    constructor(
+        wsQBoxServerService: RallarWsLifecycleSocketService,
+        handlers: RallarWsLifecycleHandlers
+    ) {
+        this.wsQBoxServerService = wsQBoxServerService;
+        this.handlers = handlers;
+        validateRetryConfig(handlers.retry);
+        wsQBoxServerService.socket.onWebsocketCallbacksDo(WS_LIFECYCLE_CALLBACK_ID, {
+            onClose: (socket) => {
+                console.log(`Websocket client disconnected: ${socket.id}`);
+                this.observeClose({
+                    sessionId: socket.id,
+                    generationId: socket.generationId,
+                    generationStartedAtEpochMs: socket.generationStartedAtEpochMs,
+                    disconnectedAtEpochMs: Math.max(
+                        handlers.now(),
+                        socket.generationStartedAtEpochMs
+                    ),
+                    reason: 'socket-closed'
+                });
+            }
+        });
+    }
+
+    getPendingCloseCount(): number {
+        return this.pending.size;
+    }
+
+    async retryPending(): Promise<void> {
+        await Promise.all([...this.pending.values()].map(async (entry) => {
+            entry.cancelScheduledRetry?.();
+            await this.writeClose(entry.input, entry.token);
+        }));
+    }
+
+    stop(): void {
+        this.stopped = true;
+        for (const entry of [...this.pending.values()]) {
+            this.release(entry.input);
         }
-        const attempts = entry.attempts;
-        const delayIndex = Math.min(attempts - 1, handlers.retry.delaysMs.length - 1);
-        const cancelScheduledRetry = handlers.retry.schedule(
-            handlers.retry.delaysMs[delayIndex]!,
-            async () => await writeClose(entry.input, entry.token)
-        );
-        pending.set(closeKey(entry.input), { ...entry, cancelScheduledRetry });
-    };
-    const writeClose = async (
-        input: RallarWsLifecycleCloseInput,
-        token: object
-    ): Promise<void> => {
-        const current = pending.get(closeKey(input));
-        if (stopped || current?.token !== token || !handlers.hasCloseFacts(input)) {
-            return;
-        }
-        const attempted: PendingClose = {
-            input,
-            attempts: current.attempts + 1,
-            cancelScheduledRetry: null,
-            token
-        };
-        pending.set(closeKey(input), attempted);
-        try {
-            await Promise.all([
-                handlers.enqueueClientSessionDisconnect(input),
-                handlers.enqueueGroupSessionCleanup(input)
-            ]);
-            release(input);
-        }
-        catch (error) {
-            console.error('WebSocket lifecycle durable enqueue failed:', error);
-            schedule(attempted);
-        }
-    };
-    const observeClose = (input: RallarWsLifecycleCloseInput): void => {
-        for (const existing of [...pending.values()]) {
+        this.wsQBoxServerService.socket.removeWebsocketCallbackById(WS_LIFECYCLE_CALLBACK_ID);
+    }
+
+    private observeClose(input: RallarWsLifecycleCloseInput): void {
+        for (const existing of [...this.pending.values()]) {
             if (
                 existing.input.sessionId === input.sessionId &&
                 compareGeneration(existing.input, input) < 0
             ) {
-                release(existing.input);
+                this.release(existing.input);
             }
         }
-        const existing = pending.get(closeKey(input));
-        if (
-            existing ||
-            [...pending.values()].some((candidate) =>
-                candidate.input.sessionId === input.sessionId &&
-                compareGeneration(candidate.input, input) > 0
-            )
-        ) {
+        const existing = this.pending.get(closeKey(input));
+        if (existing || this.hasNewerGeneration(input)) {
             if (!existing) {
-                handlers.releaseCloseFacts(input);
+                this.handlers.releaseCloseFacts(input);
             }
             return;
         }
@@ -120,42 +122,73 @@ export function initWsLifecycle(
             cancelScheduledRetry: null,
             token: {}
         };
-        pending.set(closeKey(input), entry);
-        void writeClose(input, entry.token);
-    };
+        this.pending.set(closeKey(input), entry);
+        void this.writeClose(input, entry.token);
+    }
 
-    wsQBoxServerService.socket.onWebsocketCallbacksDo('handle-ws-lifecycle', {
-        onClose: (socket) => {
-            console.log(`Websocket client disconnected: ${socket.id}`);
-            observeClose({
-                sessionId: socket.id,
-                generationId: socket.generationId,
-                generationStartedAtEpochMs: socket.generationStartedAtEpochMs,
-                disconnectedAtEpochMs: Math.max(
-                    handlers.now(),
-                    socket.generationStartedAtEpochMs
-                ),
-                reason: 'socket-closed'
-            });
-        }
-    });
+    private hasNewerGeneration(input: RallarWsLifecycleCloseInput): boolean {
+        return [...this.pending.values()].some((candidate) =>
+            candidate.input.sessionId === input.sessionId &&
+            compareGeneration(candidate.input, input) > 0
+        );
+    }
 
-    return {
-        getPendingCloseCount: () => pending.size,
-        retryPending: async () => {
-            await Promise.all([...pending.values()].map(async (entry) => {
-                entry.cancelScheduledRetry?.();
-                await writeClose(entry.input, entry.token);
-            }));
-        },
-        stop: () => {
-            stopped = true;
-            for (const entry of [...pending.values()]) {
-                release(entry.input);
-            }
-            wsQBoxServerService.socket.removeWebsocketCallbackById('handle-ws-lifecycle');
+    private async writeClose(
+        input: RallarWsLifecycleCloseInput,
+        token: object
+    ): Promise<void> {
+        const current = this.pending.get(closeKey(input));
+        if (
+            this.stopped || current?.token !== token ||
+            !this.handlers.hasCloseFacts(input)
+        ) {
+            return;
         }
-    };
+        const attempted: PendingClose = {
+            input,
+            attempts: current.attempts + 1,
+            cancelScheduledRetry: null,
+            token
+        };
+        this.pending.set(closeKey(input), attempted);
+        try {
+            await Promise.all([
+                this.handlers.enqueueClientSessionDisconnect(input),
+                this.handlers.enqueueGroupSessionCleanup(input)
+            ]);
+            this.release(input);
+        }
+        catch (error) {
+            console.error('WebSocket lifecycle durable enqueue failed:', error);
+            this.schedule(attempted);
+        }
+    }
+
+    private schedule(entry: PendingClose): void {
+        const current = this.pending.get(closeKey(entry.input));
+        if (
+            this.stopped || current?.token !== entry.token ||
+            !this.handlers.hasCloseFacts(entry.input)
+        ) {
+            return;
+        }
+        const delayIndex = Math.min(
+            entry.attempts - 1,
+            this.handlers.retry.delaysMs.length - 1
+        );
+        const cancelScheduledRetry = this.handlers.retry.schedule(
+            this.handlers.retry.delaysMs[delayIndex]!,
+            async () => await this.writeClose(entry.input, entry.token)
+        );
+        this.pending.set(closeKey(entry.input), { ...entry, cancelScheduledRetry });
+    }
+
+    private release(input: RallarWsLifecycleCloseInput): void {
+        const existing = this.pending.get(closeKey(input));
+        existing?.cancelScheduledRetry?.();
+        this.pending.delete(closeKey(input));
+        this.handlers.releaseCloseFacts(input);
+    }
 }
 
 export function scheduleWsLifecycleRetry(

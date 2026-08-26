@@ -18,7 +18,7 @@ import {
 } from '@shared/crdt/mod.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY, retryAfterAttempt } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
-import { WsQueueBoxServerService } from '@shared/services/WsQueueBoxServerService.ts';
+import { WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 import { JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.ts';
 
 const DOCUMENT: RallarCrdtDocumentRef = {
@@ -143,7 +143,12 @@ describe('CRDT persisted mutation contract invariants', () => {
 
     it('never configures update topics for live-only fanout without mutation ingress', () => {
         const socket = new JsonWebSocketServer();
-        const service = new WsQueueBoxServerService(new InMemoryQueueBox(), new InMemoryQueueBox(), socket, 'server-1');
+        const service = new WsQueueBoxServerService({
+            inbox: new InMemoryQueueBox(),
+            outbox: new InMemoryQueueBox(),
+            socket: socket,
+            name: 'server-1'
+        });
         const bridge = installRallarCrdtWsTopics(new RallarServerWsRouter(service));
 
         expect(

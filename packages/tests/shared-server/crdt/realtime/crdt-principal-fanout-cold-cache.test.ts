@@ -14,12 +14,12 @@ import {
 } from '@shared/crdt/mod.ts';
 import { ConnectionContext, JsonWebSocketServer } from '@shared/mod.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
-import { WsQueueBoxServerService } from '@shared/services/WsQueueBoxServerService.ts';
+import { WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 import { describe, expect, it } from 'vitest';
 
 import { findCurrentClientSnapshot } from '../../../../../apps/api-v1/src/crdt/create-api-crdt-document-authorizer.ts';
 import { configureTestCacheRepositories } from '../../../cache-repository-config.ts';
-import { FakeRuntimeStateRepository } from '../../fake-runtime-state-repository.ts';
+import { FakeRuntimeStateRepository } from '../../runtime-state/test-support/fake-runtime-state-repository.ts';
 
 const NOW = Date.now();
 const COLD_CACHE_FANOUT_BEHAVIOR = 'fails closed while cold, then expands omitted-workspace ' + 'principal to all current sessions';
@@ -42,7 +42,11 @@ describe('CRDT principal fanout from a cold cache', () => {
             webSocketServer.addConnection(new ConnectionContext(id, new RecordingWebSocket(sent)));
         }
         const queue = new InMemoryQueueBox();
-        const service = new WsQueueBoxServerService(queue, queue, webSocketServer, 'server-1', {
+        const service = new WsQueueBoxServerService({
+            inbox: queue,
+            outbox: queue,
+            socket: webSocketServer,
+            name: 'server-1',
             targetResolver: createWsServerTargetResolver(webSocketServer, {
                 findClientSnapshotByRef: (ref) => findCurrentClientSnapshot(cache, ref),
                 now: () => NOW

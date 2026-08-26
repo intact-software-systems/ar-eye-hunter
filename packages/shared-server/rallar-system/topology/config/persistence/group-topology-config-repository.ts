@@ -20,16 +20,14 @@ import {
     validateStoredGroupTopologyOverride
 } from '../mutation/validate-topology-config-records.ts';
 import {
-    assertCanonicalGroupTopologySourceEntry,
     assertRetainedGroupTopologyEntry,
     decodeGroupTopologyGenerationEntry,
     decodeGroupTopologyGenerationValue,
     decodeGroupTopologyInvariantEntry,
     decodeGroupTopologyInvariantValue,
     decodeGroupTopologyMutationEntry,
-    decodeGroupTopologyMutationValue,
-    toValidatedLiveGroupTopologySourceEntry
-} from './group-topology-config-persistence-codec.ts';
+    decodeGroupTopologyMutationValue
+} from './group-topology-config-mutation-record-codec.ts';
 import type {
     GroupTopologyConfigCommitResult,
     GroupTopologyConfigDeleteResult
@@ -41,6 +39,10 @@ import {
     GROUP_TOPOLOGY_CONFIG_NAMESPACE,
     GROUP_TOPOLOGY_OVERRIDE_NAMESPACE
 } from './group-topology-config-runtime-namespaces.ts';
+import {
+    assertCanonicalGroupTopologySourceEntry,
+    toValidatedLiveGroupTopologySourceEntry
+} from './group-topology-config-source-codec.ts';
 import { GroupTopologyConfigSourceRepository } from './group-topology-config-source-repository.ts';
 import {
     createGroupTopologyMutationExactReadDecoders,
@@ -49,21 +51,14 @@ import {
     type GroupTopologyMutationExactReadResult
 } from './read-exact-group-topology-config-mutation.ts';
 
-type GroupTopologyMutationStoredValue =
-    | StoredGroupTopologyConfig
-    | StoredGroupTopologyOverride
-    | GroupTopologyConfigGeneration
-    | GroupTopologyConfigInvariantGeneration
-    | GroupTopologyConfigMutationRecord;
-
 export class GroupTopologyConfigRepository extends GroupTopologyConfigSourceRepository {
     async readMutationExactEntries(
         ref: GroupRef,
         requestId: string | null
     ): Promise<GroupTopologyMutationExactReadResult> {
-        const locations = createGroupTopologyMutationExactReadLocations(
-            this,
-            {
+        const locations = createGroupTopologyMutationExactReadLocations({
+            keyProvider: this,
+            namespaces: {
                 invariant: GROUP_TOPOLOGY_CONFIG_INVARIANT_GENERATION_NAMESPACE,
                 config: GROUP_TOPOLOGY_CONFIG_NAMESPACE,
                 override: GROUP_TOPOLOGY_OVERRIDE_NAMESPACE,
@@ -72,33 +67,37 @@ export class GroupTopologyConfigRepository extends GroupTopologyConfigSourceRepo
             },
             ref,
             requestId
-        );
+        });
         const decoders = createGroupTopologyMutationExactReadDecoders(ref, requestId, {
             validateSourceRaw: assertCanonicalGroupTopologySourceEntry,
             decodeConfigLive: (stored, trustedRef) =>
-                toValidatedLiveGroupTopologySourceEntry(
-                    stored as RuntimeStateEntryValue<StoredGroupTopologyConfig>,
-                    'config',
-                    trustedRef
-                ),
+                toValidatedLiveGroupTopologySourceEntry(stored, 'config', trustedRef),
             decodeOverrideLive: (stored, trustedRef) =>
-                toValidatedLiveGroupTopologySourceEntry(
-                    stored as RuntimeStateEntryValue<StoredGroupTopologyOverride>,
-                    'override',
-                    trustedRef
-                ),
+                toValidatedLiveGroupTopologySourceEntry(stored, 'override', trustedRef),
             validateInvariantRaw: decodeGroupTopologyInvariantEntry,
-            validateInvariantLive: decodeGroupTopologyInvariantValue,
+            decodeInvariantLive: decodeGroupTopologyInvariantValue,
             validateGenerationRaw: decodeGroupTopologyGenerationEntry,
-            validateGenerationLive: decodeGroupTopologyGenerationValue,
+            decodeGenerationLive: (entry, value, trustedRef, trustedTarget) =>
+                decodeGroupTopologyGenerationValue({
+                    entry,
+                    value,
+                    trustedRef,
+                    trustedTarget
+                }),
             validateMutationRaw: decodeGroupTopologyMutationEntry,
-            validateMutationLive: decodeGroupTopologyMutationValue,
+            decodeMutationLive: (entry, value, trustedRef, trustedRequestId) =>
+                decodeGroupTopologyMutationValue({
+                    entry,
+                    value,
+                    trustedRef,
+                    trustedRequestId
+                }),
             assertRetained: assertRetainedGroupTopologyEntry
         });
         return await readGroupTopologyMutationExactEntries(
             this.runtimeRepository,
             locations,
-            async (namespace, entry) => await this.toLiveEntryValue<GroupTopologyMutationStoredValue>(namespace, entry),
+            async (namespace, entry) => await this.toLiveJsonEntryValue(namespace, entry),
             decoders
         );
     }
@@ -114,7 +113,7 @@ export class GroupTopologyConfigRepository extends GroupTopologyConfigSourceRepo
             return undefined;
         }
         assertCanonicalGroupTopologySourceEntry(raw, 'config', ref);
-        const stored = await this.toLiveEntryValue<StoredGroupTopologyConfig>(
+        const stored = await this.toLiveJsonEntryValue(
             GROUP_TOPOLOGY_CONFIG_NAMESPACE,
             raw
         );
@@ -172,7 +171,7 @@ export class GroupTopologyConfigRepository extends GroupTopologyConfigSourceRepo
             return undefined;
         }
         assertCanonicalGroupTopologySourceEntry(raw, 'override', ref);
-        const stored = await this.toLiveEntryValue<StoredGroupTopologyOverride>(
+        const stored = await this.toLiveJsonEntryValue(
             GROUP_TOPOLOGY_OVERRIDE_NAMESPACE,
             raw
         );
@@ -232,14 +231,21 @@ export class GroupTopologyConfigRepository extends GroupTopologyConfigSourceRepo
         }
         decodeGroupTopologyMutationEntry(raw, ref, requestId);
         assertRetainedGroupTopologyEntry(raw, 'mutation record');
-        const stored = await this.toLiveEntryValue<GroupTopologyConfigMutationRecord>(
+        const stored = await this.toLiveJsonEntryValue(
             GROUP_TOPOLOGY_CONFIG_MUTATION_NAMESPACE,
             raw
         );
-        if (stored) {
-            decodeGroupTopologyMutationValue(stored.entry, stored.value, ref, requestId);
-        }
-        return stored;
+        return stored
+            ? {
+                entry: stored.entry,
+                value: decodeGroupTopologyMutationValue({
+                    entry: stored.entry,
+                    value: stored.value,
+                    trustedRef: ref,
+                    trustedRequestId: requestId
+                })
+            }
+            : undefined;
     }
 
     async findMutationRecord(
@@ -280,14 +286,21 @@ export class GroupTopologyConfigRepository extends GroupTopologyConfigSourceRepo
         }
         decodeGroupTopologyGenerationEntry(raw, ref, target);
         assertRetainedGroupTopologyEntry(raw, 'target generation');
-        const stored = await this.toLiveEntryValue<GroupTopologyConfigGeneration>(
+        const stored = await this.toLiveJsonEntryValue(
             GROUP_TOPOLOGY_CONFIG_GENERATION_NAMESPACE,
             raw
         );
-        if (stored) {
-            decodeGroupTopologyGenerationValue(stored.entry, stored.value, ref, target);
-        }
-        return stored;
+        return stored
+            ? {
+                entry: stored.entry,
+                value: decodeGroupTopologyGenerationValue({
+                    entry: stored.entry,
+                    value: stored.value,
+                    trustedRef: ref,
+                    trustedTarget: target
+                })
+            }
+            : undefined;
     }
 
     async commitGeneration(
@@ -326,14 +339,16 @@ export class GroupTopologyConfigRepository extends GroupTopologyConfigSourceRepo
         }
         decodeGroupTopologyInvariantEntry(raw, ref);
         assertRetainedGroupTopologyEntry(raw, 'invariant generation');
-        const stored = await this.toLiveEntryValue<GroupTopologyConfigInvariantGeneration>(
+        const stored = await this.toLiveJsonEntryValue(
             GROUP_TOPOLOGY_CONFIG_INVARIANT_GENERATION_NAMESPACE,
             raw
         );
-        if (stored) {
-            decodeGroupTopologyInvariantValue(stored.entry, stored.value, ref);
-        }
-        return stored;
+        return stored
+            ? {
+                entry: stored.entry,
+                value: decodeGroupTopologyInvariantValue(stored.entry, stored.value, ref)
+            }
+            : undefined;
     }
 
     async commitInvariantGeneration(

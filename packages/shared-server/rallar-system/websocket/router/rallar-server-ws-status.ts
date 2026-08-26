@@ -1,4 +1,4 @@
-import type { WsQueueBoxServerService } from '@shared/services/WsQueueBoxServerService.ts';
+import type { WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 
 export interface RallarServerWsConnectionStatus {
     readonly connectionId: string;

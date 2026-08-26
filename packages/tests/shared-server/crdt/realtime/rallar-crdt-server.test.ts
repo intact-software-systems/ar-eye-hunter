@@ -504,7 +504,11 @@ function createRouter(options?: ConstructorParameters<typeof RallarServerWsRoute
     const socket = new RecordingJsonWebSocketServer();
     const inbox = new InMemoryQueueBox(new Map());
     const outbox = new InMemoryQueueBox(new Map());
-    const service = new WsQueueBoxServerService(inbox, outbox, socket, 'server-1', {
+    const service = new WsQueueBoxServerService({
+        inbox: inbox,
+        outbox: outbox,
+        socket: socket,
+        name: 'server-1',
         targetResolver: createTargetResolver()
     });
     const router = new RallarServerWsRouter(service, options);

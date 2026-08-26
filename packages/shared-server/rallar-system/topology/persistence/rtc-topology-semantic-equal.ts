@@ -1,7 +1,12 @@
 import { compareRtcTopologyIdentifiers } from './rtc-topology-identifiers.ts';
 
+type RtcTopologySemanticValue = null | boolean | number | string | object;
+
 /** Object-key-order neutral, array-order preserving equality for RTC values. */
-export function rtcTopologySemanticEqual(left: unknown, right: unknown): boolean {
+export function rtcTopologySemanticEqual(
+    left: RtcTopologySemanticValue | undefined,
+    right: RtcTopologySemanticValue | undefined
+): boolean {
     if (Object.is(left, right)) {
         return true;
     }
@@ -10,7 +15,7 @@ export function rtcTopologySemanticEqual(left: unknown, right: unknown): boolean
             left.length === right.length &&
             left.every((value, index) => rtcTopologySemanticEqual(value, right[index]));
     }
-    if (!isRecord(left) || !isRecord(right)) {
+    if (!isRtcTopologyRecord(left) || !isRtcTopologyRecord(right)) {
         return false;
     }
     const leftKeys = Object.keys(left).sort(compareRtcTopologyIdentifiers);
@@ -22,6 +27,8 @@ export function rtcTopologySemanticEqual(left: unknown, right: unknown): boolean
         );
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
+function isRtcTopologyRecord(
+    value: RtcTopologySemanticValue | undefined
+): value is Readonly<Record<string, RtcTopologySemanticValue | undefined>> {
     return !!value && typeof value === 'object' && !Array.isArray(value);
 }

@@ -7,9 +7,14 @@ import {
 
 import { type AppInboxEnqueueInput } from '../../app-inbox/app-inbox-contracts.ts';
 import { AppInboxType } from '../../app-inbox/app-inbox-contracts.ts';
-import { hashCanonicalCommand } from '../../app-inbox/hash-canonical-command.ts';
 import type { IssuedAuthSession } from '../../auth/persistence/auth-session-types.ts';
 import { GroupMutationAuthorizationError } from '../../group-state/group-mutation-authority.ts';
+import {
+    decodeJsonWireValue,
+    hashMutationCommand,
+    type JsonWireObject,
+    type JsonWireValue
+} from '../../protocol/json-wire-identity.ts';
 import type { GroupTopologyConfigMutationCommand } from '../config/mutation/group-topology-config-mutation-contracts.ts';
 import type {
     CreateTopologyAppInboxCommandInput,
@@ -18,8 +23,6 @@ import type {
     TopologyAppInboxRequestPayload
 } from './topology-app-inbox-contracts.ts';
 
-type TopologyRecord = Record<string, unknown>;
-
 interface TopologyConfigMutationCommandInput {
     readonly command: TopologyAppInboxCommand;
     readonly config: GroupTopologyConfigPatch | null;
@@ -27,17 +30,25 @@ interface TopologyConfigMutationCommandInput {
     readonly expiresAtEpochMs: number | null;
 }
 
+interface TopologyAppInboxCommandIdentity {
+    readonly actor: TopologyAppInboxCommand['actor'];
+    readonly groupRef: TopologyAppInboxCommand['groupRef'];
+    readonly requestId: string;
+    readonly commandHash: string;
+    readonly capturedAtEpochMs: number;
+}
+
 export async function toTopologyAppInboxCommand(
     input: CreateTopologyAppInboxCommandInput
 ): Promise<TopologyAppInboxCommand> {
+    const actor = readTopologyActor(
+        decodeJsonWireValue(input.actor, 'Topology AppInbox actor')
+    );
+    const groupRef = readTopologyGroupRef(
+        decodeJsonWireValue(input.groupRef, 'Topology AppInbox groupRef')
+    );
     if (
         input.requestId.length === 0 ||
-        input.actor.principalId.length === 0 ||
-        input.actor.sessionId.length === 0 ||
-        input.groupRef.applicationId.length === 0 ||
-        input.groupRef.workspaceId.length === 0 ||
-        input.groupRef.groupId.length === 0 ||
-        !isTopologyAppInboxRequestPayload(input.payload) ||
         !Number.isSafeInteger(input.capturedAtEpochMs) ||
         input.capturedAtEpochMs < 0
     ) {
@@ -45,21 +56,22 @@ export async function toTopologyAppInboxCommand(
     }
     const payload = toCanonicalTopologyAppInboxPayload(input.payload);
     const stableCommand = {
-        actor: { ...input.actor },
-        groupRef: {
-            applicationId: input.groupRef.applicationId,
-            workspaceId: input.groupRef.workspaceId,
-            groupId: input.groupRef.groupId
-        },
+        actor,
+        groupRef,
         requestId: input.requestId,
         operation: payload.operation,
         payload
     } as const;
-    return {
-        ...stableCommand,
-        capturedAtEpochMs: input.capturedAtEpochMs,
-        commandHash: await hashCanonicalCommand(stableCommand)
-    } as TopologyAppInboxCommand;
+    return topologyAppInboxCommand(
+        {
+            actor,
+            groupRef,
+            requestId: input.requestId,
+            capturedAtEpochMs: input.capturedAtEpochMs,
+            commandHash: await hashMutationCommand(stableCommand)
+        },
+        payload
+    );
 }
 
 export async function toTopologyHttpMutationSemanticHash(
@@ -95,7 +107,7 @@ async function hashTopologyHttpMutationSemantic(
         payload: TopologyAppInboxPayload;
     }>
 ): Promise<string> {
-    return await hashCanonicalCommand({
+    return await hashMutationCommand({
         operation: input.payload.operation,
         requestId: input.requestId,
         callerId: input.principalId,
@@ -118,19 +130,8 @@ export async function readTopologyCommandForValidatedSession<V>(
     enqueue: AppInboxEnqueueInput<V>,
     expectedActor: Readonly<{ principalId: string; sessionId: string; }>
 ): Promise<TopologyAppInboxCommand> {
-    const command = enqueue.data as TopologyAppInboxCommand;
+    const command = readDurableTopologyAppInboxCommand(enqueue.data);
     if (
-        !command ||
-        typeof command !== 'object' ||
-        !command.actor ||
-        typeof command.actor !== 'object' ||
-        typeof command.actor.principalId !== 'string' ||
-        typeof command.actor.sessionId !== 'string' ||
-        !command.groupRef ||
-        typeof command.groupRef !== 'object' ||
-        typeof command.operation !== 'string' ||
-        !isTopologyAppInboxPayload(command.payload) ||
-        command.payload.operation !== command.operation ||
         command.actor.principalId !== expectedActor.principalId ||
         command.actor.sessionId !== expectedActor.sessionId ||
         toTopologyAppInboxType(command.operation) !== enqueue.type
@@ -146,7 +147,7 @@ export async function readTopologyCommandForValidatedSession<V>(
         operation: command.operation,
         payload: command.payload
     };
-    if ((await hashCanonicalCommand(stableCommand)) !== command.commandHash) {
+    if ((await hashMutationCommand(stableCommand)) !== command.commandHash) {
         throw new GroupMutationAuthorizationError('Topology AppInbox command hash is invalid.');
     }
     return command;
@@ -167,10 +168,11 @@ export function toTopologyHttpMutationContextId(
 }
 
 export function readDurableTopologyAppInboxCommand(value: unknown): TopologyAppInboxCommand {
-    if (!isRecord(value)) {
-        throw new TypeError('topology command is invalid');
-    }
-    requireExactKeys(value, [
+    const command = requireTopologyObject(
+        decodeJsonWireValue(value, 'Topology durable AppInbox command'),
+        'Topology durable AppInbox command'
+    );
+    requireExactKeys(command, [
         'actor',
         'groupRef',
         'requestId',
@@ -178,21 +180,23 @@ export function readDurableTopologyAppInboxCommand(value: unknown): TopologyAppI
         'capturedAtEpochMs',
         'operation',
         'payload'
-    ]);
-    if (!isTopologyAppInboxPayload(value.payload)) {
-        throw new TypeError('topology command payload is invalid');
+    ], 'Topology durable AppInbox command');
+    const actor = readTopologyActor(command.actor);
+    const groupRef = readTopologyGroupRef(command.groupRef);
+    const requestId = readTopologyString(command.requestId, 'requestId');
+    const commandHash = readTopologyString(command.commandHash, 'commandHash');
+    const capturedAtEpochMs = readTopologyEpoch(
+        command.capturedAtEpochMs,
+        'capturedAtEpochMs'
+    );
+    const payload = readTopologyAppInboxPayload(command.payload);
+    if (command.operation !== payload.operation) {
+        throw new TypeError('Topology durable command operation does not match its payload');
     }
-    const actor = isRecord(value.actor) ? value.actor : null;
-    const groupRef = isRecord(value.groupRef) ? value.groupRef : null;
-    if (!actor || !groupRef) {
-        throw new TypeError('topology identity is invalid');
-    }
-    requireExactKeys(actor, ['principalId', 'sessionId']);
-    requireExactKeys(groupRef, ['applicationId', 'workspaceId', 'groupId']);
-    if (!hasValidTopologyCommandIdentity(value, actor, groupRef)) {
-        throw new TypeError('topology command identity fields are invalid');
-    }
-    return value as TopologyAppInboxCommand;
+    return topologyAppInboxCommand(
+        { actor, groupRef, requestId, commandHash, capturedAtEpochMs },
+        payload
+    );
 }
 
 export function toTopologyConfigMutationCommand(
@@ -232,109 +236,108 @@ export function toTopologyConfigMutationCommand(
     }
 }
 
-export function requireExactTopologyKeys(
-    record: TopologyRecord,
-    expected: readonly string[]
-): void {
-    requireExactKeys(record, expected);
-}
-
-export function isTopologyRecord(value: unknown): value is TopologyRecord {
-    return isRecord(value);
-}
-
-function isTopologyAppInboxRequestPayload(value: unknown): value is TopologyAppInboxRequestPayload {
-    if (!isRecord(value) || typeof value.operation !== 'string') {
-        return false;
-    }
-    try {
-        switch (value.operation) {
-            case 'putConfig':
-                requireExactKeys(value, ['operation', 'config']);
-                toCanonicalGroupTopologyConfigPatch(value.config);
-                return true;
-            case 'deleteConfig':
-                requireExactKeys(value, ['operation', 'target']);
-                return value.target === 'config';
-            case 'putOverride':
-                requireExactKeys(value, ['operation', 'config', 'ttlMs', 'expiresAtEpochMs']);
-                toCanonicalGroupTopologyConfigPatch(value.config);
-                return isFiniteNumberOrNull(value.ttlMs) && isFiniteNumberOrNull(value.expiresAtEpochMs);
-            case 'deleteOverride':
-                requireExactKeys(value, ['operation', 'target']);
-                return value.target === 'override';
-            case 'reconfigureTopology':
-                requireExactKeys(value, ['operation', 'requestOptions', 'publish']);
-                toCanonicalGroupTopologyConfigPatch(value.requestOptions);
-                return typeof value.publish === 'boolean';
-            default:
-                return false;
-        }
-    }
-    catch {
-        return false;
-    }
-}
-
-function isTopologyAppInboxPayload(value: unknown): value is TopologyAppInboxPayload {
-    if (!isRecord(value)) {
-        return false;
-    }
-    const record = value;
-    if (typeof record.operation !== 'string') {
-        return false;
-    }
-    try {
-        switch (record.operation) {
-            case 'putConfig':
-                requireExactKeys(record, ['operation', 'config']);
-                readCanonicalGroupTopologyConfigPatch(record.config);
-                return true;
-            case 'deleteConfig':
-                requireExactKeys(record, ['operation', 'target']);
-                return record.target === 'config';
-            case 'putOverride':
-                requireExactKeys(record, ['operation', 'config', 'ttlMs', 'expiresAtEpochMs']);
-                readCanonicalGroupTopologyConfigPatch(record.config);
-                return isFiniteNumberOrNull(record.ttlMs) && isFiniteNumberOrNull(record.expiresAtEpochMs);
-            case 'deleteOverride':
-                requireExactKeys(record, ['operation', 'target']);
-                return record.target === 'override';
-            case 'reconfigureTopology':
-                requireExactKeys(record, ['operation', 'requestOptions', 'publish']);
-                readCanonicalGroupTopologyConfigPatch(record.requestOptions);
-                return typeof record.publish === 'boolean';
-            default:
-                return false;
-        }
-    }
-    catch {
-        return false;
-    }
+function isTopologyRecord(value: JsonWireValue): value is JsonWireObject {
+    return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
 function toCanonicalTopologyAppInboxPayload(
     payload: TopologyAppInboxRequestPayload
 ): TopologyAppInboxPayload {
-    switch (payload.operation) {
+    const request = requireTopologyObject(
+        decodeJsonWireValue(payload, 'Topology AppInbox request payload'),
+        'Topology AppInbox request payload'
+    );
+    switch (request.operation) {
         case 'putConfig':
+            requireExactKeys(request, ['operation', 'config']);
             return {
-                operation: payload.operation,
-                config: toCanonicalGroupTopologyConfigPatch(payload.config)
+                operation: request.operation,
+                config: toCanonicalGroupTopologyConfigPatch(request.config)
             };
         case 'deleteConfig':
-        case 'deleteOverride':
-            return { ...payload };
+            requireExactKeys(request, ['operation', 'target']);
+            if (request.target !== 'config') {
+                throw new TypeError('Topology delete config target is invalid');
+            }
+            return { operation: request.operation, target: request.target };
         case 'putOverride':
+            requireExactKeys(request, ['operation', 'config', 'ttlMs', 'expiresAtEpochMs']);
             return {
-                ...payload,
-                config: toCanonicalGroupTopologyConfigPatch(payload.config)
+                operation: request.operation,
+                config: toCanonicalGroupTopologyConfigPatch(request.config),
+                ttlMs: readFiniteNumberOrNull(request.ttlMs, 'Topology override ttlMs'),
+                expiresAtEpochMs: readFiniteNumberOrNull(
+                    request.expiresAtEpochMs,
+                    'Topology override expiresAtEpochMs'
+                )
             };
+        case 'deleteOverride':
+            requireExactKeys(request, ['operation', 'target']);
+            if (request.target !== 'override') {
+                throw new TypeError('Topology delete override target is invalid');
+            }
+            return { operation: request.operation, target: request.target };
         case 'reconfigureTopology':
+            requireExactKeys(request, ['operation', 'requestOptions', 'publish']);
+            if (typeof request.publish !== 'boolean') {
+                throw new TypeError('Topology reconfigure publish is invalid');
+            }
             return {
-                ...payload,
-                requestOptions: toCanonicalGroupTopologyConfigPatch(payload.requestOptions)
+                operation: request.operation,
+                requestOptions: toCanonicalGroupTopologyConfigPatch(request.requestOptions),
+                publish: request.publish
             };
+        default:
+            throw new TypeError('Topology AppInbox request operation is invalid');
+    }
+}
+
+function readTopologyAppInboxPayload(
+    value: JsonWireValue | undefined
+): TopologyAppInboxPayload {
+    const payload = requireTopologyObject(value, 'Topology durable AppInbox payload');
+    switch (payload.operation) {
+        case 'putConfig':
+            requireExactKeys(payload, ['operation', 'config']);
+            return {
+                operation: payload.operation,
+                config: readCanonicalGroupTopologyConfigPatch(payload.config)
+            };
+        case 'deleteConfig':
+            requireExactKeys(payload, ['operation', 'target']);
+            if (payload.target !== 'config') {
+                throw new TypeError('Topology durable delete config target is invalid');
+            }
+            return { operation: payload.operation, target: payload.target };
+        case 'putOverride':
+            requireExactKeys(payload, ['operation', 'config', 'ttlMs', 'expiresAtEpochMs']);
+            return {
+                operation: payload.operation,
+                config: readCanonicalGroupTopologyConfigPatch(payload.config),
+                ttlMs: readFiniteNumberOrNull(payload.ttlMs, 'Topology durable override ttlMs'),
+                expiresAtEpochMs: readFiniteNumberOrNull(
+                    payload.expiresAtEpochMs,
+                    'Topology durable override expiresAtEpochMs'
+                )
+            };
+        case 'deleteOverride':
+            requireExactKeys(payload, ['operation', 'target']);
+            if (payload.target !== 'override') {
+                throw new TypeError('Topology durable delete override target is invalid');
+            }
+            return { operation: payload.operation, target: payload.target };
+        case 'reconfigureTopology':
+            requireExactKeys(payload, ['operation', 'requestOptions', 'publish']);
+            if (typeof payload.publish !== 'boolean') {
+                throw new TypeError('Topology durable reconfigure publish is invalid');
+            }
+            return {
+                operation: payload.operation,
+                requestOptions: readCanonicalGroupTopologyConfigPatch(payload.requestOptions),
+                publish: payload.publish
+            };
+        default:
+            throw new TypeError('Topology durable AppInbox payload operation is invalid');
     }
 }
 
@@ -376,41 +379,91 @@ function topologyConfigMutationCommand(
     };
 }
 
-function hasValidTopologyCommandIdentity(
-    value: TopologyRecord,
-    actor: TopologyRecord,
-    groupRef: TopologyRecord
-): boolean {
-    return (
-        typeof actor.principalId === 'string' &&
-        actor.principalId.length > 0 &&
-        typeof actor.sessionId === 'string' &&
-        actor.sessionId.length > 0 &&
-        typeof groupRef.applicationId === 'string' &&
-        groupRef.applicationId.length > 0 &&
-        typeof groupRef.workspaceId === 'string' &&
-        groupRef.workspaceId.length > 0 &&
-        typeof groupRef.groupId === 'string' &&
-        groupRef.groupId.length > 0 &&
-        typeof value.requestId === 'string' &&
-        value.requestId.length > 0 &&
-        typeof value.commandHash === 'string' &&
-        Number.isSafeInteger(value.capturedAtEpochMs) &&
-        (value.capturedAtEpochMs as number) >= 0 &&
-        value.operation === (value.payload as TopologyAppInboxPayload).operation
-    );
-}
-
-function isRecord(value: unknown): value is TopologyRecord {
-    return value !== null && typeof value === 'object' && !Array.isArray(value);
-}
-
-function requireExactKeys(record: TopologyRecord, expected: readonly string[]): void {
-    if (JSON.stringify(Object.keys(record).toSorted()) !== JSON.stringify([...expected].toSorted())) {
-        throw new TypeError('Topology durable command has missing or unknown fields');
+function topologyAppInboxCommand(
+    identity: TopologyAppInboxCommandIdentity,
+    payload: TopologyAppInboxPayload
+): TopologyAppInboxCommand {
+    switch (payload.operation) {
+        case 'putConfig':
+            return { ...identity, operation: payload.operation, payload };
+        case 'deleteConfig':
+            return { ...identity, operation: payload.operation, payload };
+        case 'putOverride':
+            return { ...identity, operation: payload.operation, payload };
+        case 'deleteOverride':
+            return { ...identity, operation: payload.operation, payload };
+        case 'reconfigureTopology':
+            return { ...identity, operation: payload.operation, payload };
     }
 }
 
-function isFiniteNumberOrNull(value: unknown): value is number | null {
-    return value === null || (typeof value === 'number' && Number.isFinite(value));
+function readTopologyActor(
+    value: JsonWireValue | undefined
+): TopologyAppInboxCommand['actor'] {
+    const actor = requireTopologyObject(value, 'Topology AppInbox actor');
+    requireExactKeys(actor, ['principalId', 'sessionId'], 'Topology AppInbox actor');
+    return {
+        principalId: readTopologyString(actor.principalId, 'actor principalId'),
+        sessionId: readTopologyString(actor.sessionId, 'actor sessionId')
+    };
+}
+
+function readTopologyGroupRef(
+    value: JsonWireValue | undefined
+): TopologyAppInboxCommand['groupRef'] {
+    const groupRef = requireTopologyObject(value, 'Topology AppInbox groupRef');
+    requireExactKeys(
+        groupRef,
+        ['applicationId', 'workspaceId', 'groupId'],
+        'Topology AppInbox groupRef'
+    );
+    return {
+        applicationId: readTopologyString(groupRef.applicationId, 'group applicationId'),
+        workspaceId: readTopologyString(groupRef.workspaceId, 'group workspaceId'),
+        groupId: readTopologyString(groupRef.groupId, 'group groupId')
+    };
+}
+
+function readTopologyString(value: JsonWireValue | undefined, label: string): string {
+    if (typeof value !== 'string' || value.length === 0) {
+        throw new TypeError(`Topology AppInbox ${label} is invalid`);
+    }
+    return value;
+}
+
+function readTopologyEpoch(value: JsonWireValue | undefined, label: string): number {
+    if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) {
+        throw new TypeError(`Topology AppInbox ${label} is invalid`);
+    }
+    return value;
+}
+
+function requireTopologyObject(
+    value: JsonWireValue | undefined,
+    label: string
+): JsonWireObject {
+    if (value === undefined || !isTopologyRecord(value)) {
+        throw new TypeError(`${label} must be an exact object`);
+    }
+    return value;
+}
+
+function requireExactKeys(
+    record: JsonWireObject,
+    expected: readonly string[],
+    label = 'Topology durable command'
+): void {
+    if (JSON.stringify(Object.keys(record).toSorted()) !== JSON.stringify([...expected].toSorted())) {
+        throw new TypeError(`${label} has missing or unexpected fields`);
+    }
+}
+
+function readFiniteNumberOrNull(
+    value: JsonWireValue | undefined,
+    label: string
+): number | null {
+    if (value === null || typeof value === 'number' && Number.isFinite(value)) {
+        return value;
+    }
+    throw new TypeError(`${label} is invalid`);
 }

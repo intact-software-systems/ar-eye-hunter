@@ -18,7 +18,7 @@ import type {
 } from '@shared-server/rallar-system/auth/mutation/auth-mutation-contracts.ts';
 import { decodeAuthMutationIntent } from '@shared-server/rallar-system/auth/mutation/decode-auth-mutation-intent.ts';
 
-import { toJsonWireAppInboxEnqueue } from '@shared-server/rallar-system/app-inbox/app-inbox-command-wire.ts';
+import { decodeAppInboxEnqueue } from '@shared-server/rallar-system/app-inbox/app-inbox-command-decoding.ts';
 import type { AppInboxMessageContext } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import { encodeAppInboxResult } from '@shared-server/rallar-system/app-inbox/app-inbox-registration-codecs.ts';
 import type {
@@ -218,7 +218,7 @@ function createContext(
     intent: AuthMutationIntent,
     contextId: string = toAuthIntentContextId(intent)
 ): AppInboxMessageContext<AuthMutationResult> {
-    const enqueue = toJsonWireAppInboxEnqueue({
+    const enqueue = decodeAppInboxEnqueue({
         type: toAuthAppInboxType(intent),
         topicId: toAuthAppInboxType(intent),
         resourceId: intent.requestId,

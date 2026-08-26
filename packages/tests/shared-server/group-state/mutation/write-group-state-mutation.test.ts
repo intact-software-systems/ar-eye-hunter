@@ -1,43 +1,21 @@
 import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import { describe, expect, it } from 'vitest';
 
+import { groupStateGroupStorageKey } from '@shared-server/rallar-system/group-state/persistence/aggregate/group-aggregate-storage-keys.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
-import {
-    groupStateGroupStorageKey,
-    groupStateIdempotencyStorageKey,
-    groupStateMemberStorageKey
-} from '@shared-server/rallar-system/group-state/persistence/group-state-storage-keys.ts';
+import { groupStateIdempotencyStorageKey } from '@shared-server/rallar-system/group-state/persistence/idempotency/group-idempotency-storage-key.ts';
+import { groupStateMemberStorageKey } from '@shared-server/rallar-system/group-state/persistence/membership/group-membership-storage-key.ts';
 import type { RuntimeStateGuardedBatch } from '@shared-server/runtime-state/guarded-batch/runtime-state-guarded-batch.ts';
-import type { RuntimeStateOptimisticTransactionalRepositoryLike } from '@shared-server/runtime-state/runtime-state-repository.ts';
 import type { GroupMember, GroupRef } from '@shared/api/group-types.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
-import { FakeRuntimeStateRepository } from '../../fake-runtime-state-repository.ts';
+import { FakeRuntimeStateRepository } from '../../runtime-state/test-support/fake-runtime-state-repository.ts';
 import { createTestGroupStateService } from '../group-state-test-runtime.ts';
 import { ApplyingGuardedBatchRepository, OrderedGroupEventStore } from './group-mutation-test-runtime.ts';
 
 const BATCH_SELECTED = new Error('guarded group batch selected');
 
-class BeginOnlyGuardedBatchRepository extends FakeRuntimeStateRepository {
+class RejectingGuardedBatchRepository extends FakeRuntimeStateRepository {
     batchCalls = 0;
-    private transactionDepth = 0;
-
-    get runtimeStateGuardedBatchCapability(): true | false {
-        return this.transactionDepth > 0;
-    }
-
-    override async begin<T>(
-        fn: (repository: RuntimeStateOptimisticTransactionalRepositoryLike) => Promise<T>
-    ): Promise<T> {
-        return await super.begin(async () => {
-            this.transactionDepth += 1;
-            try {
-                return await fn(this);
-            }
-            finally {
-                this.transactionDepth -= 1;
-            }
-        });
-    }
 
     executeGuardedBatch(_batch: RuntimeStateGuardedBatch): Promise<never> {
         this.batchCalls += 1;
@@ -51,8 +29,8 @@ const SCOPE = {
 } as const;
 
 describe('GroupStateService guarded runtime-state batch', () => {
-    it('selects the capability exposed only by the transaction repository', async () => {
-        const runtime = new BeginOnlyGuardedBatchRepository();
+    it('executes every group mutation through the required guarded batch operation', async () => {
+        const runtime = new RejectingGuardedBatchRepository();
         const service = createTestGroupStateService({
             runtimeRepository: runtime,
             now: () => 1_000,

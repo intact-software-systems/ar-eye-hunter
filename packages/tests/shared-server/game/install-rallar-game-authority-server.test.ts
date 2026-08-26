@@ -601,7 +601,7 @@ async function emitFakeGameAuthorityMessage<TPayload extends JsonWireValue>(
         return;
     }
 
-    const message: RallarServerWsMessage = {
+    const message: RallarServerWsMessage<JsonWireValue> = {
         payload: wireValue,
         raw: toTestALMessage(input.typeId, wireValue),
         receivedAtEpochMs: 2_000
@@ -628,7 +628,7 @@ interface StoredTopicDefinition extends RallarServerWsTopicMetadata {
 interface HandlerSubscription {
     readonly selector: RallarServerWsSelector;
     invoke(
-        message: RallarServerWsMessage,
+        message: RallarServerWsMessage<JsonWireValue>,
         context: RallarServerWsMessageContext
     ): void | Promise<void>;
 }

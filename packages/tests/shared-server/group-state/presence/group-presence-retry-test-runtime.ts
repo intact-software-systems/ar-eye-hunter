@@ -1,6 +1,6 @@
 import type { GroupRef } from '@shared/api/group-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
-import { FakeRuntimeStateRepository } from '../../fake-runtime-state-repository.ts';
+import { FakeRuntimeStateRepository } from '../../runtime-state/test-support/fake-runtime-state-repository.ts';
 import { createTestGroupStateService as createGroupStateService } from '../group-state-test-runtime.ts';
 
 export const SCOPE: StateScope = {

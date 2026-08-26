@@ -7,8 +7,8 @@ import type { IssuedAuthSession } from '@shared-server/rallar-system/auth/persis
 import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 
-import { createAppInboxTestResilience } from '../app-inbox-resource-fixtures.ts';
-import { FakeRuntimeStateRepository } from '../fake-runtime-state-repository.ts';
+import { createAppInboxTestResilience } from '../rallar-system/app-inbox/test-support/app-inbox-resource-fixtures.ts';
+import { FakeRuntimeStateRepository } from '../runtime-state/test-support/fake-runtime-state-repository.ts';
 import { createAuthInboxTestRuntime, runAuthInboxCommand, type AuthInboxTestRuntime } from './auth-app-inbox-test-runtime.ts';
 
 interface AuthHttpIdempotencyRuntime {

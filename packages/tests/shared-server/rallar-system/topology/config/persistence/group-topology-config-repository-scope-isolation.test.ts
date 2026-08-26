@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { groupStateGroupStorageKey } from '@shared-server/rallar-system/group-state/persistence/group-state-storage-keys.ts';
+import { groupStateGroupStorageKey } from '@shared-server/rallar-system/group-state/persistence/aggregate/group-aggregate-storage-keys.ts';
 import { GroupTopologyConfigRepositoryInvariantCorruptionError } from '@shared-server/rallar-system/topology/config/persistence/group-topology-config-repository-contracts.ts';
 import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/topology/config/persistence/group-topology-config-repository.ts';
 import {
@@ -13,7 +13,7 @@ import {
 import type { GroupRef } from '@shared/api/group-types.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 
-import { FakeRuntimeStateRepository } from '../../../../fake-runtime-state-repository.ts';
+import { FakeRuntimeStateRepository } from '../../../../runtime-state/test-support/fake-runtime-state-repository.ts';
 import {
     createTopologyTestEffectiveConfig,
     createTopologyTestGroupRef,
@@ -127,16 +127,16 @@ describe('group topology config repository scope isolation', () => {
 interface CanonicalRepositoryBoundary {
     readonly label: string;
     readonly namespace: string;
-    readonly seed: (repository: GroupTopologyConfigRepository) => Promise<unknown>;
-    readonly read: (repository: GroupTopologyConfigRepository) => Promise<unknown>;
+    readonly seed: (repository: GroupTopologyConfigRepository) => Promise<object | undefined>;
+    readonly read: (repository: GroupTopologyConfigRepository) => Promise<object | undefined>;
 }
 
 interface WrongStoredRepositoryBoundary {
     readonly label: string;
     readonly namespace: string;
     readonly key: string;
-    readonly value: unknown;
-    readonly read: () => Promise<unknown>;
+    readonly value: object;
+    readonly read: () => Promise<object | undefined>;
 }
 
 function createCanonicalBoundaryContracts(): readonly CanonicalRepositoryBoundary[] {

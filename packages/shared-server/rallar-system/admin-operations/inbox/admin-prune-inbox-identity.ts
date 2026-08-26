@@ -4,7 +4,7 @@ import type { Key } from '@shared/queuebox/ResourceEntry.ts';
 import { toStrictAppInboxQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 import { AppInboxType, type AppInboxExecutionMetadata } from '../../app-inbox/app-inbox-contracts.ts';
 import { AppInboxIdempotencyConflictError } from '../../app-inbox/app-inbox-contracts.ts';
-import { hashCanonicalCommand } from '../../app-inbox/hash-canonical-command.ts';
+import { hashMutationCommand } from '../../protocol/json-wire-identity.ts';
 import type { AdminPruneAppData, AdminPruneCommand } from './admin-prune-command-codec.ts';
 
 export const ADMIN_APP_INBOX_TOPIC = AppInboxType.ADMIN_PRUNE_EXPIRED;
@@ -45,7 +45,7 @@ export async function createAdminPruneIdempotencyIdentity(
         ...input,
         contextId: key.contextId,
         jobId: await toAdminPruneJobId(key),
-        semanticHash: await hashCanonicalCommand({
+        semanticHash: await hashMutationCommand({
             version: 1,
             categories,
             appData: input.appData,
@@ -155,7 +155,7 @@ export function toAdminPruneContextId(
 }
 
 export async function toAdminPruneJobId(key: Key): Promise<string> {
-    const digest = await hashCanonicalCommand({
+    const digest = await hashMutationCommand({
         domain: 'admin-prune-job.v1',
         topicId: key.topicId,
         contextId: key.contextId,

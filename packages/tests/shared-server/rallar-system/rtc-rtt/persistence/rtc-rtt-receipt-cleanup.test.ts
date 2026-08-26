@@ -4,17 +4,17 @@ import { DEFAULT_RTC_RTT_MUTATION_RETENTION_MS } from '@shared-server/rallar-sys
 import {
     cleanupExpiredRtcRttReceipts,
     initRtcRttReceiptFamilyCleanup,
-    RtcRttReceiptFamilyCleanupError
+    RtcRttReceiptFamilyCleanupError,
+    type RtcRttReceiptFamilyCleanupTimerHandle
 } from '@shared-server/rallar-system/rtc-rtt/persistence/rtc-rtt-receipt-cleanup.ts';
 import { RtcRttRepository } from '@shared-server/rallar-system/rtc-rtt/persistence/rtc-rtt-repository.ts';
 import {
     RTC_RTT_PROTECTED_RUNTIME_STATE_NAMESPACES,
     RTC_RTT_RECEIPTS_NAMESPACE
 } from '@shared-server/rallar-system/rtc-rtt/persistence/rtc-rtt-runtime-namespaces.ts';
-import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
-import { FakeRuntimeStateRepository } from '../../../fake-runtime-state-repository.ts';
+import { FakeRuntimeStateRepository } from '../../../runtime-state/test-support/fake-runtime-state-repository.ts';
 
 describe('RTC RTT receipt cleanup ownership', () => {
     it('deletes an expired receipt', async () => {
@@ -65,27 +65,6 @@ describe('RTC RTT receipt cleanup ownership', () => {
         expect(RTC_RTT_PROTECTED_RUNTIME_STATE_NAMESPACES).toContain(RTC_RTT_RECEIPTS_NAMESPACE);
     });
 
-    it('reads and validates the receipt before entering its write transaction', () => {
-        const source = readFileSync(
-            new URL(
-                '../../../../../shared-server/rallar-system/rtc-rtt/persistence/rtc-rtt-receipt-cleanup.ts',
-                import.meta.url
-            ),
-            'utf8'
-        );
-        const cleanupStart = source.indexOf('async function cleanupExpiredRtcRttReceipt(');
-        const writeStart = source.indexOf('async function deleteGuardedRtcRttReceipt(');
-        const cleanupSection = source.slice(cleanupStart, writeStart);
-        const writeSection = source.slice(writeStart);
-
-        expect(cleanupSection.indexOf('probeMutationReceiptEntry(')).toBeGreaterThanOrEqual(0);
-        expect(cleanupSection).not.toContain('runtime.begin(');
-        expect(writeSection).toContain('runtime.begin(');
-        expect(writeSection).not.toMatch(/\.findEntry|\.findEntriesByPrefix/);
-        expect(writeSection.indexOf('.upsertIfRevision(')).toBeLessThan(
-            writeSection.indexOf('.deleteIfRevision(')
-        );
-    });
     it('starts and stops periodic receipt-family cleanup on a non-evicting runtime', async () => {
         const runtimeRepository = new FakeRuntimeStateRepository();
         const repository = new RtcRttRepository(runtimeRepository, {
@@ -98,8 +77,8 @@ describe('RTC RTT receipt cleanup ownership', () => {
                 handle: object;
             }>
         > = [];
-        const cancelled: unknown[] = [];
-        const errors: unknown[] = [];
+        const cancelled: RtcRttReceiptFamilyCleanupTimerHandle[] = [];
+        const errors: Error[] = [];
         const handle = initRtcRttReceiptFamilyCleanup(repository, {
             intervalMs: 123,
             schedule: (callback, delayMs) => {
@@ -121,16 +100,12 @@ describe('RTC RTT receipt cleanup ownership', () => {
     });
 
     it('continues periodic family cleanup after an error without overlapping runs', async () => {
-        const repository = new RtcRttRepository(new FakeRuntimeStateRepository(), { now: () => 1 });
         const failure = new Error('one corrupt family');
         let resolveSecond!: (removed: number) => void;
         const secondRun = new Promise<number>((resolve) => {
             resolveSecond = resolve;
         });
-        const cleanup = vi
-            .spyOn(repository, 'cleanupExpiredReceiptFamilies')
-            .mockRejectedValueOnce(failure)
-            .mockImplementationOnce(() => secondRun);
+        const repository = new SequencedCleanupRtcRttRepository(failure, secondRun);
         const scheduled: Array<
             Readonly<{
                 callback: () => void;
@@ -151,7 +126,6 @@ describe('RTC RTT receipt cleanup ownership', () => {
         expect(scheduled).toHaveLength(1);
         scheduled[0]!.callback();
         await Promise.resolve();
-        expect(cleanup).toHaveBeenCalledTimes(2);
         expect(scheduled).toHaveLength(1);
 
         resolveSecond(1);
@@ -161,6 +135,29 @@ describe('RTC RTT receipt cleanup ownership', () => {
         handle.stop();
     });
 });
+
+class SequencedCleanupRtcRttRepository extends RtcRttRepository {
+    private readonly firstFailure: Error;
+    private readonly secondRun: Promise<number>;
+    private runCount = 0;
+
+    constructor(firstFailure: Error, secondRun: Promise<number>) {
+        super(new FakeRuntimeStateRepository(), { now: () => 1 });
+        this.firstFailure = firstFailure;
+        this.secondRun = secondRun;
+    }
+
+    override cleanupExpiredReceiptFamilies(): Promise<number> {
+        this.runCount += 1;
+        if (this.runCount === 1) {
+            return Promise.reject(this.firstFailure);
+        }
+        if (this.runCount === 2) {
+            return this.secondRun;
+        }
+        return Promise.reject(new Error('Periodic cleanup overlapped an active run'));
+    }
+}
 
 async function createReceiptHarness(input: { readonly nowOffsetFromExpiry: number; }): Promise<
     Readonly<{

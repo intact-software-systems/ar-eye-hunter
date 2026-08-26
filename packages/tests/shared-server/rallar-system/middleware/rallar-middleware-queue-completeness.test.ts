@@ -9,7 +9,7 @@ import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY } from '@shared/queuebox/ResourceIn
 import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 import { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
-import { WsQueueBoxServerService } from '@shared/services/WsQueueBoxServerService.ts';
+import { WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 import { JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.ts';
 import { describe, expect, it } from 'vitest';
 
@@ -66,12 +66,12 @@ function createQueueTaskInput(): RegisterRallarMiddlewareQueueTasksInput {
     const queue = new InMemoryQueueBox();
     const resilience = createResilience();
     return {
-        wsQBoxServerService: new WsQueueBoxServerService(
-            queue,
-            queue,
-            new JsonWebSocketServer(),
-            'queue-registration-test'
-        ),
+        wsQBoxServerService: new WsQueueBoxServerService({
+            inbox: queue,
+            outbox: queue,
+            socket: new JsonWebSocketServer(),
+            name: 'queue-registration-test'
+        }),
         inboxQueueReader: new InboxQueueReader(queue),
         outboxQueueReader: new OutboxQueueReader(queue),
         wsInboxResilience: resilience,

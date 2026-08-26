@@ -9,7 +9,7 @@ import type {
 } from '@shared/api/group-types.ts';
 import type { RuntimeStateEntryValue } from '../../../runtime-state/runtime-state-json-store.ts';
 import { isLogicallyActiveSession } from '../../presence/session-expiry.ts';
-import { groupStateGroupStorageKey } from './group-state-storage-keys.ts';
+import { groupStateGroupStorageKey } from './aggregate/group-aggregate-storage-keys.ts';
 
 export type GroupStateSnapshotAssemblyInput = Readonly<{
     group: Group;

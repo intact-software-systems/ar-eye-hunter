@@ -437,12 +437,13 @@ the retained prefix triggers current-state hydration of every open local
 session before it advances to a captured HEAD; dead consumers do not pin
 retention.
 
-Before HTTP starts, a process registers its stream with a database-time lease,
-captures existing HEADs, and seeds its new consumer cursors to those HEADs. A
-publisher discovered after readiness starts at its retained floor minus one.
-The process renews its 30-second lease every 10 seconds. Lease loss stops replay,
-closes local sockets, and initiates controlled shutdown instead of silently
-reusing the identity.
+During runtime readiness, after HTTP binding but before queue workers start or
+startup is reported successful, a process registers its stream with a
+database-time lease, captures existing HEADs, and seeds its new consumer
+cursors to those HEADs. A publisher discovered after readiness starts at its
+retained floor minus one. The process renews its 30-second lease every 10
+seconds. Lease loss stops replay, closes local sockets, and initiates controlled
+shutdown instead of silently reusing the identity.
 
 Reconnect hydration batches connections for 25 milliseconds and scans durable
 topology in pages of 100. For every candidate session/group pair it reloads the
@@ -616,8 +617,13 @@ deployment boundary described by this architecture.
 
 ## Source Map
 
-- [`packages/shared-server/rallar-system/README.md`](../packages/shared-server/rallar-system/README.md)
-  is the live server call-entry, ownership, side-effect, and test map.
+- [`packages/shared-server/README.md`](../packages/shared-server/README.md) is
+  the package ownership and public-entry map.
+- [`packages/shared-server/docs/runtime-navigation.md`](../packages/shared-server/docs/runtime-navigation.md)
+  traces registration, first invocation, runtime calls, and shutdown.
+- [`packages/shared-server/docs/persistence-and-replay.md`](../packages/shared-server/docs/persistence-and-replay.md)
+  maps current stores, transactions, outboxes, replay, cursors, expiry, and
+  retention.
 - `packages/shared/api/group-types.ts` and `client-types.ts` own the current
   state contracts.
 - `packages/shared/api/overlay-topology.ts` owns topology causal ordering and
@@ -634,23 +640,23 @@ deployment boundary described by this architecture.
 
 Focused concurrency coverage lives in:
 
-- `packages/tests/shared-server/authoritative-mutation-read-compute-validate-write.test.ts`
-- `packages/tests/shared-server/cached-state-services.test.ts`
-- `packages/tests/shared-server/rtc-topology-outbox-work.test.ts`
-- `packages/tests/shared-server/rtc-topology-delivery-log.test.ts`
-- `packages/tests/shared-server/rtc-topology-replay-service.test.ts`
-- `packages/tests/shared-server/rtc-topology-reconnect-hydrator.test.ts`
+- `packages/tests/repo/mutation-route-ownership/authoritative/authoritative-mutation-read-compute-validate-write.test.ts`
+- `packages/tests/shared-server/rallar-system/state-sync/cached-state-services.test.ts`
+- `packages/tests/shared-server/rallar-system/topology/mutation/rtc-topology-outbox-work.test.ts`
+- `packages/tests/shared-server/rallar-system/topology/replay/delivery/rtc-topology-delivery-log.test.ts`
+- `packages/tests/shared-server/rallar-system/topology/replay/consumer/rtc-topology-replay-service.test.ts`
+- `packages/tests/shared-server/rallar-system/topology/replay/hydration/rtc-topology-reconnect-hydrator.test.ts`
 - `packages/tests/shared-server/rallar-system/rtc-rtt/persistence/rtc-rtt-repository-read-write.test.ts`
 - `packages/tests/shared-server/rallar-system/rtc-rtt/persistence/rtc-rtt-repository-convergence.test.ts`
 - `packages/tests/shared-server/rallar-system/rtc-rtt/persistence/rtc-rtt-persistence-corruption.test.ts`
-- `packages/tests/shared-server/rallar-system/rtc-rtt/rtc-topology-snapshot-repository.test.ts`
-- `packages/tests/shared-server/rallar-system/rtc-rtt/rtc-topology-publication-repository.test.ts`
-- `packages/tests/shared-server/group-topology-management-service.test.ts`
-- `packages/tests/shared-server/queuebox-pubsub-bridge.test.ts`
-- `packages/tests/shared-server/rallar-middleware.test.ts`
+- `packages/tests/shared-server/rallar-system/topology/persistence/rtc-topology-snapshot-repository.test.ts`
+- `packages/tests/shared-server/rallar-system/topology/publication/rtc-topology-publication-repository.test.ts`
+- `packages/tests/shared-server/rallar-system/topology/runtime/rtc-topology-runtime-integration.test.ts`
+- `packages/tests/shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-bridge.test.ts`
+- `packages/tests/shared-server/rallar-system/middleware/rallar-middleware-construction.test.ts`
 - `packages/tests/shared/ws-outbox-owner-miss-retry.test.ts`
 - `packages/tests/shared-web/state-cache/browser-state-cache-lifecycle.test.ts`
-- `apps/api-v1/test/services/ws-topic-room-authorizer.test.ts`
+- `packages/tests/shared-server/rallar-system/websocket/authorization/ws-topic-room-authorizer.test.ts`
 - `packages/shared-test/black-box-runner/tests/api-v1/api-v1-rtc-topology-convergence.json`
 - `packages/shared-test/black-box-runner/tests/api-v1/api-v1-state-topology-churn.json`
 - `packages/shared-test/black-box-runner/topology-replay/api-v1-rtc-topology-replay-proof.mts`

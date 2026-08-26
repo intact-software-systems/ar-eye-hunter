@@ -1,3 +1,4 @@
+import type { ApiJsonObject } from './api-json-value.ts';
 import type { MutationActor } from './mutation-actor.ts';
 
 export type ApplicationId = string;
@@ -82,7 +83,7 @@ type ClientPrincipalBase =
         authProvider: string | null;
         externalSubjectId: string | null;
         roles: readonly string[];
-        metadata: Record<string, unknown>;
+        metadata: ApiJsonObject;
 
         snapshotVersion: number;
         profileVersion: number;
@@ -211,5 +212,5 @@ export type ClientEvent =
         reason: string | null;
         traceId: string | null;
         requestId: string | null;
-        payload: Record<string, unknown>;
+        payload: ApiJsonObject;
     }>;

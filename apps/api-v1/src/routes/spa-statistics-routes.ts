@@ -1,3 +1,6 @@
+import { Hono, type Context } from 'jsr:@hono/hono@4.11.9';
+
+import { RequestAuthFailure } from '@shared-server/http/request-auth-service.ts';
 import { isGroupPolicyDeniedError } from '@shared-server/rallar-system/group-state/policy/group-policy-result.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type {
@@ -6,20 +9,17 @@ import type {
     WorkspaceSpaStatisticsResponse
 } from '@shared/api/spa-statistics-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
-import { Hono, type Context } from 'jsr:@hono/hono@4.11.9';
 
-export type SpaStatisticsRouteReadWorkspaceInput = Readonly<{
-    scope: StateScope;
-    authSession: AuthSession;
-}>;
+export interface SpaStatisticsRouteReadWorkspaceInput {
+    readonly scope: StateScope;
+    readonly authSession: AuthSession;
+}
 
-export type SpaStatisticsRouteReadGroupInput =
-    & SpaStatisticsRouteReadWorkspaceInput
-    & Readonly<{
-        groupId: string;
-    }>;
+export interface SpaStatisticsRouteReadGroupInput extends SpaStatisticsRouteReadWorkspaceInput {
+    readonly groupId: string;
+}
 
-export type SpaStatisticsRouteService = Readonly<{
+export interface SpaStatisticsRouteService {
     readWorkspaceSummary(
         input: SpaStatisticsRouteReadWorkspaceInput
     ): Promise<WorkspaceSpaStatisticsResponse>;
@@ -29,16 +29,21 @@ export type SpaStatisticsRouteService = Readonly<{
     readMyRealtimeStatus(
         input: SpaStatisticsRouteReadWorkspaceInput
     ): Promise<MyRealtimeSpaStatisticsResponse>;
-}>;
+}
 
-export type SpaStatisticsRouteDependencies = Readonly<{
-    statistics: SpaStatisticsRouteService;
-    requireApiAuthSession: (
-        req: {
+export interface SpaStatisticsRouteDependencies {
+    readonly statistics: SpaStatisticsRouteService;
+    readonly requireApiAuthSession: (
+        request: {
             header(name: string): string | undefined;
         }
     ) => Promise<AuthSession>;
-}>;
+}
+
+type SpaStatisticsResponse =
+    | WorkspaceSpaStatisticsResponse
+    | GroupSpaStatisticsResponse
+    | MyRealtimeSpaStatisticsResponse;
 
 export function registerSpaStatisticsRoutes(
     app: Hono,
@@ -46,71 +51,77 @@ export function registerSpaStatisticsRoutes(
 ): void {
     app.get(
         '/api/state/apps/:applicationId/workspaces/:workspaceId/stats/summary',
-        (c) =>
-            withStats(c, dependencies, (authSession) =>
-                dependencies.statistics.readWorkspaceSummary({
-                    scope: toScope(c),
-                    authSession
-                }))
+        (context) =>
+            respondToSpaStatisticsRequest(
+                context,
+                dependencies,
+                (authSession) =>
+                    dependencies.statistics.readWorkspaceSummary({
+                        scope: toScope(context),
+                        authSession
+                    })
+            )
     );
 
     app.get(
         '/api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/stats',
-        (c) =>
-            withStats(c, dependencies, (authSession) =>
-                dependencies.statistics.readGroupStats({
-                    scope: toScope(c),
-                    groupId: c.req.param('groupId'),
-                    authSession
-                }))
+        (context) =>
+            respondToSpaStatisticsRequest(
+                context,
+                dependencies,
+                (authSession) =>
+                    dependencies.statistics.readGroupStats({
+                        scope: toScope(context),
+                        groupId: context.req.param('groupId'),
+                        authSession
+                    })
+            )
     );
 
     app.get(
         '/api/state/apps/:applicationId/workspaces/:workspaceId/stats/me/realtime',
-        (c) =>
-            withStats(c, dependencies, (authSession) =>
-                dependencies.statistics.readMyRealtimeStatus({
-                    scope: toScope(c),
-                    authSession
-                }))
+        (context) =>
+            respondToSpaStatisticsRequest(
+                context,
+                dependencies,
+                (authSession) =>
+                    dependencies.statistics.readMyRealtimeStatus({
+                        scope: toScope(context),
+                        authSession
+                    })
+            )
     );
 }
 
-async function withStats(
-    c: Context,
-    deps: SpaStatisticsRouteDependencies,
-    execute: (authSession: AuthSession) => Promise<unknown>
+async function respondToSpaStatisticsRequest(
+    context: Context,
+    dependencies: SpaStatisticsRouteDependencies,
+    readStatistics: (authSession: AuthSession) => Promise<SpaStatisticsResponse>
 ): Promise<Response> {
     try {
-        const authSession = await deps.requireApiAuthSession(c.req);
-        const response = await execute(authSession);
-        c.header('Cache-Control', 'no-store');
-        return c.json(response);
+        const authSession = await dependencies.requireApiAuthSession(context.req);
+        const statisticsResponse = await readStatistics(authSession);
+        context.header('Cache-Control', 'no-store');
+        return context.json(statisticsResponse);
     }
     catch (error) {
-        return toErrorResponse(c, error);
+        return toErrorResponse(context, error);
     }
 }
 
-function toScope(c: {
-    req: {
-        param(key: 'applicationId' | 'workspaceId'): string;
-    };
-}): StateScope {
+function toScope(context: Context): StateScope {
     return {
-        applicationId: c.req.param('applicationId'),
-        workspaceId: c.req.param('workspaceId')
+        applicationId: context.req.param('applicationId'),
+        workspaceId: context.req.param('workspaceId')
     };
 }
 
 function toErrorResponse(
-    c: {
-        json(value: unknown, status?: number): Response;
-    },
+    context: Context,
     error: unknown
 ): Response {
     if (isGroupPolicyDeniedError(error)) {
-        return c.json({
+        return context.json({
             error: `Forbidden: ${error.denial.message}`,
             code: error.denial.code,
             message: error.denial.message,
@@ -119,7 +130,7 @@ function toErrorResponse(
     }
 
     const message = error instanceof Error ? error.message : String(error);
-    const status = isStatusError(error)
+    const status = error instanceof RequestAuthFailure
         ? error.status
         : message.includes('not found')
         ? 404
@@ -129,10 +140,5 @@ function toErrorResponse(
         ? 403
         : 400;
 
-    return c.json({ error: message }, status);
-}
-
-function isStatusError(error: unknown): error is Error & { status: number; } {
-    return error instanceof Error &&
-        typeof (error as { status?: unknown; }).status === 'number';
+    return context.json({ error: message }, status);
 }

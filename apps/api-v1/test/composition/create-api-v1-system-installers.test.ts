@@ -8,7 +8,7 @@ import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { toResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 import type { OnWebSocketServerMessageCallback } from '@shared/services/InboxOutboxContracts.ts';
-import { WsQueueBoxServerService } from '@shared/services/WsQueueBoxServerService.ts';
+import { WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 import { JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.ts';
 
 import {
@@ -38,8 +38,7 @@ Deno.test('system topic installation rejects a second start before mutating inst
         'rtc-rtt',
         'crdt-ingress',
         'crdt-topics',
-        'router',
-        'register-stop'
+        'router'
     ];
     assert.deepEqual(events, installedEvents);
     assert.equal(runtime.wsQBoxServerService.anyInboxRegistrationCount, 1);
@@ -143,8 +142,8 @@ Deno.test(
 );
 
 class RuntimeCalls {
-    clientDisconnect?: unknown;
-    groupCleanup?: unknown;
+    clientDisconnect?: Parameters<ApiV1SystemInstallerRuntime['appClientInboxService']['enqueueAuthorisedWsClientDisconnect']>[0];
+    groupCleanup?: Parameters<ApiV1SystemInstallerRuntime['groupStateInboxService']['enqueueGroupSessionCleanup']>[0];
 }
 
 interface TestRuntime extends ApiV1SystemInstallerRuntime {
@@ -159,17 +158,12 @@ function createInput(): CreateApiV1SystemInstallersInput<ApiV1SystemInstallerTop
         serviceId: 'api-test',
         nowEpochMs: () => 1_000,
         topology: {
-            rtcTopologyService: {},
             rtcTopologyOptions: {},
             topologyQuery: {},
             topologyPlanning: {},
-            topologyConfigRepository: {},
             groupStateRepository: {
                 readLifecyclePolicy: rejectUnusedCrdtRead
             },
-            topologySnapshotRepository: {},
-            rttRepository: {},
-            rttRefinementGate: {},
             rttRefinementService: {}
         },
         crdtLogRepository: {
@@ -181,8 +175,7 @@ function createInput(): CreateApiV1SystemInstallersInput<ApiV1SystemInstallerTop
             exportBackupBundle: rejectUnusedCrdtRead,
             verifyIntegrity: rejectUnusedCrdtRead
         },
-        crdtPolicies: [{ documentType: '*', rollout: 'disabled' }],
-        globalGraphRecomputeLimit: undefined
+        crdtPolicies: [{ documentType: '*', rollout: 'disabled' }]
     };
 }
 
@@ -196,12 +189,12 @@ function createRuntime(
     calls: RuntimeCalls = new RuntimeCalls()
 ): TestRuntime {
     return {
-        wsQBoxServerService: new CountingWsQueueBoxServerService(
-            new InMemoryQueueBox(new Map()),
-            new InMemoryQueueBox(new Map()),
-            new JsonWebSocketServer(),
-            'api-v1-system-installers-test'
-        ),
+        wsQBoxServerService: new CountingWsQueueBoxServerService({
+            inbox: new InMemoryQueueBox(new Map()),
+            outbox: new InMemoryQueueBox(new Map()),
+            socket: new JsonWebSocketServer(),
+            name: 'api-v1-system-installers-test'
+        }),
         appClientInboxService: {
             enqueueAuthorisedWsClientDisconnect: (input) => {
                 calls.clientDisconnect = input;
@@ -245,7 +238,6 @@ function createOperations(
     return {
         installTopologyAppOutbox: () => {
             events.push('topology-app-outbox');
-            return {} as never;
         },
         installChatTopic: () => {
             events.push('chat');
@@ -255,11 +247,6 @@ function createOperations(
         },
         installRtcRttTopic: () => {
             events.push('rtc-rtt');
-            return {
-                stop: () => {
-                    events.push('stop-rtc-rtt');
-                }
-            };
         },
         createCrdtMutationIngress: () => {
             events.push('crdt-ingress');

@@ -1,6 +1,7 @@
 import type { GroupRef, GroupScope, GroupSnapshot } from '@shared/api/group-types.ts';
 import type { RuntimeStateEntryValue } from '../../../runtime-state/runtime-state-json-store.ts';
 import type { RuntimeStateEntry } from '../../../runtime-state/runtime-state-repository.ts';
+import { decodeJsonWireValue, type JsonWireValue } from '../../protocol/json-wire-identity.ts';
 export type GroupStateAuthorityGuard = Readonly<{
     groupRef: GroupRef;
     entry: RuntimeStateEntry;
@@ -27,23 +28,23 @@ export class GroupStateRepositoryInvariantCorruptionError extends Error {
     }
 }
 
-export async function toLiveGroupStateEntryValue<T>(
+export async function toLiveGroupStateEntryValue(
     entry: RuntimeStateEntry
-): Promise<RuntimeStateEntryValue<T> | undefined> {
+): Promise<RuntimeStateEntryValue<JsonWireValue> | undefined> {
     if (entry.expireAtTimestamp <= Date.now()) {
         return undefined;
     }
     try {
-        return { entry, value: JSON.parse(entry.value) as T };
+        return {
+            entry,
+            value: decodeJsonWireValue(JSON.parse(entry.value), 'Stored group-state value')
+        };
     }
     catch (error) {
-        if (error instanceof SyntaxError) {
-            throw new GroupStateRepositoryInvariantCorruptionError(
-                entry.key,
-                `Stored group-state JSON is invalid: ${error.message}`
-            );
-        }
-        throw error;
+        throw new GroupStateRepositoryInvariantCorruptionError(
+            entry.key,
+            `Stored group-state JSON is invalid: ${error instanceof Error ? error.message : String(error)}`
+        );
     }
 }
 
@@ -103,10 +104,10 @@ export function decodeStoredGroupStateKey<T>(
 }
 
 export function decodeStoredGroupStateValue<T>(
-    value: unknown,
+    value: JsonWireValue,
     ref: GroupRef,
     storageKey: string,
-    decode: (value: unknown, ref: GroupRef) => T,
+    decode: (value: JsonWireValue, ref: GroupRef) => T,
     invalidValueMessage: string
 ): T {
     try {

@@ -27,7 +27,7 @@ interface RallarServerAiResultPublicationBase<TValue extends RallarAiJsonValue> 
     readonly fanout?: RallarServerWsFanout;
 }
 
-export type RallarServerAiResultPublicationInput<TValue extends RallarAiJsonValue = RallarAiJsonValue> =
+export type RallarServerAiResultPublicationInput<TValue extends RallarAiJsonValue> =
     & RallarServerAiResultPublicationBase<TValue>
     & (
         | Readonly<{ scope?: 'room'; roomRef: GroupRef; }>

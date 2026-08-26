@@ -1,12 +1,16 @@
 import { type AppInboxEnqueueInput } from '../../app-inbox/app-inbox-contracts.ts';
 import { AppInboxType } from '../../app-inbox/app-inbox-contracts.ts';
-import { hashCanonicalCommand } from '../../app-inbox/hash-canonical-command.ts';
 import { GroupMutationAuthorizationError } from '../../group-state/group-mutation-authority.ts';
 import type { GroupStateService } from '../../group-state/group-state-service-contracts.ts';
-import { decodeJsonWireValue, type JsonWireObject, type JsonWireValue } from '../../protocol/json-wire-identity.ts';
+import {
+    decodeJsonWireValue,
+    hashMutationCommand,
+    type JsonWireObject,
+    type JsonWireValue
+} from '../../protocol/json-wire-identity.ts';
 import {
     constantTimeTopologyProofEqual,
-    validateTopologyMutationAuthorityProof
+    decodeTopologyMutationAuthorityProof
 } from '../../topology/inbox/topology-app-inbox-authority.ts';
 import { createTopologyMutationAuthorityProof } from '../../topology/inbox/topology-mutation-authority-proof.ts';
 import { toRtcRttMutationReceiptId } from '../mutation/rtc-rtt-mutation-identifiers.ts';
@@ -49,7 +53,7 @@ export async function createRtcRttDurableEnqueue(
             sessionId: session.sessionId
         },
         requestId,
-        mutationCommandHash: await hashCanonicalCommand(stableRequest),
+        mutationCommandHash: await hashMutationCommand(stableRequest),
         capturedAtEpochMs: input.request.capturedAtEpochMs,
         rtt: input.request.rtt
     } as const;
@@ -61,14 +65,15 @@ export async function createRtcRttDurableEnqueue(
     } as const;
     const command: RtcRttAppInboxCommand = {
         ...commandWithoutHash,
-        commandHash: await hashCanonicalCommand(stableCommand)
+        commandHash: await hashMutationCommand(stableCommand)
     };
     const proof = await createTopologyMutationAuthorityProof(session, command.commandHash);
+    const authority = { kind: 'rtc-rtt', proof, command } satisfies RtcRttAppInboxAuthority;
     return {
         type: AppInboxType.RTC_RTT_SUBMIT,
         resourceId: requestId,
         data: command,
-        authority: { kind: 'rtc-rtt', proof, command } satisfies RtcRttAppInboxAuthority
+        authority: decodeJsonWireValue(authority, 'RTC RTT AppInbox authority')
     };
 }
 
@@ -81,8 +86,7 @@ export function decodeRtcRttAppInboxAuthority(
         if (authority.kind !== 'rtc-rtt') {
             throw new TypeError('authority kind is invalid');
         }
-        const proof = authority.proof;
-        validateTopologyMutationAuthorityProof(proof);
+        const proof = decodeTopologyMutationAuthorityProof(authority.proof);
         return {
             kind: 'rtc-rtt',
             proof,
@@ -175,10 +179,10 @@ async function verifyRtcRttCommandHashes(command: RtcRttAppInboxCommand): Promis
         rtt: command.rtt
     };
     if (
-        (await hashCanonicalCommand(
+        (await hashMutationCommand(
                 decodeJsonWireValue(canonicalStableCommand, 'RTC RTT stable command')
             )) !== command.commandHash ||
-        (await hashCanonicalCommand(decodeJsonWireValue({
+        (await hashMutationCommand(decodeJsonWireValue({
                 rtt: command.rtt,
                 alSenderId: command.actor.sessionId
             }, 'RTC RTT mutation command'))) !== command.mutationCommandHash
