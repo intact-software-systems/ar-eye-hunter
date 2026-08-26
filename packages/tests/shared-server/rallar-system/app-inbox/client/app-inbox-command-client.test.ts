@@ -29,10 +29,10 @@ describe('AppInboxCommandClient', () => {
                     enqueueReplacingWhen: async () => entry.key
                 },
                 resultWaiter: {
-                    waitForResult: async (
+                    waitForResult: async <Result>(
                         enqueue: AppInboxEnqueueInput,
                         key: typeof entry.key,
-                        decodeResult: AppInboxResultWaiter.ResultDecoder<{ accepted: boolean; }>
+                        decodeResult: AppInboxResultWaiter.ResultDecoder<Result>
                     ) => {
                         if (enqueue !== COMMAND || key.contextId !== COMMAND.contextId) {
                             throw new TypeError('Command client passed an unrelated queue identity');
@@ -56,7 +56,11 @@ describe('AppInboxCommandClient', () => {
         );
 
         const result = await client.enqueueAndWaitForResult(COMMAND, (value) => ({
-            accepted: typeof value === 'object' && value !== null && value.status === 'stored'
+            accepted:
+                typeof value === 'object' &&
+                value !== null &&
+                'status' in value &&
+                value.status === 'stored'
         }));
 
         expect(result).toEqual(Either.ofRight({ accepted: true }));
