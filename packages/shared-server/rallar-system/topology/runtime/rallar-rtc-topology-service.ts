@@ -45,10 +45,6 @@ export interface RtcTopologyKindHysteresisWidths {
     readonly treeExitWidth: number;
 }
 
-export { planRallarRtcTopologySnapshot } from '../planning/plan-rallar-rtc-topology-snapshot.ts';
-
-export type { RallarRtcTopologyRttQueueResult } from './rtc-topology-rtt-rebuild-scheduler.ts';
-
 const DEFAULT_RTT_REBUILD_DEBOUNCE_MS = 250;
 
 export class RallarRtcTopologyService {

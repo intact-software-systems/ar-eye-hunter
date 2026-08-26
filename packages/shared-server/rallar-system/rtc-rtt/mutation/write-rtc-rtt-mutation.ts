@@ -4,7 +4,7 @@ import { RuntimeStateWriteConflictError } from '../../../runtime-state/optimisti
 import { PSqlRuntimeStateRepository } from '../../../runtime-state/postgres/p-sql-runtime-state-repository.ts';
 
 import type { RtcTopologyOutboxWriter } from '../../topology/mutation/rtc-topology-outbox-writer.ts';
-import { RTC_RTT_MUTATION_RETENTION_MS } from '../persistence/rtc-rtt-persistence-validation.ts';
+import { RTC_RTT_MUTATION_RETENTION_MS } from '../persistence/rtc-rtt-persistence-validation-primitives.ts';
 import { RtcRttRepository } from '../persistence/rtc-rtt-repository.ts';
 import type { RtcRttMutationComputed } from './rtc-rtt-mutation-contracts.ts';
 import { validateRtcRttWriteCandidate } from './validate-rtc-rtt-write-candidate.ts';

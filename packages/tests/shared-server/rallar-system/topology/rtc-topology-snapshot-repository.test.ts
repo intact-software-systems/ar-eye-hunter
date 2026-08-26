@@ -1,10 +1,10 @@
 import { decodeJsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import { decodeRtcTopologySnapshot } from '@shared-server/rallar-system/topology/persistence/decode-rtc-topology-snapshot.ts';
+import { RtcTopologySnapshotRevisionConflictError } from '@shared-server/rallar-system/topology/persistence/rtc-topology-errors.ts';
 import { decideTopologySnapshot } from '@shared-server/rallar-system/topology/persistence/rtc-topology-snapshot-contract.ts';
 import {
     RTC_TOPOLOGY_SNAPSHOTS_NAMESPACE,
-    RtcTopologySnapshotRepository,
-    RtcTopologySnapshotRevisionConflictError
+    RtcTopologySnapshotRepository
 } from '@shared-server/rallar-system/topology/persistence/rtc-topology-snapshot-repository.ts';
 import { RTC_TOPOLOGY_PUBLICATIONS_NAMESPACE } from '@shared-server/rallar-system/topology/publication/rtc-topology-publication-repository-contracts.ts';
 import { RtcTopologyPublicationRepository } from '@shared-server/rallar-system/topology/publication/rtc-topology-publication-repository.ts';
@@ -98,19 +98,16 @@ describe('RTC topology snapshot repository', () => {
         const first = createTopologySnapshot(groupRef, 1);
         const second = { ...first, name: 'Concurrent candidate' };
         let waiting = 0;
-        let release!: () => void;
-        const together = new Promise<void>((resolve) => {
-            release = resolve;
-        });
+        const together = Promise.withResolvers<void>();
         runtimeRepository.beforeUpsert = async (namespace) => {
             if (namespace !== RTC_TOPOLOGY_SNAPSHOTS_NAMESPACE) {
                 return;
             }
             waiting += 1;
             if (waiting === 2) {
-                release();
+                together.resolve();
             }
-            await together;
+            await together.promise;
         };
 
         const results = await Promise.all([

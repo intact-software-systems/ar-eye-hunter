@@ -1,4 +1,5 @@
 import type {
+    GroupTopologyConfigMutationReceipt,
     StoredGroupTopologyConfig,
     StoredGroupTopologyOverride
 } from '@shared/api/graph-topology-management-types.ts';
@@ -6,7 +7,7 @@ import type {
 import type * as mutationContracts from './group-topology-config-mutation-contracts.ts';
 
 export interface GroupTopologyConfigMutationExecution {
-    readonly receipt: mutationContracts.GroupTopologyConfigMutationReceipt;
+    readonly receipt: GroupTopologyConfigMutationReceipt;
     readonly config?: StoredGroupTopologyConfig;
     readonly override?: StoredGroupTopologyOverride;
 }

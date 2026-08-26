@@ -39,12 +39,6 @@ import {
     validatePersistedClientSession
 } from './validate-persisted-client-state.ts';
 
-export type {
-    ClientMutationIdempotencyRecord,
-    ClientPrincipalSnapshotRead
-} from './client-state-persistence-contracts.ts';
-export { ClientStateRepositoryInvariantCorruptionError } from './client-state-persistence-contracts.ts';
-
 export function createTransactionBoundClientStateRepository(
     transaction: PSqlSql
 ): ClientStateRepository {

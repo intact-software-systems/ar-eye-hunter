@@ -14,14 +14,12 @@ import { computeClientMutation } from '@shared-server/rallar-system/client-state
 import { validateClientMutation } from '@shared-server/rallar-system/client-state/mutation/result-validation/validate-client-mutation.ts';
 import { ClientMutationIdempotencyConflictError } from '@shared-server/rallar-system/client-state/mutation/result-validation/validate-client-mutation.ts';
 import { clientStateInstanceStorageKey } from '@shared-server/rallar-system/client-state/persistence/client-state-instance-storage-key.ts';
+import { ClientStateRepositoryInvariantCorruptionError } from '@shared-server/rallar-system/client-state/persistence/client-state-persistence-contracts.ts';
 import {
     clientStatePrincipalStorageKey,
     decodeClientPrincipalStorageKey
 } from '@shared-server/rallar-system/client-state/persistence/client-state-principal-storage-key.ts';
-import {
-    ClientStateRepository,
-    ClientStateRepositoryInvariantCorruptionError
-} from '@shared-server/rallar-system/client-state/persistence/client-state-repository.ts';
+import { ClientStateRepository } from '@shared-server/rallar-system/client-state/persistence/client-state-repository.ts';
 import { clientStateSessionStorageKey } from '@shared-server/rallar-system/client-state/persistence/client-state-session-storage-key.ts';
 import { ClientMutationRejectedError } from '@shared-server/rallar-system/client-state/validation/client-mutation-rejection.ts';
 import type { RallarTimingEvent } from '@shared-server/rallar-system/observability/timing.ts';

@@ -37,10 +37,8 @@ import {
     type TopologyAppInboxResult
 } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-handler.ts';
 
-import type {
-    GroupTopologyConfigMutationComputed,
-    GroupTopologyConfigMutationReceipt
-} from '@shared-server/rallar-system/topology/config/mutation/group-topology-config-mutation-contracts.ts';
+import type { GroupTopologyConfigMutationComputed } from '@shared-server/rallar-system/topology/config/mutation/group-topology-config-mutation-contracts.ts';
+import type { GroupTopologyConfigMutationReceipt } from '@shared/api/graph-topology-management-types.ts';
 
 import type {
     GroupTopologyConfigMutationAttemptRead,

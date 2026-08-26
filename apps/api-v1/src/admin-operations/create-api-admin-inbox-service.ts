@@ -6,9 +6,10 @@ import type { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
 import type { PSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 
 import type { ResourceInboxResultsRepository } from '@shared-server/queuebox/postgres/resource-inbox-results-repository.ts';
+import { createAdminPruneIdempotencyIdentity } from '@shared-server/rallar-system/admin-operations/inbox/admin-prune-inbox-identity.ts';
 import {
     AppAdminInboxService,
-    createAdminPruneIdempotencyIdentity
+    type AdminPruneAuthority
 } from '@shared-server/rallar-system/admin-operations/inbox/app-admin-inbox-service.ts';
 import { PSqlAdminExpiredDataPruner } from '@shared-server/rallar-system/admin-operations/postgres/p-sql-admin-expired-data-pruner.ts';
 import { PSqlAdminPruneRepository } from '@shared-server/rallar-system/admin-operations/postgres/p-sql-admin-prune-repository.ts';
@@ -54,7 +55,7 @@ export function createApiAdminInboxService(
             requestedSessionId: string;
             nowEpochMs: number;
         }>
-    ) => {
+    ): Promise<AdminPruneAuthority> => {
         const session = await input.currentAuthority.readSession(
             authority.requestedSessionId
         );

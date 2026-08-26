@@ -11,11 +11,6 @@ import type * as persistence from '../../../group-state/persistence/group-state-
 import type { ComputedRtcTopologyOutbox } from '../../mutation/rtc-topology-outbox-entry.ts';
 import type { GroupTopologyServerOptions } from '../group-topology-config.ts';
 
-export type {
-    GroupTopologyConfigMutationOperation,
-    GroupTopologyConfigMutationReceipt
-} from '@shared/api/graph-topology-management-types.ts';
-
 export type GroupTopologyConfigMutationCommand = Readonly<{
     operation: GroupTopologyConfigMutationOperation;
     aggregateRef: GroupRef;

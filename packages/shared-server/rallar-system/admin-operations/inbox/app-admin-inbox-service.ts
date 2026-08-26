@@ -65,16 +65,6 @@ import {
 } from './admin-prune-inbox-identity.ts';
 import { throwOnAdminPruneValidationIssues, type AdminPruneValidationIssue } from './admin-prune-inbox-validation.ts';
 
-export type { AdminPruneEnqueueResult } from './admin-prune-inbox-codec.ts';
-export {
-    ADMIN_APP_INBOX_TOPIC,
-    createAdminPruneIdempotencyIdentity
-} from './admin-prune-inbox-identity.ts';
-export type {
-    AdminPruneIdempotencyIdentity,
-    AdminPruneIdempotencyIdentityInput
-} from './admin-prune-inbox-identity.ts';
-
 export interface AdminPruneAuthorityReaderInput {
     readonly requestedBy: string;
     readonly requestedSessionId: string;

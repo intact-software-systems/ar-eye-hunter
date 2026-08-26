@@ -81,8 +81,6 @@ interface AuthInboxRepository {
     ): Promise<ResourceEntry>;
 }
 
-export { AUTH_STATE_APP_INBOX_TOPIC, toAuthAppInboxType } from './auth-app-inbox-routing.ts';
-
 const AUTH_TYPES = [
     AppInboxType.AUTH_USER_REGISTER,
     AppInboxType.AUTH_SESSION_ISSUE,

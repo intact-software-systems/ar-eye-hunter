@@ -10,7 +10,7 @@ import {
     type GroupInviteCreateAppInboxPayload,
     type GroupMemberBanAppInboxPayload,
     type GroupMemberUnbanAppInboxPayload
-} from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-service.ts';
+} from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-contracts.ts';
 
 import type { JsonWireObject, JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 

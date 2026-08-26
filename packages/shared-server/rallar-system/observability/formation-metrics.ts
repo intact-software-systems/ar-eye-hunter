@@ -1,6 +1,5 @@
 import { AppTopics } from '@shared/api/api-config.ts';
 import {
-    GROUP_FORMATION_MUTATION_OUTCOMES,
     type GroupFormationMutationOutcome,
     type GroupFormationOperationKind,
     type RallarGroupFormationMetrics
@@ -11,15 +10,6 @@ import type {
 } from '@shared/services/ws-queue-box-server/ws-queue-box-server-contracts.ts';
 
 import { APP_OUTBOX_RTC_TOPOLOGY_TOPIC } from '../topology/mutation/rtc-topology-outbox-entry.ts';
-
-export {
-    GROUP_FORMATION_MUTATION_OUTCOMES,
-    GROUP_FORMATION_OPERATION_KINDS,
-    type GroupFormationMutationOutcome,
-    type GroupFormationMutationOutcomeCounts,
-    type GroupFormationOperationKind,
-    type RallarGroupFormationMetrics
-} from '@shared/rtc/group-formation-metrics.ts';
 
 export type GroupFormationGroupMutationEvent = Readonly<{
     operation: string;
@@ -107,8 +97,7 @@ export function createGroupFormationMetricsRecorder(): RallarGroupFormationMetri
     const groupMutation: GroupFormationGroupMutationSink = (event) => {
         try {
             const kind = toGroupFormationOperationKind(event.operation);
-            const outcome = isGroupFormationMutationOutcome(event.outcome) ? event.outcome : 'rejected';
-            metrics.groupMutationCount[kind][outcome] += 1;
+            metrics.groupMutationCount[kind][event.outcome] += 1;
         }
         catch {
             // Recording must never affect mutation behavior.
@@ -222,10 +211,6 @@ function createMutableGroupFormationMetrics(): MutableGroupFormationMetrics {
 
 function emptyOutcomeCounts(): MutableOutcomeCounts {
     return { write: 0, noOp: 0, rejected: 0 };
-}
-
-function isGroupFormationMutationOutcome(value: string): value is GroupFormationMutationOutcome {
-    return (GROUP_FORMATION_MUTATION_OUTCOMES as readonly string[]).includes(value);
 }
 
 function incrementByTopic(counts: Record<string, number>, topicId: string, amount: number): void {

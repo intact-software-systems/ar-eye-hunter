@@ -44,7 +44,7 @@ const sources = {
     rtcHandler: read(`${rtcInboxRoot}/rtc-rtt-app-inbox-handler.ts`),
     groupHandler: read(`${groupStateRoot}/inbox/group-state-inbox-handler.ts`),
     groupService: read(`${groupStateRoot}/group-state-service.ts`),
-    client: read('packages/shared-server/rallar-system/client-state/mutation/write/write-client-mutation.ts'),
+    client: read('packages/shared-server/rallar-system/client-state/mutation/write-client-mutation.ts'),
     group: read(`${groupStateRoot}/mutation/write/write-group-mutation.ts`),
     topologyConfig: read(`${topologyRoot}/config/mutation/write-topology-config-mutation.ts`),
     topologyReconfigure: read(`${topologyRoot}/reconfigure/group-topology-reconfigure-mutation.ts`),
