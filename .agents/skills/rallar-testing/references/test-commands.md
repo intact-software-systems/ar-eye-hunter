@@ -65,8 +65,8 @@ PR B uses the focused semantic entry, transaction, and exit suites:
 
 ```bash
 npx vitest run \
-  packages/tests/shared-server/group-state/inbox/app-group-inbox-registration-lifecycle.test.ts \
-  packages/tests/shared-server/group-state/inbox/group-state-inbox-transaction-result.test.ts \
+  packages/tests/shared-server/rallar-system/group-state/inbox/domain-inbox-registration.test.ts \
+  packages/tests/shared-server/rallar-system/group-state/inbox/group-state-inbox-transaction-result.test.ts \
   packages/tests/repo/mutation-route-ownership/authoritative/authoritative-mutation-read-compute-validate-write.test.ts
 ```
 
