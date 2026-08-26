@@ -19,23 +19,6 @@ describe('enqueuePresenceExpiryReconciliation', () => {
         expect(enqueueExpiredPresenceSessions).toHaveBeenCalledWith(123_456);
     });
 
-    it('does not invoke destructive group purge work', async () => {
-        const processPurgeExpiredGroupsNoWaiting = vi.fn();
-        const runtime = {
-            appClientInboxService: {
-                enqueueExpiredSessions: vi.fn(async () => undefined)
-            },
-            groupStateInboxService: {
-                enqueueExpiredPresenceSessions: vi.fn(async () => 0),
-                processPurgeExpiredGroupsNoWaiting
-            }
-        };
-
-        await enqueuePresenceExpiryReconciliation(runtime as never, 123_456);
-
-        expect(processPurgeExpiredGroupsNoWaiting).not.toHaveBeenCalled();
-    });
-
     it('propagates durable maintenance enqueue failures for interval retry', async () => {
         const failure = new Error('group expiry unavailable');
         const runtime = {

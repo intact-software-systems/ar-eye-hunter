@@ -2,7 +2,7 @@ import { GroupMutationIdempotencyConflictError } from '@shared-server/rallar-sys
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
 import { RuntimeStateRetryExhaustedError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
 import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { BASE_EPOCH_MS, requireJoinCodeResult } from './group-state-concurrency-test-fixtures.ts';
 import { GroupBarrierRepository } from './group-state-concurrency-test-runtime.ts';
 import { groupRef, SCOPE } from './mutation/group-mutation-test-runtime.ts';
@@ -141,7 +141,11 @@ describe('convergent group and presence state', () => {
         const runtime = new GroupBarrierRepository();
         await seedOpenGroup(runtime, 'retry-exhaustion-room');
         runtime.failNextGroupCas(3);
-        const sleep = vi.fn((_delayMs: number) => Promise.resolve());
+        const retryDelaysMs: number[] = [];
+        const sleep = (delayMs: number): Promise<void> => {
+            retryDelaysMs.push(delayMs);
+            return Promise.resolve();
+        };
         await expect(
             createService(runtime, 2_000, sleep).updateGroup(SCOPE, 'retry-exhaustion-room', {
                 displayName: 'Never committed',
@@ -149,7 +153,7 @@ describe('convergent group and presence state', () => {
                 requestId: 'retry-exhaustion'
             })
         ).rejects.toBeInstanceOf(RuntimeStateRetryExhaustedError);
-        expect(sleep.mock.calls.map(([delay]) => delay)).toEqual([2, 8]);
+        expect(retryDelaysMs).toEqual([2, 8]);
         expect((await requireSnapshot(runtime, 'retry-exhaustion-room')).group.displayName).toBe(
             'retry-exhaustion-room'
         );
