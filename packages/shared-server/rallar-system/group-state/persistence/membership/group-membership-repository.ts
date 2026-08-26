@@ -1,18 +1,21 @@
 import type { GroupMember, GroupRef } from '@shared/api/group-types.ts';
-import { RuntimeStateJsonStore, type RuntimeStateEntryValue } from '../../../runtime-state/runtime-state-json-store.ts';
-import type { RuntimeStateRepositoryLike } from '../../../runtime-state/runtime-state-repository.ts';
-import type { JsonWireValue } from '../../protocol/json-wire-identity.ts';
-import { decodePersistedGroupMember } from './group-state-persistence-codec.ts';
+import {
+    RuntimeStateJsonStore,
+    type RuntimeStateEntryValue
+} from '../../../../runtime-state/runtime-state-json-store.ts';
+import type { RuntimeStateRepositoryLike } from '../../../../runtime-state/runtime-state-repository.ts';
+import type { JsonWireValue } from '../../../protocol/json-wire-identity.ts';
+import { decodePersistedGroupMember } from '../group-state-persistence-codec.ts';
 import {
     assertGroupRefIdentity,
     assertTrustedGroupRef,
     decodeStoredGroupStateKey,
     decodeStoredGroupStateValue,
     throwGroupStateIdentityCorruption
-} from './group-state-persistence-contracts.ts';
-import { MEMBERS_NAMESPACE } from './group-state-runtime-namespaces.ts';
-import { decodeGroupStateMemberStorageKey, groupStateMemberStorageKey } from './group-state-storage-keys.ts';
-import { validatePersistedGroupMember } from './validate-persisted-group.ts';
+} from '../group-state-persistence-contracts.ts';
+import { MEMBERS_NAMESPACE } from '../group-state-runtime-namespaces.ts';
+import { validatePersistedGroupMember } from '../validate-persisted-group.ts';
+import { decodeGroupStateMemberStorageKey, groupStateMemberStorageKey } from './group-membership-storage-key.ts';
 
 export class GroupMembershipRepository extends RuntimeStateJsonStore {
     constructor(repository: RuntimeStateRepositoryLike) {

@@ -23,7 +23,7 @@ import {
     type CoalescedAppOutboxWorkEnvelope,
     type ComputedCoalescedAppOutboxWork
 } from '../../../app-outbox/coalesced-app-outbox-work-service.ts';
-import { groupStateGroupStorageKey } from '../../../group-state/persistence/group-state-storage-keys.ts';
+import { groupStateGroupStorageKey } from '../../../group-state/persistence/aggregate/group-aggregate-storage-keys.ts';
 import { APP_OUTBOX_RTC_TOPOLOGY_TOPIC } from '../../mutation/rtc-topology-outbox-entry.ts';
 import type { RtcTopologyGroupRevisionWork } from '../../mutation/rtc-topology-outbox-work.ts';
 import type { PersistedRtcTopologyWork } from './rtc-topology-work-codec.ts';

@@ -1,12 +1,10 @@
 import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import { describe, expect, it } from 'vitest';
 
+import { groupStateGroupStorageKey } from '@shared-server/rallar-system/group-state/persistence/aggregate/group-aggregate-storage-keys.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
-import {
-    groupStateGroupStorageKey,
-    groupStateIdempotencyStorageKey,
-    groupStateMemberStorageKey
-} from '@shared-server/rallar-system/group-state/persistence/group-state-storage-keys.ts';
+import { groupStateIdempotencyStorageKey } from '@shared-server/rallar-system/group-state/persistence/idempotency/group-idempotency-storage-key.ts';
+import { groupStateMemberStorageKey } from '@shared-server/rallar-system/group-state/persistence/membership/group-membership-storage-key.ts';
 import type { RuntimeStateGuardedBatch } from '@shared-server/runtime-state/guarded-batch/runtime-state-guarded-batch.ts';
 import type { RuntimeStateOptimisticTransactionalRepositoryLike } from '@shared-server/runtime-state/runtime-state-repository.ts';
 import type { GroupMember, GroupRef } from '@shared/api/group-types.ts';

@@ -5,16 +5,16 @@ import {
     type GroupMutationRead
 } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
 import { computeGroupMutation } from '@shared-server/rallar-system/group-state/mutation/orchestration/compute-group-mutation.ts';
+import { groupStateGroupStorageKey } from '@shared-server/rallar-system/group-state/persistence/aggregate/group-aggregate-storage-keys.ts';
 import { decodePersistedGroupMember } from '@shared-server/rallar-system/group-state/persistence/group-state-persistence-codec.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
+import { groupStateIdempotencyStorageKey } from '@shared-server/rallar-system/group-state/persistence/idempotency/group-idempotency-storage-key.ts';
+import { groupStateMemberStorageKey } from '@shared-server/rallar-system/group-state/persistence/membership/group-membership-storage-key.ts';
 import {
-    groupStateGroupStorageKey,
-    groupStateIdempotencyStorageKey,
-    groupStateMemberStorageKey,
     groupStatePresenceAdmissionStorageKey,
     groupStatePresenceSessionStorageKey,
     groupStatePresenceSummaryStorageKey
-} from '@shared-server/rallar-system/group-state/persistence/group-state-storage-keys.ts';
+} from '@shared-server/rallar-system/group-state/persistence/presence/group-presence-storage-keys.ts';
 import { validatePersistedGroupMember } from '@shared-server/rallar-system/group-state/persistence/validate-persisted-group.ts';
 import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import type { AuditStamp, Group, GroupMember, GroupPresenceAdmission, GroupPresenceSession, GroupPresenceSummary, GroupRef } from '@shared/api/group-types.ts';

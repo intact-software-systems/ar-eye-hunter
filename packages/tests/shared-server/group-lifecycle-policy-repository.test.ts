@@ -1,8 +1,9 @@
+import { groupStateGroupStorageKey } from '@shared-server/rallar-system/group-state/persistence/aggregate/group-aggregate-storage-keys.ts';
 import {
     GROUP_LIFECYCLE_POLICIES_NAMESPACE,
     GroupLifecyclePolicyRepository
 } from '@shared-server/rallar-system/group-state/persistence/group-lifecycle-policy-repository.ts';
-import { groupStateGroupStorageKey } from '@shared-server/rallar-system/group-state/persistence/group-state-storage-keys.ts';
+import type { JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import { createDefaultGroupLifecyclePolicy, resolveGroupLifecyclePolicyPreset } from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
@@ -19,7 +20,11 @@ function createRepository(): GroupLifecyclePolicyRepository {
     return new GroupLifecyclePolicyRepository(new FakeRuntimeStateRepository());
 }
 
-async function storeRaw(repository: GroupLifecyclePolicyRepository, ref: GroupRef, value: unknown): Promise<void> {
+async function storeRaw(
+    repository: GroupLifecyclePolicyRepository,
+    ref: GroupRef,
+    value: JsonWireValue
+): Promise<void> {
     await repository.runtimeRepository.upsert(
         GROUP_LIFECYCLE_POLICIES_NAMESPACE,
         groupStateGroupStorageKey(ref),

@@ -16,6 +16,7 @@ import {
 } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
 import { toGroupMutationRejectionError } from '@shared-server/rallar-system/group-state/mutation/group-mutation-result.ts';
 import { computeGroupMutation } from '@shared-server/rallar-system/group-state/mutation/orchestration/compute-group-mutation.ts';
+import { readGroupMutation } from '@shared-server/rallar-system/group-state/mutation/read/read-group-mutation.ts';
 import { validateGroupMutation } from '@shared-server/rallar-system/group-state/mutation/state-validation/validate-group-mutation.ts';
 import { materializeGroupStateGuardedBatch } from '@shared-server/rallar-system/group-state/mutation/write/write-group-mutation.ts';
 import { GroupLifecyclePolicyRepository } from '@shared-server/rallar-system/group-state/persistence/group-lifecycle-policy-repository.ts';
@@ -27,11 +28,7 @@ import {
     type RuntimeStateGuardedBatchRepositoryLike
 } from '@shared-server/runtime-state/guarded-batch/runtime-state-guarded-batch.ts';
 import { validateRuntimeStateGuardedBatchResult } from '@shared-server/runtime-state/guarded-batch/validate-runtime-state-guarded-batch-result.ts';
-import {
-    requireConditionalWrite,
-    RuntimeStateRetryExhaustedError,
-    RuntimeStateWriteConflictError
-} from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
+import { RuntimeStateRetryExhaustedError, RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
 import type { RuntimeStateOptimisticTransactionalRepositoryLike } from '@shared-server/runtime-state/runtime-state-repository.ts';
 import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import type { GroupEvent } from '@shared/api/group-types.ts';
@@ -102,9 +99,7 @@ export class GroupStateTestMutationExecutor {
         const commandHash = await hashMutationCommand(command as JsonWireValue);
         let computed: GroupMutationComputed | undefined;
         for (let attempt = 1; attempt <= 3; attempt += 1) {
-            const read = await import('@shared-server/rallar-system/group-state/mutation/read/read-group-mutation.ts').then(
-                ({ readGroupMutation }) => readGroupMutation(this.repository(), command)
-            );
+            const read = await readGroupMutation(this.repository(), command);
             const facts: GroupMutationFacts = {
                 nowEpochMs: atEpochMs,
                 expireAtEpochMs: TEST_OUTBOX_EXPIRE_AT_EPOCH_MS,
@@ -197,12 +192,10 @@ export class GroupStateTestMutationExecutor {
     private async writeComputed(computed: GroupMutationComputedWrite): Promise<GroupMutationReceipt> {
         await this.dependencies.runtimeRepository.begin(async (transaction) => {
             const repository = this.repository(transaction);
-            if (isRuntimeStateGuardedBatchRepositoryLike(transaction)) {
-                await writeGuardedBatch(transaction, computed);
+            if (!isRuntimeStateGuardedBatchRepositoryLike(transaction)) {
+                throw new TypeError('Group-state test mutations require guarded batch support');
             }
-            else {
-                await writeConditionalMutation(repository, computed);
-            }
+            await writeGuardedBatch(transaction, computed);
             if (computed.lifecyclePolicy !== null) {
                 await new GroupLifecyclePolicyRepository(transaction).writePolicy(computed.receipt.aggregateRef, computed.lifecyclePolicy);
             }
@@ -238,59 +231,13 @@ export class GroupStateTestMutationExecutor {
 
 async function writeGuardedBatch(transaction: RuntimeStateGuardedBatchRepositoryLike, computed: GroupMutationComputedWrite): Promise<void> {
     const materialized = materializeGroupStateGuardedBatch(computed);
-    const result = validateRuntimeStateGuardedBatchResult(materialized.batch, await transaction.executeGuardedBatch(materialized.batch));
+    const result = validateRuntimeStateGuardedBatchResult(
+        materialized,
+        await transaction.executeGuardedBatch(materialized)
+    );
     if (result.guard.status === 'conflict' || result.effects.some((effect) => effect.status !== 'applied')) {
         throw new RuntimeStateWriteConflictError();
     }
-}
-
-async function writeConditionalMutation(repository: GroupStateRepository, computed: GroupMutationComputedWrite): Promise<void> {
-    await writeConditionalGuard(repository, computed);
-    if (computed.presenceAdmission) {
-        requireConditionalWrite(
-            computed.presenceAdmission.operation === 'insert'
-                ? await repository.insertPresenceAdmission(computed.presenceAdmission.value)
-                : await repository.updatePresenceAdmission(computed.presenceAdmission.value, computed.presenceAdmission.expectedRevision)
-        );
-    }
-    for (const member of computed.members) {
-        await repository.putMember(member);
-    }
-    if (computed.initialPresenceSummary) {
-        const summary = computed.initialPresenceSummary;
-        requireConditionalWrite(
-            summary.operation === 'insert'
-                ? await repository.insertPresenceSummary(summary.value)
-                : await repository.updatePresenceSummary(summary.value, summary.expectedRevision)
-        );
-    }
-    if (computed.idempotency) {
-        requireConditionalWrite(
-            await repository.insertIdempotentGroupMutationReceipt(
-                computed.receipt.aggregateRef,
-                computed.idempotency.requestId,
-                computed.idempotency
-            )
-        );
-    }
-}
-
-async function writeConditionalGuard(repository: GroupStateRepository, computed: GroupMutationComputedWrite): Promise<void> {
-    if (computed.guard.kind === 'group') {
-        requireConditionalWrite(
-            computed.guard.operation === 'insert'
-                ? await repository.insertGroup(computed.guard.value)
-                : await repository.updateGroup(computed.guard.value, computed.guard.expectedRevision)
-        );
-        return;
-    }
-    requireConditionalWrite(
-        computed.guard.operation === 'insert'
-            ? await repository.insertPresence(computed.guard.value)
-            : computed.guard.operation === 'update'
-            ? await repository.updatePresence(computed.guard.value, computed.guard.expectedRevision)
-            : await repository.deletePresence(computed.guard.value, computed.guard.expectedRevision)
-    );
 }
 
 const TEST_OUTBOX_EXPIRE_AT_EPOCH_MS = 253_402_300_799_999;

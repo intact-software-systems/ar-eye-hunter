@@ -1,11 +1,11 @@
 import { computeGroupMutation } from '@shared-server/rallar-system/group-state/mutation/orchestration/compute-group-mutation.ts';
+import { groupStateGroupStorageKey } from '@shared-server/rallar-system/group-state/persistence/aggregate/group-aggregate-storage-keys.ts';
+import { groupStateMemberStorageKey } from '@shared-server/rallar-system/group-state/persistence/membership/group-membership-storage-key.ts';
 import {
-    groupStateGroupStorageKey,
-    groupStateMemberStorageKey,
     groupStatePresenceAdmissionStorageKey,
     groupStatePresenceSessionStorageKey,
     groupStatePresenceSummaryStorageKey
-} from '@shared-server/rallar-system/group-state/persistence/group-state-storage-keys.ts';
+} from '@shared-server/rallar-system/group-state/persistence/presence/group-presence-storage-keys.ts';
 import {
     computeGroupPresenceSummary,
     validateGroupPresenceSummary,

@@ -1,6 +1,6 @@
 import { Temporal } from '@js-temporal/polyfill';
 
-import { groupStateGroupStorageKey } from '@shared-server/rallar-system/group-state/persistence/group-state-storage-keys.ts';
+import { groupStateGroupStorageKey } from '@shared-server/rallar-system/group-state/persistence/aggregate/group-aggregate-storage-keys.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { EnqueuedType, type RttMeasurementInfo } from '@shared/api/api-config.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
@@ -214,7 +214,7 @@ function validateComputedRtcTopologyOutbox(computed: ComputedRtcTopologyOutbox):
     }
 }
 
-function hasCanonicalRequestOptions(value: unknown): boolean {
+function hasCanonicalRequestOptions(value: CanonicalGroupTopologyConfigPatch): boolean {
     try {
         readCanonicalGroupTopologyConfigPatch(value);
         return true;

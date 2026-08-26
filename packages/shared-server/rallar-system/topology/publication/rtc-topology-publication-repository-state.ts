@@ -3,7 +3,7 @@ import type { GroupRef, GroupStateCausalRevision } from '@shared/api/group-types
 import {
     decodeGroupStateGroupStorageKey,
     groupStateGroupStorageKey
-} from '@shared-server/rallar-system/group-state/persistence/group-state-storage-keys.ts';
+} from '@shared-server/rallar-system/group-state/persistence/aggregate/group-aggregate-storage-keys.ts';
 import type { RuntimeStateEntry } from '../../../runtime-state/runtime-state-repository.ts';
 import {
     isRuntimeStateOptimisticTransactionalRepositoryLike,

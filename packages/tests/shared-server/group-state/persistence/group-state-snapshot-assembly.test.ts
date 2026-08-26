@@ -1,12 +1,12 @@
 import { type GroupMutationRead } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
+import { groupStateGroupStorageKey } from '@shared-server/rallar-system/group-state/persistence/aggregate/group-aggregate-storage-keys.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
+import { groupStateMemberStorageKey } from '@shared-server/rallar-system/group-state/persistence/membership/group-membership-storage-key.ts';
 import {
-    groupStateGroupStorageKey,
-    groupStateMemberStorageKey,
     groupStatePresenceAdmissionStorageKey,
     groupStatePresenceSessionStorageKey,
     groupStatePresenceSummaryStorageKey
-} from '@shared-server/rallar-system/group-state/persistence/group-state-storage-keys.ts';
+} from '@shared-server/rallar-system/group-state/persistence/presence/group-presence-storage-keys.ts';
 import type { RuntimeStateReadBatchSelection, RuntimeStateReadBatchSelector } from '@shared-server/runtime-state/read-batch/runtime-state-read-batch.ts';
 import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import type { AuditStamp, Group, GroupMember } from '@shared/api/group-types.ts';
@@ -14,6 +14,7 @@ import { describe, expect, it } from 'vitest';
 import { FakeRuntimeStateRepository } from '../../fake-runtime-state-repository.ts';
 import { createSnapshotAssemblyMutationRead } from '../../group-state-persistence-mutation-read-fixtures.ts';
 import { groupMemberStorageKey, groupRef, groupStorageKey, storedEntry } from '../mutation/group-mutation-test-runtime.ts';
+
 describe('GroupStateRepository persistence', () => {
     it('fails closed when persisted active membership exceeds maxMembers', async () => {
         const runtime = new FakeRuntimeStateRepository();
@@ -96,8 +97,7 @@ describe('GroupStateRepository persistence', () => {
             removed: null,
             banned: null
         };
-        const incompleteGroup = structuredClone(completeGroup) as Record<string, unknown>;
-        delete incompleteGroup.joinMode;
+        const { joinMode: _omittedJoinMode, ...incompleteGroup } = completeGroup;
 
         const groupRuntime = new FakeRuntimeStateRepository();
         await groupRuntime.upsert(
@@ -213,8 +213,7 @@ describe('GroupStateRepository persistence', () => {
                 namespace: 'group-state:members',
                 key: groupStateMemberStorageKey({ ...ref, principalId: 'alice' }),
                 value: (() => {
-                    const value = structuredClone(completeMember) as Record<string, unknown>;
-                    delete value.status;
+                    const { status: _omittedStatus, ...value } = completeMember;
                     return value;
                 })(),
                 reads: (repository: GroupStateRepository) => [

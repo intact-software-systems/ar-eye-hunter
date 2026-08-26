@@ -1,6 +1,8 @@
 import { type GroupMutationIdempotencyRecord, type GroupMutationRead } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
+import { groupStateGroupStorageKey } from '@shared-server/rallar-system/group-state/persistence/aggregate/group-aggregate-storage-keys.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
-import { groupStateGroupStorageKey, groupStateIdempotencyStorageKey } from '@shared-server/rallar-system/group-state/persistence/group-state-storage-keys.ts';
+import { groupStateIdempotencyStorageKey } from '@shared-server/rallar-system/group-state/persistence/idempotency/group-idempotency-storage-key.ts';
+import type { JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import type { AuditStamp, Group } from '@shared/api/group-types.ts';
 import { describe, expect, it, vi } from 'vitest';
@@ -129,7 +131,7 @@ describe('GroupStateRepository persistence', () => {
         };
         const { commandHash: _missingCommandHash, ...missingCommandHash } = valid;
         const { aggregateRef: _aggregateRef, ...identityFree } = valid;
-        const invalidRecords: readonly [string, unknown][] = [
+        const invalidRecords: readonly [string, JsonWireValue][] = [
             ['malformed SHA', { ...valid, commandHash: 'sha256:not-a-digest' }],
             ['empty receipt', { ...valid, receipt: {} }],
             ['unexpected top-level field', { ...valid, unexpected: true }],

@@ -4,7 +4,7 @@ import { jsonEquals } from '@shared/repository/state-utils.ts';
 import {
     groupStatePresenceAdmissionStorageKey,
     groupStatePresenceSessionStorageKey
-} from '../../persistence/group-state-storage-keys.ts';
+} from '../../persistence/presence/group-presence-storage-keys.ts';
 import { validateGroupStateRuntimeEntry } from '../../persistence/validate-group-state-runtime-entry.ts';
 import {
     validatePresenceAdmission,

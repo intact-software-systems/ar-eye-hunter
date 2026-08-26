@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { groupStateGroupStorageKey } from '@shared-server/rallar-system/group-state/persistence/group-state-storage-keys.ts';
+import { groupStateGroupStorageKey } from '@shared-server/rallar-system/group-state/persistence/aggregate/group-aggregate-storage-keys.ts';
 import {
     RTC_TOPOLOGY_INPUT_FINGERPRINTS_NAMESPACE,
     RtcTopologyInputFingerprintRepository

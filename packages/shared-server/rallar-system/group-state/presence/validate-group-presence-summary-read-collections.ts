@@ -1,10 +1,10 @@
 import type { GroupPresenceSession, GroupRef } from '@shared/api/group-types.ts';
 
+import { groupStateMemberStorageKey } from '../persistence/membership/group-membership-storage-key.ts';
 import {
-    groupStateMemberStorageKey,
     groupStatePresenceAdmissionStorageKey,
     groupStatePresenceSessionStorageKey
-} from '../persistence/group-state-storage-keys.ts';
+} from '../persistence/presence/group-presence-storage-keys.ts';
 import { validateGroupStateRuntimeEntry } from '../persistence/validate-group-state-runtime-entry.ts';
 import {
     validatePresenceAdmission,

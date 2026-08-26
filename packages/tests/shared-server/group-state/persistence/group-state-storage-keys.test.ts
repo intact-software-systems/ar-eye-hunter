@@ -1,14 +1,16 @@
 import { type GroupMutationIdempotencyRecord, type GroupMutationRead } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
-import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
 import {
     groupStateGroupStorageKey,
-    groupStateIdempotencyStorageKey,
-    groupStateMemberStorageKey,
+    groupStateScopeStorageKey
+} from '@shared-server/rallar-system/group-state/persistence/aggregate/group-aggregate-storage-keys.ts';
+import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
+import { groupStateIdempotencyStorageKey } from '@shared-server/rallar-system/group-state/persistence/idempotency/group-idempotency-storage-key.ts';
+import { groupStateMemberStorageKey } from '@shared-server/rallar-system/group-state/persistence/membership/group-membership-storage-key.ts';
+import {
     groupStatePresenceAdmissionStorageKey,
     groupStatePresenceSessionStorageKey,
-    groupStatePresenceSummaryStorageKey,
-    groupStateScopeStorageKey
-} from '@shared-server/rallar-system/group-state/persistence/group-state-storage-keys.ts';
+    groupStatePresenceSummaryStorageKey
+} from '@shared-server/rallar-system/group-state/persistence/presence/group-presence-storage-keys.ts';
 import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import type { AuditStamp, Group, GroupMember, GroupPresenceAdmission, GroupPresenceSession } from '@shared/api/group-types.ts';
 import { describe, expect, it, vi } from 'vitest';

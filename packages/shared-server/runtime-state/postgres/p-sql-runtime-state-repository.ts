@@ -32,7 +32,16 @@ interface RuntimeStateSavepointSql extends PSqlSql {
 
 type RuntimeStateSqlState =
     | Readonly<{ kind: 'root'; sql: PSqlSql; }>
-    | Readonly<{ kind: 'transaction'; sql: RuntimeStateSavepointSql; }>;
+    | Readonly<{ kind: 'transaction'; sql: PSqlSql; }>;
+
+export function createTransactionBoundPSqlRuntimeStateRepository(
+    transaction: PSqlSql
+): PSqlRuntimeStateRepository {
+    return new PSqlRuntimeStateRepository(transaction, {
+        kind: 'transaction',
+        sql: transaction
+    });
+}
 
 export class PSqlRuntimeStateRepository implements RuntimeStateOptimisticTransactionalRepositoryLike {
     private readonly sqlState: RuntimeStateSqlState;
@@ -63,7 +72,8 @@ export class PSqlRuntimeStateRepository implements RuntimeStateOptimisticTransac
         ) => Promise<T>
     ): Promise<T> {
         if (this.sqlState.kind === 'transaction') {
-            return await this.sqlState.sql.savepoint(async (sql) => {
+            const savepointSql = requireSavepointSql(this.sqlState.sql);
+            return await savepointSql.savepoint(async (sql) => {
                 const savepointSql = requireSavepointSql(sql);
                 return await fn(
                     new PSqlRuntimeStateRepository(savepointSql, {
@@ -76,12 +86,7 @@ export class PSqlRuntimeStateRepository implements RuntimeStateOptimisticTransac
 
         return await this.sqlState.sql.begin(async (sql: PSqlSql) => {
             const transactionSql = requireSavepointSql(sql);
-            return await fn(
-                new PSqlRuntimeStateRepository(transactionSql, {
-                    kind: 'transaction',
-                    sql: transactionSql
-                })
-            );
+            return await fn(createTransactionBoundPSqlRuntimeStateRepository(transactionSql));
         });
     }
 

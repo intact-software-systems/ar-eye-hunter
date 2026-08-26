@@ -2,19 +2,22 @@ import { validateAuthoritativeGroupEvent } from '@shared/api/authoritative-state
 import type { Group, GroupEvent, GroupRef, GroupScope } from '@shared/api/group-types.ts';
 import type { StateEventPage } from '@shared/api/state-event-types.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
-import type { RuntimeStateGuardedBatchUpdate } from '../../../runtime-state/guarded-batch/runtime-state-guarded-batch.ts';
-import { RuntimeStateJsonStore, type RuntimeStateEntryValue } from '../../../runtime-state/runtime-state-json-store.ts';
+import type { RuntimeStateGuardedBatchUpdate } from '../../../../runtime-state/guarded-batch/runtime-state-guarded-batch.ts';
+import {
+    RuntimeStateJsonStore,
+    type RuntimeStateEntryValue
+} from '../../../../runtime-state/runtime-state-json-store.ts';
 import {
     isRuntimeStateConditionalRepositoryLike,
     type RuntimeStateConditionalWriteResult,
     type RuntimeStateRepositoryLike
-} from '../../../runtime-state/runtime-state-repository.ts';
-import { decodeJsonWireValue, type JsonWireValue } from '../../protocol/json-wire-identity.ts';
-import type { GroupStateEventStore } from '../../state-events/group-state-event-store.ts';
-import type { StateEventListQuery } from '../../state-events/state-event-listing.ts';
-import type { GroupMutationIdempotencyRecord } from '../mutation/group-mutation-contracts.ts';
-import { validateGroupMutationIdempotencyRecord } from '../mutation/result-validation/validate-group-mutation-result.ts';
-import { decodePersistedGroup } from './group-state-persistence-codec.ts';
+} from '../../../../runtime-state/runtime-state-repository.ts';
+import { decodeJsonWireValue, type JsonWireValue } from '../../../protocol/json-wire-identity.ts';
+import type { GroupStateEventStore } from '../../../state-events/group-state-event-store.ts';
+import type { StateEventListQuery } from '../../../state-events/state-event-listing.ts';
+import type { GroupMutationIdempotencyRecord } from '../../mutation/group-mutation-contracts.ts';
+import { validateGroupMutationIdempotencyRecord } from '../../mutation/result-validation/validate-group-mutation-result.ts';
+import { decodePersistedGroup } from '../group-state-persistence-codec.ts';
 import {
     assertGroupRefIdentity,
     decodeStoredGroupStateKey,
@@ -22,15 +25,14 @@ import {
     GroupStateRepositoryInvariantCorruptionError,
     throwGroupStateIdentityCorruption,
     type GroupStateAuthorityGuard
-} from './group-state-persistence-contracts.ts';
-import { GROUPS_NAMESPACE, IDEMPOTENT_NAMESPACE } from './group-state-runtime-namespaces.ts';
+} from '../group-state-persistence-contracts.ts';
+import { GROUPS_NAMESPACE, IDEMPOTENT_NAMESPACE } from '../group-state-runtime-namespaces.ts';
 import {
-    decodeGroupStateGroupStorageKey,
     decodeGroupStateIdempotencyStorageKey,
-    groupStateGroupStorageKey,
     groupStateIdempotencyStorageKey
-} from './group-state-storage-keys.ts';
-import { validatePersistedGroup } from './validate-persisted-group.ts';
+} from '../idempotency/group-idempotency-storage-key.ts';
+import { validatePersistedGroup } from '../validate-persisted-group.ts';
+import { decodeGroupStateGroupStorageKey, groupStateGroupStorageKey } from './group-aggregate-storage-keys.ts';
 
 export class GroupAggregateRepository extends RuntimeStateJsonStore {
     private readonly events: GroupStateEventStore;

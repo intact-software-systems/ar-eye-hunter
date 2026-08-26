@@ -4,12 +4,12 @@ import type { GroupRef } from '@shared/api/group-types.ts';
 import { RuntimeStateJsonStore } from '../../../runtime-state/runtime-state-json-store.ts';
 import type { RuntimeStateRepositoryLike } from '../../../runtime-state/runtime-state-repository.ts';
 import { decodeJsonWireValue } from '../../protocol/json-wire-identity.ts';
+import { groupStateGroupStorageKey } from './aggregate/group-aggregate-storage-keys.ts';
 import {
     decodeCurrentGroupLifecyclePolicy,
     decodeStoredGroupLifecyclePolicy,
     type StoredGroupLifecyclePolicy
 } from './decode-stored-group-lifecycle-policy.ts';
-import { groupStateGroupStorageKey } from './group-state-storage-keys.ts';
 
 export const GROUP_LIFECYCLE_POLICIES_NAMESPACE = 'group-state:lifecycle-policies';
 

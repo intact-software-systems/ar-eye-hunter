@@ -1,18 +1,22 @@
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
+import type { AuthSession } from '@shared/api/api-config.ts';
 
 import { decodeClientPrincipalStorageKey } from '@shared-server/rallar-system/client-state/persistence/client-state-principal-storage-key.ts';
 import { decodeClientSessionStorageKey } from '@shared-server/rallar-system/client-state/persistence/client-state-session-storage-key.ts';
-import {
-    decodeGroupStateGroupStorageKey,
-    decodeGroupStateMemberStorageKey,
-    decodeGroupStatePresenceSessionStorageKey
-} from '@shared-server/rallar-system/group-state/persistence/group-state-storage-keys.ts';
+import { decodeGroupStateGroupStorageKey } from '@shared-server/rallar-system/group-state/persistence/aggregate/group-aggregate-storage-keys.ts';
+import { decodeGroupStateMemberStorageKey } from '@shared-server/rallar-system/group-state/persistence/membership/group-membership-storage-key.ts';
+import { decodeGroupStatePresenceSessionStorageKey } from '@shared-server/rallar-system/group-state/persistence/presence/group-presence-storage-keys.ts';
 import type { JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import { createTestGroup } from '../../../../packages/tests/create-test-group.ts';
 import type { PGliteSql } from '../../src/db/pglite-sql-adapter.ts';
 import { createApiV1TestPGliteDatabaseLifecycle } from './api-v1-test-pglite-database.ts';
 
 type PSqlValues = Parameters<PSqlSql>[0];
+
+export interface RuntimeJsonScanGuard {
+    readonly guardedSql: PSqlSql;
+    readonly runtimeJsonScanCount: number;
+}
 
 export async function seedAdminOperationsRows(sql: PGliteSql): Promise<void> {
     await sql`
@@ -417,7 +421,7 @@ function isJsonRecord(
 
 export function createRuntimeJsonScanGuard(
     sql: PGliteSql
-): Readonly<{ guardedSql: PSqlSql; runtimeJsonScanCount: number; }> {
+): RuntimeJsonScanGuard {
     let runtimeJsonScanCount = 0;
     const guarded = ((
         stringsOrValues: TemplateStringsArray | PSqlValues,
@@ -447,7 +451,7 @@ export function createRuntimeJsonScanGuard(
     };
 }
 
-export function createAdminSession() {
+export function createAdminSession(): AuthSession {
     return {
         clientId: 'platform-admin',
         username: 'admin',

@@ -1,10 +1,11 @@
+import type { RuntimeStateEntry } from '@shared-server/runtime-state/runtime-state-repository.ts';
 import type { GroupEvent } from '@shared/api/group-types.ts';
 import { describe, expect, it, vi } from 'vitest';
 
 import {
     groupStatePresenceAdmissionStorageKey,
     groupStatePresenceSessionStorageKey
-} from '@shared-server/rallar-system/group-state/persistence/group-state-storage-keys.ts';
+} from '@shared-server/rallar-system/group-state/persistence/presence/group-presence-storage-keys.ts';
 import { GroupStateEventCollisionError } from '@shared-server/rallar-system/state-events/group-state-event-store.ts';
 import { RuntimeStateRetryExhaustedError, RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
 import { TestGroupStateEventStore } from '@shared-test/shared-server/test-group-state-event-store.ts';
@@ -175,7 +176,10 @@ describe('GroupStateService guarded batch atomicity', () => {
         }
 
         expect(caught).toBeInstanceOf(RuntimeStateRetryExhaustedError);
-        expect((caught as Error).cause).toBeInstanceOf(RuntimeStateWriteConflictError);
+        if (!(caught instanceof Error)) {
+            throw new Error('Expected retry exhaustion to throw an Error');
+        }
+        expect(caught.cause).toBeInstanceOf(RuntimeStateWriteConflictError);
         expect(runtime.beginCount).toBe(3);
         expect(runtime.batches).toHaveLength(3);
         expect(runtime.transactionOrder).toEqual(['batch', 'batch', 'batch']);
@@ -245,8 +249,8 @@ function createGroup(service: ReturnType<typeof createTestGroupStateService>, gr
 
 function expectTerminalRollback(
     runtime: ApplyingGuardedBatchRepository,
-    events: readonly unknown[],
-    before: ReadonlyMap<string, unknown>
+    events: readonly GroupEvent[],
+    before: ReadonlyMap<string, RuntimeStateEntry>
 ): void {
     expect(runtime.beginCount).toBe(1);
     expect(runtime.batches).toHaveLength(1);

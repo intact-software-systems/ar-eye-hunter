@@ -22,7 +22,7 @@ import {
     toGroupTopologyConfigRepositoryCorruption,
     type GroupTopologyConfigGenerationSourceEntry
 } from './group-topology-config-repository-contracts.ts';
-import { assertGroupTopologyRef, decodeGroupTopologyStorageKey } from './group-topology-config-storage-keys.ts';
+import { assertGroupTopologyRef, decodeGroupTopologyStorageKey } from './group-topology-storage-slot.ts';
 
 export function decodeCanonicalGroupTopologyGenerationSourceEntry(
     entry: RuntimeStateEntry,

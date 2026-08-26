@@ -16,22 +16,20 @@ import {
     requirePositiveSafeInteger
 } from '../group-state-validation-primitives.ts';
 import { presenceAdmissionIdentity } from '../mutation/presence/compute-group-presence-admission.ts';
-import {
-    groupStateGroupStorageKey,
-    groupStatePresenceSummaryStorageKey
-} from '../persistence/group-state-storage-keys.ts';
+import { groupStateGroupStorageKey } from '../persistence/aggregate/group-aggregate-storage-keys.ts';
+import { groupStatePresenceSummaryStorageKey } from '../persistence/presence/group-presence-storage-keys.ts';
 import { validateGroupStateRuntimeEntry } from '../persistence/validate-group-state-runtime-entry.ts';
 import { validatePresenceSummaryValue } from '../persistence/validate-persisted-group-presence.ts';
 import { validateStoredGroup } from '../persistence/validate-persisted-group.ts';
 import { validateGroupPresenceSummaryReadCollections } from './validate-group-presence-summary-read-collections.ts';
 
-export type GroupPresenceSummaryRead = Readonly<{
-    group: RuntimeStateEntryValue<Group>;
-    members: readonly RuntimeStateEntryValue<GroupMember>[];
-    admissions: readonly RuntimeStateEntryValue<GroupPresenceAdmission>[];
-    presenceSessions: readonly RuntimeStateEntryValue<GroupPresenceSession>[];
-    current: RuntimeStateEntryValue<GroupPresenceSummary> | null;
-}>;
+export interface GroupPresenceSummaryRead {
+    readonly group: RuntimeStateEntryValue<Group>;
+    readonly members: readonly RuntimeStateEntryValue<GroupMember>[];
+    readonly admissions: readonly RuntimeStateEntryValue<GroupPresenceAdmission>[];
+    readonly presenceSessions: readonly RuntimeStateEntryValue<GroupPresenceSession>[];
+    readonly current: RuntimeStateEntryValue<GroupPresenceSummary> | null;
+}
 
 export type GroupPresenceSummaryComputed =
     | Readonly<{
@@ -47,6 +45,18 @@ export type GroupPresenceSummaryComputed =
         summary: GroupPresenceSummary;
     }>;
 
+interface ComputeGroupPresenceSummaryInput {
+    readonly ref: GroupRef;
+    readonly read: GroupPresenceSummaryRead;
+    readonly nowEpochMs: number;
+}
+
+interface ValidateGroupPresenceSummaryInput {
+    readonly ref: GroupRef;
+    readonly read: GroupPresenceSummaryRead;
+    readonly computed: GroupPresenceSummaryComputed;
+}
+
 interface GroupPresenceSummaryValidation {
     readonly ref: GroupRef;
     readonly read: GroupPresenceSummaryRead;
@@ -58,11 +68,7 @@ interface GroupPresenceSummaryValidation {
 }
 
 export function computeGroupPresenceSummary(
-    input: Readonly<{
-        ref: GroupRef;
-        read: GroupPresenceSummaryRead;
-        nowEpochMs: number;
-    }>
+    input: ComputeGroupPresenceSummaryInput
 ): GroupPresenceSummaryComputed {
     const { ref, read, nowEpochMs } = input;
     const content = deriveGroupPresenceSummaryContent(read, nowEpochMs);
@@ -100,11 +106,7 @@ export function computeGroupPresenceSummary(
 }
 
 export function validateGroupPresenceSummary(
-    input: Readonly<{
-        ref: GroupRef;
-        read: GroupPresenceSummaryRead;
-        computed: GroupPresenceSummaryComputed;
-    }>
+    input: ValidateGroupPresenceSummaryInput
 ): void {
     const { ref, read, computed } = input;
     requireJsonSafe(read, 'Group presence summary read');
@@ -138,11 +140,7 @@ export function validateGroupPresenceSummary(
 }
 
 function validateGroupPresenceSummaryCandidate(
-    input: Readonly<{
-        ref: GroupRef;
-        read: GroupPresenceSummaryRead;
-        computed: GroupPresenceSummaryComputed;
-    }>
+    input: ValidateGroupPresenceSummaryInput
 ): void {
     const { ref, read, computed } = input;
     validatePresenceSummaryValue(computed.summary, ref);

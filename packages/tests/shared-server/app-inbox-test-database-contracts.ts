@@ -1,4 +1,4 @@
-import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
+import type { PSqlParameter, PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import type { RuntimeStateOptimisticTransactionalRepositoryLike } from '@shared-server/runtime-state/runtime-state-repository.ts';
 import type { TestClientStateEventStore } from '@shared-test/shared-server/test-client-state-event-store.ts';
 import type { TestGroupStateEventStore } from '@shared-test/shared-server/test-group-state-event-store.ts';
@@ -28,7 +28,7 @@ export interface AppInboxTestDatabaseOptions {
 export interface AppInboxTestResourceRepositories {
     readonly inbox: Readonly<{
         getItem(key: Key): Promise<ResourceEntry | undefined>;
-        enqueue(entry: ResourceEntry): Promise<unknown>;
+        enqueue(entry: ResourceEntry): Promise<ResourceEntry | undefined>;
     }>;
     readonly results: Readonly<{
         replace(entry: ResourceEntry): Promise<ResourceEntry>;
@@ -51,7 +51,7 @@ export interface AppInboxTestPendingWrites {
 
 export interface AppInboxTestSqlExecution {
     readonly query: string;
-    readonly values: readonly unknown[];
+    readonly values: readonly PSqlParameter[];
     readonly runtime: RuntimeStateOptimisticTransactionalRepositoryLike | undefined;
     readonly repositories: AppInboxTestResourceRepositories;
     readonly options: AppInboxTestDatabaseOptions;

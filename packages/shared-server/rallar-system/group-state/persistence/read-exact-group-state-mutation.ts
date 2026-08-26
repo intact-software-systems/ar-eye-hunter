@@ -15,6 +15,7 @@ import type { RuntimeStateEntryValue } from '../../../runtime-state/runtime-stat
 import type { RuntimeStateEntry, RuntimeStateRepositoryLike } from '../../../runtime-state/runtime-state-repository.ts';
 import type { JsonWireValue } from '../../protocol/json-wire-identity.ts';
 import type { GroupMutationIdempotencyRecord } from '../mutation/group-mutation-contracts.ts';
+import { groupStateGroupStorageKey } from './aggregate/group-aggregate-storage-keys.ts';
 import {
     GROUPS_NAMESPACE,
     IDEMPOTENT_NAMESPACE,
@@ -23,13 +24,12 @@ import {
     PRESENCE_SUMMARIES_NAMESPACE,
     SESSIONS_NAMESPACE
 } from './group-state-runtime-namespaces.ts';
+import { groupStateIdempotencyStorageKey } from './idempotency/group-idempotency-storage-key.ts';
+import { groupStateMemberStorageKey } from './membership/group-membership-storage-key.ts';
 import {
-    groupStateGroupStorageKey,
-    groupStateIdempotencyStorageKey,
-    groupStateMemberStorageKey,
     groupStatePresenceAdmissionStorageKey,
     groupStatePresenceSessionStorageKey
-} from './group-state-storage-keys.ts';
+} from './presence/group-presence-storage-keys.ts';
 
 export type GroupStateMutationExactReadInput = Readonly<{
     aggregateRef: GroupRef;

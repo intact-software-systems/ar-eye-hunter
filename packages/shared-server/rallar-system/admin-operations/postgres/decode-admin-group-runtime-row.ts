@@ -1,11 +1,9 @@
 import type { Group, GroupMember, GroupPresenceSession, GroupRef } from '@shared/api/group-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 
-import {
-    decodeGroupStateGroupStorageKey,
-    decodeGroupStateMemberStorageKey,
-    decodeGroupStatePresenceSessionStorageKey
-} from '../../group-state/persistence/group-state-storage-keys.ts';
+import { decodeGroupStateGroupStorageKey } from '../../group-state/persistence/aggregate/group-aggregate-storage-keys.ts';
+import { decodeGroupStateMemberStorageKey } from '../../group-state/persistence/membership/group-membership-storage-key.ts';
+import { decodeGroupStatePresenceSessionStorageKey } from '../../group-state/persistence/presence/group-presence-storage-keys.ts';
 import { validatePersistedGroupPresenceSession } from '../../group-state/persistence/validate-persisted-group-presence.ts';
 import {
     validatePersistedGroup,

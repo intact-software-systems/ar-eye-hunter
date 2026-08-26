@@ -2,7 +2,7 @@ import type { AdminOperationsStateResponse } from '@shared/api/admin-operations-
 import type { StateScope } from '@shared/api/state-types.ts';
 
 import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
-import { groupStateScopeStorageKey } from '../../group-state/persistence/group-state-storage-keys.ts';
+import { groupStateScopeStorageKey } from '../../group-state/persistence/aggregate/group-aggregate-storage-keys.ts';
 import { groupStateEventWorkspaceKey } from '../../state-events/postgres/group-state-event-workspace-key.ts';
 import type { AdminOperationReadRequest } from '../admin-operation-request.ts';
 import { createAdminOperationBaseResponse } from '../admin-operation-response.ts';

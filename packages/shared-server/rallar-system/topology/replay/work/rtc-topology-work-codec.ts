@@ -1,4 +1,4 @@
-import { groupStateGroupStorageKey } from '@shared-server/rallar-system/group-state/persistence/group-state-storage-keys.ts';
+import { groupStateGroupStorageKey } from '@shared-server/rallar-system/group-state/persistence/aggregate/group-aggregate-storage-keys.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { decodePersistedALMessageValue } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';

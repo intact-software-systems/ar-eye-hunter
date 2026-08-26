@@ -5,20 +5,17 @@ import type {
     GroupPresenceSession,
     GroupPresenceSummary,
     GroupRef,
-    GroupScope
+    GroupScope,
+    GroupStateCausalRevision
 } from '@shared/api/group-types.ts';
 
 import type { RuntimeStateEntryRead, RuntimeStateEntryValue } from '../../../runtime-state/runtime-state-json-store.ts';
 import type { JsonWireValue } from '../../protocol/json-wire-identity.ts';
 import type { GroupMutationIdempotencyRecord } from '../mutation/group-mutation-contracts.ts';
 import { validateGroupMutationIdempotencyRecord } from '../mutation/result-validation/validate-group-mutation-result.ts';
-import { assertStoredIdempotency, canonicalStoredGroup } from './group-aggregate-repository.ts';
-import { canonicalStoredMember } from './group-membership-repository.ts';
-import {
-    canonicalStoredAdmission,
-    canonicalStoredSession,
-    canonicalStoredSummary
-} from './group-presence-repository.ts';
+import { assertStoredIdempotency, canonicalStoredGroup } from './aggregate/group-aggregate-repository.ts';
+import { groupStateGroupStorageKey, groupStateScopeStorageKey } from './aggregate/group-aggregate-storage-keys.ts';
+import { decodeStoredGroupStateValue } from './group-state-persistence-contracts.ts';
 import {
     GROUPS_NAMESPACE,
     IDEMPOTENT_NAMESPACE,
@@ -28,14 +25,18 @@ import {
     SESSIONS_NAMESPACE
 } from './group-state-runtime-namespaces.ts';
 import { GroupStateSnapshotRepository } from './group-state-snapshot-repository.ts';
+import { groupStateIdempotencyStorageKey } from './idempotency/group-idempotency-storage-key.ts';
+import { canonicalStoredMember } from './membership/group-membership-repository.ts';
+import { groupStateMemberStorageKey } from './membership/group-membership-storage-key.ts';
 import {
-    groupStateGroupStorageKey,
-    groupStateIdempotencyStorageKey,
-    groupStateMemberStorageKey,
+    canonicalStoredAdmission,
+    canonicalStoredSession,
+    canonicalStoredSummary
+} from './presence/group-presence-repository.ts';
+import {
     groupStatePresenceAdmissionStorageKey,
-    groupStatePresenceSessionStorageKey,
-    groupStateScopeStorageKey
-} from './group-state-storage-keys.ts';
+    groupStatePresenceSessionStorageKey
+} from './presence/group-presence-storage-keys.ts';
 import {
     readGroupStateMutationExactEntries,
     type GroupStateMutationExactReadInput,
@@ -118,7 +119,7 @@ export class GroupStateRepositoryReads extends GroupStateSnapshotRepository {
 
     async readCausalRevision(
         ref: GroupRef
-    ): Promise<import('@shared/api/group-types.ts').GroupStateCausalRevision | undefined> {
+    ): Promise<GroupStateCausalRevision | undefined> {
         const [stored, summary] = await Promise.all([
             this.findGroupEntry(ref),
             this.findPresenceSummaryEntry(ref)
@@ -254,8 +255,22 @@ function canonicalStoredIdempotency(
     stored: RuntimeStateEntryValue<JsonWireValue>,
     expected: GroupRef & Readonly<{ requestId: string; }>
 ): RuntimeStateEntryValue<GroupMutationIdempotencyRecord> {
-    validateGroupMutationIdempotencyRecord(stored.value, expected);
-    const decoded = { entry: stored.entry, value: stored.value };
+    const value = decodeStoredGroupStateValue(
+        stored.value,
+        expected,
+        stored.entry.key,
+        decodeGroupMutationIdempotencyRecord,
+        'Stored group idempotency value is invalid'
+    );
+    const decoded = { entry: stored.entry, value };
     assertStoredIdempotency(decoded, expected);
     return decoded;
+}
+
+function decodeGroupMutationIdempotencyRecord(
+    value: JsonWireValue,
+    expected: GroupRef
+): GroupMutationIdempotencyRecord {
+    validateGroupMutationIdempotencyRecord(value, expected);
+    return value;
 }

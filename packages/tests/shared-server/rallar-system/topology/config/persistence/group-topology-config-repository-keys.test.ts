@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import { groupStateGroupStorageKey, groupStateIdempotencyStorageKey } from '@shared-server/rallar-system/group-state/persistence/group-state-storage-keys.ts';
+import { groupStateGroupStorageKey } from '@shared-server/rallar-system/group-state/persistence/aggregate/group-aggregate-storage-keys.ts';
+import { groupStateIdempotencyStorageKey } from '@shared-server/rallar-system/group-state/persistence/idempotency/group-idempotency-storage-key.ts';
 import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/topology/config/persistence/group-topology-config-repository.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 

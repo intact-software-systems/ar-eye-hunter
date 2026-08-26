@@ -2,7 +2,7 @@ import type { GroupMember, GroupRef } from '@shared/api/group-types.ts';
 import { jsonEquals } from '@shared/repository/state-utils.ts';
 
 import type { RuntimeStateEntryValue } from '../../../../runtime-state/runtime-state-json-store.ts';
-import { groupStateMemberStorageKey } from '../../persistence/group-state-storage-keys.ts';
+import { groupStateMemberStorageKey } from '../../persistence/membership/group-membership-storage-key.ts';
 import { validateGroupStateRuntimeEntry } from '../../persistence/validate-group-state-runtime-entry.ts';
 import { validateStoredMember } from '../../persistence/validate-persisted-group.ts';
 import type { GroupMutationRead } from '../group-mutation-contracts.ts';

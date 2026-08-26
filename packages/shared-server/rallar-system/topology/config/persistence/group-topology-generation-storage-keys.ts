@@ -1,36 +1,13 @@
 import type { GroupRef } from '@shared/api/group-types.ts';
 
-import {
-    decodeGroupStateGroupStorageKey,
-    decodeGroupStateIdempotencyStorageKey,
-    groupStateGroupStorageKey,
-    groupStateIdempotencyStorageKey
-} from '../../../group-state/persistence/group-state-storage-keys.ts';
+import { groupStateGroupStorageKey } from '../../../group-state/persistence/aggregate/group-aggregate-storage-keys.ts';
 import type { GroupTopologyConfigGenerationTarget } from '../mutation/group-topology-config-mutation-contracts.ts';
 import { toGroupTopologyConfigRepositoryCorruption } from './group-topology-config-repository-contracts.ts';
+import { assertGroupTopologyRef, decodeGroupTopologyStorageKey } from './group-topology-storage-slot.ts';
 
 interface GroupTopologyChildStorageKey {
     readonly groupRef: GroupRef;
     readonly value: string;
-}
-
-export interface GroupTopologyRefExpectation {
-    readonly actual: GroupRef;
-    readonly expected: GroupRef;
-    readonly storageKey: string;
-    readonly slot: string;
-}
-
-export function groupTopologyConfigStorageKey(ref: GroupRef): string {
-    return groupStateGroupStorageKey(ref);
-}
-
-export function groupTopologyOverrideStorageKey(ref: GroupRef): string {
-    return groupStateGroupStorageKey(ref);
-}
-
-export function groupTopologyMutationStorageKey(ref: GroupRef, requestId: string): string {
-    return groupStateIdempotencyStorageKey(ref, requestId);
 }
 
 export function groupTopologyGenerationStorageKey(
@@ -42,48 +19,6 @@ export function groupTopologyGenerationStorageKey(
 
 export function groupTopologyInvariantGenerationStorageKey(ref: GroupRef): string {
     return groupTopologyChildStorageKey(ref, 'invariant', 'effective-config');
-}
-
-export function groupTopologyGenerationSourceStorageKey(
-    ref: GroupRef,
-    target: GroupTopologyConfigGenerationTarget
-): string {
-    return target === 'config'
-        ? groupTopologyConfigStorageKey(ref)
-        : groupTopologyOverrideStorageKey(ref);
-}
-
-export function decodeGroupTopologyStorageKey(storageKey: string): GroupRef {
-    try {
-        return decodeGroupStateGroupStorageKey(storageKey);
-    }
-    catch (error) {
-        throw toGroupTopologyConfigRepositoryCorruption(
-            storageKey,
-            error instanceof Error ? error.message : 'Stored topology config group key is invalid'
-        );
-    }
-}
-
-export function assertGroupTopologyMutationStorageSlot(
-    storageKey: string,
-    trustedRef: GroupRef,
-    trustedRequestId: string
-): GroupRef & Readonly<{ requestId: string; }> {
-    const decoded = decodeGroupTopologyMutationStorageKey(storageKey);
-    assertGroupTopologyRef({
-        actual: decoded,
-        expected: trustedRef,
-        storageKey,
-        slot: 'requested mutation slot'
-    });
-    if (decoded.requestId !== trustedRequestId) {
-        throw toGroupTopologyConfigRepositoryCorruption(
-            storageKey,
-            'Stored topology config request differs from the requested slot'
-        );
-    }
-    return decoded;
 }
 
 export function assertGroupTopologyGenerationStorageSlot(
@@ -121,39 +56,8 @@ export function assertGroupTopologyInvariantStorageSlot(
     return decoded;
 }
 
-export function assertGroupTopologyRef(input: GroupTopologyRefExpectation): void {
-    if (!isSameGroupTopologyRef(input.actual, input.expected)) {
-        throw toGroupTopologyConfigRepositoryCorruption(
-            input.storageKey,
-            `Stored topology config identity differs from the ${input.slot}`
-        );
-    }
-}
-
-export function isSameGroupTopologyRef(left: GroupRef, right: GroupRef): boolean {
-    return (
-        left.applicationId === right.applicationId &&
-        left.workspaceId === right.workspaceId &&
-        left.groupId === right.groupId
-    );
-}
-
 function groupTopologyChildStorageKey(ref: GroupRef, name: string, value: string): string {
     return `${groupStateGroupStorageKey(ref)}:${name}=${encodeURIComponent(value)}`;
-}
-
-function decodeGroupTopologyMutationStorageKey(
-    storageKey: string
-): GroupRef & Readonly<{ requestId: string; }> {
-    try {
-        return decodeGroupStateIdempotencyStorageKey(storageKey);
-    }
-    catch (error) {
-        throw toGroupTopologyConfigRepositoryCorruption(
-            storageKey,
-            error instanceof Error ? error.message : 'Stored topology config mutation key is invalid'
-        );
-    }
 }
 
 function decodeGroupTopologyGenerationStorageKey(

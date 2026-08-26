@@ -5,7 +5,10 @@ import type {
 import { toCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topology-config-canonical.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import type { RuntimeStateEntryValue } from '../../../../runtime-state/runtime-state-json-store.ts';
-import { toRtcTopologyEntryResourceId } from '../../mutation/rtc-topology-outbox-entry.ts';
+import {
+    toRtcTopologyEntryResourceId,
+    type ComputedRtcTopologyOutbox
+} from '../../mutation/rtc-topology-outbox-entry.ts';
 import type {
     GroupTopologyConfigGeneration,
     GroupTopologyConfigMutationAcceptedResult,
@@ -14,7 +17,6 @@ import type {
     GroupTopologyConfigMutationRead,
     GroupTopologyConfigMutationRecord,
     GroupTopologyConfigMutationWriteComputed,
-    GroupTopologyConfigOutboxInput,
     TopologyConfigWriteGuard
 } from './group-topology-config-mutation-contracts.ts';
 
@@ -168,7 +170,7 @@ export function resultFromTopologyConfigReceipt(
 function createTopologyConfigOutbox(
     topologyWrite: CreateTopologyConfigWriteResultInput,
     acceptedCausalRevision: NonNullable<GroupTopologyConfigMutationReceipt['acceptedCausalRevision']>
-): GroupTopologyConfigOutboxInput {
+): ComputedRtcTopologyOutbox {
     const causalRevision = acceptedCausalRevision.causalRevision;
     const outboxResourceId = [
         topologyWrite.command.commandId,
@@ -195,7 +197,7 @@ function createTopologyConfigOutbox(
 function createAppliedTopologyConfigReceipt(
     topologyWrite: CreateTopologyConfigWriteResultInput,
     acceptedCausalRevision: NonNullable<GroupTopologyConfigMutationReceipt['acceptedCausalRevision']>,
-    outbox: GroupTopologyConfigOutboxInput
+    outbox: ComputedRtcTopologyOutbox
 ): GroupTopologyConfigMutationReceipt {
     const acceptedValue = topologyWrite.guard.operation === 'delete' ? null : topologyWrite.guard.value;
     return createTopologyConfigReceipt({

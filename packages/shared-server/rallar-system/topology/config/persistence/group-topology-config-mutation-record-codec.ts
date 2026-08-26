@@ -17,10 +17,10 @@ import {
 import { toGroupTopologyConfigRepositoryCorruption } from './group-topology-config-repository-contracts.ts';
 import {
     assertGroupTopologyGenerationStorageSlot,
-    assertGroupTopologyInvariantStorageSlot,
-    assertGroupTopologyMutationStorageSlot,
-    assertGroupTopologyRef
-} from './group-topology-config-storage-keys.ts';
+    assertGroupTopologyInvariantStorageSlot
+} from './group-topology-generation-storage-keys.ts';
+import { assertGroupTopologyMutationStorageSlot } from './group-topology-mutation-storage-key.ts';
+import { assertGroupTopologyRef } from './group-topology-storage-slot.ts';
 
 export function decodeGroupTopologyMutationEntry(
     entry: RuntimeStateEntry,

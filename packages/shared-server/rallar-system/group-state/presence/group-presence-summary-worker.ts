@@ -17,9 +17,9 @@ import { APP_OUTBOX_RTC_TOPOLOGY_TOPIC } from '../../topology/mutation/rtc-topol
 import {
     toRtcTopologyCoalescedGroupRevisionResourceId
 } from '../../topology/replay/work/rtc-topology-coalesced-group-revision-work.ts';
+import { groupStateGroupStorageKey } from '../persistence/aggregate/group-aggregate-storage-keys.ts';
 import { GroupStateRepositoryReads } from '../persistence/group-state-repository-reads.ts';
 import { createTransactionBoundGroupStateRepository } from '../persistence/group-state-repository.ts';
-import { groupStateGroupStorageKey } from '../persistence/group-state-storage-keys.ts';
 import { decodeCanonicalGroupPresenceSummaryWork } from './decode-canonical-group-presence-summary-work.ts';
 import {
     computeGroupPresenceSummaryWork,

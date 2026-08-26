@@ -5,44 +5,49 @@ import type {
     GroupRef
 } from '@shared/api/group-types.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
-import { RuntimeStateJsonStore, type RuntimeStateEntryValue } from '../../../runtime-state/runtime-state-json-store.ts';
+import {
+    RuntimeStateJsonStore,
+    type RuntimeStateEntryValue
+} from '../../../../runtime-state/runtime-state-json-store.ts';
 import type {
     RuntimeStateConditionalDeleteResult,
     RuntimeStateConditionalWriteResult,
     RuntimeStateRepositoryLike
-} from '../../../runtime-state/runtime-state-repository.ts';
-import { toSessionPurgeAfterEpochMs } from '../../presence/session-expiry.ts';
-import type { JsonWireValue } from '../../protocol/json-wire-identity.ts';
+} from '../../../../runtime-state/runtime-state-repository.ts';
+import { toSessionPurgeAfterEpochMs } from '../../../presence/session-expiry.ts';
+import type { JsonWireValue } from '../../../protocol/json-wire-identity.ts';
+import {
+    decodeGroupStateGroupStorageKey,
+    groupStateGroupStorageKey
+} from '../aggregate/group-aggregate-storage-keys.ts';
 import {
     decodePersistedGroupPresenceAdmission,
     decodePersistedGroupPresenceSession,
     decodePersistedGroupPresenceSummary
-} from './group-state-persistence-codec.ts';
+} from '../group-state-persistence-codec.ts';
 import {
     assertGroupRefIdentity,
     assertTrustedGroupRef,
     decodeStoredGroupStateKey,
     decodeStoredGroupStateValue,
     throwGroupStateIdentityCorruption
-} from './group-state-persistence-contracts.ts';
+} from '../group-state-persistence-contracts.ts';
 import {
     PRESENCE_ADMISSIONS_NAMESPACE,
     PRESENCE_SUMMARIES_NAMESPACE,
     SESSIONS_NAMESPACE
-} from './group-state-runtime-namespaces.ts';
-import {
-    decodeGroupStateGroupStorageKey,
-    decodeGroupStatePresenceAdmissionStorageKey,
-    decodeGroupStatePresenceSessionStorageKey,
-    groupStateGroupStorageKey,
-    groupStatePresenceAdmissionStorageKey,
-    groupStatePresenceSessionStorageKey
-} from './group-state-storage-keys.ts';
+} from '../group-state-runtime-namespaces.ts';
 import {
     validatePersistedGroupPresenceAdmission,
     validatePersistedGroupPresenceSession,
     validatePersistedGroupPresenceSummary
-} from './validate-persisted-group-presence.ts';
+} from '../validate-persisted-group-presence.ts';
+import {
+    decodeGroupStatePresenceAdmissionStorageKey,
+    decodeGroupStatePresenceSessionStorageKey,
+    groupStatePresenceAdmissionStorageKey,
+    groupStatePresenceSessionStorageKey
+} from './group-presence-storage-keys.ts';
 
 export class GroupPresenceRepository extends RuntimeStateJsonStore {
     constructor(repository: RuntimeStateRepositoryLike) {

@@ -4,13 +4,13 @@ import { type RuntimeStateReadBatchSelector } from '../../../runtime-state/read-
 import type { RuntimeStateEntryValue } from '../../../runtime-state/runtime-state-json-store.ts';
 import type { RuntimeStateEntry, RuntimeStateRepositoryLike } from '../../../runtime-state/runtime-state-repository.ts';
 import type { JsonWireValue } from '../../protocol/json-wire-identity.ts';
+import { groupStateGroupStorageKey } from './aggregate/group-aggregate-storage-keys.ts';
 import {
     GROUPS_NAMESPACE,
     MEMBERS_NAMESPACE,
     PRESENCE_SUMMARIES_NAMESPACE,
     SESSIONS_NAMESPACE
 } from './group-state-runtime-namespaces.ts';
-import { groupStateGroupStorageKey } from './group-state-storage-keys.ts';
 
 export type GroupStateAuthorityBatchRead =
     | Readonly<{ status: 'concurrent-change'; }>

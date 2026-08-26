@@ -1,12 +1,16 @@
 import { Temporal } from '@js-temporal/polyfill';
 
-import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
+import type { PSqlParameter, PSqlRows, PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import { ResourceInboxInvariantCorruptionError } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
+import { decodeJsonWireValue, type JsonWireObject, type JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
+import type { RuntimeStateReadBatchSelector } from '@shared-server/runtime-state/read-batch/runtime-state-read-batch.ts';
+import { validateRuntimeStateReadBatchSelectors } from '@shared-server/runtime-state/read-batch/validate-runtime-state-read-batch-selectors.ts';
+import { validateAuthoritativeClientEvent, validateAuthoritativeGroupEvent } from '@shared/api/authoritative-state-validation.ts';
 import type { ClientEvent } from '@shared/api/client-types.ts';
 import type { GroupEvent } from '@shared/api/group-types.ts';
-import type { EntityStatus, ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 
-import { tryExecuteRuntimeStateConditionalMutation } from './app-inbox-runtime-state-mutation.ts';
+import { tryExecuteRuntimeStateConditionalMutation, tryExecuteRuntimeStateGuardedBatch } from './app-inbox-runtime-state-mutation.ts';
 import type {
     AppInboxTestDatabaseOptions,
     AppInboxTestDatabaseState,
@@ -23,22 +27,69 @@ interface CreateAppInboxTestTransactionSqlInput {
     readonly runtime: AppInboxTestSqlExecution['runtime'];
 }
 
-export function createAppInboxTestTransactionSql(
+interface ResourceInboxResultDatabaseRow {
+    readonly ris_row_id: bigint;
+    readonly ris_resource_id: string;
+    readonly ris_topic_id: string;
+    readonly ris_resource: string;
+    readonly ris_type_id: string;
+    readonly ris_status: EntityStatus;
+    readonly fk_ext_bank_id: string;
+    readonly system_date: string;
+    readonly created_by: string;
+    readonly created_ts: string;
+    readonly expire_ts: string;
+}
+
+interface ResourceInboxDatabaseRow {
+    readonly ri_row_id: bigint;
+    readonly ri_resource_id: string;
+    readonly ri_topic_id: string;
+    readonly ri_resource: string;
+    readonly ri_type_id: string;
+    readonly ri_status: EntityStatus;
+    readonly fk_ext_bank_id: string;
+    readonly system_date: string;
+    readonly created_by: string;
+    readonly created_ts: string;
+    readonly expire_ts: string;
+    readonly start_ts: string | null;
+    readonly end_ts: string | null;
+    readonly next_ts: string | null;
+    readonly ri_attempts: bigint;
+}
+
+export function createAppInboxTestDatabaseSql(
     input: CreateAppInboxTestTransactionSqlInput
 ): PSqlSql {
-    const transaction = (async (strings: TemplateStringsArray, ...values: unknown[]) => {
+    function transactionSql(values: readonly PSqlParameter[]): object;
+    function transactionSql<Result>(
+        strings: TemplateStringsArray,
+        ...values: readonly PSqlParameter[]
+    ): Promise<Result>;
+    function transactionSql<Result>(
+        stringsOrValues: TemplateStringsArray | readonly PSqlParameter[],
+        ...values: readonly PSqlParameter[]
+    ): object | Promise<Result> {
+        if (!('raw' in stringsOrValues)) {
+            return { values: stringsOrValues };
+        }
+        const strings = stringsOrValues;
         const query = strings.join('?').replace(/\s+/gu, ' ').trim().toLowerCase();
-        return await executeAppInboxTestSql({ ...input, query, values });
-    }) as unknown as PSqlSql;
-    transaction.begin = async () => {
-        throw new Error('Nested app inbox transaction');
-    };
-    return transaction;
+        return executeAppInboxTestSql({ ...input, query, values })
+            .then((rows) => rows as Result);
+    }
+
+    return Object.assign(transactionSql, {
+        begin: async <T>(_write: (sql: PSqlSql) => Promise<T>): Promise<T> => {
+            throw new Error('Nested app inbox transaction');
+        }
+    });
 }
 
 async function executeAppInboxTestSql(
     input: AppInboxTestSqlExecution
-): Promise<readonly unknown[]> {
+): Promise<PSqlRows> {
     const runtimeStateResult = await executeRuntimeStateSql(input);
     if (runtimeStateResult) {
         return runtimeStateResult;
@@ -60,16 +111,16 @@ async function executeAppInboxTestSql(
 
 async function executeRuntimeStateSql(
     input: AppInboxTestSqlExecution
-): Promise<readonly unknown[] | undefined> {
+): Promise<PSqlRows | undefined> {
+    const guardedBatch = await tryExecuteRuntimeStateGuardedBatch(input);
+    if (guardedBatch) {
+        return guardedBatch;
+    }
     const writeResult = await executeRuntimeStateWriteSql(input);
     if (writeResult) {
         return writeResult;
     }
-    const conditionalMutation = await tryExecuteRuntimeStateConditionalMutation(
-        input.query,
-        input.runtime,
-        input.values
-    );
+    const conditionalMutation = await tryExecuteRuntimeStateConditionalMutation(input);
     if (conditionalMutation) {
         return conditionalMutation;
     }
@@ -80,19 +131,25 @@ async function executeRuntimeStateWriteSql({
     query,
     runtime,
     values
-}: AppInboxTestSqlExecution): Promise<unknown[] | undefined> {
+}: AppInboxTestSqlExecution): Promise<PSqlRows | undefined> {
     const insertsAbsentEntry = query.includes('insert into runtime_state_store') &&
         query.includes('do nothing') &&
         query.includes('returning revision');
     if (insertsAbsentEntry) {
         const repository = requireTransactionRuntime(runtime);
-        const [namespace, key, value, expireAt] = values as [string, string, string, Date];
+        const namespace = readStringParameter(values[0], 'Runtime-state namespace');
+        const key = readStringParameter(values[1], 'Runtime-state key');
+        const value = readStringParameter(values[2], 'Runtime-state value');
+        const expireAt = readDateParameter(values[3], 'Runtime-state expiry');
         const result = await repository.insertIfAbsent(namespace, key, value, expireAt.getTime());
         return result.status === 'applied' ? [{ revision: result.revision }] : [];
     }
     if (query.includes('insert into runtime_state_store') && query.includes('do update set')) {
         const repository = requireTransactionRuntime(runtime);
-        const [namespace, key, value, expireAt] = values as [string, string, string, Date];
+        const namespace = readStringParameter(values[0], 'Runtime-state namespace');
+        const key = readStringParameter(values[1], 'Runtime-state key');
+        const value = readStringParameter(values[2], 'Runtime-state value');
+        const expireAt = readDateParameter(values[3], 'Runtime-state expiry');
         await repository.upsert(namespace, key, value, expireAt.getTime());
         return [];
     }
@@ -103,24 +160,14 @@ async function executeRuntimeStateSelectionSql({
     query,
     runtime,
     values
-}: AppInboxTestSqlExecution): Promise<unknown[] | undefined> {
+}: AppInboxTestSqlExecution): Promise<PSqlRows | undefined> {
     if (!query.includes('jsonb_array_elements') || !query.includes('as selections')) {
         return undefined;
     }
     const repository = requireTransactionRuntime(runtime);
-    const rawSelectors = typeof values[0] === 'string' ? JSON.parse(values[0]) : values[0];
-    if (!Array.isArray(rawSelectors)) {
-        throw new Error('Runtime-state batch selectors are required');
-    }
+    const selectors = readRuntimeStateSqlSelectors(values[0]);
     const selections = [];
-    for (const rawSelector of rawSelectors) {
-        const selector = rawSelector as Readonly<{
-            selectorId: string;
-            kind: 'key' | 'prefix';
-            namespace: string;
-            key: string | null;
-            keyPrefix: string | null;
-        }>;
+    for (const selector of selectors) {
         const entries = selector.kind === 'key'
             ? await repository.findEntriesByKeys(
                 selector.namespace,
@@ -141,21 +188,23 @@ function requireTransactionRuntime(runtime: AppInboxTestSqlExecution['runtime'])
 
 async function executeStateEventSql(
     input: AppInboxTestSqlExecution
-): Promise<unknown[] | undefined> {
+): Promise<PSqlRows | undefined> {
     if (input.query.includes('insert into client_state_events')) {
-        const event = readStateEvent<ClientEvent>(input.values, 'Client');
+        const event = readClientStateEvent(input.values);
         input.pending.clientEvents.push(event);
         return [{ event_id: event.eventId }];
     }
     if (input.query.includes('insert into group_state_events')) {
-        const event = readStateEvent<GroupEvent>(input.values, 'Group');
+        const event = readGroupStateEvent(input.values);
         input.pending.groupEvents.push(event);
         return [{ event_id: event.eventId }];
     }
     if (!input.query.includes('from group_state_events')) {
         return undefined;
     }
-    const [applicationId, workspaceKey, groupId] = input.values as string[];
+    const applicationId = readStringParameter(input.values[0], 'Group event application ID');
+    const workspaceKey = readStringParameter(input.values[1], 'Group event workspace key');
+    const groupId = readStringParameter(input.values[2], 'Group event group ID');
     const workspaceId = workspaceKey === '_' ? undefined : workspaceKey;
     return [...input.state.groupEventStore.events, ...input.pending.groupEvents]
         .filter(
@@ -173,17 +222,32 @@ async function executeStateEventSql(
         }));
 }
 
-function readStateEvent<T>(values: readonly unknown[], family: 'Client' | 'Group'): T {
+function readClientStateEvent(values: readonly PSqlParameter[]): ClientEvent {
+    const event = readStateEventValue(values, 'Client');
+    validateAuthoritativeClientEvent(event);
+    return event;
+}
+
+function readGroupStateEvent(values: readonly PSqlParameter[]): GroupEvent {
+    const event = readStateEventValue(values, 'Group');
+    validateAuthoritativeGroupEvent(event);
+    return event;
+}
+
+function readStateEventValue(
+    values: readonly PSqlParameter[],
+    family: 'Client' | 'Group'
+): JsonWireValue {
     const eventJson = values.at(-1);
     if (typeof eventJson !== 'string') {
         throw new Error(`${family} state event JSON is required`);
     }
-    return JSON.parse(eventJson) as T;
+    return decodeJsonWireValue(JSON.parse(eventJson), `${family} state event`);
 }
 
 async function executeResultAndReservationSql(
     input: AppInboxTestSqlExecution
-): Promise<unknown[] | undefined> {
+): Promise<PSqlRows | undefined> {
     if (input.query.includes('insert into resource_inbox_results')) {
         await input.options.onStage?.('resource-result-replace');
         const entry = toResultEntry(input.values);
@@ -197,14 +261,12 @@ async function executeResultAndReservationSql(
         return undefined;
     }
     await input.options.onStage?.('reservation-finish');
-    const [status, completedAt, topicId, resourceId, contextId, attempts] = input.values as [
-        EntityStatus,
-        Date,
-        string,
-        string,
-        string,
-        number
-    ];
+    const status = readEntityStatus(input.values[0], 'Reservation status');
+    const completedAt = readDateParameter(input.values[1], 'Reservation completion');
+    const topicId = readStringParameter(input.values[2], 'Reservation topic ID');
+    const resourceId = readStringParameter(input.values[3], 'Reservation resource ID');
+    const contextId = readStringParameter(input.values[4], 'Reservation context ID');
+    const attempts = readNonNegativeIntegerParameter(input.values[5], 'Reservation attempts');
     const current = await input.repositories.inbox.getItem({ topicId, resourceId, contextId });
     if (
         !current ||
@@ -227,7 +289,7 @@ async function executeResultAndReservationSql(
     return [toInboxRow(entry)];
 }
 
-function executeOutboxSql(input: AppInboxTestSqlExecution): unknown[] | undefined {
+function executeOutboxSql(input: AppInboxTestSqlExecution): PSqlRows | undefined {
     const insertsOutbox = input.query.includes('insert into resource_inbox');
     if (insertsOutbox) {
         const entry = toInboxEntry(input.values);
@@ -251,14 +313,16 @@ function executeOutboxSql(input: AppInboxTestSqlExecution): unknown[] | undefine
         return [toInboxRow(entry)];
     }
     if (input.query.includes('from resource_inbox') && input.query.includes('where ri_topic_id')) {
-        const [topicId, resourceId, contextId] = input.values as string[];
+        const topicId = readStringParameter(input.values[0], 'Outbox topic ID');
+        const resourceId = readStringParameter(input.values[1], 'Outbox resource ID');
+        const contextId = readStringParameter(input.values[2], 'Outbox context ID');
         const entry = input.pending.outbox.get(`${contextId}:${topicId}:${resourceId}`);
         return entry ? [toInboxRow(entry)] : [];
     }
     return undefined;
 }
 
-function toInboxEntry(values: readonly unknown[]): ResourceEntry {
+function toInboxEntry(values: readonly PSqlParameter[]): ResourceEntry {
     const [
         resourceId,
         topicId,
@@ -277,18 +341,18 @@ function toInboxEntry(values: readonly unknown[]): ResourceEntry {
     ] = values;
     return {
         key: {
-            resourceId: resourceId as string,
-            topicId: topicId as string,
-            contextId: contextId as string
+            resourceId: readStringParameter(resourceId, 'Outbox resource ID'),
+            topicId: readStringParameter(topicId, 'Outbox topic ID'),
+            contextId: readStringParameter(contextId, 'Outbox context ID')
         },
-        resource: resource as string,
-        typeId: typeId as string,
-        status: status as EntityStatus,
+        resource: readStringParameter(resource, 'Outbox resource'),
+        typeId: readStringParameter(typeId, 'Outbox type ID'),
+        status: readEntityStatus(status, 'Outbox status'),
         audit: {
-            date: Temporal.PlainDate.from(systemDate as string)
+            date: Temporal.PlainDate.from(readStringParameter(systemDate, 'Outbox system date'))
                 .toPlainDateTime()
                 .toPlainTime(),
-            createdBy: createdBy as string,
+            createdBy: readStringParameter(createdBy, 'Outbox creator'),
             createdTs: toPlainDateTime(createdTs),
             expiryTs: toInstant(expiryTs)
         },
@@ -296,12 +360,12 @@ function toInboxEntry(values: readonly unknown[]): ResourceEntry {
             startTs: startTs === null ? undefined : toInstant(startTs),
             endTs: endTs === null ? undefined : toInstant(endTs),
             nextTs: nextTs === null ? undefined : toInstant(nextTs),
-            attempts: Number(attempts)
+            attempts: readNonNegativeIntegerParameter(attempts, 'Outbox attempts')
         }
     };
 }
 
-function toResultEntry(values: readonly unknown[]): ResourceEntry {
+function toResultEntry(values: readonly PSqlParameter[]): ResourceEntry {
     const [
         resourceId,
         topicId,
@@ -316,30 +380,26 @@ function toResultEntry(values: readonly unknown[]): ResourceEntry {
     ] = values;
     return {
         key: {
-            resourceId: resourceId as string,
-            topicId: topicId as string,
-            contextId: contextId as string
+            resourceId: readStringParameter(resourceId, 'Result resource ID'),
+            topicId: readStringParameter(topicId, 'Result topic ID'),
+            contextId: readStringParameter(contextId, 'Result context ID')
         },
-        resource: resource as string,
-        typeId: typeId as string,
-        status: status as EntityStatus,
+        resource: readStringParameter(resource, 'Result resource'),
+        typeId: readStringParameter(typeId, 'Result type ID'),
+        status: readEntityStatus(status, 'Result status'),
         audit: {
-            date: Temporal.PlainDate.from(systemDate as string)
+            date: Temporal.PlainDate.from(readStringParameter(systemDate, 'Result system date'))
                 .toPlainDateTime()
                 .toPlainTime(),
-            createdBy: createdBy as string,
+            createdBy: readStringParameter(createdBy, 'Result creator'),
             createdTs: toPlainDateTime(createdTs),
-            expiryTs: String(expiryTs).endsWith('Z')
-                ? Temporal.Instant.from(expiryTs as string)
-                : Temporal.PlainDateTime.from(expiryTs as string)
-                    .toZonedDateTime('UTC')
-                    .toInstant()
+            expiryTs: toInstant(expiryTs)
         },
         dequeueAudit: { attempts: 0 }
     };
 }
 
-function toResultRow(entry: ResourceEntry) {
+function toResultRow(entry: ResourceEntry): ResourceInboxResultDatabaseRow {
     return {
         ris_row_id: 1n,
         ris_resource_id: entry.key.resourceId,
@@ -355,7 +415,7 @@ function toResultRow(entry: ResourceEntry) {
     };
 }
 
-function toInboxRow(entry: ResourceEntry) {
+function toInboxRow(entry: ResourceEntry): ResourceInboxDatabaseRow {
     return {
         ri_row_id: 1n,
         ri_resource_id: entry.key.resourceId,
@@ -375,13 +435,114 @@ function toInboxRow(entry: ResourceEntry) {
     };
 }
 
-function toPlainDateTime(value: unknown): Temporal.PlainDateTime {
-    return Temporal.PlainDateTime.from(String(value).replace(/Z$/u, ''));
+function toPlainDateTime(value: PSqlParameter): Temporal.PlainDateTime {
+    if (value instanceof Date && Number.isFinite(value.getTime())) {
+        return Temporal.Instant.fromEpochMilliseconds(value.getTime())
+            .toZonedDateTimeISO('UTC')
+            .toPlainDateTime();
+    }
+    if (typeof value !== 'string') {
+        throw new TypeError('AppInbox timestamp must be a string or Date');
+    }
+    return Temporal.PlainDateTime.from(value.replace(/Z$/u, ''));
 }
 
-function toInstant(value: unknown): Temporal.Instant {
-    const text = String(value);
+function toInstant(value: PSqlParameter): Temporal.Instant {
+    if (value instanceof Date && Number.isFinite(value.getTime())) {
+        return Temporal.Instant.fromEpochMilliseconds(value.getTime());
+    }
+    if (typeof value !== 'string') {
+        throw new TypeError('AppInbox instant must be a string or Date');
+    }
+    const text = value;
     return Temporal.Instant.from(text.endsWith('Z') ? text : `${text}Z`);
+}
+
+function readRuntimeStateSqlSelectors(
+    value: PSqlParameter
+): readonly RuntimeStateReadBatchSelector[] {
+    const decoded = decodeJsonWireValue(
+        typeof value === 'string' ? JSON.parse(value) : value,
+        'Runtime-state SQL selectors'
+    );
+    if (!Array.isArray(decoded)) {
+        throw new TypeError('Runtime-state SQL selectors must be an array');
+    }
+    const selectors = decoded.map((selector, index): RuntimeStateReadBatchSelector => {
+        const record = readJsonWireObject(selector, `Runtime-state SQL selector ${index}`);
+        const selectorId = readJsonWireString(record.selectorId, 'Runtime-state selector ID');
+        const namespace = readJsonWireString(record.namespace, 'Runtime-state selector namespace');
+        if (record.kind === 'key') {
+            return {
+                selectorId,
+                kind: record.kind,
+                namespace,
+                key: readJsonWireString(record.key, 'Runtime-state selector key')
+            };
+        }
+        if (record.kind === 'prefix') {
+            return {
+                selectorId,
+                kind: record.kind,
+                namespace,
+                keyPrefix: readJsonWireString(
+                    record.keyPrefix,
+                    'Runtime-state selector key prefix'
+                )
+            };
+        }
+        throw new TypeError('Runtime-state SQL selector kind is invalid');
+    });
+    return validateRuntimeStateReadBatchSelectors(selectors);
+}
+
+function readJsonWireObject(value: JsonWireValue, label: string): JsonWireObject {
+    if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+        throw new TypeError(`${label} must be an object`);
+    }
+    return value as JsonWireObject;
+}
+
+function readJsonWireString(value: JsonWireValue | undefined, label: string): string {
+    if (typeof value !== 'string') {
+        throw new TypeError(`${label} must be a string`);
+    }
+    return value;
+}
+
+function readStringParameter(value: PSqlParameter, label: string): string {
+    if (typeof value !== 'string') {
+        throw new TypeError(`${label} must be a string`);
+    }
+    return value;
+}
+
+function readDateParameter(value: PSqlParameter, label: string): Date {
+    if (!(value instanceof Date) || !Number.isFinite(value.getTime())) {
+        throw new TypeError(`${label} must be a valid Date`);
+    }
+    return value;
+}
+
+function readEntityStatus(value: PSqlParameter, label: string): EntityStatus {
+    if (
+        typeof value !== 'string' ||
+        !Object.values(EntityStatus).some((status) => status === value)
+    ) {
+        throw new TypeError(`${label} is invalid`);
+    }
+    return value as EntityStatus;
+}
+
+function readNonNegativeIntegerParameter(value: PSqlParameter, label: string): number {
+    if (typeof value !== 'number' && typeof value !== 'bigint') {
+        throw new TypeError(`${label} must be a non-negative safe integer`);
+    }
+    const numberValue = typeof value === 'bigint' ? Number(value) : value;
+    if (!Number.isSafeInteger(numberValue) || numberValue < 0) {
+        throw new TypeError(`${label} must be a non-negative safe integer`);
+    }
+    return numberValue;
 }
 
 function toResourceKey(entry: ResourceEntry): string {

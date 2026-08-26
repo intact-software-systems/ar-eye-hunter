@@ -6,7 +6,8 @@ import type {
     GroupMutationRead
 } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
 import { computeGroupMutation } from '@shared-server/rallar-system/group-state/mutation/orchestration/compute-group-mutation.ts';
-import { groupStateGroupStorageKey, groupStateMemberStorageKey } from '@shared-server/rallar-system/group-state/persistence/group-state-storage-keys.ts';
+import { groupStateGroupStorageKey } from '@shared-server/rallar-system/group-state/persistence/aggregate/group-aggregate-storage-keys.ts';
+import { groupStateMemberStorageKey } from '@shared-server/rallar-system/group-state/persistence/membership/group-membership-storage-key.ts';
 import type { AuditStamp, Group, GroupMember, GroupRef } from '@shared/api/group-types.ts';
 import { decodeCanonicalGroupPresenceSummaryEntry } from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
 import { describe, expect, it } from 'vitest';

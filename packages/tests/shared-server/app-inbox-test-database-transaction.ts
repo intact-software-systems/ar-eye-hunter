@@ -7,7 +7,7 @@ import {
     type AppInboxTestPendingWrites,
     type AppInboxTestResourceRepositories
 } from './app-inbox-test-database-contracts.ts';
-import { createAppInboxTestTransactionSql } from './app-inbox-test-database-sql.ts';
+import { createAppInboxTestDatabaseSql } from './app-inbox-test-database-sql.ts';
 
 interface CreateAppInboxTestTransactionInput {
     readonly repositories: AppInboxTestResourceRepositories;
@@ -58,7 +58,7 @@ async function writePendingAppInboxTestTransaction<T>({
     runtime
 }: RunAppInboxTestTransactionInput<T>): Promise<T> {
     const pending = createAppInboxTestPendingWrites(state);
-    const transaction = createAppInboxTestTransactionSql({
+    const transaction = createAppInboxTestDatabaseSql({
         repositories,
         options,
         state,

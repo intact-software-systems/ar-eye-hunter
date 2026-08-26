@@ -12,6 +12,12 @@ import type { RuntimeStateEntry, RuntimeStateRepositoryLike } from '../../../run
 import type { JsonWireValue } from '../../protocol/json-wire-identity.ts';
 import { readStableStateSnapshot } from '../../state-events/state-snapshot-read.ts';
 import type { GroupSnapshotPage, GroupSnapshotPageOptions } from '../group-state-service-contracts.ts';
+import { canonicalStoredGroup, toGroupStateAuthorityGuard } from './aggregate/group-aggregate-repository.ts';
+import {
+    decodeGroupStateGroupStorageKey,
+    groupStateGroupStorageKey,
+    groupStateScopeStorageKey
+} from './aggregate/group-aggregate-storage-keys.ts';
 import {
     assembleGroupStateSnapshot,
     collectGroupStateValuesByGroupId,
@@ -20,9 +26,6 @@ import {
     type GroupStateSnapshotPageGroup,
     type GroupStateSnapshotPageScan
 } from './assemble-group-state-snapshot.ts';
-import { canonicalStoredGroup, toGroupStateAuthorityGuard } from './group-aggregate-repository.ts';
-import { canonicalStoredMember } from './group-membership-repository.ts';
-import { canonicalStoredSession, canonicalStoredSummary } from './group-presence-repository.ts';
 import {
     assertDecodedGroupScope,
     decodeStoredGroupStateKey,
@@ -36,13 +39,10 @@ import {
     PRESENCE_SUMMARIES_NAMESPACE,
     SESSIONS_NAMESPACE
 } from './group-state-runtime-namespaces.ts';
-import {
-    decodeGroupStateGroupStorageKey,
-    decodeGroupStateMemberStorageKey,
-    decodeGroupStatePresenceSessionStorageKey,
-    groupStateGroupStorageKey,
-    groupStateScopeStorageKey
-} from './group-state-storage-keys.ts';
+import { canonicalStoredMember } from './membership/group-membership-repository.ts';
+import { decodeGroupStateMemberStorageKey } from './membership/group-membership-storage-key.ts';
+import { canonicalStoredSession, canonicalStoredSummary } from './presence/group-presence-repository.ts';
+import { decodeGroupStatePresenceSessionStorageKey } from './presence/group-presence-storage-keys.ts';
 import { readGroupStateAuthorityBatch } from './read-group-state-authority.ts';
 
 export abstract class GroupStateSnapshotRepository extends RuntimeStateJsonStore {
