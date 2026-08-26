@@ -1,11 +1,15 @@
-import { readCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topology-config-canonical.ts';
 import { toAuthAppInboxType } from '../auth/inbox/auth-app-inbox-routing.ts';
 import { decodeAuthMutationIntent } from '../auth/mutation/decode-auth-mutation-intent.ts';
+import { decodeCrdtMutationCommand } from '../crdt/mutation/crdt-mutation-command-codec.ts';
 import { toDescriptorCommand } from '../group-state/group-mutation-authority.ts';
 import type { GroupMutationDescriptor } from '../group-state/group-state-service-contracts.ts';
 import { validateGroupMutationCommand } from '../group-state/mutation/command-validation/validate-group-mutation-command.ts';
-import { decodeJsonWireValue, type JsonWireValue } from '../protocol/json-wire-identity.ts';
-import { validateRtcRttMeasurement } from '../rtc-rtt/persistence/rtc-rtt-persistence-validation.ts';
+import { decodeJsonWireValue, type JsonWireObject, type JsonWireValue } from '../protocol/json-wire-identity.ts';
+import { readRtcRttAppInboxCommand } from '../rtc-rtt/inbox/rtc-rtt-app-inbox-authority.ts';
+import {
+    readDurableTopologyAppInboxCommand,
+    toTopologyAppInboxType
+} from '../topology/inbox/topology-app-inbox-command.ts';
 import { AppInboxType, type AppInboxEnqueueInput } from './app-inbox-contracts.ts';
 
 export interface LogicalAppInboxCommand {
@@ -42,16 +46,19 @@ function encodeLogicalCommand(command: LogicalAppInboxCommand): JsonWireValue {
     return decodeJsonWireValue(command, 'Logical AppInbox command');
 }
 
-function toStableGroupCommand<Authority>(
+function toStableGroupCommand(
     type: AppInboxType,
-    authority: Authority
+    authority: JsonWireValue | undefined
 ): JsonWireValue | undefined {
     const expectedOperation = toGroupAppInboxOperation(type);
     if (!expectedOperation) {
         return undefined;
     }
-    const authorized = requireRecord(authority);
-    const descriptor = requireRecord(authorized.descriptor) as GroupMutationDescriptor;
+    const authorized = requireLogicalJsonObject(authority, 'Logical group AppInbox authority');
+    const descriptor = requireLogicalJsonObject(
+        authorized.descriptor,
+        'Logical group AppInbox descriptor'
+    ) as GroupMutationDescriptor;
     const command = toDescriptorCommand(descriptor, () => {
         throw new TypeError('Authenticated group mutation requestId is required');
     });
@@ -169,8 +176,10 @@ function toStableAuthCommand(type: AppInboxType, value: JsonWireValue): JsonWire
 function toStableDomainCommand(type: AppInboxType, value: JsonWireValue): JsonWireValue | undefined {
     try {
         if (type === AppInboxType.CRDT_UPDATE_APPEND) {
-            const command = requireRecord(value);
-            const actor = requireRecord(command.actor);
+            const command = decodeCrdtMutationCommand(value);
+            if (command.operation !== 'append') {
+                throw new TypeError('CRDT append AppInbox operation is invalid');
+            }
             return decodeJsonWireValue({
                 operation: command.operation,
                 commandId: command.commandId,
@@ -178,26 +187,16 @@ function toStableDomainCommand(type: AppInboxType, value: JsonWireValue): JsonWi
                 documentKey: command.documentKey,
                 update: command.update,
                 authorizationScope: command.authorizationScope,
-                actor: { actorId: actor.actorId, principalId: actor.principalId }
+                actor: {
+                    actorId: command.actor.actorId,
+                    principalId: command.actor.principalId
+                }
             }, 'Logical CRDT AppInbox command');
         }
         if (type === AppInboxType.RTC_RTT_SUBMIT) {
-            const command = requireExactRecord(value, [
-                'actor',
-                'requestId',
-                'commandHash',
-                'mutationCommandHash',
-                'capturedAtEpochMs',
-                'rtt'
-            ]);
-            const actor = readActor(command.actor);
-            readNonEmptyString(command.requestId);
-            readNonEmptyString(command.commandHash);
-            readNonEmptyString(command.mutationCommandHash);
-            readEpoch(command.capturedAtEpochMs);
-            validateRtcRttMeasurement(command.rtt);
+            const command = readRtcRttAppInboxCommand(value);
             return decodeJsonWireValue({
-                actor,
+                actor: command.actor,
                 requestId: command.requestId,
                 commandHash: command.commandHash,
                 mutationCommandHash: command.mutationCommandHash,
@@ -207,37 +206,16 @@ function toStableDomainCommand(type: AppInboxType, value: JsonWireValue): JsonWi
         if (!TOPOLOGY_APP_INBOX_TYPES.has(type)) {
             return undefined;
         }
-        const command = requireExactRecord(value, [
-            'actor',
-            'groupRef',
-            'requestId',
-            'commandHash',
-            'capturedAtEpochMs',
-            'operation',
-            'payload'
-        ]);
-        const actor = readActor(command.actor);
-        const groupRef = requireExactRecord(command.groupRef, [
-            'applicationId',
-            'workspaceId',
-            'groupId'
-        ]);
-        readNonEmptyString(groupRef.applicationId);
-        readNonEmptyString(groupRef.workspaceId);
-        readNonEmptyString(groupRef.groupId);
-        readNonEmptyString(command.requestId);
-        readNonEmptyString(command.commandHash);
-        readEpoch(command.capturedAtEpochMs);
-        const payload = readTopologyPayload(command.payload);
-        if (command.operation !== payload.operation) {
-            throw new TypeError('Topology operation differs from payload');
+        const command = readDurableTopologyAppInboxCommand(value);
+        if (toTopologyAppInboxType(command.operation) !== type) {
+            throw new TypeError('Topology operation differs from AppInbox type');
         }
         return decodeJsonWireValue({
-            actor: { principalId: actor.principalId },
-            groupRef,
+            actor: { principalId: command.actor.principalId },
+            groupRef: command.groupRef,
             requestId: command.requestId,
             operation: command.operation,
-            payload
+            payload: command.payload
         }, 'Logical topology AppInbox command');
     }
     catch {
@@ -253,83 +231,16 @@ const TOPOLOGY_APP_INBOX_TYPES = new Set<AppInboxType>([
     AppInboxType.TOPOLOGY_RECONFIGURE
 ]);
 
-function readTopologyPayload(value: unknown): Record<string, unknown> {
-    const record = requireRecord(value);
-    switch (record.operation) {
-        case 'putConfig':
-            requireExactKeys(record, ['operation', 'config']);
-            readCanonicalGroupTopologyConfigPatch(record.config);
-            return record;
-        case 'deleteConfig':
-            requireExactKeys(record, ['operation', 'target']);
-            if (record.target !== 'config') {
-                throw new TypeError('Invalid target');
-            }
-            return record;
-        case 'putOverride':
-            requireExactKeys(record, ['operation', 'config', 'ttlMs', 'expiresAtEpochMs']);
-            readCanonicalGroupTopologyConfigPatch(record.config);
-            readFiniteNumberOrNull(record.ttlMs);
-            readFiniteNumberOrNull(record.expiresAtEpochMs);
-            return record;
-        case 'deleteOverride':
-            requireExactKeys(record, ['operation', 'target']);
-            if (record.target !== 'override') {
-                throw new TypeError('Invalid target');
-            }
-            return record;
-        case 'reconfigureTopology':
-            requireExactKeys(record, ['operation', 'requestOptions', 'publish']);
-            readCanonicalGroupTopologyConfigPatch(record.requestOptions);
-            if (typeof record.publish !== 'boolean') {
-                throw new TypeError('Invalid publish flag');
-            }
-            return record;
-        default:
-            throw new TypeError('Invalid topology operation');
+function requireLogicalJsonObject(
+    value: JsonWireValue | undefined,
+    label: string
+): JsonWireObject {
+    if (value === undefined || value === null || typeof value !== 'object' || isJsonWireArray(value)) {
+        throw new TypeError(`${label} must be an exact object`);
     }
+    return value;
 }
 
-function readActor(value: unknown): Record<string, unknown> {
-    const actor = requireExactRecord(value, ['principalId', 'sessionId']);
-    readNonEmptyString(actor.principalId);
-    readNonEmptyString(actor.sessionId);
-    return actor;
-}
-
-function requireExactRecord(value: unknown, expected: readonly string[]): Record<string, unknown> {
-    const record = requireRecord(value);
-    requireExactKeys(record, expected);
-    return record;
-}
-
-function requireRecord(value: unknown): Record<string, unknown> {
-    if (value === null || typeof value !== 'object' || Array.isArray(value)) {
-        throw new TypeError('Expected record');
-    }
-    return value as Record<string, unknown>;
-}
-
-function requireExactKeys(record: Record<string, unknown>, expected: readonly string[]): void {
-    if (JSON.stringify(Object.keys(record).toSorted()) !== JSON.stringify([...expected].toSorted())) {
-        throw new TypeError('Unexpected durable command fields');
-    }
-}
-
-function readNonEmptyString(value: unknown): void {
-    if (typeof value !== 'string' || value.length === 0) {
-        throw new TypeError('Expected non-empty string');
-    }
-}
-
-function readEpoch(value: unknown): void {
-    if (!Number.isSafeInteger(value) || (value as number) < 0) {
-        throw new TypeError('Expected epoch');
-    }
-}
-
-function readFiniteNumberOrNull(value: unknown): void {
-    if (value !== null && (typeof value !== 'number' || !Number.isFinite(value))) {
-        throw new TypeError('Expected finite number or null');
-    }
+function isJsonWireArray(value: JsonWireValue): value is readonly JsonWireValue[] {
+    return Array.isArray(value);
 }
