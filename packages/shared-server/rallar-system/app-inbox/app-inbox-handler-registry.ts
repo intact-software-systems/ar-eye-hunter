@@ -100,117 +100,126 @@ export class AppInboxHandlerRegistry {
             throw new Error(`AppInbox handler ${type} is already registered by ${this.serviceId}`);
         }
         this.inbox.onInboxMessageDo(registration.type, {
-            onMessage: async (message: ALMessage, entry: ResourceEntry) => {
-                const fallbackEnqueue: AppInboxEnqueueInput<JsonWireValue, JsonWireValue> = {
-                    type,
-                    resourceId: entry.key.resourceId,
-                    contextId: entry.key.contextId,
-                    data: null
-                };
-                let context: AppInboxMessageContext<Result> | undefined;
-
-                await timeRallarAsync(
-                    this.timing,
-                    {
-                        component: 'app-inbox-handler',
-                        operation: String(type),
-                        serviceId: this.serviceId,
-                        requestId: entry.key.resourceId,
-                        details: {
-                            type,
-                            topicId: entry.key.topicId,
-                            contextId: entry.key.contextId,
-                            resourceId: entry.key.resourceId
-                        }
-                    },
-                    async () => {
-                        try {
-                            const identity = validateAppInboxCommandIdentity(entry);
-                            if (!identity.valid) {
-                                throw new AppInboxCommandIdentityError(
-                                    identity.identity.operationSource
-                                );
-                            }
-                            const enqueue = identity.command;
-                            const command = registration.decodeCommand(enqueue.data);
-                            const validatedContext: AppInboxMessageContext<Result> = {
-                                enqueue,
-                                message,
-                                entry,
-                                encodeResult: registration.encodeResult
-                            };
-                            context = validatedContext;
-                            this.transactionWriter.begin(validatedContext);
-                            const result = await this.timePhase(
-                                'handler-action',
-                                enqueue,
-                                entry.key,
-                                async () => await registration.handle(command, validatedContext)
-                            );
-                            const finalization = this.transactionWriter.read(validatedContext);
-                            if (finalization.state === 'transaction-finalized') {
-                                return finalization.result;
-                            }
-                            await this.timePhase(
-                                'write-result',
-                                enqueue,
-                                entry.key,
-                                async () => {
-                                    await this.results.replace(
-                                        toResourceEntryWithUpdatedResource(
-                                            entry,
-                                            EntityStatus.COMPLETED,
-                                            registration.encodeResult(result)
-                                        )
-                                    );
-                                },
-                                { resultStatus: EntityStatus.COMPLETED }
-                            );
-                        }
-                        catch (error) {
-                            if (context) {
-                                const finalization = this.transactionWriter.read(context);
-                                if (
-                                    finalization.state === 'transaction-finalized' &&
-                                    finalization.status === EntityStatus.COMPLETED
-                                ) {
-                                    return finalization.result;
-                                }
-                            }
-                            const classification = classifyAppInboxError(error);
-                            if (classification.kind === 'retryable') {
-                                this.recordQueueRetryTiming(
-                                    context?.enqueue ?? fallbackEnqueue,
-                                    entry,
-                                    classification,
-                                    error
-                                );
-                                throw error;
-                            }
-                            const terminalContext = context ?? {
-                                enqueue: fallbackEnqueue,
-                                message,
-                                entry,
-                                encodeResult: registration.encodeResult
-                            };
-                            await this.transactionWriter.writeTerminalFailure(
-                                terminalContext,
-                                encodeAppInboxFailure(classification.result)
-                            );
-                            throw new ResourceInboxFinalizedByHandlerError(
-                                toFinalizedResourceEntry(
-                                    terminalContext,
-                                    EntityStatus.FAILED,
-                                    this.nowEpochMs()
-                                ),
-                                error instanceof Error ? error : new Error(String(error))
-                            );
-                        }
-                    }
-                );
+            onMessage: async (message, entry) => {
+                await this.handleRegisteredMessage(registration, message, entry);
             }
         });
         this.registeredTypes.add(type);
+    }
+
+    private async handleRegisteredMessage<Command, Result>(
+        registration: AppInboxHandlerRegistry.Registration<Command, Result>,
+        message: ALMessage,
+        entry: ResourceEntry
+    ): Promise<void> {
+        const type = registration.type;
+        const fallbackEnqueue: AppInboxEnqueueInput<JsonWireValue, JsonWireValue> = {
+            type,
+            resourceId: entry.key.resourceId,
+            contextId: entry.key.contextId,
+            data: null
+        };
+        let context: AppInboxMessageContext<Result> | undefined;
+
+        await timeRallarAsync(
+            this.timing,
+            {
+                component: 'app-inbox-handler',
+                operation: String(type),
+                serviceId: this.serviceId,
+                requestId: entry.key.resourceId,
+                details: {
+                    type,
+                    topicId: entry.key.topicId,
+                    contextId: entry.key.contextId,
+                    resourceId: entry.key.resourceId
+                }
+            },
+            async () => {
+                try {
+                    const identity = validateAppInboxCommandIdentity(entry);
+                    if (!identity.valid) {
+                        throw new AppInboxCommandIdentityError(
+                            identity.identity.operationSource
+                        );
+                    }
+                    const enqueue = identity.command;
+                    const command = registration.decodeCommand(enqueue.data);
+                    const validatedContext: AppInboxMessageContext<Result> = {
+                        enqueue,
+                        message,
+                        entry,
+                        encodeResult: registration.encodeResult
+                    };
+                    context = validatedContext;
+                    this.transactionWriter.begin(validatedContext);
+                    const result = await this.timePhase(
+                        'handler-action',
+                        enqueue,
+                        entry.key,
+                        async () => await registration.handle(command, validatedContext)
+                    );
+                    const finalization = this.transactionWriter.read(validatedContext);
+                    if (finalization.state === 'transaction-finalized') {
+                        return finalization.result;
+                    }
+                    await this.timePhase(
+                        'write-result',
+                        enqueue,
+                        entry.key,
+                        async () => {
+                            await this.results.replace(
+                                toResourceEntryWithUpdatedResource(
+                                    entry,
+                                    EntityStatus.COMPLETED,
+                                    registration.encodeResult(result)
+                                )
+                            );
+                        },
+                        { resultStatus: EntityStatus.COMPLETED }
+                    );
+                }
+                catch (error) {
+                    if (context) {
+                        const finalization = this.transactionWriter.read(context);
+                        if (
+                            finalization.state === 'transaction-finalized' &&
+                            finalization.status === EntityStatus.COMPLETED
+                        ) {
+                            return finalization.result;
+                        }
+                    }
+                    const classification = classifyAppInboxError(error);
+                    if (classification.kind === 'retryable') {
+                        this.recordQueueRetryTiming(
+                            context?.enqueue ?? fallbackEnqueue,
+                            entry,
+                            classification,
+                            error
+                        );
+                        throw error;
+                    }
+                    const terminalContext = context ?? {
+                        enqueue: fallbackEnqueue,
+                        message,
+                        entry,
+                        encodeResult: registration.encodeResult
+                    };
+                    await this.transactionWriter.writeTerminalFailure(
+                        terminalContext,
+                        encodeAppInboxFailure(classification.result)
+                    );
+                    throw new ResourceInboxFinalizedByHandlerError(
+                        toFinalizedResourceEntry(
+                            terminalContext,
+                            EntityStatus.FAILED,
+                            this.nowEpochMs()
+                        ),
+                        error instanceof Error ? error : new Error(String(error))
+                    );
+                }
+            }
+        );
     }
 
     assertRegistrationComplete(expectedTypes: readonly AppInboxType[]): void {
