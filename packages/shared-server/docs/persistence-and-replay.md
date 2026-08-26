@@ -71,8 +71,9 @@ have separate owners:
 
 - `AppInboxQueueClient` materializes reservations, enqueues, wakes, waits, and
   decodes results;
-- `AppInboxHandlerRegistry` registers exact command decoders and handlers and
-  classifies retryable versus terminal failures;
+- `AppInboxHandlerRegistry` registers exact command decoders and handlers;
+- `AppInboxHandlerExecutor` invokes registered handlers and classifies
+  retryable versus terminal failures;
 - the domain handler owns its read, compute, validate, and transaction-bound
   write;
 - `AppInboxTransactionWriter` owns the SQL transaction, durable result, and

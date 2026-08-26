@@ -9,14 +9,11 @@ import {
     type AppInboxEnqueueInput
 } from '../../app-inbox/app-inbox-contracts.ts';
 import { type AppInboxFailure } from '../../app-inbox/app-inbox-failure.ts';
-import { AppInboxHandlerRegistry } from '../../app-inbox/app-inbox-handler-registry.ts';
 import type { AppInboxOptions } from '../../app-inbox/app-inbox-options.ts';
 import type { AppInboxEntryRepository, AppInboxResultRepository } from '../../app-inbox/app-inbox-persistence-ports.ts';
 import { AppInboxQueueClient, SIMPLER_GROUP_STATE_APP_INBOX_TOPIC } from '../../app-inbox/app-inbox-queue-client.ts';
-import {
-    encodeAppInboxCommand,
-    encodeAppInboxResult
-} from '../../app-inbox/app-inbox-registration-codecs.ts';
+import { encodeAppInboxCommand, encodeAppInboxResult } from '../../app-inbox/app-inbox-registration-codecs.ts';
+import { createAppInboxHandlerRuntime } from '../../app-inbox/handler/app-inbox-handler-runtime.ts';
 import type { IssuedAuthSession } from '../../auth/persistence/auth-session-types.ts';
 import type { GroupStateService } from '../../group-state/group-state-service-contracts.ts';
 import type { RallarTimingSink } from '../../observability/timing.ts';
@@ -95,21 +92,18 @@ export class TopologyInboxService {
                 wakeOwningQueue: config.wakeOwningQueue
             }
         );
-        const handlers = new AppInboxHandlerRegistry(
-            {
-                inboxQueueReader: dependencies.inboxQueueReader,
-                resourceInboxResultsRepository: dependencies.resourceInboxResultsRepository,
-                database: dependencies.database
-            },
-            {
-                serviceId: config.serviceId,
-                timing: config.timing,
-                options: config.options
-            }
-        );
+        const handlerRuntime = createAppInboxHandlerRuntime({
+            inboxQueueReader: dependencies.inboxQueueReader,
+            resultRepository: dependencies.resourceInboxResultsRepository,
+            database: dependencies.database,
+            serviceId: config.serviceId,
+            timing: config.timing,
+            options: config.options
+        });
+        const handlers = handlerRuntime.registry;
         this.handler = new TopologyAppInboxHandler({
             groupStateService: dependencies.groupStateService,
-            transactionWriter: handlers.transactionWriter,
+            transactionWriter: handlerRuntime.transactionWriter,
             nowEpochMs: () => this.queueClient.nowEpochMs(),
             wakeQueue: config.wakeOwningQueue
         });

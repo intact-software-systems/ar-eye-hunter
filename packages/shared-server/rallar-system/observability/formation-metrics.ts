@@ -1,5 +1,6 @@
 import { AppTopics } from '@shared/api/api-config.ts';
 import {
+    GROUP_FORMATION_MUTATION_OUTCOMES,
     type GroupFormationMutationOutcome,
     type GroupFormationOperationKind,
     type RallarGroupFormationMetrics
@@ -97,7 +98,10 @@ export function createGroupFormationMetricsRecorder(): RallarGroupFormationMetri
     const groupMutation: GroupFormationGroupMutationSink = (event) => {
         try {
             const kind = toGroupFormationOperationKind(event.operation);
-            metrics.groupMutationCount[kind][event.outcome] += 1;
+            const outcome = isGroupFormationMutationOutcome(event.outcome)
+                ? event.outcome
+                : 'rejected';
+            metrics.groupMutationCount[kind][outcome] += 1;
         }
         catch {
             // Recording must never affect mutation behavior.
@@ -211,6 +215,10 @@ function createMutableGroupFormationMetrics(): MutableGroupFormationMetrics {
 
 function emptyOutcomeCounts(): MutableOutcomeCounts {
     return { write: 0, noOp: 0, rejected: 0 };
+}
+
+function isGroupFormationMutationOutcome(value: string): value is GroupFormationMutationOutcome {
+    return (GROUP_FORMATION_MUTATION_OUTCOMES as readonly string[]).includes(value);
 }
 
 function incrementByTopic(counts: Record<string, number>, topicId: string, amount: number): void {

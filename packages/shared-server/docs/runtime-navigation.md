@@ -91,6 +91,10 @@ Registration and invocation are separate:
 ```text
 construction
   domain inbox service constructor
+    -> createAppInboxHandlerRuntime
+    -> AppInboxTransactionWriter
+    -> AppInboxHandlerExecutor
+    -> AppInboxHandlerRegistry
     -> AppInboxHandlerRegistry.registerHandler
     -> InboxQueueReader.onInboxMessageDo
 
@@ -101,7 +105,7 @@ runtime
     -> AppInboxQueueClient reserve/enqueue/wait
     -> QueueBox application-inbox task
     -> InboxQueueReader invokes the registered callback once per reserved attempt
-    -> AppInboxHandlerRegistry.handleRegisteredMessage
+    -> AppInboxHandlerExecutor.execute
     -> validateAppInboxCommandIdentity
     -> registration.decodeCommand(JsonWireValue)
     -> domain handler read/compute/validate

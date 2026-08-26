@@ -16,7 +16,6 @@ import { PSqlResourceInboxEntryRepository } from '@shared-server/queuebox/postgr
 import { ResourceInboxResultsRepository } from '@shared-server/queuebox/postgres/resource-inbox-results-repository.ts';
 import type { AppInboxFailure } from '../../app-inbox/app-inbox-failure.ts';
 import { toUnavailableAppInboxFailure } from '../../app-inbox/app-inbox-failure.ts';
-import { AppInboxHandlerRegistry } from '../../app-inbox/app-inbox-handler-registry.ts';
 import {
     DEFAULT_APP_INBOX_WAIT_JITTER_RATIO,
     DEFAULT_APP_INBOX_WAIT_MAX_ELAPSED_MSECS,
@@ -26,10 +25,10 @@ import {
 } from '../../app-inbox/app-inbox-options.ts';
 import type { AppInboxEntryRepository, AppInboxResultRepository } from '../../app-inbox/app-inbox-persistence-ports.ts';
 import { AppInboxQueueClient } from '../../app-inbox/app-inbox-queue-client.ts';
-import {
-    encodeAppInboxCommand,
-    encodeAppInboxResult
-} from '../../app-inbox/app-inbox-registration-codecs.ts';
+import { encodeAppInboxCommand, encodeAppInboxResult } from '../../app-inbox/app-inbox-registration-codecs.ts';
+import { AppInboxHandlerRegistry } from '../../app-inbox/handler/app-inbox-handler-registry.ts';
+import { createAppInboxHandlerRuntime } from '../../app-inbox/handler/app-inbox-handler-runtime.ts';
+import { AppInboxTransactionWriter } from '../../app-inbox/handler/app-inbox-transaction-writer.ts';
 import type { AdminExpiredDataPruner } from '../admin-expired-data-pruner.ts';
 import { toAdminPruneExpiredOptions } from '../admin-prune-options.ts';
 import { toAdminPruneOutbox } from '../prune/admin-prune-page-codec.ts';
@@ -123,6 +122,7 @@ export class AppAdminInboxService {
     private readonly aggregateWaitPolicy: TryWithPolicy;
     private readonly queueClient: AppInboxQueueClient;
     private readonly handlers: AppInboxHandlerRegistry;
+    private readonly transactionWriter: AppInboxTransactionWriter;
     private readonly serviceId: string;
 
     constructor(dependencies: AppAdminInboxServiceDependencies, config: AppAdminInboxServiceConfig) {
@@ -140,18 +140,16 @@ export class AppAdminInboxService {
                 wakeOwningQueue: dependencies.wakeQueueEngine
             }
         );
-        this.handlers = new AppInboxHandlerRegistry(
-            {
-                inboxQueueReader: dependencies.inboxQueueReader,
-                resourceInboxResultsRepository: dependencies.resourceInboxResultsRepository,
-                database: dependencies.database
-            },
-            {
-                serviceId: config.serviceId,
-                timing: config.timing,
-                options: config.appInbox
-            }
-        );
+        const handlerRuntime = createAppInboxHandlerRuntime({
+            inboxQueueReader: dependencies.inboxQueueReader,
+            resultRepository: dependencies.resourceInboxResultsRepository,
+            database: dependencies.database,
+            serviceId: config.serviceId,
+            timing: config.timing,
+            options: config.appInbox
+        });
+        this.handlers = handlerRuntime.registry;
+        this.transactionWriter = handlerRuntime.transactionWriter;
         this.serviceId = config.serviceId;
         this.dependencies = dependencies;
         this.config = config;
@@ -249,7 +247,7 @@ export class AppAdminInboxService {
         );
         throwOnAdminPruneValidationIssues(issues);
 
-        const result = await this.handlers.writeMutation(context, async (transaction) => {
+        const result = await this.transactionWriter.writeMutation(context, async (transaction) => {
             const outbox = new PSqlResourceInboxEntryRepository(transaction);
             for (const entry of computed.outboxEntries) {
                 await outbox.write(entry);

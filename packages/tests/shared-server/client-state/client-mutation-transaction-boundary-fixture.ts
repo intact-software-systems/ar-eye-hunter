@@ -5,7 +5,7 @@ import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import { type AppInboxMessageContext } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import { encodeAppInboxResult } from '@shared-server/rallar-system/app-inbox/app-inbox-registration-codecs.ts';
-import { AppInboxTransactionWriter } from '@shared-server/rallar-system/app-inbox/app-inbox-transaction-writer.ts';
+import { AppInboxTransactionWriter } from '@shared-server/rallar-system/app-inbox/handler/app-inbox-transaction-writer.ts';
 import type { ClientStateWritten } from '@shared-server/rallar-system/client-state/client-state-service-contracts.ts';
 import { ClientStateInboxHandler } from '@shared-server/rallar-system/client-state/inbox/client-state-inbox-handler.ts';
 import { toClientMutationIssuedSessionAuthority } from '@shared-server/rallar-system/client-state/mutation/client-mutation-authority.ts';
@@ -72,12 +72,13 @@ export async function createHandlerHarness(options: Readonly<{ failTransaction?:
                 return snapshot;
             }
         },
-        transactionWriter: new AppInboxTransactionWriter({
-            database,
-            serviceId: 'client-inbox-service',
-            nowEpochMs: () => 1_700_000_000_000,
-            toTimingDetails: () => ({})
-        }),
+        transactionWriter: new AppInboxTransactionWriter(
+            { database },
+            {
+                serviceId: 'client-inbox-service',
+                nowEpochMs: () => 1_700_000_000_000
+            }
+        ),
         serviceId: 'client-inbox-service'
     });
     return { actions, committedSnapshot, context, handler, observedSnapshots, results };

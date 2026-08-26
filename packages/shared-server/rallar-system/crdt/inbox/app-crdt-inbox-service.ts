@@ -14,13 +14,12 @@ import {
     type AppInboxMessageContext
 } from '../../app-inbox/app-inbox-contracts.ts';
 import type { AppInboxFailure } from '../../app-inbox/app-inbox-failure.ts';
-import { AppInboxHandlerRegistry } from '../../app-inbox/app-inbox-handler-registry.ts';
 import type { AppInboxOptions } from '../../app-inbox/app-inbox-options.ts';
 import { AppInboxQueueClient } from '../../app-inbox/app-inbox-queue-client.ts';
-import {
-    encodeAppInboxCommand,
-    encodeAppInboxResult
-} from '../../app-inbox/app-inbox-registration-codecs.ts';
+import { encodeAppInboxCommand, encodeAppInboxResult } from '../../app-inbox/app-inbox-registration-codecs.ts';
+import { AppInboxHandlerRegistry } from '../../app-inbox/handler/app-inbox-handler-registry.ts';
+import { createAppInboxHandlerRuntime } from '../../app-inbox/handler/app-inbox-handler-runtime.ts';
+import { AppInboxTransactionWriter } from '../../app-inbox/handler/app-inbox-transaction-writer.ts';
 import type { RallarTimingSink } from '../../observability/timing.ts';
 import { createCrdtMutationCommand, decodeCrdtMutationCommand } from '../mutation/crdt-mutation-command-codec.ts';
 import {
@@ -89,6 +88,7 @@ export namespace AppCrdtInboxService {
 export class AppCrdtInboxService {
     private readonly queueClient: AppInboxQueueClient;
     private readonly handlers: AppInboxHandlerRegistry;
+    private readonly transactionWriter: AppInboxTransactionWriter;
     private readonly readCurrentSession: ReadCurrentCrdtMutationSession;
     private readonly wakeQueueEngine: () => void;
     private readonly serviceId: string;
@@ -110,18 +110,16 @@ export class AppCrdtInboxService {
                 wakeOwningQueue: dependencies.wakeQueueEngine
             }
         );
-        this.handlers = new AppInboxHandlerRegistry(
-            {
-                inboxQueueReader: dependencies.inboxQueueReader,
-                resourceInboxResultsRepository: dependencies.resourceInboxResultsRepository,
-                database: dependencies.database
-            },
-            {
-                serviceId: config.serviceId,
-                timing: config.timing,
-                options: config.appInbox
-            }
-        );
+        const handlerRuntime = createAppInboxHandlerRuntime({
+            inboxQueueReader: dependencies.inboxQueueReader,
+            resultRepository: dependencies.resourceInboxResultsRepository,
+            database: dependencies.database,
+            serviceId: config.serviceId,
+            timing: config.timing,
+            options: config.appInbox
+        });
+        this.handlers = handlerRuntime.registry;
+        this.transactionWriter = handlerRuntime.transactionWriter;
         this.serviceId = config.serviceId;
         this.mutationService = dependencies.mutationService;
         this.readCurrentSession = dependencies.readCurrentSession;
@@ -276,7 +274,7 @@ export class AppCrdtInboxService {
         if (computed.outcome === 'rejected' && isCrdtHttpAdminIdentity({ command, appInboxContext })) {
             throw toCrdtHttpAdminRejection(computed.code);
         }
-        const result = await this.handlers.writeMutation(
+        const result = await this.transactionWriter.writeMutation(
             appInboxContext,
             async (transaction) => await this.mutationService.write(transaction, computed)
         );

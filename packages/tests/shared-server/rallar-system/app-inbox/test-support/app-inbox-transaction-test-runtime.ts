@@ -2,8 +2,11 @@ import { Temporal } from '@js-temporal/polyfill';
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import type { AppInboxEnqueueInput } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import { AppInboxType, type AppInboxMessageContext } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
-import { AppInboxHandlerRegistry } from '@shared-server/rallar-system/app-inbox/app-inbox-handler-registry.ts';
 import { AppInboxQueueClient } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-client.ts';
+import type { AppInboxHandlerRegistration } from '@shared-server/rallar-system/app-inbox/handler/app-inbox-handler-registration.ts';
+import { AppInboxHandlerRegistry } from '@shared-server/rallar-system/app-inbox/handler/app-inbox-handler-registry.ts';
+import { createAppInboxHandlerRuntime } from '@shared-server/rallar-system/app-inbox/handler/app-inbox-handler-runtime.ts';
+import { AppInboxTransactionWriter } from '@shared-server/rallar-system/app-inbox/handler/app-inbox-transaction-writer.ts';
 import { newALRoute, newALUntargetedMessage } from '@shared/al-contracts/al-contract.ts';
 
 import type { RallarTimingEvent } from '@shared-server/rallar-system/observability/timing.ts';
@@ -65,26 +68,34 @@ interface AtomicResultRow {
 class AtomicAppInboxService {
     private readonly queueClient: AppInboxQueueClient;
     private readonly handlerRegistry: AppInboxHandlerRegistry;
+    private readonly transactionWriter: AppInboxTransactionWriter;
 
     constructor(
-        dependencies:
-            & AppInboxQueueClient.Dependencies
-            & AppInboxHandlerRegistry.Dependencies,
-        config: AppInboxQueueClient.Config & AppInboxHandlerRegistry.Config
+        dependencies: AppInboxQueueClient.Dependencies & Readonly<{ database: PSqlSql; }>,
+        config: AppInboxQueueClient.Config
     ) {
         this.queueClient = new AppInboxQueueClient(dependencies, config);
-        this.handlerRegistry = new AppInboxHandlerRegistry(dependencies, config);
+        const handlerRuntime = createAppInboxHandlerRuntime({
+            inboxQueueReader: dependencies.inboxQueueReader,
+            resultRepository: dependencies.resourceInboxResultsRepository,
+            database: dependencies.database,
+            serviceId: config.serviceId,
+            timing: config.timing,
+            options: config.options
+        });
+        this.handlerRegistry = handlerRuntime.registry;
+        this.transactionWriter = handlerRuntime.transactionWriter;
     }
 
     async commit<R>(
         context: AppInboxMessageContext<R>,
         write: (transaction: PSqlSql) => Promise<R>
     ): Promise<R> {
-        return await this.handlerRegistry.writeMutation(context, write);
+        return await this.transactionWriter.writeMutation(context, write);
     }
 
     async fail(context: AppInboxMessageContext<JsonWireValue>, error: JsonWireValue): Promise<void> {
-        await this.handlerRegistry.transactionWriter.writeTerminalFailure(context, error);
+        await this.transactionWriter.writeTerminalFailure(context, error);
     }
 
     onStateMessage<Result>(
@@ -103,7 +114,7 @@ class AtomicAppInboxService {
     }
 
     registerHandler<Command, Result>(
-        registration: AppInboxHandlerRegistry.Registration<Command, Result>
+        registration: AppInboxHandlerRegistration<Command, Result>
     ): void {
         this.handlerRegistry.registerHandler(registration);
     }

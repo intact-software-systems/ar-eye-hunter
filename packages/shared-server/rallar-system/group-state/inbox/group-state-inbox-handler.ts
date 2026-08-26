@@ -1,6 +1,6 @@
 import type { GroupFormationMutationOutcome } from '@shared/rtc/group-formation-metrics.ts';
 import { type AppInboxMessageContext } from '../../app-inbox/app-inbox-contracts.ts';
-import type { AppInboxMutationTransactionWriter } from '../../app-inbox/app-inbox-transaction-writer.ts';
+import type { AppInboxMutationTransactionWriter } from '../../app-inbox/handler/app-inbox-transaction-writer.ts';
 import type { GroupFormationGroupMutationSink } from '../../observability/formation-metrics.ts';
 import type { WsSessionGenerationLifecycleComputed } from '../../websocket/ws-session-generation-computation.ts';
 import type { WsSessionGenerationLifecycleService } from '../../websocket/ws-session-generation-lifecycle.ts';

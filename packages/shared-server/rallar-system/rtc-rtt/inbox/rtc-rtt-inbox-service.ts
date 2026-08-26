@@ -4,11 +4,11 @@ import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 
 import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
 import { AppInboxType } from '../../app-inbox/app-inbox-contracts.ts';
-import { AppInboxHandlerRegistry } from '../../app-inbox/app-inbox-handler-registry.ts';
 import type { AppInboxOptions } from '../../app-inbox/app-inbox-options.ts';
 import type { AppInboxEntryRepository, AppInboxResultRepository } from '../../app-inbox/app-inbox-persistence-ports.ts';
 import { AppInboxQueueClient, SIMPLER_GROUP_STATE_APP_INBOX_TOPIC } from '../../app-inbox/app-inbox-queue-client.ts';
 import { encodeAppInboxResult } from '../../app-inbox/app-inbox-registration-codecs.ts';
+import { createAppInboxHandlerRuntime } from '../../app-inbox/handler/app-inbox-handler-runtime.ts';
 import type { GroupStateService } from '../../group-state/group-state-service-contracts.ts';
 import type { RallarTimingSink } from '../../observability/timing.ts';
 import { readRtcRttAppInboxCommand } from './rtc-rtt-app-inbox-authority.ts';
@@ -55,21 +55,19 @@ export class RtcRttInboxService {
                 wakeOwningQueue: config.wakeOwningQueue
             }
         );
-        const handlers = new AppInboxHandlerRegistry(
-            {
-                inboxQueueReader: dependencies.inboxQueueReader,
-                resourceInboxResultsRepository: dependencies.resourceInboxResultsRepository,
-                database: dependencies.database
-            },
-            {
-                serviceId: config.serviceId,
-                timing: config.timing,
-                options: config.options
-            }
-        );
+        const handlerRuntime = createAppInboxHandlerRuntime({
+            inboxQueueReader: dependencies.inboxQueueReader,
+            resultRepository: dependencies.resourceInboxResultsRepository,
+            database: dependencies.database,
+            serviceId: config.serviceId,
+            timing: config.timing,
+            options: config.options
+        });
+        const handlers = handlerRuntime.registry;
         this.handler = new RtcRttAppInboxHandler({
             groupStateService: dependencies.groupStateService,
-            writeMutation: async (context, write) => await handlers.writeMutation(context, write),
+            writeMutation: async (context, write) =>
+                await handlerRuntime.transactionWriter.writeMutation(context, write),
             nowEpochMs: () => this.queueClient.nowEpochMs(),
             wakeQueue: config.wakeOwningQueue
         });

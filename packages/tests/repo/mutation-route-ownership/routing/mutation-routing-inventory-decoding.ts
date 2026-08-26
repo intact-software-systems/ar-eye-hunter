@@ -4,7 +4,7 @@ import type { MutationRouteInventoryEntry } from './mutation-routing-inventory.t
 import { MUTATION_ROUTE_OWNER_DISPATCH_PATHS, MUTATION_ROUTE_OWNER_PATHS, type MutationRouteInventoryRow } from './mutation-routing-owner-inventory.ts';
 
 const PATHS = {
-    c: 'apps/api-v1/src/routes/client-state-routes.ts',
+    c: 'apps/api-v1/src/routes/client-state-mutation-routes.ts',
     ga: 'apps/api-v1/src/group-state/register-group-admission-routes.ts',
     gm: 'apps/api-v1/src/group-state/register-group-membership-routes.ts',
     gp: 'apps/api-v1/src/group-state/register-group-presence-routes.ts',

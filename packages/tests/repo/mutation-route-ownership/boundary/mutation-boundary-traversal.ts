@@ -22,7 +22,7 @@ const EXACT_RESOLVED_HANDOFFS = new Set([
     'packages/shared-server/rallar-system/crdt/inbox/app-crdt-inbox-service.ts',
     'packages/shared-server/rallar-system/group-state/inbox/group-state-inbox-service.ts',
     'packages/shared-server/rallar-system/app-inbox/app-inbox-queue-client.ts',
-    'packages/shared-server/rallar-system/app-inbox/app-inbox-transaction-writer.ts',
+    'packages/shared-server/rallar-system/app-inbox/handler/app-inbox-transaction-writer.ts',
     'packages/shared-server/rallar-system/app-inbox/app-inbox-retry-finalization.ts',
     'packages/shared-server/rallar-system/topology/mutation/rtc-topology-outbox-work.ts'
 ]);

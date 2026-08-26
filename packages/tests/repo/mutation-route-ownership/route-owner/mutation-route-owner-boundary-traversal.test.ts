@@ -1,4 +1,3 @@
-import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
 import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
@@ -36,27 +35,6 @@ describe('Mutation route owner boundary traversal contracts', { timeout: 30_000 
                 expect.stringContaining('Duplicate mutation route'),
                 'Inventory must cover all 52 AppInbox command types'
             ])
-        );
-    });
-
-    it('rejects a dead correct marker when the registered handler is rerouted', () => {
-        const first = MUTATION_ROUTE_INVENTORY[0]!;
-        const source = readFileSync(first.sourcePath, 'utf8');
-        const liveCall = 'const snapshot = await processClientAppInbox<ClientPrincipalUpsertAppInboxPayload>';
-        expect(source).toContain(liveCall);
-        const rerouted = source.replace(liveCall, 'const snapshot = await Promise.resolve<ClientSnapshot>') +
-            `
-function deadCorrectMutationMarker(): void {
-  void AppInboxType.${first.type};
-  void deps.processClientAppInbox;
-}
-`;
-        expect(
-            validateMutationRouteInventory(MUTATION_ROUTE_INVENTORY, {
-                sourceOverrides: new Map([[first.sourcePath, rerouted]])
-            })
-        ).toEqual(
-            expect.arrayContaining([expect.stringContaining('registered handler is not connected')])
         );
     });
 

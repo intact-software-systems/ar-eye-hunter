@@ -10,7 +10,7 @@ import { decodeAppInboxEnqueue } from '@shared-server/rallar-system/app-inbox/ap
 import { AppInboxType, type AppInboxMessageContext } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import { SIMPLER_GROUP_STATE_APP_INBOX_TOPIC } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-client.ts';
 import { encodeAppInboxResult } from '@shared-server/rallar-system/app-inbox/app-inbox-registration-codecs.ts';
-import { AppInboxTransactionWriter } from '@shared-server/rallar-system/app-inbox/app-inbox-transaction-writer.ts';
+import { AppInboxTransactionWriter } from '@shared-server/rallar-system/app-inbox/handler/app-inbox-transaction-writer.ts';
 import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
 import { type IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
 import { mutationDescriptor } from '@shared-server/rallar-system/group-state/group-mutation-authority.ts';
@@ -73,12 +73,13 @@ export async function createGroupStateTransactionBoundaryHarness(
     );
     const context = await createReservedContext(storage.queue, prepared);
     let wakeCount = 0;
-    const transactionWriter = new AppInboxTransactionWriter({
-        database: storage.database,
-        serviceId: 'server-12345678',
-        nowEpochMs: () => NOW_EPOCH_MS,
-        toTimingDetails: () => ({})
-    });
+    const transactionWriter = new AppInboxTransactionWriter(
+        { database: storage.database },
+        {
+            serviceId: 'server-12345678',
+            nowEpochMs: () => NOW_EPOCH_MS
+        }
+    );
     transactionWriter.begin(context);
     const formationMutationEvents: Array<Readonly<{ operation: string; outcome: string; }>> = [];
     const handler = new GroupStateInboxHandler({

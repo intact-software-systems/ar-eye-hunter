@@ -6,7 +6,7 @@ import {
     AppInboxTransactionWriter,
     type AppInboxMutationTransactionResult,
     type AppInboxMutationTransactionWriter
-} from '@shared-server/rallar-system/app-inbox/app-inbox-transaction-writer.ts';
+} from '@shared-server/rallar-system/app-inbox/handler/app-inbox-transaction-writer.ts';
 import type {
     GroupMutationAuthority,
     GroupMutationDescriptor,

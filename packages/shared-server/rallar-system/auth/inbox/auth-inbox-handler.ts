@@ -1,4 +1,4 @@
-import type { AppInboxMutationTransactionWriter } from '@shared-server/rallar-system/app-inbox/app-inbox-transaction-writer.ts';
+import type { AppInboxMutationTransactionWriter } from '@shared-server/rallar-system/app-inbox/handler/app-inbox-transaction-writer.ts';
 
 import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 import type { AppInboxMessageContext } from '../../app-inbox/app-inbox-contracts.ts';
