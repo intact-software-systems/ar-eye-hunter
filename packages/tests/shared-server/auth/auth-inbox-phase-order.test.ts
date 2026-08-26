@@ -24,7 +24,7 @@ import { encodeAppInboxResult } from '@shared-server/rallar-system/app-inbox/app
 import type {
     AppInboxMutationTransactionResult,
     AppInboxMutationTransactionWriter
-} from '@shared-server/rallar-system/app-inbox/app-inbox-transaction-writer.ts';
+} from '@shared-server/rallar-system/app-inbox/handler/app-inbox-transaction-writer.ts';
 import { materializeAuthMutationIntent } from '@shared-server/rallar-system/auth/mutation/materialize-auth-mutation-intent.ts';
 
 const decodeOrderCase = 'decodes before queue identity validation and exits before mutation phases on mismatch';

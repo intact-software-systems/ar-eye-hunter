@@ -1,7 +1,7 @@
 import { resourceInboxRetryExpiryAtEpochMs } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
 import type { AppInboxExecutionMetadata, AppInboxMessageContext } from '../../app-inbox/app-inbox-contracts.ts';
-import type { AppInboxMutationTransactionWriter } from '../../app-inbox/app-inbox-transaction-writer.ts';
+import type { AppInboxMutationTransactionWriter } from '../../app-inbox/handler/app-inbox-transaction-writer.ts';
 import {
     type WsSessionGenerationFacts,
     type WsSessionGenerationLifecycleComputed

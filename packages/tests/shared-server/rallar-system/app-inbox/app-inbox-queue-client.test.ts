@@ -2,9 +2,10 @@ import { Temporal } from '@js-temporal/polyfill';
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import { toResultsDomain } from '@shared-server/queuebox/postgres/resource-inbox-row-codec.ts';
 import { AppInboxType, type AppInboxEnqueueInput, type AppInboxMessageContext } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
-import { AppInboxHandlerRegistry } from '@shared-server/rallar-system/app-inbox/app-inbox-handler-registry.ts';
 import { AppInboxQueueClient } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-client.ts';
 import { encodeAppInboxCommand } from '@shared-server/rallar-system/app-inbox/app-inbox-registration-codecs.ts';
+import { AppInboxHandlerRegistry } from '@shared-server/rallar-system/app-inbox/handler/app-inbox-handler-registry.ts';
+import { createAppInboxHandlerRuntime } from '@shared-server/rallar-system/app-inbox/handler/app-inbox-handler-runtime.ts';
 import type { GroupMemberUpsertAppInboxPayload } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-contracts.ts';
 import { ClientStateEventCollisionError } from '@shared-server/rallar-system/state-events/client-state-event-store.ts';
 import { GroupStateEventCollisionError } from '@shared-server/rallar-system/state-events/group-state-event-store.ts';
@@ -364,9 +365,7 @@ describe('AppInboxQueueClient', () => {
                 return 'member';
             }
         });
-        expect(() =>
-            encodeAppInboxCommand(unsafeCommand, 'Unsafe accessor AppInbox command')
-        ).toThrow(/JSON-safe/u);
+        expect(() => encodeAppInboxCommand(unsafeCommand, 'Unsafe accessor AppInbox command')).toThrow(/JSON-safe/u);
         expect(getterCalls).toBe(0);
         expect(() =>
             encodeAppInboxCommand(
@@ -772,18 +771,14 @@ class TestAppInboxRuntime extends AppInboxQueueClient {
             },
             config
         );
-        this.handlers = new AppInboxHandlerRegistry(
-            {
-                inboxQueueReader: dependencies.inboxQueueReader,
-                resourceInboxResultsRepository: dependencies.resourceInboxResultsRepository,
-                database: dependencies.database
-            },
-            {
-                serviceId: config.serviceId,
-                timing: config.timing,
-                options: config.options
-            }
-        );
+        this.handlers = createAppInboxHandlerRuntime({
+            inboxQueueReader: dependencies.inboxQueueReader,
+            resultRepository: dependencies.resourceInboxResultsRepository,
+            database: dependencies.database,
+            serviceId: config.serviceId,
+            timing: config.timing,
+            options: config.options
+        }).registry;
     }
 
     onStateMessage<Result>(

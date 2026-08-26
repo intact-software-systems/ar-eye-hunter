@@ -6,14 +6,12 @@ import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
 import { AppInboxType, type AppInboxEnqueueInput } from '../../app-inbox/app-inbox-contracts.ts';
 import type { AppInboxFailure } from '../../app-inbox/app-inbox-failure.ts';
-import { AppInboxHandlerRegistry } from '../../app-inbox/app-inbox-handler-registry.ts';
 import type { AppInboxOptions } from '../../app-inbox/app-inbox-options.ts';
 import type { AppInboxEntryRepository, AppInboxResultRepository } from '../../app-inbox/app-inbox-persistence-ports.ts';
 import { AppInboxQueueClient, SIMPLER_CLIENT_STATE_APP_INBOX_TOPIC } from '../../app-inbox/app-inbox-queue-client.ts';
-import {
-    encodeAppInboxCommand,
-    encodeAppInboxResult
-} from '../../app-inbox/app-inbox-registration-codecs.ts';
+import { encodeAppInboxCommand, encodeAppInboxResult } from '../../app-inbox/app-inbox-registration-codecs.ts';
+import { AppInboxHandlerRegistry } from '../../app-inbox/handler/app-inbox-handler-registry.ts';
+import { createAppInboxHandlerRuntime } from '../../app-inbox/handler/app-inbox-handler-runtime.ts';
 import type { RallarTimingSink } from '../../observability/timing.ts';
 import type { ClientStateService, ClientStateWritten } from '../client-state-service-contracts.ts';
 import {
@@ -107,18 +105,15 @@ export class AppClientInboxService {
                 wakeOwningQueue: config.wakeOwningQueue
             }
         );
-        this.handlers = new AppInboxHandlerRegistry(
-            {
-                inboxQueueReader: dependencies.inboxQueueReader,
-                resourceInboxResultsRepository: dependencies.resourceInboxResultsRepository,
-                database: dependencies.database
-            },
-            {
-                serviceId: config.serviceId,
-                timing: config.timing,
-                options: config.options
-            }
-        );
+        const handlerRuntime = createAppInboxHandlerRuntime({
+            inboxQueueReader: dependencies.inboxQueueReader,
+            resultRepository: dependencies.resourceInboxResultsRepository,
+            database: dependencies.database,
+            serviceId: config.serviceId,
+            timing: config.timing,
+            options: config.options
+        });
+        this.handlers = handlerRuntime.registry;
         this.serviceId = config.serviceId;
         this.clientStateService = dependencies.clientStateService;
         this.handler = new ClientStateInboxHandler({
@@ -126,7 +121,7 @@ export class AppClientInboxService {
             sessionGenerationLifecycle: dependencies.clientStateService.sessionGenerationLifecycle,
             expiryCandidates: dependencies.clientStateService,
             snapshotObserver: dependencies.clientStateService,
-            transactionWriter: this.handlers.transactionWriter,
+            transactionWriter: handlerRuntime.transactionWriter,
             serviceId: config.serviceId
         });
         this.registerClientStateMessages();

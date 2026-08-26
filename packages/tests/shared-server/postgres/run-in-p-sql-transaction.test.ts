@@ -17,11 +17,9 @@ import {
 import { ResourceInboxResultsRepository } from '@shared-server/queuebox/postgres/resource-inbox-results-repository.ts';
 
 import { AppInboxType, type AppInboxMessageContext } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
-import { AppInboxHandlerRegistry } from '@shared-server/rallar-system/app-inbox/app-inbox-handler-registry.ts';
 import { encodeAppInboxResult } from '@shared-server/rallar-system/app-inbox/app-inbox-registration-codecs.ts';
+import { AppInboxTransactionWriter } from '@shared-server/rallar-system/app-inbox/handler/app-inbox-transaction-writer.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
-import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
-import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 
 import type { JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 
@@ -117,12 +115,8 @@ describe('Postgres transaction write boundary', () => {
                 throw new Error('external repository factory must not run');
             }
         });
-        const handlerRegistry = new AppInboxHandlerRegistry(
-            {
-                inboxQueueReader: new InboxQueueReader(new InMemoryQueueBox()),
-                resourceInboxResultsRepository: new ResourceInboxResultsRepository(database.sql),
-                database: database.sql
-            },
+        const transactionWriter = new AppInboxTransactionWriter(
+            { database: database.sql },
             { serviceId: 'server-1' }
         );
         const enqueue = {
@@ -147,7 +141,7 @@ describe('Postgres transaction write boundary', () => {
             encodeResult: (result) => encodeAppInboxResult(result, 'Postgres transaction test result')
         };
 
-        const result = await handlerRegistry.writeMutation(context, async (transaction) => {
+        const result = await transactionWriter.writeMutation(context, async (transaction) => {
             await new PSqlRuntimeStateRepository(transaction).insertIfAbsent(
                 'app-inbox-transaction',
                 'aggregate-1',

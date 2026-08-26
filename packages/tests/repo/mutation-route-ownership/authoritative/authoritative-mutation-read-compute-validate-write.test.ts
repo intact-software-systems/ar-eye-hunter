@@ -145,7 +145,7 @@ it.each([
             'this.read(command)',
             'this.compute(read)',
             'this.validate(computed)',
-            'this.handlers.writeMutation(context'
+            'this.transactionWriter.writeMutation(context'
         ]
     },
     {

@@ -26,14 +26,12 @@ import {
     type AppInboxErrorClassification
 } from '../../app-inbox/app-inbox-error-classification.ts';
 import { toUnexpectedAppInboxFailure, type AppInboxFailure } from '../../app-inbox/app-inbox-failure.ts';
-import { AppInboxHandlerRegistry } from '../../app-inbox/app-inbox-handler-registry.ts';
 import type { AppInboxOptions } from '../../app-inbox/app-inbox-options.ts';
 import type { AppInboxEntryRepository, AppInboxResultRepository } from '../../app-inbox/app-inbox-persistence-ports.ts';
 import { AppInboxQueueClient } from '../../app-inbox/app-inbox-queue-client.ts';
-import {
-    encodeAppInboxCommand,
-    encodeAppInboxResult
-} from '../../app-inbox/app-inbox-registration-codecs.ts';
+import { encodeAppInboxCommand, encodeAppInboxResult } from '../../app-inbox/app-inbox-registration-codecs.ts';
+import { AppInboxHandlerRegistry } from '../../app-inbox/handler/app-inbox-handler-registry.ts';
+import { createAppInboxHandlerRuntime } from '../../app-inbox/handler/app-inbox-handler-runtime.ts';
 import type { RallarTimingSink } from '../../observability/timing.ts';
 import type { AuthMutationService } from '../auth-mutation-service.ts';
 import type { AuthCredentialIssuer } from '../credentials/auth-credential-issuer.ts';
@@ -140,18 +138,15 @@ export class AppAuthInboxService {
                 wakeOwningQueue: config.wakeOwningQueue
             }
         );
-        this.handlers = new AppInboxHandlerRegistry(
-            {
-                inboxQueueReader: dependencies.inboxQueueReader,
-                resourceInboxResultsRepository: dependencies.resourceInboxResultsRepository,
-                database: dependencies.database
-            },
-            {
-                serviceId: config.serviceId,
-                timing: config.timing,
-                options: config.options
-            }
-        );
+        const handlerRuntime = createAppInboxHandlerRuntime({
+            inboxQueueReader: dependencies.inboxQueueReader,
+            resultRepository: dependencies.resourceInboxResultsRepository,
+            database: dependencies.database,
+            serviceId: config.serviceId,
+            timing: config.timing,
+            options: config.options
+        });
+        this.handlers = handlerRuntime.registry;
         this.authMutationService = dependencies.authMutationService;
         this.credentialIssuer = dependencies.credentialIssuer;
         this.authInboxRepository = dependencies.resourceInboxRepository;
@@ -159,7 +154,7 @@ export class AppAuthInboxService {
         this.authInboxHandler = new AuthInboxHandler({
             mutationService: dependencies.authMutationService,
             credentialIssuer: dependencies.credentialIssuer,
-            transactionWriter: this.handlers.transactionWriter,
+            transactionWriter: handlerRuntime.transactionWriter,
             nowEpochMs: this.authFactNowEpochMs
         });
         for (const type of AUTH_TYPES) {

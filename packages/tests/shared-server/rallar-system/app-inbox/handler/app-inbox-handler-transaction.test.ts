@@ -8,18 +8,17 @@ import type { JsonWireValue } from '@shared-server/rallar-system/protocol/json-w
 import { EntityStatus, toKeyAsString } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 import { describe, expect, it } from 'vitest';
-
-const NOW_EPOCH_MS = Date.parse('2026-07-22T12:00:00.000Z');
-
 import {
     createAtomicHarness,
     createRegisteredHandlerHarness,
     createResilience,
     toRegisteredHandlerIdentityResource,
     waitForRegisteredHandlerEntry
-} from './test-support/app-inbox-transaction-test-runtime.ts';
+} from '../test-support/app-inbox-transaction-test-runtime.ts';
 
-describe('AppInboxHandlerRegistry transaction ownership', () => {
+const NOW_EPOCH_MS = Date.parse('2026-07-22T12:00:00.000Z');
+
+describe('AppInboxTransactionWriter atomic finalization', () => {
     it('commits mutation, outbox, result, and completion in one transaction', async () => {
         const harness = createAtomicHarness();
         const receipt = { status: 'accepted', revision: 2 } as const;
@@ -171,7 +170,7 @@ describe('AppInboxHandlerRegistry transaction ownership', () => {
     });
 });
 
-describe('AppInboxHandlerRegistry registered handler finalization', () => {
+describe('AppInboxHandlerExecutor registered handler finalization', () => {
     it('rejects startup when a configured handler has not been registered', () => {
         const harness = createRegisteredHandlerHarness();
 

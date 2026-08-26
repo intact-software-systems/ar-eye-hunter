@@ -4,14 +4,13 @@ import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
 import { AppInboxType, type AppInboxEnqueueInput } from '../../app-inbox/app-inbox-contracts.ts';
 import { type AppInboxFailure } from '../../app-inbox/app-inbox-failure.ts';
-import { AppInboxHandlerRegistry } from '../../app-inbox/app-inbox-handler-registry.ts';
 import type { AppInboxOptions } from '../../app-inbox/app-inbox-options.ts';
 import type { AppInboxEntryRepository, AppInboxResultRepository } from '../../app-inbox/app-inbox-persistence-ports.ts';
 import { AppInboxQueueClient, SIMPLER_GROUP_STATE_APP_INBOX_TOPIC } from '../../app-inbox/app-inbox-queue-client.ts';
-import {
-    encodeAppInboxCommand,
-    encodeAppInboxResult
-} from '../../app-inbox/app-inbox-registration-codecs.ts';
+import { encodeAppInboxCommand, encodeAppInboxResult } from '../../app-inbox/app-inbox-registration-codecs.ts';
+import { AppInboxHandlerRegistry } from '../../app-inbox/handler/app-inbox-handler-registry.ts';
+import { createAppInboxHandlerRuntime } from '../../app-inbox/handler/app-inbox-handler-runtime.ts';
+import { AppInboxTransactionWriter } from '../../app-inbox/handler/app-inbox-transaction-writer.ts';
 import type { IssuedAuthSession } from '../../auth/persistence/auth-session-types.ts';
 import type { GroupFormationGroupMutationSink } from '../../observability/formation-metrics.ts';
 import type { RallarTimingSink } from '../../observability/timing.ts';
@@ -62,6 +61,7 @@ export namespace GroupStateInboxService {
 export class GroupStateInboxService {
     private readonly queueClient: AppInboxQueueClient;
     private readonly handlers: AppInboxHandlerRegistry;
+    private readonly transactionWriter: AppInboxTransactionWriter;
     private readonly groupStateInboxHandler: GroupStateInboxHandler;
     private readonly wakeQueue?: () => void;
     private readonly serviceId: string;
@@ -86,18 +86,16 @@ export class GroupStateInboxService {
                 wakeOwningQueue: config.wakeOwningQueue
             }
         );
-        this.handlers = new AppInboxHandlerRegistry(
-            {
-                inboxQueueReader: dependencies.inboxQueueReader,
-                resourceInboxResultsRepository: dependencies.resourceInboxResultsRepository,
-                database: dependencies.database
-            },
-            {
-                serviceId: config.serviceId,
-                timing: config.timing,
-                options: config.options
-            }
-        );
+        const handlerRuntime = createAppInboxHandlerRuntime({
+            inboxQueueReader: dependencies.inboxQueueReader,
+            resultRepository: dependencies.resourceInboxResultsRepository,
+            database: dependencies.database,
+            serviceId: config.serviceId,
+            timing: config.timing,
+            options: config.options
+        });
+        this.handlers = handlerRuntime.registry;
+        this.transactionWriter = handlerRuntime.transactionWriter;
         this.groupStateService = dependencies.groupStateService;
         this.wakeQueue = config.wakeOwningQueue;
         this.serviceId = config.serviceId;
@@ -105,7 +103,7 @@ export class GroupStateInboxService {
             mutationService: this.groupStateService,
             sessionGenerationLifecycle: this.groupStateService.sessionGenerationLifecycle,
             snapshotObserver: this.groupStateService,
-            transactionWriter: this.handlers.transactionWriter,
+            transactionWriter: this.transactionWriter,
             wakeQueue: this.wakeQueue,
             formationMetrics: config.formationMetrics,
             prepareMutation: (descriptor, authority) =>
@@ -215,7 +213,7 @@ export class GroupStateInboxService {
                     facts: payload,
                     attemptCount: context.entry.dequeueAudit.attempts,
                     groupStateService: this.groupStateService,
-                    writeMutation: async (write) => await this.handlers.writeMutation(context, write),
+                    writeMutation: async (write) => await this.transactionWriter.writeMutation(context, write),
                     wakeQueue: this.wakeQueue
                 })
         });
