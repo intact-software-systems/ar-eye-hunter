@@ -54,25 +54,25 @@ export function authorizationDenied(
     return new RequestAuthFailure({ kind: 'authorization', code, status: 403, message });
 }
 
-export function readApiAuthCredentialProof(req: {
+export function readApiAuthCredentialProof(request: {
     header(name: string): string | undefined;
 }): ApiAuthCredentialProof | undefined {
-    const accessToken = readBearerToken(req.header('authorization'));
-    const clientId = req.header('x-client-id');
+    const accessToken = readBearerToken(request.header('authorization'));
+    const clientId = request.header('x-client-id');
     return accessToken && clientId ? { accessToken, clientId } : undefined;
 }
 
 export async function requireApiAuthSession(
-    req: {
+    request: {
         header(name: string): string | undefined;
     },
     repository: AuthSessionRepository
 ): Promise<IssuedAuthSession> {
-    const accessToken = readBearerToken(req.header('authorization'));
+    const accessToken = readBearerToken(request.header('authorization'));
     if (!accessToken) {
         throw unauthorized('Missing bearer token');
     }
-    const clientId = req.header('x-client-id');
+    const clientId = request.header('x-client-id');
     if (!clientId) {
         throw unauthorized('Missing x-client-id header');
     }
@@ -124,7 +124,7 @@ export function toAuthSession(session: IssuedAuthSession): AuthSession {
 }
 
 export function toAuthErrorResponse(
-    c: {
+    context: {
         json(value: RequestAuthErrorResponse, status?: number): Response;
     },
     error: unknown
@@ -132,22 +132,8 @@ export function toAuthErrorResponse(
     const message = error instanceof Error ? error.message : String(error);
     const status = error instanceof RequestAuthFailure
         ? error.status
-        : readExplicitAuthErrorStatus(typeof error === 'object' ? error : null) ?? 400;
-    return c.json({ error: message }, status);
-}
-
-const AUTH_ERROR_STATUSES: readonly number[] = [400, 401, 403, 404, 409, 429, 503];
-
-function readExplicitAuthErrorStatus(error: object | null): number | undefined {
-    if (!error) {
-        return undefined;
-    }
-    const descriptor = Object.getOwnPropertyDescriptor(error, 'status');
-    if (!descriptor || !Object.prototype.hasOwnProperty.call(descriptor, 'value')) {
-        return undefined;
-    }
-    const status = Number(descriptor.value);
-    return AUTH_ERROR_STATUSES.includes(status) ? status : undefined;
+        : 400;
+    return context.json({ error: message }, status);
 }
 
 function readBearerToken(authorization?: string): string | undefined {
