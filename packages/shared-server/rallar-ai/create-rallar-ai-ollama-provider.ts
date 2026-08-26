@@ -58,7 +58,7 @@ export function createRallarAiOllamaProvider(
             supportsCancellation: true,
             target: 'server'
         },
-        async generateJson<TValue = RallarAiJsonValue, TContext = RallarAiJsonValue>(
+        async generateJson<TValue, TContext>(
             request: RallarAiJsonRequest<TContext>
         ): Promise<RallarAiJsonResult<TValue>> {
             const startedAtEpochMs = Date.now();

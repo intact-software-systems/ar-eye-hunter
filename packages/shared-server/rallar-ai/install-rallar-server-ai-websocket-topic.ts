@@ -147,7 +147,7 @@ function toResultPublicationInput(
     result: RallarAiJsonResult<RallarAiJsonValue>,
     config: RallarServerAiWebSocketConfig,
     target: RallarServerAiResultPublicationTarget
-): RallarServerAiResultPublicationInput {
+): RallarServerAiResultPublicationInput<RallarAiJsonValue> {
     return target.scope === 'room'
         ? {
             result,

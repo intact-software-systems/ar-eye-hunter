@@ -9,7 +9,7 @@ export interface RallarServerAiHttpRequest {
     readonly roomId?: string;
 }
 
-export interface RallarServerAiHttpResponse<TValue extends RallarAiJsonValue = RallarAiJsonValue> {
+export interface RallarServerAiHttpResponse<TValue extends RallarAiJsonValue> {
     readonly status: number;
     readonly headers: Readonly<Record<string, string>>;
     readonly body:
@@ -22,7 +22,7 @@ export interface RallarServerAiHttpResponse<TValue extends RallarAiJsonValue = R
 
 export type RallarServerAiHttpHandler = (
     request: RallarServerAiHttpRequest
-) => Promise<RallarServerAiHttpResponse>;
+) => Promise<RallarServerAiHttpResponse<RallarAiJsonValue>>;
 
 export interface RallarServerAiHttpRouter {
     post(path: string, handler: RallarServerAiHttpHandler): void;
@@ -46,7 +46,7 @@ export function installRallarServerAiHttpRoute(
 export async function respondToRallarServerAiHttpRequest(
     serverAi: RallarServerAi,
     request: RallarServerAiHttpRequest
-): Promise<RallarServerAiHttpResponse> {
+): Promise<RallarServerAiHttpResponse<RallarAiJsonValue>> {
     try {
         const generationRequest = decodeRallarServerAiJsonRequest(request.body);
         const result = await serverAi.generateJson(generationRequest, {
