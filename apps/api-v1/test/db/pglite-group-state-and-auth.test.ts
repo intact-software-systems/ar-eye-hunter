@@ -29,7 +29,7 @@ import { GROUP_PRESENCE_SUMMARY_TOPIC as APP_OUTBOX_GROUP_PRESENCE_SUMMARY_TOPIC
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 import { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
-import { expectGroupPresenceSummaryAppToWsLifecycleEvidence } from '../../../../packages/tests/shared-server/rallar-system/app-outbox/postgres/postgres-worker-outbox-evidence.ts';
+import { assertGroupPresenceSummaryAppToWsLifecycle } from '../../../../packages/tests/shared-server/rallar-system/app-outbox/postgres/worker-outbox-lifecycle-assertions.ts';
 import { toResilienceDto } from '../api-v1-test-queue-resilience.ts';
 import { readPGliteAppInboxFailure, waitForPGliteQueueRow } from './pglite-app-inbox-test-runtime.ts';
 import { withPGliteSql } from './pglite-auth-test-harness.ts';
@@ -335,7 +335,7 @@ Deno.test(
       select ri_resource_id, ri_topic_id, ri_type_id, ri_status, ri_resource
       from resource_inbox order by ri_row_id
     `;
-            expectGroupPresenceSummaryAppToWsLifecycleEvidence(
+            assertGroupPresenceSummaryAppToWsLifecycle(
                 afterSummary,
                 afterSummary
                     .filter((row) => row.ri_topic_id === APP_OUTBOX_GROUP_PRESENCE_SUMMARY_TOPIC)
