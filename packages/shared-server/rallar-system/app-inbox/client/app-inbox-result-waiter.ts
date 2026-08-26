@@ -6,16 +6,17 @@ import {
     timeRallarAsync,
     type RallarTimingDetails,
     type RallarTimingSink
-} from '../observability/timing.ts';
-import { decodeJsonWireValue, type JsonWireValue } from '../protocol/json-wire-identity.ts';
-import type { AppInboxEnqueueInput } from './app-inbox-contracts.ts';
-import { decodePersistedAppInboxFailure } from './app-inbox-failure-decoding.ts';
-import { toTerminalAppInboxFailure, toUnavailableAppInboxFailure, type AppInboxFailure } from './app-inbox-failure.ts';
-import type { NormalizedAppInboxOptions } from './app-inbox-options.ts';
-
-export type AppInboxResultDecoder<Result> = (value: JsonWireValue) => Result;
+} from '../../observability/timing.ts';
+import { decodeJsonWireValue, type JsonWireValue } from '../../protocol/json-wire-identity.ts';
+import type { AppInboxEnqueueInput } from '../app-inbox-contracts.ts';
+import { decodePersistedAppInboxFailure } from '../app-inbox-failure-decoding.ts';
+import { toTerminalAppInboxFailure, toUnavailableAppInboxFailure, type AppInboxFailure } from '../app-inbox-failure.ts';
+import type { NormalizedAppInboxOptions } from '../app-inbox-options.ts';
+import type { AppInboxReservationClient } from './app-inbox-reservation-client.ts';
 
 export namespace AppInboxResultWaiter {
+    export type ResultDecoder<Result> = (value: JsonWireValue) => Result;
+
     export interface StatusRepository {
         isEntryWithStatus(key: Key, statuses: EntityStatus[]): Promise<boolean>;
     }
@@ -33,6 +34,7 @@ export namespace AppInboxResultWaiter {
         readonly serviceId: string;
         readonly timing?: RallarTimingSink;
         readonly options: NormalizedAppInboxOptions;
+        readonly wakeOwningQueue?: () => void;
     }
 }
 
@@ -42,6 +44,7 @@ export class AppInboxResultWaiter {
     private readonly serviceId: string;
     private readonly timing: RallarTimingSink | undefined;
     private readonly options: NormalizedAppInboxOptions;
+    private readonly wakeOwningQueue: (() => void) | undefined;
 
     constructor(
         dependencies: AppInboxResultWaiter.Dependencies,
@@ -52,12 +55,13 @@ export class AppInboxResultWaiter {
         this.serviceId = config.serviceId;
         this.timing = config.timing;
         this.options = config.options;
+        this.wakeOwningQueue = config.wakeOwningQueue;
     }
 
     async waitForResult<Result>(
         enqueue: AppInboxEnqueueInput,
         key: Key,
-        decodeResult: AppInboxResultDecoder<Result>
+        decodeResult: AppInboxResultWaiter.ResultDecoder<Result>
     ): Promise<Either<AppInboxFailure, Result>> {
         if (!(await this.waitForCompletion(enqueue, key))) {
             return Either.ofLeft(toUnavailableAppInboxFailure());
@@ -70,9 +74,23 @@ export class AppInboxResultWaiter {
         );
     }
 
+    async waitForReservedResult<Result>(
+        reservation: AppInboxReservationClient.MaterializedReservation,
+        decodeResult: AppInboxResultWaiter.ResultDecoder<Result>
+    ): Promise<Either<AppInboxFailure, Result>> {
+        if (reservation.winner) {
+            this.wakeOwningQueue?.();
+        }
+        return await this.waitForResult(
+            reservation.enqueue,
+            reservation.key,
+            decodeResult
+        );
+    }
+
     private async readResult<Result>(
         key: Key,
-        decodeResult: AppInboxResultDecoder<Result>
+        decodeResult: AppInboxResultWaiter.ResultDecoder<Result>
     ): Promise<Either<AppInboxFailure, Result>> {
         const result = await this.resultRepository.findByKey(key);
         if (result === undefined) {

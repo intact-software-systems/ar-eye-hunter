@@ -8,7 +8,10 @@ import { AppInboxType, type AppInboxEnqueueInput } from '../../app-inbox/app-inb
 import type { AppInboxFailure } from '../../app-inbox/app-inbox-failure.ts';
 import type { AppInboxOptions } from '../../app-inbox/app-inbox-options.ts';
 import type { AppInboxEntryRepository, AppInboxResultRepository } from '../../app-inbox/app-inbox-persistence-ports.ts';
-import { AppInboxQueueClient, SIMPLER_CLIENT_STATE_APP_INBOX_TOPIC } from '../../app-inbox/app-inbox-queue-client.ts';
+import { CLIENT_STATE_APP_INBOX_TOPIC } from '../../app-inbox/app-inbox-topics.ts';
+import type { AppInboxCommandClient } from '../../app-inbox/client/app-inbox-command-client.ts';
+import type { AppInboxQueueEntryWriter } from '../../app-inbox/client/app-inbox-queue-entry-writer.ts';
+import { createAppInboxClientRuntime } from '../../app-inbox/client/create-app-inbox-client-runtime.ts';
 import { encodeAppInboxCommand, encodeAppInboxResult } from '../../app-inbox/app-inbox-registration-codecs.ts';
 import { AppInboxHandlerRegistry } from '../../app-inbox/handler/app-inbox-handler-registry.ts';
 import { createAppInboxHandlerRuntime } from '../../app-inbox/handler/app-inbox-handler-runtime.ts';
@@ -80,7 +83,8 @@ export namespace AppClientInboxService {
 }
 
 export class AppClientInboxService {
-    private readonly queueClient: AppInboxQueueClient;
+    private readonly commandClient: AppInboxCommandClient;
+    private readonly queueEntryWriter: AppInboxQueueEntryWriter;
     private readonly handlers: AppInboxHandlerRegistry;
     private readonly handler: ClientStateInboxHandler;
     private readonly serviceId: string;
@@ -91,20 +95,18 @@ export class AppClientInboxService {
         dependencies: AppClientInboxService.Dependencies,
         config: AppClientInboxService.Config
     ) {
-        this.queueClient = new AppInboxQueueClient(
-            {
-                inboxQueueReader: dependencies.inboxQueueReader,
-                resourceInboxRepository: dependencies.resourceInboxRepository,
-                resourceInboxResultsRepository: dependencies.resourceInboxResultsRepository
-            },
-            {
-                serviceId: config.serviceId,
-                defaultTopicId: SIMPLER_CLIENT_STATE_APP_INBOX_TOPIC,
-                timing: config.timing,
-                options: config.options,
-                wakeOwningQueue: config.wakeOwningQueue
-            }
-        );
+        const clientRuntime = createAppInboxClientRuntime({
+            inboxQueueReader: dependencies.inboxQueueReader,
+            resourceInboxRepository: dependencies.resourceInboxRepository,
+            resourceInboxResultsRepository: dependencies.resourceInboxResultsRepository,
+            serviceId: config.serviceId,
+            defaultTopicId: CLIENT_STATE_APP_INBOX_TOPIC,
+            timing: config.timing,
+            options: config.options,
+            wakeOwningQueue: config.wakeOwningQueue
+        });
+        this.commandClient = clientRuntime.commandClient;
+        this.queueEntryWriter = clientRuntime.queueEntryWriter;
         const handlerRuntime = createAppInboxHandlerRuntime({
             inboxQueueReader: dependencies.inboxQueueReader,
             resultRepository: dependencies.resourceInboxResultsRepository,
@@ -134,7 +136,7 @@ export class AppClientInboxService {
     ): Promise<Either<AppInboxFailure, ClientStateWritten>> {
         const ingress = readAuthenticatedClientMutationIngress(enqueue);
         validateIssuedClientMutationIngress(authority, ingress);
-        const result = await this.queueClient.processEntryUntilCompletionResult(
+        const result = await this.commandClient.enqueueAndWaitForResult(
             {
                 ...enqueue,
                 authority: toClientMutationIssuedSessionAuthority(
@@ -151,20 +153,20 @@ export class AppClientInboxService {
     public async processAuthorisedWsClientConnect(
         input: ToAuthorisedWsClientConnectEnqueueInput
     ): Promise<Either<AppInboxFailure, AuthorisedWsClientMutationResult>> {
-        return await this.queueClient.processEntryUntilCompletionResult(
+        return await this.commandClient.enqueueAndWaitForResult(
             toAuthorisedWsClientConnectEnqueue(input),
             decodeAuthorisedWsClientMutationResult
         );
     }
 
     public async enqueueAuthorisedWsClientConnect(input: ToAuthorisedWsClientConnectEnqueueInput) {
-        return await this.queueClient.enqueue(toAuthorisedWsClientConnectEnqueue(input));
+        return await this.queueEntryWriter.enqueue(toAuthorisedWsClientConnectEnqueue(input));
     }
 
     public async processAuthorisedWsClientDisconnect(
         input: ToAuthorisedWsClientDisconnectEnqueueInput
     ): Promise<Either<AppInboxFailure, AuthorisedWsClientMutationResult>> {
-        return await this.queueClient.processEntryUntilCompletionResult(
+        return await this.commandClient.enqueueAndWaitForResult(
             toAuthorisedWsClientDisconnectEnqueue(input),
             decodeAuthorisedWsClientMutationResult
         );
@@ -173,13 +175,13 @@ export class AppClientInboxService {
     public async enqueueAuthorisedWsClientDisconnect(
         input: ToAuthorisedWsClientDisconnectEnqueueInput
     ) {
-        return await this.queueClient.enqueue(toAuthorisedWsClientDisconnectEnqueue(input));
+        return await this.queueEntryWriter.enqueue(toAuthorisedWsClientDisconnectEnqueue(input));
     }
 
     public async processExpiredSessions(
         atEpochMs: number = Date.now()
     ): Promise<Either<AppInboxFailure, readonly ClientStateWritten[]>> {
-        return await this.queueClient.processEntryUntilCompletionIfResult(
+        return await this.commandClient.enqueueReplacingWhenAndWaitForResult(
             this.toExpiredSessionsEnqueue(atEpochMs),
             (entry) => isCompletedOrFailed(entry.status),
             decodeExpiredClientSessionsResult
@@ -187,7 +189,7 @@ export class AppClientInboxService {
     }
 
     public async enqueueExpiredSessions(atEpochMs: number = Date.now()) {
-        return await this.queueClient.enqueue(
+        return await this.queueEntryWriter.enqueue(
             this.toExpiredSessionsEnqueue(atEpochMs, `expire-client-sessions-${atEpochMs}`)
         );
     }

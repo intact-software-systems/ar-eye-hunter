@@ -8,7 +8,7 @@ import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 
 import { decodeAppInboxEnqueue } from '@shared-server/rallar-system/app-inbox/app-inbox-command-decoding.ts';
 import { AppInboxType, type AppInboxMessageContext } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
-import { SIMPLER_GROUP_STATE_APP_INBOX_TOPIC } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-client.ts';
+import { GROUP_STATE_APP_INBOX_TOPIC } from '@shared-server/rallar-system/app-inbox/app-inbox-topics.ts';
 import { encodeAppInboxResult } from '@shared-server/rallar-system/app-inbox/app-inbox-registration-codecs.ts';
 import { AppInboxTransactionWriter } from '@shared-server/rallar-system/app-inbox/handler/app-inbox-transaction-writer.ts';
 import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
@@ -206,7 +206,7 @@ async function createReservedContext(
     const createdAt = Temporal.Instant.fromEpochMilliseconds(NOW_EPOCH_MS);
     const entry: ResourceEntry = {
         key: {
-            topicId: SIMPLER_GROUP_STATE_APP_INBOX_TOPIC,
+            topicId: GROUP_STATE_APP_INBOX_TOPIC,
             resourceId: REQUEST_ID,
             contextId: requireContextId(enqueue.contextId)
         },

@@ -1,5 +1,6 @@
 import type { AppInboxEntryRepository } from '@shared-server/rallar-system/app-inbox/app-inbox-persistence-ports.ts';
-import { AppInboxQueueClient, SIMPLER_CLIENT_STATE_APP_INBOX_TOPIC } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-client.ts';
+import { CLIENT_STATE_APP_INBOX_TOPIC } from '@shared-server/rallar-system/app-inbox/app-inbox-topics.ts';
+import { createAppInboxClientRuntime } from '@shared-server/rallar-system/app-inbox/client/create-app-inbox-client-runtime.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { EntityStatus, isExpiredResourceEntry, type Key, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
@@ -9,26 +10,22 @@ import * as clientStateRoutes from '../../src/routes/client-state-routes.ts';
 
 Deno.test('HTTP wait timeout leaves its durable AppInbox row eligible', async () => {
     const queue = new DurableTimeoutQueue();
-    const service = new AppInboxQueueClient(
-        {
-            inboxQueueReader: new InboxQueueReader(queue),
-            resourceInboxRepository: queue,
-            resourceInboxResultsRepository: {
-                replace: (entry) => Promise.resolve(entry),
-                findByKey: () => Promise.resolve(undefined)
-            }
+    const service = createAppInboxClientRuntime({
+        inboxQueueReader: new InboxQueueReader(queue),
+        resourceInboxRepository: queue,
+        resourceInboxResultsRepository: {
+            replace: (entry) => Promise.resolve(entry),
+            findByKey: () => Promise.resolve(undefined)
         },
-        {
-            serviceId: 'server-12345678',
-            defaultTopicId: SIMPLER_CLIENT_STATE_APP_INBOX_TOPIC,
-            options: {
-                waitMaxElapsedMsecs: 0,
-                waitRetryIntervalMsecs: 0,
-                waitMaxRetryIntervalMsecs: 0,
-                waitJitterRatio: 0
-            }
+        serviceId: 'server-12345678',
+        defaultTopicId: CLIENT_STATE_APP_INBOX_TOPIC,
+        options: {
+            waitMaxElapsedMsecs: 0,
+            waitRetryIntervalMsecs: 0,
+            waitMaxRetryIntervalMsecs: 0,
+            waitJitterRatio: 0
         }
-    );
+    }).commandClient;
     let directMutationFallbacks = 0;
     const app = new Hono();
     clientStateRoutes.registerClientStateRoutes(app, {
@@ -57,7 +54,7 @@ Deno.test('HTTP wait timeout leaves its durable AppInbox row eligible', async ()
             }),
         readClientSnapshot: () => Promise.resolve({ status: 'not-found', source: 'durable' }),
         processClientAppInbox: async (input) => {
-            return await service.processEntryUntilCompletionResult(
+            return await service.enqueueAndWaitForResult(
                 input,
                 () => {
                     directMutationFallbacks += 1;

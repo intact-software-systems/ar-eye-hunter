@@ -5,7 +5,11 @@ const topologyRoot = `${systemRoot}/topology`;
 const rtcMutationRoot = `${systemRoot}/rtc-rtt/mutation`;
 
 export const authoritativeMutationRuntimeSourcePaths = [
-    `${systemRoot}/app-inbox/app-inbox-queue-client.ts`,
+    `${systemRoot}/app-inbox/client/app-inbox-command-client.ts`,
+    `${systemRoot}/app-inbox/client/app-inbox-queue-entry-writer.ts`,
+    `${systemRoot}/app-inbox/client/app-inbox-reservation-client.ts`,
+    `${systemRoot}/app-inbox/client/app-inbox-result-waiter.ts`,
+    `${systemRoot}/app-inbox/client/create-app-inbox-client-runtime.ts`,
     `${systemRoot}/client-state/client-state-service.ts`,
     `${systemRoot}/client-state/mutation/write-client-mutation.ts`,
     `${systemRoot}/client-state/inbox/client-state-inbox-handler.ts`,

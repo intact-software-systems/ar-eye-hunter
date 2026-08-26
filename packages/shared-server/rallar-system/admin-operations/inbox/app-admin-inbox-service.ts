@@ -24,7 +24,9 @@ import {
     type AppInboxOptions
 } from '../../app-inbox/app-inbox-options.ts';
 import type { AppInboxEntryRepository, AppInboxResultRepository } from '../../app-inbox/app-inbox-persistence-ports.ts';
-import { AppInboxQueueClient } from '../../app-inbox/app-inbox-queue-client.ts';
+import type { AppInboxReservationClient } from '../../app-inbox/client/app-inbox-reservation-client.ts';
+import type { AppInboxResultWaiter } from '../../app-inbox/client/app-inbox-result-waiter.ts';
+import { createAppInboxClientRuntime } from '../../app-inbox/client/create-app-inbox-client-runtime.ts';
 import { encodeAppInboxCommand, encodeAppInboxResult } from '../../app-inbox/app-inbox-registration-codecs.ts';
 import { AppInboxHandlerRegistry } from '../../app-inbox/handler/app-inbox-handler-registry.ts';
 import { createAppInboxHandlerRuntime } from '../../app-inbox/handler/app-inbox-handler-runtime.ts';
@@ -120,26 +122,25 @@ export class AppAdminInboxService {
     private readonly dependencies: AppAdminInboxServiceDependencies;
     private readonly config: AppAdminInboxServiceConfig;
     private readonly aggregateWaitPolicy: TryWithPolicy;
-    private readonly queueClient: AppInboxQueueClient;
+    private readonly reservationClient: AppInboxReservationClient;
+    private readonly resultWaiter: AppInboxResultWaiter;
     private readonly handlers: AppInboxHandlerRegistry;
     private readonly transactionWriter: AppInboxTransactionWriter;
     private readonly serviceId: string;
 
     constructor(dependencies: AppAdminInboxServiceDependencies, config: AppAdminInboxServiceConfig) {
-        this.queueClient = new AppInboxQueueClient(
-            {
-                inboxQueueReader: dependencies.inboxQueueReader,
-                resourceInboxRepository: dependencies.resourceInboxRepository,
-                resourceInboxResultsRepository: dependencies.resourceInboxResultsRepository
-            },
-            {
-                serviceId: config.serviceId,
-                defaultTopicId: ADMIN_APP_INBOX_TOPIC,
-                timing: config.timing,
-                options: config.appInbox,
-                wakeOwningQueue: dependencies.wakeQueueEngine
-            }
-        );
+        const clientRuntime = createAppInboxClientRuntime({
+            inboxQueueReader: dependencies.inboxQueueReader,
+            resourceInboxRepository: dependencies.resourceInboxRepository,
+            resourceInboxResultsRepository: dependencies.resourceInboxResultsRepository,
+            serviceId: config.serviceId,
+            defaultTopicId: ADMIN_APP_INBOX_TOPIC,
+            timing: config.timing,
+            options: config.appInbox,
+            wakeOwningQueue: dependencies.wakeQueueEngine
+        });
+        this.reservationClient = clientRuntime.reservationClient;
+        this.resultWaiter = clientRuntime.resultWaiter;
         const handlerRuntime = createAppInboxHandlerRuntime({
             inboxQueueReader: dependencies.inboxQueueReader,
             resultRepository: dependencies.resourceInboxResultsRepository,
@@ -184,7 +185,7 @@ export class AppAdminInboxService {
         });
 
         const key = toAdminPruneQueueKey(identity);
-        const reservation = await this.queueClient.reserveMaterializedEntry(
+        const reservation = await this.reservationClient.reserveMaterializedEntry(
             {
                 type: AppInboxType.ADMIN_PRUNE_EXPIRED,
                 topicId: key.topicId,
@@ -194,7 +195,7 @@ export class AppAdminInboxService {
                 data: null
             },
             async () => {
-                const capturedAtEpochMs = this.queueClient.nowEpochMs();
+                const capturedAtEpochMs = this.config.appInbox.nowEpochMs?.() ?? Date.now();
                 const command = await createAdminPruneCommand({
                     jobId: identity.jobId,
                     requestedBy: identity.requestedBy,
@@ -219,10 +220,9 @@ export class AppAdminInboxService {
         const command = decodeAdminPruneCommand(reservation.enqueue.data);
         await assertAdminPruneStoredIdentity(key, reservation.enqueue, command);
         assertMatchingAdminPruneIdentity(identity, command);
-        const enqueued = await this.queueClient.waitForReservedEntryResult<AdminPruneEnqueueResult>(
-            reservation.enqueue,
-            (value) => decodeAdminPruneEnqueueResultForCommand(value, command),
-            reservation.winner
+        const enqueued = await this.resultWaiter.waitForReservedResult<AdminPruneEnqueueResult>(
+            reservation,
+            (value) => decodeAdminPruneEnqueueResultForCommand(value, command)
         );
         return await this.toCallerResult(command, enqueued);
     }
@@ -269,7 +269,7 @@ export class AppAdminInboxService {
     }
 
     private async read(command: AdminPruneCommand): Promise<AdminPruneRead> {
-        const nowEpochMs = this.queueClient.nowEpochMs();
+        const nowEpochMs = this.config.appInbox.nowEpochMs?.() ?? Date.now();
         const countPairs = ADMIN_PRUNE_EXPIRED_CATEGORIES.map(async (category) => {
             const count = command.categories.includes(category)
                 ? await this.dependencies.pruner.countExpired(category, toAdminPruneExpiredOptions(command))
@@ -383,7 +383,7 @@ export class AppAdminInboxService {
     ): Promise<Either<AppInboxFailure, AdminPruneEnqueueResult>> {
         try {
             const entry = await tryWithPolicy(async () => {
-                const entry = await this.queueClient.resourceInboxResults.findByKey(
+                const entry = await this.dependencies.resourceInboxResultsRepository.findByKey(
                     toAdminPruneAggregateKey(command.jobId)
                 );
                 if (entry === undefined || entry.status !== EntityStatus.COMPLETED) {

@@ -69,8 +69,12 @@ Concurrency-driven rereads remain because they are part of current correctness.
 The application entry, queue reservation, domain decision, and durable result
 have separate owners:
 
-- `AppInboxQueueClient` materializes reservations, enqueues, wakes, waits, and
-  decodes results;
+- `AppInboxReservationClient` materializes commands that require a durable
+  reservation before their current authority can be computed;
+- `AppInboxQueueEntryWriter` writes current commands and wakes the owning queue;
+- `AppInboxCommandClient` coordinates ordinary enqueue-and-wait calls;
+- `AppInboxResultWaiter` polls completion state and decodes the typed durable
+  result;
 - `AppInboxHandlerRegistry` registers exact command decoders and handlers;
 - `AppInboxHandlerExecutor` invokes registered handlers and classifies
   retryable versus terminal failures;

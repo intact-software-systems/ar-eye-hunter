@@ -102,7 +102,9 @@ runtime
   HTTP route or mutating WebSocket topic
     -> authenticate and decode current command
     -> domain inbox service
-    -> AppInboxQueueClient reserve/enqueue/wait
+    -> AppInboxReservationClient for materialized commands, when required
+    -> AppInboxQueueEntryWriter writes the durable queue entry
+    -> AppInboxCommandClient waits for ordinary command completion
     -> QueueBox application-inbox task
     -> InboxQueueReader invokes the registered callback once per reserved attempt
     -> AppInboxHandlerExecutor.execute
@@ -116,7 +118,7 @@ runtime
          -> durable typed result
          -> reservation-fenced finalization
     -> commit
-    -> AppInboxResultWaiter decodes the durable result
+    -> AppInboxResultWaiter reads and decodes the durable result
     -> caller translates success or AppInboxFailure
 ```
 

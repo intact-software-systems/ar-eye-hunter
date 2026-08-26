@@ -15,7 +15,11 @@ import {
 } from '../../app-inbox/app-inbox-contracts.ts';
 import type { AppInboxFailure } from '../../app-inbox/app-inbox-failure.ts';
 import type { AppInboxOptions } from '../../app-inbox/app-inbox-options.ts';
-import { AppInboxQueueClient } from '../../app-inbox/app-inbox-queue-client.ts';
+import type { AppInboxCommandClient } from '../../app-inbox/client/app-inbox-command-client.ts';
+import type { AppInboxQueueEntryWriter } from '../../app-inbox/client/app-inbox-queue-entry-writer.ts';
+import type { AppInboxReservationClient } from '../../app-inbox/client/app-inbox-reservation-client.ts';
+import type { AppInboxResultWaiter } from '../../app-inbox/client/app-inbox-result-waiter.ts';
+import { createAppInboxClientRuntime } from '../../app-inbox/client/create-app-inbox-client-runtime.ts';
 import { encodeAppInboxCommand, encodeAppInboxResult } from '../../app-inbox/app-inbox-registration-codecs.ts';
 import { AppInboxHandlerRegistry } from '../../app-inbox/handler/app-inbox-handler-registry.ts';
 import { createAppInboxHandlerRuntime } from '../../app-inbox/handler/app-inbox-handler-runtime.ts';
@@ -86,7 +90,10 @@ export namespace AppCrdtInboxService {
 }
 
 export class AppCrdtInboxService {
-    private readonly queueClient: AppInboxQueueClient;
+    private readonly commandClient: AppInboxCommandClient;
+    private readonly queueEntryWriter: AppInboxQueueEntryWriter;
+    private readonly reservationClient: AppInboxReservationClient;
+    private readonly resultWaiter: AppInboxResultWaiter;
     private readonly handlers: AppInboxHandlerRegistry;
     private readonly transactionWriter: AppInboxTransactionWriter;
     private readonly readCurrentSession: ReadCurrentCrdtMutationSession;
@@ -96,20 +103,20 @@ export class AppCrdtInboxService {
     public readonly mutationService: CrdtMutationService;
 
     constructor(dependencies: AppCrdtInboxService.Dependencies, config: AppCrdtInboxService.Config) {
-        this.queueClient = new AppInboxQueueClient(
-            {
-                inboxQueueReader: dependencies.inboxQueueReader,
-                resourceInboxRepository: dependencies.resourceInboxRepository,
-                resourceInboxResultsRepository: dependencies.resourceInboxResultsRepository
-            },
-            {
-                serviceId: config.serviceId,
-                defaultTopicId: CRDT_APP_INBOX_TOPIC,
-                timing: config.timing,
-                options: config.appInbox,
-                wakeOwningQueue: dependencies.wakeQueueEngine
-            }
-        );
+        const clientRuntime = createAppInboxClientRuntime({
+            inboxQueueReader: dependencies.inboxQueueReader,
+            resourceInboxRepository: dependencies.resourceInboxRepository,
+            resourceInboxResultsRepository: dependencies.resourceInboxResultsRepository,
+            serviceId: config.serviceId,
+            defaultTopicId: CRDT_APP_INBOX_TOPIC,
+            timing: config.timing,
+            options: config.appInbox,
+            wakeOwningQueue: dependencies.wakeQueueEngine
+        });
+        this.commandClient = clientRuntime.commandClient;
+        this.queueEntryWriter = clientRuntime.queueEntryWriter;
+        this.reservationClient = clientRuntime.reservationClient;
+        this.resultWaiter = clientRuntime.resultWaiter;
         const handlerRuntime = createAppInboxHandlerRuntime({
             inboxQueueReader: dependencies.inboxQueueReader,
             resultRepository: dependencies.resourceInboxResultsRepository,
@@ -142,7 +149,7 @@ export class AppCrdtInboxService {
         command: CrdtMutationCommand
     ): Promise<Either<AppInboxFailure, CrdtMutationResult>> {
         const decoded = decodeCrdtMutationCommand(command);
-        return await this.queueClient.processEntryUntilCompletionResult(
+        return await this.commandClient.enqueueAndWaitForResult(
             {
                 type: toCrdtAppInboxType(decoded),
                 topicId: CRDT_APP_INBOX_TOPIC,
@@ -164,7 +171,7 @@ export class AppCrdtInboxService {
             resourceId: reservation.requestId,
             contextId: toCrdtHttpAdminContextId(reservation.callerId, reservation.documentKey)
         });
-        const reserved = await this.queueClient.reserveMaterializedEntry(
+        const reserved = await this.reservationClient.reserveMaterializedEntry(
             {
                 type,
                 ...key,
@@ -200,22 +207,24 @@ export class AppCrdtInboxService {
                 reservation.semanticHash
             );
         }
-        return await this.queueClient.waitForReservedEntryResult(
-            reserved.enqueue,
-            decodeCrdtMutationResult,
-            reserved.winner
+        return await this.resultWaiter.waitForReservedResult(
+            reserved,
+            decodeCrdtMutationResult
         );
     }
 
     writeCrdtCommandNoWaiting(command: CrdtMutationCommand): void {
         const decoded = decodeCrdtMutationCommand(command);
-        this.queueClient.processEntryNoWaiting({
+        void this.queueEntryWriter.enqueue({
             type: toCrdtAppInboxType(decoded),
             topicId: CRDT_APP_INBOX_TOPIC,
             resourceId: decoded.deliveryId,
             contextId: decoded.documentKey,
             senderId: decoded.actor.sessionId,
             data: encodeAppInboxCommand(decoded, 'CRDT AppInbox command')
+        }).catch((caught) => {
+            const error = caught instanceof Error ? caught : new Error(String(caught));
+            console.error('Error enqueueing CRDT AppInbox command without waiting', error);
         });
     }
 
@@ -238,7 +247,7 @@ export class AppCrdtInboxService {
         if (command.operation !== 'append') {
             throw new TypeError('CRDT append command is invalid');
         }
-        await this.queueClient.enqueue({
+        await this.queueEntryWriter.enqueue({
             type: toCrdtAppInboxType(command),
             topicId: CRDT_APP_INBOX_TOPIC,
             resourceId: command.deliveryId,

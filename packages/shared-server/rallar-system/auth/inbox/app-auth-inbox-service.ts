@@ -28,7 +28,8 @@ import {
 import { toUnexpectedAppInboxFailure, type AppInboxFailure } from '../../app-inbox/app-inbox-failure.ts';
 import type { AppInboxOptions } from '../../app-inbox/app-inbox-options.ts';
 import type { AppInboxEntryRepository, AppInboxResultRepository } from '../../app-inbox/app-inbox-persistence-ports.ts';
-import { AppInboxQueueClient } from '../../app-inbox/app-inbox-queue-client.ts';
+import type { AppInboxCommandClient } from '../../app-inbox/client/app-inbox-command-client.ts';
+import { createAppInboxClientRuntime } from '../../app-inbox/client/create-app-inbox-client-runtime.ts';
 import { encodeAppInboxCommand, encodeAppInboxResult } from '../../app-inbox/app-inbox-registration-codecs.ts';
 import { AppInboxHandlerRegistry } from '../../app-inbox/handler/app-inbox-handler-registry.ts';
 import { createAppInboxHandlerRuntime } from '../../app-inbox/handler/app-inbox-handler-runtime.ts';
@@ -114,7 +115,7 @@ export namespace AppAuthInboxService {
 }
 
 export class AppAuthInboxService {
-    private readonly queueClient: AppInboxQueueClient;
+    private readonly commandClient: AppInboxCommandClient;
     private readonly handlers: AppInboxHandlerRegistry;
     private readonly authInboxHandler: AuthInboxHandler;
     private readonly authInboxRepository: AuthInboxRepository;
@@ -124,20 +125,16 @@ export class AppAuthInboxService {
     public readonly credentialIssuer: AuthCredentialIssuer;
 
     constructor(dependencies: AppAuthInboxService.Dependencies, config: AppAuthInboxService.Config) {
-        this.queueClient = new AppInboxQueueClient(
-            {
-                inboxQueueReader: dependencies.inboxQueueReader,
-                resourceInboxRepository: dependencies.resourceInboxRepository,
-                resourceInboxResultsRepository: dependencies.resourceInboxResultsRepository
-            },
-            {
-                serviceId: config.serviceId,
-                defaultTopicId: AUTH_STATE_APP_INBOX_TOPIC,
-                timing: config.timing,
-                options: config.options,
-                wakeOwningQueue: config.wakeOwningQueue
-            }
-        );
+        this.commandClient = createAppInboxClientRuntime({
+            inboxQueueReader: dependencies.inboxQueueReader,
+            resourceInboxRepository: dependencies.resourceInboxRepository,
+            resourceInboxResultsRepository: dependencies.resourceInboxResultsRepository,
+            serviceId: config.serviceId,
+            defaultTopicId: AUTH_STATE_APP_INBOX_TOPIC,
+            timing: config.timing,
+            options: config.options,
+            wakeOwningQueue: config.wakeOwningQueue
+        }).commandClient;
         const handlerRuntime = createAppInboxHandlerRuntime({
             inboxQueueReader: dependencies.inboxQueueReader,
             resultRepository: dependencies.resourceInboxResultsRepository,
@@ -198,7 +195,7 @@ export class AppAuthInboxService {
         const decoded = decodeAuthMutationIntent(intent);
         let persisted: Either<AppInboxFailure, AuthMutationResult>;
         try {
-            persisted = await this.queueClient.processEntryUntilCompletionResult<AuthMutationResult>(
+            persisted = await this.commandClient.enqueueAndWaitForResult<AuthMutationResult>(
                 {
                     type: toAuthAppInboxType(decoded),
                     topicId: toAuthAppInboxType(decoded),
