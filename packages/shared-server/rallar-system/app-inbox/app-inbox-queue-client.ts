@@ -126,8 +126,9 @@ export class AppInboxQueueClient {
                 );
             },
             decodeJsonWireResult
-        ).catch((error: unknown) => {
-            console.error(`Error processing entry without waiting: ${String(error)}`);
+        ).catch((caught) => {
+            const error = caught instanceof Error ? caught : new Error(String(caught));
+            console.error('Error processing AppInbox entry without waiting', error);
         });
     }
 
