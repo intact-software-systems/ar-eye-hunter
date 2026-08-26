@@ -79,24 +79,24 @@ describe('GitHub Actions runtime governance', () => {
         );
     });
 
-    it('restores pull-request Deno caches without permitting pull requests to save them', async () => {
+    it('restores Deno caches without saving unless the exact main push is checked out', async () => {
         const releaseGate = await readFile(
             path.join(repoRoot, '.github/workflows/release-gate.yml'),
             'utf8'
         );
-        const pullRequestCacheStep = getWorkflowStep(
+        const restoreOnlyCacheStep = getWorkflowStep(
             releaseGate,
-            'Restore Deno cache for pull requests'
+            'Restore Deno cache without save permission'
         );
         const trustedCacheStep = getWorkflowStep(releaseGate, 'Cache Deno for trusted runs');
 
-        expect(pullRequestCacheStep).toContain(
-            'if: ${{ github.event_name == \'pull_request\' }}'
+        expect(restoreOnlyCacheStep).toContain(
+            'if: ${{ github.event_name != \'push\' || github.ref != \'refs/heads/main\' || inputs.candidate_ref != github.sha }}'
         );
-        expect(pullRequestCacheStep).toContain('uses: actions/cache/restore@v6');
-        expect(pullRequestCacheStep).not.toContain('uses: actions/cache@v6');
+        expect(restoreOnlyCacheStep).toContain('uses: actions/cache/restore@v6');
+        expect(restoreOnlyCacheStep).not.toContain('uses: actions/cache@v6');
         expect(trustedCacheStep).toContain(
-            'if: ${{ github.event_name != \'pull_request\' }}'
+            'if: ${{ github.event_name == \'push\' && github.ref == \'refs/heads/main\' && inputs.candidate_ref == github.sha }}'
         );
         expect(trustedCacheStep).toContain('uses: actions/cache@v6');
         expect(releaseGate).not.toContain('lookup-only:');

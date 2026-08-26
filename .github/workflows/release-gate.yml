@@ -59,9 +59,9 @@ jobs:
         with:
           deno-version: v2.x
 
-      # Pull requests may restore trusted entries, but only trusted runs may save cache state.
-      - name: Restore Deno cache for pull requests
-        if: ${{ github.event_name == 'pull_request' }}
+      # Only a push validating its exact main commit may save cache state; every other caller restores only.
+      - name: Restore Deno cache without save permission
+        if: ${{ github.event_name != 'push' || github.ref != 'refs/heads/main' || inputs.candidate_ref != github.sha }}
         uses: actions/cache/restore@v6
         with:
           path: |
@@ -72,7 +72,7 @@ jobs:
             ${{ runner.os }}-deno-
 
       - name: Cache Deno for trusted runs
-        if: ${{ github.event_name != 'pull_request' }}
+        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && inputs.candidate_ref == github.sha }}
         uses: actions/cache@v6
         with:
           path: |
