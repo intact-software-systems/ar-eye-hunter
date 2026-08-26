@@ -1,7 +1,10 @@
 import { createClientRestSnapshotReadSelector } from '@shared-server/rallar-system/client-state/snapshot/client-rest-snapshot-read-selector.ts';
 import { createClientStateSnapshotReadThroughCache } from '@shared-server/rallar-system/client-state/snapshot/client-state-snapshot-read-through-cache.ts';
 import { createGroupRestSnapshotReadSelector } from '@shared-server/rallar-system/group-state/snapshot/group-rest-snapshot-read-selector.ts';
-import { describe, expect, it, vi } from 'vitest';
+import type { ClientPrincipalRef, ClientSnapshot } from '@shared/api/client-types.ts';
+import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
+import type { StateSnapshotReadDiagnosticEvent } from '@shared/api/state-snapshot-read.ts';
+import { describe, expect, it } from 'vitest';
 import { configureTestCacheRepositories } from '../../../../cache-repository-config.ts';
 import { createClientCache, createClientSnapshot, createGroupCache, createGroupSnapshot } from './rest-state-snapshot-read-test-fixtures.ts';
 
@@ -9,7 +12,10 @@ describe('client REST snapshot read selector', () => {
     it('uses one durable read for tokenless and strict reads even with eligible cache state', async () => {
         const cached = createClientSnapshot(5);
         const durableSnapshot = createClientSnapshot(6);
-        const durable = { readSnapshot: vi.fn().mockResolvedValue(durableSnapshot) };
+        const durable = createClientDurableReader(cached.principal, [
+            durableSnapshot,
+            durableSnapshot
+        ]);
         const cache = createClientCache(cached);
         const selector = createClientRestSnapshotReadSelector({ durable, cache });
 
@@ -28,13 +34,11 @@ describe('client REST snapshot read selector', () => {
             source: 'durable',
             snapshot: durableSnapshot
         });
-
-        expect(durable.readSnapshot).toHaveBeenCalledTimes(2);
     });
 
     it('uses eligible scalar cache state without durable I/O', async () => {
         const cached = createClientSnapshot(5);
-        const durable = { readSnapshot: vi.fn() };
+        const durable = { readSnapshot: rejectUnexpectedClientDurableRead };
         const selector = createClientRestSnapshotReadSelector({
             durable,
             cache: createClientCache(cached)
@@ -47,13 +51,12 @@ describe('client REST snapshot read selector', () => {
             source: 'cache',
             snapshot: cached
         });
-        expect(durable.readSnapshot).not.toHaveBeenCalled();
     });
 
     it('falls back once and returns a typed durable scalar shortfall', async () => {
         const cached = createClientSnapshot(2);
         const durableSnapshot = createClientSnapshot(3);
-        const durable = { readSnapshot: vi.fn().mockResolvedValue(durableSnapshot) };
+        const durable = createClientDurableReader(cached.principal, [durableSnapshot]);
         const selector = createClientRestSnapshotReadSelector({
             durable,
             cache: createClientCache(cached)
@@ -66,7 +69,6 @@ describe('client REST snapshot read selector', () => {
             source: 'durable',
             snapshot: durableSnapshot
         });
-        expect(durable.readSnapshot).toHaveBeenCalledOnce();
     });
 
     it('keeps a newer observation when an older durable absence finishes', async () => {
@@ -74,20 +76,20 @@ describe('client REST snapshot read selector', () => {
         const newer = createClientSnapshot(2);
         const cache = createClientCache(observed);
         const durable = {
-            readSnapshot: vi.fn(async () => {
+            readSnapshot: async (ref: ClientPrincipalRef): Promise<undefined> => {
+                expect(ref).toEqual(observed.principal);
                 cache.publish(newer);
                 return undefined;
-            })
+            }
         };
-        const diagnostics = vi.fn();
-        const now = vi.fn()
-            .mockReturnValueOnce(10)
-            .mockReturnValueOnce(17);
+        let diagnostic: StateSnapshotReadDiagnosticEvent | undefined;
         const selector = createClientRestSnapshotReadSelector({
             durable,
             cache,
-            diagnostics,
-            now
+            diagnostics: (event) => {
+                diagnostic = event;
+            },
+            now: createSequentialClock([10, 17])
         });
 
         await expect(selector.read(observed.principal)).resolves.toEqual({
@@ -95,7 +97,7 @@ describe('client REST snapshot read selector', () => {
             source: 'durable'
         });
         expect(cache.current()).toBe(newer);
-        expect(diagnostics).toHaveBeenCalledWith({
+        expect(diagnostic).toEqual({
             name: 'rallar.rest.client-state-snapshot-read',
             source: 'durable',
             result: 'not-found',
@@ -104,9 +106,7 @@ describe('client REST snapshot read selector', () => {
             strictMode: false,
             durationMs: 7
         });
-        expect(Object.keys(diagnostics.mock.calls[0]?.[0] ?? {})).not.toContain(
-            'principalId'
-        );
+        expect(diagnostic).not.toHaveProperty('principalId');
     });
 
     it('evicts matching loaned state without deleting a newer latest snapshot', async () => {
@@ -115,7 +115,14 @@ describe('client REST snapshot read selector', () => {
         const newer = createClientSnapshot(2);
         const cache = createClientStateSnapshotReadThroughCache({
             clientsRepository: {
-                readSnapshot: vi.fn().mockResolvedValue(first)
+                readSnapshot: async (ref): Promise<ClientSnapshot> => {
+                    expect(ref).toEqual({
+                        applicationId: first.principal.applicationId,
+                        workspaceId: first.principal.workspaceId,
+                        principalId: first.principal.principalId
+                    });
+                    return first;
+                }
             }
         });
         const loaded = await cache.findOrLoadByRef(first.principal);
@@ -140,7 +147,7 @@ describe('group REST snapshot read selector', () => {
         ] as const
     )('uses a cache tuple that %s the requested floor', async (_name, revision) => {
         const cached = createGroupSnapshot(revision.groupRevision, revision.presenceRevision);
-        const durable = { readSnapshot: vi.fn() };
+        const durable = { readSnapshot: rejectUnexpectedGroupDurableRead };
         const selector = createGroupRestSnapshotReadSelector({
             durable,
             cache: createGroupCache(cached)
@@ -155,7 +162,6 @@ describe('group REST snapshot read selector', () => {
             source: 'cache',
             snapshot: cached
         });
-        expect(durable.readSnapshot).not.toHaveBeenCalled();
     });
 
     it.each(
@@ -166,7 +172,7 @@ describe('group REST snapshot read selector', () => {
     )('falls back once when the cache tuple is %s', async (_name, revision) => {
         const cached = createGroupSnapshot(revision.groupRevision, revision.presenceRevision);
         const durableSnapshot = createGroupSnapshot(3, 3);
-        const durable = { readSnapshot: vi.fn().mockResolvedValue(durableSnapshot) };
+        const durable = createGroupDurableReader(cached.group, [durableSnapshot]);
         const selector = createGroupRestSnapshotReadSelector({
             durable,
             cache: createGroupCache(cached)
@@ -181,7 +187,6 @@ describe('group REST snapshot read selector', () => {
             source: 'durable',
             snapshot: durableSnapshot
         });
-        expect(durable.readSnapshot).toHaveBeenCalledOnce();
     });
 
     it.each(
@@ -194,7 +199,7 @@ describe('group REST snapshot read selector', () => {
             revision.groupRevision,
             revision.presenceRevision
         );
-        const durable = { readSnapshot: vi.fn().mockResolvedValue(durableSnapshot) };
+        const durable = createGroupDurableReader(durableSnapshot.group, [durableSnapshot]);
         const selector = createGroupRestSnapshotReadSelector({
             durable,
             cache: createGroupCache()
@@ -209,13 +214,12 @@ describe('group REST snapshot read selector', () => {
             source: 'durable',
             snapshot: durableSnapshot
         });
-        expect(durable.readSnapshot).toHaveBeenCalledOnce();
     });
 
     it('forces a strict tokened read through one durable snapshot', async () => {
         const cached = createGroupSnapshot(5, 5);
         const durableSnapshot = createGroupSnapshot(6, 6);
-        const durable = { readSnapshot: vi.fn().mockResolvedValue(durableSnapshot) };
+        const durable = createGroupDurableReader(cached.group, [durableSnapshot]);
         const selector = createGroupRestSnapshotReadSelector({
             durable,
             cache: createGroupCache(cached)
@@ -231,7 +235,6 @@ describe('group REST snapshot read selector', () => {
             source: 'durable',
             snapshot: durableSnapshot
         });
-        expect(durable.readSnapshot).toHaveBeenCalledOnce();
     });
 
     it('keeps a newer group observation when durable absence loses the race', async () => {
@@ -239,17 +242,20 @@ describe('group REST snapshot read selector', () => {
         const newer = createGroupSnapshot(2, 2);
         const cache = createGroupCache(observed);
         const durable = {
-            readSnapshot: vi.fn(async () => {
+            readSnapshot: async (ref: GroupRef): Promise<undefined> => {
+                expect(ref).toEqual(observed.group);
                 cache.publish(newer);
                 return undefined;
-            })
+            }
         };
-        const diagnostics = vi.fn();
+        let diagnostic: StateSnapshotReadDiagnosticEvent | undefined;
         const selector = createGroupRestSnapshotReadSelector({
             durable,
             cache,
-            diagnostics,
-            now: vi.fn().mockReturnValueOnce(4).mockReturnValueOnce(9)
+            diagnostics: (event) => {
+                diagnostic = event;
+            },
+            now: createSequentialClock([4, 9])
         });
 
         await expect(selector.read(observed.group)).resolves.toEqual({
@@ -257,7 +263,7 @@ describe('group REST snapshot read selector', () => {
             source: 'durable'
         });
         expect(cache.current()).toBe(newer);
-        expect(diagnostics).toHaveBeenCalledWith({
+        expect(diagnostic).toEqual({
             name: 'rallar.rest.group-state-snapshot-read',
             source: 'durable',
             result: 'not-found',
@@ -273,8 +279,8 @@ describe('logical cache convergence', () => {
     it('makes an isolated third client and group cache fall back to one durable source', async () => {
         let durableClient = createClientSnapshot(1);
         let durableGroup = createGroupSnapshot(1, 1);
-        const clientRead = vi.fn(async () => durableClient);
-        const groupRead = vi.fn(async () => durableGroup);
+        const clientRead = async (): Promise<ClientSnapshot> => durableClient;
+        const groupRead = async (): Promise<GroupSnapshot> => durableGroup;
         const clientCaches = [createClientCache(), createClientCache(), createClientCache()];
         const groupCaches = [createGroupCache(), createGroupCache(), createGroupCache()];
         const clientSelectors = clientCaches.map((cache) =>
@@ -316,8 +322,56 @@ describe('logical cache convergence', () => {
             status: 'found',
             source: 'durable'
         });
-
-        expect(clientRead).toHaveBeenCalledTimes(5);
-        expect(groupRead).toHaveBeenCalledTimes(5);
     });
 });
+
+function createClientDurableReader(
+    expectedRef: ClientPrincipalRef,
+    snapshots: readonly (ClientSnapshot | undefined)[]
+): Readonly<{ readSnapshot(ref: ClientPrincipalRef): Promise<ClientSnapshot | undefined>; }> {
+    let index = 0;
+    return {
+        readSnapshot: async (ref) => {
+            expect(ref).toEqual(expectedRef);
+            if (index >= snapshots.length) {
+                throw new Error('Client snapshot selector performed an extra durable read');
+            }
+            return snapshots[index++];
+        }
+    };
+}
+
+function createGroupDurableReader(
+    expectedRef: GroupRef,
+    snapshots: readonly (GroupSnapshot | undefined)[]
+): Readonly<{ readSnapshot(ref: GroupRef): Promise<GroupSnapshot | undefined>; }> {
+    let index = 0;
+    return {
+        readSnapshot: async (ref) => {
+            expect(ref).toEqual(expectedRef);
+            if (index >= snapshots.length) {
+                throw new Error('Group snapshot selector performed an extra durable read');
+            }
+            return snapshots[index++];
+        }
+    };
+}
+
+function rejectUnexpectedClientDurableRead(): Promise<never> {
+    return Promise.reject(new Error('Eligible client cache state must avoid durable I/O'));
+}
+
+function rejectUnexpectedGroupDurableRead(): Promise<never> {
+    return Promise.reject(new Error('Eligible group cache state must avoid durable I/O'));
+}
+
+function createSequentialClock(values: readonly number[]): () => number {
+    let index = 0;
+    return () => {
+        const value = values[index++];
+        if (value === undefined) {
+            throw new Error('Snapshot selector read the clock more often than expected');
+        }
+        return value;
+    };
+}

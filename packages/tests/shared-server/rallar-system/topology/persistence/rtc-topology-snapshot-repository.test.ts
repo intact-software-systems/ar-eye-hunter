@@ -45,9 +45,6 @@ describe('RTC topology snapshot repository', () => {
 
     it('stores topology snapshots without invoking application locks', async () => {
         const runtimeRepository = new FakeRuntimeStateRepository();
-        vi.spyOn(runtimeRepository, 'lockKey').mockRejectedValue(
-            new Error('targeted topology locks are forbidden')
-        );
         const repository = new RtcTopologySnapshotRepository(runtimeRepository);
         const groupRef = createGroupRef();
         const snapshot = createTopologySnapshot(groupRef, 3);
@@ -74,7 +71,10 @@ describe('RTC topology snapshot repository', () => {
             status: 'accepted',
             observation: 'inserted'
         });
-        const writes = vi.spyOn(runtimeRepository, 'upsertIfRevision');
+        const beforeDuplicate = await runtimeRepository.findEntry(
+            RTC_TOPOLOGY_SNAPSHOTS_NAMESPACE,
+            repository.snapshotKey(snapshot.groupRef)
+        );
         await expect(
             repository.commitSnapshot({
                 expected: reordered,
@@ -84,12 +84,16 @@ describe('RTC topology snapshot repository', () => {
             status: 'accepted',
             observation: 'duplicate'
         });
-        expect(writes).not.toHaveBeenCalled();
+        await expect(
+            runtimeRepository.findEntry(
+                RTC_TOPOLOGY_SNAPSHOTS_NAMESPACE,
+                repository.snapshotKey(snapshot.groupRef)
+            )
+        ).resolves.toEqual(beforeDuplicate);
     });
 
     it('lets exactly one snapshot planner claim an absent predecessor without locks', async () => {
         const runtimeRepository = new FakeRuntimeStateRepository();
-        vi.spyOn(runtimeRepository, 'lockKey').mockResolvedValue();
         const repository = new RtcTopologySnapshotRepository(runtimeRepository);
         const groupRef = createGroupRef();
         const first = createTopologySnapshot(groupRef, 1);

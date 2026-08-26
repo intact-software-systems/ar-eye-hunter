@@ -80,11 +80,11 @@ describe('Mutation route owner analysis contracts', () => {
     it('rejects a CRDT reservation builder disconnected from command materialization', () => {
         const source = read(CRDT_ADMIN_MUTATIONS);
         const connectedMaterializer = 'materialize: () => createCrdtAdminCommand(input.mutation),';
-        expect(source).toContain(connectedMaterializer);
         const disconnected = source.replace(
             connectedMaterializer,
             'materialize: () => disconnectedCrdtAdminCommand(input.mutation),'
         );
+        expect(disconnected).not.toBe(source);
         const issues = routingContract.validateMutationRouteInventory(
             routingContract.MUTATION_ROUTE_INVENTORY,
             { sourceOverrides: new Map([[CRDT_ADMIN_MUTATIONS, disconnected]]) }

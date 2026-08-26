@@ -1005,6 +1005,374 @@ moved or changed test.
       "summary": "Release automation checks pinned TypeScript workspaces separately from Deno-owned applications. Executable assertion: “keeps TypeScript and Deno checking as separate release gates”.",
       "semanticCoverage": "packages/tests/repo/typescript-7-boundaries.test.ts#keeps TypeScript and Deno checking as separate release gates",
       "coverageRelation": "The release-boundary test executes the manifest/workflow inspection that keeps npm TypeScript checking separate from Deno checking; this workflow read is its exact release interface."
+    },
+    {
+      "id": "group-http-mutation-contract--rejects-a-conditional-private-owner-call-in-the-exported-family-",
+      "domain": "Group HTTP mutation contract",
+      "owner": "Rallar server maintainers",
+      "summary": "Public group HTTP actions translate into complete canonical AppInbox command shapes. Executable assertion: “rejects a conditional private-owner call in the exported family registrar”.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-http-shapes.test.ts#rejects a conditional private-owner call in the exported family registrar",
+      "coverageRelation": "The named HTTP-shape test executes one malformed command, result, registration, control-flow, or translator mutation and requires the analyzer to reject that exact public mutation path."
+    },
+    {
+      "id": "group-http-mutation-contract--rejects-a-correct-handoff-found-only-after-the-handler-return",
+      "domain": "Group HTTP mutation contract",
+      "owner": "Rallar server maintainers",
+      "summary": "Public group HTTP actions translate into complete canonical AppInbox command shapes. Executable assertion: “rejects a correct handoff found only after the handler return”.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-http-shapes.test.ts#rejects a correct handoff found only after the handler return",
+      "coverageRelation": "The named HTTP-shape test executes one malformed command, result, registration, control-flow, or translator mutation and requires the analyzer to reject that exact public mutation path."
+    },
+    {
+      "id": "group-http-mutation-contract--rejects-a-correct-handoff-found-only-in-a-literal-false-handler-",
+      "domain": "Group HTTP mutation contract",
+      "owner": "Rallar server maintainers",
+      "summary": "Public group HTTP actions translate into complete canonical AppInbox command shapes. Executable assertion: “rejects a correct handoff found only in a literal-false handler branch”.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-http-shapes.test.ts#rejects a correct handoff found only in a literal-false handler branch",
+      "coverageRelation": "The named HTTP-shape test executes one malformed command, result, registration, control-flow, or translator mutation and requires the analyzer to reject that exact public mutation path."
+    },
+    {
+      "id": "group-http-mutation-contract--rejects-a-correct-handoff-found-only-in-an-uninvoked-nested-hand",
+      "domain": "Group HTTP mutation contract",
+      "owner": "Rallar server maintainers",
+      "summary": "Public group HTTP actions translate into complete canonical AppInbox command shapes. Executable assertion: “rejects a correct handoff found only in an uninvoked nested handler function”.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-http-shapes.test.ts#rejects a correct handoff found only in an uninvoked nested handler function",
+      "coverageRelation": "The named HTTP-shape test executes one malformed command, result, registration, control-flow, or translator mutation and requires the analyzer to reject that exact public mutation path."
+    },
+    {
+      "id": "group-http-mutation-contract--rejects-a-duplicate-private-owner-call-in-the-exported-family-re",
+      "domain": "Group HTTP mutation contract",
+      "owner": "Rallar server maintainers",
+      "summary": "Public group HTTP actions translate into complete canonical AppInbox command shapes. Executable assertion: “rejects a duplicate private-owner call in the exported family registrar”.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-http-shapes.test.ts#rejects a duplicate private-owner call in the exported family registrar",
+      "coverageRelation": "The named HTTP-shape test executes one malformed command, result, registration, control-flow, or translator mutation and requires the analyzer to reject that exact public mutation path."
+    },
+    {
+      "id": "group-http-mutation-contract--rejects-a-private-owner-call-after-a-family-registrar-return",
+      "domain": "Group HTTP mutation contract",
+      "owner": "Rallar server maintainers",
+      "summary": "Public group HTTP actions translate into complete canonical AppInbox command shapes. Executable assertion: “rejects a private-owner call after a family-registrar return”.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-http-shapes.test.ts#rejects a private-owner call after a family-registrar return",
+      "coverageRelation": "The named HTTP-shape test executes one malformed command, result, registration, control-flow, or translator mutation and requires the analyzer to reject that exact public mutation path."
+    },
+    {
+      "id": "group-http-mutation-contract--rejects-a-removed-private-owner-call-from-the-exported-family-re",
+      "domain": "Group HTTP mutation contract",
+      "owner": "Rallar server maintainers",
+      "summary": "Public group HTTP actions translate into complete canonical AppInbox command shapes. Executable assertion: “rejects a removed private-owner call from the exported family registrar”.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-http-shapes.test.ts#rejects a removed private-owner call from the exported family registrar",
+      "coverageRelation": "The named HTTP-shape test executes one malformed command, result, registration, control-flow, or translator mutation and requires the analyzer to reject that exact public mutation path."
+    },
+    {
+      "id": "group-http-mutation-contract--rejects-a-second-exact-registration-in-the-exported-family-regis",
+      "domain": "Group HTTP mutation contract",
+      "owner": "Rallar server maintainers",
+      "summary": "Public group HTTP actions translate into complete canonical AppInbox command shapes. Executable assertion: “rejects a second exact registration in the exported family registrar”.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-http-shapes.test.ts#rejects a second exact registration in the exported family registrar",
+      "coverageRelation": "The named HTTP-shape test executes one malformed command, result, registration, control-flow, or translator mutation and requires the analyzer to reject that exact public mutation path."
+    },
+    {
+      "id": "group-http-mutation-contract--rejects-a-separately-bound-command-declared-after-its-submission",
+      "domain": "Group HTTP mutation contract",
+      "owner": "Rallar server maintainers",
+      "summary": "Public group HTTP actions translate into complete canonical AppInbox command shapes. Executable assertion: “rejects a separately bound command declared after its submission”.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-http-shapes.test.ts#rejects a separately bound command declared after its submission",
+      "coverageRelation": "The named HTTP-shape test executes one malformed command, result, registration, control-flow, or translator mutation and requires the analyzer to reject that exact public mutation path."
+    },
+    {
+      "id": "group-http-mutation-contract--rejects-an-appinbox-type-overridden-by-a-computed-result-object-",
+      "domain": "Group HTTP mutation contract",
+      "owner": "Rallar server maintainers",
+      "summary": "Public group HTTP actions translate into complete canonical AppInbox command shapes. Executable assertion: “rejects an AppInbox type overridden by a computed result-object property”.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-http-shapes.test.ts#rejects an AppInbox type overridden by a computed result-object property",
+      "coverageRelation": "The named HTTP-shape test executes one malformed command, result, registration, control-flow, or translator mutation and requires the analyzer to reject that exact public mutation path."
+    },
+    {
+      "id": "group-http-mutation-contract--rejects-an-appinbox-type-overridden-by-a-later-result-object-spr",
+      "domain": "Group HTTP mutation contract",
+      "owner": "Rallar server maintainers",
+      "summary": "Public group HTTP actions translate into complete canonical AppInbox command shapes. Executable assertion: “rejects an AppInbox type overridden by a later result-object spread”.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-http-shapes.test.ts#rejects an AppInbox type overridden by a later result-object spread",
+      "coverageRelation": "The named HTTP-shape test executes one malformed command, result, registration, control-flow, or translator mutation and requires the analyzer to reject that exact public mutation path."
+    },
+    {
+      "id": "group-http-mutation-contract--rejects-an-exact-registration-after-an-unconditional-owner-retur",
+      "domain": "Group HTTP mutation contract",
+      "owner": "Rallar server maintainers",
+      "summary": "Public group HTTP actions translate into complete canonical AppInbox command shapes. Executable assertion: “rejects an exact registration after an unconditional owner return”.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-http-shapes.test.ts#rejects an exact registration after an unconditional owner return",
+      "coverageRelation": "The named HTTP-shape test executes one malformed command, result, registration, control-flow, or translator mutation and requires the analyzer to reject that exact public mutation path."
+    },
+    {
+      "id": "group-http-mutation-contract--rejects-an-exact-registration-inside-a-literal-false-owner-branc",
+      "domain": "Group HTTP mutation contract",
+      "owner": "Rallar server maintainers",
+      "summary": "Public group HTTP actions translate into complete canonical AppInbox command shapes. Executable assertion: “rejects an exact registration inside a literal-false owner branch”.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-http-shapes.test.ts#rejects an exact registration inside a literal-false owner branch",
+      "coverageRelation": "The named HTTP-shape test executes one malformed command, result, registration, control-flow, or translator mutation and requires the analyzer to reject that exact public mutation path."
+    },
+    {
+      "id": "group-http-mutation-contract--rejects-an-operation-overridden-by-a-computed-command-object-pro",
+      "domain": "Group HTTP mutation contract",
+      "owner": "Rallar server maintainers",
+      "summary": "Public group HTTP actions translate into complete canonical AppInbox command shapes. Executable assertion: “rejects an operation overridden by a computed command-object property”.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-http-shapes.test.ts#rejects an operation overridden by a computed command-object property",
+      "coverageRelation": "The named HTTP-shape test executes one malformed command, result, registration, control-flow, or translator mutation and requires the analyzer to reject that exact public mutation path."
+    },
+    {
+      "id": "group-http-mutation-contract--rejects-an-operation-overridden-by-a-later-command-object-spread",
+      "domain": "Group HTTP mutation contract",
+      "owner": "Rallar server maintainers",
+      "summary": "Public group HTTP actions translate into complete canonical AppInbox command shapes. Executable assertion: “rejects an operation overridden by a later command-object spread”.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-http-shapes.test.ts#rejects an operation overridden by a later command-object spread",
+      "coverageRelation": "The named HTTP-shape test executes one malformed command, result, registration, control-flow, or translator mutation and requires the analyzer to reject that exact public mutation path."
+    },
+    {
+      "id": "group-http-mutation-contract--rejects-duplicate-direct-appinbox-type-properties-in-the-result-",
+      "domain": "Group HTTP mutation contract",
+      "owner": "Rallar server maintainers",
+      "summary": "Public group HTTP actions translate into complete canonical AppInbox command shapes. Executable assertion: “rejects duplicate direct AppInbox type properties in the result object”.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-http-shapes.test.ts#rejects duplicate direct AppInbox type properties in the result object",
+      "coverageRelation": "The named HTTP-shape test executes one malformed command, result, registration, control-flow, or translator mutation and requires the analyzer to reject that exact public mutation path."
+    },
+    {
+      "id": "group-http-mutation-contract--rejects-duplicate-direct-operation-properties-in-the-command-obj",
+      "domain": "Group HTTP mutation contract",
+      "owner": "Rallar server maintainers",
+      "summary": "Public group HTTP actions translate into complete canonical AppInbox command shapes. Executable assertion: “rejects duplicate direct operation properties in the command object”.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-http-shapes.test.ts#rejects duplicate direct operation properties in the command object",
+      "coverageRelation": "The named HTTP-shape test executes one malformed command, result, registration, control-flow, or translator mutation and requires the analyzer to reject that exact public mutation path."
+    },
+    {
+      "id": "group-mutation-construction--rejects-a-canonical-family-name-rebound-to-a-different-imported-",
+      "domain": "Group mutation construction boundary",
+      "owner": "Rallar server maintainers",
+      "summary": "Group mutation dependencies are constructed once and route commands to the canonical transaction owner. Executable assertion: “rejects a canonical family name rebound to a different imported family”.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts#rejects a canonical family name rebound to a different imported family",
+      "coverageRelation": "The named construction test executes one ownership mutation against the group registrar and requires the analyzer to reject the exact missing, duplicated, reordered, or rebound dependency path."
+    },
+    {
+      "id": "group-mutation-construction--rejects-a-conditional-family-call-in-the-exported-root",
+      "domain": "Group mutation construction boundary",
+      "owner": "Rallar server maintainers",
+      "summary": "Group mutation dependencies are constructed once and route commands to the canonical transaction owner. Executable assertion: “rejects a conditional family call in the exported root”.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts#rejects a conditional family call in the exported root",
+      "coverageRelation": "The named construction test executes one ownership mutation against the group registrar and requires the analyzer to reject the exact missing, duplicated, reordered, or rebound dependency path."
+    },
+    {
+      "id": "group-mutation-construction--rejects-a-different-app-passed-from-a-family-to-its-private-owne",
+      "domain": "Group mutation construction boundary",
+      "owner": "Rallar server maintainers",
+      "summary": "Group mutation dependencies are constructed once and route commands to the canonical transaction owner. Executable assertion: “rejects a different app passed from a family to its private owner”.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts#rejects a different app passed from a family to its private owner",
+      "coverageRelation": "The named construction test executes one ownership mutation against the group registrar and requires the analyzer to reject the exact missing, duplicated, reordered, or rebound dependency path."
+    },
+    {
+      "id": "group-mutation-construction--rejects-a-duplicate-family-call-in-the-exported-root",
+      "domain": "Group mutation construction boundary",
+      "owner": "Rallar server maintainers",
+      "summary": "Group mutation dependencies are constructed once and route commands to the canonical transaction owner. Executable assertion: “rejects a duplicate family call in the exported root”.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts#rejects a duplicate family call in the exported root",
+      "coverageRelation": "The named construction test executes one ownership mutation against the group registrar and requires the analyzer to reject the exact missing, duplicated, reordered, or rebound dependency path."
+    },
+    {
+      "id": "group-mutation-construction--rejects-a-family-call-after-an-exported-root-return",
+      "domain": "Group mutation construction boundary",
+      "owner": "Rallar server maintainers",
+      "summary": "Group mutation dependencies are constructed once and route commands to the canonical transaction owner. Executable assertion: “rejects a family call after an exported-root return”.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts#rejects a family call after an exported-root return",
+      "coverageRelation": "The named construction test executes one ownership mutation against the group registrar and requires the analyzer to reject the exact missing, duplicated, reordered, or rebound dependency path."
+    },
+    {
+      "id": "group-mutation-construction--rejects-a-family-call-before-authorization-exists",
+      "domain": "Group mutation construction boundary",
+      "owner": "Rallar server maintainers",
+      "summary": "Group mutation dependencies are constructed once and route commands to the canonical transaction owner. Executable assertion: “rejects a family call before authorization exists”.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts#rejects a family call before authorization exists",
+      "coverageRelation": "The named construction test executes one ownership mutation against the group registrar and requires the analyzer to reject the exact missing, duplicated, reordered, or rebound dependency path."
+    },
+    {
+      "id": "group-mutation-construction--rejects-a-family-removed-from-the-exported-root",
+      "domain": "Group mutation construction boundary",
+      "owner": "Rallar server maintainers",
+      "summary": "Group mutation dependencies are constructed once and route commands to the canonical transaction owner. Executable assertion: “rejects a family removed from the exported root”.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts#rejects a family removed from the exported root",
+      "coverageRelation": "The named construction test executes one ownership mutation against the group registrar and requires the analyzer to reject the exact missing, duplicated, reordered, or rebound dependency path."
+    },
+    {
+      "id": "group-mutation-construction--rejects-a-missing-family-to-private-owner-argument",
+      "domain": "Group mutation construction boundary",
+      "owner": "Rallar server maintainers",
+      "summary": "Group mutation dependencies are constructed once and route commands to the canonical transaction owner. Executable assertion: “rejects a missing family-to-private-owner argument”.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts#rejects a missing family-to-private-owner argument",
+      "coverageRelation": "The named construction test executes one ownership mutation against the group registrar and requires the analyzer to reject the exact missing, duplicated, reordered, or rebound dependency path."
+    },
+    {
+      "id": "group-mutation-construction--rejects-an-extra-family-to-private-owner-argument",
+      "domain": "Group mutation construction boundary",
+      "owner": "Rallar server maintainers",
+      "summary": "Group mutation dependencies are constructed once and route commands to the canonical transaction owner. Executable assertion: “rejects an extra family-to-private-owner argument”.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts#rejects an extra family-to-private-owner argument",
+      "coverageRelation": "The named construction test executes one ownership mutation against the group registrar and requires the analyzer to reject the exact missing, duplicated, reordered, or rebound dependency path."
+    },
+    {
+      "id": "group-mutation-construction--rejects-an-extra-root-to-family-argument",
+      "domain": "Group mutation construction boundary",
+      "owner": "Rallar server maintainers",
+      "summary": "Group mutation dependencies are constructed once and route commands to the canonical transaction owner. Executable assertion: “rejects an extra root-to-family argument”.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts#rejects an extra root-to-family argument",
+      "coverageRelation": "The named construction test executes one ownership mutation against the group registrar and requires the analyzer to reject the exact missing, duplicated, reordered, or rebound dependency path."
+    },
+    {
+      "id": "group-mutation-construction--rejects-an-uninventoryed-live-private-owner-and-route-in-a-famil",
+      "domain": "Group mutation construction boundary",
+      "owner": "Rallar server maintainers",
+      "summary": "Group mutation dependencies are constructed once and route commands to the canonical transaction owner. Executable assertion: “rejects an uninventoryed live private owner and route in a family”.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts#rejects an uninventoryed live private owner and route in a family",
+      "coverageRelation": "The named construction test executes one ownership mutation against the group registrar and requires the analyzer to reject the exact missing, duplicated, reordered, or rebound dependency path."
+    },
+    {
+      "id": "group-mutation-construction--rejects-reordered-family-to-private-owner-arguments",
+      "domain": "Group mutation construction boundary",
+      "owner": "Rallar server maintainers",
+      "summary": "Group mutation dependencies are constructed once and route commands to the canonical transaction owner. Executable assertion: “rejects reordered family-to-private-owner arguments”.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts#rejects reordered family-to-private-owner arguments",
+      "coverageRelation": "The named construction test executes one ownership mutation against the group registrar and requires the analyzer to reject the exact missing, duplicated, reordered, or rebound dependency path."
+    },
+    {
+      "id": "group-mutation-construction--rejects-reordered-root-to-family-arguments",
+      "domain": "Group mutation construction boundary",
+      "owner": "Rallar server maintainers",
+      "summary": "Group mutation dependencies are constructed once and route commands to the canonical transaction owner. Executable assertion: “rejects reordered root-to-family arguments”.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts#rejects reordered root-to-family arguments",
+      "coverageRelation": "The named construction test executes one ownership mutation against the group registrar and requires the analyzer to reject the exact missing, duplicated, reordered, or rebound dependency path."
+    },
+    {
+      "id": "group-mutation-construction--rejects-wrong-root-to-family-arguments",
+      "domain": "Group mutation construction boundary",
+      "owner": "Rallar server maintainers",
+      "summary": "Group mutation dependencies are constructed once and route commands to the canonical transaction owner. Executable assertion: “rejects wrong root-to-family arguments”.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts#rejects wrong root-to-family arguments",
+      "coverageRelation": "The named construction test executes one ownership mutation against the group registrar and requires the analyzer to reject the exact missing, duplicated, reordered, or rebound dependency path."
+    },
+    {
+      "id": "mutation-boundary-analysis-interface",
+      "domain": "Mutation boundary analysis interface",
+      "owner": "Rallar server maintainers",
+      "summary": "The routing audit follows imports and exported capabilities through one deterministic analysis model. Executable assertion: “exports a syntax-aware analyzer for named, default, namespace, dynamic, and alias evasions”.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-analysis.test.ts#exports a syntax-aware analyzer for named, default, namespace, dynamic, and alias evasions",
+      "coverageRelation": "The analyzer test executes import traversal and inventory checks across the authoritative mutation surface; this file enumeration is the fail-closed production input to that security audit."
+    },
+    {
+      "id": "mutation-capability-export-interface",
+      "domain": "Mutation capability export analysis",
+      "owner": "Rallar server maintainers",
+      "summary": "Exported mutation capabilities resolve to their canonical implementation owner before routing assertions run. Executable assertion: “resolves mutable repository capabilities through the shared-server barrel”.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-boundary-traversal.test.ts#resolves mutable repository capabilities through the shared-server barrel",
+      "coverageRelation": "The capability traversal test executes barrel and re-export resolution; this AST parse is the mechanism that follows a mutable capability to its canonical owner."
+    },
+    {
+      "id": "mutation-capability-type-interface",
+      "domain": "Mutation capability type analysis",
+      "owner": "Rallar server maintainers",
+      "summary": "Capability declarations remain distinguishable from executable authoritative mutation owners. Executable assertion: “maps all 56 entrypoints and 52 types to real registrations and owners”.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-analysis.test.ts#maps all 56 entrypoints and 52 types to real registrations and owners",
+      "coverageRelation": "The route-owner suite executes type-to-owner mapping over the complete inventory; this AST parse distinguishes type declarations from executable mutation owners."
+    },
+    {
+      "id": "mutation-registration-collections--binds-direct-client-registrations-to-their-live-types",
+      "domain": "Mutation handler registration collections",
+      "owner": "Rallar server maintainers",
+      "summary": "Registration collections include every authoritative mutation family exactly once. Executable assertion: “binds direct client registrations to their live types”.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-registration-collections.test.ts#binds direct client registrations to their live types",
+      "coverageRelation": "The named collection test executes a removed or rebound live registration family and requires the audit to distinguish authoritative message collections from ordinary domain values."
+    },
+    {
+      "id": "mutation-registration-collections--binds-topology-loops-to-their-live-types",
+      "domain": "Mutation handler registration collections",
+      "owner": "Rallar server maintainers",
+      "summary": "Registration collections include every authoritative mutation family exactly once. Executable assertion: “binds topology loops to their live types”.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-registration-collections.test.ts#binds topology loops to their live types",
+      "coverageRelation": "The named collection test executes a removed or rebound live registration family and requires the audit to distinguish authoritative message collections from ordinary domain values."
+    },
+    {
+      "id": "mutation-registration-collections--rejects-a-crdt-type-removed-from-its-imported-live-registration-",
+      "domain": "Mutation handler registration collections",
+      "owner": "Rallar server maintainers",
+      "summary": "Registration collections include every authoritative mutation family exactly once. Executable assertion: “rejects a CRDT type removed from its imported live registration collection”.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-registration-collections.test.ts#rejects a CRDT type removed from its imported live registration collection",
+      "coverageRelation": "The named collection test executes a removed or rebound live registration family and requires the audit to distinguish authoritative message collections from ordinary domain values."
+    },
+    {
+      "id": "mutation-registration-collections--rejects-an-auth-registration-loop-replaced-with-an-empty-iterabl",
+      "domain": "Mutation handler registration collections",
+      "owner": "Rallar server maintainers",
+      "summary": "Registration collections include every authoritative mutation family exactly once. Executable assertion: “rejects an auth registration loop replaced with an empty iterable”.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-registration-collections.test.ts#rejects an auth registration loop replaced with an empty iterable",
+      "coverageRelation": "The named collection test executes a removed or rebound live registration family and requires the audit to distinguish authoritative message collections from ordinary domain values."
+    },
+    {
+      "id": "mutation-registration-collections--rejects-group-create-removed-from-the-imported-live-group-regist",
+      "domain": "Mutation handler registration collections",
+      "owner": "Rallar server maintainers",
+      "summary": "Registration collections include every authoritative mutation family exactly once. Executable assertion: “rejects GROUP_CREATE removed from the imported live group registration collection”.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-registration-collections.test.ts#rejects GROUP_CREATE removed from the imported live group registration collection",
+      "coverageRelation": "The named collection test executes a removed or rebound live registration family and requires the audit to distinguish authoritative message collections from ordinary domain values."
+    },
+    {
+      "id": "mutation-registration-predicates--evaluates-safe-logical-includes-and-identity-map-chains-exactly",
+      "domain": "Mutation registration predicates",
+      "owner": "Rallar server maintainers",
+      "summary": "Registration predicates accept only authoritative messages owned by their handler family. Executable assertion: “evaluates safe logical includes and identity map chains exactly”.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-registration-predicates.test.ts#evaluates safe logical includes and identity map chains exactly",
+      "coverageRelation": "The named test mutates the live auth registration expression and executes the fail-closed route-owner analyzer; the source read supplies the exact security boundary being mutated."
+    },
+    {
+      "id": "mutation-registration-predicates--fails-closed-for-an-opaque-registration-predicate",
+      "domain": "Mutation registration predicates",
+      "owner": "Rallar server maintainers",
+      "summary": "Registration predicates accept only authoritative messages owned by their handler family. Executable assertion: “fails closed for an opaque registration predicate”.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-registration-predicates.test.ts#fails closed for an opaque registration predicate",
+      "coverageRelation": "The named test mutates the live group registration expression and executes the fail-closed route-owner analyzer; the source read supplies the exact security boundary being mutated."
+    },
+    {
+      "id": "mutation-registration-predicates--narrows-the-auth-registration-array-with-an-exact-equality-filte",
+      "domain": "Mutation registration predicates",
+      "owner": "Rallar server maintainers",
+      "summary": "Registration predicates accept only authoritative messages owned by their handler family. Executable assertion: “narrows the auth registration array with an exact equality filter”.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-registration-predicates.test.ts#narrows the auth registration array with an exact equality filter",
+      "coverageRelation": "The named test mutates the live auth registration expression and executes the fail-closed route-owner analyzer; the source read supplies the exact security boundary being mutated."
+    },
+    {
+      "id": "mutation-registration-predicates--narrows-the-group-registration-array-with-an-exact-equality-filt",
+      "domain": "Mutation registration predicates",
+      "owner": "Rallar server maintainers",
+      "summary": "Registration predicates accept only authoritative messages owned by their handler family. Executable assertion: “narrows the group registration array with an exact equality filter”.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-registration-predicates.test.ts#narrows the group registration array with an exact equality filter",
+      "coverageRelation": "The named test mutates the live group registration expression and executes the fail-closed route-owner analyzer; the source read supplies the exact security boundary being mutated."
+    },
+    {
+      "id": "mutation-registration-predicates--rejects-a-group-registration-filter-that-is-always-false",
+      "domain": "Mutation registration predicates",
+      "owner": "Rallar server maintainers",
+      "summary": "Registration predicates accept only authoritative messages owned by their handler family. Executable assertion: “rejects a group registration filter that is always false”.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-registration-predicates.test.ts#rejects a group registration filter that is always false",
+      "coverageRelation": "The named test mutates the live group registration expression and executes the fail-closed route-owner analyzer; the source read supplies the exact security boundary being mutated."
+    },
+    {
+      "id": "mutation-route-owner-analysis--uses-one-named-readonly-input-object-for-each-authorised-websock",
+      "domain": "Authoritative mutation route ownership",
+      "owner": "Rallar server maintainers",
+      "summary": "Every authoritative route resolves to one AppInbox transaction owner without a persistence bypass. Executable assertion: “uses one named readonly input object for each authorised websocket enqueue helper”.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-analysis.test.ts#uses one named readonly input object for each authorised websocket enqueue helper",
+      "coverageRelation": "The named analyzer test executes a concrete route, type, owner, or fallback mutation and requires the security audit to reject it; each source access supplies the exact mutated module or canonical comparison for that scenario."
+    },
+    {
+      "id": "mutation-route-owner-crdt-reservation-materialization",
+      "domain": "CRDT administrative mutation routing",
+      "owner": "Rallar repository maintainers",
+      "summary": "CRDT reservation construction remains connected to canonical durable AppInbox command materialization. Executable assertion: “rejects a CRDT reservation builder disconnected from command materialization”.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-analysis.test.ts#rejects a CRDT reservation builder disconnected from command materialization",
+      "coverageRelation": "The test replaces the actual CRDT administrative route command-materialization call and executes the mutation-route inventory validator; reading that production route is the executable input that proves reservation construction cannot bypass canonical durable AppInbox command materialization."
     }
   ],
   "entries": [
@@ -2426,6 +2794,556 @@ moved or changed test.
       "owner": "Shared Web maintainers",
       "rationale": "Reads the shared-web package manifest before bundling and confirms graphology is not declared as a direct browser-package dependency.",
       "semanticCoverage": "packages/tests/shared-web/shared-web-browser-bundle-boundaries.test.ts#keeps shared-web from declaring graphology directly"
+    },
+    {
+      "id": "test-structure-coupling-70a87a1f1ea479cd",
+      "path": "packages/tests/repo/mutation-route-ownership/boundary/mutation-boundary-analysis.ts",
+      "kind": "exact-file-tree",
+      "contract": "mutation-boundary-analysis-interface",
+      "disposition": "durable-boundary",
+      "boundary": "security",
+      "owner": "Rallar server maintainers",
+      "rationale": "Parses the analyzer module itself to enumerate its exported syntax-aware entrypoint; consumers need this stable repository-test interface for every supported import form.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-analysis.test.ts#exports a syntax-aware analyzer for named, default, namespace, dynamic, and alias evasions"
+    },
+    {
+      "id": "test-structure-coupling-f75b3422e50b6549",
+      "path": "packages/tests/repo/mutation-route-ownership/boundary/capabilities/mutation-boundary-capability-exports.ts",
+      "kind": "ast-inspection",
+      "contract": "mutation-capability-export-interface",
+      "disposition": "durable-boundary",
+      "boundary": "security",
+      "owner": "Rallar server maintainers",
+      "rationale": "Reads the shared-server barrel as the starting export graph, proving mutable capabilities remain traceable through the package public surface.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-boundary-traversal.test.ts#resolves mutable repository capabilities through the shared-server barrel"
+    },
+    {
+      "id": "test-structure-coupling-78bf1368cf214172",
+      "path": "packages/tests/repo/mutation-route-ownership/boundary/capabilities/mutation-boundary-capability-types.ts",
+      "kind": "ast-inspection",
+      "contract": "mutation-capability-type-interface",
+      "disposition": "durable-boundary",
+      "boundary": "security",
+      "owner": "Rallar server maintainers",
+      "rationale": "Inspects the canonical capability declarations so every inventoried mutation type can be joined to an actual registration and owner.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-analysis.test.ts#maps all 56 entrypoints and 52 types to real registrations and owners"
+    },
+    {
+      "id": "test-structure-coupling-5ac40266b15fed40",
+      "path": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-analysis.test.ts",
+      "kind": "ast-inspection",
+      "contract": "mutation-route-owner-analysis--uses-one-named-readonly-input-object-for-each-authorised-websock",
+      "disposition": "durable-boundary",
+      "boundary": "security",
+      "owner": "Rallar server maintainers",
+      "rationale": "Uses the parsed parameter nodes to distinguish one object contract from several positional parameters across both helpers.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-analysis.test.ts#uses one named readonly input object for each authorised websocket enqueue helper"
+    },
+    {
+      "id": "test-structure-coupling-7c5aa61574c59a94",
+      "path": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-analysis.test.ts",
+      "kind": "production-source-read",
+      "contract": "mutation-route-owner-analysis--uses-one-named-readonly-input-object-for-each-authorised-websock",
+      "disposition": "durable-boundary",
+      "boundary": "security",
+      "owner": "Rallar server maintainers",
+      "rationale": "Requires the authorised websocket helper to accept its first named readonly input object rather than a positional mutation tuple.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-analysis.test.ts#uses one named readonly input object for each authorised websocket enqueue helper"
+    },
+    {
+      "id": "test-structure-coupling-9f3ecb4406f3911a",
+      "path": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-analysis.test.ts",
+      "kind": "production-source-read",
+      "contract": "mutation-route-owner-analysis--uses-one-named-readonly-input-object-for-each-authorised-websock",
+      "disposition": "durable-boundary",
+      "boundary": "security",
+      "owner": "Rallar server maintainers",
+      "rationale": "Reads and parses that helper module so parameter declarations are evaluated as syntax, not brittle substring matches.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-analysis.test.ts#uses one named readonly input object for each authorised websocket enqueue helper"
+    },
+    {
+      "id": "test-structure-coupling-52beab5de7d2f568",
+      "path": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-analysis.test.ts",
+      "kind": "production-source-read",
+      "contract": "mutation-route-owner-analysis--uses-one-named-readonly-input-object-for-each-authorised-websock",
+      "disposition": "durable-boundary",
+      "boundary": "security",
+      "owner": "Rallar server maintainers",
+      "rationale": "Checks the second enqueue helper in the same module for its own named readonly input object.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-analysis.test.ts#uses one named readonly input object for each authorised websocket enqueue helper"
+    },
+    {
+      "id": "test-structure-coupling-755638c9349907da",
+      "path": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts",
+      "kind": "production-source-read",
+      "contract": "group-mutation-construction--rejects-a-canonical-family-name-rebound-to-a-different-imported-",
+      "disposition": "durable-boundary",
+      "boundary": "security",
+      "owner": "Rallar server maintainers",
+      "rationale": "Reads the exported root before rebinding a canonical family identifier to another imported registrar, testing binding identity rather than call spelling.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts#rejects a canonical family name rebound to a different imported family"
+    },
+    {
+      "id": "test-structure-coupling-a953d677a6a4e37d",
+      "path": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts",
+      "kind": "production-source-read",
+      "contract": "group-mutation-construction--rejects-a-conditional-family-call-in-the-exported-root",
+      "disposition": "durable-boundary",
+      "boundary": "security",
+      "owner": "Rallar server maintainers",
+      "rationale": "Wraps one root family call in conditional control flow so construction is no longer guaranteed for every server startup.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts#rejects a conditional family call in the exported root"
+    },
+    {
+      "id": "test-structure-coupling-f2014ef62de286a9",
+      "path": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts",
+      "kind": "production-source-read",
+      "contract": "group-mutation-construction--rejects-a-different-app-passed-from-a-family-to-its-private-owne",
+      "disposition": "durable-boundary",
+      "boundary": "security",
+      "owner": "Rallar server maintainers",
+      "rationale": "Mutates the family-to-owner call to pass a different app object, isolating instance continuity across the private ownership boundary.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts#rejects a different app passed from a family to its private owner"
+    },
+    {
+      "id": "test-structure-coupling-c7927fc092bac2c7",
+      "path": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts",
+      "kind": "production-source-read",
+      "contract": "group-mutation-construction--rejects-a-duplicate-family-call-in-the-exported-root",
+      "disposition": "durable-boundary",
+      "boundary": "security",
+      "owner": "Rallar server maintainers",
+      "rationale": "Duplicates one family registration in the exported root, exercising exactly-once construction rather than simple presence.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts#rejects a duplicate family call in the exported root"
+    },
+    {
+      "id": "test-structure-coupling-503ee8c186f47263",
+      "path": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts",
+      "kind": "production-source-read",
+      "contract": "group-mutation-construction--rejects-a-family-call-after-an-exported-root-return",
+      "disposition": "durable-boundary",
+      "boundary": "security",
+      "owner": "Rallar server maintainers",
+      "rationale": "Moves a required family call below the root return; the occurrence proves syntactic presence is insufficient when the handoff is unreachable.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts#rejects a family call after an exported-root return"
+    },
+    {
+      "id": "test-structure-coupling-ee9090eba9fc708c",
+      "path": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts",
+      "kind": "production-source-read",
+      "contract": "group-mutation-construction--rejects-a-family-call-before-authorization-exists",
+      "disposition": "durable-boundary",
+      "boundary": "security",
+      "owner": "Rallar server maintainers",
+      "rationale": "Moves family construction ahead of authorization resolution, testing lifecycle order at the root composition boundary.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts#rejects a family call before authorization exists"
+    },
+    {
+      "id": "test-structure-coupling-ce59f3bf64ba0cda",
+      "path": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts",
+      "kind": "production-source-read",
+      "contract": "group-mutation-construction--rejects-a-family-removed-from-the-exported-root",
+      "disposition": "durable-boundary",
+      "boundary": "security",
+      "owner": "Rallar server maintainers",
+      "rationale": "Deletes one canonical family invocation from the root fixture so the analyzer must report the missing owner family.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts#rejects a family removed from the exported root"
+    },
+    {
+      "id": "test-structure-coupling-cc694049a6a7199b",
+      "path": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts",
+      "kind": "production-source-read",
+      "contract": "group-mutation-construction--rejects-a-missing-family-to-private-owner-argument",
+      "disposition": "durable-boundary",
+      "boundary": "security",
+      "owner": "Rallar server maintainers",
+      "rationale": "Removes one private-owner argument from a family call, proving the boundary tracks the complete dependency tuple.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts#rejects a missing family-to-private-owner argument"
+    },
+    {
+      "id": "test-structure-coupling-0b58d02400285f7d",
+      "path": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts",
+      "kind": "production-source-read",
+      "contract": "group-mutation-construction--rejects-an-extra-family-to-private-owner-argument",
+      "disposition": "durable-boundary",
+      "boundary": "security",
+      "owner": "Rallar server maintainers",
+      "rationale": "Adds an unapproved argument at the family/private-owner handoff, catching widened construction that could conceal a second dependency source.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts#rejects an extra family-to-private-owner argument"
+    },
+    {
+      "id": "test-structure-coupling-227bc4333000c0c6",
+      "path": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts",
+      "kind": "production-source-read",
+      "contract": "group-mutation-construction--rejects-an-extra-root-to-family-argument",
+      "disposition": "durable-boundary",
+      "boundary": "security",
+      "owner": "Rallar server maintainers",
+      "rationale": "Adds a root-owned value to a family invocation beyond its approved signature, testing the public composition tuple exactly.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts#rejects an extra root-to-family argument"
+    },
+    {
+      "id": "test-structure-coupling-8a5a2d44c9bdcb60",
+      "path": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts",
+      "kind": "production-source-read",
+      "contract": "group-mutation-construction--rejects-an-uninventoryed-live-private-owner-and-route-in-a-famil",
+      "disposition": "durable-boundary",
+      "boundary": "security",
+      "owner": "Rallar server maintainers",
+      "rationale": "Introduces a working private owner and route that are absent from the canonical inventory, ensuring live but unnamed mutation paths remain rejected.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts#rejects an uninventoryed live private owner and route in a family"
+    },
+    {
+      "id": "test-structure-coupling-e0660606ecfc700b",
+      "path": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts",
+      "kind": "production-source-read",
+      "contract": "group-mutation-construction--rejects-reordered-family-to-private-owner-arguments",
+      "disposition": "durable-boundary",
+      "boundary": "security",
+      "owner": "Rallar server maintainers",
+      "rationale": "Swaps two same-surface arguments at the private-owner call, a defect runtime smoke coverage may not distinguish until values diverge.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts#rejects reordered family-to-private-owner arguments"
+    },
+    {
+      "id": "test-structure-coupling-c91e07c5b311b838",
+      "path": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts",
+      "kind": "production-source-read",
+      "contract": "group-mutation-construction--rejects-reordered-root-to-family-arguments",
+      "disposition": "durable-boundary",
+      "boundary": "security",
+      "owner": "Rallar server maintainers",
+      "rationale": "Reorders the root arguments passed into one family registrar, preserving arity while violating ownership position.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts#rejects reordered root-to-family arguments"
+    },
+    {
+      "id": "test-structure-coupling-56c975daa7221e46",
+      "path": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts",
+      "kind": "production-source-read",
+      "contract": "group-mutation-construction--rejects-wrong-root-to-family-arguments",
+      "disposition": "durable-boundary",
+      "boundary": "security",
+      "owner": "Rallar server maintainers",
+      "rationale": "Substitutes a different resolved dependency at the root/family edge, testing provenance rather than just argument count.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts#rejects wrong root-to-family arguments"
+    },
+    {
+      "id": "test-structure-coupling-2c9a715e8123397b",
+      "path": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-http-shapes.test.ts",
+      "kind": "production-source-read",
+      "contract": "group-http-mutation-contract--rejects-a-conditional-private-owner-call-in-the-exported-family-",
+      "disposition": "durable-boundary",
+      "boundary": "security",
+      "owner": "Rallar server maintainers",
+      "rationale": "Wraps the presence private-owner invocation in a condition, making the exported family registrar unable to guarantee owner installation.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-http-shapes.test.ts#rejects a conditional private-owner call in the exported family registrar"
+    },
+    {
+      "id": "test-structure-coupling-72419b026769b6d0",
+      "path": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-http-shapes.test.ts",
+      "kind": "production-source-read",
+      "contract": "group-http-mutation-contract--rejects-a-correct-handoff-found-only-after-the-handler-return",
+      "disposition": "durable-boundary",
+      "boundary": "security",
+      "owner": "Rallar server maintainers",
+      "rationale": "Uses the canonical membership source as the comparison guard after relocating the correct handoff below the handler return.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-http-shapes.test.ts#rejects a correct handoff found only after the handler return"
+    },
+    {
+      "id": "test-structure-coupling-2c9fc1d9749b84c8",
+      "path": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-http-shapes.test.ts",
+      "kind": "production-source-read",
+      "contract": "group-http-mutation-contract--rejects-a-correct-handoff-found-only-in-a-literal-false-handler-",
+      "disposition": "durable-boundary",
+      "boundary": "security",
+      "owner": "Rallar server maintainers",
+      "rationale": "Compares the false-branch mutant with the original membership registrar so the assertion proves it tested unreachable rather than canonical source.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-http-shapes.test.ts#rejects a correct handoff found only in a literal-false handler branch"
+    },
+    {
+      "id": "test-structure-coupling-d8cf0d32eadae715",
+      "path": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-http-shapes.test.ts",
+      "kind": "production-source-read",
+      "contract": "group-http-mutation-contract--rejects-a-correct-handoff-found-only-in-an-uninvoked-nested-hand",
+      "disposition": "durable-boundary",
+      "boundary": "security",
+      "owner": "Rallar server maintainers",
+      "rationale": "Confirms the nested-function mutant differs from the membership source before requiring rejection of the never-invoked handoff.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-http-shapes.test.ts#rejects a correct handoff found only in an uninvoked nested handler function"
+    },
+    {
+      "id": "test-structure-coupling-4654f94f4e72070a",
+      "path": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-http-shapes.test.ts",
+      "kind": "production-source-read",
+      "contract": "group-http-mutation-contract--rejects-a-duplicate-private-owner-call-in-the-exported-family-re",
+      "disposition": "durable-boundary",
+      "boundary": "security",
+      "owner": "Rallar server maintainers",
+      "rationale": "Duplicates the private-owner setup inside the family registrar to enforce a single authoritative registration pass.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-http-shapes.test.ts#rejects a duplicate private-owner call in the exported family registrar"
+    },
+    {
+      "id": "test-structure-coupling-22dc15575e2a1e4c",
+      "path": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-http-shapes.test.ts",
+      "kind": "production-source-read",
+      "contract": "group-http-mutation-contract--rejects-a-private-owner-call-after-a-family-registrar-return",
+      "disposition": "durable-boundary",
+      "boundary": "security",
+      "owner": "Rallar server maintainers",
+      "rationale": "Places private-owner installation after the family registrar returns, distinguishing reachable construction from token presence.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-http-shapes.test.ts#rejects a private-owner call after a family-registrar return"
+    },
+    {
+      "id": "test-structure-coupling-15bbcd32e40bf76d",
+      "path": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-http-shapes.test.ts",
+      "kind": "production-source-read",
+      "contract": "group-http-mutation-contract--rejects-a-removed-private-owner-call-from-the-exported-family-re",
+      "disposition": "durable-boundary",
+      "boundary": "security",
+      "owner": "Rallar server maintainers",
+      "rationale": "Removes the family’s only private-owner call, directly testing the missing handoff that would leave routes unowned.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-http-shapes.test.ts#rejects a removed private-owner call from the exported family registrar"
+    },
+    {
+      "id": "test-structure-coupling-2fc0acf2d10f5d4e",
+      "path": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-http-shapes.test.ts",
+      "kind": "production-source-read",
+      "contract": "group-http-mutation-contract--rejects-a-second-exact-registration-in-the-exported-family-regis",
+      "disposition": "durable-boundary",
+      "boundary": "security",
+      "owner": "Rallar server maintainers",
+      "rationale": "Adds another exact route registration to the same family, guarding against ambiguous competing handlers.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-http-shapes.test.ts#rejects a second exact registration in the exported family registrar"
+    },
+    {
+      "id": "test-structure-coupling-f9b1590c42ac3d60",
+      "path": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-http-shapes.test.ts",
+      "kind": "production-source-read",
+      "contract": "group-http-mutation-contract--rejects-a-separately-bound-command-declared-after-its-submission",
+      "disposition": "durable-boundary",
+      "boundary": "security",
+      "owner": "Rallar server maintainers",
+      "rationale": "Moves the separately bound command declaration below AppInbox submission, so the analyzer must reject use before authoritative construction.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-http-shapes.test.ts#rejects a separately bound command declared after its submission"
+    },
+    {
+      "id": "test-structure-coupling-d32ceadfc6f25479",
+      "path": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-http-shapes.test.ts",
+      "kind": "production-source-read",
+      "contract": "group-http-mutation-contract--rejects-an-appinbox-type-overridden-by-a-computed-result-object-",
+      "disposition": "durable-boundary",
+      "boundary": "security",
+      "owner": "Rallar server maintainers",
+      "rationale": "Adds a computed result property that overwrites the approved AppInbox type, exercising final object semantics rather than the first visible key.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-http-shapes.test.ts#rejects an AppInbox type overridden by a computed result-object property"
+    },
+    {
+      "id": "test-structure-coupling-b7043c39e11a7834",
+      "path": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-http-shapes.test.ts",
+      "kind": "production-source-read",
+      "contract": "group-http-mutation-contract--rejects-an-appinbox-type-overridden-by-a-later-result-object-spr",
+      "disposition": "durable-boundary",
+      "boundary": "security",
+      "owner": "Rallar server maintainers",
+      "rationale": "Appends a spread after the result type property so the effective AppInbox type can differ from the earlier literal.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-http-shapes.test.ts#rejects an AppInbox type overridden by a later result-object spread"
+    },
+    {
+      "id": "test-structure-coupling-1345f6386ce086d7",
+      "path": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-http-shapes.test.ts",
+      "kind": "production-source-read",
+      "contract": "group-http-mutation-contract--rejects-an-exact-registration-after-an-unconditional-owner-retur",
+      "disposition": "durable-boundary",
+      "boundary": "security",
+      "owner": "Rallar server maintainers",
+      "rationale": "Moves the exact route registration below an unconditional owner return, making it dead despite remaining in the source.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-http-shapes.test.ts#rejects an exact registration after an unconditional owner return"
+    },
+    {
+      "id": "test-structure-coupling-5fc76df120a41839",
+      "path": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-http-shapes.test.ts",
+      "kind": "production-source-read",
+      "contract": "group-http-mutation-contract--rejects-an-exact-registration-inside-a-literal-false-owner-branc",
+      "disposition": "durable-boundary",
+      "boundary": "security",
+      "owner": "Rallar server maintainers",
+      "rationale": "Nests exact registration under a literal-false owner branch, testing reachability of the public route installation.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-http-shapes.test.ts#rejects an exact registration inside a literal-false owner branch"
+    },
+    {
+      "id": "test-structure-coupling-710b1ee889017354",
+      "path": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-http-shapes.test.ts",
+      "kind": "production-source-read",
+      "contract": "group-http-mutation-contract--rejects-an-operation-overridden-by-a-computed-command-object-pro",
+      "disposition": "durable-boundary",
+      "boundary": "security",
+      "owner": "Rallar server maintainers",
+      "rationale": "Overrides the command operation through a computed property, proving the audit evaluates the effective object value.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-http-shapes.test.ts#rejects an operation overridden by a computed command-object property"
+    },
+    {
+      "id": "test-structure-coupling-19d9204dd60e1bc8",
+      "path": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-http-shapes.test.ts",
+      "kind": "production-source-read",
+      "contract": "group-http-mutation-contract--rejects-an-operation-overridden-by-a-later-command-object-spread",
+      "disposition": "durable-boundary",
+      "boundary": "security",
+      "owner": "Rallar server maintainers",
+      "rationale": "Places an operation-changing spread after the approved command property, catching last-write-wins command drift.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-http-shapes.test.ts#rejects an operation overridden by a later command-object spread"
+    },
+    {
+      "id": "test-structure-coupling-e341fd0365ad31ee",
+      "path": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-http-shapes.test.ts",
+      "kind": "production-source-read",
+      "contract": "group-http-mutation-contract--rejects-duplicate-direct-appinbox-type-properties-in-the-result-",
+      "disposition": "durable-boundary",
+      "boundary": "security",
+      "owner": "Rallar server maintainers",
+      "rationale": "Duplicates the direct result type property, rejecting an object whose authoritative outcome depends on property order.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-http-shapes.test.ts#rejects duplicate direct AppInbox type properties in the result object"
+    },
+    {
+      "id": "test-structure-coupling-66383e1835cf7c4e",
+      "path": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-http-shapes.test.ts",
+      "kind": "production-source-read",
+      "contract": "group-http-mutation-contract--rejects-duplicate-direct-operation-properties-in-the-command-obj",
+      "disposition": "durable-boundary",
+      "boundary": "security",
+      "owner": "Rallar server maintainers",
+      "rationale": "Duplicates the command operation key, making the final submitted operation ambiguous to a source-only first-match check.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-http-shapes.test.ts#rejects duplicate direct operation properties in the command object"
+    },
+    {
+      "id": "test-structure-coupling-a68cd62856cac931",
+      "path": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-registration-collections.test.ts",
+      "kind": "production-source-read",
+      "contract": "mutation-registration-collections--binds-direct-client-registrations-to-their-live-types",
+      "disposition": "durable-boundary",
+      "boundary": "security",
+      "owner": "Rallar server maintainers",
+      "rationale": "Reads the direct client registration collection and resolves each handler to the live imported type it actually installs.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-registration-collections.test.ts#binds direct client registrations to their live types"
+    },
+    {
+      "id": "test-structure-coupling-339457838dde3151",
+      "path": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-registration-collections.test.ts",
+      "kind": "production-source-read",
+      "contract": "mutation-registration-collections--binds-topology-loops-to-their-live-types",
+      "disposition": "durable-boundary",
+      "boundary": "security",
+      "owner": "Rallar server maintainers",
+      "rationale": "Inspects the topology registration loop so the audit evaluates its iterated live type collection rather than only the loop body.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-registration-collections.test.ts#binds topology loops to their live types"
+    },
+    {
+      "id": "test-structure-coupling-ec228fda47126f7e",
+      "path": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-registration-collections.test.ts",
+      "kind": "production-source-read",
+      "contract": "mutation-registration-collections--rejects-a-crdt-type-removed-from-its-imported-live-registration-",
+      "disposition": "durable-boundary",
+      "boundary": "security",
+      "owner": "Rallar server maintainers",
+      "rationale": "Loads the CRDT owner module alongside the shortened collection so the analyzer must compare registrations with their real owner surface.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-registration-collections.test.ts#rejects a CRDT type removed from its imported live registration collection"
+    },
+    {
+      "id": "test-structure-coupling-ac677f8aefd31dcf",
+      "path": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-registration-collections.test.ts",
+      "kind": "production-source-read",
+      "contract": "mutation-registration-collections--rejects-a-crdt-type-removed-from-its-imported-live-registration-",
+      "disposition": "durable-boundary",
+      "boundary": "security",
+      "owner": "Rallar server maintainers",
+      "rationale": "Removes one CRDT type from the imported live collection, establishing the exact collection mutation the rejection case evaluates.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-registration-collections.test.ts#rejects a CRDT type removed from its imported live registration collection"
+    },
+    {
+      "id": "test-structure-coupling-8daaa2a7222a3e9c",
+      "path": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-registration-collections.test.ts",
+      "kind": "production-source-read",
+      "contract": "mutation-registration-collections--rejects-an-auth-registration-loop-replaced-with-an-empty-iterabl",
+      "disposition": "durable-boundary",
+      "boundary": "security",
+      "owner": "Rallar server maintainers",
+      "rationale": "Replaces the auth registrar’s live collection with an empty iterable, testing that a syntactically valid loop cannot mask total registration loss.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-registration-collections.test.ts#rejects an auth registration loop replaced with an empty iterable"
+    },
+    {
+      "id": "test-structure-coupling-87348c819775b5e0",
+      "path": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-registration-collections.test.ts",
+      "kind": "production-source-read",
+      "contract": "mutation-registration-collections--rejects-group-create-removed-from-the-imported-live-group-regist",
+      "disposition": "durable-boundary",
+      "boundary": "security",
+      "owner": "Rallar server maintainers",
+      "rationale": "Deletes GROUP_CREATE from the imported group type collection and requires the owner audit to report that specific missing live route.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-registration-collections.test.ts#rejects GROUP_CREATE removed from the imported live group registration collection"
+    },
+    {
+      "id": "test-structure-coupling-9d52ec4349d2ad4d",
+      "path": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-registration-predicates.test.ts",
+      "kind": "production-source-read",
+      "contract": "mutation-registration-predicates--evaluates-safe-logical-includes-and-identity-map-chains-exactly",
+      "disposition": "durable-boundary",
+      "boundary": "security",
+      "owner": "Rallar server maintainers",
+      "rationale": "Reads the live auth registration loop that the test replaces with a transparent filter/map chain before executing exact owner-coverage assertions.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-registration-predicates.test.ts#evaluates safe logical includes and identity map chains exactly"
+    },
+    {
+      "id": "test-structure-coupling-560101002d0a8a81",
+      "path": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-registration-predicates.test.ts",
+      "kind": "production-source-read",
+      "contract": "mutation-registration-predicates--fails-closed-for-an-opaque-registration-predicate",
+      "disposition": "durable-boundary",
+      "boundary": "security",
+      "owner": "Rallar server maintainers",
+      "rationale": "Reads the live group registration predicate that the test makes opaque before executing the analyzer and requiring unknown registration semantics to fail closed.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-registration-predicates.test.ts#fails closed for an opaque registration predicate"
+    },
+    {
+      "id": "test-structure-coupling-cbc161a2abbae5c6",
+      "path": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-registration-predicates.test.ts",
+      "kind": "production-source-read",
+      "contract": "mutation-registration-predicates--narrows-the-auth-registration-array-with-an-exact-equality-filte",
+      "disposition": "durable-boundary",
+      "boundary": "security",
+      "owner": "Rallar server maintainers",
+      "rationale": "Reads the live auth registration loop that the test narrows before executing the analyzer and requiring an excluded auth command to lose its owner connection.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-registration-predicates.test.ts#narrows the auth registration array with an exact equality filter"
+    },
+    {
+      "id": "test-structure-coupling-2e15caeb35eae4be",
+      "path": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-registration-predicates.test.ts",
+      "kind": "production-source-read",
+      "contract": "mutation-registration-predicates--narrows-the-group-registration-array-with-an-exact-equality-filt",
+      "disposition": "durable-boundary",
+      "boundary": "security",
+      "owner": "Rallar server maintainers",
+      "rationale": "Reads the live group registration expression that the test narrows before executing the analyzer and requiring the omitted owner family to fail closed.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-registration-predicates.test.ts#narrows the group registration array with an exact equality filter"
+    },
+    {
+      "id": "test-structure-coupling-4f6cf14c31fc65a6",
+      "path": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-registration-predicates.test.ts",
+      "kind": "production-source-read",
+      "contract": "mutation-registration-predicates--rejects-a-group-registration-filter-that-is-always-false",
+      "disposition": "durable-boundary",
+      "boundary": "security",
+      "owner": "Rallar server maintainers",
+      "rationale": "Reads the live group registration predicate that the test replaces with false before executing the analyzer and requiring all group owner connections to disappear.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-registration-predicates.test.ts#rejects a group registration filter that is always false"
+    },
+    {
+      "id": "test-structure-coupling-c6c21e820b68b8eb",
+      "path": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-analysis.test.ts",
+      "kind": "production-source-read",
+      "contract": "mutation-route-owner-crdt-reservation-materialization",
+      "disposition": "durable-boundary",
+      "boundary": "security",
+      "owner": "Rallar repository maintainers",
+      "rationale": "Reads the actual CRDT administrative mutation route as the mutated input to the real route validator, proving that disconnecting reservation construction from canonical AppInbox command materialization is rejected.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-analysis.test.ts#rejects a CRDT reservation builder disconnected from command materialization"
     }
   ]
 }

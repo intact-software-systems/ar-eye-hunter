@@ -144,19 +144,23 @@ it('returns the current invalid-bearer denial without scanning unrelated rows', 
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(new Date('2027-01-01T00:00:00.000Z'));
     try {
-        const runtime = new FakeRuntimeStateRepository();
-        const page = vi.spyOn(runtime, 'findEntriesByPrefixPage');
+        const runtime = new PrefixScanRejectingRuntimeStateRepository();
         const repository = new AuthSessionRepository(runtime);
 
         await expect(
             requireApiAuthSession(authRequest('missing-token', 'client-1'), repository)
         ).rejects.toThrow('Unauthorized: Invalid or expired access token');
-        expect(page).not.toHaveBeenCalled();
     }
     finally {
         vi.useRealTimers();
     }
 });
+
+class PrefixScanRejectingRuntimeStateRepository extends FakeRuntimeStateRepository {
+    override findEntriesByPrefixPage(): Promise<never> {
+        return Promise.reject(new Error('Invalid bearer lookup must not scan unrelated rows'));
+    }
+}
 
 function authRequest(
     accessToken: string,

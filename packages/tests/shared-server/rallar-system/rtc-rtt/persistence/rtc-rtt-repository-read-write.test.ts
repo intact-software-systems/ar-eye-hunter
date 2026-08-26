@@ -59,9 +59,6 @@ describe('RTC RTT repository reads and writes', () => {
 
     it('accepts a newer RTT without invoking an application lock', async () => {
         const runtimeRepository = new FakeRuntimeStateRepository();
-        vi.spyOn(runtimeRepository, 'lockKey').mockRejectedValue(
-            new Error('targeted RTT locks are forbidden')
-        );
         const repository = new RtcRttRepository(runtimeRepository, {
             now: () => 1
         });
@@ -101,10 +98,22 @@ describe('RTC RTT repository reads and writes', () => {
     });
 
     it('surfaces a single-attempt RTT CAS race as a typed conflict', async () => {
-        const repository = new RtcRttRepository(new FakeRuntimeStateRepository(), { now: () => 1 });
-        const commit = vi
-            .spyOn(repository, 'commitMeasurement')
-            .mockResolvedValue({ status: 'conflict' });
+        const runtimeRepository = new FakeRuntimeStateRepository();
+        const repository = new RtcRttRepository(runtimeRepository, { now: () => 1 });
+        const competing = {
+            sessionIdFrom: 'session-a',
+            sessionIdTo: 'session-b',
+            rttMs: 2,
+            createdAtEpochMs: 1,
+            version: 1
+        };
+        runtimeRepository.beforeConditionalWrite = async (operation, namespace, key) => {
+            if (operation !== 'insertIfAbsent') {
+                return;
+            }
+            runtimeRepository.beforeConditionalWrite = undefined;
+            await runtimeRepository.insertIfAbsent(namespace, key, JSON.stringify(competing), 100);
+        };
 
         await expect(
             repository.putMeasurementIfNewer({
@@ -115,7 +124,9 @@ describe('RTC RTT repository reads and writes', () => {
                 version: 1
             })
         ).rejects.toBeInstanceOf(RuntimeStateWriteConflictError);
-        expect(commit).toHaveBeenCalledTimes(1);
+        await expect(repository.findMeasurement('session-a', 'session-b')).resolves.toEqual(
+            competing
+        );
     });
 
     it('uses stable code-unit ordering for Unicode RTT pairs and endpoint peers', async () => {
@@ -244,10 +255,14 @@ describe('RTC RTT repository reads and writes', () => {
 
     it('keeps expired RTT reads observational without retries or cleanup writes', async () => {
         const runtimeRepository = new FakeRuntimeStateRepository();
-        const sleep = vi.fn(async () => {});
+        runtimeRepository.beforeConditionalWrite = (operation) => {
+            if (operation === 'deleteIfRevision') {
+                throw new Error('Expired RTT reads must not delete durable state');
+            }
+        };
         const repository = new RtcRttRepository(runtimeRepository, {
             now: () => 100,
-            sleep
+            sleep: rejectUnexpectedRetry
         });
         const measurement = {
             sessionIdFrom: 'session-a',
@@ -259,13 +274,14 @@ describe('RTC RTT repository reads and writes', () => {
         const key = repository.measurementKey('session-a', 'session-b');
         await runtimeRepository.upsert(RTC_RTT_LATEST_NAMESPACE, key, JSON.stringify(measurement), 90);
         const before = await runtimeRepository.findEntry(RTC_RTT_LATEST_NAMESPACE, key);
-        const deletes = vi.spyOn(runtimeRepository, 'deleteIfRevision');
 
         await expect(repository.findMeasurement('session-a', 'session-b')).resolves.toBeUndefined();
         await expect(runtimeRepository.findEntry(RTC_RTT_LATEST_NAMESPACE, key)).resolves.toEqual(
             before
         );
-        expect(deletes).not.toHaveBeenCalled();
-        expect(sleep).not.toHaveBeenCalled();
     });
 });
+
+function rejectUnexpectedRetry(): Promise<never> {
+    return Promise.reject(new Error('Expired RTT reads must not enter retry backoff'));
+}

@@ -1,6 +1,6 @@
 import type { RuntimeStateEntry } from '@shared-server/runtime-state/runtime-state-repository.ts';
 import type { GroupEvent } from '@shared/api/group-types.ts';
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
 import {
     groupStatePresenceAdmissionStorageKey,
@@ -40,10 +40,11 @@ describe('GroupStateService guarded batch atomicity', () => {
         async (conflictTarget) => {
             const runtime = new ApplyingGuardedBatchRepository();
             const eventStore = new OrderedGroupEventStore(runtime);
-            const sleep = vi.fn(async (delayMs: number) => {
+            const retryDelays: number[] = [];
+            const sleep = async (delayMs: number): Promise<void> => {
                 expect(runtime.activeTransactionDepth).toBe(0);
-                expect(delayMs).toBe(2);
-            });
+                retryDelays.push(delayMs);
+            };
             runtime.forceNextConflict(conflictTarget);
             const service = createTestGroupStateService({
                 runtimeRepository: runtime,
@@ -72,7 +73,7 @@ describe('GroupStateService guarded batch atomicity', () => {
             expect(runtime.transactionOrder).toEqual(['batch', 'batch', 'event', 'commit']);
             expect([...runtime.data.values()].every(({ revision }) => revision === 0)).toBe(true);
             expect(eventStore.events).toHaveLength(1);
-            expect(sleep).toHaveBeenCalledOnce();
+            expect(retryDelays).toEqual([2]);
         }
     );
 
@@ -80,9 +81,11 @@ describe('GroupStateService guarded batch atomicity', () => {
         const runtime = new ApplyingGuardedBatchRepository();
         const eventStore = new OrderedGroupEventStore(runtime);
         const nowEpochMs = 1_900_000_000_000;
-        const sleep = vi.fn(async () => {
+        const retryDelays: number[] = [];
+        const sleep = async (delayMs: number): Promise<void> => {
             expect(runtime.activeTransactionDepth).toBe(0);
-        });
+            retryDelays.push(delayMs);
+        };
         let generatedId = 0;
         const service = createTestGroupStateService({
             runtimeRepository: runtime,
@@ -143,17 +146,17 @@ describe('GroupStateService guarded batch atomicity', () => {
             )?.revision
         ).toBe(0);
         expect(eventStore.events).toHaveLength(2);
-        expect(sleep).toHaveBeenCalledWith(2);
+        expect(retryDelays).toEqual([2]);
     });
 
     it('exhausts repeated guard conflicts without leaking rows or events', async () => {
         const runtime = new ApplyingGuardedBatchRepository();
         const eventStore = new OrderedGroupEventStore(runtime);
         const delays: number[] = [];
-        const sleep = vi.fn(async (delayMs: number) => {
+        const sleep = async (delayMs: number): Promise<void> => {
             expect(runtime.activeTransactionDepth).toBe(0);
             delays.push(delayMs);
-        });
+        };
         runtime.forceNextConflict('guard');
         runtime.forceNextConflict('guard');
         runtime.forceNextConflict('guard');
@@ -191,13 +194,12 @@ describe('GroupStateService guarded batch atomicity', () => {
     it('keeps an event collision terminal and rolls its batch back', async () => {
         const runtime = new ApplyingGuardedBatchRepository();
         const eventStore = new CollidingGroupEventStore(runtime);
-        const sleep = vi.fn();
         const service = createTestGroupStateService({
             runtimeRepository: runtime,
             groupStateEventStoreFor: () => eventStore,
             now: () => 1_000,
             randomId: () => 'event-conflict-id',
-            sleep,
+            sleep: rejectUnexpectedRetry,
             serviceId: 'event-conflict-service'
         });
         const before = new Map(runtime.data);
@@ -209,20 +211,18 @@ describe('GroupStateService guarded batch atomicity', () => {
         expect(runtime.transactionOrder).toEqual(['batch', 'event']);
         expect(runtime.data).toEqual(before);
         expect(eventStore.events).toEqual([]);
-        expect(sleep).not.toHaveBeenCalled();
     });
 
     it('treats a missing member-put result as a terminal invariant failure', async () => {
         const runtime = new ApplyingGuardedBatchRepository();
         const eventStore = new OrderedGroupEventStore(runtime);
-        const sleep = vi.fn();
         runtime.omitNextEffectResult('member:alice');
         const service = createTestGroupStateService({
             runtimeRepository: runtime,
             groupStateEventStoreFor: () => eventStore,
             now: () => 1_000,
             randomId: () => 'missing-member-result-id',
-            sleep,
+            sleep: rejectUnexpectedRetry,
             serviceId: 'missing-member-result-service'
         });
         const before = new Map(runtime.data);
@@ -232,9 +232,12 @@ describe('GroupStateService guarded batch atomicity', () => {
         );
 
         expectTerminalRollback(runtime, eventStore.events, before);
-        expect(sleep).not.toHaveBeenCalled();
     });
 });
+
+function rejectUnexpectedRetry(): Promise<never> {
+    return Promise.reject(new Error('Terminal group mutation failure must not retry'));
+}
 
 function createGroup(service: ReturnType<typeof createTestGroupStateService>, groupId: string) {
     return service.createGroup(SCOPE, {

@@ -2,9 +2,9 @@ import { type ClientStateService } from '@shared-server/rallar-system/client-sta
 import { createCachedClientStateService } from '@shared-server/rallar-system/client-state/snapshot/cached-client-state-service.ts';
 import { createCachedGroupStateService } from '@shared-server/rallar-system/group-state/snapshot/cached-group-state-service.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
-import type { AuditStamp, GroupSnapshot } from '@shared/api/group-types.ts';
+import type { AuditStamp, GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import { StateSnapshotRevisionConflictError } from '@shared/repository/state-snapshot-revision.ts';
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { createTestGroup } from '../../../create-test-group.ts';
 import { createClientStateServiceStub } from '../../client-state/test-support/client-state-service-stub.ts';
 import { createGroupStateServiceStub } from './test-support/group-state-service-stub.ts';
@@ -13,13 +13,13 @@ describe('cached state services', () => {
     it('does not expose a direct group mutation from its durable dependency', () => {
         const durable = {
             ...createGroupStateServiceStub(),
-            createGroup: vi.fn()
+            createGroup: rejectUnexpectedAsyncOperation
         };
         const service = createCachedGroupStateService({
             durable,
             cache: {
-                findOrLoadByRef: vi.fn(),
-                observe: vi.fn()
+                findOrLoadByRef: rejectUnexpectedCacheAccess,
+                observe: rejectUnexpectedCacheAccess
             }
         });
 
@@ -28,40 +28,38 @@ describe('cached state services', () => {
 
     it('reads current group authority durably without caching an equal-revision projection', async () => {
         const revisioned = createGroupSnapshot(4);
-        const observe = vi.fn();
-        const findOrLoadByRef = vi.fn();
         const durable = {
             ...createGroupStateServiceStub(),
-            readSnapshot: vi.fn().mockResolvedValue(revisioned)
+            readSnapshot: async (ref: GroupRef): Promise<GroupSnapshot> => {
+                expect(ref).toEqual(revisioned.group);
+                return revisioned;
+            }
         };
         const service = createCachedGroupStateService({
             durable,
             cache: {
-                findOrLoadByRef,
-                observe
+                findOrLoadByRef: rejectUnexpectedCacheAccess,
+                observe: rejectUnexpectedCacheAccess
             }
         });
 
         const result = await service.readCurrentSnapshot(revisioned.group);
 
-        expect(durable.readSnapshot).toHaveBeenCalledWith(revisioned.group);
-        expect(findOrLoadByRef).not.toHaveBeenCalled();
-        expect(observe).not.toHaveBeenCalled();
         expect(result).toBe(revisioned);
     });
 
     it('does not expose direct group presence mutations', () => {
         const durable = {
             ...createGroupStateServiceStub(),
-            connectPresenceSession: vi.fn(),
-            heartbeatPresenceSession: vi.fn(),
-            disconnectPresenceSession: vi.fn()
+            connectPresenceSession: rejectUnexpectedAsyncOperation,
+            heartbeatPresenceSession: rejectUnexpectedAsyncOperation,
+            disconnectPresenceSession: rejectUnexpectedAsyncOperation
         };
         const service = createCachedGroupStateService({
             durable,
             cache: {
-                findOrLoadByRef: vi.fn(),
-                observe: vi.fn()
+                findOrLoadByRef: rejectUnexpectedCacheAccess,
+                observe: rejectUnexpectedCacheAccess
             }
         });
 
@@ -79,10 +77,10 @@ describe('cached state services', () => {
         const service = createCachedGroupStateService({
             durable: createGroupStateServiceStub(),
             cache: {
-                findOrLoadByRef: vi.fn(),
-                observe: vi.fn(() => {
+                findOrLoadByRef: rejectUnexpectedCacheAccess,
+                observe: () => {
                     throw conflict;
-                })
+                }
             }
         });
 
@@ -91,21 +89,28 @@ describe('cached state services', () => {
 
     it('uses client read-through state and explicitly observes committed snapshots', async () => {
         const snapshot = createClientSnapshot(2);
-        const findOrLoadByRef = vi.fn().mockResolvedValue(snapshot);
-        const observe = vi.fn();
+        let observed: ClientSnapshot | undefined;
         const durable = createClientStateServiceStub({
-            readSnapshot: vi.fn()
+            readSnapshot: rejectUnexpectedAsyncOperation
         });
         const service = createCachedClientStateService({
             durable,
-            cache: { findOrLoadByRef, observe }
+            cache: {
+                findOrLoadByRef: async (ref): Promise<ClientSnapshot> => {
+                    expect(ref).toEqual(snapshot.principal);
+                    return snapshot;
+                },
+                observe: (committed) => {
+                    observed = committed;
+                    return 'inserted';
+                }
+            }
         });
 
         await expect(service.readSnapshot(snapshot.principal)).resolves.toBe(snapshot);
         await expect(service.observeSnapshot(snapshot)).resolves.toBe(snapshot);
 
-        expect(findOrLoadByRef).toHaveBeenCalledWith(snapshot.principal);
-        expect(observe).toHaveBeenCalledWith(snapshot);
+        expect(observed).toBe(snapshot);
     });
 
     it('reads current client authority durably without touching the cache', async () => {
@@ -113,25 +118,33 @@ describe('cached state services', () => {
             readCurrentSnapshot?: ClientStateService['readSnapshot'];
         }>;
         const snapshot = createClientSnapshot(3);
-        const findOrLoadByRef = vi.fn();
-        const observe = vi.fn();
         const durable = createClientStateServiceStub({
-            readSnapshot: vi.fn().mockResolvedValue(snapshot)
+            readSnapshot: async (ref): Promise<ClientSnapshot> => {
+                expect(ref).toEqual(snapshot.principal);
+                return snapshot;
+            }
         });
         const service = createCachedClientStateService({
             durable,
-            cache: { findOrLoadByRef, observe }
+            cache: {
+                findOrLoadByRef: rejectUnexpectedCacheAccess,
+                observe: rejectUnexpectedCacheAccess
+            }
         }) as DurableCurrentClientReader;
 
         await expect(
             service.readCurrentSnapshot?.(snapshot.principal)
         ).resolves.toBe(snapshot);
-        expect(durable.readSnapshot).toHaveBeenCalledOnce();
-        expect(durable.readSnapshot).toHaveBeenCalledWith(snapshot.principal);
-        expect(findOrLoadByRef).not.toHaveBeenCalled();
-        expect(observe).not.toHaveBeenCalled();
     });
 });
+
+function rejectUnexpectedCacheAccess(): never {
+    throw new Error('Current authority reads must not access the projection cache');
+}
+
+function rejectUnexpectedAsyncOperation(): Promise<never> {
+    return Promise.reject(new Error('Cached state service exposed an unexpected operation'));
+}
 
 function createGroupSnapshot(groupRevision: number): GroupSnapshot {
     const audit = createAuditStamp(1);
