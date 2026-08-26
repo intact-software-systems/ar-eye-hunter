@@ -1,8 +1,16 @@
 import { validatePersistedAppInboxCommandIdentity } from '@shared-server/rallar-system/app-inbox/app-inbox-command-identity.ts';
-import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
-import { describe, expect, it } from 'vitest';
+import {
+    AppInboxType,
+    type AppInboxEnqueueInput
+} from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
+import type { JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
+import { describe, expect, expectTypeOf, it } from 'vitest';
 
 describe('persisted AppInbox command decoding', () => {
+    it('uses JSON-wire data as the sole persisted enqueue shape', () => {
+        expectTypeOf<AppInboxEnqueueInput['data']>().toEqualTypeOf<JsonWireValue>();
+    });
+
     it('accepts the exact current JSON-wire command', () => {
         expect(validate(AppInboxType.GROUP_CREATE, {
             type: AppInboxType.GROUP_CREATE,

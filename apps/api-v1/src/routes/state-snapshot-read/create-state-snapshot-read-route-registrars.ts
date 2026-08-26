@@ -85,8 +85,8 @@ export function createStateSnapshotReadRouteRegistrars<Runtime extends ApiV1Stat
                 requireApiAuthSession: (request) =>
                     operations.requireApiAuthSession(request, runtime.authSessionRepository),
                 hydrateStateSyncSnapshotCaches,
-                processClientAppInbox: async <V>(
-                    enqueue: AppInboxEnqueueInput<V>,
+                processClientAppInbox: async (
+                    enqueue: AppInboxEnqueueInput,
                     authority: IssuedAuthSession
                 ): Promise<Either<AppInboxFailure, ClientStateWritten>> =>
                     await runtime.appClientInboxService

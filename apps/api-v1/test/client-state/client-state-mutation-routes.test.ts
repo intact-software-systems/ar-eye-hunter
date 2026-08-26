@@ -2,6 +2,7 @@ import { Hono } from 'jsr:@hono/hono@4.11.9';
 import assert from 'node:assert/strict';
 
 import { type AppInboxEnqueueInput } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
+import type { StateSyncCacheHydrationInput } from '@shared-server/rallar-system/state-sync/state-sync-cache-hydration.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import { Either } from '@shared/resilience/Either.ts';
 
@@ -19,7 +20,7 @@ import {
 const REQUEST_ID = 'ClientMutationRequest_012345';
 
 Deno.test('malformed client REST mutations return terminal 400 before inbox enqueue', async () => {
-    const processCalls: unknown[] = [];
+    const processCalls: AppInboxEnqueueInput[] = [];
     const deps = createClientRouteDeps({
         session: createAuthSession('alice'),
         clientService: {},
@@ -101,7 +102,7 @@ Deno.test('malformed client REST mutations return terminal 400 before inbox enqu
 });
 
 Deno.test('client REST lifecycle accepts equal causal timestamp boundaries', async () => {
-    const processCalls: unknown[] = [];
+    const processCalls: AppInboxEnqueueInput[] = [];
     const deps = createClientRouteDeps({
         session: createAuthSession('alice'),
         clientService: {},
@@ -237,7 +238,7 @@ Deno.test('client mutation routes hydrate the receiving node cache from remotely
         activeSessionCount: 1,
         lastSeenAtEpochMs: 1
     };
-    const hydrationInputs: unknown[] = [];
+    const hydrationInputs: StateSyncCacheHydrationInput[] = [];
     let cachedSnapshot = baseSnapshot;
     const app = new Hono();
     clientStateRoutes.registerClientStateRoutes(app, {
@@ -251,7 +252,7 @@ Deno.test('client mutation routes hydrate the receiving node cache from remotely
             listEventPage: () => Promise.resolve({ events: [], hasMore: false })
         },
         requireApiAuthSession: () => Promise.resolve(createAuthSession('alice')),
-        processClientAppInbox: <V>(_input: AppInboxEnqueueInput<V>) =>
+        processClientAppInbox: (_input: AppInboxEnqueueInput) =>
             Promise.resolve(Either.ofRight({
                 status: 'ok',
                 result: { snapshot, event: null }
@@ -298,9 +299,9 @@ Deno.test('client mutation routes hydrate the receiving node cache from remotely
 
 Deno.test('client mutation routes preserve committed success when cache hydration fails', async () => {
     const snapshot = createClientSnapshot('alice');
-    const warnings: unknown[][] = [];
+    const warnings: Parameters<typeof console.warn>[] = [];
     const originalWarn = console.warn;
-    console.warn = (...args: unknown[]) => warnings.push(args);
+    console.warn = (...args: Parameters<typeof console.warn>) => warnings.push(args);
     try {
         const deps = createClientRouteDeps({
             session: createAuthSession('alice'),

@@ -6,7 +6,7 @@ import type { IssuedAuthSession } from '@shared-server/rallar-system/auth/persis
 import type { ClientMutationWritten, ClientStateWritten } from '@shared-server/rallar-system/client-state/client-state-service-contracts.ts';
 import { createClientStateService } from '@shared-server/rallar-system/client-state/client-state-service.ts';
 import { AppClientInboxService } from '@shared-server/rallar-system/client-state/inbox/app-client-inbox-service.ts';
-import { toAuthorisedWsClientConnectEnqueue } from '@shared-server/rallar-system/client-state/inbox/authorised-ws-client-app-inbox.ts';
+import { toAuthorisedWsClientConnection } from '@shared-server/rallar-system/client-state/inbox/authorised-ws-client-app-inbox.ts';
 import type { AuthorisedWsClientMutationResult } from '@shared-server/rallar-system/client-state/inbox/client-state-inbox-result-codec.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import { Either } from '@shared/resilience/Either.ts';
@@ -51,7 +51,7 @@ it('rejects authorised websocket disconnect after durable auth revocation', asyn
     await authSessions.deleteSession(authSession);
     const disconnected = await processAppInboxMethod(queue, reader, () =>
         service.processAuthorisedWsClientDisconnect({
-            connection: toAuthorisedWsClientConnectEnqueue(connectInput).data,
+            connection: toAuthorisedWsClientConnection(connectInput),
             disconnectedAtEpochMs: Date.now(),
             reason: 'socket-closed'
         }));
@@ -197,7 +197,7 @@ it(
         await processAppInboxMethod(queue, reader, () => service.processAuthorisedWsClientConnect(connectInput));
         const disconnected = await processAppInboxMethod(queue, reader, () =>
             service.processAuthorisedWsClientDisconnect({
-                connection: toAuthorisedWsClientConnectEnqueue(connectInput).data,
+                connection: toAuthorisedWsClientConnection(connectInput),
                 disconnectedAtEpochMs: Date.now(),
                 reason: 'socket-closed'
             }));

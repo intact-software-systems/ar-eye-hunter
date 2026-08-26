@@ -2,6 +2,7 @@ import { resourceInboxRetryExpiryAtEpochMs } from '@shared/queuebox/ResourceInbo
 import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
 import { type AppInboxEnqueueInput } from '../../app-inbox/app-inbox-contracts.ts';
 import { AppInboxType } from '../../app-inbox/app-inbox-contracts.ts';
+import { encodeAppInboxCommand } from '../../app-inbox/app-inbox-registration-codecs.ts';
 import { decodeJsonWireValue } from '../../protocol/json-wire-identity.ts';
 import type {
     WsSessionGenerationCloseFacts,
@@ -46,12 +47,10 @@ interface GroupSessionCleanupResult extends InactiveGroupPresenceResult {
     readonly affectedGroups: number;
 }
 
-export type ExpiredGroupPresenceEnqueue = AppInboxEnqueueInput<Readonly<{ commandId: string; }>>;
-
 export function toGroupSessionCleanupEnqueue(
     input: GroupPresenceSessionCleanupAppInboxPayload,
     serviceId: string
-): AppInboxEnqueueInput<GroupPresenceSessionCleanupAppInboxPayload> {
+): AppInboxEnqueueInput {
     const connection = input.connection;
     return {
         type: AppInboxType.GROUP_PRESENCE_SESSION_CLEANUP,
@@ -64,13 +63,13 @@ export function toGroupSessionCleanupEnqueue(
             .join(':'),
         contextId: connection.authSession.sessionId,
         senderId: serviceId,
-        data: input
+        data: encodeAppInboxCommand(input, 'Group presence cleanup AppInbox command')
     };
 }
 
 export function toExpiredPresenceEnqueue(
     preparation: GroupMutationPreparation
-): ExpiredGroupPresenceEnqueue {
+): AppInboxEnqueueInput {
     return {
         type: AppInboxType.GROUP_PRESENCE_EXPIRE,
         resourceId: preparation.queueResourceId,

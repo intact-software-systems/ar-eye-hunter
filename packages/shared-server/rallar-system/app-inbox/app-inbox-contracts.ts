@@ -59,18 +59,18 @@ export const AppInboxType = {
 
 export type AppInboxType = (typeof AppInboxType)[keyof typeof AppInboxType];
 
-export interface AppInboxEnqueueInput<V> {
+export interface AppInboxEnqueueInput {
     readonly type: AppInboxType;
     readonly topicId?: string;
     readonly resourceId?: string;
     readonly contextId?: string;
     readonly senderId?: string;
     readonly authority?: JsonWireValue;
-    readonly data: V;
+    readonly data: JsonWireValue;
 }
 
 export type AppInboxExecutionMetadata = Readonly<{
-    enqueue: AppInboxEnqueueInput<JsonWireValue>;
+    enqueue: AppInboxEnqueueInput;
     message: ALMessage;
     entry: ResourceEntry;
 }>;

@@ -26,7 +26,10 @@ import {
 } from '../../app-inbox/app-inbox-options.ts';
 import type { AppInboxEntryRepository, AppInboxResultRepository } from '../../app-inbox/app-inbox-persistence-ports.ts';
 import { AppInboxQueueClient } from '../../app-inbox/app-inbox-queue-client.ts';
-import { encodeAppInboxResult } from '../../app-inbox/app-inbox-registration-codecs.ts';
+import {
+    encodeAppInboxCommand,
+    encodeAppInboxResult
+} from '../../app-inbox/app-inbox-registration-codecs.ts';
 import type { AdminExpiredDataPruner } from '../admin-expired-data-pruner.ts';
 import { toAdminPruneExpiredOptions } from '../admin-prune-options.ts';
 import { toAdminPruneOutbox } from '../prune/admin-prune-page-codec.ts';
@@ -46,7 +49,6 @@ import {
 import { AppInboxType, type AppInboxMessageContext } from '../../app-inbox/app-inbox-contracts.ts';
 
 import { recordRallarTiming, timeRallarAsync, type RallarTimingSink } from '../../observability/timing.ts';
-import { decodeJsonWireValue, type JsonWireValue } from '../../protocol/json-wire-identity.ts';
 import {
     decodeAdminPruneEnqueueResultForCommand,
     decodeAdminPruneRequest,
@@ -212,16 +214,14 @@ export class AppAdminInboxService {
                     resourceId: key.resourceId,
                     contextId: key.contextId,
                     senderId: command.requestedSessionId,
-                    data: command
+                    data: encodeAppInboxCommand(command, 'Admin prune AppInbox command')
                 };
             }
         );
-        const command = decodeAdminPruneCommand(
-            decodeJsonWireValue(reservation.enqueue.data, 'Reserved admin prune command')
-        );
+        const command = decodeAdminPruneCommand(reservation.enqueue.data);
         await assertAdminPruneStoredIdentity(key, reservation.enqueue, command);
         assertMatchingAdminPruneIdentity(identity, command);
-        const enqueued = await this.queueClient.waitForReservedEntryResult<JsonWireValue, AdminPruneEnqueueResult>(
+        const enqueued = await this.queueClient.waitForReservedEntryResult<AdminPruneEnqueueResult>(
             reservation.enqueue,
             (value) => decodeAdminPruneEnqueueResultForCommand(value, command),
             reservation.winner

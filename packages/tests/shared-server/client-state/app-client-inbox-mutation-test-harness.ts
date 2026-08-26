@@ -11,8 +11,9 @@ import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 
-import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
+import { AppInboxType, type AppInboxEnqueueInput } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import type { AppInboxFailure } from '@shared-server/rallar-system/app-inbox/app-inbox-failure.ts';
+import { encodeAppInboxCommand } from '@shared-server/rallar-system/app-inbox/app-inbox-registration-codecs.ts';
 import {
     type ClientMutationWritten,
     type ClientStateService,
@@ -21,6 +22,7 @@ import {
 import { createClientStateService } from '@shared-server/rallar-system/client-state/client-state-service.ts';
 import { AppClientInboxService } from '@shared-server/rallar-system/client-state/inbox/app-client-inbox-service.ts';
 import { toAuthenticatedClientMutationContextId } from '@shared-server/rallar-system/client-state/inbox/authenticated-client-mutation-ingress.ts';
+import type { JsonWireObject, JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import type { ClientStateEventStore } from '@shared-server/rallar-system/state-events/client-state-event-store.ts';
 
 import { createAppInboxTestDatabase } from '../rallar-system/app-inbox/test-support/app-inbox-test-database.ts';
@@ -147,14 +149,9 @@ function toAuthenticatedClientTestEnqueue<V>(
         data: V;
     }>,
     authority: IssuedAuthSession
-) {
-    const data = input.data as
-        & V
-        & Readonly<{
-            scope: StateScope;
-            principalId: string;
-            request: Readonly<{ requestId: string; }>;
-        }>;
+): AppInboxEnqueueInput {
+    const wireData = encodeAppInboxCommand(input.data, 'Client mutation test command');
+    const data = readAuthenticatedClientTestCommand(wireData);
     return {
         ...input,
         topicId: input.type,
@@ -164,8 +161,46 @@ function toAuthenticatedClientTestEnqueue<V>(
             principalId: data.principalId,
             callerClientId: authority.clientId,
             callerSessionId: authority.sessionId
-        })
+        }),
+        data: wireData
     };
+}
+
+function readAuthenticatedClientTestCommand(value: JsonWireValue): Readonly<{
+    scope: StateScope;
+    principalId: string;
+    request: Readonly<{ requestId: string; }>;
+}> {
+    const command = requireJsonObject(value, 'Client mutation test command');
+    const scope = requireJsonObject(command.scope, 'Client mutation test scope');
+    const request = requireJsonObject(command.request, 'Client mutation test request');
+    if (
+        typeof scope.applicationId !== 'string' ||
+        typeof scope.workspaceId !== 'string' ||
+        typeof command.principalId !== 'string' ||
+        typeof request.requestId !== 'string'
+    ) {
+        throw new TypeError('Client mutation test command is invalid');
+    }
+    return {
+        scope: {
+            applicationId: scope.applicationId,
+            workspaceId: scope.workspaceId
+        },
+        principalId: command.principalId,
+        request: { requestId: request.requestId }
+    };
+}
+
+function requireJsonObject(value: JsonWireValue | undefined, label: string): JsonWireObject {
+    if (value === undefined || value === null || typeof value !== 'object' || isJsonWireArray(value)) {
+        throw new TypeError(`${label} must be an object`);
+    }
+    return value;
+}
+
+function isJsonWireArray(value: JsonWireValue): value is readonly JsonWireValue[] {
+    return Array.isArray(value);
 }
 
 export function issuedSession(clientId: string, sessionId: string): IssuedAuthSession {

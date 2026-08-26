@@ -1,9 +1,11 @@
 import { type AppInboxEnqueueInput } from '../../app-inbox/app-inbox-contracts.ts';
 import { AppInboxType } from '../../app-inbox/app-inbox-contracts.ts';
+import { encodeAppInboxCommand } from '../../app-inbox/app-inbox-registration-codecs.ts';
 import { GroupMutationAuthorizationError } from '../../group-state/group-mutation-authority.ts';
 import type { GroupStateService } from '../../group-state/group-state-service-contracts.ts';
 import {
     decodeJsonWireValue,
+    encodeJsonWireValue,
     hashMutationCommand,
     type JsonWireObject,
     type JsonWireValue
@@ -35,7 +37,7 @@ export interface VerifyRtcRttAppInboxAuthorityInput {
 
 export async function createRtcRttDurableEnqueue(
     input: CreateRtcRttDurableEnqueueInput
-): Promise<AppInboxEnqueueInput<RtcRttAppInboxCommand>> {
+): Promise<AppInboxEnqueueInput> {
     const session = await input.groupStateService.readIssuedAuthSession(input.request.alSenderId);
     if (!session || session.expiresAtEpochMs <= input.nowEpochMs()) {
         throw new GroupMutationAuthorizationError(
@@ -72,7 +74,7 @@ export async function createRtcRttDurableEnqueue(
     return {
         type: AppInboxType.RTC_RTT_SUBMIT,
         resourceId: requestId,
-        data: command,
+        data: encodeAppInboxCommand(command, 'RTC RTT AppInbox command'),
         authority: decodeJsonWireValue(authority, 'RTC RTT AppInbox authority')
     };
 }
@@ -180,12 +182,12 @@ async function verifyRtcRttCommandHashes(command: RtcRttAppInboxCommand): Promis
     };
     if (
         (await hashMutationCommand(
-                decodeJsonWireValue(canonicalStableCommand, 'RTC RTT stable command')
+                encodeJsonWireValue(canonicalStableCommand, 'RTC RTT stable command')
             )) !== command.commandHash ||
-        (await hashMutationCommand(decodeJsonWireValue({
-                rtt: command.rtt,
-                alSenderId: command.actor.sessionId
-            }, 'RTC RTT mutation command'))) !== command.mutationCommandHash
+        (await hashMutationCommand(encodeJsonWireValue({
+            rtt: command.rtt,
+            alSenderId: command.actor.sessionId
+        }, 'RTC RTT mutation command'))) !== command.mutationCommandHash
     ) {
         throw new GroupMutationAuthorizationError('RTC RTT durable command hash is invalid.');
     }

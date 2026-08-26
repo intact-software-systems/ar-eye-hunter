@@ -16,7 +16,7 @@ import { AppClientInboxService } from '@shared-server/rallar-system/client-state
 import { requireGroupStateWritten } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-result-codec.ts';
 import { GroupStateInboxService } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-service.ts';
 
-import { toAuthorisedWsClientConnectEnqueue } from '@shared-server/rallar-system/client-state/inbox/authorised-ws-client-app-inbox.ts';
+import { toAuthorisedWsClientConnection } from '@shared-server/rallar-system/client-state/inbox/authorised-ws-client-app-inbox.ts';
 
 import { type GroupStateWritten } from '@shared-server/rallar-system/group-state/group-state-service-contracts.ts';
 import {
@@ -295,11 +295,11 @@ async function enqueueClientClose(
     facts: AuthorisedWsCloseFacts
 ): Promise<void> {
     await service.enqueueAuthorisedWsClientDisconnect({
-        connection: toAuthorisedWsClientConnectEnqueue({
+        connection: toAuthorisedWsClientConnection({
             authSession: facts.authSession,
             generationId: facts.generationId,
             input: facts.input
-        }).data,
+        }),
         disconnectedAtEpochMs: facts.disconnectedAtEpochMs,
         reason: facts.reason
     });
@@ -310,11 +310,11 @@ async function enqueueGroupClose(
     facts: AuthorisedWsCloseFacts
 ): Promise<number> {
     return await service.enqueueGroupSessionCleanup({
-        connection: toAuthorisedWsClientConnectEnqueue({
+        connection: toAuthorisedWsClientConnection({
             authSession: facts.authSession,
             generationId: facts.generationId,
             input: facts.input
-        }).data,
+        }),
         disconnectedAtEpochMs: facts.disconnectedAtEpochMs,
         reason: facts.reason
     });

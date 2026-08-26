@@ -5,7 +5,7 @@ import type {
     AppClientInboxService
 } from '@shared-server/rallar-system/client-state/inbox/app-client-inbox-service.ts';
 import {
-    toAuthorisedWsClientConnectEnqueue,
+    toAuthorisedWsClientConnection,
     type ToAuthorisedWsClientDisconnectEnqueueInput
 } from '@shared-server/rallar-system/client-state/inbox/authorised-ws-client-app-inbox.ts';
 import { type GroupPresenceSessionCleanupAppInboxPayload } from '@shared-server/rallar-system/group-state/presence/group-presence-session-cleanup-app-inbox-payload.ts';
@@ -74,7 +74,7 @@ async function handleWebSocketUpgrade(
         rememberAuthorisedWsConnection(
             connection.id,
             connection.generationId,
-            toAuthorisedWsClientConnectEnqueue(connectInput).data
+            toAuthorisedWsClientConnection(connectInput)
         );
         socketServer.addConnection(connection);
         await input.appClientInboxService.enqueueAuthorisedWsClientConnect(connectInput);

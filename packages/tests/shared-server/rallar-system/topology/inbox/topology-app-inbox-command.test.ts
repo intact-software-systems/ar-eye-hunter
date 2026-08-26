@@ -1,6 +1,5 @@
 import { describe, expect, expectTypeOf, it } from 'vitest';
 
-import { decodeAppInboxEnqueue } from '@shared-server/rallar-system/app-inbox/app-inbox-command-decoding.ts';
 import { AppInboxType, type AppInboxEnqueueInput } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import { toLogicalAppInboxCommand } from '@shared-server/rallar-system/app-inbox/logical-app-inbox-command.ts';
 import type { IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
@@ -224,7 +223,7 @@ describe('topology AppInbox durable command contract', () => {
                     config
                 }
             })
-        ).rejects.toThrow(/unknown|canonical|invalid/i);
+        ).rejects.toThrow(/contains .* fields: unexpected/i);
     });
 
     it('rejects predecessor identity fields before constructing a durable command', async () => {
@@ -331,9 +330,9 @@ async function topologyCommand(capturedAtEpochMs: number) {
     });
 }
 
-function logicalIdentity<Command>(enqueue: AppInboxEnqueueInput<Command>): string {
+function logicalIdentity(enqueue: AppInboxEnqueueInput): string {
     return serializeCanonicalMutationCommand(
-        toLogicalAppInboxCommand(decodeAppInboxEnqueue(enqueue))
+        toLogicalAppInboxCommand(enqueue)
     );
 }
 

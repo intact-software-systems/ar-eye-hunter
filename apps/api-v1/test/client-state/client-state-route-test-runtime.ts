@@ -10,6 +10,7 @@ import { Either } from '@shared/resilience/Either.ts';
 
 import type { GroupStateRouteAuthSession } from '../../src/group-state/group-state-route-contracts.ts';
 import * as clientStateRoutes from '../../src/routes/client-state-routes.ts';
+import type { ProcessClientAppInbox } from '../../src/routes/client-state-mutation-routes.ts';
 
 export const TEST_SCOPE: StateScope = {
     applicationId: 'app-1',
@@ -44,9 +45,9 @@ export function createClientRouteDeps(
         hydrateStateSyncSnapshotCaches?: clientStateRoutes.ClientStateRouteDependencies[
             'hydrateStateSyncSnapshotCaches'
         ];
-        processClientAppInbox?: <V>(
-            enqueue: AppInboxEnqueueInput<V>,
-            authority: Parameters<clientStateRoutes.ProcessClientAppInbox>[1]
+        processClientAppInbox?: (
+            enqueue: AppInboxEnqueueInput,
+            authority: Parameters<ProcessClientAppInbox>[1]
         ) => Promise<Either<AppInboxFailure, ClientStateWritten> | ClientStateWritten>;
         readClientSnapshot?: clientStateRoutes.ClientStateRouteDependencies[
             'readClientSnapshot'

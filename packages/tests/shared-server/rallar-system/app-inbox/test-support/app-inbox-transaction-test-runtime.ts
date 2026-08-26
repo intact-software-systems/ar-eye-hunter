@@ -112,10 +112,10 @@ class AtomicAppInboxService {
         this.handlerRegistry.assertRegistrationComplete(expectedTypes);
     }
 
-    processEntryUntilCompletion<V>(
-        input: AppInboxEnqueueInput<V>
+    processEntryUntilCompletion(
+        input: AppInboxEnqueueInput
     ) {
-        return this.queueClient.processEntryUntilCompletion<V>(input);
+        return this.queueClient.processEntryUntilCompletion(input);
     }
 
     processEntryNoWaiting(input: AppInboxMessageContext<JsonWireValue>['enqueue']): void {

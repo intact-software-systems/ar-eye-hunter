@@ -4,7 +4,11 @@ import { decodeCrdtMutationCommand } from '../crdt/mutation/crdt-mutation-comman
 import { toDescriptorCommand } from '../group-state/group-mutation-authority.ts';
 import type { GroupMutationDescriptor } from '../group-state/group-state-service-contracts.ts';
 import { validateGroupMutationCommand } from '../group-state/mutation/command-validation/validate-group-mutation-command.ts';
-import { decodeJsonWireValue, type JsonWireObject, type JsonWireValue } from '../protocol/json-wire-identity.ts';
+import {
+    encodeJsonWireValue,
+    type JsonWireObject,
+    type JsonWireValue
+} from '../protocol/json-wire-identity.ts';
 import { readRtcRttAppInboxCommand } from '../rtc-rtt/inbox/rtc-rtt-app-inbox-authority.ts';
 import {
     readDurableTopologyAppInboxCommand,
@@ -19,7 +23,7 @@ export interface LogicalAppInboxCommand {
 }
 
 export function toLogicalAppInboxCommand(
-    enqueue: AppInboxEnqueueInput<JsonWireValue>
+    enqueue: AppInboxEnqueueInput
 ): JsonWireValue {
     const stableAuth = toStableAuthCommand(enqueue.type, enqueue.data);
     if (stableAuth) {
@@ -37,13 +41,13 @@ export function toLogicalAppInboxCommand(
         type: enqueue.type,
         authority: enqueue.authority === undefined
             ? null
-            : decodeJsonWireValue(enqueue.authority, 'AppInbox logical authority'),
+            : enqueue.authority,
         data: enqueue.data
     });
 }
 
 function encodeLogicalCommand(command: LogicalAppInboxCommand): JsonWireValue {
-    return decodeJsonWireValue(command, 'Logical AppInbox command');
+    return encodeJsonWireValue(command, 'Logical AppInbox command');
 }
 
 function toStableGroupCommand(
@@ -66,7 +70,7 @@ function toStableGroupCommand(
     if (command.operation !== expectedOperation) {
         throw new TypeError('Group mutation operation differs from AppInbox type');
     }
-    return decodeJsonWireValue({
+    return encodeJsonWireValue({
         ...command,
         input: { ...command.input, actorSessionId: null }
     }, 'Logical group AppInbox command');
@@ -180,7 +184,7 @@ function toStableDomainCommand(type: AppInboxType, value: JsonWireValue): JsonWi
             if (command.operation !== 'append') {
                 throw new TypeError('CRDT append AppInbox operation is invalid');
             }
-            return decodeJsonWireValue({
+            return encodeJsonWireValue({
                 operation: command.operation,
                 commandId: command.commandId,
                 document: command.document,
@@ -195,7 +199,7 @@ function toStableDomainCommand(type: AppInboxType, value: JsonWireValue): JsonWi
         }
         if (type === AppInboxType.RTC_RTT_SUBMIT) {
             const command = readRtcRttAppInboxCommand(value);
-            return decodeJsonWireValue({
+            return encodeJsonWireValue({
                 actor: command.actor,
                 requestId: command.requestId,
                 commandHash: command.commandHash,
@@ -210,7 +214,7 @@ function toStableDomainCommand(type: AppInboxType, value: JsonWireValue): JsonWi
         if (toTopologyAppInboxType(command.operation) !== type) {
             throw new TypeError('Topology operation differs from AppInbox type');
         }
-        return decodeJsonWireValue({
+        return encodeJsonWireValue({
             actor: { principalId: command.actor.principalId },
             groupRef: command.groupRef,
             requestId: command.requestId,

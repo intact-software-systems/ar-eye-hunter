@@ -15,8 +15,16 @@ export function decodeJsonWireValue(value: unknown, label = 'JSON wire value'): 
     return value as JsonWireValue;
 }
 
+export function decodeJsonWireText(serialized: string, label = 'JSON wire value'): JsonWireValue {
+    return decodeJsonWireValue(JSON.parse(serialized), label);
+}
+
+export function encodeJsonWireValue<Value>(value: Value, label = 'JSON wire value'): JsonWireValue {
+    assertJsonWireValue(value, label);
+    return value as JsonWireValue;
+}
+
 export async function hashMutationCommand(command: JsonWireValue): Promise<string> {
-    assertJsonWireValue(command, 'Mutation command');
     return `sha256:${await sha256CanonicalJson(command)}`;
 }
 

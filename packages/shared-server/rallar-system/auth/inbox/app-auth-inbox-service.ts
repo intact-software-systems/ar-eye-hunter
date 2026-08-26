@@ -15,7 +15,6 @@ import type { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 import { QueueBoxUtilities } from '@shared/services/QueueBoxUtilities.ts';
 
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
-import { decodeAppInboxEnqueue } from '../../app-inbox/app-inbox-command-decoding.ts';
 import { validateAppInboxCommandIdentity } from '../../app-inbox/app-inbox-command-identity.ts';
 import {
     AppInboxIdempotencyConflictError,
@@ -31,9 +30,11 @@ import { AppInboxHandlerRegistry } from '../../app-inbox/app-inbox-handler-regis
 import type { AppInboxOptions } from '../../app-inbox/app-inbox-options.ts';
 import type { AppInboxEntryRepository, AppInboxResultRepository } from '../../app-inbox/app-inbox-persistence-ports.ts';
 import { AppInboxQueueClient } from '../../app-inbox/app-inbox-queue-client.ts';
-import { encodeAppInboxResult } from '../../app-inbox/app-inbox-registration-codecs.ts';
+import {
+    encodeAppInboxCommand,
+    encodeAppInboxResult
+} from '../../app-inbox/app-inbox-registration-codecs.ts';
 import type { RallarTimingSink } from '../../observability/timing.ts';
-import type { JsonWireValue } from '../../protocol/json-wire-identity.ts';
 import type { AuthMutationService } from '../auth-mutation-service.ts';
 import type { AuthCredentialIssuer } from '../credentials/auth-credential-issuer.ts';
 import { constantTimeAuthDigestEqual } from '../credentials/constant-time-auth-digest-equal.ts';
@@ -202,17 +203,14 @@ export class AppAuthInboxService {
         const decoded = decodeAuthMutationIntent(intent);
         let persisted: Either<AppInboxFailure, AuthMutationResult>;
         try {
-            persisted = await this.queueClient.processEntryUntilCompletionResult<
-                AuthMutationIntent,
-                AuthMutationResult
-            >(
+            persisted = await this.queueClient.processEntryUntilCompletionResult<AuthMutationResult>(
                 {
                     type: toAuthAppInboxType(decoded),
                     topicId: toAuthAppInboxType(decoded),
                     resourceId: decoded.requestId,
                     contextId: toAuthIntentContextId(decoded),
                     senderId: toAuthIntentSenderId(decoded),
-                    data: decoded
+                    data: encodeAppInboxCommand(decoded, 'Auth AppInbox command')
                 },
                 decodeAuthMutationResult
             );
@@ -637,30 +635,32 @@ interface AuthCommandReservation {
     readonly senderId: string;
 }
 
-function toAuthIntentEnqueue(intent: AuthMutationIntent): AppInboxEnqueueInput<AuthMutationIntent> {
+function toAuthIntentEnqueue(intent: AuthMutationIntent): AppInboxEnqueueInput {
     return {
         type: toAuthAppInboxType(intent),
         topicId: toAuthAppInboxType(intent),
         resourceId: intent.requestId,
         contextId: toAuthIntentContextId(intent),
         senderId: toAuthIntentSenderId(intent),
-        data: intent
+        data: encodeAppInboxCommand(intent, 'Auth AppInbox command')
     };
 }
 
-function toAuthInboxEntry(enqueue: AppInboxEnqueueInput<AuthMutationIntent | null>): ResourceEntry {
-    const wire = decodeAppInboxEnqueue(enqueue);
+function toAuthInboxEntry(enqueue: AppInboxEnqueueInput): ResourceEntry {
+    if (!enqueue.topicId || !enqueue.contextId || !enqueue.resourceId) {
+        throw new TypeError('Auth AppInbox queue identity is incomplete');
+    }
     const key = toAppQueueKey({
-        topicId: wire.topicId!,
-        contextId: wire.contextId!,
-        resourceId: wire.resourceId!
+        topicId: enqueue.topicId,
+        contextId: enqueue.contextId,
+        resourceId: enqueue.resourceId
     });
     return QueueBoxUtilities.toResourceEntryFromMsg(
         newALUntargetedMessage(
             toAppQueueCreatedBy('auth-fact-reservation'),
             newALRoute(key.topicId, key.contextId, key.resourceId),
-            wire.type,
-            wire
+            enqueue.type,
+            enqueue
         ),
         'APP_INBOX'
     );
@@ -693,7 +693,7 @@ function readAuthReplayIntent(
         return null;
     }
     try {
-        const intent = decodeAuthMutationIntent(validation.command.data as JsonWireValue);
+        const intent = decodeAuthMutationIntent(validation.command.data);
         const expectedKey = toAppQueueKey({
             topicId: toAuthAppInboxType(intent),
             resourceId: intent.requestId,

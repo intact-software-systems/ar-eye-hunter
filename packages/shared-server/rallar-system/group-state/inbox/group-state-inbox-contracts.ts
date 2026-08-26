@@ -183,8 +183,11 @@ export type AuthenticatedGroupMutationInboxType = keyof AuthenticatedGroupMutati
 export type AuthenticatedGroupMutationEnqueue = Readonly<
     {
         [Type in AuthenticatedGroupMutationInboxType]:
-            & Omit<AppInboxEnqueueInput<AuthenticatedGroupMutationPayloadByType[Type]>, 'type'>
-            & Readonly<{ type: Type; }>;
+            & Omit<AppInboxEnqueueInput, 'type' | 'data'>
+            & Readonly<{
+                type: Type;
+                data: AuthenticatedGroupMutationPayloadByType[Type];
+            }>;
     }
 >[AuthenticatedGroupMutationInboxType];
 

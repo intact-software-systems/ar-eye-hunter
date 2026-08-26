@@ -15,7 +15,7 @@ import { AppInboxType, type AppInboxEnqueueInput } from '@shared-server/rallar-s
 import { requireGroupStateWritten } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-result-codec.ts';
 import type { GroupStateInboxService } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-service.ts';
 
-import { toAuthorisedWsClientConnectEnqueue } from '@shared-server/rallar-system/client-state/inbox/authorised-ws-client-app-inbox.ts';
+import { toAuthorisedWsClientConnection } from '@shared-server/rallar-system/client-state/inbox/authorised-ws-client-app-inbox.ts';
 
 import { type GroupStateWritten } from '@shared-server/rallar-system/group-state/group-state-service-contracts.ts';
 import { processNext, waitForQueuedType } from './test-support/app-inbox-queue-entry-test-helpers.ts';
@@ -70,11 +70,11 @@ it('bounds a lost-close group guard to the shared retry retention horizon', asyn
     expect(expectedExpiry).toBeLessThan(253_402_300_799_999);
 
     await harness.group.enqueueGroupSessionCleanup({
-        connection: toAuthorisedWsClientConnectEnqueue({
+        connection: toAuthorisedWsClientConnection({
             authSession: facts.authSession,
             generationId: facts.generationId,
             input: { ...facts.input, expiresAtEpochMs: 253_402_300_799_999 }
-        }).data,
+        }),
         disconnectedAtEpochMs: facts.disconnectedAtEpochMs,
         reason: facts.reason
     });
