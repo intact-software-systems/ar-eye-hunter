@@ -17,6 +17,14 @@ const CANDIDATE_COMMIT = '74a62eb22583216e8c6651de069209d7e1a8ca67';
 const CANDIDATE_TREE = '7f971bcf84aa494265992d17e3c9b99227bd8122';
 const CANDIDATE_IDENTITY = { commit: CANDIDATE_COMMIT, tree: CANDIDATE_TREE } as const;
 
+interface GroupTopologyConflictReasonInput {
+    readonly schemaVersion: string;
+    baseCommit: string;
+    candidateCommit: string;
+    candidateTree: string;
+    readonly reasons: StateWriteBenchmarkRegressionReason[];
+}
+
 describe('API-v1 state-write topology regression reasons', { timeout: 30_000 }, () => {
     it('binds precommitted topology conflict reasons before measurement', async () => {
         const artifactOwner = await import('../../../../../scripts/perf/state-write/api-v1-state-write-benchmark-artifact.ts');
@@ -102,7 +110,7 @@ describe('API-v1 state-write topology regression reasons', { timeout: 30_000 }, 
     });
 });
 
-function createConflictReasonInput(): any {
+function createConflictReasonInput(): GroupTopologyConflictReasonInput {
     const metrics = [
         'sql.statements',
         'sql.rowsRead',
@@ -118,15 +126,15 @@ function createConflictReasonInput(): any {
     };
 }
 
-function conflictReasonFailures(): readonly ((input: any) => void)[] {
+function conflictReasonFailures(): readonly ((input: GroupTopologyConflictReasonInput) => void)[] {
     return [
-        (input) => (input.extra = true),
+        (input) => Reflect.set(input, 'extra', true),
         (input) => (input.baseCommit = CANDIDATE_COMMIT),
         (input) => (input.candidateCommit = APPROVED_PR_C_BASE_COMMIT),
         (input) => (input.candidateTree = APPROVED_PR_C_BASE_COMMIT),
         (input) => input.reasons.pop(),
-        (input) => (input.reasons[0].metric = 'sql.unsupported'),
-        (input) => (input.reasons[0].reason = 'written after measurement'),
+        (input) => Reflect.set(input.reasons[0], 'metric', 'sql.unsupported'),
+        (input) => Reflect.set(input.reasons[0], 'reason', 'written after measurement'),
         (input) => ([input.reasons[0], input.reasons[1]] = [input.reasons[1], input.reasons[0]])
     ];
 }

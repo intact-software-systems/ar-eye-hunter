@@ -1,3 +1,4 @@
+import { decodeJsonWireValue, type JsonWireObject, type JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import { createHash } from 'node:crypto';
 import { access, link, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -6,7 +7,12 @@ import { describe, expect, it } from 'vitest';
 import { validateStateWriteArtifact } from '../../../../../scripts/perf/compare-api-v1-state-write-results.mjs';
 import { poolApiV1StateWriteResults, poolApiV1StateWriteResultsForPositions } from '../../../../../scripts/perf/pool-api-v1-state-write-results.mjs';
 import { writeApiV1StateWritePooledResults } from '../../../../../scripts/perf/write-api-v1-state-write-pooled-results.mjs';
-import { createStateWritePerformanceArtifact } from './test-support/state-write-performance-artifact-fixture.ts';
+import {
+    createStateWritePerformanceArtifact,
+    decodeStateWritePerformanceArtifact,
+    type StateWritePerformanceArtifact,
+    type StateWritePerformanceSample
+} from './test-support/state-write-performance-artifact-fixture.ts';
 
 const APPROVED_BASE_COMMIT = '52d973bb71dda2100455e8585a0a8f98d177bd13';
 const CANDIDATE_COMMIT = 'c8b842cb5156ef231f68dd711700ae66ffda844c';
@@ -46,6 +52,18 @@ interface MutableSourcePositionDescriptor {
     key: string;
     position: number;
     role: string;
+}
+
+interface ExplicitPositionFailureContext {
+    readonly descriptors: MutableSourcePositionDescriptor[];
+    readonly input: PoolingInput;
+}
+
+interface PooledWriterManifest {
+    readonly outputs: {
+        readonly approvedBase: { readonly path: string; readonly sha256: string; };
+        readonly candidate: { readonly path: string; readonly sha256: string; };
+    };
 }
 
 describe('API-v1 state-write order-balanced pooling', { timeout: 120_000 }, () => {
@@ -106,7 +124,9 @@ describe('API-v1 state-write order-balanced pooling', { timeout: 120_000 }, () =
 
     it('rejects a source that the unchanged artifact validator rejects', () => {
         const input = createPoolingInput();
-        const artifact = JSON.parse(input.sources.candidateFirst.artifactText);
+        const artifact = decodeStateWritePerformanceArtifact(
+            input.sources.candidateFirst.artifactText
+        );
         artifact.workloads[0].samples[0].durableEvidence.receipts.shift();
         input.sources.candidateFirst.artifactText = JSON.stringify(artifact);
 
@@ -134,7 +154,9 @@ describe('API-v1 state-write order-balanced pooling', { timeout: 120_000 }, () =
         expect(() => poolApiV1StateWriteResults(wrongCommit)).toThrow(/candidate commit/);
 
         const wrongOrder = createPoolingInput();
-        const candidateSecond = JSON.parse(wrongOrder.sources.candidateSecond.artifactText);
+        const candidateSecond = decodeStateWritePerformanceArtifact(
+            wrongOrder.sources.candidateSecond.artifactText
+        );
         candidateSecond.generatedAt = '2026-08-01T00:01:30.000Z';
         wrongOrder.sources.candidateSecond.artifactText = JSON.stringify(candidateSecond);
         expect(() => poolApiV1StateWriteResults(wrongOrder)).toThrow(
@@ -155,7 +177,9 @@ describe('API-v1 state-write order-balanced pooling', { timeout: 120_000 }, () =
 
     it('rejects incompatible same-role metadata and duplicate raw command identities', () => {
         const metadataMismatch = createPoolingInput();
-        const approvedBaseSecond = JSON.parse(metadataMismatch.sources.approvedBaseSecond.artifactText);
+        const approvedBaseSecond = decodeStateWritePerformanceArtifact(
+            metadataMismatch.sources.approvedBaseSecond.artifactText
+        );
         approvedBaseSecond.regressionReasons = [
             { workload: 'shared', metric: 'sql.statements', reason: 'metadata mismatch probe fixture' }
         ];
@@ -165,18 +189,22 @@ describe('API-v1 state-write order-balanced pooling', { timeout: 120_000 }, () =
         );
 
         const unknownMetadata = createPoolingInput();
-        const sourceWithUnknownMetadata = JSON.parse(
+        const sourceWithUnknownMetadata = decodeStateWritePerformanceArtifact(
             unknownMetadata.sources.approvedBaseSecond.artifactText
         );
-        sourceWithUnknownMetadata.uncheckedMetadata = 'must not be dropped';
+        Reflect.set(sourceWithUnknownMetadata, 'uncheckedMetadata', 'must not be dropped');
         unknownMetadata.sources.approvedBaseSecond.artifactText = JSON.stringify(sourceWithUnknownMetadata);
         expect(() => poolApiV1StateWriteResults(unknownMetadata)).toThrow(
             /artifact fields must match the governed schema/
         );
 
         const duplicateCommands = createPoolingInput();
-        const candidateSecond = JSON.parse(duplicateCommands.sources.candidateSecond.artifactText);
-        const candidateFirst = JSON.parse(duplicateCommands.sources.candidateFirst.artifactText);
+        const candidateSecond = decodeStateWritePerformanceArtifact(
+            duplicateCommands.sources.candidateSecond.artifactText
+        );
+        const candidateFirst = decodeStateWritePerformanceArtifact(
+            duplicateCommands.sources.candidateFirst.artifactText
+        );
         candidateSecond.workloads = candidateFirst.workloads;
         candidateSecond.generatedAt = '2026-08-01T00:03:00.000Z';
         duplicateCommands.sources.candidateSecond.artifactText = JSON.stringify(candidateSecond);
@@ -200,7 +228,7 @@ describe('API-v1 state-write order-balanced pooling', { timeout: 120_000 }, () =
 
             const approvedBaseText = await readFile(approvedBaseOut, 'utf8');
             const candidateText = await readFile(candidateOut, 'utf8');
-            const manifest = JSON.parse(await readFile(manifestOut, 'utf8'));
+            const manifest = decodePooledWriterManifest(await readFile(manifestOut, 'utf8'));
             expect(approvedBaseText).toBe(`${JSON.stringify(expected.approvedBase)}\n`);
             expect(candidateText).toBe(`${JSON.stringify(expected.candidate)}\n`);
             expect(validateStateWriteArtifact(JSON.parse(approvedBaseText))).toEqual([]);
@@ -283,11 +311,17 @@ const DEFAULT_SOURCE_POSITIONS = [
     { key: 'candidateSecond', position: 3, role: 'candidate' },
     { key: 'approvedBaseSecond', position: 4, role: 'approved-base' }
 ] as const;
-function explicitPositionFailures(): readonly [RegExp, (context: any) => void][] {
+function explicitPositionFailures(): readonly [
+    RegExp,
+    (context: ExplicitPositionFailureContext) => void
+][] {
     return [
         [/dense four-entry array/, ({ descriptors }) => delete descriptors[1]],
-        [/fields must be exactly/, ({ descriptors }) => (descriptors[0].extra = true)],
-        [/fields must be exactly/, ({ descriptors }) => delete descriptors[0].key],
+        [/fields must be exactly/, ({ descriptors }) => Reflect.set(descriptors[0], 'extra', true)],
+        [
+            /fields must be exactly/,
+            ({ descriptors }) => Reflect.deleteProperty(descriptors[0], 'key')
+        ],
         [/key must be non-empty/, ({ descriptors }) => (descriptors[0].key = '')],
         [/keys must be unique/, ({ descriptors }) => (descriptors[1].key = descriptors[0].key)],
         [/positions must be 1, 2, 3, 4/, ({ descriptors }) => descriptors.reverse()],
@@ -297,12 +331,15 @@ function explicitPositionFailures(): readonly [RegExp, (context: any) => void][]
             ({ descriptors }) => (descriptors[1].role = 'approved-base')
         ],
         [/role is unsupported/, ({ descriptors }) => (descriptors[0].role = 'unsupported')],
-        [/position 4 source is incomplete/, ({ input }) => delete input.sources.approvedBaseSecond],
+        [
+            /position 4 source is incomplete/,
+            ({ input }) => Reflect.deleteProperty(input.sources, 'approvedBaseSecond')
+        ],
         [/generatedAt values must increase in explicit position order/, makeThirdSourceTooEarly]
     ];
 }
-function makeThirdSourceTooEarly({ input }: any): void {
-    const source = JSON.parse(input.sources.candidateSecond.artifactText);
+function makeThirdSourceTooEarly({ input }: ExplicitPositionFailureContext): void {
+    const source = decodeStateWritePerformanceArtifact(input.sources.candidateSecond.artifactText);
     source.generatedAt = '2026-08-01T00:01:30.000Z';
     input.sources.candidateSecond.artifactText = JSON.stringify(source);
 }
@@ -354,23 +391,40 @@ function createSource(input: CreateSourceInput): PoolingSourceText {
         sourceName: `${artifactId}.json`
     };
 }
-function parseSources(input: PoolingInput): Record<string, any> {
+function parseSources(input: PoolingInput): Record<string, StateWritePerformanceArtifact> {
     return Object.fromEntries(
-        Object.entries(input.sources).map(([name, source]) => [name, JSON.parse(source.artifactText)])
+        Object.entries(input.sources).map(([name, source]) => [
+            name,
+            decodeStateWritePerformanceArtifact(source.artifactText)
+        ])
     );
 }
-function expectSamplesPreserved(pooled: any, first: any, second: any): void {
+function expectSamplesPreserved(
+    pooled: StateWritePerformanceArtifact,
+    first: StateWritePerformanceArtifact,
+    second: StateWritePerformanceArtifact
+): void {
     for (const pooledWorkload of pooled.workloads) {
         const sourceSamples = [first, second].flatMap(
-            (artifact) => artifact.workloads.find((workload: any) => workload.name === pooledWorkload.name).samples
+            (artifact) => {
+                const workload = artifact.workloads.find(
+                    (candidate) => candidate.name === pooledWorkload.name
+                );
+                if (!workload) {
+                    throw new Error(`Expected ${pooledWorkload.name} source workload`);
+                }
+                return workload.samples;
+            }
         );
         expect(pooledWorkload.samples.map(withoutRunIndex)).toEqual(sourceSamples.map(withoutRunIndex));
-        expect(pooledWorkload.samples.map((sample: any) => sample.runIndex)).toEqual(
+        expect(pooledWorkload.samples.map((sample) => sample.runIndex)).toEqual(
             Array.from({ length: 18 }, (_, index) => index)
         );
     }
 }
-function withoutRunIndex(sample: any): any {
+function withoutRunIndex(
+    sample: StateWritePerformanceSample
+): Omit<StateWritePerformanceSample, 'runIndex'> {
     const { runIndex: _runIndex, ...preserved } = sample;
     return preserved;
 }
@@ -420,4 +474,27 @@ function toWriterArguments(
 }
 function sha256(value: string): string {
     return createHash('sha256').update(value).digest('hex');
+}
+
+function decodePooledWriterManifest(text: string): PooledWriterManifest {
+    const value = decodeJsonWireValue(JSON.parse(text), 'Pooled writer manifest');
+    if (!isObject(value) || !isObject(value.outputs)) {
+        throw new TypeError('Pooled writer manifest outputs are missing');
+    }
+    const approvedBase = value.outputs.approvedBase;
+    const candidate = value.outputs.candidate;
+    if (!isOutputRecord(approvedBase) || !isOutputRecord(candidate)) {
+        throw new TypeError('Pooled writer manifest output records are malformed');
+    }
+    return { outputs: { approvedBase, candidate } };
+}
+
+function isOutputRecord(
+    value: JsonWireValue
+): value is JsonWireObject & { readonly path: string; readonly sha256: string; } {
+    return isObject(value) && typeof value.path === 'string' && typeof value.sha256 === 'string';
+}
+
+function isObject(value: JsonWireValue): value is JsonWireObject {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
 }

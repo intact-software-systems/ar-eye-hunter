@@ -9,37 +9,43 @@ import {
 } from '../../../../../scripts/perf/compare-group-state-server-structure-performance.mjs';
 import {
     createStateWritePerformanceArtifact,
-    refreshStateWritePerformanceWorkload
+    refreshStateWritePerformanceWorkload,
+    type StateWriteAttemptObservation,
+    type StateWritePerformanceAggregation,
+    type StateWritePerformanceArtifact,
+    type StateWritePerformanceSample,
+    type StateWritePerformanceWorkload,
+    type StateWritePostgresArtifactMetrics,
+    type StateWriteSqlArtifactMetrics
 } from '../state-write/test-support/state-write-performance-artifact-fixture.ts';
 
-interface ResourceMetricInput {
-    readonly artifact: any;
+interface ResourceMetricOwnerInput {
+    readonly artifact: StateWritePerformanceArtifact;
     readonly workloadName: string;
-    readonly owner: string;
-    readonly metric: string;
 }
 
-interface SetResourceAdverseRatioInput extends ResourceMetricInput {
-    readonly ratio: number;
-}
+type ResourceMetricSelection =
+    | { readonly owner: 'sql'; readonly metric: keyof StateWriteSqlArtifactMetrics; }
+    | { readonly owner: 'postgres'; readonly metric: keyof StateWritePostgresArtifactMetrics; };
 
-interface SetResourceValueInput extends ResourceMetricInput {
-    readonly value: number;
-}
+type ResourceMetricInput = ResourceMetricOwnerInput & ResourceMetricSelection;
+type SetResourceAdverseRatioInput = ResourceMetricInput & { readonly ratio: number; };
+type SetResourceValueInput = ResourceMetricInput & { readonly value: number; };
+type ResourceMetricCase = ResourceMetricSelection & { readonly workloadName: string; };
+
+const RESOURCE_METRIC_CASES = [
+    { workloadName: 'uncontended', owner: 'sql', metric: 'statements' },
+    { workloadName: 'shared', owner: 'sql', metric: 'rowsRead' },
+    { workloadName: 'hot', owner: 'sql', metric: 'serializedResultBytes' },
+    { workloadName: 'shared', owner: 'postgres', metric: 'transactionDurationMs' }
+] as const satisfies readonly ResourceMetricCase[];
 
 describe('group-state server structure performance policy', { timeout: 120_000 }, () => {
-    it.each([
-        ['uncontended', 'sql', 'statements'],
-        ['shared', 'sql', 'rowsRead'],
-        ['hot', 'sql', 'serializedResultBytes'],
-        ['shared', 'postgres', 'transactionDurationMs']
-    ])('accepts exactly 1.5 percent adverse %s %s.%s movement', (workload, owner, metric) => {
+    it.each(RESOURCE_METRIC_CASES)('accepts exactly 1.5 percent adverse $workloadName $owner.$metric movement', (metricCase) => {
         const { baseline, candidate } = createArtifactPair();
         setResourceAdverseRatio({
             artifact: candidate,
-            workloadName: workload,
-            owner,
-            metric,
+            ...metricCase,
             ratio: 0.015
         });
 
@@ -138,7 +144,7 @@ describe('group-state server structure performance policy', { timeout: 120_000 }
             expect.arrayContaining([expect.stringContaining('pooled A-B-B-A')])
         );
         baseline.aggregation = createAggregation('approved-base', 'a', 'b');
-        baseline.aggregation.unexpected = true;
+        Reflect.set(baseline.aggregation, 'unexpected', true);
         expect(compareGroupStateServerStructurePerformance(baseline, candidate)).toEqual(
             expect.arrayContaining([expect.stringContaining('exact pooled A-B-B-A metadata')])
         );
@@ -253,7 +259,11 @@ function createArtifactPair() {
     return { baseline, candidate };
 }
 
-function createAggregation(role: string, first: string, second: string) {
+function createAggregation(
+    role: string,
+    first: string,
+    second: string
+): StateWritePerformanceAggregation {
     return {
         protocol: 'rallar.api-v1.state-write.order-balanced-abba.v1',
         role,
@@ -299,15 +309,15 @@ function expectExtremeConflictCostRejected(baselineValue: number, candidateValue
     expect(applyGroupStateServerStructurePerformancePolicy(policy)).not.toEqual([]);
 }
 
-function addConflicts(workload: any, count: number): void {
+function addConflicts(workload: StateWritePerformanceWorkload, count: number): void {
     for (const sample of workload.samples) {
         for (const entry of sample.durableEvidence.appInbox.slice(0, count)) {
             entry.attempts = 2;
             const index = sample.attemptObservations.findIndex(
-                (attempt: any) => attempt.commandId === entry.commandId && attempt.operationId === entry.operationId
+                (attempt) => attempt.commandId === entry.commandId && attempt.operationId === entry.operationId
             );
             const accepted = { ...sample.attemptObservations[index], attempt: 2 };
-            const conflicted = {
+            const conflicted: StateWriteAttemptObservation = {
                 ...accepted,
                 attempt: 1,
                 outcome: 'conflicted',
@@ -321,7 +331,11 @@ function addConflicts(workload: any, count: number): void {
     refreshStateWritePerformanceWorkload(workload);
 }
 
-function setThroughputAdverseRatio(artifact: any, workloadName: string, ratio: number): void {
+function setThroughputAdverseRatio(
+    artifact: StateWritePerformanceArtifact,
+    workloadName: string,
+    ratio: number
+): void {
     const workload = findWorkload(artifact, workloadName);
     for (const sample of workload.samples) {
         sample.durationMs = 100 / (1 - ratio);
@@ -332,20 +346,41 @@ function setThroughputAdverseRatio(artifact: any, workloadName: string, ratio: n
 
 function setResourceAdverseRatio(input: SetResourceAdverseRatioInput): void {
     const workload = findWorkload(input.artifact, input.workloadName);
-    const baselineValue = workload.samples[0][input.owner][input.metric];
+    const baselineValue = readResourceMetric(workload.samples[0], input);
     setResourceValue({ ...input, value: baselineValue * (1 + input.ratio) });
 }
 
 function setResourceValue(input: SetResourceValueInput): void {
     const workload = findWorkload(input.artifact, input.workloadName);
     for (const sample of workload.samples) {
-        sample[input.owner][input.metric] = input.value;
+        if (input.owner === 'sql') {
+            sample.sql[input.metric] = input.value;
+        }
+        else {
+            sample.postgres[input.metric] = input.value;
+        }
     }
     refreshStateWritePerformanceWorkload(workload);
 }
 
-function findWorkload(artifact: any, workloadName: string): any {
-    return artifact.workloads.find((workload: any) => workload.name === workloadName);
+function readResourceMetric(
+    sample: StateWritePerformanceSample,
+    selection: ResourceMetricSelection
+): number {
+    return selection.owner === 'sql'
+        ? sample.sql[selection.metric]
+        : sample.postgres[selection.metric];
+}
+
+function findWorkload(
+    artifact: StateWritePerformanceArtifact,
+    workloadName: string
+): StateWritePerformanceWorkload {
+    const workload = artifact.workloads.find((candidate) => candidate.name === workloadName);
+    if (!workload) {
+        throw new Error(`Expected ${workloadName} state-write workload`);
+    }
+    return workload;
 }
 
 function sha256(value: string): string {

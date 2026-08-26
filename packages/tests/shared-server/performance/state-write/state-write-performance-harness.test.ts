@@ -5,7 +5,7 @@ import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-c
 import { mutationDescriptor, toDescriptorCommand } from '@shared-server/rallar-system/group-state/group-mutation-authority.ts';
 import { toGroupMutationDescriptorTargetIdentity } from '@shared-server/rallar-system/group-state/inbox/to-group-mutation-descriptor.ts';
 import { toScopedGroupMutationCommandId } from '@shared-server/rallar-system/group-state/scoped-group-mutation-command-id.ts';
-import { hashMutationCommand, type JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
+import { decodeJsonWireValue, hashMutationCommand } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 import { computeGroupPresenceSummaryEntry } from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
 import {
@@ -29,8 +29,16 @@ import {
 import { STATE_WRITE_REASONS } from '../../../../../scripts/perf/state-write/api-v1-state-write-regression-reasons.ts';
 
 import { parseBenchmarkOptions } from '../../../../../scripts/perf/state-write/api-v1-state-write-benchmark-options.ts';
-import { createDefaultStateWritePerformanceArtifact, refreshStateWritePerformanceWorkload } from './test-support/state-write-performance-artifact-fixture.ts';
-import { binding, swapCompleteDurableResults } from './test-support/state-write-performance-result-fixture.ts';
+import {
+    createDefaultStateWritePerformanceArtifact,
+    refreshStateWritePerformanceWorkload,
+    swapCompleteDurableResults,
+    type StateWriteAppInboxEvidenceEntry,
+    type StateWriteDurableEvidence,
+    type StateWritePerformanceArtifact,
+    type StateWritePerformanceSample
+} from './test-support/state-write-performance-artifact-fixture.ts';
+import { binding, type StateWritePresenceDurableResult, type StateWriteTopologyDurableResult } from './test-support/state-write-performance-result-fixture.ts';
 
 describe('API-v1 state-write final durable evidence', { timeout: 30_000 }, () => {
     it('reads a scoped group command only from its exact actor, workspace, group, topic, and context', async () => {
@@ -65,7 +73,7 @@ describe('API-v1 state-write final durable evidence', { timeout: 30_000 }, () =>
         });
         const commandId = await toScopedGroupMutationCommandId(descriptor, actorPrincipalId);
         const semanticCommand = toDescriptorCommand(descriptor, () => requestId);
-        const commandHash = await hashMutationCommand(semanticCommand as JsonWireValue);
+        const commandHash = await hashMutationCommand(decodeJsonWireValue(semanticCommand));
         const command = {
             ...semanticCommand,
             commandId
@@ -207,7 +215,7 @@ describe('API-v1 state-write final durable evidence', { timeout: 30_000 }, () =>
         });
         const commandId = await toScopedGroupMutationCommandId(descriptor, actorPrincipalId);
         const semanticCommand = toDescriptorCommand(descriptor, () => requestId);
-        const commandHash = await hashMutationCommand(semanticCommand as JsonWireValue);
+        const commandHash = await hashMutationCommand(decodeJsonWireValue(semanticCommand));
         const command = { ...semanticCommand, commandId };
         const physicalKey = toAppQueueKey({ topicId, resourceId: requestId, contextId: logicalContextId });
         const row = {
@@ -261,7 +269,10 @@ describe('API-v1 state-write final durable evidence', { timeout: 30_000 }, () =>
             commandId: `${scope.applicationId}:profile-instance:7`
         } as const;
         const expectation = toStateWriteAppInboxExpectations([command], scope, 5)
-            .find((candidate) => candidate.operationId === 'profile')!;
+            .find((candidate) => candidate.operationId === 'profile');
+        if (!expectation) {
+            throw new Error('Expected profile AppInbox fixture');
+        }
         const resource = queueResource(
             {
                 type: expectation.topicId,
@@ -394,7 +405,10 @@ describe('API-v1 state-write final durable evidence', { timeout: 30_000 }, () =>
                 eventId: 'summary-event'
             }]
         };
-        const expectation = computeProductionOutboxExpectations([command], [receipt])[0]!;
+        const [expectation] = computeProductionOutboxExpectations([command], [receipt]);
+        if (!expectation) {
+            throw new Error('Expected group-presence-summary outbox fixture');
+        }
         const row = {
             ri_resource_id: entry.key.resourceId,
             ri_topic_id: entry.key.topicId,
@@ -431,7 +445,10 @@ describe('API-v1 state-write final durable evidence', { timeout: 30_000 }, () =>
             identityKind: 'logical-msg-id' as const,
             resultBindings: [topologyBinding]
         };
-        const expectation = computeProductionOutboxExpectations([command], [receipt])[0]!;
+        const [expectation] = computeProductionOutboxExpectations([command], [receipt]);
+        if (!expectation) {
+            throw new Error('Expected topology outbox fixture');
+        }
         const exactRow = {
             ri_resource_id: expectation.physicalKey.resourceId,
             ri_topic_id: expectation.physicalKey.topicId,
@@ -486,17 +503,23 @@ describe('API-v1 state-write final durable evidence', { timeout: 30_000 }, () =>
         );
         expect(sample.durableEvidence.intermediateMutationIntents).toEqual([]);
         expect(sample.correctness.atomicCompletionFailures).toBe(0);
-        expect(candidate.features).toBeUndefined();
+        expect(candidate).not.toHaveProperty('features');
         expect(validateStateWriteArtifact(candidate)).toEqual([]);
     });
 
     it('accepts scoped physical group receipt identities distinct from public request IDs', () => {
         const candidate = createDefaultStateWritePerformanceArtifact();
         const sample = artifactSample(candidate);
-        const command = sample.commands.find((entry: any) => entry.kind === 'membership');
+        const command = sample.commands.find((entry) => entry.kind === 'membership');
+        if (!command) {
+            throw new Error('Expected membership command fixture');
+        }
         const receipt = sample.durableEvidence.receipts.find(
-            (entry: any) => entry.commandId === command.commandId
+            (entry) => entry.commandId === command.commandId
         );
+        if (!receipt) {
+            throw new Error('Expected membership receipt fixture');
+        }
         const binding = receipt.resultBindings[0];
 
         expect(binding.receiptId).toMatch(/^group-app-inbox:[0-9a-f]{64}$/);
@@ -548,9 +571,9 @@ describe('API-v1 state-write final durable evidence', { timeout: 30_000 }, () =>
     it('rejects missing same-observation completion components', () => {
         for (
             const mutate of [
-                (sample: any) => sample.durableEvidence.appInbox.shift(),
-                (sample: any) => sample.durableEvidence.receipts.shift(),
-                (sample: any) => sample.durableEvidence.resourceOutbox.shift()
+                (sample: StateWritePerformanceSample) => sample.durableEvidence.appInbox.shift(),
+                (sample: StateWritePerformanceSample) => sample.durableEvidence.receipts.shift(),
+                (sample: StateWritePerformanceSample) => sample.durableEvidence.resourceOutbox.shift()
             ]
         ) {
             const candidate = createDefaultStateWritePerformanceArtifact();
@@ -629,15 +652,11 @@ describe('API-v1 state-write final durable evidence', { timeout: 30_000 }, () =>
             expect(validateStateWriteArtifact(swapped)).not.toEqual([]);
         }
         const missingTopologySibling = createDefaultStateWritePerformanceArtifact();
-        const missingEntry = durableEvidence(missingTopologySibling).appInbox.find(
-            (entry: any) => entry.commandType === 'TOPOLOGY_CONFIG_PUT'
-        );
-        delete missingEntry.durableResult.config;
+        const missingEntry = findTopologyEntry(missingTopologySibling);
+        Reflect.deleteProperty(missingEntry.durableResult, 'config');
         expect(validateStateWriteArtifact(missingTopologySibling)).not.toEqual([]);
         const swappedTopologySibling = createDefaultStateWritePerformanceArtifact();
-        const topologyEntries = durableEvidence(swappedTopologySibling).appInbox.filter(
-            (entry: any) => entry.commandType === 'TOPOLOGY_CONFIG_PUT'
-        );
+        const topologyEntries = findTopologyEntries(swappedTopologySibling);
         [topologyEntries[0].durableResult.config, topologyEntries[1].durableResult.config] = [
             topologyEntries[1].durableResult.config,
             topologyEntries[0].durableResult.config
@@ -648,10 +667,10 @@ describe('API-v1 state-write final durable evidence', { timeout: 30_000 }, () =>
     it('is total over malformed nested candidate evidence', () => {
         for (
             const mutate of [
-                (candidate: any) => (artifactSample(candidate).durableEvidence = null),
-                (candidate: any) => delete durableEvidence(candidate).appInbox[0],
-                (candidate: any) => (durableEvidence(candidate).receipts[0] = null),
-                (candidate: any) => (durableEvidence(candidate).resourceOutbox[0] = null)
+                (candidate: StateWritePerformanceArtifact) => Reflect.set(artifactSample(candidate), 'durableEvidence', null),
+                (candidate: StateWritePerformanceArtifact) => Reflect.deleteProperty(durableEvidence(candidate).appInbox, '0'),
+                (candidate: StateWritePerformanceArtifact) => Reflect.set(durableEvidence(candidate).receipts, '0', null),
+                (candidate: StateWritePerformanceArtifact) => Reflect.set(durableEvidence(candidate).resourceOutbox, '0', null)
             ]
         ) {
             const candidate = createDefaultStateWritePerformanceArtifact();
@@ -894,7 +913,7 @@ describe('API-v1 state-write final durable evidence', { timeout: 30_000 }, () =>
 });
 
 function expectStateWriteArtifactIssues(
-    candidate: Parameters<typeof validateStateWriteArtifact>[0],
+    candidate: StateWritePerformanceArtifact,
     ...messages: readonly string[]
 ): void {
     expect(validateStateWriteArtifact(candidate)).toEqual(
@@ -929,11 +948,14 @@ function groupIdempotencyRecord(
     };
 }
 
-const artifactSample = (artifact: any): any => artifact.workloads[0].samples[0];
-const durableEvidence = (artifact: any): any => artifactSample(artifact).durableEvidence;
-const malformedDurableResultCases: readonly [(artifact: any) => void, string][] = [
+const artifactSample = (artifact: StateWritePerformanceArtifact): StateWritePerformanceSample => artifact.workloads[0].samples[0];
+const durableEvidence = (artifact: StateWritePerformanceArtifact): StateWriteDurableEvidence => artifactSample(artifact).durableEvidence;
+const malformedDurableResultCases: readonly [
+    (artifact: StateWritePerformanceArtifact) => void,
+    string
+][] = [
     [
-        (artifact) => delete durableEvidence(artifact).appInbox[0].durableResult,
+        (artifact) => Reflect.deleteProperty(durableEvidence(artifact).appInbox[0], 'durableResult'),
         'persisted durable result is malformed'
     ],
     [
@@ -942,15 +964,18 @@ const malformedDurableResultCases: readonly [(artifact: any) => void, string][] 
     ],
     [
         (artifact) => {
-            const entry = durableEvidence(artifact).appInbox.find((candidate: any) => candidate.commandType.startsWith('GROUP_PRESENCE_'));
+            const entry = findPresenceEntry(artifact);
             entry.durableResult.outboxIds = ['invented-embedded-effect'];
         },
         'embedded result receipt must match authoritative receipt and effects'
     ],
     [
         (artifact) => {
-            const entry = durableEvidence(artifact).appInbox.find((candidate: any) => candidate.commandType.startsWith('CLIENT_'));
-            entry.durableResult.unreceipted = true;
+            const entry = durableEvidence(artifact).appInbox.find((candidate) => candidate.commandType.startsWith('CLIENT_'));
+            if (!entry) {
+                throw new Error('Expected client AppInbox fixture');
+            }
+            Reflect.set(entry.durableResult, 'unreceipted', true);
         },
         'persisted durable result is malformed'
     ]
@@ -986,7 +1011,7 @@ function queueResource(
 
 // Scales serializedResultBytes rather than statements: the fixture's statement
 // count is 20, too coarse for 4% and 6% to land on different integers.
-function setResourceAdverseRatio(artifact: any, ratio: number): void {
+function setResourceAdverseRatio(artifact: StateWritePerformanceArtifact, ratio: number): void {
     for (const workload of artifact.workloads) {
         for (const sample of workload.samples) {
             sample.sql.serializedResultBytes = Math.round(sample.sql.serializedResultBytes * (1 + ratio));
@@ -995,7 +1020,7 @@ function setResourceAdverseRatio(artifact: any, ratio: number): void {
     }
 }
 
-function setThroughputAdverseRatio(artifact: any, ratio: number): void {
+function setThroughputAdverseRatio(artifact: StateWritePerformanceArtifact, ratio: number): void {
     for (const workload of artifact.workloads) {
         for (const sample of workload.samples) {
             sample.durationMs = 100 / (1 - ratio);
@@ -1003,4 +1028,50 @@ function setThroughputAdverseRatio(artifact: any, ratio: number): void {
         }
         refreshStateWritePerformanceWorkload(workload);
     }
+}
+
+interface StateWriteTopologyAppInboxEntry extends StateWriteAppInboxEvidenceEntry {
+    durableResult: StateWriteTopologyDurableResult;
+}
+
+interface StateWritePresenceAppInboxEntry extends StateWriteAppInboxEvidenceEntry {
+    durableResult: StateWritePresenceDurableResult;
+}
+
+function findTopologyEntry(
+    artifact: StateWritePerformanceArtifact
+): StateWriteTopologyAppInboxEntry {
+    const entry = findTopologyEntries(artifact)[0];
+    if (!entry) {
+        throw new Error('Expected topology AppInbox fixture');
+    }
+    return entry;
+}
+
+function findTopologyEntries(
+    artifact: StateWritePerformanceArtifact
+): StateWriteTopologyAppInboxEntry[] {
+    return durableEvidence(artifact).appInbox.filter(isTopologyEntry);
+}
+
+function isTopologyEntry(
+    entry: StateWriteAppInboxEvidenceEntry
+): entry is StateWriteTopologyAppInboxEntry {
+    return entry.commandType === 'TOPOLOGY_CONFIG_PUT' && 'receipt' in entry.durableResult;
+}
+
+function findPresenceEntry(
+    artifact: StateWritePerformanceArtifact
+): StateWritePresenceAppInboxEntry {
+    const entry = durableEvidence(artifact).appInbox.find(isPresenceEntry);
+    if (!entry) {
+        throw new Error('Expected presence AppInbox fixture');
+    }
+    return entry;
+}
+
+function isPresenceEntry(
+    entry: StateWriteAppInboxEvidenceEntry
+): entry is StateWritePresenceAppInboxEntry {
+    return entry.commandType.startsWith('GROUP_PRESENCE_') && 'outboxIds' in entry.durableResult;
 }

@@ -1,8 +1,20 @@
+import { decodeJsonWireValue, type JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import {
     PRODUCTION_STATE_WRITE_MUTATION_CONTRACT,
-    STATE_WRITE_ARTIFACT_SCHEMA_VERSION
+    STATE_WRITE_ARTIFACT_SCHEMA_VERSION,
+    validateStateWriteArtifact
 } from '../../../../../../scripts/perf/compare-api-v1-state-write-results.mjs';
-import { binding, durableResult, effectIds } from './state-write-performance-result-fixture.ts';
+import type { StateWriteBenchmarkRegressionReason } from '../../../../../../scripts/perf/state-write/api-v1-state-write-benchmark-artifact.ts';
+import {
+    binding,
+    durableResult,
+    effectIds,
+    type StateWriteCompleteDurableResult,
+    type StateWriteDurableResult,
+    type StateWriteFixtureCommand,
+    type StateWriteMutationKind,
+    type StateWriteResultBinding
+} from './state-write-performance-result-fixture.ts';
 
 const MUTATION_MIX = [
     'profile-instance',
@@ -14,11 +26,12 @@ const MUTATION_MIX = [
     'topology-source'
 ] as const;
 
-type StateWriteMutationKind = (typeof MUTATION_MIX)[number];
-
-interface StateWritePerformanceCommand {
+export interface StateWritePerformanceCommand extends StateWriteFixtureCommand {
     readonly commandId: string;
     readonly kind: StateWriteMutationKind;
+    readonly latencyMs: number;
+    readonly stackIndex: number;
+    readonly status: 'accepted';
 }
 
 interface StateWritePerformanceArtifactInput {
@@ -28,7 +41,180 @@ interface StateWritePerformanceArtifactInput {
     readonly measuredRuns: number;
 }
 
-export function createDefaultStateWritePerformanceArtifact(): any {
+export interface StateWritePercentiles {
+    p50: number;
+    p95: number;
+    p99: number;
+}
+
+export interface StateWriteSqlArtifactMetrics {
+    statements: number;
+    rowsRead: number;
+    serializedResultBytes: number;
+}
+
+export interface StateWritePostgresArtifactMetrics {
+    transactionDurationMs: number;
+    lockWaitMs: number;
+    cpuTimeMs: number;
+    sharedBufferHits: number;
+    sharedBufferReads: number;
+    walBytes: number;
+}
+
+export interface StateWriteTimingArtifactMetrics {
+    read: number;
+    compute: number;
+    validate: number;
+    write: number;
+    transaction: number;
+    outbox: number;
+}
+
+export interface StateWriteOutcomeMetrics {
+    accepted: number;
+    conflicted: number;
+    transientRetries: number;
+    exhausted: number;
+    attempts: number;
+    attemptsPerAcceptedMutation: number;
+}
+
+export interface StateWriteCorrectnessMetrics {
+    acceptedCommandCount: number;
+    receiptCount: number;
+    effectfulCommandCount: number;
+    requiredOutboxIntentCount: number;
+    outboxIntentCount: number;
+    atomicCompletionFailures: number;
+    dbwFindings: string[];
+}
+
+export type StateWriteAttemptOutcome = 'accepted' | 'conflicted' | 'transient-retry';
+
+export type StateWriteAttemptFailure =
+    | { readonly kind: 'none'; }
+    | { readonly kind: 'retryable'; readonly code: string; readonly name: string; };
+
+export interface StateWriteAttemptObservation {
+    readonly commandId: string;
+    readonly operationId: string;
+    attempt: number;
+    outcome: StateWriteAttemptOutcome;
+    terminal: boolean;
+    source: string;
+    retryDelayMs: number;
+    dueAgeMs: number;
+    selectedLane: string;
+    failure: StateWriteAttemptFailure;
+}
+
+export interface StateWriteAppInboxEvidenceEntry {
+    readonly commandId: string;
+    readonly operationId: string;
+    readonly resourceId: string;
+    readonly topicId: string;
+    readonly contextId: string;
+    readonly status: 'COMPLETED';
+    readonly resultStatus: 'COMPLETED';
+    attempts: number;
+    readonly commandType: string;
+    durableResult: StateWriteDurableResult;
+    retryDelayMs: number;
+    dueAgeMs: number;
+    selectedLane: string;
+    transactionDurationMs: number;
+}
+
+export interface StateWriteReceiptEvidence {
+    readonly commandId: string;
+    readonly receiptIds: string[];
+    outboxIds: string[];
+    readonly identityKind: 'logical-msg-id' | 'physical-resource-id';
+    readonly resultBindings: StateWriteResultBinding[];
+}
+
+export interface StateWriteResourceOutboxEvidence {
+    readonly effectId: string;
+    readonly resourceId: string;
+    readonly outboxId: string;
+    readonly commandId: string;
+    readonly effectKind: string;
+    readonly typeId: 'WS_OUTBOX' | 'APP_OUTBOX';
+    readonly topicId: string;
+}
+
+export interface StateWriteDurableEvidence {
+    appInbox: StateWriteAppInboxEvidenceEntry[];
+    receipts: StateWriteReceiptEvidence[];
+    resourceOutbox: StateWriteResourceOutboxEvidence[];
+    intermediateMutationIntents: object[];
+    atomicCompletionFailures: number;
+}
+
+export interface StateWritePerformanceSample {
+    runIndex: number;
+    durationMs: number;
+    throughputPerSecond: number;
+    readonly latencySamplesMs: number[];
+    readonly latencyMs: StateWritePercentiles;
+    readonly commands: StateWritePerformanceCommand[];
+    readonly attemptObservations: StateWriteAttemptObservation[];
+    readonly stackCommandCounts: number[];
+    durableEvidence: StateWriteDurableEvidence;
+    outcomes: StateWriteOutcomeMetrics;
+    readonly sql: StateWriteSqlArtifactMetrics;
+    readonly postgres: StateWritePostgresArtifactMetrics;
+    readonly timingsMs: StateWriteTimingArtifactMetrics;
+    readonly correctness: StateWriteCorrectnessMetrics;
+}
+
+export interface StateWritePerformanceSummary {
+    latencyMs: StateWritePercentiles;
+    throughputPerSecond: number;
+    outcomes: StateWriteOutcomeMetrics;
+    sql: StateWriteSqlArtifactMetrics;
+    postgres: StateWritePostgresArtifactMetrics;
+    timingsMs: StateWriteTimingArtifactMetrics;
+    correctness: StateWriteCorrectnessMetrics;
+}
+
+export interface StateWritePerformanceWorkload {
+    readonly name: string;
+    readonly scale: { clients: number; groups: number; concurrency: number; };
+    readonly mutationMix: StateWriteMutationKind[];
+    readonly warmupRuns: number;
+    readonly measuredRuns: number;
+    samples: StateWritePerformanceSample[];
+    summary: StateWritePerformanceSummary;
+}
+
+export interface StateWritePerformanceAggregation {
+    readonly protocol: string;
+    readonly role: string;
+    readonly environmentSha256: string;
+    readonly sourceArtifactSha256: string[];
+}
+
+export interface StateWritePerformanceArtifact {
+    readonly schemaVersion: string;
+    gitCommit: string;
+    readonly backend: 'postgres';
+    generatedAt: string;
+    readonly measurement: {
+        readonly warmupRuns: number;
+        readonly measuredRuns: number;
+        readonly concurrency: number;
+        readonly mutationTimingExcludes: string[];
+        readonly tailSamplesDiscarded: boolean;
+        readonly counterSources: Record<string, string>;
+    };
+    regressionReasons: StateWriteBenchmarkRegressionReason[];
+    workloads: StateWritePerformanceWorkload[];
+    aggregation?: StateWritePerformanceAggregation;
+}
+
+export function createDefaultStateWritePerformanceArtifact(): StateWritePerformanceArtifact {
     return createStateWritePerformanceArtifact({
         artifactId: 'run',
         generatedAt: '2026-07-27T00:00:00.000Z',
@@ -39,7 +225,7 @@ export function createDefaultStateWritePerformanceArtifact(): any {
 
 export function createStateWritePerformanceArtifact(
     input: StateWritePerformanceArtifactInput
-): any {
+): StateWritePerformanceArtifact {
     const { measuredRuns, artifactId } = input;
     const workloads = [
         createWorkload({ name: 'uncontended', groups: 100, measuredRuns, artifactId }),
@@ -71,24 +257,22 @@ interface CreateWorkloadInput {
     readonly artifactId: string;
 }
 
-function createWorkload(input: CreateWorkloadInput): any {
+function createWorkload(input: CreateWorkloadInput): StateWritePerformanceWorkload {
     const { name, groups, measuredRuns, artifactId } = input;
     const samples = Array.from({ length: measuredRuns }, (_, index) => createSample(index, artifactId));
-    const workload = {
+    return {
         name,
         scale: { clients: 100, groups, concurrency: 10 },
         mutationMix: [...MUTATION_MIX],
         warmupRuns: 1,
         measuredRuns,
         samples,
-        summary: {}
+        summary: createSummary(samples)
     };
-    refreshStateWritePerformanceWorkload(workload);
-    return workload;
 }
 
-function createSample(runIndex: number, artifactId: string): any {
-    const commands = MUTATION_MIX.flatMap((kind) =>
+function createSample(runIndex: number, artifactId: string): StateWritePerformanceSample {
+    const commands: StateWritePerformanceCommand[] = MUTATION_MIX.flatMap((kind) =>
         Array.from({ length: 100 }, (_, ordinal) => ({
             commandId: `${artifactId}-${runIndex}:${kind}:${ordinal}`,
             kind,
@@ -141,8 +325,10 @@ function createSample(runIndex: number, artifactId: string): any {
     };
 }
 
-function createAttemptObservations(evidence: any): any[] {
-    return evidence.appInbox.flatMap((entry: any) =>
+function createAttemptObservations(
+    evidence: StateWriteDurableEvidence
+): StateWriteAttemptObservation[] {
+    return evidence.appInbox.flatMap((entry) =>
         Array.from({ length: entry.attempts }, (_, index) => ({
             commandId: entry.commandId,
             operationId: entry.operationId,
@@ -160,8 +346,10 @@ function createAttemptObservations(evidence: any): any[] {
     );
 }
 
-function createFinalEvidence(commands: readonly StateWritePerformanceCommand[]): any {
-    const appInbox = commands.flatMap((command) =>
+function createFinalEvidence(
+    commands: readonly StateWritePerformanceCommand[]
+): StateWriteDurableEvidence {
+    const appInbox: StateWriteAppInboxEvidenceEntry[] = commands.flatMap((command) =>
         operationIds(command).map((operationId) => ({
             commandId: command.commandId,
             operationId,
@@ -185,7 +373,7 @@ function createFinalEvidence(commands: readonly StateWritePerformanceCommand[]):
             transactionDurationMs: 1
         }))
     );
-    const receipts = commands.map((command) => ({
+    const receipts: StateWriteReceiptEvidence[] = commands.map((command) => ({
         commandId: command.commandId,
         receiptIds: operationIds(command).map(
             (operationId) => binding(command, operationId).receiptId
@@ -194,7 +382,7 @@ function createFinalEvidence(commands: readonly StateWritePerformanceCommand[]):
         identityKind: command.kind === 'topology-source' ? 'logical-msg-id' : 'physical-resource-id',
         resultBindings: operationIds(command).map((operationId) => binding(command, operationId))
     }));
-    const resourceOutbox = commands.flatMap((command) =>
+    const resourceOutbox: StateWriteResourceOutboxEvidence[] = commands.flatMap((command) =>
         PRODUCTION_STATE_WRITE_MUTATION_CONTRACT[command.kind].map((effectKind, index) => ({
             effectId: effectIds(command)[index],
             resourceId: effectIds(command)[index],
@@ -214,11 +402,11 @@ function createFinalEvidence(commands: readonly StateWritePerformanceCommand[]):
     };
 }
 
-function operationIds(command: any): string[] {
+function operationIds(command: StateWriteFixtureCommand): string[] {
     return command.kind === 'profile-instance' ? ['profile', 'instance'] : ['command'];
 }
 
-export function refreshStateWritePerformanceWorkload(workload: any): void {
+export function refreshStateWritePerformanceWorkload(workload: StateWritePerformanceWorkload): void {
     const samples = workload.samples;
     for (const sample of samples) {
         const attempts = sample.attemptObservations.length;
@@ -234,7 +422,7 @@ export function refreshStateWritePerformanceWorkload(workload: any): void {
     workload.summary = createSummary(samples);
 }
 
-function createSummary(samples: any[]): any {
+function createSummary(samples: StateWritePerformanceSample[]): StateWritePerformanceSummary {
     const accepted = 700 * samples.length;
     const attempts = sum(samples.map((sample) => sample.attemptObservations.length));
     return {
@@ -265,11 +453,11 @@ function createSummary(samples: any[]): any {
     };
 }
 
-function countAttempts(sample: any, outcome: string): number {
-    return sample.attemptObservations.filter((attempt: any) => attempt.outcome === outcome).length;
+function countAttempts(sample: StateWritePerformanceSample, outcome: StateWriteAttemptOutcome): number {
+    return sample.attemptObservations.filter((attempt) => attempt.outcome === outcome).length;
 }
 
-function toPercentiles(values: number[]): { p50: number; p95: number; p99: number; } {
+function toPercentiles(values: readonly number[]): StateWritePercentiles {
     const sorted = [...values].sort((left, right) => left - right);
     const at = (ratio: number) => sorted[Math.ceil(sorted.length * ratio) - 1];
     return { p50: at(0.5), p95: at(0.95), p99: at(0.99) };
@@ -299,4 +487,34 @@ function createCounterSources(): Record<string, string> {
 
 function sum(values: number[]): number {
     return values.reduce((total, value) => total + value, 0);
+}
+
+export function swapCompleteDurableResults(
+    candidate: StateWritePerformanceArtifact,
+    commandTypePrefix: string
+): void {
+    const candidates = candidate.workloads[0].samples[0].durableEvidence.appInbox.filter(
+        (entry) => entry.commandType.startsWith(commandTypePrefix) && isCompleteDurableResult(entry.durableResult)
+    );
+    const operationId = candidates[0]?.operationId;
+    const [first, second] = candidates.filter((entry) => entry.operationId === operationId);
+    if (!first || !second) {
+        throw new Error(`Expected two ${commandTypePrefix} durable results for one operation`);
+    }
+    [first.durableResult, second.durableResult] = [second.durableResult, first.durableResult];
+}
+
+function isCompleteDurableResult(
+    result: StateWriteDurableResult
+): result is StateWriteCompleteDurableResult {
+    return 'status' in result && result.status === 'ok';
+}
+
+export function decodeStateWritePerformanceArtifact(text: string): StateWritePerformanceArtifact {
+    const value = decodeJsonWireValue(JSON.parse(text), 'State-write performance artifact');
+    const errors = validateStateWriteArtifact(value);
+    if (errors.length > 0) {
+        throw new TypeError(`Invalid state-write performance fixture: ${errors.join('; ')}`);
+    }
+    return value as JsonWireValue & StateWritePerformanceArtifact;
 }

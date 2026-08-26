@@ -1,14 +1,130 @@
 import { createHash } from 'node:crypto';
 import { PRODUCTION_STATE_WRITE_MUTATION_CONTRACT } from '../../../../../../scripts/perf/compare-api-v1-state-write-results.mjs';
 
-type StateWriteMutationKind = keyof typeof PRODUCTION_STATE_WRITE_MUTATION_CONTRACT;
+export type StateWriteMutationKind = keyof typeof PRODUCTION_STATE_WRITE_MUTATION_CONTRACT;
 
 export interface StateWriteFixtureCommand {
     readonly kind: StateWriteMutationKind;
     readonly commandId: string;
 }
 
-export function binding(command: any, operationId: string): any {
+export interface StateWriteCausalRevision {
+    readonly groupRevision: number;
+    readonly presenceRevision: number;
+}
+
+export interface StateWriteAcceptedCausalRevision {
+    readonly causalRevision: StateWriteCausalRevision;
+    readonly snapshotVersion: number;
+    readonly metadataVersion: number;
+    readonly rosterVersion: number;
+    readonly presenceVersion: number;
+}
+
+export interface StateWritePrincipalAggregateRef {
+    readonly applicationId: string;
+    readonly workspaceId: string;
+    readonly principalId: string;
+}
+
+export interface StateWriteGroupAggregateRef {
+    readonly applicationId: string;
+    readonly workspaceId: string;
+    readonly groupId: string;
+}
+
+export type StateWriteAggregateRef = StateWritePrincipalAggregateRef | StateWriteGroupAggregateRef;
+
+export interface StateWriteTopologyConfig {
+    topologyKind: string;
+    degreeLimit: number;
+    treeMinSize: number;
+    meshMinSize: number;
+    meshParamK: number;
+}
+
+export interface StateWriteResultBinding {
+    readonly operationId: string;
+    readonly receiptId: string;
+    readonly requestId: string;
+    readonly commandHash: string;
+    outcome: string;
+    readonly attemptCount: number;
+    outboxIds: string[];
+    readonly aggregateRef: StateWriteAggregateRef;
+    readonly stateRevision: number | null;
+    readonly causalRevision: StateWriteCausalRevision | null;
+    readonly snapshotVersion: number;
+    readonly acceptedVersion: number | null;
+    readonly operation: 'putConfig' | null;
+    readonly target: 'config' | null;
+    readonly acceptedStorageRevision: number | null;
+    readonly acceptedCreatedAtEpochMs: number | null;
+    readonly acceptedUpdatedAtEpochMs: number | null;
+    readonly acceptedExpiresAtEpochMs: number | null;
+    readonly acceptedConfig: StateWriteTopologyConfig | null;
+    readonly acceptedCausalRevision: StateWriteAcceptedCausalRevision | null;
+    readonly eventId: string | null;
+}
+
+export interface StateWriteCompleteDurableResult {
+    readonly status: 'ok';
+    readonly result: {
+        readonly snapshot: object;
+        readonly event: object;
+    };
+}
+
+export interface StateWritePresenceDurableResult {
+    readonly commandId: string;
+    readonly requestId: string;
+    readonly commandHash: string;
+    readonly aggregateRef: StateWriteAggregateRef;
+    readonly snapshotVersion: number;
+    readonly causalRevision: StateWriteCausalRevision | null;
+    readonly eventId: string | null;
+    readonly outcome: 'applied';
+    readonly attemptCount: number;
+    outboxIds: string[];
+}
+
+export interface StateWriteTopologyDurableResult {
+    readonly receipt: {
+        readonly commandId: string;
+        readonly requestId: string;
+        readonly commandHash: string;
+        readonly groupRef: StateWriteAggregateRef;
+        readonly acceptedVersion: number | null;
+        readonly acceptedStorageRevision: number | null;
+        readonly acceptedCreatedAtEpochMs: number | null;
+        readonly acceptedUpdatedAtEpochMs: number | null;
+        readonly acceptedExpiresAtEpochMs: number | null;
+        readonly acceptedConfig: StateWriteTopologyConfig | null;
+        readonly acceptedCausalRevision: StateWriteAcceptedCausalRevision | null;
+        readonly eventId: string | null;
+        readonly operation: 'putConfig' | null;
+        readonly target: 'config' | null;
+        readonly outcome: string;
+        readonly attemptCount: number;
+        readonly outboxIds: string[];
+    };
+    config: {
+        readonly groupRef: StateWriteAggregateRef;
+        readonly config: StateWriteTopologyConfig | null;
+        readonly version: number | null;
+        readonly createdAtEpochMs: number;
+        readonly updatedAtEpochMs: number;
+        readonly updatedByPrincipalId: string;
+        readonly requestId: string;
+    };
+}
+
+export type StateWriteDurableResult =
+    | StateWriteCompleteDurableResult
+    | StateWritePresenceDurableResult
+    | StateWriteTopologyDurableResult;
+
+export function binding(command: StateWriteFixtureCommand, operationId: string): StateWriteResultBinding {
     const topology = command.kind === 'topology-source';
     const requestId = command.kind === 'profile-instance'
         ? `${command.commandId}-${operationId}`
@@ -54,7 +170,10 @@ export function binding(command: any, operationId: string): any {
     };
 }
 
-export function durableResult(command: any, operationId: string): any {
+export function durableResult(
+    command: StateWriteFixtureCommand,
+    operationId: string
+): StateWriteDurableResult {
     const authoritative = binding(command, operationId);
     const outboxIds = effectIds(command);
     if (command.kind === 'topology-source') {
@@ -127,7 +246,7 @@ export function durableResult(command: any, operationId: string): any {
     };
 }
 
-function topologyConfig(): any {
+function topologyConfig(): StateWriteTopologyConfig {
     return {
         topologyKind: 'mesh',
         degreeLimit: 4,
@@ -143,12 +262,4 @@ export function effectIds(command: StateWriteFixtureCommand): string[] {
     }
     return PRODUCTION_STATE_WRITE_MUTATION_CONTRACT[command.kind]
         .map((_, index) => `${command.commandId}:effect:${index}`);
-}
-
-export function swapCompleteDurableResults(candidate: any, prefix: string): void {
-    const candidates = candidate.workloads[0].samples[0].durableEvidence.appInbox.filter(
-        (entry: any) => entry.commandType.startsWith(prefix) && entry.durableResult.status
-    );
-    const [first, second] = candidates.filter((entry: any) => entry.operationId === candidates[0].operationId);
-    [first.durableResult, second.durableResult] = [second.durableResult, first.durableResult];
 }
