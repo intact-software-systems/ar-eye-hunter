@@ -15,6 +15,30 @@ const deliveryGuidancePaths = [
 ] as const;
 
 describe('general agent guidance routing', () => {
+    it('requires skill preflight before implementation inspection or coding decisions', () => {
+        const agents = normalize(readRepo('AGENTS.md'));
+        const codeWriting = normalize(readRepo('.agents/skills/rallar-code-writing/SKILL.md'));
+
+        expectAll(agents, [
+            'Skill preflight is the first repository action',
+            'Before reading implementation files, forming a plan, choosing an abstraction, reviewing code, or editing code',
+            'Classify the task from the request and repository guidance',
+            'Read each selected `SKILL.md` completely',
+            'State the selected skills and their loading order',
+            'load its applicable skill before making decisions about that surface',
+            'Source-integrity tests prove publication, not agent behavior',
+            'Fresh-agent pressure evaluations are the behavioral evidence',
+            'Only runtime tool-event telemetry can prove the ordering of a live task',
+            'Do not claim that CI enforces live preflight order without that telemetry'
+        ]);
+        expectAll(codeWriting, [
+            'before inspecting implementation code or making coding decisions',
+            'read this skill and `references/repo-code-style.md` completely',
+            'Skill descriptions are routing metadata, not a substitute for the skill body',
+            'Do not load unrelated skills merely to complete the preflight'
+        ]);
+    });
+
     it('uses the pull request as the remote delivery entity', () => {
         const agents = normalize(readRepo('AGENTS.md'));
         const adaptive = normalize(readRepo('.agents/skills/adaptive-plan-execution/SKILL.md'));

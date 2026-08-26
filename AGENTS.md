@@ -3,6 +3,31 @@
 Use this file as the lightweight repo orientation. Detailed workflows live in
 the repo-local Codex plugin under `.agents/skills/**`.
 
+## Skill Preflight
+
+Skill preflight is the first repository action. Before reading implementation
+files, forming a plan, choosing an abstraction, reviewing code, or editing
+code:
+
+1. Classify the task from the request and repository guidance.
+2. Select the smallest set of immediately applicable process, code-standard,
+   domain, testing, and publication skills.
+3. Read each selected `SKILL.md` completely, including every reference that
+   skill marks as required for the current task.
+4. State the selected skills and their loading order before continuing.
+
+Skill names and descriptions are routing metadata, not substitutes for the
+skill bodies. Do not load the full skill catalog preemptively. If later
+exploration introduces a new technical surface, load its applicable skill
+before making decisions about that surface. After preflight, inspect nearby
+code, tests, and examples before choosing the implementation shape.
+
+Source-integrity tests prove publication, not agent behavior. Fresh-agent
+pressure evaluations are the behavioral evidence that the guidance changes a
+decision under realistic incentives. Only runtime tool-event telemetry can
+prove the ordering of a live task. Do not claim that CI enforces live preflight
+order without that telemetry.
+
 ## Primary Code Goal
 
 > “The goal is not minimum syntax. The goal is minimum cognitive indirection.”
@@ -64,11 +89,12 @@ limit.
 
 ## Start Here
 
-- Inspect the existing code and relevant `examples/**` before editing; Rallar
-  package docs can lag behind active package work.
 - For any TypeScript change, use the `rallar-code-writing` skill and read the
   authoritative repo standard at
   `.agents/skills/rallar-code-writing/references/repo-code-style.md`.
+- After completing skill preflight, inspect the existing code and relevant
+  `examples/**` before editing; Rallar package docs can lag behind active
+  package work.
 - TypeScript type design optimizes for human comprehension: one canonical name
   per type, and never introduce local or exported aliases that merely rename or
   shorten an existing named type. Preserve meaningful qualification such as

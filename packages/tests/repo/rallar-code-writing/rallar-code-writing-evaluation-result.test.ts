@@ -31,7 +31,12 @@ const legacyScenarioDimensions = [
     ['public-compatibility-legacy-restraint', 'legacy.retention-governance'],
     ['public-compatibility-legacy-restraint', 'legacy.behavior-preservation'],
     ['public-compatibility-legacy-restraint', 'legacy.scope-containment'],
-    ['public-compatibility-legacy-restraint', 'legacy.preexisting-pressure-rejection']
+    ['public-compatibility-legacy-restraint', 'legacy.preexisting-pressure-rejection'],
+    ['pre-decision-skill-preflight', 'preflight.before-implementation-inspection'],
+    ['pre-decision-skill-preflight', 'preflight.complete-required-reading'],
+    ['pre-decision-skill-preflight', 'preflight.minimum-applicable-set'],
+    ['pre-decision-skill-preflight', 'preflight.new-surface-gate'],
+    ['pre-decision-skill-preflight', 'preflight.observable-order']
 ] as const;
 
 afterEach(() => {
@@ -57,15 +62,15 @@ describe('rallar code-writing evaluation result validation', () => {
         expect(validation.stdout).toContain('PASS: rallar code-writing evaluation result');
     });
 
-    it('requires all three critical scenarios and their raw output artifacts', () => {
+    it('requires all four critical scenarios and their raw output artifacts', () => {
         const validationInput = createValidationInput();
 
-        expect(validationInput.result.scenarioResults).toHaveLength(3);
+        expect(validationInput.result.scenarioResults).toHaveLength(4);
         expect(validationInput.result.summary).toEqual({
-            criticalPassed: 3,
-            criticalTotal: 3,
-            passed: 3,
-            total: 3
+            criticalPassed: 4,
+            criticalTotal: 4,
+            passed: 4,
+            total: 4
         });
 
         validationInput.result.scenarioResults[0].rawOutputArtifact = 'missing-agent-output.txt';
@@ -81,10 +86,10 @@ describe('rallar code-writing evaluation result validation', () => {
         scenarioResult.verdict = 'fail';
         scenarioResult.criticalFailures = [dimensionId];
         consistentInput.result.summary = {
-            criticalPassed: 2,
-            criticalTotal: 3,
-            passed: 2,
-            total: 3
+            criticalPassed: 3,
+            criticalTotal: 4,
+            passed: 3,
+            total: 4
         };
 
         expect(validateEvaluationResult(consistentInput)).toEqual([]);
@@ -96,8 +101,8 @@ describe('rallar code-writing evaluation result validation', () => {
             expect.arrayContaining([
                 `${scenarioId} verdict must be fail when a required dimension fails`,
                 `${scenarioId} criticalFailures must exactly list failed required dimensions`,
-                'result.summary.passed must equal 2',
-                'result.summary.criticalPassed must equal 2'
+                'result.summary.passed must equal 3',
+                'result.summary.criticalPassed must equal 3'
             ])
         );
     });
@@ -111,10 +116,10 @@ describe('rallar code-writing evaluation result validation', () => {
             scenarioResult.verdict = 'fail';
             scenarioResult.criticalFailures = [dimensionId];
             consistentInput.result.summary = {
-                criticalPassed: 2,
-                criticalTotal: 3,
-                passed: 2,
-                total: 3
+                criticalPassed: 3,
+                criticalTotal: 4,
+                passed: 3,
+                total: 4
             };
 
             expect(validateEvaluationResult(consistentInput)).toEqual([]);
@@ -125,79 +130,142 @@ describe('rallar code-writing evaluation result validation', () => {
                 expect.arrayContaining([
                     `${legacyScenarioId} verdict must be fail when a required dimension fails`,
                     `${legacyScenarioId} criticalFailures must exactly list failed required dimensions`,
-                    'result.summary.passed must equal 2',
-                    'result.summary.criticalPassed must equal 2'
+                    'result.summary.passed must equal 3',
+                    'result.summary.criticalPassed must equal 3'
                 ])
             );
         }
     );
 });
 
-function failDimension(result: any, targetScenarioId: string, dimensionId: string): void {
+function failDimension(
+    result: EvaluationResult,
+    targetScenarioId: string,
+    dimensionId: string
+): void {
     const dimensionResult = findScenarioResult(result, targetScenarioId).dimensionResults.find(
-        (entry: any) => entry.dimensionId === dimensionId
+        (entry) => entry.dimensionId === dimensionId
     );
+    if (!dimensionResult) {
+        throw new Error(`Missing dimension result: ${dimensionId}`);
+    }
     dimensionResult.verdict = 'fail';
 }
 
-function findScenarioResult(result: any, targetScenarioId: string): any {
+function findScenarioResult(
+    result: EvaluationResult,
+    targetScenarioId: string
+): EvaluationScenarioResult {
     const scenarioResult = result.scenarioResults.find(
-        (entry: any) => entry.scenarioId === targetScenarioId
+        (entry) => entry.scenarioId === targetScenarioId
     );
     expect(scenarioResult, targetScenarioId).toBeDefined();
-    return scenarioResult;
+    return scenarioResult!;
 }
 
-function createValidationInput(): any {
-    const suite = readJson(`${evaluationRoot}/scenarios.json`) as any;
-    const rubric = readJson(`${evaluationRoot}/rubric.json`) as any;
+function createValidationInput(): EvaluationValidationInput {
+    const suite = readJson<EvaluationSuite>(`${evaluationRoot}/scenarios.json`);
+    const rubric = readJson<object>(`${evaluationRoot}/rubric.json`);
     const scenarios = suite.scenarios.filter(
-        (scenario: any) => scenario.primarySkill === 'rallar-code-writing'
+        (scenario) => scenario.primarySkill === 'rallar-code-writing'
     );
-    const criticalTotal = scenarios.filter((scenario: any) => scenario.critical).length;
+    const criticalTotal = scenarios.filter((scenario) => scenario.critical).length;
+    const result: EvaluationResult = {
+        schemaVersion: 'rallar-code-writing-result-v1',
+        runId: 'fixture-rallar-code-writing-result',
+        suiteId: 'rallar-code-writing-v1',
+        primarySkill: 'rallar-code-writing',
+        skillVariant: 'with-skill',
+        model: 'fresh-agent',
+        startedAt: '2026-08-14T12:00:00Z',
+        completedAt: '2026-08-14T12:10:00Z',
+        scenarioResults: scenarios.map((scenario) => ({
+            scenarioId: scenario.id,
+            verdict: 'pass',
+            dimensionResults: scenario.requiredDimensions.map((dimensionId) => ({
+                dimensionId,
+                verdict: 'pass',
+                evidence: `Direct evidence for ${dimensionId}.`,
+                reason: `The raw answer satisfies ${dimensionId}.`
+            })),
+            criticalFailures: [],
+            rawOutputArtifact: rawArtifact
+        })),
+        summary: {
+            criticalPassed: criticalTotal,
+            criticalTotal,
+            passed: scenarios.length,
+            total: scenarios.length
+        }
+    };
+
     return {
         repoRoot,
         suite,
         rubric,
-        result: {
-            schemaVersion: 'rallar-code-writing-result-v1',
-            runId: 'fixture-rallar-code-writing-result',
-            suiteId: 'rallar-code-writing-v1',
-            primarySkill: 'rallar-code-writing',
-            skillVariant: 'with-skill',
-            model: 'fresh-agent',
-            startedAt: '2026-08-14T12:00:00Z',
-            completedAt: '2026-08-14T12:10:00Z',
-            scenarioResults: scenarios.map((scenario: any) => ({
-                scenarioId: scenario.id,
-                verdict: 'pass',
-                dimensionResults: scenario.requiredDimensions.map((dimensionId: string) => ({
-                    dimensionId,
-                    verdict: 'pass',
-                    evidence: `Direct evidence for ${dimensionId}.`,
-                    reason: `The raw answer satisfies ${dimensionId}.`
-                })),
-                criticalFailures: [],
-                rawOutputArtifact: rawArtifact
-            })),
-            summary: {
-                criticalPassed: criticalTotal,
-                criticalTotal,
-                passed: scenarios.length,
-                total: scenarios.length
-            }
-        }
+        result
     };
 }
 
-function readJson(repositoryPath: string): unknown {
-    return JSON.parse(readFileSync(path.join(repoRoot, repositoryPath), 'utf8'));
+function readJson<T>(repositoryPath: string): T {
+    return JSON.parse(readFileSync(path.join(repoRoot, repositoryPath), 'utf8')) as T;
 }
 
-function writeResult(result: unknown): string {
+function writeResult(result: EvaluationResult): string {
     const temporaryDirectory = mkdtempSync(path.join(tmpdir(), 'rallar-code-writing-result-'));
     temporaryDirectories.push(temporaryDirectory);
     const resultPath = path.join(temporaryDirectory, 'result.json');
     writeFileSync(resultPath, JSON.stringify(result), 'utf8');
     return resultPath;
+}
+
+interface EvaluationScenario {
+    readonly id: string;
+    readonly critical: boolean;
+    readonly primarySkill: string;
+    readonly requiredDimensions: readonly string[];
+}
+
+interface EvaluationSuite {
+    readonly scenarios: readonly EvaluationScenario[];
+}
+
+interface EvaluationDimensionResult {
+    readonly dimensionId: string;
+    verdict: 'pass' | 'fail';
+    readonly evidence: string;
+    readonly reason: string;
+}
+
+interface EvaluationScenarioResult {
+    readonly scenarioId: string;
+    verdict: 'pass' | 'fail';
+    readonly dimensionResults: EvaluationDimensionResult[];
+    criticalFailures: string[];
+    rawOutputArtifact: string;
+}
+
+interface EvaluationResult {
+    readonly schemaVersion: string;
+    readonly runId: string;
+    readonly suiteId: string;
+    readonly primarySkill: string;
+    readonly skillVariant: string;
+    readonly model: string;
+    readonly startedAt: string;
+    readonly completedAt: string;
+    readonly scenarioResults: EvaluationScenarioResult[];
+    summary: {
+        criticalPassed: number;
+        criticalTotal: number;
+        passed: number;
+        total: number;
+    };
+}
+
+interface EvaluationValidationInput {
+    readonly repoRoot: string;
+    readonly suite: EvaluationSuite;
+    readonly rubric: object;
+    readonly result: EvaluationResult;
 }

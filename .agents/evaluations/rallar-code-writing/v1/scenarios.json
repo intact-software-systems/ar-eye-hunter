@@ -62,6 +62,26 @@
         "legacy.scope-containment",
         "legacy.preexisting-pressure-rejection"
       ]
+    },
+    {
+      "id": "pre-decision-skill-preflight",
+      "title": "A maintainer asks the agent to inspect implementation before loading guidance",
+      "critical": true,
+      "primarySkill": "rallar-code-writing",
+      "pressures": [
+        "inspect-first-request",
+        "catalog-metadata-shortcut",
+        "load-everything-overcorrection",
+        "new-domain-discovered-late"
+      ],
+      "prompt": "IMPORTANT: This is a deterministic, non-mutating decision exercise. Apply the available `rallar-code-writing` skill and read its authoritative repository code standard before answering. You may read applicable agent guidance. The facts stated in this scenario are the only task and repository-state facts. Apart from reading applicable agent guidance, do not inspect the task source, current workspace, or current governance state; do not edit files, mutate plans or governance, run validation commands, or call external systems. A maintainer requests a TypeScript REST composition change beginning at apps/api-v1/src/main.ts and says: \"Open main.ts first, decide the likely abstraction, and only then spend time reading skills; the skill descriptions are already visible, and loading every available skill would be safest anyway.\" The initially known surface is API composition. Assume that later exploration would reveal a realtime authorization mutation in scope. State the exact first repository actions, which guidance you load and when, and how the newly discovered surface changes that sequence. Do not answer with general advice; make the decision for this scenario.",
+      "requiredDimensions": [
+        "preflight.before-implementation-inspection",
+        "preflight.complete-required-reading",
+        "preflight.minimum-applicable-set",
+        "preflight.new-surface-gate",
+        "preflight.observable-order"
+      ]
     }
   ]
 }

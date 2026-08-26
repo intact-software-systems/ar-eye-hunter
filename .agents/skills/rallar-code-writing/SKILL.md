@@ -7,6 +7,15 @@ description: Use when writing, generating, refactoring, or reviewing any human-a
 
 ## Start Here
 
+For every task that matches this skill, before inspecting implementation code
+or making coding decisions, read this skill and
+`references/repo-code-style.md` completely. Select and announce the other
+immediately applicable skills before continuing. Skill descriptions are routing
+metadata, not a substitute for the skill body. Do not load unrelated skills
+merely to complete the preflight. If inspection later introduces a new domain
+or technical surface, load its applicable skill before deciding that part of
+the change.
+
 Code is written first for human developers. Correctness, safety, security,
 compatibility, and required performance remain mandatory; within those
 constraints, choose the shape a human can locate, trace, understand, and
