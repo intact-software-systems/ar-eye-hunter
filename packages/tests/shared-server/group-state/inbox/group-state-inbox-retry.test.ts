@@ -76,7 +76,24 @@ describe('GroupStateInboxService authenticated authority', { timeout: 30_000 }, 
                         aggregateRef: { ...SCOPE, groupId: 'outer-retry-room' },
                         commandId: 'outer-retry-authority-change',
                         requestId: 'outer-retry-authority-change',
-                        input: {}
+                        input: {
+                            actorPrincipalId: 'owner',
+                            actorSessionId: 'owner-session',
+                            reason: null,
+                            traceId: null,
+                            slug: null,
+                            displayName: 'Must Not Apply',
+                            description: null,
+                            kind: null,
+                            status: null,
+                            joinMode: null,
+                            maxMembers: null,
+                            maxSessionsPerMember: null,
+                            metadata: null,
+                            expiresAtEpochMs: null,
+                            emptySinceEpochMs: null,
+                            purgeAfterEpochMs: null
+                        }
                     },
                     facts: {
                         nowEpochMs,

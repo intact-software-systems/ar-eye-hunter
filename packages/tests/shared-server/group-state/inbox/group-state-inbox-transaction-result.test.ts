@@ -10,7 +10,7 @@ import type { GroupMutationPreparation } from '@shared-server/rallar-system/grou
 import { GroupStateInboxHandler } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-handler.ts';
 import { decodeGroupStateWritten } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-result-codec.ts';
 import type { GroupStateInboxDurableResult } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-result.ts';
-import { decodeJsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
+import { decodeJsonWireValue, type JsonWireObject, type JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import { newALRoute, newALUntargetedMessage } from '@shared/al-contracts/al-contract.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 
@@ -91,6 +91,31 @@ describe('group-state AppInbox transaction result boundary', () => {
         await harness.handler.processGroupStateMutation(harness.context);
 
         expect(harness.formationMutationEvents).toEqual([{ operation: 'createGroup', outcome: 'write' }]);
+    });
+
+    it('rejects predecessor fields in prepared facts before starting the mutation transaction', async () => {
+        const harness = await createGroupStateTransactionBoundaryHarness();
+        const authority = requireJsonWireObject(
+            harness.context.enqueue.authority,
+            'Prepared authority'
+        );
+        const facts = requireJsonWireObject(authority.facts, 'Prepared facts');
+        const malformedContext = {
+            ...harness.context,
+            enqueue: {
+                ...harness.context.enqueue,
+                authority: {
+                    ...authority,
+                    facts: { ...facts, predecessorAttemptCount: 1 }
+                }
+            }
+        };
+
+        await expect(
+            harness.handler.processGroupStateMutation(malformedContext)
+        ).rejects.toThrow('App inbox prepared group mutation is malformed.');
+        expect(harness.reachedStages).toEqual([]);
+        expect(await harness.repository.readSnapshot(harness.groupRef)).toBeUndefined();
     });
 
     it('persists an inactive presence result once without active mutation effects', async () => {
@@ -188,8 +213,34 @@ describe('group-state AppInbox transaction result boundary', () => {
 
 function inactiveConnectContext(): AppInboxMessageContext<GroupStateInboxDurableResult> {
     const authority: GroupMutationPreparation = {
-        authorityProof: null,
-        descriptor: null,
+        authorityProof: {
+            version: 1,
+            principalId: 'owner',
+            sessionId: 'inactive-session',
+            sessionIssuedAtEpochMs: 1_000,
+            sessionExpiresAtEpochMs: 61_000,
+            commandMac: 'a'.repeat(64)
+        },
+        descriptor: {
+            operation: 'connectPresence',
+            scope: {
+                applicationId: 'ar-eye-hunter',
+                workspaceId: 'default'
+            },
+            groupId: 'inactive-group',
+            targetPrincipalId: null,
+            sessionId: 'inactive-session',
+            request: {
+                requestId: 'inactive-request',
+                actorPrincipalId: 'owner',
+                actorSessionId: 'inactive-session',
+                principalId: 'owner',
+                generationId: 'inactive-generation',
+                connectedAtEpochMs: 1_000,
+                lastHeartbeatAtEpochMs: 1_000,
+                expiresAtEpochMs: 61_000
+            }
+        },
         command: {
             operation: 'connectPresence',
             aggregateRef: {
@@ -217,7 +268,7 @@ function inactiveConnectContext(): AppInboxMessageContext<GroupStateInboxDurable
             expireAtEpochMs: 604_802_000,
             serviceId: 'server-1',
             eventId: 'event-1',
-            commandHash: 'sha256:inactive',
+            commandHash: `sha256:${'a'.repeat(64)}`,
             resolvedJoinCode: null,
             joinCodeVerifier: null,
             internalAuthority: 'none',
@@ -281,4 +332,21 @@ function createUnusedTransaction(): PSqlSql {
         }
     );
     return transaction;
+}
+
+function requireJsonWireObject(
+    value: JsonWireValue | undefined,
+    label: string
+): JsonWireObject {
+    if (
+        value === null || value === undefined || typeof value !== 'object' ||
+        isJsonWireArray(value)
+    ) {
+        throw new TypeError(`${label} must be an object`);
+    }
+    return value;
+}
+
+function isJsonWireArray(value: JsonWireValue): value is readonly JsonWireValue[] {
+    return Array.isArray(value);
 }
