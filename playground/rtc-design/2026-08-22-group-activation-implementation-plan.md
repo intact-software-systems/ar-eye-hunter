@@ -361,7 +361,9 @@ makes the cutover legal, and slice 14's runbook records the ordering.
 **Gates:** baseline + both black-box profiles — a partial landing fails at runtime in the recipes, not
 at build time — **plus one `formation-large` profile run**, because the two managed-burst recipes
 carry only that profile, which no workflow executes, so four of the 23 assertions are outside every
-CI gate. No medium-scale; no mutation semantics change. The review added the two nets the sweep
+CI gate. That run's verdict: the four renamed cells pass in both recipes; the profile itself is red
+with a pre-existing `thresholdActivatesAtScale` timing failure reproduced identically at the merge
+base, filed as its own follow-up. No medium-scale; no mutation semantics change. The review added the two nets the sweep
 lacked: the OpenAPI `lifecycleState` enum pin in `rallar-group-public-contracts.test.ts` and the
 stored-stage acceptance matrix in `validate-persisted-group-lifecycle.test.ts`.
 
