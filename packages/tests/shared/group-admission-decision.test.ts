@@ -1,14 +1,12 @@
 import { computeGroupAdmissionDecision, type ComputeGroupAdmissionDecisionInput } from '@shared/api/group-lifecycle/compute-group-admission-decision.ts';
-import type { GroupAdmissionPolicy, GroupLifecycleState } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
+import { GROUP_LIFECYCLE_STATES, type GroupAdmissionPolicy } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import { describe, expect, it } from 'vitest';
 
 const NOW = 1_700_000_000_000;
-const STATES: readonly GroupLifecycleState[] = [
-    'forming',
-    'connecting',
-    'active',
-    'reconfiguring'
-];
+const STATES = GROUP_LIFECYCLE_STATES;
+const EVERY_STATE_EXCEPT_FORMING = GROUP_LIFECYCLE_STATES.filter(
+    (lifecycleState) => lifecycleState !== 'forming'
+);
 
 function decision(
     admission: Partial<GroupAdmissionPolicy>,
@@ -37,11 +35,12 @@ describe('group admission decision', () => {
 
     // Plan decision 5.2: closed binds outside FORMING — the roster freezes
     // when establishment begins, and a below-floor return to FORMING
-    // re-opens the lobby.
+    // re-opens the lobby. Product decision 38 extends the same posture to
+    // every new stage, dormant included: failure is not consent to admit.
     it('closed admits only while forming', () => {
         expect(decision({ mode: 'closed' }, { lifecycleState: 'forming' }))
             .toEqual({ kind: 'admit' });
-        for (const lifecycleState of ['connecting', 'active', 'reconfiguring'] as const) {
+        for (const lifecycleState of EVERY_STATE_EXCEPT_FORMING) {
             expect(deniedCode(decision({ mode: 'closed' }, { lifecycleState })))
                 .toBe('group-admission-closed');
         }

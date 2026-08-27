@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import type { GroupLifecycleState } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
+import { GROUP_LIFECYCLE_STATES, type GroupLifecycleState } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 
 import { resolveGroupTopologyConfig } from '@shared-server/rallar-system/topology/config/group-topology-config.ts';
 import { GroupTopologyPlanningService } from '@shared-server/rallar-system/topology/planning/group-topology-planning-service.ts';
@@ -103,7 +103,11 @@ describe('GroupTopologyPlanningService', () => {
     });
 
     it('plans in every non-forming lifecycle state', () => {
-        for (const lifecycleState of ['connecting', 'active', 'reconfiguring'] as const) {
+        for (
+            const lifecycleState of GROUP_LIFECYCLE_STATES.filter(
+                (candidate) => candidate !== 'forming'
+            )
+        ) {
             const group = groupWithSessionsIn(lifecycleState);
             const service = createPlanningService({ group });
 

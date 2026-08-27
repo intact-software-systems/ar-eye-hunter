@@ -5102,6 +5102,12 @@ components:
         formation:
           type: string
           enum: [phased, immediate]
+        initiator:
+          type: string
+          enum: [manager, any-member, server-auto]
+          description: >-
+            Who may issue the application-facing group-authority commands. One
+            policy governs all of them; server-auto denies every principal.
         manager:
           type: object
           properties:
@@ -5124,10 +5130,30 @@ components:
             transports:
               type: string
               enum: [rtc-and-ws, ws-only, rtc-preferred]
-            initiator:
-              type: string
-              enum: [manager, any-member, server-auto]
             maxConcurrentEdgeSetups:
+              type: integer
+              format: int64
+            planTrigger:
+              $ref: '#/components/schemas/GroupStageTriggerInput'
+            connectTrigger:
+              $ref: '#/components/schemas/GroupStageTriggerInput'
+        topology:
+          type: object
+          description: >-
+            Replanning policy after a layout exists. Stored and validated, not
+            yet behavioural: replanning modes and the stage triggers take
+            effect in a later release.
+          properties:
+            replanning:
+              type: string
+              enum: [auto, debounced, commanded]
+            reconfigureLanding:
+              type: string
+              enum: [apply, hold]
+            debounceWindowMs:
+              type: integer
+              format: int64
+            maxReplanWaitMs:
               type: integer
               format: int64
         activation:
@@ -5174,6 +5200,28 @@ components:
             preActivationAppData:
               type: string
               enum: [allowed, blocked-until-active]
+    GroupStageTriggerInput:
+      type: object
+      required: [kind]
+      description: >-
+        One automatic stage boundary of a phased group. manual waits for an
+        application command; immediate fires on entry; after fires once
+        settleMs has elapsed; presence fires at memberCount live members or at
+        the fallbackMs timer, whichever is first. Stored and validated, not
+        yet behavioural.
+      properties:
+        kind:
+          type: string
+          enum: [manual, immediate, after, presence]
+        settleMs:
+          type: integer
+          format: int64
+        memberCount:
+          type: integer
+          format: int64
+        fallbackMs:
+          type: integer
+          format: int64
     CreateGroupRequest:
       type: object
       required: [groupId, displayName, kind]

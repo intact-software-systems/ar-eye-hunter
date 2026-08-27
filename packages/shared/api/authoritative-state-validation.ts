@@ -1,6 +1,7 @@
 import { toScopedOverlayId } from './api-type-utils.ts';
 import type { ClientEvent, ClientSnapshot } from './client-types.ts';
 import { toClientSnapshotLastSeenAtEpochMs } from './group-client-views.ts';
+import { GROUP_LIFECYCLE_STATES } from './group-lifecycle/group-lifecycle-policy.ts';
 import type { GroupEvent, GroupRef, GroupSnapshot } from './group-types.ts';
 import type { RallarOverlayTopologySnapshot } from './overlay-topology.ts';
 import type { StateEventPage } from './state-event-types.ts';
@@ -430,7 +431,7 @@ export function validateAuthoritativeGroupSnapshot(
     }
     enumValue(
         group.lifecycleState,
-        ['forming', 'connecting', 'active', 'reconfiguring'],
+        GROUP_LIFECYCLE_STATES,
         'GroupSnapshot.group.lifecycleState'
     );
     nonNegativeInteger(group.formationEpoch, 'GroupSnapshot.group.formationEpoch');

@@ -9,7 +9,9 @@ import type {
     GroupEstablishmentPolicy,
     GroupLifecyclePolicy,
     GroupLifecyclePolicyInput,
-    GroupManagerPolicy
+    GroupManagerPolicy,
+    GroupStageTrigger,
+    GroupTopologyPolicy
 } from './group-lifecycle-policy.ts';
 
 export const MAX_GROUP_FORMATION_DEADLINE_MS = 600_000;
@@ -17,6 +19,9 @@ export const MAX_GROUP_MANAGERS = 16;
 export const MAX_GROUP_CONCURRENT_EDGE_SETUPS = 256;
 export const MAX_GROUP_FORMATION_ATTEMPTS = 16;
 export const MAX_GROUP_ADMISSION_MEMBER_COUNT = 100_000;
+export const MAX_GROUP_TOPOLOGY_DEBOUNCE_WINDOW_MS = 30_000;
+export const MAX_GROUP_TOPOLOGY_REPLAN_WAIT_MS = 600_000;
+export const MAX_GROUP_STAGE_TRIGGER_DELAY_MS = 600_000;
 
 /**
  * Sparse client input to a complete policy: the preset (or the optimistic
@@ -34,10 +39,12 @@ export function toNormalizedGroupLifecyclePolicy(
 
     return {
         formation: input.formation ?? base.formation,
+        initiator: input.initiator ?? base.initiator,
         manager: toManagerPolicy(base.manager, input.manager),
         establishment: toEstablishmentPolicy(base.establishment, input.establishment),
         activation: toActivationCriterion(base.activation, input.activation),
         admission: toAdmissionPolicy(base.admission, input.admission),
+        topology: toTopologyPolicy(base.topology, input.topology),
         data: toDataPolicy(base.data, input.data)
     };
 }
@@ -60,11 +67,49 @@ function toEstablishmentPolicy(
 ): GroupEstablishmentPolicy {
     return {
         transports: input?.transports ?? base.transports,
-        initiator: input?.initiator ?? base.initiator,
         maxConcurrentEdgeSetups: toClampedInteger(
             input?.maxConcurrentEdgeSetups ?? base.maxConcurrentEdgeSetups,
             1,
             MAX_GROUP_CONCURRENT_EDGE_SETUPS
+        ),
+        planTrigger: toStageTrigger(input?.planTrigger ?? base.planTrigger),
+        connectTrigger: toStageTrigger(input?.connectTrigger ?? base.connectTrigger)
+    };
+}
+
+function toStageTrigger(trigger: GroupStageTrigger): GroupStageTrigger {
+    if (trigger.kind === 'after') {
+        return {
+            kind: 'after',
+            settleMs: toClampedInteger(trigger.settleMs, 0, MAX_GROUP_STAGE_TRIGGER_DELAY_MS)
+        };
+    }
+    if (trigger.kind === 'presence') {
+        return {
+            kind: 'presence',
+            memberCount: toClampedInteger(trigger.memberCount, 1, MAX_GROUP_ADMISSION_MEMBER_COUNT),
+            fallbackMs: toClampedInteger(trigger.fallbackMs, 0, MAX_GROUP_STAGE_TRIGGER_DELAY_MS)
+        };
+    }
+    return trigger;
+}
+
+function toTopologyPolicy(
+    base: GroupTopologyPolicy,
+    input: Partial<GroupTopologyPolicy> | undefined
+): GroupTopologyPolicy {
+    return {
+        replanning: input?.replanning ?? base.replanning,
+        reconfigureLanding: input?.reconfigureLanding ?? base.reconfigureLanding,
+        debounceWindowMs: toClampedInteger(
+            input?.debounceWindowMs ?? base.debounceWindowMs,
+            0,
+            MAX_GROUP_TOPOLOGY_DEBOUNCE_WINDOW_MS
+        ),
+        maxReplanWaitMs: toClampedInteger(
+            input?.maxReplanWaitMs ?? base.maxReplanWaitMs,
+            0,
+            MAX_GROUP_TOPOLOGY_REPLAN_WAIT_MS
         )
     };
 }

@@ -1,10 +1,32 @@
 import type { PrincipalId } from '../group-types.ts';
 
-export type GroupLifecycleState =
-    | 'forming'
-    | 'connecting'
-    | 'active'
-    | 'reconfiguring';
+/**
+ * The stage registry. Every stage-keyed decision is a total function over this
+ * array (product decision 41), and the runtime enum validators pass it
+ * directly, so adding a stage is a compile error at every decision site and
+ * never a silent fallthrough. `dormant`, `planned` and `reconnecting` are
+ * unreachable until their producing transitions land; every current consumer
+ * holds an explicit row for them.
+ */
+export const GROUP_LIFECYCLE_STATES = [
+    'dormant',
+    'forming',
+    'planned',
+    'connecting',
+    'active',
+    'reconfiguring',
+    'reconnecting'
+] as const;
+
+export type GroupLifecycleState = typeof GROUP_LIFECYCLE_STATES[number];
+
+/**
+ * Halting is a transport fact, not a stage (product decision 25): `pause` sets
+ * `halted`, `resume` sets `flowing`, and neither touches the routing plane.
+ */
+export type GroupTransportState =
+    | 'flowing'
+    | 'halted';
 
 export type GroupFormationMode =
     | 'phased'
@@ -26,10 +48,56 @@ export type GroupEstablishmentTransports =
     | 'ws-only'
     | 'rtc-preferred';
 
-export type GroupEstablishmentInitiator =
+/**
+ * Who may issue the eight application-facing group-authority commands. One
+ * policy governs all of them (product decision 12), and the field lives on the
+ * group-authority tier, not under establishment (product decision 26).
+ * `server-auto` denies every principal and leaves the stages to policy
+ * automation.
+ */
+export type GroupLifecycleInitiator =
     | 'manager'
     | 'any-member'
     | 'server-auto';
+
+/**
+ * Replanning after a layout exists (product decision 2): `auto` replans on the
+ * first opportunity after a change, `debounced` coalesces under the per-group
+ * window with a bounded maximum wait (product decision 31), and `commanded`
+ * queues nothing — the layout moves only on `reconfigure`.
+ */
+export type GroupTopologyReplanningMode =
+    | 'auto'
+    | 'debounced'
+    | 'commanded';
+
+/**
+ * Whether the accepted layout follows a newly planned one with no lifecycle
+ * transition (`apply`, product decision 27) or waits in `reconfiguring` for a
+ * commanded `connect` (`hold`).
+ */
+export type GroupTopologyReconfigureLanding =
+    | 'apply'
+    | 'hold';
+
+export type GroupTopologyPolicy = Readonly<{
+    replanning: GroupTopologyReplanningMode;
+    reconfigureLanding: GroupTopologyReconfigureLanding;
+    debounceWindowMs: number;
+    maxReplanWaitMs: number;
+}>;
+
+/**
+ * One trigger vocabulary drives the automatic boundaries of `phased` groups
+ * (product decision 8): `forming → planned` and `planned → connecting`.
+ * `manual` means the boundary waits for an application command, mirroring
+ * `GroupActivationMode`'s use of the word.
+ */
+export type GroupStageTrigger =
+    | Readonly<{ kind: 'manual'; }>
+    | Readonly<{ kind: 'immediate'; }>
+    | Readonly<{ kind: 'after'; settleMs: number; }>
+    | Readonly<{ kind: 'presence'; memberCount: number; fallbackMs: number; }>;
 
 export type GroupActivationMode =
     | 'threshold'
@@ -55,8 +123,9 @@ export type GroupManagerPolicy = Readonly<{
 
 export type GroupEstablishmentPolicy = Readonly<{
     transports: GroupEstablishmentTransports;
-    initiator: GroupEstablishmentInitiator;
     maxConcurrentEdgeSetups: number;
+    planTrigger: GroupStageTrigger;
+    connectTrigger: GroupStageTrigger;
 }>;
 
 /**
@@ -100,10 +169,12 @@ export type GroupFormationOutcome = Readonly<{
 
 export type GroupLifecyclePolicy = Readonly<{
     formation: GroupFormationMode;
+    initiator: GroupLifecycleInitiator;
     manager: GroupManagerPolicy;
     establishment: GroupEstablishmentPolicy;
     activation: GroupActivationCriterion;
     admission: GroupAdmissionPolicy;
+    topology: GroupTopologyPolicy;
     data: GroupDataPolicy;
 }>;
 
@@ -120,10 +191,12 @@ export type GroupLifecyclePolicyPresetName = typeof GROUP_LIFECYCLE_POLICY_PRESE
 export type GroupLifecyclePolicyInput = Readonly<{
     preset?: GroupLifecyclePolicyPresetName;
     formation?: GroupFormationMode;
+    initiator?: GroupLifecycleInitiator;
     manager?: Partial<GroupManagerPolicy>;
     establishment?: Partial<GroupEstablishmentPolicy>;
     activation?: Partial<GroupActivationCriterion>;
     admission?: Partial<GroupAdmissionPolicy>;
+    topology?: Partial<GroupTopologyPolicy>;
     data?: Partial<GroupDataPolicy>;
 }>;
 
@@ -135,7 +208,10 @@ export const GROUP_LIFECYCLE_POLICY_ISSUE_CODES = [
     'deadline-mode-requires-positive-deadline',
     'assigned-selection-requires-principals',
     'manager-count-exceeds-assigned-principals',
-    'strict-confirmation-unsupported'
+    'strict-confirmation-unsupported',
+    'server-auto-requires-automatic-trigger',
+    'server-auto-cannot-command-replanning',
+    'replan-window-exceeds-maximum-wait'
 ] as const;
 
 export type GroupLifecyclePolicyIssueCode = typeof GROUP_LIFECYCLE_POLICY_ISSUE_CODES[number];

@@ -8,13 +8,13 @@ import type {
 import { computeGroupMutation } from '@shared-server/rallar-system/group-state/mutation/orchestration/compute-group-mutation.ts';
 import { canGovernGroupMember } from '@shared-server/rallar-system/group-state/policy/group-governance-policy.ts';
 import { canConnectGroupPresenceSession, canJoinGroup } from '@shared-server/rallar-system/group-state/policy/group-membership-admission-policy.ts';
-import type { GroupLifecycleState } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
+import { GROUP_LIFECYCLE_STATES, type GroupLifecycleState } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import type { AuditStamp, Group, GroupMember, GroupSnapshot } from '@shared/api/group-types.ts';
 import { createTestGroup } from '../../../create-test-group.ts';
 
 import { groupMemberStorageKey, groupRef, groupStorageKey, storedEntry } from './mutation/group-mutation-test-runtime.ts';
 
-const EVERY_LIFECYCLE_STATE: readonly GroupLifecycleState[] = ['forming', 'connecting', 'active', 'reconfiguring'];
+const EVERY_LIFECYCLE_STATE = GROUP_LIFECYCLE_STATES;
 
 /**
  * The safety-baseline invariant of the lifecycle plan: phases gate

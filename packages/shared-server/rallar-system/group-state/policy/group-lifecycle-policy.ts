@@ -79,7 +79,7 @@ export function canCommandGroupLifecycleTransition(
 function denyForLifecycleInitiator(
     input: CanCommandGroupLifecycleTransitionInput
 ): GroupPolicyDenied | undefined {
-    switch (input.policy.establishment.initiator) {
+    switch (input.policy.initiator) {
         case 'any-member':
             return undefined;
         case 'server-auto':

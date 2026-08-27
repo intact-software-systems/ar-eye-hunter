@@ -27,6 +27,7 @@ export function resolveGroupLifecyclePolicyPreset(
 
 const OPTIMISTIC_POLICY: GroupLifecyclePolicy = {
     formation: 'immediate',
+    initiator: 'any-member',
     manager: {
         selection: 'none',
         assignedPrincipalIds: [],
@@ -35,8 +36,9 @@ const OPTIMISTIC_POLICY: GroupLifecyclePolicy = {
     },
     establishment: {
         transports: 'rtc-and-ws',
-        initiator: 'any-member',
-        maxConcurrentEdgeSetups: 64
+        maxConcurrentEdgeSetups: 64,
+        planTrigger: { kind: 'immediate' },
+        connectTrigger: { kind: 'immediate' }
     },
     activation: {
         mode: 'manual',
@@ -51,11 +53,24 @@ const OPTIMISTIC_POLICY: GroupLifecyclePolicy = {
         untilEpochMs: null,
         untilMemberCount: null
     },
+    topology: {
+        replanning: 'auto',
+        reconfigureLanding: 'apply',
+        debounceWindowMs: 500,
+        maxReplanWaitMs: 5_000
+    },
     data: { preActivationAppData: 'allowed' }
 };
 
+/**
+ * The manager curates who is in and when the group starts, not the wiring
+ * (product decision 6): the plan trigger is manual so nothing moves before the
+ * manager's `plan`, and the connect trigger is immediate so that one command
+ * starts the dialing, preserving today's single manager action.
+ */
 const MANAGED_POLICY: GroupLifecyclePolicy = {
     formation: 'phased',
+    initiator: 'manager',
     manager: {
         selection: 'creator',
         assignedPrincipalIds: [],
@@ -64,8 +79,9 @@ const MANAGED_POLICY: GroupLifecyclePolicy = {
     },
     establishment: {
         transports: 'rtc-and-ws',
-        initiator: 'manager',
-        maxConcurrentEdgeSetups: 32
+        maxConcurrentEdgeSetups: 32,
+        planTrigger: { kind: 'manual' },
+        connectTrigger: { kind: 'immediate' }
     },
     activation: {
         mode: 'threshold-or-deadline',
@@ -80,6 +96,12 @@ const MANAGED_POLICY: GroupLifecyclePolicy = {
         untilEpochMs: null,
         untilMemberCount: null
     },
+    topology: {
+        replanning: 'debounced',
+        reconfigureLanding: 'apply',
+        debounceWindowMs: 500,
+        maxReplanWaitMs: 5_000
+    },
     data: { preActivationAppData: 'allowed' }
 };
 
@@ -87,10 +109,13 @@ const MANAGED_POLICY: GroupLifecyclePolicy = {
  * The floor equals the success rate, which is how this preset asks for
  * all-or-nothing: a session that is not fully connected does not start rather
  * than starting degraded. `strictConfirmation` stays false because the per-edge
- * confirmation ledger is not implemented; setting it true is rejected.
+ * confirmation ledger is not implemented; setting it true is rejected. Every
+ * boundary is application-commanded: manual triggers, `commanded` replanning
+ * and a `hold` landing.
  */
 const MATCH_POLICY: GroupLifecyclePolicy = {
     formation: 'phased',
+    initiator: 'manager',
     manager: {
         // elected-by-rank has no rank source in v1 (plan decision 4.2); the
         // deterministic election gives the preset a working manager until one
@@ -102,8 +127,9 @@ const MATCH_POLICY: GroupLifecyclePolicy = {
     },
     establishment: {
         transports: 'rtc-preferred',
-        initiator: 'manager',
-        maxConcurrentEdgeSetups: 16
+        maxConcurrentEdgeSetups: 16,
+        planTrigger: { kind: 'manual' },
+        connectTrigger: { kind: 'manual' }
     },
     activation: {
         mode: 'threshold-or-deadline',
@@ -118,11 +144,18 @@ const MATCH_POLICY: GroupLifecyclePolicy = {
         untilEpochMs: null,
         untilMemberCount: null
     },
+    topology: {
+        replanning: 'commanded',
+        reconfigureLanding: 'hold',
+        debounceWindowMs: 500,
+        maxReplanWaitMs: 5_000
+    },
     data: { preActivationAppData: 'blocked-until-active' }
 };
 
 const DROP_IN_SOCIAL_POLICY: GroupLifecyclePolicy = {
     formation: 'immediate',
+    initiator: 'server-auto',
     manager: {
         selection: 'none',
         assignedPrincipalIds: [],
@@ -131,8 +164,9 @@ const DROP_IN_SOCIAL_POLICY: GroupLifecyclePolicy = {
     },
     establishment: {
         transports: 'rtc-and-ws',
-        initiator: 'server-auto',
-        maxConcurrentEdgeSetups: 64
+        maxConcurrentEdgeSetups: 64,
+        planTrigger: { kind: 'immediate' },
+        connectTrigger: { kind: 'immediate' }
     },
     activation: {
         mode: 'threshold',
@@ -146,6 +180,12 @@ const DROP_IN_SOCIAL_POLICY: GroupLifecyclePolicy = {
         mode: 'open',
         untilEpochMs: null,
         untilMemberCount: 50
+    },
+    topology: {
+        replanning: 'debounced',
+        reconfigureLanding: 'apply',
+        debounceWindowMs: 500,
+        maxReplanWaitMs: 5_000
     },
     data: { preActivationAppData: 'allowed' }
 };

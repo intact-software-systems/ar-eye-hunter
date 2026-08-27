@@ -1,5 +1,6 @@
 import { validateAuthoritativeGroupEvent } from './authoritative-state-validation.ts';
 import { compareGroupCausalRevision } from './group-client-views.ts';
+import { GROUP_LIFECYCLE_STATES } from './group-lifecycle/group-lifecycle-policy.ts';
 import type { Group, GroupEvent, GroupMember, GroupPresenceSession, GroupStateCausalRevision } from './group-types.ts';
 import type { StateScope } from './state-types.ts';
 
@@ -190,7 +191,7 @@ function validateDeltaGroup(
     }
     enumValue(
         group.lifecycleState,
-        ['forming', 'connecting', 'active', 'reconfiguring'],
+        GROUP_LIFECYCLE_STATES,
         `${label}.lifecycleState`
     );
     nonNegativeInteger(group.formationEpoch, `${label}.formationEpoch`);

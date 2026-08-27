@@ -13,7 +13,8 @@ export function validateGroupLifecyclePolicy(
 ): Either<readonly GroupLifecyclePolicyIssue[], GroupLifecyclePolicy> {
     const issues: GroupLifecyclePolicyIssue[] = [
         ...toManagerIssues(policy),
-        ...toActivationIssues(policy)
+        ...toActivationIssues(policy),
+        ...toAutomationIssues(policy)
     ];
 
     return issues.length === 0
@@ -25,16 +26,16 @@ function toManagerIssues(
     policy: GroupLifecyclePolicy
 ): readonly GroupLifecyclePolicyIssue[] {
     const issues: GroupLifecyclePolicyIssue[] = [];
-    const { manager, establishment } = policy;
+    const { manager } = policy;
 
     // Nobody could ever start establishment, so the group would hold in FORMING
     // for its whole life.
-    if (manager.selection === 'none' && establishment.initiator === 'manager') {
+    if (manager.selection === 'none' && policy.initiator === 'manager') {
         issues.push({
             code: 'manager-initiator-without-manager',
-            field: 'establishment.initiator',
-            message: 'establishment.initiator is manager but manager.selection is none, ' +
-                'so no principal can ever start establishment'
+            field: 'initiator',
+            message: 'initiator is manager but manager.selection is none, ' +
+                'so no principal can ever command a stage transition'
         });
     }
 
@@ -112,6 +113,51 @@ function toActivationIssues(
             code: 'strict-confirmation-unsupported',
             field: 'activation.strictConfirmation',
             message: 'activation.strictConfirmation is not supported in this release'
+        });
+    }
+
+    return issues;
+}
+
+function toAutomationIssues(
+    policy: GroupLifecyclePolicy
+): readonly GroupLifecyclePolicyIssue[] {
+    const issues: GroupLifecyclePolicyIssue[] = [];
+    const { establishment, topology } = policy;
+
+    // server-auto denies every principal, so a phased boundary with a manual
+    // trigger could never be crossed — the permanently stuck combination the
+    // earlier contract accepted silently.
+    if (
+        policy.formation === 'phased' &&
+        policy.initiator === 'server-auto' &&
+        (establishment.planTrigger.kind === 'manual' || establishment.connectTrigger.kind === 'manual')
+    ) {
+        issues.push({
+            code: 'server-auto-requires-automatic-trigger',
+            field: 'establishment.planTrigger',
+            message: 'formation is phased and initiator is server-auto, but a stage trigger is ' +
+                'manual, so no principal and no automation could ever cross that boundary'
+        });
+    }
+
+    // Under commanded replanning only a principal's reconfigure moves the
+    // layout, and server-auto denies every principal.
+    if (topology.replanning === 'commanded' && policy.initiator === 'server-auto') {
+        issues.push({
+            code: 'server-auto-cannot-command-replanning',
+            field: 'topology.replanning',
+            message: 'topology.replanning is commanded but initiator is server-auto, ' +
+                'so no principal could ever issue the reconfigure it waits for'
+        });
+    }
+
+    if (topology.debounceWindowMs > topology.maxReplanWaitMs) {
+        issues.push({
+            code: 'replan-window-exceeds-maximum-wait',
+            field: 'topology.debounceWindowMs',
+            message: 'topology.debounceWindowMs exceeds topology.maxReplanWaitMs, ' +
+                'which the maximum wait exists to bound'
         });
     }
 

@@ -140,16 +140,12 @@ describe('GroupLifecyclePolicyRepository', () => {
         const repository = createRepository();
         const incoherent = {
             ...createDefaultGroupLifecyclePolicy(),
+            initiator: 'manager',
             manager: {
                 selection: 'none',
                 assignedPrincipalIds: [],
                 count: 1,
                 succession: 'none'
-            },
-            establishment: {
-                transports: 'rtc-and-ws',
-                initiator: 'manager',
-                maxConcurrentEdgeSetups: 8
             }
         };
 

@@ -1,3 +1,4 @@
+import { GROUP_LIFECYCLE_STATES } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import type { AuditStamp, Group, GroupMember, GroupRef, GroupStateCausalRevision } from '@shared/api/group-types.ts';
 import type { MutationActor } from '@shared/api/mutation-actor.ts';
 
@@ -107,7 +108,7 @@ export function validateStoredGroup(group: unknown, ref: GroupRef): asserts grou
     nullablePositiveSafeInteger(value.purgeAfterEpochMs, 'Stored group purgeAfterEpochMs');
     requireOneOf(
         value.lifecycleState,
-        ['forming', 'connecting', 'active', 'reconfiguring'],
+        GROUP_LIFECYCLE_STATES,
         'Stored group lifecycleState'
     );
     requireNonNegativeSafeInteger(value.formationEpoch, 'Stored group formationEpoch');
