@@ -17,11 +17,8 @@ jobs:
     name: Resolve RTC observation source
     runs-on: ubuntu-latest
     timeout-minutes: 2
-    outputs:
-      source_sha: ${{ steps.source.outputs.source_sha }}
     steps:
       - name: Require the main branch source
-        id: source
         env:
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
           SOURCE_REF: ${{ github.ref }}
@@ -35,7 +32,6 @@ jobs:
             echo "::error::RTC observation source SHA is malformed"
             exit 1
           fi
-          echo "source_sha=$SOURCE_SHA" >> "$GITHUB_OUTPUT"
 
   capture:
     name: Capture RTC-B05 browser observation
@@ -49,7 +45,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ needs.source.outputs.source_sha }}
+          ref: ${{ github.sha }}
           fetch-depth: 0
 
       - name: Initialize recoverable diagnostics
@@ -106,7 +102,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ needs.source.outputs.source_sha }}
+          ref: ${{ github.sha }}
           fetch-depth: 0
           persist-credentials: false
 

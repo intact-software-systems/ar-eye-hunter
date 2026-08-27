@@ -26,12 +26,12 @@ describe('pull-request release workflow', () => {
             'cancel-in-progress': false
         });
         expect(capture.permissions).toEqual({ contents: 'read' });
-        expect(source.outputs.source_sha).toBe('${{ steps.source.outputs.source_sha }}');
+        expect(source.outputs).toBeUndefined();
         expect(source.steps[0].run).toContain('refs/heads/main');
         expect(capture.needs).toBe('source');
         expect(capture.steps[0]).toMatchObject({
             uses: 'actions/checkout@v7',
-            with: { ref: '${{ needs.source.outputs.source_sha }}', 'fetch-depth': 0 }
+            with: { ref: '${{ github.sha }}', 'fetch-depth': 0 }
         });
         expect(observe.run).toContain('--source-ref=main');
         expect(observe.run).toContain('--github-run-id="$GITHUB_RUN_ID"');
@@ -43,7 +43,7 @@ describe('pull-request release workflow', () => {
             uses: 'actions/upload-artifact@v7'
         });
         expect(publication.needs).toEqual(['source', 'capture']);
-        expect(publication.steps[0].with.ref).toBe('${{ needs.source.outputs.source_sha }}');
+        expect(publication.steps[0].with.ref).toBe('${{ github.sha }}');
         expect(publication.steps[0].with['persist-credentials']).toBe(false);
         expect(verify.run).toContain('verify-observation');
         expect(publish.run).toContain('npm run pr:delivery -- publish-observation');
