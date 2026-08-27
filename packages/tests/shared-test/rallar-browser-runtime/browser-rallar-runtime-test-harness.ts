@@ -6,14 +6,16 @@ import {
     facadeRecords,
     facadeSession,
     rallarFacadeTestDouble,
-    resetBrowserRuntimeFacadeTestDouble
+    resetBrowserRuntimeFacadeTestDouble,
+    setFacadeConnected
 } from './browser-runtime-facade-test-double.ts';
 
 export const facade = {
     behavior: facadeBehavior,
     records: facadeRecords,
     session: facadeSession,
-    rallar: rallarFacadeTestDouble
+    rallar: rallarFacadeTestDouble,
+    setConnected: setFacadeConnected
 };
 
 interface TestWindow {

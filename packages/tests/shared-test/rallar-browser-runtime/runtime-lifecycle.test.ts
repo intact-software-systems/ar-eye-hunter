@@ -207,6 +207,48 @@ it('deduplicates concurrent close cleanup', async () => {
     expect(facade.records.realtimeUnsubscribeCount).toBe(1);
 });
 
+it('closes a never-connected runtime without disconnecting the page facade', async () => {
+    // A headless agent resets at bootstrap, before anything connects. Reaching
+    // into the page facade there hits browser caches that only exist after
+    // authentication, and a throwing close faults the runtime for good.
+    facade.setConnected(false);
+    facade.behavior.disconnect.mockRejectedValue(
+        new Error('Repository not found: shared.repository.group-state-snapshots')
+    );
+    const runtime = await loadRuntime();
+
+    const closeResult = await runtime.close();
+
+    expect(facade.records.disconnectCount).toBe(0);
+    expect(closeResult).toMatchObject({
+        status: 'closed',
+        disconnected: false,
+        cleanupErrors: []
+    });
+});
+
+it('authenticates after a close that found nothing to clean up', async () => {
+    facade.setConnected(false);
+    facade.behavior.disconnect.mockRejectedValue(
+        new Error('Repository not found: shared.repository.group-state-snapshots')
+    );
+    const runtime = await loadRuntime();
+    await runtime.close();
+
+    const session = await runtime.authenticate({
+        connection: 'aliceRtc',
+        actor: 'alice',
+        roomId: 'room-1',
+        rallar: {
+            apiBaseUrl: 'https://api.example.test',
+            username: 'alice',
+            password: 'secret'
+        }
+    });
+
+    expect(session).toBeDefined();
+});
+
 it('fences send completion after runtime close without serializing sends', async () => {
     const send = createDeferred<readonly RallarRealtimeSendResult[]>();
     facade.behavior.realtimeSend.mockReturnValueOnce(send.promise);

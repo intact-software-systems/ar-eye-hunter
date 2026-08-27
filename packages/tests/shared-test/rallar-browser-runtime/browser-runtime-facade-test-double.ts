@@ -82,6 +82,13 @@ const records: BrowserRuntimeFacadeRecords = {
     directorAppointments: []
 };
 
+let facadeConnected = true;
+
+/** Mirrors a page facade that has never connected, as on a freshly loaded agent. */
+export function setFacadeConnected(connected: boolean): void {
+    facadeConnected = connected;
+}
+
 export const facadeSession: AuthSession = {
     clientId: 'client-1',
     accessToken: 'access-token-1',
@@ -298,7 +305,7 @@ export const rallarFacadeTestDouble: BlackBoxBrowserRallarRuntimeDependency = {
         await facadeBehavior.disconnect();
     },
     status: () => 'connected',
-    isConnected: () => true,
+    isConnected: () => facadeConnected,
     session: () => facadeSession,
     auth,
     rooms,
@@ -313,6 +320,7 @@ export const rallarFacadeTestDouble: BlackBoxBrowserRallarRuntimeDependency = {
 export function resetBrowserRuntimeFacadeTestDouble(): void {
     vi.resetAllMocks();
     clearRecords();
+    facadeConnected = true;
     facadeBehavior.login.mockResolvedValue(facadeSession);
     facadeBehavior.registerAndLogin.mockResolvedValue(facadeSession);
     facadeBehavior.logout.mockResolvedValue(undefined);

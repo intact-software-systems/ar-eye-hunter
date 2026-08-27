@@ -1163,7 +1163,10 @@ function createBlackBoxRallarRuntimeInstallation(
                 logout = true;
                 emitDiagnostic(config, 'rallar.browser.cleanup.logout_completed');
             }
-            else {
+            // Disconnecting a facade this runtime never connected reaches browser
+            // state caches that exist only after authentication, and the throw
+            // faults the runtime for the rest of the page's life.
+            else if (config || rallar.isConnected()) {
                 if (config) {
                     emitDiagnostic(config, 'rallar.browser.cleanup.disconnect_started');
                 }

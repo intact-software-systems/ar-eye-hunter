@@ -3013,9 +3013,9 @@ class BrowserCommandAdapter {
     ): Promise<{
         webSocketCount: number;
         rallar?: unknown;
-        errors?: unknown[];
+        errors?: BrowserAdapterCloseFailure[];
     }> {
-        const errors: unknown[] = [];
+        const errors: BrowserAdapterCloseFailure[] = [];
         const webSockets = [...this.webSockets.entries()];
         webSockets.forEach(([connection, socket]) => {
             try {
@@ -3052,7 +3052,13 @@ class BrowserCommandAdapter {
         }
 
         if (errors.length > 0 && !options.tolerant) {
-            throw new Error('Failed to close one or more browser adapter resources.');
+            // The collected causes are the only record of why a close failed:
+            // the adapter runs in the agent browser and its throw is all the
+            // fleet artifact keeps.
+            throw new Error(
+                `Failed to close one or more browser adapter resources: ${toBrowserCloseFailureSummary(errors)}`,
+                { cause: errors[0]?.error }
+            );
         }
 
         return {
@@ -3080,4 +3086,19 @@ export function createRallarBlackBoxBrowserTestRuntime(
             runtime.recordEvent(toRallarBrowserEventInput(event));
         }
     });
+}
+
+interface BrowserAdapterCloseFailure {
+    readonly connection: string;
+    readonly error: unknown;
+}
+
+function toBrowserCloseFailureSummary(
+    failures: readonly BrowserAdapterCloseFailure[]
+): string {
+    return failures
+        .map((failure) =>
+            `${failure.connection}: ${failure.error instanceof Error ? failure.error.message : String(failure.error)}`
+        )
+        .join('; ');
 }
