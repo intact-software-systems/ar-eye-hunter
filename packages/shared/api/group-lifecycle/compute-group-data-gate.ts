@@ -1,8 +1,4 @@
-import type {
-    GroupLifecycleState,
-    GroupPreActivationAppData,
-    GroupTransportState
-} from './group-lifecycle-policy.ts';
+import type { GroupLifecycleState, GroupPreActivationAppData, GroupTransportState } from './group-lifecycle-policy.ts';
 
 export type GroupDataGate =
     | 'flows'
@@ -42,7 +38,7 @@ export function computeGroupDataGate(input: ComputeGroupDataGateInput): GroupDat
     }
     if (
         input.preActivationAppData === 'blocked-until-active' &&
-        FORWARD_GATE_BLOCKS[input.lifecycleState]
+        (FORWARD_GATE_BLOCKS[input.lifecycleState] ?? true)
     ) {
         return 'blocked';
     }

@@ -1,3 +1,5 @@
+import { requireGroupLifecyclePolicyInputShape } from '@shared/api/group-lifecycle/require-group-lifecycle-policy-input-shape.ts';
+
 import {
     requireNonEmptyString,
     requireOneOf,
@@ -64,6 +66,9 @@ function validateAggregateMutationInput(
         optionalPositiveInteger('maxSessionsPerMember');
         if (input.metadata !== undefined) {
             requireRecord(input.metadata, 'Group metadata');
+        }
+        if (input.lifecyclePolicy !== undefined) {
+            requireGroupLifecyclePolicyInputShape(input.lifecyclePolicy);
         }
         requireNonEmptyString(input.createdByPrincipalId, 'Group createGroup createdByPrincipalId');
         optionalPositiveInteger('expiresAtEpochMs');

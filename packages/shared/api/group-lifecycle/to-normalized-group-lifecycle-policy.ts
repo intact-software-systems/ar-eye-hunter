@@ -78,20 +78,22 @@ function toEstablishmentPolicy(
 }
 
 function toStageTrigger(trigger: GroupStageTrigger): GroupStageTrigger {
-    if (trigger.kind === 'after') {
-        return {
-            kind: 'after',
-            settleMs: toClampedInteger(trigger.settleMs, 0, MAX_GROUP_STAGE_TRIGGER_DELAY_MS)
-        };
+    switch (trigger.kind) {
+        case 'manual':
+        case 'immediate':
+            return { kind: trigger.kind };
+        case 'after':
+            return {
+                kind: 'after',
+                settleMs: toClampedInteger(trigger.settleMs, 0, MAX_GROUP_STAGE_TRIGGER_DELAY_MS)
+            };
+        case 'presence':
+            return {
+                kind: 'presence',
+                memberCount: toClampedInteger(trigger.memberCount, 1, MAX_GROUP_ADMISSION_MEMBER_COUNT),
+                fallbackMs: toClampedInteger(trigger.fallbackMs, 0, MAX_GROUP_STAGE_TRIGGER_DELAY_MS)
+            };
     }
-    if (trigger.kind === 'presence') {
-        return {
-            kind: 'presence',
-            memberCount: toClampedInteger(trigger.memberCount, 1, MAX_GROUP_ADMISSION_MEMBER_COUNT),
-            fallbackMs: toClampedInteger(trigger.fallbackMs, 0, MAX_GROUP_STAGE_TRIGGER_DELAY_MS)
-        };
-    }
-    return trigger;
 }
 
 function toTopologyPolicy(

@@ -7,12 +7,9 @@ export type GroupTopologyWorkDisposition =
     | 'follow-replanning-policy';
 
 /**
- * What topology work may do per stage. `dormant` and `forming` publish the
- * removal tombstone; `planned` and `reconfiguring` may plan and publish a held
- * candidate; `connecting` and `reconnecting` freeze the planned identity being
- * dialed and rely on the transition's unconditional follow-up enqueue to
- * replan latest authority; `active` defers to the replanning policy. The
- * freeze begins only after a successful `connect` commits.
+ * What topology work may do per stage. The freeze begins only after a
+ * successful `connect` commits, and frozen stages rely on the transition's
+ * unconditional follow-up enqueue to replan latest authority afterwards.
  */
 const TOPOLOGY_WORK_DISPOSITIONS: Readonly<Record<GroupLifecycleState, GroupTopologyWorkDisposition>> = {
     dormant: 'publish-removal',

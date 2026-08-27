@@ -141,6 +141,22 @@ function toAutomationIssues(
         });
     }
 
+    // The same deadlock through the activation boundary: manual activation
+    // waits for a principal's activate, and server-auto denies every
+    // principal, so a phased group would dial forever.
+    if (
+        policy.formation === 'phased' &&
+        policy.initiator === 'server-auto' &&
+        policy.activation.mode === 'manual'
+    ) {
+        issues.push({
+            code: 'server-auto-requires-automatic-activation',
+            field: 'activation.mode',
+            message: 'formation is phased and initiator is server-auto, but activation.mode is ' +
+                'manual, so no principal and no criterion could ever activate the group'
+        });
+    }
+
     // Under commanded replanning only a principal's reconfigure moves the
     // layout, and server-auto denies every principal.
     if (topology.replanning === 'commanded' && policy.initiator === 'server-auto') {

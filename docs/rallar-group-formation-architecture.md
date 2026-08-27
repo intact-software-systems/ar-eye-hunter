@@ -102,7 +102,7 @@ Every transition writes the aggregate under compare-and-set, bumps `snapshotVers
 `canCommandGroupLifecycleTransition` in
 `packages/shared-server/rallar-system/group-state/policy/group-lifecycle-policy.ts`
 decides in order: the actor must be an active member (`member-not-active`, or the blocked-member
-denials), then the policy's `establishment.initiator` decides authority, then the transition must be
+denials), then the policy's `initiator` decides authority, then the transition must be
 legal from the current state.
 
 | `initiator`   | Who may command                                                                                                                                     |
@@ -181,7 +181,7 @@ reads them. Establishment pacing is whatever the browser's existing dial budget 
 | `manager.selection`               | `none`       | `creator`               | `elected-random-deterministic` | `none`           |
 | `manager.count`                   | 1            | 1                       | 1                              | 1                |
 | `manager.succession`              | `none`       | `next-by-selection`     | `next-by-selection`            | `none`           |
-| `establishment.initiator`         | `any-member` | `manager`               | `manager`                      | `server-auto`    |
+| `initiator`                       | `any-member` | `manager`               | `manager`                      | `server-auto`    |
 | `establishment.transports`        | `rtc-and-ws` | `rtc-and-ws`            | `rtc-preferred`                | `rtc-and-ws`     |
 | `maxConcurrentEdgeSetups`         | 64           | 32                      | 16                             | 64               |
 | `activation.mode`                 | `manual`     | `threshold-or-deadline` | `threshold-or-deadline`        | `threshold`      |
@@ -539,7 +539,8 @@ yet due (clock-skew defence; the retry release walks it forward), drops it if th
 its epoch moved on, and then: a `retry` entry for a `forming` group submits `startGroupEstablishment`
 under `formation-criterion` authority; a `deadline` entry for a `connecting` or `reconfiguring`
 group reads the planning authority and the stored plan and runs the same evaluation function. If no
-plan is stored at deadline time the entry does nothing.
+plan is stored at deadline time the handler throws so the durable entry is retried rather than
+acknowledged, until topology publication catches up.
 
 **Racing producers replay instead of double-transitioning.** Criterion command ids are
 deterministic per decision and epoch —

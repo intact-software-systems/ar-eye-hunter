@@ -183,13 +183,24 @@ describe('group lifecycle policy validation', () => {
         expect(toIssueCodes(policy)).toContain('server-auto-requires-automatic-trigger');
     });
 
-    it('accepts a phased server-auto policy whose triggers are automatic', () => {
+    it('accepts a phased server-auto policy whose boundaries are all automatic', () => {
         const policy = toNormalizedGroupLifecyclePolicy({
             formation: 'phased',
-            initiator: 'server-auto'
+            initiator: 'server-auto',
+            activation: { mode: 'threshold', successRate: 0.8, minimumViableRate: 0.5 }
         });
 
         expect(toIssueCodes(policy)).toHaveLength(0);
+    });
+
+    it('rejects a phased server-auto policy with manual activation', () => {
+        const policy = toNormalizedGroupLifecyclePolicy({
+            formation: 'phased',
+            initiator: 'server-auto',
+            activation: { mode: 'manual' }
+        });
+
+        expect(toIssueCodes(policy)).toContain('server-auto-requires-automatic-activation');
     });
 
     it('rejects commanded replanning under server-auto', () => {

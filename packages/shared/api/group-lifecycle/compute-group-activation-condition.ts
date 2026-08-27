@@ -1,13 +1,14 @@
-import type { GroupLifecycleState, GroupTopologyReplanningMode } from './group-lifecycle-policy.ts';
 import type { GroupLayoutIdentity } from './group-layout-identity.ts';
+import type { GroupLifecycleState, GroupTopologyReplanningMode } from './group-lifecycle-policy.ts';
 import { resolveDialLayoutRoles } from './resolve-dial-layout-roles.ts';
 
 /**
- * The dwell before a coverage band change is believed, and the width the exit
- * threshold sits below its entry threshold so a per-group rate patch cannot
- * invert the `active ↔ degraded` band. Server defaults settled here (product
- * decisions 7 and 41); they become policy knobs only when an application needs
- * them.
+ * Server defaults settled once so no later slice invents values under
+ * pressure (product decisions 7 and 41). Nothing in this file applies them:
+ * the status writer slice owns the dwell, the hysteresis band (exit sitting
+ * one width below entry) and evidence expiry, the replanning slice owns the
+ * minimum layout age, and the browser pacing slice owns the RTC setup
+ * timeout. Until those land, the pinning matrix test is their only consumer.
  */
 export const GROUP_ACTIVATION_STATUS_DWELL_MS = 3_000;
 export const GROUP_ACTIVATION_HYSTERESIS_WIDTH = 0.05;
@@ -55,8 +56,10 @@ export interface ComputeGroupActivationConditionInput {
  * 41): an archived, deleted or expired group reads `inactive` — its routing
  * plane is frozen and no coverage claim is honest. Precedence follows the
  * product table: `failed`, then `inactive`, then the dwell-held bands, then
- * `initialising`. A halted group keeps its coverage condition, because the
- * halt is intent and the condition is connectivity.
+ * `initialising`. Exhaustion reads `failed` only in `dormant`, where the
+ * spent series parked the group — a dialing group still on its final attempt
+ * is judged by its coverage. A halted group keeps its coverage condition,
+ * because the halt is intent and the condition is connectivity.
  */
 export function computeGroupActivationCondition(
     input: ComputeGroupActivationConditionInput
@@ -64,10 +67,11 @@ export function computeGroupActivationCondition(
     if (input.business !== 'active') {
         return 'inactive';
     }
+    const exhaustedInDormant = input.attemptBudgetExhausted && input.lifecycleState === 'dormant';
     const belowFloorForDwell = input.coverage !== undefined &&
         input.coverage.coverageRate < input.coverage.minimumViableRate &&
         input.coverage.dwellSatisfied;
-    if (input.attemptBudgetExhausted || belowFloorForDwell) {
+    if (exhaustedInDormant || belowFloorForDwell) {
         return 'failed';
     }
     if (input.coverage === undefined || resolveDialLayoutRoles(input.lifecycleState) === 'none') {

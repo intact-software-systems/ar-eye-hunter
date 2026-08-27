@@ -20,7 +20,7 @@ import { denyGroupPolicy, GROUP_POLICY_ALLOWED, type GroupPolicyActor } from './
  * `computeGroupDataGate` — replaces these rows in the transport-valve slice,
  * not before.
  */
-export const PRE_ACTIVATION_DATA_BLOCKS: Readonly<Record<GroupLifecycleState, boolean>> = {
+const PRE_ACTIVATION_DATA_BLOCKS: Readonly<Record<GroupLifecycleState, boolean>> = {
     dormant: true,
     forming: true,
     planned: true,
@@ -29,6 +29,14 @@ export const PRE_ACTIVATION_DATA_BLOCKS: Readonly<Record<GroupLifecycleState, bo
     reconfiguring: true,
     reconnecting: true
 };
+
+/**
+ * Fails closed: a stage the registry does not know blocks rather than flows,
+ * because this is the one stage table whose miss would otherwise open a gate.
+ */
+export function blocksGroupPreActivationData(lifecycleState: GroupLifecycleState): boolean {
+    return PRE_ACTIVATION_DATA_BLOCKS[lifecycleState] ?? true;
+}
 
 export interface CanSendGroupMessageInput {
     readonly snapshot: GroupSnapshot;
@@ -72,7 +80,7 @@ export function canSendGroupMessage(
     }
     if (
         input.preActivationAppData === 'blocked-until-active' &&
-        PRE_ACTIVATION_DATA_BLOCKS[input.snapshot.group.lifecycleState]
+        blocksGroupPreActivationData(input.snapshot.group.lifecycleState)
     ) {
         return denyGroupPolicy(
             'group-data-blocked-until-active',

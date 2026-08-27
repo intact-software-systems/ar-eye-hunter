@@ -57,6 +57,11 @@ const TRANSITION_TABLE: Readonly<
  * The intent state machine. Every accepted transition advances the formation
  * epoch, and nothing else does — election and readiness pin their member set
  * to the epoch, so an advance on join would flap them (plan correction 4).
+ * The one exception is `plan` re-issued from `planned`, whose idempotence
+ * (product decision 28) is only real if it re-pins nothing and invalidates no
+ * outstanding causal fence. Exhaustion's `dormant` landing for
+ * `fail-formation` is `resolveFormationFailureLanding`, applied by the
+ * criterion owner over this table's unexhausted landing.
  */
 export function computeGroupLifecycleTransition(
     input: Readonly<{
@@ -65,7 +70,7 @@ export function computeGroupLifecycleTransition(
         formationEpoch: number;
     }>
 ): GroupLifecycleTransitionOutcome {
-    const nextState = TRANSITION_TABLE[input.lifecycleState][input.transition];
+    const nextState = TRANSITION_TABLE[input.lifecycleState]?.[input.transition];
     if (nextState === undefined) {
         return {
             allowed: false,
@@ -77,10 +82,11 @@ export function computeGroupLifecycleTransition(
             }
         };
     }
+    const idempotentReplan = input.transition === 'plan' && input.lifecycleState === 'planned';
     return {
         allowed: true,
         nextState,
-        nextFormationEpoch: input.formationEpoch + 1
+        nextFormationEpoch: idempotentReplan ? input.formationEpoch : input.formationEpoch + 1
     };
 }
 
@@ -98,7 +104,7 @@ export function resolveFormationFailureLanding(
         attemptBudgetExhausted: boolean;
     }>
 ): GroupLifecycleState | undefined {
-    const tableLanding = TRANSITION_TABLE[input.lifecycleState]['fail-formation'];
+    const tableLanding = TRANSITION_TABLE[input.lifecycleState]?.['fail-formation'];
     if (tableLanding === undefined) {
         return undefined;
     }

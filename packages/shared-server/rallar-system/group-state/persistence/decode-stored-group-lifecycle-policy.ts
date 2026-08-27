@@ -322,7 +322,7 @@ function isJsonWireObject(value: JsonWireValue): value is JsonWireObject {
 }
 
 function requireRate(value: JsonWireValue, label: string): number {
-    if (typeof value !== 'number' || value < 0 || value > 1) {
+    if (typeof value !== 'number' || !Number.isFinite(value) || value < 0 || value > 1) {
         throw new TypeError(`${label} must be between zero and one`);
     }
     return value;

@@ -22,17 +22,17 @@ export function evaluateGroupStageTrigger(
     input: EvaluateGroupStageTriggerInput
 ): GroupStageTriggerDecision {
     const { trigger } = input;
-    if (trigger.kind === 'manual') {
-        return 'wait';
+    switch (trigger.kind) {
+        case 'manual':
+            return 'wait';
+        case 'immediate':
+            return 'fire';
+        case 'after':
+            return input.nowEpochMs - input.stageEnteredAtEpochMs >= trigger.settleMs ? 'fire' : 'wait';
+        case 'presence':
+            if (input.livePresenceMemberCount >= trigger.memberCount) {
+                return 'fire';
+            }
+            return input.nowEpochMs - input.stageEnteredAtEpochMs >= trigger.fallbackMs ? 'fire' : 'wait';
     }
-    if (trigger.kind === 'immediate') {
-        return 'fire';
-    }
-    if (trigger.kind === 'after') {
-        return input.nowEpochMs - input.stageEnteredAtEpochMs >= trigger.settleMs ? 'fire' : 'wait';
-    }
-    if (input.livePresenceMemberCount >= trigger.memberCount) {
-        return 'fire';
-    }
-    return input.nowEpochMs - input.stageEnteredAtEpochMs >= trigger.fallbackMs ? 'fire' : 'wait';
 }

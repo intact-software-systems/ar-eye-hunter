@@ -3,8 +3,8 @@ import { readGroupVersion } from '@shared/api/group-client-views.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 
 import {
-    canSendGroupMessage,
-    PRE_ACTIVATION_DATA_BLOCKS
+    blocksGroupPreActivationData,
+    canSendGroupMessage
 } from '@shared-server/rallar-system/group-state/policy/group-message-policy.ts';
 import { isSameGroupScope } from '@shared/api/api-type-utils.ts';
 import type { GroupPreActivationAppData } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
@@ -132,7 +132,7 @@ async function resolvePreActivationAppData(
     ) {
         return undefined;
     }
-    if (!PRE_ACTIVATION_DATA_BLOCKS[snapshot.group.lifecycleState] || !options.readPreActivationAppData) {
+    if (!blocksGroupPreActivationData(snapshot.group.lifecycleState) || !options.readPreActivationAppData) {
         return undefined;
     }
     return await options.readPreActivationAppData({

@@ -210,6 +210,7 @@ export const GROUP_LIFECYCLE_POLICY_ISSUE_CODES = [
     'manager-count-exceeds-assigned-principals',
     'strict-confirmation-unsupported',
     'server-auto-requires-automatic-trigger',
+    'server-auto-requires-automatic-activation',
     'server-auto-cannot-command-replanning',
     'replan-window-exceeds-maximum-wait'
 ] as const;

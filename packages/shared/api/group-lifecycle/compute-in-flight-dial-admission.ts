@@ -13,11 +13,10 @@ export interface ComputeInFlightDialAdmissionInput {
 }
 
 /**
- * The in-flight pacing rule (product decision 18): a peer shared by several
- * groups is one connection charged to every owning group's count, and its
- * setup starts only when every owning group has a free slot — it waits while
- * any one is at its bound, even if another is idle. The member's session-wide
- * cap remains a separate ceiling owned by the RTC layer.
+ * The in-flight pacing rule (product decision 18): a shared peer waits while
+ * any owning group is at its bound, even if another is idle — starting anyway
+ * would put the saturated group over the bound its own policy asked for. The
+ * member's session-wide cap remains a separate ceiling owned by the RTC layer.
  */
 export function computeInFlightDialAdmission(
     input: ComputeInFlightDialAdmissionInput

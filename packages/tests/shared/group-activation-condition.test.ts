@@ -10,8 +10,8 @@ import {
     type ComputeGroupActivationConditionInput,
     type GroupCoverageObservation
 } from '@shared/api/group-lifecycle/compute-group-activation-condition.ts';
-import { GROUP_LIFECYCLE_STATES } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import type { GroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
+import { GROUP_LIFECYCLE_STATES } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 
 function coverage(overrides: Partial<GroupCoverageObservation> = {}): GroupCoverageObservation {
     return {
@@ -54,6 +54,21 @@ describe('computeGroupActivationCondition', () => {
     it('reads failed when the attempt budget is spent', () => {
         expect(condition({ lifecycleState: 'dormant', attemptBudgetExhausted: true, coverage: undefined }))
             .toBe('failed');
+    });
+
+    // Exhaustion is a dormant fact (the spent series parked the group there);
+    // a group still dialing its final attempt is judged by its coverage.
+    it('does not read failed for exhaustion outside dormant', () => {
+        expect(condition({
+            lifecycleState: 'connecting',
+            attemptBudgetExhausted: true,
+            coverage: coverage({ coverageRate: 1 })
+        })).toBe('active');
+        expect(condition({
+            lifecycleState: 'connecting',
+            attemptBudgetExhausted: true,
+            coverage: undefined
+        })).toBe('inactive');
     });
 
     it('reads failed below the floor once the dwell is satisfied', () => {
@@ -169,7 +184,8 @@ describe('resolveCoverageBasisLayoutIdentity', () => {
             });
             if (lifecycleState === 'connecting') {
                 expect(basis).toEqual(PLANNED);
-            } else {
+            }
+            else {
                 expect(basis, lifecycleState).toBeUndefined();
             }
         }

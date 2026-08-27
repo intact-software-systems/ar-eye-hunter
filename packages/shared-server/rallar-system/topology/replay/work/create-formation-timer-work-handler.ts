@@ -32,7 +32,9 @@ export interface FormationTimerWorkHandlerOptions {
  * The stages each timer kind is consumed in. The rows deliberately preserve
  * today's gates — a `retry` entry fires only for a `forming` group, a
  * `deadline` entry only in the dialing stages; `reconnecting` joins the
- * deadline row when that stage becomes reachable.
+ * deadline row when that stage becomes reachable. Keep `DEADLINE_TIMER_CONSUMES`
+ * in lockstep with `CRITERION_EVALUATES` in
+ * compute-formation-criterion-command.ts — this gate is that path's entry.
  */
 const RETRY_TIMER_CONSUMES: Readonly<Record<GroupLifecycleState, boolean>> = {
     dormant: false,

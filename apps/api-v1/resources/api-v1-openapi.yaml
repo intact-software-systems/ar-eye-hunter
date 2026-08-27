@@ -5207,7 +5207,9 @@ components:
         One automatic stage boundary of a phased group. manual waits for an
         application command; immediate fires on entry; after fires once
         settleMs has elapsed; presence fires at memberCount live members or at
-        the fallbackMs timer, whichever is first. Stored and validated, not
+        the fallbackMs timer, whichever is first. Each kind accepts exactly its
+        own fields — after requires settleMs, presence requires memberCount and
+        fallbackMs, and unknown keys are rejected. Stored and validated, not
         yet behavioural.
       properties:
         kind:

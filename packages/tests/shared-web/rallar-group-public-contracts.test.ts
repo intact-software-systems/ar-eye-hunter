@@ -230,6 +230,15 @@ describe('Rallar group public contracts', () => {
             'requestId',
             'outboxId'
         ]);
+        // The published lifecycleState enums deliberately list only the four
+        // reachable stages while the widened registry stays dark; they widen
+        // in the slice that makes a new stage producible, never by accident.
+        for (const schemaName of ['Group', 'GroupFormationView']) {
+            expect(
+                schema(schemaName).properties?.lifecycleState?.enum,
+                schemaName
+            ).toEqual(['forming', 'connecting', 'active', 'reconfiguring']);
+        }
         expect(
             schema('GroupTopologyConfigAcceptedCausalRevision')
                 .properties?.causalRevision?.$ref

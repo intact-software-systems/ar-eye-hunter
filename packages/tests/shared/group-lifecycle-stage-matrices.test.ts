@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { blocksGroupPreActivationData } from '@shared-server/rallar-system/group-state/policy/group-message-policy.ts';
 import { computeGroupDataGate } from '@shared/api/group-lifecycle/compute-group-data-gate.ts';
 import { GROUP_LIFECYCLE_STATES } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import { resolveDialLayoutRoles } from '@shared/api/group-lifecycle/resolve-dial-layout-roles.ts';
@@ -74,6 +75,24 @@ describe('computeGroupDataGate', () => {
                 transportState: 'flowing',
                 preActivationAppData: 'allowed'
             })).toBe('flows');
+        }
+    });
+
+    // The live predicate and the product gate deliberately disagree on the
+    // two reconfiguration stages until the transport-valve slice swaps the
+    // live rows. This pin makes that swap a conscious edit here rather than a
+    // silent drift between two packages.
+    it('the live block predicate diverges from the product gate on exactly the reconfiguration stages', () => {
+        for (const lifecycleState of GROUP_LIFECYCLE_STATES) {
+            const liveBlocks = blocksGroupPreActivationData(lifecycleState);
+            const productBlocks = computeGroupDataGate({
+                lifecycleState,
+                transportState: 'flowing',
+                preActivationAppData: 'blocked-until-active'
+            }) === 'blocked';
+            const deliberatelyDivergent = lifecycleState === 'reconfiguring' ||
+                lifecycleState === 'reconnecting';
+            expect(liveBlocks !== productBlocks, lifecycleState).toBe(deliberatelyDivergent);
         }
     });
 });

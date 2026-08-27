@@ -7,10 +7,8 @@ export type GroupDialLayoutRoles =
     | 'accepted-and-planned';
 
 /**
- * The dial matrix (product decision 1): `connecting` dials the frozen planned
- * layout, `active` and `reconfiguring` dial the accepted layout, `reconnecting`
- * dials their union, and every other stage dials nothing — absence never falls
- * back to active sessions for a `phased` group.
+ * The dial matrix (product decision 1). Absence never falls back to active
+ * sessions for a `phased` group.
  */
 const DIAL_LAYOUT_ROLES: Readonly<Record<GroupLifecycleState, GroupDialLayoutRoles>> = {
     dormant: 'none',

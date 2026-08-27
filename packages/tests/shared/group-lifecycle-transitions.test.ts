@@ -54,6 +54,7 @@ const ALLOWED_CELLS: ReadonlyArray<{
 describe('computeGroupLifecycleTransition', () => {
     it('accepts exactly the legal cells and advances the epoch on each', () => {
         for (const cell of ALLOWED_CELLS) {
+            const idempotentReplan = cell.transition === 'plan' && cell.from === 'planned';
             const outcome = computeGroupLifecycleTransition({
                 transition: cell.transition,
                 lifecycleState: cell.from,
@@ -62,10 +63,22 @@ describe('computeGroupLifecycleTransition', () => {
             expect(outcome, `${cell.transition} from ${cell.from}`).toEqual({
                 allowed: true,
                 nextState: cell.to,
-                nextFormationEpoch: 7
+                nextFormationEpoch: idempotentReplan ? 6 : 7
             });
         }
         expect(ALLOWED_CELLS).toHaveLength(21);
+    });
+
+    // Product decision 28: plan is idempotently legal from planned. Idempotence
+    // is only real if a repeat advances nothing — an epoch bump would re-pin
+    // the electorate and turn every outstanding causal fence stale.
+    it('keeps the formation epoch on an idempotent replan', () => {
+        const outcome = computeGroupLifecycleTransition({
+            transition: 'plan',
+            lifecycleState: 'planned',
+            formationEpoch: 4
+        });
+        expect(outcome).toEqual({ allowed: true, nextState: 'planned', nextFormationEpoch: 4 });
     });
 
     it('denies every other cell as lifecycle-transition-invalid', () => {

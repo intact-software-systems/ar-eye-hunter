@@ -31,7 +31,11 @@ export interface ComputeFormationCriterionCommandInput {
 /**
  * The stages the criterion evaluates in. The rows deliberately preserve
  * today's two-stage gate — `reconnecting` measures the planned candidate under
- * the product model and flips true when that stage becomes reachable.
+ * the product model and flips true when that stage becomes reachable. Keep in
+ * lockstep with `DEADLINE_TIMER_CONSUMES` in
+ * create-formation-timer-work-handler.ts: the timer gate is this path's
+ * entry, so widening only the timer side throws-and-redelivers forever on a
+ * missing plan, and widening only this side is silently inert.
  */
 const CRITERION_EVALUATES: Readonly<Record<GroupLifecycleState, boolean>> = {
     dormant: false,
