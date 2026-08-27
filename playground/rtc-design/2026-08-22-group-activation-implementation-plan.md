@@ -526,6 +526,25 @@ receipt, result and outbox. `api-v1-group-formation-criterion.json` gains the
 
 **Gates:** baseline + both black-box profiles + **medium-scale** + **state-write**.
 
+**Delivery record (PR 3, 2026-08-27).** Landed as specified, with three verified corrections:
+
+- **No hashing needed for the v2 request ids.** The 36-character cap binds the queue resource id,
+  which is already derived from the sha256 causal token (`group-state-service.ts`
+  `queueResourceId: g-${causalToken.slice(...)}`), never the raw command id — so
+  `formation-criterion:v2:*` ids spell the full fence (canonical JSON) instead of an `fnv1a64`
+  digest, and the second checkpoint's hashing instruction is retired as conditionally scoped to a
+  surface the command id never reaches.
+- **Recipe legs deferred to slice 5.** The `stale-petition-fenced` leg needs an HTTP-forceable way
+  to move the stored planned layout between petition build and delivery, and the
+  failure → activation → later reconfiguration budget matrix needs `reconfigure`; both arrive with
+  slice 5's `connect`/`reconfigure` surfaces. The fence rejections are pinned at compute level
+  (stale-epoch, superseded, no-planned-row — each asserting a rejection receipt with no event and
+  no outbox ids).
+- **Absent fence keys are principal commands.** The lifecycle request rows exclude the fence keys,
+  so raw principal requests arrive with the fields absent — absence, like null, means no fence.
+  Found when the changed-style gate flagged the input validators; the request-validation tests now
+  pin fence-less principal requests and the exact-key rejection of a client-spelled fence key.
+
 ## Slice 4 — Accepted and planned layout ownership (the held-layout foundation)
 
 The structural blocker, verified: `RtcTopologySnapshotRepository.snapshotKey(ref)` is the group
