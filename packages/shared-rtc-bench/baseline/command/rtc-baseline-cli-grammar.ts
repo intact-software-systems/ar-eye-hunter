@@ -1,4 +1,5 @@
 import type { RtcBaselineEnvironmentId, RtcBaselineWorkloadId } from '../contracts/rtc-baseline-contracts.ts';
+import { isRtcBaselineId } from '../contracts/rtc-baseline-id.ts';
 import {
     createRtcBaselineCliIssue as issue,
     parseRtcBaselineBoundedInteger,
@@ -24,7 +25,6 @@ const environments = [
     'E4-pg',
     'E5-remote'
 ] as const satisfies readonly RtcBaselineEnvironmentId[];
-const baselinePattern = /^\d{8}-[0-9a-f]{12}-e(?:1-local|2-browser|3-memory|4-pg|5-remote)(?:-repeat-01)?$/;
 const attemptOptions = [
     'baseline-id',
     'workload',
@@ -99,7 +99,7 @@ function validateTypedOptions(
 ) {
     for (const name of ['baseline-id', 'comparison-baseline-id'] as const) {
         const value = options[name];
-        if (value !== undefined && !baselinePattern.test(value)) {
+        if (value !== undefined && !isRtcBaselineId(value)) {
             issues.push(
                 issue(
                     `$.${name}`,
@@ -166,7 +166,7 @@ function validateTypedOptions(
             issue('$.format', 'unsupported-format', `Option --format must be ${expectedFormat}.`)
         );
     }
-    if (options['repeat-of'] !== undefined && !baselinePattern.test(options['repeat-of'])) {
+    if (options['repeat-of'] !== undefined && !isRtcBaselineId(options['repeat-of'])) {
         issues.push(
             issue(
                 '$.repeat-of',
