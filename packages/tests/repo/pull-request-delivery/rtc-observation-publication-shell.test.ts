@@ -143,6 +143,8 @@ function gitPublicationFixture() {
     runGit(seed, ['push', '--quiet', '-u', 'origin', 'main']);
     runGit(root, ['--git-dir', origin, 'symbolic-ref', 'HEAD', 'refs/heads/main']);
     runGit(root, ['clone', '--quiet', origin, repository]);
+    runGit(repository, ['config', 'user.name', 'RTC Publication Test']);
+    runGit(repository, ['config', 'user.email', 'rtc-publication@example.invalid']);
 
     const observationId = '20260827T031500Z-eaf526518c70-e2-browser-gh123456789-a2';
     const archiveRepositoryPath = `performance-observations/rtc-b05/2026/08/27/${observationId}.zip`;
