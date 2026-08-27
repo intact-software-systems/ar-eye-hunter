@@ -5,10 +5,7 @@ import path from 'node:path';
 
 import { afterEach, describe, expect, it } from 'vitest';
 
-import {
-    publishRtcObservationPullRequest,
-    RtcObservationPublicationShell
-} from '../../../../scripts/pull-request-delivery/rtc-observation-pull-request.mjs';
+import { publishRtcObservationPullRequest, RtcObservationPublicationShell } from '../../../../scripts/pull-request-delivery/rtc-observation-pull-request.mjs';
 
 const fixtureRoots: string[] = [];
 
@@ -67,7 +64,66 @@ describe('RTC observation Git publication shell', () => {
         );
         expect(calls).toEqual(['verify', 'arm-auto-merge']);
     });
+
+    it('replaces a stale observation branch from the current main index with an exact lease', async () => {
+        const fixture = gitPublicationFixture();
+        const shell = new RtcObservationPublicationShell({ repoRoot: fixture.repository });
+        let pullRequest: ReturnType<typeof openPullRequest> | undefined;
+        shell.verifyObservation = () => undefined;
+        shell.readDefaultBranch = () => 'main';
+        shell.configureGitAuthentication = () => undefined;
+        shell.findPullRequest = () => pullRequest;
+        shell.openPullRequest = () => {
+            pullRequest = openPullRequest(fixture.branchName);
+            return pullRequest;
+        };
+        shell.armAutoMerge = () => {
+            pullRequest = { ...pullRequest!, autoMergeArmed: true };
+        };
+
+        await publishRtcObservationPullRequest(fixture.input, shell);
+
+        const otherArchivePath = 'performance-observations/rtc-b05/2026/08/27/' +
+            '20260827T031600Z-111111111111-e2-browser-gh123456790-a1.zip';
+        const otherIndexLine = JSON.stringify({ archive: { path: otherArchivePath } });
+        writeRepositoryFile(fixture.repository, otherArchivePath, 'other-observation');
+        writeRepositoryFile(
+            fixture.repository,
+            'performance-observations/rtc-b05/index.jsonl',
+            `${otherIndexLine}\n`
+        );
+        runGit(fixture.repository, ['add', 'performance-observations']);
+        runGit(fixture.repository, ['commit', '--quiet', '-m', 'archive other observation']);
+        runGit(fixture.repository, ['push', '--quiet', 'origin', 'main']);
+        const currentMain = runGit(fixture.repository, ['rev-parse', 'HEAD']).trim();
+
+        await publishRtcObservationPullRequest(fixture.input, shell);
+
+        runGit(fixture.repository, ['fetch', '--quiet', 'origin', fixture.branchName]);
+        const refreshedBranch = runGit(fixture.repository, ['rev-parse', 'FETCH_HEAD']).trim();
+        expect(runGit(fixture.repository, ['rev-parse', `${refreshedBranch}^`]).trim()).toBe(
+            currentMain
+        );
+        expect(
+            runGit(fixture.repository, [
+                'show',
+                `${refreshedBranch}:performance-observations/rtc-b05/index.jsonl`
+            ])
+        ).toBe(`${otherIndexLine}\n${fixture.indexLine}\n`);
+        expect(runGit(fixture.repository, ['rev-parse', 'origin/main']).trim()).toBe(currentMain);
+    });
 });
+
+function openPullRequest(branchName: string) {
+    return {
+        url: 'https://github.com/example/repository/pull/91',
+        state: 'OPEN' as const,
+        merged: false,
+        baseBranch: 'main',
+        headBranch: branchName,
+        autoMergeArmed: false
+    };
+}
 
 function gitPublicationFixture() {
     const root = mkdtempSync(path.join(tmpdir(), 'rtc-observation-publication-test-'));
@@ -89,8 +145,7 @@ function gitPublicationFixture() {
     runGit(root, ['clone', '--quiet', origin, repository]);
 
     const observationId = '20260827T031500Z-eaf526518c70-e2-browser-gh123456789-a2';
-    const archiveRepositoryPath =
-        `performance-observations/rtc-b05/2026/08/27/${observationId}.zip`;
+    const archiveRepositoryPath = `performance-observations/rtc-b05/2026/08/27/${observationId}.zip`;
     const archivePath = path.join(root, 'observation.zip');
     const indexEntryPath = path.join(root, 'index-entry.jsonl');
     writeFileSync(archivePath, 'deterministic-zip-fixture');
@@ -128,4 +183,10 @@ function gitPublicationFixture() {
 
 function runGit(root: string, arguments_: readonly string[]): string {
     return execFileSync('git', arguments_, { cwd: root, encoding: 'utf8' });
+}
+
+function writeRepositoryFile(root: string, repositoryPath: string, source: string) {
+    const filePath = path.join(root, repositoryPath);
+    mkdirSync(path.dirname(filePath), { recursive: true });
+    writeFileSync(filePath, source);
 }

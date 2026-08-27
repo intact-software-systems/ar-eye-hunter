@@ -138,11 +138,14 @@ export interface RtcPerformanceObservation {
     observationId: string;
     startedAt: string;
     completedAt: string;
-    source: { commit: string; tree: string; ref: string };
-    workflow: { runId: number; runAttempt: number; url: string };
-    primary: { outcome: 'passed' | 'failed' | 'incomplete'; acceptedMetrics: boolean };
-    repeat: { decision: 'not-required' | 'required'; outcome: 'not-run' | 'passed' | 'failed' | 'incomplete' };
-    archive: { path: string; byteLength: number; sha256: string };
+    source: { commit: string; tree: string; ref: string; };
+    workflow: { runId: number; runAttempt: number; url: string; };
+    primary: { outcome: 'passed' | 'failed' | 'incomplete'; acceptedMetrics: boolean; };
+    repeat: {
+        decision: 'not-required' | 'required';
+        outcome: 'not-run' | 'passed' | 'failed' | 'incomplete';
+    };
+    archive: { path: string; byteLength: number; sha256: string; };
 }
 ```
 
@@ -473,7 +476,7 @@ Expected: one canonical ZIP and row are produced. A failed workload result is ac
 RTC_OBSERVATION_ARCHIVE="$(find tmp/perf/rtc-observation-local -maxdepth 1 -type f -name '*.zip' -print -quit)"
 npm run perf:rtc-baseline -- verify-observation \
   --archive="$RTC_OBSERVATION_ARCHIVE" \
-  --index-entry=tmp/perf/rtc-observation-local/index-entry.json
+  --index-entry=tmp/perf/rtc-observation-local/index-entry.jsonl
 ```
 
 Expected: PASS with archive digest and observation ID.

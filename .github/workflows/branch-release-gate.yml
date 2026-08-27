@@ -82,6 +82,10 @@ jobs:
             echo "reuse=false" >> "$GITHUB_OUTPUT"
             echo "build_tree_digest=$SELECTION_DIGEST" >> "$GITHUB_OUTPUT"
             echo "archive_path=$SELECTION_ARCHIVE_PATH" >> "$GITHUB_OUTPUT"
+          elif [[ "$SELECTION_OUTCOME" == "success" && "$SELECTION_MODE" == "invalid-rtc-observation" ]]; then
+            echo "mode=invalid-rtc-observation" >> "$GITHUB_OUTPUT"
+            echo "reuse=false" >> "$GITHUB_OUTPUT"
+            echo "build_tree_digest=$SELECTION_DIGEST" >> "$GITHUB_OUTPUT"
           elif [[ "$SELECTION_OUTCOME" == "success" && "$SELECTION_MODE" == "reuse" && "$SELECTION_REUSE" == "true" ]]; then
             echo "mode=reuse" >> "$GITHUB_OUTPUT"
             echo "reuse=true" >> "$GITHUB_OUTPUT"

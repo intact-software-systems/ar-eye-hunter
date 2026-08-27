@@ -90,4 +90,18 @@ describe('Branch Release Gate result', () => {
             })
         ).toContain('validation mode must be broad, reuse, or rtc-observation');
     });
+
+    it('fails an invalid RTC observation change while all validation jobs remain skipped', () => {
+        expect(
+            validateBranchReleaseConclusion({
+                governanceResult: 'success',
+                selectionResult: 'success',
+                mode: 'invalid-rtc-observation',
+                reuse: 'false',
+                releaseResult: 'skipped',
+                publicationResult: 'skipped',
+                rtcObservationResult: 'skipped'
+            })
+        ).toEqual(['RTC observation store change is not one exact verified append']);
+    });
 });

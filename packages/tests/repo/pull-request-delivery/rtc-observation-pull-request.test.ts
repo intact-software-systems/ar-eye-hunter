@@ -36,13 +36,13 @@ describe('RTC observation pull-request publication', () => {
             'load-observation',
             'assert-clean',
             'read-default-branch',
+            'configure-git-authentication',
             'refresh-main',
             'inspect-main',
             'inspect-branch',
-            'configure-git-authentication',
+            'find-pr',
             'build-branch',
             'push-branch',
-            'find-pr',
             'open-pr',
             'arm-auto-merge'
         ]);
@@ -61,6 +61,29 @@ describe('RTC observation pull-request publication', () => {
                 body: expect.stringMatching(/main may continue to move/u)
             })
         ]);
+    });
+
+    it('rebuilds a stale matching branch on the current main index with an exact lease', async () => {
+        const fixture = publicationFixture({
+            branchState: 'stale',
+            pullRequest: {
+                url: 'https://github.com/example/repository/pull/90',
+                state: 'OPEN',
+                merged: false,
+                baseBranch: 'main',
+                headBranch: 'automation/rtc-b05-observation-gh123456789-a2',
+                autoMergeArmed: true
+            }
+        });
+
+        const result = await publishRtcObservationPullRequest(input, fixture.dependencies);
+
+        expect(result.pullRequestUrl).toContain('/pull/90');
+        expect(fixture.calls).toContain('build-branch');
+        expect(fixture.calls).toContain('replace-branch');
+        expect(fixture.calls).not.toContain('push-branch');
+        expect(fixture.calls).not.toContain('open-pr');
+        expect(fixture.calls).not.toContain('arm-auto-merge');
     });
 
     it('resumes a matching branch and pull request without another commit or push', async () => {
@@ -134,7 +157,7 @@ interface PullRequestState {
 }
 
 interface PublicationFixtureConfiguration {
-    readonly branchState?: 'missing' | 'matching' | 'conflict';
+    readonly branchState?: 'missing' | 'matching' | 'stale' | 'conflict';
     readonly buildError?: string;
     readonly defaultBranch?: string;
     readonly dirty?: boolean;
@@ -210,6 +233,10 @@ function publicationFixture(configuration: PublicationFixtureConfiguration = {})
         pushBranch() {
             calls.push('push-branch');
             mutations.push('push-branch');
+        },
+        replaceBranch() {
+            calls.push('replace-branch');
+            mutations.push('replace-branch');
         },
         findPullRequest() {
             calls.push('find-pr');

@@ -1,12 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import {
-    copyFileSync,
-    mkdirSync,
-    mkdtempSync,
-    readFileSync,
-    rmSync,
-    writeFileSync
-} from 'node:fs';
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
@@ -24,6 +17,7 @@ export async function publishRtcObservationPullRequest(input, dependencies) {
         throw new Error('RTC observation publication default branch must be main');
     }
 
+    dependencies.configureGitAuthentication();
     const baseCommit = dependencies.refreshMain();
     const mainState = dependencies.inspectMain({
         baseCommit,
@@ -48,13 +42,18 @@ export async function publishRtcObservationPullRequest(input, dependencies) {
     if (branchState === 'conflict') {
         throw new Error('RTC observation publication branch identity is already used');
     }
+    let pullRequest = dependencies.findPullRequest(branchName);
+    if (pullRequest !== undefined) {
+        assertMatchingPullRequest(pullRequest, branchName);
+    }
     if (branchState === 'missing') {
-        dependencies.configureGitAuthentication();
         const publicationCommit = dependencies.buildBranch(branchInput);
         dependencies.pushBranch({ ...branchInput, publicationCommit });
     }
-
-    let pullRequest = dependencies.findPullRequest(branchName);
+    else if (branchState === 'stale') {
+        const publicationCommit = dependencies.buildBranch(branchInput);
+        dependencies.replaceBranch({ ...branchInput, publicationCommit });
+    }
     if (pullRequest === undefined) {
         pullRequest = dependencies.openPullRequest({
             baseBranch: 'main',
@@ -75,6 +74,7 @@ export class RtcObservationPublicationShell {
         this.repoRoot = repoRoot;
         this.execFile = execFile;
         this.worktrees = new Map();
+        this.remoteBranches = new Map();
     }
 
     verifyObservation(input) {
@@ -163,6 +163,14 @@ export class RtcObservationPublicationShell {
         if (remote === '') {
             return 'missing';
         }
+        const [remoteCommit, remoteBranch, ...unexpected] = remote.split(/\s+/u);
+        if (
+            unexpected.length > 0 ||
+            remoteBranch !== branchReference ||
+            !/^[0-9a-f]{40}$/u.test(remoteCommit)
+        ) {
+            return 'conflict';
+        }
         const remoteReference = `refs/remotes/origin/${input.branchName}`;
         this.#git([
             'fetch',
@@ -170,9 +178,14 @@ export class RtcObservationPublicationShell {
             'origin',
             `+${branchReference}:${remoteReference}`
         ]);
-        return this.#publicationCommitMatches({ ...input, publicationCommit: remoteReference })
-            ? 'matching'
-            : 'conflict';
+        if (!this.#publicationCommitMatches({ ...input, publicationCommit: remoteReference })) {
+            return 'conflict';
+        }
+        const parentCommit = this.#git(['rev-parse', `${remoteReference}^`]).trim();
+        const parentIndex = this.#readRevisionFile(parentCommit, indexRepositoryPath) ?? '';
+        const currentMainIndex = this.#readRevisionFile(input.baseCommit, indexRepositoryPath) ?? '';
+        this.remoteBranches.set(input.branchName, remoteCommit);
+        return parentIndex === currentMainIndex ? 'matching' : 'stale';
     }
 
     configureGitAuthentication() {
@@ -184,7 +197,6 @@ export class RtcObservationPublicationShell {
         const worktree = path.join(temporaryRoot, 'worktree');
         try {
             this.#git(['worktree', 'add', '--detach', worktree, input.baseCommit]);
-            this.#git(['switch', '-c', input.branchName], worktree);
             const archiveDestination = path.join(worktree, input.observation.archivePath);
             const indexDestination = path.join(worktree, indexRepositoryPath);
             mkdirSync(path.dirname(archiveDestination), { recursive: true });
@@ -219,6 +231,27 @@ export class RtcObservationPublicationShell {
     }
 
     pushBranch(input) {
+        this.#pushBuiltBranch(input, [
+            'push',
+            'origin',
+            `HEAD:refs/heads/${input.branchName}`
+        ]);
+    }
+
+    replaceBranch(input) {
+        const remoteCommit = this.remoteBranches.get(input.branchName);
+        if (remoteCommit === undefined) {
+            throw new Error('RTC observation publication branch lease is unavailable');
+        }
+        this.#pushBuiltBranch(input, [
+            'push',
+            `--force-with-lease=refs/heads/${input.branchName}:${remoteCommit}`,
+            'origin',
+            `HEAD:refs/heads/${input.branchName}`
+        ]);
+    }
+
+    #pushBuiltBranch(input, pushArguments) {
         const paths = this.worktrees.get(input.branchName);
         if (paths === undefined) {
             throw new Error('RTC observation publication worktree is unavailable');
@@ -230,14 +263,11 @@ export class RtcObservationPublicationShell {
             if (currentIndex !== expectedIndex) {
                 throw new Error('remote main index changed during publication');
             }
-            this.#git([
-                'push',
-                'origin',
-                `HEAD:refs/heads/${input.branchName}`
-            ], paths.worktree);
+            this.#git(pushArguments, paths.worktree);
         }
         finally {
             this.worktrees.delete(input.branchName);
+            this.remoteBranches.delete(input.branchName);
             this.#removeWorktree(paths.temporaryRoot, paths.worktree);
         }
     }

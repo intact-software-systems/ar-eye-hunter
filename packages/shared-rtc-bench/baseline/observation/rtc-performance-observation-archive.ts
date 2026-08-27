@@ -12,9 +12,9 @@ import {
     toRtcPerformanceObservationArchivePath
 } from './rtc-performance-observation.ts';
 
-const MAX_ARCHIVE_BYTE_LENGTH = 128 * 1024 * 1024;
+const MAX_ARCHIVE_BYTE_LENGTH = 90 * 1024 * 1024;
 const MAX_ARCHIVE_ENTRY_COUNT = 10_000;
-const MAX_ARCHIVE_EXPANDED_BYTE_LENGTH = 512 * 1024 * 1024;
+const MAX_ARCHIVE_EXPANDED_BYTE_LENGTH = 256 * 1024 * 1024;
 
 class RtcPerformanceObservationArchiveResourceError extends Error {}
 
@@ -51,9 +51,13 @@ export async function createRtcPerformanceObservationArchive(
 ): Promise<RtcPerformanceObservationArchiveWritten> {
     assertRtcPerformanceObservationArchiveInput(archive);
     const contentEntries = toArchiveContentEntries(archive);
+    assertRtcPerformanceObservationArchiveCreationBudget(contentEntries);
     contentEntries.set('checksums.sha256', strToU8(await toChecksumFile(contentEntries)));
     const entries = Object.fromEntries([...contentEntries].sort(([left], [right]) => left.localeCompare(right)));
     const bytes = zipSync(entries, { level: 9, mtime: new Date(1980, 0, 1) });
+    if (bytes.byteLength > MAX_ARCHIVE_BYTE_LENGTH) {
+        throw new Error('observation archive exceeds its creation resource budget');
+    }
     return {
         bytes,
         indexEntry: {
@@ -249,6 +253,26 @@ function appendArtifacts(input: AppendRtcPerformanceObservationArtifactsInput) {
         )
     ) {
         input.entries.set(`${input.role}/${input.baselineId}/${relativePath}`, bytes);
+    }
+}
+
+function assertRtcPerformanceObservationArchiveCreationBudget(
+    contentEntries: ReadonlyMap<string, Uint8Array>
+) {
+    const entryCount = contentEntries.size + 1;
+    const contentByteLength = [...contentEntries.values()].reduce(
+        (total, bytes) => total + bytes.byteLength,
+        0
+    );
+    const checksumByteLength = [...contentEntries.keys()].reduce(
+        (total, path) => total + 67 + strToU8(path).byteLength,
+        0
+    );
+    if (
+        entryCount > MAX_ARCHIVE_ENTRY_COUNT ||
+        contentByteLength + checksumByteLength > MAX_ARCHIVE_EXPANDED_BYTE_LENGTH
+    ) {
+        throw new Error('observation archive exceeds its creation resource budget');
     }
 }
 

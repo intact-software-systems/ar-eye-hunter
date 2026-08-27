@@ -299,6 +299,20 @@ describe('RTC performance observation archive', () => {
         }
     );
 
+    it('rejects too many entries before compressing an observation archive', async () => {
+        const excessiveArtifacts = new Map(primaryArtifacts);
+        for (let index = excessiveArtifacts.size; index < 10_000; index += 1) {
+            excessiveArtifacts.set(`diagnostics/entry-${String(index).padStart(5, '0')}.json`, new Uint8Array());
+        }
+
+        await expect(
+            createRtcPerformanceObservationArchive({
+                observation,
+                primaryArtifacts: excessiveArtifacts
+            })
+        ).rejects.toThrow('archive exceeds its creation resource budget');
+    });
+
     it.each([
         ['archive-length-mismatch', (entry: RtcPerformanceObservationIndexEntryDto) => ({
             ...entry,

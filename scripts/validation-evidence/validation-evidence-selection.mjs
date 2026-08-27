@@ -26,6 +26,17 @@ export function selectValidationEvidence(input) {
             })
         };
     }
+    if (observation.observationTouched) {
+        return {
+            ...observation,
+            mode: 'invalid-rtc-observation',
+            reuse: false,
+            buildTreeDigest: computeBuildAffectingTreeDigest({
+                repoRoot: input.repoRoot,
+                headSha: input.candidate.head
+            })
+        };
+    }
     const selected = selectReusableValidationEvidence(input);
     return { ...selected, mode: selected.reuse ? 'reuse' : 'broad' };
 }

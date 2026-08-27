@@ -55,6 +55,11 @@ describe('PR-scoped validation reuse workflow', () => {
         expect(release.if).toContain('outputs.mode == \'broad\'');
         expect(publication.if).toContain('outputs.mode == \'broad\'');
         expect(integrity.if).toContain('outputs.mode == \'rtc-observation\'');
+        expect(
+            selection.steps.find(
+                (step: Record<string, any>) => step.name === 'Resolve validation evidence selection'
+            ).run
+        ).toContain('invalid-rtc-observation');
         expect(verify.run).toContain('npm run perf:rtc-baseline -- verify-observation');
         expect(verify.run).not.toMatch(/build|deploy|test:ci/iu);
     });

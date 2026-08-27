@@ -82,6 +82,47 @@ describe('same-PR validation reuse', () => {
     });
 
     it.each([
+        ['an observation archive deletion', (fixture: ReturnType<typeof createFixture>) => {
+            const existingArchive = 'performance-observations/rtc-b05/2026/08/26/20260826T031500Z-' +
+                'eaf526518c70-e2-browser-gh123456788-a1.zip';
+            const base = commit(fixture.root, 'existing observation', {
+                [existingArchive]: 'zip-bytes',
+                'performance-observations/rtc-b05/index.jsonl': `${
+                    JSON.stringify({
+                        archive: { path: existingArchive }
+                    })
+                }\n`
+            });
+            runGit(fixture.root, ['rm', existingArchive]);
+            runGit(fixture.root, ['commit', '--quiet', '-m', 'delete observation']);
+            return { base, head: runGit(fixture.root, ['rev-parse', 'HEAD']).trim() };
+        }],
+        ['a mixed observation and product change', (fixture: ReturnType<typeof createFixture>) => {
+            const base = fixture.evidenceHead;
+            const observationId = '20260827T031500Z-eaf526518c70-e2-browser-gh123456789-a2';
+            const archivePath = `performance-observations/rtc-b05/2026/08/27/${observationId}.zip`;
+            const head = commit(fixture.root, 'mixed observation', {
+                [archivePath]: 'zip-bytes',
+                'performance-observations/rtc-b05/index.jsonl': `${
+                    JSON.stringify({
+                        archive: { path: archivePath }
+                    })
+                }\n`,
+                'apps/example/main.ts': 'export const value = 2;\n'
+            });
+            return { base, head };
+        }]
+    ])('fails closed for %s', (_name, change) => {
+        const fixture = createFixture();
+        const candidate = change(fixture);
+
+        expect(selectModeFromBase(fixture, candidate.base, candidate.head)).toMatchObject({
+            mode: 'invalid-rtc-observation',
+            reuse: false
+        });
+    });
+
+    it.each([
         ['another PR', { candidate: { pullRequestNumber: 223 } }, 'untrusted-workflow-run'],
         [
             'ambiguous PR association',
@@ -190,6 +231,14 @@ function select(
 }
 
 function selectMode(fixture: ReturnType<typeof createFixture>, candidateHead: string) {
+    return selectModeFromBase(fixture, fixture.evidenceHead, candidateHead);
+}
+
+function selectModeFromBase(
+    fixture: ReturnType<typeof createFixture>,
+    base: string,
+    candidateHead: string
+) {
     return selectValidationEvidence({
         repoRoot: fixture.root,
         candidate: {
@@ -198,7 +247,7 @@ function selectMode(fixture: ReturnType<typeof createFixture>, candidateHead: st
             workflowPath,
             branch: 'feature',
             baseBranch: 'main',
-            base: fixture.evidenceHead,
+            base,
             head: candidateHead,
             currentRunId: 5000
         },

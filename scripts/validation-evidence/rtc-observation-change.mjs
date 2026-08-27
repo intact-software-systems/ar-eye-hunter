@@ -1,16 +1,18 @@
 import { execFileSync } from 'node:child_process';
 
 const indexPath = 'performance-observations/rtc-b05/index.jsonl';
+const observationRoot = 'performance-observations/';
 const archivePathPattern =
     /^performance-observations\/rtc-b05\/(\d{4})\/(\d{2})\/(\d{2})\/\d{8}T\d{6}Z-[0-9a-f]{12}-e2-browser-gh[1-9]\d*-a[1-9]\d*\.zip$/u;
 
 export function inspectRtcObservationChange({ repoRoot, base, head }) {
     const changes = readNameStatus(repoRoot, base, head);
     if (!changes.ok) {
-        return rejected(changes.reason);
+        return rejected(changes.reason, true);
     }
+    const observationTouched = changes.value.some(({ path }) => path.startsWith(observationRoot));
     if (changes.value.length !== 2) {
-        return rejected('rtc-observation-change-count');
+        return rejected('rtc-observation-change-count', observationTouched);
     }
     const archive = changes.value.find(({ path }) => path.endsWith('.zip'));
     const index = changes.value.find(({ path }) => path === indexPath);
@@ -20,7 +22,7 @@ export function inspectRtcObservationChange({ repoRoot, base, head }) {
         !['A', 'M'].includes(index.status) ||
         !canonicalArchivePath(archive.path)
     ) {
-        return rejected('rtc-observation-change-shape');
+        return rejected('rtc-observation-change-shape', observationTouched);
     }
     const oldIndex = readRevisionFile(repoRoot, base, indexPath);
     const newIndex = readRevisionFile(repoRoot, head, indexPath);
@@ -29,14 +31,18 @@ export function inspectRtcObservationChange({ repoRoot, base, head }) {
         (oldIndex === null) !== (index.status === 'A') ||
         (oldIndex !== null && index.status !== 'M')
     ) {
-        return rejected('rtc-observation-index-status');
+        return rejected('rtc-observation-index-status', observationTouched);
     }
     const appended = readAppendedIndexEntry(oldIndex ?? '', newIndex);
     if (!appended.ok || appended.value.archive?.path !== archive.path) {
-        return rejected(appended.ok ? 'rtc-observation-index-archive-mismatch' : appended.reason);
+        return rejected(
+            appended.ok ? 'rtc-observation-index-archive-mismatch' : appended.reason,
+            observationTouched
+        );
     }
     return {
         observationOnly: true,
+        observationTouched: true,
         reason: 'rtc-observation-only',
         archivePath: archive.path,
         indexEntry: appended.value
@@ -121,8 +127,8 @@ function canonicalArchivePath(value) {
     return Number.isFinite(timestamp) && new Date(timestamp).toISOString() === isoDate;
 }
 
-function rejected(reason) {
-    return { observationOnly: false, reason };
+function rejected(reason, observationTouched) {
+    return { observationOnly: false, observationTouched, reason };
 }
 
 function isRecord(value) {

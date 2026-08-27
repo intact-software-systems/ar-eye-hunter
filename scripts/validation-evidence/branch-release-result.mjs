@@ -60,6 +60,10 @@ export function validateBranchReleaseConclusion({
         }
         return issues;
     }
+    if (mode === 'invalid-rtc-observation') {
+        issues.push('RTC observation store change is not one exact verified append');
+        return issues;
+    }
     if (mode !== 'broad') {
         issues.push('validation mode must be broad, reuse, or rtc-observation');
         return issues;

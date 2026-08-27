@@ -35,6 +35,7 @@ describe('RTC observation-only change', () => {
             head
         })).toEqual({
             observationOnly: true,
+            observationTouched: true,
             reason: 'rtc-observation-only',
             archivePath,
             indexEntry: JSON.parse(indexLine(archivePath))
@@ -97,7 +98,24 @@ describe('RTC observation-only change', () => {
             repoRoot: fixture.root,
             base: fixture.base,
             head
-        })).toMatchObject({ observationOnly: false });
+        })).toMatchObject({
+            observationOnly: false,
+            observationTouched: true
+        });
+    });
+
+    it('does not mark an ordinary change as touching the observation store', () => {
+        const fixture = createFixture(true);
+        const head = commit(fixture.root, 'ordinary change', { 'docs/guide.md': 'changed\n' });
+
+        expect(inspectRtcObservationChange({
+            repoRoot: fixture.root,
+            base: fixture.base,
+            head
+        })).toMatchObject({
+            observationOnly: false,
+            observationTouched: false
+        });
     });
 });
 
