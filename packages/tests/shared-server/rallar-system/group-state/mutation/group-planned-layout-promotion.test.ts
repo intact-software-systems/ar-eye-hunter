@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
-import { toApplyPlannedLayoutCommand } from '@shared-server/rallar-system/group-state/group-topology-publication-mutation-command.ts';
 import { validateGroupMutationAuthority } from '@shared-server/rallar-system/group-state/mutation/command-validation/validate-group-mutation-authority.ts';
 import type { GroupMutationCommand } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
+import { toApplyPlannedLayoutCommand } from '@shared-server/rallar-system/group-state/to-apply-planned-layout-command.ts';
 import { computeTopologyPromotionEntry, decodeTopologyPromotionWork } from '@shared-server/rallar-system/group-state/topology-promotion-outbox-entry.ts';
 import { FakeRuntimeStateRepository } from '../../../runtime-state/test-support/fake-runtime-state-repository.ts';
 import { createTestGroupStateService } from '../group-state-test-runtime.ts';
@@ -11,7 +11,7 @@ import {
     computePlannedLayoutPromotion,
     type GroupPlannedLayoutRow
 } from '@shared-server/rallar-system/group-state/mutation/aggregate/compute-planned-layout-promotion.ts';
-import { groupLayoutPromotionEffects } from '@shared-server/rallar-system/group-state/persistence/layout/group-layout-promotion-descriptors.ts';
+import { groupLayoutPromotionEffects } from '@shared-server/rallar-system/group-state/persistence/layout/group-layout-promotion-effects.ts';
 import {
     RTC_TOPOLOGY_ACCEPTED_SNAPSHOTS_NAMESPACE,
     RTC_TOPOLOGY_SNAPSHOTS_NAMESPACE

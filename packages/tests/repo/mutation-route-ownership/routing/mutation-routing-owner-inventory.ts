@@ -683,7 +683,7 @@ export const MUTATION_ROUTE_INVENTORY_ROWS: readonly MutationRouteInventoryRow[]
         entrypoint: 'planned publication promotion',
         type: 'GROUP_TOPOLOGY_PUBLICATION',
         source: 'ci',
-        registrationMarker: 'createTopologyPromotionWorkHandler',
+        registrationMarker: 'submitTopologyPublicationCommand',
         enqueueSource: 'ci',
         enqueueMarker: 'enqueueTopologyPublicationCommand',
         ownerSource: 'H',

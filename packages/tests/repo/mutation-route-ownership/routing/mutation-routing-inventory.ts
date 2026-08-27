@@ -68,11 +68,11 @@ export function validateMutationRouteInventory(
 ): readonly string[] {
     const issues: string[] = [];
     const sources = createSourceReader(options);
-    if (inventory.length !== 56) {
-        issues.push(`Expected 56 entrypoints, found ${inventory.length}`);
+    if (inventory.length !== 57) {
+        issues.push(`Expected 57 entrypoints, found ${inventory.length}`);
     }
-    if (new Set(inventory.map((item) => item.type)).size !== 52) {
-        issues.push('Inventory must cover all 52 AppInbox command types');
+    if (new Set(inventory.map((item) => item.type)).size !== 53) {
+        issues.push('Inventory must cover all 53 AppInbox command types');
     }
     const seen = new Set<string>();
     for (const item of inventory) {

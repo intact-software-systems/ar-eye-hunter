@@ -187,6 +187,14 @@ function submitFormationCriterionCommand(
     return runtime.groupStateInboxService.enqueueFormationCriterionCommand(command, atEpochMs);
 }
 
+function submitTopologyPublicationCommand(
+    runtime: ApiV1SystemInstallerRuntime,
+    command: Parameters<ApiV1Runtime['groupStateInboxService']['enqueueTopologyPublicationCommand']>[0],
+    atEpochMs: number
+): Promise<void> {
+    return runtime.groupStateInboxService.enqueueTopologyPublicationCommand(command, atEpochMs);
+}
+
 function createSystemTopicOptions<
     Runtime extends ApiV1SystemInstallerRuntime,
     Topology extends ApiV1SystemInstallerTopology,
@@ -215,8 +223,7 @@ function createSystemTopicOptions<
                 submitCommand: (command, atEpochMs) => submitFormationCriterionCommand(runtime, command, atEpochMs)
             },
             topologyPublication: {
-                submitCommand: (command, atEpochMs) =>
-                    runtime.groupStateInboxService.enqueueTopologyPublicationCommand(command, atEpochMs)
+                submitCommand: (command, atEpochMs) => submitTopologyPublicationCommand(runtime, command, atEpochMs)
             }
         },
         enqueueRtcRttMutation: (enqueue) => runtime.rtcRttInboxService.enqueue(enqueue)

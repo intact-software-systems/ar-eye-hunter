@@ -20,7 +20,7 @@ import {
 import { GroupLifecyclePolicyRepository } from '../../persistence/group-lifecycle-policy-repository.ts';
 import { createTransactionBoundGroupStateRepository } from '../../persistence/group-state-repository.ts';
 import { groupStateInsertIdempotencyDescriptor } from '../../persistence/idempotency/group-idempotency-write-descriptor.ts';
-import { groupLayoutPromotionEffects } from '../../persistence/layout/group-layout-promotion-descriptors.ts';
+import { groupLayoutPromotionEffects } from '../../persistence/layout/group-layout-promotion-effects.ts';
 import { groupStateMemberPutDescriptor } from '../../persistence/membership/group-state-member-put-descriptor.ts';
 import {
     groupStateDeletePresenceDescriptor,

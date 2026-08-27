@@ -205,9 +205,14 @@ export class RtcTopologySnapshotRepository extends RuntimeStateJsonStore {
  * promotion effect writes accepted rows through the group-state guarded
  * batch and must produce exactly what this repository reads back.
  */
+export interface StoredRtcTopologySnapshotRow {
+    readonly key: string;
+    readonly value: string;
+}
+
 export function toStoredRtcTopologySnapshotRow(
     snapshot: RallarOverlayTopologySnapshot
-): Readonly<{ key: string; value: string; }> {
+): StoredRtcTopologySnapshotRow {
     const stored = canonicalSnapshot(snapshot);
     return {
         key: groupStateGroupStorageKey(stored.groupRef),
