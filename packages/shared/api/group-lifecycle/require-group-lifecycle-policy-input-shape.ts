@@ -56,9 +56,11 @@ function requireManagerShape(value: unknown): void {
     if (manager.assignedPrincipalIds !== undefined) {
         if (
             !Array.isArray(manager.assignedPrincipalIds) ||
-            manager.assignedPrincipalIds.some((principalId) => typeof principalId !== 'string')
+            manager.assignedPrincipalIds.some(
+                (principalId) => typeof principalId !== 'string' || principalId.length === 0
+            )
         ) {
-            throw new TypeError('Group lifecyclePolicy manager assignedPrincipalIds must be strings');
+            throw new TypeError('Group lifecyclePolicy manager assignedPrincipalIds must be non-empty strings');
         }
     }
     requireOptionalNumber(manager.count, 'Group lifecyclePolicy manager count');

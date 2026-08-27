@@ -190,8 +190,10 @@ those slices at their own I20 checkpoints:
 - **Slice 11**: the deadline-hole premise changed on main. `e6a2faef6` flipped the formation-timer
   handler's missing-plan path from silent early return to a thrown retry, so the pre-existing gap
   is now unbounded retry while the planned read stays null, not a silently never-failed group. The
-  repair is still owed; its shape changed. Timer-id headroom is thin: `fnv1a64` renders ≤13
-  base-36 characters, so `ft-deadline-<epoch>-<hash>` sits near the 36-character cap.
+  repair is still owed; its shape changed. The earlier timer-id headroom worry was wrong twice over
+  (review sweep): the id's `<epoch>` is the small per-group formation counter, not a timestamp, and
+  `toQueueKeyPart` rewrites an over-long id deterministically — there is no truncation hazard to
+  design around.
 - **Slice 12**: `GroupEventType` is a 16-member string-literal union, not a `Record` — 12a's
   "only the `Record<GroupEventType, true>` one is compiler-checked" claim must be re-derived when
   that slice is selected. `validateGroupPresenceSummaryCausalRevision` (the watermark pattern to
@@ -308,7 +310,7 @@ Decisions I21–I25 were taken while delivering and reviewing PR 2 (1b + 1c) on 
 | I21 | **The trigger vocabulary carries a `manual` member, and the presets choose their triggers by character.** `manual` mirrors `GroupActivationMode`'s use of the word — no automation at that boundary. Presets: `optimistic` and `drop-in-social` are `immediate`/`immediate` (inert under immediate formation); `managed` is `manual`/`immediate`, so the manager's one `plan` command starts the wiring, preserving today's single manager action; `match` is `manual`/`manual`. _Alternatives rejected:_ nullable trigger fields (null handling at every consumer for a semantic a discriminant states), and `immediate`/`immediate` for `managed`, which would auto-plan a group whose preset exists to let the manager decide when it starts.        |
 | I22 | **The new policy fields are validated-but-inert, not input-rejected** — refining I8's gating sentence. The sparse input's only shared seam across the HTTP and JSON-wire paths sits inside the AppInbox compute where a policy-style rejection does not fit; the product plan mandates input rejection only for `strictConfirmation`; and a temporary rejection gate is exactly the temporary machinery product decision 14 rejects. Honesty is kept by the cross-field rules (`server-auto-requires-automatic-trigger`, `server-auto-cannot-command-replanning`, `replan-window-exceeds-maximum-wait`), the OpenAPI "stored and validated, not yet behavioural" descriptions, and the recipes. I8's route-cutover core is untouched.                   |
 | I23 | **The business-plane rows of both status axes read `inactive` / `none`.** An archived, deleted or expired group's routing plane is frozen, so no coverage claim and no remediation claim is honest — the C5 row values I10 requires, now encoded in `computeGroupActivationCondition` and `resolveGroupActivationRemediation` as precedence zero.                                                                                                                                                                                                                                                                                                                                                                                                       |
-| I24 | **The settled numeric constants**: status dwell 3 000 ms, `active ↔ degraded` hysteresis width 0.05, evidence expiry 30 000 ms, minimum layout age 1 000 ms, RTC setup timeout 15 000 ms (`compute-group-activation-condition.ts`); per-group debounce window default 500 ms (the live server value) clamped at 30 000 ms, maximum replan wait default 5 000 ms clamped at 600 000 ms, trigger delay clamp 600 000 ms (`to-normalized-group-lifecycle-policy.ts`). Pinned by the policy and status matrices so no later slice invents values under pressure.                                                                                                                                                                                            |
+| I24 | **The settled numeric constants**: status dwell 3 000 ms, `active ↔ degraded` hysteresis width 0.05, evidence expiry 30 000 ms, minimum layout age 1 000 ms, RTC setup timeout 15 000 ms (`compute-group-activation-condition.ts`); per-group debounce window default 500 ms — matching today's `topology.recompute.formationDebounceMs` server default, an unbounded operator knob the clamped per-group field supersedes for replanning when slice 10 lands — clamped at 30 000 ms, maximum replan wait default 5 000 ms clamped at 600 000 ms, trigger delay clamp 600 000 ms (`to-normalized-group-lifecycle-policy.ts`). Pinned by the policy and status matrices so no later slice invents values under pressure.                                 |
 | I25 | **Supersedes I16: the `mutationDescriptor` refactor had already landed on `main` via #338** (`MutationDescriptorInput`, one named parameter), one day after this plan's last edit, so slice 5a carries no refactor. What survives of I16 is its own closing observation: the function's remaining job is defaulting `targetPrincipalId` and `sessionId` to `null` on a type that declares both required, so the honest outcome may be deletion. That question is decided in slice 5a with the four new commands in hand, where the call-site shape is being edited anyway. _Alternative rejected:_ deleting it during a governance pass — 36 live call sites across 9 files edited outside any behavioural slice, with no gate that exercises them all. |
 
 The held-layout capability is the next milestone under current evidence, but every checkpoint selects
@@ -345,17 +347,23 @@ stage.
 **Dark:** nothing. The value is on the wire the moment a group establishes. That is why it goes first
 and alone.
 
-**Risk:** a value-keyed sweep damages unrelated code. Two legitimate English uses must survive in
-`docs/test-structure-coupling-exceptions.md`. And the rename is a hard cutover for durable state and
+**Risk:** a value-keyed sweep damages unrelated code. The complete survivor allowlist for the
+finalisation sweep (review-verified): the two English uses in
+`docs/test-structure-coupling-exceptions.md`, and the dated planning records under
+`playground/rtc-design/` — where the product plan's decision 1 and finalisation criterion name the
+old value deliberately and its "What holds today" section is an explicitly dated code snapshot.
+Nothing else may carry the word. And the rename is a hard cutover for durable state and
 open browser tabs (product decision 14 forbids the accept-both shim): a group row persisted mid-dial
 as `establishing`, and a pre-rename bundle receiving a post-rename delta, both fail their validators
 until the environment is reset or reloaded — nothing deployed carries such state, which is what
 makes the cutover legal, and slice 14's runbook records the ordering.
 
 **Gates:** baseline + both black-box profiles — a partial landing fails at runtime in the recipes, not
-at build time. No medium-scale; no mutation semantics change. The review added the two nets the
-sweep lacked: the OpenAPI `lifecycleState` enum pin in `rallar-group-public-contracts.test.ts` and
-the stored-stage acceptance matrix in `validate-persisted-group-lifecycle.test.ts`.
+at build time — **plus one `formation-large` profile run**, because the two managed-burst recipes
+carry only that profile, which no workflow executes, so four of the 23 assertions are outside every
+CI gate. No medium-scale; no mutation semantics change. The review added the two nets the sweep
+lacked: the OpenAPI `lifecycleState` enum pin in `rallar-group-public-contracts.test.ts` and the
+stored-stage acceptance matrix in `validate-persisted-group-lifecycle.test.ts`.
 
 ### 1b — Stage widening and the pure function library (dark)
 

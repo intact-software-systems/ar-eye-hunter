@@ -49,6 +49,43 @@ describe('GroupLifecyclePolicyRepository', () => {
         expect(await repository.readPolicy(GROUP)).toEqual({ status: 'present', policy });
     });
 
+    // No preset carries the timed trigger kinds, so without this the decoder's
+    // per-variant key sets have no persistence-path coverage at all — a typo in
+    // one variant list would ship green and read every such policy as corrupt.
+    it('round-trips the timed trigger variants', async () => {
+        const repository = createRepository();
+        const policy = {
+            ...resolveGroupLifecyclePolicyPreset('managed'),
+            establishment: {
+                ...resolveGroupLifecyclePolicyPreset('managed').establishment,
+                planTrigger: { kind: 'after', settleMs: 2_000 } as const,
+                connectTrigger: { kind: 'presence', memberCount: 4, fallbackMs: 10_000 } as const
+            }
+        };
+
+        await repository.writePolicy(GROUP, policy);
+
+        expect(await repository.readPolicy(GROUP)).toEqual({ status: 'present', policy });
+    });
+
+    it('reports a trigger with a cross-variant key as corrupt', async () => {
+        const repository = createRepository();
+        const managed = resolveGroupLifecyclePolicyPreset('managed');
+
+        await storeRaw(repository, GROUP, {
+            groupRef: GROUP,
+            policy: {
+                ...managed,
+                establishment: {
+                    ...managed.establishment,
+                    planTrigger: { kind: 'immediate', settleMs: 5 }
+                }
+            }
+        });
+
+        expect(await repository.readPolicy(GROUP)).toMatchObject({ status: 'corrupt' });
+    });
+
     it('keeps policies of different groups apart', async () => {
         const repository = createRepository();
         const other: GroupRef = { ...GROUP, groupId: 'group-2' };

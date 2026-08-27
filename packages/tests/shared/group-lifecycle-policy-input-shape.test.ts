@@ -73,17 +73,16 @@ describe('requireGroupLifecyclePolicyInputShape', () => {
     it('rejects unknown enum values at the boundary', () => {
         expect(() => requireGroupLifecyclePolicyInputShape({ initiator: 'nobody' }))
             .toThrow('initiator must be one of');
-        expect(() =>
-            requireGroupLifecyclePolicyInputShape({ topology: { replanning: 'eventually' } })
-        ).toThrow('replanning must be one of');
+        expect(() => requireGroupLifecyclePolicyInputShape({ topology: { replanning: 'eventually' } })).toThrow('replanning must be one of');
     });
 
     it('rejects non-object and non-string-array shapes', () => {
-        expect(() =>
-            requireGroupLifecyclePolicyInputShape({ establishment: { planTrigger: 'manual' } })
-        ).toThrow('planTrigger must be an object');
-        expect(() =>
-            requireGroupLifecyclePolicyInputShape({ manager: { assignedPrincipalIds: [1] } })
-        ).toThrow('assignedPrincipalIds must be strings');
+        expect(() => requireGroupLifecyclePolicyInputShape({ establishment: { planTrigger: 'manual' } })).toThrow('planTrigger must be an object');
+        expect(() => requireGroupLifecyclePolicyInputShape({ manager: { assignedPrincipalIds: [1] } })).toThrow(
+            'assignedPrincipalIds must be non-empty strings'
+        );
+        expect(() => requireGroupLifecyclePolicyInputShape({ manager: { assignedPrincipalIds: [''] } })).toThrow(
+            'assignedPrincipalIds must be non-empty strings'
+        );
     });
 });

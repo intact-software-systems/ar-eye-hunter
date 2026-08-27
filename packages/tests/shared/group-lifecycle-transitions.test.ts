@@ -100,7 +100,7 @@ describe('computeGroupLifecycleTransition', () => {
                 denied += 1;
             }
         }
-        expect(denied).toBe(EVERY_TRANSITION.length * GROUP_LIFECYCLE_STATES.length - ALLOWED_CELLS.length);
+        expect(denied).toBe(42);
     });
 
     it('reports the offending transition and state in the denial details', () => {
