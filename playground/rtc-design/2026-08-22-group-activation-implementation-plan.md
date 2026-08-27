@@ -502,6 +502,28 @@ rule.
 Add `apps/relic-hunter-server-v1` to the verification list (C8) and state the deploy order for the two
 servers.
 
+**Delivery record (PR 4, slices 2 + 4a, 2026-08-27).** Landed as specified with these verified
+findings:
+
+- **Apply-landing promotion is live behavior, not dark**: the default policy's
+  `reconfigureLanding: 'apply'` makes promotion-on-publication today's implicit semantics made
+  explicit. Decision 27's gate is read from the group's policy in the publication write phase
+  (`hold` promotes only through activate; corrupt fails closed; an absent consumer port mints
+  nothing) — the reconnect-resync recipe caught the missing gate before it shipped. Two recipes
+  pinning exact revisions on apply groups now create with `hold`, the first recipe coverage of it.
+- **The read-to-commit fence race is closed**: the promotion's guarded batch re-asserts the planned
+  row's revision inside the transaction, so a replan between read and commit conflicts the batch.
+  The PR 3 acceptance criterion is met one slice early via the revision assert; slice 4b+ may still
+  move the rows into group-state ownership.
+- **Measured state-write cost of apply landing** (all artifacts in `tmp/perf/pr4-*`): hot
+  `sql.statements` ≈ +4% (covered by the new `planned-layout-promotion` recorded-reason profile,
+  following the durable-append and formation-damping precedents), uncontended p99 +6–7% (promotion
+  writes on the tail), hot throughput draw-dependent within the machine's documented comparator
+  noise (control samples 38.3–48.4/s, head 30.5–49.0/s). Byte-headroom concern (C-risk in slice 2):
+  `serializedResultBytes` passed in every comparison.
+- **Promotion recipe legs** defer to slice 5's surfaces with the same reasoning as slice 3's
+  deferral; the promotion matrix is pinned at compute level and through the durable service read.
+
 ## Slice 3 — Causal fences and narrow internal authority capabilities
 
 **Needs:** PR 2's dark command and stage contracts. This slice owns the internal-authority protocol
