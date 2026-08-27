@@ -107,7 +107,7 @@ export function validateStoredGroup(group: unknown, ref: GroupRef): asserts grou
     nullablePositiveSafeInteger(value.purgeAfterEpochMs, 'Stored group purgeAfterEpochMs');
     requireOneOf(
         value.lifecycleState,
-        ['forming', 'establishing', 'active', 'reconfiguring'],
+        ['forming', 'connecting', 'active', 'reconfiguring'],
         'Stored group lifecycleState'
     );
     requireNonNegativeSafeInteger(value.formationEpoch, 'Stored group formationEpoch');

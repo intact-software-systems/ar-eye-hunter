@@ -40,7 +40,7 @@ export async function computeFormationCriterionCommand(
     input: ComputeFormationCriterionCommandInput
 ): Promise<GroupMutationCommand | null> {
     const group = input.group.group;
-    if (group.lifecycleState !== 'establishing' && group.lifecycleState !== 'reconfiguring') {
+    if (group.lifecycleState !== 'connecting' && group.lifecycleState !== 'reconfiguring') {
         return null;
     }
     const policyRead = await input.readLifecyclePolicy(group);
@@ -196,7 +196,7 @@ export function createDeferredCriterionPetitioner(
     return {
         async request(work, read) {
             if (
-                work.groupSnapshot.group.lifecycleState !== 'establishing' ||
+                work.groupSnapshot.group.lifecycleState !== 'connecting' ||
                 read.snapshot === null ||
                 read.snapshot.value.state !== 'active'
             ) {

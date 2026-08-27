@@ -2,7 +2,7 @@ import type { PrincipalId } from '../group-types.ts';
 
 export type GroupLifecycleState =
     | 'forming'
-    | 'establishing'
+    | 'connecting'
     | 'active'
     | 'reconfiguring';
 

@@ -14,7 +14,7 @@ import { createTestGroup } from '../../../create-test-group.ts';
 
 import { groupMemberStorageKey, groupRef, groupStorageKey, storedEntry } from './mutation/group-mutation-test-runtime.ts';
 
-const EVERY_LIFECYCLE_STATE: readonly GroupLifecycleState[] = ['forming', 'establishing', 'active', 'reconfiguring'];
+const EVERY_LIFECYCLE_STATE: readonly GroupLifecycleState[] = ['forming', 'connecting', 'active', 'reconfiguring'];
 
 /**
  * The safety-baseline invariant of the lifecycle plan: phases gate

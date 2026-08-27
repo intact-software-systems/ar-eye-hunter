@@ -31,7 +31,7 @@
       "default": "local"
     },
     "leaveGroupId": "succession-leave-room-{runId}",
-    "zeroEstablishingGroupId": "zero-establishing-room-{runId}"
+    "zeroConnectingGroupId": "zero-connecting-room-{runId}"
   },
   "execution": {
     "correlation": {
@@ -272,7 +272,7 @@
         "status": 200,
         "body": {
           "group": {
-            "lifecycleState": "establishing",
+            "lifecycleState": "connecting",
             "formationEpoch": 1,
             "formationElectorate": ["{aliceClientId}", "{bobClientId}"]
           }
@@ -422,14 +422,14 @@
         "status": 200,
         "body": {
           "group": {
-            "lifecycleState": "establishing",
+            "lifecycleState": "connecting",
             "formationEpoch": 1
           }
         }
       }
     },
     {
-      "name": "managerLeavesMidEstablishing",
+      "name": "managerLeavesMidConnecting",
       "type": "http",
       "connection": "primary",
       "request": {
@@ -470,7 +470,7 @@
       "expect": {
         "status": 200,
         "body": {
-          "lifecycleState": "establishing",
+          "lifecycleState": "connecting",
           "managerPrincipalIds": ["{bobClientId}"]
         }
       }
@@ -499,19 +499,19 @@
       }
     },
     {
-      "name": "createZeroEstablishingGroup",
+      "name": "createZeroConnectingGroup",
       "type": "http",
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/requests/group-create-zero-establishing-{runId}",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/requests/group-create-zero-connecting-{runId}",
         "headers": {
           "Authorization": "{bobAuthHeader}",
           "x-client-id": "{bobClientId}"
         },
         "body": {
-          "groupId": "{zeroEstablishingGroupId}",
-          "displayName": "Zero manager establishing {runId}",
+          "groupId": "{zeroConnectingGroupId}",
+          "displayName": "Zero manager connecting {runId}",
           "kind": "room",
           "joinMode": "open",
           "createdByPrincipalId": "{bobClientId}",
@@ -541,12 +541,12 @@
       }
     },
     {
-      "name": "aliceJoinsTheZeroEstablishingGroup",
+      "name": "aliceJoinsTheZeroConnectingGroup",
       "type": "http",
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{zeroEstablishingGroupId}/join/requests/join-alice-zero-establishing-{runId}",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{zeroConnectingGroupId}/join/requests/join-alice-zero-connecting-{runId}",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
@@ -571,7 +571,7 @@
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{zeroEstablishingGroupId}/lifecycle/establish/requests/establish-zero-establishing-{runId}",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{zeroConnectingGroupId}/lifecycle/establish/requests/establish-zero-connecting-{runId}",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
@@ -582,19 +582,19 @@
         "status": 200,
         "body": {
           "group": {
-            "lifecycleState": "establishing",
+            "lifecycleState": "connecting",
             "formationEpoch": 1
           }
         }
       }
     },
     {
-      "name": "soleManagerLeavesMidEstablishing",
+      "name": "soleManagerLeavesMidConnecting",
       "type": "http",
       "connection": "primary",
       "request": {
         "method": "PUT",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{zeroEstablishingGroupId}/members/{aliceClientId}/requests/leave-zero-establishing-alice-{runId}",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{zeroConnectingGroupId}/members/{aliceClientId}/requests/leave-zero-connecting-alice-{runId}",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
@@ -616,12 +616,12 @@
       }
     },
     {
-      "name": "zeroManagersMidEstablishingInTheView",
+      "name": "zeroManagersMidConnectingInTheView",
       "type": "http",
       "connection": "primary",
       "request": {
         "method": "GET",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{zeroEstablishingGroupId}/formation",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{zeroConnectingGroupId}/formation",
         "headers": {
           "Authorization": "{bobAuthHeader}",
           "x-client-id": "{bobClientId}"
@@ -630,18 +630,18 @@
       "expect": {
         "status": 200,
         "body": {
-          "lifecycleState": "establishing",
+          "lifecycleState": "connecting",
           "managerPrincipalIds": []
         }
       }
     },
     {
-      "name": "zeroManagerBlocksActivateMidEstablishing",
+      "name": "zeroManagerBlocksActivateMidConnecting",
       "type": "http",
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{zeroEstablishingGroupId}/lifecycle/activate/requests/activate-zero-establishing-{runId}",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{zeroConnectingGroupId}/lifecycle/activate/requests/activate-zero-connecting-{runId}",
         "headers": {
           "Authorization": "{bobAuthHeader}",
           "x-client-id": "{bobClientId}"
@@ -659,12 +659,12 @@
       }
     },
     {
-      "name": "membershipStaysSafeMidEstablishing",
+      "name": "membershipStaysSafeMidConnecting",
       "type": "http",
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{zeroEstablishingGroupId}/join/requests/rejoin-zero-establishing-alice-{runId}",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{zeroConnectingGroupId}/join/requests/rejoin-zero-connecting-alice-{runId}",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"

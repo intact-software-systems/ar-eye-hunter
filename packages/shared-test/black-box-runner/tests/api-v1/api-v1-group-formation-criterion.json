@@ -213,7 +213,7 @@
         "status": 200,
         "body": {
           "group": {
-            "lifecycleState": "establishing",
+            "lifecycleState": "connecting",
             "formationEpoch": 1
           }
         }
@@ -369,7 +369,7 @@
         "status": 200,
         "body": {
           "group": {
-            "lifecycleState": "establishing",
+            "lifecycleState": "connecting",
             "formationEpoch": 1,
             "formationElectorate": ["{aliceClientId}", "{bobClientId}"]
           }
@@ -533,7 +533,7 @@
         "status": 200,
         "body": {
           "group": {
-            "lifecycleState": "establishing",
+            "lifecycleState": "connecting",
             "formationEpoch": 1
           }
         }
@@ -560,7 +560,7 @@
       "expect": {
         "status": 200,
         "body": {
-          "lifecycleState": "establishing",
+          "lifecycleState": "connecting",
           "readiness": {
             "plannedEdgeCount": 1,
             "observedEdgeCount": 0,
@@ -694,7 +694,7 @@
         "status": 200,
         "body": {
           "group": {
-            "lifecycleState": "establishing",
+            "lifecycleState": "connecting",
             "formationEpoch": 1
           }
         }

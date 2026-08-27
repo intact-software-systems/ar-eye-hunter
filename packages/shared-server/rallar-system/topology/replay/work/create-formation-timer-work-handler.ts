@@ -82,7 +82,7 @@ async function processFormationTimerWork(
         return;
     }
     const lifecycleState = snapshot.group.lifecycleState;
-    if (lifecycleState !== 'establishing' && lifecycleState !== 'reconfiguring') {
+    if (lifecycleState !== 'connecting' && lifecycleState !== 'reconfiguring') {
         return;
     }
     const [authority, planned] = await Promise.all([

@@ -682,7 +682,7 @@
         "status": 200,
         "body": {
           "group": {
-            "lifecycleState": "establishing",
+            "lifecycleState": "connecting",
             "formationEpoch": 1,
             "formationElectorate": ["{aliceClientId}"]
           }

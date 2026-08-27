@@ -697,10 +697,10 @@ describe('RTC topology APP_OUTBOX work', () => {
     });
 
     // The refinement gate defers the replan, never the activation decision:
-    // deferred RTT work for an establishing group still petitions the
+    // deferred RTT work for a connecting group still petitions the
     // criterion, so the measurement that crosses the threshold activates the
     // group instead of waiting for the deadline evaluation.
-    it('petitions the criterion for an establishing group when the gate defers the replan', async () => {
+    it('petitions the criterion for a connecting group when the gate defers the replan', async () => {
         const queue = new InMemoryQueueBox();
         const runtime = createRtcTopologyOutboxPublisher({
             outboxQueueReader: new OutboxQueueReader(queue),
@@ -720,7 +720,7 @@ describe('RTC topology APP_OUTBOX work', () => {
             ...base,
             group: {
                 ...base.group,
-                lifecycleState: 'establishing',
+                lifecycleState: 'connecting',
                 establishmentStartedAtEpochMs: 500
             }
         };

@@ -49,22 +49,22 @@ Formation intent has four states and four transitions
 create (formation: phased) --> forming
 create (formation: immediate) --> active
 
-forming        -- start-establishment -->  establishing
-establishing   -- activate ------------->  active
+forming        -- start-establishment -->  connecting
+connecting     -- activate ------------->  active
 active         -- reopen-establishment ->  reconfiguring
 reconfiguring  -- activate ------------->  active
-establishing   -- fail-formation ------->  forming
+connecting     -- fail-formation ------->  forming
 reconfiguring  -- fail-formation ------->  forming
 ```
 
-| Transition             | From                            | To              |
-| ---------------------- | ------------------------------- | --------------- |
-| `start-establishment`  | `forming`                       | `establishing`  |
-| `activate`             | `establishing`, `reconfiguring` | `active`        |
-| `reopen-establishment` | `active`                        | `reconfiguring` |
-| `fail-formation`       | `establishing`, `reconfiguring` | `forming`       |
+| Transition             | From                          | To              |
+| ---------------------- | ----------------------------- | --------------- |
+| `start-establishment`  | `forming`                     | `connecting`    |
+| `activate`             | `connecting`, `reconfiguring` | `active`        |
+| `reopen-establishment` | `active`                      | `reconfiguring` |
+| `fail-formation`       | `connecting`, `reconfiguring` | `forming`       |
 
-`reconfiguring` is a distinct state, not `establishing` with a flag: the read surface tells a group
+`reconfiguring` is a distinct state, not `connecting` with a flag: the read surface tells a group
 that was active and is repairing its overlay apart from one that has never been active. The data
 gate does not read that difference — under `blocked-until-active` both block, because
 `canSendGroupMessage` tests only `lifecycleState !== 'active'` (see
@@ -131,7 +131,7 @@ overlay is planned or published and the server commands no dials. The browser is
 with no server overlay, `WebRtcGroupManager.targetPeerIdsForGroup` falls back to the group's online
 members and `computeOutboundDialPlan` dials up to `maxPeerConnections` of them, so a
 presence-connected forming lobby still makes bounded bootstrap RTC attempts. Holding those is not
-built (see [Not In V1](#not-in-v1)). `establishing`, `active`, and `reconfiguring` all plan.
+built (see [Not In V1](#not-in-v1)). `connecting`, `active`, and `reconfiguring` all plan.
 `api-v1-group-lifecycle-transitions` pins it: `GET …/topology` is `null` or `state: 'removed'`
 while forming, the `overlay.topology` hydration a forming member receives announces `removed`, and
 a plan exists after `start-establishment`. The admin `reconfigureGroupTopology` path bypasses the
@@ -148,7 +148,7 @@ never the ability to be in the group.
 ### Recipes
 
 `api-v1-group-lifecycle-transitions` walks a `managed` group with `activation.mode: 'manual'`
-through `forming` → `establishing` (epoch 1) → `active` (2) → `reconfiguring` (3) → `active` (4),
+through `forming` → `connecting` (epoch 1) → `active` (2) → `reconfiguring` (3) → `active` (4),
 pins `formationElectorate: [creator]` at creation, the non-manager denial `forbidden-role`, and the
 illegal-transition denial. Manual activation is pinned there because the managed preset's default
 `threshold-or-deadline` would otherwise auto-activate underneath the deterministic walk.
@@ -201,7 +201,7 @@ reads them. Establishment pacing is whatever the browser's existing dial budget 
   not start rather than starting degraded.
 - `drop-in-social`'s `activation.mode: 'threshold'` never evaluates. `immediate` formation creates
   the group `active`, `server-auto` denies every principal-commanded transition, and the criterion
-  only runs in `establishing` or `reconfiguring`. What the preset actually buys is the open-until-50
+  only runs in `connecting` or `reconfiguring`. What the preset actually buys is the open-until-50
   admission window, which binds from creation.
 
 ### Absent policy
@@ -498,7 +498,7 @@ exhausting both attempts and re-opening as a joinable lobby (`allOrNothingFloorR
 
 `computeFormationCriterionCommand`
 (`packages/shared-server/rallar-system/topology/replay/work/compute-formation-criterion-command.ts`)
-is the single evaluation function: it returns `null` unless the group is `establishing` or
+is the single evaluation function: it returns `null` unless the group is `connecting` or
 `reconfiguring`, reads the policy (corrupt → `null`; absent → optimistic, whose `manual` mode waits),
 derives readiness from the supplied plan and evidence, evaluates the criterion, and returns the
 command it asks for — `activateGroup` with `observedRate` and a `degraded` flag, or
@@ -517,19 +517,19 @@ and the per-group interval floor has elapsed — 5 ms and 30 s by default, overr
 `RALLAR_RTC_TOPOLOGY_RTT_VIVALDI_DELTA_MS` and `RALLAR_RTC_TOPOLOGY_RTT_REFINEMENT_MIN_INTERVAL_MS`)
 does not compute a plan, so it would not petition — and under a
 burst of reports the measurement that carries the group across its threshold is exactly the one
-deferred. `createDeferredCriterionPetitioner` closes that gap: a deferred item for an `establishing`
+deferred. `createDeferredCriterionPetitioner` closes that gap: a deferred item for a `connecting`
 group with an active stored plan petitions at most once per
 `DEFAULT_DEFERRED_CRITERION_PETITION_MIN_INTERVAL_MS` = 1 000 ms per group, process-locally; damped
 requests arm one trailing timer per group, because the crossing measurement lives at the burst's
 tail by construction. The trailing petition re-reads the stored plan and petitions only if it is
 still active; it is best-effort and only warns on failure. Two bounds are deliberate: it petitions
-for `establishing` only — a `reconfiguring` group under refinement-deferred work waits for the next
+for `connecting` only — a `reconfiguring` group under refinement-deferred work waits for the next
 computed plan or the deadline — and a removed stored plan never petitions, since its empty edge set
 would read as trivially complete.
 
 **The time leg** exists because deadline expiry generates no evidence. The transitions arm it
 themselves (`computeFormationTimerEntries` in `formation-timer-outbox-entry.ts`), in the same
-AppInbox transaction: entering `establishing` or `reconfiguring` under a deadline mode writes one
+AppInbox transaction: entering `connecting` or `reconfiguring` under a deadline mode writes one
 `FORMATION_TIMER` app-outbox entry due at `now + deadlineMs`; a below-floor return with attempts
 remaining writes one `retry` entry due after the backoff. Entries are inserted with
 `dequeueAudit.nextTs` at their due time, so every queue backend holds them invisible until then —
@@ -537,7 +537,7 @@ native scheduling, no polling or requeue loop — and each carries the post-tran
 `formationEpoch`. The consumer (`create-formation-timer-work-handler.ts`) throws if an entry is not
 yet due (clock-skew defence; the retry release walks it forward), drops it if the group is gone or
 its epoch moved on, and then: a `retry` entry for a `forming` group submits `startGroupEstablishment`
-under `formation-criterion` authority; a `deadline` entry for an `establishing` or `reconfiguring`
+under `formation-criterion` authority; a `deadline` entry for a `connecting` or `reconfiguring`
 group reads the planning authority and the stored plan and runs the same evaluation function. If no
 plan is stored at deadline time the entry does nothing.
 
@@ -551,7 +551,7 @@ its id) and otherwise a typed idempotency-conflict rejection, never a second tra
 that lands after the group left the transition's source states is a `lifecycle-transition-invalid`
 rejection the mutation compute absorbs. The compute does not compare the petition's epoch with the
 stored one, so the one window left open is a petition that waits in the queue while the group cycles
-back into a legal source state at a later epoch — `establishing` → `forming` → `establishing` under
+back into a legal source state at a later epoch — `connecting` → `forming` → `connecting` under
 the retry backoff, or `active` → `reconfiguring` by operator command — and is then applied with the
 older evidence.
 
@@ -601,7 +601,7 @@ default five reporting peers. `docs/rallar-rtc-rtt-reporting.md` owns the wider 
 until the group's `lifecycleState` is `active`. It is one added denial at the existing per-message
 predicate: `canSendGroupMessage` in `group-state/policy/group-message-policy.ts` denies `group-data-blocked-until-active` when
 the resolved value is `blocked-until-active` and the group is not `active` — so `forming`,
-`establishing`, and `reconfiguring` all block, which is the meaning `reconfiguring` exists to carry.
+`connecting`, and `reconfiguring` all block, which is the meaning `reconfiguring` exists to carry.
 
 The room authorizer (`rallar-system/websocket/ws-topic-room-authorizer.ts`, composed in
 `apps/api-v1/src/services/ws-topic-room-authorizer.ts`) supplies the value lazily: it reads the
@@ -681,7 +681,7 @@ admitted member in the payload — and `ownership-transferred` carries `fromPrin
 | Route                                                              | Body                              | Success                                  |
 | ------------------------------------------------------------------ | --------------------------------- | ---------------------------------------- |
 | `POST …/groups/requests/{requestId}` with `lifecyclePolicy`        | `GroupLifecyclePolicyInput`       | `201` snapshot                           |
-| `POST …/groups/{groupId}/lifecycle/establish/requests/{requestId}` | `GroupLifecycleTransitionRequest` | `200` snapshot, `forming → establishing` |
+| `POST …/groups/{groupId}/lifecycle/establish/requests/{requestId}` | `GroupLifecycleTransitionRequest` | `200` snapshot, `forming → connecting`   |
 | `POST …/lifecycle/activate/requests/{requestId}`                   | same                              | `200` snapshot, `→ active`               |
 | `POST …/lifecycle/reopen/requests/{requestId}`                     | same                              | `200` snapshot, `active → reconfiguring` |
 | `POST …/admissions/{principalId}/grant/requests/{requestId}`       | `GrantGroupAdmissionRequest`      | `200` snapshot, member `active`          |
@@ -778,7 +778,7 @@ Recorded at the scale tiers and not fixed, because real heartbeat-cadence report
   under 19-writer endpoint contention.
 - Before the edge-trigger landed, threshold activation under bursty evidence waited for the
   deadline evaluation because the evidence-leg petition rode the refinement gate's debounce. The
-  edge-trigger closes that for `establishing` groups; the deadline remains the backstop.
+  edge-trigger closes that for `connecting` groups; the deadline remains the backstop.
 
 ## Not In V1
 

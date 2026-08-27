@@ -222,7 +222,7 @@ async function computeAcceptedRtcTopologyWork(
         })
     ) {
         // The gate defers the replan, never the activation decision: the
-        // measurement that carries an establishing group across its threshold
+        // measurement that carries a connecting group across its threshold
         // must still petition the criterion, or activation waits for the next
         // deadline evaluation. A removed stored plan never petitions — its
         // empty edge set would read as trivially-complete readiness.

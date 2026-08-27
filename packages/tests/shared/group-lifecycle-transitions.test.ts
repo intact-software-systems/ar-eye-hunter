@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { GroupLifecycleState } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import { computeGroupLifecycleTransition, type GroupLifecycleTransition } from '@shared/api/group-lifecycle/group-lifecycle-transitions.ts';
 
-const STATES: readonly GroupLifecycleState[] = ['forming', 'establishing', 'active', 'reconfiguring'];
+const STATES: readonly GroupLifecycleState[] = ['forming', 'connecting', 'active', 'reconfiguring'];
 
 // The complete machine: every cell is either the one allowed target or denied.
 const ALLOWED_CELLS: ReadonlyArray<{
@@ -11,8 +11,8 @@ const ALLOWED_CELLS: ReadonlyArray<{
     from: GroupLifecycleState;
     to: GroupLifecycleState;
 }> = [
-    { transition: 'start-establishment', from: 'forming', to: 'establishing' },
-    { transition: 'activate', from: 'establishing', to: 'active' },
+    { transition: 'start-establishment', from: 'forming', to: 'connecting' },
+    { transition: 'activate', from: 'connecting', to: 'active' },
     { transition: 'activate', from: 'reconfiguring', to: 'active' },
     { transition: 'reopen-establishment', from: 'active', to: 'reconfiguring' }
 ];

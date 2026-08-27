@@ -27,7 +27,7 @@ describe('group lifecycle transition computation', () => {
         }
         expect(computed.guard.kind).toBe('group');
         const written = computed.guard.value as Group;
-        expect(written.lifecycleState).toBe('establishing');
+        expect(written.lifecycleState).toBe('connecting');
         expect(written.formationEpoch).toBe(3);
         expect(written.snapshotVersion).toBe(2);
         expect(computed.event.eventType).toBe('group-updated');
@@ -36,7 +36,7 @@ describe('group lifecycle transition computation', () => {
     it('pins the formation electorate to the roster read at every epoch advance', () => {
         const cases = [
             { operation: 'startGroupEstablishment', lifecycleState: 'forming' },
-            { operation: 'activateGroup', lifecycleState: 'establishing' },
+            { operation: 'activateGroup', lifecycleState: 'connecting' },
             { operation: 'reopenGroupEstablishment', lifecycleState: 'active' }
         ] as const;
         for (const { operation, lifecycleState } of cases) {
@@ -54,8 +54,8 @@ describe('group lifecycle transition computation', () => {
         }
     });
 
-    it('activates from establishing and from reconfiguring', () => {
-        for (const from of ['establishing', 'reconfiguring'] as const) {
+    it('activates from connecting and from reconfiguring', () => {
+        for (const from of ['connecting', 'reconfiguring'] as const) {
             const computed = computeGroupMutation({
                 command: transitionCommand('activateGroup'),
                 read: transitionRead({ lifecycleState: from, formationEpoch: 1 }),
@@ -123,7 +123,7 @@ describe('group lifecycle transition computation', () => {
         const computed = computeGroupMutation({
             command: criterionCommand('failGroupFormation', { observedRate: 0.3 }),
             read: criterionRead({
-                lifecycleState: 'establishing',
+                lifecycleState: 'connecting',
                 formationEpoch: 2,
                 establishmentStartedAtEpochMs: 1_500,
                 formationAttemptCount: 1
@@ -151,7 +151,7 @@ describe('group lifecycle transition computation', () => {
         expect(() =>
             computeGroupMutation({
                 command: transitionCommand('failGroupFormation' as never),
-                read: transitionRead({ lifecycleState: 'establishing', formationEpoch: 1 }),
+                read: transitionRead({ lifecycleState: 'connecting', formationEpoch: 1 }),
                 facts: transitionFacts()
             })
         ).toThrowError(/criterion-commanded only/);
@@ -166,7 +166,7 @@ describe('group lifecycle transition computation', () => {
         ) {
             const computed = computeGroupMutation({
                 command: criterionCommand('activateGroup', { observedRate: 0.97, degraded }),
-                read: criterionRead({ lifecycleState: 'establishing', formationEpoch: 1 }),
+                read: criterionRead({ lifecycleState: 'connecting', formationEpoch: 1 }),
                 facts: criterionFacts()
             });
             expect(computed.outcome).toBe('write');
@@ -182,7 +182,7 @@ describe('group lifecycle transition computation', () => {
     it('leaves the recorded outcome untouched on manual activation', () => {
         const computed = computeGroupMutation({
             command: transitionCommand('activateGroup'),
-            read: transitionRead({ lifecycleState: 'establishing', formationEpoch: 1 }),
+            read: transitionRead({ lifecycleState: 'connecting', formationEpoch: 1 }),
             facts: transitionFacts()
         });
         expect(computed.outcome).toBe('write');

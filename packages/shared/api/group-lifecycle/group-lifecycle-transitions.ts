@@ -17,13 +17,13 @@ export type GroupLifecycleTransitionOutcome =
 
 const TRANSITION_SOURCES: Readonly<Record<GroupLifecycleTransition, readonly GroupLifecycleState[]>> = {
     'start-establishment': ['forming'],
-    activate: ['establishing', 'reconfiguring'],
+    activate: ['connecting', 'reconfiguring'],
     'reopen-establishment': ['active'],
-    'fail-formation': ['establishing', 'reconfiguring']
+    'fail-formation': ['connecting', 'reconfiguring']
 };
 
 const TRANSITION_TARGETS: Readonly<Record<GroupLifecycleTransition, GroupLifecycleState>> = {
-    'start-establishment': 'establishing',
+    'start-establishment': 'connecting',
     activate: 'active',
     'reopen-establishment': 'reconfiguring',
     'fail-formation': 'forming'
