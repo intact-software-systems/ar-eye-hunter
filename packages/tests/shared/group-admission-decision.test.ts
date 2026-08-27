@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 const NOW = 1_700_000_000_000;
 const STATES: readonly GroupLifecycleState[] = [
     'forming',
-    'establishing',
+    'connecting',
     'active',
     'reconfiguring'
 ];
@@ -41,7 +41,7 @@ describe('group admission decision', () => {
     it('closed admits only while forming', () => {
         expect(decision({ mode: 'closed' }, { lifecycleState: 'forming' }))
             .toEqual({ kind: 'admit' });
-        for (const lifecycleState of ['establishing', 'active', 'reconfiguring'] as const) {
+        for (const lifecycleState of ['connecting', 'active', 'reconfiguring'] as const) {
             expect(deniedCode(decision({ mode: 'closed' }, { lifecycleState })))
                 .toBe('group-admission-closed');
         }

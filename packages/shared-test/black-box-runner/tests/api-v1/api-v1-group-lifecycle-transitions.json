@@ -469,7 +469,7 @@
         "status": 200,
         "body": {
           "group": {
-            "lifecycleState": "establishing",
+            "lifecycleState": "connecting",
             "formationEpoch": 1
           }
         }
@@ -526,7 +526,7 @@
       "expect": {
         "status": 200,
         "body": {
-          "lifecycleState": "establishing",
+          "lifecycleState": "connecting",
           "formationEpoch": 1,
           "establishmentStartedAtEpochMs": "integer",
           "readiness": {

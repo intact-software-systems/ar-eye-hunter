@@ -401,7 +401,7 @@ describe('group policy helpers', () => {
         expect(
             canSendGroupMessage({
                 snapshot: snapshot({
-                    lifecycleState: 'establishing',
+                    lifecycleState: 'connecting',
                     activeSessions: [session('alice-session', 'alice')]
                 }),
                 actor: ACTOR,
@@ -420,7 +420,7 @@ describe('group policy helpers', () => {
         expect(
             canSendGroupMessage({
                 snapshot: snapshot({
-                    lifecycleState: 'establishing',
+                    lifecycleState: 'connecting',
                     activeSessions: [session('alice-session', 'alice')]
                 }),
                 actor: ACTOR,
@@ -603,7 +603,7 @@ describe('group policy helpers', () => {
             expectCode(
                 canSendGroupMessage({
                     snapshot: snapshot({
-                        lifecycleState: 'establishing',
+                        lifecycleState: 'connecting',
                         activeSessions: [session('alice-session', 'alice')]
                     }),
                     actor: ACTOR,

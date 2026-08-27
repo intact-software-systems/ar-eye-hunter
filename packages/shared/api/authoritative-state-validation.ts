@@ -430,7 +430,7 @@ export function validateAuthoritativeGroupSnapshot(
     }
     enumValue(
         group.lifecycleState,
-        ['forming', 'establishing', 'active', 'reconfiguring'],
+        ['forming', 'connecting', 'active', 'reconfiguring'],
         'GroupSnapshot.group.lifecycleState'
     );
     nonNegativeInteger(group.formationEpoch, 'GroupSnapshot.group.formationEpoch');

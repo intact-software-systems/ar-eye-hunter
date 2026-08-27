@@ -144,7 +144,7 @@ Deno.test('API room authorization observes remote bans and deletion across warm 
 });
 
 Deno.test('API room authorization blocks pre-activation app data when policy says so', async () => {
-    const snapshot = createEstablishingSnapshot();
+    const snapshot = createConnectingSnapshot();
     const authorizer = createApiV1RoomWsAuthorizer({
         readCurrentSnapshot: () => Promise.resolve(snapshot)
     }, {
@@ -166,7 +166,7 @@ Deno.test('API room authorization blocks pre-activation app data when policy say
 });
 
 Deno.test('API room authorization fails closed on a corrupt policy before activation', async () => {
-    const snapshot = createEstablishingSnapshot();
+    const snapshot = createConnectingSnapshot();
     const authorizer = createApiV1RoomWsAuthorizer({
         readCurrentSnapshot: () => Promise.resolve(snapshot)
     }, {
@@ -197,7 +197,7 @@ Deno.test('API room authorization reads no policy for active groups', async () =
 });
 
 Deno.test('API room authorization exempts the CRDT topics from the data-policy gate', async () => {
-    const snapshot = createEstablishingSnapshot();
+    const snapshot = createConnectingSnapshot();
     let policyReads = 0;
     const authorizer = createApiV1RoomWsAuthorizer({
         readCurrentSnapshot: () => Promise.resolve(snapshot)
@@ -248,11 +248,11 @@ function roomChatInput(snapshot: GroupSnapshot) {
     };
 }
 
-function createEstablishingSnapshot(): GroupSnapshot {
+function createConnectingSnapshot(): GroupSnapshot {
     const snapshot = createSnapshot();
     return {
         ...snapshot,
-        group: { ...snapshot.group, lifecycleState: 'establishing', formationEpoch: 1 }
+        group: { ...snapshot.group, lifecycleState: 'connecting', formationEpoch: 1 }
     };
 }
 

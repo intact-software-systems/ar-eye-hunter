@@ -1216,7 +1216,7 @@ paths:
       tags: [Group State]
       summary: Start group establishment
       description: |
-        Moves formation intent from FORMING to ESTABLISHING and advances the
+        Moves formation intent from FORMING to CONNECTING and advances the
         formation epoch.
 
         Authorization follows the group's lifecycle policy: the establishment
@@ -1260,7 +1260,7 @@ paths:
       tags: [Group State]
       summary: Activate the group
       description: |
-        Moves formation intent from ESTABLISHING or RECONFIGURING to ACTIVE and
+        Moves formation intent from CONNECTING or RECONFIGURING to ACTIVE and
         advances the formation epoch.
 
         Authorization follows the group's lifecycle policy: the establishment
@@ -4593,7 +4593,7 @@ components:
           nullable: true
         lifecycleState:
           type: string
-          enum: [forming, establishing, active, reconfiguring]
+          enum: [forming, connecting, active, reconfiguring]
         formationEpoch:
           type: integer
           format: int64
@@ -4630,7 +4630,7 @@ components:
           $ref: '#/components/schemas/GroupRef'
         lifecycleState:
           type: string
-          enum: [forming, establishing, active, reconfiguring]
+          enum: [forming, connecting, active, reconfiguring]
         formationEpoch:
           type: integer
           format: int64

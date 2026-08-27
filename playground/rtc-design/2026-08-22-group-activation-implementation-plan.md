@@ -131,6 +131,88 @@ amend this document and the semantic PR explanation before implementation contin
 `build`, `test:repo-governance`, repository structure, and a fresh state-write control when the
 selected work changes a mutation path.
 
+### Initial checkpoint — executed 2026-08-27 against `main` @ `9c8069be4`
+
+The ten-surface census re-ran as six parallel surface censuses plus a current-main gate run. `main`
+moved ~33 commits past this plan's last amendment (#327), including the shared-server ownership
+series (#329–#350). Verdict: **no numbered implementation decision is invalidated; PR 1 (slice 1a)
+and PR 2 (slice 1b + 1c) stand as selected.** Corrected evidence for 1a/1b/1c is folded into those
+sections directly. Corrections affecting later slices are recorded here and must be folded into
+those slices at their own I20 checkpoints:
+
+- **The group-mutation spine did not move in #344–#350; the AppInbox plumbing under it did.**
+  Handler execution split into `app-inbox/handler/` (#348: `AppInboxHandlerRegistry`,
+  `AppInboxHandlerExecutor`, `AppInboxTransactionWriter`, `createAppInboxHandlerRuntime`) and
+  client execution into `app-inbox/client/` (#349: `AppInboxCommandClient` replacing the deleted
+  `AppInboxQueueClient`, `AppInboxQueueEntryWriter`, `createAppInboxClientRuntime`,
+  `AppInboxResultWaiter`). Generic JSON-wire command decode is `decodeAppInboxEnqueue` /
+  `decodePersistedAppInboxEnqueue` in `app-inbox/app-inbox-command-decoding.ts` (#346).
+- **I16 is already complete and is struck as a work item.** `mutationDescriptor` takes one named
+  `MutationDescriptorInput` since #338 (`7f530fdbd`, one day after this plan's last edit); the call
+  census (36 sites / 9 files / 22 in `to-group-mutation-descriptor.ts`) matches the plan.
+  `toGroupMutationDescriptor` itself has always taken one parameter. 5a no longer carries a
+  refactor.
+- **Slice 3's named owner `validateTrustedAuthorityMode` does not exist.** The capability is split:
+  mode validity sits in `validateGroupMutationFacts` (an untyped string list), and the
+  mode × operation matrix sits in `validateGroupMutationAuthority` →
+  `validateInternalMutationAuthority` → `validateFormationCriterionAuthority`
+  (`command-validation/validate-group-mutation-authority.ts`). Slice 3 extends both, not one
+  function. The current internal-mode union is
+  `'none' | 'expiry' | 'session-cleanup' | 'formation-criterion'` on
+  `GroupMutationFacts.internalAuthority` (`group-mutation-contracts.ts`).
+- **Slice 5's registry census is 18 files / ~23 sites**, not ~15 registries; the recovered list
+  adds `GROUP_MUTATION_INBOX_TYPES`, `AuthenticatedGroupMutationPayloadByType`,
+  `TARGET_GROUP_MUTATION_OPERATIONS`, `PRESENCE_GROUP_MUTATION_OPERATIONS`, the
+  `decodeGroupMutationOperation` 23-arm switch, the member result-validation switch, the route
+  contracts, and the black-box causal-evidence census
+  (`state-write-evidence/api-v1-state-write-group-causal-evidence.ts`).
+- **Slice 2 naming**: the aggregate allowlist is `GROUP_KEYS` in
+  `authoritative-state-validation.ts` (no symbol named `AUTHORITATIVE_STATE` exists). All four
+  hand-maintained lists sit at 31 keys with the same six-key formation tail. The serialized-JSON
+  pin lives at `group-state/inbox/group-state-inbox-transaction-result.test.ts`, and its key order
+  differs from `createTestGroup`'s — both need the append-at-end discipline independently.
+- **Slice 4a**: `RtcTopologySnapshotRepository` is **not** namespace/childKey-parameterisable on
+  current main — `RTC_TOPOLOGY_SNAPSHOTS_NAMESPACE` is a module constant, the constructor takes
+  only the runtime repository, and `childKey` exists only on the publication repository. The
+  accepted-layout slot is a small new surface (parameterise the namespace or add a sibling), not a
+  config flip. `DEFAULT_RTC_TOPOLOGY_PUBLICATION_RETENTION_MS` no longer exists; retention is
+  `RTC_TOPOLOGY_REPLAY_RETENTION_MS` (#345).
+- **Slice 4b / C6**: the five stage-blind topology write paths verify exactly (all in
+  `graph-topology-routes.ts`, all via `assertCanManageGroupRef` → business status only), plus a
+  sixth non-route path: `apps/api-v1/src/admin-operations/recompute-api-admin-topology.ts` issuing
+  `reconfigureTopology`. `isGroupTopologyPlannableAt` has exactly one production call site.
+- **Slice 8c**: `match.ts` is now a thin composition file; the readiness wait and the `sendJson`
+  fallback moved to `game/match/rallar-game-match-egress-runtime.ts`, with a second `sendJson` in
+  `game/transport/rallar-game-presence-egress-runtime.ts`. The five outbound dial entry points
+  verify and all converge on `ensurePeerConnectionStarted` → `computeRtcPeerDtoIfAbsent` (single
+  call site).
+- **Slice 11**: the deadline-hole premise changed on main. `e6a2faef6` flipped the formation-timer
+  handler's missing-plan path from silent early return to a thrown retry, so the pre-existing gap
+  is now unbounded retry while the planned read stays null, not a silently never-failed group. The
+  repair is still owed; its shape changed. Timer-id headroom is thin: `fnv1a64` renders ≤13
+  base-36 characters, so `ft-deadline-<epoch>-<hash>` sits near the 36-character cap.
+- **Slice 12**: `GroupEventType` is a 16-member string-literal union, not a `Record` — 12a's
+  "only the `Record<GroupEventType, true>` one is compiler-checked" claim must be re-derived when
+  that slice is selected. `validateGroupPresenceSummaryCausalRevision` (the watermark pattern to
+  copy) is module-private in `compute-group-presence-summary.ts`. The coalesced-work ownership is
+  split across three files (`rtc-topology-coalesced-group-revision-work.ts` computation/merge,
+  `coalesced-app-outbox-work-service.ts` generation CAS, `coalesced-app-outbox-work-envelope.ts`
+  metadata shape) — the #341/#343 shape; its exact-key metadata list lives in
+  `rtc-topology-work-codec.ts`.
+- **Pre-existing latent asymmetry, recorded for 1b**: `compute-formation-criterion-command.ts`
+  gates the criterion at line 43 on `establishing | reconfiguring` but the debounced petition path
+  at line 199 on `establishing` alone, so a `reconfiguring` group reaches the criterion only
+  through the timer path. 1b's total stage functions make this class of divergence impossible; 1a
+  renames both literals without changing the asymmetry.
+
+Current-main gates: `check:repo-structure`, `typecheck`, `typecheck:tests`, `test:repo-governance`,
+`test:deno`, `build`, `test:unit` pass on `9c8069be4` (the one `test:unit` failure was a
+machine-local Deno-rewired `node_modules/.bin/playwright` link, repaired and re-verified — not a
+repository fact). `format:check` fails on 25 files of pre-existing dprint drift from the #344–#350
+series — none in slice 1a's file set; branch CI does not run `format:check`, and the drift belongs
+to a maintainer formatting commit on `main`, not to a delivery PR. No state-write control was run:
+the selected work changes no mutation path.
+
 ## Corrections — resolved
 
 Four corrections changed a recorded product decision and have been ruled on. They are recorded here
@@ -190,13 +272,24 @@ shadow delivery schedule.
 
 ### 1a — The `establishing → connecting` rename
 
-**Lands:** the single rename everywhere in one commit — the enum in `group-lifecycle-policy.ts`;
-~20 production comparison literals; the three untyped runtime validators, each holding
+**Lands** (inventory corrected at the 2026-08-27 checkpoint): the single rename everywhere in one
+commit — the enum in `group-lifecycle-policy.ts`; the stage values inside `TRANSITION_SOURCES` and
+`TRANSITION_TARGETS`; the eight production stage literals in the topology-work predicates and one
+comment; the three untyped runtime validators, each holding
 `['forming', 'establishing', 'active', 'reconfiguring']` as a bare `readonly string[]`
-(`authoritative-state-validation.ts:433`, `group-state-delta.ts:193`,
-`validate-persisted-group.ts:110`); both OpenAPI enum lines; 23 recipe assertions across 8 files;
-~72 typed test literals; and the stage-derived identifiers in recipes and routes
-(`/lifecycle/establish/`, `start-establishment-{runId}`).
+(`authoritative-state-validation.ts`, `group-state-delta.ts`, `validate-persisted-group.ts`); both
+OpenAPI `lifecycleState` enum lines plus the two all-caps stage mentions in the establish/activate
+route descriptions; 23 recipe assertions across 9 files; 24 typed test literals across 10 files;
+the stage-derived recipe identifiers (`zeroEstablishingGroupId` and its references,
+`zero-establishing-room-{runId}`, `join-closed-establishing-{runId}`, one `recipe-matrix.json`
+scenario description); and the 19 stage-describing lines in
+`docs/rallar-group-formation-architecture.md`, so the doc stays truthful about the wire value until
+slice 14's full rewrite. The command-derived `/lifecycle/establish/` path and
+`start-establishment-{runId}` request id are **not** part of this rename — an earlier draft's
+parenthetical listing them contradicted I1, 5d and 8d; no occurrence of `establishment` anywhere in
+the repository is stage-derived, and the two words meet only at `group-lifecycle-transitions.ts`'s
+`'start-establishment': 'establishing'` entry, where the key is the command and the value is the
+stage.
 
 **Dark:** nothing. The value is on the wire the moment a group establishes. That is why it goes first
 and alone.
@@ -219,6 +312,13 @@ per transition. It cannot express `connect` landing in either `connecting` or `r
 `fail-formation` landing in `forming`, `active` **or** `dormant` (product decisions 28 and 35). **The
 table shape changes, not just its entries**, and product decision 41 fixes the replacement shape:
 keyed on `(stage, command) → stage`, so the next stage is a table entry rather than a refactor.
+Checkpoint addition (2026-08-27): `TRANSITION_SOURCES` is a co-equal second table in the same file —
+`Record<GroupLifecycleTransition, readonly GroupLifecycleState[]>`, the legality half, membership
+tested by a runtime `includes` — and the `(stage, command)` registry replaces **both**. Beyond
+`EVERY_LIFECYCLE_STATE`, the registry derivation also covers the hand-written stage arrays in
+`group-lifecycle-transitions.test.ts` and `group-admission-decision.test.ts` and the two
+three-element `as const` "every state except forming" subsets in `group-admission-decision.test.ts`
+and `group-topology-planning-service.test.ts`.
 
 The library: the seven-stage transition table with C2's landing rule and the `connect` precondition;
 `resolveDialLayoutRoles(stage) → none | planned | accepted | accepted-and-planned`; the complete
@@ -263,8 +363,13 @@ carrying no trigger, and `replanning: 'commanded'` with `server-auto` is the new
 minimum layout age, `after` settle time, presence fallback timer, per-preset
 `maxConcurrentEdgeSetups`, RTC setup timeout, status dwell, and the `active ↔ degraded` hysteresis
 width — as clamped constants with matrices. Note that the live debounce value now arrives as
-`topology.recompute.n` from the api-v1 configuration defaults, not from the exported
-`DEFAULT_TOPOLOGY_RECOMPUTE_DEBOUNCE_MS`, which has no references at all and should be deleted.
+`topology.recompute.formationDebounceMs` (500 ms) from the api-v1 configuration defaults, not from
+the exported `DEFAULT_TOPOLOGY_RECOMPUTE_DEBOUNCE_MS`, which has no references at all and should be
+deleted. Checkpoint addition (2026-08-27): two more hand-maintained lists join this slice's edit
+inventory — the stored-policy exact-keys list in `decode-stored-group-lifecycle-policy.ts` (a new
+root policy key breaks every stored row unless the codec lands in the same change) and the
+configuration source allowlist in `decode-api-v1-configuration-source.ts`, which is separate from
+the decoder in `decode-api-v1-configuration.ts`.
 
 **Gates:** baseline + the policy matrix test.
 
@@ -440,9 +545,9 @@ stable-command translation return `undefined` and silently change the canonical 
 `toDescriptorCommand` has a `default:` arm that misroutes an unlisted operation into the _membership_
 builder; `GROUP_MUTATION_OPERATIONS` is an untyped `Set` of bare strings.
 
-- **5a — `plan` and `connect` plumbing, dark**: registered on no route, emitted by no producer. Also
-  refactors `mutationDescriptor` to a named input interface across its ~22 call sites (I16), before
-  four new commands inherit a seven-argument call site.
+- **5a — `plan` and `connect` plumbing, dark**: registered on no route, emitted by no producer.
+  (I16's `mutationDescriptor` refactor was found already complete at the 2026-08-27 checkpoint —
+  #338 landed the named `MutationDescriptorInput` — so 5a carries no refactor.)
 - **5b — `connect` semantics, dark**: binding the dialing stage to the expected planned identity — the
   expected-layout fence and the two typed denials `no-planned-layout` / `planned-layout-superseded` (product decision 32), and `plan`'s
   idempotence from `planned` (product decision 28). Needs 4b. The caller-supplied-expected-state shape

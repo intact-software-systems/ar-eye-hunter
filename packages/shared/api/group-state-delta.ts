@@ -190,7 +190,7 @@ function validateDeltaGroup(
     }
     enumValue(
         group.lifecycleState,
-        ['forming', 'establishing', 'active', 'reconfiguring'],
+        ['forming', 'connecting', 'active', 'reconfiguring'],
         `${label}.lifecycleState`
     );
     nonNegativeInteger(group.formationEpoch, `${label}.formationEpoch`);

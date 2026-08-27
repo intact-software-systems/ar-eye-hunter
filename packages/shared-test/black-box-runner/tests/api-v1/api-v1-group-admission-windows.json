@@ -572,7 +572,7 @@
         "status": 200,
         "body": {
           "group": {
-            "lifecycleState": "establishing",
+            "lifecycleState": "connecting",
             "formationEpoch": 1
           }
         }
@@ -584,7 +584,7 @@
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{closedGroupId}/join/requests/join-closed-establishing-{runId}",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{closedGroupId}/join/requests/join-closed-connecting-{runId}",
         "headers": {
           "Authorization": "{bobAuthHeader}",
           "x-client-id": "{bobClientId}"
@@ -782,7 +782,7 @@
         "status": 200,
         "body": {
           "group": {
-            "lifecycleState": "establishing",
+            "lifecycleState": "connecting",
             "formationEpoch": 1,
             "formationElectorate": ["{aliceClientId}", "{bobClientId}"]
           }

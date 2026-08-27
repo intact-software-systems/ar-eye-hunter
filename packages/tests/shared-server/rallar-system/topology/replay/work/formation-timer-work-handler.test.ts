@@ -18,7 +18,7 @@ describe('formation timer work handler', () => {
             ...base,
             group: createTestGroup({
                 ...base.group,
-                lifecycleState: 'establishing',
+                lifecycleState: 'connecting',
                 formationEpoch: 1,
                 formationAttemptCount: 1,
                 establishmentStartedAtEpochMs: 1_000

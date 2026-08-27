@@ -206,7 +206,7 @@ describe('canCommandGroupLifecycleTransition', () => {
         const members = [member('alice', 'owner')];
         expect(
             command({
-                overrides: { lifecycleState: 'establishing' },
+                overrides: { lifecycleState: 'connecting' },
                 members,
                 actorPrincipalId: 'alice',
                 policy: OPTIMISTIC,

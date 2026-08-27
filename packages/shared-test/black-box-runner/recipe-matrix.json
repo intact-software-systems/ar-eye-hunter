@@ -952,7 +952,7 @@
           }
         ]
       },
-      "description": "Drives the three lifecycle transition commands on a managed-preset group -- forming to establishing to active to reconfiguring and back -- with formation-epoch assertions, a non-manager denial, and an illegal-transition denial."
+      "description": "Drives the three lifecycle transition commands on a managed-preset group -- forming to connecting to active to reconfiguring and back -- with formation-epoch assertions, a non-manager denial, and an illegal-transition denial."
     },
     {
       "id": "api-v1-group-formation-criterion",

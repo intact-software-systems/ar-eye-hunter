@@ -103,7 +103,7 @@ describe('GroupTopologyPlanningService', () => {
     });
 
     it('plans in every non-forming lifecycle state', () => {
-        for (const lifecycleState of ['establishing', 'active', 'reconfiguring'] as const) {
+        for (const lifecycleState of ['connecting', 'active', 'reconfiguring'] as const) {
             const group = groupWithSessionsIn(lifecycleState);
             const service = createPlanningService({ group });
 
