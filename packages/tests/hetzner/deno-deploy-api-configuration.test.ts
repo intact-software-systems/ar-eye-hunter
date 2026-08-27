@@ -41,6 +41,17 @@ describe('Deno Deploy API configuration evidence', () => {
         )).toEqual([]);
     });
 
+    it('accepts production evidence when Deno omits its managed DATABASE_URL', () => {
+        const environmentWithoutDatabaseUrl = sharedProductionEnvironment.filter(
+            (entry) => entry.name !== 'DATABASE_URL'
+        );
+
+        expect(validateDenoDeployApiEnvironment(
+            environmentWithoutDatabaseUrl,
+            'api-v1'
+        )).toEqual([]);
+    });
+
     it('requires the Relic policy in addition to the embedded API-v1 prod environment', () => {
         expect(validateDenoDeployApiEnvironment(
             sharedProductionEnvironment,
@@ -70,10 +81,10 @@ describe('Deno Deploy API configuration evidence', () => {
         );
 
         const missingSecret = sharedProductionEnvironment.filter(
-            (entry) => entry.name !== 'DATABASE_URL'
+            (entry) => entry.name !== 'METERED_API_KEY'
         );
         expect(validateDenoDeployApiEnvironment(missingSecret, 'api-v1')).toContain(
-            'DATABASE_URL is missing from the production context.'
+            'METERED_API_KEY is missing from the production context.'
         );
     });
 

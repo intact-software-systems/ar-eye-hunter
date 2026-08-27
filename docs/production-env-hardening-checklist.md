@@ -20,7 +20,8 @@ names and configuration paths without reporting secret values.
 - Set visible deployment values for `AUTH_ADMIN_CLIENT_IDS`,
   `RALLAR_BLACK_BOX_OPERATOR_CLIENT_IDS`, and `METERED_APP_NAME`. Administrator
   identities must be non-demo identities.
-- Store `DATABASE_URL`, `RALLAR_AUTH_CREDENTIAL_SECRET`, `METERED_API_KEY`, and
+- Keep the Deno Deploy-provided `DATABASE_URL` available to the application at
+  runtime. Store `RALLAR_AUTH_CREDENTIAL_SECRET`, `METERED_API_KEY`, and
   `RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET` as platform secrets. The auth secret
   must contain at least 32 characters and remain stable while sessions,
   tickets, or durable AppInbox results can be replayed.
@@ -31,8 +32,10 @@ names and configuration paths without reporting secret values.
 
 The Deno Deploy preflight reads redacted environment metadata for
 `rallar-server` and refuses deployment unless the production context contains
-the exact `prod` selector, required visible values, and all four platform
-secret names. It never prints or uploads the environment document.
+the exact `prod` selector, required visible values, and the three
+repository-managed platform secret names. Deno Deploy guarantees
+`DATABASE_URL`, so the preflight does not require it to appear in the redacted
+metadata. The preflight never prints or uploads the environment document.
 
 ## Relic Server Production
 
