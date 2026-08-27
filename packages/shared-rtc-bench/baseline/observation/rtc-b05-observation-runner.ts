@@ -23,6 +23,11 @@ export interface RtcB05ObservationRunInput {
     readonly outputDirectory: string;
 }
 
+export interface RtcB05ObservationOutput {
+    readonly archivePath: string;
+    readonly indexEntryPath: string;
+}
+
 export interface RtcB05ObservationRunnerDependencies {
     envelope: RtcB05ObservationEnvelope;
     preflight(): Promise<RtcBaselineResult<void>>;
@@ -42,7 +47,7 @@ export interface RtcB05ObservationRunnerDependencies {
     writeOutput(input: {
         outputDirectory: string;
         archive: RtcPerformanceObservationArchiveWritten;
-    }): Promise<RtcBaselineResult<{ archivePath: string; indexEntryPath: string; }>>;
+    }): Promise<RtcBaselineResult<RtcB05ObservationOutput>>;
     nowUtc(): string;
 }
 

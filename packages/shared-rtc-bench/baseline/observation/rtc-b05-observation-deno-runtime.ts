@@ -10,7 +10,10 @@ import type { DenoRtcBaselineAdapters } from '../runtime/rtc-baseline-deno-adapt
 import type { RtcBaselineDenoPort } from '../runtime/rtc-baseline-deno-port.ts';
 import { RTC_BASELINE_DENO_ROOT_PATH } from '../runtime/rtc-baseline-deno-runtime.ts';
 import type { RtcBaselineEnvelope } from '../runtime/rtc-baseline-envelope.ts';
-import type { RtcB05ObservationRunnerDependencies } from './rtc-b05-observation-runner.ts';
+import type {
+    RtcB05ObservationOutput,
+    RtcB05ObservationRunnerDependencies
+} from './rtc-b05-observation-runner.ts';
 import {
     createRtcPerformanceObservationArchive,
     verifyRtcPerformanceObservationArchive
@@ -43,11 +46,15 @@ export function createRtcB05ObservationDenoRuntime(
                 return verified.ok ? { ok: true, value: archive } : verified;
             }
             catch (error) {
-                return failed('$.archive', 'archive-creation-failed', cleanMessage(error));
+                return failed(
+                    '$.archive',
+                    'archive-creation-failed',
+                    cleanMessage(error instanceof Error ? error : String(error))
+                );
             }
         },
         writeOutput: ({ outputDirectory, archive }) => writeOutput(input.runtime, outputDirectory, archive),
-        nowUtc: () => new Date().toISOString()
+        nowUtc: () => input.runtime.now().toISOString()
     };
 }
 
@@ -63,7 +70,11 @@ async function preflight(runtime: RtcBaselineDenoPort): Promise<RtcBaselineResul
             );
     }
     catch (error) {
-        return failed('$.browserProducer', 'missing-browser-producer', cleanMessage(error));
+        return failed(
+            '$.browserProducer',
+            'missing-browser-producer',
+            cleanMessage(error instanceof Error ? error : String(error))
+        );
     }
 }
 
@@ -94,14 +105,21 @@ async function runBrowserProducer(
     return { exitStatus: output.code };
 }
 
-async function readFinalizedArtifacts(runtime: RtcBaselineDenoPort, baselineId: string) {
+async function readFinalizedArtifacts(
+    runtime: RtcBaselineDenoPort,
+    baselineId: string
+): Promise<RtcBaselineResult<ReadonlyMap<string, Uint8Array>>> {
     const baselinePath = join(RTC_BASELINE_DENO_ROOT_PATH, baselineId);
     let checksumBytes: Uint8Array;
     try {
         checksumBytes = await runtime.readFile(join(baselinePath, RTC_BASELINE_CHECKSUM_FILE));
     }
     catch (error) {
-        return failed('$.SHA256SUMS', 'finalized-artifact-read-failed', cleanMessage(error));
+        return failed(
+            '$.SHA256SUMS',
+            'finalized-artifact-read-failed',
+            cleanMessage(error instanceof Error ? error : String(error))
+        );
     }
     const checksums = inspectRtcBaselineChecksumEntries(checksumBytes);
     if (checksums.issues.length > 0) {
@@ -118,7 +136,7 @@ async function readFinalizedArtifacts(runtime: RtcBaselineDenoPort, baselineId: 
             return failed(
                 `$.${relativePath}`,
                 'finalized-artifact-read-failed',
-                cleanMessage(error)
+                cleanMessage(error instanceof Error ? error : String(error))
             );
         }
     }
@@ -129,7 +147,7 @@ async function writeOutput(
     runtime: RtcBaselineDenoPort,
     outputDirectory: string,
     archive: Parameters<RtcB05ObservationRunnerDependencies['writeOutput']>[0]['archive']
-) {
+): Promise<RtcBaselineResult<RtcB05ObservationOutput>> {
     const archivePath = join(outputDirectory, basename(archive.indexEntry.archive.path));
     const indexEntryPath = join(outputDirectory, 'index-entry.jsonl');
     try {
@@ -143,7 +161,11 @@ async function writeOutput(
         return { ok: true as const, value: { archivePath, indexEntryPath } };
     }
     catch (error) {
-        return failed('$.output', 'observation-output-write-failed', cleanMessage(error));
+        return failed(
+            '$.output',
+            'observation-output-write-failed',
+            cleanMessage(error instanceof Error ? error : String(error))
+        );
     }
 }
 
@@ -151,6 +173,6 @@ function failed(path: string, code: string, message: string): RtcBaselineResult<
     return { ok: false, issues: [{ path, code, message }] };
 }
 
-function cleanMessage(error: unknown) {
+function cleanMessage(error: Error | string) {
     return error instanceof Error ? error.message.replace(/^Error: /u, '') : String(error);
 }

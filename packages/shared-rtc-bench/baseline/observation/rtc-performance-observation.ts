@@ -1,4 +1,4 @@
-import type { RtcBaselineResult } from '../contracts/rtc-baseline-contracts.ts';
+import type { RtcBaselineJson, RtcBaselineResult } from '../contracts/rtc-baseline-contracts.ts';
 import { createRtcBaselineObservationId } from '../contracts/rtc-baseline-id.ts';
 
 export type RtcPerformanceObservationOutcome = 'passed' | 'failed' | 'incomplete';
@@ -48,8 +48,12 @@ export interface RtcPerformanceObservationIndexEntryDto {
     readonly archive: RtcPerformanceObservationArchiveDto;
 }
 
+interface RtcPerformanceObservationJsonObject {
+    readonly [key: string]: RtcBaselineJson;
+}
+
 export function decodeRtcPerformanceObservationIndexEntry(
-    source: unknown
+    source: RtcBaselineJson | RtcPerformanceObservationIndexEntryDto
 ): RtcBaselineResult<RtcPerformanceObservationIndexEntryDto> {
     if (!isRtcPerformanceObservationIndexEntry(source)) {
         return failed('$.indexEntry', 'invalid-index-entry', 'Observation index entry is incomplete or malformed.');
@@ -112,7 +116,9 @@ function validateRtcPerformanceObservationIndexEntry(
     ];
 }
 
-function isRtcPerformanceObservationIndexEntry(source: unknown) {
+function isRtcPerformanceObservationIndexEntry(
+    source: RtcBaselineJson | RtcPerformanceObservationIndexEntryDto
+) {
     if (!exactRecord(source, ['schema', 'observation', 'archive'])) {
         return false;
     }
@@ -121,7 +127,7 @@ function isRtcPerformanceObservationIndexEntry(source: unknown) {
         isRtcPerformanceObservationArchive(source.archive);
 }
 
-function isRtcPerformanceObservation(source: unknown) {
+function isRtcPerformanceObservation(source: RtcBaselineJson) {
     if (
         !exactRecord(source, [
             'schema',
@@ -146,33 +152,33 @@ function isRtcPerformanceObservation(source: unknown) {
         isRtcPerformanceObservationRepeat(source.repeat);
 }
 
-function isRtcPerformanceObservationSource(source: unknown) {
+function isRtcPerformanceObservationSource(source: RtcBaselineJson) {
     return exactRecord(source, ['commit', 'tree', 'ref']) &&
         fullOid(source.commit) &&
         fullOid(source.tree) &&
         source.ref === 'main';
 }
 
-function isRtcPerformanceObservationWorkflow(source: unknown) {
+function isRtcPerformanceObservationWorkflow(source: RtcBaselineJson) {
     return exactRecord(source, ['runId', 'runAttempt', 'url']) &&
         positiveSafeInteger(source.runId) &&
         positiveSafeInteger(source.runAttempt) &&
         validWorkflowUrl(source.url, source.runId);
 }
 
-function isRtcPerformanceObservationPrimary(source: unknown) {
+function isRtcPerformanceObservationPrimary(source: RtcBaselineJson) {
     return exactRecord(source, ['outcome', 'acceptedMetrics']) &&
         performanceOutcome(source.outcome) &&
         typeof source.acceptedMetrics === 'boolean';
 }
 
-function isRtcPerformanceObservationRepeat(source: unknown) {
+function isRtcPerformanceObservationRepeat(source: RtcBaselineJson) {
     return exactRecord(source, ['decision', 'outcome']) &&
         (source.decision === 'not-required' || source.decision === 'required') &&
         (source.outcome === 'not-run' || performanceOutcome(source.outcome));
 }
 
-function isRtcPerformanceObservationArchive(source: unknown) {
+function isRtcPerformanceObservationArchive(source: RtcBaselineJson) {
     return exactRecord(source, ['path', 'byteLength', 'sha256']) &&
         typeof source.path === 'string' &&
         positiveSafeInteger(source.byteLength) &&
@@ -186,7 +192,7 @@ function validRepeatOutcome(repeat: RtcPerformanceObservationRepeatDto) {
         : repeat.outcome !== 'not-run';
 }
 
-function validWorkflowUrl(value: unknown, runId: unknown) {
+function validWorkflowUrl(value: RtcBaselineJson, runId: RtcBaselineJson) {
     if (typeof value !== 'string' || !positiveSafeInteger(runId)) {
         return false;
     }
@@ -204,14 +210,17 @@ function validWorkflowUrl(value: unknown, runId: unknown) {
     }
 }
 
-function exactRecord(value: unknown, keys: readonly string[]): value is Record<string, unknown> {
+function exactRecord(
+    value: RtcBaselineJson | RtcPerformanceObservationIndexEntryDto,
+    keys: readonly string[]
+): value is RtcPerformanceObservationJsonObject {
     return value !== null &&
         typeof value === 'object' &&
         !Array.isArray(value) &&
         JSON.stringify(Object.keys(value).sort()) === JSON.stringify([...keys].sort());
 }
 
-function canonicalIsoTimestamp(value: unknown) {
+function canonicalIsoTimestamp(value: RtcBaselineJson) {
     if (typeof value !== 'string') {
         return false;
     }
@@ -219,15 +228,15 @@ function canonicalIsoTimestamp(value: unknown) {
     return Number.isFinite(timestamp) && new Date(timestamp).toISOString() === value;
 }
 
-function positiveSafeInteger(value: unknown) {
-    return Number.isSafeInteger(value) && Number(value) > 0;
+function positiveSafeInteger(value: RtcBaselineJson) {
+    return typeof value === 'number' && Number.isSafeInteger(value) && value > 0;
 }
 
-function fullOid(value: unknown) {
+function fullOid(value: RtcBaselineJson) {
     return typeof value === 'string' && /^[0-9a-f]{40}$/u.test(value);
 }
 
-function performanceOutcome(value: unknown): value is RtcPerformanceObservationOutcome {
+function performanceOutcome(value: RtcBaselineJson): value is RtcPerformanceObservationOutcome {
     return value === 'passed' || value === 'failed' || value === 'incomplete';
 }
 

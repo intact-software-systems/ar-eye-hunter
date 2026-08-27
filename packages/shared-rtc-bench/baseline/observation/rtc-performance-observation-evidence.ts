@@ -2,7 +2,11 @@ import { strFromU8 } from 'fflate';
 
 import type { RtcBaselineIssueDto, RtcBaselineJson, RtcBaselineResult } from '../contracts/rtc-baseline-contracts.ts';
 import type { RtcBaselineVerifiedArtifacts } from '../evidence/rtc-baseline-evidence-layout.ts';
-import { createRtcBaselineFinalizedArtifactVerifier } from '../evidence/rtc-baseline-finalized-verification.ts';
+import {
+    createRtcBaselineFinalizedArtifactVerifier,
+    type RtcBaselineFinalizedArtifactVerifier
+} from '../evidence/rtc-baseline-finalized-verification.ts';
+import type { RtcBaselineFinalizedReaderDependencies } from '../evidence/rtc-baseline-finalized-artifact-reader.ts';
 import type { RtcPerformanceObservation } from './rtc-performance-observation.ts';
 
 export interface RtcPerformanceObservationEvidenceValidationInput {
@@ -42,7 +46,7 @@ export async function validateRtcPerformanceObservationEvidence(
 
 async function validateRtcPerformanceObservationRepeat(
     input: RtcPerformanceObservationEvidenceValidationInput,
-    verifier: ReturnType<typeof createRtcBaselineFinalizedArtifactVerifier>
+    verifier: RtcBaselineFinalizedArtifactVerifier
 ) {
     const repeatId = `${input.observation.observationId}-repeat-01`;
     const repeat = await verifier.readStructurallyVerifiedArtifacts(repeatId);
@@ -114,7 +118,9 @@ function validateRtcPerformanceObservationEvidenceContract(
     ];
 }
 
-function toFinalizedReaderDependencies(input: RtcPerformanceObservationEvidenceValidationInput) {
+function toFinalizedReaderDependencies(
+    input: RtcPerformanceObservationEvidenceValidationInput
+): RtcBaselineFinalizedReaderDependencies {
     const primaryId = input.observation.observationId;
     function prefixFor(baselineId: string) {
         return baselineId === primaryId

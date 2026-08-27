@@ -1,6 +1,6 @@
 import { strFromU8, strToU8, unzipSync, zipSync } from 'fflate';
 
-import type { RtcBaselineResult } from '../contracts/rtc-baseline-contracts.ts';
+import type { RtcBaselineJson, RtcBaselineResult } from '../contracts/rtc-baseline-contracts.ts';
 import { isRtcBaselineConfinedArtifactPath } from '../contracts/rtc-baseline-validation.ts';
 import { validateRtcPerformanceObservationEvidence } from './rtc-performance-observation-evidence.ts';
 import type {
@@ -31,7 +31,7 @@ export interface RtcPerformanceObservationArchiveWritten {
 
 export interface VerifyRtcPerformanceObservationArchiveInput {
     readonly bytes: Uint8Array;
-    readonly indexEntry: unknown;
+    readonly indexEntry: RtcBaselineJson | RtcPerformanceObservationIndexEntryDto;
 }
 
 interface VerifiedRtcPerformanceObservationArchiveInput {

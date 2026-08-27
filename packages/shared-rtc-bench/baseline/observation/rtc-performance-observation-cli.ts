@@ -1,5 +1,8 @@
-import type { RtcBaselineResult } from '../contracts/rtc-baseline-contracts.ts';
-import type { RtcB05ObservationRunInput } from './rtc-b05-observation-runner.ts';
+import type { RtcBaselineJson, RtcBaselineResult } from '../contracts/rtc-baseline-contracts.ts';
+import type {
+    RtcB05ObservationOutput,
+    RtcB05ObservationRunInput
+} from './rtc-b05-observation-runner.ts';
 import type { VerifyRtcPerformanceObservationArchiveInput } from './rtc-performance-observation-archive.ts';
 import { parseRtcPerformanceObservationCommand } from './rtc-performance-observation-cli-grammar.ts';
 
@@ -8,7 +11,7 @@ export interface RtcPerformanceObservationCliDependencies {
         run(input: RtcB05ObservationRunInput): Promise<
             RtcBaselineResult<{
                 observation: { observationId: string; };
-                output: { archivePath: string; indexEntryPath: string; };
+                output: RtcB05ObservationOutput;
             }>
         >;
     };
@@ -80,7 +83,7 @@ export async function runRtcPerformanceObservationCli(
     }
 }
 
-function decodeIndexEntryLine(bytes: Uint8Array): RtcBaselineResult<unknown> {
+function decodeIndexEntryLine(bytes: Uint8Array): RtcBaselineResult<RtcBaselineJson> {
     const text = decoder.decode(bytes);
     if (!text.endsWith('\n') || text.slice(0, -1).includes('\n') || text.length === 1) {
         return {
@@ -95,7 +98,7 @@ function decodeIndexEntryLine(bytes: Uint8Array): RtcBaselineResult<unknown> {
         };
     }
     try {
-        return { ok: true, value: JSON.parse(text.slice(0, -1)) as unknown };
+        return { ok: true, value: JSON.parse(text.slice(0, -1)) as RtcBaselineJson };
     }
     catch {
         return {

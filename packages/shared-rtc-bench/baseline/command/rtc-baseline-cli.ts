@@ -20,6 +20,11 @@ interface CliInput {
     writeStderr(value: string): void;
 }
 
+interface RtcBaselineCliComposition {
+    readonly envelope: RtcBaselineEnvelope;
+    readonly observation: RtcPerformanceObservationCliDependencies;
+}
+
 function captureRequest(command: Extract<RtcBaselineParsedCommand, { kind: 'initialize'; }>) {
     return {
         schema: 'rallar.rtc-baseline.capture-request.v1',
@@ -194,7 +199,7 @@ export function createDefaultRtcBaselineEnvelope() {
     return createDefaultRtcBaselineCliComposition().envelope;
 }
 
-function createDefaultRtcBaselineCliComposition() {
+function createDefaultRtcBaselineCliComposition(): RtcBaselineCliComposition {
     const runtime = defaultRuntime();
     const adapters = createDenoRtcBaselineAdapters(runtime);
     const envelope = createRtcBaselineDenoRuntime(adapters);
