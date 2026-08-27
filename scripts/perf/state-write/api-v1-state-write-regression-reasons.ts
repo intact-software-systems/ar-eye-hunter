@@ -40,6 +40,29 @@ export const RTC_TOPOLOGY_REGRESSION_REASON_PROFILE = 'rtc-topology-durable-appe
 
 export const GROUP_FORMATION_DAMPING_REGRESSION_REASON_PROFILE = 'group-formation-damping' as const;
 
+const PLANNED_LAYOUT_PROMOTION_REASON = 'Apply-landing groups promote each changed planned publication into the ' +
+    'accepted slot (product decision 27): the publication transaction writes a ' +
+    'durable promotion request and the applyPlannedLayout command executes one ' +
+    'group-state read/compute/write per changed plan, including the ' +
+    'revision-guarded planned-row re-assertion and the accepted row and ' +
+    'fingerprint copies.';
+
+export const PLANNED_LAYOUT_PROMOTION_REASONS = (['uncontended', 'shared', 'hot'] as const).flatMap(
+    (workload) =>
+        [
+            'sql.statements',
+            'sql.rowsRead',
+            'sql.serializedResultBytes',
+            'postgres.transactionDurationMs'
+        ].map((metric) => ({
+            workload,
+            metric,
+            reason: PLANNED_LAYOUT_PROMOTION_REASON
+        }))
+);
+
+export const PLANNED_LAYOUT_PROMOTION_REGRESSION_REASON_PROFILE = 'planned-layout-promotion' as const;
+
 export function selectStateWriteRegressionReasons(
     profile: string | undefined,
     precommittedReasons: readonly StateWriteBenchmarkRegressionReason[]
@@ -55,6 +78,9 @@ export function selectStateWriteRegressionReasons(
     }
     if (profile === GROUP_FORMATION_DAMPING_REGRESSION_REASON_PROFILE) {
         return GROUP_FORMATION_DAMPING_REASONS;
+    }
+    if (profile === PLANNED_LAYOUT_PROMOTION_REGRESSION_REASON_PROFILE) {
+        return PLANNED_LAYOUT_PROMOTION_REASONS;
     }
     throw new Error('State-write regression reason selection is inconsistent');
 }
