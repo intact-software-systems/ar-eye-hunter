@@ -12,6 +12,7 @@ describe('pull-request release workflow', () => {
         const source = workflow.jobs.source;
         const capture = workflow.jobs.capture;
         const publication = workflow.jobs.publication;
+        const initialize = capture.steps.find((step: Record<string, any>) => step.name === 'Initialize recoverable diagnostics');
         const observe = capture.steps.find((step: Record<string, any>) => step.name === 'Capture RTC-B05 browser observation');
         const upload = capture.steps.find((step: Record<string, any>) => step.name === 'Retain RTC observation output');
         const verify = publication.steps.find((step: Record<string, any>) => step.name === 'Verify captured observation');
@@ -26,6 +27,7 @@ describe('pull-request release workflow', () => {
             'cancel-in-progress': false
         });
         expect(capture.permissions).toEqual({ contents: 'read' });
+        expect(capture.env).toBeUndefined();
         expect(source.outputs).toBeUndefined();
         expect(source.steps[0].run).toContain('refs/heads/main');
         expect(capture.needs).toBe('source');
@@ -38,9 +40,12 @@ describe('pull-request release workflow', () => {
         expect(observe.run).toContain('--github-run-attempt="$GITHUB_RUN_ATTEMPT"');
         expect(observe.run).toContain('$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID');
         expect(observe.run).not.toMatch(/fetch|ls-remote|origin\/main/iu);
+        expect(initialize.run).toContain('$RUNNER_TEMP/rtc-observation');
+        expect(initialize.run).toContain('$GITHUB_ENV');
         expect(upload).toMatchObject({
             if: '${{ always() }}',
-            uses: 'actions/upload-artifact@v7'
+            uses: 'actions/upload-artifact@v7',
+            with: { path: '${{ runner.temp }}/rtc-observation' }
         });
         expect(publication.needs).toEqual(['source', 'capture']);
         expect(publication.steps[0].with.ref).toBe('${{ github.sha }}');

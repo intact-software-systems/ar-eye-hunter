@@ -40,8 +40,6 @@ jobs:
     timeout-minutes: 60
     permissions:
       contents: read
-    env:
-      RTC_OBSERVATION_OUTPUT: ${{ runner.temp }}/rtc-observation
     steps:
       - uses: actions/checkout@v7
         with:
@@ -50,8 +48,10 @@ jobs:
 
       - name: Initialize recoverable diagnostics
         run: |
-          mkdir -p "$RTC_OBSERVATION_OUTPUT"
-          git rev-parse HEAD > "$RTC_OBSERVATION_OUTPUT/source-commit.txt"
+          observation_output="$RUNNER_TEMP/rtc-observation"
+          mkdir -p "$observation_output"
+          git rev-parse HEAD > "$observation_output/source-commit.txt"
+          echo "RTC_OBSERVATION_OUTPUT=$observation_output" >> "$GITHUB_ENV"
 
       - uses: actions/setup-node@v7
         with:
@@ -86,7 +86,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: rtc-b05-observation-gh${{ github.run_id }}-a${{ github.run_attempt }}
-          path: ${{ env.RTC_OBSERVATION_OUTPUT }}
+          path: ${{ runner.temp }}/rtc-observation
           if-no-files-found: error
           retention-days: 30
 
