@@ -6,12 +6,14 @@ import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import type { OnMessageCallback } from '@shared/services/InboxOutboxContracts.ts';
 
+import type { GroupLifecyclePolicyRead } from '@shared-server/rallar-system/group-state/persistence/group-lifecycle-policy-repository.ts';
 import { computeTopologyPromotionEntry } from '@shared-server/rallar-system/group-state/topology-promotion-outbox-entry.ts';
 import { toRtcTopologyPublicationId } from '@shared-server/rallar-system/topology/persistence/rtc-topology-identifiers.ts';
 import type { GroupTopologyPlanningAuthority } from '@shared-server/rallar-system/topology/planning/group-topology-planning-authority.ts';
 import { hashRtcTopologyExecutionCommand } from '@shared-server/rallar-system/topology/publication/rtc-topology-publication-repository-contracts.ts';
 import { type RtcTopologyPublication } from '@shared-server/rallar-system/topology/publication/rtc-topology-publication.ts';
 import { toGroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
+import { createDefaultGroupLifecyclePolicy } from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
 import type { PSqlSql } from '../../../../postgres/p-sql-sql.ts';
 import { runInPSqlTransaction } from '../../../../postgres/run-in-p-sql-transaction.ts';
 import { PSqlResourceInboxRepository } from '../../../../queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
@@ -86,6 +88,14 @@ interface RtcTopologyWorkHandlerOptions {
      * work. Absent means the default; 0 petitions per deferred item.
      */
     readonly criterionPetitionMinIntervalMs?: number;
+    /**
+     * The route-less promotion producer (decision 27): present only when a
+     * consumer is installed, and enqueueing only for groups whose topology
+     * policy lands reconfigurations with `apply`.
+     */
+    readonly topologyPublication?: Readonly<{
+        readLifecyclePolicy: (ref: GroupRef) => Promise<GroupLifecyclePolicyRead>;
+    }>;
     readonly topologyDelivery?: RtcTopologyDeliveryOptions;
     readonly onInactiveOverlay?: (overlayId: string) => void;
     readonly wakeQueue?: () => void;
@@ -377,13 +387,14 @@ async function writeAcceptedRtcTopologyWork(
         options.topologyPlanning.observeCommittedTopology(accepted.group, computed.current);
         return;
     }
+    const promotionLanding = await resolvePromotionLanding(options, accepted.group.group);
     await writeRtcTopologyPublicationTransaction(options, entry, async (transaction) => {
         await options.executionRepository.writeTopologyMutation(transaction, computed);
         if (
-            options.formationCriterion &&
             computed.outcome === 'write' &&
             computed.snapshotGuard.candidate.state === 'active' &&
-            accepted.group.group.lifecycleState === 'active'
+            accepted.group.group.lifecycleState === 'active' &&
+            promotionLanding === 'apply'
         ) {
             // Decision 27: the transaction accepting an apply-role planned
             // publication durably requests the route-less promotion, so
@@ -432,6 +443,28 @@ async function writeAcceptedRtcTopologyWork(
         options.wakeQueue?.();
         options.wakeReplay?.();
     }
+}
+
+/**
+ * Decision 27's gate: only an apply-landing policy promotes on publication;
+ * hold changes accepted only through activate, an unreadable policy fails
+ * closed, and an absent consumer port never mints requests.
+ */
+async function resolvePromotionLanding(
+    options: RtcTopologyWorkHandlerOptions,
+    group: GroupRef
+): Promise<'apply' | 'hold'> {
+    if (!options.topologyPublication) {
+        return 'hold';
+    }
+    const policyRead = await options.topologyPublication.readLifecyclePolicy(group);
+    if (policyRead.status === 'corrupt') {
+        return 'hold';
+    }
+    const policy = policyRead.status === 'present'
+        ? policyRead.policy
+        : createDefaultGroupLifecyclePolicy();
+    return policy.topology.reconfigureLanding;
 }
 
 async function petitionCommittedCriterion(

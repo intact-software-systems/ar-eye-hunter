@@ -37,6 +37,7 @@ export interface InstallTopologyAppOutboxOptions {
     }>;
     /** The route-less promotion consumer (decision 27); absent means no automation. */
     readonly topologyPublication?: Readonly<{
+        readLifecyclePolicy: (ref: GroupRef) => Promise<GroupLifecyclePolicyRead>;
         submitCommand: (command: GroupMutationCommand, atEpochMs: number) => Promise<void>;
     }>;
 }
@@ -87,6 +88,7 @@ export function installTopologyAppOutbox(
             rttRefinementService: options.rttRefinementService,
             topologyDelivery: options.topologyDelivery,
             formationCriterion: options.formationCriterion,
+            topologyPublication: options.topologyPublication,
             wakeQueue: options.wake,
             wakeReplay: options.wakeReplay
         })

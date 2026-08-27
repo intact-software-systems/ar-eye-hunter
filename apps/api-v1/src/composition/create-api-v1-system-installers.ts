@@ -223,6 +223,7 @@ function createSystemTopicOptions<
                 submitCommand: (command, atEpochMs) => submitFormationCriterionCommand(runtime, command, atEpochMs)
             },
             topologyPublication: {
+                readLifecyclePolicy: (ref) => topology.groupStateRepository.readLifecyclePolicy(ref),
                 submitCommand: (command, atEpochMs) => submitTopologyPublicationCommand(runtime, command, atEpochMs)
             }
         },
