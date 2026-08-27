@@ -68,6 +68,21 @@ The root commands `perf:rtc-baseline`, `perf:rtc-topology:delivery-log`, and
 that package directly. RTC production implementations remain authoritative;
 the benchmark package measures them and does not reimplement RTC behavior.
 
+RTC-B05 is also captured as a continuous browser observation stream. The
+`RTC-B05 Performance Observation` workflow runs nightly at 03:17 UTC and by
+manual dispatch, measures the `main` snapshot selected when the run starts,
+and records the exact source commit rather than waiting for a permanently
+stable head. Each verified result is retained as a workflow artifact and is
+published through an observation-only pull request when
+`RTC_OBSERVATION_PR_TOKEN` is configured with repository Contents and Pull
+Requests access. Archive-only merges are excluded from product deploy and
+supported distributed-manifest push triggers.
+
+Local capture and archive verification commands, archive contents, and
+failure semantics are documented in the package README. Local outputs still
+belong under `tmp/perf/`; only the scheduled publication path writes the
+append-only `performance-observations/rtc-b05/**` repository stream.
+
 ## Prerequisites
 
 Run commands from the repository root.
