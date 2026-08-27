@@ -160,7 +160,7 @@ Deno.test(
             };
             const group = topologyGroupSnapshotWithSessionIds(
                 groupRef,
-                ['session-a', 'session-b', 'session-c'],
+                ['session-a', 'session-b', 'session-c', 'session-d'],
                 nowEpochMs
             );
             const runtime = new PSqlRuntimeStateRepository(sql);
@@ -208,11 +208,15 @@ Deno.test(
                     return super.planGroupTopologyAt(...args);
                 }
             }
+            // The reporting limit resolves no lower than the planning degree
+            // limit, so a non-reporting pair needs both endpoints at full
+            // planned degree: a four-session ring keeps every selection
+            // exactly the planned hops and leaves the a-c chord outside.
             const topologyService = new RecordingTopologyService({
                 now: () => nowEpochMs,
                 topologyKind: 'tree',
                 degreeLimit: 2,
-                rttReportingDegreeLimit: 1
+                rttReportingDegreeLimit: 2
             });
             const service = createGroupTopologyRuntimeOwners({
                 findGroupSnapshotByRef: () => group,
@@ -226,17 +230,18 @@ Deno.test(
                 serverDefaults: {
                     topologyKind: 'tree',
                     degreeLimit: 2,
-                    rttReportingDegreeLimit: 1
+                    rttReportingDegreeLimit: 2
                 }
             });
             const previous = activeTopologySnapshot({
                 groupRef,
                 sourceGroupStateCausalRevision: { groupRevision: 1, presenceRevision: 1 },
-                activeSessionIds: ['session-a', 'session-b', 'session-c'],
+                activeSessionIds: ['session-a', 'session-b', 'session-c', 'session-d'],
                 nextHopsBySessionId: {
-                    'session-a': ['session-b'],
+                    'session-a': ['session-b', 'session-d'],
                     'session-b': ['session-a', 'session-c'],
-                    'session-c': ['session-b']
+                    'session-c': ['session-b', 'session-d'],
+                    'session-d': ['session-a', 'session-c']
                 }
             });
             const authority = await service.planning.readTopologyPlanningAuthority({
