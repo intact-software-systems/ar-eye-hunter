@@ -88,7 +88,8 @@ export function createStateWriteServiceRuntime({
         groupStateEventStore,
         serviceId,
         timing,
-        authSessionRepository
+        authSessionRepository,
+        readPlannedLayoutIdentity: async () => null
     });
     const resourceInbox = createPSqlResourceInboxRepository(instrumentedSql);
     const inbox = new InboxQueueReader(new PSqlQueueBox(resourceInbox), {

@@ -13,8 +13,8 @@ import { createTestClientStateRepository, createTestGroupStateRepository } from 
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 
-import { createClientStatePhaseTestDriver, failNextClientStateTestOutboxWrite } from '../client-state/client-state-test-runtime.ts';
 import { FakeRuntimeStateRepository } from '../../runtime-state/test-support/fake-runtime-state-repository.ts';
+import { createClientStatePhaseTestDriver, failNextClientStateTestOutboxWrite } from '../client-state/client-state-test-runtime.ts';
 import { createAppInboxTestResilience, TestResourceInbox, TestResourceInboxResults } from './test-support/app-inbox-resource-fixtures.ts';
 import { createAppInboxTestDatabase } from './test-support/app-inbox-test-database.ts';
 
@@ -229,6 +229,7 @@ describe('AppInbox expired row replacement', () => {
                 runtimeRepository: runtime,
                 groupStateEventStore: database.groupEventStore,
                 serviceId: 'expired-group-service',
+                readPlannedLayoutIdentity: async () => null,
                 now: () => nowEpochMs,
                 authSessionRepository: sessions
             });

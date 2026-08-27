@@ -1,3 +1,4 @@
+import { computeExpectedLayoutFence } from '@shared/api/group-lifecycle/compute-expected-layout-fence.ts';
 import { createDefaultGroupLifecyclePolicy } from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
 import {
     computeGroupLifecycleTransition,
@@ -78,9 +79,14 @@ export function computeLifecycleTransition(
         throw new TypeError('Lifecycle transition compute requires the roster read');
     }
     if (facts.internalAuthority === 'formation-criterion') {
-        // The criterion evaluator petitions with service authority; the state
-        // machine below is the only check that applies. Principals never carry
-        // this authority mode (validateGroupMutationAuthority enforces it).
+        // The criterion evaluator petitions with service authority; the causal
+        // fence and the state machine below are the only checks that apply.
+        // Principals never carry this authority mode
+        // (validateGroupMutationAuthority enforces it).
+        const fenceRejection = computeFenceRejection(command, read, facts, stored.value);
+        if (fenceRejection !== null) {
+            return fenceRejection;
+        }
     }
     else if (command.operation === 'failGroupFormation') {
         throw new GroupMutationRejectedError('Formation failure is criterion-commanded only');
@@ -142,5 +148,54 @@ export function computeLifecycleTransition(
         eventType: 'group-updated',
         presenceSummaryWork: 'enqueue',
         extraOutboxEntries: computeFormationTimerEntries({ command, next, policy, facts })
+    });
+}
+
+/**
+ * The causal fence (product decisions 19 and 32): a petition carrying an old
+ * epoch or a layout identity that is no longer the stored plan is a typed
+ * rejection that writes no state, event, or outbox — never a wrong
+ * transition and never a silent no-op. Principal commands carry null fences
+ * and are governed by the initiator policy alone.
+ */
+function computeFenceRejection(
+    command: Extract<GroupMutationCommand, { operation: GroupLifecycleTransitionOperation; }>,
+    read: GroupMutationRead,
+    facts: GroupMutationFacts,
+    stored: Group
+): GroupMutationComputed | null {
+    const expectedFormationEpoch = command.input.expectedFormationEpoch;
+    if (expectedFormationEpoch !== null && expectedFormationEpoch !== stored.formationEpoch) {
+        return rejected({
+            command,
+            read,
+            facts,
+            rejectionCode: 'group-mutation-rejected',
+            message: `Criterion petition fence is stale-epoch: expected ${expectedFormationEpoch}, ` +
+                `stored ${stored.formationEpoch}`
+        });
+    }
+    const expectedLayout = command.operation === 'activateGroup' ||
+            command.operation === 'failGroupFormation'
+        ? command.input.expectedLayout
+        : null;
+    if (expectedLayout === null) {
+        return null;
+    }
+    const fence = computeExpectedLayoutFence({
+        expectedFormationEpoch: expectedFormationEpoch ?? stored.formationEpoch,
+        expectedLayout,
+        currentFormationEpoch: stored.formationEpoch,
+        currentPlannedLayout: read.plannedLayoutIdentity ?? undefined
+    });
+    if (fence === 'match') {
+        return null;
+    }
+    return rejected({
+        command,
+        read,
+        facts,
+        rejectionCode: 'group-mutation-rejected',
+        message: `Criterion petition fence is ${fence} for the stored planned layout`
     });
 }

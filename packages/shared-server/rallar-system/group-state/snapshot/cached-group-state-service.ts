@@ -45,6 +45,12 @@ export function createCachedGroupStateService(
         prepareSessionCleanupMutations: async (input) => await options.durable.prepareSessionCleanupMutations(input),
         prepareFormationCriterionMutation: async (command, atEpochMs) =>
             await options.durable.prepareFormationCriterionMutation(command, atEpochMs),
+        prepareFormationAutomationMutation: async (command, atEpochMs) =>
+            await options.durable.prepareFormationAutomationMutation(command, atEpochMs),
+        prepareTopologyPublicationMutation: async (command, atEpochMs) =>
+            await options.durable.prepareTopologyPublicationMutation(command, atEpochMs),
+        prepareActivationStatusMutation: async (command, atEpochMs) =>
+            await options.durable.prepareActivationStatusMutation(command, atEpochMs),
         read: async (command) => await options.durable.read(command),
         compute: (command, read) => options.durable.compute(command, read),
         validate: (command, read, computed) => options.durable.validate(command, read, computed),

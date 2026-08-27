@@ -1,3 +1,4 @@
+import type { GroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
 import type {
     GroupEvent,
     GroupRef,
@@ -184,6 +185,18 @@ export type GroupStateService =
             command: GroupMutationCommand,
             atEpochMs: number
         ): Promise<GroupMutationPreparation>;
+        prepareFormationAutomationMutation(
+            command: GroupMutationCommand,
+            atEpochMs: number
+        ): Promise<GroupMutationPreparation>;
+        prepareTopologyPublicationMutation(
+            command: GroupMutationCommand,
+            atEpochMs: number
+        ): Promise<GroupMutationPreparation>;
+        prepareActivationStatusMutation(
+            command: GroupMutationCommand,
+            atEpochMs: number
+        ): Promise<GroupMutationPreparation>;
         listSnapshots(scope: GroupScope): Promise<readonly GroupSnapshot[]>;
         listSnapshotsPage(
             scope: GroupScope,
@@ -215,4 +228,11 @@ export type GroupStateServiceDependencies = Readonly<{
     serviceId: string;
     timing?: RallarTimingSink;
     authSessionRepository: Pick<AuthSessionRepository, 'findBySessionId'>;
+    /**
+     * The stored planned layout's identity for the causal fence read; null
+     * when no planned row exists. Deployments without a topology subsystem
+     * supply a constant null reader, which fences every layout-bound command
+     * closed as no-planned-layout.
+     */
+    readPlannedLayoutIdentity: (ref: GroupRef) => Promise<GroupLayoutIdentity | null>;
 }>;

@@ -1,3 +1,4 @@
+import type { GroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 
 import { serializeCanonicalJson } from '../protocol/canonical-json.ts';
@@ -15,6 +16,7 @@ export function toFormationActivateCommand(
         formationEpoch: number;
         observedRate: number;
         degraded: boolean;
+        expectedLayout: GroupLayoutIdentity;
     }>
 ): GroupMutationCommand {
     const semanticCommand = {
@@ -26,14 +28,17 @@ export function toFormationActivateCommand(
             reason: null,
             traceId: null,
             observedRate: input.observedRate,
-            degraded: input.degraded
+            degraded: input.degraded,
+            expectedFormationEpoch: input.formationEpoch,
+            expectedLayout: input.expectedLayout
         }
     } as const;
-    const commandId = groupFormationCriterionRequestId(
-        input.degraded ? 'activate-degraded' : 'activate',
-        input.groupRef,
-        input.formationEpoch
-    );
+    const commandId = groupFormationCriterionRequestId({
+        decision: input.degraded ? 'activate-degraded' : 'activate',
+        groupRef: input.groupRef,
+        formationEpoch: input.formationEpoch,
+        expectedLayout: input.expectedLayout
+    });
     return { ...semanticCommand, commandId, requestId: commandId };
 }
 
@@ -42,6 +47,7 @@ export function toFailFormationCommand(
         groupRef: GroupRef;
         formationEpoch: number;
         observedRate: number;
+        expectedLayout: GroupLayoutIdentity;
     }>
 ): GroupMutationCommand {
     const semanticCommand = {
@@ -52,14 +58,17 @@ export function toFailFormationCommand(
             actorSessionId: null,
             reason: null,
             traceId: null,
-            observedRate: input.observedRate
+            observedRate: input.observedRate,
+            expectedFormationEpoch: input.formationEpoch,
+            expectedLayout: input.expectedLayout
         }
     } as const;
-    const commandId = groupFormationCriterionRequestId(
-        'fail-formation',
-        input.groupRef,
-        input.formationEpoch
-    );
+    const commandId = groupFormationCriterionRequestId({
+        decision: 'fail-formation',
+        groupRef: input.groupRef,
+        formationEpoch: input.formationEpoch,
+        expectedLayout: input.expectedLayout
+    });
     return { ...semanticCommand, commandId, requestId: commandId };
 }
 
@@ -81,21 +90,36 @@ export function toFormationRetryEstablishCommand(
             actorPrincipalId: null,
             actorSessionId: null,
             reason: null,
-            traceId: null
+            traceId: null,
+            expectedFormationEpoch: input.formationEpoch
         }
     } as const;
-    const commandId = groupFormationCriterionRequestId(
-        'retry-establish',
-        input.groupRef,
-        input.formationEpoch
-    );
+    const commandId = groupFormationCriterionRequestId({
+        decision: 'retry-establish',
+        groupRef: input.groupRef,
+        formationEpoch: input.formationEpoch,
+        expectedLayout: null
+    });
     return { ...semanticCommand, commandId, requestId: commandId };
 }
 
+/**
+ * v2 keys the id on the full causal fence, layout identity included, so two
+ * petitions against different planned layouts in one epoch are distinct
+ * commands rather than a replay of each other (product decision 19).
+ */
 function groupFormationCriterionRequestId(
-    decision: 'activate' | 'activate-degraded' | 'fail-formation' | 'retry-establish',
-    groupRef: GroupRef,
-    formationEpoch: number
+    input: Readonly<{
+        decision: 'activate' | 'activate-degraded' | 'fail-formation' | 'retry-establish';
+        groupRef: GroupRef;
+        formationEpoch: number;
+        expectedLayout: GroupLayoutIdentity | null;
+    }>
 ): string {
-    return `formation-criterion:v1:${decision}:${serializeCanonicalJson({ groupRef, formationEpoch })}`;
+    const identity = serializeCanonicalJson({
+        groupRef: input.groupRef,
+        formationEpoch: input.formationEpoch,
+        expectedLayout: input.expectedLayout
+    });
+    return `formation-criterion:v2:${input.decision}:${identity}`;
 }

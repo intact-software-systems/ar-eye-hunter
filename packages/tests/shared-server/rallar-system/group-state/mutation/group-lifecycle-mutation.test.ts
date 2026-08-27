@@ -1,3 +1,4 @@
+import type { GroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
 import { describe, expect, it } from 'vitest';
 
 import type {
@@ -121,7 +122,11 @@ describe('group lifecycle transition computation', () => {
 
     it('fails formation with criterion authority: outcome, attempts, epoch, anchor', () => {
         const computed = computeGroupMutation({
-            command: criterionCommand('failGroupFormation', { observedRate: 0.3 }),
+            command: criterionCommand('failGroupFormation', {
+                observedRate: 0.3,
+                expectedFormationEpoch: 2,
+                expectedLayout: PLANNED_LAYOUT
+            }),
             read: criterionRead({
                 lifecycleState: 'connecting',
                 formationEpoch: 2,
@@ -147,6 +152,54 @@ describe('group lifecycle transition computation', () => {
         });
     });
 
+    // The causal fence: a stale petition is a typed rejection that computes
+    // no write facts at all — never a wrong transition, never a silent no-op.
+    it.each([
+        {
+            label: 'a stale epoch',
+            expectedFormationEpoch: 1,
+            expectedLayout: PLANNED_LAYOUT,
+            planned: PLANNED_LAYOUT,
+            rejection: /stale-epoch/
+        },
+        {
+            label: 'a superseded planned layout',
+            expectedFormationEpoch: 2,
+            expectedLayout: { ...PLANNED_LAYOUT, version: 1 },
+            planned: PLANNED_LAYOUT,
+            rejection: /planned-layout-superseded/
+        },
+        {
+            label: 'a missing planned row',
+            expectedFormationEpoch: 2,
+            expectedLayout: PLANNED_LAYOUT,
+            planned: null,
+            rejection: /no-planned-layout/
+        }
+    ])('fences $label without computing any write', (row) => {
+        const computed = computeGroupMutation({
+            command: criterionCommand('failGroupFormation', {
+                observedRate: 0.3,
+                expectedFormationEpoch: row.expectedFormationEpoch,
+                expectedLayout: row.expectedLayout
+            }),
+            read: criterionRead(
+                { lifecycleState: 'connecting', formationEpoch: 2 },
+                row.planned
+            ),
+            facts: criterionFacts()
+        });
+        expect(computed.outcome).toBe('rejected');
+        if (computed.outcome !== 'rejected') {
+            return;
+        }
+        expect(computed.receipt.rejection).toMatch(row.rejection);
+        expect(computed.receipt.eventId).toBeNull();
+        expect(computed.receipt.outboxIds).toEqual([]);
+        expect('guard' in computed).toBe(false);
+        expect('outboxEntries' in computed).toBe(false);
+    });
+
     it('rejects principal-commanded formation failure', () => {
         expect(() =>
             computeGroupMutation({
@@ -165,7 +218,12 @@ describe('group lifecycle transition computation', () => {
             ] as const
         ) {
             const computed = computeGroupMutation({
-                command: criterionCommand('activateGroup', { observedRate: 0.97, degraded }),
+                command: criterionCommand('activateGroup', {
+                    observedRate: 0.97,
+                    degraded,
+                    expectedFormationEpoch: 1,
+                    expectedLayout: PLANNED_LAYOUT
+                }),
                 read: criterionRead({ lifecycleState: 'connecting', formationEpoch: 1 }),
                 facts: criterionFacts()
             });
@@ -222,17 +280,33 @@ function transitionCommand(
     } as GroupMutationCommand;
 }
 
-function criterionRead(groupOverrides: Partial<Group>): GroupMutationRead {
+const PLANNED_LAYOUT = {
+    groupRevision: 6,
+    presenceRevision: 9,
+    version: 2,
+    state: 'active'
+} as const;
+
+function criterionRead(
+    groupOverrides: Partial<Group>,
+    plannedLayoutIdentity: GroupLayoutIdentity | null = PLANNED_LAYOUT
+): GroupMutationRead {
     return {
         ...transitionRead(groupOverrides),
         actorMember: null,
-        actorMemberEntry: null
+        actorMemberEntry: null,
+        plannedLayoutIdentity
     } as GroupMutationRead;
 }
 
 function criterionCommand(
     operation: 'activateGroup' | 'failGroupFormation',
-    extras: Readonly<{ observedRate: number; degraded?: boolean; }>
+    extras: Readonly<{
+        observedRate: number;
+        degraded?: boolean;
+        expectedFormationEpoch?: number;
+        expectedLayout?: GroupLayoutIdentity;
+    }>
 ): GroupMutationCommand {
     return {
         operation,
@@ -245,6 +319,8 @@ function criterionCommand(
             reason: null,
             traceId: null,
             observedRate: extras.observedRate,
+            expectedFormationEpoch: extras.expectedFormationEpoch ?? null,
+            expectedLayout: extras.expectedLayout ?? null,
             ...(operation === 'activateGroup' ? { degraded: extras.degraded ?? false } : {})
         }
     } as GroupMutationCommand;
@@ -310,7 +386,8 @@ function transitionRead(groupOverrides: Partial<Group>, options: TransitionReadO
         authorityPresenceSessionEntries: [],
         presenceSummary: null,
         lifecyclePolicy,
-        activeMemberPrincipalIds: [actorPrincipalId]
+        activeMemberPrincipalIds: [actorPrincipalId],
+        plannedLayoutIdentity: null
     } as GroupMutationRead;
 }
 

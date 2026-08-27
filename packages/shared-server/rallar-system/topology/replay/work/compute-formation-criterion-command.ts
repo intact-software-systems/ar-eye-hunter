@@ -1,6 +1,7 @@
 import type { RttMeasurementInfo } from '@shared/api/api-config.ts';
 import { computeGroupFormationReadiness } from '@shared/api/group-lifecycle/compute-group-formation-readiness.ts';
 import { evaluateGroupActivationCriterion } from '@shared/api/group-lifecycle/evaluate-group-activation-criterion.ts';
+import { toGroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
 import { createDefaultGroupLifecyclePolicy } from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
 import type { GroupLifecycleState } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
@@ -108,7 +109,8 @@ export async function computeFormationCriterionCommand(
                 },
                 formationEpoch: group.formationEpoch,
                 observedRate: readiness.observedRate,
-                degraded: decision.decision === 'activate-degraded'
+                degraded: decision.decision === 'activate-degraded',
+                expectedLayout: toGroupLayoutIdentity(input.planned)
             });
         case 'below-floor':
             return toFailFormationCommand({
@@ -118,7 +120,8 @@ export async function computeFormationCriterionCommand(
                     groupId: group.groupId
                 },
                 formationEpoch: group.formationEpoch,
-                observedRate: readiness.observedRate
+                observedRate: readiness.observedRate,
+                expectedLayout: toGroupLayoutIdentity(input.planned)
             });
     }
 }

@@ -17,6 +17,9 @@ export const TIMED_ASYNC_OPERATIONS = [
     'prepareExpiredPresenceMutations',
     'prepareSessionCleanupMutations',
     'prepareFormationCriterionMutation',
+    'prepareFormationAutomationMutation',
+    'prepareTopologyPublicationMutation',
+    'prepareActivationStatusMutation',
     'listSnapshots',
     'listSnapshotsPage',
     'readSnapshot',
@@ -105,6 +108,9 @@ function createPreparationFake(
     | 'prepareExpiredPresenceMutations'
     | 'prepareSessionCleanupMutations'
     | 'prepareFormationCriterionMutation'
+    | 'prepareFormationAutomationMutation'
+    | 'prepareTopologyPublicationMutation'
+    | 'prepareActivationStatusMutation'
 > {
     return {
         authorizeMutation: async (...arguments_) => (await record('authorizeMutation', arguments_)) as never,
@@ -112,6 +118,9 @@ function createPreparationFake(
         prepareAppInboxMutation: async (...arguments_) => (await record('prepareAppInboxMutation', arguments_)) as never,
         prepareExpiredPresenceMutations: async (...arguments_) => (await record('prepareExpiredPresenceMutations', arguments_)) as never,
         prepareFormationCriterionMutation: async (...arguments_) => (await record('prepareFormationCriterionMutation', arguments_)) as never,
+        prepareFormationAutomationMutation: async (...arguments_) => (await record('prepareFormationAutomationMutation', arguments_)) as never,
+        prepareTopologyPublicationMutation: async (...arguments_) => (await record('prepareTopologyPublicationMutation', arguments_)) as never,
+        prepareActivationStatusMutation: async (...arguments_) => (await record('prepareActivationStatusMutation', arguments_)) as never,
         prepareSessionCleanupMutations: async (...arguments_) => (await record('prepareSessionCleanupMutations', arguments_)) as never
     };
 }
@@ -227,6 +236,9 @@ export const TIMED_OPERATION_ARGUMENTS: TimedOperationArgumentsByOperation = {
     prepareExpiredPresenceMutations: [1_000],
     prepareSessionCleanupMutations: [timingCleanup],
     prepareFormationCriterionMutation: [{} as never, 1_000],
+    prepareFormationAutomationMutation: [{} as never, 1_000],
+    prepareTopologyPublicationMutation: [{} as never, 1_000],
+    prepareActivationStatusMutation: [{} as never, 1_000],
     listSnapshots: [timingScope],
     listSnapshotsPage: [timingScope, timingSnapshotPageOptions],
     readSnapshot: [timingGroupRef],
@@ -258,6 +270,18 @@ const TIMED_OPERATION_INVOCATIONS: Readonly<Record<TimedAsyncOperation, (service
     prepareFormationCriterionMutation: async (service) =>
         await service.prepareFormationCriterionMutation(
             ...TIMED_OPERATION_ARGUMENTS.prepareFormationCriterionMutation
+        ),
+    prepareFormationAutomationMutation: async (service) =>
+        await service.prepareFormationAutomationMutation(
+            ...TIMED_OPERATION_ARGUMENTS.prepareFormationAutomationMutation
+        ),
+    prepareTopologyPublicationMutation: async (service) =>
+        await service.prepareTopologyPublicationMutation(
+            ...TIMED_OPERATION_ARGUMENTS.prepareTopologyPublicationMutation
+        ),
+    prepareActivationStatusMutation: async (service) =>
+        await service.prepareActivationStatusMutation(
+            ...TIMED_OPERATION_ARGUMENTS.prepareActivationStatusMutation
         ),
     listSnapshots: async (service) => await service.listSnapshots(...TIMED_OPERATION_ARGUMENTS.listSnapshots),
     listSnapshotsPage: async (service) => await service.listSnapshotsPage(...TIMED_OPERATION_ARGUMENTS.listSnapshotsPage),

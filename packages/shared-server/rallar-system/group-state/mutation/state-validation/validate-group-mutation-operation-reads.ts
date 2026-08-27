@@ -66,4 +66,10 @@ function validateActiveMemberPrincipalIdsRead(
             'Group mutation read must not carry active member principal ids for this operation'
         );
     }
+    if (
+        !isGroupLifecycleTransitionOperation(command.operation) &&
+        read.plannedLayoutIdentity !== null
+    ) {
+        throw new TypeError('Group mutation read carries a planned layout for a non-lifecycle operation');
+    }
 }

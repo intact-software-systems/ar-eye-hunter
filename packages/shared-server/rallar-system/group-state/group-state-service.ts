@@ -20,6 +20,7 @@ import {
 import { createTimedGroupStateService } from './group-state-service-timing.ts';
 import { validateGroupMutationCommand } from './mutation/command-validation/validate-group-mutation-command.ts';
 import type { GroupMutationCommand, GroupMutationFacts } from './mutation/group-mutation-contracts.ts';
+import { isGroupLifecycleTransitionOperation } from './mutation/group-mutation-contracts.ts';
 import { computeGroupMutation } from './mutation/orchestration/compute-group-mutation.ts';
 import { readGroupMutation } from './mutation/read/read-group-mutation.ts';
 import { validateGroupMutation } from './mutation/state-validation/validate-group-mutation.ts';
@@ -156,6 +157,9 @@ function createPreparationOperations(
     | 'prepareExpiredPresenceMutations'
     | 'prepareSessionCleanupMutations'
     | 'prepareFormationCriterionMutation'
+    | 'prepareFormationAutomationMutation'
+    | 'prepareTopologyPublicationMutation'
+    | 'prepareActivationStatusMutation'
 > {
     const { dependencies, repositoryFor, authorityDependencies, prepareInternalMutation } = owners;
     const runtime = dependencies.runtimeRepository;
@@ -178,6 +182,12 @@ function createPreparationOperations(
         },
         prepareFormationCriterionMutation: async (command, atEpochMs) =>
             await prepareInternalMutation(command, 'formation-criterion', atEpochMs),
+        prepareFormationAutomationMutation: async (command, atEpochMs) =>
+            await prepareInternalMutation(command, 'formation-automation', atEpochMs),
+        prepareTopologyPublicationMutation: async (command, atEpochMs) =>
+            await prepareInternalMutation(command, 'topology-publication', atEpochMs),
+        prepareActivationStatusMutation: async (command, atEpochMs) =>
+            await prepareInternalMutation(command, 'activation-status', atEpochMs),
         prepareSessionCleanupMutations: async (input) => {
             const candidates = await readGroupSessionCleanupCandidates(
                 repositoryFor(runtime),
@@ -243,10 +253,24 @@ function createMutationOperations(
                         'Internal group mutation authority is malformed.'
                     );
                 }
-                return await readGroupMutation(repositoryFor(runtime), prepared.command);
+                const plannedLayoutIdentity = isGroupLifecycleTransitionOperation(prepared.command.operation)
+                    ? await dependencies.readPlannedLayoutIdentity(prepared.command.aggregateRef)
+                    : null;
+                return await readGroupMutation(
+                    repositoryFor(runtime),
+                    prepared.command,
+                    plannedLayoutIdentity
+                );
             }
             await verifyPreparedGroupMutationAuthority(authorityDependencies, prepared);
-            return await readGroupMutation(repositoryFor(runtime), prepared.command);
+            const plannedLayoutIdentity = isGroupLifecycleTransitionOperation(prepared.command.operation)
+                ? await dependencies.readPlannedLayoutIdentity(prepared.command.aggregateRef)
+                : null;
+            return await readGroupMutation(
+                repositoryFor(runtime),
+                prepared.command,
+                plannedLayoutIdentity
+            );
         },
         compute: (prepared, read) => computeGroupMutation({ command: prepared.command, read, facts: prepared.facts }),
         validate: (prepared, read, computed) => {

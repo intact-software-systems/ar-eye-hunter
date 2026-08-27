@@ -17,12 +17,14 @@ interface ReadSequentialGroupMutationInput {
     readonly repository: GroupStateRepository;
     readonly command: GroupMutationCommand;
     readonly lifecyclePolicy: GroupMutationRead['lifecyclePolicy'];
+    readonly plannedLayoutIdentity: GroupMutationRead['plannedLayoutIdentity'];
 }
 
 export async function readSequentialGroupMutation({
     repository,
     command,
-    lifecyclePolicy
+    lifecyclePolicy,
+    plannedLayoutIdentity
 }: ReadSequentialGroupMutationInput): Promise<GroupMutationRead> {
     const primary = await readSequentialPrimaryEntries(repository, command);
     // Read after the group entry whose revision anchors the write guard:
@@ -53,7 +55,8 @@ export async function readSequentialGroupMutation({
         related,
         authorityPresenceSessionEntries,
         lifecyclePolicy,
-        activeMemberPrincipalIds
+        activeMemberPrincipalIds,
+        plannedLayoutIdentity
     });
 }
 
@@ -142,6 +145,7 @@ interface AssembleSequentialGroupMutationReadInput {
     readonly authorityPresenceSessionEntries: GroupMutationRead['authorityPresenceSessionEntries'];
     readonly lifecyclePolicy: GroupMutationRead['lifecyclePolicy'];
     readonly activeMemberPrincipalIds: GroupMutationRead['activeMemberPrincipalIds'];
+    readonly plannedLayoutIdentity: GroupMutationRead['plannedLayoutIdentity'];
 }
 
 function assembleSequentialGroupMutationRead({
@@ -150,7 +154,8 @@ function assembleSequentialGroupMutationRead({
     related,
     authorityPresenceSessionEntries,
     lifecyclePolicy,
-    activeMemberPrincipalIds
+    activeMemberPrincipalIds,
+    plannedLayoutIdentity
 }: AssembleSequentialGroupMutationReadInput): GroupMutationRead {
     const { idempotency, groupRead, targetPresenceRead, presenceSummary } = primary;
     const { actorPrincipalId, targetPrincipalId, ownerPrincipalId, director } = identities;
@@ -201,7 +206,8 @@ function assembleSequentialGroupMutationRead({
         authorityPresenceSessionEntries,
         presenceSummary: presenceSummary ?? null,
         lifecyclePolicy,
-        activeMemberPrincipalIds
+        activeMemberPrincipalIds,
+        plannedLayoutIdentity
     };
 }
 

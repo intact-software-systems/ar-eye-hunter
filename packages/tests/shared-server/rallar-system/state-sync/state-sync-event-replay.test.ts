@@ -5,9 +5,9 @@ import type { ClientEvent, ClientPrincipalRef } from '@shared/api/client-types.t
 import type { GroupEvent, GroupRef } from '@shared/api/group-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import { describe, expect, it } from 'vitest';
+import { FakeRuntimeStateRepository } from '../../runtime-state/test-support/fake-runtime-state-repository.ts';
 import { createClientStateTestDriver as createClientStateService } from '../client-state/client-state-test-runtime.ts';
 import { createTestGroupStateService as createGroupStateService } from '../group-state/group-state-test-runtime.ts';
-import { FakeRuntimeStateRepository } from '../../runtime-state/test-support/fake-runtime-state-repository.ts';
 
 const SCOPE: StateScope = {
     applicationId: 'app-1',
@@ -21,7 +21,8 @@ describe('state sync event replay', () => {
         const service = createGroupStateService({
             runtimeRepository,
             now: () => now,
-            serviceId: 'group-service'
+            serviceId: 'group-service',
+            readPlannedLayoutIdentity: async () => null
         });
         const groupRef = toGroupRef('room-1');
 

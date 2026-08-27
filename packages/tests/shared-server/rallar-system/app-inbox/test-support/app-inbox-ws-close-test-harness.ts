@@ -82,6 +82,7 @@ export async function createAppInboxWsCloseHarness(
         authSessionRepository: authSessions,
         groupStateEventStore: database.groupEventStore,
         serviceId: 'server-12345678',
+        readPlannedLayoutIdentity: async () => null,
         now: () => NOW_EPOCH_MS
     });
     const clientState = createClientStateService({

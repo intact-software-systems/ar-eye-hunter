@@ -43,7 +43,8 @@ const GROUP_MUTATION_READ_KEYS = [
     'authorityPresenceSessionEntries',
     'presenceSummary',
     'lifecyclePolicy',
-    'activeMemberPrincipalIds'
+    'activeMemberPrincipalIds',
+    'plannedLayoutIdentity'
 ] as const;
 
 export function validateGroupMutationRead(

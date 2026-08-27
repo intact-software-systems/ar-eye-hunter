@@ -1,3 +1,4 @@
+import type { GroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
 import type { GroupLifecyclePolicy } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import type {
     AuditStamp,
@@ -91,7 +92,12 @@ export type GroupMutationCommand =
         & GroupMutationCommandBase
         & Readonly<{
             operation: 'startGroupEstablishment' | 'reopenGroupEstablishment';
-            input: NullableActorInput;
+            input:
+                & NullableActorInput
+                & Readonly<{
+                    /** Null on principal commands; the retry leg's causal fence when internal. */
+                    expectedFormationEpoch: number | null;
+                }>;
         }>
     )
     | (
@@ -104,6 +110,9 @@ export type GroupMutationCommand =
                     /** Null on operator commands; the criterion's rate when internal. */
                     observedRate: number | null;
                     degraded: boolean | null;
+                    /** Null on operator commands; the criterion's causal fence when internal. */
+                    expectedFormationEpoch: number | null;
+                    expectedLayout: GroupLayoutIdentity | null;
                 }>;
         }>
     )
@@ -111,7 +120,13 @@ export type GroupMutationCommand =
         & GroupMutationCommandBase
         & Readonly<{
             operation: 'failGroupFormation';
-            input: NullableActorInput & Readonly<{ observedRate: number; }>;
+            input:
+                & NullableActorInput
+                & Readonly<{
+                    observedRate: number;
+                    expectedFormationEpoch: number | null;
+                    expectedLayout: GroupLayoutIdentity | null;
+                }>;
         }>
     )
     | (
@@ -299,6 +314,13 @@ export type GroupMutationRead = Readonly<{
      * consistent with the transition that records it.
      */
     activeMemberPrincipalIds: readonly string[] | null;
+    /**
+     * The stored planned layout's identity, read only for lifecycle
+     * transitions so compute can validate a command's causal fence against
+     * durable authority; null when no planned row exists or the operation
+     * carries no fence.
+     */
+    plannedLayoutIdentity: GroupLayoutIdentity | null;
 }>;
 
 export type GroupMutationFacts = Readonly<{
@@ -310,7 +332,14 @@ export type GroupMutationFacts = Readonly<{
     attemptCount: number;
     resolvedJoinCode: string | null;
     joinCodeVerifier: string | null;
-    internalAuthority: 'none' | 'expiry' | 'session-cleanup' | 'formation-criterion';
+    internalAuthority:
+        | 'none'
+        | 'expiry'
+        | 'session-cleanup'
+        | 'formation-criterion'
+        | 'formation-automation'
+        | 'topology-publication'
+        | 'activation-status';
     /**
      * Operational capacity defaults captured at preparation time; absent when
      * the runtime configured no defaults, which preserves stored-cap-only

@@ -86,16 +86,21 @@ function validateAggregateMutationInput(
         return;
     }
     if (operation === 'startGroupEstablishment' || operation === 'reopenGroupEstablishment') {
+        validateExpectedFormationEpochInput(input, operation);
         return;
     }
     if (operation === 'activateGroup') {
         validateActivateGroupInput(input);
+        validateExpectedFormationEpochInput(input, operation);
+        validateExpectedLayoutInput(input, operation);
         return;
     }
     if (operation === 'failGroupFormation') {
         if (!isUnitIntervalNumber(input.observedRate)) {
             throw new TypeError('Group failGroupFormation observedRate must be within [0, 1]');
         }
+        validateExpectedFormationEpochInput(input, operation);
+        validateExpectedLayoutInput(input, operation);
         return;
     }
     optionalString('joinCode');
@@ -228,4 +233,35 @@ function validateActivateGroupInput(input: Record<string, unknown>): void {
 
 function isUnitIntervalNumber(value: unknown): value is number {
     return typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 1;
+}
+
+function validateExpectedFormationEpochInput(
+    input: Record<string, unknown>,
+    operation: string
+): void {
+    const epoch = input.expectedFormationEpoch;
+    if (epoch !== null && (!Number.isSafeInteger(epoch) || (epoch as number) < 0)) {
+        throw new TypeError(`Group ${operation} expectedFormationEpoch must be null or a non-negative integer`);
+    }
+}
+
+function validateExpectedLayoutInput(
+    input: Record<string, unknown>,
+    operation: string
+): void {
+    const layout = input.expectedLayout;
+    if (layout === null) {
+        return;
+    }
+    const record = requireRecord(layout, `Group ${operation} expectedLayout`);
+    for (const key of ['groupRevision', 'presenceRevision', 'version']) {
+        if (!Number.isSafeInteger(record[key]) || (record[key] as number) < 0) {
+            throw new TypeError(`Group ${operation} expectedLayout ${key} must be a non-negative integer`);
+        }
+    }
+    requireOneOf(record.state, ['active', 'removed'], `Group ${operation} expectedLayout state`);
+    const keys = Object.keys(record).sort().join(',');
+    if (keys !== 'groupRevision,presenceRevision,state,version') {
+        throw new TypeError(`Group ${operation} expectedLayout carries unexpected keys`);
+    }
 }

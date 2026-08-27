@@ -62,6 +62,7 @@ async function main(): Promise<void> {
         groupStateEventStore,
         now: () => 1_700_000_000_000,
         serviceId: 'group-list-fanout-bench',
+        readPlannedLayoutIdentity: async () => null,
         authSessionRepository: new AuthSessionRepository(repository)
     });
 
