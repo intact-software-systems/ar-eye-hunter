@@ -8,18 +8,16 @@ import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/topo
 import { RtcTopologySnapshotRepository } from '@shared-server/rallar-system/topology/persistence/rtc-topology-snapshot-repository.ts';
 import { GroupTopologyPlanningService } from '@shared-server/rallar-system/topology/planning/group-topology-planning-service.ts';
 import { RallarRtcTopologyService } from '@shared-server/rallar-system/topology/runtime/rallar-rtc-topology-service.ts';
-import type { RuntimeStateReadBatchSelection, RuntimeStateReadBatchSelector } from '@shared-server/runtime-state/read-batch/runtime-state-read-batch.ts';
-import { selectRuntimeStateReadBatch } from '@shared-server/runtime-state/read-batch/select-runtime-state-read-batch.ts';
-import type { RuntimeStateEntry, RuntimeStateEntryPageOptions, RuntimeStateRepositoryLike } from '@shared-server/runtime-state/runtime-state-repository.ts';
-import type { GroupPresenceSession, GroupSnapshot } from '@shared/api/group-types.ts';
+import type { GroupMember, GroupPresenceSession, GroupSnapshot } from '@shared/api/group-types.ts';
 
 import { createTestGroup } from '../../../../packages/tests/create-test-group.ts';
+import { FakeRuntimeStateRepository } from '../../../../packages/tests/shared-server/runtime-state/test-support/fake-runtime-state-repository.ts';
 import { createApiV1TopologyServices, type CreateApiV1TopologyServicesInput } from '../../src/composition/create-api-v1-topology-services.ts';
 
 const NOW_EPOCH_MS = 4_000_000_000_000;
 
 Deno.test('topology composition installs canonical owners and RTT policy inputs', async () => {
-    const runtimeStateRepository = new MemoryRuntimeStateRepository();
+    const runtimeStateRepository = new FakeRuntimeStateRepository();
     const snapshot = createGroupSnapshot();
     const formationEvents: unknown[] = [];
     const input: CreateApiV1TopologyServicesInput = {
@@ -65,12 +63,25 @@ Deno.test('topology composition installs canonical owners and RTT policy inputs'
         replay: { replayWakeCount: 2 }
     });
 
-    await services.groupStateRepository.putPresenceSession(
-        createPresenceSession('session-from', 'alice')
-    );
-    await services.groupStateRepository.putPresenceSession(
-        createPresenceSession('session-to', 'bob')
-    );
+    const sessionFrom = createPresenceSession('session-from', 'alice');
+    const sessionTo = createPresenceSession('session-to', 'bob');
+    await services.groupStateRepository.putGroup(snapshot.group);
+    await services.groupStateRepository.putMember(createActiveMember('alice'));
+    await services.groupStateRepository.putMember(createActiveMember('bob'));
+    await services.groupStateRepository.putPresenceSession(sessionFrom);
+    await services.groupStateRepository.putPresenceSession(sessionTo);
+    await services.groupStateRepository.insertPresenceSummary({
+        applicationId: 'app',
+        workspaceId: 'workspace',
+        groupId: 'group',
+        causalRevision: { groupRevision: 1, presenceRevision: 1 },
+        activePrincipalIds: ['alice', 'bob'],
+        activeSessionIds: ['session-from', 'session-to'],
+        activeSessions: [sessionFrom, sessionTo],
+        activePrincipalCount: 2,
+        activeSessionCount: 2,
+        computedAtEpochMs: 1
+    });
     assert.equal((await services.groupStateRepository.listAllPresenceSessions()).length, 2);
     const policy = await services.rtcRttMutationDependencies.readPolicyInputs({
         actor: { principalId: 'alice', sessionId: 'session-from' },
@@ -87,34 +98,42 @@ Deno.test('topology composition installs canonical owners and RTT policy inputs'
         }
     });
 
-    assert.deepEqual(policy.candidateGroups, [snapshot]);
+    // Candidates come from the durable repository, not the cached service: the
+    // stubbed cache snapshot has no active sessions, so a cache read here
+    // would judge the reporting pair dead.
+    assert.equal(policy.candidateGroups.length, 1);
+    assert.equal(policy.candidateGroups[0]!.group.groupId, 'group');
+    assert.deepEqual(
+        policy.candidateGroups[0]!.activeSessions.map((session) => session.sessionId).sort(),
+        ['session-from', 'session-to']
+    );
     assert.equal(policy.overlaySnapshotsByGroupKey.size, 0);
     assert.equal(policy.degreeLimit, 7);
     assert.deepEqual(formationEvents, []);
 });
 
-function createMinimalInput(): CreateApiV1TopologyServicesInput {
-    const runtimeStateRepository = new MemoryRuntimeStateRepository();
+function createActiveMember(principalId: string): GroupMember {
+    const audit = {
+        atEpochMs: 1,
+        actor: { kind: 'session' as const, principalId, sessionId: `session-${principalId}` },
+        reason: null,
+        traceId: null,
+        requestId: `join-${principalId}`
+    };
     return {
-        runtimeStateRepository,
-        groupStateRepository: new GroupStateRepository(
-            runtimeStateRepository,
-            new InMemoryGroupStateEventStore()
-        ),
-        groupStateService: { readSnapshotAtLeast: () => Promise.resolve(undefined) },
-        groupFormationRttMutation: () => {},
-        topologyOutboxWritten: () => undefined,
-        topologyReplayMetrics: {
-            readMetrics: () => ({}),
-            resetMetrics: () => {}
-        },
-        adminClientIds: [],
-        rtcTopologyOptions: {},
-        rttRefinementGateConfig: {
-            minIntervalMs: 30_000,
-            vivaldiDeltaThresholdMs: 5
-        },
-        nowEpochMs: () => NOW_EPOCH_MS
+        applicationId: 'app',
+        workspaceId: 'workspace',
+        groupId: 'group',
+        principalId,
+        role: principalId === 'alice' ? 'owner' : 'member',
+        status: 'active',
+        joined: audit,
+        updated: audit,
+        left: null,
+        removed: null,
+        banned: null,
+        invitedByPrincipalId: null,
+        invitationExpiresAtEpochMs: null
     };
 }
 
@@ -154,8 +173,8 @@ function createGroupSnapshot(): GroupSnapshot {
             workspaceId: 'workspace',
             groupId: 'group',
             displayName: 'Group',
-            activeMemberCount: 0,
-            ownerPrincipalId: 'owner',
+            activeMemberCount: 2,
+            ownerPrincipalId: 'alice',
             snapshotVersion: 1,
             metadataVersion: 1,
             rosterVersion: 1,
@@ -168,73 +187,4 @@ function createGroupSnapshot(): GroupSnapshot {
         memberCount: 0,
         onlineMemberCount: 0
     };
-}
-
-class MemoryRuntimeStateRepository implements RuntimeStateRepositoryLike {
-    private readonly entries = new Map<string, RuntimeStateEntry>();
-
-    findEntry(namespace: string, key: string): Promise<RuntimeStateEntry | undefined> {
-        return Promise.resolve(this.entries.get(`${namespace}:${key}`));
-    }
-
-    findAllEntries(namespace: string): Promise<readonly RuntimeStateEntry[]> {
-        return Promise.resolve(
-            [...this.entries.entries()]
-                .filter(([key]) => key.startsWith(`${namespace}:`))
-                .map(([, entry]) => entry)
-        );
-    }
-
-    async findEntriesByPrefixPage(
-        namespace: string,
-        keyPrefix: string,
-        options: RuntimeStateEntryPageOptions
-    ): Promise<readonly RuntimeStateEntry[]> {
-        return (await this.findAllEntries(namespace))
-            .filter((entry) =>
-                entry.key.startsWith(keyPrefix) &&
-                (options.afterKey === undefined || entry.key > options.afterKey)
-            )
-            .slice(0, options.limit);
-    }
-
-    readRuntimeStateBatch(
-        selectors: readonly RuntimeStateReadBatchSelector[]
-    ): Promise<readonly RuntimeStateReadBatchSelection[]> {
-        return Promise.resolve(selectRuntimeStateReadBatch(
-            selectors.flatMap((selector) =>
-                [...this.entries]
-                    .filter(([compositeKey]) => compositeKey.startsWith(`${selector.namespace}:`))
-                    .map(([, entry]) => ({ namespace: selector.namespace, entry }))
-            ),
-            selectors
-        ));
-    }
-
-    upsert(
-        namespace: string,
-        key: string,
-        value: string,
-        expireAtTimestamp: number
-    ): Promise<void> {
-        const identity = `${namespace}:${key}`;
-        const current = this.entries.get(identity);
-        this.entries.set(identity, {
-            key,
-            value,
-            expireAtTimestamp,
-            updatedTimestamp: new Date(0).toISOString(),
-            revision: current ? current.revision + 1 : 0
-        });
-        return Promise.resolve();
-    }
-
-    deleteByKey(namespace: string, key: string): Promise<void> {
-        this.entries.delete(`${namespace}:${key}`);
-        return Promise.resolve();
-    }
-
-    deleteExpired(): Promise<number> {
-        return Promise.resolve(0);
-    }
 }

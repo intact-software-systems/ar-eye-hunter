@@ -148,9 +148,12 @@ export function createApiV1TopologyServices(
                     sessionIds.has(command.rtt.sessionIdTo)
                 )
                 .map(({ ref }) => ref);
+            // Acceptance judges pair liveness durably: AppInbox executes RTT
+            // submits on any cluster server, and a server-local cache can lag
+            // the joins it is judging, permanently rejecting valid evidence.
             const candidateGroups = (
                 await Promise.all(
-                    groupRefs.map((ref) => input.groupStateService.readSnapshotAtLeast(ref, {}))
+                    groupRefs.map((ref) => groupStateRepository.readSnapshot(ref))
                 )
             ).filter((snapshot) => snapshot !== undefined);
             const overlaySnapshotsByGroupKey = new Map<string, RallarOverlayTopologySnapshot>();
