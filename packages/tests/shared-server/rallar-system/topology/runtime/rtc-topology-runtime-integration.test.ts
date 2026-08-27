@@ -211,7 +211,9 @@ describe('RTC topology process runtime integration', () => {
         const metrics = new RtcTopologyMetrics();
         const times = [10, 17];
         const planner = new RtcTopologyPlanner(
-            { topologyKind: 'tree', rttReportingDegreeLimit: 1 },
+            // Reporting resolves no lower than the planning degree limit, so the
+            // sparse setup pins both limits to 1.
+            { topologyKind: 'tree', degreeLimit: 1, rttReportingDegreeLimit: 1 },
             { metrics, durationNowMs: () => times.shift() ?? 17 }
         );
 
@@ -239,7 +241,9 @@ describe('RTC topology process runtime integration', () => {
         const metrics = new RtcTopologyMetrics();
         let clockReads = 0;
         const planner = new RtcTopologyPlanner(
-            { topologyKind: 'tree', rttReportingDegreeLimit: 1 },
+            // Reporting resolves no lower than the planning degree limit, so the
+            // sparse setup pins both limits to 1.
+            { topologyKind: 'tree', degreeLimit: 1, rttReportingDegreeLimit: 1 },
             {
                 metrics,
                 durationNowMs: () => {

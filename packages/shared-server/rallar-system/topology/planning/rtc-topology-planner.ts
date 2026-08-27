@@ -206,9 +206,12 @@ export class RtcTopologyPlanner {
     }
 
     readRttReportingDegreeLimit(options: RallarRtcTopologyServiceOptions): number {
-        return normalizeRttReportingDegreeLimit(
-            options.rttReportingDegreeLimit,
-            this.readDegreeLimit(options)
+        // A reporting limit below the planning degree limit would reject
+        // evidence for planned edges, so readiness could never cover the plan.
+        const degreeLimit = this.readDegreeLimit(options);
+        return Math.max(
+            normalizeRttReportingDegreeLimit(options.rttReportingDegreeLimit, degreeLimit),
+            degreeLimit
         );
     }
 
