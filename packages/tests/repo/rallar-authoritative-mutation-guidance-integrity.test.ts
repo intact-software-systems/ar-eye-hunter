@@ -206,6 +206,70 @@ describe('authoritative mutation guidance integrity', () => {
         ]);
     });
 
+    it('requires the IDE causal-navigation cold probe for changed mutation control flow', () => {
+        const codeWriting = readRepo('.agents/skills/rallar-code-writing/SKILL.md');
+        const codeStyle = readRepo('.agents/skills/rallar-code-writing/references/repo-code-style.md');
+        const serviceWriting = readRepo(canonicalServiceWritingPath);
+        const testing = readRepo('.agents/skills/rallar-testing/SKILL.md');
+        const testCommands = readRepo('.agents/skills/rallar-testing/references/test-commands.md');
+
+        expectAllNormalized(codeStyle, [
+            'IDE causal navigation',
+            'Go to Definition and Find Usages',
+            'concrete operation entry',
+            'domain or update policy',
+            'first conditional write guard',
+            'exact durable result',
+            'after-commit effect',
+            'search escapes',
+            'ambiguous pivots',
+            'named deferred boundaries',
+            'no global call-depth limit',
+            'named functions passed to `Either` or pipeline operators'
+        ]);
+        expectAllNormalized(serviceWriting, [
+            '5/5 cold probe',
+            'concrete AppInbox registration',
+            'first conditional write guard',
+            'exact durable result',
+            'after-commit effect'
+        ]);
+        for (const source of [codeWriting, testing, testCommands]) {
+            expectAllNormalized(source, [
+                'npm run check:repo-style:navigation-details',
+                'authoritative mutation control flow',
+                '5/5 cold probe'
+            ]);
+        }
+    });
+
+    it('qualifies functional-shell guidance by callable ownership instead of syntax', () => {
+        const codeWriting = readRepo('.agents/skills/rallar-code-writing/SKILL.md');
+        const codeStyle = readRepo('.agents/skills/rallar-code-writing/references/repo-code-style.md');
+
+        expectAllNormalized(codeWriting, [
+            'Functional core, explicit imperative shell, named functional composition where it makes failure flow clearer',
+            'A callable collection is not itself an indirection violation',
+            'If classification is uncertain, report it; do not mechanically refactor it',
+            'new or worsened high-confidence registration-indirection and unnamed-deferred-edge findings'
+        ]);
+        expectAllNormalized(codeStyle, [
+            'Functional core, explicit imperative shell, named functional composition where it makes failure flow clearer',
+            'Do not erase a fixed, meaningful operation inventory unless the generic owner contributes semantics that justify doing so',
+            'runtime-extensible',
+            'declarative data',
+            'ordering, scheduling, lifecycle, retry, cleanup, or failure semantics',
+            'transparent wrappers',
+            'Never auto-fix a callable-inventory finding',
+            'Existing high-confidence debt does not block an unrelated change',
+            'legitimate boundaries and unknown/manual-review classifications never block'
+        ]);
+        expect(codeWriting).not.toContain('Disallow erased inventory');
+        expect(codeStyle).not.toContain('Disallow erased inventory');
+        expect(codeWriting).not.toContain('value or failure flow clearer');
+        expect(codeStyle).not.toContain('value or failure flow clearer');
+    });
+
     it.each([
         '.agents/skills/rallar-testing/SKILL.md',
         '.agents/skills/rallar-testing/references/test-commands.md',

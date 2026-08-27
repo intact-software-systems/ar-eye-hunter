@@ -58,6 +58,53 @@ describe('GitHub Actions runtime governance', () => {
         expect(releaseGate).not.toContain('npm run check:test-structure-coupling');
     });
 
+    it('observes IDE navigation after dependency installation without weakening failures', async () => {
+        const releaseGate = await readFile(
+            path.join(repoRoot, '.github/workflows/release-gate.yml'),
+            'utf8'
+        );
+        const installIndex = releaseGate.indexOf('run: npm ci');
+        const navigationIndex = releaseGate.indexOf(
+            'run: npm run check:repo-style:navigation-details'
+        );
+        const changedStyleIndex = releaseGate.indexOf(
+            'node scripts/check-changed-repo-style.mjs'
+        );
+
+        expect(installIndex).toBeGreaterThan(-1);
+        expect(navigationIndex).toBeGreaterThan(installIndex);
+        expect(changedStyleIndex).toBeGreaterThan(navigationIndex);
+        expect(releaseGate.slice(navigationIndex - 120, navigationIndex + 120)).not.toContain(
+            'continue-on-error'
+        );
+    });
+
+    it('restores Deno caches without saving unless the exact main push is checked out', async () => {
+        const releaseGate = await readFile(
+            path.join(repoRoot, '.github/workflows/release-gate.yml'),
+            'utf8'
+        );
+        const restoreOnlyCacheStep = getWorkflowStep(
+            releaseGate,
+            'Restore Deno cache without save permission'
+        );
+        const trustedCacheStep = getWorkflowStep(releaseGate, 'Cache Deno for trusted runs');
+
+        expect(restoreOnlyCacheStep).toContain(
+            'if: ${{ github.event_name != \'push\' || github.ref != \'refs/heads/main\' || inputs.candidate_ref != github.sha }}'
+        );
+        expect(restoreOnlyCacheStep).toContain('uses: actions/cache/restore@v6');
+        expect(restoreOnlyCacheStep).not.toContain('uses: actions/cache@v6');
+        expect(trustedCacheStep).toContain(
+            'if: ${{ github.event_name == \'push\' && github.ref == \'refs/heads/main\' && inputs.candidate_ref == github.sha }}'
+        );
+        expect(trustedCacheStep).toContain('uses: actions/cache@v6');
+        expect(releaseGate).not.toContain('lookup-only:');
+        expect(releaseGate).toContain(
+            'ref: ${{ github.event_name == \'workflow_dispatch\' && github.sha || inputs.candidate_ref }}'
+        );
+    });
+
     it('uses the exact merge base when the trusted base tip has diverged', async () => {
         const fixtureRoot = mkdtempSync(path.join(tmpdir(), 'rallar-changed-review-range-'));
         try {
@@ -145,4 +192,15 @@ describe('GitHub Actions runtime governance', () => {
 
 function runGit(root: string, args: readonly string[]): string {
     return execFileSync('git', args, { cwd: root, encoding: 'utf8' });
+}
+
+function getWorkflowStep(source: string, stepName: string): string {
+    const marker = `      - name: ${stepName}`;
+    const start = source.indexOf(marker);
+    if (start === -1) {
+        return '';
+    }
+
+    const nextStep = source.indexOf('\n      - name:', start + marker.length);
+    return source.slice(start, nextStep === -1 ? undefined : nextStep);
 }

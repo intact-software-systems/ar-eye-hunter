@@ -8,6 +8,7 @@ import {
     findingMagnitude,
     matchesBaseMagnitude
 } from './repo-style-check/finding-magnitude.mjs';
+import { navigationClassifications, scanNavigationProject } from './repo-style-check/navigation-rules.mjs';
 import {
     collectProductionSources,
     isProductionCodeFile,
@@ -72,13 +73,26 @@ async function main() {
         targetSources: governedTargetSources,
         changes
     });
-    const baseFindings = toEnforcedFindings(
-        scanProductionSources({ repoRoot, sources: baseSources, options: scanOptions }).findings
+    const navigationProductChanged = changes.some((change) =>
+        [change.source, change.target]
+            .filter(Boolean)
+            .some((file) => isNavigationProductSource(repoRoot, path.join(repoRoot, file)))
     );
-    const targetFindings = toEnforcedFindings(
-        scanProductionSources({ repoRoot, sources: governedTargetSources, options: scanOptions })
-            .findings
-    );
+    const baseFindings = [
+        ...toEnforcedFindings(
+            scanProductionSources({ repoRoot, sources: baseSources, options: scanOptions }).findings
+        ),
+        ...(navigationProductChanged ? scanHighConfidenceNavigationFindings(repoRoot, baseSources) : [])
+    ];
+    const targetFindings = [
+        ...toEnforcedFindings(
+            scanProductionSources({ repoRoot, sources: governedTargetSources, options: scanOptions })
+                .findings
+        ),
+        ...(navigationProductChanged
+            ? scanHighConfidenceNavigationFindings(repoRoot, governedTargetSources)
+            : [])
+    ];
     const newFindings = subtractExistingFindings({
         repoRoot,
         baseFindings,
@@ -104,6 +118,19 @@ const isGovernedSourceFile = (file) => isProductionCodeFile(file) || isTestSourc
 // Both sides of the comparison are filtered, so a rule that is not yet enforced on tests never
 // enters the base or the target set and cannot register as new or worsened.
 const toEnforcedFindings = (findings) => findings.filter((entry) => isTestEnforcedFinding(entry.file, entry.ruleId));
+
+function scanHighConfidenceNavigationFindings(repoRoot, sources) {
+    const productionSources = sources.filter(({ file }) => isNavigationProductSource(repoRoot, file));
+    return scanNavigationProject({ repoRoot, sources: productionSources }).findings.filter(
+        (finding) => finding.classification === navigationClassifications.highConfidenceFinding
+    );
+}
+
+function isNavigationProductSource(repoRoot, file) {
+    const relativeFile = toRelativePath(repoRoot, file);
+    return isProductionCodeFile(file) &&
+        (relativeFile.startsWith('apps/') || relativeFile.startsWith('packages/'));
+}
 
 function printChangedFindings(result) {
     for (const issue of result.governanceIssues) {

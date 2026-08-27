@@ -65,10 +65,29 @@ PR B uses the focused semantic entry, transaction, and exit suites:
 
 ```bash
 npx vitest run \
-  packages/tests/shared-server/group-state/inbox/app-group-inbox-registration-lifecycle.test.ts \
-  packages/tests/shared-server/group-state/inbox/group-state-inbox-transaction-result.test.ts \
+  packages/tests/shared-server/rallar-system/group-state/inbox/domain-inbox-registration.test.ts \
+  packages/tests/shared-server/rallar-system/group-state/inbox/group-state-inbox-transaction-result.test.ts \
   packages/tests/repo/mutation-route-ownership/authoritative/authoritative-mutation-read-compute-validate-write.test.ts
 ```
+
+## IDE causal-navigation observation
+
+When authoritative mutation control flow changes, run the observational project
+report with the smallest useful repeated roots:
+
+```bash
+npm run check:repo-style:navigation-details
+npm run check:repo-style:navigation-details -- --root packages/shared-server/rallar-system/group-state --root apps/api-v1/src
+```
+
+Then perform the manual 5/5 cold probe using only Go to Definition and Find
+Usages. The five landmarks are concrete operation entry, domain or update policy,
+first conditional write guard, exact durable result, and after-commit effect.
+Record search escapes, ambiguous pivots, and named deferred boundaries. The
+report remains observational. The changed-range gate rejects only new or
+worsened high-confidence registration-indirection and unnamed-deferred-edge
+findings; legitimate and unknown/manual classifications remain non-blocking.
+Analyzer execution failure is still fatal.
 
 ## Type Checks And Builds
 

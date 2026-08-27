@@ -157,6 +157,23 @@ exhaustive operation inventory. Timing identity fields are deliberately
 populated, deliberately retained for compatibility, or removed only through
 separately approved observable-behavior work.
 
+## IDE causal-navigation mutation probe
+
+When authoritative mutation control flow changes, start at the concrete AppInbox
+registration and perform the canonical 5/5 cold probe using only Go to Definition
+and Find Usages. Reach the concrete operation entry, domain or update policy,
+first conditional write guard, exact durable result, and after-commit effect.
+Record search escapes, ambiguous business-interface pivots, and named deferred
+boundaries. A passing test or analyzer report does not replace this manual probe.
+When a family intentionally performs no after-commit work, reach the explicit
+commit return that proves the absence and record it as the fifth landmark.
+
+The transaction callback, repository, transaction-writer, queue, clock, gateway,
+and sink remain legitimate named effect boundaries. Keep the business phases on
+the caller side visible, and keep the callable edge to each boundary concrete.
+Named functions passed through `Either` or another functional pipeline preserve
+the edge; no controller or class wrapper is required.
+
 ## Verification
 
 For every materially different AppInbox callback, transaction, retry, protocol,

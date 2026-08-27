@@ -377,6 +377,50 @@ justified import renames, and namespace-before-class ordering.
 
 ### Optional noisy checks
 
+Run the IDE causal-navigation report when reviewing authoritative
+mutation control flow or API-v1 route entry paths:
+
+```bash
+npm run check:repo-style:navigation-details
+```
+
+Use repeated `--root` arguments for focused calibration. The report recognizes
+concrete AppInbox registrations and Hono route handlers, follows resolvable named
+callables across files, and reports these stable signals:
+
+- `navigation.registration-indirection` for registrations whose concrete type is
+  hidden behind an indirect registration shape;
+- `navigation.unnamed-deferred-edge` for deferred work without visible inline
+  work or a transparent edge to a concrete named callable; and
+- `navigation.interface-pivot` when a business call resolves only to a type
+  signature and Find Usages exposes multiple production candidates.
+
+Repository, transaction-writer, queue, clock, gateway, and sink contracts are
+printed as named effect-port facts rather than interface-pivot findings. Named
+callback contracts and decoder strategies are likewise printed as deferred and
+translation boundary facts, because they are not competing business owners.
+The report also classifies every detail as a high-confidence finding, a
+legitimate dynamic boundary, or unknown/manual review. Interface pivots and
+analysis uncertainty remain manual-review evidence.
+
+Callable collections are judged by ownership rather than syntax. Runtime-owned
+listeners, lifecycle participants, cleanup stacks, plugins, middleware, and
+named declarative tables are legitimate boundaries. A statically fixed
+application-operation inventory becomes `navigation.unnamed-deferred-edge` only
+when anonymous entries cross a generic mount, registration, or installation
+boundary whose executor merely invokes them. Transparent wrappers are followed,
+so adding a pass-through name does not hide the same inventory. The analyzer
+never auto-fixes these findings.
+
+The report command remains observational and exits successfully when findings
+exist. The changed-range gate blocks only new or worsened high-confidence
+`navigation.registration-indirection` and
+`navigation.unnamed-deferred-edge` findings. Existing findings do not block
+unrelated changes, and legitimate or unknown/manual classifications never block.
+Invalid arguments, project construction failures, and analyzer errors fail the
+command. Output is deterministic and capped at 200 detailed entries; per-rule
+counts retain the complete totals.
+
 Run detailed construction-shape checks when reviewing late binding, callback
 depth, or boundary-free wrappers:
 
@@ -485,6 +529,13 @@ npm run check:repo-style:changed -- origin/main
 The comparison enables the optional contract and detailed layout checks for
 changed production code. Existing findings may remain unchanged, improve, or
 disappear without blocking the branch.
+
+For changed product code under `apps/**` or `packages/**`, the comparison also
+runs cross-file navigation analysis on merge-base and candidate production
+sources. It gates only newly introduced or worsened high-confidence
+registration-indirection and unnamed-deferred-edge findings; interface pivots,
+legitimate boundaries, diagnostics, and unchanged navigation debt remain
+observational.
 
 #### Reviewed changed-file dispositions
 

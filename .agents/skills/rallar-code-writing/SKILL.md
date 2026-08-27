@@ -7,6 +7,15 @@ description: Use when writing, generating, refactoring, or reviewing any human-a
 
 ## Start Here
 
+For every task that matches this skill, before inspecting implementation code
+or making coding decisions, read this skill and
+`references/repo-code-style.md` completely. Select and announce the other
+immediately applicable skills before continuing. Skill descriptions are routing
+metadata, not a substitute for the skill body. Do not load unrelated skills
+merely to complete the preflight. If inspection later introduces a new domain
+or technical surface, load its applicable skill before deciding that part of
+the change.
+
 Code is written first for human developers. Correctness, safety, security,
 compatibility, and required performance remain mandatory; within those
 constraints, choose the shape a human can locate, trace, understand, and
@@ -16,6 +25,13 @@ A mechanically compliant change is not acceptable when it adds indirection,
 hides a decision, fragments one dataflow, weakens names, or makes ownership
 less obvious. Resolve a detailed-rule tradeoff through the direct
 owner-to-result path and use only the escalation conditions below.
+
+Functional core, explicit imperative shell, named functional composition where
+it makes failure flow clearer. A callable collection is not itself an indirection
+violation: runtime-owned callbacks, declarative strategies, lifecycle hooks,
+middleware, plugins, and cleanup steps may be the truthful model. If
+classification is uncertain, report it; do not mechanically refactor it. The
+canonical standard defines the fixed-inventory decision test.
 
 Production code is the primary design artifact; tests are secondary evidence.
 Tests protect independently stated observable behavior, public contracts, safety
@@ -234,6 +250,15 @@ directory containing changed production files. For public API or cross-runtime
 changes, check both browser and server consumers. Report passed, failed, and
 skipped commands in the completion handoff. For written or multi-slice work,
 `adaptive-plan-execution` owns working-plan and proportional-validation judgment.
+
+When authoritative mutation control flow changes, also run
+`npm run check:repo-style:navigation-details` with the smallest useful repeated
+`--root` scope and perform the manual 5/5 cold probe from the concrete
+registration. The detailed report remains observational, while the changed-range
+gate rejects new or worsened high-confidence registration-indirection and
+unnamed-deferred-edge findings. Legitimate and unknown/manual classifications do
+not block. Analyzer execution failure and a failed post-consolidation cold probe
+are real validation failures.
 
 For every construction-detail warning in changed production code, record its
 path, rule, and symbol plus one human disposition: resolved throughout the

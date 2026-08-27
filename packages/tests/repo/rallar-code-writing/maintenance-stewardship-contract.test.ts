@@ -34,6 +34,13 @@ const publicCompatibilityLegacyDimensions = [
     'legacy.scope-containment',
     'legacy.preexisting-pressure-rejection'
 ] as const;
+const preflightDimensions = [
+    'preflight.before-implementation-inspection',
+    'preflight.complete-required-reading',
+    'preflight.minimum-applicable-set',
+    'preflight.new-surface-gate',
+    'preflight.observable-order'
+] as const;
 const allDimensions = [
     ...stewardshipDimensions,
     'legacy.safe-private-removal',
@@ -42,7 +49,8 @@ const allDimensions = [
     'legacy.preexisting-pressure-rejection',
     'legacy.public-compatibility-safety',
     'legacy.minimized-boundary',
-    'legacy.retention-governance'
+    'legacy.retention-governance',
+    ...preflightDimensions
 ] as const;
 const legacyRemovalGuidancePaths = [
     'AGENTS.md',
@@ -231,7 +239,7 @@ describe('rallar code-writing maintenance stewardship contract', () => {
             );
         }
 
-        const rubric = readJson(`${evaluationRoot}/rubric.json`) as EvaluationRubric;
+        const rubric = readJson<EvaluationRubric>(`${evaluationRoot}/rubric.json`);
         const escalationDimension = rubric.dimensions.find(
             ({ id }) => id === 'stewardship.genuine-decision-escalation'
         );
@@ -239,13 +247,13 @@ describe('rallar code-writing maintenance stewardship contract', () => {
         expectAll(escalationDimension?.pass ?? '', preWorkEvidence);
     });
 
-    it('defines three critical versioned pressure scenarios and a binary rubric', () => {
-        const suite = readJson(`${evaluationRoot}/scenarios.json`) as EvaluationSuite;
-        const rubric = readJson(`${evaluationRoot}/rubric.json`) as EvaluationRubric;
+    it('defines four critical versioned pressure scenarios and a binary rubric', () => {
+        const suite = readJson<EvaluationSuite>(`${evaluationRoot}/scenarios.json`);
+        const rubric = readJson<EvaluationRubric>(`${evaluationRoot}/rubric.json`);
 
         expect(suite.schemaVersion).toBe('rallar-code-writing-scenarios-v1');
         expect(suite.suiteId).toBe('rallar-code-writing-v1');
-        expect(suite.scenarios).toHaveLength(3);
+        expect(suite.scenarios).toHaveLength(4);
         const stewardshipScenario = findScenario(
             suite,
             'pre-existing-noncompliance-under-release-pressure'
@@ -255,6 +263,7 @@ describe('rallar code-writing maintenance stewardship contract', () => {
             suite,
             'public-compatibility-legacy-restraint'
         );
+        const preflightScenario = findScenario(suite, 'pre-decision-skill-preflight');
         expect(stewardshipScenario).toMatchObject({
             id: 'pre-existing-noncompliance-under-release-pressure',
             critical: true,
@@ -286,6 +295,20 @@ describe('rallar code-writing maintenance stewardship contract', () => {
         expect(publicCompatibilityScenario.prompt).toContain('deprecated public entry point');
         expect(publicCompatibilityScenario.prompt).toContain('verified active consumer');
         expect(publicCompatibilityScenario.prompt).toContain('duplicate business logic');
+        expect(preflightScenario).toMatchObject({
+            critical: true,
+            primarySkill: 'rallar-code-writing',
+            requiredDimensions: preflightDimensions
+        });
+        expect(preflightScenario.pressures).toEqual([
+            'inspect-first-request',
+            'catalog-metadata-shortcut',
+            'load-everything-overcorrection',
+            'new-domain-discovered-late'
+        ]);
+        expect(preflightScenario.prompt).toContain('apps/api-v1/src/main.ts');
+        expect(preflightScenario.prompt).toContain('skill descriptions are already visible');
+        expect(preflightScenario.prompt).toContain('realtime authorization mutation');
 
         expect(rubric.schemaVersion).toBe('rallar-code-writing-rubric-v1');
         expect(rubric.suiteId).toBe(suite.suiteId);
@@ -302,8 +325,8 @@ describe('rallar code-writing maintenance stewardship contract', () => {
     });
 
     it('keeps expected stewardship actions in the rubric instead of the pressure prompt', () => {
-        const suite = readJson(`${evaluationRoot}/scenarios.json`) as EvaluationSuite;
-        const rubric = readJson(`${evaluationRoot}/rubric.json`) as EvaluationRubric;
+        const suite = readJson<EvaluationSuite>(`${evaluationRoot}/scenarios.json`);
+        const rubric = readJson<EvaluationRubric>(`${evaluationRoot}/rubric.json`);
         const forbiddenAnswerFragments = [
             'standards compliance across every file you touch',
             'remediation scope propagates',
@@ -356,7 +379,7 @@ describe('rallar code-writing maintenance stewardship contract', () => {
     });
 
     it('keeps each pressure scenario deterministic, non-mutating, and workspace-independent', () => {
-        const suite = readJson(`${evaluationRoot}/scenarios.json`) as EvaluationSuite;
+        const suite = readJson<EvaluationSuite>(`${evaluationRoot}/scenarios.json`);
 
         for (const scenario of suite.scenarios) {
             const prompt = normalize(scenario.prompt);
@@ -419,8 +442,8 @@ function readRepo(repositoryPath: string): string {
     return readFileSync(path.join(repoRoot, repositoryPath), 'utf8');
 }
 
-function readJson(repositoryPath: string): unknown {
-    return JSON.parse(readRepo(repositoryPath));
+function readJson<T>(repositoryPath: string): T {
+    return JSON.parse(readRepo(repositoryPath)) as T;
 }
 
 function normalize(value: string): string {

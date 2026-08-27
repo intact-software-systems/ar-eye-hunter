@@ -59,6 +59,26 @@
     {
       "id": "legacy.retention-governance",
       "pass": "Requires explicit authorized-maintainer approval and a durable retained-legacy registry entry for the exact path and symbol before completing with the public boundary retained. The registry facts name its purpose, canonical owner, verified consumer dependency, unsafe-removal reason, minimization, compatibility tests, named owner, and review or removal condition."
+    },
+    {
+      "id": "preflight.before-implementation-inspection",
+      "pass": "Classifies the task from the request and repository guidance, then reads immediately applicable skills before opening implementation files, forming an implementation plan, choosing an abstraction, reviewing code, or editing."
+    },
+    {
+      "id": "preflight.complete-required-reading",
+      "pass": "Reads each selected SKILL.md completely together with every reference it marks as required for the known task, and does not treat catalog names or descriptions as loaded guidance."
+    },
+    {
+      "id": "preflight.minimum-applicable-set",
+      "pass": "Selects the smallest immediately applicable process, code-standard, and domain skill set instead of preloading every available skill or omitting an already-known applicable skill."
+    },
+    {
+      "id": "preflight.new-surface-gate",
+      "pass": "When realtime authorization becomes newly relevant, pauses decisions for that surface until the newly applicable domain and authoritative-mutation guidance has been read; already completed preflight work is not repeated without cause."
+    },
+    {
+      "id": "preflight.observable-order",
+      "pass": "States the selected skills and their loading order before repository inspection so a human can verify the pre-decision sequence."
     }
   ],
   "resultContract": {
