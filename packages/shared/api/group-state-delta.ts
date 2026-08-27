@@ -1,6 +1,10 @@
 import { validateAuthoritativeGroupEvent } from './authoritative-state-validation.ts';
 import { compareGroupCausalRevision } from './group-client-views.ts';
 import { GROUP_LIFECYCLE_STATES } from './group-lifecycle/group-lifecycle-policy.ts';
+import {
+    GROUP_LAYOUT_IDENTITY_KEYS,
+    GROUP_LAYOUT_IDENTITY_STATES
+} from './group-lifecycle/group-layout-identity.ts';
 import type { Group, GroupEvent, GroupMember, GroupPresenceSession, GroupStateCausalRevision } from './group-types.ts';
 import type { StateScope } from './state-types.ts';
 
@@ -75,7 +79,9 @@ const GROUP_KEYS = [
     'formationAttemptCount',
     'lastFormationOutcome',
     'establishmentStartedAtEpochMs',
-    'formationElectorate'
+    'formationElectorate',
+    'acceptedLayoutIdentity',
+    'transportState'
 ];
 const GROUP_MEMBER_KEYS = [
     'applicationId',
@@ -233,6 +239,15 @@ function validateDeltaGroup(
             fail(`${label}.formationElectorate entries must be non-empty strings`);
         }
     }
+    if (group.acceptedLayoutIdentity !== null) {
+        const accepted = record(group.acceptedLayoutIdentity, `${label}.acceptedLayoutIdentity`);
+        exact(accepted, GROUP_LAYOUT_IDENTITY_KEYS, `${label}.acceptedLayoutIdentity`);
+        for (const key of ['groupRevision', 'presenceRevision', 'version'] as const) {
+            nonNegativeInteger(accepted[key], `${label}.acceptedLayoutIdentity.${key}`);
+        }
+        enumValue(accepted.state, GROUP_LAYOUT_IDENTITY_STATES, `${label}.acceptedLayoutIdentity.state`);
+    }
+    enumValue(group.transportState, ['flowing', 'halted'], `${label}.transportState`);
     return { activeMemberCount: group.activeMemberCount, status: group.status };
 }
 

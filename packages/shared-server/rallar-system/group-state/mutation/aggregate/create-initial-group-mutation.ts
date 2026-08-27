@@ -42,7 +42,9 @@ export function createInitialGroup({
         formationAttemptCount: 0,
         lastFormationOutcome: null,
         establishmentStartedAtEpochMs: null,
-        formationElectorate: [command.input.createdByPrincipalId]
+        formationElectorate: [command.input.createdByPrincipalId],
+        acceptedLayoutIdentity: null,
+        transportState: 'flowing'
     };
 }
 

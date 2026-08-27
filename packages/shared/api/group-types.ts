@@ -1,5 +1,6 @@
 import type { ApiJsonObject } from './api-json-value.ts';
-import type { GroupFormationOutcome, GroupLifecycleState } from './group-lifecycle/group-lifecycle-policy.ts';
+import type { GroupFormationOutcome, GroupLifecycleState, GroupTransportState } from './group-lifecycle/group-lifecycle-policy.ts';
+import type { GroupLayoutIdentity } from './group-lifecycle/group-layout-identity.ts';
 import type { MutationActor } from './mutation-actor.ts';
 
 export type ApplicationId = string;
@@ -99,6 +100,22 @@ type GroupBase =
          * manager. At creation this is the creator alone.
          */
         formationElectorate: readonly string[];
+
+        /**
+         * The layout identity the canonical promotion effect last accepted
+         * (product decisions 24/29/42). Null until a first promotion; `reset`
+         * clears it. Written only inside the activateGroup or
+         * applyPlannedLayout transaction, never by the planner.
+         */
+        acceptedLayoutIdentity: GroupLayoutIdentity | null;
+
+        /**
+         * The data valve (product decision 25): set by pause, cleared by
+         * resume, never automatic. Orthogonal to the stage — a halted group
+         * keeps its accepted layout and presence while application data stops.
+         * Creation is always `flowing`.
+         */
+        transportState: GroupTransportState;
     }>;
 
 export type Group =

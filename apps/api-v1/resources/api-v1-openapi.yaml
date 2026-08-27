@@ -4496,6 +4496,8 @@ components:
         - lastFormationOutcome
         - establishmentStartedAtEpochMs
         - formationElectorate
+        - acceptedLayoutIdentity
+        - transportState
       discriminator:
         propertyName: status
       oneOf:
@@ -4613,6 +4615,40 @@ components:
           type: array
           items:
             type: string
+        acceptedLayoutIdentity:
+          $ref: '#/components/schemas/GroupLayoutIdentity'
+          nullable: true
+        transportState:
+          type: string
+          enum: [flowing, halted]
+
+    GroupLayoutIdentity:
+      type: object
+      description: >-
+        The identity of a planned or accepted overlay layout (product decision
+        29): the causal tuple plus version plus state. A version alone is not a
+        safe predicate because the removed tombstone reuses it.
+      required:
+        - groupRevision
+        - presenceRevision
+        - version
+        - state
+      properties:
+        groupRevision:
+          type: integer
+          format: int64
+          minimum: 0
+        presenceRevision:
+          type: integer
+          format: int64
+          minimum: 0
+        version:
+          type: integer
+          format: int64
+          minimum: 0
+        state:
+          type: string
+          enum: [active, removed]
 
     GroupFormationView:
       type: object

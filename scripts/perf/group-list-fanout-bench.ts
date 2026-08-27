@@ -154,6 +154,8 @@ function createGroup(groupId: string, ownerPrincipalId: string): Group {
         lastFormationOutcome: null,
         establishmentStartedAtEpochMs: null,
         formationElectorate: [ownerPrincipalId],
+        acceptedLayoutIdentity: null,
+        transportState: 'flowing',
         snapshotVersion: 1,
         metadataVersion: 1,
         rosterVersion: 1,
