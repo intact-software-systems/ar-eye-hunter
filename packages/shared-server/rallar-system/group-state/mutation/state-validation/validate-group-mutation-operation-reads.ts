@@ -3,7 +3,8 @@ import type { GroupMutationCommand, GroupMutationRead } from '../group-mutation-
 import {
     isGroupAdmissionDecisionOperation,
     isGroupAdmissionPolicyReadOperation,
-    isGroupLifecycleTransitionOperation
+    isGroupLifecycleTransitionOperation,
+    isLayoutFencedGroupMutationCommand
 } from '../group-mutation-contracts.ts';
 
 export function validateGroupMutationOperationReads(
@@ -12,6 +13,20 @@ export function validateGroupMutationOperationReads(
 ): void {
     validateLifecyclePolicyRead(read, command);
     validateActiveMemberPrincipalIdsRead(read, command);
+    validatePlannedLayoutIdentityRead(read, command);
+}
+
+/**
+ * The planned layout is read exactly for commands that carry a layout fence;
+ * null stays legal there because the reader may find no planned row.
+ */
+function validatePlannedLayoutIdentityRead(
+    read: GroupMutationRead,
+    command: GroupMutationCommand
+): void {
+    if (!isLayoutFencedGroupMutationCommand(command) && read.plannedLayoutIdentity !== null) {
+        throw new TypeError('Group mutation read carries a planned layout for an unfenced command');
+    }
 }
 
 /**
@@ -65,11 +80,5 @@ function validateActiveMemberPrincipalIdsRead(
         throw new TypeError(
             'Group mutation read must not carry active member principal ids for this operation'
         );
-    }
-    if (
-        !isGroupLifecycleTransitionOperation(command.operation) &&
-        read.plannedLayoutIdentity !== null
-    ) {
-        throw new TypeError('Group mutation read carries a planned layout for a non-lifecycle operation');
     }
 }

@@ -67,25 +67,34 @@ function validateInternalMutationAuthority(
             );
         case 'none':
             throw new TypeError('Internal group mutation cannot carry the none authority mode');
+        default: {
+            // The compile-time anchor keeps the matrix total: an unhandled
+            // future mode is a type error here, never a fail-open fallthrough.
+            const unhandled: never = facts.internalAuthority;
+            throw new TypeError(`Internal group mutation authority mode is unknown: ${String(unhandled)}`);
+        }
     }
 }
 
+// The fence guards reject absent (`undefined`) alongside explicit null: a
+// wire-decoded command lacking the keys is malformed here, not later as a
+// lying stale-epoch rejection in compute.
 function validateFormationCriterionAuthority(command: GroupMutationCommand): void {
     switch (command.operation) {
         case 'startGroupEstablishment':
-            if (command.input.expectedFormationEpoch === null) {
+            if (command.input.expectedFormationEpoch === null || command.input.expectedFormationEpoch === undefined) {
                 throw new TypeError('Criterion transitions must carry the expected formation epoch fence');
             }
             return;
         case 'activateGroup':
         case 'failGroupFormation':
-            if (command.input.expectedFormationEpoch === null) {
+            if (command.input.expectedFormationEpoch === null || command.input.expectedFormationEpoch === undefined) {
                 throw new TypeError('Criterion transitions must carry the expected formation epoch fence');
             }
-            if (command.input.observedRate === null) {
+            if (command.input.observedRate === null || command.input.observedRate === undefined) {
                 throw new TypeError('Criterion transitions must carry the observed rate');
             }
-            if (command.input.expectedLayout === null) {
+            if (command.input.expectedLayout === null || command.input.expectedLayout === undefined) {
                 throw new TypeError('Criterion transitions must carry the expected layout fence');
             }
             return;

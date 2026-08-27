@@ -31,7 +31,6 @@ import type {
     RuntimeStateOptimisticTransactionalRepositoryLike
 } from '@shared-server/runtime-state/runtime-state-repository.ts';
 import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
-import type { GroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
 import type { GroupEvent } from '@shared/api/group-types.ts';
 
 export type GroupStateTestMutationResult =
@@ -54,8 +53,6 @@ type GroupStateTestMaintenanceCommand = ReturnType<typeof toExpiryCommand> | Ret
 
 export class GroupStateTestMutationExecutor {
     private readonly dependencies: GroupStateTestMutationExecutorDependencies;
-    /** The stored planned layout identity the fence reads; tests set it per case. */
-    plannedLayoutIdentity: GroupLayoutIdentity | null = null;
 
     constructor(dependencies: GroupStateTestMutationExecutorDependencies) {
         this.dependencies = dependencies;
@@ -104,7 +101,7 @@ export class GroupStateTestMutationExecutor {
         );
         let computed: GroupMutationComputed | undefined;
         for (let attempt = 1; attempt <= 3; attempt += 1) {
-            const read = await readGroupMutation(this.repository(), command, this.plannedLayoutIdentity);
+            const read = await readGroupMutation(this.repository(), command);
             const facts: GroupMutationFacts = {
                 nowEpochMs: atEpochMs,
                 expireAtEpochMs: TEST_OUTBOX_EXPIRE_AT_EPOCH_MS,

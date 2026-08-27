@@ -1,11 +1,7 @@
 import type { Key, ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { Either } from '@shared/resilience/Either.ts';
 
-import {
-    timeRallarAsync,
-    type RallarTimingDetails,
-    type RallarTimingSink
-} from '../../observability/timing.ts';
+import { timeRallarAsync, type RallarTimingDetails, type RallarTimingSink } from '../../observability/timing.ts';
 import type { JsonWireValue } from '../../protocol/json-wire-identity.ts';
 import type { AppInboxEnqueueInput } from '../app-inbox-contracts.ts';
 import type { AppInboxFailure } from '../app-inbox-failure.ts';
@@ -86,10 +82,11 @@ export class AppInboxCommandClient {
         return await this.timeCommand(enqueue, async () => {
             const key = await this.timeEnqueue(
                 enqueue,
-                async () => await this.queueEntryWriter.enqueueReplacingWhen(
-                    enqueue,
-                    replaceExistingWhen
-                )
+                async () =>
+                    await this.queueEntryWriter.enqueueReplacingWhen(
+                        enqueue,
+                        replaceExistingWhen
+                    )
             );
             return await this.resultWaiter.waitForResult(enqueue, key, decodeResult);
         });

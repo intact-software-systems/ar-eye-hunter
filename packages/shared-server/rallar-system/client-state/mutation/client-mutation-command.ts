@@ -1,7 +1,4 @@
-import {
-    encodeJsonWireValue,
-    hashMutationCommand
-} from '../../protocol/json-wire-identity.ts';
+import { encodeJsonWireValue, hashMutationCommand } from '../../protocol/json-wire-identity.ts';
 
 import type {
     ClientMutationAuthority,

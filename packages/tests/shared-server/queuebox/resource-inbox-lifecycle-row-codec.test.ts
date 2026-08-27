@@ -1,9 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import {
-    isValidResourceInboxLifecycle,
-    type ResourceInboxRow
-} from '@shared-server/queuebox/postgres/resource-inbox-row-codec.ts';
+import { isValidResourceInboxLifecycle, type ResourceInboxRow } from '@shared-server/queuebox/postgres/resource-inbox-row-codec.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 
 const NEW_ROW: ResourceInboxRow = {

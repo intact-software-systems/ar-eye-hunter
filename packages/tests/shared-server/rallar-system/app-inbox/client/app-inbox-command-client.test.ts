@@ -1,10 +1,10 @@
 import { Either } from '@shared/resilience/Either.ts';
 import { describe, expect, it } from 'vitest';
 
-import { AppInboxCommandClient } from '@shared-server/rallar-system/app-inbox/client/app-inbox-command-client.ts';
 import { AppInboxType, type AppInboxEnqueueInput } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
-import type { AppInboxResultWaiter } from '@shared-server/rallar-system/app-inbox/client/app-inbox-result-waiter.ts';
 import { toAppInboxResourceEntry } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-entry.ts';
+import { AppInboxCommandClient } from '@shared-server/rallar-system/app-inbox/client/app-inbox-command-client.ts';
+import type { AppInboxResultWaiter } from '@shared-server/rallar-system/app-inbox/client/app-inbox-result-waiter.ts';
 import type { JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 
 const COMMAND: AppInboxEnqueueInput = {
@@ -22,10 +22,11 @@ describe('AppInboxCommandClient', () => {
         const client = new AppInboxCommandClient(
             {
                 queueEntryWriter: {
-                    enqueue: async (enqueue) => toAppInboxResourceEntry(
-                        enqueue,
-                        'server-12345678'
-                    ),
+                    enqueue: async (enqueue) =>
+                        toAppInboxResourceEntry(
+                            enqueue,
+                            'server-12345678'
+                        ),
                     enqueueReplacingWhen: async () => entry.key
                 },
                 resultWaiter: {
@@ -56,8 +57,7 @@ describe('AppInboxCommandClient', () => {
         );
 
         const result = await client.enqueueAndWaitForResult(COMMAND, (value) => ({
-            accepted:
-                typeof value === 'object' &&
+            accepted: typeof value === 'object' &&
                 value !== null &&
                 'status' in value &&
                 value.status === 'stored'

@@ -1,9 +1,5 @@
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
-import {
-    decodeJsonWireText,
-    type JsonWireObject,
-    type JsonWireValue
-} from '../protocol/json-wire-identity.ts';
+import { decodeJsonWireText, type JsonWireObject, type JsonWireValue } from '../protocol/json-wire-identity.ts';
 import { AppInboxTypeUnavailableError, decodeAppInboxEnqueue } from './app-inbox-command-decoding.ts';
 import { AppInboxType, type AppInboxEnqueueInput } from './app-inbox-contracts.ts';
 

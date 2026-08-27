@@ -185,9 +185,9 @@ async function verifyRtcRttCommandHashes(command: RtcRttAppInboxCommand): Promis
                 encodeJsonWireValue(canonicalStableCommand, 'RTC RTT stable command')
             )) !== command.commandHash ||
         (await hashMutationCommand(encodeJsonWireValue({
-            rtt: command.rtt,
-            alSenderId: command.actor.sessionId
-        }, 'RTC RTT mutation command'))) !== command.mutationCommandHash
+                rtt: command.rtt,
+                alSenderId: command.actor.sessionId
+            }, 'RTC RTT mutation command'))) !== command.mutationCommandHash
     ) {
         throw new GroupMutationAuthorizationError('RTC RTT durable command hash is invalid.');
     }

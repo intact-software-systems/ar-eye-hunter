@@ -4,11 +4,7 @@ import { decodeCrdtMutationCommand } from '../crdt/mutation/crdt-mutation-comman
 import { toDescriptorCommand } from '../group-state/group-mutation-authority.ts';
 import type { GroupMutationDescriptor } from '../group-state/group-state-service-contracts.ts';
 import { validateGroupMutationCommand } from '../group-state/mutation/command-validation/validate-group-mutation-command.ts';
-import {
-    encodeJsonWireValue,
-    type JsonWireObject,
-    type JsonWireValue
-} from '../protocol/json-wire-identity.ts';
+import { encodeJsonWireValue, type JsonWireObject, type JsonWireValue } from '../protocol/json-wire-identity.ts';
 import { readRtcRttAppInboxCommand } from '../rtc-rtt/inbox/rtc-rtt-app-inbox-authority.ts';
 import {
     readDurableTopologyAppInboxCommand,

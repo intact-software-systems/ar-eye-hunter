@@ -540,10 +540,52 @@ receipt, result and outbox. `api-v1-group-formation-criterion.json` gains the
   slice 5's `connect`/`reconfigure` surfaces. The fence rejections are pinned at compute level
   (stale-epoch, superseded, no-planned-row — each asserting a rejection receipt with no event and
   no outbox ids).
-- **Absent fence keys are principal commands.** The lifecycle request rows exclude the fence keys,
-  so raw principal requests arrive with the fields absent — absence, like null, means no fence.
-  Found when the changed-style gate flagged the input validators; the request-validation tests now
+- **Absent fence keys: no fence on requests, malformed on commands.** The lifecycle request rows
+  exclude the fence keys, so raw principal requests arrive with the fields absent and validate
+  cleanly; the built command contract requires the keys present (null-or-shaped), enforced at the
+  command decode boundary — so a wire-decoded command missing them fails as an honest terminal
+  malformed error, never as a lying stale-epoch rejection in compute. The request-validation tests
   pin fence-less principal requests and the exact-key rejection of a client-spelled fence key.
+
+**Review repairs (PR 3 max-effort review, 2026-08-27).** Ten finder angles, five themed verifiers
+and a gap sweep confirmed fifteen findings; all were repaired in the same PR:
+
+- **Criterion petitions now fire at the post-publication boundary in fact, not just in identity.**
+  The evidence leg had petitioned pre-commit with the freshly computed candidate — never persisted
+  on the skipped-unchanged path (fingerprint only, while the causal revision drifts), not yet
+  persisted on the changed path — so the delivery-time fence terminally rejected the decisive
+  activation; in threshold-only mode (no deadline timer) a connecting group could stall
+  permanently. The petition now runs after the write-phase commit, fencing on the row the store
+  actually holds (stored row when unchanged, committed snapshot when written, none when
+  superseded).
+- **Tombstones never activate a group.** A removed plan's empty edge set reads as observedRate 1,
+  and the deadline leg had no state guard while the fence matched the tombstone against itself.
+  `computeFormationCriterionCommand` now refuses any non-active plan centrally, the deadline leg
+  retries (rather than consumes) its durable timer on a missing-or-removed plan, and the fence
+  compute rejects an activation naming a removed layout as a typed backstop.
+- **The capability matrix fails closed structurally.** The mode switch gained a default-throw with
+  a `never` exhaustiveness anchor (an unhandled future mode is a compile error, not fail-open); the
+  mode registry is one exported `as const` tuple the union derives from; the fence-required guards
+  reject absent alongside null; and the three inert-mode preparers run the matrix at prepare time,
+  so a command a mode cannot execute fails at the call site instead of poisoning the queue.
+- **Fence keyed on fence presence, not producer.** `computeFenceRejection` runs for every lifecycle
+  command (a no-op for null fences), so future fenced routes — slice 5b's principal `connect`
+  included — inherit validation instead of re-adding a mode branch; the planned-layout read fires
+  only for layout-fenced commands, is attached by the service after the group-row read, and the
+  dead `?? stored.formationEpoch` fallback that neutralized the shared helper's stale-epoch branch
+  is gone.
+- **Known interim race, closed by slice 4:** the planned layout lives in the topology namespace,
+  outside the group-row CAS the write guard covers, so a replan committing between the fence read
+  and the activation commit is undetected (window: one read-compute-validate-commit span). Slice
+  4's group-state-owned planned/accepted rows must bring the fence identity into the guarded
+  write; record that as an explicit slice-4 acceptance criterion.
+- **Deploy-boundary posture (decision 14):** in-flight v1 criterion rows fail decode under this
+  build as honest terminal malformed errors, and v2 rows drained by old-code workers terminally
+  fail as authority-denied — both directions drop the queued decision. A quiet connecting group
+  (no further RTT evidence) then waits for operator action; groups with live RTT traffic self-heal
+  on the next evidence petition. Deploy with formation quiesced or accept the drop; slice 14's
+  runbook owns the ordering. Operationally, repeated `no-planned-layout` rejections on groups that
+  just published a plan are the signature of a mis-wired (constant-null) planned-layout reader.
 
 ## Slice 4 — Accepted and planned layout ownership (the held-layout foundation)
 

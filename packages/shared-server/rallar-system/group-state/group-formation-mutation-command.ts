@@ -5,10 +5,12 @@ import { serializeCanonicalJson } from '../protocol/canonical-json.ts';
 import type { GroupMutationCommand } from './mutation/group-mutation-contracts.ts';
 
 /**
- * Criterion-commanded transitions are idempotent per formation epoch and
- * decision: the evidence producer and the deadline consumer can race to the
- * same conclusion, and the identical command id makes the second firing an
- * inbox replay rather than a second transition.
+ * Criterion-commanded transitions are idempotent per decision and full
+ * causal fence: two firings naming the same epoch and layout identity share
+ * a command id, so the second is an inbox replay. Petitions naming different
+ * layout identities are distinct commands, and the loser is stopped by the
+ * causal fence's typed rejection at compute — either way, never a second
+ * transition.
  */
 export function toFormationActivateCommand(
     input: Readonly<{
@@ -33,7 +35,7 @@ export function toFormationActivateCommand(
             expectedLayout: input.expectedLayout
         }
     } as const;
-    const commandId = groupFormationCriterionRequestId({
+    const commandId = toGroupFormationCriterionRequestId({
         decision: input.degraded ? 'activate-degraded' : 'activate',
         groupRef: input.groupRef,
         formationEpoch: input.formationEpoch,
@@ -63,7 +65,7 @@ export function toFailFormationCommand(
             expectedLayout: input.expectedLayout
         }
     } as const;
-    const commandId = groupFormationCriterionRequestId({
+    const commandId = toGroupFormationCriterionRequestId({
         decision: 'fail-formation',
         groupRef: input.groupRef,
         formationEpoch: input.formationEpoch,
@@ -94,7 +96,7 @@ export function toFormationRetryEstablishCommand(
             expectedFormationEpoch: input.formationEpoch
         }
     } as const;
-    const commandId = groupFormationCriterionRequestId({
+    const commandId = toGroupFormationCriterionRequestId({
         decision: 'retry-establish',
         groupRef: input.groupRef,
         formationEpoch: input.formationEpoch,
@@ -108,7 +110,7 @@ export function toFormationRetryEstablishCommand(
  * petitions against different planned layouts in one epoch are distinct
  * commands rather than a replay of each other (product decision 19).
  */
-function groupFormationCriterionRequestId(
+function toGroupFormationCriterionRequestId(
     input: Readonly<{
         decision: 'activate' | 'activate-degraded' | 'fail-formation' | 'retry-establish';
         groupRef: GroupRef;

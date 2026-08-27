@@ -201,9 +201,26 @@ describe('group lifecycle transition computation', () => {
     });
 
     it('rejects principal-commanded formation failure', () => {
+        // Key-complete on purpose: the command survives input validation so
+        // the compute-level principal ban is what rejects it.
+        const principalFail = {
+            operation: 'failGroupFormation',
+            aggregateRef: groupRef('pure-room'),
+            commandId: 'lifecycle-command',
+            requestId: 'lifecycle-command',
+            input: {
+                actorPrincipalId: 'alice',
+                actorSessionId: 'alice-session',
+                reason: null,
+                traceId: null,
+                observedRate: 0.2,
+                expectedFormationEpoch: null,
+                expectedLayout: null
+            }
+        } as GroupMutationCommand;
         expect(() =>
             computeGroupMutation({
-                command: transitionCommand('failGroupFormation' as never),
+                command: principalFail,
                 read: transitionRead({ lifecycleState: 'connecting', formationEpoch: 1 }),
                 facts: transitionFacts()
             })
@@ -275,7 +292,10 @@ function transitionCommand(
             actorSessionId: `${actorPrincipalId}-session`,
             reason: null,
             traceId: null,
-            ...(operation === 'activateGroup' ? { observedRate: null, degraded: null } : {})
+            expectedFormationEpoch: null,
+            ...(operation === 'activateGroup'
+                ? { observedRate: null, degraded: null, expectedLayout: null }
+                : {})
         }
     } as GroupMutationCommand;
 }
