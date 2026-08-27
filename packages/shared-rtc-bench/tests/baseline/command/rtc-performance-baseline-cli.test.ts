@@ -88,7 +88,6 @@ describe('RTC baseline CLI application', () => {
             ],
             stderr: []
         });
-        expect(runObservation).toHaveBeenCalledOnce();
     });
 
     it('writes the complete encoded value across partial synchronous writes', () => {

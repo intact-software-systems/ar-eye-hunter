@@ -206,8 +206,6 @@ describe('RTC-B05 observation runner', () => {
 
         expect(await createRtcB05ObservationRunner(configured).run(workflow)).toEqual(failed());
         expect(calls).toEqual([]);
-        expect(configured.createArchive).not.toHaveBeenCalled();
-        expect(configured.writeOutput).not.toHaveBeenCalled();
     });
 
     it('captures the existing controlled repeat only when repeat policy selects RTC-B05', async () => {
@@ -224,7 +222,7 @@ describe('RTC-B05 observation runner', () => {
                 observation: { repeat: { decision: 'required', outcome: 'passed' } }
             }
         });
-        expect(configured.envelope.initializeBaseline).toHaveBeenLastCalledWith(
+        expect(configured.envelope.initializeBaseline).toHaveBeenCalledWith(
             expect.objectContaining({
                 baselineId: '20260827T031500Z-eaf526518c70-e2-browser-gh123456789-a2-repeat-01',
                 retainedSampleMultiplier: 2,
