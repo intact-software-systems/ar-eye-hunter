@@ -147,6 +147,35 @@ describe('Rallar auth login, expiry, and registration contract', () => {
         expect(facade.isConnected()).toBe(false);
     });
 
+    it('contains an expiry failure instead of raising an unhandled rejection', async () => {
+        // Both games restore a stored session before connecting, so an already
+        // expired one fires this timer with nothing to catch its rejection. An
+        // escaping rejection fails this file, which is the assertion that matters.
+        const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
+        vi.useFakeTimers();
+        vi.setSystemTime(1_000);
+        const reported: string[] = [];
+        const consoleError = vi.spyOn(console, 'error').mockImplementation((message) => {
+            reported.push(String(message));
+        });
+        const expiringSession = {
+            ...mocks.ctx.session,
+            expiresAtEpochMs: 1_500
+        };
+        mocks.readSession.mockReturnValue(expiringSession);
+        mocks.clearSession.mockImplementation(() => {
+            throw new Error('storage unavailable');
+        });
+        const facade = createRallarFacade();
+        facade.auth.onChange(() => undefined, { emitCurrent: true });
+
+        await vi.advanceTimersByTimeAsync(500);
+        await Promise.resolve();
+
+        expect(reported).toContain('Failed to expire the Rallar auth session');
+        consoleError.mockRestore();
+    });
+
     it('does not expire a replacement session when an old expiry timer fires', async () => {
         const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
         vi.useFakeTimers();

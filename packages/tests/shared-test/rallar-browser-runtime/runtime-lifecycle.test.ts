@@ -289,3 +289,33 @@ it('rejects new resource effects while runtime close is in progress', async () =
     disconnection.resolve();
     await closing;
 });
+
+it('forgets its connection target after a close that failed', async () => {
+    // A failed close still aborted operations and dropped subscriptions, so the
+    // runtime must not keep naming the target it just tried to leave.
+    const runtime = await loadRuntime();
+    await runtime.connect({
+        connection: 'aliceRtc',
+        actor: 'alice',
+        roomId: 'room-1',
+        rallar: {
+            apiBaseUrl: 'https://api.example.test',
+            username: 'alice',
+            password: 'secret'
+        }
+    });
+    facade.behavior.disconnect.mockRejectedValue(new Error('disconnect failed'));
+    await expect(runtime.close()).rejects.toThrow('disconnect failed');
+    facade.behavior.disconnect.mockResolvedValue(undefined);
+
+    await expect(runtime.connect({
+        connection: 'bobRtc',
+        actor: 'bob',
+        roomId: 'room-2',
+        rallar: {
+            apiBaseUrl: 'https://api.example.test',
+            username: 'bob',
+            password: 'other-secret'
+        }
+    })).resolves.toBeDefined();
+});

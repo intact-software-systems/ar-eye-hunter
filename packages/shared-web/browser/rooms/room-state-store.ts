@@ -9,6 +9,7 @@ import { toGroupRefFromScope } from '@shared/api/api-type-utils.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import { isGroupActive, isSessionInGroup, readGroupVersion } from '@shared/api/group-client-views.ts';
 import { DEFAULT_STATE_WORKSPACE_ID } from '@shared/api/state-types.ts';
+import { readConfiguredValue } from '@shared/cache/RepositoryManager.ts';
 
 import type { RallarStateCacheReadPort } from '../state-cache/rallar-state-store.ts';
 import type { RallarRoomState } from './rallar-room-contracts.ts';
@@ -91,8 +92,13 @@ class RoomStateStore implements RallarRoomStateStorePort {
         options: RallarOnChangeOptions = {}
     ): RallarUnsubscribe {
         this.#listeners.add(listener);
-        if (options.emitCurrent ?? true) {
-            notifyListener(listener, this.state());
+        // Subscribing before a first connect is ordinary; the caches it would
+        // read do not exist yet, and this delivery is a notification.
+        const current = (options.emitCurrent ?? true)
+            ? readConfiguredValue(() => this.state())
+            : undefined;
+        if (current) {
+            notifyListener(listener, current);
         }
         return () => this.#listeners.delete(listener);
     }

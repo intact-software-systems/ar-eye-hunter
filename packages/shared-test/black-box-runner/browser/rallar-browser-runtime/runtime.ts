@@ -1237,6 +1237,11 @@ function createBlackBoxRallarRuntimeInstallation(
                 return diagnostics;
             }
             catch (error) {
+                // Cleanup already dropped this runtime's subscriptions, so it
+                // must stop naming the target it tried to leave. closeRetryConfig
+                // survives so a later close can still reach that target.
+                state = undefined;
+                authenticationState = undefined;
                 throw error;
             }
         }, activeCrdtOpens);

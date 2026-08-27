@@ -63,6 +63,15 @@ export function createBlackBoxRallarLifecycleController<TConfig, TSession, TConn
 
     const isCurrent = (candidate: number): boolean => candidate === generation && !closeInFlight && !faulted;
 
+    /**
+     * A failed close still aborted every operation it fenced, and its owner
+     * discards the state it could not close. Staying faulted beyond that would
+     * strand a runtime that lives as long as its page.
+     */
+    const clearFailedCloseFault = (): void => {
+        faulted = false;
+    };
+
     const assertConnectionCurrent = (candidate: number): void => {
         if (!isCurrent(candidate)) {
             throw options.connectionClosedError();
@@ -73,9 +82,10 @@ export function createBlackBoxRallarLifecycleController<TConfig, TSession, TConn
         config: TConfig,
         effect: (signal: AbortSignal) => Promise<TSession>
     ): Promise<TSession> => {
-        if (closeInFlight || faulted) {
+        if (closeInFlight) {
             return Promise.reject(options.authenticationClosedError());
         }
+        clearFailedCloseFault();
 
         const key = options.authenticationKey(config);
         const active = authenticationInFlight;
@@ -131,9 +141,10 @@ export function createBlackBoxRallarLifecycleController<TConfig, TSession, TConn
         key: string,
         effect: (context: BlackBoxRallarLifecycleOperationContext) => Promise<TResult>
     ): Promise<TResult> => {
-        if (closeInFlight || faulted) {
+        if (closeInFlight) {
             return Promise.reject(options.connectionClosedError());
         }
+        clearFailedCloseFault();
 
         const active = connectInFlight;
         if (active) {

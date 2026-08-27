@@ -2,6 +2,34 @@ import { DisposableRepository, RepositoryToken } from './RepositoryToken.ts';
 
 type ManagedRepository = unknown;
 
+const REPOSITORY_NOT_FOUND_PREFIX = 'Repository not found: ';
+
+/**
+ * Matches on the message because `require` throws a plain `Error`, and test
+ * doubles across the repository reproduce that literal text; a named error type
+ * cannot be introduced without rewriting all of them.
+ */
+export function isRepositoryNotFoundError(error: Error): boolean {
+    return error.message.startsWith(REPOSITORY_NOT_FOUND_PREFIX);
+}
+
+/**
+ * Reads a value that needs a configured repository, reporting nothing when the
+ * repository is absent. For notification paths, whose callers never asked for
+ * state; a caller that reads state directly still gets the failure.
+ */
+export function readConfiguredValue<T>(read: () => T): T | undefined {
+    try {
+        return read();
+    }
+    catch (error) {
+        if (error instanceof Error && isRepositoryNotFoundError(error)) {
+            return undefined;
+        }
+        throw error;
+    }
+}
+
 export class RepositoryManager {
     private readonly repositories = new Map<string, ManagedRepository>();
 
@@ -26,7 +54,7 @@ export class RepositoryManager {
     public require<R>(token: RepositoryToken<R>): R {
         const repository = this.get(token);
         if (repository === undefined) {
-            throw new Error(`Repository not found: ${token.id}`);
+            throw new Error(`${REPOSITORY_NOT_FOUND_PREFIX}${token.id}`);
         }
         return repository;
     }
