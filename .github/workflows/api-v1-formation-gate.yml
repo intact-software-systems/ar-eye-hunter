@@ -1,0 +1,77 @@
+name: API v1 Formation Gate
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - '.github/actions/api-v1-black-box-test/**'
+      - '.github/workflows/api-v1-formation-gate.yml'
+      - 'apps/api-v1/**'
+      - 'packages/shared/**'
+      - 'packages/shared-server/**'
+      - 'packages/shared-test/black-box-runner/**'
+      - 'packages/tests/shared-test/**'
+
+permissions:
+  contents: read
+
+jobs:
+  formation-large:
+    name: API v1 formation-large Postgres
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: app
+          POSTGRES_PASSWORD: app
+          POSTGRES_DB: appdb
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U app -d appdb"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    env:
+      DATABASE_URL: postgresql://app:app@localhost:5432/appdb
+      RALLAR_API_CONFIGURATION_PROFILE: prod-in-memory
+      RALLAR_LOGIN_USER_RATE_LIMIT: '1000'
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - run: npm ci
+      - name: Record exact checkout SHA
+        run: |
+          mkdir -p .artifacts/api-v1-black-box/formation-large
+          git rev-parse HEAD > .artifacts/api-v1-black-box/formation-large/validated-sha.txt
+          git write-tree > .artifacts/api-v1-black-box/formation-large/validated-tree.txt
+      - name: Run unchanged formation-large profile
+        uses: ./.github/actions/api-v1-black-box-test
+        with:
+          backend: postgres
+          api-port: '18080'
+          secondary-api-port: '18081'
+          tertiary-api-port: '18082'
+          artifact-dir: .artifacts/api-v1-black-box/formation-large
+          profile: api-v1-black-box-formation-large
+          run-id: '${{ github.run_id }}-${{ github.run_attempt }}-formation-large'
+      - name: Upload exact-SHA artifacts
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: api-v1-formation-large-${{ github.sha }}
+          path: |
+            .artifacts/api-v1-black-box/formation-large
+            .artifacts/api-v1-black-box/formation-large/api-v1-server.log
+            .artifacts/api-v1-black-box/formation-large/api-v1-server-secondary.log
+            .artifacts/api-v1-black-box/formation-large/api-v1-server-tertiary.log
+          if-no-files-found: error
