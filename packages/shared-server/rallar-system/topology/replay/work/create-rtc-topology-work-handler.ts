@@ -45,6 +45,7 @@ import {
     type RtcTopologyWorkEnvelope
 } from './rtc-topology-work-codec.ts';
 import {
+    readTopologyPromotionRequest,
     writeTopologyPromotionRequest,
     type TopologyPromotionPublicationPort
 } from './write-topology-promotion-request.ts';
@@ -370,17 +371,19 @@ async function writeAcceptedRtcTopologyWork(
         options.topologyPlanning.observeCommittedTopology(accepted.group, computed.current);
         return;
     }
+    // Read outside, mint inside: the gate reads use the shared database
+    // handle and must not run while the transaction holds the session.
+    const promotionRequest = computed.outcome === 'write'
+        ? await readTopologyPromotionRequest({
+            publication: options.topologyPublication,
+            serviceId: options.serviceId,
+            entry,
+            target: computed.snapshotGuard.candidate
+        })
+        : null;
     await writeRtcTopologyPublicationTransaction(options, entry, async (transaction) => {
         await options.executionRepository.writeTopologyMutation(transaction, computed);
-        if (computed.outcome === 'write') {
-            await writeTopologyPromotionRequest({
-                publication: options.topologyPublication,
-                serviceId: options.serviceId,
-                transaction,
-                entry,
-                target: computed.snapshotGuard.candidate
-            });
-        }
+        await writeTopologyPromotionRequest(transaction, promotionRequest);
         if (computed.outcome === 'write') {
             await options.executionRepository.writeTopologyInputFingerprint(
                 transaction,
@@ -406,19 +409,19 @@ async function writeUnchangedTopologyWork(
     entry: ResourceEntry,
     accepted: Extract<AcceptedRtcTopologyWork, { decision: 'skipped-unchanged'; }>
 ): Promise<void> {
+    const promotionRequest = await readTopologyPromotionRequest({
+        publication: options.topologyPublication,
+        serviceId: options.serviceId,
+        entry,
+        target: accepted.criterionPetition?.planned ?? null
+    });
     await runInPSqlTransaction(options.database, async (transaction) => {
         await options.executionRepository.writeTopologyInputFingerprint(
             transaction,
             accepted.group.group,
             accepted.inputFingerprint
         );
-        await writeTopologyPromotionRequest({
-            publication: options.topologyPublication,
-            serviceId: options.serviceId,
-            transaction,
-            entry,
-            target: accepted.criterionPetition?.planned ?? null
-        });
+        await writeTopologyPromotionRequest(transaction, promotionRequest);
         await finishRtcTopologyReservation(transaction, entry);
     });
     options.topologyPlanning.recordTopologyPublication(false);

@@ -24,66 +24,79 @@ export interface TopologyPromotionPublicationPort {
     readonly findCurrentGroup: (ref: GroupRef) => Promise<Group | null>;
 }
 
-export interface WriteTopologyPromotionRequestInput {
+export interface ReadTopologyPromotionRequestInput {
     readonly publication: TopologyPromotionPublicationPort | undefined;
     readonly serviceId: string | undefined;
-    readonly transaction: PSqlSql;
     readonly entry: ResourceEntry;
     readonly target: RallarOverlayTopologySnapshot | null;
 }
 
 /**
- * Decision 27: an accepted apply-landing planned publication durably requests
- * the route-less promotion. Every gate fact is read fresh here — the current
- * group snapshot, never the work payload's enqueue-time copy — and the write
- * also reconciles: a request is minted whenever the group's accepted
- * identity trails the target layout, so a cycle that once saw a stale stage
- * heals on the next pass. The cheap checks run before the policy read; hold
- * promotes only through activate; a corrupt policy and an absent consumer
- * port fail closed; and the entry never expires, so an outbox backlog delays
- * a promotion but cannot drop it.
+ * Decision 27's gate, read BEFORE the publication transaction opens: the
+ * port's group and policy reads run on the shared database handle, and a
+ * single-session backend (PGlite) deadlocks if they run while the
+ * transaction holds that session. Every gate fact is read fresh here — the
+ * current group snapshot, never the work payload's enqueue-time copy — and
+ * the read also reconciles: an entry is produced whenever the group's
+ * accepted identity trails the target layout, so a cycle that once saw a
+ * stale stage heals on the next pass. The cheap checks run before the
+ * policy read; hold promotes only through activate; a corrupt policy and an
+ * absent consumer port fail closed; and the entry never expires, so an
+ * outbox backlog delays a promotion but cannot drop it.
  */
-export async function writeTopologyPromotionRequest(
-    input: WriteTopologyPromotionRequestInput
-): Promise<void> {
+export async function readTopologyPromotionRequest(
+    input: ReadTopologyPromotionRequestInput
+): Promise<ResourceEntry | null> {
     const { publication, target } = input;
     if (!publication || target === null || target.state !== 'active') {
-        return;
+        return null;
     }
     const group = await publication.findCurrentGroup(target.groupRef);
     if (group === null || group.lifecycleState !== 'active') {
-        return;
+        return null;
     }
     const targetIdentity = toGroupLayoutIdentity(target);
     if (
         group.acceptedLayoutIdentity !== null &&
         isSameGroupLayoutIdentity(group.acceptedLayoutIdentity, targetIdentity)
     ) {
-        return;
+        return null;
     }
     const policyRead = await publication.readLifecyclePolicy(target.groupRef);
     if (policyRead.status === 'corrupt') {
-        return;
+        return null;
     }
     const policy = policyRead.status === 'present'
         ? policyRead.policy
         : createDefaultGroupLifecyclePolicy();
     if (policy.topology.reconfigureLanding !== 'apply') {
+        return null;
+    }
+    return computeTopologyPromotionEntry({
+        work: {
+            groupRef: target.groupRef,
+            formationEpoch: group.formationEpoch,
+            expectedLayout: targetIdentity
+        },
+        senderId: input.serviceId ?? 'topology-promotion',
+        createdAtEpochMs: input.entry.audit.createdTs.toZonedDateTime('UTC').epochMilliseconds,
+        expireAtEpochMs: GROUP_MUTATION_QUEUE_EXPIRE_AT_EPOCH_MS
+    });
+}
+
+/**
+ * The durable half, inside the publication transaction: the mint commits or
+ * rolls back with the row it promotes (decision 27's atomicity).
+ */
+export async function writeTopologyPromotionRequest(
+    transaction: PSqlSql,
+    requestEntry: ResourceEntry | null
+): Promise<void> {
+    if (requestEntry === null) {
         return;
     }
     try {
-        await new PSqlResourceInboxEntryRepository(input.transaction).writeIfAbsentOrMatch(
-            computeTopologyPromotionEntry({
-                work: {
-                    groupRef: target.groupRef,
-                    formationEpoch: group.formationEpoch,
-                    expectedLayout: targetIdentity
-                },
-                senderId: input.serviceId ?? 'topology-promotion',
-                createdAtEpochMs: input.entry.audit.createdTs.toZonedDateTime('UTC').epochMilliseconds,
-                expireAtEpochMs: GROUP_MUTATION_QUEUE_EXPIRE_AT_EPOCH_MS
-            })
-        );
+        await new PSqlResourceInboxEntryRepository(transaction).writeIfAbsentOrMatch(requestEntry);
     }
     catch (error) {
         // A same-identity request with different audit bytes already exists:
