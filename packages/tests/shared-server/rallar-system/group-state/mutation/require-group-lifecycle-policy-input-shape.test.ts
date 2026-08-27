@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { requireGroupLifecyclePolicyInputShape } from '@shared/api/group-lifecycle/require-group-lifecycle-policy-input-shape.ts';
+import { requireGroupLifecyclePolicyInputShape } from '@shared-server/rallar-system/group-state/mutation/command-validation/require-group-lifecycle-policy-input-shape.ts';
 
 describe('requireGroupLifecyclePolicyInputShape', () => {
     it('accepts the full current input shape', () => {
@@ -33,25 +33,25 @@ describe('requireGroupLifecyclePolicyInputShape', () => {
             requireGroupLifecyclePolicyInputShape({
                 establishment: { initiator: 'manager' }
             })
-        ).toThrow('unknown key: initiator');
+        ).toThrow('unsupported key: initiator');
     });
 
-    it('rejects unknown keys at the root', () => {
+    it('rejects keys the contract does not declare', () => {
         expect(() => requireGroupLifecyclePolicyInputShape({ evolution: 'auto' }))
-            .toThrow('unknown key: evolution');
+            .toThrow('unsupported key: evolution');
     });
 
-    it('rejects an unknown trigger kind and cross-variant keys', () => {
+    it('rejects an unsupported trigger kind and cross-variant keys', () => {
         expect(() =>
             requireGroupLifecyclePolicyInputShape({
                 establishment: { planTrigger: { kind: 'quorum' } }
             })
-        ).toThrow('kind is not a known trigger kind');
+        ).toThrow('kind is not a supported trigger kind');
         expect(() =>
             requireGroupLifecyclePolicyInputShape({
                 establishment: { planTrigger: { kind: 'immediate', settleMs: 5 } }
             })
-        ).toThrow('unknown key: settleMs');
+        ).toThrow('unsupported key: settleMs');
     });
 
     // Omitting a variant field would otherwise clamp to the minimum and
@@ -70,19 +70,23 @@ describe('requireGroupLifecyclePolicyInputShape', () => {
         ).toThrow('settleMs must be a finite number');
     });
 
-    it('rejects unknown enum values at the boundary', () => {
+    it('rejects enum values outside the contract', () => {
         expect(() => requireGroupLifecyclePolicyInputShape({ initiator: 'nobody' }))
             .toThrow('initiator must be one of');
-        expect(() => requireGroupLifecyclePolicyInputShape({ topology: { replanning: 'eventually' } })).toThrow('replanning must be one of');
+        expect(() =>
+            requireGroupLifecyclePolicyInputShape({ topology: { replanning: 'eventually' } })
+        ).toThrow('replanning must be one of');
     });
 
     it('rejects non-object and non-string-array shapes', () => {
-        expect(() => requireGroupLifecyclePolicyInputShape({ establishment: { planTrigger: 'manual' } })).toThrow('planTrigger must be an object');
-        expect(() => requireGroupLifecyclePolicyInputShape({ manager: { assignedPrincipalIds: [1] } })).toThrow(
-            'assignedPrincipalIds must be non-empty strings'
-        );
-        expect(() => requireGroupLifecyclePolicyInputShape({ manager: { assignedPrincipalIds: [''] } })).toThrow(
-            'assignedPrincipalIds must be non-empty strings'
-        );
+        expect(() =>
+            requireGroupLifecyclePolicyInputShape({ establishment: { planTrigger: 'manual' } })
+        ).toThrow('planTrigger must be an object');
+        expect(() =>
+            requireGroupLifecyclePolicyInputShape({ manager: { assignedPrincipalIds: [1] } })
+        ).toThrow('assignedPrincipalIds must be non-empty strings');
+        expect(() =>
+            requireGroupLifecyclePolicyInputShape({ manager: { assignedPrincipalIds: [''] } })
+        ).toThrow('assignedPrincipalIds must be non-empty strings');
     });
 });

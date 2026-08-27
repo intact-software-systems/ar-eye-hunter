@@ -1,16 +1,18 @@
-import { GROUP_LIFECYCLE_POLICY_PRESET_NAMES } from './group-lifecycle-policy.ts';
+import { GROUP_LIFECYCLE_POLICY_PRESET_NAMES } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
+
+import type { JsonWireObject, JsonWireValue } from '../../../protocol/json-wire-identity.ts';
 
 /**
- * Boundary enforcement for the sparse `lifecyclePolicy` input. Unknown keys
- * and unknown discriminants are rejected loudly here because the normalizer
- * is silent and total: without this gate a retired input key (such as the
+ * Boundary enforcement for the sparse `lifecyclePolicy` input. Unrecognised
+ * keys and discriminants are rejected loudly here because the normalizer is
+ * silent and total: without this gate a retired input key (such as the
  * pre-move `establishment.initiator`) would be dropped rather than answered,
  * silently widening the resolved policy, and a malformed trigger would
  * survive normalization only to throw from the persistence codec inside the
  * write transaction. Range problems stay with the clamps and cross-field
  * contradictions with validateGroupLifecyclePolicy; this owns shape alone.
  */
-export function requireGroupLifecyclePolicyInputShape(value: unknown): void {
+export function requireGroupLifecyclePolicyInputShape(value: JsonWireValue): void {
     const input = requireShapeRecord(value, 'Group lifecyclePolicy');
     requireAllowedKeys(input, [
         'preset',
@@ -38,7 +40,7 @@ export function requireGroupLifecyclePolicyInputShape(value: unknown): void {
     requireDataShape(input.data);
 }
 
-function requireManagerShape(value: unknown): void {
+function requireManagerShape(value: JsonWireValue | undefined): void {
     if (value === undefined) {
         return;
     }
@@ -71,7 +73,7 @@ function requireManagerShape(value: unknown): void {
     );
 }
 
-function requireEstablishmentShape(value: unknown): void {
+function requireEstablishmentShape(value: JsonWireValue | undefined): void {
     if (value === undefined) {
         return;
     }
@@ -94,7 +96,7 @@ function requireEstablishmentShape(value: unknown): void {
     requireTriggerShape(establishment.connectTrigger, 'connectTrigger');
 }
 
-function requireTriggerShape(value: unknown, label: string): void {
+function requireTriggerShape(value: JsonWireValue | undefined, label: string): void {
     if (value === undefined) {
         return;
     }
@@ -119,10 +121,10 @@ function requireTriggerShape(value: unknown, label: string): void {
         requireNumber(trigger.fallbackMs, `Group lifecyclePolicy establishment ${label} fallbackMs`);
         return;
     }
-    throw new TypeError(`Group lifecyclePolicy establishment ${label} kind is not a known trigger kind`);
+    throw new TypeError(`Group lifecyclePolicy establishment ${label} kind is not a supported trigger kind`);
 }
 
-function requireActivationShape(value: unknown): void {
+function requireActivationShape(value: JsonWireValue | undefined): void {
     if (value === undefined) {
         return;
     }
@@ -149,7 +151,7 @@ function requireActivationShape(value: unknown): void {
     }
 }
 
-function requireAdmissionShape(value: unknown): void {
+function requireAdmissionShape(value: JsonWireValue | undefined): void {
     if (value === undefined) {
         return;
     }
@@ -171,7 +173,7 @@ function requireAdmissionShape(value: unknown): void {
     );
 }
 
-function requireTopologyShape(value: unknown): void {
+function requireTopologyShape(value: JsonWireValue | undefined): void {
     if (value === undefined) {
         return;
     }
@@ -195,7 +197,7 @@ function requireTopologyShape(value: unknown): void {
     requireOptionalNumber(topology.maxReplanWaitMs, 'Group lifecyclePolicy topology maxReplanWaitMs');
 }
 
-function requireDataShape(value: unknown): void {
+function requireDataShape(value: JsonWireValue | undefined): void {
     if (value === undefined) {
         return;
     }
@@ -208,27 +210,31 @@ function requireDataShape(value: unknown): void {
     );
 }
 
-function requireShapeRecord(value: unknown, label: string): Record<string, unknown> {
-    if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+function requireShapeRecord(value: JsonWireValue, label: string): JsonWireObject {
+    if (!isShapeRecord(value)) {
         throw new TypeError(`${label} must be an object`);
     }
-    return value as Record<string, unknown>;
+    return value;
+}
+
+function isShapeRecord(value: JsonWireValue): value is JsonWireObject {
+    return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
 function requireAllowedKeys(
-    value: Record<string, unknown>,
+    value: JsonWireObject,
     allowed: readonly string[],
     label: string
 ): void {
     for (const key of Object.keys(value)) {
         if (!allowed.includes(key)) {
-            throw new TypeError(`${label} has an unknown key: ${key}`);
+            throw new TypeError(`${label} has an unsupported key: ${key}`);
         }
     }
 }
 
 function requireOptionalEnum(
-    value: unknown,
+    value: JsonWireValue | undefined,
     allowed: readonly string[],
     label: string
 ): void {
@@ -240,19 +246,19 @@ function requireOptionalEnum(
     }
 }
 
-function requireNumber(value: unknown, label: string): void {
+function requireNumber(value: JsonWireValue | undefined, label: string): void {
     if (typeof value !== 'number' || !Number.isFinite(value)) {
         throw new TypeError(`${label} must be a finite number`);
     }
 }
 
-function requireOptionalNumber(value: unknown, label: string): void {
+function requireOptionalNumber(value: JsonWireValue | undefined, label: string): void {
     if (value !== undefined) {
         requireNumber(value, label);
     }
 }
 
-function requireOptionalNullableNumber(value: unknown, label: string): void {
+function requireOptionalNullableNumber(value: JsonWireValue | undefined, label: string): void {
     if (value !== undefined && value !== null) {
         requireNumber(value, label);
     }
