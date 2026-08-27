@@ -1,6 +1,6 @@
 import type { RtcBaselineEnvironmentId, RtcBaselineResult } from './rtc-baseline-contracts.ts';
 
-const legacyRtcBaselineIdPattern = /^\d{8}-[0-9a-f]{12}-e(?:1-local|2-browser|3-memory|4-pg|5-remote)(?:-repeat-01)?$/;
+const dateScopedRtcBaselineIdPattern = /^\d{8}-[0-9a-f]{12}-e(?:1-local|2-browser|3-memory|4-pg|5-remote)(?:-repeat-01)?$/;
 const observationRtcBaselineIdPattern =
     /^(\d{8}T\d{6}Z)-[0-9a-f]{12}-e(?:1-local|2-browser|3-memory|4-pg|5-remote)-gh([1-9]\d*)-a([1-9]\d*)(?:-repeat-01)?$/;
 const fullCommitPattern = /^[0-9a-f]{40}$/;
@@ -13,7 +13,7 @@ export interface RtcBaselineObservationIdInputDto {
 }
 
 export function isRtcBaselineId(baselineId: string) {
-    if (legacyRtcBaselineIdPattern.test(baselineId)) {
+    if (dateScopedRtcBaselineIdPattern.test(baselineId)) {
         return true;
     }
     const match = observationRtcBaselineIdPattern.exec(baselineId);
