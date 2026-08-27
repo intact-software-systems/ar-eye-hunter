@@ -7,6 +7,9 @@ import {
 import {
     MAX_GROUP_FORMATION_DEADLINE_MS,
     MAX_GROUP_MANAGERS,
+    MAX_GROUP_STAGE_TRIGGER_DELAY_MS,
+    MAX_GROUP_TOPOLOGY_DEBOUNCE_WINDOW_MS,
+    MAX_GROUP_TOPOLOGY_REPLAN_WAIT_MS,
     toNormalizedGroupLifecyclePolicy
 } from '@shared/api/group-lifecycle/to-normalized-group-lifecycle-policy.ts';
 import { validateGroupLifecyclePolicy } from '@shared/api/group-lifecycle/validate-group-lifecycle-policy.ts';
@@ -48,6 +51,28 @@ describe('group lifecycle policy defaults', () => {
         expect(match.admission.mode).toBe('closed');
         expect(match.data.preActivationAppData).toBe('blocked-until-active');
     });
+
+    // Product decision 6's replanning and landing table, pinned per preset.
+    it.each([
+        { name: 'optimistic' as const, replanning: 'auto', reconfigureLanding: 'apply' },
+        { name: 'managed' as const, replanning: 'debounced', reconfigureLanding: 'apply' },
+        { name: 'match' as const, replanning: 'commanded', reconfigureLanding: 'hold' },
+        { name: 'drop-in-social' as const, replanning: 'debounced', reconfigureLanding: 'apply' }
+    ])('gives $name the $replanning / $reconfigureLanding topology policy', (row) => {
+        const preset = resolveGroupLifecyclePolicyPreset(row.name);
+
+        expect(preset.topology.replanning).toBe(row.replanning);
+        expect(preset.topology.reconfigureLanding).toBe(row.reconfigureLanding);
+    });
+
+    // The manager curates who is in and when the group starts, not the wiring:
+    // one manager plan command starts the dialing.
+    it('gives managed a manual plan trigger and an immediate connect trigger', () => {
+        const managed = resolveGroupLifecyclePolicyPreset('managed');
+
+        expect(managed.establishment.planTrigger).toEqual({ kind: 'manual' });
+        expect(managed.establishment.connectTrigger).toEqual({ kind: 'immediate' });
+    });
 });
 
 describe('group lifecycle policy normalization', () => {
@@ -59,7 +84,41 @@ describe('group lifecycle policy normalization', () => {
 
         expect(policy.admission.mode).toBe('closed');
         expect(policy.formation).toBe('phased');
-        expect(policy.establishment.initiator).toBe('manager');
+        expect(policy.initiator).toBe('manager');
+    });
+
+    it('layers the initiator and topology fields over the preset', () => {
+        const policy = toNormalizedGroupLifecyclePolicy({
+            preset: 'managed',
+            initiator: 'any-member',
+            topology: { replanning: 'auto' }
+        });
+
+        expect(policy.initiator).toBe('any-member');
+        expect(policy.topology.replanning).toBe('auto');
+        expect(policy.topology.reconfigureLanding).toBe('apply');
+    });
+
+    it('clamps the trigger and replanning windows to their server bounds', () => {
+        const policy = toNormalizedGroupLifecyclePolicy({
+            establishment: {
+                planTrigger: { kind: 'after', settleMs: 10_000_000 },
+                connectTrigger: { kind: 'presence', memberCount: 0, fallbackMs: -5 }
+            },
+            topology: { debounceWindowMs: 999_999, maxReplanWaitMs: 999_999_999 }
+        });
+
+        expect(policy.establishment.planTrigger).toEqual({
+            kind: 'after',
+            settleMs: MAX_GROUP_STAGE_TRIGGER_DELAY_MS
+        });
+        expect(policy.establishment.connectTrigger).toEqual({
+            kind: 'presence',
+            memberCount: 1,
+            fallbackMs: 0
+        });
+        expect(policy.topology.debounceWindowMs).toBe(MAX_GROUP_TOPOLOGY_DEBOUNCE_WINDOW_MS);
+        expect(policy.topology.maxReplanWaitMs).toBe(MAX_GROUP_TOPOLOGY_REPLAN_WAIT_MS);
     });
 
     it.each([
@@ -106,10 +165,59 @@ describe('group lifecycle policy validation', () => {
     it('rejects a manager initiator with no manager selection', () => {
         const policy = toNormalizedGroupLifecyclePolicy({
             manager: { selection: 'none' },
-            establishment: { initiator: 'manager' }
+            initiator: 'manager'
         });
 
         expect(toIssueCodes(policy)).toContain('manager-initiator-without-manager');
+    });
+
+    // The combination the earlier contract accepted silently: server-auto
+    // denies every principal, so a manual trigger on a phased boundary is a
+    // permanently stuck group.
+    it('rejects a phased server-auto policy with a manual trigger', () => {
+        const policy = toNormalizedGroupLifecyclePolicy({
+            preset: 'managed',
+            initiator: 'server-auto'
+        });
+
+        expect(toIssueCodes(policy)).toContain('server-auto-requires-automatic-trigger');
+    });
+
+    it('accepts a phased server-auto policy whose boundaries are all automatic', () => {
+        const policy = toNormalizedGroupLifecyclePolicy({
+            formation: 'phased',
+            initiator: 'server-auto',
+            activation: { mode: 'threshold', successRate: 0.8, minimumViableRate: 0.5 }
+        });
+
+        expect(toIssueCodes(policy)).toHaveLength(0);
+    });
+
+    it('rejects a phased server-auto policy with manual activation', () => {
+        const policy = toNormalizedGroupLifecyclePolicy({
+            formation: 'phased',
+            initiator: 'server-auto',
+            activation: { mode: 'manual' }
+        });
+
+        expect(toIssueCodes(policy)).toContain('server-auto-requires-automatic-activation');
+    });
+
+    it('rejects commanded replanning under server-auto', () => {
+        const policy = toNormalizedGroupLifecyclePolicy({
+            initiator: 'server-auto',
+            topology: { replanning: 'commanded' }
+        });
+
+        expect(toIssueCodes(policy)).toContain('server-auto-cannot-command-replanning');
+    });
+
+    it('rejects a debounce window above the maximum wait', () => {
+        const policy = toNormalizedGroupLifecyclePolicy({
+            topology: { debounceWindowMs: 6_000, maxReplanWaitMs: 1_000 }
+        });
+
+        expect(toIssueCodes(policy)).toContain('replan-window-exceeds-maximum-wait');
     });
 
     // The slice-5 sibling deadlock: nobody could ever grant a parked join
@@ -181,7 +289,7 @@ describe('group lifecycle policy validation', () => {
     it('reports every issue rather than stopping at the first', () => {
         const policy = toNormalizedGroupLifecyclePolicy({
             manager: { selection: 'none' },
-            establishment: { initiator: 'manager' },
+            initiator: 'manager',
             activation: {
                 mode: 'threshold',
                 successRate: 0,

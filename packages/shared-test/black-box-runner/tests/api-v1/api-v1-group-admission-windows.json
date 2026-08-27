@@ -529,9 +529,7 @@
               "assignedPrincipalIds": ["{aliceClientId}"],
               "count": 1
             },
-            "establishment": {
-              "initiator": "manager"
-            },
+            "initiator": "manager",
             "activation": {
               "mode": "deadline",
               "successRate": 1,
@@ -674,9 +672,7 @@
               "assignedPrincipalIds": ["{aliceClientId}"],
               "count": 1
             },
-            "establishment": {
-              "initiator": "manager"
-            },
+            "initiator": "manager",
             "activation": {
               "mode": "deadline",
               "successRate": 1,

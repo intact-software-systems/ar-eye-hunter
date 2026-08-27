@@ -163,9 +163,7 @@
               "assignedPrincipalIds": ["{aliceClientId}"],
               "count": 1
             },
-            "establishment": {
-              "initiator": "manager"
-            },
+            "initiator": "manager",
             "activation": {
               "mode": "manual"
             },
@@ -533,9 +531,7 @@
               "assignedPrincipalIds": ["{aliceClientId}"],
               "count": 1
             },
-            "establishment": {
-              "initiator": "manager"
-            },
+            "initiator": "manager",
             "activation": {
               "mode": "manual"
             },
@@ -699,9 +695,7 @@
               "assignedPrincipalIds": ["{aliceClientId}"],
               "count": 1
             },
-            "establishment": {
-              "initiator": "manager"
-            },
+            "initiator": "manager",
             "activation": {
               "mode": "manual"
             },

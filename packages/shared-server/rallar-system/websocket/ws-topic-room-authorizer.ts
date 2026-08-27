@@ -2,7 +2,10 @@ import { readALTargetGroupRef } from '@shared/al-contracts/al-contract.ts';
 import { readGroupVersion } from '@shared/api/group-client-views.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 
-import { canSendGroupMessage } from '@shared-server/rallar-system/group-state/policy/group-message-policy.ts';
+import {
+    blocksGroupPreActivationData,
+    canSendGroupMessage
+} from '@shared-server/rallar-system/group-state/policy/group-message-policy.ts';
 import { isSameGroupScope } from '@shared/api/api-type-utils.ts';
 import type { GroupPreActivationAppData } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import type { GroupPolicyDenied } from '@shared/api/group-policy-types.ts';
@@ -129,7 +132,7 @@ async function resolvePreActivationAppData(
     ) {
         return undefined;
     }
-    if (snapshot.group.lifecycleState === 'active' || !options.readPreActivationAppData) {
+    if (!blocksGroupPreActivationData(snapshot.group.lifecycleState) || !options.readPreActivationAppData) {
         return undefined;
     }
     return await options.readPreActivationAppData({

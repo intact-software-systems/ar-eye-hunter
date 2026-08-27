@@ -1,4 +1,5 @@
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
+import type { GroupLifecycleState } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
@@ -26,6 +27,34 @@ export interface FormationTimerWorkHandlerOptions {
     readonly submitCommand: (command: GroupMutationCommand, atEpochMs: number) => Promise<void>;
     readonly nowEpochMs: () => number;
 }
+
+/**
+ * The stages each timer kind is consumed in. The rows deliberately preserve
+ * today's gates — a `retry` entry fires only for a `forming` group, a
+ * `deadline` entry only in the dialing stages; `reconnecting` joins the
+ * deadline row when that stage becomes reachable. Keep `DEADLINE_TIMER_CONSUMES`
+ * in lockstep with `CRITERION_EVALUATES` in
+ * compute-formation-criterion-command.ts — this gate is that path's entry.
+ */
+const RETRY_TIMER_CONSUMES: Readonly<Record<GroupLifecycleState, boolean>> = {
+    dormant: false,
+    forming: true,
+    planned: false,
+    connecting: false,
+    active: false,
+    reconfiguring: false,
+    reconnecting: false
+};
+
+const DEADLINE_TIMER_CONSUMES: Readonly<Record<GroupLifecycleState, boolean>> = {
+    dormant: false,
+    forming: false,
+    planned: false,
+    connecting: true,
+    active: false,
+    reconfiguring: true,
+    reconnecting: false
+};
 
 /**
  * The time leg's consumer. Every queue backend holds entries invisible until
@@ -69,7 +98,7 @@ async function processFormationTimerWork(
     }
     const nowEpochMs = options.nowEpochMs();
     if (work.kind === 'retry') {
-        if (snapshot.group.lifecycleState !== 'forming') {
+        if (!RETRY_TIMER_CONSUMES[snapshot.group.lifecycleState]) {
             return;
         }
         await options.submitCommand(
@@ -81,8 +110,7 @@ async function processFormationTimerWork(
         );
         return;
     }
-    const lifecycleState = snapshot.group.lifecycleState;
-    if (lifecycleState !== 'connecting' && lifecycleState !== 'reconfiguring') {
+    if (!DEADLINE_TIMER_CONSUMES[snapshot.group.lifecycleState]) {
         return;
     }
     const [authority, planned] = await Promise.all([

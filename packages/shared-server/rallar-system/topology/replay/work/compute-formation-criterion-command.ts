@@ -2,6 +2,7 @@ import type { RttMeasurementInfo } from '@shared/api/api-config.ts';
 import { computeGroupFormationReadiness } from '@shared/api/group-lifecycle/compute-group-formation-readiness.ts';
 import { evaluateGroupActivationCriterion } from '@shared/api/group-lifecycle/evaluate-group-activation-criterion.ts';
 import { createDefaultGroupLifecyclePolicy } from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
+import type { GroupLifecycleState } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 
@@ -28,6 +29,40 @@ export interface ComputeFormationCriterionCommandInput {
 }
 
 /**
+ * The stages the criterion evaluates in. The rows deliberately preserve
+ * today's two-stage gate — `reconnecting` measures the planned candidate under
+ * the product model and flips true when that stage becomes reachable. Keep in
+ * lockstep with `DEADLINE_TIMER_CONSUMES` in
+ * create-formation-timer-work-handler.ts: the timer gate is this path's
+ * entry, so widening only the timer side throws-and-redelivers forever on a
+ * missing plan, and widening only this side is silently inert.
+ */
+const CRITERION_EVALUATES: Readonly<Record<GroupLifecycleState, boolean>> = {
+    dormant: false,
+    forming: false,
+    planned: false,
+    connecting: true,
+    active: false,
+    reconfiguring: true,
+    reconnecting: false
+};
+
+/**
+ * The stages the refinement-deferred RTT path petitions from. Deliberately
+ * narrower than `CRITERION_EVALUATES`: a `reconfiguring` group under deferred
+ * work waits for the next computed plan or the deadline.
+ */
+const DEFERRED_PETITION_STAGES: Readonly<Record<GroupLifecycleState, boolean>> = {
+    dormant: false,
+    forming: false,
+    planned: false,
+    connecting: true,
+    active: false,
+    reconfiguring: false,
+    reconnecting: false
+};
+
+/**
  * Observation petitions intent, and nothing more: this derives readiness from
  * the just-planned overlay, evaluates the activation criterion, and returns
  * the transition command the criterion asks for -- or null. The command
@@ -40,7 +75,7 @@ export async function computeFormationCriterionCommand(
     input: ComputeFormationCriterionCommandInput
 ): Promise<GroupMutationCommand | null> {
     const group = input.group.group;
-    if (group.lifecycleState !== 'connecting' && group.lifecycleState !== 'reconfiguring') {
+    if (!CRITERION_EVALUATES[group.lifecycleState]) {
         return null;
     }
     const policyRead = await input.readLifecyclePolicy(group);
@@ -196,7 +231,7 @@ export function createDeferredCriterionPetitioner(
     return {
         async request(work, read) {
             if (
-                work.groupSnapshot.group.lifecycleState !== 'connecting' ||
+                !DEFERRED_PETITION_STAGES[work.groupSnapshot.group.lifecycleState] ||
                 read.snapshot === null ||
                 read.snapshot.value.state !== 'active'
             ) {

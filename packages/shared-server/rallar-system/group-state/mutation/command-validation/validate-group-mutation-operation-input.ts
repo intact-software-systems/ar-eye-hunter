@@ -1,10 +1,13 @@
+import type { JsonWireValue } from '../../../protocol/json-wire-identity.ts';
 import {
+    requireJsonSafe,
     requireNonEmptyString,
     requireOneOf,
     requirePositiveSafeInteger,
     requireRecord
 } from '../../group-state-validation-primitives.ts';
 import type { GroupMutationCommand } from '../group-mutation-contracts.ts';
+import { requireGroupLifecyclePolicyInputShape } from './require-group-lifecycle-policy-input-shape.ts';
 
 interface ValidateGroupMutationOperationInput {
     readonly operation: GroupMutationCommand['operation'];
@@ -64,6 +67,10 @@ function validateAggregateMutationInput(
         optionalPositiveInteger('maxSessionsPerMember');
         if (input.metadata !== undefined) {
             requireRecord(input.metadata, 'Group metadata');
+        }
+        if (input.lifecyclePolicy !== undefined) {
+            requireJsonSafe(input.lifecyclePolicy, 'Group lifecyclePolicy');
+            requireGroupLifecyclePolicyInputShape(input.lifecyclePolicy as JsonWireValue);
         }
         requireNonEmptyString(input.createdByPrincipalId, 'Group createGroup createdByPrincipalId');
         optionalPositiveInteger('expiresAtEpochMs');

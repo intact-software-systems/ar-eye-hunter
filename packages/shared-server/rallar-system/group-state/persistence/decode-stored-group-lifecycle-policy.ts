@@ -1,10 +1,13 @@
-import type { GroupLifecyclePolicy } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
+import type { GroupLifecyclePolicy, GroupStageTrigger } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import {
     MAX_GROUP_ADMISSION_MEMBER_COUNT,
     MAX_GROUP_CONCURRENT_EDGE_SETUPS,
     MAX_GROUP_FORMATION_ATTEMPTS,
     MAX_GROUP_FORMATION_DEADLINE_MS,
-    MAX_GROUP_MANAGERS
+    MAX_GROUP_MANAGERS,
+    MAX_GROUP_STAGE_TRIGGER_DELAY_MS,
+    MAX_GROUP_TOPOLOGY_DEBOUNCE_WINDOW_MS,
+    MAX_GROUP_TOPOLOGY_REPLAN_WAIT_MS
 } from '@shared/api/group-lifecycle/to-normalized-group-lifecycle-policy.ts';
 import { validateGroupLifecyclePolicy } from '@shared/api/group-lifecycle/validate-group-lifecycle-policy.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
@@ -41,15 +44,21 @@ export function decodeCurrentGroupLifecyclePolicy(value: JsonWireValue): GroupLi
     const policy = requireJsonWireObject(value, 'Group lifecycle policy');
     requireExactKeys(
         policy,
-        ['formation', 'manager', 'establishment', 'activation', 'admission', 'data'],
+        ['formation', 'initiator', 'manager', 'establishment', 'activation', 'admission', 'topology', 'data'],
         'Group lifecycle policy'
     );
     const decoded: GroupLifecyclePolicy = {
         formation: requireOneOf(policy.formation, ['phased', 'immediate'] as const, 'Policy formation'),
+        initiator: requireOneOf(
+            policy.initiator,
+            ['manager', 'any-member', 'server-auto'] as const,
+            'Policy initiator'
+        ),
         manager: decodeManagerPolicy(policy.manager),
         establishment: decodeEstablishmentPolicy(policy.establishment),
         activation: decodeActivationCriterion(policy.activation),
         admission: decodeAdmissionPolicy(policy.admission),
+        topology: decodeTopologyPolicy(policy.topology),
         data: decodeDataPolicy(policy.data)
     };
     return validateGroupLifecyclePolicy(decoded).fold(
@@ -119,7 +128,7 @@ function decodeEstablishmentPolicy(value: JsonWireValue): GroupLifecyclePolicy['
     const establishment = requireJsonWireObject(value, 'Group lifecycle establishment policy');
     requireExactKeys(
         establishment,
-        ['transports', 'initiator', 'maxConcurrentEdgeSetups'],
+        ['transports', 'maxConcurrentEdgeSetups', 'planTrigger', 'connectTrigger'],
         'Group lifecycle establishment policy'
     );
     return {
@@ -128,16 +137,91 @@ function decodeEstablishmentPolicy(value: JsonWireValue): GroupLifecyclePolicy['
             ['rtc-and-ws', 'ws-only', 'rtc-preferred'] as const,
             'Group lifecycle establishment transports'
         ),
-        initiator: requireOneOf(
-            establishment.initiator,
-            ['manager', 'any-member', 'server-auto'] as const,
-            'Group lifecycle establishment initiator'
-        ),
         maxConcurrentEdgeSetups: requireBoundedInteger({
             value: establishment.maxConcurrentEdgeSetups,
             minimum: 1,
             maximum: MAX_GROUP_CONCURRENT_EDGE_SETUPS,
             label: 'Group lifecycle establishment maxConcurrentEdgeSetups'
+        }),
+        planTrigger: decodeStageTrigger(establishment.planTrigger, 'planTrigger'),
+        connectTrigger: decodeStageTrigger(establishment.connectTrigger, 'connectTrigger')
+    };
+}
+
+function decodeStageTrigger(value: JsonWireValue, label: string): GroupStageTrigger {
+    const trigger = requireJsonWireObject(value, `Group lifecycle establishment ${label}`);
+    const kind = requireOneOf(
+        trigger.kind,
+        ['manual', 'immediate', 'after', 'presence'] as const,
+        `Group lifecycle establishment ${label} kind`
+    );
+    if (kind === 'after') {
+        requireExactKeys(trigger, ['kind', 'settleMs'], `Group lifecycle establishment ${label}`);
+        return {
+            kind,
+            settleMs: requireBoundedInteger({
+                value: trigger.settleMs,
+                minimum: 0,
+                maximum: MAX_GROUP_STAGE_TRIGGER_DELAY_MS,
+                label: `Group lifecycle establishment ${label} settleMs`
+            })
+        };
+    }
+    if (kind === 'presence') {
+        requireExactKeys(
+            trigger,
+            ['kind', 'memberCount', 'fallbackMs'],
+            `Group lifecycle establishment ${label}`
+        );
+        return {
+            kind,
+            memberCount: requireBoundedInteger({
+                value: trigger.memberCount,
+                minimum: 1,
+                maximum: MAX_GROUP_ADMISSION_MEMBER_COUNT,
+                label: `Group lifecycle establishment ${label} memberCount`
+            }),
+            fallbackMs: requireBoundedInteger({
+                value: trigger.fallbackMs,
+                minimum: 0,
+                maximum: MAX_GROUP_STAGE_TRIGGER_DELAY_MS,
+                label: `Group lifecycle establishment ${label} fallbackMs`
+            })
+        };
+    }
+    requireExactKeys(trigger, ['kind'], `Group lifecycle establishment ${label}`);
+    return { kind };
+}
+
+function decodeTopologyPolicy(value: JsonWireValue): GroupLifecyclePolicy['topology'] {
+    const topology = requireJsonWireObject(value, 'Group lifecycle topology policy');
+    requireExactKeys(
+        topology,
+        ['replanning', 'reconfigureLanding', 'debounceWindowMs', 'maxReplanWaitMs'],
+        'Group lifecycle topology policy'
+    );
+    return {
+        replanning: requireOneOf(
+            topology.replanning,
+            ['auto', 'debounced', 'commanded'] as const,
+            'Group lifecycle topology replanning'
+        ),
+        reconfigureLanding: requireOneOf(
+            topology.reconfigureLanding,
+            ['apply', 'hold'] as const,
+            'Group lifecycle topology reconfigureLanding'
+        ),
+        debounceWindowMs: requireBoundedInteger({
+            value: topology.debounceWindowMs,
+            minimum: 0,
+            maximum: MAX_GROUP_TOPOLOGY_DEBOUNCE_WINDOW_MS,
+            label: 'Group lifecycle topology debounceWindowMs'
+        }),
+        maxReplanWaitMs: requireBoundedInteger({
+            value: topology.maxReplanWaitMs,
+            minimum: 0,
+            maximum: MAX_GROUP_TOPOLOGY_REPLAN_WAIT_MS,
+            label: 'Group lifecycle topology maxReplanWaitMs'
         })
     };
 }
@@ -238,7 +322,7 @@ function isJsonWireObject(value: JsonWireValue): value is JsonWireObject {
 }
 
 function requireRate(value: JsonWireValue, label: string): number {
-    if (typeof value !== 'number' || value < 0 || value > 1) {
+    if (typeof value !== 'number' || !Number.isFinite(value) || value < 0 || value > 1) {
         throw new TypeError(`${label} must be between zero and one`);
     }
     return value;

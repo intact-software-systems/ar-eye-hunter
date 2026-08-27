@@ -79,7 +79,7 @@ export function canCommandGroupLifecycleTransition(
 function denyForLifecycleInitiator(
     input: CanCommandGroupLifecycleTransitionInput
 ): GroupPolicyDenied | undefined {
-    switch (input.policy.establishment.initiator) {
+    switch (input.policy.initiator) {
         case 'any-member':
             return undefined;
         case 'server-auto':
@@ -92,5 +92,16 @@ function denyForLifecycleInitiator(
                 input,
                 'Only the group manager can command lifecycle transitions.'
             );
+        default:
+            return denyUnknownInitiator(input.policy.initiator);
     }
+}
+
+// A widened initiator union must add its arm above or fail closed here —
+// falling off the switch would read as "no authority objection".
+function denyUnknownInitiator(initiator: never): GroupPolicyDenied {
+    return denyGroupPolicy(
+        'forbidden-role',
+        `Unknown lifecycle initiator policy: ${String(initiator)}.`
+    );
 }

@@ -21,6 +21,22 @@ export type GroupAdmissionDecision =
     | Readonly<{ kind: 'deny'; denial: GroupPolicyDenied; }>;
 
 /**
+ * `closed` admits only while the lobby is still forming; every other stage —
+ * including `dormant` after exhaustion — keeps the posture the policy asked
+ * for, because failure is not consent to admit strangers (product decision
+ * 38).
+ */
+const CLOSED_MODE_ADMITS: Readonly<Record<GroupLifecycleState, boolean>> = {
+    dormant: false,
+    forming: true,
+    planned: false,
+    connecting: false,
+    active: false,
+    reconfiguring: false,
+    reconnecting: false
+};
+
+/**
  * The admission decision, binding per mode as plan decision 5.2 fixes
  * correction 5: the window constraints and `manager-approval` bind in every
  * lifecycle state from creation, while `closed` binds outside FORMING — the
@@ -54,7 +70,7 @@ export function computeGroupAdmissionDecision(
         case 'open':
             return { kind: 'admit' };
         case 'closed':
-            return input.lifecycleState === 'forming'
+            return CLOSED_MODE_ADMITS[input.lifecycleState]
                 ? { kind: 'admit' }
                 : deny('group-admission-closed', 'Group admission is closed outside formation.');
         case 'manager-approval':
