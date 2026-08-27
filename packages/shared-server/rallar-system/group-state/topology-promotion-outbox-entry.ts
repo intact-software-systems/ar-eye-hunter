@@ -3,6 +3,7 @@ import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import {
     GROUP_LAYOUT_IDENTITY_KEYS,
+    GROUP_LAYOUT_IDENTITY_STATES,
     type GroupLayoutIdentity
 } from '@shared/api/group-lifecycle/group-layout-identity.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
@@ -11,7 +12,8 @@ import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry
 
 import { AppOutboxType } from '../app-outbox/app-outbox-type.ts';
 import { serializeCanonicalJson } from '../protocol/canonical-json.ts';
-import { decodeJsonWireValue, toExactJsonWireObject, toJsonWireObject } from '../protocol/json-wire-identity.ts';
+import { decodeJsonWireValue, type JsonWireValue } from '../protocol/json-wire-identity.ts';
+import { toExactJsonWireObject, toJsonWireObject } from '../protocol/to-json-wire-object.ts';
 
 import { groupStateGroupStorageKey } from './persistence/aggregate/group-aggregate-storage-keys.ts';
 
@@ -65,7 +67,13 @@ export function computeTopologyPromotionEntry(
     return {
         key,
         typeId: EnqueuedType.APP_OUTBOX,
-        resource: JSON.stringify(toTopologyPromotionMessage(input, work, key, createdBy)),
+        resource: JSON.stringify(toTopologyPromotionMessage({
+            work,
+            route: key,
+            createdBy,
+            createdAtEpochMs: input.createdAtEpochMs,
+            expireAtEpochMs: input.expireAtEpochMs
+        })),
         status: EntityStatus.NEW,
         audit: {
             date: createdTs.toPlainTime(),
@@ -79,24 +87,27 @@ export function computeTopologyPromotionEntry(
     };
 }
 
-function toTopologyPromotionMessage(
-    input: ComputeTopologyPromotionEntryInput,
-    work: GroupTopologyPromotionWork,
-    key: ReturnType<typeof toAppQueueKey>,
-    createdBy: string
-): ALMessage {
+interface TopologyPromotionMessageInput {
+    readonly work: GroupTopologyPromotionWork;
+    readonly route: ReturnType<typeof toAppQueueKey>;
+    readonly createdBy: string;
+    readonly createdAtEpochMs: number;
+    readonly expireAtEpochMs: number;
+}
+
+function toTopologyPromotionMessage(input: TopologyPromotionMessageInput): ALMessage {
     return {
         id: {
             v: 2,
-            msgId: key.resourceId,
+            msgId: input.route.resourceId,
             ts: input.createdAtEpochMs,
-            senderId: createdBy
+            senderId: input.createdBy
         },
-        route: key,
+        route: input.route,
         constraints: { expiresAtMs: input.expireAtEpochMs },
         ordering: {
-            orderingKey: key.contextId,
-            epoch: work.formationEpoch,
+            orderingKey: input.route.contextId,
+            epoch: input.work.formationEpoch,
             seq: 0
         },
         delivery: {
@@ -107,10 +118,10 @@ function toTopologyPromotionMessage(
         payload: {
             typeId: AppOutboxType.TOPOLOGY_PROMOTION,
             contentType: 'application/json',
-            resource: JSON.stringify(work)
+            resource: JSON.stringify(input.work)
         },
         audit: {
-            createdBy,
+            createdBy: input.createdBy,
             createdTs: input.createdAtEpochMs
         }
     };
@@ -157,23 +168,24 @@ export function decodeTopologyPromotionWork(resource: string): GroupTopologyProm
     };
 }
 
-function toNonEmptyString(value: unknown, field: string): string {
+function toNonEmptyString(value: JsonWireValue | undefined, field: string): string {
     if (typeof value !== 'string' || value.length === 0) {
         throw new TypeError(`Topology promotion ${field} must be a non-empty string`);
     }
     return value;
 }
 
-function toNonNegativeInteger(value: unknown, field: string): number {
-    if (!Number.isSafeInteger(value) || (value as number) < 0) {
+function toNonNegativeInteger(value: JsonWireValue | undefined, field: string): number {
+    if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) {
         throw new TypeError(`Topology promotion ${field} must be a non-negative integer`);
     }
-    return value as number;
+    return value;
 }
 
-function toLayoutState(value: unknown): GroupLayoutIdentity['state'] {
-    if (value !== 'active' && value !== 'removed') {
+function toLayoutState(value: JsonWireValue | undefined): GroupLayoutIdentity['state'] {
+    const state = GROUP_LAYOUT_IDENTITY_STATES.find((candidate) => candidate === value);
+    if (state === undefined) {
         throw new TypeError('Topology promotion layout state is invalid');
     }
-    return value;
+    return state;
 }

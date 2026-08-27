@@ -1,16 +1,11 @@
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { toWebRtcGroupKey } from '@shared/api/api-type-utils.ts';
-import { isSameGroupLayoutIdentity, toGroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
-import { createDefaultGroupLifecyclePolicy } from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
 import { fromCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topology-config-canonical.ts';
-import type { Group, GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
+import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import type { OnMessageCallback } from '@shared/services/InboxOutboxContracts.ts';
 
-import { GROUP_MUTATION_QUEUE_EXPIRE_AT_EPOCH_MS } from '@shared-server/rallar-system/group-state/group-state-service-contracts.ts';
-import type { GroupLifecyclePolicyRead } from '@shared-server/rallar-system/group-state/persistence/group-lifecycle-policy-repository.ts';
-import { computeTopologyPromotionEntry } from '@shared-server/rallar-system/group-state/topology-promotion-outbox-entry.ts';
 import { toRtcTopologyPublicationId } from '@shared-server/rallar-system/topology/persistence/rtc-topology-identifiers.ts';
 import type { GroupTopologyPlanningAuthority } from '@shared-server/rallar-system/topology/planning/group-topology-planning-authority.ts';
 import { hashRtcTopologyExecutionCommand } from '@shared-server/rallar-system/topology/publication/rtc-topology-publication-repository-contracts.ts';
@@ -18,10 +13,6 @@ import { type RtcTopologyPublication } from '@shared-server/rallar-system/topolo
 import type { PSqlSql } from '../../../../postgres/p-sql-sql.ts';
 import { runInPSqlTransaction } from '../../../../postgres/run-in-p-sql-transaction.ts';
 import { PSqlResourceInboxRepository } from '../../../../queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
-import {
-    PSqlResourceInboxEntryRepository,
-    ResourceInboxInvariantCorruptionError
-} from '../../../../queuebox/postgres/p-sql-resource-inbox-entry-repository.ts';
 import { RuntimeStateWriteConflictError } from '../../../../runtime-state/optimistic-runtime-state-write.ts';
 import type { RallarTimingSink } from '../../../observability/timing.ts';
 import type { RtcRttRefinementService } from '../../../rtc-rtt/topic/rtc-rtt-refinement-service.ts';
@@ -53,6 +44,10 @@ import {
     type PersistedRtcTopologyWork,
     type RtcTopologyWorkEnvelope
 } from './rtc-topology-work-codec.ts';
+import {
+    writeTopologyPromotionRequest,
+    type TopologyPromotionPublicationPort
+} from './write-topology-promotion-request.ts';
 
 type AcceptedRtcTopologyMutation = Exclude<RtcTopologyMutationComputed, Readonly<{ outcome: 'loaded' | 'retry'; }>>;
 
@@ -92,16 +87,7 @@ interface RtcTopologyWorkHandlerOptions {
      * work. Absent means the default; 0 petitions per deferred item.
      */
     readonly criterionPetitionMinIntervalMs?: number;
-    /**
-     * The route-less promotion producer (decision 27): present only when a
-     * consumer is installed, and enqueueing only for groups whose topology
-     * policy lands reconfigurations with `apply`.
-     */
-    readonly topologyPublication?: Readonly<{
-        readLifecyclePolicy: (ref: GroupRef) => Promise<GroupLifecyclePolicyRead>;
-        /** The current group facts, never the work payload's enqueue-time copy. */
-        findCurrentGroup: (ref: GroupRef) => Promise<Group | null>;
-    }>;
+    readonly topologyPublication?: TopologyPromotionPublicationPort;
     readonly topologyDelivery?: RtcTopologyDeliveryOptions;
     readonly onInactiveOverlay?: (overlayId: string) => void;
     readonly wakeQueue?: () => void;
@@ -387,12 +373,13 @@ async function writeAcceptedRtcTopologyWork(
     await writeRtcTopologyPublicationTransaction(options, entry, async (transaction) => {
         await options.executionRepository.writeTopologyMutation(transaction, computed);
         if (computed.outcome === 'write') {
-            await writeTopologyPromotionRequest(
-                options,
+            await writeTopologyPromotionRequest({
+                publication: options.topologyPublication,
+                serviceId: options.serviceId,
                 transaction,
                 entry,
-                computed.snapshotGuard.candidate
-            );
+                target: computed.snapshotGuard.candidate
+            });
         }
         if (computed.outcome === 'write') {
             await options.executionRepository.writeTopologyInputFingerprint(
@@ -425,12 +412,13 @@ async function writeUnchangedTopologyWork(
             accepted.group.group,
             accepted.inputFingerprint
         );
-        await writeTopologyPromotionRequest(
-            options,
+        await writeTopologyPromotionRequest({
+            publication: options.topologyPublication,
+            serviceId: options.serviceId,
             transaction,
             entry,
-            accepted.criterionPetition?.planned ?? null
-        );
+            target: accepted.criterionPetition?.planned ?? null
+        });
         await finishRtcTopologyReservation(transaction, entry);
     });
     options.topologyPlanning.recordTopologyPublication(false);
@@ -461,72 +449,6 @@ async function finishCommittedTopologyWork(
         options.topologyPlanning.recordTopologyPublication(true);
         options.wakeQueue?.();
         options.wakeReplay?.();
-    }
-}
-
-/**
- * Decision 27: an accepted apply-landing planned publication durably requests
- * the route-less promotion. Every gate fact is read fresh here — the current
- * group snapshot, never the work payload's enqueue-time copy — and the write
- * also reconciles: a request is minted whenever the group's accepted
- * identity trails the target layout, so a cycle that once saw a stale stage
- * heals on the next pass. The cheap checks run before the policy read; hold
- * promotes only through activate; a corrupt policy and an absent consumer
- * port fail closed; and the entry never expires, so an outbox backlog delays
- * a promotion but cannot drop it.
- */
-async function writeTopologyPromotionRequest(
-    options: RtcTopologyWorkHandlerOptions,
-    transaction: PSqlSql,
-    entry: ResourceEntry,
-    target: RallarOverlayTopologySnapshot | null
-): Promise<void> {
-    if (!options.topologyPublication || target === null || target.state !== 'active') {
-        return;
-    }
-    const group = await options.topologyPublication.findCurrentGroup(target.groupRef);
-    if (group === null || group.lifecycleState !== 'active') {
-        return;
-    }
-    const targetIdentity = toGroupLayoutIdentity(target);
-    if (
-        group.acceptedLayoutIdentity !== null &&
-        isSameGroupLayoutIdentity(group.acceptedLayoutIdentity, targetIdentity)
-    ) {
-        return;
-    }
-    const policyRead = await options.topologyPublication.readLifecyclePolicy(target.groupRef);
-    if (policyRead.status === 'corrupt') {
-        return;
-    }
-    const policy = policyRead.status === 'present'
-        ? policyRead.policy
-        : createDefaultGroupLifecyclePolicy();
-    if (policy.topology.reconfigureLanding !== 'apply') {
-        return;
-    }
-    try {
-        await new PSqlResourceInboxEntryRepository(transaction).writeIfAbsentOrMatch(
-            computeTopologyPromotionEntry({
-                work: {
-                    groupRef: target.groupRef,
-                    formationEpoch: group.formationEpoch,
-                    expectedLayout: targetIdentity
-                },
-                senderId: options.serviceId ?? 'topology-promotion',
-                createdAtEpochMs: entry.audit.createdTs.toZonedDateTime('UTC').epochMilliseconds,
-                expireAtEpochMs: GROUP_MUTATION_QUEUE_EXPIRE_AT_EPOCH_MS
-            })
-        );
-    }
-    catch (error) {
-        // A same-identity request with different audit bytes already exists:
-        // the promotion is already durably requested, which is this write's
-        // whole goal — swallow the mismatch instead of wedging the
-        // publication transaction.
-        if (!(error instanceof ResourceInboxInvariantCorruptionError)) {
-            throw error;
-        }
     }
 }
 

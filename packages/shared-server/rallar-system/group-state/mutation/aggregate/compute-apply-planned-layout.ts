@@ -11,13 +11,13 @@ import { auditStamp, computeGroupMutationWriteResult, noOp, rejected, requireGro
 import { computePlannedLayoutPromotion } from './compute-planned-layout-promotion.ts';
 import { assertActive } from './group-aggregate-mutation-policy.ts';
 
-/**
- * The no-transition promotion path (plan slice 4a, product decision 27): the
- * accepted planned publication's transaction enqueued this command, and here
- * it applies the same canonical promotion activation uses — without touching
- * stage, epoch, electorate or attempt count. Identical replay is a no-op
- * success; stale authority is a typed rejection that writes nothing.
- */
+interface ComputeApplyPreconditionRejectionInput {
+    readonly command: Extract<GroupMutationCommand, { operation: 'applyPlannedLayout'; }>;
+    readonly read: GroupMutationRead;
+    readonly facts: GroupMutationFacts;
+    readonly stored: Group;
+}
+
 /**
  * May this group promote now? Decision 27's landing is re-checked at compute
  * rather than only at entry-mint time — the retryable transaction
@@ -27,11 +27,9 @@ import { assertActive } from './group-aggregate-mutation-policy.ts';
  * group promotes only through its activation.
  */
 function computeApplyPreconditionRejection(
-    command: Extract<GroupMutationCommand, { operation: 'applyPlannedLayout'; }>,
-    read: GroupMutationRead,
-    facts: GroupMutationFacts,
-    stored: Group
+    input: ComputeApplyPreconditionRejectionInput
 ): GroupMutationComputed | null {
+    const { command, read, facts, stored } = input;
     if (stored.lifecycleState !== 'active') {
         return rejected({
             command,
@@ -68,6 +66,13 @@ function computeApplyPreconditionRejection(
     });
 }
 
+/**
+ * The no-transition promotion path (plan slice 4a, product decision 27): the
+ * accepted planned publication's transaction enqueued this command, and here
+ * it applies the same canonical promotion activation uses — without touching
+ * stage, epoch, electorate or attempt count. Identical replay is a no-op
+ * success; stale authority is a typed rejection that writes nothing.
+ */
 export function computeApplyPlannedLayout(
     command: Extract<GroupMutationCommand, { operation: 'applyPlannedLayout'; }>,
     read: GroupMutationRead,
@@ -75,7 +80,7 @@ export function computeApplyPlannedLayout(
 ): GroupMutationComputed {
     const stored = requireGroup(read, command.aggregateRef);
     assertActive(stored.value, facts.nowEpochMs);
-    const preconditionRejection = computeApplyPreconditionRejection(command, read, facts, stored.value);
+    const preconditionRejection = computeApplyPreconditionRejection({ command, read, facts, stored: stored.value });
     if (preconditionRejection !== null) {
         return preconditionRejection;
     }
