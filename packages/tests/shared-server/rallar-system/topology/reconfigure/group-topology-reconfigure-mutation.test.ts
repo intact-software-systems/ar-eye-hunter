@@ -114,6 +114,7 @@ function createRead() {
             config: resolveGroupTopologyConfig({}),
             kindHysteresisWidths: { meshExitWidth: 4, treeExitWidth: 0 },
             rttMeasurements: [],
+            replanning: 'debounced' as const,
             nowEpochMs: 1_000
         },
         authorityGuard: createTopologyTestAuthorityGuard()

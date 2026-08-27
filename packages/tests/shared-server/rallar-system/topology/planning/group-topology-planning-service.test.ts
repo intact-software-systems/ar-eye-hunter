@@ -3,7 +3,9 @@ import { describe, expect, it } from 'vitest';
 import { GROUP_LIFECYCLE_STATES, type GroupLifecycleState } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 
 import { resolveGroupTopologyConfig } from '@shared-server/rallar-system/topology/config/group-topology-config.ts';
+import type { ReconcileGroupTopologyResult } from '@shared-server/rallar-system/topology/planning/group-topology-planning-contracts.ts';
 import { GroupTopologyPlanningService } from '@shared-server/rallar-system/topology/planning/group-topology-planning-service.ts';
+import type { GroupTopologyReplanningRead } from '@shared-server/rallar-system/topology/planning/resolve-topology-plan-action.ts';
 import { RallarRtcTopologyService } from '@shared-server/rallar-system/topology/runtime/rallar-rtc-topology-service.ts';
 import { createTestGroup } from '../../../../create-test-group.ts';
 
@@ -26,6 +28,7 @@ describe('GroupTopologyPlanningService', () => {
             config,
             kindHysteresisWidths: { meshExitWidth: 4, treeExitWidth: 0 },
             rttMeasurements: [],
+            replanning: 'auto',
             nowEpochMs: 2_000
         });
     });
@@ -55,6 +58,7 @@ describe('GroupTopologyPlanningService', () => {
                 config: resolveGroupTopologyConfig({}),
                 kindHysteresisWidths: { meshExitWidth: 4, treeExitWidth: 0 },
                 rttMeasurements: [],
+                replanning: 'debounced',
                 nowEpochMs: 2_000
             },
             undefined
@@ -81,17 +85,17 @@ describe('GroupTopologyPlanningService', () => {
             undefined
         );
 
-        expect(result.snapshot.state).toBe('removed');
-        expect(Object.values(result.snapshot.nextHopsBySessionId).flat()).toEqual([]);
+        expect(requirePlanned(result).snapshot.state).toBe('removed');
+        expect(Object.values(requirePlanned(result).snapshot.nextHopsBySessionId).flat()).toEqual([]);
     });
 
     it('drops a previously planned topology when the group returns to FORMING', () => {
         const active = groupWithSessionsIn('active');
         const service = createPlanningService({ group: active });
-        const planned = service.computeTopologyFromAuthority(
+        const planned = requirePlanned(service.computeTopologyFromAuthority(
             planningAuthority(active),
             undefined
-        );
+        ));
         expect(planned.snapshot.state).not.toBe('removed');
 
         const forming = groupWithSessionsIn('forming');
@@ -99,26 +103,132 @@ describe('GroupTopologyPlanningService', () => {
             planningAuthority(forming),
             planned.snapshot
         );
-        expect(held.snapshot.state).toBe('removed');
+        expect(requirePlanned(held).snapshot.state).toBe('removed');
     });
 
-    it('plans in every non-forming lifecycle state', () => {
-        for (
-            const lifecycleState of GROUP_LIFECYCLE_STATES.filter(
-                (candidate) => candidate !== 'forming'
+    it('resolves every stage with no stored layout: removal for dormant and forming, a first plan everywhere else', () => {
+        for (const lifecycleState of GROUP_LIFECYCLE_STATES) {
+            const group = groupWithSessionsIn(lifecycleState);
+            const service = createPlanningService({ group });
+
+            const result = requirePlanned(service.computeTopologyFromAuthority(
+                planningAuthority(group),
+                undefined
+            ));
+
+            if (lifecycleState === 'dormant' || lifecycleState === 'forming') {
+                expect(result.snapshot.state).toBe('removed');
+                continue;
+            }
+            // Freeze is replacement suppression, never establishment
+            // suppression: a dialing stage still produces its first layout.
+            expect(result.snapshot.state).not.toBe('removed');
+            expect(result.snapshot.activeSessionIds).toEqual(['session-a', 'session-b']);
+        }
+    });
+
+    it('resolves every stage against an active stored layout to the 4b disposition table', () => {
+        const seed = groupWithSessionsIn('active');
+        const stored = requirePlanned(
+            createPlanningService({ group: seed }).computeTopologyFromAuthority(
+                planningAuthority(seed),
+                undefined
             )
-        ) {
+        ).snapshot;
+        const frozenStages: GroupLifecycleState[] = ['connecting', 'reconnecting'];
+        for (const lifecycleState of GROUP_LIFECYCLE_STATES) {
             const group = groupWithSessionsIn(lifecycleState);
             const service = createPlanningService({ group });
 
             const result = service.computeTopologyFromAuthority(
                 planningAuthority(group),
-                undefined
+                stored
             );
 
-            expect(result.snapshot.state).not.toBe('removed');
-            expect(result.snapshot.activeSessionIds).toEqual(['session-a', 'session-b']);
+            if (frozenStages.includes(lifecycleState)) {
+                expect(result).toEqual({ action: 'frozen', current: stored });
+                continue;
+            }
+            const planned = requirePlanned(result);
+            if (lifecycleState === 'dormant' || lifecycleState === 'forming') {
+                expect(planned.snapshot.state).toBe('removed');
+                continue;
+            }
+            expect(planned.snapshot.state).not.toBe('removed');
         }
+    });
+
+    it('freezes automatic replanning of an active stored layout under commanded mode, but plans commanded work', () => {
+        const group = groupWithSessionsIn('active');
+        const service = createPlanningService({ group });
+        const stored = requirePlanned(service.computeTopologyFromAuthority(
+            planningAuthority(group),
+            undefined
+        )).snapshot;
+
+        const automatic = service.computeTopologyFromAuthority(
+            planningAuthority(group, 'commanded'),
+            stored,
+            { intent: 'full-rebuild', origin: 'automatic' }
+        );
+        expect(automatic).toEqual({ action: 'frozen', current: stored });
+
+        const commanded = service.computeTopologyFromAuthority(
+            planningAuthority(group, 'commanded'),
+            stored,
+            { intent: 'full-rebuild', origin: 'commanded' }
+        );
+        expect(requirePlanned(commanded).snapshot.state).not.toBe('removed');
+    });
+
+    it('fails automatic replanning closed on a corrupt policy, and C7: a departure does not move a commanded layout', () => {
+        const group = groupWithSessionsIn('active');
+        const service = createPlanningService({ group });
+        const stored = requirePlanned(service.computeTopologyFromAuthority(
+            planningAuthority(group),
+            undefined
+        )).snapshot;
+
+        expect(service.computeTopologyFromAuthority(
+            planningAuthority(group, 'corrupt'),
+            stored,
+            { intent: 'full-rebuild', origin: 'automatic' }
+        )).toEqual({ action: 'frozen', current: stored });
+
+        // C7: presence expiry flows in as automatic membership-delta work; a
+        // commanded group keeps its stored layout naming the departed session.
+        const departed = {
+            ...group,
+            activeSessions: group.activeSessions.slice(0, 1),
+            onlineMemberCount: 1
+        };
+        const afterDeparture = service.computeTopologyFromAuthority(
+            planningAuthority(departed, 'commanded'),
+            stored,
+            { intent: 'membership-delta', origin: 'automatic' }
+        );
+        expect(afterDeparture).toEqual({ action: 'frozen', current: stored });
+    });
+
+    it('freezes the local reconfigure path for a dialing stage', async () => {
+        const group = groupWithSessionsIn('connecting');
+        const topologyService = new RallarRtcTopologyService({ now: () => 2_000 });
+        const service = createPlanningService({ group, topologyService });
+        const stored = requirePlanned(service.computeTopologyFromAuthority(
+            planningAuthority(group),
+            undefined
+        )).snapshot;
+        topologyService.observeCommittedTopologySnapshot(stored);
+
+        const response = await service.reconfigureGroupTopology({
+            groupRef: group.group,
+            groupSnapshot: group,
+            publisher: () => 1
+        });
+
+        expect(response.changed).toBe(false);
+        expect(response.published).toBe(false);
+        expect(response.snapshot).toEqual(topologyService.readSnapshot(group));
     });
 
     it('does not report a topology publication when the delivery owner reaches no session', async () => {
@@ -160,21 +270,36 @@ function groupWithSessionsIn(
     };
 }
 
-function planningAuthority(group: ReturnType<typeof createTopologyTestGroupSnapshot>) {
+function planningAuthority(
+    group: ReturnType<typeof createTopologyTestGroupSnapshot>,
+    replanning: GroupTopologyReplanningRead = 'debounced'
+) {
     return {
         group,
         config: resolveGroupTopologyConfig({}),
         kindHysteresisWidths: { meshExitWidth: 4, treeExitWidth: 0 },
         rttMeasurements: [],
+        replanning,
         nowEpochMs: 2_000
     };
+}
+
+function requirePlanned(
+    result: ReconcileGroupTopologyResult
+): Extract<ReconcileGroupTopologyResult, { action: 'planned'; }> {
+    expect(result.action).toBe('planned');
+    if (result.action !== 'planned') {
+        throw new Error('expected a planned topology result');
+    }
+    return result;
 }
 
 function createPlanningService(input: {
     group: ReturnType<typeof createTopologyTestGroupSnapshot>;
     config?: ReturnType<typeof resolveGroupTopologyConfig>;
+    topologyService?: RallarRtcTopologyService;
 }): GroupTopologyPlanningService {
-    const topologyService = new RallarRtcTopologyService({ now: () => 2_000 });
+    const topologyService = input.topologyService ?? new RallarRtcTopologyService({ now: () => 2_000 });
     return new GroupTopologyPlanningService({
         findGroupSnapshotByRef: async () => input.group,
         readCurrentGroupSnapshot: async () => input.group,

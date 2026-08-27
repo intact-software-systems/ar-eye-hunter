@@ -639,6 +639,7 @@ function createRouteApp(options: {
                         groupRef,
                         overlayId: 'overlay',
                         snapshot: null,
+                        acceptedSnapshot: null,
                         config: createTopologyConfigView(),
                         pending: null
                     })),

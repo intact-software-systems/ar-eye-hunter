@@ -6,6 +6,7 @@ import { AppTopics } from '@shared/api/api-config.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { describe, expect, it, vi } from 'vitest';
 
+import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import { createRtcTopologyReplayFixture } from './rtc-topology-replay-fixture.ts';
 
 describe('RtcTopologyReplayEntryHandlerService', () => {
@@ -51,6 +52,34 @@ describe('RtcTopologyReplayEntryHandlerService', () => {
             recipientPeerIds: ['session-2']
         });
         expect(message.constraints?.expiresAtMs).toBe(fixture.entry.retainUntilEpochMs);
+    });
+
+    it('repairs onto the accepted layout whenever the accepted slot exists (4c)', async () => {
+        const fixture = createRtcTopologyReplayFixture();
+        const plannedAhead = {
+            ...fixture.currentSnapshot,
+            version: fixture.currentSnapshot.version + 5,
+            updatedAtEpochMs: fixture.currentSnapshot.updatedAtEpochMs + 5
+        };
+        const acceptedSnapshot = {
+            ...fixture.currentSnapshot,
+            activeSessionIds: ['session-2'],
+            nextHopsBySessionId: { 'session-2': [] },
+            version: fixture.currentSnapshot.version + 1,
+            updatedAtEpochMs: fixture.currentSnapshot.updatedAtEpochMs + 1
+        };
+        const { handler, send } = createHandler({
+            ...fixture,
+            currentSnapshot: plannedAhead,
+            acceptedSnapshot
+        });
+
+        await expect(
+            handler.handle(fixture.entry, fixture.databaseNowEpochMs, new AbortController().signal)
+        ).resolves.toEqual({ status: 'current-repair' });
+        const message = send.mock.calls[0]![0];
+        expect(message.payload.resource).toBe(JSON.stringify(acceptedSnapshot));
+        expect(message.targets).toMatchObject({ recipientPeerIds: ['session-2'] });
     });
 
     it('treats no current local recipient as successful handling', async () => {
@@ -107,6 +136,7 @@ function createHandler(
         & Readonly<{
             publication?: RtcTopologyPublication;
             outbox?: ResourceEntry;
+            acceptedSnapshot?: RallarOverlayTopologySnapshot;
         }>,
     sendStatus: 'sent-live' | 'no-recipients' | 'partial-failure' | 'failed' = 'sent-live'
 ) {
@@ -121,6 +151,9 @@ function createHandler(
             },
             snapshots: {
                 findSnapshot: vi.fn(async () => fixture.currentSnapshot)
+            },
+            acceptedSnapshots: {
+                findSnapshot: vi.fn(async () => fixture.acceptedSnapshot)
             },
             sender: { sendToTargetsWithResult: send }
         }),

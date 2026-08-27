@@ -1,3 +1,4 @@
+import type { RtcTopologyReconnectHydration } from '@shared-server/rallar-system/topology/replay/hydration/rtc-topology-reconnect-hydration.ts';
 import { RtcTopologyReconnectHydrator } from '@shared-server/rallar-system/topology/replay/hydration/rtc-topology-reconnect-hydrator.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { decodePersistedALMessageValue } from '@shared/al-contracts/al-message-persistence-validation.ts';
@@ -54,6 +55,49 @@ describe('RtcTopologyReconnectHydrator', () => {
 
         const message = harness.sentMessages(connection)[0] as { payload: { resource: string; }; };
         expect(JSON.parse(message.payload.resource)).toEqual(current);
+    });
+
+    it('hydrates the accepted layout whenever the accepted slot exists (4c)', async () => {
+        const planned = createTopology({ version: 6 });
+        const accepted = createTopology({ version: 5 });
+        const harness = createHarness({
+            scanTopology: planned,
+            currentTopology: planned,
+            acceptedTopologies: {
+                listSnapshotEntriesPage: async () => [],
+                findSnapshot: async () => accepted
+            }
+        });
+        const connection = harness.addConnection('session-1', 'generation-1');
+
+        await harness.hydrator.hydrateOpenConnections(new AbortController().signal);
+
+        const message = harness.sentMessages(connection)[0] as { payload: { resource: string; }; };
+        expect(JSON.parse(message.payload.resource)).toEqual(accepted);
+        expect(harness.outcomes).toEqual(['sent']);
+    });
+
+    it('finds a member only the accepted layout still names through the second scan (4c)', async () => {
+        const planned = createTopology({ version: 7, activeSessionIds: ['session-9'] });
+        const accepted = createTopology({ version: 6 });
+        const harness = createHarness({
+            scanTopology: planned,
+            currentTopology: planned,
+            acceptedTopologies: {
+                listSnapshotEntriesPage: async () => [{
+                    entry: { key: accepted.groupRef.groupId },
+                    value: accepted
+                } as never],
+                findSnapshot: async () => accepted
+            }
+        });
+        const connection = harness.addConnection('session-1', 'generation-1');
+
+        await harness.hydrator.hydrateOpenConnections(new AbortController().signal);
+
+        const message = harness.sentMessages(connection)[0] as { payload: { resource: string; }; };
+        expect(JSON.parse(message.payload.resource)).toEqual(accepted);
+        expect(harness.outcomes).toEqual(['sent']);
     });
 
     it('never writes to a replacement generation that appears during authorization', async () => {
@@ -259,6 +303,7 @@ interface HarnessOverrides {
     readonly scanTopology?: RallarOverlayTopologySnapshot;
     readonly currentTopology?: RallarOverlayTopologySnapshot;
     readonly topologies?: readonly RallarOverlayTopologySnapshot[];
+    readonly acceptedTopologies?: RtcTopologyReconnectHydration.TopologyReader;
     readonly beforeAuthorizationReturns?: () => Promise<void>;
     readonly scheduler?: ManualScheduler;
     readonly currentTopologyFailures?: number;
@@ -284,6 +329,10 @@ function createHarness(overrides: HarnessOverrides = {}) {
     const hydrator = new RtcTopologyReconnectHydrator({
         socket,
         batchWindowMs: 25,
+        acceptedTopologies: overrides.acceptedTopologies ?? {
+            listSnapshotEntriesPage: async () => [],
+            findSnapshot: async () => undefined
+        },
         topologies: {
             listSnapshotEntriesPage: async ({ afterKey, limit }) => {
                 pageLimits.push(limit);

@@ -159,6 +159,7 @@ export function constructApiV1Runtime(
         readHydrationIdentity: readAuthorisedWsConnectionIdentity
     });
     const topology = operations.createTopologyServices({
+        database: input.database,
         runtimeStateRepository: mutation.runtimeStateRepository,
         groupStateRepository: mutation.groupsRepository,
         groupStateService: mutation.groupStateService,

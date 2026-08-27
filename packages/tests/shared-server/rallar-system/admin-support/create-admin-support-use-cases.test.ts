@@ -381,6 +381,7 @@ describe('admin support use cases', () => {
                 createdAtEpochMs: NOW_EPOCH_MS - 2_000,
                 updatedAtEpochMs: NOW_EPOCH_MS - 1_000
             },
+            acceptedSnapshot: null,
             pending: null
         };
         const service = createService({

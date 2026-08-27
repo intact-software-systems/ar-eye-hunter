@@ -20,6 +20,14 @@ export interface GroupTopologyConfigQueryServiceDependencies {
     readonly readPersistedTopologySnapshot?: (
         groupRef: GroupRef
     ) => Promise<RallarOverlayTopologySnapshot | undefined>;
+    /** The accepted-slot reader (plan slice 4c). Absent in local mode: no promotion exists there. */
+    readonly readPersistedAcceptedTopologySnapshot?: (
+        groupRef: GroupRef
+    ) => Promise<RallarOverlayTopologySnapshot | undefined>;
+    /** Decision 11's transient half. Absent in local mode: no durable queue to consult. */
+    readonly readPendingTopologyReplan?: (
+        groupRef: GroupRef
+    ) => Promise<GroupTopologyManagementView['pending']>;
     readonly configRepository?: GroupTopologyConfigRepository;
     readonly serverDefaults?: GroupTopologyServerOptions;
 }
@@ -43,13 +51,17 @@ export class GroupTopologyConfigQueryService {
             : group
             ? this.dependencies.readLocalTopologySnapshot(group)
             : undefined;
-
+        const [acceptedSnapshot, pending] = await Promise.all([
+            this.dependencies.readPersistedAcceptedTopologySnapshot?.(groupRef),
+            this.dependencies.readPendingTopologyReplan?.(groupRef)
+        ]);
         return {
             groupRef,
             overlayId: toScopedOverlayId(groupRef),
             snapshot: snapshot ?? null,
+            acceptedSnapshot: acceptedSnapshot ?? null,
             config: await this.readConfig(groupRef),
-            pending: null
+            pending: pending ?? null
         };
     }
 

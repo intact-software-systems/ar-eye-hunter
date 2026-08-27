@@ -132,6 +132,12 @@ type AcceptedRtcTopologyWork =
         criterionPetition: CommittedCriterionPetition | null;
     }>
     | Readonly<{
+        decision: 'skipped-frozen';
+        work: PersistedRtcTopologyWork;
+        group: GroupSnapshot;
+        criterionPetition: CommittedCriterionPetition | null;
+    }>
+    | Readonly<{
         decision: 'skipped-rtt-refinement';
         work: PersistedRtcTopologyWork;
         group: GroupSnapshot;
@@ -274,8 +280,19 @@ async function computeAcceptedRtcTopologyWork(
     const computedTopology = options.topologyPlanning.computeTopologyFromAuthority(
         authority,
         read.snapshot?.value,
-        membershipDeltaWork ? 'membership-delta' : 'full-rebuild'
+        {
+            intent: membershipDeltaWork ? 'membership-delta' : 'full-rebuild',
+            origin: work.kind === 'rtt-refresh' || changeGated ? 'automatic' : 'commanded'
+        }
     );
+    if (computedTopology.action === 'frozen') {
+        return {
+            decision: 'skipped-frozen',
+            work,
+            group: authority.group,
+            criterionPetition: read.snapshot ? { authority, planned: read.snapshot.value } : null
+        };
+    }
     // RTT is deliberately outside the fingerprint, so an RTT refresh always
     // replans — but an unchanged planned graph publishes nothing (M8). The
     // criterion petition fences on the stored row, not the recomputed
@@ -365,6 +382,10 @@ async function writeAcceptedRtcTopologyWork(
         await writeUnchangedTopologyWork(options, entry, accepted);
         return;
     }
+    if (accepted.decision === 'skipped-frozen') {
+        await writeFrozenTopologyWork(options, entry, accepted);
+        return;
+    }
     const computed = accepted.computed;
     if (computed.outcome === 'superseded') {
         await finishRtcTopologyWork(options.database, entry);
@@ -421,6 +442,32 @@ async function writeUnchangedTopologyWork(
             accepted.group.group,
             accepted.inputFingerprint
         );
+        await writeTopologyPromotionRequest(transaction, promotionRequest);
+        await finishRtcTopologyReservation(transaction, entry);
+    });
+    options.topologyPlanning.recordTopologyPublication(false);
+    await petitionCommittedCriterion(options, accepted.criterionPetition);
+}
+
+/**
+ * The frozen path (plan slice 4b): the stage or the commanded mode refuses a
+ * replacement, so nothing is written — not even the input fingerprint, which
+ * must keep signalling that the stored layout trails the authority. The
+ * criterion still measures the frozen candidate, and the promotion reconcile
+ * still heals an accepted row that trails it.
+ */
+async function writeFrozenTopologyWork(
+    options: RtcTopologyWorkHandlerOptions,
+    entry: ResourceEntry,
+    accepted: Extract<AcceptedRtcTopologyWork, { decision: 'skipped-frozen'; }>
+): Promise<void> {
+    const promotionRequest = await readTopologyPromotionRequest({
+        publication: options.topologyPublication,
+        serviceId: options.serviceId,
+        entry,
+        target: accepted.criterionPetition?.planned ?? null
+    });
+    await runInPSqlTransaction(options.database, async (transaction) => {
         await writeTopologyPromotionRequest(transaction, promotionRequest);
         await finishRtcTopologyReservation(transaction, entry);
     });

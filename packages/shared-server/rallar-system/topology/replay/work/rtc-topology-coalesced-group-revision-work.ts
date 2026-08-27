@@ -11,7 +11,7 @@ import {
     toCanonicalGroupTopologyConfigPatch
 } from '@shared/api/group-topology-config-canonical.ts';
 import type { GroupRef, GroupSnapshot, GroupStateCausalRevision } from '@shared/api/group-types.ts';
-import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import { EntityStatus, type Key, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 
 import { toAppQueueCreatedBy, toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 import { AppOutboxType } from '../../../app-outbox/app-outbox-type.ts';
@@ -130,6 +130,43 @@ function readPreviousMessageIdentity(previousEntry: ResourceEntry): CoalescedMes
     return {
         tsEpochMs: message.id.ts,
         expiresAtEpochMs: message.constraints?.expiresAtMs ?? null
+    };
+}
+
+export interface PendingTopologyReplanReader {
+    findByKey(key: Key): Promise<ResourceEntry | null>;
+}
+
+/** Decision 11's transient half: a replan is queued and due at T. */
+export interface PendingTopologyReplan {
+    readonly reconfigureQueued: boolean;
+    readonly dueAtEpochMs: number | null;
+}
+
+/**
+ * The transient half of product decision 11: is a replan queued for this
+ * group, and when is it due? Read straight off the coalesced group-revision
+ * row (I14 — its `dueAtEpochMs` doubles as the read surface's "when will
+ * this settle"). A row in a terminal status is settled work, not pending; a
+ * present row whose envelope no longer decodes still reports queued, with a
+ * null due time, rather than hiding work the queue will attempt.
+ */
+export async function readPendingTopologyReplan(
+    reader: PendingTopologyReplanReader,
+    groupRef: GroupRef
+): Promise<PendingTopologyReplan | null> {
+    const entry = await reader.findByKey(toAppQueueKey({
+        topicId: APP_OUTBOX_RTC_TOPOLOGY_TOPIC,
+        resourceId: toRtcTopologyCoalescedGroupRevisionResourceId(toScopedOverlayId(groupRef)),
+        contextId: groupStateGroupStorageKey(groupRef)
+    }));
+    if (entry === null || !isMutableCoalescedStatus(entry.status)) {
+        return null;
+    }
+    const envelope = tryReadCoalescedAppOutboxWorkEnvelope<RtcTopologyGroupRevisionWork>(entry);
+    return {
+        reconfigureQueued: true,
+        dueAtEpochMs: envelope?.data[COALESCED_APP_OUTBOX_WORK_FIELD].dueAtEpochMs ?? null
     };
 }
 

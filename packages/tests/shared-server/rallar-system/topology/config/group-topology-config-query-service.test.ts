@@ -62,7 +62,28 @@ describe('GroupTopologyConfigQueryService', () => {
         await expect(query.readTopologyView(GROUP_REF)).resolves.toMatchObject({
             groupRef: GROUP_REF,
             snapshot: persistedSnapshot,
+            acceptedSnapshot: null,
             pending: null
+        });
+    });
+
+    it('carries both layout slots and the queued replan when their readers are wired', async () => {
+        const persistedSnapshot = { overlayId: 'planned-overlay' } as never;
+        const acceptedSnapshot = { overlayId: 'accepted-overlay' } as never;
+        const group = { group: GROUP_REF } as GroupSnapshot;
+        const query = new GroupTopologyConfigQueryService({
+            findGroupSnapshotByRef: async () => group,
+            readLocalTopologySnapshot: () => undefined,
+            readPersistedTopologySnapshot: async () => persistedSnapshot,
+            readPersistedAcceptedTopologySnapshot: async () => acceptedSnapshot,
+            readPendingTopologyReplan: async () => ({ reconfigureQueued: true, dueAtEpochMs: 4_500 }),
+            serverDefaults: { topologyKind: 'tree', degreeLimit: 7 }
+        });
+
+        await expect(query.readTopologyView(GROUP_REF)).resolves.toMatchObject({
+            snapshot: persistedSnapshot,
+            acceptedSnapshot,
+            pending: { reconfigureQueued: true, dueAtEpochMs: 4_500 }
         });
     });
 

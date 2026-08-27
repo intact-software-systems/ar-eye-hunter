@@ -5678,13 +5678,16 @@ components:
 
     GroupTopologyManagementView:
       type: object
-      required: [groupRef, overlayId, snapshot, config, pending]
+      required: [groupRef, overlayId, snapshot, acceptedSnapshot, config, pending]
       properties:
         groupRef:
           $ref: '#/components/schemas/GroupRef'
         overlayId:
           type: string
         snapshot:
+          $ref: '#/components/schemas/RallarOverlayTopologySnapshot'
+          nullable: true
+        acceptedSnapshot:
           $ref: '#/components/schemas/RallarOverlayTopologySnapshot'
           nullable: true
         config:

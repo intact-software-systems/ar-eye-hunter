@@ -33,6 +33,8 @@ export namespace RtcTopologyReconnectHydration {
     export interface Dependencies {
         readonly socket: JsonWebSocketServer;
         readonly topologies: TopologyReader;
+        /** The accepted slot: hydration pins to it whenever it exists (plan slice 4c). */
+        readonly acceptedTopologies: TopologyReader;
         readonly groups: GroupReader;
         readonly readIdentity: (
             connection: ConnectionContext
@@ -52,6 +54,7 @@ export namespace RtcTopologyReconnectHydration {
 export class RtcTopologyReconnectHydration {
     readonly #socket: JsonWebSocketServer;
     readonly #topologies: RtcTopologyReconnectHydration.TopologyReader;
+    readonly #acceptedTopologies: RtcTopologyReconnectHydration.TopologyReader;
     readonly #groups: RtcTopologyReconnectHydration.GroupReader;
     readonly #readIdentity: RtcTopologyReconnectHydration.Dependencies['readIdentity'];
     readonly #nowEpochMs: () => number;
@@ -61,6 +64,7 @@ export class RtcTopologyReconnectHydration {
     constructor(dependencies: RtcTopologyReconnectHydration.Dependencies) {
         this.#socket = dependencies.socket;
         this.#topologies = dependencies.topologies;
+        this.#acceptedTopologies = dependencies.acceptedTopologies;
         this.#groups = dependencies.groups;
         this.#readIdentity = dependencies.readIdentity;
         this.#nowEpochMs = dependencies.nowEpochMs;
@@ -68,46 +72,80 @@ export class RtcTopologyReconnectHydration {
         this.#yield = dependencies.yield;
     }
 
+    /**
+     * Both slots are scanned (plan slice 4c): the planned namespace names
+     * every dialing member — a connecting group has no accepted row — while
+     * the accepted namespace names members the traffic layout still carries
+     * after a replan moved the planned row past them. Delivery itself always
+     * chooses accepted-first, so the two scans agree on content and the pair
+     * set only dedupes work.
+     */
     async hydrate(input: RtcTopologyReconnectHydration.Input): Promise<ReadonlySet<ConnectionContext>> {
-        const matched = new Set<ConnectionContext>();
-        const retry = new Set<ConnectionContext>();
+        const state: HydrationScanState = {
+            matched: new Set<ConnectionContext>(),
+            retry: new Set<ConnectionContext>(),
+            hydratedPairs: new Set<string>()
+        };
+        await this.#scanTopologyPages(this.#topologies, input, state);
+        await this.#scanTopologyPages(this.#acceptedTopologies, input, state);
+        this.#recordUnmatched(input.connections, state.matched, state.retry);
+        return state.retry;
+    }
+
+    async #scanTopologyPages(
+        reader: RtcTopologyReconnectHydration.TopologyReader,
+        input: RtcTopologyReconnectHydration.Input,
+        state: HydrationScanState
+    ): Promise<void> {
         let afterKey: string | undefined;
         while (true) {
             throwIfAborted(input);
             let page: readonly RuntimeStateEntryValue<RallarOverlayTopologySnapshot>[];
             try {
-                page = await this.#topologies.listSnapshotEntriesPage({
+                page = await reader.listSnapshotEntriesPage({
                     afterKey,
                     limit: RTC_TOPOLOGY_HYDRATION_PAGE_SIZE
                 });
             }
             catch {
                 throwIfAborted(input);
-                this.#recordScanRetries(input.connections, retry);
-                break;
+                this.#recordScanRetries(input.connections, state.retry);
+                return;
             }
             for (const entry of page) {
                 throwIfAborted(input);
-                const candidates = input.connections.filter((connection) =>
-                    entry.value.activeSessionIds.includes(connection.id)
-                );
-                for (const connection of candidates) {
-                    matched.add(connection);
-                    const outcome = await this.#hydrateTopology(connection, entry.value, input);
-                    this.#diagnostics?.({ kind: 'hydration', outcome });
-                    if (outcome === 'retry') {
-                        retry.add(connection);
-                    }
-                }
+                await this.#hydrateScannedTopology(entry.value, input, state);
             }
             if (page.length < RTC_TOPOLOGY_HYDRATION_PAGE_SIZE) {
-                break;
+                return;
             }
             afterKey = page.at(-1)!.entry.key;
             await this.#yield();
         }
-        this.#recordUnmatched(input.connections, matched, retry);
-        return retry;
+    }
+
+    async #hydrateScannedTopology(
+        scannedTopology: RallarOverlayTopologySnapshot,
+        input: RtcTopologyReconnectHydration.Input,
+        state: HydrationScanState
+    ): Promise<void> {
+        const candidates = input.connections.filter((connection) =>
+            scannedTopology.activeSessionIds.includes(connection.id)
+        );
+        for (const connection of candidates) {
+            const pair = `${scannedTopology.overlayId}\u0000${connection.id}`;
+            if (state.hydratedPairs.has(pair)) {
+                continue;
+            }
+            state.matched.add(connection);
+            const outcome = await this.#hydrateTopology(connection, scannedTopology, input);
+            this.#diagnostics?.({ kind: 'hydration', outcome });
+            if (outcome === 'retry') {
+                state.retry.add(connection);
+                continue;
+            }
+            state.hydratedPairs.add(pair);
+        }
     }
 
     #recordScanRetries(
@@ -156,7 +194,14 @@ export class RtcTopologyReconnectHydration {
             if (!this.#isCurrent(connection)) {
                 return 'stale-generation';
             }
-            const currentTopology = await this.#topologies.findSnapshot(scannedTopology.groupRef);
+            // Hydration content is accepted-first: the layout carrying
+            // traffic when it exists, the planned row only before a first
+            // promotion (product decisions 1/30).
+            const [acceptedTopology, plannedTopology] = await Promise.all([
+                this.#acceptedTopologies.findSnapshot(scannedTopology.groupRef),
+                this.#topologies.findSnapshot(scannedTopology.groupRef)
+            ]);
+            const currentTopology = acceptedTopology ?? plannedTopology;
             throwIfAborted(input);
             const authorizationAfter = await this.#groups.readSnapshot(scannedTopology.groupRef);
             throwIfAborted(input);
@@ -200,6 +245,12 @@ export class RtcTopologyReconnectHydration {
     #isCurrent(connection: ConnectionContext): boolean {
         return this.#socket.connections.get(connection.id) === connection && connection.isOpen;
     }
+}
+
+interface HydrationScanState {
+    readonly matched: Set<ConnectionContext>;
+    readonly retry: Set<ConnectionContext>;
+    readonly hydratedPairs: Set<string>;
 }
 
 interface IsAuthorizedInput {

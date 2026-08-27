@@ -60,6 +60,9 @@ describe('RTC topology websocket publication', () => {
             snapshots: {
                 findSnapshot: async () => fixture.currentSnapshot
             },
+            acceptedSnapshots: {
+                findSnapshot: async () => undefined
+            },
             sender: service
         });
 

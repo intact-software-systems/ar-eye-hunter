@@ -1,4 +1,5 @@
 import { PSqlGroupStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-group-state-event-repository.ts';
+import type { ReconcileGroupTopologyResult } from '@shared-server/rallar-system/topology/planning/group-topology-planning-contracts.ts';
 import assert from 'node:assert/strict';
 
 import {
@@ -57,10 +58,10 @@ Deno.test(
                 updatedAtEpochMs: 123
             });
 
-            const result = scenario.service.planning.computeTopologyFromAuthority(
+            const result = requirePlannedTopology(scenario.service.planning.computeTopologyFromAuthority(
                 scenario.authority,
                 scenario.previous
-            );
+            ));
 
             assert.equal(result.snapshot.state, 'removed');
             assert.equal(result.snapshot.updatedAtEpochMs, 123);
@@ -80,10 +81,10 @@ Deno.test(
                 updatedAtEpochMs: 200
             });
 
-            const result = scenario.service.planning.computeTopologyFromAuthority(
+            const result = requirePlannedTopology(scenario.service.planning.computeTopologyFromAuthority(
                 scenario.authority,
                 scenario.previous
-            );
+            ));
 
             assert.equal(scenario.authority.group.group.status, 'active');
             assert.equal(result.snapshot.state, 'active');
@@ -106,10 +107,10 @@ Deno.test(
                 updatedAtEpochMs: 201
             });
 
-            const result = scenario.service.planning.computeTopologyFromAuthority(
+            const result = requirePlannedTopology(scenario.service.planning.computeTopologyFromAuthority(
                 scenario.authority,
                 scenario.previous
-            );
+            ));
 
             assert.equal(scenario.authority.group.group.status, 'active');
             assert.equal(result.snapshot.state, 'removed');
@@ -132,10 +133,10 @@ Deno.test(
                 updatedAtEpochMs: 202
             });
 
-            const result = scenario.service.planning.computeTopologyFromAuthority(
+            const result = requirePlannedTopology(scenario.service.planning.computeTopologyFromAuthority(
                 scenario.authority,
                 scenario.previous
-            );
+            ));
 
             assert.equal(scenario.authority.group.group.status, 'archived');
             assert.equal(result.snapshot.state, 'removed');
@@ -598,3 +599,12 @@ Deno.test(
         });
     }
 );
+
+function requirePlannedTopology(
+    result: ReconcileGroupTopologyResult
+): Extract<ReconcileGroupTopologyResult, { action: 'planned'; }> {
+    if (result.action !== 'planned') {
+        throw new Error('expected a planned topology result');
+    }
+    return result;
+}

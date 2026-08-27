@@ -3,6 +3,7 @@ import type { GroupTopologyConfigPatch, GroupTopologyConfigView } from '@shared/
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 
 import type { RtcTopologyKindHysteresisWidths } from '../runtime/rallar-rtc-topology-service.ts';
+import type { GroupTopologyReplanningRead } from './resolve-topology-plan-action.ts';
 
 export type GroupTopologyPlanningSnapshotSelection = 'prefer-current' | 'preserve-known-revision';
 
@@ -18,5 +19,7 @@ export interface GroupTopologyPlanningAuthority {
     readonly config: GroupTopologyConfigView;
     readonly kindHysteresisWidths: RtcTopologyKindHysteresisWidths;
     readonly rttMeasurements: readonly RttMeasurementInfo[];
+    /** The group's replanning mode, read with the rest of the authority (4b). */
+    readonly replanning: GroupTopologyReplanningRead;
     readonly nowEpochMs: number;
 }

@@ -1,5 +1,4 @@
 import { compareGroupCausalRevision, readGroupCausalRevision } from '@shared/api/group-client-views.ts';
-import type { GroupLifecycleState } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { isTuplePreservingGroupLivenessReduction } from '@shared/repository/group-state-snapshot-revision.ts';
 import { GroupStateSnapshotIncomparableError } from '@shared/repository/group-state-snapshots-repository.ts';
@@ -16,37 +15,6 @@ export function isGroupTopologyActiveAt(
         snapshot.group.status === 'active' &&
         (snapshot.group.expiresAtEpochMs === null ||
             snapshot.group.expiresAtEpochMs > observedAtEpochMs)
-    );
-}
-
-/**
- * The formation window (Phase 5, M7): FORMING holds topology planning, so a
- * forming group has no planned overlay to establish and no dials to command.
- * Every other intent state plans -- RECONFIGURING exists precisely to redo
- * establishment work. Groups with immediate formation are created ACTIVE and
- * never enter FORMING, which keeps today's behaviour byte-identical for them.
- * The rows deliberately preserve today's `!== 'forming'` behaviour for the
- * unreachable stages; the total stage-keyed work disposition
- * (`resolveGroupTopologyWorkDisposition`) replaces this gate in the
- * held-layout slice.
- */
-const TOPOLOGY_PLANNABLE: Readonly<Record<GroupLifecycleState, boolean>> = {
-    dormant: true,
-    forming: false,
-    planned: true,
-    connecting: true,
-    active: true,
-    reconfiguring: true,
-    reconnecting: true
-};
-
-export function isGroupTopologyPlannableAt(
-    snapshot: GroupSnapshot,
-    observedAtEpochMs: number
-): boolean {
-    return (
-        isGroupTopologyActiveAt(snapshot, observedAtEpochMs) &&
-        TOPOLOGY_PLANNABLE[snapshot.group.lifecycleState]
     );
 }
 

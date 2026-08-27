@@ -217,10 +217,14 @@ export async function createPGliteTopologyWorkFixture(
         knownGroup: groupSnapshot,
         snapshotSelection: 'prefer-current'
     });
-    const topology = topologyManagement.planning.computeTopologyFromAuthority(
+    const computedTopology = topologyManagement.planning.computeTopologyFromAuthority(
         authority,
         undefined
-    ).snapshot;
+    );
+    if (computedTopology.action !== 'planned') {
+        throw new Error('expected a planned topology result');
+    }
+    const topology = computedTopology.snapshot;
     const expiresAtEpochMs = executionRepository.publicationExpireAtTimestamp();
     const publication = {
         publicationId: toRtcTopologyPublicationId({

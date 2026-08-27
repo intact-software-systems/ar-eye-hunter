@@ -1,4 +1,5 @@
 import type { RttMeasurementInfo } from '@shared/api/api-config.ts';
+import type { GroupTopologyManagementView } from '@shared/api/graph-topology-management-types.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 
 import { GroupTopologyConfigQueryService } from '../config/group-topology-config-query-service.ts';
@@ -13,6 +14,7 @@ import {
     GroupTopologyPlanningService,
     type GroupTopologyPlanningServiceDependencies
 } from '../planning/group-topology-planning-service.ts';
+import type { GroupTopologyReplanningRead } from '../planning/resolve-topology-plan-action.ts';
 import type { RallarRtcTopologyService } from './rallar-rtc-topology-service.ts';
 
 export interface CreateGroupTopologyRuntimeOwnersInput {
@@ -27,6 +29,13 @@ export interface CreateGroupTopologyRuntimeOwnersInput {
     readonly configRepository?: GroupTopologyConfigRepository;
     readonly topologyService: RallarRtcTopologyService;
     readonly topologySnapshotRepository?: RtcTopologySnapshotRepository;
+    readonly acceptedTopologySnapshotRepository?: RtcTopologySnapshotRepository;
+    readonly readPendingTopologyReplan?: (
+        groupRef: GroupRef
+    ) => Promise<GroupTopologyManagementView['pending']>;
+    readonly readTopologyReplanningMode?: (
+        group: GroupSnapshot
+    ) => GroupTopologyReplanningRead | Promise<GroupTopologyReplanningRead>;
     readonly publisher?: GroupTopologyPublisher;
     readonly serverDefaults?: GroupTopologyServerOptions;
 }
@@ -46,6 +55,10 @@ export function createGroupTopologyRuntimeOwners(
         readPersistedTopologySnapshot: topologySnapshotRepository
             ? async (groupRef) => await topologySnapshotRepository.findSnapshot(groupRef)
             : undefined,
+        readPersistedAcceptedTopologySnapshot: input.acceptedTopologySnapshotRepository
+            ? async (groupRef) => await input.acceptedTopologySnapshotRepository?.findSnapshot(groupRef)
+            : undefined,
+        readPendingTopologyReplan: input.readPendingTopologyReplan,
         configRepository: input.configRepository,
         serverDefaults: input.serverDefaults
     });
@@ -56,6 +69,7 @@ export function createGroupTopologyRuntimeOwners(
         readCurrentGroupSnapshot: input.readCurrentGroupSnapshot,
         readRttMeasurements: input.readRttMeasurements,
         topologyMode: topologySnapshotRepository ? 'persistent' : 'local',
+        readTopologyReplanningMode: input.readTopologyReplanningMode,
         publisher: input.publisher,
         serverDefaults: input.serverDefaults
     };

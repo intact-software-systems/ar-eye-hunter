@@ -149,6 +149,12 @@ export type GroupTopologyManagementView = Readonly<{
     groupRef: GroupRef;
     overlayId: string;
     snapshot: RallarOverlayTopologySnapshot | null;
+    /**
+     * The accepted layout — the one carrying traffic (product decisions
+     * 24/42). Null until a first promotion; `snapshot` stays the planned
+     * slot, which may run ahead of it as a held candidate.
+     */
+    acceptedSnapshot: RallarOverlayTopologySnapshot | null;
     config: GroupTopologyConfigView;
     pending:
         | Readonly<{
