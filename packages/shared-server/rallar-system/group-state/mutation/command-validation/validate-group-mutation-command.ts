@@ -166,12 +166,14 @@ function validateAggregateOperationInput(
     }
 }
 
-function isUnitIntervalNumber(value: unknown): value is number {
+type AggregateOperationInputRecord = Parameters<typeof validateAggregateOperationInput>[1];
+
+function isUnitIntervalNumber(value: AggregateOperationInputRecord[string]): value is number {
     return typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 1;
 }
 
 function validateExpectedFormationEpochInput(
-    input: Readonly<Record<string, unknown>>,
+    input: AggregateOperationInputRecord,
     operation: string
 ): void {
     if (input.expectedFormationEpoch !== null) {
@@ -183,7 +185,7 @@ function validateExpectedFormationEpochInput(
 }
 
 function validateExpectedLayoutInput(
-    input: Readonly<Record<string, unknown>>,
+    input: AggregateOperationInputRecord,
     operation: string
 ): void {
     if (input.expectedLayout === null) {
