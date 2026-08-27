@@ -255,6 +255,33 @@ slice 14's runbook owns that cutover ordering.
   `lifecycleState` response enums stay at four values until a stage becomes producible — the pin
   test added at this review is the reminder.
 
+### Third checkpoint — executed 2026-08-27, after PR 3 (#356) with its review
+
+PR 3 landed slice 3 with a max-effort review (ten finder angles, five themed verifiers, a gap
+sweep; fifteen confirmed findings, all repaired in the PR — the delivery record in slice 3's
+section carries them). `main` moved three commits since the second checkpoint: #353 itself, #355
+(RTC observation tooling and delivery scripts — no plan surface), and #357 (the formation-large
+managed-burst fixes: the RTT-reporting degree-limit clamp and a new `api-v1-formation-gate.yml`
+workflow). Checkpoint facts verified against that main:
+
+- The four Group allowlists stand at 31 keys (both `GROUP_KEYS`, `STORED_GROUP_KEYS`, OpenAPI
+  `Group.required`) — the second checkpoint's PR 4 numbers hold.
+- `RtcTopologySnapshotRepository` and group-state persistence are untouched by #355/#357; slice
+  4's structural facts (one never-expiring row per group, publication retention copies) stand.
+- **Superseded plan fact:** formation-large now runs in CI as the "API v1 Formation Gate" — 1a's
+  "no workflow executes that profile" note is historical. The gate is green on PR 3's head.
+- **Known main regression:** #357's clamp broke the pre-existing Deno test
+  `pglite-topology-command.test.ts` "filters RTTs outside recomputed group reporting edges"
+  (expects filtering below the now-clamped reporting limit); reproduced at `origin/main`
+  95dabd1cf and filed as its own follow-up. `test:deno` verdicts are read net of it until fixed.
+
+**Next PR (I5, I20): PR 4 = slices 2 + 4a — the aggregate fields with their first reader**, as the
+second checkpoint selected, now with the review-added acceptance criterion in 4a's section: the
+promotion's conditional guard must re-validate the planned identity inside the guarded write,
+closing the read-to-commit fence window slice 3 documented as interim. The petition boundary is
+already at post-commit (the review moved it), so 4a consumes that ordering rather than
+re-establishing it.
+
 ## Corrections — resolved
 
 Four corrections changed a recorded product decision and have been ruled on. They are recorded here
@@ -624,6 +651,14 @@ returns `publish-superseded`, so a dominated candidate's publication can be broa
   writes the group guard, accepted-topology guard, event, delta/final outbox, receipt and completion.
   A conflict retries the whole read/compute/validate/write operation; an injected failure at any write
   rolls all facts back. The stage cannot commit without the accepted row and identity.
+
+  **Acceptance criterion added by the PR 3 review:** the causal fence must move inside the guarded
+  write. Slice 3's fence validates against a read taken outside the write transaction, and the
+  planned row lives in the topology namespace outside the group-row CAS — a replan committing
+  between the fence read and the activation commit is currently undetected. Once the planned and
+  accepted layouts are group-state-owned rows, the promotion's conditional guard must re-validate
+  the planned identity inside the transaction, closing decisions 19/32's residual read-to-commit
+  window; slice 3's compute-level fence then becomes the early typed rejection, not the last line.
 
   A new route-less `applyPlannedLayout` operation owns the no-transition path. It is prepared only
   with slice 3's `topology-publication` authority, reuses the same pure effect and writes the same
