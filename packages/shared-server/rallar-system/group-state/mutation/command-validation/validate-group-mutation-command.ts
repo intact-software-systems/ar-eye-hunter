@@ -139,7 +139,15 @@ function validateAggregateOperationInput(
         // here, never a lying stale-epoch rejection deep in compute.
         case 'applyPlannedLayout':
             assertRequiredKeys(input, GROUP_MUTATION_INPUT_KEYS[operation], `Group ${operation} input`);
-            validateExpectedFormationEpochInput(input, operation);
+            // The fences are non-null on this operation: null here is as
+            // malformed as an absent key.
+            requireNonNegativeSafeInteger(
+                input.expectedFormationEpoch,
+                `Group ${operation} expectedFormationEpoch`
+            );
+            if (input.expectedLayout === null) {
+                throw new TypeError(`Group ${operation} expectedLayout must not be null`);
+            }
             validateExpectedLayoutInput(input, operation);
             return;
         case 'startGroupEstablishment':

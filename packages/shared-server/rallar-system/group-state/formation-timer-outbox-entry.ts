@@ -216,7 +216,7 @@ function timerEntry(
     });
 }
 
-export function readExactJsonObject(
+function readExactJsonObject(
     value: JsonWireValue | undefined,
     expectedKeys: readonly string[],
     label: string
@@ -230,7 +230,7 @@ export function readExactJsonObject(
     return record;
 }
 
-export function readJsonObject(value: JsonWireValue | undefined, label: string): JsonWireObject {
+function readJsonObject(value: JsonWireValue | undefined, label: string): JsonWireObject {
     if (value === undefined || !isJsonWireObject(value)) {
         throw new TypeError(`${label} is invalid`);
     }

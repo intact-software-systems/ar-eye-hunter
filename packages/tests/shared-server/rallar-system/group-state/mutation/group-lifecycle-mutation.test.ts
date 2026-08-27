@@ -1,4 +1,6 @@
+import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import type { GroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
+import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import { describe, expect, it } from 'vitest';
 
 import type {
@@ -307,6 +309,30 @@ const PLANNED_LAYOUT = {
     state: 'active'
 } as const;
 
+// The row carries only the snapshot; the identity is derived from it, so the
+// fixture builds a snapshot whose derived identity is exactly the requested
+// one — a mismatched pair cannot be spelled.
+function plannedSnapshotFor(identity: GroupLayoutIdentity): RallarOverlayTopologySnapshot {
+    return {
+        sourceGroupStateCausalRevision: {
+            groupRevision: identity.groupRevision,
+            presenceRevision: identity.presenceRevision
+        },
+        state: identity.state,
+        overlayId: toScopedOverlayId(groupRef('pure-room')),
+        groupRef: groupRef('pure-room'),
+        name: 'pure-room-overlay',
+        topology: 'tree',
+        activeSessionIds: [],
+        nextHopsBySessionId: {},
+        degreeLimit: 2,
+        version: identity.version,
+        createdByClientId: 'lifecycle-test',
+        createdAtEpochMs: 900,
+        updatedAtEpochMs: 950
+    };
+}
+
 function criterionRead(
     groupOverrides: Partial<Group>,
     plannedLayoutIdentity: GroupLayoutIdentity | null = PLANNED_LAYOUT
@@ -316,10 +342,8 @@ function criterionRead(
         actorMember: null,
         actorMemberEntry: null,
         plannedLayoutRow: plannedLayoutIdentity === null ? null : {
-            snapshot: {} as never,
-            identity: plannedLayoutIdentity,
-            revision: 5,
-            inputFingerprint: null
+            snapshot: plannedSnapshotFor(plannedLayoutIdentity),
+            revision: 5
         },
         acceptedLayoutRow: null
     } as GroupMutationRead;

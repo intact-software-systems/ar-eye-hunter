@@ -1,3 +1,4 @@
+import { createDefaultGroupLifecyclePolicy } from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
 import type { Group } from '@shared/api/group-types.ts';
 
 import type {
@@ -17,6 +18,56 @@ import { assertActive } from './group-aggregate-mutation-policy.ts';
  * stage, epoch, electorate or attempt count. Identical replay is a no-op
  * success; stale authority is a typed rejection that writes nothing.
  */
+/**
+ * May this group promote now? Decision 27's landing is re-checked at compute
+ * rather than only at entry-mint time — the retryable transaction
+ * re-authorizes against fresh policy, so a group switched to hold (or a
+ * corrupt policy) rejects a queued promotion instead of applying it — and
+ * promotion without a transition is an active-group operation: a connecting
+ * group promotes only through its activation.
+ */
+function computeApplyPreconditionRejection(
+    command: Extract<GroupMutationCommand, { operation: 'applyPlannedLayout'; }>,
+    read: GroupMutationRead,
+    facts: GroupMutationFacts,
+    stored: Group
+): GroupMutationComputed | null {
+    if (stored.lifecycleState !== 'active') {
+        return rejected({
+            command,
+            read,
+            facts,
+            rejectionCode: 'group-mutation-rejected',
+            message: `Planned layout promotion requires an active group, not ${stored.lifecycleState}`
+        });
+    }
+    if (read.lifecyclePolicy === null) {
+        throw new TypeError('Planned layout promotion requires the policy read');
+    }
+    if (read.lifecyclePolicy.status === 'corrupt') {
+        return rejected({
+            command,
+            read,
+            facts,
+            rejectionCode: 'group-mutation-rejected',
+            message: `Group lifecycle policy is unreadable: ${read.lifecyclePolicy.reason}`
+        });
+    }
+    const landing = read.lifecyclePolicy.status === 'present'
+        ? read.lifecyclePolicy.policy.topology.reconfigureLanding
+        : createDefaultGroupLifecyclePolicy().topology.reconfigureLanding;
+    if (landing === 'apply') {
+        return null;
+    }
+    return rejected({
+        command,
+        read,
+        facts,
+        rejectionCode: 'group-mutation-rejected',
+        message: 'Planned layout promotion requires the apply reconfigure landing'
+    });
+}
+
 export function computeApplyPlannedLayout(
     command: Extract<GroupMutationCommand, { operation: 'applyPlannedLayout'; }>,
     read: GroupMutationRead,
@@ -24,16 +75,9 @@ export function computeApplyPlannedLayout(
 ): GroupMutationComputed {
     const stored = requireGroup(read, command.aggregateRef);
     assertActive(stored.value, facts.nowEpochMs);
-    if (stored.value.lifecycleState !== 'active') {
-        // Promotion without a transition is an active-group operation; a
-        // connecting group promotes only through its activation.
-        return rejected({
-            command,
-            read,
-            facts,
-            rejectionCode: 'group-mutation-rejected',
-            message: `Planned layout promotion requires an active group, not ${stored.value.lifecycleState}`
-        });
+    const preconditionRejection = computeApplyPreconditionRejection(command, read, facts, stored.value);
+    if (preconditionRejection !== null) {
+        return preconditionRejection;
     }
     const promotion = computePlannedLayoutPromotion({
         expectedFormationEpoch: command.input.expectedFormationEpoch,

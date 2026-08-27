@@ -105,6 +105,8 @@ function validateTopologyPublicationAuthority(command: GroupMutationCommand): vo
     if (command.operation !== 'applyPlannedLayout') {
         throw new TypeError('Topology-publication authority is limited to applyPlannedLayout');
     }
+    // The contract types the fences non-null; the wire defense still rejects
+    // an absent or null value a hand-built payload could carry.
     if (command.input.expectedFormationEpoch === null || command.input.expectedFormationEpoch === undefined) {
         throw new TypeError('Planned layout promotion must carry the expected formation epoch fence');
     }

@@ -140,14 +140,15 @@ export type GroupMutationCommand =
         & Readonly<{
             // Route-less (I8): only the accepted planned-publication
             // transaction enqueues it, under topology-publication authority.
-            // It promotes without advancing stage, epoch or electorate.
+            // It promotes without advancing stage, epoch or electorate. The
+            // fences are non-null by construction: the one builder always
+            // supplies them and no authenticated route exists.
             operation: 'applyPlannedLayout';
             input:
                 & NullableActorInput
                 & Readonly<{
-                    /** The causal fence; mandatory under internal authority. */
-                    expectedFormationEpoch: number | null;
-                    expectedLayout: GroupLayoutIdentity | null;
+                    expectedFormationEpoch: number;
+                    expectedLayout: GroupLayoutIdentity;
                 }>;
         }>
     )
@@ -504,11 +505,7 @@ export function isLayoutFencedGroupMutationCommand(command: GroupMutationCommand
  * its fence.
  */
 export function readsGroupLayoutRows(command: GroupMutationCommand): boolean {
-    return (
-        command.operation === 'activateGroup' ||
-        command.operation === 'applyPlannedLayout' ||
-        isLayoutFencedGroupMutationCommand(command)
-    );
+    return command.operation === 'activateGroup' || isLayoutFencedGroupMutationCommand(command);
 }
 
 export type GroupAdmissionDecisionOperation = Extract<

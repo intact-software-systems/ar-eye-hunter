@@ -2,7 +2,7 @@ import {
     GROUP_LAYOUT_IDENTITY_KEYS,
     GROUP_LAYOUT_IDENTITY_STATES
 } from '@shared/api/group-lifecycle/group-layout-identity.ts';
-import { GROUP_LIFECYCLE_STATES } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
+import { GROUP_LIFECYCLE_STATES, GROUP_TRANSPORT_STATES } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import type { AuditStamp, Group, GroupMember, GroupRef, GroupStateCausalRevision } from '@shared/api/group-types.ts';
 import type { MutationActor } from '@shared/api/mutation-actor.ts';
 
@@ -167,7 +167,7 @@ export function validateStoredGroup(group: unknown, ref: GroupRef): asserts grou
             'Stored group acceptedLayoutIdentity state'
         );
     }
-    requireOneOf(value.transportState, ['flowing', 'halted'], 'Stored group transportState');
+    requireOneOf(value.transportState, GROUP_TRANSPORT_STATES, 'Stored group transportState');
 }
 
 export function validateStoredMember(

@@ -40,12 +40,13 @@ export const RTC_TOPOLOGY_REGRESSION_REASON_PROFILE = 'rtc-topology-durable-appe
 
 export const GROUP_FORMATION_DAMPING_REGRESSION_REASON_PROFILE = 'group-formation-damping' as const;
 
-const PLANNED_LAYOUT_PROMOTION_REASON = 'Apply-landing groups promote each changed planned publication into the ' +
-    'accepted slot (product decision 27): the publication transaction writes a ' +
-    'durable promotion request and the applyPlannedLayout command executes one ' +
-    'group-state read/compute/write per changed plan, including the ' +
-    'revision-guarded planned-row re-assertion and the accepted row and ' +
-    'fingerprint copies.';
+const PLANNED_LAYOUT_PROMOTION_REASON = 'Slices 2 and 4a widen every persisted group row by two required fields ' +
+    '(acceptedLayoutIdentity, transportState), growing serialized bytes and ' +
+    'row work on all group writes; the measured counter deltas overlap the ' +
+    'documented contention drift and the bench executes no promotions (its ' +
+    'harness wires no topology outbox consumer and its mix issues no ' +
+    'lifecycle operations), so the residue is row width plus drift, not ' +
+    'promotion execution.';
 
 export const PLANNED_LAYOUT_PROMOTION_REASONS = (['uncontended', 'shared', 'hot'] as const).flatMap(
     (workload) =>

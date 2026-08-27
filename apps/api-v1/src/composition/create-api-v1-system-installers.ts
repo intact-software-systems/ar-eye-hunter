@@ -30,7 +30,10 @@ export interface ApiV1SystemInstallerTopology {
     readonly rtcTopologyOptions: ApiV1TopologyServices['rtcTopologyOptions'];
     readonly topologyQuery: object;
     readonly topologyPlanning: object;
-    readonly groupStateRepository: Pick<ApiV1TopologyServices['groupStateRepository'], 'readLifecyclePolicy'>;
+    readonly groupStateRepository: Pick<
+        ApiV1TopologyServices['groupStateRepository'],
+        'readLifecyclePolicy' | 'readSnapshot'
+    >;
     readonly rttRefinementService: object;
 }
 
@@ -224,6 +227,12 @@ function createSystemTopicOptions<
             },
             topologyPublication: {
                 readLifecyclePolicy: (ref) => topology.groupStateRepository.readLifecyclePolicy(ref),
+                // Durable, never the snapshot cache: the mint gate's stage and
+                // accepted-identity facts must not lag a cross-server write.
+                findCurrentGroup: async (ref) => {
+                    const snapshot = await topology.groupStateRepository.readSnapshot(ref);
+                    return snapshot?.group ?? null;
+                },
                 submitCommand: (command, atEpochMs) => submitTopologyPublicationCommand(runtime, command, atEpochMs)
             }
         },

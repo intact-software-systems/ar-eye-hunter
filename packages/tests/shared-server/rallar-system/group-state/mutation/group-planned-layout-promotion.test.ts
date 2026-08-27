@@ -11,7 +11,7 @@ import {
     computePlannedLayoutPromotion,
     type GroupPlannedLayoutRow
 } from '@shared-server/rallar-system/group-state/mutation/aggregate/compute-planned-layout-promotion.ts';
-import { groupLayoutPromotionEffects } from '@shared-server/rallar-system/group-state/persistence/layout/group-layout-promotion-effects.ts';
+import { toGroupLayoutPromotionEffects } from '@shared-server/rallar-system/group-state/persistence/layout/to-group-layout-promotion-effects.ts';
 import {
     RTC_TOPOLOGY_ACCEPTED_SNAPSHOTS_NAMESPACE,
     RTC_TOPOLOGY_SNAPSHOTS_NAMESPACE
@@ -54,9 +54,7 @@ const SNAPSHOT: RallarOverlayTopologySnapshot = {
 
 const PLANNED: GroupPlannedLayoutRow = {
     snapshot: SNAPSHOT,
-    identity: IDENTITY,
-    revision: 11,
-    inputFingerprint: `sha256:${'b'.repeat(64)}`
+    revision: 11
 };
 
 describe('computePlannedLayoutPromotion', () => {
@@ -74,7 +72,6 @@ describe('computePlannedLayoutPromotion', () => {
             outcome: 'apply',
             acceptedSnapshot: SNAPSHOT,
             acceptedIdentity: IDENTITY,
-            acceptedFingerprint: PLANNED.inputFingerprint,
             acceptedExpectedRevision: null,
             plannedExpectedRevision: 11
         });
@@ -87,7 +84,7 @@ describe('computePlannedLayoutPromotion', () => {
             currentFormationEpoch: 2,
             planned: PLANNED,
             acceptedIdentity: { ...IDENTITY, version: 2 },
-            acceptedRow: { identity: { ...IDENTITY, version: 2 }, revision: 8 }
+            acceptedRow: { revision: 8 }
         });
 
         expect(promotion.outcome).toBe('apply');
@@ -114,7 +111,7 @@ describe('computePlannedLayoutPromotion', () => {
                 expectedLayout: null,
                 planned: {
                     ...PLANNED,
-                    identity: { ...IDENTITY, state: 'removed' as const }
+                    snapshot: { ...SNAPSHOT, state: 'removed' as const }
                 }
             },
             outcome: 'no-planned-layout'
@@ -145,7 +142,7 @@ describe('computePlannedLayoutPromotion', () => {
             currentFormationEpoch: 2,
             planned: PLANNED,
             acceptedIdentity: IDENTITY,
-            acceptedRow: { identity: IDENTITY, revision: 8 }
+            acceptedRow: { revision: 8 }
         });
         expect(promotion.outcome).toBe('already-applied');
     });
@@ -153,11 +150,10 @@ describe('computePlannedLayoutPromotion', () => {
 
 describe('groupLayoutPromotionEffects', () => {
     it('re-asserts the planned row and inserts the first accepted row atomically', () => {
-        const effects = groupLayoutPromotionEffects(GROUP_REF, {
+        const effects = toGroupLayoutPromotionEffects({
             outcome: 'apply',
             acceptedSnapshot: SNAPSHOT,
             acceptedIdentity: IDENTITY,
-            acceptedFingerprint: PLANNED.inputFingerprint,
             acceptedExpectedRevision: null,
             plannedExpectedRevision: 11
         });
@@ -165,12 +161,7 @@ describe('groupLayoutPromotionEffects', () => {
         expect(effects.map((effect) => [effect.effectId, effect.operation, effect.namespace]))
             .toEqual([
                 ['planned-layout-fence', 'update', RTC_TOPOLOGY_SNAPSHOTS_NAMESPACE],
-                ['accepted-layout', 'insert', RTC_TOPOLOGY_ACCEPTED_SNAPSHOTS_NAMESPACE],
-                [
-                    'accepted-layout-fingerprint',
-                    'put',
-                    'rtc-topology:accepted-input-fingerprints'
-                ]
+                ['accepted-layout', 'insert', RTC_TOPOLOGY_ACCEPTED_SNAPSHOTS_NAMESPACE]
             ]);
         const fence = effects[0];
         if (fence.operation !== 'update') {
@@ -180,11 +171,10 @@ describe('groupLayoutPromotionEffects', () => {
     });
 
     it('revision-guards a re-promotion of the accepted row', () => {
-        const effects = groupLayoutPromotionEffects(GROUP_REF, {
+        const effects = toGroupLayoutPromotionEffects({
             outcome: 'apply',
             acceptedSnapshot: SNAPSHOT,
             acceptedIdentity: IDENTITY,
-            acceptedFingerprint: null,
             acceptedExpectedRevision: 8,
             plannedExpectedRevision: 11
         });
@@ -194,8 +184,6 @@ describe('groupLayoutPromotionEffects', () => {
             throw new Error('re-promotion must be a revision-guarded update');
         }
         expect(accepted.expectedRevision).toBe(8);
-        expect(effects.some((effect) => effect.effectId === 'accepted-layout-fingerprint'))
-            .toBe(false);
     });
 });
 
@@ -209,12 +197,7 @@ describe('applyPlannedLayout through the durable service', () => {
                 return () => `apply-id-${++generated}`;
             })(),
             serviceId: 'apply-service',
-            readPlannedLayoutRow: async () => ({
-                snapshot: SNAPSHOT,
-                identity: IDENTITY,
-                revision: 11,
-                inputFingerprint: null
-            }),
+            readPlannedLayoutRow: async () => ({ snapshot: SNAPSHOT, revision: 11 }),
             readAcceptedLayoutRow: async () => null
         });
         await service.createGroup(

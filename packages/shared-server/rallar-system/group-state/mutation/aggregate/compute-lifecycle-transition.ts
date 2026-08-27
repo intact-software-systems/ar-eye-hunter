@@ -1,4 +1,5 @@
 import { computeExpectedLayoutFence } from '@shared/api/group-lifecycle/compute-expected-layout-fence.ts';
+import { toGroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
 import { createDefaultGroupLifecyclePolicy } from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
 import type { GroupLifecyclePolicy } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import {
@@ -71,9 +72,6 @@ export function computeLifecycleTransition(
     if (read.activeMemberPrincipalIds === null) {
         throw new TypeError('Lifecycle transition compute requires the roster read');
     }
-    // The fence is keyed on fence presence, never on who produced the command:
-    // any lifecycle command naming stale causal expectations is rejected,
-    // and unfenced (principal) commands pass through untouched.
     const fenceRejection = computeFenceRejection({ command, read, facts, stored: stored.value });
     if (fenceRejection !== null) {
         return fenceRejection;
@@ -94,9 +92,7 @@ export function computeLifecycleTransition(
         stored: stored.value,
         outcome,
         formationElectorate: read.activeMemberPrincipalIds,
-        acceptedLayoutIdentity: promotion?.outcome === 'apply'
-            ? promotion.acceptedIdentity
-            : stored.value.acceptedLayoutIdentity
+        promotion
     });
     return computeGroupMutationWriteResult({
         acceptedLayoutPromotion: promotion?.outcome === 'apply' ? promotion : null,
@@ -138,15 +134,18 @@ function computeCorruptPolicyRejection(
 }
 
 function computeNextLifecycleGroup(
-    { command, facts, stored, outcome, formationElectorate, acceptedLayoutIdentity }: Readonly<{
+    { command, facts, stored, outcome, formationElectorate, promotion }: Readonly<{
         command: Extract<GroupMutationCommand, { operation: GroupLifecycleTransitionOperation; }>;
         facts: GroupMutationFacts;
         stored: Group;
         outcome: Extract<ReturnType<typeof computeGroupLifecycleTransition>, { allowed: true; }>;
         formationElectorate: readonly string[];
-        acceptedLayoutIdentity: Group['acceptedLayoutIdentity'];
+        promotion: PlannedLayoutPromotion | null;
     }>
 ): Group {
+    const acceptedLayoutIdentity = promotion?.outcome === 'apply'
+        ? promotion.acceptedIdentity
+        : stored.acceptedLayoutIdentity;
     const beginsEstablishment = command.operation === 'startGroupEstablishment' ||
         command.operation === 'reopenGroupEstablishment';
     return {
@@ -287,7 +286,9 @@ function computeFenceRejection(
         expectedFormationEpoch,
         expectedLayout,
         currentFormationEpoch: stored.formationEpoch,
-        currentPlannedLayout: read.plannedLayoutRow?.identity
+        currentPlannedLayout: read.plannedLayoutRow === null
+            ? undefined
+            : toGroupLayoutIdentity(read.plannedLayoutRow.snapshot)
     });
     if (fence === 'match') {
         return null;

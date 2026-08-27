@@ -46,9 +46,7 @@ import {
     RTC_TOPOLOGY_ACCEPTED_SNAPSHOTS_NAMESPACE,
     RtcTopologySnapshotRepository
 } from '@shared-server/rallar-system/topology/persistence/rtc-topology-snapshot-repository.ts';
-import { RtcTopologyInputFingerprintRepository } from '@shared-server/rallar-system/topology/replay/work/rtc-topology-input-fingerprint.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
-import { toGroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
 import type { RallarCrdtDocumentTypePolicy } from '@shared/crdt/mod.ts';
 import type { DequeueResourceEntryOptions, ResilienceDto } from '@shared/queuebox/DequeueResourceEntryController.ts';
 import { JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.ts';
@@ -158,9 +156,6 @@ export function createApiV1MutationRuntime(
         resources.runtimeStateRepository,
         RTC_TOPOLOGY_ACCEPTED_SNAPSHOTS_NAMESPACE
     );
-    const topologyFingerprintRepository = new RtcTopologyInputFingerprintRepository(
-        resources.runtimeStateRepository
-    );
     const groupStateService = createCachedGroupStateService({
         durable: createGroupStateService({
             runtimeRepository: resources.runtimeStateRepository,
@@ -171,22 +166,13 @@ export function createApiV1MutationRuntime(
             timing: input.timing,
             readPlannedLayoutRow: async (ref) => {
                 const planned = await plannedSnapshotRepository.findSnapshotEntry(ref);
-                if (!planned) {
-                    return null;
-                }
-                return {
-                    snapshot: planned.value,
-                    identity: toGroupLayoutIdentity(planned.value),
-                    revision: planned.entry.revision,
-                    inputFingerprint: await topologyFingerprintRepository.findFingerprint(ref)
-                };
-            },
-            readAcceptedLayoutRow: async (ref) => {
-                const accepted = await acceptedSnapshotRepository.findSnapshotEntry(ref);
-                return accepted
-                    ? { identity: toGroupLayoutIdentity(accepted.value), revision: accepted.entry.revision }
+                return planned
+                    ? { snapshot: planned.value, revision: planned.entry.revision }
                     : null;
-            }
+            },
+            // The promotion consults only the revision, so the accepted slot
+            // is read raw — no structural decode of a snapshot nothing uses.
+            readAcceptedLayoutRow: async (ref) => await acceptedSnapshotRepository.findEntryRevision(ref)
         }),
         cache: resources.groupSnapshotCache
     });

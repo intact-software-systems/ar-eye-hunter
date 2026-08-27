@@ -28,6 +28,12 @@ export type GroupTransportState =
     | 'flowing'
     | 'halted';
 
+/** The runtime registry the validators check against. */
+export const GROUP_TRANSPORT_STATES = [
+    'flowing',
+    'halted'
+] as const satisfies readonly GroupTransportState[];
+
 export type GroupFormationMode =
     | 'phased'
     | 'immediate';

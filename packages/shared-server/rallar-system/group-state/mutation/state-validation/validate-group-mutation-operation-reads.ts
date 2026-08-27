@@ -46,7 +46,8 @@ function validateLifecyclePolicyRead(
 ): void {
     if (
         isGroupLifecycleTransitionOperation(command.operation) ||
-        isGroupAdmissionPolicyReadOperation(command.operation)
+        isGroupAdmissionPolicyReadOperation(command.operation) ||
+        command.operation === 'applyPlannedLayout'
     ) {
         if (read.lifecyclePolicy === null) {
             throw new TypeError('Group mutation read is missing the lifecycle policy read');

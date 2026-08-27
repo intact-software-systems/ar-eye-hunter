@@ -6,6 +6,7 @@ import type { GroupMutationCommand } from '@shared-server/rallar-system/group-st
 import { GroupPolicyDeniedError } from '@shared-server/rallar-system/group-state/policy/group-policy-result.ts';
 import type { GroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
+import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import { FakeRuntimeStateRepository } from '../../../runtime-state/test-support/fake-runtime-state-repository.ts';
 import { createTestGroupStateService } from '../group-state-test-runtime.ts';
 
@@ -53,12 +54,7 @@ async function createFenceReadHarness() {
         serviceId: 'fence-read-service',
         readPlannedLayoutRow: (ref) => {
             readRefs.push(ref);
-            return Promise.resolve({
-                snapshot: PLANNED_SNAPSHOT,
-                identity: PLANNED_LAYOUT,
-                revision: 7,
-                inputFingerprint: null
-            });
+            return Promise.resolve({ snapshot: PLANNED_SNAPSHOT, revision: 7 });
         },
         readAcceptedLayoutRow: async () => null
     });
@@ -96,7 +92,7 @@ describe('formation fence through the durable service read', () => {
         const read = await service.read(prepared);
 
         expect(readRefs).toEqual([GROUP_REF]);
-        expect(read.plannedLayoutRow?.identity).toEqual(PLANNED_LAYOUT);
+        expect(read.plannedLayoutRow?.snapshot).toEqual(PLANNED_SNAPSHOT);
     });
 
     it('never invokes the reader for a criterion command without a layout fence', async () => {

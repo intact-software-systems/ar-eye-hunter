@@ -72,6 +72,16 @@ export class RtcTopologySnapshotRepository extends RuntimeStateJsonStore {
         return entry ? decodeSnapshotEntry(entry, ref) : undefined;
     }
 
+    /**
+     * The raw entry revision without a structural decode, for consumers that
+     * guard on the slot's revision and never read the snapshot (the accepted
+     * slot's promotion CAS).
+     */
+    async findEntryRevision(ref: GroupRef): Promise<Readonly<{ revision: number; }> | null> {
+        const entry = await this.runtimeRepository.findEntry(this.namespace, this.snapshotKey(ref));
+        return entry ? { revision: entry.revision } : null;
+    }
+
     async findSnapshot(
         ref: GroupRef
     ): Promise<RallarOverlayTopologySnapshot | undefined> {

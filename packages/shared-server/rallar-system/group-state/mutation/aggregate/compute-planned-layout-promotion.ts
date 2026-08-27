@@ -1,20 +1,26 @@
 import {
     isSameGroupLayoutIdentity,
+    toGroupLayoutIdentity,
     type GroupLayoutIdentity
 } from '@shared/api/group-lifecycle/group-layout-identity.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 
-/** The planned-slot row as the promotion read loads it, revision included. */
+/**
+ * The planned-slot row as the promotion read loads it. The identity is
+ * always derived from the snapshot at the point of use — a precomputed copy
+ * would be a second source of truth that fixtures could split.
+ */
 export type GroupPlannedLayoutRow = Readonly<{
     snapshot: RallarOverlayTopologySnapshot;
-    identity: GroupLayoutIdentity;
     revision: number;
-    inputFingerprint: string | null;
 }>;
 
-/** The accepted-slot row; the snapshot itself is never consulted by compute. */
+/**
+ * The accepted-slot row: only the revision, for the insert-vs-update guard.
+ * The already-applied decision reads the group row's acceptedLayoutIdentity —
+ * the single authority — never a second copy from the slot.
+ */
 export type GroupAcceptedLayoutRow = Readonly<{
-    identity: GroupLayoutIdentity;
     revision: number;
 }>;
 
@@ -33,7 +39,6 @@ export type PlannedLayoutPromotion =
         outcome: 'apply';
         acceptedSnapshot: RallarOverlayTopologySnapshot;
         acceptedIdentity: GroupLayoutIdentity;
-        acceptedFingerprint: string | null;
         /** Null when the accepted slot is empty (first promotion inserts). */
         acceptedExpectedRevision: number | null;
         /**
@@ -65,26 +70,29 @@ export function computePlannedLayoutPromotion(
     ) {
         return { outcome: 'stale-fence' };
     }
-    if (input.planned === null || input.planned.identity.state !== 'active') {
+    if (input.planned === null) {
+        return { outcome: 'no-planned-layout' };
+    }
+    const plannedIdentity = toGroupLayoutIdentity(input.planned.snapshot);
+    if (plannedIdentity.state !== 'active') {
         return { outcome: 'no-planned-layout' };
     }
     if (
         input.expectedLayout !== null &&
-        !isSameGroupLayoutIdentity(input.expectedLayout, input.planned.identity)
+        !isSameGroupLayoutIdentity(input.expectedLayout, plannedIdentity)
     ) {
         return { outcome: 'planned-layout-superseded' };
     }
     if (
         input.acceptedIdentity !== null &&
-        isSameGroupLayoutIdentity(input.acceptedIdentity, input.planned.identity)
+        isSameGroupLayoutIdentity(input.acceptedIdentity, plannedIdentity)
     ) {
         return { outcome: 'already-applied' };
     }
     return {
         outcome: 'apply',
         acceptedSnapshot: input.planned.snapshot,
-        acceptedIdentity: input.planned.identity,
-        acceptedFingerprint: input.planned.inputFingerprint,
+        acceptedIdentity: plannedIdentity,
         acceptedExpectedRevision: input.acceptedRow?.revision ?? null,
         plannedExpectedRevision: input.planned.revision
     };
