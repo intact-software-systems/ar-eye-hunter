@@ -81,8 +81,12 @@ for `rallar-server` and `relic-hunters`. Both production contexts must contain:
 - visible non-demo `AUTH_ADMIN_CLIENT_IDS` and
   `RALLAR_BLACK_BOX_OPERATOR_CLIENT_IDS`;
 - visible non-empty `METERED_APP_NAME`;
-- platform-secret `DATABASE_URL`, `RALLAR_AUTH_CREDENTIAL_SECRET`,
-  `METERED_API_KEY`, and `RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET`.
+- platform-secret `RALLAR_AUTH_CREDENTIAL_SECRET`, `METERED_API_KEY`, and
+  `RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET`.
+
+The applications still require `DATABASE_URL` at runtime. Their assigned Deno
+Deploy PostgreSQL databases supply that value, so the preflight intentionally
+does not require it to appear in redacted environment metadata.
 
 The Relic production context must also contain visible
 `RELIC_REST_AUTH_MODE=group-policy`. The verifier reports names and policy
