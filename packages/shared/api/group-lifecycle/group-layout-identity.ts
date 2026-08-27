@@ -14,6 +14,19 @@ export type GroupLayoutIdentity = Readonly<{
     state: RallarOverlayTopologySnapshot['state'];
 }>;
 
+/** The wire shape's exact key set; boundary decoders validate against this. */
+export const GROUP_LAYOUT_IDENTITY_KEYS = [
+    'groupRevision',
+    'presenceRevision',
+    'version',
+    'state'
+] as const satisfies readonly (keyof GroupLayoutIdentity)[];
+
+export const GROUP_LAYOUT_IDENTITY_STATES = [
+    'active',
+    'removed'
+] as const satisfies readonly RallarOverlayTopologySnapshot['state'][];
+
 export function toGroupLayoutIdentity(
     snapshot: Pick<RallarOverlayTopologySnapshot, 'sourceGroupStateCausalRevision' | 'version' | 'state'>
 ): GroupLayoutIdentity {

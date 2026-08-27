@@ -6,7 +6,7 @@ import {
     requirePositiveSafeInteger,
     requireRecord
 } from '../../group-state-validation-primitives.ts';
-import type { GroupMutationCommand } from '../group-mutation-contracts.ts';
+import { isGroupLifecycleTransitionOperation, type GroupMutationCommand } from '../group-mutation-contracts.ts';
 import { requireGroupLifecyclePolicyInputShape } from './require-group-lifecycle-policy-input-shape.ts';
 
 interface ValidateGroupMutationOperationInput {
@@ -85,22 +85,11 @@ function validateAggregateMutationInput(
         optionalPositiveInteger('heartbeatTtlMs');
         return;
     }
-    if (operation === 'startGroupEstablishment' || operation === 'reopenGroupEstablishment') {
-        validateExpectedFormationEpochInput(input.expectedFormationEpoch as JsonWireValue | undefined, operation);
-        return;
-    }
-    if (operation === 'activateGroup') {
-        validateActivateGroupInput(input);
-        validateExpectedFormationEpochInput(input.expectedFormationEpoch as JsonWireValue | undefined, operation);
-        validateExpectedLayoutInput(input.expectedLayout as JsonWireValue | undefined, operation);
-        return;
-    }
-    if (operation === 'failGroupFormation') {
-        if (!isUnitIntervalNumber(input.observedRate)) {
-            throw new TypeError('Group failGroupFormation observedRate must be within [0, 1]');
-        }
-        validateExpectedFormationEpochInput(input.expectedFormationEpoch as JsonWireValue | undefined, operation);
-        validateExpectedLayoutInput(input.expectedLayout as JsonWireValue | undefined, operation);
+    if (isGroupLifecycleTransitionOperation(operation)) {
+        // A lifecycle request carries only actor identity — its exact-key row
+        // excludes every operation field, so there is nothing further to
+        // validate here. The built command's fields (including the criterion
+        // fences) are owned by validateGroupMutationCommand.
         return;
     }
     optionalString('joinCode');
@@ -216,55 +205,4 @@ function isPresenceOperation(
     operation: GroupMutationCommand['operation']
 ): operation is PresenceOperation {
     return ['connectPresence', 'heartbeatPresence', 'disconnectPresence'].includes(operation);
-}
-
-// This validator sees both raw requests and built commands. Requests never
-// carry the criterion fields (the exact-key check excludes them), so absence,
-// like null, means operator activation.
-function validateActivateGroupInput(input: Record<string, unknown>): void {
-    const { observedRate, degraded } = input;
-    if (observedRate !== undefined && observedRate !== null && !isUnitIntervalNumber(observedRate)) {
-        throw new TypeError('Group activateGroup observedRate must be within [0, 1]');
-    }
-    if (degraded !== undefined && degraded !== null && typeof degraded !== 'boolean') {
-        throw new TypeError('Group activateGroup degraded must be boolean or null');
-    }
-}
-
-function isUnitIntervalNumber(value: unknown): value is number {
-    return typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 1;
-}
-
-// Raw requests never carry the fence keys (their exact-key rows exclude
-// them), so absence, like null, means a principal command with no fence.
-function validateExpectedFormationEpochInput(
-    epoch: JsonWireValue | undefined,
-    operation: string
-): void {
-    if (epoch === undefined || epoch === null) {
-        return;
-    }
-    if (!Number.isSafeInteger(epoch) || (epoch as number) < 0) {
-        throw new TypeError(`Group ${operation} expectedFormationEpoch must be null or a non-negative integer`);
-    }
-}
-
-function validateExpectedLayoutInput(
-    layout: JsonWireValue | undefined,
-    operation: string
-): void {
-    if (layout === undefined || layout === null) {
-        return;
-    }
-    const record = requireRecord(layout, `Group ${operation} expectedLayout`);
-    for (const key of ['groupRevision', 'presenceRevision', 'version']) {
-        if (!Number.isSafeInteger(record[key]) || (record[key] as number) < 0) {
-            throw new TypeError(`Group ${operation} expectedLayout ${key} must be a non-negative integer`);
-        }
-    }
-    requireOneOf(record.state, ['active', 'removed'], `Group ${operation} expectedLayout state`);
-    const keys = Object.keys(record).sort().join(',');
-    if (keys !== 'groupRevision,presenceRevision,state,version') {
-        throw new TypeError(`Group ${operation} expectedLayout carries unexpected keys`);
-    }
 }

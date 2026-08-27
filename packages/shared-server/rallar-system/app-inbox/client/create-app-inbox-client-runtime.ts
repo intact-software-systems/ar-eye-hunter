@@ -3,10 +3,7 @@ import type { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 import type { RallarTimingSink } from '../../observability/timing.ts';
 import type { AppInboxOptions } from '../app-inbox-options.ts';
 import { normalizeAppInboxOptions } from '../app-inbox-options.ts';
-import type {
-    AppInboxEntryRepository,
-    AppInboxResultRepository
-} from '../app-inbox-persistence-ports.ts';
+import type { AppInboxEntryRepository, AppInboxResultRepository } from '../app-inbox-persistence-ports.ts';
 import { AppInboxCommandClient } from './app-inbox-command-client.ts';
 import { AppInboxQueueEntryWriter } from './app-inbox-queue-entry-writer.ts';
 import { AppInboxReservationClient } from './app-inbox-reservation-client.ts';

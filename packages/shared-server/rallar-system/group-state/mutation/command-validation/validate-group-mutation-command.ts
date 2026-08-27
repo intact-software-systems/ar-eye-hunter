@@ -1,7 +1,14 @@
 import {
+    GROUP_LAYOUT_IDENTITY_KEYS,
+    GROUP_LAYOUT_IDENTITY_STATES
+} from '@shared/api/group-lifecycle/group-layout-identity.ts';
+
+import {
     assertExactKeys,
+    assertRequiredKeys,
     requireJsonSafe,
     requireNonEmptyString,
+    requireNonNegativeSafeInteger,
     requireOneOf,
     requirePositiveSafeInteger,
     requireRecord,
@@ -127,9 +134,68 @@ function validateAggregateOperationInput(
             validateNullableString(input, 'joinCode');
             validateNullableInteger(input, 'expiresAtEpochMs', true);
             return;
+        // The lifecycle inputs require key presence, not just no-extras: a
+        // wire-decoded criterion command missing its fence keys is malformed
+        // here, never a lying stale-epoch rejection deep in compute.
+        case 'startGroupEstablishment':
+        case 'reopenGroupEstablishment':
+            assertRequiredKeys(input, GROUP_MUTATION_INPUT_KEYS[operation], `Group ${operation} input`);
+            validateExpectedFormationEpochInput(input, operation);
+            return;
+        case 'activateGroup':
+            assertRequiredKeys(input, GROUP_MUTATION_INPUT_KEYS[operation], `Group ${operation} input`);
+            if (input.observedRate !== null && !isUnitIntervalNumber(input.observedRate)) {
+                throw new TypeError('Group activateGroup observedRate must be null or within [0, 1]');
+            }
+            if (input.degraded !== null && typeof input.degraded !== 'boolean') {
+                throw new TypeError('Group activateGroup degraded must be boolean or null');
+            }
+            validateExpectedFormationEpochInput(input, operation);
+            validateExpectedLayoutInput(input, operation);
+            return;
+        case 'failGroupFormation':
+            assertRequiredKeys(input, GROUP_MUTATION_INPUT_KEYS[operation], `Group ${operation} input`);
+            if (!isUnitIntervalNumber(input.observedRate)) {
+                throw new TypeError('Group failGroupFormation observedRate must be within [0, 1]');
+            }
+            validateExpectedFormationEpochInput(input, operation);
+            validateExpectedLayoutInput(input, operation);
+            return;
         default:
             return;
     }
+}
+
+function isUnitIntervalNumber(value: unknown): value is number {
+    return typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 1;
+}
+
+function validateExpectedFormationEpochInput(
+    input: Readonly<Record<string, unknown>>,
+    operation: string
+): void {
+    if (input.expectedFormationEpoch !== null) {
+        requireNonNegativeSafeInteger(
+            input.expectedFormationEpoch,
+            `Group ${operation} expectedFormationEpoch`
+        );
+    }
+}
+
+function validateExpectedLayoutInput(
+    input: Readonly<Record<string, unknown>>,
+    operation: string
+): void {
+    if (input.expectedLayout === null) {
+        return;
+    }
+    const record = requireRecord(input.expectedLayout, `Group ${operation} expectedLayout`);
+    assertRequiredKeys(record, GROUP_LAYOUT_IDENTITY_KEYS, `Group ${operation} expectedLayout`);
+    assertExactKeys(record, GROUP_LAYOUT_IDENTITY_KEYS, `Group ${operation} expectedLayout`);
+    for (const key of ['groupRevision', 'presenceRevision', 'version'] as const) {
+        requireNonNegativeSafeInteger(record[key], `Group ${operation} expectedLayout ${key}`);
+    }
+    requireOneOf(record.state, GROUP_LAYOUT_IDENTITY_STATES, `Group ${operation} expectedLayout state`);
 }
 
 function validateMembershipOperationInput(

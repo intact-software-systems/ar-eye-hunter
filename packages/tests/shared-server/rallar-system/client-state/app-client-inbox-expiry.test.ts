@@ -24,8 +24,8 @@ import {
     readClientExpiryTestEnqueueData,
     readClientExpiryTestEntries
 } from './app-client-inbox-expiry-fixtures.ts';
-import { createClientStatePhaseTestDriver } from './client-state-test-runtime.ts';
 import { createClientStateServiceStub } from './client-state-service-stub.ts';
+import { createClientStatePhaseTestDriver } from './client-state-test-runtime.ts';
 
 const SCOPE: StateScope = { applicationId: 'ar-eye-hunter', workspaceId: 'default' };
 

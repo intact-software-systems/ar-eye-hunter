@@ -1,8 +1,4 @@
-import {
-    decodeJsonWireValue,
-    encodeJsonWireValue,
-    type JsonWireValue
-} from '../protocol/json-wire-identity.ts';
+import { decodeJsonWireValue, encodeJsonWireValue, type JsonWireValue } from '../protocol/json-wire-identity.ts';
 
 export function decodeNullAppInboxCommand(value: JsonWireValue): null {
     if (value !== null) {

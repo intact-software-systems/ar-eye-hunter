@@ -18,9 +18,10 @@ import {
     type GroupStateServiceDependencies
 } from './group-state-service-contracts.ts';
 import { createTimedGroupStateService } from './group-state-service-timing.ts';
+import { validateGroupMutationAuthority } from './mutation/command-validation/validate-group-mutation-authority.ts';
 import { validateGroupMutationCommand } from './mutation/command-validation/validate-group-mutation-command.ts';
 import type { GroupMutationCommand, GroupMutationFacts } from './mutation/group-mutation-contracts.ts';
-import { isGroupLifecycleTransitionOperation } from './mutation/group-mutation-contracts.ts';
+import { isLayoutFencedGroupMutationCommand } from './mutation/group-mutation-contracts.ts';
 import { computeGroupMutation } from './mutation/orchestration/compute-group-mutation.ts';
 import { readGroupMutation } from './mutation/read/read-group-mutation.ts';
 import { validateGroupMutation } from './mutation/state-validation/validate-group-mutation.ts';
@@ -135,6 +136,11 @@ function createInternalMutationPreparer(
             ...(dependencies.capacity ? { capacity: dependencies.capacity } : {}),
             authenticatedAuthority: null
         };
+        // Run the capability matrix at prepare time: a command a mode cannot
+        // execute fails at the call site, never as a poison row the queue
+        // retries into a terminal failure. attemptCount is a placeholder the
+        // matrix never reads.
+        validateGroupMutationAuthority(command, { ...facts, attemptCount: 1 });
         const causalToken = await sha256CanonicalJson({ command, facts });
         return {
             authorityProof: null,
@@ -253,24 +259,22 @@ function createMutationOperations(
                         'Internal group mutation authority is malformed.'
                     );
                 }
-                const plannedLayoutIdentity = isGroupLifecycleTransitionOperation(prepared.command.operation)
-                    ? await dependencies.readPlannedLayoutIdentity(prepared.command.aggregateRef)
-                    : null;
-                return await readGroupMutation(
-                    repositoryFor(runtime),
-                    prepared.command,
-                    plannedLayoutIdentity
-                );
             }
-            await verifyPreparedGroupMutationAuthority(authorityDependencies, prepared);
-            const plannedLayoutIdentity = isGroupLifecycleTransitionOperation(prepared.command.operation)
-                ? await dependencies.readPlannedLayoutIdentity(prepared.command.aggregateRef)
-                : null;
-            return await readGroupMutation(
-                repositoryFor(runtime),
-                prepared.command,
-                plannedLayoutIdentity
+            else {
+                await verifyPreparedGroupMutationAuthority(authorityDependencies, prepared);
+            }
+            const read = await readGroupMutation(repositoryFor(runtime), prepared.command);
+            if (!isLayoutFencedGroupMutationCommand(prepared.command)) {
+                return read;
+            }
+            // Read after the group row so the fence's staleness window ends as
+            // close to compute as this slice allows; the write guard cannot
+            // cover the topology namespace until the planned layout becomes a
+            // group-state-owned row (slice 4).
+            const plannedLayoutIdentity = await dependencies.readPlannedLayoutIdentity(
+                prepared.command.aggregateRef
             );
+            return { ...read, plannedLayoutIdentity };
         },
         compute: (prepared, read) => computeGroupMutation({ command: prepared.command, read, facts: prepared.facts }),
         validate: (prepared, read, computed) => {

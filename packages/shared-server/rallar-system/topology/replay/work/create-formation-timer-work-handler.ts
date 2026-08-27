@@ -121,7 +121,10 @@ async function processFormationTimerWork(
         }),
         options.readPlannedTopology(work.groupRef)
     ]);
-    if (planned === null) {
+    if (planned === null || planned.state !== 'active') {
+        // A missing or tombstoned plan retries the durable deadline rather
+        // than consuming it: computeFormationCriterionCommand would refuse a
+        // removed plan anyway, and a silent return would spend the timer.
         throw new Error('Formation topology plan is not available; retry the deadline evaluation');
     }
     const command = await computeFormationCriterionCommand({

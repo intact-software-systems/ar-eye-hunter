@@ -216,11 +216,10 @@ describe('GroupStateService mutation exact reads', () => {
         const requestId = 'expiry-replacement-request';
         const command = updateCommand(ref, requestId);
 
-        const observed = await readGroupMutation(createTestGroupStateRepository(runtime), command, null);
+        const observed = await readGroupMutation(createTestGroupStateRepository(runtime), command);
         const expected = await readGroupMutation(
             createTestGroupStateRepository(cloneRuntime(runtime)),
-            command,
-            null
+            command
         );
 
         expect(observed).toEqual(expected);

@@ -124,6 +124,7 @@ export type GroupMutationCommand =
                 & NullableActorInput
                 & Readonly<{
                     observedRate: number;
+                    /** Null on operator commands; the criterion's causal fence when internal. */
                     expectedFormationEpoch: number | null;
                     expectedLayout: GroupLayoutIdentity | null;
                 }>;
@@ -315,13 +316,30 @@ export type GroupMutationRead = Readonly<{
      */
     activeMemberPrincipalIds: readonly string[] | null;
     /**
-     * The stored planned layout's identity, read only for lifecycle
-     * transitions so compute can validate a command's causal fence against
-     * durable authority; null when no planned row exists or the operation
-     * carries no fence.
+     * The stored planned layout's identity, read only for commands that carry
+     * a layout fence so compute can validate the fence against durable
+     * authority. Null when the command carries no layout fence, when no
+     * planned row exists, or when the deployment wired the constant null
+     * reader — the last two are indistinguishable here and both fence
+     * layout-bound commands closed as no-planned-layout.
      */
     plannedLayoutIdentity: GroupLayoutIdentity | null;
 }>;
+
+/**
+ * The internal authority mode registry. The facts codec validates against
+ * this tuple and the type derives from it, so adding a mode is a compile
+ * error at every decision site and never a silent runtime rejection.
+ */
+export const GROUP_MUTATION_INTERNAL_AUTHORITY_MODES = [
+    'none',
+    'expiry',
+    'session-cleanup',
+    'formation-criterion',
+    'formation-automation',
+    'topology-publication',
+    'activation-status'
+] as const;
 
 export type GroupMutationFacts = Readonly<{
     nowEpochMs: number;
@@ -332,14 +350,7 @@ export type GroupMutationFacts = Readonly<{
     attemptCount: number;
     resolvedJoinCode: string | null;
     joinCodeVerifier: string | null;
-    internalAuthority:
-        | 'none'
-        | 'expiry'
-        | 'session-cleanup'
-        | 'formation-criterion'
-        | 'formation-automation'
-        | 'topology-publication'
-        | 'activation-status';
+    internalAuthority: (typeof GROUP_MUTATION_INTERNAL_AUTHORITY_MODES)[number];
     /**
      * Operational capacity defaults captured at preparation time; absent when
      * the runtime configured no defaults, which preserves stored-cap-only
@@ -441,6 +452,14 @@ export function isGroupLifecycleTransitionOperation(
         operation === 'activateGroup' ||
         operation === 'reopenGroupEstablishment' ||
         operation === 'failGroupFormation'
+    );
+}
+
+/** True exactly when the command names a planned layout its fence must match. */
+export function isLayoutFencedGroupMutationCommand(command: GroupMutationCommand): boolean {
+    return (
+        (command.operation === 'activateGroup' || command.operation === 'failGroupFormation') &&
+        command.input.expectedLayout !== null
     );
 }
 

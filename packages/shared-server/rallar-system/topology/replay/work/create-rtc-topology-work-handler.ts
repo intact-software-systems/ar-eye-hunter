@@ -2,10 +2,12 @@ import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { toWebRtcGroupKey } from '@shared/api/api-type-utils.ts';
 import { fromCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topology-config-canonical.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
+import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import type { OnMessageCallback } from '@shared/services/InboxOutboxContracts.ts';
 
 import { toRtcTopologyPublicationId } from '@shared-server/rallar-system/topology/persistence/rtc-topology-identifiers.ts';
+import type { GroupTopologyPlanningAuthority } from '@shared-server/rallar-system/topology/planning/group-topology-planning-authority.ts';
 import { hashRtcTopologyExecutionCommand } from '@shared-server/rallar-system/topology/publication/rtc-topology-publication-repository-contracts.ts';
 import { type RtcTopologyPublication } from '@shared-server/rallar-system/topology/publication/rtc-topology-publication.ts';
 import type { PSqlSql } from '../../../../postgres/p-sql-sql.ts';
@@ -90,6 +92,17 @@ interface RtcTopologyWorkHandlerOptions {
     readonly serviceId?: string;
 }
 
+/**
+ * A criterion petition deferred until the write phase commits: the fence
+ * must name the layout identity the store actually holds, so the petition
+ * fires only after the row it names is durable (product decisions 19/32,
+ * the plan's post-publication boundary).
+ */
+type CommittedCriterionPetition = Readonly<{
+    authority: GroupTopologyPlanningAuthority;
+    planned: RallarOverlayTopologySnapshot;
+}>;
+
 type AcceptedRtcTopologyWork =
     | Readonly<{
         decision: 'accepted';
@@ -98,6 +111,7 @@ type AcceptedRtcTopologyWork =
         computed: AcceptedRtcTopologyMutation;
         publication: RtcTopologyPublication | null;
         inputFingerprint: string;
+        criterionPetition: CommittedCriterionPetition | null;
     }>
     | Readonly<{
         decision: 'skipped-fingerprint';
@@ -109,6 +123,7 @@ type AcceptedRtcTopologyWork =
         work: PersistedRtcTopologyWork;
         group: GroupSnapshot;
         inputFingerprint: string;
+        criterionPetition: CommittedCriterionPetition | null;
     }>
     | Readonly<{
         decision: 'skipped-rtt-refinement';
@@ -255,12 +270,20 @@ async function computeAcceptedRtcTopologyWork(
         read.snapshot?.value,
         membershipDeltaWork ? 'membership-delta' : 'full-rebuild'
     );
-    await petitionFormationCriterion(options, authority, computedTopology.snapshot);
     // RTT is deliberately outside the fingerprint, so an RTT refresh always
-    // replans — but an unchanged planned graph publishes nothing (M8).
+    // replans — but an unchanged planned graph publishes nothing (M8). The
+    // criterion petition fences on the stored row, not the recomputed
+    // candidate: an unchanged graph still drifts its causal revision, and a
+    // candidate-identity fence would reject the decisive activation.
     const unchangedGated = changeGated || work.kind !== 'group-revision';
     if (unchangedGated && read.snapshot !== null && !computedTopology.changed) {
-        return { decision: 'skipped-unchanged', work, group: authority.group, inputFingerprint };
+        return {
+            decision: 'skipped-unchanged',
+            work,
+            group: authority.group,
+            inputFingerprint,
+            criterionPetition: { authority, planned: read.snapshot.value }
+        };
     }
     const publicationExpireAtTimestamp = work.publish
         ? options.executionRepository.publicationExpireAtTimestamp()
@@ -313,7 +336,8 @@ async function computeAcceptedRtcTopologyWork(
         group: authority.group,
         computed,
         publication,
-        inputFingerprint
+        inputFingerprint,
+        criterionPetition: { authority, planned: computedTopology.snapshot }
     };
 }
 
@@ -341,6 +365,7 @@ async function writeAcceptedRtcTopologyWork(
             await finishRtcTopologyReservation(transaction, entry);
         });
         options.topologyPlanning.recordTopologyPublication(false);
+        await petitionCommittedCriterion(options, accepted.criterionPetition);
         return;
     }
     const computed = accepted.computed;
@@ -369,11 +394,29 @@ async function writeAcceptedRtcTopologyWork(
     if (committedSnapshot.state === 'removed') {
         options.onInactiveOverlay?.(accepted.work.overlayId);
     }
+    if (accepted.criterionPetition !== null) {
+        // Petition with the row the commit made durable, never the candidate
+        // the compute phase happened to build.
+        await petitionCommittedCriterion(options, {
+            authority: accepted.criterionPetition.authority,
+            planned: committedSnapshot
+        });
+    }
     if (accepted.publication) {
         options.topologyPlanning.recordTopologyPublication(true);
         options.wakeQueue?.();
         options.wakeReplay?.();
     }
+}
+
+async function petitionCommittedCriterion(
+    options: RtcTopologyWorkHandlerOptions,
+    petition: CommittedCriterionPetition | null
+): Promise<void> {
+    if (petition === null) {
+        return;
+    }
+    await petitionFormationCriterion(options, petition.authority, petition.planned);
 }
 
 async function writeRtcTopologyPublicationTransaction(

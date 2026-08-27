@@ -55,6 +55,29 @@ interface TimedGroupStateServiceInput {
     readonly serviceId: string;
 }
 
+type InternalCommandPreparation =
+    | 'prepareFormationCriterionMutation'
+    | 'prepareFormationAutomationMutation'
+    | 'prepareTopologyPublicationMutation'
+    | 'prepareActivationStatusMutation';
+
+// The four internal command preparers share one signature, so one factory
+// times them all; the operation string doubles as the method name, which
+// keeps the timing label and the forwarded call from drifting apart.
+function createTimedInternalCommandPreparation(
+    service: GroupStateService,
+    input: TimedGroupStateServiceInput,
+    operation: InternalCommandPreparation
+): GroupStateService[InternalCommandPreparation] {
+    return async (command, atEpochMs) =>
+        await timeGroupStateOperation({
+            ...input,
+            operation,
+            details: {},
+            action: async () => await service[operation](command, atEpochMs)
+        });
+}
+
 function createTimedPreparationOperations(
     service: GroupStateService,
     input: TimedGroupStateServiceInput
@@ -63,13 +86,12 @@ function createTimedPreparationOperations(
     | 'authorizeMutation'
     | 'prepareMutation'
     | 'prepareAppInboxMutation'
+    | InternalCommandPreparation
     | 'prepareExpiredPresenceMutations'
     | 'prepareSessionCleanupMutations'
-    | 'prepareFormationCriterionMutation'
-    | 'prepareFormationAutomationMutation'
-    | 'prepareTopologyPublicationMutation'
-    | 'prepareActivationStatusMutation'
 > {
+    const timedCommand = (operation: InternalCommandPreparation) =>
+        createTimedInternalCommandPreparation(service, input, operation);
     return {
         authorizeMutation: async (descriptor, authority) =>
             await timeGroupStateOperation({
@@ -92,40 +114,16 @@ function createTimedPreparationOperations(
                 details: {},
                 action: async () => await service.prepareAppInboxMutation(descriptor, authority)
             }),
+        prepareFormationCriterionMutation: timedCommand('prepareFormationCriterionMutation'),
+        prepareFormationAutomationMutation: timedCommand('prepareFormationAutomationMutation'),
+        prepareTopologyPublicationMutation: timedCommand('prepareTopologyPublicationMutation'),
+        prepareActivationStatusMutation: timedCommand('prepareActivationStatusMutation'),
         prepareExpiredPresenceMutations: async (atEpochMs) =>
             await timeGroupStateOperation({
                 ...input,
                 operation: 'prepareExpiredPresenceMutations',
                 details: {},
                 action: async () => await service.prepareExpiredPresenceMutations(atEpochMs)
-            }),
-        prepareFormationCriterionMutation: async (command, atEpochMs) =>
-            await timeGroupStateOperation({
-                ...input,
-                operation: 'prepareFormationCriterionMutation',
-                details: {},
-                action: async () => await service.prepareFormationCriterionMutation(command, atEpochMs)
-            }),
-        prepareFormationAutomationMutation: async (command, atEpochMs) =>
-            await timeGroupStateOperation({
-                ...input,
-                operation: 'prepareFormationAutomationMutation',
-                details: {},
-                action: async () => await service.prepareFormationAutomationMutation(command, atEpochMs)
-            }),
-        prepareTopologyPublicationMutation: async (command, atEpochMs) =>
-            await timeGroupStateOperation({
-                ...input,
-                operation: 'prepareTopologyPublicationMutation',
-                details: {},
-                action: async () => await service.prepareTopologyPublicationMutation(command, atEpochMs)
-            }),
-        prepareActivationStatusMutation: async (command, atEpochMs) =>
-            await timeGroupStateOperation({
-                ...input,
-                operation: 'prepareActivationStatusMutation',
-                details: {},
-                action: async () => await service.prepareActivationStatusMutation(command, atEpochMs)
             }),
         prepareSessionCleanupMutations: async (cleanup) =>
             await timeGroupStateOperation({

@@ -5,7 +5,7 @@ import {
     requirePositiveSafeInteger,
     requireRecord
 } from '../../group-state-validation-primitives.ts';
-import type { GroupMutationFacts } from '../group-mutation-contracts.ts';
+import { GROUP_MUTATION_INTERNAL_AUTHORITY_MODES, type GroupMutationFacts } from '../group-mutation-contracts.ts';
 
 export function validateGroupMutationFacts(facts: GroupMutationFacts): void {
     requireJsonSafe(facts, 'Group mutation facts');
@@ -38,16 +38,7 @@ export function validateGroupMutationFacts(facts: GroupMutationFacts): void {
     if (!/^sha256:[0-9a-f]{64}$/.test(facts.commandHash)) {
         throw new TypeError('Group mutation commandHash is invalid');
     }
-    const internalAuthorityModes = [
-        'none',
-        'expiry',
-        'session-cleanup',
-        'formation-criterion',
-        'formation-automation',
-        'topology-publication',
-        'activation-status'
-    ];
-    if (!internalAuthorityModes.includes(facts.internalAuthority)) {
+    if (!(GROUP_MUTATION_INTERNAL_AUTHORITY_MODES as readonly string[]).includes(facts.internalAuthority)) {
         throw new TypeError('Group mutation internal authority is invalid');
     }
     validateCapacityFacts(facts.capacity);

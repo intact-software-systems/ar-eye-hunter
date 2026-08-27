@@ -17,14 +17,12 @@ interface ReadSequentialGroupMutationInput {
     readonly repository: GroupStateRepository;
     readonly command: GroupMutationCommand;
     readonly lifecyclePolicy: GroupMutationRead['lifecyclePolicy'];
-    readonly plannedLayoutIdentity: GroupMutationRead['plannedLayoutIdentity'];
 }
 
 export async function readSequentialGroupMutation({
     repository,
     command,
-    lifecyclePolicy,
-    plannedLayoutIdentity
+    lifecyclePolicy
 }: ReadSequentialGroupMutationInput): Promise<GroupMutationRead> {
     const primary = await readSequentialPrimaryEntries(repository, command);
     // Read after the group entry whose revision anchors the write guard:
@@ -55,8 +53,7 @@ export async function readSequentialGroupMutation({
         related,
         authorityPresenceSessionEntries,
         lifecyclePolicy,
-        activeMemberPrincipalIds,
-        plannedLayoutIdentity
+        activeMemberPrincipalIds
     });
 }
 
@@ -145,7 +142,6 @@ interface AssembleSequentialGroupMutationReadInput {
     readonly authorityPresenceSessionEntries: GroupMutationRead['authorityPresenceSessionEntries'];
     readonly lifecyclePolicy: GroupMutationRead['lifecyclePolicy'];
     readonly activeMemberPrincipalIds: GroupMutationRead['activeMemberPrincipalIds'];
-    readonly plannedLayoutIdentity: GroupMutationRead['plannedLayoutIdentity'];
 }
 
 function assembleSequentialGroupMutationRead({
@@ -154,8 +150,7 @@ function assembleSequentialGroupMutationRead({
     related,
     authorityPresenceSessionEntries,
     lifecyclePolicy,
-    activeMemberPrincipalIds,
-    plannedLayoutIdentity
+    activeMemberPrincipalIds
 }: AssembleSequentialGroupMutationReadInput): GroupMutationRead {
     const { idempotency, groupRead, targetPresenceRead, presenceSummary } = primary;
     const { actorPrincipalId, targetPrincipalId, ownerPrincipalId, director } = identities;
@@ -207,7 +202,9 @@ function assembleSequentialGroupMutationRead({
         presenceSummary: presenceSummary ?? null,
         lifecyclePolicy,
         activeMemberPrincipalIds,
-        plannedLayoutIdentity
+        // The layout-fence read is attached by the service for fenced
+        // commands; the read layer itself never consults it.
+        plannedLayoutIdentity: null
     };
 }
 

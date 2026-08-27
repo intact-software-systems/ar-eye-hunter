@@ -79,6 +79,12 @@ export async function computeFormationCriterionCommand(
     if (!CRITERION_EVALUATES[group.lifecycleState]) {
         return null;
     }
+    if (input.planned.state !== 'active') {
+        // A removed plan never petitions, from any leg: its empty edge set
+        // reads as trivially-complete readiness, which would activate a group
+        // against a torn-down layout at rate 1.
+        return null;
+    }
     const policyRead = await input.readLifecyclePolicy(group);
     if (policyRead.status === 'corrupt') {
         return null;
