@@ -223,7 +223,10 @@ export class BrowserSessionAuthLifecycle implements RallarSessionAuthLifecycle {
         const delayMs = Math.max(0, session.expiresAtEpochMs - Date.now());
         this.input.authRuntime.setAuthExpiryTimer(
             setTimeout(
-                () => void this.expireAuthSessionIfCurrent(session),
+                () =>
+                    void this.expireAuthSessionIfCurrent(session).catch((error) =>
+                        console.error('Failed to expire the Rallar auth session', error)
+                    ),
                 Math.min(delayMs, MAX_AUTH_EXPIRY_TIMEOUT_MS)
             )
         );
@@ -259,10 +262,12 @@ export class BrowserSessionAuthLifecycle implements RallarSessionAuthLifecycle {
         const dataCleanupError = session
             ? await this.cleanupEndedSession(session)
             : undefined;
-        this.input.emitState();
+        // Listeners learn the session ended only from emitAuthState, so a failing
+        // state emit must not stand between them and that notification.
+        const stateEmitError = captureSyncError(() => this.input.emitState());
         this.emitAuthState(reason, undefined);
 
-        const failure = disconnectError ?? revokeError ?? dataCleanupError;
+        const failure = disconnectError ?? revokeError ?? dataCleanupError ?? stateEmitError;
         if (failure) {
             throw failure;
         }
@@ -305,6 +310,18 @@ async function revokeAuthSession(
         (signal) => authApi.logoutFromApi({ requestId, signal, authSession: session }),
         toRallarCommandOptions(operationOptions)
     ).run();
+}
+
+function captureSyncError(operation: () => void): Error | undefined {
+    try {
+        operation();
+        return undefined;
+    }
+    catch (error) {
+        return error instanceof Error
+            ? error
+            : new Error('Rallar session operation failed.');
+    }
 }
 
 async function captureError(operation: () => Promise<void>): Promise<Error | undefined> {

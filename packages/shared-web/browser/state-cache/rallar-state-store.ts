@@ -7,6 +7,7 @@ import type {
     RallarStateListener,
     RallarUnsubscribe
 } from '@shared-web/browser/rallar-shared-contracts.ts';
+import type { RallarRoomState } from '@shared-web/browser/rooms/rallar-room-contracts.ts';
 import type { RallarRoomStateStorePort } from '@shared-web/browser/rooms/room-state-store.ts';
 import { browserStateCacheLifecycle } from '@shared-web/browser/state-cache/browser-state-cache-lifecycle.ts';
 import type { AuthSession, ClientInfo } from '@shared/api/api-config.ts';
@@ -14,6 +15,7 @@ import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import { readActiveClientSessionIds } from '@shared/api/group-client-views.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import { DEFAULT_STATE_WORKSPACE_ID, type StateScope } from '@shared/api/state-types.ts';
+import { readConfiguredValue } from '@shared/cache/RepositoryManager.ts';
 import * as clientStateSnapshotsRepository from '@shared/repository/client-state-snapshots-repository.ts';
 import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
 
@@ -65,6 +67,11 @@ export function createRallarStateCacheReadPort(): RallarStateCacheReadPort {
 }
 
 export namespace RallarStateStore {
+    export interface EmittableState {
+        readonly room: RallarRoomState;
+        readonly people: RallarPeopleState;
+    }
+
     export interface Input {
         readonly runtime: RallarStateRuntimePort;
         readonly roomStateStore: RallarRoomStateStorePort;
@@ -107,15 +114,28 @@ export class RallarStateStore implements RallarStatePort {
     }
 
     emit(): void {
-        const roomState = this.#input.roomStateStore.state();
-        const peopleState = this.peopleState();
-        this.#input.roomStateStore.emit(roomState);
+        const state = this.readEmittableState();
+        if (!state) {
+            return;
+        }
+        this.#input.roomStateStore.emit(state.room);
         for (const listener of this.#peopleStateListeners) {
-            notifyListener(listener, peopleState);
+            notifyListener(listener, state.people);
         }
         for (const listener of this.#afterEmitListeners) {
-            listener();
+            notifyListener(listener, undefined);
         }
+    }
+
+    /**
+     * Connect configures the snapshot repositories, so disconnect and logout can
+     * both emit before they exist. There is no state to report until then.
+     */
+    private readEmittableState(): RallarStateStore.EmittableState | undefined {
+        return readConfiguredValue(() => ({
+            room: this.#input.roomStateStore.state(),
+            people: this.peopleState()
+        }));
     }
 
     onAfterEmit(listener: () => void): RallarUnsubscribe {
@@ -140,8 +160,11 @@ export class RallarStateStore implements RallarStatePort {
         options: RallarOnChangeOptions = {}
     ): RallarUnsubscribe {
         this.#peopleStateListeners.add(listener);
-        if (options.emitCurrent ?? true) {
-            notifyListener(listener, this.peopleState());
+        const current = (options.emitCurrent ?? true)
+            ? readConfiguredValue(() => this.peopleState())
+            : undefined;
+        if (current) {
+            notifyListener(listener, current);
         }
         return () => this.#peopleStateListeners.delete(listener);
     }

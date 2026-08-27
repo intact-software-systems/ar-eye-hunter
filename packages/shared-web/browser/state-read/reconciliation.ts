@@ -1,6 +1,7 @@
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
+import { readConfiguredValue } from '@shared/cache/RepositoryManager.ts';
 import * as clientSnapshots from '@shared/repository/client-state-snapshots-repository.ts';
 import * as groupSnapshots from '@shared/repository/group-state-snapshots-repository.ts';
 
@@ -25,15 +26,7 @@ export function captureStateSnapshotCollectionObservations(
 }
 
 function readConfiguredSnapshots<T>(read: () => T[]): T[] {
-    try {
-        return read();
-    }
-    catch (error) {
-        if (error instanceof Error && error.message.startsWith('Repository not found:')) {
-            return [];
-        }
-        throw error;
-    }
+    return readConfiguredValue(read) ?? [];
 }
 
 export function reconcileCompleteStateSnapshotCollections(
