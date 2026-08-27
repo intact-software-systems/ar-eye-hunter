@@ -47,6 +47,36 @@ describe('group mutation request validation', () => {
         expect(unexpectedKey).toThrowError('Group updateGroup request has unexpected key: unexpected');
     });
 
+    // The lifecycle request rows exclude the criterion fence keys entirely, so
+    // a principal request arrives without them and must validate cleanly.
+    it.each([
+        'startGroupEstablishment' as const,
+        'activateGroup' as const,
+        'reopenGroupEstablishment' as const
+    ])('accepts a fence-less principal %s request', (operation) => {
+        expect(() =>
+            validateGroupMutationRequest(operation, {
+                actorPrincipalId: 'owner-1',
+                actorSessionId: 'owner-session',
+                requestId: `${operation}-request`
+            })
+        ).not.toThrow();
+    });
+
+    it('rejects a principal lifecycle request that spells a fence key', () => {
+        const fenceKey = () =>
+            validateGroupMutationRequest('activateGroup', {
+                actorPrincipalId: 'owner-1',
+                actorSessionId: 'owner-session',
+                requestId: 'fenced-activate',
+                expectedFormationEpoch: 3
+            });
+        expect(fenceKey).toThrowError(TypeError);
+        expect(fenceKey).toThrowError(
+            'Group activateGroup request has unexpected key: expectedFormationEpoch'
+        );
+    });
+
     it('requires non-empty authenticated actor identity on group mutation requests', () => {
         const missingPrincipal = () =>
             validateGroupMutationRequest('updateGroup', {

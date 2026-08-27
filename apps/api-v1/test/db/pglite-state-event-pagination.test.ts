@@ -314,6 +314,7 @@ Deno.test(
             };
             const persistedAuthority = await toPersistedAuthSessionFixture(authority);
             const service = createGroupStateService({
+                readPlannedLayoutIdentity: () => Promise.resolve(null),
                 runtimeRepository: runtime,
                 groupStateEventStore: new PSqlGroupStateEventRepository(sql),
                 authSessionRepository: {
@@ -415,6 +416,7 @@ Deno.test(
             };
             const persistedAuthority = await toPersistedAuthSessionFixture(authority);
             const service = createGroupStateService({
+                readPlannedLayoutIdentity: () => Promise.resolve(null),
                 runtimeRepository: runtime,
                 groupStateEventStore: new PSqlGroupStateEventRepository(sql),
                 authSessionRepository: {
