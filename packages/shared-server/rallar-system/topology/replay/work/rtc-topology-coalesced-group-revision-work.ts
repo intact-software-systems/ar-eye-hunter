@@ -28,8 +28,6 @@ import { APP_OUTBOX_RTC_TOPOLOGY_TOPIC } from '../../mutation/rtc-topology-outbo
 import type { RtcTopologyGroupRevisionWork } from '../../mutation/rtc-topology-outbox-work.ts';
 import type { PersistedRtcTopologyWork } from './rtc-topology-work-codec.ts';
 
-export const DEFAULT_TOPOLOGY_RECOMPUTE_DEBOUNCE_MS = 500;
-
 export interface RtcTopologyCoalescedGroupRevisionInput {
     readonly aggregateRef: GroupRef;
     readonly groupSnapshot: GroupSnapshot;
