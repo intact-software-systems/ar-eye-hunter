@@ -1,8 +1,9 @@
 # Pull Request Delivery
 
-`scripts/pull-request-delivery.mjs` owns the agent-facing `status` and `ready` commands. The current
-Git branch identifies the pull request; callers never supply a pull-request number, commit SHA,
-plan identifier, digest, run identifier, or reviewer identity.
+`scripts/pull-request-delivery.mjs` owns the agent-facing `status` and `ready` commands and the
+automation-only `publish-observation` command. For interactive delivery, the current Git branch
+identifies the pull request; callers never supply a pull-request number, commit SHA, plan
+identifier, digest, run identifier, or reviewer identity.
 
 ## Dataflow
 
@@ -13,6 +14,9 @@ plan identifier, digest, run identifier, or reviewer identity.
 4. `ready-pull-request.mjs` may mark a draft ready. It arms native squash auto-merge only after
    GitHub reports the pull request approved. The command refreshes the same pull request after each
    mutation and then prints its current action.
+5. `rtc-observation-pull-request.mjs` verifies one package-owned RTC archive before mutation,
+   appends it on a disposable branch made from current remote `main`, opens or resumes the matching
+   pull request, and arms native squash auto-merge. It never commits or pushes `main`.
 
 Conflict and terminal states are resolved before any readiness mutation. `BEHIND` is never a repair
 state when GitHub still reports the pull request mergeable. While review is required, `ready`
@@ -29,6 +33,11 @@ are report-only and do not create agent work.
 ```bash
 npm run pr:delivery -- status
 npm run pr:delivery -- ready
+npm run pr:delivery -- publish-observation \
+  --archive=/path/to/observation.zip \
+  --index-entry=/path/to/index-entry.jsonl \
+  --run-id=123456789 \
+  --run-attempt=1
 ```
 
 The output action is one of `OPEN_DRAFT`, `WORK`, `STOP_CLOSED`, `DONE`, `STOP_WRONG_BASE`,
@@ -39,3 +48,9 @@ post-merge governance mutation.
 GitHub authentication, network, and permission errors remain visible. If native auto-merge cannot
 be armed, the command reports the original GitHub error and returns
 `AWAIT_REVIEW_OR_ADMIN_MERGE`; an authorized administrator may use GitHub directly.
+
+Scheduled RTC publication uses `RTC_OBSERVATION_PR_TOKEN` as `GH_TOKEN`. That automation
+credential needs only repository Contents and Pull Requests write access, and its events must run
+ordinary pull-request checks. A missing or insufficient credential fails closed after the capture
+has already been retained as a workflow artifact. The restricted governance App is not used for
+ordinary observation pull requests.

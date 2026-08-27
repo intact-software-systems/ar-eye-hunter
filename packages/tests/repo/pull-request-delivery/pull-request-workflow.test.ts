@@ -7,6 +7,57 @@ import { describe, expect, it } from 'vitest';
 const repoRoot = path.resolve(__dirname, '../../../..');
 
 describe('pull-request release workflow', () => {
+    it('captures RTC-B05 nightly from moving main and publishes only verified artifacts', () => {
+        const workflow = readWorkflow('.github/workflows/rtc-performance-observation.yml');
+        const capture = workflow.jobs.capture;
+        const publication = workflow.jobs.publication;
+        const observe = capture.steps.find((step: Record<string, any>) =>
+            step.name === 'Capture RTC-B05 browser observation'
+        );
+        const upload = capture.steps.find((step: Record<string, any>) =>
+            step.name === 'Retain RTC observation output'
+        );
+        const verify = publication.steps.find((step: Record<string, any>) =>
+            step.name === 'Verify captured observation'
+        );
+        const publish = publication.steps.find((step: Record<string, any>) =>
+            step.name === 'Publish observation pull request'
+        );
+
+        expect(workflow.on).toEqual({
+            schedule: [{ cron: '17 3 * * *' }],
+            workflow_dispatch: null
+        });
+        expect(workflow.concurrency).toEqual({
+            group: 'rtc-b05-performance-observation',
+            'cancel-in-progress': false
+        });
+        expect(capture.permissions).toEqual({ contents: 'read' });
+        expect(capture.steps[0]).toMatchObject({
+            uses: 'actions/checkout@v7',
+            with: { ref: 'main', 'fetch-depth': 0 }
+        });
+        expect(observe.run).toContain('--source-ref=main');
+        expect(observe.run).toContain('--github-run-id="$GITHUB_RUN_ID"');
+        expect(observe.run).toContain('--github-run-attempt="$GITHUB_RUN_ATTEMPT"');
+        expect(observe.run).toContain('$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID');
+        expect(observe.run).not.toMatch(/fetch|ls-remote|origin\/main/iu);
+        expect(upload).toMatchObject({
+            if: '${{ always() }}',
+            uses: 'actions/upload-artifact@v7'
+        });
+        expect(publication.needs).toBe('capture');
+        expect(publication.steps[0].with['persist-credentials']).toBe(false);
+        expect(verify.run).toContain('verify-observation');
+        expect(publish.run).toContain('npm run pr:delivery -- publish-observation');
+        expect(publication.steps.indexOf(publish)).toBeGreaterThan(publication.steps.indexOf(verify));
+        expect(publish.env).toEqual({ GH_TOKEN: '${{ secrets.RTC_OBSERVATION_PR_TOKEN }}' });
+        expect(publish.run).not.toMatch(/gh\s+pr\s+merge|--admin|git\s+push\s+origin\s+main/iu);
+
+        const source = readSource('.github/workflows/rtc-performance-observation.yml');
+        expect(source).not.toMatch(/source.*(?:fresh|latest)|compare.*main|pin(?:ned)?/iu);
+    });
+
     it('runs only for current pull-request changes and cancels only superseded runs of that PR', () => {
         const workflow = readWorkflow('.github/workflows/branch-release-gate.yml');
 

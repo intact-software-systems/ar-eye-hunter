@@ -6,6 +6,10 @@ import { pathToFileURL } from 'node:url';
 import { deriveDeliveryAction } from './pull-request-delivery/derive-delivery-action.mjs';
 import { readPullRequest, toCommandErrorMessage } from './pull-request-delivery/read-pull-request.mjs';
 import { armPullRequestAutoMerge, markPullRequestReady } from './pull-request-delivery/ready-pull-request.mjs';
+import {
+    publishRtcObservationPullRequest,
+    RtcObservationPublicationShell
+} from './pull-request-delivery/rtc-observation-pull-request.mjs';
 
 const mutationBlockedActions = new Set([
     'OPEN_DRAFT',
@@ -22,6 +26,7 @@ if (isDirectExecution()) {
     try {
         await runPullRequestDeliveryCommand(process.argv.slice(2), {
             execFile: execFileSync,
+            repoRoot: process.cwd(),
             writeOutput: console.log,
             writeError: console.error
         });
@@ -37,6 +42,9 @@ export async function runPullRequestDeliveryCommand(arguments_, dependencies) {
     if (operation === 'help') {
         printHelp(dependencies.writeOutput);
         return 'HELP';
+    }
+    if (operation === 'publish-observation') {
+        return runObservationPublication(arguments_, dependencies);
     }
 
     let pullRequest = readPullRequest({ execFile: dependencies.execFile });
@@ -87,13 +95,77 @@ function readOperation(arguments_) {
     if (arguments_.length === 1 && (arguments_[0] === 'status' || arguments_[0] === 'ready')) {
         return arguments_[0];
     }
-    throw new Error('usage: npm run pr:delivery -- <status|ready>');
+    if (arguments_[0] === 'publish-observation') {
+        return arguments_[0];
+    }
+    throw new Error('usage: npm run pr:delivery -- <status|ready|publish-observation>');
 }
 
 function printHelp(writeOutput) {
-    writeOutput('Usage: npm run pr:delivery -- <status|ready>');
+    writeOutput('Usage: npm run pr:delivery -- <status|ready|publish-observation>');
     writeOutput('  status  Read the current pull request and report the next action.');
     writeOutput('  ready   Mark a draft ready and arm native auto-merge after approval.');
+    writeOutput(
+        '  publish-observation  Publish one verified RTC observation through a main pull request.'
+    );
+}
+
+async function runObservationPublication(arguments_, dependencies) {
+    const options = readObservationPublicationOptions(arguments_.slice(1));
+    const input = {
+        repoRoot: dependencies.repoRoot ?? process.cwd(),
+        archivePath: options.get('--archive'),
+        indexEntryPath: options.get('--index-entry'),
+        runId: readPositiveInteger(options.get('--run-id'), '--run-id'),
+        runAttempt: readPositiveInteger(options.get('--run-attempt'), '--run-attempt')
+    };
+    const publish = dependencies.publishObservation ?? ((publicationInput) =>
+        publishRtcObservationPullRequest(
+            publicationInput,
+            new RtcObservationPublicationShell({
+                repoRoot: publicationInput.repoRoot,
+                execFile: dependencies.execFile
+            })
+        ));
+    const result = await publish(input);
+    dependencies.writeOutput(`Observation publication: ${result.status}`);
+    if (result.pullRequestUrl !== undefined) {
+        dependencies.writeOutput(`PR ${result.pullRequestUrl}`);
+    }
+    return result.status === 'already-published'
+        ? 'OBSERVATION_ALREADY_PUBLISHED'
+        : 'OBSERVATION_PULL_REQUEST_READY';
+}
+
+function readObservationPublicationOptions(arguments_) {
+    const expected = new Set(['--archive', '--index-entry', '--run-id', '--run-attempt']);
+    const options = new Map();
+    for (const argument of arguments_) {
+        const separator = argument.indexOf('=');
+        const name = separator === -1 ? argument : argument.slice(0, separator);
+        const value = separator === -1 ? '' : argument.slice(separator + 1);
+        if (!expected.has(name) || value === '' || options.has(name)) {
+            throw new Error(`invalid publish-observation option: ${argument}`);
+        }
+        options.set(name, value);
+    }
+    for (const name of expected) {
+        if (!options.has(name)) {
+            throw new Error(`missing publish-observation option: ${name}`);
+        }
+    }
+    return options;
+}
+
+function readPositiveInteger(value, name) {
+    if (!/^[1-9]\d*$/u.test(value)) {
+        throw new Error(`${name} must be a positive integer`);
+    }
+    const parsed = Number(value);
+    if (!Number.isSafeInteger(parsed)) {
+        throw new Error(`${name} must be a safe integer`);
+    }
+    return parsed;
 }
 
 function printDeliveryStatus(pullRequest, action, writeOutput) {
