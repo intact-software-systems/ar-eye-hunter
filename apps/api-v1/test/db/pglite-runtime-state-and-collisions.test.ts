@@ -682,6 +682,7 @@ Deno.test(
                 return await readTopologyConfigMutation(command);
             };
             const groupState = createGroupStateService({
+                readPlannedLayoutIdentity: () => Promise.resolve(null),
                 runtimeRepository: runtime,
                 groupStateEventStore: new PSqlGroupStateEventRepository(sql),
                 authSessionRepository: authSessions,

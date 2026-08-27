@@ -115,6 +115,7 @@ Deno.test(
                 await groupRepository.putMember(member);
             }
             const groupState = createGroupStateService({
+                readPlannedLayoutIdentity: () => Promise.resolve(null),
                 runtimeRepository: runtime,
                 groupStateEventStore: new PSqlGroupStateEventRepository(sql),
                 authSessionRepository: authSessions,

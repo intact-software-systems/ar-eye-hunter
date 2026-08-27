@@ -86,21 +86,21 @@ function validateAggregateMutationInput(
         return;
     }
     if (operation === 'startGroupEstablishment' || operation === 'reopenGroupEstablishment') {
-        validateExpectedFormationEpochInput(input, operation);
+        validateExpectedFormationEpochInput(input.expectedFormationEpoch as JsonWireValue | undefined, operation);
         return;
     }
     if (operation === 'activateGroup') {
         validateActivateGroupInput(input);
-        validateExpectedFormationEpochInput(input, operation);
-        validateExpectedLayoutInput(input, operation);
+        validateExpectedFormationEpochInput(input.expectedFormationEpoch as JsonWireValue | undefined, operation);
+        validateExpectedLayoutInput(input.expectedLayout as JsonWireValue | undefined, operation);
         return;
     }
     if (operation === 'failGroupFormation') {
         if (!isUnitIntervalNumber(input.observedRate)) {
             throw new TypeError('Group failGroupFormation observedRate must be within [0, 1]');
         }
-        validateExpectedFormationEpochInput(input, operation);
-        validateExpectedLayoutInput(input, operation);
+        validateExpectedFormationEpochInput(input.expectedFormationEpoch as JsonWireValue | undefined, operation);
+        validateExpectedLayoutInput(input.expectedLayout as JsonWireValue | undefined, operation);
         return;
     }
     optionalString('joinCode');
@@ -235,22 +235,25 @@ function isUnitIntervalNumber(value: unknown): value is number {
     return typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 1;
 }
 
+// Raw requests never carry the fence keys (their exact-key rows exclude
+// them), so absence, like null, means a principal command with no fence.
 function validateExpectedFormationEpochInput(
-    input: Record<string, unknown>,
+    epoch: JsonWireValue | undefined,
     operation: string
 ): void {
-    const epoch = input.expectedFormationEpoch;
-    if (epoch !== null && (!Number.isSafeInteger(epoch) || (epoch as number) < 0)) {
+    if (epoch === undefined || epoch === null) {
+        return;
+    }
+    if (!Number.isSafeInteger(epoch) || (epoch as number) < 0) {
         throw new TypeError(`Group ${operation} expectedFormationEpoch must be null or a non-negative integer`);
     }
 }
 
 function validateExpectedLayoutInput(
-    input: Record<string, unknown>,
+    layout: JsonWireValue | undefined,
     operation: string
 ): void {
-    const layout = input.expectedLayout;
-    if (layout === null) {
+    if (layout === undefined || layout === null) {
         return;
     }
     const record = requireRecord(layout, `Group ${operation} expectedLayout`);

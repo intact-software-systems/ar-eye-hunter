@@ -5,11 +5,8 @@ import {
     toFormationActivateCommand,
     toFormationRetryEstablishCommand
 } from '@shared-server/rallar-system/group-state/group-formation-mutation-command.ts';
-import type {
-    GroupMutationCommand,
-    GroupMutationFacts
-} from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
 import { validateGroupMutationAuthority } from '@shared-server/rallar-system/group-state/mutation/command-validation/validate-group-mutation-authority.ts';
+import type { GroupMutationCommand, GroupMutationFacts } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
 import type { GroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
 
 const GROUP_REF = { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'group-1' } as const;
@@ -71,9 +68,7 @@ describe('internal authority capability matrix', () => {
     });
 
     it('fails formation-criterion closed outside its three transitions', () => {
-        expect(() =>
-            validateGroupMutationAuthority(internalJoinCommand(), internalFacts('formation-criterion'))
-        ).toThrow('limited to criterion transitions');
+        expect(() => validateGroupMutationAuthority(internalJoinCommand(), internalFacts('formation-criterion'))).toThrow('limited to criterion transitions');
     });
 
     // The three modes registered ahead of their operations admit nothing:
@@ -117,23 +112,24 @@ describe('internal authority capability matrix', () => {
     // The fence is mandatory on internal commands: a fence-less criterion
     // petition is malformed, not merely unfenced.
     it('requires the fence fields on criterion commands', () => {
-        const unfenced = {
-            ...toFormationActivateCommand({
-                groupRef: GROUP_REF,
-                formationEpoch: 3,
-                observedRate: 0.95,
-                degraded: false,
-                expectedLayout: LAYOUT_A
-            })
-        } as GroupMutationCommand & { input: Record<string, unknown>; };
-        const withoutLayout = {
-            ...unfenced,
-            input: { ...unfenced.input, expectedLayout: null }
-        } as GroupMutationCommand;
-        const withoutEpoch = {
-            ...unfenced,
-            input: { ...unfenced.input, expectedFormationEpoch: null }
-        } as GroupMutationCommand;
+        const fenced = toFormationActivateCommand({
+            groupRef: GROUP_REF,
+            formationEpoch: 3,
+            observedRate: 0.95,
+            degraded: false,
+            expectedLayout: LAYOUT_A
+        });
+        if (fenced.operation !== 'activateGroup') {
+            throw new Error('activation builder must target activateGroup');
+        }
+        const withoutLayout: GroupMutationCommand = {
+            ...fenced,
+            input: { ...fenced.input, expectedLayout: null }
+        };
+        const withoutEpoch: GroupMutationCommand = {
+            ...fenced,
+            input: { ...fenced.input, expectedFormationEpoch: null }
+        };
 
         expect(() => validateGroupMutationAuthority(withoutLayout, internalFacts('formation-criterion')))
             .toThrow('expected layout fence');

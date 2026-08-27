@@ -83,7 +83,7 @@ export function computeLifecycleTransition(
         // fence and the state machine below are the only checks that apply.
         // Principals never carry this authority mode
         // (validateGroupMutationAuthority enforces it).
-        const fenceRejection = computeFenceRejection(command, read, facts, stored.value);
+        const fenceRejection = computeFenceRejection({ command, read, facts, stored: stored.value });
         if (fenceRejection !== null) {
             return fenceRejection;
         }
@@ -158,11 +158,15 @@ export function computeLifecycleTransition(
  * transition and never a silent no-op. Principal commands carry null fences
  * and are governed by the initiator policy alone.
  */
+interface ComputeFenceRejectionInput {
+    readonly command: Extract<GroupMutationCommand, { operation: GroupLifecycleTransitionOperation; }>;
+    readonly read: GroupMutationRead;
+    readonly facts: GroupMutationFacts;
+    readonly stored: Group;
+}
+
 function computeFenceRejection(
-    command: Extract<GroupMutationCommand, { operation: GroupLifecycleTransitionOperation; }>,
-    read: GroupMutationRead,
-    facts: GroupMutationFacts,
-    stored: Group
+    { command, read, facts, stored }: ComputeFenceRejectionInput
 ): GroupMutationComputed | null {
     const expectedFormationEpoch = command.input.expectedFormationEpoch;
     if (expectedFormationEpoch !== null && expectedFormationEpoch !== stored.formationEpoch) {
