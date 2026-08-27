@@ -16,6 +16,11 @@ import type {
     GroupStatus
 } from '@shared/api/group-types.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import type {
+    GroupAcceptedLayoutRow,
+    GroupPlannedLayoutRow,
+    PlannedLayoutPromotion
+} from './aggregate/compute-planned-layout-promotion.ts';
 
 import type { GroupPolicyCapacityConfig } from '@shared-server/rallar-system/group-state/policy/group-membership-admission-policy.ts';
 import type { RuntimeStateEntryValue } from '../../../runtime-state/runtime-state-json-store.ts';
@@ -316,14 +321,17 @@ export type GroupMutationRead = Readonly<{
      */
     activeMemberPrincipalIds: readonly string[] | null;
     /**
-     * The stored planned layout's identity, read only for commands that carry
-     * a layout fence so compute can validate the fence against durable
-     * authority. Null when the command carries no layout fence, when no
-     * planned row exists, or when the deployment wired the constant null
-     * reader — the last two are indistinguishable here and both fence
-     * layout-bound commands closed as no-planned-layout.
+     * The stored planned layout row — identity, snapshot and revision — read
+     * for commands whose fence or promotion consumes it (activateGroup
+     * always, layout-fenced failGroupFormation, applyPlannedLayout). Null
+     * when the command reads no layout, when no planned row exists, or when
+     * the deployment wired the constant null reader — the last two are
+     * indistinguishable here and both fence layout-bound commands closed as
+     * no-planned-layout.
      */
-    plannedLayoutIdentity: GroupLayoutIdentity | null;
+    plannedLayoutRow: GroupPlannedLayoutRow | null;
+    /** The accepted slot, read only by the promotion-capable operations. */
+    acceptedLayoutRow: GroupAcceptedLayoutRow | null;
 }>;
 
 /**
@@ -431,6 +439,12 @@ export type GroupMutationComputed =
         idempotency: GroupMutationIdempotencyRecord | null;
         outboxEntries: readonly ResourceEntry[];
         lifecyclePolicy: GroupLifecyclePolicy | null;
+        /**
+         * The accepted-layout facts an activation or applyPlannedLayout
+         * commits atomically with the group row (product decisions 24/42);
+         * null for every other operation and when no plan exists to promote.
+         */
+        acceptedLayoutPromotion: Extract<PlannedLayoutPromotion, { outcome: 'apply'; }> | null;
     }>;
 
 export type GroupMutationComputedWrite = Extract<GroupMutationComputed, { outcome: 'write'; }>;
@@ -461,6 +475,16 @@ export function isLayoutFencedGroupMutationCommand(command: GroupMutationCommand
         (command.operation === 'activateGroup' || command.operation === 'failGroupFormation') &&
         command.input.expectedLayout !== null
     );
+}
+
+/**
+ * True when the command's compute consults the stored layout rows: every
+ * activation reads them for the promotion effect (operator activations
+ * included), and a layout-fenced formation failure reads the planned row for
+ * its fence.
+ */
+export function readsGroupLayoutRows(command: GroupMutationCommand): boolean {
+    return command.operation === 'activateGroup' || isLayoutFencedGroupMutationCommand(command);
 }
 
 export type GroupAdmissionDecisionOperation = Extract<

@@ -202,9 +202,10 @@ function assembleSequentialGroupMutationRead({
         presenceSummary: presenceSummary ?? null,
         lifecyclePolicy,
         activeMemberPrincipalIds,
-        // The layout-fence read is attached by the service for fenced
-        // commands; the read layer itself never consults it.
-        plannedLayoutIdentity: null
+        // The layout rows are attached by the service for the commands that
+        // consult them; the read layer itself never does.
+        plannedLayoutRow: null,
+        acceptedLayoutRow: null
     };
 }
 

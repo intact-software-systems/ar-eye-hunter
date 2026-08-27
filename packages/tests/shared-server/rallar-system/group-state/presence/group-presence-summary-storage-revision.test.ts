@@ -180,7 +180,8 @@ function mutationRead(storageRevision: number): GroupMutationRead {
         // upsertMember consults the admission policy; absent means open admission.
         lifecyclePolicy: { status: 'absent' },
         activeMemberPrincipalIds: null,
-        plannedLayoutIdentity: null
+        plannedLayoutRow: null,
+        acceptedLayoutRow: null
     } as GroupMutationRead;
 }
 

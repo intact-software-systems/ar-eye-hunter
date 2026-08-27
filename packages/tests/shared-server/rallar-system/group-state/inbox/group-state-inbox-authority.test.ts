@@ -251,7 +251,8 @@ describe('GroupStateInboxService authenticated authority', () => {
             {
                 runtimeRepository,
                 serviceId: 'server-12345678',
-                readPlannedLayoutIdentity: async () => null,
+                readPlannedLayoutRow: async () => null,
+                readAcceptedLayoutRow: async () => null,
                 now: () => nowEpochMs,
                 groupStateEventStore: new InMemoryGroupStateEventStore(),
                 authSessionRepository: authSessions

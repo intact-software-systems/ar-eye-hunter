@@ -42,7 +42,11 @@ import {
 import { recordRallarTiming, type RallarTimingSink } from '@shared-server/rallar-system/observability/timing.ts';
 import { PSqlClientStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-client-state-event-repository.ts';
 import { PSqlGroupStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-group-state-event-repository.ts';
-import { RtcTopologySnapshotRepository } from '@shared-server/rallar-system/topology/persistence/rtc-topology-snapshot-repository.ts';
+import {
+    RTC_TOPOLOGY_ACCEPTED_SNAPSHOTS_NAMESPACE,
+    RtcTopologySnapshotRepository
+} from '@shared-server/rallar-system/topology/persistence/rtc-topology-snapshot-repository.ts';
+import { RtcTopologyInputFingerprintRepository } from '@shared-server/rallar-system/topology/replay/work/rtc-topology-input-fingerprint.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import { toGroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
 import type { RallarCrdtDocumentTypePolicy } from '@shared/crdt/mod.ts';
@@ -147,7 +151,14 @@ export function createApiV1MutationRuntime(
     const resources = createApiV1MutationResources(input.database);
     const stateDependencies = createApiV1StateMutationDependencies(input, resources);
     const mutationFactories = createApiV1MutationInboxFactories(input, resources);
-    const topologySnapshotRepository = new RtcTopologySnapshotRepository(
+    const plannedSnapshotRepository = new RtcTopologySnapshotRepository(
+        resources.runtimeStateRepository
+    );
+    const acceptedSnapshotRepository = new RtcTopologySnapshotRepository(
+        resources.runtimeStateRepository,
+        RTC_TOPOLOGY_ACCEPTED_SNAPSHOTS_NAMESPACE
+    );
+    const topologyFingerprintRepository = new RtcTopologyInputFingerprintRepository(
         resources.runtimeStateRepository
     );
     const groupStateService = createCachedGroupStateService({
@@ -158,9 +169,23 @@ export function createApiV1MutationRuntime(
             groupStateEventStore: resources.groupStateEventStore,
             serviceId: input.serviceId,
             timing: input.timing,
-            readPlannedLayoutIdentity: async (ref) => {
-                const planned = await topologySnapshotRepository.findSnapshot(ref);
-                return planned ? toGroupLayoutIdentity(planned) : null;
+            readPlannedLayoutRow: async (ref) => {
+                const planned = await plannedSnapshotRepository.findSnapshotEntry(ref);
+                if (!planned) {
+                    return null;
+                }
+                return {
+                    snapshot: planned.value,
+                    identity: toGroupLayoutIdentity(planned.value),
+                    revision: planned.entry.revision,
+                    inputFingerprint: await topologyFingerprintRepository.findFingerprint(ref)
+                };
+            },
+            readAcceptedLayoutRow: async (ref) => {
+                const accepted = await acceptedSnapshotRepository.findSnapshotEntry(ref);
+                return accepted
+                    ? { identity: toGroupLayoutIdentity(accepted.value), revision: accepted.entry.revision }
+                    : null;
             }
         }),
         cache: resources.groupSnapshotCache

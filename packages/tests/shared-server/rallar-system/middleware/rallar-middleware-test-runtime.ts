@@ -62,7 +62,8 @@ export function createRallarMiddlewareTestRuntime(
         groupStateEventStore: database.groupEventStore,
         authSessionRepository: authSessions,
         serviceId: TEST_SERVICE_ID,
-        readPlannedLayoutIdentity: async () => null
+        readPlannedLayoutRow: async () => null,
+        readAcceptedLayoutRow: async () => null
     });
     const clientsRepository = createTestClientStateRepository(
         runtimeRepository,

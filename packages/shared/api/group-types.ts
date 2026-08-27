@@ -1,6 +1,10 @@
 import type { ApiJsonObject } from './api-json-value.ts';
-import type { GroupFormationOutcome, GroupLifecycleState, GroupTransportState } from './group-lifecycle/group-lifecycle-policy.ts';
 import type { GroupLayoutIdentity } from './group-lifecycle/group-layout-identity.ts';
+import type {
+    GroupFormationOutcome,
+    GroupLifecycleState,
+    GroupTransportState
+} from './group-lifecycle/group-lifecycle-policy.ts';
 import type { MutationActor } from './mutation-actor.ts';
 
 export type ApplicationId = string;

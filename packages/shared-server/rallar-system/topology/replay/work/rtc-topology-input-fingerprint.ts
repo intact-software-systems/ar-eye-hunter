@@ -15,6 +15,25 @@ import type { RtcTopologyKindHysteresisWidths } from '../../runtime/rallar-rtc-t
 
 export const RTC_TOPOLOGY_INPUT_FINGERPRINTS_NAMESPACE = 'rtc-topology:input-fingerprints';
 
+/** The fingerprint copied at promotion (plan slice 4a): accepted beside planned. */
+export const RTC_TOPOLOGY_ACCEPTED_INPUT_FINGERPRINTS_NAMESPACE = 'rtc-topology:accepted-input-fingerprints';
+
+/** The stored fingerprint row encoding, shared by putFingerprint and the promotion effect. */
+export function toStoredRtcTopologyInputFingerprintValue(ref: GroupRef, fingerprint: string): string {
+    if (!/^sha256:[0-9a-f]{64}$/.test(fingerprint)) {
+        throw new TypeError('RTC topology input fingerprint is invalid');
+    }
+    const stored: StoredRtcTopologyInputFingerprint = {
+        groupRef: {
+            applicationId: ref.applicationId,
+            workspaceId: ref.workspaceId,
+            groupId: ref.groupId
+        },
+        fingerprint
+    };
+    return JSON.stringify(stored);
+}
+
 export interface RtcTopologyInputFingerprintFacts {
     readonly group: GroupSnapshot;
     readonly effectiveConfig: EffectiveGroupTopologyConfig;

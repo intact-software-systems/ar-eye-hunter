@@ -21,6 +21,23 @@ const PLANNED_LAYOUT: GroupLayoutIdentity = {
 
 const SUPERSEDING_LAYOUT: GroupLayoutIdentity = { ...PLANNED_LAYOUT, groupRevision: 4, version: 3 };
 
+const PLANNED_SNAPSHOT = {
+    groupRef: GROUP_REF,
+    overlayId: 'fence-read-overlay',
+    name: 'fence-read-overlay',
+    kind: 'tree',
+    degreeLimit: 2,
+    version: PLANNED_LAYOUT.version,
+    state: 'active',
+    sourceGroupStateCausalRevision: {
+        groupRevision: PLANNED_LAYOUT.groupRevision,
+        presenceRevision: PLANNED_LAYOUT.presenceRevision
+    },
+    activeSessionIds: [],
+    nextHopsBySessionId: {},
+    updatedAtEpochMs: 900
+} as never;
+
 // The one place the whole fence read chain runs against the durable service:
 // the gate in service.read, the reader invocation, the attached identity, and
 // compute consuming exactly what the service read — not a hand-built fixture.
@@ -34,10 +51,16 @@ async function createFenceReadHarness() {
             return () => `fence-read-id-${++generated}`;
         })(),
         serviceId: 'fence-read-service',
-        readPlannedLayoutIdentity: (ref) => {
+        readPlannedLayoutRow: (ref) => {
             readRefs.push(ref);
-            return Promise.resolve(PLANNED_LAYOUT);
-        }
+            return Promise.resolve({
+                snapshot: PLANNED_SNAPSHOT,
+                identity: PLANNED_LAYOUT,
+                revision: 7,
+                inputFingerprint: null
+            });
+        },
+        readAcceptedLayoutRow: async () => null
     });
     await service.createGroup(SCOPE, {
         groupId: GROUP_REF.groupId,
@@ -73,7 +96,7 @@ describe('formation fence through the durable service read', () => {
         const read = await service.read(prepared);
 
         expect(readRefs).toEqual([GROUP_REF]);
-        expect(read.plannedLayoutIdentity).toEqual(PLANNED_LAYOUT);
+        expect(read.plannedLayoutRow?.identity).toEqual(PLANNED_LAYOUT);
     });
 
     it('never invokes the reader for a criterion command without a layout fence', async () => {
@@ -85,7 +108,7 @@ describe('formation fence through the durable service read', () => {
         const read = await service.read(prepared);
 
         expect(readRefs).toEqual([]);
-        expect(read.plannedLayoutIdentity).toBeNull();
+        expect(read.plannedLayoutRow).toBeNull();
     });
 
     it('feeds compute the service-read identity: superseded fences reject, matches pass', async () => {

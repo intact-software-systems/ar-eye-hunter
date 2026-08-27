@@ -17,7 +17,8 @@ describe('GroupStateService command idempotency', () => {
             runtimeRepository: new FakeRuntimeStateRepository(),
             now: () => 1_000,
             serviceId: 'group-service',
-            readPlannedLayoutIdentity: async () => null,
+            readPlannedLayoutRow: async () => null,
+            readAcceptedLayoutRow: async () => null,
             timing: (event) => timingEvents.push(event)
         });
 
@@ -53,7 +54,8 @@ describe('GroupStateService command idempotency', () => {
             runtimeRepository,
             now: () => 1_000,
             serviceId: 'group-service',
-            readPlannedLayoutIdentity: async () => null
+            readPlannedLayoutRow: async () => null,
+            readAcceptedLayoutRow: async () => null
         });
         const groupRef = toGroupRef('room-1');
         const request = {
@@ -147,7 +149,8 @@ describe('GroupStateService command idempotency', () => {
             runtimeRepository,
             now: () => 1_000,
             serviceId: 'group-service',
-            readPlannedLayoutIdentity: async () => null
+            readPlannedLayoutRow: async () => null,
+            readAcceptedLayoutRow: async () => null
         });
 
         await expect(
@@ -185,7 +188,8 @@ describe('GroupStateService command idempotency', () => {
             runtimeRepository,
             now: () => 1_000,
             serviceId: 'group-service',
-            readPlannedLayoutIdentity: async () => null
+            readPlannedLayoutRow: async () => null,
+            readAcceptedLayoutRow: async () => null
         });
 
         await service.createGroup(SCOPE, {
@@ -226,7 +230,8 @@ describe('GroupStateService command idempotency', () => {
             runtimeRepository,
             now: () => 2_000,
             serviceId: 'group-service',
-            readPlannedLayoutIdentity: async () => null
+            readPlannedLayoutRow: async () => null,
+            readAcceptedLayoutRow: async () => null
         });
         const groupRef = toGroupRef('room-2');
         const request = {
@@ -268,7 +273,8 @@ describe('GroupStateService command idempotency', () => {
             runtimeRepository,
             now: () => 3_000,
             serviceId: 'group-service',
-            readPlannedLayoutIdentity: async () => null
+            readPlannedLayoutRow: async () => null,
+            readAcceptedLayoutRow: async () => null
         });
         const groupRef = toGroupRef('room-5');
         const request = {

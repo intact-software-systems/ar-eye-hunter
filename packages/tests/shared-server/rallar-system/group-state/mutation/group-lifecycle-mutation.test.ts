@@ -315,7 +315,13 @@ function criterionRead(
         ...transitionRead(groupOverrides),
         actorMember: null,
         actorMemberEntry: null,
-        plannedLayoutIdentity
+        plannedLayoutRow: plannedLayoutIdentity === null ? null : {
+            snapshot: {} as never,
+            identity: plannedLayoutIdentity,
+            revision: 5,
+            inputFingerprint: null
+        },
+        acceptedLayoutRow: null
     } as GroupMutationRead;
 }
 
@@ -407,7 +413,8 @@ function transitionRead(groupOverrides: Partial<Group>, options: TransitionReadO
         presenceSummary: null,
         lifecyclePolicy,
         activeMemberPrincipalIds: [actorPrincipalId],
-        plannedLayoutIdentity: null
+        plannedLayoutRow: null,
+        acceptedLayoutRow: null
     } as GroupMutationRead;
 }
 
