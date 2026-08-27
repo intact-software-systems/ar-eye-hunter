@@ -6,17 +6,27 @@ describe('Branch Release Gate result', () => {
     // A superseded run cancels its jobs, leaving their outputs empty. The conclusion must name that
     // rather than reporting the chain of derived failures an empty reuse decision would produce.
     it.each([
-        ['governance', 'cancelled', 'cancelled', 'skipped', 'cancelled'],
-        ['release', 'success', 'success', 'cancelled', 'cancelled']
+        ['governance', 'cancelled', 'cancelled', 'skipped', 'cancelled', 'skipped'],
+        ['release', 'success', 'success', 'cancelled', 'cancelled', 'skipped'],
+        ['observation', 'success', 'success', 'skipped', 'skipped', 'cancelled']
     ])(
         'reports a cancelled %s run as cancelled, not as a failure',
-        (_name, governanceResult, selectionResult, releaseResult, publicationResult) => {
+        (
+            _name,
+            governanceResult,
+            selectionResult,
+            releaseResult,
+            publicationResult,
+            rtcObservationResult
+        ) => {
             const issues = validateBranchReleaseConclusion({
                 governanceResult,
                 selectionResult,
+                mode: '',
                 reuse: '',
                 releaseResult,
-                publicationResult
+                publicationResult,
+                rtcObservationResult
             });
 
             expect(issues).toHaveLength(1);
@@ -27,34 +37,57 @@ describe('Branch Release Gate result', () => {
     );
 
     it.each([
-        ['fresh validation', 'false', 'success', 'success'],
-        ['same-PR content reuse', 'true', 'skipped', 'skipped']
-    ])('accepts successful %s', (_name, reuse, releaseResult, publicationResult) => {
-        expect(
-            validateBranchReleaseConclusion({
-                governanceResult: 'success',
-                selectionResult: 'success',
-                reuse,
-                releaseResult,
-                publicationResult
-            })
-        ).toEqual([]);
-    });
+        ['fresh validation', 'broad', 'false', 'success', 'success', 'skipped'],
+        ['same-PR content reuse', 'reuse', 'true', 'skipped', 'skipped', 'skipped'],
+        ['RTC observation integrity', 'rtc-observation', 'false', 'skipped', 'skipped', 'success']
+    ])(
+        'accepts successful %s',
+        (_name, mode, reuse, releaseResult, publicationResult, rtcObservationResult) => {
+            expect(
+                validateBranchReleaseConclusion({
+                    governanceResult: 'success',
+                    selectionResult: 'success',
+                    mode,
+                    reuse,
+                    releaseResult,
+                    publicationResult,
+                    rtcObservationResult
+                })
+            ).toEqual([]);
+        }
+    );
 
     it('rejects every failed constituent without an external deviation', () => {
         expect(
             validateBranchReleaseConclusion({
                 governanceResult: 'failure',
                 selectionResult: 'failure',
+                mode: 'broad',
                 reuse: 'false',
                 releaseResult: 'failure',
-                publicationResult: 'failure'
+                publicationResult: 'failure',
+                rtcObservationResult: 'failure'
             })
         ).toEqual([
             'Governance Gate did not succeed',
             'validation-evidence selection did not succeed',
             'broad Release Gate did not succeed',
-            'fresh validation evidence was not published'
+            'fresh validation evidence was not published',
+            'broad validation requires RTC observation integrity to be skipped'
         ]);
+    });
+
+    it('rejects a malformed or contradictory selection mode', () => {
+        expect(
+            validateBranchReleaseConclusion({
+                governanceResult: 'success',
+                selectionResult: 'success',
+                mode: 'unexpected',
+                reuse: 'false',
+                releaseResult: 'skipped',
+                publicationResult: 'skipped',
+                rtcObservationResult: 'skipped'
+            })
+        ).toContain('validation mode must be broad, reuse, or rtc-observation');
     });
 });

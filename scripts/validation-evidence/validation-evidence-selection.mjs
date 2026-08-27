@@ -1,9 +1,34 @@
 import { execFileSync } from 'node:child_process';
 
 import { computeBuildAffectingTreeDigest } from './build-affecting-tree.mjs';
+import { inspectRtcObservationChange } from './rtc-observation-change.mjs';
 import { readValidationEvidence } from './validation-evidence-record.mjs';
 
 export const VALIDATION_EVIDENCE_LIFETIME_MS = 7 * 24 * 60 * 60 * 1000;
+
+export function selectValidationEvidence(input) {
+    if (!fullCommitSha(input.candidate.base)) {
+        throw new Error('candidate base commit is malformed');
+    }
+    const observation = inspectRtcObservationChange({
+        repoRoot: input.repoRoot,
+        base: input.candidate.base,
+        head: input.candidate.head
+    });
+    if (observation.observationOnly) {
+        return {
+            ...observation,
+            mode: 'rtc-observation',
+            reuse: false,
+            buildTreeDigest: computeBuildAffectingTreeDigest({
+                repoRoot: input.repoRoot,
+                headSha: input.candidate.head
+            })
+        };
+    }
+    const selected = selectReusableValidationEvidence(input);
+    return { ...selected, mode: selected.reuse ? 'reuse' : 'broad' };
+}
 
 export function readWorkflowRunsEnvelope(source) {
     let envelope;

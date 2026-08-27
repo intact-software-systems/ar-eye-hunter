@@ -21,7 +21,12 @@ describe('build-affecting tree', () => {
         ['application documentation', 'apps/example/README.md'],
         ['package documentation', 'packages/example/docs/architecture.md'],
         ['historical plan documentation', 'plans/example-plan.md'],
-        ['pull request text', '.github/PULL_REQUEST_TEMPLATE.md']
+        ['pull request text', '.github/PULL_REQUEST_TEMPLATE.md'],
+        [
+            'RTC performance observation archive',
+            'performance-observations/rtc-b05/2026/08/27/20260827T010203Z-123456789abc-e2-browser-gh42-a1.zip'
+        ],
+        ['RTC performance observation index', 'performance-observations/rtc-b05/index.jsonl']
     ])('ignores changed %s', (_name, changedPath) => {
         const fixture = createGitFixture();
         const before = computeBuildAffectingTreeDigest({ repoRoot: fixture, headSha: 'HEAD' });
