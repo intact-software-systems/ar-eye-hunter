@@ -8,6 +8,7 @@ const approvedRepositoryImportPrefixes = ['@shared/', '@shared-web/', '@shared-s
 const approvedExternalImports = new Set([
     '@playwright/test',
     '@std/path',
+    'fflate',
     'graphology',
     'postgres',
     'vitest'
@@ -102,6 +103,7 @@ describe('shared RTC benchmark package boundaries', () => {
                 'node:path',
                 '@playwright/test',
                 '@std/path',
+                'fflate',
                 'graphology',
                 'postgres',
                 'vitest'

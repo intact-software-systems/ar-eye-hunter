@@ -2461,12 +2461,14 @@
       "packages/shared-rtc-bench": {
         "dependencies": [
           "jsr:@std/path@^1.0.9",
+          "npm:fflate@0.8.2",
           "npm:graphology@0.26.0",
           "npm:postgres@^3.4.9"
         ],
         "packageJson": {
           "dependencies": [
-            "npm:@types/deno@2.7.0"
+            "npm:@types/deno@2.7.0",
+            "npm:fflate@0.8.2"
           ]
         }
       },

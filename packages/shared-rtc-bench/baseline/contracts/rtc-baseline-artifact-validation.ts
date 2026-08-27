@@ -15,6 +15,7 @@ import type {
     RtcBaselineSampleIdentityDto,
     RtcBaselineSummaryDto
 } from './rtc-baseline-contracts.ts';
+import { isRtcBaselineId } from './rtc-baseline-id.ts';
 import { validateRtcBaselineId } from './rtc-baseline-validation.ts';
 type AccountingIdentity = RtcBaselineSampleIdentityDto | RtcBaselineCohortIdentityDto;
 type FailureIdentity = Pick<RtcBaselineFinalizationFailureDto, 'baselineId'>;
@@ -88,10 +89,7 @@ export function validateRtcBaselineStringRule(
     if (rule.format === 'sha256' && !/^[0-9a-f]{64}$/.test(value)) {
         return [issue(path, 'invalid-sha256', 'Expected a lowercase 64-character SHA-256 digest.')];
     }
-    if (
-        rule.format === 'baselineId' &&
-        !/^\d{8}-[0-9a-f]{12}-e[1-5]-(?:local|browser|memory|pg|remote)(?:-repeat-01)?$/.test(value)
-    ) {
+    if (rule.format === 'baselineId' && !isRtcBaselineId(value)) {
         return [
             issue(path, 'invalid-baseline-id', 'Baseline ID does not match the canonical grammar.')
         ];

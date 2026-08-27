@@ -29,6 +29,9 @@ import {
 } from './rtc-baseline-statistics.ts';
 
 export interface RtcBaselineFinalizedArtifactVerifier {
+    readStructurallyVerifiedArtifacts(
+        baselineId: string
+    ): Promise<RtcBaselineResult<RtcBaselineVerifiedArtifacts>>;
     readVerifiedArtifacts(
         baselineId: string
     ): Promise<RtcBaselineResult<RtcBaselineVerifiedArtifacts>>;
@@ -71,8 +74,7 @@ function validateProjectedArtifacts(value: RtcBaselineReadFinalizedArtifacts): v
             cohorts: value.projection.cohortOutcomes,
             failures: value.projection.failures,
             summary: value.summary
-        }),
-        ...validateRtcBaselinePassingSummary(value.summary)
+        })
     );
 }
 
@@ -173,15 +175,24 @@ export function createRtcBaselineFinalizedArtifactVerifier(
     dependencies: RtcBaselineFinalizedReaderDependencies
 ): RtcBaselineFinalizedArtifactVerifier {
     const artifactReader = createRtcBaselineFinalizedArtifactReader(dependencies);
+    async function readStructurallyVerifiedArtifacts(baselineId: string) {
+        const read = await artifactReader.read(baselineId);
+        if (!read.ok) {
+            return read;
+        }
+        validateProjectedArtifacts(read.value);
+        validateArtifactSet(baselineId, read.value);
+        return toVerifiedArtifacts(baselineId, read.value);
+    }
     return {
+        readStructurallyVerifiedArtifacts,
         async readVerifiedArtifacts(baselineId) {
-            const read = await artifactReader.read(baselineId);
-            if (!read.ok) {
-                return read;
+            const verified = await readStructurallyVerifiedArtifacts(baselineId);
+            if (!verified.ok) {
+                return verified;
             }
-            validateProjectedArtifacts(read.value);
-            validateArtifactSet(baselineId, read.value);
-            return toVerifiedArtifacts(baselineId, read.value);
+            const issues = validateRtcBaselinePassingSummary(verified.value.summary);
+            return issues.length > 0 ? { ok: false, issues } : verified;
         },
         validateRepeatLink: (baselineId, summary) => validateRepeatLink(dependencies, baselineId, summary)
     };

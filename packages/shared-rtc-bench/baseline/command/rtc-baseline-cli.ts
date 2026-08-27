@@ -1,3 +1,11 @@
+import { createRtcB05ObservationDenoRuntime } from '../observation/rtc-b05-observation-deno-runtime.ts';
+import { createRtcB05ObservationRunner } from '../observation/rtc-b05-observation-runner.ts';
+import { verifyRtcPerformanceObservationArchive } from '../observation/rtc-performance-observation-archive.ts';
+import { isRtcPerformanceObservationCommand } from '../observation/rtc-performance-observation-cli-grammar.ts';
+import {
+    runRtcPerformanceObservationCli,
+    type RtcPerformanceObservationCliDependencies
+} from '../observation/rtc-performance-observation-cli.ts';
 import { createDenoRtcBaselineAdapters } from '../runtime/rtc-baseline-deno-adapters.ts';
 import { createRtcBaselineDenoRuntime } from '../runtime/rtc-baseline-deno-runtime.ts';
 import type { RtcBaselineEnvelope } from '../runtime/rtc-baseline-envelope.ts';
@@ -7,6 +15,7 @@ import { writeRtcBaselineCliOutput } from './write-rtc-baseline-cli-output.ts';
 interface CliInput {
     args: readonly string[];
     envelope: RtcBaselineEnvelope;
+    observation?: RtcPerformanceObservationCliDependencies;
     writeStdout(value: string): void;
     writeStderr(value: string): void;
 }
@@ -89,6 +98,20 @@ async function dispatch(envelope: RtcBaselineEnvelope, command: RtcBaselineParse
 }
 
 export async function runRtcBaselineCli(input: CliInput) {
+    if (isRtcPerformanceObservationCommand(input.args[0])) {
+        if (input.observation === undefined) {
+            input.writeStderr(
+                '[{"path":"$.observation","code":"missing-observation-runtime","message":"Observation runtime is unavailable."}]\n'
+            );
+            return 1;
+        }
+        return runRtcPerformanceObservationCli({
+            args: input.args,
+            ...input.observation,
+            writeStdout: input.writeStdout,
+            writeStderr: input.writeStderr
+        });
+    }
     const parsed = parseRtcBaselineCommand(input.args);
     if (!parsed.ok) {
         input.writeStderr(`${JSON.stringify(parsed.issues)}\n`);
@@ -168,14 +191,34 @@ function defaultRuntime() {
 }
 
 export function createDefaultRtcBaselineEnvelope() {
-    return createRtcBaselineDenoRuntime(createDenoRtcBaselineAdapters(defaultRuntime()));
+    return createDefaultRtcBaselineCliComposition().envelope;
+}
+
+function createDefaultRtcBaselineCliComposition() {
+    const runtime = defaultRuntime();
+    const adapters = createDenoRtcBaselineAdapters(runtime);
+    const envelope = createRtcBaselineDenoRuntime(adapters);
+    const observationDependencies = createRtcB05ObservationDenoRuntime({
+        runtime,
+        adapters,
+        envelope
+    });
+    return {
+        envelope,
+        observation: {
+            runner: createRtcB05ObservationRunner(observationDependencies),
+            readFile: runtime.readFile,
+            verifyArchive: verifyRtcPerformanceObservationArchive
+        }
+    };
 }
 
 if (import.meta.main) {
     const deno = Deno;
+    const composition = createDefaultRtcBaselineCliComposition();
     const code = await runRtcBaselineCli({
         args: deno.args,
-        envelope: createDefaultRtcBaselineEnvelope(),
+        ...composition,
         writeStdout: (value) => writeRtcBaselineCliOutput(deno.stdout, value),
         writeStderr: (value) => writeRtcBaselineCliOutput(deno.stderr, value)
     });
