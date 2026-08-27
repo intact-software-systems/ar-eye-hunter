@@ -17,6 +17,7 @@ describe('GroupStateService command idempotency', () => {
             runtimeRepository: new FakeRuntimeStateRepository(),
             now: () => 1_000,
             serviceId: 'group-service',
+            readPlannedLayoutIdentity: async () => null,
             timing: (event) => timingEvents.push(event)
         });
 
@@ -51,7 +52,8 @@ describe('GroupStateService command idempotency', () => {
         const service = createGroupStateService({
             runtimeRepository,
             now: () => 1_000,
-            serviceId: 'group-service'
+            serviceId: 'group-service',
+            readPlannedLayoutIdentity: async () => null
         });
         const groupRef = toGroupRef('room-1');
         const request = {
@@ -144,7 +146,8 @@ describe('GroupStateService command idempotency', () => {
         const service = createGroupStateService({
             runtimeRepository,
             now: () => 1_000,
-            serviceId: 'group-service'
+            serviceId: 'group-service',
+            readPlannedLayoutIdentity: async () => null
         });
 
         await expect(
@@ -181,7 +184,8 @@ describe('GroupStateService command idempotency', () => {
         const service = createGroupStateService({
             runtimeRepository,
             now: () => 1_000,
-            serviceId: 'group-service'
+            serviceId: 'group-service',
+            readPlannedLayoutIdentity: async () => null
         });
 
         await service.createGroup(SCOPE, {
@@ -221,7 +225,8 @@ describe('GroupStateService command idempotency', () => {
         const service = createGroupStateService({
             runtimeRepository,
             now: () => 2_000,
-            serviceId: 'group-service'
+            serviceId: 'group-service',
+            readPlannedLayoutIdentity: async () => null
         });
         const groupRef = toGroupRef('room-2');
         const request = {
@@ -262,7 +267,8 @@ describe('GroupStateService command idempotency', () => {
         const service = createGroupStateService({
             runtimeRepository,
             now: () => 3_000,
-            serviceId: 'group-service'
+            serviceId: 'group-service',
+            readPlannedLayoutIdentity: async () => null
         });
         const groupRef = toGroupRef('room-5');
         const request = {

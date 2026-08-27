@@ -24,6 +24,12 @@ export function validateGroupMutationAuthority(
     }
 }
 
+/**
+ * The total mode-by-operation capability matrix (plan decision I19): each
+ * internal producer holds exactly the operations it needs, every cross-product
+ * outside the table fails closed, and the three modes whose operations arrive
+ * in later slices admit nothing until those operations exist.
+ */
 function validateInternalMutationAuthority(
     command: GroupMutationCommand,
     facts: GroupMutationFacts
@@ -31,36 +37,60 @@ function validateInternalMutationAuthority(
     if (facts.authenticatedAuthority !== null) {
         throw new TypeError('Internal group mutation cannot use authenticated authority facts');
     }
-    if (facts.internalAuthority === 'formation-criterion') {
-        validateFormationCriterionAuthority(command);
-    }
-    else if (command.operation !== 'disconnectPresence') {
-        throw new TypeError('Internal group authority is limited to presence maintenance');
-    }
     if (command.input.actorPrincipalId !== null || command.input.actorSessionId !== null) {
         throw new TypeError('Internal group maintenance cannot claim semantic actor authority');
     }
-    if (facts.internalAuthority === 'expiry' && command.input.reason !== 'expired') {
-        throw new TypeError('Group expiry authority requires an expiry command');
-    }
-    if (facts.internalAuthority === 'session-cleanup' && command.input.reason !== null) {
-        throw new TypeError('Group session cleanup authority has invalid command facts');
+    switch (facts.internalAuthority) {
+        case 'formation-criterion':
+            return validateFormationCriterionAuthority(command);
+        case 'expiry':
+            if (command.operation !== 'disconnectPresence' || command.input.reason !== 'expired') {
+                throw new TypeError('Group expiry authority requires an expiry command');
+            }
+            return;
+        case 'session-cleanup':
+            if (command.operation !== 'disconnectPresence' || command.input.reason !== null) {
+                throw new TypeError('Group session cleanup authority has invalid command facts');
+            }
+            return;
+        case 'formation-automation':
+            throw new TypeError(
+                'Formation-automation authority is limited to automatic stage commands, none of which exist yet'
+            );
+        case 'topology-publication':
+            throw new TypeError(
+                'Topology-publication authority is limited to applyPlannedLayout, which does not exist yet'
+            );
+        case 'activation-status':
+            throw new TypeError(
+                'Activation-status authority is limited to the status update, which does not exist yet'
+            );
+        case 'none':
+            throw new TypeError('Internal group mutation cannot carry the none authority mode');
     }
 }
 
 function validateFormationCriterionAuthority(command: GroupMutationCommand): void {
-    if (
-        command.operation !== 'activateGroup' &&
-        command.operation !== 'failGroupFormation' &&
-        command.operation !== 'startGroupEstablishment'
-    ) {
-        throw new TypeError('Formation-criterion authority is limited to criterion transitions');
-    }
-    if (
-        (command.operation === 'activateGroup' || command.operation === 'failGroupFormation') &&
-        command.input.observedRate === null
-    ) {
-        throw new TypeError('Criterion transitions must carry the observed rate');
+    switch (command.operation) {
+        case 'startGroupEstablishment':
+            if (command.input.expectedFormationEpoch === null) {
+                throw new TypeError('Criterion transitions must carry the expected formation epoch fence');
+            }
+            return;
+        case 'activateGroup':
+        case 'failGroupFormation':
+            if (command.input.expectedFormationEpoch === null) {
+                throw new TypeError('Criterion transitions must carry the expected formation epoch fence');
+            }
+            if (command.input.observedRate === null) {
+                throw new TypeError('Criterion transitions must carry the observed rate');
+            }
+            if (command.input.expectedLayout === null) {
+                throw new TypeError('Criterion transitions must carry the expected layout fence');
+            }
+            return;
+        default:
+            throw new TypeError('Formation-criterion authority is limited to criterion transitions');
     }
 }
 

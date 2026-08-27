@@ -38,7 +38,15 @@ export function validateGroupMutationFacts(facts: GroupMutationFacts): void {
     if (!/^sha256:[0-9a-f]{64}$/.test(facts.commandHash)) {
         throw new TypeError('Group mutation commandHash is invalid');
     }
-    const internalAuthorityModes = ['none', 'expiry', 'session-cleanup', 'formation-criterion'];
+    const internalAuthorityModes = [
+        'none',
+        'expiry',
+        'session-cleanup',
+        'formation-criterion',
+        'formation-automation',
+        'topology-publication',
+        'activation-status'
+    ];
     if (!internalAuthorityModes.includes(facts.internalAuthority)) {
         throw new TypeError('Group mutation internal authority is invalid');
     }

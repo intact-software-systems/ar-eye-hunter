@@ -66,6 +66,9 @@ function createTimedPreparationOperations(
     | 'prepareExpiredPresenceMutations'
     | 'prepareSessionCleanupMutations'
     | 'prepareFormationCriterionMutation'
+    | 'prepareFormationAutomationMutation'
+    | 'prepareTopologyPublicationMutation'
+    | 'prepareActivationStatusMutation'
 > {
     return {
         authorizeMutation: async (descriptor, authority) =>
@@ -102,6 +105,27 @@ function createTimedPreparationOperations(
                 operation: 'prepareFormationCriterionMutation',
                 details: {},
                 action: async () => await service.prepareFormationCriterionMutation(command, atEpochMs)
+            }),
+        prepareFormationAutomationMutation: async (command, atEpochMs) =>
+            await timeGroupStateOperation({
+                ...input,
+                operation: 'prepareFormationAutomationMutation',
+                details: {},
+                action: async () => await service.prepareFormationAutomationMutation(command, atEpochMs)
+            }),
+        prepareTopologyPublicationMutation: async (command, atEpochMs) =>
+            await timeGroupStateOperation({
+                ...input,
+                operation: 'prepareTopologyPublicationMutation',
+                details: {},
+                action: async () => await service.prepareTopologyPublicationMutation(command, atEpochMs)
+            }),
+        prepareActivationStatusMutation: async (command, atEpochMs) =>
+            await timeGroupStateOperation({
+                ...input,
+                operation: 'prepareActivationStatusMutation',
+                details: {},
+                action: async () => await service.prepareActivationStatusMutation(command, atEpochMs)
             }),
         prepareSessionCleanupMutations: async (cleanup) =>
             await timeGroupStateOperation({

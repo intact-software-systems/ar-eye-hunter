@@ -79,7 +79,8 @@ export function createPostgresAppInboxWorkerServices(
         groupStateEventStore: new PSqlGroupStateEventRepository(input.sql),
         authSessionRepository: authSessions,
         now: () => input.atEpochMs,
-        serviceId: input.serviceId
+        serviceId: input.serviceId,
+        readPlannedLayoutIdentity: async () => null
     });
     const client = new AppClientInboxService(
         {

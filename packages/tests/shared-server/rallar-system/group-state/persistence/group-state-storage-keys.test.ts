@@ -343,6 +343,7 @@ function createMutationRead(): GroupMutationRead {
         authorityPresenceSessionEntries: [],
         presenceSummary: null,
         lifecyclePolicy: null,
-        activeMemberPrincipalIds: null
+        activeMemberPrincipalIds: null,
+        plannedLayoutIdentity: null
     } as GroupMutationRead;
 }

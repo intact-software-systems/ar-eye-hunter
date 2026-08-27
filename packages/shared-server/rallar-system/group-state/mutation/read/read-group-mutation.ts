@@ -1,3 +1,5 @@
+import type { GroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
+
 import { GroupStateRepository } from '../../persistence/group-state-repository.ts';
 import type { GroupMutationCommand, GroupMutationRead } from '../group-mutation-contracts.ts';
 import {
@@ -10,7 +12,8 @@ import { readSequentialGroupMutation } from './read-sequential-group-mutation.ts
 
 export async function readGroupMutation(
     repository: GroupStateRepository,
-    command: GroupMutationCommand
+    command: GroupMutationCommand,
+    plannedLayoutIdentity: GroupLayoutIdentity | null
 ): Promise<GroupMutationRead> {
     // Safe beside the exact batch because the policy document is written once
     // at creation and never updated in this release; a policy-update surface
@@ -32,5 +35,10 @@ export async function readGroupMutation(
             return exactRead;
         }
     }
-    return await readSequentialGroupMutation({ repository, command, lifecyclePolicy });
+    return await readSequentialGroupMutation({
+        repository,
+        command,
+        lifecyclePolicy,
+        plannedLayoutIdentity
+    });
 }

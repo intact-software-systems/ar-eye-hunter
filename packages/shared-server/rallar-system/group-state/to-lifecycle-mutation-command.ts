@@ -31,7 +31,10 @@ function toTransitionCommand(
         operation,
         aggregateRef: { ...descriptor.scope, groupId: descriptor.groupId },
         ...toGroupMutationIdentity(request.requestId, randomId),
-        input: toGroupMutationActorInput(request)
+        input: {
+            ...toGroupMutationActorInput(request),
+            expectedFormationEpoch: null
+        }
     };
 }
 
@@ -49,7 +52,9 @@ function toActivateCommand(
         input: {
             ...toGroupMutationActorInput(request),
             observedRate: request.observedRate ?? null,
-            degraded: request.degraded ?? null
+            degraded: request.degraded ?? null,
+            expectedFormationEpoch: null,
+            expectedLayout: null
         }
     };
 }
@@ -65,7 +70,9 @@ function toFailFormationCommand(
         ...toGroupMutationIdentity(request.requestId, randomId),
         input: {
             ...toGroupMutationActorInput(request),
-            observedRate: request.observedRate
+            observedRate: request.observedRate,
+            expectedFormationEpoch: null,
+            expectedLayout: null
         }
     };
 }

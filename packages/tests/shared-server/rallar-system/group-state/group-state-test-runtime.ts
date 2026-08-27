@@ -89,13 +89,14 @@ export interface AuthSessionInput {
 }
 
 type TestGroupStateServiceDependencies =
-    & Omit<GroupStateServiceDependencies, 'authSessionRepository' | 'groupStateEventStore' | 'runtimeRepository'>
+    & Omit<GroupStateServiceDependencies, 'authSessionRepository' | 'groupStateEventStore' | 'runtimeRepository' | 'readPlannedLayoutIdentity'>
     & Readonly<{
         runtimeRepository: RuntimeStateGuardedBatchTransactionalRepositoryLike;
         groupStateEventStoreFor?: (
             runtime: RuntimeStateOptimisticTransactionalRepositoryLike
         ) => GroupStateEventStore;
         sleep?: (delayMs: number) => Promise<void>;
+        readPlannedLayoutIdentity?: GroupStateServiceDependencies['readPlannedLayoutIdentity'];
     }>;
 
 export function authSession({
@@ -127,6 +128,7 @@ export function createTestGroupStateRuntime(
         now: dependencies.now,
         randomId: dependencies.randomId,
         serviceId: dependencies.serviceId,
+        readPlannedLayoutIdentity: dependencies.readPlannedLayoutIdentity ?? (async () => null),
         timing: dependencies.timing,
         authSessionRepository: {
             findBySessionId: (sessionId) => Promise.resolve(issued.get(sessionId))
