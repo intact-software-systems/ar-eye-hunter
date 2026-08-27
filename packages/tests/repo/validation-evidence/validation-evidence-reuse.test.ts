@@ -6,7 +6,7 @@ import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { createValidationEvidence } from '../../../../scripts/validation-evidence/validation-evidence-record.mjs';
-import { selectReusableValidationEvidence } from '../../../../scripts/validation-evidence/validation-evidence-selection.mjs';
+import { selectReusableValidationEvidence, selectValidationEvidence } from '../../../../scripts/validation-evidence/validation-evidence-selection.mjs';
 
 const repository = 'intact-software-systems/ar-eye-hunter';
 const workflowPath = '.github/workflows/branch-release-gate.yml';
@@ -19,6 +19,43 @@ afterEach(() => {
 });
 
 describe('same-PR validation reuse', () => {
+    it('selects rtc-observation before reuse and keeps broad and reuse modes explicit', () => {
+        const observationFixture = createFixture();
+        const observationId = '20260827T031500Z-eaf526518c70-e2-browser-gh123456789-a2';
+        const archivePath = `performance-observations/rtc-b05/2026/08/27/${observationId}.zip`;
+        const observationHead = commit(observationFixture.root, 'observation', {
+            [archivePath]: 'zip-bytes',
+            'performance-observations/rtc-b05/index.jsonl': `${
+                JSON.stringify({
+                    archive: { path: archivePath }
+                })
+            }\n`
+        });
+        expect(selectMode(observationFixture, observationHead)).toMatchObject({
+            mode: 'rtc-observation',
+            reuse: false,
+            reason: 'rtc-observation-only'
+        });
+
+        const reuseFixture = createFixture();
+        const reuseHead = commit(reuseFixture.root, 'docs', { 'docs/guide.md': 'clarified\n' });
+        expect(selectMode(reuseFixture, reuseHead)).toMatchObject({
+            mode: 'reuse',
+            reuse: true,
+            reason: 'reusable-validation-evidence'
+        });
+
+        const broadFixture = createFixture();
+        const broadHead = commit(broadFixture.root, 'code', {
+            'apps/example/main.ts': 'export const value = 2;\n'
+        });
+        expect(selectMode(broadFixture, broadHead)).toMatchObject({
+            mode: 'broad',
+            reuse: false,
+            reason: 'build-tree-digest-mismatch'
+        });
+    });
+
     it('reuses a successful run from the same PR when only non-build content changed', () => {
         const fixture = createFixture();
         const candidateHead = commit(fixture.root, 'docs', { 'docs/guide.md': 'clarified\n' });
@@ -41,6 +78,47 @@ describe('same-PR validation reuse', () => {
         expect(select(fixture, candidateHead)).toMatchObject({
             reuse: false,
             reason: 'build-tree-digest-mismatch'
+        });
+    });
+
+    it.each([
+        ['an observation archive deletion', (fixture: ReturnType<typeof createFixture>) => {
+            const existingArchive = 'performance-observations/rtc-b05/2026/08/26/20260826T031500Z-' +
+                'eaf526518c70-e2-browser-gh123456788-a1.zip';
+            const base = commit(fixture.root, 'existing observation', {
+                [existingArchive]: 'zip-bytes',
+                'performance-observations/rtc-b05/index.jsonl': `${
+                    JSON.stringify({
+                        archive: { path: existingArchive }
+                    })
+                }\n`
+            });
+            runGit(fixture.root, ['rm', existingArchive]);
+            runGit(fixture.root, ['commit', '--quiet', '-m', 'delete observation']);
+            return { base, head: runGit(fixture.root, ['rev-parse', 'HEAD']).trim() };
+        }],
+        ['a mixed observation and product change', (fixture: ReturnType<typeof createFixture>) => {
+            const base = fixture.evidenceHead;
+            const observationId = '20260827T031500Z-eaf526518c70-e2-browser-gh123456789-a2';
+            const archivePath = `performance-observations/rtc-b05/2026/08/27/${observationId}.zip`;
+            const head = commit(fixture.root, 'mixed observation', {
+                [archivePath]: 'zip-bytes',
+                'performance-observations/rtc-b05/index.jsonl': `${
+                    JSON.stringify({
+                        archive: { path: archivePath }
+                    })
+                }\n`,
+                'apps/example/main.ts': 'export const value = 2;\n'
+            });
+            return { base, head };
+        }]
+    ])('fails closed for %s', (_name, change) => {
+        const fixture = createFixture();
+        const candidate = change(fixture);
+
+        expect(selectModeFromBase(fixture, candidate.base, candidate.head)).toMatchObject({
+            mode: 'invalid-rtc-observation',
+            reuse: false
         });
     });
 
@@ -149,6 +227,33 @@ function select(
         runs: [fixture.run],
         readArtifact: () => fixture.artifact ?? `${JSON.stringify(fixture.evidence)}\n`,
         now: mutation.now ?? '2026-08-13T10:00:00.000Z'
+    });
+}
+
+function selectMode(fixture: ReturnType<typeof createFixture>, candidateHead: string) {
+    return selectModeFromBase(fixture, fixture.evidenceHead, candidateHead);
+}
+
+function selectModeFromBase(
+    fixture: ReturnType<typeof createFixture>,
+    base: string,
+    candidateHead: string
+) {
+    return selectValidationEvidence({
+        repoRoot: fixture.root,
+        candidate: {
+            repository,
+            pullRequestNumber: 222,
+            workflowPath,
+            branch: 'feature',
+            baseBranch: 'main',
+            base,
+            head: candidateHead,
+            currentRunId: 5000
+        },
+        runs: [fixture.run],
+        readArtifact: () => `${JSON.stringify(fixture.evidence)}\n`,
+        now: '2026-08-13T10:00:00.000Z'
     });
 }
 

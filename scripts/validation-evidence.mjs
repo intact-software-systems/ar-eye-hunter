@@ -11,7 +11,7 @@ import {
 import { createValidationEvidence } from './validation-evidence/validation-evidence-record.mjs';
 import {
     readWorkflowRunsEnvelope,
-    selectReusableValidationEvidence
+    selectValidationEvidence
 } from './validation-evidence/validation-evidence-selection.mjs';
 
 await runValidationEvidenceCommand(process.argv.slice(2));
@@ -62,7 +62,7 @@ function runSelection(options) {
     const workflowPath = requiredOption(options, '--workflow-path');
     const branch = requiredOption(options, '--branch');
     const sources = readSelectionSources(options, { repository, workflowPath, branch });
-    const result = selectReusableValidationEvidence({
+    const result = selectValidationEvidence({
         repoRoot: path.resolve(requiredOption(options, '--repo-root')),
         candidate: {
             repository,
@@ -70,6 +70,7 @@ function runSelection(options) {
             workflowPath,
             branch,
             baseBranch: requiredOption(options, '--base-branch'),
+            base: requiredOption(options, '--base'),
             head: requiredOption(options, '--head'),
             currentRunId: Number(requiredOption(options, '--current-run-id'))
         },
@@ -78,9 +79,11 @@ function runSelection(options) {
         now: requiredOption(options, '--now')
     });
     const lines = [
+        `mode=${result.mode}`,
         `reuse=${String(result.reuse)}`,
         `reason=${result.reason}`,
-        `build_tree_digest=${result.buildTreeDigest}`
+        `build_tree_digest=${result.buildTreeDigest}`,
+        `archive_path=${result.archivePath ?? ''}`
     ];
     writeFileSync(requiredOption(options, '--output'), `${lines.join('\n')}\n`, 'utf8');
     console.log(`PASS: validation evidence selection ${result.reason}`);
@@ -124,9 +127,11 @@ function runConclusion(options) {
     const issues = validateBranchReleaseConclusion({
         governanceResult: requiredOption(options, '--governance-result'),
         selectionResult: requiredOption(options, '--selection-result'),
+        mode: requiredOption(options, '--mode'),
         reuse: requiredOption(options, '--reuse'),
         releaseResult: requiredOption(options, '--release-result'),
-        publicationResult: requiredOption(options, '--publication-result')
+        publicationResult: requiredOption(options, '--publication-result'),
+        rtcObservationResult: requiredOption(options, '--rtc-observation-result')
     });
     if (issues.length > 0) {
         throw new Error(issues.join('; '));

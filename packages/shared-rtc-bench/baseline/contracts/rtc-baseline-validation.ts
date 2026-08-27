@@ -10,17 +10,17 @@ import type {
     RtcBaselineWorkerCommandDto
 } from './rtc-baseline-contracts.ts';
 import { decodeRtcBaselineCaptureRequest } from './rtc-baseline-decoding.ts';
+import { isRtcBaselineId } from './rtc-baseline-id.ts';
 
 function issue(path: string, code: string, message: string) {
     return { path, code, message };
 }
 
-const baselinePattern = /^\d{8}-[0-9a-f]{12}-e(?:1-local|2-browser|3-memory|4-pg|5-remote)(?:-repeat-01)?$/;
 const shaPattern = /^[0-9a-f]{64}$/;
 const workloads = new Set(['RTC-B01', 'RTC-B02', 'RTC-B03', 'RTC-B04', 'RTC-B05', 'RTC-B06']);
 
 export function validateRtcBaselineId(baselineId: string) {
-    return baselinePattern.test(baselineId)
+    return isRtcBaselineId(baselineId)
         ? []
         : [
             issue(
@@ -34,7 +34,7 @@ export function validateRtcBaselineId(baselineId: string) {
 export function isRtcBaselineConfinedArtifactPath(baselineId: string, relativePath: string) {
     const components = relativePath.split('/');
     return (
-        baselinePattern.test(baselineId) &&
+        isRtcBaselineId(baselineId) &&
         relativePath.length > 0 &&
         !relativePath.startsWith('/') &&
         !relativePath.includes('\\') &&

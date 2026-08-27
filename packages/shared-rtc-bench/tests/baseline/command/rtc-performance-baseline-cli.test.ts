@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { createDefaultRtcBaselineEnvelope, runRtcBaselineCli } from '../../../baseline/command/rtc-baseline-cli.ts';
 import { writeRtcBaselineCliOutput } from '../../../baseline/command/write-rtc-baseline-cli-output.ts';
+import type { RtcPerformanceObservationCliDependencies } from '../../../baseline/observation/rtc-performance-observation-cli.ts';
 import type { RtcBaselineEnvelope } from '../../../baseline/runtime/rtc-baseline-envelope.ts';
 
 const conclusiveComparison = {
@@ -35,12 +36,17 @@ function createEnvelope(result: unknown = { ok: true, value: undefined }) {
     return envelope as typeof envelope & RtcBaselineEnvelope;
 }
 
-async function run(args: readonly string[], envelope = createEnvelope()) {
+async function run(
+    args: readonly string[],
+    envelope = createEnvelope(),
+    observation?: RtcPerformanceObservationCliDependencies
+) {
     const stdout: string[] = [];
     const stderr: string[] = [];
     const exitCode = await runRtcBaselineCli({
         args,
         envelope,
+        observation,
         writeStdout: (value) => stdout.push(value),
         writeStderr: (value) => stderr.push(value)
     });
@@ -48,6 +54,42 @@ async function run(args: readonly string[], envelope = createEnvelope()) {
 }
 
 describe('RTC baseline CLI application', () => {
+    it('routes observation commands through the package observation CLI', async () => {
+        const runObservation = vi.fn(async () => ({
+            ok: true as const,
+            value: {
+                observation: { observationId: 'observation-id' },
+                output: { archivePath: 'archive.zip', indexEntryPath: 'index-entry.jsonl' }
+            }
+        }));
+        const observation: RtcPerformanceObservationCliDependencies = {
+            runner: { run: runObservation },
+            readFile: vi.fn(),
+            verifyArchive: vi.fn()
+        };
+
+        const result = await run(
+            [
+                'observe-browser',
+                '--source-ref=main',
+                '--github-run-id=123',
+                '--github-run-attempt=1',
+                '--github-run-url=https://github.com/example/repository/actions/runs/123',
+                '--output=tmp/observation'
+            ],
+            createEnvelope(),
+            observation
+        );
+
+        expect(result).toMatchObject({
+            exitCode: 0,
+            stdout: [
+                '{"observationId":"observation-id","archivePath":"archive.zip","indexEntryPath":"index-entry.jsonl"}\n'
+            ],
+            stderr: []
+        });
+    });
+
     it('writes the complete encoded value across partial synchronous writes', () => {
         const chunks: string[] = [];
         const decoder = new TextDecoder();

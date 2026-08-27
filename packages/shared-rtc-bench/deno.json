@@ -4,6 +4,7 @@
     "@shared-web/": "../shared-web/",
     "@shared/": "../shared/",
     "@std/path": "jsr:@std/path@^1.0.9",
+    "fflate": "npm:fflate@0.8.2",
     "graphology": "npm:graphology@0.26.0",
     "postgres": "npm:postgres@^3.4.9"
   },
@@ -11,14 +12,6 @@
     "erasableSyntaxOnly": true,
     "strict": true,
     "lib": ["deno.ns", "dom"]
-  },
-  "fmt": {
-    "include": ["."],
-    "lineWidth": 100,
-    "indentWidth": 2,
-    "useTabs": false,
-    "semiColons": true,
-    "singleQuote": true
   },
   "lint": {
     "include": ["."],

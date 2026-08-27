@@ -66,12 +66,16 @@ describe('validation evidence command', () => {
             'success',
             '--selection-result',
             'success',
+            '--mode',
+            'broad',
             '--reuse',
             'false',
             '--release-result',
             'success',
             '--publication-result',
-            'success'
+            'success',
+            '--rtc-observation-result',
+            'skipped'
         ]);
 
         expect(result.status).toBe(0);

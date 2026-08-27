@@ -1,11 +1,29 @@
 import { describe, expect, it } from 'vitest';
 import { validateRtcBaselineRawArtifactMembership } from '../../../baseline/evidence/rtc-baseline-evidence-layout.ts';
 import { createRtcBaselineFinalizedReader } from '../../../baseline/evidence/rtc-baseline-finalized-reader.ts';
+import { createRtcBaselineFinalizedArtifactVerifier } from '../../../baseline/evidence/rtc-baseline-finalized-verification.ts';
 const encoder = new TextEncoder();
 const primaryId = '20260807-0123456789ab-e1-local';
 const repeatId = '20260807-0123456789ab-e1-local-repeat-01';
 const candidateId = '20260808-fedcba987654-e1-local';
 const fileMap = (record: Record<string, string>) => new Map(Object.entries(record).reverse());
+
+async function sha256(text: string) {
+    const digest = new Uint8Array(
+        await crypto.subtle.digest('SHA-256', Uint8Array.from(encoder.encode(text)))
+    );
+    return [...digest].map((value) => value.toString(16).padStart(2, '0')).join('');
+}
+
+async function withActualChecksums(files: ReadonlyMap<string, string>) {
+    const content = [...files].filter(([path]) => path !== 'SHA256SUMS');
+    const lines = await Promise.all(
+        content.sort(([left], [right]) => left.localeCompare(right)).map(
+            async ([path, text]) => `${await sha256(text)}  ${path}`
+        )
+    );
+    return new Map([...content, ['SHA256SUMS', `${lines.join('\n')}\n`]]);
+}
 const primaryFiles = fileMap({
     'environment.json':
         `{"schema":"rallar.rtc-baseline.environment.v1","baselineId":"20260807-0123456789ab-e1-local","workloadIds":["RTC-B01"],"environmentId":"E1-local","repeatLink":null,"conditionalEnvironmentDecisions":[],"observation":{"git":{"headCommit":"0000000000000000000000000000000000000000","headTree":"1111111111111111111111111111111111111111","ref":"codex/rtc-baseline","clean":true},"runtime":{"node":"24","npm":"11","deno":"2","playwright":"1","chromium":"139"},"host":{"os":"darwin","kernel":"24.6.0","architecture":"arm64","logicalCpuCount":10,"cpuModel":"Apple M4","totalMemoryBytes":17179869184,"executionContext":"local"},"timing":{"startedAtUtc":"2026-08-07T10:00:00.000Z","endedAtUtc":"2026-08-07T10:00:01.000Z","monotonicDurationMs":1000,"monotonicSource":"performance.now"},"deviations":[],"sourceHashes":[],"configurationInputs":[],"resolvedConfiguration":[],"controllerInputs":[],"allowlistedEnvironment":{},"workerCommand":{"redactedArgv":{"executable":"deno","arguments":["run","scripts/perf/rtc.ts"]},"projection":{"fixedWorkerFlags":["--capture=worker"],"configurationFlags":[]}}}}`,
@@ -92,6 +110,42 @@ function readerFor(
     });
 }
 describe('RTC baseline finalized reader', () => {
+    it('separates structurally complete failed evidence from strict passing acceptance', async () => {
+        const recordedIssue = { path: '$.producer', code: 'producer-failed', message: 'producer failed' };
+        const sample = JSON.parse(primaryFiles.get('results/samples/sample.json')!);
+        Object.assign(sample, { outcome: 'failed', issues: [recordedIssue] });
+        const summary = JSON.parse(primaryFiles.get('summary.json')!);
+        Object.assign(summary.sampleOutcomes[0], { outcome: 'failed', issues: [recordedIssue] });
+        summary.metricSummaries = [];
+        const failedFiles = await withActualChecksums(
+            new Map([
+                ['environment.json', primaryFiles.get('environment.json')!],
+                ['manifest.json', primaryFiles.get('manifest.json')!],
+                ['results/samples/sample.json', JSON.stringify(sample)],
+                ['summary.json', JSON.stringify(summary)]
+            ])
+        );
+        const verifier = createRtcBaselineFinalizedArtifactVerifier({
+            readJson: async () => ({ ok: true, value: {} }),
+            readBytes: async (_baselineId, path) => ({
+                ok: true,
+                value: encoder.encode(failedFiles.get(path)!)
+            }),
+            listArtifactPaths: async () => ({
+                ok: true,
+                value: [...failedFiles.keys()].filter((path) => path !== 'SHA256SUMS')
+            }),
+            sha256: async (bytes) => sha256(new TextDecoder().decode(bytes))
+        });
+
+        const structural = await verifier.readStructurallyVerifiedArtifacts(primaryId);
+        expect(structural.ok ? structural.value.summary.sampleOutcomes[0]?.outcome : structural)
+            .toBe('failed');
+        expect(await issuesFrom(verifier.readVerifiedArtifacts(primaryId))).toBe(
+            '$.summary\tnon-passing-finalized-outcome\tEvery finalized outcome must pass.'
+        );
+    });
+
     it('validates exhaustive raw artifact membership', () => {
         const membershipIssues = validateRtcBaselineRawArtifactMembership({
             retainedArtifactPaths: ['artifacts/kept.bin', 'artifacts/unreferenced.bin'],

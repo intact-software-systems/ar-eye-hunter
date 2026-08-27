@@ -6,6 +6,7 @@ import type {
     RtcBaselineSampleDto
 } from '../../baseline/contracts/rtc-baseline-contracts.ts';
 import { rtcBaselineIssue } from '../../baseline/contracts/rtc-baseline-contracts.ts';
+import { isRtcBrowserBaselineId } from '../../baseline/contracts/rtc-baseline-id.ts';
 import { summarizeRtcB05 } from './summarize-rtc-b05.ts';
 
 export const RTC_DATA_CHANNEL_BROWSER_SOAK_CONTRACT = {
@@ -18,7 +19,6 @@ export const RTC_DATA_CHANNEL_BROWSER_SOAK_CONTRACT = {
     playwrightConfigPath: 'apps/rallar-black-box/playwright.config.ts'
 } as const;
 
-const baselineIdPattern = /^\d{8}-[0-9a-f]{12}-e2-browser(?:-repeat-01)?$/;
 const expectedEvents = [
     'local-close',
     'local-open',
@@ -109,7 +109,7 @@ function validateRawIdentity(
             )
         );
     }
-    else if (!baselineIdPattern.test(baselineId)) {
+    else if (!isRtcBrowserBaselineId(baselineId)) {
         issues.push(
             rtcBaselineIssue(
                 '$.identity.baselineId',

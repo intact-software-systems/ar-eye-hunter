@@ -40,7 +40,10 @@ describe('risk-scoped supported Hetzner workflow', () => {
         const workflow = readWorkflow();
 
         expect(workflow.on).toEqual({
-            push: { branches: ['main'] },
+            push: {
+                branches: ['main'],
+                'paths-ignore': ['performance-observations/**']
+            },
             workflow_dispatch: null
         });
         expect(workflow.jobs.selection).toMatchObject({

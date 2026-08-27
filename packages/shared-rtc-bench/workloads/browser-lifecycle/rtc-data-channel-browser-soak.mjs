@@ -4,6 +4,7 @@ import { pathToFileURL } from 'node:url';
 
 import { chromium } from '@playwright/test';
 
+import { isRtcBrowserBaselineId } from '../../baseline/contracts/rtc-baseline-id.ts';
 import {
     computeRtcDataChannelBrowserSoakSample,
     RTC_DATA_CHANNEL_BROWSER_SOAK_CONTRACT,
@@ -20,7 +21,6 @@ const {
 } = RTC_DATA_CHANNEL_BROWSER_SOAK_CONTRACT;
 const DEFAULT_DIAGNOSTIC_OUT = 'tmp/perf/results/rtc-data-channel-browser-soak.json';
 const DEFAULT_BASELINE_ROOT = 'tmp/perf/rtc-baseline';
-const BASELINE_ID_PATTERN = /^\d{8}-[0-9a-f]{12}-e2-browser(?:-repeat-01)?$/;
 
 function fail(message) {
     throw new Error(`RTC-B05: ${message}`);
@@ -88,7 +88,7 @@ function parseRawEvidenceCommand(options) {
         }
     }
     const baselineId = requiredOption(options, 'baseline-id');
-    if (!BASELINE_ID_PATTERN.test(baselineId)) {
+    if (!isRtcBrowserBaselineId(baselineId)) {
         fail('baseline ID does not match the accepted E2 browser grammar');
     }
     const intendedPhase = requiredOption(options, 'intended-phase');

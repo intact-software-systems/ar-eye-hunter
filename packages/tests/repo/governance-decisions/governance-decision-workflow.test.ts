@@ -138,6 +138,13 @@ describe('governance decision GitHub workflows', () => {
             '.github/workflows/hetzner-supported-distributed-manifests.yml'
         );
 
+        for (const workflow of [deploy, distributed]) {
+            expect(workflow.on.push).toMatchObject({
+                branches: ['main'],
+                'paths-ignore': ['performance-observations/**']
+            });
+        }
+
         expect(deploy.jobs['governance-decision']).toMatchObject({
             permissions: { actions: 'read', contents: 'read' },
             outputs: {

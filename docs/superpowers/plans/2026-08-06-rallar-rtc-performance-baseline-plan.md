@@ -3637,7 +3637,48 @@ changed anchor returns to Task 7.
 **Exit:** a complete, failed, or explicitly not-run E1 sample set whose raw
 evidence remains ignored and whose summary preserves every attempt.
 
-### Task 9: Capture B05 on the distinct E2 anchor
+### Task 9: Capture B05 as a continuous E2 observation stream
+
+**Current execution semantics (supersedes the historical procedure below):**
+
+Task 9 is delivered by `.github/workflows/rtc-performance-observation.yml` and
+the package-owned `observe-browser` command. Scheduled and manual runs observe
+the `main` snapshot selected when each run starts. They record its exact commit
+and tree but do not wait for an exact-main deploy envelope, a quiet future
+head, a later date, or the frozen Task 7 anchor. `main` is expected to keep
+moving; that movement does not invalidate an older observation.
+
+Each primary identity contains its UTC start timestamp, twelve-character
+source SHA, `E2-browser`, GitHub run ID, and run attempt. It captures one
+warmup plus five retained fresh Chromium processes. The existing repeat rule
+alone may add `-repeat-01` with one warmup plus ten retained processes. An
+initialized capture failure is finalized and archived as failed with no
+accepted metrics. Tooling failure before trustworthy initialization creates no
+stream ZIP.
+
+The workflow always retains recoverable output as a workflow artifact. A
+verified ZIP and canonical row are published through an observation-only pull
+request to:
+
+```text
+performance-observations/rtc-b05/YYYY/MM/DD/<observation-id>.zip
+performance-observations/rtc-b05/index.jsonl
+```
+
+- [ ] Merge the observation-stream tooling and configure the ordinary
+      pull-request credential `RTC_OBSERVATION_PR_TOKEN`.
+- [ ] Manually dispatch `RTC-B05 Performance Observation` from `main` once.
+- [ ] Confirm that the capture artifact exists and its observation-only pull
+      request passes `Branch Release Gate result` through RTC integrity.
+- [ ] Confirm that the first stream ZIP and index row merge without launching
+      product deploy or supported distributed-manifest workflows.
+
+The first valid archived observation proves the stream works; it is not the
+final measurement. Later B06 or optimization decisions must name selected
+valid observations or an explicit time window. RTC-B06 remains a separate
+human activation decision after enough observations exist.
+
+**Superseded historical procedure (preserved for provenance; do not execute):**
 
 **Organization prerequisite:** use only the unchanged exact Task 7 anchor and
 the package-owned B05 entrypoint. Verify the catalog's config hash names the
@@ -3764,8 +3805,13 @@ historical nonexistent root config path.
   printf 'export RTC_E2_COMPARISON_ID=%q\n' "${RTC_E2_COMPARISON_ID}"
   ```
 
-**Exit:** native-browser evidence remains separate from E1 synthetic evidence
-even though both use the same gated B01-B05 Git anchor.
+**Historical exit (superseded):** native-browser evidence remained separate
+from E1 synthetic evidence while both used the same gated B01-B05 Git anchor.
+
+**Current exit:** the scheduled/manual stream and its integrity-gated
+publication path are merged, and at least one independently valid RTC-B05 ZIP
+and index row has been archived from `main`. The stream then continues; no
+single observation freezes or permanently completes performance measurement.
 
 ### Task 10: B06 separate activation, head, gates, and capture
 

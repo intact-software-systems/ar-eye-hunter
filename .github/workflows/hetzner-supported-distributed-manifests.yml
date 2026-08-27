@@ -3,6 +3,8 @@ name: Run Hetzner Supported Distributed Manifests
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - 'performance-observations/**'
   workflow_dispatch:
 
 permissions:

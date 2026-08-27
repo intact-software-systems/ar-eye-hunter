@@ -37,6 +37,52 @@ Task 4A move provenance that Git cannot identify as a rename is recorded in
 `plans/repo-style-lineages/shared-rtc-bench-task-4a.json`; Git-detected renames
 remain direct diff evidence and are intentionally absent from that manifest.
 
+## Continuous RTC-B05 observations
+
+RTC-B05 browser lifecycle performance is an observation stream over moving
+`main`, not a pinned or final baseline. The nightly and manually dispatched
+`RTC-B05 Performance Observation` workflow checks out `main` once, records its
+exact commit and tree, and accepts that `main` may move before publication. A
+primary uses one warmup and five retained fresh Chromium processes. The
+existing repeat decision adds one warmup and ten retained processes only when
+the primary metrics require it.
+
+Run the same package-owned path locally from a clean checkout:
+
+```bash
+npm run perf:rtc-baseline -- observe-browser \
+  --source-ref=main \
+  --github-run-id=1 \
+  --github-run-attempt=1 \
+  --github-run-url=https://github.com/intact-software-systems/ar-eye-hunter/actions/runs/1 \
+  --output=tmp/perf/rtc-observation-local
+
+RTC_OBSERVATION_ARCHIVE="$(find tmp/perf/rtc-observation-local -maxdepth 1 -type f -name '*.zip' -print -quit)"
+npm run perf:rtc-baseline -- verify-observation \
+  --archive="$RTC_OBSERVATION_ARCHIVE" \
+  --index-entry=tmp/perf/rtc-observation-local/index-entry.jsonl
+```
+
+`observe-browser` writes exactly one timestamped ZIP and one canonical
+`index-entry.jsonl`. Tooling failure before initialization creates no ZIP.
+After initialization, complete failed evidence can be archived with outcome
+`failed` and `acceptedMetrics: false`; malformed or unaccounted evidence is
+rejected rather than published.
+
+Repository observations are append-only:
+
+```text
+performance-observations/rtc-b05/YYYY/MM/DD/<observation-id>.zip
+performance-observations/rtc-b05/index.jsonl
+```
+
+The ZIP contains `observation.json`, `checksums.sha256`, the finalized primary
+tree below `primary/<observation-id>/`, and a finalized
+`repeat/<observation-id>-repeat-01/` tree only when required. The external
+index row adds the archive path, byte length, and SHA-256. Observation-only
+pull requests run the narrow RTC integrity gate; their merge pushes do not
+start product deploy or supported distributed-manifest workflows.
+
 ## Baseline writer lock recovery
 
 Every initialized baseline keeps a `.writer.lock` JSON file. A writer records a
@@ -72,7 +118,7 @@ deleted. Preserve the failed directory for diagnosis and use a new baseline ID.
 
 | Program class              | Capability                   | Command entry                                                            | Root/package command                                          | Inputs                                                                                                                                                                                          | Production symbol measured                                                    | Setup owner                                                    | Timing boundary                                                              | Validation owner                                                             | Output/artifact class                                         | Owning test                                                                     | Status                                    |
 | -------------------------- | ---------------------------- | ------------------------------------------------------------------------ | ------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- | -------------------------------------------------------------- | ---------------------------------------------------------------------------- | ---------------------------------------------------------------------------- | ------------------------------------------------------------- | ------------------------------------------------------------------------------- | ----------------------------------------- |
-| Baseline controller        | Evidence lifecycle           | `baseline/command/rtc-baseline-cli.ts`                                   | `npm run perf:rtc-baseline -- <command>`                      | Exact `initialize`, `capture`, `list-external-attempts`, `record-browser`, `record-external`, `record-external-cohort`, `repeat-required`, `compare-paired`, `validate`, and `finalize` grammar | `RtcBaselineEnvelope` operations selected by `runRtcBaselineCli`              | `createRtcBaselineDenoRuntime`                                 | Workload-owned intervals; controller adds no measured setup                  | Baseline structural, semantic, accounting, and checksum validators           | Confined accepted baseline tree under `tmp/perf/rtc-baseline` | `tests/baseline/command/rtc-performance-baseline-cli.test.ts`                   | Accepted controller; capture remains held |
+| Baseline controller        | Evidence lifecycle           | `baseline/command/rtc-baseline-cli.ts`                                   | `npm run perf:rtc-baseline -- <command>`                      | Exact `initialize`, `capture`, `list-external-attempts`, `record-browser`, `record-external`, `record-external-cohort`, `repeat-required`, `compare-paired`, `validate`, `finalize`, `observe-browser`, and `verify-observation` grammar | `RtcBaselineEnvelope` operations selected by `runRtcBaselineCli`              | `createRtcBaselineDenoRuntime`                                 | Workload-owned intervals; controller adds no measured setup                  | Baseline structural, semantic, accounting, archive, and checksum validators  | Confined local baseline tree or timestamped RTC-B05 ZIP       | `tests/baseline/command/rtc-performance-baseline-cli.test.ts`                   | Accepted controller; RTC-B05 stream active |
 | Accepted workload          | Signaling diagnostics        | `workloads/signaling/rtc-peer-connection-diagnostics-burst.ts`           | `npm run perf:rtc-baseline -- capture ...`                    | Peer count and accepted worker identity                                                                                                                                                         | `runRtcPeerConnectionDiagnostics` over `QRtcPeerConnection`                   | `createRtcPeerConnectionDiagnosticsDependencies`               | Diagnostic operation interval returned by the production-facing runtime      | `validateResult` and accepted-sample envelope checks                         | Raw diagnostic JSON or accepted B01 samples                   | `tests/workloads/signaling/rtc-signaling-benchmark-lifecycle.test.ts`           | B01 accepted tooling                      |
 | Accepted workload          | ICE queue                    | `workloads/signaling/rtc-ice-candidate-queue-bench.ts`                   | `npm run perf:rtc-baseline -- capture ...`                    | Candidate count and accepted worker identity                                                                                                                                                    | `QRtcPeerConnection.flushIceCandidateQueue`                                   | Package-local native peer stand-in                             | Queue flush only                                                             | `validateResult` and accepted-sample envelope checks                         | Create-new diagnostic JSON or accepted B01 samples            | `tests/workloads/signaling/rtc-signaling-benchmark-lifecycle.test.ts`           | B01 accepted tooling                      |
 | Accepted workload          | Peer listener cleanup        | `workloads/signaling/rtc-peer-listener-cleanup-bench.ts`                 | `npm run perf:rtc-baseline -- capture ...`                    | Peer count and accepted worker identity                                                                                                                                                         | `QRtcPeerConnection` construction, `connect`, and `reset`                     | Package-local native peer stand-in                             | Construction, connect, and reset loop                                        | `validateResult` and accepted-sample envelope checks                         | Create-new diagnostic JSON or accepted B01 samples            | `tests/workloads/signaling/rtc-signaling-benchmark-lifecycle.test.ts`           | B01 accepted tooling                      |

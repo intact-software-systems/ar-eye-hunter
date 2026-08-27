@@ -31,8 +31,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 2
     outputs:
+      mode: ${{ steps.resolution.outputs.mode }}
       reuse: ${{ steps.resolution.outputs.reuse }}
       build_tree_digest: ${{ steps.resolution.outputs.build_tree_digest }}
+      archive_path: ${{ steps.resolution.outputs.archive_path }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -54,6 +56,7 @@ jobs:
           --workflow-path ".github/workflows/branch-release-gate.yml"
           --branch "${{ github.event.pull_request.head.ref }}"
           --base-branch "${{ github.event.pull_request.base.ref }}"
+          --base "${{ github.event.pull_request.base.sha }}"
           --head "${{ github.event.pull_request.head.sha }}"
           --current-run-id "$GITHUB_RUN_ID"
           --now "$(date -u +'%Y-%m-%dT%H:%M:%S.000Z')"
@@ -61,19 +64,34 @@ jobs:
       - name: Fall back to broad validation
         id: fallback
         if: ${{ steps.selection.outcome != 'success' }}
-        run: echo "reuse=false" >> "$GITHUB_OUTPUT"
+        run: |
+          echo "mode=broad" >> "$GITHUB_OUTPUT"
+          echo "reuse=false" >> "$GITHUB_OUTPUT"
       - name: Resolve validation evidence selection
         id: resolution
         if: ${{ always() }}
         env:
           SELECTION_OUTCOME: ${{ steps.selection.outcome }}
+          SELECTION_MODE: ${{ steps.selection.outputs.mode }}
           SELECTION_REUSE: ${{ steps.selection.outputs.reuse }}
           SELECTION_DIGEST: ${{ steps.selection.outputs.build_tree_digest }}
+          SELECTION_ARCHIVE_PATH: ${{ steps.selection.outputs.archive_path }}
         run: |
-          if [[ "$SELECTION_OUTCOME" == "success" && "$SELECTION_REUSE" == "true" ]]; then
+          if [[ "$SELECTION_OUTCOME" == "success" && "$SELECTION_MODE" == "rtc-observation" ]]; then
+            echo "mode=rtc-observation" >> "$GITHUB_OUTPUT"
+            echo "reuse=false" >> "$GITHUB_OUTPUT"
+            echo "build_tree_digest=$SELECTION_DIGEST" >> "$GITHUB_OUTPUT"
+            echo "archive_path=$SELECTION_ARCHIVE_PATH" >> "$GITHUB_OUTPUT"
+          elif [[ "$SELECTION_OUTCOME" == "success" && "$SELECTION_MODE" == "invalid-rtc-observation" ]]; then
+            echo "mode=invalid-rtc-observation" >> "$GITHUB_OUTPUT"
+            echo "reuse=false" >> "$GITHUB_OUTPUT"
+            echo "build_tree_digest=$SELECTION_DIGEST" >> "$GITHUB_OUTPUT"
+          elif [[ "$SELECTION_OUTCOME" == "success" && "$SELECTION_MODE" == "reuse" && "$SELECTION_REUSE" == "true" ]]; then
+            echo "mode=reuse" >> "$GITHUB_OUTPUT"
             echo "reuse=true" >> "$GITHUB_OUTPUT"
             echo "build_tree_digest=$SELECTION_DIGEST" >> "$GITHUB_OUTPUT"
           else
+            echo "mode=broad" >> "$GITHUB_OUTPUT"
             echo "reuse=false" >> "$GITHUB_OUTPUT"
           fi
 
@@ -82,7 +100,7 @@ jobs:
     needs:
       - governance-gate
       - validation-evidence
-    if: ${{ always() && needs.governance-gate.result == 'success' && needs.validation-evidence.outputs.reuse != 'true' }}
+    if: ${{ always() && needs.governance-gate.result == 'success' && needs.validation-evidence.outputs.mode == 'broad' }}
     uses: ./.github/workflows/release-gate.yml
     with:
       candidate_ref: ${{ github.event.pull_request.head.sha }}
@@ -97,7 +115,7 @@ jobs:
       - governance-gate
       - validation-evidence
       - release-gate
-    if: ${{ always() && needs.release-gate.result == 'success' && needs.validation-evidence.outputs.reuse != 'true' }}
+    if: ${{ always() && needs.release-gate.result == 'success' && needs.validation-evidence.outputs.mode == 'broad' }}
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
@@ -129,6 +147,39 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  rtc-observation-integrity:
+    name: RTC observation integrity
+    needs:
+      - governance-gate
+      - validation-evidence
+    if: ${{ always() && needs.governance-gate.result == 'success' && needs.validation-evidence.outputs.mode == 'rtc-observation' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: Install observation verifier dependencies
+        run: npm ci
+      - name: Verify appended RTC observation
+        env:
+          RTC_OBSERVATION_ARCHIVE: ${{ needs.validation-evidence.outputs.archive_path }}
+        run: |
+          mkdir -p .artifacts/rtc-observation
+          tail -n 1 performance-observations/rtc-b05/index.jsonl > .artifacts/rtc-observation/index-entry.jsonl
+          npm run perf:rtc-baseline -- verify-observation \
+            --archive="$RTC_OBSERVATION_ARCHIVE" \
+            --index-entry=.artifacts/rtc-observation/index-entry.jsonl
+
   branch-release-result:
     name: Branch Release Gate result
     needs:
@@ -136,6 +187,7 @@ jobs:
       - validation-evidence
       - release-gate
       - publish-validation-evidence
+      - rtc-observation-integrity
     if: ${{ always() }}
     runs-on: ubuntu-latest
     timeout-minutes: 2
@@ -151,6 +203,8 @@ jobs:
           node scripts/validation-evidence.mjs conclude
           --governance-result "${{ needs.governance-gate.result }}"
           --selection-result "${{ needs.validation-evidence.result }}"
+          --mode "${{ needs.validation-evidence.outputs.mode }}"
           --reuse "${{ needs.validation-evidence.outputs.reuse }}"
           --release-result "${{ needs.release-gate.result }}"
           --publication-result "${{ needs.publish-validation-evidence.result }}"
+          --rtc-observation-result "${{ needs.rtc-observation-integrity.result }}"

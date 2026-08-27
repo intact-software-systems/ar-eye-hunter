@@ -59,18 +59,57 @@ const openPullRequest: PullRequestFixture = {
 };
 
 describe('pull request delivery command', () => {
-    it('lists only status and ready in help without reading GitHub', async () => {
+    it('lists interactive and observation publication operations without reading GitHub', async () => {
         const github = createGithubFixture([]);
 
         const result = await runCommand(['--help'], github);
 
         expect(result.action).toBe('HELP');
         expect(result.output).toEqual([
-            'Usage: npm run pr:delivery -- <status|ready>',
+            'Usage: npm run pr:delivery -- <status|ready|publish-observation>',
             '  status  Read the current pull request and report the next action.',
-            '  ready   Mark a draft ready and arm native auto-merge after approval.'
+            '  ready   Mark a draft ready and arm native auto-merge after approval.',
+            '  publish-observation  Publish one verified RTC observation through a main pull request.'
         ]);
         expect(github.calls).toEqual([]);
+    });
+
+    it('routes explicit observation inputs through the shared delivery command', async () => {
+        const output: string[] = [];
+        const publicationInputs: ObservationPublicationInput[] = [];
+
+        const action = await runPullRequestDeliveryCommand([
+            'publish-observation',
+            '--archive=/capture/observation.zip',
+            '--index-entry=/capture/index-entry.jsonl',
+            '--run-id=123456789',
+            '--run-attempt=2'
+        ], {
+            execFile: () => '',
+            repoRoot: '/repository',
+            publishObservation: async (publicationInput: ObservationPublicationInput) => {
+                publicationInputs.push(publicationInput);
+                return {
+                    status: 'pull-request-ready',
+                    pullRequestUrl: 'https://github.com/example/repository/pull/91'
+                };
+            },
+            writeOutput: (line: string) => output.push(line),
+            writeError: () => undefined
+        });
+
+        expect(action).toBe('OBSERVATION_PULL_REQUEST_READY');
+        expect(publicationInputs).toEqual([{
+            repoRoot: '/repository',
+            archivePath: '/capture/observation.zip',
+            indexEntryPath: '/capture/index-entry.jsonl',
+            runId: 123456789,
+            runAttempt: 2
+        }]);
+        expect(output).toEqual([
+            'Observation publication: pull-request-ready',
+            'PR https://github.com/example/repository/pull/91'
+        ]);
     });
 
     it('opens a draft when the current branch has no pull request', async () => {
@@ -403,6 +442,14 @@ describe('pull request delivery command', () => {
 interface GithubCall {
     readonly executable: string;
     readonly arguments: readonly string[];
+}
+
+interface ObservationPublicationInput {
+    readonly repoRoot: string;
+    readonly archivePath: string;
+    readonly indexEntryPath: string;
+    readonly runId: number;
+    readonly runAttempt: number;
 }
 
 interface GithubFixture {

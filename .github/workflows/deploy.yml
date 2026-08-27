@@ -4,6 +4,8 @@ on:
   push:
     branches:
       - main
+    paths-ignore:
+      - 'performance-observations/**'
   workflow_dispatch:
     inputs:
       skip_release_gate:
