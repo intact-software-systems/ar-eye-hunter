@@ -15,6 +15,7 @@ import {
     createRtcTopologyWorkHandler,
     type RtcTopologyDeliveryOptions
 } from '../replay/work/create-rtc-topology-work-handler.ts';
+import { createTopologyPromotionWorkHandler } from '../replay/work/create-topology-promotion-work-handler.ts';
 
 export interface InstallTopologyAppOutboxOptions {
     readonly database: PSqlSql;
@@ -32,6 +33,10 @@ export interface InstallTopologyAppOutboxOptions {
     readonly nowEpochMs: () => number;
     readonly formationCriterion?: Readonly<{
         readLifecyclePolicy: (ref: GroupRef) => Promise<GroupLifecyclePolicyRead>;
+        submitCommand: (command: GroupMutationCommand, atEpochMs: number) => Promise<void>;
+    }>;
+    /** The route-less promotion consumer (decision 27); absent means no automation. */
+    readonly topologyPublication?: Readonly<{
         submitCommand: (command: GroupMutationCommand, atEpochMs: number) => Promise<void>;
     }>;
 }
@@ -59,6 +64,15 @@ export function installTopologyAppOutbox(
                 topologyPlanning: options.topologyPlanning,
                 readLifecyclePolicy: options.formationCriterion.readLifecyclePolicy,
                 submitCommand: options.formationCriterion.submitCommand,
+                nowEpochMs: options.nowEpochMs
+            })
+        );
+    }
+    if (options.topologyPublication) {
+        options.outboxQueueReader.onOutboxMessageDo(
+            AppOutboxType.TOPOLOGY_PROMOTION,
+            createTopologyPromotionWorkHandler({
+                submitCommand: options.topologyPublication.submitCommand,
                 nowEpochMs: options.nowEpochMs
             })
         );

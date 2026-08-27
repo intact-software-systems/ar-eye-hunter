@@ -50,7 +50,7 @@ export interface ApiV1SystemInstallerRuntime {
     readonly appClientInboxService: Pick<ApiV1Runtime['appClientInboxService'], 'enqueueAuthorisedWsClientDisconnect'>;
     readonly groupStateInboxService: Pick<
         ApiV1Runtime['groupStateInboxService'],
-        'enqueueFormationCriterionCommand' | 'enqueueGroupSessionCleanup'
+        'enqueueFormationCriterionCommand' | 'enqueueTopologyPublicationCommand' | 'enqueueGroupSessionCleanup'
     >;
     readonly rtcRttInboxService: Pick<ApiV1Runtime['rtcRttInboxService'], 'enqueue'>;
     readonly appCrdtInboxService?: object;
@@ -213,6 +213,10 @@ function createSystemTopicOptions<
             formationCriterion: {
                 readLifecyclePolicy: (ref) => topology.groupStateRepository.readLifecyclePolicy(ref),
                 submitCommand: (command, atEpochMs) => submitFormationCriterionCommand(runtime, command, atEpochMs)
+            },
+            topologyPublication: {
+                submitCommand: (command, atEpochMs) =>
+                    runtime.groupStateInboxService.enqueueTopologyPublicationCommand(command, atEpochMs)
             }
         },
         enqueueRtcRttMutation: (enqueue) => runtime.rtcRttInboxService.enqueue(enqueue)

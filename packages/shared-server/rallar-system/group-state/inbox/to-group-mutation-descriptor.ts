@@ -82,6 +82,7 @@ export function toGroupMutationDescriptorTargetIdentity(
         case 'reopenGroupEstablishment':
         case 'activateGroup':
         case 'failGroupFormation':
+        case 'applyPlannedLayout':
         case 'joinGroup':
         case 'acceptGroupInvite':
         case 'rotateGroupJoinCode':

@@ -138,6 +138,22 @@ export type GroupMutationCommand =
     | (
         & GroupMutationCommandBase
         & Readonly<{
+            // Route-less (I8): only the accepted planned-publication
+            // transaction enqueues it, under topology-publication authority.
+            // It promotes without advancing stage, epoch or electorate.
+            operation: 'applyPlannedLayout';
+            input:
+                & NullableActorInput
+                & Readonly<{
+                    /** The causal fence; mandatory under internal authority. */
+                    expectedFormationEpoch: number | null;
+                    expectedLayout: GroupLayoutIdentity | null;
+                }>;
+        }>
+    )
+    | (
+        & GroupMutationCommandBase
+        & Readonly<{
             operation: 'joinGroup' | 'acceptGroupInvite';
             targetPrincipalId: string;
             input:
@@ -472,7 +488,11 @@ export function isGroupLifecycleTransitionOperation(
 /** True exactly when the command names a planned layout its fence must match. */
 export function isLayoutFencedGroupMutationCommand(command: GroupMutationCommand): boolean {
     return (
-        (command.operation === 'activateGroup' || command.operation === 'failGroupFormation') &&
+        (
+            command.operation === 'activateGroup' ||
+            command.operation === 'failGroupFormation' ||
+            command.operation === 'applyPlannedLayout'
+        ) &&
         command.input.expectedLayout !== null
     );
 }
@@ -484,7 +504,11 @@ export function isLayoutFencedGroupMutationCommand(command: GroupMutationCommand
  * its fence.
  */
 export function readsGroupLayoutRows(command: GroupMutationCommand): boolean {
-    return command.operation === 'activateGroup' || isLayoutFencedGroupMutationCommand(command);
+    return (
+        command.operation === 'activateGroup' ||
+        command.operation === 'applyPlannedLayout' ||
+        isLayoutFencedGroupMutationCommand(command)
+    );
 }
 
 export type GroupAdmissionDecisionOperation = Extract<

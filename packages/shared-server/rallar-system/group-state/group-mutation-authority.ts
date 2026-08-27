@@ -261,6 +261,8 @@ export function toDescriptorCommand(
         case 'reopenGroupEstablishment':
         case 'failGroupFormation':
             return toLifecycleMutationCommand(descriptor, randomId);
+        case 'applyPlannedLayout':
+            throw new TypeError('applyPlannedLayout has no authenticated route');
         case 'connectPresence':
         case 'heartbeatPresence':
         case 'disconnectPresence':

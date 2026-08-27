@@ -150,6 +150,22 @@ export class GroupStateInboxService {
         });
     }
 
+    async enqueueTopologyPublicationCommand(
+        command: GroupMutationCommand,
+        atEpochMs: number
+    ): Promise<void> {
+        const preparation = await this.groupStateService.prepareTopologyPublicationMutation(
+            command,
+            atEpochMs
+        );
+        await this.queueEntryWriter.enqueue({
+            type: AppInboxType.GROUP_TOPOLOGY_PUBLICATION,
+            resourceId: preparation.queueResourceId,
+            authority: decodeJsonWireValue(preparation, 'Group topology publication AppInbox authority'),
+            data: { commandId: preparation.command.commandId }
+        });
+    }
+
     async enqueueGroupSessionCleanup(
         input: GroupPresenceSessionCleanupAppInboxPayload
     ): Promise<number> {

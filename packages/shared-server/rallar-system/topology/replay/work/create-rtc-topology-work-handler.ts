@@ -6,13 +6,16 @@ import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import type { OnMessageCallback } from '@shared/services/InboxOutboxContracts.ts';
 
+import { computeTopologyPromotionEntry } from '@shared-server/rallar-system/group-state/topology-promotion-outbox-entry.ts';
 import { toRtcTopologyPublicationId } from '@shared-server/rallar-system/topology/persistence/rtc-topology-identifiers.ts';
 import type { GroupTopologyPlanningAuthority } from '@shared-server/rallar-system/topology/planning/group-topology-planning-authority.ts';
 import { hashRtcTopologyExecutionCommand } from '@shared-server/rallar-system/topology/publication/rtc-topology-publication-repository-contracts.ts';
 import { type RtcTopologyPublication } from '@shared-server/rallar-system/topology/publication/rtc-topology-publication.ts';
+import { toGroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
 import type { PSqlSql } from '../../../../postgres/p-sql-sql.ts';
 import { runInPSqlTransaction } from '../../../../postgres/run-in-p-sql-transaction.ts';
 import { PSqlResourceInboxRepository } from '../../../../queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
+import { PSqlResourceInboxEntryRepository } from '../../../../queuebox/postgres/p-sql-resource-inbox-entry-repository.ts';
 import { RuntimeStateWriteConflictError } from '../../../../runtime-state/optimistic-runtime-state-write.ts';
 import type { RallarTimingSink } from '../../../observability/timing.ts';
 import type { RtcRttRefinementService } from '../../../rtc-rtt/topic/rtc-rtt-refinement-service.ts';
@@ -376,6 +379,28 @@ async function writeAcceptedRtcTopologyWork(
     }
     await writeRtcTopologyPublicationTransaction(options, entry, async (transaction) => {
         await options.executionRepository.writeTopologyMutation(transaction, computed);
+        if (
+            options.formationCriterion &&
+            computed.outcome === 'write' &&
+            computed.snapshotGuard.candidate.state === 'active' &&
+            accepted.group.group.lifecycleState === 'active'
+        ) {
+            // Decision 27: the transaction accepting an apply-role planned
+            // publication durably requests the route-less promotion, so
+            // process loss cannot strand it.
+            await new PSqlResourceInboxEntryRepository(transaction).writeIfAbsentOrMatch(
+                computeTopologyPromotionEntry({
+                    work: {
+                        groupRef: accepted.group.group,
+                        formationEpoch: accepted.group.group.formationEpoch,
+                        expectedLayout: toGroupLayoutIdentity(computed.snapshotGuard.candidate)
+                    },
+                    senderId: options.serviceId ?? 'topology-promotion',
+                    createdAtEpochMs: accepted.work.requestedAtEpochMs,
+                    expireAtEpochMs: entry.audit.expiryTs.epochMilliseconds
+                })
+            );
+        }
         if (computed.outcome === 'write') {
             await options.executionRepository.writeTopologyInputFingerprint(
                 transaction,

@@ -233,6 +233,7 @@ function decodeGroupMutationOperation(
         case 'activateGroup':
         case 'reopenGroupEstablishment':
         case 'failGroupFormation':
+        case 'applyPlannedLayout':
         case 'joinGroup':
         case 'acceptGroupInvite':
         case 'createGroupInvite':

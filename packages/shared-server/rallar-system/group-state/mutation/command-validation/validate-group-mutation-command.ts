@@ -137,6 +137,11 @@ function validateAggregateOperationInput(
         // The lifecycle inputs require key presence, not just no-extras: a
         // wire-decoded criterion command missing its fence keys is malformed
         // here, never a lying stale-epoch rejection deep in compute.
+        case 'applyPlannedLayout':
+            assertRequiredKeys(input, GROUP_MUTATION_INPUT_KEYS[operation], `Group ${operation} input`);
+            validateExpectedFormationEpochInput(input, operation);
+            validateExpectedLayoutInput(input, operation);
+            return;
         case 'startGroupEstablishment':
         case 'reopenGroupEstablishment':
             assertRequiredKeys(input, GROUP_MUTATION_INPUT_KEYS[operation], `Group ${operation} input`);
@@ -289,6 +294,7 @@ const GROUP_MUTATION_OPERATIONS = new Set([
     'activateGroup',
     'reopenGroupEstablishment',
     'failGroupFormation',
+    'applyPlannedLayout',
     'joinGroup',
     'acceptGroupInvite',
     'createGroupInvite',
@@ -336,7 +342,8 @@ const AGGREGATE_GROUP_MUTATION_OPERATIONS = new Set<GroupMutationCommand['operat
     'startGroupEstablishment',
     'activateGroup',
     'reopenGroupEstablishment',
-    'failGroupFormation'
+    'failGroupFormation',
+    'applyPlannedLayout'
 ]);
 
 const GROUP_MUTATION_INPUT_KEYS: Readonly<Record<GroupMutationCommand['operation'], readonly string[]>> = {
@@ -375,6 +382,7 @@ const GROUP_MUTATION_INPUT_KEYS: Readonly<Record<GroupMutationCommand['operation
     activateGroup: [...ACTOR_INPUT_KEYS, 'observedRate', 'degraded', 'expectedFormationEpoch', 'expectedLayout'],
     reopenGroupEstablishment: [...ACTOR_INPUT_KEYS, 'expectedFormationEpoch'],
     failGroupFormation: [...ACTOR_INPUT_KEYS, 'observedRate', 'expectedFormationEpoch', 'expectedLayout'],
+    applyPlannedLayout: [...ACTOR_INPUT_KEYS, 'expectedFormationEpoch', 'expectedLayout'],
     joinGroup: [...ACTOR_INPUT_KEYS, 'inviteToken', 'joinCode'],
     acceptGroupInvite: [...ACTOR_INPUT_KEYS, 'inviteToken', 'joinCode'],
     createGroupInvite: [...ACTOR_INPUT_KEYS, 'invitationExpiresAtEpochMs'],

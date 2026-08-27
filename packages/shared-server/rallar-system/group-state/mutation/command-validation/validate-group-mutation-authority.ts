@@ -58,9 +58,7 @@ function validateInternalMutationAuthority(
                 'Formation-automation authority is limited to automatic stage commands, none of which exist yet'
             );
         case 'topology-publication':
-            throw new TypeError(
-                'Topology-publication authority is limited to applyPlannedLayout, which does not exist yet'
-            );
+            return validateTopologyPublicationAuthority(command);
         case 'activation-status':
             throw new TypeError(
                 'Activation-status authority is limited to the status update, which does not exist yet'
@@ -100,6 +98,18 @@ function validateFormationCriterionAuthority(command: GroupMutationCommand): voi
             return;
         default:
             throw new TypeError('Formation-criterion authority is limited to criterion transitions');
+    }
+}
+
+function validateTopologyPublicationAuthority(command: GroupMutationCommand): void {
+    if (command.operation !== 'applyPlannedLayout') {
+        throw new TypeError('Topology-publication authority is limited to applyPlannedLayout');
+    }
+    if (command.input.expectedFormationEpoch === null || command.input.expectedFormationEpoch === undefined) {
+        throw new TypeError('Planned layout promotion must carry the expected formation epoch fence');
+    }
+    if (command.input.expectedLayout === null || command.input.expectedLayout === undefined) {
+        throw new TypeError('Planned layout promotion must carry the expected layout fence');
     }
 }
 

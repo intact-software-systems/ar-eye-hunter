@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
+import { toApplyPlannedLayoutCommand } from '@shared-server/rallar-system/group-state/group-topology-publication-mutation-command.ts';
+import { validateGroupMutationAuthority } from '@shared-server/rallar-system/group-state/mutation/command-validation/validate-group-mutation-authority.ts';
+import type { GroupMutationCommand } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
+import { computeTopologyPromotionEntry, decodeTopologyPromotionWork } from '@shared-server/rallar-system/group-state/topology-promotion-outbox-entry.ts';
+import { FakeRuntimeStateRepository } from '../../../runtime-state/test-support/fake-runtime-state-repository.ts';
+import { createTestGroupStateService } from '../group-state-test-runtime.ts';
+
 import {
     computePlannedLayoutPromotion,
     type GroupPlannedLayoutRow
@@ -189,5 +196,144 @@ describe('groupLayoutPromotionEffects', () => {
         expect(accepted.expectedRevision).toBe(8);
         expect(effects.some((effect) => effect.effectId === 'accepted-layout-fingerprint'))
             .toBe(false);
+    });
+});
+
+describe('applyPlannedLayout through the durable service', () => {
+    async function createApplyHarness() {
+        const service = createTestGroupStateService({
+            runtimeRepository: new FakeRuntimeStateRepository(),
+            now: () => 1_000,
+            randomId: (() => {
+                let generated = 0;
+                return () => `apply-id-${++generated}`;
+            })(),
+            serviceId: 'apply-service',
+            readPlannedLayoutRow: async () => ({
+                snapshot: SNAPSHOT,
+                identity: IDENTITY,
+                revision: 11,
+                inputFingerprint: null
+            }),
+            readAcceptedLayoutRow: async () => null
+        });
+        await service.createGroup(
+            { applicationId: GROUP_REF.applicationId, workspaceId: GROUP_REF.workspaceId },
+            {
+                groupId: GROUP_REF.groupId,
+                displayName: 'Promotion group',
+                kind: 'room',
+                joinMode: 'open',
+                createdByPrincipalId: 'owner',
+                requestId: 'apply-seed'
+            }
+        );
+        const prepare = async (command: GroupMutationCommand) => {
+            const preparation = await service.prepareTopologyPublicationMutation(command, 1_000);
+            return {
+                authorityProof: null,
+                descriptor: null,
+                command: preparation.command,
+                facts: { ...preparation.facts, attemptCount: 1 }
+            };
+        };
+        return { service, prepare };
+    }
+
+    it('promotes without touching stage, epoch or attempts', async () => {
+        const { service, prepare } = await createApplyHarness();
+        const prepared = await prepare(toApplyPlannedLayoutCommand({
+            groupRef: GROUP_REF,
+            formationEpoch: 0,
+            expectedLayout: IDENTITY
+        }));
+
+        const read = await service.read(prepared);
+        const computed = service.compute(prepared, read);
+
+        if (computed.outcome !== 'write') {
+            throw new Error(`Expected a write, computed ${computed.outcome}`);
+        }
+        expect(computed.acceptedLayoutPromotion?.acceptedIdentity).toEqual(IDENTITY);
+        if (computed.guard.kind !== 'group') {
+            throw new Error('applyPlannedLayout must guard the group row');
+        }
+        expect(computed.guard.value.acceptedLayoutIdentity).toEqual(IDENTITY);
+        expect(computed.guard.value.lifecycleState).toBe('active');
+        expect(computed.guard.value.formationEpoch).toBe(0);
+        expect(computed.guard.value.formationAttemptCount).toBe(0);
+    });
+
+    it('rejects a superseded fence as a typed value', async () => {
+        const { service, prepare } = await createApplyHarness();
+        const prepared = await prepare(toApplyPlannedLayoutCommand({
+            groupRef: GROUP_REF,
+            formationEpoch: 0,
+            expectedLayout: { ...IDENTITY, version: IDENTITY.version + 1 }
+        }));
+
+        const computed = service.compute(prepared, await service.read(prepared));
+
+        if (!('receipt' in computed) || computed.receipt.rejection === null) {
+            throw new Error('Superseded fence must compute a rejection receipt');
+        }
+        expect(computed.receipt.rejection).toContain('planned-layout-superseded');
+    });
+
+    it('answers an already-applied fence with a no-op success', async () => {
+        const { service, prepare } = await createApplyHarness();
+        const prepared = await prepare(toApplyPlannedLayoutCommand({
+            groupRef: GROUP_REF,
+            formationEpoch: 0,
+            expectedLayout: IDENTITY
+        }));
+        const read = await service.read(prepared);
+        if (read.group === null) {
+            throw new Error('Seeded group must be readable');
+        }
+        const promoted = { ...read.group.value, acceptedLayoutIdentity: IDENTITY };
+        const applied = {
+            ...read,
+            group: {
+                entry: { ...read.group.entry, value: JSON.stringify(promoted) },
+                value: promoted
+            },
+            acceptedLayoutRow: { identity: IDENTITY, revision: 1 }
+        } as typeof read;
+
+        const computed = service.compute(prepared, applied);
+
+        expect(computed.outcome).toBe('no-op');
+    });
+
+    it('admits exactly applyPlannedLayout under topology-publication authority', async () => {
+        const { prepare } = await createApplyHarness();
+        const prepared = await prepare(toApplyPlannedLayoutCommand({
+            groupRef: GROUP_REF,
+            formationEpoch: 0,
+            expectedLayout: IDENTITY
+        }));
+
+        expect(() => validateGroupMutationAuthority(prepared.command, prepared.facts))
+            .not.toThrow();
+    });
+});
+
+describe('topology promotion outbox entry', () => {
+    it('round-trips the work through the durable entry', () => {
+        const entry = computeTopologyPromotionEntry({
+            work: { groupRef: GROUP_REF, formationEpoch: 2, expectedLayout: IDENTITY },
+            senderId: 'promotion-service',
+            createdAtEpochMs: 1_000,
+            expireAtEpochMs: 100_000
+        });
+
+        expect(entry.key.resourceId.length).toBeLessThanOrEqual(36);
+        expect(entry.key.resourceId.startsWith('tp-2-')).toBe(true);
+        expect(decodeTopologyPromotionWork(entry.resource)).toEqual({
+            groupRef: GROUP_REF,
+            formationEpoch: 2,
+            expectedLayout: IDENTITY
+        });
     });
 });
