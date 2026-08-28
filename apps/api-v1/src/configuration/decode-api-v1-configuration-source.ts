@@ -194,7 +194,6 @@ const CONFIGURATION_KEYS_BY_PATH: Readonly<Record<string, ReadonlySet<string>>> 
 };
 
 const ENVIRONMENT_NAME_BY_PATH: Readonly<Record<string, string>> = {
-    'profile.productionHardening': 'RALLAR_PRODUCTION_HARDENING',
     'http.port': 'PORT',
     'http.corsOrigins': 'CORS_ORIGINS',
     'publicApi.apiBaseUrl': 'RALLAR_API_BASE_URL',

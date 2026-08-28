@@ -57,6 +57,23 @@ Deno.test('configuration reader selects only absent or exact canonical profiles'
     }
 });
 
+Deno.test('configuration reader keeps production hardening profile-owned', async () => {
+    const environment = {
+        ...validConfigurationEnvironment('prod'),
+        RALLAR_PRODUCTION_HARDENING: '1'
+    };
+
+    const configuration = await readApiV1Configuration(readerInput(environment));
+
+    assert.equal(configuration.profile.productionHardening, false);
+    assert.equal(
+        configuration.profile.appliedEnvironmentOverrideNames.includes(
+            'RALLAR_PRODUCTION_HARDENING'
+        ),
+        false
+    );
+});
+
 Deno.test('configuration reader applies exact leaf precedence and ignores unrelated environment', async () => {
     const environment = {
         ...validConfigurationEnvironment(),

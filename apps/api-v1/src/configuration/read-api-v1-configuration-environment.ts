@@ -171,11 +171,6 @@ function decodeJson(raw: string): ApiV1ConfigurationSourceValue {
 
 const ENVIRONMENT_SETTINGS: readonly EnvironmentSetting[] = [
     {
-        name: 'RALLAR_PRODUCTION_HARDENING',
-        decode: decodeBoolean,
-        apply: (source, value) => source.profile.productionHardening = value
-    },
-    {
         name: 'PORT',
         decode: decodeNumber,
         apply: (source, value) => source.http.port = value

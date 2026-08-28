@@ -4,6 +4,8 @@ import { pathToFileURL } from 'node:url';
 
 const BUNDLED_DEMO_CLIENT_IDS = readBundledDemoClientIds();
 
+const RETIRED_PRODUCTION_NAMES = ['ENVIRONMENT', 'RALLAR_PRODUCTION_HARDENING'];
+
 const REQUIRED_SHARED_VALUES = new Map([
     ['AUTH_ADMIN_CLIENT_IDS', undefined],
     ['RALLAR_BLACK_BOX_OPERATOR_CLIENT_IDS', undefined],
@@ -23,6 +25,11 @@ export function validateDenoDeployApiEnvironment(document, target) {
 
     const productionEntries = collectProductionEnvironmentEntries(document);
     const errors = [];
+    for (const name of RETIRED_PRODUCTION_NAMES) {
+        if (productionEntries.has(name)) {
+            errors.push(`${name} is retired and must be removed from the production context.`);
+        }
+    }
     const productionProfile = requireProductionProfile(errors, productionEntries);
     for (const [name, expectedValue] of REQUIRED_SHARED_VALUES) {
         requireVisibleValue({ errors, entries: productionEntries, name, expectedValue });
@@ -38,12 +45,10 @@ export function validateDenoDeployApiEnvironment(document, target) {
     for (const name of REQUIRED_SHARED_SECRETS) {
         requireSecret(errors, productionEntries, name);
     }
-    if (target === 'relic') {
-        requireOptionalRelicPolicy({
-            errors,
-            entries: productionEntries,
-            name: 'RELIC_REST_AUTH_MODE'
-        });
+    if (target === 'relic' && productionEntries.has('RELIC_REST_AUTH_MODE')) {
+        errors.push(
+            'RELIC_REST_AUTH_MODE is profile-owned and must be removed from the production context.'
+        );
     }
     return errors;
 }
@@ -74,22 +79,6 @@ function requireNoBundledDemoClientIds(errors, entries, name) {
     const clientIds = entry.value.split(',').map((clientId) => clientId.trim());
     if (clientIds.some((clientId) => BUNDLED_DEMO_CLIENT_IDS.has(clientId))) {
         errors.push(`${name} must not include bundled demo client IDs for the prod profile.`);
-    }
-}
-
-function requireOptionalRelicPolicy({ errors, entries, name }) {
-    const entry = entries.get(name);
-    if (!entry) {
-        return;
-    }
-    if (entry.secret || !entry.value) {
-        errors.push(`${name} must be a visible non-empty production value when configured.`);
-        return;
-    }
-    if (entry.value !== 'group-policy') {
-        errors.push(
-            `${name} must equal group-policy when explicitly configured in the production context.`
-        );
     }
 }
 

@@ -70,7 +70,7 @@ export async function readRelicHunterServerConfiguration(
     const expeditionAi = decodeRelicAiExpeditionConfiguration(source);
     if (apiV1.profile.productionHardening && restAuthorization.mode !== 'group-policy') {
         throw new Error(
-            'RELIC_REST_AUTH_MODE must be group-policy when production hardening is enabled.'
+            'Relic profile restAuthorization.mode must be group-policy when production hardening is enabled.'
         );
     }
 
@@ -90,6 +90,14 @@ async function readRelicRestAuthorization(
     profileName: ApiV1ConfigurationProfile['name'],
     environment: RelicHunterServerEnvironmentSource
 ): Promise<RelicRestAuthorizationConfiguration> {
+    if (
+        (profileName === 'prod' || profileName === 'prod-hardened') &&
+        environment.restAuthorizationMode !== undefined
+    ) {
+        throw new Error(
+            `RELIC_REST_AUTH_MODE must be omitted when the ${profileName} profile owns the policy.`
+        );
+    }
     const defaultsMode = await readRelicRestAuthorizationMode(
         input,
         input.relicDefaultsUrl,

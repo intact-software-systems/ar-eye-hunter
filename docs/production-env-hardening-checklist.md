@@ -42,15 +42,15 @@ environment document.
 ## Relic Server Production
 
 - Apply the complete API-v1 production checklist to the embedded server.
-- Keep the `prod-hardened` profile-owned `group-policy` setting. If
-  `RELIC_REST_AUTH_MODE` is present, set it to exactly `group-policy`.
+- Keep the `prod-hardened` profile-owned `group-policy` setting and omit
+  `RELIC_REST_AUTH_MODE`.
 - Keep `RELIC_AI_EXPEDITION_OLLAMA_BASE_URL` private when
   `RELIC_AI_EXPEDITION_MODE=ollama`.
 - Snapshot reads require full group read permission, commands require room send
   permission, and reset requires active owner/admin permission.
 
 The Deno Deploy preflight applies the same API-v1 evidence checks to
-`relic-hunters` and rejects an explicitly configured Relic policy that is not `group-policy`.
+`relic-hunters` and rejects any explicitly configured Relic policy.
 
 ## Hetzner Disposable Controller
 

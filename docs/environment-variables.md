@@ -59,8 +59,7 @@ defaults-config.json
 `RALLAR_API_CONFIGURATION_PROFILE` accepts only the case-sensitive values
 `dev`, `prod`, `prod-hardened`, and `prod-in-memory`. Absence selects `dev`;
 `prod` uses production infrastructure with public registration and bundled ordinary users, while
-`prod-hardened` always enables hardening. `RALLAR_PRODUCTION_HARDENING=1` may strengthen another
-profile but cannot weaken `prod-hardened`.
+`prod-hardened` always enables hardening. API-v1 hardening is owned only by the selected profile.
 
 The exact non-secret override allowlist is:
 
@@ -114,7 +113,6 @@ accepted. There are no aliases or transitional readers.
 | Variable                           | Required | Default          | Usage                                                                                                                                                                        |
 | ---------------------------------- | -------- | ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `RALLAR_API_CONFIGURATION_PROFILE` | No       | `dev`            | Selects one exact committed profile.                                                                                                                                         |
-| `RALLAR_PRODUCTION_HARDENING`      | No       | Profile-owned    | `1` or `true` strengthens another profile; `0` or `false` cannot weaken `prod-hardened`.                                                                                     |
 | `PORT`                             | No       | Profile/defaults | HTTP listen port from `1` through `65535`.                                                                                                                                   |
 | `CORS_ORIGINS`                     | No       | Profile/defaults | Exact comma-separated browser origins. Hardened production requires exact HTTPS origins.                                                                                     |
 | `RALLAR_API_BASE_URL`              | No       | Profile/defaults | Canonical public HTTP API URL.                                                                                                                                               |
@@ -133,14 +131,14 @@ accepted. There are no aliases or transitional readers.
 
 ### Auth And Rate Limits
 
-| Variable                        | Required | Default  | Usage                                                                                                                                                                                                                                                                                       |
-| ------------------------------- | -------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `AUTH_REGISTRATION_MODE`        | No       | `public` | When set to `admin`, `/api/auth/register` requires an authenticated admin client. Other values behave like public registration.                                                                                                                                                             |
-| `AUTH_ADMIN_CLIENT_IDS`         | No       | `admin`  | Comma-separated platform-admin allow-list for admin-only registration, topology management, CRDT admin routes, admin operations, and admin support explain routes.                                                                                                                          |
-| `AUTH_STATIC_CLIENTS_MODE`      | No       | `demo`   | `demo` enables bundled local clients such as `admin/admin`, `user/user`, and tests. `disabled` removes static clients from login and registration conflict checks.                                                                                                                          |
-| `RALLAR_AUTH_CREDENTIAL_SECRET` | Yes      | None     | Stable server-only HMAC secret for deterministically reconstructing AppInbox-issued access tokens and one-time tickets without persisting their plaintext. Must contain at least 32 characters and remain unchanged for the lifetime of outstanding sessions, tickets, and durable results. |
-| `RALLAR_LOGIN_IP_RATE_LIMIT`    | No       | `30`     | Login attempts per client IP per 60 seconds. Must be a positive integer.                                                                                                                                                                                                                    |
-| `RALLAR_LOGIN_USER_RATE_LIMIT`  | No       | `5`      | Login attempts per client IP plus username per 60 seconds. Must be a positive integer. Root memory-mode scripts raise this to `100`.                                                                                                                                                        |
+| Variable                        | Required | Default       | Usage                                                                                                                                                                                                                                                                                       |
+| ------------------------------- | -------- | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `AUTH_REGISTRATION_MODE`        | No       | Profile-owned | Exact values are `public` or `admin`. `admin` requires an authenticated admin client for `/api/auth/register`; any other value rejects startup.                                                                                                                                             |
+| `AUTH_ADMIN_CLIENT_IDS`         | No       | `admin`       | Comma-separated platform-admin allow-list for admin-only registration, topology management, CRDT admin routes, admin operations, and admin support explain routes.                                                                                                                          |
+| `AUTH_STATIC_CLIENTS_MODE`      | No       | `demo`        | `demo` enables bundled local clients such as `admin/admin`, `user/user`, and tests. `disabled` removes static clients from login and registration conflict checks.                                                                                                                          |
+| `RALLAR_AUTH_CREDENTIAL_SECRET` | Yes      | None          | Stable server-only HMAC secret for deterministically reconstructing AppInbox-issued access tokens and one-time tickets without persisting their plaintext. Must contain at least 32 characters and remain unchanged for the lifetime of outstanding sessions, tickets, and durable results. |
+| `RALLAR_LOGIN_IP_RATE_LIMIT`    | No       | `30`          | Login attempts per client IP per 60 seconds. Must be a positive integer.                                                                                                                                                                                                                    |
+| `RALLAR_LOGIN_USER_RATE_LIMIT`  | No       | `5`           | Login attempts per client IP plus username per 60 seconds. Must be a positive integer. Root memory-mode scripts raise this to `100`.                                                                                                                                                        |
 
 ### Realtime Topology And Group Formation
 
@@ -169,32 +167,32 @@ accepted. There are no aliases or transitional readers.
 
 ### Black Box Operator Tokens
 
-| Variable                                 | Required                               | Default            | Usage                                                                                                                                                                  |
-| ---------------------------------------- | -------------------------------------- | ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET` | Yes for `/api/black-box/control-token` | None               | HMAC secret used by API-v1 to issue short-lived control-server operator tokens. The same value must be configured on the black-box control server.                     |
-| `RALLAR_BLACK_BOX_OPERATOR_TOKEN_TTL_MS` | No                                     | `86400000`         | TTL for logged-in operator tokens. Production hardening requires an explicit positive TTL. Prefer short TTLs and bearer headers.                                       |
-| `RALLAR_BLACK_BOX_OPERATOR_CLIENT_IDS`   | No                                     | Any logged-in user | Optional comma-separated allow-list of authenticated client IDs that may request `/api/black-box/control-token`. Production hardening requires an explicit allow-list. |
+| Variable                                 | Required                                | Default            | Usage                                                                                                                                                                                  |
+| ---------------------------------------- | --------------------------------------- | ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET` | Yes for `/api/black-box/control-token`  | None               | HMAC secret used by API-v1 to issue short-lived control-server operator tokens. The same value must be configured on the black-box control server.                                     |
+| `RALLAR_BLACK_BOX_OPERATOR_TOKEN_TTL_MS` | No                                      | `86400000`         | TTL for logged-in operator tokens. Production hardening requires an explicit positive TTL. Prefer short TTLs and bearer headers.                                                       |
+| `RALLAR_BLACK_BOX_OPERATOR_CLIENT_IDS`   | Required for `prod` and `prod-hardened` | Any logged-in user | Comma-separated allow-list of authenticated client IDs that may request `/api/black-box/control-token`. Production requires a non-empty allow-list with no bundled demo IDs in `prod`. |
 
 ### ICE / WebRTC
 
 | Variable                                | Required                                                                   | Default                         | Usage                                                                                                                      |
 | --------------------------------------- | -------------------------------------------------------------------------- | ------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
 | `RALLAR_ICE_MODE`                       | No                                                                         | Profile-owned                   | ICE provider. Supported values: `metered`, `local`. `local` returns an empty ICE server list and avoids Metered API calls. |
-| `RALLAR_RTC_RTT_REPORTING_DEGREE_LIMIT` | No                                                                         | RTC topology `degreeLimit`, `5` | Positive integer cap for accepted RTC RTT reporting edges per endpoint. Invalid values fall back to the topology degree.   |
+| `RALLAR_RTC_RTT_REPORTING_DEGREE_LIMIT` | No                                                                         | RTC topology `degreeLimit`, `5` | Positive integer cap for accepted RTC RTT reporting edges per endpoint. Invalid values reject startup.                     |
 | `METERED_APP_NAME`                      | Required when `RALLAR_ICE_MODE=metered` and `/api/webrtc/ice` is requested | None                            | Metered TURN app name. Used in `https://<app>.metered.live/...`.                                                           |
 | `METERED_API_KEY`                       | Required when `RALLAR_ICE_MODE=metered` and `/api/webrtc/ice` is requested | None                            | Metered TURN API key. Server-only secret.                                                                                  |
 | `METERED_REGION`                        | No                                                                         | `eu`                            | Optional override for the mandatory Metered TURN region. Ignored when ICE mode is `local`.                                 |
 
 ### Timing And App Inbox Tuning
 
-| Variable                                      | Required | Default | Usage                                                                         |
-| --------------------------------------------- | -------- | ------- | ----------------------------------------------------------------------------- |
-| `RALLAR_TIMING_LOGS`                          | No       | Enabled | Enables console timing sink. Values `0`, `false`, `no`, and `off` disable it. |
-| `RALLAR_APP_INBOX_PHASE_TIMING`               | No       | `false` | Enables phase timing in app inbox processing.                                 |
-| `RALLAR_APP_INBOX_WAIT_MAX_ELAPSED_MS`        | No       | `30000` | Max app inbox wait time. Invalid numbers fall back.                           |
-| `RALLAR_APP_INBOX_WAIT_RETRY_INTERVAL_MS`     | No       | `250`   | Initial app inbox retry interval. Invalid numbers fall back.                  |
-| `RALLAR_APP_INBOX_WAIT_MAX_RETRY_INTERVAL_MS` | No       | `1000`  | Max app inbox retry interval. Invalid numbers fall back.                      |
-| `RALLAR_APP_INBOX_WAIT_JITTER_RATIO`          | No       | `0.1`   | App inbox retry jitter ratio. Invalid numbers fall back.                      |
+| Variable                                      | Required | Default | Usage                                                                                                                            |
+| --------------------------------------------- | -------- | ------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `RALLAR_TIMING_LOGS`                          | No       | Enabled | Enables the console timing sink. Exact values `0` and `false` disable it; `1` and `true` enable it. Other values reject startup. |
+| `RALLAR_APP_INBOX_PHASE_TIMING`               | No       | `false` | Enables phase timing in app inbox processing.                                                                                    |
+| `RALLAR_APP_INBOX_WAIT_MAX_ELAPSED_MS`        | No       | `30000` | Max app inbox wait time. Invalid values reject startup.                                                                          |
+| `RALLAR_APP_INBOX_WAIT_RETRY_INTERVAL_MS`     | No       | `250`   | Initial app inbox retry interval. Invalid values reject startup.                                                                 |
+| `RALLAR_APP_INBOX_WAIT_MAX_RETRY_INTERVAL_MS` | No       | `1000`  | Max app inbox retry interval. Invalid values reject startup.                                                                     |
+| `RALLAR_APP_INBOX_WAIT_JITTER_RATIO`          | No       | `0.1`   | App inbox retry jitter ratio. Invalid values reject startup.                                                                     |
 
 ### Scripts
 
@@ -263,16 +261,16 @@ repositories are used.
 
 ### Relic Server Variables
 
-| Variable                              | Required | Default                                                             | Usage                                                                                                                                                                                        |
-| ------------------------------------- | -------- | ------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `PORT`                                | No       | `8090`                                                              | HTTP listen port. Parsed with `Number(...)`; no range validation is applied here.                                                                                                            |
-| `CORS_ORIGINS`                        | No       | `http://localhost:5173,http://localhost:5174,http://localhost:5175` | Allowed browser origins for `/api/*`. Use `*` to reflect any request origin.                                                                                                                 |
-| `RALLAR_API_CONFIGURATION_PROFILE`    | No       | `dev`                                                               | Selects the same immutable API-v1 profile used by the embedded server. Production uses `prod` by default or `prod-hardened` for forced hardening.                                            |
-| `RELIC_REST_AUTH_MODE`                | No       | Profile-owned                                                       | Local profiles default to `authenticated`; production profiles default to `group-policy`. An explicit override is applied after the profile, but production deployment rejects weakening it. |
-| `RELIC_AI_EXPEDITION_MODE`            | No       | `off`                                                               | Optional server-side expedition setup generation. Supported values: `off`, `mock`, and `ollama`.                                                                                             |
-| `RELIC_AI_EXPEDITION_TIMEOUT_MS`      | No       | `15000`                                                             | Timeout for server-side expedition blueprint generation before procedural fallback. Must be a positive integer.                                                                              |
-| `RELIC_AI_EXPEDITION_OLLAMA_BASE_URL` | No       | `http://127.0.0.1:11434`                                            | Private Ollama sidecar base URL used only when `RELIC_AI_EXPEDITION_MODE=ollama`.                                                                                                            |
-| `RELIC_AI_EXPEDITION_OLLAMA_MODEL`    | No       | `llama-test`                                                        | Ollama model ID used only when `RELIC_AI_EXPEDITION_MODE=ollama`.                                                                                                                            |
+| Variable                              | Required | Default                                                             | Usage                                                                                                                                             |
+| ------------------------------------- | -------- | ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `PORT`                                | No       | `8090`                                                              | HTTP listen port. Parsed with `Number(...)`; no range validation is applied here.                                                                 |
+| `CORS_ORIGINS`                        | No       | `http://localhost:5173,http://localhost:5174,http://localhost:5175` | Allowed browser origins for `/api/*`. Use `*` to reflect any request origin.                                                                      |
+| `RALLAR_API_CONFIGURATION_PROFILE`    | No       | `dev`                                                               | Selects the same immutable API-v1 profile used by the embedded server. Production uses `prod` by default or `prod-hardened` for forced hardening. |
+| `RELIC_REST_AUTH_MODE`                | No       | Profile-owned                                                       | Local profiles default to `authenticated` and may override the mode. Production profiles own `group-policy` and reject this variable.             |
+| `RELIC_AI_EXPEDITION_MODE`            | No       | `off`                                                               | Optional server-side expedition setup generation. Supported values: `off`, `mock`, and `ollama`.                                                  |
+| `RELIC_AI_EXPEDITION_TIMEOUT_MS`      | No       | `15000`                                                             | Timeout for server-side expedition blueprint generation before procedural fallback. Must be a positive integer.                                   |
+| `RELIC_AI_EXPEDITION_OLLAMA_BASE_URL` | No       | `http://127.0.0.1:11434`                                            | Private Ollama sidecar base URL used only when `RELIC_AI_EXPEDITION_MODE=ollama`.                                                                 |
+| `RELIC_AI_EXPEDITION_OLLAMA_MODEL`    | No       | `llama-test`                                                        | Ollama model ID used only when `RELIC_AI_EXPEDITION_MODE=ollama`.                                                                                 |
 
 ### Inherited API-v1 Variables
 
