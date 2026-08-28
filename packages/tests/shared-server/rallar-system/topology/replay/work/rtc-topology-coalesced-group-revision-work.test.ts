@@ -10,6 +10,7 @@ import type { RtcTopologyGroupRevisionWork } from '@shared-server/rallar-system/
 import {
     computeCoalescedRtcTopologyGroupRevisionWork,
     mergeRtcTopologyGroupRevisionWork,
+    readPendingTopologyReplan,
     toRtcTopologyCoalescedGroupRevisionResourceId
 } from '@shared-server/rallar-system/topology/replay/work/rtc-topology-coalesced-group-revision-work.ts';
 import { computeRtcTopologyInputFingerprint } from '@shared-server/rallar-system/topology/replay/work/rtc-topology-input-fingerprint.ts';
@@ -23,7 +24,7 @@ import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import { toCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topology-config-canonical.ts';
 import type { AuditStamp, GroupSnapshot } from '@shared/api/group-types.ts';
 import { isIdempotentHandlerFinalizedRelease } from '@shared/queuebox/queue-box-types.ts';
-import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import { EntityStatus, type Key, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { isCanonicalRtcTopologyWorkEntry } from '@shared/queuebox/rtc-topology-work-entry-contract.ts';
 import { createTestGroup } from '../../../../../create-test-group.ts';
 
@@ -519,3 +520,63 @@ function withSessions(snapshot: GroupSnapshot, sessionIds: readonly string[]): G
         }))
     };
 }
+
+describe('readPendingTopologyReplan', () => {
+    function computedEntry(): ResourceEntry {
+        return computeCoalescedRtcTopologyGroupRevisionWork({
+            aggregateRef: GROUP_REF,
+            groupSnapshot: createGroupSnapshot(4, 3),
+            requestedAtEpochMs: BASE_EPOCH_MS,
+            expireAtEpochMs: EXPIRE_AT_EPOCH_MS,
+            recomputeDebounceMs: DEBOUNCE_MS,
+            senderId: 'server-1',
+            previousEntry: null
+        }).entry;
+    }
+
+    it('reads a queued replan and its due time off the coalesced row', async () => {
+        await expect(
+            readPendingTopologyReplan({ findByKey: async () => computedEntry() }, GROUP_REF)
+        ).resolves.toEqual({
+            reconfigureQueued: true,
+            dueAtEpochMs: BASE_EPOCH_MS + DEBOUNCE_MS
+        });
+    });
+
+    it('reads null when no row exists and asks with the stored row\'s exact key', async () => {
+        const keys: Key[] = [];
+        await expect(
+            readPendingTopologyReplan({
+                findByKey: async (key) => {
+                    keys.push(key);
+                    return null;
+                }
+            }, GROUP_REF)
+        ).resolves.toBeNull();
+        expect(keys).toEqual([computedEntry().key]);
+    });
+
+    it('reads an executing (reserved) row as still queued', async () => {
+        const reserved = { ...computedEntry(), status: EntityStatus.RESERVED };
+        await expect(
+            readPendingTopologyReplan({ findByKey: async () => reserved }, GROUP_REF)
+        ).resolves.toEqual({
+            reconfigureQueued: true,
+            dueAtEpochMs: BASE_EPOCH_MS + DEBOUNCE_MS
+        });
+    });
+
+    it('reads a settled row as no pending work', async () => {
+        const settled = { ...computedEntry(), status: EntityStatus.COMPLETED };
+        await expect(
+            readPendingTopologyReplan({ findByKey: async () => settled }, GROUP_REF)
+        ).resolves.toBeNull();
+    });
+
+    it('reports a queued replan with an unknown due time when the envelope no longer decodes', async () => {
+        const corrupt = { ...computedEntry(), resource: '{"not":"an-envelope"}' };
+        await expect(
+            readPendingTopologyReplan({ findByKey: async () => corrupt }, GROUP_REF)
+        ).resolves.toEqual({ reconfigureQueued: true, dueAtEpochMs: null });
+    });
+});

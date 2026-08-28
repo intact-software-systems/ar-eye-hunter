@@ -87,6 +87,11 @@ export class RallarRtcTopologyService {
         this.metrics.recordFingerprintSkip();
     }
 
+    /** A stage or policy hold refused a replacement (4b) — not a publish attempt. */
+    recordTopologyPlanFrozen(): void {
+        this.metrics.recordPlanFrozen();
+    }
+
     updateGroupTopology(
         group: GroupSnapshot,
         rttMeasurements: readonly RttMeasurementInfo[] = [],

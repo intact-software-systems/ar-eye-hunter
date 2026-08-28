@@ -8,6 +8,7 @@ import type { WsServerLiveSendStatus } from '@shared/services/ws-queue-box-serve
 import { decodePersistedALMessageValue } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { toCanonicalRtcTopologyGroupIdentity } from '../../persistence/rtc-topology-identifiers.ts';
 import type { RtcTopologyPublication } from '../../publication/rtc-topology-publication.ts';
+import { toDeliverableTopologySnapshot } from '../deliverable-topology-snapshot.ts';
 import type { RtcTopologyDeliveryLogEntry } from '../delivery/rtc-topology-delivery-contracts.ts';
 import type {
     RtcTopologyReplayEntryHandler,
@@ -38,6 +39,8 @@ interface RtcTopologyReplayEntryHandlerOptions {
     readonly publications: RtcTopologyReplayPublicationReader;
     readonly outbox: RtcTopologyReplayOutboxReader;
     readonly snapshots: RtcTopologyReplaySnapshotReader;
+    /** The accepted slot: repair pins to it whenever it exists (plan slice 4c). */
+    readonly acceptedSnapshots: RtcTopologyReplaySnapshotReader;
     readonly sender: RtcTopologyReplayLiveSender;
 }
 
@@ -45,12 +48,14 @@ export class RtcTopologyReplayEntryHandlerService implements RtcTopologyReplayEn
     readonly #publications: RtcTopologyReplayPublicationReader;
     readonly #outbox: RtcTopologyReplayOutboxReader;
     readonly #snapshots: RtcTopologyReplaySnapshotReader;
+    readonly #acceptedSnapshots: RtcTopologyReplaySnapshotReader;
     readonly #sender: RtcTopologyReplayLiveSender;
 
     constructor(options: RtcTopologyReplayEntryHandlerOptions) {
         this.#publications = options.publications;
         this.#outbox = options.outbox;
         this.#snapshots = options.snapshots;
+        this.#acceptedSnapshots = options.acceptedSnapshots;
         this.#sender = options.sender;
     }
 
@@ -60,7 +65,12 @@ export class RtcTopologyReplayEntryHandlerService implements RtcTopologyReplayEn
         signal: AbortSignal
     ): Promise<RtcTopologyReplayEntryHandlingResult> {
         throwIfAborted(signal);
-        const [publication, outbox, currentSnapshot] = await Promise.all([
+        // The decision compares against the planned row: it is written in the
+        // same transaction as every publication, so the log can never run
+        // ahead of it — the invariant the corruption checks enforce. The
+        // asynchronously promoted accepted row may trail the log and is read
+        // only when the rare repair branch needs delivery content.
+        const [publication, outbox, plannedSnapshot] = await Promise.all([
             this.#publications.findPublication(entry.groupRef, entry.publicationId),
             this.#outbox.getItem(entry.outboxKey),
             this.#snapshots.findSnapshot(entry.groupRef)
@@ -71,7 +81,7 @@ export class RtcTopologyReplayEntryHandlerService implements RtcTopologyReplayEn
             entry,
             publication,
             outbox,
-            currentSnapshot,
+            currentSnapshot: plannedSnapshot,
             databaseNowEpochMs
         });
         if (decision.status === 'gap') {
@@ -82,7 +92,10 @@ export class RtcTopologyReplayEntryHandlerService implements RtcTopologyReplayEn
         const message = isCurrentRepair
             ? materializeRtcTopologyCurrentRepairMessage({
                 entry,
-                currentSnapshot: decision.currentSnapshot,
+                currentSnapshot: toDeliverableTopologySnapshot({
+                    planned: decision.currentSnapshot,
+                    accepted: await this.#acceptedSnapshots.findSnapshot(entry.groupRef)
+                }) ?? decision.currentSnapshot,
                 databaseNowEpochMs
             })
             : decision.message;

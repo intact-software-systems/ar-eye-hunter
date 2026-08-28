@@ -788,6 +788,118 @@ returns `publish-superseded`, so a dominated candidate's publication can be broa
 **Gates:** baseline, both profiles, **medium-scale**, `topology-replay`, state-write,
 `test:integration:postgres`.
 
+### PR 5 delivery record — slices 4b + 4c (executed 2026-08-27, branch `codex/group-activation-planning-gate`)
+
+Delivered as designed, with these recorded rulings where the slice text left the semantics open:
+
+- **Freeze is replacement suppression, never establishment suppression.** "Write no replacement" is
+  read literally: `connecting`/`reconnecting` (and `active` under suppression) freeze only when the
+  planned slot holds an **active** row; an absent or tombstoned slot always plans. This is
+  load-bearing for today's phased flow — `start-establishment` jumps `forming → connecting` and the
+  first real plan is produced while already `connecting`; a stage-only freeze would starve the
+  deadline timer (it throws-to-retry on a missing/tombstoned planned row) and the criterion would
+  never have a layout to measure. The one behavior change for a producible stage: `connecting` no
+  longer replans mid-dial — the candidate stays frozen (the slice's own mitigation, the transitions'
+  unconditional follow-up enqueue, reconsiders latest authority after the stage advances).
+- **The decision has one owner.** `resolveTopologyPlanAction` (pure, total via the stage registry;
+  beside the planning service) resolves `plan | publish-removal | freeze` from stage, replanning
+  mode, work origin and previous-row state. `computeTopologyFromAuthority` applies it — still the
+  single production gate both runtimes converge on — and now returns a discriminated
+  `planned | frozen` result, so the compiler censused every consumer. The work handler maps `frozen`
+  to a new `skipped-frozen` decision: entry finished, **no snapshot and no fingerprint write** (the
+  fingerprint must keep saying the stored layout trails the authority — decision 11's latched
+  signal), criterion petitioned on the stored row, promotion reconcile still runs. The local-mode
+  bypasses (`reconfigureGroupTopology`, `flushDueGroupTopology`) consult the same resolver;
+  local-mode explicit reconfigure of a removal-disposition stage keeps today's planning (a skip
+  there has no snapshot to answer with — recorded residue, api-v1's paths all converge on the
+  handler).
+- **`active` follows the policy now, minimally.** The authority read resolves the group's stored
+  `topology.replanning` (absent → default preset, unreadable → `'corrupt'`). `auto`/`debounced`
+  plan (indistinguishable until decision 31). `commanded` freezes **change-gated coalesced** work
+  and RTT refreshes (origin `automatic`); non-change-gated group-revision work — the reconfigure
+  family and the lifecycle transitions' follow-up enqueues — carries origin `commanded` and plans.
+  A corrupt policy fails automatic replanning closed, commanded work still plans. C6 closes here:
+  the six stage-blind enqueue paths all converge on the gated compute. C7's mechanism lands with a
+  pinned test: a departure arriving as automatic work under `commanded` freezes — the layout keeps
+  naming the departed session until the application reconfigures; 10a owns the observable axes.
+- **4c delivery is accepted-first with a planned fallback, not accepted-only.** Repair
+  (`deliver-current`) and hydration content resolve `accepted ?? planned` — decisions 1/30: the
+  layout carrying traffic when a promotion has produced one, the frozen planned candidate before
+  that (`connecting`, pre-first-promotion, operator-activated). One split matters: the replay
+  **decision** still compares the log against the **planned** row — it is written in the same
+  transaction as every publication, so the log can never run ahead of it, which is exactly the
+  invariant the decision's corruption checks enforce; the asynchronously promoted accepted row may
+  trail the log indefinitely under hold, and using it as the comparison baseline made the
+  `topology-replay` proof read healthy entries as "historical newer than current" corruption. Only
+  the repair **content** is accepted-first. Replay's transport of newer planned
+  publications is untouched — the browser's stage gate owns dialing (slice 8); what changed is that
+  repair and hydration can no longer put `active` members onto an unaccepted planned layout. The
+  hydrator scans **both** namespaces (the planned scan finds dialing members, the accepted scan
+  finds members a replan moved past) deduplicating per `(overlay, connection)` pair — the cost the
+  plan's table priced as "the hydrator's paged-CAS reader".
+- **The view carries both slots without a rename.** `GroupTopologyManagementView` gains required
+  `acceptedSnapshot` (null until first promotion); `snapshot` stays the planned slot. `pending` is
+  finally populated: `readPendingTopologyReplan` (owned beside the coalesced row it decodes) reads
+  the row by its exact durable key via `findByKey`, reports `{reconfigureQueued, dueAtEpochMs}` for
+  a mutable row, `null` for absent/settled rows, and queued-with-unknown-due for a row whose
+  envelope no longer decodes. api-v1 wires it straight over the database handle
+  (`PSqlResourceInboxEntryRepository`), so the query service needs no queue-engine dependency.
+- **A PR-4 post-review defect fixed beneath this PR** (`1c2967a11`, on the PR-4 branch): the
+  promotion mint gate's fresh reads ran inside the publication transaction on the shared database
+  handle — pooled Postgres works, single-session PGlite deadlocks and wedges the AppInbox loop
+  (caught by the black-box memory leg). Doctrine recorded: **enqueue-side gate reads run before the
+  transaction opens; only the idempotent mint commits inside it.** The frozen and unchanged paths
+  here follow the same shape.
+
+#### PR 5 review-repair record (ten-angle max-effort review + gap sweep, executed 2026-08-28)
+
+Fifteen confirmed findings, all repaired in the PR. The rulings the repairs added:
+
+- **Delivery content has one owner with two qualifiers.** `toDeliverableTopologySnapshot` (replay/)
+  resolves repair and hydration content: accepted-first, **except** a planned removal tombstone
+  always wins — the accepted slot only ever holds active layouts (a tombstone never promotes) and
+  nothing deletes it today, so without this clause a torn-down overlay is resurrected from the stale
+  accepted row forever (the teardown signal I15 protects) — and, member-aware, a session named only
+  in the held planned candidate receives its candidate assignment, or a `commanded` hold starves the
+  very coverage the criterion measures. The replay **decision** stays planned-pinned and now reads
+  the accepted row only on the repair branch (the hot path pays nothing). Accepted-slot deletion on
+  teardown belongs to slice 5e's `reset`.
+- **`pending` means "the queue will still attempt it":** NEW, RETRY and RESERVED all report queued.
+  Recorded residue: a delta parked on a causal-suffixed successor row behind a reserved head is
+  invisible to the point read for at most its debounce window (the head reads queued while
+  reserved); revivable-but-unrevived FAILED rows honestly read as not queued. `PendingTopologyReplan`
+  is now the one named contract in the shared API, and api-v1 feeds the reader the mutation
+  runtime's own entries repository — no raw database handle, no second repository instance.
+- **The policy fold has one owner beside the resolver**: `toGroupTopologyReplanningRead` (absent →
+  default preset, corrupt stays corrupt) and `consultsReplanningPolicy` (spelled off the disposition
+  registry, so the read gate cannot drift from the row that consumes it). The planning service takes
+  the same `readLifecyclePolicy` port every other topology consumer takes. `workOrigin` is owned by
+  an exhaustive `toTopologyWorkOrigin` beside the work kinds — a new kind fails the anchor instead
+  of silently classifying `commanded` past the freeze — and the origin doc is corrected: the
+  transitions' follow-ups ride the **automatic** coalesced presence chain, so a `commanded` group's
+  post-transition replan also waits for the application (C7), which is the intended semantics.
+- **The frozen path is observable and honest**: a dedicated `topologyPlanFrozenCount` (a hold is not
+  a failed publish attempt), the skipped-frozen arm carries the union's own payload (non-null
+  criterion petition, no phantom frozen-without-row state), both skip decisions share one writer
+  with the fingerprint non-write guarded on the discriminant, and the local `flushDue` path now
+  skips for removal-disposition stages too. Hydration's pair set dedupes **attempts** (a retry pair
+  keeps its mark for the next pass instead of being re-attempted by the second scan — no duplicate
+  sends, no false requires-retry throw on a fully hydrated gap pass).
+- **The gate list grew what the review demanded**: the frozen write path has a real-Postgres
+  handler-level test (establishment plans while `connecting`, the replacement freezes with the entry
+  completed and the fingerprint latch untouched); the lifecycle-transitions recipe pins
+  `acceptedSnapshot: null` through establishment and a post-activation poll proves the promotion
+  lands the accepted slot over REST; the admin-support narrative summarizes the traffic layout, not
+  the held candidate; the formation deadline timer reads the planned slot directly instead of the
+  widened management view.
+- **Refuted for the record**: the transition follow-up enqueue the freeze relies on does exist —
+  `compute-lifecycle-transition` marks presence-summary work and `group-presence-summary-effects`
+  mints the coalesced topology row unconditionally; and the accepted slot can never hold a tombstone
+  (`computePlannedLayoutPromotion` returns `no-planned-layout` for any non-active planned identity).
+  Accepted residue: `preserve-known-revision` membership-delta work can evaluate the gate on an
+  enqueue-time stage for one cycle — the pre-existing selection semantics; every producible
+  stale-stage pairing today resolves to the same action the fresh stage would.
+
 ## Slice 5 — The command family: `plan`, `connect`, `pause`, `resume`, `reset`, `start` (dark)
 
 Per-command cost is the checkpoint-recovered 18-file / ~23-site census: a new `AppInboxType`; a payload type and an

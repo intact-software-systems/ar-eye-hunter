@@ -32,6 +32,7 @@ export interface RallarRtcTopologyMetrics {
     readonly topologyPublishedCount: number;
     readonly topologyPublishSkippedUnchangedCount: number;
     readonly topologyRebuildSkippedFingerprintCount: number;
+    readonly topologyPlanFrozenCount: number;
     readonly topologyRemovalRequestCount: number;
     readonly topologyRemovedCount: number;
     readonly topologyRemoveMissCount: number;
@@ -71,6 +72,7 @@ interface RtcTopologyMetricsState {
     topologyPublishedCount: number;
     topologyPublishSkippedUnchangedCount: number;
     topologyRebuildSkippedFingerprintCount: number;
+    topologyPlanFrozenCount: number;
     topologyRemovalRequestCount: number;
     topologyRemovedCount: number;
     topologyRemoveMissCount: number;
@@ -210,6 +212,10 @@ export class RtcTopologyMetrics {
         this.state.topologyRebuildSkippedFingerprintCount += 1;
     }
 
+    recordPlanFrozen(): void {
+        this.state.topologyPlanFrozenCount += 1;
+    }
+
     recordRemoval(removed: boolean): void {
         this.state.topologyRemovalRequestCount += 1;
         if (removed) {
@@ -265,6 +271,7 @@ function createRtcTopologyMetricsState(): RtcTopologyMetricsState {
         topologyPublishedCount: 0,
         topologyPublishSkippedUnchangedCount: 0,
         topologyRebuildSkippedFingerprintCount: 0,
+        topologyPlanFrozenCount: 0,
         topologyRemovalRequestCount: 0,
         topologyRemovedCount: 0,
         topologyRemoveMissCount: 0

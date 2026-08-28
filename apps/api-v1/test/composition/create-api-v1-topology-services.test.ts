@@ -21,6 +21,9 @@ Deno.test('topology composition installs canonical owners and RTT policy inputs'
     const snapshot = createGroupSnapshot();
     const formationEvents: unknown[] = [];
     const input: CreateApiV1TopologyServicesInput = {
+        pendingReplanReader: {
+            findByKey: () => Promise.reject(new Error('pending replan not read by construction test'))
+        },
         runtimeStateRepository,
         groupStateRepository: new GroupStateRepository(
             runtimeStateRepository,

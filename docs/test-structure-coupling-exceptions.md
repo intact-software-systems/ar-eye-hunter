@@ -1373,6 +1373,51 @@ moved or changed test.
       "summary": "CRDT reservation construction remains connected to canonical durable AppInbox command materialization. Executable assertion: “rejects a CRDT reservation builder disconnected from command materialization”.",
       "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-analysis.test.ts#rejects a CRDT reservation builder disconnected from command materialization",
       "coverageRelation": "The test replaces the actual CRDT administrative route command-materialization call and executes the mutation-route inventory validator; reading that production route is the executable input that proves reservation construction cannot bypass canonical durable AppInbox command materialization."
+    },
+    {
+      "id": "rtc-topology-replay-single-live-send",
+      "domain": "RTC topology replay live delivery",
+      "owner": "Rallar server maintainers",
+      "summary": "A replayable delivery-log entry produces exactly one live WebSocket send of the immutable outbox message. Executable assertion: \u201cdelivers the exact immutable outbox message when the publication is current\u201d.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-system/topology/replay/consumer/rtc-topology-replay-entry-handler.test.ts#delivers the exact immutable outbox message when the publication is current",
+      "coverageRelation": "The named assertion executes the replay entry handler against a current publication and observes its owned live-send port; the single-send count is the exactly-once delivery constraint of the replay protocol.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "WS queue-box live sender (sendToTargetsWithResult)",
+        "observableEffect": "One handled replay entry emits one live send carrying the durable outbox message bytes.",
+        "requiredConstraint": "Replay emits exactly one live send per handled entry \u2014 never zero, never a duplicate.",
+        "failureRationale": "A duplicate send would double-deliver topology to members and a missing send would silently drop replayed history, both breaking the at-most-once live half of the replay protocol."
+      }
+    },
+    {
+      "id": "rtc-topology-replay-suppressed-send",
+      "domain": "RTC topology replay live delivery",
+      "owner": "Rallar server maintainers",
+      "summary": "An expired delivery-log entry sends nothing: a retention gap is a typed result the consumer handles, never a stale delivery. Executable assertion: \u201creturns a typed retention gap without attempting a send\u201d.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-system/topology/replay/consumer/rtc-topology-replay-entry-handler.test.ts#returns a typed retention gap without attempting a send",
+      "coverageRelation": "The named assertion executes the replay entry handler on an expired entry and observes the owned live-send port; the absence of a send is the constraint that expired history never reaches members.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "WS queue-box live sender (sendToTargetsWithResult)",
+        "observableEffect": "An expired entry resolves to a typed gap with zero live sends.",
+        "requiredConstraint": "The live sender remains unused for expired delivery-log entries.",
+        "failureRationale": "Sending expired history would deliver stale topology to members instead of surfacing the gap to the replay consumer."
+      }
+    },
+    {
+      "id": "rtc-topology-replay-corruption-suppressed-send",
+      "domain": "RTC topology replay live delivery",
+      "owner": "Rallar server maintainers",
+      "summary": "A corrupt delivery-log entry sends nothing: corruption propagates to the replay consumer without reaching the socket. Executable assertion: \u201cpropagates corruption for a missing unexpired durable reference\u201d.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-system/topology/replay/consumer/rtc-topology-replay-entry-handler.test.ts#propagates corruption for a missing unexpired durable reference",
+      "coverageRelation": "The named assertion executes the replay entry handler on a corrupt entry and observes the owned live-send port; the absence of a send is the constraint that invalid history never reaches members.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "WS queue-box live sender (sendToTargetsWithResult)",
+        "observableEffect": "A corrupt entry throws to the consumer with zero live sends.",
+        "requiredConstraint": "The live sender remains unused for corrupt delivery-log entries.",
+        "failureRationale": "Sending invalid history would deliver corrupt topology to members instead of surfacing the corruption to the replay consumer."
+      }
     }
   ],
   "entries": [
@@ -3344,6 +3389,39 @@ moved or changed test.
       "owner": "Rallar repository maintainers",
       "rationale": "Reads the actual CRDT administrative mutation route as the mutated input to the real route validator, proving that disconnecting reservation construction from canonical AppInbox command materialization is rejected.",
       "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-analysis.test.ts#rejects a CRDT reservation builder disconnected from command materialization"
+    },
+    {
+      "id": "test-structure-coupling-5b530e925eb450cb",
+      "path": "packages/tests/shared-server/rallar-system/topology/replay/consumer/rtc-topology-replay-entry-handler.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "rtc-topology-replay-single-live-send",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar server maintainers",
+      "rationale": "The single-send count directly proves that one handled replay entry emits exactly one live delivery of the immutable outbox message.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-system/topology/replay/consumer/rtc-topology-replay-entry-handler.test.ts#delivers the exact immutable outbox message when the publication is current"
+    },
+    {
+      "id": "test-structure-coupling-f34d70bf4a6739c1",
+      "path": "packages/tests/shared-server/rallar-system/topology/replay/consumer/rtc-topology-replay-entry-handler.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "rtc-topology-replay-suppressed-send",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar server maintainers",
+      "rationale": "The send-absence assertion directly proves that an expired entry resolves to a typed retention gap without any live delivery.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-system/topology/replay/consumer/rtc-topology-replay-entry-handler.test.ts#returns a typed retention gap without attempting a send"
+    },
+    {
+      "id": "test-structure-coupling-7694279a835a985d",
+      "path": "packages/tests/shared-server/rallar-system/topology/replay/consumer/rtc-topology-replay-entry-handler.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "rtc-topology-replay-corruption-suppressed-send",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar server maintainers",
+      "rationale": "The send-absence assertion directly proves that corruption for a missing durable reference propagates without any live delivery.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-system/topology/replay/consumer/rtc-topology-replay-entry-handler.test.ts#propagates corruption for a missing unexpired durable reference"
     }
   ]
 }

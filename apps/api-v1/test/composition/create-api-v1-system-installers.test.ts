@@ -161,6 +161,9 @@ function createInput(): CreateApiV1SystemInstallersInput<ApiV1SystemInstallerTop
             rtcTopologyOptions: {},
             topologyQuery: {},
             topologyPlanning: {},
+            topologySnapshotRepository: {
+                findSnapshot: rejectUnusedCrdtRead
+            },
             groupStateRepository: {
                 readLifecyclePolicy: rejectUnusedCrdtRead,
                 readSnapshot: rejectUnusedCrdtRead

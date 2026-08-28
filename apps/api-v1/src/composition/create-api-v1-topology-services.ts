@@ -19,9 +19,16 @@ import {
     createGroupTopologyMutationOwners
 } from '@shared-server/rallar-system/topology/mutation/create-group-topology-mutation-owners.ts';
 import { RtcTopologyOutboxWriter } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-writer.ts';
-import { RtcTopologySnapshotRepository } from '@shared-server/rallar-system/topology/persistence/rtc-topology-snapshot-repository.ts';
+import {
+    RTC_TOPOLOGY_ACCEPTED_SNAPSHOTS_NAMESPACE,
+    RtcTopologySnapshotRepository
+} from '@shared-server/rallar-system/topology/persistence/rtc-topology-snapshot-repository.ts';
 import type { GroupTopologyPlanningService } from '@shared-server/rallar-system/topology/planning/group-topology-planning-service.ts';
 import type { GroupTopologyReconfigureMutation } from '@shared-server/rallar-system/topology/reconfigure/group-topology-reconfigure-mutation.ts';
+import {
+    readPendingTopologyReplan,
+    type PendingTopologyReplanReader
+} from '@shared-server/rallar-system/topology/replay/work/rtc-topology-coalesced-group-revision-work.ts';
 import {
     createGroupTopologyRuntimeOwners
 } from '@shared-server/rallar-system/topology/runtime/create-group-topology-runtime-owners.ts';
@@ -42,6 +49,8 @@ export interface ApiV1TopologyReplayMetrics {
 }
 
 export interface CreateApiV1TopologyServicesInput {
+    /** The durable queue-entry reader the coalesced pending-replan row lives in. */
+    readonly pendingReplanReader: PendingTopologyReplanReader;
     readonly runtimeStateRepository: RuntimeStateRepositoryLike;
     readonly groupStateRepository: GroupStateRepository;
     readonly groupStateService: Pick<CachedGroupStateService, 'readSnapshotAtLeast'>;
@@ -97,6 +106,11 @@ export function createApiV1TopologyServices(
     const topologySnapshotRepository = new RtcTopologySnapshotRepository(
         input.runtimeStateRepository
     );
+    const acceptedTopologySnapshotRepository = new RtcTopologySnapshotRepository(
+        input.runtimeStateRepository,
+        RTC_TOPOLOGY_ACCEPTED_SNAPSHOTS_NAMESPACE
+    );
+
     const rttRepository = new RtcRttRepository(input.runtimeStateRepository, {
         now: nowEpochMs
     });
@@ -114,6 +128,10 @@ export function createApiV1TopologyServices(
         configRepository: topologyConfigRepository,
         topologyService: rtcTopologyService,
         topologySnapshotRepository,
+        acceptedTopologySnapshotRepository,
+        readPendingTopologyReplan: async (groupRef) =>
+            await readPendingTopologyReplan(input.pendingReplanReader, groupRef),
+        readLifecyclePolicy: async (ref) => await groupStateRepository.readLifecyclePolicy(ref),
         serverDefaults: {
             ...rtcTopologyOptions,
             topologyKind: rtcTopologyOptions.topologyKind ?? 'auto'

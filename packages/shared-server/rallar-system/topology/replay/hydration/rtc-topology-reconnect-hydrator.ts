@@ -17,6 +17,7 @@ export namespace RtcTopologyReconnectHydrator {
     export interface Dependencies {
         readonly socket: JsonWebSocketServer;
         readonly topologies: RtcTopologyReconnectHydration.TopologyReader;
+        readonly acceptedTopologies: RtcTopologyReconnectHydration.TopologyReader;
         readonly groups: RtcTopologyReconnectHydration.GroupReader;
         readonly readIdentity: (
             connection: ConnectionContext
@@ -48,6 +49,7 @@ export class RtcTopologyReconnectHydrator {
         this.#hydration = new RtcTopologyReconnectHydration({
             socket: dependencies.socket,
             topologies: dependencies.topologies,
+            acceptedTopologies: dependencies.acceptedTopologies,
             groups: dependencies.groups,
             readIdentity: dependencies.readIdentity,
             nowEpochMs: dependencies.nowEpochMs,

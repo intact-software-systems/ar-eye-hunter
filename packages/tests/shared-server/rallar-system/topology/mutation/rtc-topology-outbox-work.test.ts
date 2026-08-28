@@ -670,6 +670,7 @@ describe('RTC topology APP_OUTBOX work', () => {
                 computeTopologyFromAuthority: vi.fn(),
                 observeCommittedTopology: vi.fn(),
                 recordTopologyPublication: vi.fn(),
+                recordTopologyPlanFrozen: vi.fn(),
                 recordTopologyRebuildSkippedFingerprint: vi.fn()
             },
             executionRepository: new RtcTopologyExecutionRepository(runtimeRepository),
@@ -771,6 +772,7 @@ describe('RTC topology APP_OUTBOX work', () => {
                 computeTopologyFromAuthority: vi.fn(),
                 observeCommittedTopology: vi.fn(),
                 recordTopologyPublication: vi.fn(),
+                recordTopologyPlanFrozen: vi.fn(),
                 recordTopologyRebuildSkippedFingerprint: vi.fn()
             } as never,
             executionRepository: new RtcTopologyExecutionRepository(runtimeRepository),
@@ -838,6 +840,7 @@ describe('RTC topology APP_OUTBOX work', () => {
                 computeTopologyFromAuthority: vi.fn(),
                 observeCommittedTopology: vi.fn(),
                 recordTopologyPublication: vi.fn(),
+                recordTopologyPlanFrozen: vi.fn(),
                 recordTopologyRebuildSkippedFingerprint: vi.fn()
             },
             executionRepository: new RtcTopologyExecutionRepository(new FakeRuntimeStateRepository()),

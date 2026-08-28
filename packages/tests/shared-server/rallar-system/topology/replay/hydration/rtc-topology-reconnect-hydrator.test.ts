@@ -1,3 +1,4 @@
+import type { RtcTopologyReconnectHydration } from '@shared-server/rallar-system/topology/replay/hydration/rtc-topology-reconnect-hydration.ts';
 import { RtcTopologyReconnectHydrator } from '@shared-server/rallar-system/topology/replay/hydration/rtc-topology-reconnect-hydrator.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { decodePersistedALMessageValue } from '@shared/al-contracts/al-message-persistence-validation.ts';
@@ -54,6 +55,85 @@ describe('RtcTopologyReconnectHydrator', () => {
 
         const message = harness.sentMessages(connection)[0] as { payload: { resource: string; }; };
         expect(JSON.parse(message.payload.resource)).toEqual(current);
+    });
+
+    it('hydrates the accepted layout whenever the accepted slot exists (4c)', async () => {
+        const planned = createTopology({ version: 6 });
+        const accepted = createTopology({ version: 5 });
+        const harness = createHarness({
+            scanTopology: planned,
+            currentTopology: planned,
+            acceptedTopologies: {
+                listSnapshotEntriesPage: async () => [],
+                findSnapshot: async () => accepted
+            }
+        });
+        const connection = harness.addConnection('session-1', 'generation-1');
+
+        await harness.hydrator.hydrateOpenConnections(new AbortController().signal);
+
+        const message = harness.sentMessages(connection)[0] as { payload: { resource: string; }; };
+        expect(JSON.parse(message.payload.resource)).toEqual(accepted);
+        expect(harness.outcomes).toEqual(['sent']);
+    });
+
+    it('hydrates the removal tombstone even when a stale accepted row survives (teardown wins)', async () => {
+        const tombstone = { ...createTopology({ version: 8 }), state: 'removed' as const };
+        const staleAccepted = createTopology({ version: 7 });
+        const harness = createHarness({
+            scanTopology: tombstone,
+            currentTopology: tombstone,
+            acceptedTopologies: {
+                listSnapshotEntriesPage: async () => [],
+                findSnapshot: async () => staleAccepted
+            }
+        });
+        const connection = harness.addConnection('session-1', 'generation-1');
+
+        await harness.hydrator.hydrateOpenConnections(new AbortController().signal);
+
+        const message = harness.sentMessages(connection)[0] as { payload: { resource: string; }; };
+        expect(JSON.parse(message.payload.resource)).toEqual(tombstone);
+    });
+
+    it('serves a member named only in the held planned candidate their candidate assignment (4c)', async () => {
+        const planned = createTopology({ version: 9, activeSessionIds: ['session-1', 'session-2'] });
+        const accepted = createTopology({ version: 8, activeSessionIds: ['session-2'] });
+        const harness = createHarness({
+            scanTopology: planned,
+            currentTopology: planned,
+            acceptedTopologies: {
+                listSnapshotEntriesPage: async () => [],
+                findSnapshot: async () => accepted
+            }
+        });
+        const connection = harness.addConnection('session-1', 'generation-1');
+
+        await harness.hydrator.hydrateOpenConnections(new AbortController().signal);
+
+        const message = harness.sentMessages(connection)[0] as { payload: { resource: string; }; };
+        expect(JSON.parse(message.payload.resource)).toEqual(planned);
+        expect(harness.outcomes).toEqual(['sent']);
+    });
+
+    it('finds a member only the accepted layout still names through the second scan (4c)', async () => {
+        const planned = createTopology({ version: 7, activeSessionIds: ['session-9'] });
+        const accepted = createTopology({ version: 6 });
+        const harness = createHarness({
+            scanTopology: planned,
+            currentTopology: planned,
+            acceptedTopologies: {
+                listSnapshotEntriesPage: async () => [toSnapshotPageEntry(accepted)],
+                findSnapshot: async () => accepted
+            }
+        });
+        const connection = harness.addConnection('session-1', 'generation-1');
+
+        await harness.hydrator.hydrateOpenConnections(new AbortController().signal);
+
+        const message = harness.sentMessages(connection)[0] as { payload: { resource: string; }; };
+        expect(JSON.parse(message.payload.resource)).toEqual(accepted);
+        expect(harness.outcomes).toEqual(['sent']);
     });
 
     it('never writes to a replacement generation that appears during authorization', async () => {
@@ -259,6 +339,7 @@ interface HarnessOverrides {
     readonly scanTopology?: RallarOverlayTopologySnapshot;
     readonly currentTopology?: RallarOverlayTopologySnapshot;
     readonly topologies?: readonly RallarOverlayTopologySnapshot[];
+    readonly acceptedTopologies?: RtcTopologyReconnectHydration.TopologyReader;
     readonly beforeAuthorizationReturns?: () => Promise<void>;
     readonly scheduler?: ManualScheduler;
     readonly currentTopologyFailures?: number;
@@ -284,6 +365,10 @@ function createHarness(overrides: HarnessOverrides = {}) {
     const hydrator = new RtcTopologyReconnectHydrator({
         socket,
         batchWindowMs: 25,
+        acceptedTopologies: overrides.acceptedTopologies ?? {
+            listSnapshotEntriesPage: async () => [],
+            findSnapshot: async () => undefined
+        },
         topologies: {
             listSnapshotEntriesPage: async ({ afterKey, limit }) => {
                 pageLimits.push(limit);
@@ -391,6 +476,21 @@ function requireHarnessWebSocket(
         throw new Error(`Missing test WebSocket for ${context.id}`);
     }
     return webSocket;
+}
+
+function toSnapshotPageEntry(
+    snapshot: RallarOverlayTopologySnapshot
+): { entry: { key: string; value: string; expireAtTimestamp: number; updatedTimestamp: string; revision: number; }; value: RallarOverlayTopologySnapshot; } {
+    return {
+        entry: {
+            key: snapshot.groupRef.groupId,
+            value: JSON.stringify(snapshot),
+            expireAtTimestamp: Number.MAX_SAFE_INTEGER,
+            updatedTimestamp: '2026-08-10T00:00:00.000Z',
+            revision: 1
+        },
+        value: snapshot
+    };
 }
 
 function createTopology(

@@ -3,6 +3,7 @@ import type {
     GroupTopologyConfigPatch,
     GroupTopologyConfigView,
     GroupTopologyManagementView,
+    PendingTopologyReplan,
     StoredGroupTopologyOverride
 } from '@shared/api/graph-topology-management-types.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
@@ -20,6 +21,14 @@ export interface GroupTopologyConfigQueryServiceDependencies {
     readonly readPersistedTopologySnapshot?: (
         groupRef: GroupRef
     ) => Promise<RallarOverlayTopologySnapshot | undefined>;
+    /** The accepted-slot reader (plan slice 4c). Absent in local mode: no promotion exists there. */
+    readonly readPersistedAcceptedTopologySnapshot?: (
+        groupRef: GroupRef
+    ) => Promise<RallarOverlayTopologySnapshot | undefined>;
+    /** Decision 11's transient half. Absent in local mode: no durable queue to consult. */
+    readonly readPendingTopologyReplan?: (
+        groupRef: GroupRef
+    ) => Promise<PendingTopologyReplan | null>;
     readonly configRepository?: GroupTopologyConfigRepository;
     readonly serverDefaults?: GroupTopologyServerOptions;
 }
@@ -37,20 +46,30 @@ export class GroupTopologyConfigQueryService {
     }
 
     async readTopologyView(groupRef: GroupRef): Promise<GroupTopologyManagementView> {
-        const group = await this.dependencies.findGroupSnapshotByRef(groupRef);
-        const snapshot = this.dependencies.readPersistedTopologySnapshot
-            ? await this.dependencies.readPersistedTopologySnapshot(groupRef)
-            : group
-            ? this.dependencies.readLocalTopologySnapshot(group)
-            : undefined;
-
+        const [snapshot, acceptedSnapshot, pending, config] = await Promise.all([
+            this.readViewTopologySnapshot(groupRef),
+            this.dependencies.readPersistedAcceptedTopologySnapshot?.(groupRef),
+            this.dependencies.readPendingTopologyReplan?.(groupRef),
+            this.readConfig(groupRef)
+        ]);
         return {
             groupRef,
             overlayId: toScopedOverlayId(groupRef),
             snapshot: snapshot ?? null,
-            config: await this.readConfig(groupRef),
-            pending: null
+            acceptedSnapshot: acceptedSnapshot ?? null,
+            config,
+            pending: pending ?? null
         };
+    }
+
+    private async readViewTopologySnapshot(
+        groupRef: GroupRef
+    ): Promise<RallarOverlayTopologySnapshot | undefined> {
+        if (this.dependencies.readPersistedTopologySnapshot) {
+            return await this.dependencies.readPersistedTopologySnapshot(groupRef);
+        }
+        const group = await this.dependencies.findGroupSnapshotByRef(groupRef);
+        return group ? this.dependencies.readLocalTopologySnapshot(group) : undefined;
     }
 
     async readConfig(groupRef: GroupRef): Promise<GroupTopologyConfigView> {

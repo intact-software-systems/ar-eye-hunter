@@ -149,14 +149,21 @@ export type GroupTopologyManagementView = Readonly<{
     groupRef: GroupRef;
     overlayId: string;
     snapshot: RallarOverlayTopologySnapshot | null;
+    /**
+     * The accepted layout — the one carrying traffic (product decisions
+     * 24/42). Null until a first promotion; `snapshot` stays the planned
+     * slot, which may run ahead of it as a held candidate.
+     */
+    acceptedSnapshot: RallarOverlayTopologySnapshot | null;
     config: GroupTopologyConfigView;
-    pending:
-        | Readonly<{
-            reconfigureQueued: boolean;
-            dueAtEpochMs: number | null;
-        }>
-        | null;
+    pending: PendingTopologyReplan | null;
 }>;
+
+/** Decision 11's transient half: a replan is queued and due at T. */
+export interface PendingTopologyReplan {
+    readonly reconfigureQueued: boolean;
+    readonly dueAtEpochMs: number | null;
+}
 
 export type PutGroupTopologyConfigRequest = Readonly<{
     requestId: string;

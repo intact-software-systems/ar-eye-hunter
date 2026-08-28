@@ -4,6 +4,7 @@ import {
     RtcTopologyExecutionRepository
 } from '@shared-server/rallar-system/topology/persistence/rtc-topology-execution-repository.ts';
 import {
+    RTC_TOPOLOGY_ACCEPTED_SNAPSHOTS_NAMESPACE,
     RtcTopologySnapshotRepository
 } from '@shared-server/rallar-system/topology/persistence/rtc-topology-snapshot-repository.ts';
 import { RtcTopologyPublicationRepository } from '@shared-server/rallar-system/topology/publication/rtc-topology-publication-repository.ts';
@@ -92,9 +93,14 @@ export function createApiRtcTopologyRuntime(
     const replayRepository = new PSqlRtcTopologyReplayRepository(input.database);
     const replayDiagnostics = createRtcTopologyReplayDiagnostics();
     const topologySnapshots = new RtcTopologySnapshotRepository(input.runtimeStateRepository);
+    const acceptedTopologySnapshots = new RtcTopologySnapshotRepository(
+        input.runtimeStateRepository,
+        RTC_TOPOLOGY_ACCEPTED_SNAPSHOTS_NAMESPACE
+    );
     const reconnectHydrator = new RtcTopologyReconnectHydrator({
         socket: input.webSocketServer,
         topologies: topologySnapshots,
+        acceptedTopologies: acceptedTopologySnapshots,
         groups: input.groupsRepository,
         readIdentity: input.readHydrationIdentity,
         nowEpochMs: input.nowEpochMs,
@@ -146,6 +152,7 @@ export function createApiRtcTopologyRuntime(
                         publications: publicationRepository,
                         outbox: wsQueueBoxServerService.outbox,
                         snapshots: topologySnapshots,
+                        acceptedSnapshots: acceptedTopologySnapshots,
                         sender: wsQueueBoxServerService
                     }),
                     hydrateGap: async (signal) => await reconnectHydrator.hydrateOpenConnections(signal)

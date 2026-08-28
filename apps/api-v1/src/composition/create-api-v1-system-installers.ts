@@ -30,6 +30,7 @@ export interface ApiV1SystemInstallerTopology {
     readonly rtcTopologyOptions: ApiV1TopologyServices['rtcTopologyOptions'];
     readonly topologyQuery: object;
     readonly topologyPlanning: object;
+    readonly topologySnapshotRepository: Pick<ApiV1TopologyServices['topologySnapshotRepository'], 'findSnapshot'>;
     readonly groupStateRepository: Pick<
         ApiV1TopologyServices['groupStateRepository'],
         'readLifecyclePolicy' | 'readSnapshot'
@@ -210,6 +211,7 @@ function createSystemTopicOptions<
         rtcTopologyOptions: topology.rtcTopologyOptions,
         topologyQuery: topology.topologyQuery,
         topologyPlanning: topology.topologyPlanning,
+        topologySnapshotRepository: topology.topologySnapshotRepository,
         rttRefinementService: topology.rttRefinementService,
         rtcTopologyAppOutbox: {
             database: input.database,
@@ -247,6 +249,7 @@ export interface ApiV1SystemTopicOptions<
     readonly rtcTopologyOptions: Topology['rtcTopologyOptions'];
     readonly topologyQuery: Topology['topologyQuery'];
     readonly topologyPlanning: Topology['topologyPlanning'];
+    readonly topologySnapshotRepository: Topology['topologySnapshotRepository'];
     readonly rttRefinementService: Topology['rttRefinementService'];
     readonly rtcTopologyAppOutbox: ApiV1RtcTopologyAppOutboxOptions<Runtime>;
     readonly enqueueRtcRttMutation: InstallRtcRttSystemTopicOptions['enqueueMutation'];
@@ -259,7 +262,7 @@ export interface ApiV1RtcTopologyAppOutboxOptions<Runtime extends ApiV1SystemIns
             | 'executionRepository'
             | 'outboxQueueReader'
             | 'topologyDelivery'
-            | 'topologyQuery'
+            | 'readPlannedTopologySnapshot'
             | 'topologyPlanning'
             | 'rttRefinementService'
             | 'nowEpochMs'
@@ -273,7 +276,7 @@ const PRODUCTION_OPERATIONS: ApiV1SystemInstallerOperations<ApiV1Runtime, ApiV1T
     installTopologyAppOutbox: (options) =>
         installTopologyAppOutbox({
             ...options.rtcTopologyAppOutbox,
-            topologyQuery: options.topologyQuery,
+            readPlannedTopologySnapshot: async (ref) => await options.topologySnapshotRepository.findSnapshot(ref),
             topologyPlanning: options.topologyPlanning,
             rttRefinementService: options.rttRefinementService,
             nowEpochMs: options.rtcTopologyOptions.now ?? Date.now

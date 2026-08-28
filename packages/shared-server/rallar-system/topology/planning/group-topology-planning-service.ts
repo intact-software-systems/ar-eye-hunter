@@ -7,7 +7,9 @@ import type {
 } from '@shared/api/graph-topology-management-types.ts';
 import { readGroupCreatedByPrincipalId, readGroupMemberSessionIds } from '@shared/api/group-client-views.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
+
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
+import type { GroupLifecyclePolicyRead } from '../../group-state/persistence/group-lifecycle-policy-repository.ts';
 
 import { filterRtcRttMeasurementsForGroup } from '../../rtc-rtt/policy/rtc-rtt-measurement-policy.ts';
 import type { GroupTopologyConfigQueryService } from '../config/group-topology-config-query-service.ts';
@@ -32,7 +34,15 @@ import type {
 } from './group-topology-planning-contracts.ts';
 import { materializeRtcOverlayTopologyBroadcastMessage } from './materialize-rtc-overlay-topology-broadcast-message.ts';
 import {
-    isGroupTopologyPlannableAt,
+    consultsReplanningPolicy,
+    resolveTopologyPlanAction,
+    toGroupTopologyReplanningRead,
+    type GroupTopologyReplanningRead,
+    type TopologyPlanAction,
+    type TopologyWorkOrigin
+} from './resolve-topology-plan-action.ts';
+import {
+    isGroupTopologyActiveAt,
     selectGroupTopologyPlanningSnapshot
 } from './select-group-topology-planning-snapshot.ts';
 
@@ -48,8 +58,21 @@ export interface GroupTopologyPlanningServiceDependencies {
         group: GroupSnapshot
     ) => readonly RttMeasurementInfo[] | Promise<readonly RttMeasurementInfo[]>;
     readonly topologyMode: 'local' | 'persistent';
+    /**
+     * The stored lifecycle-policy read, for the stage-keyed planning gate
+     * (plan slice 4b) — the same port every other topology consumer takes.
+     * Absent means no policy store exists in this composition; the default
+     * preset's mode then governs (`toGroupTopologyReplanningRead` owns that
+     * fold).
+     */
+    readonly readLifecyclePolicy?: (ref: GroupRef) => Promise<GroupLifecyclePolicyRead>;
     readonly publisher?: GroupTopologyPublisher;
     readonly serverDefaults?: GroupTopologyServerOptions;
+}
+
+export interface TopologyPlanningRequest {
+    readonly intent: RtcTopologyPlanningIntent;
+    readonly origin: TopologyWorkOrigin;
 }
 
 export class GroupTopologyPlanningService {
@@ -67,6 +90,10 @@ export class GroupTopologyPlanningService {
         this.dependencies.topologyService.recordTopologyRebuildSkippedFingerprint();
     }
 
+    recordTopologyPlanFrozen(): void {
+        this.dependencies.topologyService.recordTopologyPlanFrozen();
+    }
+
     async readTopologyPlanningAuthority(
         input: ReadGroupTopologyPlanningAuthorityInput
     ): Promise<GroupTopologyPlanningAuthority> {
@@ -77,15 +104,17 @@ export class GroupTopologyPlanningService {
         const group = input.knownGroup
             ? selectGroupTopologyPlanningSnapshot(input.knownGroup, currentGroup, input.snapshotSelection)
             : requireGroupTopologyPlanningSnapshot(input.groupRef, currentGroup);
-        const [config, rttMeasurements] = await Promise.all([
+        const [config, rttMeasurements, replanning] = await Promise.all([
             this.dependencies.queryService.readResolvedTopologyConfig(group.group, input.requestOptions),
-            this.readRawRttMeasurements(group)
+            this.readRawRttMeasurements(group),
+            this.readTopologyReplanningMode(group)
         ]);
         return {
             group,
             config,
             kindHysteresisWidths: this.dependencies.topologyService.readKindHysteresisWidths(),
             rttMeasurements,
+            replanning,
             nowEpochMs: this.dependencies.topologyService.readNowEpochMs()
         };
     }
@@ -93,10 +122,22 @@ export class GroupTopologyPlanningService {
     computeTopologyFromAuthority(
         authority: GroupTopologyPlanningAuthority,
         previous: RallarOverlayTopologySnapshot | undefined,
-        planningIntent: RtcTopologyPlanningIntent = 'full-rebuild'
+        planning: TopologyPlanningRequest
     ): ReconcileGroupTopologyResult {
-        if (!isGroupTopologyPlannableAt(authority.group, authority.nowEpochMs)) {
+        if (!isGroupTopologyActiveAt(authority.group, authority.nowEpochMs)) {
             return removedTopologyResult(authority.group, previous);
+        }
+        const action = resolveTopologyPlanAction({
+            lifecycleState: authority.group.group.lifecycleState,
+            replanning: authority.replanning,
+            workOrigin: planning.origin,
+            previous
+        });
+        if (action === 'publish-removal') {
+            return removedTopologyResult(authority.group, previous);
+        }
+        if (action === 'freeze') {
+            return { action: 'frozen', current: requireFrozenTopology(previous) };
         }
         const filteredRttMeasurements = this.filterRttMeasurementsForGroup(
             authority.group,
@@ -107,11 +148,11 @@ export class GroupTopologyPlanningService {
         const result = this.dependencies.topologyService.planGroupTopologyAt(
             authority.group,
             filteredRttMeasurements,
-            { previous, topologyOptions: authority.config.effective, planningIntent },
+            { previous, topologyOptions: authority.config.effective, planningIntent: planning.intent },
             authority.nowEpochMs
         );
         this.validateTopology(result.snapshot);
-        return result;
+        return { ...result, action: 'planned' };
     }
 
     async computeGroupTopology(
@@ -123,7 +164,11 @@ export class GroupTopologyPlanningService {
             knownGroup: group,
             snapshotSelection: 'prefer-current'
         });
-        return this.computeTopologyFromAuthority(authority, previous);
+        // The machinery's own reconcile sweep: automatic by definition.
+        return this.computeTopologyFromAuthority(authority, previous, {
+            intent: 'full-rebuild',
+            origin: 'automatic'
+        });
     }
 
     async reconfigureGroupTopology(
@@ -136,6 +181,18 @@ export class GroupTopologyPlanningService {
             input.requestOptions
         );
         const previous = this.dependencies.topologyService.readSnapshot(group);
+        // Only freeze gates the explicit reconfigure; a removal-disposition
+        // stage keeps today's local planning (a skip has no snapshot to
+        // answer with — recorded residue, api-v1 converges on the handler).
+        if (await this.readLocalTopologyPlanAction(group, previous, 'commanded') === 'freeze') {
+            this.dependencies.topologyService.recordTopologyPlanFrozen();
+            return toReconfigureGroupTopologyResponse({
+                groupRef: input.groupRef,
+                result: { snapshot: requireFrozenTopology(previous), previous: previous ?? null, changed: false },
+                config,
+                published: false
+            });
+        }
         const result = this.dependencies.topologyService.updateGroupTopology(
             group,
             this.filterRttMeasurementsForGroup(
@@ -167,6 +224,9 @@ export class GroupTopologyPlanningService {
         }
         const previous = this.dependencies.topologyService.readSnapshot(group);
         const result = await this.computeGroupTopology(group, previous);
+        if (result.action === 'frozen') {
+            return result;
+        }
         this.observeCommittedTopology(group, result.snapshot);
         return result;
     }
@@ -188,6 +248,12 @@ export class GroupTopologyPlanningService {
         const group = await this.readReconfigureGroup(input);
         const config = await this.dependencies.queryService.readConfig(input.groupRef);
         const previous = this.dependencies.topologyService.readSnapshot(group);
+        // The automatic flush writes only when the stage says plan: freeze
+        // holds the candidate and a removal-disposition stage has nothing
+        // for an RTT refresh to improve.
+        if (await this.readLocalTopologyPlanAction(group, previous, 'automatic') !== 'plan') {
+            return undefined;
+        }
         const result = this.dependencies.topologyService.flushDueRttTopologyUpdate(
             group,
             this.filterRttMeasurementsForGroup(
@@ -221,6 +287,34 @@ export class GroupTopologyPlanningService {
             this.dependencies.topologyService.removeGroupTopology(group);
         }
         return Promise.resolve();
+    }
+
+    /**
+     * Only stages whose disposition is `follow-replanning-policy` consult
+     * the mode (the gate is spelled off the registry so the two cannot
+     * drift); every other stage carries the default preset's mode, which
+     * its disposition row never reads.
+     */
+    private async readTopologyReplanningMode(group: GroupSnapshot): Promise<GroupTopologyReplanningRead> {
+        const readLifecyclePolicy = this.dependencies.readLifecyclePolicy;
+        if (!readLifecyclePolicy || !consultsReplanningPolicy(group.group.lifecycleState)) {
+            return toGroupTopologyReplanningRead({ status: 'absent' });
+        }
+        return toGroupTopologyReplanningRead(await readLifecyclePolicy(group.group));
+    }
+
+    /** The local paths' share of the 4b gate, resolved by the one owner. */
+    private async readLocalTopologyPlanAction(
+        group: GroupSnapshot,
+        previous: RallarOverlayTopologySnapshot | undefined,
+        workOrigin: TopologyWorkOrigin
+    ): Promise<TopologyPlanAction> {
+        return resolveTopologyPlanAction({
+            lifecycleState: group.group.lifecycleState,
+            replanning: await this.readTopologyReplanningMode(group),
+            workOrigin,
+            previous
+        });
     }
 
     private async readReconfigureGroup(input: ReconfigureGroupTopologyInput): Promise<GroupSnapshot> {
@@ -323,6 +417,15 @@ function requireGroupTopologyPlanningSnapshot(
     return snapshot;
 }
 
+function requireFrozenTopology(
+    previous: RallarOverlayTopologySnapshot | undefined
+): RallarOverlayTopologySnapshot {
+    if (!previous) {
+        throw new TypeError('A frozen topology plan requires a stored layout');
+    }
+    return previous;
+}
+
 function removedTopologyResult(
     group: GroupSnapshot,
     previous: RallarOverlayTopologySnapshot | undefined
@@ -331,6 +434,7 @@ function removedTopologyResult(
         ...new Set([...(previous?.activeSessionIds ?? []), ...readGroupMemberSessionIds(group)])
     ].sort(compareRtcTopologyIdentifiers);
     return {
+        action: 'planned',
         snapshot: {
             sourceGroupStateCausalRevision: group.causalRevision,
             state: 'removed',

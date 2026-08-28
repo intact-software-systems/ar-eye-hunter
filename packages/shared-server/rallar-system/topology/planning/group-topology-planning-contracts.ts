@@ -24,8 +24,20 @@ export interface ReconfigureGroupTopologyInput {
     readonly publisher?: GroupTopologyPublisher;
 }
 
-export interface ReconcileGroupTopologyResult {
-    readonly snapshot: RallarOverlayTopologySnapshot;
-    readonly previous: RallarOverlayTopologySnapshot | null;
-    readonly changed: boolean;
-}
+/**
+ * The stage-keyed planning gate's outcome (plan slice 4b): `planned` carries
+ * the candidate to commit and publish — a removal tombstone is a planned
+ * publication too — while `frozen` carries the stored layout the stage
+ * refuses to replace, and nothing may be written or published for it.
+ */
+export type ReconcileGroupTopologyResult =
+    | Readonly<{
+        action: 'planned';
+        snapshot: RallarOverlayTopologySnapshot;
+        previous: RallarOverlayTopologySnapshot | null;
+        changed: boolean;
+    }>
+    | Readonly<{
+        action: 'frozen';
+        current: RallarOverlayTopologySnapshot;
+    }>;

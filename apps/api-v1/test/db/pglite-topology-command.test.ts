@@ -1,4 +1,5 @@
 import { PSqlGroupStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-group-state-event-repository.ts';
+import { requirePlannedTopology } from '@shared-test/shared-server/require-planned-topology.ts';
 import assert from 'node:assert/strict';
 
 import {
@@ -57,10 +58,11 @@ Deno.test(
                 updatedAtEpochMs: 123
             });
 
-            const result = scenario.service.planning.computeTopologyFromAuthority(
+            const result = requirePlannedTopology(scenario.service.planning.computeTopologyFromAuthority(
                 scenario.authority,
-                scenario.previous
-            );
+                scenario.previous,
+                { intent: 'full-rebuild', origin: 'automatic' }
+            ));
 
             assert.equal(result.snapshot.state, 'removed');
             assert.equal(result.snapshot.updatedAtEpochMs, 123);
@@ -80,10 +82,11 @@ Deno.test(
                 updatedAtEpochMs: 200
             });
 
-            const result = scenario.service.planning.computeTopologyFromAuthority(
+            const result = requirePlannedTopology(scenario.service.planning.computeTopologyFromAuthority(
                 scenario.authority,
-                scenario.previous
-            );
+                scenario.previous,
+                { intent: 'full-rebuild', origin: 'automatic' }
+            ));
 
             assert.equal(scenario.authority.group.group.status, 'active');
             assert.equal(result.snapshot.state, 'active');
@@ -106,10 +109,11 @@ Deno.test(
                 updatedAtEpochMs: 201
             });
 
-            const result = scenario.service.planning.computeTopologyFromAuthority(
+            const result = requirePlannedTopology(scenario.service.planning.computeTopologyFromAuthority(
                 scenario.authority,
-                scenario.previous
-            );
+                scenario.previous,
+                { intent: 'full-rebuild', origin: 'automatic' }
+            ));
 
             assert.equal(scenario.authority.group.group.status, 'active');
             assert.equal(result.snapshot.state, 'removed');
@@ -132,10 +136,11 @@ Deno.test(
                 updatedAtEpochMs: 202
             });
 
-            const result = scenario.service.planning.computeTopologyFromAuthority(
+            const result = requirePlannedTopology(scenario.service.planning.computeTopologyFromAuthority(
                 scenario.authority,
-                scenario.previous
-            );
+                scenario.previous,
+                { intent: 'full-rebuild', origin: 'automatic' }
+            ));
 
             assert.equal(scenario.authority.group.group.status, 'archived');
             assert.equal(result.snapshot.state, 'removed');
@@ -250,7 +255,10 @@ Deno.test(
             });
             assert.deepEqual(authority.rttMeasurements, [storedRtt]);
 
-            service.planning.computeTopologyFromAuthority(authority, previous);
+            service.planning.computeTopologyFromAuthority(authority, previous, {
+                intent: 'full-rebuild',
+                origin: 'automatic'
+            });
 
             assert.deepEqual(plannedRtts, []);
         });
