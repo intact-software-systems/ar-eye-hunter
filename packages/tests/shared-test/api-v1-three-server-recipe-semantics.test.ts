@@ -215,6 +215,68 @@ describe('API-v1 three-server recipe semantics', () => {
         }
     });
 
+    // The two envelopes the exact-revision assertions consume are the two
+    // earliest buffered group-state.event frames, so any third envelope in the
+    // window is read as a mutation. Under the apply landing the route-less
+    // applyPlannedLayout promotion emits exactly such an envelope, and whether
+    // it lands before the sockets open is a race the group's own load decides.
+    it('pins the held reconfigure landing the exact-revision assertions depend on', () => {
+        const { entries } = readMatrix();
+        const entry = entries.find((candidate) => candidate.id === 'api-v1-rtc-topology-convergence');
+        const recipe = readRecipe(entry!.recipe);
+        const allSteps = flattenRecipeSteps(recipe.steps as Array<Record<string, unknown>>);
+
+        expect(allSteps.find((step) => step.name === 'createGroupOnPrimary')).toMatchObject({
+            request: {
+                body: {
+                    lifecyclePolicy: { topology: { reconfigureLanding: 'hold' } }
+                }
+            }
+        });
+        expect(
+            allSteps.find((step) => step.name === 'heldLandingLeftAcceptedLayoutUnpromoted')
+        ).toMatchObject({
+            expect: {
+                body: {
+                    snapshot: { state: 'active' },
+                    acceptedSnapshot: null
+                }
+            }
+        });
+    });
+
+    it('covers the route-less accepted-layout promotion the convergence recipe holds back', () => {
+        const recipe = readRecipe('tests/api-v1/api-v1-state-topology-churn.json');
+        const steps = recipe.steps as Array<Record<string, unknown>>;
+
+        for (
+            const [stepName, connection] of [
+                ['sharedAcceptedLayoutPromotedWithoutLifecycleCommand', 'apiTertiary'],
+                ['churnAcceptedLayoutPromotedWithoutLifecycleCommand', 'apiSecondary']
+            ] as const
+        ) {
+            expect(steps.find((step) => step.name === stepName), stepName).toMatchObject({
+                connection,
+                request: {
+                    poll: {
+                        maxAttempts: 20,
+                        maxDurationMs: 15000
+                    }
+                },
+                expect: {
+                    body: {
+                        acceptedSnapshot: { state: 'active' }
+                    }
+                }
+            });
+        }
+
+        // Both groups take the default apply landing and no step drives a
+        // lifecycle transition, so promotion through activation cannot be what
+        // these two steps observe.
+        expect(JSON.stringify(recipe)).not.toContain('lifecycle');
+    });
+
     it('defines bounded three-server multi-client and multi-group churn coverage', () => {
         const { entries } = readMatrix();
         const entry = entries.find((candidate) => candidate.id === 'api-v1-state-topology-churn');

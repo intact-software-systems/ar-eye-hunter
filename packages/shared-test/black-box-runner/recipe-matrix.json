@@ -1169,7 +1169,7 @@
           }
         ]
       },
-      "description": "No-browser three-server convergence test for immutable RTC topology revisions and PostgreSQL-backed WebSocket fanout."
+      "description": "No-browser three-server convergence test for immutable RTC topology revisions and PostgreSQL-backed WebSocket fanout. The group pins the hold reconfigure landing so the only group-state.event envelopes are the two mutations it commits: under apply, the route-less applyPlannedLayout promotion emits a third envelope that the exact-revision assertions would consume. Route-less promotion is covered by api-v1-state-topology-churn."
     },
     {
       "id": "api-v1-state-topology-churn",
@@ -1202,7 +1202,7 @@
           }
         ]
       },
-      "description": "Bounded three-server load recipe with 12 clients contending across two groups and disconnect/reconnect presence churn."
+      "description": "Bounded three-server load recipe with 12 clients contending across two groups and disconnect/reconnect presence churn. Both groups take the default apply reconfigure landing and the recipe issues no lifecycle command, so the accepted layout each closing reconfigure lands can only have come from the route-less applyPlannedLayout promotion."
     },
     {
       "id": "api-v1-state-write-convergence",

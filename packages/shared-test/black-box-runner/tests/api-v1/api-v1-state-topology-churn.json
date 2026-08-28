@@ -1226,6 +1226,66 @@
           "outboxId": "string"
         }
       }
+    },
+    {
+      "name": "sharedAcceptedLayoutPromotedWithoutLifecycleCommand",
+      "type": "http",
+      "connection": "apiTertiary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{sharedGroupId}/topology",
+        "headers": {
+          "Authorization": "{ownerAuthHeader}",
+          "x-client-id": "{ownerClientId}"
+        },
+        "poll": {
+          "maxAttempts": 20,
+          "maxDurationMs": 15000,
+          "backoffMs": 100,
+          "backoffMultiplier": 2
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "snapshot": {
+            "state": "active"
+          },
+          "acceptedSnapshot": {
+            "state": "active"
+          }
+        }
+      }
+    },
+    {
+      "name": "churnAcceptedLayoutPromotedWithoutLifecycleCommand",
+      "type": "http",
+      "connection": "apiSecondary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{churnGroupId}/topology",
+        "headers": {
+          "Authorization": "{ownerAuthHeader}",
+          "x-client-id": "{ownerClientId}"
+        },
+        "poll": {
+          "maxAttempts": 20,
+          "maxDurationMs": 15000,
+          "backoffMs": 100,
+          "backoffMultiplier": 2
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "snapshot": {
+            "state": "active"
+          },
+          "acceptedSnapshot": {
+            "state": "active"
+          }
+        }
+      }
     }
   ]
 }
