@@ -1162,15 +1162,25 @@ inventory and `COVERED_API_MUTATIONS` are untouched. Rulings:
   no-change call, which is what the no-op ruling exists to avoid, and the hazard is `computeUpdate`'s
   today rather than something the valve introduces. Nothing can reach it while the commands are
   dark; slice 8's route must state that a valve retry is evaluated against current state.
-- **Recorded — `resume` is legal in `dormant`, and the stage table's parenthetical is descriptive.**
-  The stage table's `dormant` row reads "blocked (and transport is halted)" and decision 35 says
-  transport is halted there. Both describe how a group arrives in `dormant` — `reset` sets the valve
-  (decision 36) — not an invariant the stage enforces, because decision 25 makes the valve orthogonal
-  to the stage and settable only by the application. Decision 36's own words are that the group "is
-  silent until the application resumes it", which contemplates exactly this call. The forward gate
-  still blocks `dormant` under `blocked-until-active` regardless of the valve, and `dormant` dials
-  nothing, so a resumed `dormant` group has no edges to carry data. Denying the valve per stage would
-  reintroduce the stage-dependence decision 25 removed.
+- **Recorded — `resume` is legal in `dormant`, and a stage guard would be ineffective, not merely
+  unnecessary.** The stage table's `dormant` row reads "blocked (and transport is halted)" and
+  decision 35 says transport is halted there. Both describe how a group arrives in `dormant` —
+  `reset` sets the valve (decision 36) — not an invariant the stage enforces. The decisive reason is
+  structural: **every stage transition preserves the valve by construction.**
+  `computeNextLifecycleGroup` never names `transportState`; it spreads the stored group, so the valve
+  rides every transition unchanged. Decision 36 assigns halting to `reset` alone, and
+  `resolveFormationFailureLanding` — exhaustion's `dormant` landing — touches nothing else. So once
+  the criterion owner passes real exhaustion state, an `active` + `flowing` group lands in `dormant`
+  **still flowing**, with no `resume` involved. `dormant` + `flowing` is therefore a state the model
+  produces on its own; denying `resume` there would not establish the invariant, only stop the
+  application from leaving a state the system can still enter by itself.
+
+  The same structure explains the stage table's wording: if `dormant` enforced the valve, `reset`
+  would not have to set it explicitly. Supporting facts, not the argument itself: the forward gate
+  blocks `dormant` under `blocked-until-active` regardless of the valve, `dormant` dials nothing so a
+  resumed `dormant` group has no edges to carry data, decision 36's own words are that the group "is
+  silent until the application resumes it", and a per-stage denial would reintroduce the
+  stage-dependence decision 25 removed.
 - **A user-visible denial message changed on live commands.** `denyForGroupAuthorityInitiator` now
   answers for both families, so "Lifecycle transitions are server-initiated under this policy." and
   "Only the group manager can command lifecycle transitions." became "Group authority commands …" and
