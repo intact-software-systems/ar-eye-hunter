@@ -1,4 +1,4 @@
-import type { GroupTransportState } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
+import type { GroupLifecyclePolicy, GroupTransportState } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import type { Group } from '@shared/api/group-types.ts';
 
 import { canCommandGroupAuthority } from '../../policy/group-lifecycle-policy.ts';
@@ -38,20 +38,7 @@ export function computeGroupTransportMutation(
     if (resolution.status === 'corrupt') {
         return toCorruptPolicyRejection({ command, read, facts, reason: resolution.reason });
     }
-    if (read.activeMemberPrincipalIds === null) {
-        throw new TypeError('Transport compute requires the roster read');
-    }
-    assertAllowed(
-        canCommandGroupAuthority({
-            snapshot: toPolicySnapshot(read, command.aggregateRef, facts.nowEpochMs),
-            actor: {
-                principalId: command.input.actorPrincipalId ?? undefined,
-                sessionId: command.input.actorSessionId ?? undefined
-            },
-            policy: resolution.policy,
-            activeMemberPrincipalIds: read.activeMemberPrincipalIds
-        })
-    );
+    assertGroupTransportAuthority({ command, read, facts, policy: resolution.policy });
     const transportState = TRANSPORT_STATE_BY_OPERATION[command.operation];
     // The valve has no repair to perform, so a command that asks for the
     // state the group already holds changes nothing and pushes no delta.
@@ -80,4 +67,30 @@ export function computeGroupTransportMutation(
         eventType: 'group-updated',
         presenceSummaryWork: 'enqueue'
     });
+}
+
+interface GroupTransportAuthorityInput {
+    readonly command: Extract<GroupMutationCommand, { operation: GroupTransportOperation; }>;
+    readonly read: GroupMutationRead;
+    readonly facts: GroupMutationFacts;
+    readonly policy: GroupLifecyclePolicy;
+}
+
+function assertGroupTransportAuthority(
+    { command, read, facts, policy }: GroupTransportAuthorityInput
+): void {
+    if (read.activeMemberPrincipalIds === null) {
+        throw new TypeError('Transport compute requires the roster read');
+    }
+    assertAllowed(
+        canCommandGroupAuthority({
+            snapshot: toPolicySnapshot(read, command.aggregateRef, facts.nowEpochMs),
+            actor: {
+                principalId: command.input.actorPrincipalId ?? undefined,
+                sessionId: command.input.actorSessionId ?? undefined
+            },
+            policy,
+            activeMemberPrincipalIds: read.activeMemberPrincipalIds
+        })
+    );
 }
