@@ -175,7 +175,8 @@ export function computeFormationTimerEntries(
     const { command, next, policy, facts } = input;
     const deadlineArmed = policy.activation.mode === 'deadline' || policy.activation.mode === 'threshold-or-deadline';
     const beginsEstablishment = command.operation === 'startGroupEstablishment' ||
-        command.operation === 'reopenGroupEstablishment';
+        command.operation === 'reopenGroupEstablishment' ||
+        command.operation === 'connectGroup';
     if (beginsEstablishment && deadlineArmed) {
         return [timerEntry(input, 'deadline', facts.nowEpochMs + policy.activation.deadlineMs)];
     }

@@ -3,6 +3,7 @@ import type { GroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layo
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import { describe, expect, it } from 'vitest';
 
+import { GroupConnectDenialError } from '@shared-server/rallar-system/group-state/mutation/aggregate/group-connect-denial-error.ts';
 import type {
     GroupMutationCommand,
     GroupMutationFacts,
@@ -17,6 +18,110 @@ import { createTestGroup } from '../../../../create-test-group.ts';
 import { groupMemberStorageKey, groupRef, groupStorageKey, storedEntry } from './group-mutation-test-runtime.ts';
 
 describe('group lifecycle transition computation', () => {
+    it('plans from forming into the planned stage and advances the epoch', () => {
+        const computed = computeGroupMutation({
+            command: transitionCommand('planGroupLayout'),
+            read: transitionRead({ lifecycleState: 'forming', formationEpoch: 2 }),
+            facts: transitionFacts()
+        });
+
+        expect(computed.outcome).toBe('write');
+        if (computed.outcome !== 'write') {
+            return;
+        }
+        const written = computed.guard.value as Group;
+        expect(written.lifecycleState).toBe('planned');
+        expect(written.formationEpoch).toBe(3);
+        expect(written.formationElectorate).toEqual(['alice']);
+        // Planning stays with the transition's unconditional follow-up.
+        expect(written.establishmentStartedAtEpochMs).toBe(null);
+    });
+
+    it('replans idempotently from planned: a write that re-pins nothing (decision 28)', () => {
+        const computed = computeGroupMutation({
+            command: transitionCommand('planGroupLayout'),
+            read: transitionRead({
+                lifecycleState: 'planned',
+                formationEpoch: 4,
+                formationElectorate: ['pinned-earlier']
+            }),
+            facts: transitionFacts()
+        });
+
+        expect(computed.outcome).toBe('write');
+        if (computed.outcome !== 'write') {
+            return;
+        }
+        const written = computed.guard.value as Group;
+        expect(written.lifecycleState).toBe('planned');
+        expect(written.formationEpoch).toBe(4);
+        expect(written.formationElectorate).toEqual(['pinned-earlier']);
+        expect(written.snapshotVersion).toBe(2);
+    });
+
+    it('connects from planned when the fence names the current planned layout (decision 32)', () => {
+        const stored = { lifecycleState: 'planned', formationEpoch: 4 } as const;
+        const computed = computeGroupMutation({
+            command: connectCommand({ expectedFormationEpoch: 4, expectedLayout: PLANNED_LAYOUT }),
+            read: connectRead(stored, PLANNED_LAYOUT),
+            facts: transitionFacts()
+        });
+
+        expect(computed.outcome).toBe('write');
+        if (computed.outcome !== 'write') {
+            return;
+        }
+        const written = computed.guard.value as Group;
+        expect(written.lifecycleState).toBe('connecting');
+        expect(written.formationEpoch).toBe(5);
+        expect(written.establishmentStartedAtEpochMs).toBe(2_000);
+        // Dialing a candidate is not acceptance (decision 42).
+        expect(written.acceptedLayoutIdentity).toBe(null);
+    });
+
+    it.each(
+        [
+            ['no-planned-layout', null],
+            ['planned-layout-superseded', { ...PLANNED_LAYOUT, version: PLANNED_LAYOUT.version + 1 }]
+        ] as const
+    )('throws the typed %s connect denial as a 409 conflict', (denial, storedIdentity) => {
+        let caught: unknown;
+        try {
+            computeGroupMutation({
+                command: connectCommand({ expectedFormationEpoch: 4, expectedLayout: PLANNED_LAYOUT }),
+                read: connectRead({ lifecycleState: 'planned', formationEpoch: 4 }, storedIdentity),
+                facts: transitionFacts()
+            });
+        }
+        catch (error) {
+            caught = error;
+        }
+        expect(caught).toBeInstanceOf(GroupConnectDenialError);
+        const conflict = caught as GroupConnectDenialError;
+        expect(conflict.status).toBe(409);
+        expect(conflict.denial).toBe(denial);
+        expect(conflict.code).toBe(`group-connect-${denial}`);
+    });
+
+    it('rejects a stale-epoch connect as a typed receipt, not a thrown denial', () => {
+        const computed = computeGroupMutation({
+            command: connectCommand({ expectedFormationEpoch: 3, expectedLayout: PLANNED_LAYOUT }),
+            read: connectRead({ lifecycleState: 'planned', formationEpoch: 4 }, PLANNED_LAYOUT),
+            facts: transitionFacts()
+        });
+        expect(computed.outcome).toBe('rejected');
+    });
+
+    it('rejects a connect fence that names a removed layout', () => {
+        const removed = { ...PLANNED_LAYOUT, state: 'removed' } as const;
+        const computed = computeGroupMutation({
+            command: connectCommand({ expectedFormationEpoch: 4, expectedLayout: removed }),
+            read: connectRead({ lifecycleState: 'planned', formationEpoch: 4 }, removed),
+            facts: transitionFacts()
+        });
+        expect(computed.outcome).toBe('rejected');
+    });
+
     it('starts establishment from forming and advances the formation epoch', () => {
         const computed = computeGroupMutation({
             command: transitionCommand('startGroupEstablishment'),
@@ -281,7 +386,7 @@ describe('group lifecycle transition computation', () => {
 });
 
 function transitionCommand(
-    operation: 'startGroupEstablishment' | 'activateGroup' | 'reopenGroupEstablishment',
+    operation: 'startGroupEstablishment' | 'activateGroup' | 'reopenGroupEstablishment' | 'planGroupLayout',
     actorPrincipalId = 'alice'
 ): GroupMutationCommand {
     return {
@@ -331,6 +436,39 @@ function plannedSnapshotFor(identity: GroupLayoutIdentity): RallarOverlayTopolog
         createdAtEpochMs: 900,
         updatedAtEpochMs: 950
     };
+}
+
+function connectCommand(
+    extras: Readonly<{ expectedFormationEpoch: number; expectedLayout: GroupLayoutIdentity; }>
+): GroupMutationCommand {
+    return {
+        operation: 'connectGroup',
+        aggregateRef: groupRef('pure-room'),
+        commandId: 'connect-command',
+        requestId: 'connect-command',
+        input: {
+            actorPrincipalId: 'alice',
+            actorSessionId: 'alice-session',
+            reason: null,
+            traceId: null,
+            expectedFormationEpoch: extras.expectedFormationEpoch,
+            expectedLayout: extras.expectedLayout
+        }
+    } as GroupMutationCommand;
+}
+
+function connectRead(
+    groupOverrides: Partial<Group>,
+    plannedLayoutIdentity: GroupLayoutIdentity | null
+): GroupMutationRead {
+    return {
+        ...transitionRead(groupOverrides),
+        plannedLayoutRow: plannedLayoutIdentity === null ? null : {
+            snapshot: plannedSnapshotFor(plannedLayoutIdentity),
+            revision: 5
+        },
+        acceptedLayoutRow: null
+    } as GroupMutationRead;
 }
 
 function criterionRead(

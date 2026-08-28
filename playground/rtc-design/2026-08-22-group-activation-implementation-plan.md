@@ -301,6 +301,29 @@ self-reconciling). No plan-surface change arrived on `main` beyond this workstre
   denials; 5c's `pause`/`resume` follows separately (cheapest, `transportState`'s first writers),
   then 5d/5e per their stated needs.
 
+### Fifth checkpoint — executed 2026-08-28, after PR 5 (#362) with its review
+
+PR 5 merged to `main` as `cae0c07ae` after the ten-angle review cycle (fifteen confirmed findings,
+all repaired in-PR; the delivery and review-repair records live in slice 4's section). `main` also
+carries `5dfd2161a` from a parallel session — the browser-cache pre-connect read fix, no overlap
+with this plan's surfaces. Slice 4 is complete: the stage-keyed gate, the accepted-first delivery
+rule with its tombstone and member-aware qualifiers, the populated management view, and the frozen
+path's counter and real-Postgres coverage are all live and gated.
+
+**PR 6 = slices 5a + 5b as the fourth checkpoint selected — confirmed.** 5b's stated need (4b) is
+satisfied and verified end-to-end; 4a's promotion outcome vocabulary
+(`no-planned-layout`/`planned-layout-superseded`/`stale-fence`) is already the fence language
+decision 32 asks connect to speak, so 5b builds on an existing compute rather than a new one. Both
+commands land dark — registered through the full census, mounted on no route, emitted by no
+producer — so the tree's live behavior is unchanged and the inventory counts move only where
+semantics say they must (AppInbox types and trusted vocabulary, not routing entrypoints).
+
+**Open for the sixth checkpoint:** when `plan`/`connect` get HTTP routes. 5d's recipe rewrite (each
+`establish` POST becoming two calls) requires reachable paths, while the slice-8 text owns "the
+routes"; the gates note ("extend the strict request-identity route inventory before recipes can
+reach the new paths") reads as permission to mount them before 8 once the family is complete.
+Resolve with the 5c/5d/5e ordering after PR 6's review.
+
 ## Corrections — resolved
 
 Four corrections changed a recorded product decision and have been ruled on. They are recorded here
@@ -957,6 +980,44 @@ builder; `GROUP_MUTATION_OPERATIONS` is an untyped `Set` of bare strings.
   they weaken atomicity and leave a window where hydration or change suppression can observe a
   half-reset group. Reset's tests inject failure at each write and prove group facts, both tombstones,
   event, receipt, result and outbox either all commit or all roll back.
+
+### PR 6 delivery record — slices 5a + 5b (executed 2026-08-28, branch `codex/group-activation-command-family`)
+
+`planGroupLayout` and `connectGroup` land dark through the full recovered census — both compile-forced
+surfaces (the Extract's six registries, the payload map, the descriptor and operation switches, the
+key Records) and every silent surface the census names (`GROUP_APP_INBOX_OPERATIONS`, the
+`toDescriptorCommand` membership fallthrough, the untyped operation Sets, the runtime predicate
+chains, `decodeGroupMutationOperation`). No route, no OpenAPI, no producer: the routing inventory
+stays 57/53 and `COVERED_API_MUTATIONS` stays 47, exactly as the fifth checkpoint predicted. The
+dispatch classifier is pinned the only way it can be — the operation matrix executes both commands
+through the real phases (plan lands `forming → planned` and the idempotent replan; connect lands its
+typed denial), so a membership-fallthrough misroute cannot regress silently. Rulings:
+
+- **`connect` requires both fences non-null** — `expectedFormationEpoch` and `expectedLayout`
+  (decision 32 names the layout; the existing compute rule rejects a layout fence without an epoch
+  fence, and `computeExpectedLayoutFence` is non-null by signature). A descriptor missing them is
+  malformed at the builder (thrown `TypeError`), mirroring `applyPlannedLayout`'s
+  non-null-by-construction posture; a manual caller reads both from the formation and topology views.
+- **The two denials are thrown 409 conflicts, terminal in the AppInbox classifier.** `connect`'s
+  `no-planned-layout` / `planned-layout-superseded` throw `GroupConnectDenialError`
+  (`status 409`, `code group-connect-<denial>`) from inside compute — the
+  `RtcRttMutationIdempotencyConflictError` template — and both codes are registered in
+  `TERMINAL_STATUS_BY_CODE`, because the executor's default for an unknown thrown code is retry and
+  a deterministic denial must not burn the retry budget. Stale-epoch stays the shared rejected
+  receipt; a connect fence naming a removed layout is rejected like activate's.
+- **`connect` begins establishment.** It joins the `beginsEstablishment` list (sets
+  `establishmentStartedAtEpochMs`, arms the deadline timer under deadline-mode policies) for both of
+  its rows — `planned → connecting` and `reconfiguring → reconnecting` — since under decision 34 it
+  replaces `start-establishment` as the entry into dialing, and `DEADLINE_TIMER_CONSUMES` already
+  expects the stage entered to have armed the deadline. `plan` begins nothing and promotes nothing;
+  `connect` passes `promotion: null` (decision 42: dialing a candidate is not acceptance).
+- **The idempotent replan re-pins nothing and still repairs.** `plan` from `planned` keeps the epoch
+  (the table's rule) and now also keeps the stored `formationElectorate`, while remaining a write —
+  the audit/version bump plus the transition's unconditional presence-summary follow-up is exactly
+  the first-party repair decision 28 promises, since the `planned` disposition replans from latest
+  authority. `lastFormationOutcome` is untouched by both commands (the recorded-outcome fold already
+  falls through), and the `formation-automation` authority mode keeps its fail-closed throw until
+  slice 11's triggers produce commands.
 
 Product decision 12 keeps one initiator policy for all eight application-facing commands, so the
 command predicate needs no per-command branch.

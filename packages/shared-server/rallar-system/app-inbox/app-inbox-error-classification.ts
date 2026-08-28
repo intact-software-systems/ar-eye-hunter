@@ -52,6 +52,8 @@ const TERMINAL_STATUS_BY_CODE = new Map<string, number>([
     ['group-mutation-authority-denied', 403],
     ['group-already-exists', 409],
     ['group-mutation-idempotency-conflict', 409],
+    ['group-connect-no-planned-layout', 409],
+    ['group-connect-planned-layout-superseded', 409],
     ['group-mutation-rejected', 400],
     ['group-state-event-collision', 409],
     ['group-state-event-repository-invariant-corruption', 500],

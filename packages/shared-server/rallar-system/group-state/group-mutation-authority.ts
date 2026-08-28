@@ -257,6 +257,8 @@ export function toDescriptorCommand(
         case 'rotateGroupJoinCode':
             return toAggregateMutationCommand(descriptor, randomId);
         case 'startGroupEstablishment':
+        case 'planGroupLayout':
+        case 'connectGroup':
         case 'activateGroup':
         case 'reopenGroupEstablishment':
         case 'failGroupFormation':

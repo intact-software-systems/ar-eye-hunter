@@ -60,6 +60,8 @@ export function computeGroupMutation(
         case 'appointDirector':
             return computeDirector(command, read, facts);
         case 'startGroupEstablishment':
+        case 'planGroupLayout':
+        case 'connectGroup':
         case 'activateGroup':
         case 'reopenGroupEstablishment':
         case 'failGroupFormation':

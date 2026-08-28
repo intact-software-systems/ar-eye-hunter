@@ -230,6 +230,8 @@ function decodeGroupMutationOperation(
         case 'updateGroup':
         case 'appointDirector':
         case 'startGroupEstablishment':
+        case 'planGroupLayout':
+        case 'connectGroup':
         case 'activateGroup':
         case 'reopenGroupEstablishment':
         case 'failGroupFormation':

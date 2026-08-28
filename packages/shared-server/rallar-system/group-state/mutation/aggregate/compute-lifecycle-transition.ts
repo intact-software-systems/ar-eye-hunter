@@ -1,5 +1,3 @@
-import { computeExpectedLayoutFence } from '@shared/api/group-lifecycle/compute-expected-layout-fence.ts';
-import { toGroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
 import { createDefaultGroupLifecyclePolicy } from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
 import type { GroupLifecyclePolicy } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import {
@@ -20,11 +18,14 @@ import type {
     GroupMutationRead
 } from '../group-mutation-contracts.ts';
 import { auditStamp, computeGroupMutationWriteResult, rejected, requireGroup } from '../group-mutation-result.ts';
+import { computeLifecycleFenceRejection } from './compute-lifecycle-fence-rejection.ts';
 import { computePlannedLayoutPromotion, type PlannedLayoutPromotion } from './compute-planned-layout-promotion.ts';
 import { assertActive, assertAllowed, toPolicySnapshot } from './group-aggregate-mutation-policy.ts';
 
 const LIFECYCLE_TRANSITION_BY_OPERATION = {
     startGroupEstablishment: 'start-establishment',
+    planGroupLayout: 'plan',
+    connectGroup: 'connect',
     activateGroup: 'activate',
     reopenGroupEstablishment: 'reopen-establishment',
     failGroupFormation: 'fail-formation'
@@ -72,7 +73,7 @@ export function computeLifecycleTransition(
     if (read.activeMemberPrincipalIds === null) {
         throw new TypeError('Lifecycle transition compute requires the roster read');
     }
-    const fenceRejection = computeFenceRejection({ command, read, facts, stored: stored.value });
+    const fenceRejection = computeLifecycleFenceRejection({ command, read, facts, stored: stored.value });
     if (fenceRejection !== null) {
         return fenceRejection;
     }
@@ -147,7 +148,13 @@ function computeNextLifecycleGroup(
         ? promotion.acceptedIdentity
         : stored.acceptedLayoutIdentity;
     const beginsEstablishment = command.operation === 'startGroupEstablishment' ||
-        command.operation === 'reopenGroupEstablishment';
+        command.operation === 'reopenGroupEstablishment' ||
+        command.operation === 'connectGroup';
+    // An idempotent replan re-pins nothing (product decision 28): the table
+    // preserves the epoch, and the electorate that fences the running series
+    // must not move either.
+    const idempotentReplan = command.operation === 'planGroupLayout' &&
+        outcome.nextFormationEpoch === stored.formationEpoch;
     return {
         ...stored,
         lifecycleState: outcome.nextState,
@@ -164,7 +171,7 @@ function computeNextLifecycleGroup(
             : stored.formationAttemptCount,
         acceptedLayoutIdentity,
         lastFormationOutcome: computeRecordedOutcome(command, stored, facts),
-        formationElectorate,
+        formationElectorate: idempotentReplan ? stored.formationElectorate : formationElectorate,
         snapshotVersion: stored.snapshotVersion + 1,
         updated: auditStamp(command, facts, command.input.actorPrincipalId ?? undefined)
     };
@@ -257,41 +264,3 @@ function validateLifecycleTransitionAuthority(
  * no-op. Unfenced (principal) commands pass; absent, like null, means no
  * fence, though the wire decoders reject absent keys before compute.
  */
-function computeFenceRejection(
-    { command, read, facts, stored }: LifecycleTransitionDecisionInput & Readonly<{ stored: Group; }>
-): GroupMutationComputed | null {
-    const rejectedFence = (message: string) =>
-        rejected({ command, read, facts, rejectionCode: 'group-mutation-rejected', message });
-    const expectedFormationEpoch = command.input.expectedFormationEpoch ?? null;
-    if (expectedFormationEpoch !== null && expectedFormationEpoch !== stored.formationEpoch) {
-        return rejectedFence(
-            `Criterion petition fence is stale-epoch: expected ${expectedFormationEpoch}, ` +
-                `stored ${stored.formationEpoch}`
-        );
-    }
-    const expectedLayout = command.operation === 'activateGroup' ||
-            command.operation === 'failGroupFormation'
-        ? command.input.expectedLayout ?? null
-        : null;
-    if (expectedLayout === null) {
-        return null;
-    }
-    if (expectedFormationEpoch === null) {
-        return rejectedFence('Criterion petition carries a layout fence without an epoch fence');
-    }
-    if (command.operation === 'activateGroup' && expectedLayout.state !== 'active') {
-        return rejectedFence('Criterion activation fence names a removed layout');
-    }
-    const fence = computeExpectedLayoutFence({
-        expectedFormationEpoch,
-        expectedLayout,
-        currentFormationEpoch: stored.formationEpoch,
-        currentPlannedLayout: read.plannedLayoutRow === null
-            ? undefined
-            : toGroupLayoutIdentity(read.plannedLayoutRow.snapshot)
-    });
-    if (fence === 'match') {
-        return null;
-    }
-    return rejectedFence(`Criterion petition fence is ${fence} for the stored planned layout`);
-}

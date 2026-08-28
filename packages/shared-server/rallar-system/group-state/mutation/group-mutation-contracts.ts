@@ -108,6 +108,36 @@ export type GroupMutationCommand =
     | (
         & GroupMutationCommandBase
         & Readonly<{
+            // Dark until slice 8 mounts routes (plan slice 5a): registered
+            // through the full census, emitted by no producer.
+            operation: 'planGroupLayout';
+            input:
+                & NullableActorInput
+                & Readonly<{
+                    /** Null on principal commands; the plan trigger's causal fence when internal. */
+                    expectedFormationEpoch: number | null;
+                }>;
+        }>
+    )
+    | (
+        & GroupMutationCommandBase
+        & Readonly<{
+            // Dark until slice 8 mounts routes (plan slice 5b). `connect`
+            // names the exact planned layout it means to dial (product
+            // decision 32), so both fences are required — a manual caller
+            // reads them from the formation and topology views.
+            operation: 'connectGroup';
+            input:
+                & NullableActorInput
+                & Readonly<{
+                    expectedFormationEpoch: number;
+                    expectedLayout: GroupLayoutIdentity;
+                }>;
+        }>
+    )
+    | (
+        & GroupMutationCommandBase
+        & Readonly<{
             operation: 'activateGroup';
             input:
                 & NullableActorInput
@@ -472,7 +502,12 @@ export type GroupMutationRejectionCode =
 
 export type GroupLifecycleTransitionOperation = Extract<
     GroupMutationCommand['operation'],
-    'startGroupEstablishment' | 'activateGroup' | 'reopenGroupEstablishment' | 'failGroupFormation'
+    | 'startGroupEstablishment'
+    | 'activateGroup'
+    | 'reopenGroupEstablishment'
+    | 'failGroupFormation'
+    | 'planGroupLayout'
+    | 'connectGroup'
 >;
 
 export function isGroupLifecycleTransitionOperation(
@@ -482,7 +517,9 @@ export function isGroupLifecycleTransitionOperation(
         operation === 'startGroupEstablishment' ||
         operation === 'activateGroup' ||
         operation === 'reopenGroupEstablishment' ||
-        operation === 'failGroupFormation'
+        operation === 'failGroupFormation' ||
+        operation === 'planGroupLayout' ||
+        operation === 'connectGroup'
     );
 }
 
@@ -492,7 +529,8 @@ export function isLayoutFencedGroupMutationCommand(command: GroupMutationCommand
         (
             command.operation === 'activateGroup' ||
             command.operation === 'failGroupFormation' ||
-            command.operation === 'applyPlannedLayout'
+            command.operation === 'applyPlannedLayout' ||
+            command.operation === 'connectGroup'
         ) &&
         command.input.expectedLayout !== null
     );

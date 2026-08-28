@@ -9,6 +9,7 @@ import {
     type GroupInviteRevokeAppInboxPayload,
     type GroupJoinAppInboxPayload,
     type GroupJoinCodeRotateAppInboxPayload,
+    type GroupLifecycleTransitionAppInboxPayload,
     type GroupMemberRemoveAppInboxPayload,
     type GroupMemberRoleSetAppInboxPayload,
     type GroupMemberUpsertAppInboxPayload,
@@ -28,7 +29,7 @@ import {
     runOperationMatrix,
     type OperationMatrixCase
 } from './group-state-inbox-operation-matrix-runtime.ts';
-import { createAuthorityHarness, SCOPE } from './group-state-inbox-test-runtime.ts';
+import { createAuthorityHarness, processAuthenticated, SCOPE } from './group-state-inbox-test-runtime.ts';
 
 describe('GroupStateInboxService authenticated authority', () => {
     it('exposes transaction-injected mutation phases without direct mutation bypasses', async () => {
@@ -60,6 +61,8 @@ describe('GroupStateInboxService authenticated authority', () => {
             AppInboxType.GROUP_UPDATE,
             AppInboxType.GROUP_DIRECTOR_APPOINT,
             AppInboxType.GROUP_ESTABLISHMENT_START,
+            AppInboxType.GROUP_PLAN,
+            AppInboxType.GROUP_CONNECT,
             AppInboxType.GROUP_ACTIVATE,
             AppInboxType.GROUP_ESTABLISHMENT_REOPEN,
             AppInboxType.GROUP_JOIN,
@@ -91,6 +94,7 @@ describe('GroupStateInboxService authenticated authority', () => {
 async function runEveryAdvertisedGroupOperation(): Promise<void> {
     const harness = await createAuthorityHarness(['owner', 'bob', 'charlie']);
     const groupId = 'operation-matrix-room';
+    const phasedGroupId = 'operation-matrix-phased';
     const admissionGroupId = 'operation-matrix-admissions';
     const ownerActor = {
         actorPrincipalId: 'owner',
@@ -493,8 +497,95 @@ async function runEveryAdvertisedGroupOperation(): Promise<void> {
                     status: 'disconnected'
                 });
             }
+        },
+        {
+            type: AppInboxType.GROUP_CREATE,
+            operation: 'createGroup',
+            authority: harness.sessions.owner,
+            data: {
+                scope: SCOPE,
+                request: {
+                    groupId: phasedGroupId,
+                    displayName: 'Operation Matrix Phased',
+                    kind: 'room',
+                    joinMode: 'open',
+                    createdByPrincipalId: 'owner',
+                    lifecyclePolicy: { formation: 'phased' },
+                    ...ownerActor,
+                    requestId: 'matrix-create-phased'
+                }
+            } satisfies GroupCreateAppInboxPayload,
+            assertDomain: async () => {
+                expect(
+                    (await harness.repository.readSnapshot({ ...SCOPE, groupId: phasedGroupId }))
+                        ?.group.lifecycleState
+                ).toBe('forming');
+            }
+        },
+        {
+            type: AppInboxType.GROUP_PLAN,
+            operation: 'planGroupLayout',
+            authority: harness.sessions.owner,
+            data: {
+                scope: SCOPE,
+                groupId: phasedGroupId,
+                request: { ...ownerActor, requestId: 'matrix-plan' }
+            } satisfies GroupLifecycleTransitionAppInboxPayload,
+            assertDomain: async () => {
+                const group = (await harness.repository.readSnapshot({ ...SCOPE, groupId: phasedGroupId }))?.group;
+                expect(group?.lifecycleState).toBe('planned');
+                expect(group?.formationEpoch).toBe(1);
+            }
+        },
+        {
+            type: AppInboxType.GROUP_PLAN,
+            operation: 'planGroupLayout',
+            authority: harness.sessions.owner,
+            data: {
+                scope: SCOPE,
+                groupId: phasedGroupId,
+                request: { ...ownerActor, requestId: 'matrix-replan' }
+            } satisfies GroupLifecycleTransitionAppInboxPayload,
+            assertDomain: async () => {
+                const group = (await harness.repository.readSnapshot({ ...SCOPE, groupId: phasedGroupId }))?.group;
+                // The idempotent replan re-pins nothing (decision 28).
+                expect(group?.lifecycleState).toBe('planned');
+                expect(group?.formationEpoch).toBe(1);
+            }
         }
     ];
 
     await runOperationMatrix(harness, groupId, cases);
+
+    // `connect` executes the same real phases and lands its typed 409 denial:
+    // with no planned topology row stored, the fence answers
+    // no-planned-layout — proving the dispatch classifier routes the new
+    // operation into the lifecycle builder, not the membership fallthrough.
+    const connectResult = await processAuthenticated({
+        service: harness.service,
+        reader: harness.reader,
+        authority: harness.sessions.owner,
+        input: {
+            type: AppInboxType.GROUP_CONNECT,
+            resourceId: 'matrix-connect',
+            contextId: `${SCOPE.applicationId}:${SCOPE.workspaceId}:${phasedGroupId}`,
+            senderId: harness.sessions.owner.clientId,
+            data: {
+                scope: SCOPE,
+                groupId: phasedGroupId,
+                request: {
+                    ...ownerActor,
+                    requestId: 'matrix-connect',
+                    expectedFormationEpoch: 1,
+                    expectedLayout: {
+                        groupRevision: 1,
+                        presenceRevision: 0,
+                        version: 1,
+                        state: 'active'
+                    }
+                }
+            }
+        }
+    });
+    expect(connectResult.left?.message).toContain('no-planned-layout');
 }
