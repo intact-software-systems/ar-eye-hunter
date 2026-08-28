@@ -202,6 +202,24 @@ describe('Deploy workflow release gate', () => {
         }
     });
 
+    it('pins every Deno Deploy command away from the 2.9.6 argument duplication regression', async () => {
+        const workflow = await readFile(path.join(repoRoot, '.github/workflows/deploy.yml'), 'utf8');
+
+        for (
+            const jobName of [
+                'deno-deploy-preflight',
+                'deploy-api',
+                'deploy-control-server',
+                'deploy-relic-api'
+            ]
+        ) {
+            const jobBlock = getJobBlock(workflow, jobName);
+
+            expect(jobBlock).toContain('deno-version: 2.9.5');
+            expect(jobBlock).not.toContain('deno-version: v2.x');
+        }
+    });
+
     it('documents provider settings that prevent feature-branch deployment contexts', async () => {
         const runbook = await readFile(path.join(repoRoot, 'docs/production-deployment.md'), 'utf8');
 
