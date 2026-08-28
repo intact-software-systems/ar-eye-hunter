@@ -318,11 +318,16 @@ commands land dark — registered through the full census, mounted on no route, 
 producer — so the tree's live behavior is unchanged and the inventory counts move only where
 semantics say they must (AppInbox types and trusted vocabulary, not routing entrypoints).
 
-**Open for the sixth checkpoint:** when `plan`/`connect` get HTTP routes. 5d's recipe rewrite (each
-`establish` POST becoming two calls) requires reachable paths, while the slice-8 text owns "the
-routes"; the gates note ("extend the strict request-identity route inventory before recipes can
-reach the new paths") reads as permission to mount them before 8 once the family is complete.
-Resolve with the 5c/5d/5e ordering after PR 6's review.
+**Resolved at the sixth checkpoint (2026-08-28): no routes move early, and 5d does not rewrite the
+recipes.** The question was when `plan`/`connect` get HTTP routes, because a recipe rewrite needs
+reachable paths. This is a **ruling between two entries that disagree**, not a reading the 5d text
+settles on its own: the 5d bullet lists the `AppInboxType`, the operation and the recipe call sites
+under 5d and carves out only "the route and OpenAPI path" for 8d, which reads as 5d retiring them.
+Three other entries say the opposite and are more explicit, so they win — 8d's entry ends "**No
+earlier slice removes them**", 6a's parallel entry says "**Nothing leaves before the route
+cutover**", and slice 9 verifies the commands are gone "after 5d and 6a **inventoried** them and 8d
+**removed** them". The rewrite is therefore 8d's, no route mounts early, and I8's atomic cutover is
+preserved. The 5d bullet above now says so in its own text rather than being left to contradict this.
 
 ## Corrections — resolved
 
@@ -961,11 +966,13 @@ builder; `GROUP_MUTATION_OPERATIONS` is an untyped `Set` of bare strings.
   cheapest of the three sub-slices rather than the most dangerous.
 - **5d — legacy retirement, prepared but not cut over**: `start-establishment`'s `AppInboxType`,
   operation and
-  OpenAPI block and 22 recipe call sites across 10 files, once `plan` + `connect` cover it (product
-  decision 34). Each `POST …/lifecycle/establish/…` becomes two calls, so the recipe edit is a rewrite,
-  not a path substitution. The automatic retry leg is re-expressed as `plan` plus the connect trigger.
-  **The route and OpenAPI path themselves come out in 8d, not here**, so the tree stays deployable
-  throughout.
+  OpenAPI block and **21** recipe call sites across 10 files (recounted from the tree in PR 8; the
+  22 predates it), once `plan` + `connect` cover it (product decision 34). **5d inventories all of
+  these; 8d removes them** — the sixth checkpoint's ruling, which supersedes this bullet's original
+  reading that only the route and OpenAPI path waited for 8d. Each `POST …/lifecycle/establish/…`
+  becomes two calls, so the recipe edit is a rewrite, not a path substitution. The automatic retry
+  leg is re-expressed as `plan` plus the connect trigger, which makes its scheduler cutover work too.
+  Nothing comes out before 8d, so the tree stays deployable throughout.
 - **5e — `reset` and `start`, dark** (product decisions 35–37). **Needs:** 4a's accepted slot and
   promotion-owned fingerprint semantics. `start` is `dormant → forming` and is denied while the
   attempt series is exhausted. `reset` is one AppInbox transaction that advances the epoch, zeroes
@@ -1208,6 +1215,62 @@ inventory and `COVERED_API_MUTATIONS` are untouched. Rulings:
   `lifecycle-manager-unavailable` and never reached the membership question it claimed to prove. It
   now carries the creator in the electorate and asserts the denial **code**, which separates the two
   arms.
+
+### PR 8 delivery record — slice 5d (executed 2026-08-28, branch `claude/group-activation-legacy-inventory`)
+
+Inventory only: nothing is removed, no route is mounted, no recipe is rewritten. The deliverable is
+`packages/tests/repo/legacy-establishment-retirement/` — a declared table of every
+`start-establishment` consumer, compared against a fresh whole-tree scan **in both directions**, so a
+consumer that is added, removed, or that gains or loses an occurrence fails until it is declared.
+**54 consumer files**, occurrence-exact.
+
+**What that guarantee is bounded by**, stated because an inventory that oversells itself is worse
+than none: it is exact _for the eleven declared tokens, over git-tracked files, outside the excluded
+prose roots_ (`playground/`, `plans/`, `.agents/`, `.superpowers/`, `docs/superpowers/`, `projects/`,
+plus the inventory's own directory). A consumer reached by a twelfth spelling, or living in an
+uncommitted file, is still invisible. Nor does any of it prove the cutover finished: 8d could delete
+one call site and edit the count to match. Under-declaration is blocked; under-removal is slice 9's
+job, and this slice does not take it on.
+
+- **The first draft was wrong in a way worth recording, because 8d would have inherited it.** It
+  hand-authored a list of twelve files and checked only that each still existed — no scan of the tree
+  at all — so the twenty-odd consumers nobody thought of stayed invisible. Among them was the
+  below-floor retry leg product decision 34 names explicitly: had 8d worked from that inventory it
+  would have removed the operation and left the retry timer submitting a command with no handler,
+  with no route, recipe or OpenAPI entry to reveal the break. **The cause was the hand-authored list,
+  not the choice of marker** — an earlier telling of this blamed route-path keying, but two of the
+  draft's markers do occur in the producer file, so a converse scan with even that marker set would
+  have caught it. What no marker set caught is the retry _scheduler_
+  (`formation-timer-outbox-entry.ts`), which names neither route nor command; the token list now
+  carries the retry leg's own vocabulary for it.
+- **The test's shape is the deliverable, not the table.** A one-directional check — "every declared
+  surface still exists" — passes with eleven of twelve entries deleted, which is what the first draft
+  did. The comparison is now wholesale and bidirectional, and it was mutation-checked three ways:
+  dropping a declared consumer, falsifying an occurrence count, and letting an undeclared consumer
+  appear in the tree all fail.
+- **The census is 21 recipe call sites across 10 files, not 22.** Recomputed per this slice's gate
+  line ("every hard-coded inventory recomputed from semantics rather than arithmetic"). The stale 22
+  in the slice bullet is corrected above rather than left to contradict this record.
+- **The epoch consequence is real; the number first recorded for it was not.** `plan`
+  (`forming → planned`) and `connect` (`planned → connecting`) advance the formation epoch twice
+  where the single legacy call advanced it once, so assertions after a rewritten site shift. But the
+  47 `formationEpoch` occurrences across the ten recipes are **not** the renumber set: five of the 21
+  sites expect **403** and advance nothing, and 16 of the 47 are `"formationEpoch": 0` snapshots taken
+  before any transition. `api-v1-drop-in-social-preset.json` is the clean counter-example — one
+  occurrence, asserting `0`, before its only site, which is a denial: its renumber count is zero. 8d
+  derives the shift map per site; this slice records the mechanism and declines to pin a number that
+  does not mean what it says.
+- **Scope held.** The inventory covers `start-establishment` only. `reopen-establishment` is 6a's and
+  does not share a route — `lifecycle/establish/requests` and `lifecycle/reopen/requests` are separate
+  registrations.
+- **The worklist is a removal list, and says so under test.** Product decision 14 forbids retaining
+  this command, and the sanctioned channel for retained production legacy is
+  `docs/production-legacy-exceptions.md`, whose retained-exceptions section is empty. The inventory
+  asserts that no `start-establishment` token appears in that registry, so listing fifty consumers
+  can never read as blessing them; granting an exception fails the test. `check:retained-legacy`
+  passes, and this PR touches no production file at all, so it retains nothing by construction. The
+  dual path that exists today — the dark `plan`/`connect` beside the mounted legacy route — is the
+  plan's staged cutover with a defined end in 8d, not a compatibility shim.
 
 Product decision 12 keeps one initiator policy for all eight application-facing commands, so the
 command predicate needs no per-command branch.
