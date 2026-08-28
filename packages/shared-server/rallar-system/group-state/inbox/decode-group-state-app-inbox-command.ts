@@ -132,6 +132,10 @@ function toGroupMutationOperation(
             return 'appointDirector';
         case AppInboxType.GROUP_ESTABLISHMENT_START:
             return 'startGroupEstablishment';
+        case AppInboxType.GROUP_TRANSPORT_PAUSE:
+            return 'pauseGroupTransport';
+        case AppInboxType.GROUP_TRANSPORT_RESUME:
+            return 'resumeGroupTransport';
         case AppInboxType.GROUP_PLAN:
             return 'planGroupLayout';
         case AppInboxType.GROUP_CONNECT:

@@ -5,6 +5,7 @@ import {
     computeRotateJoinCode,
     computeUpdate
 } from '../aggregate/compute-group-aggregate-mutation.ts';
+import { computeGroupTransportMutation } from '../aggregate/compute-group-transport-mutation.ts';
 import { computeLifecycleTransition } from '../aggregate/compute-lifecycle-transition.ts';
 import { validateGroupMutationAuthority } from '../command-validation/validate-group-mutation-authority.ts';
 import { validateGroupMutationCommand } from '../command-validation/validate-group-mutation-command.ts';
@@ -68,6 +69,9 @@ export function computeGroupMutation(
             return computeLifecycleTransition(command, read, facts);
         case 'applyPlannedLayout':
             return computeApplyPlannedLayout(command, read, facts);
+        case 'pauseGroupTransport':
+        case 'resumeGroupTransport':
+            return computeGroupTransportMutation(command, read, facts);
         case 'joinGroup':
         case 'acceptGroupInvite':
             return computeJoin(command, read, facts);

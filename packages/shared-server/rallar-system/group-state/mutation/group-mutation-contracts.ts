@@ -186,6 +186,17 @@ export type GroupMutationCommand =
     | (
         & GroupMutationCommandBase
         & Readonly<{
+            // Dark until slice 8 mounts routes (plan slice 5c). The valve is
+            // a transport fact, not a stage (product decision 25): these
+            // carry no fence, land in no transition table cell, and advance
+            // neither the formation epoch nor the electorate.
+            operation: 'pauseGroupTransport' | 'resumeGroupTransport';
+            input: NullableActorInput;
+        }>
+    )
+    | (
+        & GroupMutationCommandBase
+        & Readonly<{
             operation: 'joinGroup' | 'acceptGroupInvite';
             targetPrincipalId: string;
             input:
@@ -359,13 +370,14 @@ export type GroupMutationRead = Readonly<{
     authorityPresenceSessions: readonly GroupPresenceSession[];
     authorityPresenceSessionEntries: readonly RuntimeStateEntryValue<GroupPresenceSession>[];
     presenceSummary: RuntimeStateEntryValue<GroupPresenceSummary> | null;
-    /** Loaded only for the lifecycle transition operations; null everywhere else. */
+    /** Loaded only for the operations `readsGroupLifecyclePolicy` names. */
     lifecyclePolicy: GroupLifecyclePolicyRead | null;
     /**
      * The active member principal ids at read time, loaded only for the
-     * lifecycle transition operations; the compare-and-set on the group row
-     * (membership writes bump snapshotVersion) makes the pinned electorate
-     * consistent with the transition that records it.
+     * operations `readsGroupActiveMemberPrincipalIds` names; the
+     * compare-and-set on the group row (membership writes bump
+     * snapshotVersion) makes the pinned electorate consistent with the
+     * transition that records it.
      */
     activeMemberPrincipalIds: readonly string[] | null;
     /**
@@ -524,6 +536,54 @@ export function isGroupLifecycleTransitionOperation(
         operation === 'failGroupFormation' ||
         operation === 'planGroupLayout' ||
         operation === 'connectGroup'
+    );
+}
+
+/**
+ * The transport valve's two commands (product decision 25). They are not
+ * lifecycle transitions: they write `transportState` alone, so they never
+ * enter the transition table or any registry keyed on it.
+ */
+export type GroupTransportOperation = Extract<
+    GroupMutationCommand['operation'],
+    'pauseGroupTransport' | 'resumeGroupTransport'
+>;
+
+export function isGroupTransportOperation(
+    operation: GroupMutationCommand['operation']
+): operation is GroupTransportOperation {
+    return operation === 'pauseGroupTransport' || operation === 'resumeGroupTransport';
+}
+
+/**
+ * The operations whose compute consults the stored lifecycle policy: the
+ * transitions and the transport commands read its initiator (product
+ * decision 12's single group-authority policy), the promotion reads the
+ * replanning landing, and the admission surfaces read the admission mode.
+ */
+export function readsGroupLifecyclePolicy(
+    operation: GroupMutationCommand['operation']
+): boolean {
+    return (
+        isGroupLifecycleTransitionOperation(operation) ||
+        isGroupTransportOperation(operation) ||
+        isGroupAdmissionPolicyReadOperation(operation) ||
+        operation === 'applyPlannedLayout'
+    );
+}
+
+/**
+ * The operations that need the full active roster: a transition pins its
+ * electorate, an admission decision resolves current managers, and both
+ * group-authority families resolve the manager initiator from it.
+ */
+export function readsGroupActiveMemberPrincipalIds(
+    operation: GroupMutationCommand['operation']
+): boolean {
+    return (
+        isGroupLifecycleTransitionOperation(operation) ||
+        isGroupTransportOperation(operation) ||
+        isGroupAdmissionDecisionOperation(operation)
     );
 }
 

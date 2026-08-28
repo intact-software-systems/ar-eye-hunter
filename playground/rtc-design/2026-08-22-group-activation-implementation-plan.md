@@ -1093,6 +1093,57 @@ Fifteen confirmed findings, all repaired in the PR. The rulings the repairs sett
   freshly migrated pinned container each side) — both required by this slice's gate line because the
   fence extraction and the timer branch run on every lifecycle command, not only the dark ones.
 
+### PR 7 delivery record — slice 5c (executed 2026-08-28, branch `claude/group-activation-pause-resume`)
+
+`pauseGroupTransport` and `resumeGroupTransport` land dark through the same census as 5a+5b, minus
+every routing-plane registry: they are absent from `LIFECYCLE_TRANSITION_BY_OPERATION`,
+`GroupLifecycleTransitionOperation`, the transition table and `computeFormationTimerEntries`, and
+present in `AppInboxType`, `GROUP_APP_INBOX_OPERATIONS`, the payload map,
+`AUTHENTICATED_GROUP_INBOX_TYPES`, both descriptor switches, `toDescriptorCommand`, the operation
+Sets, the key Records and the decoder chains. No route, no OpenAPI, no producer: the routing
+inventory and `COVERED_API_MUTATIONS` are untouched. Rulings:
+
+- **A redundant command is a no-op, not a write.** `plan`'s idempotent replan writes because the
+  follow-up replan *is* the repair decision 28 promises; the valve has nothing to repair, so a
+  `pause` that finds `halted` returns a no-op receipt with no event, no outbox entry and the stored
+  snapshot version — no delta ships for a state nobody changed. This is `computeUpdate`'s existing
+  precedent, and it keeps a retry off the state-write budget.
+- **The valve is stage-independent by construction.** It has no transition-table row, so there is no
+  stage to deny from; the proof enumerates `GROUP_LIFECYCLE_STATES`, and a new stage joins it by
+  joining the registry. `dormant` included: `reset` leaves a group halted (decision 36) and only an
+  application decision lifts that.
+- **One initiator policy, one owner.** `canCommandGroupLifecycleTransition` bundled the active-member
+  check, the initiator switch and the state machine. The first two are now
+  `canCommandGroupAuthority`, which the transitions call before their table check and the valve calls
+  on its own — decision 12's "one policy for all eight" is structural rather than duplicated, and the
+  two denial messages that named lifecycle transitions now name group authority, because they answer
+  for both families. `denyForGroupAuthorityInitiator` never read the transition, so nothing was lost.
+- **Never automatic is enforced where it cannot be forgotten.** No `internalAuthority` mode admits a
+  transport operation, so `validateGroupMutationAuthority` refuses every one of them before compute;
+  the compute has no service-authority arm at all, unlike the transitions' criterion bypass. The
+  proof iterates `GROUP_MUTATION_INTERNAL_AUTHORITY_MODES`, so a future mode must decide explicitly.
+- **The policy read has one owner for both families.** `resolveGroupAuthorityPolicy` replaces the
+  private corrupt-policy arm in `compute-lifecycle-transition.ts`: missing read throws, corrupt
+  fails closed as a rejection value, absent resolves to the default preset. The four hand-repeated
+  read-gating disjunctions (`read-group-mutation`, `read-sequential-group-mutation` and both arms of
+  `validate-group-mutation-operation-reads`) now call `readsGroupLifecyclePolicy` /
+  `readsGroupActiveMemberPrincipalIds`, so the read path and its validator cannot disagree — the
+  silent-mirror class PR 6's review found in the rejection codes.
+- **A halt does not supersede a plan.** The valve bumps `snapshotVersion`, which the planner would
+  otherwise read as fresh authority, but `computeRtcTopologyInputFingerprint` hashes active session
+  ids, display name, effective config and hysteresis widths — not the snapshot version and not
+  `transportState`. Change suppression therefore stays latched across a pause and an outstanding
+  `connect` fence still names the stored plan. Pinned directly, both directions.
+- **Deferred by design:** the halt is not yet enforced anywhere. Slice 7 owns the WS relay valve and
+  the forward gate, and `api-v1-group-data-policy.json` gains `pause-resume` there; slice 8 mounts
+  the routes. Until then `transportState` is written by these two commands and read only by
+  `computeGroupDataGate` and the snapshot.
+- **Test honesty:** every behavioural assertion in `group-transport-mutation.test.ts` was verified to
+  fail against an implementation lacking it — the valve mapping swapped, the no-op branch removed,
+  the authority block removed, the corrupt-policy arm removed — and the two silent registries
+  (`GROUP_APP_INBOX_OPERATIONS`, the authority decoder's operation chain) were each dropped to
+  confirm the executed matrix catches them.
+
 Product decision 12 keeps one initiator policy for all eight application-facing commands, so the
 command predicate needs no per-command branch.
 Every new command inherits the slow sequential read path, and the read step and its validator apply

@@ -2,7 +2,7 @@ import { readRallarGroupDirectorAppointment } from '@shared/api/group-director.t
 
 import { GroupStateRepository } from '../../persistence/group-state-repository.ts';
 import type { GroupMutationCommand, GroupMutationRead } from '../group-mutation-contracts.ts';
-import { isGroupAdmissionDecisionOperation, isGroupLifecycleTransitionOperation } from '../group-mutation-contracts.ts';
+import { readsGroupActiveMemberPrincipalIds } from '../group-mutation-contracts.ts';
 import { groupMutationIdempotencyKey } from '../group-mutation-idempotency-key.ts';
 import {
     resolveGroupMutationTargetPrincipalId,
@@ -28,8 +28,7 @@ export async function readSequentialGroupMutation({
     // Read after the group entry whose revision anchors the write guard:
     // membership writes bump that revision, so a roster older than the guard
     // could pin a stale electorate the compare-and-set would never catch.
-    const activeMemberPrincipalIds = isGroupLifecycleTransitionOperation(command.operation) ||
-            isGroupAdmissionDecisionOperation(command.operation)
+    const activeMemberPrincipalIds = readsGroupActiveMemberPrincipalIds(command.operation)
         ? toActiveMemberPrincipalIds(await repository.listMembers(command.aggregateRef))
         : null;
     const identities = resolveSequentialIdentities(command, primary.groupRead.value?.value);

@@ -37,6 +37,9 @@ export function toGroupMutationDescriptor(
         case AppInboxType.GROUP_PRESENCE_HEARTBEAT:
         case AppInboxType.GROUP_PRESENCE_DISCONNECT:
             return toPresenceMutationDescriptor(enqueue);
+        case AppInboxType.GROUP_TRANSPORT_PAUSE:
+        case AppInboxType.GROUP_TRANSPORT_RESUME:
+            return toTransportMutationDescriptor(enqueue);
         default: {
             const exhaustiveEnqueue: never = enqueue;
             void exhaustiveEnqueue;
@@ -87,6 +90,8 @@ export function toGroupMutationDescriptorTargetIdentity(
         case 'activateGroup':
         case 'failGroupFormation':
         case 'applyPlannedLayout':
+        case 'pauseGroupTransport':
+        case 'resumeGroupTransport':
         case 'joinGroup':
         case 'acceptGroupInvite':
         case 'rotateGroupJoinCode':
@@ -354,6 +359,39 @@ function toGovernanceMutationDescriptor(
             const exhaustiveEnqueue: never = enqueue;
             void exhaustiveEnqueue;
             throw new TypeError(`Unsupported governance AppInbox type: ${enqueueType}`);
+        }
+    }
+}
+
+function toTransportMutationDescriptor(
+    enqueue: Extract<
+        AuthenticatedGroupMutationEnqueue,
+        | { readonly type: typeof AppInboxType.GROUP_TRANSPORT_PAUSE; }
+        | { readonly type: typeof AppInboxType.GROUP_TRANSPORT_RESUME; }
+    >
+): GroupMutationDescriptor {
+    const enqueueType = enqueue.type;
+    switch (enqueue.type) {
+        case AppInboxType.GROUP_TRANSPORT_PAUSE: {
+            return mutationDescriptor({
+                operation: 'pauseGroupTransport',
+                scope: enqueue.data.scope,
+                groupId: enqueue.data.groupId,
+                request: enqueue.data.request
+            });
+        }
+        case AppInboxType.GROUP_TRANSPORT_RESUME: {
+            return mutationDescriptor({
+                operation: 'resumeGroupTransport',
+                scope: enqueue.data.scope,
+                groupId: enqueue.data.groupId,
+                request: enqueue.data.request
+            });
+        }
+        default: {
+            const exhaustiveEnqueue: never = enqueue;
+            void exhaustiveEnqueue;
+            throw new TypeError(`Unsupported transport AppInbox type: ${enqueueType}`);
         }
     }
 }

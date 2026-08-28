@@ -1,4 +1,3 @@
-import { createDefaultGroupLifecyclePolicy } from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
 import type { GroupLifecyclePolicy } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import {
     computeGroupLifecycleTransition,
@@ -23,6 +22,7 @@ import { auditStamp, computeGroupMutationWriteResult, rejected, requireGroup } f
 import { computeLifecycleFenceRejection } from './compute-lifecycle-fence-rejection.ts';
 import { computePlannedLayoutPromotion, type PlannedLayoutPromotion } from './compute-planned-layout-promotion.ts';
 import { assertActive, assertAllowed, toPolicySnapshot } from './group-aggregate-mutation-policy.ts';
+import { resolveGroupAuthorityPolicy } from './resolve-group-authority-policy.ts';
 
 const LIFECYCLE_TRANSITION_BY_OPERATION = {
     startGroupEstablishment: 'start-establishment',
@@ -64,13 +64,18 @@ export function computeLifecycleTransition(
 ): GroupMutationComputed {
     const stored = requireGroup(read, command.aggregateRef);
     assertActive(stored.value, facts.nowEpochMs);
-    const corruptPolicyRejection = computeCorruptPolicyRejection({ command, read, facts });
-    if (corruptPolicyRejection !== null) {
-        return corruptPolicyRejection;
+    const resolution = resolveGroupAuthorityPolicy(read);
+    if (resolution.status === 'corrupt') {
+        // Fail closed: an unreadable stored policy must not read as permissive.
+        return rejected({
+            command,
+            read,
+            facts,
+            rejectionCode: 'group-mutation-rejected',
+            message: `Group lifecycle policy is unreadable: ${resolution.reason}`
+        });
     }
-    const policy = read.lifecyclePolicy?.status === 'present'
-        ? read.lifecyclePolicy.policy
-        : createDefaultGroupLifecyclePolicy();
+    const policy = resolution.policy;
     const transition = LIFECYCLE_TRANSITION_BY_OPERATION[command.operation];
     if (read.activeMemberPrincipalIds === null) {
         throw new TypeError('Lifecycle transition compute requires the roster read');
@@ -126,25 +131,6 @@ export function computeLifecycleTransition(
         eventType: 'group-updated',
         presenceSummaryWork: 'enqueue',
         extraOutboxEntries: computeFormationTimerEntries({ command, next, policy, facts })
-    });
-}
-
-function computeCorruptPolicyRejection(
-    { command, read, facts }: LifecycleTransitionDecisionInput
-): GroupMutationComputed | null {
-    if (read.lifecyclePolicy === null) {
-        throw new TypeError('Lifecycle transition compute requires the policy read');
-    }
-    if (read.lifecyclePolicy.status !== 'corrupt') {
-        return null;
-    }
-    // Fail closed: an unreadable stored policy must not read as permissive.
-    return rejected({
-        command,
-        read,
-        facts,
-        rejectionCode: 'group-mutation-rejected',
-        message: `Group lifecycle policy is unreadable: ${read.lifecyclePolicy.reason}`
     });
 }
 

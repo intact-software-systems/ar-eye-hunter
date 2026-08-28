@@ -1,10 +1,9 @@
 import { requireNonEmptyString, requireOneOf } from '../../group-state-validation-primitives.ts';
 import type { GroupMutationCommand, GroupMutationRead } from '../group-mutation-contracts.ts';
 import {
-    isGroupAdmissionDecisionOperation,
-    isGroupAdmissionPolicyReadOperation,
-    isGroupLifecycleTransitionOperation,
-    readsGroupLayoutRows
+    readsGroupActiveMemberPrincipalIds,
+    readsGroupLayoutRows,
+    readsGroupLifecyclePolicy
 } from '../group-mutation-contracts.ts';
 
 export function validateGroupMutationOperationReads(
@@ -37,18 +36,15 @@ function validatePlannedLayoutIdentityRead(
 }
 
 /**
- * The policy read is loaded exactly for lifecycle transitions and operations
- * whose admission policy must participate in the decision.
+ * The policy read is loaded exactly for the operations whose compute
+ * consults the stored policy — the read path and this validator share one
+ * owner, so a one-sided edit cannot leave the read missing or unexpected.
  */
 function validateLifecyclePolicyRead(
     read: GroupMutationRead,
     command: GroupMutationCommand
 ): void {
-    if (
-        isGroupLifecycleTransitionOperation(command.operation) ||
-        isGroupAdmissionPolicyReadOperation(command.operation) ||
-        command.operation === 'applyPlannedLayout'
-    ) {
+    if (readsGroupLifecyclePolicy(command.operation)) {
         if (read.lifecyclePolicy === null) {
             throw new TypeError('Group mutation read is missing the lifecycle policy read');
         }
@@ -65,17 +61,15 @@ function validateLifecyclePolicyRead(
 }
 
 /**
- * The full active roster is loaded only when a lifecycle transition pins its
- * electorate or an admission decision resolves current managers.
+ * The full active roster is loaded only when a transition pins its
+ * electorate, an admission decision resolves current managers, or a
+ * group-authority command resolves the manager initiator.
  */
 function validateActiveMemberPrincipalIdsRead(
     read: GroupMutationRead,
     command: GroupMutationCommand
 ): void {
-    if (
-        isGroupLifecycleTransitionOperation(command.operation) ||
-        isGroupAdmissionDecisionOperation(command.operation)
-    ) {
+    if (readsGroupActiveMemberPrincipalIds(command.operation)) {
         if (read.activeMemberPrincipalIds === null) {
             throw new TypeError('Group mutation read is missing the active member principal ids');
         }

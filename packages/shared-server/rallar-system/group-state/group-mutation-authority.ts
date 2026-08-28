@@ -25,6 +25,7 @@ import { type GroupMutationCommand, type GroupMutationFacts } from './mutation/g
 import { constantTimeHexEqual, constantTimeSecretEqual, hmacSha256Hex } from './mutation/group-state-crypto.ts';
 import { isScopedGroupMutationCommandId, toScopedGroupMutationCommandId } from './scoped-group-mutation-command-id.ts';
 import { toLifecycleMutationCommand } from './to-lifecycle-mutation-command.ts';
+import { toTransportMutationCommand } from './to-transport-mutation-command.ts';
 
 export interface GroupMutationAuthorityDependencies {
     readonly authSessionRepository: Pick<AuthSessionRepository, 'findBySessionId'>;
@@ -265,6 +266,9 @@ export function toDescriptorCommand(
             return toLifecycleMutationCommand(descriptor, randomId);
         case 'applyPlannedLayout':
             throw new TypeError('applyPlannedLayout has no authenticated route');
+        case 'pauseGroupTransport':
+        case 'resumeGroupTransport':
+            return toTransportMutationCommand(descriptor, randomId);
         case 'connectPresence':
         case 'heartbeatPresence':
         case 'disconnectPresence':

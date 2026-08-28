@@ -164,6 +164,17 @@ export type GroupPresenceHeartbeatAppInboxPayload = Readonly<{
     request: HeartbeatGroupPresenceSessionRequest;
 }>;
 
+/**
+ * The transport valve's payload (product decision 25). It carries no
+ * operation field: the caller names only the decision and itself — the
+ * command's direction is the AppInbox type.
+ */
+export type GroupTransportCommandAppInboxPayload = Readonly<{
+    scope: StateScope;
+    groupId: string;
+    request: MutationActorInput;
+}>;
+
 export type GroupPresenceDisconnectAppInboxPayload = Readonly<{
     scope: StateScope;
     groupId: string;
@@ -196,6 +207,8 @@ export interface AuthenticatedGroupMutationPayloadByType {
     [AppInboxType.GROUP_PRESENCE_CONNECT]: GroupPresenceConnectAppInboxPayload;
     [AppInboxType.GROUP_PRESENCE_HEARTBEAT]: GroupPresenceHeartbeatAppInboxPayload;
     [AppInboxType.GROUP_PRESENCE_DISCONNECT]: GroupPresenceDisconnectAppInboxPayload;
+    [AppInboxType.GROUP_TRANSPORT_PAUSE]: GroupTransportCommandAppInboxPayload;
+    [AppInboxType.GROUP_TRANSPORT_RESUME]: GroupTransportCommandAppInboxPayload;
 }
 
 export type AuthenticatedGroupMutationInboxType = keyof AuthenticatedGroupMutationPayloadByType;
@@ -239,7 +252,9 @@ export const AUTHENTICATED_GROUP_INBOX_TYPES = [
     AppInboxType.GROUP_MEMBER_UPSERT,
     AppInboxType.GROUP_PRESENCE_CONNECT,
     AppInboxType.GROUP_PRESENCE_HEARTBEAT,
-    AppInboxType.GROUP_PRESENCE_DISCONNECT
+    AppInboxType.GROUP_PRESENCE_DISCONNECT,
+    AppInboxType.GROUP_TRANSPORT_PAUSE,
+    AppInboxType.GROUP_TRANSPORT_RESUME
 ] as const;
 
 export const GROUP_MUTATION_INBOX_TYPES = [

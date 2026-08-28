@@ -155,6 +155,20 @@ const descriptorCases: readonly DescriptorCase[] = [
         { ...actor, requestId: 'invite-accept' }
     ),
     descriptorCase(
+        'transport-pause',
+        AppInboxType.GROUP_TRANSPORT_PAUSE,
+        { scope: SCOPE, groupId, request: { ...actor, requestId: 'transport-pause' } },
+        'pauseGroupTransport',
+        { ...actor, requestId: 'transport-pause' }
+    ),
+    descriptorCase(
+        'transport-resume',
+        AppInboxType.GROUP_TRANSPORT_RESUME,
+        { scope: SCOPE, groupId, request: { ...actor, requestId: 'transport-resume' } },
+        'resumeGroupTransport',
+        { ...actor, requestId: 'transport-resume' }
+    ),
+    descriptorCase(
         'rotate-join-code',
         AppInboxType.GROUP_JOIN_CODE_ROTATE,
         { scope: SCOPE, groupId, request: { ...actor, requestId: 'rotate-join-code' } },

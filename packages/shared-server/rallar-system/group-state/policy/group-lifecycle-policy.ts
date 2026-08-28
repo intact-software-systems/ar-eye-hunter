@@ -28,12 +28,21 @@ export interface CanChangeGroupLifecycleInput {
     readonly targetStatus: Group['status'];
 }
 
-export interface CanCommandGroupLifecycleTransitionInput {
+/**
+ * Product decision 12: one initiator policy governs every application-facing
+ * group-authority command. The transitions add the state machine on top; the
+ * transport valve (product decision 25) has nothing to add and uses this
+ * input as it stands.
+ */
+export interface CanCommandGroupAuthorityInput {
     readonly snapshot: GroupSnapshot;
     readonly actor: GroupPolicyActor;
     readonly policy: GroupLifecyclePolicy;
-    readonly transition: GroupLifecycleTransition;
     readonly activeMemberPrincipalIds: readonly string[];
+}
+
+export interface CanCommandGroupLifecycleTransitionInput extends CanCommandGroupAuthorityInput {
+    readonly transition: GroupLifecycleTransition;
 }
 
 export function canMutateActiveGroup(input: CanMutateActiveGroupInput): GroupPolicyResult {
@@ -56,16 +65,21 @@ export function canChangeGroupLifecycle(
         );
 }
 
-export function canCommandGroupLifecycleTransition(
-    input: CanCommandGroupLifecycleTransitionInput
+export function canCommandGroupAuthority(
+    input: CanCommandGroupAuthorityInput
 ): GroupPolicyResult {
-    const actorMember = findActorGroupMember(input.snapshot, input.actor);
-    const blocked = denyUnlessActiveGroupMember(actorMember);
+    const blocked = denyUnlessActiveGroupMember(findActorGroupMember(input.snapshot, input.actor));
     if (blocked) {
         return blocked;
     }
-    const authority = denyForLifecycleInitiator(input);
-    if (authority) {
+    return denyForGroupAuthorityInitiator(input) ?? GROUP_POLICY_ALLOWED;
+}
+
+export function canCommandGroupLifecycleTransition(
+    input: CanCommandGroupLifecycleTransitionInput
+): GroupPolicyResult {
+    const authority = canCommandGroupAuthority(input);
+    if (!authority.allowed) {
         return authority;
     }
     const transition = computeGroupLifecycleTransition({
@@ -76,8 +90,8 @@ export function canCommandGroupLifecycleTransition(
     return transition.allowed ? GROUP_POLICY_ALLOWED : transition;
 }
 
-function denyForLifecycleInitiator(
-    input: CanCommandGroupLifecycleTransitionInput
+function denyForGroupAuthorityInitiator(
+    input: CanCommandGroupAuthorityInput
 ): GroupPolicyDenied | undefined {
     switch (input.policy.initiator) {
         case 'any-member':
@@ -85,12 +99,12 @@ function denyForLifecycleInitiator(
         case 'server-auto':
             return denyGroupPolicy(
                 'forbidden-role',
-                'Lifecycle transitions are server-initiated under this policy.'
+                'Group authority commands are server-initiated under this policy.'
             );
         case 'manager':
             return denyUnlessGroupLifecycleManager(
                 input,
-                'Only the group manager can command lifecycle transitions.'
+                'Only the group manager can command group authority.'
             );
         default:
             return denyUnknownInitiator(input.policy.initiator);
@@ -102,6 +116,6 @@ function denyForLifecycleInitiator(
 function denyUnknownInitiator(initiator: never): GroupPolicyDenied {
     return denyGroupPolicy(
         'forbidden-role',
-        `Unknown lifecycle initiator policy: ${String(initiator)}.`
+        `Unknown group authority initiator policy: ${String(initiator)}.`
     );
 }

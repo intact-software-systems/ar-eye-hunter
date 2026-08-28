@@ -7,7 +7,11 @@ import {
     requirePositiveSafeInteger,
     requireRecord
 } from '../../group-state-validation-primitives.ts';
-import { isGroupLifecycleTransitionOperation, type GroupMutationCommand } from '../group-mutation-contracts.ts';
+import {
+    isGroupLifecycleTransitionOperation,
+    isGroupTransportOperation,
+    type GroupMutationCommand
+} from '../group-mutation-contracts.ts';
 import { requireGroupLifecyclePolicyInputShape } from './require-group-lifecycle-policy-input-shape.ts';
 import { validateExpectedLayoutIdentity } from './validate-expected-layout-identity.ts';
 
@@ -43,6 +47,8 @@ type AggregateOperation = Extract<
     | 'reopenGroupEstablishment'
     | 'failGroupFormation'
     | 'applyPlannedLayout'
+    | 'pauseGroupTransport'
+    | 'resumeGroupTransport'
 >;
 
 function validateAggregateMutationInput(
@@ -99,8 +105,12 @@ function validateAggregateMutationInput(
         validateExpectedLayoutIdentity(input, 'Group connectGroup expectedLayout');
         return;
     }
-    if (isGroupLifecycleTransitionOperation(operation) || operation === 'applyPlannedLayout') {
-        // Every other lifecycle request carries only actor identity — its
+    if (
+        isGroupLifecycleTransitionOperation(operation) ||
+        isGroupTransportOperation(operation) ||
+        operation === 'applyPlannedLayout'
+    ) {
+        // Every other group-authority request carries only actor identity — its
         // exact-key row excludes every operation field, so there is nothing
         // further to validate here. The built command's fields (including
         // the criterion fences) are owned by validateGroupMutationCommand.
@@ -212,7 +222,9 @@ function isAggregateOperation(
         'activateGroup',
         'reopenGroupEstablishment',
         'failGroupFormation',
-        'applyPlannedLayout'
+        'applyPlannedLayout',
+        'pauseGroupTransport',
+        'resumeGroupTransport'
     ].includes(operation);
 }
 

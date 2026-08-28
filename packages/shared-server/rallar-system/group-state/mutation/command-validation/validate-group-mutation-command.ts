@@ -169,6 +169,12 @@ function validateAggregateOperationInput(
             validateExpectedFormationEpochInput(input, operation);
             validateExpectedLayoutInput(input, operation);
             return;
+        // The valve carries no operation field at all, so the exact-key
+        // assertion above is the whole contract; the arm is explicit because
+        // the default one is for the membership families.
+        case 'pauseGroupTransport':
+        case 'resumeGroupTransport':
+            return;
         case 'failGroupFormation':
             assertRequiredKeys(input, GROUP_MUTATION_INPUT_KEYS[operation], `Group ${operation} input`);
             if (!isUnitIntervalNumber(input.observedRate)) {
@@ -302,6 +308,8 @@ const GROUP_MUTATION_OPERATIONS = new Set([
     'reopenGroupEstablishment',
     'failGroupFormation',
     'applyPlannedLayout',
+    'pauseGroupTransport',
+    'resumeGroupTransport',
     'joinGroup',
     'acceptGroupInvite',
     'createGroupInvite',
@@ -352,7 +360,9 @@ const AGGREGATE_GROUP_MUTATION_OPERATIONS = new Set<GroupMutationCommand['operat
     'activateGroup',
     'reopenGroupEstablishment',
     'failGroupFormation',
-    'applyPlannedLayout'
+    'applyPlannedLayout',
+    'pauseGroupTransport',
+    'resumeGroupTransport'
 ]);
 
 const GROUP_MUTATION_INPUT_KEYS: Readonly<Record<GroupMutationCommand['operation'], readonly string[]>> = {
@@ -394,6 +404,8 @@ const GROUP_MUTATION_INPUT_KEYS: Readonly<Record<GroupMutationCommand['operation
     reopenGroupEstablishment: [...ACTOR_INPUT_KEYS, 'expectedFormationEpoch'],
     failGroupFormation: [...ACTOR_INPUT_KEYS, 'observedRate', 'expectedFormationEpoch', 'expectedLayout'],
     applyPlannedLayout: [...ACTOR_INPUT_KEYS, 'expectedFormationEpoch', 'expectedLayout'],
+    pauseGroupTransport: ACTOR_INPUT_KEYS,
+    resumeGroupTransport: ACTOR_INPUT_KEYS,
     joinGroup: [...ACTOR_INPUT_KEYS, 'inviteToken', 'joinCode'],
     acceptGroupInvite: [...ACTOR_INPUT_KEYS, 'inviteToken', 'joinCode'],
     createGroupInvite: [...ACTOR_INPUT_KEYS, 'invitationExpiresAtEpochMs'],
