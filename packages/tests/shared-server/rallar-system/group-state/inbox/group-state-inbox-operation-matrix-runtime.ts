@@ -138,7 +138,10 @@ export async function runOperationMatrix(
             result.right,
             `${testCase.operation} result: ${result.left ? JSON.stringify(result.left) : ''}`
         ).toBeDefined();
-        expect(harness.database.outboxEntries.size).toBe(previousOutboxCount + 1);
+        expect(
+            harness.database.outboxEntries.size,
+            `${testCase.operation} outbox entry`
+        ).toBe(previousOutboxCount + 1);
         expect(
             (await harness.queueEntries()).some(
                 (entry) => entry.status === EntityStatus.COMPLETED && entry.dequeueAudit.attempts === 1

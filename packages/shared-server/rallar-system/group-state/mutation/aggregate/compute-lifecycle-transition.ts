@@ -11,6 +11,7 @@ import { canCommandGroupLifecycleTransition } from '../../policy/group-lifecycle
 import { GroupPolicyDeniedError } from '../../policy/group-policy-result.ts';
 import { GroupMutationRejectedError } from '../group-mutation-contracts.ts';
 import {
+    GroupLayoutTombstones,
     GroupMutationCommand,
     GroupMutationComputed,
     GroupMutationFacts,
@@ -20,7 +21,11 @@ import {
 } from '../group-mutation-contracts.ts';
 import { auditStamp, computeGroupMutationWriteResult, requireGroup } from '../group-mutation-result.ts';
 import { computeLifecycleFenceRejection } from './compute-lifecycle-fence-rejection.ts';
-import { computePlannedLayoutPromotion, type PlannedLayoutPromotion } from './compute-planned-layout-promotion.ts';
+import {
+    computePlannedLayoutPromotion,
+    type GroupPlannedLayoutRow,
+    type PlannedLayoutPromotion
+} from './compute-planned-layout-promotion.ts';
 import { assertActive, assertAllowed, toGroupAuthorityPolicyInput } from './group-aggregate-mutation-policy.ts';
 import { resolveGroupAuthorityPolicy, toCorruptPolicyRejection } from './resolve-group-authority-policy.ts';
 
@@ -28,6 +33,8 @@ const LIFECYCLE_TRANSITION_BY_OPERATION = {
     startGroupEstablishment: 'start-establishment',
     planGroupLayout: 'plan',
     connectGroup: 'connect',
+    startGroupFormation: 'start',
+    resetGroupFormation: 'reset',
     activateGroup: 'activate',
     reopenGroupEstablishment: 'reopen-establishment',
     failGroupFormation: 'fail-formation'
@@ -98,6 +105,7 @@ export function computeLifecycleTransition(
         promotion
     });
     return computeGroupMutationWriteResult({
+        layoutTombstones: computeLayoutTombstones(command, read),
         acceptedLayoutPromotion: promotion?.outcome === 'apply' ? promotion : null,
         // A promotion already re-asserts the planned row. `connect` dials a
         // candidate without promoting it (decision 42), so it carries the
@@ -137,6 +145,9 @@ function computeNextLifecycleGroup(
         promotion: PlannedLayoutPromotion | null;
     }>
 ): Group {
+    if (command.operation === 'resetGroupFormation') {
+        return toClearedFormationSeries({ command, facts, stored, outcome, formationElectorate });
+    }
     const acceptedLayoutIdentity = promotion?.outcome === 'apply'
         ? promotion.acceptedIdentity
         : stored.acceptedLayoutIdentity;
@@ -163,6 +174,64 @@ function computeNextLifecycleGroup(
         acceptedLayoutIdentity,
         lastFormationOutcome: computeRecordedOutcome(command, stored, facts),
         formationElectorate: idempotentReplan ? stored.formationElectorate : formationElectorate,
+        snapshotVersion: stored.snapshotVersion + 1,
+        updated: auditStamp(command, facts, command.input.actorPrincipalId ?? undefined)
+    };
+}
+
+/**
+ * `reset` retires both layout slots in its own transaction (product decision
+ * 36). The stored row keeps every field it had — the fingerprint stays valid
+ * for tracing — and only its state changes, so nothing that reads the row for
+ * evidence loses it. A slot holding no row has nothing to retire.
+ */
+function computeLayoutTombstones(
+    command: Extract<GroupMutationCommand, { operation: GroupLifecycleTransitionOperation; }>,
+    read: GroupMutationRead
+): GroupLayoutTombstones | null {
+    if (command.operation !== 'resetGroupFormation') {
+        return null;
+    }
+    return {
+        planned: toLayoutTombstone(read.plannedLayoutRow),
+        accepted: toLayoutTombstone(read.acceptedLayoutRow)
+    };
+}
+
+function toLayoutTombstone(row: GroupPlannedLayoutRow | null): GroupPlannedLayoutRow | null {
+    return row === null
+        ? null
+        : { snapshot: { ...row.snapshot, state: 'removed' }, revision: row.revision };
+}
+
+/**
+ * The clean slate (product decisions 35/36). `reset` is the one transition
+ * that clears rather than advances the series, so it gets its own shape
+ * instead of a sixth arm in each of the ternaries above: the count, the
+ * clock, the recorded outcome and the accepted identity all go, transport
+ * halts, and the epoch still advances so every outstanding causal fence and
+ * armed timer is invalidated. Membership, topology config and overrides are
+ * deliberately untouched.
+ */
+function toClearedFormationSeries(
+    { command, facts, stored, outcome, formationElectorate }: Readonly<{
+        command: Extract<GroupMutationCommand, { operation: GroupLifecycleTransitionOperation; }>;
+        facts: GroupMutationFacts;
+        stored: Group;
+        outcome: Extract<ReturnType<typeof computeGroupLifecycleTransition>, { allowed: true; }>;
+        formationElectorate: readonly string[];
+    }>
+): Group {
+    return {
+        ...stored,
+        lifecycleState: outcome.nextState,
+        formationEpoch: outcome.nextFormationEpoch,
+        formationAttemptCount: 0,
+        establishmentStartedAtEpochMs: null,
+        lastFormationOutcome: null,
+        acceptedLayoutIdentity: null,
+        transportState: 'halted',
+        formationElectorate,
         snapshotVersion: stored.snapshotVersion + 1,
         updated: auditStamp(command, facts, command.input.actorPrincipalId ?? undefined)
     };

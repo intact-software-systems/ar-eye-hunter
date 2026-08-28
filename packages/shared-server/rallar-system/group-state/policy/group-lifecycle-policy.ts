@@ -87,7 +87,33 @@ export function canCommandGroupLifecycleTransition(
         lifecycleState: input.snapshot.group.lifecycleState,
         formationEpoch: input.snapshot.group.formationEpoch
     });
-    return transition.allowed ? GROUP_POLICY_ALLOWED : transition;
+    if (!transition.allowed) {
+        return transition;
+    }
+    return denyForExhaustedFormationSeries(input) ?? GROUP_POLICY_ALLOWED;
+}
+
+/**
+ * Product decision 37: the attempt budget bounds one formation series, and
+ * spending it is terminal for automation. `start` is the series' only
+ * entrance, so the budget is enforced there; an explicit `reset` — which
+ * zeroes the count — is the only way past it.
+ */
+function denyForExhaustedFormationSeries(
+    input: CanCommandGroupLifecycleTransitionInput
+): GroupPolicyDenied | undefined {
+    const { group } = input.snapshot;
+    if (input.transition !== 'start') {
+        return undefined;
+    }
+    if (group.formationAttemptCount < input.policy.activation.maxFormationAttempts) {
+        return undefined;
+    }
+    return denyGroupPolicy(
+        'formation-attempts-exhausted',
+        `Formation attempts are exhausted (${group.formationAttemptCount} of ` +
+            `${input.policy.activation.maxFormationAttempts}); reset the group to start a new series.`
+    );
 }
 
 function denyForGroupAuthorityInitiator(

@@ -1272,6 +1272,46 @@ job, and this slice does not take it on.
   dual path that exists today — the dark `plan`/`connect` beside the mounted legacy route — is the
   plan's staged cutover with a defined end in 8d, not a compatibility shim.
 
+### PR 9 delivery record — slice 5e (executed 2026-08-29, branch `claude/group-activation-reset-start`)
+
+`startGroupFormation` and `resetGroupFormation` land dark through the full census. Slice 5's command
+family is now complete: `plan`, `connect`, `pause`, `resume`, `reset`, `start` all exist, none of them
+routed.
+
+- **The attempt budget is a policy rule, not a compute arm.** Decision 37 denies `start` while the
+  series is spent, and the natural place for it was beside the other lifecycle policy predicates
+  rather than inside `computeLifecycleTransition` — `canCommandGroupLifecycleTransition` already
+  holds the snapshot, the policy and the transition, and putting the rule there let the existing
+  "every reason code has a pure-helper scenario" proof cover it instead of leaving it uncovered. The
+  new `formation-attempts-exhausted` code joins the OpenAPI enum in the same change, so this slice
+  adds no contract debt; the six codes that enum was already missing stay slice 9's.
+- **`reset` gets its own shape rather than a sixth arm in five ternaries.** The clean slate zeroes
+  the count, clears the clock, the recorded outcome and the accepted identity, halts transport, and
+  still advances the epoch so every outstanding causal fence and armed timer is invalidated.
+  Membership, topology config and overrides are untouched, as decision 36 requires.
+- **The accepted slot had to widen to carry its snapshot.** `GroupAcceptedLayoutRow` was a bare
+  revision, which is all a promotion's insert-vs-update guard needs — but a tombstone is the stored
+  row with its state changed, and a revision cannot express that. The api-v1 reader now projects
+  `findSnapshotEntry` instead of `findEntryRevision`. The alternatives were fabricating tombstone
+  content or a physical delete, which decision 36 rejects because the fingerprints stay valid for
+  tracing.
+- **Atomicity is the caller's rejection, not the batch's.** The plan asks reset to prove that group
+  facts, both tombstones, event, receipt, result and outbox all commit or all roll back. Two halves,
+  proven separately because they are two different properties. Reset's half is that every write goes
+  into **one** guarded batch, pinned by materializing the batch and asserting the group guard and both
+  revision-guarded tombstones are in it. The other half is the rollback, and the first attempt to
+  prove it **failed and taught the real contract**: `executeGuardedBatch` reports a conflicting effect
+  rather than throwing, so a caller that returns normally commits the effects that already applied.
+  The rollback lives in `writeGroupMutation`'s rejection of any non-applied effect, which aborts the
+  transaction. The postgres proof models exactly that caller and asserts neither the guard nor the
+  already-applied effect survives — a property nothing in the suite covered before.
+- **The matrix executes both commands and needed its own group for them.** `reset` halts transport,
+  which turned the later `pause` case into the no-op slice 5c defines, and `start` leaves the group
+  in `forming`, which changed the stage the trailing `connect` denial probe depends on. Both are the
+  real semantics interacting correctly; the pair runs on `operation-matrix-series` so the other
+  groups keep telling their own stories. The matrix's outbox assertion now names the operation that
+  failed, which is how the interaction was found at all.
+
 Product decision 12 keeps one initiator policy for all eight application-facing commands, so the
 command predicate needs no per-command branch.
 Every new command inherits the slow sequential read path, and the read step and its validator apply

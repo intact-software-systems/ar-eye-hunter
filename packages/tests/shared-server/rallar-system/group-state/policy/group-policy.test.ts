@@ -558,6 +558,18 @@ describe('group policy helpers', () => {
             ),
             expectCode(
                 canCommandGroupLifecycleTransition({
+                    // The optimistic preset allows one attempt, so a dormant
+                    // group that has spent it covers the exhausted-series code
+                    // (product decision 37).
+                    snapshot: snapshot({ lifecycleState: 'dormant', formationAttemptCount: 1 }),
+                    actor: ACTOR,
+                    policy: resolveGroupLifecyclePolicyPreset('optimistic'),
+                    transition: 'start',
+                    activeMemberPrincipalIds: [ACTOR.principalId ?? '']
+                })
+            ),
+            expectCode(
+                canCommandGroupLifecycleTransition({
                     // An empty electorate resolves zero managers, covering the
                     // lifecycle-manager-unavailable reason code.
                     snapshot: snapshot({ lifecycleState: 'forming', formationElectorate: [] }),
@@ -743,7 +755,10 @@ function snapshot(
         activeMemberCount: options.activeMemberCount ?? members.filter((entry) => entry.status === 'active').length,
         ownerPrincipalId: options.ownerPrincipalId ?? members.find((entry) => entry.status === 'active' && entry.role === 'owner')?.principalId ?? 'alice',
         ...(options.lifecycleState === undefined ? {} : { lifecycleState: options.lifecycleState }),
-        ...(options.formationElectorate === undefined ? {} : { formationElectorate: options.formationElectorate })
+        ...(options.formationElectorate === undefined ? {} : { formationElectorate: options.formationElectorate }),
+        ...(options.formationAttemptCount === undefined
+            ? {}
+            : { formationAttemptCount: options.formationAttemptCount })
     });
     const group: Group = options.status === 'archived'
         ? {
