@@ -138,9 +138,16 @@ describe('group formation series computation', () => {
         if (computed.outcome !== 'write') {
             return;
         }
+        // A removed row may carry no edge — the persisted decoder rejects one
+        // that does — so the sessions survive with their hops emptied.
+        const retired = (version: number) => ({
+            ...layoutSnapshot('active', version),
+            state: 'removed' as const,
+            nextHopsBySessionId: { 'session-a': [], 'session-b': [] }
+        });
         expect(computed.layoutTombstones).toEqual({
-            planned: { snapshot: { ...layoutSnapshot('active', 2), state: 'removed' }, revision: 5 },
-            accepted: { snapshot: { ...layoutSnapshot('active', 1), state: 'removed' }, revision: 3 }
+            planned: { snapshot: retired(2), revision: 5 },
+            accepted: { snapshot: retired(1), revision: 3 }
         });
     });
 
@@ -204,8 +211,8 @@ function layoutSnapshot(state: 'active' | 'removed', version: number): RallarOve
         groupRef: groupRef('pure-room'),
         name: 'pure-room-overlay',
         topology: 'tree',
-        activeSessionIds: [],
-        nextHopsBySessionId: {},
+        activeSessionIds: ['session-a', 'session-b'],
+        nextHopsBySessionId: { 'session-a': ['session-b'], 'session-b': ['session-a'] },
         degreeLimit: 2,
         version,
         createdByClientId: 'series-test',

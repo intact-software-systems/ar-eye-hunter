@@ -199,9 +199,23 @@ function computeLayoutTombstones(
 }
 
 function toLayoutTombstone(row: GroupPlannedLayoutRow | null): GroupPlannedLayoutRow | null {
-    return row === null
-        ? null
-        : { snapshot: { ...row.snapshot, state: 'removed' }, revision: row.revision };
+    if (row === null) {
+        return null;
+    }
+    // A removed row may hold no edge: the persisted decoder rejects one that
+    // does, so carrying the graph forward would abort the write transaction.
+    // `removedTopologyResult` keeps the sessions and empties their hops, and a
+    // tombstone follows it.
+    return {
+        snapshot: {
+            ...row.snapshot,
+            state: 'removed',
+            nextHopsBySessionId: Object.fromEntries(
+                row.snapshot.activeSessionIds.map((sessionId) => [sessionId, []])
+            )
+        },
+        revision: row.revision
+    };
 }
 
 /**

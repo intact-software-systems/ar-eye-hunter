@@ -1278,6 +1278,12 @@ job, and this slice does not take it on.
 family is now complete: `plan`, `connect`, `pause`, `resume`, `reset`, `start` all exist, none of them
 routed.
 
+> **BLOCKED — do not merge PR 9 as it stands.** The max-effort review found that decision 36's
+> tombstone mechanism assumes three properties the topology machinery does not have. One defect is
+> repaired (a removed row may carry no edge, or the write transaction aborts); three remain and are
+> design questions this slice has no authority to settle. They are recorded under "Blocking findings"
+> below.
+
 - **The attempt budget is a policy rule, not a compute arm.** Decision 37 denies `start` while the
   series is spent, and the natural place for it was beside the other lifecycle policy predicates
   rather than inside `computeLifecycleTransition` — `canCommandGroupLifecycleTransition` already
@@ -1305,6 +1311,39 @@ routed.
   The rollback lives in `writeGroupMutation`'s rejection of any non-applied effect, which aborts the
   transaction. The postgres proof models exactly that caller and asserts neither the guard nor the
   already-applied effect survives — a property nothing in the suite covered before.
+
+#### Blocking findings — decision 36's tombstone mechanism
+
+Repaired here: **a removed row may carry no edge.** `decodeRtcTopologySnapshotRouting` rejects a
+`removed` snapshot with a non-empty hop map, so the first tombstone — the stored row with only its
+state changed — threw inside the write transaction for any group holding a real multi-session
+layout, and AppInbox would have retried that deterministic failure forever. The tombstone now empties
+each session's hops, following `removedTopologyResult`, the only other producer of removed rows. The
+first fixtures used empty session lists, which is exactly why no test saw it.
+
+Unresolved, and each one needs a decision the slice cannot make alone:
+
+1. **A tombstoned accepted slot breaks the delivery invariant.**
+   `toDeliverableTopologySnapshot` ends `accepted ?? planned` on the documented premise that "the
+   accepted slot only ever holds active layouts (a tombstone never promotes)". After
+   `reset` → `start` → `plan`, the accepted slot holds a tombstone while the planned slot holds a
+   fresh active layout, so reconnect hydration and replay repair hand a member a teardown for the
+   overlay it should be dialing. Fixing it means teaching delivery to skip a removed accepted row —
+   live code on the activate and hydration paths, which is slice 4's territory, not 5e's.
+2. **Pre-writing the planned tombstone swallows the removal publication.** The follow-up coalesced
+   replan sees `previous.state === 'removed'`, so `removedTopologyResult` reports `changed: false`
+   and the handler skips as unchanged. Before this slice the same follow-up saw an active row and
+   published the removal, so clients keep using the overlay a reset retired.
+3. **The tombstone does not disarm change suppression.** Decision 36 says "the planned tombstone, not
+   fingerprint deletion, disarms change suppression so unchanged membership rebuilds normally". The
+   semantic gate never compares `state`, so a rebuild producing the same graph still reports
+   `changed: false` and the planned row stays `removed` at its old version indefinitely. The claim in
+   the contract comment is therefore false as written.
+
+Taken together these say the mechanism decision 36 specifies needs either a change to topology
+delivery and planning semantics, or a revision of the mechanism itself. Both are outside a dark
+slice, so the work stops here and hands the question back.
+
 - **The matrix executes both commands and needed its own group for them.** `reset` halts transport,
   which turned the later `pause` case into the no-op slice 5c defines, and `start` leaves the group
   in `forming`, which changed the stage the trailing `connect` denial probe depends on. Both are the
