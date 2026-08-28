@@ -1066,14 +1066,22 @@ Fifteen confirmed findings, all repaired in the PR. The rulings the repairs sett
 - **A retry needs a fresh request id.** The request id *is* the command identity, so retrying a
   denial under the same id either replays the stored denial or raises an idempotency conflict. Now
   stated on the error class where a caller reads it.
-- **The commit-time guard is connect's alone, and the gate proved why.** The first repair gated it on
+- **The commit-time guard is connect's alone.** The first repair gated it on
   `isLayoutFencedGroupMutationCommand`, which also covers a **fenced formation failure** — a live
-  command. Adding a revision-guarded planned-row effect there makes a concurrent replan conflict and
-  retry a write that previously committed, and the `topology-replay` proof caught it as an unresolved
-  APP_OUTBOX row on CI. The guard is now scoped to `connectGroup`: a fenced failure *discards* the
-  plan rather than binding to it, so guarding the row buys no causal guarantee and only creates
-  retries. Recorded because the next fenced command must make the same choice deliberately —
-  bind-to-the-plan carries the guard, discard-the-plan does not.
+  command whose write behavior this PR has no business changing. The guard is now scoped to
+  `connectGroup` on its own merits: a fenced failure *discards* the plan rather than binding to it,
+  so guarding the row buys no causal guarantee and could only add retries. Recorded because the next
+  fenced command must make the same choice deliberately — bind-to-the-plan carries the guard,
+  discard-the-plan does not.
+
+  **Correction, same day:** the narrowing was prompted by a `topology-replay` CI failure that this
+  record first attributed to the broad guard. That attribution was wrong and is withdrawn. The same
+  proof later failed on a **markdown-only** commit (`8d14913f7` green → `2e9d37ac0` red, one file,
+  fifteen lines) with a different signature (`503; expected 200` versus the earlier unresolved
+  APP_OUTBOX row), so the gate is flaky on CI and no regression was ever demonstrated. The scope
+  ruling stands; the causal story does not. Third flaky postgres-proof observation this session,
+  alongside the medium-scale exact-revision race — the proofs' CI stability is worth its own
+  investigation before it masks a real regression.
 - **Deferred to slice 8: `connect`'s request contract in the descriptor union.** `GroupMutationDescriptor['request']`
   is a closed union of the named API request types, and connect's is not among them, so
   `toConnectCommand` bridges with a cast. The cast is safe today (the payload declares the fields, the
