@@ -1,3 +1,4 @@
+import type { GroupMutationFacts, GroupMutationRead } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
 import {
     type RuntimeStateGuardedBatch,
     type RuntimeStateGuardedBatchEffect,
@@ -15,8 +16,10 @@ import type {
     RuntimeStateOptimisticTransactionRepositoryLike
 } from '@shared-server/runtime-state/runtime-state-repository.ts';
 import { TestGroupStateEventStore } from '@shared-test/shared-server/test-group-state-event-store.ts';
-import type { GroupEvent, GroupPresenceSession, GroupRef } from '@shared/api/group-types.ts';
+import { resolveGroupLifecyclePolicyPreset } from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
+import type { AuditStamp, Group, GroupEvent, GroupPresenceSession, GroupRef } from '@shared/api/group-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
+import { createTestGroup } from '../../../../create-test-group.ts';
 import { FakeRuntimeStateRepository } from '../../../runtime-state/test-support/fake-runtime-state-repository.ts';
 
 export const SCOPE: StateScope = {
@@ -79,6 +82,109 @@ export function presenceFor(
 
 export function groupRef(groupId: string): GroupRef {
     return { ...SCOPE, groupId };
+}
+
+export interface GroupAuthorityReadOptions {
+    readonly policy?: 'absent' | 'corrupt' | 'optimistic' | 'managed' | 'server-auto';
+    readonly actorPrincipalId?: string;
+    readonly actorIsMember?: boolean;
+    readonly activeMemberPrincipalIds?: readonly string[];
+}
+
+export function createGroupAuthorityRead(
+    groupOverrides: Partial<Group>,
+    options: GroupAuthorityReadOptions = {}
+): GroupMutationRead {
+    const actorPrincipalId = options.actorPrincipalId ?? 'alice';
+    const actorMember = createGroupAuthorityActorMember(actorPrincipalId);
+    return {
+        idempotency: null,
+        group: storedEntry(groupStorageKey(), createTestGroup({ ...groupRef('pure-room'), ...groupOverrides })),
+        expiredGroupEntry: null,
+        actorMember: options.actorIsMember === false ? null : actorMember,
+        targetMember: null,
+        authorityMember: null,
+        directorMember: null,
+        actorMemberEntry: options.actorIsMember === false
+            ? null
+            : storedEntry(groupMemberStorageKey(actorPrincipalId), actorMember),
+        targetMemberEntry: null,
+        authorityMemberEntry: null,
+        directorMemberEntry: null,
+        targetPresence: null,
+        expiredTargetPresenceEntry: null,
+        targetAdmission: null,
+        authorityAdmission: null,
+        directorAdmission: null,
+        authorityPresenceSessions: [],
+        authorityPresenceSessionEntries: [],
+        presenceSummary: null,
+        lifecyclePolicy: toLifecyclePolicyRead(options.policy ?? 'absent'),
+        activeMemberPrincipalIds: options.activeMemberPrincipalIds ??
+            (options.actorIsMember === false ? [] : [actorPrincipalId]),
+        plannedLayoutRow: null,
+        acceptedLayoutRow: null
+    } as GroupMutationRead;
+}
+
+export function createGroupAuthorityFacts(principalId = 'alice'): GroupMutationFacts {
+    return {
+        nowEpochMs: 2_000,
+        expireAtEpochMs: 253_402_300_799_999,
+        serviceId: 'group-service',
+        eventId: 'event-1',
+        commandHash: `sha256:${'a'.repeat(64)}`,
+        attemptCount: 1,
+        resolvedJoinCode: null,
+        joinCodeVerifier: null,
+        internalAuthority: 'none',
+        authenticatedAuthority: {
+            principalId,
+            sessionId: `${principalId}-session`
+        }
+    };
+}
+
+export function createGroupAuthorityAuditStamp(atEpochMs: number, principalId: string): AuditStamp {
+    return {
+        atEpochMs,
+        actor: { kind: 'principal', principalId },
+        reason: null,
+        traceId: null,
+        requestId: 'seed'
+    };
+}
+
+function createGroupAuthorityActorMember(principalId: string) {
+    const audit = createGroupAuthorityAuditStamp(1_000, principalId);
+    return {
+        ...groupRef('pure-room'),
+        principalId,
+        role: 'member' as const,
+        status: 'active' as const,
+        invitedByPrincipalId: null,
+        invitationExpiresAtEpochMs: null,
+        left: null,
+        removed: null,
+        banned: null,
+        joined: audit,
+        updated: audit
+    };
+}
+
+function toLifecyclePolicyRead(requested: NonNullable<GroupAuthorityReadOptions['policy']>) {
+    if (requested === 'corrupt') {
+        return { status: 'corrupt' as const, reason: 'stored policy is not an object' };
+    }
+    if (requested === 'absent') {
+        return { status: 'absent' as const };
+    }
+    return {
+        status: 'present' as const,
+        policy: requested === 'server-auto'
+            ? { ...resolveGroupLifecyclePolicyPreset('optimistic'), initiator: 'server-auto' as const }
+            : resolveGroupLifecyclePolicyPreset(requested)
+    };
 }
 
 export class ApplyingGuardedBatchRepository extends FakeRuntimeStateRepository {
