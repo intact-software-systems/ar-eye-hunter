@@ -183,6 +183,8 @@ const GROUP_MUTATION_REQUEST_KEYS: Readonly<Record<GroupMutationCommand['operati
     ],
     appointDirector: [...MUTATION_REQUEST_KEYS, 'heartbeatTtlMs'],
     startGroupEstablishment: [...MUTATION_REQUEST_KEYS],
+    planGroupLayout: [...MUTATION_REQUEST_KEYS],
+    connectGroup: [...MUTATION_REQUEST_KEYS, 'expectedFormationEpoch', 'expectedLayout'],
     activateGroup: [...MUTATION_REQUEST_KEYS],
     reopenGroupEstablishment: [...MUTATION_REQUEST_KEYS],
     // Internal-only: never reaches the HTTP request validator, listed for the

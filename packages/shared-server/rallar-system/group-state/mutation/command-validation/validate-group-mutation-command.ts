@@ -16,6 +16,7 @@ import {
 } from '../../group-state-validation-primitives.ts';
 import type { GroupMutationCommand } from '../group-mutation-contracts.ts';
 import { ACTOR_INPUT_KEYS } from './group-mutation-request-validation.ts';
+import { validateExpectedLayoutIdentity } from './validate-expected-layout-identity.ts';
 
 export function validateGroupMutationCommand(
     command: unknown
@@ -137,6 +138,7 @@ function validateAggregateOperationInput(
         // The lifecycle inputs require key presence, not just no-extras: a
         // wire-decoded criterion command missing its fence keys is malformed
         // here, never a lying stale-epoch rejection deep in compute.
+        case 'connectGroup':
         case 'applyPlannedLayout':
             assertRequiredKeys(input, GROUP_MUTATION_INPUT_KEYS[operation], `Group ${operation} input`);
             // The fences are non-null on this operation: null here is as
@@ -152,6 +154,7 @@ function validateAggregateOperationInput(
             return;
         case 'startGroupEstablishment':
         case 'reopenGroupEstablishment':
+        case 'planGroupLayout':
             assertRequiredKeys(input, GROUP_MUTATION_INPUT_KEYS[operation], `Group ${operation} input`);
             validateExpectedFormationEpochInput(input, operation);
             return;
@@ -204,13 +207,7 @@ function validateExpectedLayoutInput(
     if (input.expectedLayout === null) {
         return;
     }
-    const record = requireRecord(input.expectedLayout, `Group ${operation} expectedLayout`);
-    assertRequiredKeys(record, GROUP_LAYOUT_IDENTITY_KEYS, `Group ${operation} expectedLayout`);
-    assertExactKeys(record, GROUP_LAYOUT_IDENTITY_KEYS, `Group ${operation} expectedLayout`);
-    for (const key of ['groupRevision', 'presenceRevision', 'version'] as const) {
-        requireNonNegativeSafeInteger(record[key], `Group ${operation} expectedLayout ${key}`);
-    }
-    requireOneOf(record.state, GROUP_LAYOUT_IDENTITY_STATES, `Group ${operation} expectedLayout state`);
+    validateExpectedLayoutIdentity(input, `Group ${operation} expectedLayout`);
 }
 
 function validateMembershipOperationInput(
@@ -299,6 +296,8 @@ const GROUP_MUTATION_OPERATIONS = new Set([
     'updateGroup',
     'appointDirector',
     'startGroupEstablishment',
+    'planGroupLayout',
+    'connectGroup',
     'activateGroup',
     'reopenGroupEstablishment',
     'failGroupFormation',
@@ -348,6 +347,8 @@ const AGGREGATE_GROUP_MUTATION_OPERATIONS = new Set<GroupMutationCommand['operat
     'appointDirector',
     'rotateGroupJoinCode',
     'startGroupEstablishment',
+    'planGroupLayout',
+    'connectGroup',
     'activateGroup',
     'reopenGroupEstablishment',
     'failGroupFormation',
@@ -387,6 +388,8 @@ const GROUP_MUTATION_INPUT_KEYS: Readonly<Record<GroupMutationCommand['operation
     ],
     appointDirector: [...ACTOR_INPUT_KEYS, 'heartbeatTtlMs'],
     startGroupEstablishment: [...ACTOR_INPUT_KEYS, 'expectedFormationEpoch'],
+    planGroupLayout: [...ACTOR_INPUT_KEYS, 'expectedFormationEpoch'],
+    connectGroup: [...ACTOR_INPUT_KEYS, 'expectedFormationEpoch', 'expectedLayout'],
     activateGroup: [...ACTOR_INPUT_KEYS, 'observedRate', 'degraded', 'expectedFormationEpoch', 'expectedLayout'],
     reopenGroupEstablishment: [...ACTOR_INPUT_KEYS, 'expectedFormationEpoch'],
     failGroupFormation: [...ACTOR_INPUT_KEYS, 'observedRate', 'expectedFormationEpoch', 'expectedLayout'],

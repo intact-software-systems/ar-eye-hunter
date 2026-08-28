@@ -20,6 +20,8 @@ import type {
     UpsertGroupMemberRequest
 } from '@shared/api/state-types.ts';
 
+import type { GroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
+
 import { AppInboxType, type AppInboxEnqueueInput } from '../../app-inbox/app-inbox-contracts.ts';
 
 export type GroupCreateAppInboxPayload = Readonly<{
@@ -37,6 +39,22 @@ export type GroupDirectorAppointAppInboxPayload = Readonly<{
     scope: StateScope;
     groupId: string;
     request: AppointGroupDirectorRequest;
+}>;
+
+/**
+ * `connect` names the exact planned layout it means to dial (product
+ * decision 32), so its causal fence rides inside `request` (I16) — the
+ * payload cannot reuse the bare lifecycle shape.
+ */
+export type GroupConnectAppInboxPayload = Readonly<{
+    scope: StateScope;
+    groupId: string;
+    request:
+        & MutationActorInput
+        & Readonly<{
+            expectedFormationEpoch: number;
+            expectedLayout: GroupLayoutIdentity;
+        }>;
 }>;
 
 export type GroupLifecycleTransitionAppInboxPayload = Readonly<{
@@ -158,6 +176,8 @@ export interface AuthenticatedGroupMutationPayloadByType {
     [AppInboxType.GROUP_UPDATE]: GroupUpdateAppInboxPayload;
     [AppInboxType.GROUP_DIRECTOR_APPOINT]: GroupDirectorAppointAppInboxPayload;
     [AppInboxType.GROUP_ESTABLISHMENT_START]: GroupLifecycleTransitionAppInboxPayload;
+    [AppInboxType.GROUP_PLAN]: GroupLifecycleTransitionAppInboxPayload;
+    [AppInboxType.GROUP_CONNECT]: GroupConnectAppInboxPayload;
     [AppInboxType.GROUP_ACTIVATE]: GroupLifecycleTransitionAppInboxPayload;
     [AppInboxType.GROUP_ESTABLISHMENT_REOPEN]: GroupLifecycleTransitionAppInboxPayload;
     [AppInboxType.GROUP_JOIN]: GroupJoinAppInboxPayload;
@@ -200,6 +220,8 @@ export const AUTHENTICATED_GROUP_INBOX_TYPES = [
     AppInboxType.GROUP_UPDATE,
     AppInboxType.GROUP_DIRECTOR_APPOINT,
     AppInboxType.GROUP_ESTABLISHMENT_START,
+    AppInboxType.GROUP_PLAN,
+    AppInboxType.GROUP_CONNECT,
     AppInboxType.GROUP_ACTIVATE,
     AppInboxType.GROUP_ESTABLISHMENT_REOPEN,
     AppInboxType.GROUP_JOIN,

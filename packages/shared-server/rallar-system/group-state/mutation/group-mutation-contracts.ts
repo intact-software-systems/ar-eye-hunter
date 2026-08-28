@@ -21,6 +21,7 @@ import type {
     GroupPlannedLayoutRow,
     PlannedLayoutPromotion
 } from './aggregate/compute-planned-layout-promotion.ts';
+import type { GroupMutationRejectionCode } from './group-mutation-rejection-codes.ts';
 
 import type { GroupPolicyCapacityConfig } from '@shared-server/rallar-system/group-state/policy/group-membership-admission-policy.ts';
 import type { RuntimeStateEntryValue } from '../../../runtime-state/runtime-state-json-store.ts';
@@ -102,6 +103,36 @@ export type GroupMutationCommand =
                 & Readonly<{
                     /** Null on principal commands; the retry leg's causal fence when internal. */
                     expectedFormationEpoch: number | null;
+                }>;
+        }>
+    )
+    | (
+        & GroupMutationCommandBase
+        & Readonly<{
+            // Dark until slice 8 mounts routes (plan slice 5a): registered
+            // through the full census, emitted by no producer.
+            operation: 'planGroupLayout';
+            input:
+                & NullableActorInput
+                & Readonly<{
+                    /** Null on principal commands; the plan trigger's causal fence when internal. */
+                    expectedFormationEpoch: number | null;
+                }>;
+        }>
+    )
+    | (
+        & GroupMutationCommandBase
+        & Readonly<{
+            // Dark until slice 8 mounts routes (plan slice 5b). `connect`
+            // names the exact planned layout it means to dial (product
+            // decision 32), so both fences are required — a manual caller
+            // reads them from the formation and topology views.
+            operation: 'connectGroup';
+            input:
+                & NullableActorInput
+                & Readonly<{
+                    expectedFormationEpoch: number;
+                    expectedLayout: GroupLayoutIdentity;
                 }>;
         }>
     )
@@ -462,17 +493,25 @@ export type GroupMutationComputed =
          * null for every other operation and when no plan exists to promote.
          */
         acceptedLayoutPromotion: Extract<PlannedLayoutPromotion, { outcome: 'apply'; }> | null;
+        /**
+         * The planned row a layout-fenced command matched, re-asserted under
+         * its revision inside the write transaction. Null when the command
+         * carries no layout fence or already promotes (a promotion emits the
+         * same guard itself).
+         */
+        plannedLayoutFence: GroupPlannedLayoutRow | null;
     }>;
 
 export type GroupMutationComputedWrite = Extract<GroupMutationComputed, { outcome: 'write'; }>;
 
-export type GroupMutationRejectionCode =
-    | 'group-already-exists'
-    | 'group-mutation-rejected';
-
 export type GroupLifecycleTransitionOperation = Extract<
     GroupMutationCommand['operation'],
-    'startGroupEstablishment' | 'activateGroup' | 'reopenGroupEstablishment' | 'failGroupFormation'
+    | 'startGroupEstablishment'
+    | 'activateGroup'
+    | 'reopenGroupEstablishment'
+    | 'failGroupFormation'
+    | 'planGroupLayout'
+    | 'connectGroup'
 >;
 
 export function isGroupLifecycleTransitionOperation(
@@ -482,7 +521,9 @@ export function isGroupLifecycleTransitionOperation(
         operation === 'startGroupEstablishment' ||
         operation === 'activateGroup' ||
         operation === 'reopenGroupEstablishment' ||
-        operation === 'failGroupFormation'
+        operation === 'failGroupFormation' ||
+        operation === 'planGroupLayout' ||
+        operation === 'connectGroup'
     );
 }
 
@@ -492,7 +533,8 @@ export function isLayoutFencedGroupMutationCommand(command: GroupMutationCommand
         (
             command.operation === 'activateGroup' ||
             command.operation === 'failGroupFormation' ||
-            command.operation === 'applyPlannedLayout'
+            command.operation === 'applyPlannedLayout' ||
+            command.operation === 'connectGroup'
         ) &&
         command.input.expectedLayout !== null
     );
@@ -501,11 +543,20 @@ export function isLayoutFencedGroupMutationCommand(command: GroupMutationCommand
 /**
  * True when the command's compute consults the stored layout rows: every
  * activation reads them for the promotion effect (operator activations
- * included), and a layout-fenced formation failure reads the planned row for
- * its fence.
+ * included), and a layout-fenced command reads the planned row for its
+ * fence and its commit-time re-assertion.
  */
 export function readsGroupLayoutRows(command: GroupMutationCommand): boolean {
     return command.operation === 'activateGroup' || isLayoutFencedGroupMutationCommand(command);
+}
+
+/**
+ * The accepted row is read only by the commands that can promote: a fenced
+ * command that never promotes (connect, decision 42) consults the planned
+ * row alone, so it does not pay for a slot it cannot consult.
+ */
+export function readsAcceptedLayoutRow(command: GroupMutationCommand): boolean {
+    return command.operation === 'activateGroup' || command.operation === 'applyPlannedLayout';
 }
 
 export type GroupAdmissionDecisionOperation = Extract<

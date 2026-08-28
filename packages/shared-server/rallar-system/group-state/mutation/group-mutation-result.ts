@@ -14,6 +14,7 @@ import type { RuntimeStateEntryValue } from '../../../runtime-state/runtime-stat
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import type { InitialGroupPresenceSummaryCandidate } from '../presence/group-initial-presence-summary.ts';
 import type { PlannedLayoutPromotion } from './aggregate/compute-planned-layout-promotion.ts';
+import type { GroupPlannedLayoutRow } from './aggregate/compute-planned-layout-promotion.ts';
 import type {
     GroupGuardCandidate,
     GroupMutationCommand,
@@ -22,12 +23,12 @@ import type {
     GroupMutationIdempotencyRecord,
     GroupMutationRead,
     GroupMutationReceipt,
-    GroupMutationRejectionCode,
     PresenceAdmissionCandidate,
     PresenceGuardCandidate
 } from './group-mutation-contracts.ts';
 import { GroupAlreadyExistsError, GroupMutationRejectedError } from './group-mutation-contracts.ts';
 import { groupMutationIdempotencyKey } from './group-mutation-idempotency-key.ts';
+import { GroupConnectDeniedError, type GroupMutationRejectionCode } from './group-mutation-rejection-codes.ts';
 
 const DEFAULT_GROUP_JOIN_CODE_TTL_MS = 7 * 24 * 60 * 60 * 1_000;
 
@@ -44,6 +45,8 @@ export interface GroupMutationWriteInput {
     readonly presenceSummaryWork: 'enqueue' | 'none';
     readonly extraOutboxEntries?: readonly ResourceEntry[];
     readonly acceptedLayoutPromotion?: Extract<PlannedLayoutPromotion, { outcome: 'apply'; }> | null;
+    /** The planned row a layout fence matched, re-asserted at commit. */
+    readonly plannedLayoutFence?: GroupPlannedLayoutRow | null;
 }
 
 export interface RejectedGroupMutationInput {
@@ -109,6 +112,7 @@ export function computeGroupMutationWriteResult(
         ];
     const outboxEntries = [...summaryOutboxEntries, ...(input.extraOutboxEntries ?? [])];
     const acceptedLayoutPromotion = input.acceptedLayoutPromotion ?? null;
+    const plannedLayoutFence = input.plannedLayoutFence ?? null;
     const receipt = receiptFor(command, facts, {
         outcome: 'applied',
         causalRevision,
@@ -129,7 +133,8 @@ export function computeGroupMutationWriteResult(
         idempotency: toGroupMutationIdempotency(command, facts, receipt),
         outboxEntries,
         lifecyclePolicy: command.operation === 'createGroup' ? (command.input.lifecyclePolicy ?? null) : null,
-        acceptedLayoutPromotion
+        acceptedLayoutPromotion,
+        plannedLayoutFence
     };
 }
 
@@ -192,11 +197,14 @@ export function rejected(input: RejectedGroupMutationInput): GroupMutationComput
 
 export function toGroupMutationRejectionError(
     computed: Extract<GroupMutationComputed, { outcome: 'rejected'; }>
-): GroupAlreadyExistsError | GroupMutationRejectedError {
+): GroupAlreadyExistsError | GroupConnectDeniedError | GroupMutationRejectedError {
     const message = computed.receipt.rejection ?? 'Group mutation rejected';
     switch (computed.rejectionCode) {
         case 'group-already-exists':
             return new GroupAlreadyExistsError(message);
+        case 'group-connect-no-planned-layout':
+        case 'group-connect-planned-layout-superseded':
+            return new GroupConnectDeniedError(computed.rejectionCode, message);
         case 'group-mutation-rejected':
             return new GroupMutationRejectedError(message);
     }

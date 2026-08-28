@@ -3,12 +3,14 @@ import {
     AUTHENTICATED_GROUP_INBOX_TYPES,
     type GroupAdmissionDeclineAppInboxPayload,
     type GroupAdmissionGrantAppInboxPayload,
+    type GroupConnectAppInboxPayload,
     type GroupCreateAppInboxPayload,
     type GroupDirectorAppointAppInboxPayload,
     type GroupInviteAcceptAppInboxPayload,
     type GroupInviteRevokeAppInboxPayload,
     type GroupJoinAppInboxPayload,
     type GroupJoinCodeRotateAppInboxPayload,
+    type GroupLifecycleTransitionAppInboxPayload,
     type GroupMemberRemoveAppInboxPayload,
     type GroupMemberRoleSetAppInboxPayload,
     type GroupMemberUpsertAppInboxPayload,
@@ -18,7 +20,10 @@ import {
     type GroupPresenceHeartbeatAppInboxPayload,
     type GroupUpdateAppInboxPayload
 } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-contracts.ts';
+import { RtcTopologySnapshotRepository } from '@shared-server/rallar-system/topology/persistence/rtc-topology-snapshot-repository.ts';
+import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import { describe, expect, it } from 'vitest';
+import { FakeRuntimeStateRepository } from '../../../runtime-state/test-support/fake-runtime-state-repository.ts';
 
 import {
     createGovernedOperationCase,
@@ -28,7 +33,7 @@ import {
     runOperationMatrix,
     type OperationMatrixCase
 } from './group-state-inbox-operation-matrix-runtime.ts';
-import { createAuthorityHarness, SCOPE } from './group-state-inbox-test-runtime.ts';
+import { createAuthorityHarness, processAuthenticated, SCOPE } from './group-state-inbox-test-runtime.ts';
 
 describe('GroupStateInboxService authenticated authority', () => {
     it('exposes transaction-injected mutation phases without direct mutation bypasses', async () => {
@@ -60,6 +65,8 @@ describe('GroupStateInboxService authenticated authority', () => {
             AppInboxType.GROUP_UPDATE,
             AppInboxType.GROUP_DIRECTOR_APPOINT,
             AppInboxType.GROUP_ESTABLISHMENT_START,
+            AppInboxType.GROUP_PLAN,
+            AppInboxType.GROUP_CONNECT,
             AppInboxType.GROUP_ACTIVATE,
             AppInboxType.GROUP_ESTABLISHMENT_REOPEN,
             AppInboxType.GROUP_JOIN,
@@ -86,11 +93,18 @@ describe('GroupStateInboxService authenticated authority', () => {
         runEveryAdvertisedGroupOperation,
         30_000
     );
+
+    it(
+        'connects against a stored planned layout and commits its revision guard',
+        runConnectAgainstStoredPlan,
+        30_000
+    );
 });
 
 async function runEveryAdvertisedGroupOperation(): Promise<void> {
     const harness = await createAuthorityHarness(['owner', 'bob', 'charlie']);
     const groupId = 'operation-matrix-room';
+    const phasedGroupId = 'operation-matrix-phased';
     const admissionGroupId = 'operation-matrix-admissions';
     const ownerActor = {
         actorPrincipalId: 'owner',
@@ -493,8 +507,242 @@ async function runEveryAdvertisedGroupOperation(): Promise<void> {
                     status: 'disconnected'
                 });
             }
+        },
+        {
+            type: AppInboxType.GROUP_CREATE,
+            operation: 'createGroup',
+            authority: harness.sessions.owner,
+            data: {
+                scope: SCOPE,
+                request: {
+                    groupId: phasedGroupId,
+                    displayName: 'Operation Matrix Phased',
+                    kind: 'room',
+                    joinMode: 'open',
+                    createdByPrincipalId: 'owner',
+                    lifecyclePolicy: { formation: 'phased' },
+                    ...ownerActor,
+                    requestId: 'matrix-create-phased'
+                }
+            } satisfies GroupCreateAppInboxPayload,
+            assertDomain: async () => {
+                expect(
+                    (await harness.repository.readSnapshot({ ...SCOPE, groupId: phasedGroupId }))
+                        ?.group.lifecycleState
+                ).toBe('forming');
+            }
+        },
+        {
+            type: AppInboxType.GROUP_PLAN,
+            operation: 'planGroupLayout',
+            authority: harness.sessions.owner,
+            data: {
+                scope: SCOPE,
+                groupId: phasedGroupId,
+                request: { ...ownerActor, requestId: 'matrix-plan' }
+            } satisfies GroupLifecycleTransitionAppInboxPayload,
+            assertDomain: async () => {
+                const group = (await harness.repository.readSnapshot({ ...SCOPE, groupId: phasedGroupId }))?.group;
+                expect(group?.lifecycleState).toBe('planned');
+                expect(group?.formationEpoch).toBe(1);
+            }
+        },
+        {
+            type: AppInboxType.GROUP_PLAN,
+            operation: 'planGroupLayout',
+            authority: harness.sessions.owner,
+            data: {
+                scope: SCOPE,
+                groupId: phasedGroupId,
+                request: { ...ownerActor, requestId: 'matrix-replan' }
+            } satisfies GroupLifecycleTransitionAppInboxPayload,
+            assertDomain: async () => {
+                const group = (await harness.repository.readSnapshot({ ...SCOPE, groupId: phasedGroupId }))?.group;
+                // The idempotent replan re-pins nothing (decision 28).
+                expect(group?.lifecycleState).toBe('planned');
+                expect(group?.formationEpoch).toBe(1);
+            }
         }
     ];
 
     await runOperationMatrix(harness, groupId, cases);
+
+    // `connect` executes the same real phases and lands its typed 409 denial:
+    // with no planned topology row stored, the fence answers
+    // no-planned-layout — proving the dispatch classifier routes the new
+    // operation into the lifecycle builder, not the membership fallthrough.
+    const connectResult = await processAuthenticated({
+        service: harness.service,
+        reader: harness.reader,
+        authority: harness.sessions.owner,
+        input: {
+            type: AppInboxType.GROUP_CONNECT,
+            resourceId: 'matrix-connect',
+            contextId: `${SCOPE.applicationId}:${SCOPE.workspaceId}:${phasedGroupId}`,
+            senderId: harness.sessions.owner.clientId,
+            data: {
+                scope: SCOPE,
+                groupId: phasedGroupId,
+                request: {
+                    ...ownerActor,
+                    requestId: 'matrix-connect',
+                    expectedFormationEpoch: 1,
+                    expectedLayout: {
+                        groupRevision: 1,
+                        presenceRevision: 0,
+                        version: 1,
+                        state: 'active'
+                    }
+                }
+            } satisfies GroupConnectAppInboxPayload
+        }
+    });
+    // The code and status are what a caller acts on: a generic rejection
+    // would still carry the phrase, so assert the mapped conflict itself.
+    expect(connectResult.left?.code).toBe('group-connect-no-planned-layout');
+    expect(connectResult.left?.status).toBe(409);
+}
+
+// `connect` succeeds only against a stored planned row, so this runs its own
+// harness with that row present: the executed request must land the stage,
+// stamp the establishment clock, and commit the planned row's revision guard
+// (the batch's fence against a replan landing between read and commit).
+async function runConnectAgainstStoredPlan(): Promise<void> {
+    const groupId = 'connect-success-room';
+    const plannedIdentity = {
+        groupRevision: 1,
+        presenceRevision: 0,
+        version: 1,
+        state: 'active' as const
+    };
+    // The guard updates the stored row, so the row must really exist in the
+    // same store the batch writes — a stubbed reader alone would make the
+    // batch conflict, which is exactly what this fence is for. The store and
+    // its row are therefore built before the harness that reads them.
+    const runtimeRepository = new FakeRuntimeStateRepository();
+    const plannedSnapshots = new RtcTopologySnapshotRepository(runtimeRepository);
+    await plannedSnapshots.commitSnapshot({
+        candidate: connectPlannedSnapshot(groupId, plannedIdentity)
+    });
+    const harness = await createAuthorityHarness(['owner'], {
+        runtimeRepository,
+        readPlannedLayoutRow: async (ref) => {
+            const entry = await plannedSnapshots.findSnapshotEntry(ref);
+            return entry ? { snapshot: entry.value, revision: entry.entry.revision } : null;
+        }
+    });
+    const ownerActor = { actorPrincipalId: 'owner', actorSessionId: 'owner-session' } as const;
+    const contextId = `${SCOPE.applicationId}:${SCOPE.workspaceId}:${groupId}`;
+    const created = await processAuthenticated({
+        service: harness.service,
+        reader: harness.reader,
+        authority: harness.sessions.owner,
+        input: {
+            type: AppInboxType.GROUP_CREATE,
+            resourceId: 'connect-create',
+            contextId,
+            senderId: harness.sessions.owner.clientId,
+            data: {
+                scope: SCOPE,
+                request: {
+                    groupId,
+                    displayName: 'Connect Success',
+                    kind: 'room',
+                    joinMode: 'open',
+                    createdByPrincipalId: 'owner',
+                    lifecyclePolicy: { formation: 'phased' },
+                    ...ownerActor,
+                    requestId: 'connect-create'
+                }
+            } satisfies GroupCreateAppInboxPayload
+        }
+    });
+    expect(created.right).toBeDefined();
+
+    const planned = await processAuthenticated({
+        service: harness.service,
+        reader: harness.reader,
+        authority: harness.sessions.owner,
+        input: {
+            type: AppInboxType.GROUP_PLAN,
+            resourceId: 'connect-plan',
+            contextId,
+            senderId: harness.sessions.owner.clientId,
+            data: {
+                scope: SCOPE,
+                groupId,
+                request: { ...ownerActor, requestId: 'connect-plan' }
+            } satisfies GroupLifecycleTransitionAppInboxPayload
+        }
+    });
+    expect(planned.right).toBeDefined();
+    const plannedGroup = (await harness.repository.readSnapshot({ ...SCOPE, groupId }))?.group;
+    expect(plannedGroup?.lifecycleState).toBe('planned');
+
+    const plannedBefore = (await plannedSnapshots.findSnapshotEntry({ ...SCOPE, groupId }))?.entry.revision ?? 0;
+    const connected = await processAuthenticated({
+        service: harness.service,
+        reader: harness.reader,
+        authority: harness.sessions.owner,
+        input: {
+            type: AppInboxType.GROUP_CONNECT,
+            resourceId: 'connect-success',
+            contextId,
+            senderId: harness.sessions.owner.clientId,
+            data: {
+                scope: SCOPE,
+                groupId,
+                request: {
+                    ...ownerActor,
+                    requestId: 'connect-success',
+                    expectedFormationEpoch: plannedGroup?.formationEpoch ?? 0,
+                    expectedLayout: plannedIdentity
+                }
+            } satisfies GroupConnectAppInboxPayload
+        }
+    });
+
+    expect(connected.left).toBeUndefined();
+    const group = (await harness.repository.readSnapshot({ ...SCOPE, groupId }))?.group;
+    expect(group?.lifecycleState).toBe('connecting');
+    expect(group?.formationEpoch).toBe((plannedGroup?.formationEpoch ?? 0) + 1);
+    // Entering a dialing stage starts the attempt clock.
+    expect(group?.establishmentStartedAtEpochMs).not.toBe(null);
+    // Dialing a candidate is not acceptance (decision 42).
+    expect(group?.acceptedLayoutIdentity).toBe(null);
+    // The commit re-asserted the planned row: the guard rewrote it in the
+    // same batch, so its revision advanced exactly once.
+    const plannedAfter = await plannedSnapshots.findSnapshotEntry({ ...SCOPE, groupId });
+    expect(plannedAfter?.entry.revision).toBe(plannedBefore + 1);
+    expect(plannedAfter?.value).toEqual(connectPlannedSnapshot(groupId, plannedIdentity));
+}
+
+function connectPlannedSnapshot(
+    groupId: string,
+    identity: Readonly<{
+        groupRevision: number;
+        presenceRevision: number;
+        version: number;
+        state: 'active' | 'removed';
+    }>
+) {
+    const groupRef = { ...SCOPE, groupId };
+    return {
+        sourceGroupStateCausalRevision: {
+            groupRevision: identity.groupRevision,
+            presenceRevision: identity.presenceRevision
+        },
+        state: identity.state,
+        overlayId: toScopedOverlayId(groupRef),
+        groupRef,
+        name: groupId,
+        topology: 'tree' as const,
+        activeSessionIds: [],
+        nextHopsBySessionId: {},
+        degreeLimit: 1,
+        version: identity.version,
+        createdByClientId: 'owner',
+        createdAtEpochMs: 1,
+        updatedAtEpochMs: 2
+    };
 }

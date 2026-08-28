@@ -5,6 +5,7 @@ import type {
     GroupMutationFacts,
     GroupMutationRead
 } from '../group-mutation-contracts.ts';
+import { isGroupMutationRejectionCode } from '../group-mutation-rejection-codes.ts';
 import { validateComputedGroupMutationWrite } from './validate-computed-group-mutation-write.ts';
 import { validateCommandHash, validateMutationReceipt } from './validate-group-mutation-result.ts';
 
@@ -77,10 +78,7 @@ function validateComputedRejectionCode(
         }
         return;
     }
-    if (
-        computed.rejectionCode !== 'group-already-exists' &&
-        computed.rejectionCode !== 'group-mutation-rejected'
-    ) {
+    if (!isGroupMutationRejectionCode(computed.rejectionCode)) {
         throw new TypeError('Group mutation computed rejection code is invalid');
     }
 }
@@ -112,7 +110,8 @@ function validateWriteOutcomeKeys(value: object): void {
         'idempotency',
         'outboxEntries',
         'lifecyclePolicy',
-        'acceptedLayoutPromotion'
+        'acceptedLayoutPromotion',
+        'plannedLayoutFence'
     ];
     assertExactKeys(value, keys, 'Group mutation computed result');
     assertRequiredKeys(value, keys, 'Group mutation computed result');

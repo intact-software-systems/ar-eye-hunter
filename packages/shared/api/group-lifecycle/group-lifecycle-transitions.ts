@@ -16,6 +16,8 @@ export type GroupLifecycleTransitionOutcome =
     | Readonly<{
         allowed: true;
         nextState: GroupLifecycleState;
+        /** The state machine's one idempotent cell: a replan from `planned`. */
+        idempotentReplan: boolean;
         nextFormationEpoch: number;
     }>
     | GroupPolicyDenied;
@@ -86,6 +88,7 @@ export function computeGroupLifecycleTransition(
     return {
         allowed: true,
         nextState,
+        idempotentReplan,
         nextFormationEpoch: idempotentReplan ? input.formationEpoch : input.formationEpoch + 1
     };
 }

@@ -1,3 +1,4 @@
+import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 
 import {
@@ -18,6 +19,30 @@ import type { PlannedLayoutPromotion } from '../../mutation/aggregate/compute-pl
  * carry the identical encoded snapshot by construction: `row` is computed
  * once and spread into every effect.
  */
+/**
+ * The causal fence re-asserted inside the transaction (product decisions
+ * 19/32): a revision-guarded rewrite of the planned row the command was
+ * fenced against, so a replan that landed between the read and the commit
+ * conflicts the whole batch instead of letting a superseded command commit.
+ * `connect` carries this alone — it dials a candidate without promoting it
+ * (decision 42) — while a promotion emits the same guard plus its accepted
+ * write.
+ */
+export function toPlannedLayoutFenceEffect(
+    planned: Readonly<{ snapshot: RallarOverlayTopologySnapshot; revision: number; }>
+): RuntimeStateGuardedBatchEffect {
+    const row = toStoredRtcTopologySnapshotRow(planned.snapshot);
+    return {
+        effectId: 'planned-layout-fence',
+        operation: 'update',
+        namespace: RTC_TOPOLOGY_SNAPSHOTS_NAMESPACE,
+        expectedRevision: planned.revision,
+        key: row.key,
+        value: row.value,
+        expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
+    };
+}
+
 export function toGroupLayoutPromotionEffects(
     promotion: Extract<PlannedLayoutPromotion, { outcome: 'apply'; }>
 ): readonly RuntimeStateGuardedBatchEffect[] {

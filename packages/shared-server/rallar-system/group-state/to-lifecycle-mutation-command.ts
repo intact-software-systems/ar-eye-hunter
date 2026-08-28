@@ -1,3 +1,4 @@
+import type { GroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
 import type { MutationActorInput } from '@shared/api/state-types.ts';
 
 import { toGroupMutationActorInput, toGroupMutationIdentity } from './group-mutation-command.ts';
@@ -11,9 +12,12 @@ export function toLifecycleMutationCommand(
     switch (descriptor.operation) {
         case 'startGroupEstablishment':
         case 'reopenGroupEstablishment':
+        case 'planGroupLayout':
             return toTransitionCommand(descriptor.operation, descriptor, randomId);
         case 'activateGroup':
             return toActivateCommand(descriptor, randomId);
+        case 'connectGroup':
+            return toConnectCommand(descriptor, randomId);
         case 'failGroupFormation':
             return toFailFormationCommand(descriptor, randomId);
         default:
@@ -22,7 +26,7 @@ export function toLifecycleMutationCommand(
 }
 
 function toTransitionCommand(
-    operation: 'startGroupEstablishment' | 'reopenGroupEstablishment',
+    operation: 'startGroupEstablishment' | 'reopenGroupEstablishment' | 'planGroupLayout',
     descriptor: GroupMutationDescriptor,
     randomId: () => string
 ): GroupMutationCommand {
@@ -34,6 +38,37 @@ function toTransitionCommand(
         input: {
             ...toGroupMutationActorInput(request),
             expectedFormationEpoch: null
+        }
+    };
+}
+
+function toConnectCommand(
+    descriptor: GroupMutationDescriptor,
+    randomId: () => string
+): GroupMutationCommand {
+    const request = descriptor.request as
+        & MutationActorInput
+        & Readonly<{
+            expectedFormationEpoch?: number | null;
+            expectedLayout?: GroupLayoutIdentity | null;
+        }>;
+    // `connect` names the exact planned layout it dials (product decision
+    // 32); absent and null are equally malformed here, so neither can reach
+    // a field the command contract types non-null.
+    if (
+        request.expectedFormationEpoch === undefined || request.expectedFormationEpoch === null ||
+        request.expectedLayout === undefined || request.expectedLayout === null
+    ) {
+        throw new TypeError('Group connect requires expectedFormationEpoch and expectedLayout');
+    }
+    return {
+        operation: 'connectGroup',
+        aggregateRef: { ...descriptor.scope, groupId: descriptor.groupId },
+        ...toGroupMutationIdentity(request.requestId, randomId),
+        input: {
+            ...toGroupMutationActorInput(request),
+            expectedFormationEpoch: request.expectedFormationEpoch,
+            expectedLayout: request.expectedLayout
         }
     };
 }

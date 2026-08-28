@@ -12,6 +12,8 @@ export function toGroupMutationDescriptor(
         case AppInboxType.GROUP_UPDATE:
         case AppInboxType.GROUP_DIRECTOR_APPOINT:
         case AppInboxType.GROUP_ESTABLISHMENT_START:
+        case AppInboxType.GROUP_PLAN:
+        case AppInboxType.GROUP_CONNECT:
         case AppInboxType.GROUP_ACTIVATE:
         case AppInboxType.GROUP_ESTABLISHMENT_REOPEN:
         case AppInboxType.GROUP_JOIN_CODE_ROTATE:
@@ -79,6 +81,8 @@ export function toGroupMutationDescriptorTargetIdentity(
         case 'updateGroup':
         case 'appointDirector':
         case 'startGroupEstablishment':
+        case 'planGroupLayout':
+        case 'connectGroup':
         case 'reopenGroupEstablishment':
         case 'activateGroup':
         case 'failGroupFormation':
@@ -102,6 +106,8 @@ function toAggregateMutationDescriptor(
         | { readonly type: typeof AppInboxType.GROUP_UPDATE; }
         | { readonly type: typeof AppInboxType.GROUP_DIRECTOR_APPOINT; }
         | { readonly type: typeof AppInboxType.GROUP_ESTABLISHMENT_START; }
+        | { readonly type: typeof AppInboxType.GROUP_PLAN; }
+        | { readonly type: typeof AppInboxType.GROUP_CONNECT; }
         | { readonly type: typeof AppInboxType.GROUP_ACTIVATE; }
         | { readonly type: typeof AppInboxType.GROUP_ESTABLISHMENT_REOPEN; }
         | { readonly type: typeof AppInboxType.GROUP_JOIN_CODE_ROTATE; }
@@ -136,6 +142,22 @@ function toAggregateMutationDescriptor(
         case AppInboxType.GROUP_ESTABLISHMENT_START: {
             return mutationDescriptor({
                 operation: 'startGroupEstablishment',
+                scope: enqueue.data.scope,
+                groupId: enqueue.data.groupId,
+                request: enqueue.data.request
+            });
+        }
+        case AppInboxType.GROUP_PLAN: {
+            return mutationDescriptor({
+                operation: 'planGroupLayout',
+                scope: enqueue.data.scope,
+                groupId: enqueue.data.groupId,
+                request: enqueue.data.request
+            });
+        }
+        case AppInboxType.GROUP_CONNECT: {
+            return mutationDescriptor({
+                operation: 'connectGroup',
                 scope: enqueue.data.scope,
                 groupId: enqueue.data.groupId,
                 request: enqueue.data.request
