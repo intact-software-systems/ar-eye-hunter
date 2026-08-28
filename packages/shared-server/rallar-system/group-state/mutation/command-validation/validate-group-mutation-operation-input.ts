@@ -10,7 +10,8 @@ import {
 import {
     isGroupLifecycleTransitionOperation,
     isGroupTransportOperation,
-    type GroupMutationCommand
+    type GroupMutationCommand,
+    type GroupTransportOperation
 } from '../group-mutation-contracts.ts';
 import { requireGroupLifecyclePolicyInputShape } from './require-group-lifecycle-policy-input-shape.ts';
 import { validateExpectedLayoutIdentity } from './validate-expected-layout-identity.ts';
@@ -24,6 +25,11 @@ export function validateGroupMutationOperationInput({
     operation,
     input
 }: ValidateGroupMutationOperationInput): void {
+    // The valve's request carries only actor identity (product decision 25),
+    // which the shared request row already pins.
+    if (isGroupTransportOperation(operation)) {
+        return;
+    }
     if (isAggregateOperation(operation)) {
         validateAggregateMutationInput(operation, input);
         return;
@@ -47,8 +53,6 @@ type AggregateOperation = Extract<
     | 'reopenGroupEstablishment'
     | 'failGroupFormation'
     | 'applyPlannedLayout'
-    | 'pauseGroupTransport'
-    | 'resumeGroupTransport'
 >;
 
 function validateAggregateMutationInput(
@@ -105,12 +109,8 @@ function validateAggregateMutationInput(
         validateExpectedLayoutIdentity(input, 'Group connectGroup expectedLayout');
         return;
     }
-    if (
-        isGroupLifecycleTransitionOperation(operation) ||
-        isGroupTransportOperation(operation) ||
-        operation === 'applyPlannedLayout'
-    ) {
-        // Every other group-authority request carries only actor identity — its
+    if (isGroupLifecycleTransitionOperation(operation) || operation === 'applyPlannedLayout') {
+        // Every other lifecycle request carries only actor identity — its
         // exact-key row excludes every operation field, so there is nothing
         // further to validate here. The built command's fields (including
         // the criterion fences) are owned by validateGroupMutationCommand.
@@ -149,7 +149,11 @@ function validateGroupUpdateInput(
 
 type MembershipOperation = Exclude<
     GroupMutationCommand['operation'],
-    AggregateOperation | 'connectPresence' | 'heartbeatPresence' | 'disconnectPresence'
+    | AggregateOperation
+    | GroupTransportOperation
+    | 'connectPresence'
+    | 'heartbeatPresence'
+    | 'disconnectPresence'
 >;
 
 function validateMembershipMutationInput(
@@ -222,9 +226,7 @@ function isAggregateOperation(
         'activateGroup',
         'reopenGroupEstablishment',
         'failGroupFormation',
-        'applyPlannedLayout',
-        'pauseGroupTransport',
-        'resumeGroupTransport'
+        'applyPlannedLayout'
     ].includes(operation);
 }
 

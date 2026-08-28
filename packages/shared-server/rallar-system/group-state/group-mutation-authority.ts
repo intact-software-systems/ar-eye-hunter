@@ -268,7 +268,7 @@ export function toDescriptorCommand(
             throw new TypeError('applyPlannedLayout has no authenticated route');
         case 'pauseGroupTransport':
         case 'resumeGroupTransport':
-            return toTransportMutationCommand(descriptor, randomId);
+            return toTransportMutationCommand(descriptor.operation, descriptor, randomId);
         case 'connectPresence':
         case 'heartbeatPresence':
         case 'disconnectPresence':

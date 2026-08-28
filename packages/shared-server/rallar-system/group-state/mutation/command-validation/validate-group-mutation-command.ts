@@ -14,7 +14,7 @@ import {
     requireRecord,
     validateGroupRef
 } from '../../group-state-validation-primitives.ts';
-import type { GroupMutationCommand } from '../group-mutation-contracts.ts';
+import { isGroupTransportOperation, type GroupMutationCommand } from '../group-mutation-contracts.ts';
 import { ACTOR_INPUT_KEYS } from './group-mutation-request-validation.ts';
 import { validateExpectedLayoutIdentity } from './validate-expected-layout-identity.ts';
 
@@ -74,6 +74,12 @@ function validateOperationInput(
     operation: GroupMutationCommand['operation'],
     input: Readonly<Record<string, unknown>>
 ): void {
+    // The valve carries no operation field at all (product decision 25), so
+    // the exact-key assertion above is its whole input contract and there is
+    // no family validator to route it to.
+    if (isGroupTransportOperation(operation)) {
+        return;
+    }
     if (AGGREGATE_GROUP_MUTATION_OPERATIONS.has(operation)) {
         validateAggregateOperationInput(operation, input);
         return;
@@ -168,12 +174,6 @@ function validateAggregateOperationInput(
             }
             validateExpectedFormationEpochInput(input, operation);
             validateExpectedLayoutInput(input, operation);
-            return;
-        // The valve carries no operation field at all, so the exact-key
-        // assertion above is the whole contract; the arm is explicit because
-        // the default one is for the membership families.
-        case 'pauseGroupTransport':
-        case 'resumeGroupTransport':
             return;
         case 'failGroupFormation':
             assertRequiredKeys(input, GROUP_MUTATION_INPUT_KEYS[operation], `Group ${operation} input`);
@@ -360,9 +360,7 @@ const AGGREGATE_GROUP_MUTATION_OPERATIONS = new Set<GroupMutationCommand['operat
     'activateGroup',
     'reopenGroupEstablishment',
     'failGroupFormation',
-    'applyPlannedLayout',
-    'pauseGroupTransport',
-    'resumeGroupTransport'
+    'applyPlannedLayout'
 ]);
 
 const GROUP_MUTATION_INPUT_KEYS: Readonly<Record<GroupMutationCommand['operation'], readonly string[]>> = {

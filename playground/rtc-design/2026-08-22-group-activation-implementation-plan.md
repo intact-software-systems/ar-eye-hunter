@@ -1141,17 +1141,63 @@ inventory and `COVERED_API_MUTATIONS` are untouched. Rulings:
 - **A halt does not supersede a plan.** The valve bumps `snapshotVersion`, which the planner would
   otherwise read as fresh authority, but `computeRtcTopologyInputFingerprint` hashes active session
   ids, display name, effective config and hysteresis widths — not the snapshot version and not
-  `transportState`. Change suppression therefore stays latched across a pause and an outstanding
-  `connect` fence still names the stored plan. Pinned directly, both directions.
+  `transportState`. The digest is what the new test pins, both directions. **Scope of the claim:**
+  `isFingerprintUnchanged` additionally requires the stored planned snapshot to be `active`, so
+  suppression latches exactly where the fence matters — a group holding a plan an outstanding
+  `connect` names. In a stage with no active stored snapshot the coalesced row is not suppressed,
+  which is the pre-existing behaviour of every group write (`updateGroup` included), not something
+  the valve introduces; there is no plan to supersede there.
+- **Recorded, not repaired — the valve pays for a replan it cannot need.** `presenceSummaryWork` is
+  `'enqueue' | 'none'`, and the presence-summary effect mints the coalesced topology row together
+  with the group delta. The valve genuinely needs the delta (decision 25's browser refusal reads the
+  snapshot) and provably cannot change topology, but the mechanism has no delta-only disposition, so
+  it takes the replan with it. Generalising that third disposition is a shared-infrastructure change
+  this slice does not own; slice 7, which is where the halt starts being enforced, is where it
+  belongs.
+- **Recorded, not repaired — a no-op stores no idempotency record.** `noOp` returns receipt-only, so
+  `writeGroupMutation` persists nothing to replay from. A redundant `pause` that the caller never
+  saw the answer to, retried under the same request id after the application has since resumed,
+  re-evaluates against the new state and halts it again. The alternative — making the redundant
+  command a write — buys the replay at the cost of a delta and a coalesced work row on every
+  no-change call, which is what the no-op ruling exists to avoid, and the hazard is `computeUpdate`'s
+  today rather than something the valve introduces. Nothing can reach it while the commands are
+  dark; slice 8's route must state that a valve retry is evaluated against current state.
+- **Recorded — `resume` is legal in `dormant`, and the stage table's parenthetical is descriptive.**
+  The stage table's `dormant` row reads "blocked (and transport is halted)" and decision 35 says
+  transport is halted there. Both describe how a group arrives in `dormant` — `reset` sets the valve
+  (decision 36) — not an invariant the stage enforces, because decision 25 makes the valve orthogonal
+  to the stage and settable only by the application. Decision 36's own words are that the group "is
+  silent until the application resumes it", which contemplates exactly this call. The forward gate
+  still blocks `dormant` under `blocked-until-active` regardless of the valve, and `dormant` dials
+  nothing, so a resumed `dormant` group has no edges to carry data. Denying the valve per stage would
+  reintroduce the stage-dependence decision 25 removed.
+- **A user-visible denial message changed on live commands.** `denyForGroupAuthorityInitiator` now
+  answers for both families, so "Lifecycle transitions are server-initiated under this policy." and
+  "Only the group manager can command lifecycle transitions." became "Group authority commands …" and
+  "… can command group authority." Those strings reach HTTP callers today through `activate`,
+  `start-establishment` and `reopen-establishment`. Nothing in the tree pins either string — recipes
+  and Deno tests assert `code`, never `message` — and a denial that names the wrong command family is
+  a defect once the valve answers to the same switch. Recorded because it is the one live-path
+  behaviour change in an otherwise dark slice.
 - **Deferred by design:** the halt is not yet enforced anywhere. Slice 7 owns the WS relay valve and
   the forward gate, and `api-v1-group-data-policy.json` gains `pause-resume` there; slice 8 mounts
   the routes. Until then `transportState` is written by these two commands and read only by
   `computeGroupDataGate` and the snapshot.
+- **Deliberate census deviation: the valve is not an aggregate _input_ family.** It carries no
+  operation field, so it is routed at both input-validation dispatchers rather than added to
+  `AGGREGATE_GROUP_MUTATION_OPERATIONS` / `isAggregateOperation`. Those two Sets are routing keys for
+  "which family validator reads this input", and the valve's whole input contract is the exact-key
+  assertion the shared row already applies. This also keeps the two >60-line validators the standard
+  would otherwise require refactoring or a registry entry for untouched.
 - **Test honesty:** every behavioural assertion in `group-transport-mutation.test.ts` was verified to
   fail against an implementation lacking it — the valve mapping swapped, the no-op branch removed,
-  the authority block removed, the corrupt-policy arm removed — and the two silent registries
-  (`GROUP_APP_INBOX_OPERATIONS`, the authority decoder's operation chain) were each dropped to
-  confirm the executed matrix catches them.
+  the authority block removed, the corrupt-policy arm removed, `assertActive` removed — and the two
+  silent registries (`GROUP_APP_INBOX_OPERATIONS`, the authority decoder's operation chain) were each
+  dropped to confirm the executed matrix catches them. The max-effort review corrected one dishonest
+  proof: the manager denial ran with a roster that resolved **no** manager, so it answered
+  `lifecycle-manager-unavailable` and never reached the membership question it claimed to prove. It
+  now carries the creator in the electorate and asserts the denial **code**, which separates the two
+  arms.
 
 Product decision 12 keeps one initiator policy for all eight application-facing commands, so the
 command predicate needs no per-command branch.

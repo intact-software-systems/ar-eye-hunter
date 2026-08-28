@@ -10,6 +10,7 @@ import { computeGroupMutation } from '@shared-server/rallar-system/group-state/m
 import { GroupPolicyDeniedError } from '@shared-server/rallar-system/group-state/policy/group-policy-result.ts';
 import { resolveGroupLifecyclePolicyPreset } from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
 import { GROUP_LIFECYCLE_STATES } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
+import type { GroupPolicyDenied } from '@shared/api/group-policy-types.ts';
 import type { AuditStamp, Group } from '@shared/api/group-types.ts';
 import { GROUP_PRESENCE_SUMMARY_TOPIC } from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
 import { createTestGroup } from '../../../../create-test-group.ts';
@@ -123,26 +124,39 @@ describe('group transport mutation computation', () => {
     // Product decision 12: the valve answers to the same initiator policy as
     // the seven other application-facing group-authority commands.
     it('denies the valve to every principal under a server-auto initiator', () => {
-        expect(() =>
+        const denial = readTransportDenial(() =>
             computeGroupMutation({
                 command: transportCommand('pauseGroupTransport'),
                 read: transportRead({ transportState: 'flowing' }, { policy: 'server-auto' }),
                 facts: transportFacts()
             })
-        ).toThrowError(GroupPolicyDeniedError);
+        );
+
+        expect(denial.code).toBe('forbidden-role');
+        expect(denial.message).toContain('server-initiated');
     });
 
-    it('denies the valve to a non-manager under a manager initiator', () => {
-        expect(() =>
+    // The roster must carry the creator too, or the policy resolves no manager
+    // at all and the denial would come from `lifecycle-manager-unavailable`
+    // without ever reaching the membership question this test is about.
+    it('denies the valve to an active member who is not the resolved manager', () => {
+        const denial = readTransportDenial(() =>
             computeGroupMutation({
                 command: transportCommand('resumeGroupTransport', 'bob'),
                 read: transportRead(
                     { transportState: 'halted' },
-                    { policy: 'managed', actorPrincipalId: 'bob' }
+                    {
+                        policy: 'managed',
+                        actorPrincipalId: 'bob',
+                        activeMemberPrincipalIds: ['alice', 'bob']
+                    }
                 ),
                 facts: transportFacts('bob')
             })
-        ).toThrowError(GroupPolicyDeniedError);
+        );
+
+        expect(denial.code).toBe('forbidden-role');
+        expect(denial.message).toContain('manager');
     });
 
     it('allows the valve to the manager the same policy resolves', () => {
@@ -156,14 +170,37 @@ describe('group transport mutation computation', () => {
     });
 
     it('denies the valve to an actor who is not an active member', () => {
-        expect(() =>
+        const denial = readTransportDenial(() =>
             computeGroupMutation({
                 command: transportCommand('pauseGroupTransport'),
                 read: transportRead({ transportState: 'flowing' }, { actorIsMember: false }),
                 facts: transportFacts()
             })
-        ).toThrowError(GroupPolicyDeniedError);
+        );
+
+        expect(denial.code).toBe('member-not-active');
     });
+
+    // The valve inherits the aggregate's own liveness rule: an archived or
+    // deleted group is not commandable at all.
+    it.each(['archived' as const, 'deleted' as const])(
+        'denies the valve on a %s group',
+        (status) => {
+            const denial = readTransportDenial(() =>
+                computeGroupMutation({
+                    command: transportCommand('pauseGroupTransport'),
+                    read: transportRead({
+                        transportState: 'flowing',
+                        status,
+                        [status]: transportAuditStamp(1_500, 'alice')
+                    }),
+                    facts: transportFacts()
+                })
+            );
+
+            expect(denial.code).toBe(`group-${status}`);
+        }
+    );
 
     it('fails closed on an unreadable stored policy instead of reading it as permissive', () => {
         const computed = computeGroupMutation({
@@ -195,6 +232,19 @@ describe('group transport mutation computation', () => {
     });
 });
 
+function readTransportDenial(run: () => unknown): GroupPolicyDenied {
+    try {
+        run();
+    }
+    catch (error) {
+        if (error instanceof GroupPolicyDeniedError) {
+            return error.denial;
+        }
+        throw error;
+    }
+    throw new Error('Expected the transport command to be denied');
+}
+
 function internalTransportCommand(): GroupMutationCommand {
     return {
         operation: 'pauseGroupTransport',
@@ -207,7 +257,7 @@ function internalTransportCommand(): GroupMutationCommand {
             reason: null,
             traceId: null
         }
-    } as unknown as GroupMutationCommand;
+    } as GroupMutationCommand;
 }
 
 function transportCommand(
@@ -225,13 +275,14 @@ function transportCommand(
             reason: null,
             traceId: null
         }
-    } as unknown as GroupMutationCommand;
+    } as GroupMutationCommand;
 }
 
 interface TransportReadOptions {
     readonly policy?: 'absent' | 'corrupt' | 'optimistic' | 'managed' | 'server-auto';
     readonly actorPrincipalId?: string;
     readonly actorIsMember?: boolean;
+    readonly activeMemberPrincipalIds?: readonly string[];
 }
 
 function transportRead(
@@ -239,38 +290,10 @@ function transportRead(
     options: TransportReadOptions = {}
 ): GroupMutationRead {
     const actorPrincipalId = options.actorPrincipalId ?? 'alice';
-    const audit = transportAuditStamp(1_000, actorPrincipalId);
-    const group = createTestGroup({ ...groupRef('pure-room'), ...groupOverrides });
-    const actorMember = {
-        ...groupRef('pure-room'),
-        principalId: actorPrincipalId,
-        role: 'member' as const,
-        status: 'active' as const,
-        invitedByPrincipalId: null,
-        invitationExpiresAtEpochMs: null,
-        left: null,
-        removed: null,
-        banned: null,
-        joined: audit,
-        updated: audit
-    };
-    const requested = options.policy ?? 'absent';
-    const lifecyclePolicy = requested === 'corrupt'
-        ? { status: 'corrupt' as const, reason: 'stored policy is not an object' }
-        : requested === 'absent'
-        ? { status: 'absent' as const }
-        : {
-            status: 'present' as const,
-            policy: requested === 'server-auto'
-                ? {
-                    ...resolveGroupLifecyclePolicyPreset('optimistic'),
-                    initiator: 'server-auto' as const
-                }
-                : resolveGroupLifecyclePolicyPreset(requested)
-        };
+    const actorMember = transportActorMember(actorPrincipalId);
     return {
         idempotency: null,
-        group: storedEntry(groupStorageKey(), group),
+        group: storedEntry(groupStorageKey(), createTestGroup({ ...groupRef('pure-room'), ...groupOverrides })),
         expiredGroupEntry: null,
         actorMember: options.actorIsMember === false ? null : actorMember,
         targetMember: null,
@@ -290,11 +313,44 @@ function transportRead(
         authorityPresenceSessions: [],
         authorityPresenceSessionEntries: [],
         presenceSummary: null,
-        lifecyclePolicy,
-        activeMemberPrincipalIds: options.actorIsMember === false ? [] : [actorPrincipalId],
+        lifecyclePolicy: transportPolicyRead(options.policy ?? 'absent'),
+        activeMemberPrincipalIds: options.activeMemberPrincipalIds ??
+            (options.actorIsMember === false ? [] : [actorPrincipalId]),
         plannedLayoutRow: null,
         acceptedLayoutRow: null
     } as GroupMutationRead;
+}
+
+function transportActorMember(principalId: string) {
+    const audit = transportAuditStamp(1_000, principalId);
+    return {
+        ...groupRef('pure-room'),
+        principalId,
+        role: 'member' as const,
+        status: 'active' as const,
+        invitedByPrincipalId: null,
+        invitationExpiresAtEpochMs: null,
+        left: null,
+        removed: null,
+        banned: null,
+        joined: audit,
+        updated: audit
+    };
+}
+
+function transportPolicyRead(requested: NonNullable<TransportReadOptions['policy']>) {
+    if (requested === 'corrupt') {
+        return { status: 'corrupt' as const, reason: 'stored policy is not an object' };
+    }
+    if (requested === 'absent') {
+        return { status: 'absent' as const };
+    }
+    return {
+        status: 'present' as const,
+        policy: requested === 'server-auto'
+            ? { ...resolveGroupLifecyclePolicyPreset('optimistic'), initiator: 'server-auto' as const }
+            : resolveGroupLifecyclePolicyPreset(requested)
+    };
 }
 
 function transportFacts(principalId = 'alice'): GroupMutationFacts {

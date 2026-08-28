@@ -11,8 +11,8 @@ import {
 import type { EffectiveGroupTopologyConfig } from '@shared/api/graph-topology-management-types.ts';
 import type { Group } from '@shared/api/group-types.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
-import { createTestGroup } from '../../../../../create-test-group.ts';
 
+import { createTestGroup } from '../../../../../create-test-group.ts';
 import { FakeRuntimeStateRepository } from '../../../../runtime-state/test-support/fake-runtime-state-repository.ts';
 
 const GROUP_REF = {

@@ -21,7 +21,7 @@ import {
 import { auditStamp, computeGroupMutationWriteResult, requireGroup } from '../group-mutation-result.ts';
 import { computeLifecycleFenceRejection } from './compute-lifecycle-fence-rejection.ts';
 import { computePlannedLayoutPromotion, type PlannedLayoutPromotion } from './compute-planned-layout-promotion.ts';
-import { assertActive, assertAllowed, toPolicySnapshot } from './group-aggregate-mutation-policy.ts';
+import { assertActive, assertAllowed, toGroupAuthorityPolicyInput } from './group-aggregate-mutation-policy.ts';
 import { resolveGroupAuthorityPolicy, toCorruptPolicyRejection } from './resolve-group-authority-policy.ts';
 
 const LIFECYCLE_TRANSITION_BY_OPERATION = {
@@ -230,19 +230,10 @@ function validateLifecycleTransitionAuthority(
     if (command.operation === 'failGroupFormation') {
         throw new GroupMutationRejectedError('Formation failure is criterion-commanded only');
     }
-    if (read.activeMemberPrincipalIds === null) {
-        throw new TypeError('Lifecycle transition compute requires the roster read');
-    }
     assertAllowed(
         canCommandGroupLifecycleTransition({
-            snapshot: toPolicySnapshot(read, command.aggregateRef, facts.nowEpochMs),
-            actor: {
-                principalId: command.input.actorPrincipalId ?? undefined,
-                sessionId: command.input.actorSessionId ?? undefined
-            },
-            policy,
-            transition,
-            activeMemberPrincipalIds: read.activeMemberPrincipalIds
+            ...toGroupAuthorityPolicyInput({ command, read, facts, policy }),
+            transition
         })
     );
 }

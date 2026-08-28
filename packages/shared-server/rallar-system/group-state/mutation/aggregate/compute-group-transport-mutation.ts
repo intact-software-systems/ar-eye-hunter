@@ -10,7 +10,7 @@ import type {
     GroupTransportOperation
 } from '../group-mutation-contracts.ts';
 import { auditStamp, computeGroupMutationWriteResult, noOp, requireGroup } from '../group-mutation-result.ts';
-import { assertActive, assertAllowed, toPolicySnapshot } from './group-aggregate-mutation-policy.ts';
+import { assertActive, assertAllowed, toGroupAuthorityPolicyInput } from './group-aggregate-mutation-policy.ts';
 import { resolveGroupAuthorityPolicy, toCorruptPolicyRejection } from './resolve-group-authority-policy.ts';
 
 const TRANSPORT_STATE_BY_OPERATION = {
@@ -38,7 +38,7 @@ export function computeGroupTransportMutation(
     if (resolution.status === 'corrupt') {
         return toCorruptPolicyRejection({ command, read, facts, reason: resolution.reason });
     }
-    assertGroupTransportAuthority({ command, read, facts, policy: resolution.policy });
+    validateGroupTransportAuthority({ command, read, facts, policy: resolution.policy });
     const transportState = TRANSPORT_STATE_BY_OPERATION[command.operation];
     // The valve has no repair to perform, so a command that asks for the
     // state the group already holds changes nothing and pushes no delta.
@@ -76,21 +76,6 @@ interface GroupTransportAuthorityInput {
     readonly policy: GroupLifecyclePolicy;
 }
 
-function assertGroupTransportAuthority(
-    { command, read, facts, policy }: GroupTransportAuthorityInput
-): void {
-    if (read.activeMemberPrincipalIds === null) {
-        throw new TypeError('Transport compute requires the roster read');
-    }
-    assertAllowed(
-        canCommandGroupAuthority({
-            snapshot: toPolicySnapshot(read, command.aggregateRef, facts.nowEpochMs),
-            actor: {
-                principalId: command.input.actorPrincipalId ?? undefined,
-                sessionId: command.input.actorSessionId ?? undefined
-            },
-            policy,
-            activeMemberPrincipalIds: read.activeMemberPrincipalIds
-        })
-    );
+function validateGroupTransportAuthority(input: GroupTransportAuthorityInput): void {
+    assertAllowed(canCommandGroupAuthority(toGroupAuthorityPolicyInput(input)));
 }
