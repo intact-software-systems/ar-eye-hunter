@@ -10,7 +10,6 @@ import type {
     GroupMutationRead
 } from '../group-mutation-contracts.ts';
 import { rejected } from '../group-mutation-result.ts';
-import { GroupConnectDenialError } from './group-connect-denial-error.ts';
 
 interface LifecycleFenceInput {
     readonly command: Extract<GroupMutationCommand, { operation: GroupLifecycleTransitionOperation; }>;
@@ -19,6 +18,15 @@ interface LifecycleFenceInput {
     readonly stored: Group;
 }
 
+/**
+ * The causal fence (product decisions 19 and 32): a command carrying an old
+ * epoch, a layout identity that is no longer the stored plan, or a removed
+ * layout as a dialing target is a typed rejection that writes no state, event,
+ * or receipt effect — never a wrong transition and never a silent no-op.
+ * `connect` names its layout explicitly, so its two mismatches carry their
+ * own conflict codes (product decision 32) rather than the shared one. Unfenced (principal) commands pass; absent, like null, means no
+ * fence, though the wire decoders reject absent keys before compute.
+ */
 export function computeLifecycleFenceRejection(
     { command, read, facts, stored }: LifecycleFenceInput
 ): GroupMutationComputed | null {
@@ -59,15 +67,23 @@ export function computeLifecycleFenceRejection(
     if (fence === 'match') {
         return null;
     }
-    // `connect` names the exact planned layout it dials; its two denials are
-    // thrown typed conflicts the caller distinguishes and retries on
-    // (product decision 32) — never a rejected receipt, never a no-op. The
-    // epoch mismatch stays the shared stale-epoch rejection above.
+    // `connect` names the exact planned layout it dials, so its two denials
+    // are distinguishable conflict codes the caller retries against the
+    // current identity (product decision 32) — typed rejection values here,
+    // mapped to their own 409 at the handler boundary like every other
+    // rejection code. The epoch mismatch stays the shared stale-epoch
+    // rejection above; a fence naming a tombstone is refused before this.
     if (
         command.operation === 'connectGroup' &&
         (fence === 'no-planned-layout' || fence === 'planned-layout-superseded')
     ) {
-        throw new GroupConnectDenialError(fence);
+        return rejected({
+            command,
+            read,
+            facts,
+            rejectionCode: `group-connect-${fence}`,
+            message: `Group connect names a layout that is ${fence}`
+        });
     }
     return rejectedFence(`Criterion petition fence is ${fence} for the stored planned layout`);
 }

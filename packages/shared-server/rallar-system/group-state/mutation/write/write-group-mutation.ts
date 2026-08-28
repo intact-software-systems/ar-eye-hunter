@@ -20,7 +20,10 @@ import {
 import { GroupLifecyclePolicyRepository } from '../../persistence/group-lifecycle-policy-repository.ts';
 import { createTransactionBoundGroupStateRepository } from '../../persistence/group-state-repository.ts';
 import { groupStateInsertIdempotencyDescriptor } from '../../persistence/idempotency/group-idempotency-write-descriptor.ts';
-import { toGroupLayoutPromotionEffects } from '../../persistence/layout/to-group-layout-promotion-effects.ts';
+import {
+    toGroupLayoutPromotionEffects,
+    toPlannedLayoutFenceEffect
+} from '../../persistence/layout/to-group-layout-promotion-effects.ts';
 import { groupStateMemberPutDescriptor } from '../../persistence/membership/group-state-member-put-descriptor.ts';
 import {
     groupStateDeletePresenceDescriptor,
@@ -67,6 +70,10 @@ export function materializeGroupStateGuardedBatch(
 
     if (computed.acceptedLayoutPromotion) {
         effects.push(...toGroupLayoutPromotionEffects(computed.acceptedLayoutPromotion));
+    }
+
+    if (computed.plannedLayoutFence) {
+        effects.push(toPlannedLayoutFenceEffect(computed.plannedLayoutFence));
     }
 
     if (computed.idempotency) {

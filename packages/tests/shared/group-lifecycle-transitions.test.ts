@@ -63,6 +63,7 @@ describe('computeGroupLifecycleTransition', () => {
             expect(outcome, `${cell.transition} from ${cell.from}`).toEqual({
                 allowed: true,
                 nextState: cell.to,
+                idempotentReplan,
                 nextFormationEpoch: idempotentReplan ? 6 : 7
             });
         }
@@ -78,7 +79,12 @@ describe('computeGroupLifecycleTransition', () => {
             lifecycleState: 'planned',
             formationEpoch: 4
         });
-        expect(outcome).toEqual({ allowed: true, nextState: 'planned', nextFormationEpoch: 4 });
+        expect(outcome).toEqual({
+            allowed: true,
+            nextState: 'planned',
+            idempotentReplan: true,
+            nextFormationEpoch: 4
+        });
     });
 
     it('denies every other cell as lifecycle-transition-invalid', () => {

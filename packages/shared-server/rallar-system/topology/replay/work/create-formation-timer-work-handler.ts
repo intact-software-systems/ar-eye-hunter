@@ -1,5 +1,6 @@
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import type { GroupLifecycleState } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
+import { consumesFormationDeadlineAt } from '@shared/api/group-lifecycle/resolve-formation-stage-entry.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
@@ -29,12 +30,11 @@ export interface FormationTimerWorkHandlerOptions {
 }
 
 /**
- * The stages each timer kind is consumed in. The rows deliberately preserve
- * today's gates — a `retry` entry fires only for a `forming` group, a
- * `deadline` entry only in the dialing stages; `reconnecting` joins the
- * deadline row when that stage becomes reachable. Keep `DEADLINE_TIMER_CONSUMES`
- * in lockstep with `CRITERION_EVALUATES` in
- * compute-formation-criterion-command.ts — this gate is that path's entry.
+ * A `retry` entry fires only for a `forming` group. The deadline's stages
+ * are owned by `consumesFormationDeadlineAt`, shared with the site that
+ * arms them so the two cannot disagree; keep that row in lockstep with
+ * `CRITERION_EVALUATES` in compute-formation-criterion-command.ts — this
+ * gate is that path's entry.
  */
 const RETRY_TIMER_CONSUMES: Readonly<Record<GroupLifecycleState, boolean>> = {
     dormant: false,
@@ -43,16 +43,6 @@ const RETRY_TIMER_CONSUMES: Readonly<Record<GroupLifecycleState, boolean>> = {
     connecting: false,
     active: false,
     reconfiguring: false,
-    reconnecting: false
-};
-
-const DEADLINE_TIMER_CONSUMES: Readonly<Record<GroupLifecycleState, boolean>> = {
-    dormant: false,
-    forming: false,
-    planned: false,
-    connecting: true,
-    active: false,
-    reconfiguring: true,
     reconnecting: false
 };
 
@@ -110,7 +100,7 @@ async function processFormationTimerWork(
         );
         return;
     }
-    if (!DEADLINE_TIMER_CONSUMES[snapshot.group.lifecycleState]) {
+    if (!consumesFormationDeadlineAt(snapshot.group.lifecycleState)) {
         return;
     }
     const [authority, planned] = await Promise.all([

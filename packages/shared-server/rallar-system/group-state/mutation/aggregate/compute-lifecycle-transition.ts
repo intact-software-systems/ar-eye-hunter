@@ -4,18 +4,20 @@ import {
     computeGroupLifecycleTransition,
     type GroupLifecycleTransition
 } from '@shared/api/group-lifecycle/group-lifecycle-transitions.ts';
+import { beginsGroupEstablishmentAt } from '@shared/api/group-lifecycle/resolve-formation-stage-entry.ts';
 import type { Group } from '@shared/api/group-types.ts';
 
 import { computeFormationTimerEntries } from '../../formation-timer-outbox-entry.ts';
 import { canCommandGroupLifecycleTransition } from '../../policy/group-lifecycle-policy.ts';
 import { GroupPolicyDeniedError } from '../../policy/group-policy-result.ts';
 import { GroupMutationRejectedError } from '../group-mutation-contracts.ts';
-import type {
-    GroupLifecycleTransitionOperation,
+import {
     GroupMutationCommand,
     GroupMutationComputed,
     GroupMutationFacts,
-    GroupMutationRead
+    GroupMutationRead,
+    isLayoutFencedGroupMutationCommand,
+    type GroupLifecycleTransitionOperation
 } from '../group-mutation-contracts.ts';
 import { auditStamp, computeGroupMutationWriteResult, rejected, requireGroup } from '../group-mutation-result.ts';
 import { computeLifecycleFenceRejection } from './compute-lifecycle-fence-rejection.ts';
@@ -73,11 +75,13 @@ export function computeLifecycleTransition(
     if (read.activeMemberPrincipalIds === null) {
         throw new TypeError('Lifecycle transition compute requires the roster read');
     }
+    // Authority first: the fence's answer names the stored plan, so a
+    // caller who may not command the transition must not read it.
+    validateLifecycleTransitionAuthority({ command, read, facts, policy, transition });
     const fenceRejection = computeLifecycleFenceRejection({ command, read, facts, stored: stored.value });
     if (fenceRejection !== null) {
         return fenceRejection;
     }
-    validateLifecycleTransitionAuthority({ command, read, facts, policy, transition });
     const outcome = computeGroupLifecycleTransition({
         transition,
         lifecycleState: stored.value.lifecycleState,
@@ -97,6 +101,16 @@ export function computeLifecycleTransition(
     });
     return computeGroupMutationWriteResult({
         acceptedLayoutPromotion: promotion?.outcome === 'apply' ? promotion : null,
+        // A promotion already re-asserts the planned row. `connect` dials a
+        // candidate without promoting it (decision 42), so it carries the
+        // guard itself and a replan landing between the read and the commit
+        // conflicts the batch instead of dialing a superseded candidate
+        // (decisions 19/32). A fenced formation failure deliberately keeps
+        // today's behavior: it discards the plan rather than binding to it,
+        // so guarding the row would only make a concurrent replan retry it.
+        plannedLayoutFence: command.operation === 'connectGroup' && command.input.expectedLayout !== null
+            ? read.plannedLayoutRow
+            : null,
         command,
         read,
         facts,
@@ -147,14 +161,12 @@ function computeNextLifecycleGroup(
     const acceptedLayoutIdentity = promotion?.outcome === 'apply'
         ? promotion.acceptedIdentity
         : stored.acceptedLayoutIdentity;
-    const beginsEstablishment = command.operation === 'startGroupEstablishment' ||
-        command.operation === 'reopenGroupEstablishment' ||
-        command.operation === 'connectGroup';
-    // An idempotent replan re-pins nothing (product decision 28): the table
-    // preserves the epoch, and the electorate that fences the running series
-    // must not move either.
-    const idempotentReplan = command.operation === 'planGroupLayout' &&
-        outcome.nextFormationEpoch === stored.formationEpoch;
+    const beginsEstablishment = beginsGroupEstablishmentAt(outcome.nextState);
+    // The state machine's own idempotent cell (product decision 28): the
+    // epoch is preserved and the electorate fencing the running series must
+    // not move either. The write still bumps the snapshot version and drives
+    // the follow-up replan — that repair is the point of a repeated `plan`.
+    const idempotentReplan = outcome.idempotentReplan;
     return {
         ...stored,
         lifecycleState: outcome.nextState,
@@ -255,12 +267,3 @@ function validateLifecycleTransitionAuthority(
         })
     );
 }
-
-/**
- * The causal fence (product decisions 19 and 32): a command carrying an old
- * epoch, a layout identity that is no longer the stored plan, or a removed
- * layout as an activation target is a typed rejection that writes no state,
- * event, or receipt effect — never a wrong transition and never a silent
- * no-op. Unfenced (principal) commands pass; absent, like null, means no
- * fence, though the wire decoders reject absent keys before compute.
- */

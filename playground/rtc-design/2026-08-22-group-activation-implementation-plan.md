@@ -1019,6 +1019,57 @@ typed denial), so a membership-fallthrough misroute cannot regress silently. Rul
   falls through), and the `formation-automation` authority mode keeps its fail-closed throw until
   slice 11's triggers produce commands.
 
+#### PR 6 review-repair record (ten-angle max-effort review, executed 2026-08-28)
+
+Fifteen confirmed findings, all repaired in the PR. The rulings the repairs settled:
+
+- **The denials are typed rejection codes, not thrown conflicts.** The first cut threw
+  `GroupConnectDenialError` from compute, citing the two existing compute-thrown 409 templates. The
+  review was right that this violates the repo's expected-failure doctrine and that the sanctioned
+  in-tree shape already exists: `GroupMutationRejectionCode` is a union consumed by an exhaustive
+  default-free mapping. `connect` now returns
+  `group-connect-no-planned-layout` / `group-connect-planned-layout-superseded` as rejection values,
+  which the handler boundary maps to `GroupConnectDeniedError` (409, own code) exactly like every
+  other rejection. Compute stays pure, the fence stays throw-free, and the shape is compiler-forced.
+  Repairing this exposed a **silent runtime mirror** of the union — a hand-written `!==` chain in the
+  computed-result validator — so the codes now derive from one exported `as const` registry with a
+  runtime predicate, and the mirror cannot drift again.
+- **A fence that does not survive to the commit is not a fence.** Connect read the planned row
+  outside the write transaction while only a promotion emitted the revision-guarded planned-row
+  re-assertion, so a replan landing between read and commit could let a superseded connect commit —
+  the read-to-commit race PR 4's review closed for activation. `toPlannedLayoutFenceEffect` is now
+  extracted from the promotion effects and carried by any layout-fenced command that does not
+  promote, so connect's batch conflicts instead.
+- **Timer arming follows the landed stage, not the operation.** `connect` had been added to a
+  `beginsEstablishment` equality list spelled in two files; for its `reconfiguring → reconnecting`
+  row that armed a deadline `DEADLINE_TIMER_CONSUMES.reconnecting` drops, which would have parked a
+  reconnecting group with no evaluation and no retry. Both facts are now stage-keyed owners in
+  `resolve-formation-stage-entry.ts` — `beginsGroupEstablishmentAt` (stamps the clock) and
+  `consumesFormationDeadlineAt` (arms and consumes the deadline, one registry for both sites) — so
+  the two can no longer disagree and a new command joins by landing in a stage rather than by being
+  added to a list.
+- **Authority is checked before the fence.** The fence's answer names the stored plan, and connect is
+  the first authenticated command carrying a caller-supplied layout, so evaluating it before the
+  initiator policy would let a non-member probe plan existence and identity once slice 8 mounts the
+  route. The ordering swap costs the criterion nothing (its authority passes) and closes the probe.
+- **Connect's wire fences are validated at the boundary.** The lifecycle short-circuit in the
+  request validator skipped them under a comment that this PR made false; the layout-identity shape
+  check is now a shared owner used by both the request boundary and the command validator, and the
+  builder rejects an explicit `null` as firmly as an absent key.
+- **Recorded, not repaired:** the fence still precedes the state-machine check, so a connect naming
+  no plan on a stage where connect is illegal answers `no-planned-layout` rather than a stage denial.
+  Moving the stage check first would turn a legitimately racing criterion petition into a policy
+  denial instead of a typed rejection, which 3b's design rejects; the fence answer is truthful, and
+  slice 11's trigger latch owns automatic progression. Also recorded: `planned` has no timer of its
+  own, so a group that reaches it and receives no `connect` waits for slice 11's trigger — deliberate,
+  since triggers own automatic intent.
+- **A retry needs a fresh request id.** The request id *is* the command identity, so retrying a
+  denial under the same id either replays the stored denial or raises an idempotency conflict. Now
+  stated on the error class where a caller reads it.
+- **Gate evidence for this PR:** medium-scale PASS and state-write PASS (merge-base control vs head,
+  freshly migrated pinned container each side) — both required by this slice's gate line because the
+  fence extraction and the timer branch run on every lifecycle command, not only the dark ones.
+
 Product decision 12 keeps one initiator policy for all eight application-facing commands, so the
 command predicate needs no per-command branch.
 Every new command inherits the slow sequential read path, and the read step and its validator apply

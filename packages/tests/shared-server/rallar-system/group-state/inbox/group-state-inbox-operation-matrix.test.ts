@@ -3,6 +3,7 @@ import {
     AUTHENTICATED_GROUP_INBOX_TYPES,
     type GroupAdmissionDeclineAppInboxPayload,
     type GroupAdmissionGrantAppInboxPayload,
+    type GroupConnectAppInboxPayload,
     type GroupCreateAppInboxPayload,
     type GroupDirectorAppointAppInboxPayload,
     type GroupInviteAcceptAppInboxPayload,
@@ -584,8 +585,11 @@ async function runEveryAdvertisedGroupOperation(): Promise<void> {
                         state: 'active'
                     }
                 }
-            }
+            } satisfies GroupConnectAppInboxPayload
         }
     });
-    expect(connectResult.left?.message).toContain('no-planned-layout');
+    // The code and status are what a caller acts on: a generic rejection
+    // would still carry the phrase, so assert the mapped conflict itself.
+    expect(connectResult.left?.code).toBe('group-connect-no-planned-layout');
+    expect(connectResult.left?.status).toBe(409);
 }

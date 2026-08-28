@@ -16,6 +16,7 @@ import {
 } from '../../group-state-validation-primitives.ts';
 import type { GroupMutationCommand } from '../group-mutation-contracts.ts';
 import { ACTOR_INPUT_KEYS } from './group-mutation-request-validation.ts';
+import { validateExpectedLayoutIdentity } from './validate-expected-layout-identity.ts';
 
 export function validateGroupMutationCommand(
     command: unknown
@@ -206,13 +207,7 @@ function validateExpectedLayoutInput(
     if (input.expectedLayout === null) {
         return;
     }
-    const record = requireRecord(input.expectedLayout, `Group ${operation} expectedLayout`);
-    assertRequiredKeys(record, GROUP_LAYOUT_IDENTITY_KEYS, `Group ${operation} expectedLayout`);
-    assertExactKeys(record, GROUP_LAYOUT_IDENTITY_KEYS, `Group ${operation} expectedLayout`);
-    for (const key of ['groupRevision', 'presenceRevision', 'version'] as const) {
-        requireNonNegativeSafeInteger(record[key], `Group ${operation} expectedLayout ${key}`);
-    }
-    requireOneOf(record.state, GROUP_LAYOUT_IDENTITY_STATES, `Group ${operation} expectedLayout state`);
+    validateExpectedLayoutIdentity(input, `Group ${operation} expectedLayout`);
 }
 
 function validateMembershipOperationInput(

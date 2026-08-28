@@ -3,12 +3,13 @@ import type { GroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layo
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import { describe, expect, it } from 'vitest';
 
-import { GroupConnectDenialError } from '@shared-server/rallar-system/group-state/mutation/aggregate/group-connect-denial-error.ts';
 import type {
     GroupMutationCommand,
     GroupMutationFacts,
     GroupMutationRead
 } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
+import { GroupConnectDeniedError } from '@shared-server/rallar-system/group-state/mutation/group-mutation-rejection-codes.ts';
+import { toGroupMutationRejectionError } from '@shared-server/rallar-system/group-state/mutation/group-mutation-result.ts';
 import { computeGroupMutation } from '@shared-server/rallar-system/group-state/mutation/orchestration/compute-group-mutation.ts';
 import { GroupPolicyDeniedError } from '@shared-server/rallar-system/group-state/policy/group-policy-result.ts';
 import { resolveGroupLifecyclePolicyPreset } from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
@@ -84,26 +85,26 @@ describe('group lifecycle transition computation', () => {
             ['no-planned-layout', null],
             ['planned-layout-superseded', { ...PLANNED_LAYOUT, version: PLANNED_LAYOUT.version + 1 }]
         ] as const
-    )('throws the typed %s connect denial as a 409 conflict', (denial, storedIdentity) => {
-        let caught: unknown;
-        try {
-            computeGroupMutation({
-                command: connectCommand({ expectedFormationEpoch: 4, expectedLayout: PLANNED_LAYOUT }),
-                read: connectRead({ lifecycleState: 'planned', formationEpoch: 4 }, storedIdentity),
-                facts: transitionFacts()
-            });
+    )('rejects a %s connect with its own conflict code', (denial, storedIdentity) => {
+        const computed = computeGroupMutation({
+            command: connectCommand({ expectedFormationEpoch: 4, expectedLayout: PLANNED_LAYOUT }),
+            read: connectRead({ lifecycleState: 'planned', formationEpoch: 4 }, storedIdentity),
+            facts: transitionFacts()
+        });
+
+        expect(computed.outcome).toBe('rejected');
+        if (computed.outcome !== 'rejected') {
+            return;
         }
-        catch (error) {
-            caught = error;
-        }
-        expect(caught).toBeInstanceOf(GroupConnectDenialError);
-        const conflict = caught as GroupConnectDenialError;
-        expect(conflict.status).toBe(409);
-        expect(conflict.denial).toBe(denial);
-        expect(conflict.code).toBe(`group-connect-${denial}`);
+        expect(computed.rejectionCode).toBe(`group-connect-${denial}`);
+        // The handler boundary maps the code to its own 409 conflict.
+        const error = toGroupMutationRejectionError(computed);
+        expect(error).toBeInstanceOf(GroupConnectDeniedError);
+        expect((error as GroupConnectDeniedError).status).toBe(409);
+        expect((error as GroupConnectDeniedError).code).toBe(`group-connect-${denial}`);
     });
 
-    it('rejects a stale-epoch connect as a typed receipt, not a thrown denial', () => {
+    it('rejects a stale-epoch connect with the shared code, not a connect denial', () => {
         const computed = computeGroupMutation({
             command: connectCommand({ expectedFormationEpoch: 3, expectedLayout: PLANNED_LAYOUT }),
             read: connectRead({ lifecycleState: 'planned', formationEpoch: 4 }, PLANNED_LAYOUT),

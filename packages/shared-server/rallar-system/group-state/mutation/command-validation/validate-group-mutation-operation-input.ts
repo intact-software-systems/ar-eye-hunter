@@ -2,12 +2,14 @@ import type { JsonWireValue } from '../../../protocol/json-wire-identity.ts';
 import {
     requireJsonSafe,
     requireNonEmptyString,
+    requireNonNegativeSafeInteger,
     requireOneOf,
     requirePositiveSafeInteger,
     requireRecord
 } from '../../group-state-validation-primitives.ts';
 import { isGroupLifecycleTransitionOperation, type GroupMutationCommand } from '../group-mutation-contracts.ts';
 import { requireGroupLifecyclePolicyInputShape } from './require-group-lifecycle-policy-input-shape.ts';
+import { validateExpectedLayoutIdentity } from './validate-expected-layout-identity.ts';
 
 interface ValidateGroupMutationOperationInput {
     readonly operation: GroupMutationCommand['operation'];
@@ -88,11 +90,20 @@ function validateAggregateMutationInput(
         optionalPositiveInteger('heartbeatTtlMs');
         return;
     }
+    if (operation === 'connectGroup') {
+        // The one lifecycle request that carries operation fields: `connect`
+        // names the layout it dials (product decision 32), so its fence is
+        // shape-checked at the boundary rather than only after the command
+        // is built.
+        requireNonNegativeSafeInteger(input.expectedFormationEpoch, 'Group connectGroup expectedFormationEpoch');
+        validateExpectedLayoutIdentity(input, 'Group connectGroup expectedLayout');
+        return;
+    }
     if (isGroupLifecycleTransitionOperation(operation) || operation === 'applyPlannedLayout') {
-        // A lifecycle request carries only actor identity — its exact-key row
-        // excludes every operation field, so there is nothing further to
-        // validate here. The built command's fields (including the criterion
-        // fences) are owned by validateGroupMutationCommand.
+        // Every other lifecycle request carries only actor identity — its
+        // exact-key row excludes every operation field, so there is nothing
+        // further to validate here. The built command's fields (including
+        // the criterion fences) are owned by validateGroupMutationCommand.
         return;
     }
     optionalString('joinCode');

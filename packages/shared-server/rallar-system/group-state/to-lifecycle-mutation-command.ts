@@ -48,10 +48,17 @@ function toConnectCommand(
 ): GroupMutationCommand {
     const request = descriptor.request as
         & MutationActorInput
-        & Readonly<{ expectedFormationEpoch?: number; expectedLayout?: GroupLayoutIdentity; }>;
+        & Readonly<{
+            expectedFormationEpoch?: number | null;
+            expectedLayout?: GroupLayoutIdentity | null;
+        }>;
     // `connect` names the exact planned layout it dials (product decision
-    // 32); a request without its fence is malformed, never a null fence.
-    if (request.expectedFormationEpoch === undefined || request.expectedLayout === undefined) {
+    // 32); absent and null are equally malformed here, so neither can reach
+    // a field the command contract types non-null.
+    if (
+        request.expectedFormationEpoch === undefined || request.expectedFormationEpoch === null ||
+        request.expectedLayout === undefined || request.expectedLayout === null
+    ) {
         throw new TypeError('Group connect requires expectedFormationEpoch and expectedLayout');
     }
     return {

@@ -1,4 +1,5 @@
 import { Temporal } from '@js-temporal/polyfill';
+import { consumesFormationDeadlineAt } from '@shared/api/group-lifecycle/resolve-formation-stage-entry.ts';
 
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
@@ -174,10 +175,11 @@ export function computeFormationTimerEntries(
 ): readonly ResourceEntry[] {
     const { command, next, policy, facts } = input;
     const deadlineArmed = policy.activation.mode === 'deadline' || policy.activation.mode === 'threshold-or-deadline';
-    const beginsEstablishment = command.operation === 'startGroupEstablishment' ||
-        command.operation === 'reopenGroupEstablishment' ||
-        command.operation === 'connectGroup';
-    if (beginsEstablishment && deadlineArmed) {
+    // Arm on the stage the transition landed in, and only where the
+    // deadline is actually evaluated: a stage that begins an attempt but
+    // consumes no deadline (reconnecting today) would queue an entry the
+    // timer handler drops, parking the group with no evaluation.
+    if (consumesFormationDeadlineAt(next.lifecycleState) && deadlineArmed) {
         return [timerEntry(input, 'deadline', facts.nowEpochMs + policy.activation.deadlineMs)];
     }
     const retryAllowed = next.formationAttemptCount < policy.activation.maxFormationAttempts;

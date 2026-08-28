@@ -21,7 +21,7 @@ import { createTimedGroupStateService } from './group-state-service-timing.ts';
 import { validateGroupMutationAuthority } from './mutation/command-validation/validate-group-mutation-authority.ts';
 import { validateGroupMutationCommand } from './mutation/command-validation/validate-group-mutation-command.ts';
 import type { GroupMutationCommand, GroupMutationFacts } from './mutation/group-mutation-contracts.ts';
-import { readsGroupLayoutRows } from './mutation/group-mutation-contracts.ts';
+import { readsAcceptedLayoutRow, readsGroupLayoutRows } from './mutation/group-mutation-contracts.ts';
 import { computeGroupMutation } from './mutation/orchestration/compute-group-mutation.ts';
 import { readGroupMutation } from './mutation/read/read-group-mutation.ts';
 import { validateGroupMutation } from './mutation/state-validation/validate-group-mutation.ts';
@@ -268,12 +268,15 @@ function createMutationOperations(
                 return read;
             }
             // Read after the group row so the fence's staleness window ends
-            // close to compute; the promotion re-asserts the planned row's
-            // revision inside the write transaction, so a replan landing
-            // after this read conflicts instead of promoting a stale plan.
+            // close to compute; the write transaction re-asserts the planned
+            // row's revision, so a replan landing after this read conflicts
+            // instead of committing against a stale plan. The accepted row
+            // is read only by the commands that can promote.
             const [plannedLayoutRow, acceptedLayoutRow] = await Promise.all([
                 dependencies.readPlannedLayoutRow(prepared.command.aggregateRef),
-                dependencies.readAcceptedLayoutRow(prepared.command.aggregateRef)
+                readsAcceptedLayoutRow(prepared.command)
+                    ? dependencies.readAcceptedLayoutRow(prepared.command.aggregateRef)
+                    : null
             ]);
             return { ...read, plannedLayoutRow, acceptedLayoutRow };
         },
