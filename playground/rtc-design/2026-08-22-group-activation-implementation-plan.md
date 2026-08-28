@@ -1066,6 +1066,21 @@ Fifteen confirmed findings, all repaired in the PR. The rulings the repairs sett
 - **A retry needs a fresh request id.** The request id *is* the command identity, so retrying a
   denial under the same id either replays the stored denial or raises an idempotency conflict. Now
   stated on the error class where a caller reads it.
+- **The commit-time guard is connect's alone, and the gate proved why.** The first repair gated it on
+  `isLayoutFencedGroupMutationCommand`, which also covers a **fenced formation failure** — a live
+  command. Adding a revision-guarded planned-row effect there makes a concurrent replan conflict and
+  retry a write that previously committed, and the `topology-replay` proof caught it as an unresolved
+  APP_OUTBOX row on CI. The guard is now scoped to `connectGroup`: a fenced failure *discards* the
+  plan rather than binding to it, so guarding the row buys no causal guarantee and only creates
+  retries. Recorded because the next fenced command must make the same choice deliberately —
+  bind-to-the-plan carries the guard, discard-the-plan does not.
+- **Deferred to slice 8: `connect`'s request contract in the descriptor union.** `GroupMutationDescriptor['request']`
+  is a closed union of the named API request types, and connect's is not among them, so
+  `toConnectCommand` bridges with a cast. The cast is safe today (the payload declares the fields, the
+  request boundary now validates their shape, and the builder rejects both absent and null), but the
+  union cannot carry them until the route's `ConnectGroupRequest` lands in `state-types.ts` with the
+  HTTP surface. Slice 8 declares the contract once and adds it to the union; until then the cast
+  stays and this entry is its record.
 - **Gate evidence for this PR:** medium-scale PASS and state-write PASS (merge-base control vs head,
   freshly migrated pinned container each side) — both required by this slice's gate line because the
   fence extraction and the timer branch run on every lifecycle command, not only the dark ones.
