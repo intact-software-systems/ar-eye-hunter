@@ -162,7 +162,8 @@ function createInput(): CreateApiV1SystemInstallersInput<ApiV1SystemInstallerTop
             topologyQuery: {},
             topologyPlanning: {},
             groupStateRepository: {
-                readLifecyclePolicy: rejectUnusedCrdtRead
+                readLifecyclePolicy: rejectUnusedCrdtRead,
+                readSnapshot: rejectUnusedCrdtRead
             },
             rttRefinementService: {}
         },
@@ -208,7 +209,8 @@ function createRuntime(
                 events.push('group-cleanup');
                 return Promise.resolve(0);
             },
-            enqueueFormationCriterionCommand: () => Promise.reject(new Error('formation criterion enqueue not used'))
+            enqueueFormationCriterionCommand: () => Promise.reject(new Error('formation criterion enqueue not used')),
+            enqueueTopologyPublicationCommand: () => Promise.reject(new Error('topology publication enqueue not used'))
         },
         rtcRttInboxService: {
             enqueue: () => Promise.reject(new Error('RTC RTT enqueue not used'))

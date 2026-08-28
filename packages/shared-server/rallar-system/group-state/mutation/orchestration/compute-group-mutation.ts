@@ -1,3 +1,4 @@
+import { computeApplyPlannedLayout } from '../aggregate/compute-apply-planned-layout.ts';
 import {
     computeCreate,
     computeDirector,
@@ -63,6 +64,8 @@ export function computeGroupMutation(
         case 'reopenGroupEstablishment':
         case 'failGroupFormation':
             return computeLifecycleTransition(command, read, facts);
+        case 'applyPlannedLayout':
+            return computeApplyPlannedLayout(command, read, facts);
         case 'joinGroup':
         case 'acceptGroupInvite':
             return computeJoin(command, read, facts);

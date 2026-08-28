@@ -16,7 +16,8 @@ export async function readGroupMutation(
     // at creation and never updated in this release; a policy-update surface
     // must move this into the batch's stability window.
     const lifecyclePolicy = isGroupLifecycleTransitionOperation(command.operation) ||
-            isGroupAdmissionPolicyReadOperation(command.operation)
+            isGroupAdmissionPolicyReadOperation(command.operation) ||
+            command.operation === 'applyPlannedLayout'
         ? await repository.readLifecyclePolicy(command.aggregateRef)
         : null;
     const requiresSequentialRead = command.operation === 'appointDirector' ||

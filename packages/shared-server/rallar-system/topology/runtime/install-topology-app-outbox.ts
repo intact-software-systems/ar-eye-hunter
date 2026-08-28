@@ -1,4 +1,4 @@
-import type { GroupRef } from '@shared/api/group-types.ts';
+import type { Group, GroupRef } from '@shared/api/group-types.ts';
 import type { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
 import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
 import { AppOutboxType } from '../../app-outbox/app-outbox-type.ts';
@@ -15,6 +15,7 @@ import {
     createRtcTopologyWorkHandler,
     type RtcTopologyDeliveryOptions
 } from '../replay/work/create-rtc-topology-work-handler.ts';
+import { createTopologyPromotionWorkHandler } from '../replay/work/create-topology-promotion-work-handler.ts';
 
 export interface InstallTopologyAppOutboxOptions {
     readonly database: PSqlSql;
@@ -32,6 +33,13 @@ export interface InstallTopologyAppOutboxOptions {
     readonly nowEpochMs: () => number;
     readonly formationCriterion?: Readonly<{
         readLifecyclePolicy: (ref: GroupRef) => Promise<GroupLifecyclePolicyRead>;
+        submitCommand: (command: GroupMutationCommand, atEpochMs: number) => Promise<void>;
+    }>;
+    /** The route-less promotion consumer (decision 27); absent means no automation. */
+    readonly topologyPublication?: Readonly<{
+        readLifecyclePolicy: (ref: GroupRef) => Promise<GroupLifecyclePolicyRead>;
+        /** The current group facts, never a work payload's enqueue-time copy. */
+        findCurrentGroup: (ref: GroupRef) => Promise<Group | null>;
         submitCommand: (command: GroupMutationCommand, atEpochMs: number) => Promise<void>;
     }>;
 }
@@ -63,6 +71,15 @@ export function installTopologyAppOutbox(
             })
         );
     }
+    if (options.topologyPublication) {
+        options.outboxQueueReader.onOutboxMessageDo(
+            AppOutboxType.TOPOLOGY_PROMOTION,
+            createTopologyPromotionWorkHandler({
+                submitCommand: options.topologyPublication.submitCommand,
+                nowEpochMs: options.nowEpochMs
+            })
+        );
+    }
     options.outboxQueueReader.onOutboxMessageDo(
         runtime.workType,
         createRtcTopologyWorkHandler({
@@ -73,6 +90,8 @@ export function installTopologyAppOutbox(
             rttRefinementService: options.rttRefinementService,
             topologyDelivery: options.topologyDelivery,
             formationCriterion: options.formationCriterion,
+            topologyPublication: options.topologyPublication,
+            serviceId: options.senderId,
             wakeQueue: options.wake,
             wakeReplay: options.wakeReplay
         })

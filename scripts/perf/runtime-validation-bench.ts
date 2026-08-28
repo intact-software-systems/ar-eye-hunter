@@ -673,7 +673,9 @@ function makeGroupSnapshot(
             formationElectorate: Array.from(
                 { length: memberCount },
                 (_, index) => `principal-${index}`
-            )
+            ),
+            acceptedLayoutIdentity: null,
+            transportState: 'flowing'
         },
         members: Array.from({ length: memberCount }, (_, index) => ({
             ...ref,

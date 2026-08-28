@@ -1,7 +1,8 @@
 import { toScopedOverlayId } from './api-type-utils.ts';
 import type { ClientEvent, ClientSnapshot } from './client-types.ts';
 import { toClientSnapshotLastSeenAtEpochMs } from './group-client-views.ts';
-import { GROUP_LIFECYCLE_STATES } from './group-lifecycle/group-lifecycle-policy.ts';
+import { GROUP_LAYOUT_IDENTITY_KEYS, GROUP_LAYOUT_IDENTITY_STATES } from './group-lifecycle/group-layout-identity.ts';
+import { GROUP_LIFECYCLE_STATES, GROUP_TRANSPORT_STATES } from './group-lifecycle/group-lifecycle-policy.ts';
 import type { GroupEvent, GroupRef, GroupSnapshot } from './group-types.ts';
 import type { RallarOverlayTopologySnapshot } from './overlay-topology.ts';
 import type { StateEventPage } from './state-event-types.ts';
@@ -94,7 +95,9 @@ const GROUP_KEYS = [
     'formationAttemptCount',
     'lastFormationOutcome',
     'establishmentStartedAtEpochMs',
-    'formationElectorate'
+    'formationElectorate',
+    'acceptedLayoutIdentity',
+    'transportState'
 ];
 const GROUP_MEMBER_KEYS = [
     'applicationId',
@@ -475,6 +478,26 @@ export function validateAuthoritativeGroupSnapshot(
             fail('GroupSnapshot.group.formationElectorate entries must be non-empty strings');
         }
     }
+    if (group.acceptedLayoutIdentity !== null) {
+        const accepted = record(
+            group.acceptedLayoutIdentity,
+            'GroupSnapshot.group.acceptedLayoutIdentity'
+        );
+        exact(accepted, GROUP_LAYOUT_IDENTITY_KEYS, 'GroupSnapshot.group.acceptedLayoutIdentity');
+        for (const key of ['groupRevision', 'presenceRevision', 'version'] as const) {
+            nonNegativeInteger(accepted[key], `GroupSnapshot.group.acceptedLayoutIdentity.${key}`);
+        }
+        enumValue(
+            accepted.state,
+            GROUP_LAYOUT_IDENTITY_STATES,
+            'GroupSnapshot.group.acceptedLayoutIdentity.state'
+        );
+    }
+    enumValue(
+        group.transportState,
+        GROUP_TRANSPORT_STATES,
+        'GroupSnapshot.group.transportState'
+    );
     const members = array(snapshot.members, 'GroupSnapshot.members');
     const memberIds = new Set<string>();
     const activeMemberIds = new Set<string>();

@@ -30,7 +30,10 @@ export interface ApiV1SystemInstallerTopology {
     readonly rtcTopologyOptions: ApiV1TopologyServices['rtcTopologyOptions'];
     readonly topologyQuery: object;
     readonly topologyPlanning: object;
-    readonly groupStateRepository: Pick<ApiV1TopologyServices['groupStateRepository'], 'readLifecyclePolicy'>;
+    readonly groupStateRepository: Pick<
+        ApiV1TopologyServices['groupStateRepository'],
+        'readLifecyclePolicy' | 'readSnapshot'
+    >;
     readonly rttRefinementService: object;
 }
 
@@ -50,7 +53,7 @@ export interface ApiV1SystemInstallerRuntime {
     readonly appClientInboxService: Pick<ApiV1Runtime['appClientInboxService'], 'enqueueAuthorisedWsClientDisconnect'>;
     readonly groupStateInboxService: Pick<
         ApiV1Runtime['groupStateInboxService'],
-        'enqueueFormationCriterionCommand' | 'enqueueGroupSessionCleanup'
+        'enqueueFormationCriterionCommand' | 'enqueueTopologyPublicationCommand' | 'enqueueGroupSessionCleanup'
     >;
     readonly rtcRttInboxService: Pick<ApiV1Runtime['rtcRttInboxService'], 'enqueue'>;
     readonly appCrdtInboxService?: object;
@@ -187,6 +190,14 @@ function submitFormationCriterionCommand(
     return runtime.groupStateInboxService.enqueueFormationCriterionCommand(command, atEpochMs);
 }
 
+function submitTopologyPublicationCommand(
+    runtime: ApiV1SystemInstallerRuntime,
+    command: Parameters<ApiV1Runtime['groupStateInboxService']['enqueueTopologyPublicationCommand']>[0],
+    atEpochMs: number
+): Promise<void> {
+    return runtime.groupStateInboxService.enqueueTopologyPublicationCommand(command, atEpochMs);
+}
+
 function createSystemTopicOptions<
     Runtime extends ApiV1SystemInstallerRuntime,
     Topology extends ApiV1SystemInstallerTopology,
@@ -213,6 +224,16 @@ function createSystemTopicOptions<
             formationCriterion: {
                 readLifecyclePolicy: (ref) => topology.groupStateRepository.readLifecyclePolicy(ref),
                 submitCommand: (command, atEpochMs) => submitFormationCriterionCommand(runtime, command, atEpochMs)
+            },
+            topologyPublication: {
+                readLifecyclePolicy: (ref) => topology.groupStateRepository.readLifecyclePolicy(ref),
+                // Durable, never the snapshot cache: the mint gate's stage and
+                // accepted-identity facts must not lag a cross-server write.
+                findCurrentGroup: async (ref) => {
+                    const snapshot = await topology.groupStateRepository.readSnapshot(ref);
+                    return snapshot?.group ?? null;
+                },
+                submitCommand: (command, atEpochMs) => submitTopologyPublicationCommand(runtime, command, atEpochMs)
             }
         },
         enqueueRtcRttMutation: (enqueue) => runtime.rtcRttInboxService.enqueue(enqueue)

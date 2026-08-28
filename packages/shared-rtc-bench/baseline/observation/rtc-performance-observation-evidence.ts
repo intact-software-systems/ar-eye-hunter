@@ -2,11 +2,11 @@ import { strFromU8 } from 'fflate';
 
 import type { RtcBaselineIssueDto, RtcBaselineJson, RtcBaselineResult } from '../contracts/rtc-baseline-contracts.ts';
 import type { RtcBaselineVerifiedArtifacts } from '../evidence/rtc-baseline-evidence-layout.ts';
+import type { RtcBaselineFinalizedReaderDependencies } from '../evidence/rtc-baseline-finalized-artifact-reader.ts';
 import {
     createRtcBaselineFinalizedArtifactVerifier,
     type RtcBaselineFinalizedArtifactVerifier
 } from '../evidence/rtc-baseline-finalized-verification.ts';
-import type { RtcBaselineFinalizedReaderDependencies } from '../evidence/rtc-baseline-finalized-artifact-reader.ts';
 import type { RtcPerformanceObservation } from './rtc-performance-observation.ts';
 
 export interface RtcPerformanceObservationEvidenceValidationInput {

@@ -1,4 +1,3 @@
-import type { GroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
 import type {
     GroupEvent,
     GroupRef,
@@ -28,6 +27,10 @@ import type {
     UpdateGroupRequest,
     UpsertGroupMemberRequest
 } from '@shared/api/state-types.ts';
+import type {
+    GroupAcceptedLayoutRow,
+    GroupPlannedLayoutRow
+} from './mutation/aggregate/compute-planned-layout-promotion.ts';
 
 import { type AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
 import type { GroupPolicyCapacityConfig } from '@shared-server/rallar-system/group-state/policy/group-membership-admission-policy.ts';
@@ -229,10 +232,12 @@ export type GroupStateServiceDependencies = Readonly<{
     timing?: RallarTimingSink;
     authSessionRepository: Pick<AuthSessionRepository, 'findBySessionId'>;
     /**
-     * The stored planned layout's identity for the causal fence read; null
-     * when no planned row exists. Deployments without a topology subsystem
-     * supply a constant null reader, which fences every layout-bound command
-     * closed as no-planned-layout.
+     * Reads the stored planned-layout row — snapshot, identity, revision and
+     * input fingerprint. Null when no planned row exists. Deployments without
+     * a topology subsystem supply a constant null reader, which fences every
+     * layout-bound command closed as no-planned-layout.
      */
-    readPlannedLayoutIdentity: (ref: GroupRef) => Promise<GroupLayoutIdentity | null>;
+    readPlannedLayoutRow: (ref: GroupRef) => Promise<GroupPlannedLayoutRow | null>;
+    /** Reads the accepted slot's identity and revision; null before promotion. */
+    readAcceptedLayoutRow: (ref: GroupRef) => Promise<GroupAcceptedLayoutRow | null>;
 }>;

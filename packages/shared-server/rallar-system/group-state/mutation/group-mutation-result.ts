@@ -13,6 +13,7 @@ import type { RuntimeStateEntryValue } from '../../../runtime-state/runtime-stat
 
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import type { InitialGroupPresenceSummaryCandidate } from '../presence/group-initial-presence-summary.ts';
+import type { PlannedLayoutPromotion } from './aggregate/compute-planned-layout-promotion.ts';
 import type {
     GroupGuardCandidate,
     GroupMutationCommand,
@@ -42,6 +43,7 @@ export interface GroupMutationWriteInput {
     readonly eventGroup?: Group;
     readonly presenceSummaryWork: 'enqueue' | 'none';
     readonly extraOutboxEntries?: readonly ResourceEntry[];
+    readonly acceptedLayoutPromotion?: Extract<PlannedLayoutPromotion, { outcome: 'apply'; }> | null;
 }
 
 export interface RejectedGroupMutationInput {
@@ -106,6 +108,7 @@ export function computeGroupMutationWriteResult(
             )
         ];
     const outboxEntries = [...summaryOutboxEntries, ...(input.extraOutboxEntries ?? [])];
+    const acceptedLayoutPromotion = input.acceptedLayoutPromotion ?? null;
     const receipt = receiptFor(command, facts, {
         outcome: 'applied',
         causalRevision,
@@ -125,7 +128,8 @@ export function computeGroupMutationWriteResult(
         receipt,
         idempotency: toGroupMutationIdempotency(command, facts, receipt),
         outboxEntries,
-        lifecyclePolicy: command.operation === 'createGroup' ? (command.input.lifecyclePolicy ?? null) : null
+        lifecyclePolicy: command.operation === 'createGroup' ? (command.input.lifecyclePolicy ?? null) : null,
+        acceptedLayoutPromotion
     };
 }
 

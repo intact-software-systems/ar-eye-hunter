@@ -47,7 +47,9 @@ export function createTestGroup(overrides: Partial<Group> = {}): Group {
         formationAttemptCount: 0,
         lastFormationOutcome: null,
         establishmentStartedAtEpochMs: null,
-        formationElectorate: ['alice']
+        formationElectorate: ['alice'],
+        acceptedLayoutIdentity: null,
+        transportState: 'flowing'
     };
 
     // `Group` correlates `status` with `archived`/`deleted`, and a spread of

@@ -21,7 +21,7 @@ import { createTimedGroupStateService } from './group-state-service-timing.ts';
 import { validateGroupMutationAuthority } from './mutation/command-validation/validate-group-mutation-authority.ts';
 import { validateGroupMutationCommand } from './mutation/command-validation/validate-group-mutation-command.ts';
 import type { GroupMutationCommand, GroupMutationFacts } from './mutation/group-mutation-contracts.ts';
-import { isLayoutFencedGroupMutationCommand } from './mutation/group-mutation-contracts.ts';
+import { readsGroupLayoutRows } from './mutation/group-mutation-contracts.ts';
 import { computeGroupMutation } from './mutation/orchestration/compute-group-mutation.ts';
 import { readGroupMutation } from './mutation/read/read-group-mutation.ts';
 import { validateGroupMutation } from './mutation/state-validation/validate-group-mutation.ts';
@@ -264,17 +264,18 @@ function createMutationOperations(
                 await verifyPreparedGroupMutationAuthority(authorityDependencies, prepared);
             }
             const read = await readGroupMutation(repositoryFor(runtime), prepared.command);
-            if (!isLayoutFencedGroupMutationCommand(prepared.command)) {
+            if (!readsGroupLayoutRows(prepared.command)) {
                 return read;
             }
-            // Read after the group row so the fence's staleness window ends as
-            // close to compute as this slice allows; the write guard cannot
-            // cover the topology namespace until the planned layout becomes a
-            // group-state-owned row (slice 4).
-            const plannedLayoutIdentity = await dependencies.readPlannedLayoutIdentity(
-                prepared.command.aggregateRef
-            );
-            return { ...read, plannedLayoutIdentity };
+            // Read after the group row so the fence's staleness window ends
+            // close to compute; the promotion re-asserts the planned row's
+            // revision inside the write transaction, so a replan landing
+            // after this read conflicts instead of promoting a stale plan.
+            const [plannedLayoutRow, acceptedLayoutRow] = await Promise.all([
+                dependencies.readPlannedLayoutRow(prepared.command.aggregateRef),
+                dependencies.readAcceptedLayoutRow(prepared.command.aggregateRef)
+            ]);
+            return { ...read, plannedLayoutRow, acceptedLayoutRow };
         },
         compute: (prepared, read) => computeGroupMutation({ command: prepared.command, read, facts: prepared.facts }),
         validate: (prepared, read, computed) => {

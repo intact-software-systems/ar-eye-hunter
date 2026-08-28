@@ -10,7 +10,8 @@ describe('GroupStateService retry ownership', () => {
             authSessionRepository: { findBySessionId: () => Promise.resolve(undefined) },
             groupStateEventStore: new InMemoryGroupStateEventStore(),
             serviceId: 'single-attempt-group-service',
-            readPlannedLayoutIdentity: async () => null
+            readPlannedLayoutRow: async () => null,
+            readAcceptedLayoutRow: async () => null
         }).service;
 
         expect(service).toMatchObject({

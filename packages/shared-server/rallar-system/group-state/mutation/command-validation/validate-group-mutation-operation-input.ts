@@ -38,6 +38,7 @@ type AggregateOperation = Extract<
     | 'activateGroup'
     | 'reopenGroupEstablishment'
     | 'failGroupFormation'
+    | 'applyPlannedLayout'
 >;
 
 function validateAggregateMutationInput(
@@ -85,7 +86,7 @@ function validateAggregateMutationInput(
         optionalPositiveInteger('heartbeatTtlMs');
         return;
     }
-    if (isGroupLifecycleTransitionOperation(operation)) {
+    if (isGroupLifecycleTransitionOperation(operation) || operation === 'applyPlannedLayout') {
         // A lifecycle request carries only actor identity — its exact-key row
         // excludes every operation field, so there is nothing further to
         // validate here. The built command's fields (including the criterion
@@ -195,7 +196,8 @@ function isAggregateOperation(
         'startGroupEstablishment',
         'activateGroup',
         'reopenGroupEstablishment',
-        'failGroupFormation'
+        'failGroupFormation',
+        'applyPlannedLayout'
     ].includes(operation);
 }
 

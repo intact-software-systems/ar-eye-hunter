@@ -44,6 +44,11 @@ import {
     type PersistedRtcTopologyWork,
     type RtcTopologyWorkEnvelope
 } from './rtc-topology-work-codec.ts';
+import {
+    readTopologyPromotionRequest,
+    writeTopologyPromotionRequest,
+    type TopologyPromotionPublicationPort
+} from './write-topology-promotion-request.ts';
 
 type AcceptedRtcTopologyMutation = Exclude<RtcTopologyMutationComputed, Readonly<{ outcome: 'loaded' | 'retry'; }>>;
 
@@ -83,6 +88,7 @@ interface RtcTopologyWorkHandlerOptions {
      * work. Absent means the default; 0 petitions per deferred item.
      */
     readonly criterionPetitionMinIntervalMs?: number;
+    readonly topologyPublication?: TopologyPromotionPublicationPort;
     readonly topologyDelivery?: RtcTopologyDeliveryOptions;
     readonly onInactiveOverlay?: (overlayId: string) => void;
     readonly wakeQueue?: () => void;
@@ -356,16 +362,7 @@ async function writeAcceptedRtcTopologyWork(
         return;
     }
     if (accepted.decision === 'skipped-unchanged') {
-        await runInPSqlTransaction(options.database, async (transaction) => {
-            await options.executionRepository.writeTopologyInputFingerprint(
-                transaction,
-                accepted.group.group,
-                accepted.inputFingerprint
-            );
-            await finishRtcTopologyReservation(transaction, entry);
-        });
-        options.topologyPlanning.recordTopologyPublication(false);
-        await petitionCommittedCriterion(options, accepted.criterionPetition);
+        await writeUnchangedTopologyWork(options, entry, accepted);
         return;
     }
     const computed = accepted.computed;
@@ -374,8 +371,19 @@ async function writeAcceptedRtcTopologyWork(
         options.topologyPlanning.observeCommittedTopology(accepted.group, computed.current);
         return;
     }
+    // Read outside, mint inside: the gate reads use the shared database
+    // handle and must not run while the transaction holds the session.
+    const promotionRequest = computed.outcome === 'write'
+        ? await readTopologyPromotionRequest({
+            publication: options.topologyPublication,
+            serviceId: options.serviceId,
+            entry,
+            target: computed.snapshotGuard.candidate
+        })
+        : null;
     await writeRtcTopologyPublicationTransaction(options, entry, async (transaction) => {
         await options.executionRepository.writeTopologyMutation(transaction, computed);
+        await writeTopologyPromotionRequest(transaction, promotionRequest);
         if (computed.outcome === 'write') {
             await options.executionRepository.writeTopologyInputFingerprint(
                 transaction,
@@ -387,6 +395,44 @@ async function writeAcceptedRtcTopologyWork(
             await writePublicationDelivery(transaction, accepted.publication, options.topologyDelivery);
         }
     });
+    await finishCommittedTopologyWork(options, accepted, computed);
+}
+
+/**
+ * The unchanged path's transaction: the fingerprint refresh, plus the
+ * promotion reconcile — a request a stale-stage cycle failed to mint is
+ * re-derived from the stored row here, so accepted and planned can never
+ * diverge silently.
+ */
+async function writeUnchangedTopologyWork(
+    options: RtcTopologyWorkHandlerOptions,
+    entry: ResourceEntry,
+    accepted: Extract<AcceptedRtcTopologyWork, { decision: 'skipped-unchanged'; }>
+): Promise<void> {
+    const promotionRequest = await readTopologyPromotionRequest({
+        publication: options.topologyPublication,
+        serviceId: options.serviceId,
+        entry,
+        target: accepted.criterionPetition?.planned ?? null
+    });
+    await runInPSqlTransaction(options.database, async (transaction) => {
+        await options.executionRepository.writeTopologyInputFingerprint(
+            transaction,
+            accepted.group.group,
+            accepted.inputFingerprint
+        );
+        await writeTopologyPromotionRequest(transaction, promotionRequest);
+        await finishRtcTopologyReservation(transaction, entry);
+    });
+    options.topologyPlanning.recordTopologyPublication(false);
+    await petitionCommittedCriterion(options, accepted.criterionPetition);
+}
+
+async function finishCommittedTopologyWork(
+    options: RtcTopologyWorkHandlerOptions,
+    accepted: Extract<AcceptedRtcTopologyWork, { decision: 'accepted'; }>,
+    computed: Exclude<AcceptedRtcTopologyMutation, Readonly<{ outcome: 'superseded'; }>>
+): Promise<void> {
     const committedSnapshot = computed.outcome === 'write'
         ? computed.snapshotGuard.candidate
         : computed.currentGuard.current;

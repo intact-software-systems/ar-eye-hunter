@@ -1,4 +1,8 @@
-import { GROUP_LIFECYCLE_STATES } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
+import {
+    GROUP_LAYOUT_IDENTITY_KEYS,
+    GROUP_LAYOUT_IDENTITY_STATES
+} from '@shared/api/group-lifecycle/group-layout-identity.ts';
+import { GROUP_LIFECYCLE_STATES, GROUP_TRANSPORT_STATES } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import type { AuditStamp, Group, GroupMember, GroupRef, GroupStateCausalRevision } from '@shared/api/group-types.ts';
 import type { MutationActor } from '@shared/api/mutation-actor.ts';
 
@@ -45,7 +49,9 @@ const STORED_GROUP_KEYS = [
     'formationAttemptCount',
     'lastFormationOutcome',
     'establishmentStartedAtEpochMs',
-    'formationElectorate'
+    'formationElectorate',
+    'acceptedLayoutIdentity',
+    'transportState'
 ] as const;
 
 const FORMATION_OUTCOME_KEYS = ['outcome', 'observedRate', 'atEpochMs', 'formationEpoch'] as const;
@@ -148,6 +154,20 @@ export function validateStoredGroup(group: unknown, ref: GroupRef): asserts grou
     for (const principalId of value.formationElectorate) {
         requireNonEmptyString(principalId, 'Stored group formationElectorate entry');
     }
+    if (value.acceptedLayoutIdentity !== null) {
+        const accepted = requireRecord(value.acceptedLayoutIdentity, 'Stored group acceptedLayoutIdentity');
+        assertExactKeys(accepted, GROUP_LAYOUT_IDENTITY_KEYS, 'Stored group acceptedLayoutIdentity');
+        assertRequiredKeys(accepted, GROUP_LAYOUT_IDENTITY_KEYS, 'Stored group acceptedLayoutIdentity');
+        for (const key of ['groupRevision', 'presenceRevision', 'version'] as const) {
+            requireNonNegativeSafeInteger(accepted[key], `Stored group acceptedLayoutIdentity ${key}`);
+        }
+        requireOneOf(
+            accepted.state,
+            GROUP_LAYOUT_IDENTITY_STATES,
+            'Stored group acceptedLayoutIdentity state'
+        );
+    }
+    requireOneOf(value.transportState, GROUP_TRANSPORT_STATES, 'Stored group transportState');
 }
 
 export function validateStoredMember(

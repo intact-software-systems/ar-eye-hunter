@@ -1,4 +1,5 @@
 import { computeExpectedLayoutFence } from '@shared/api/group-lifecycle/compute-expected-layout-fence.ts';
+import { toGroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
 import { createDefaultGroupLifecyclePolicy } from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
 import type { GroupLifecyclePolicy } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import {
@@ -19,6 +20,7 @@ import type {
     GroupMutationRead
 } from '../group-mutation-contracts.ts';
 import { auditStamp, computeGroupMutationWriteResult, rejected, requireGroup } from '../group-mutation-result.ts';
+import { computePlannedLayoutPromotion, type PlannedLayoutPromotion } from './compute-planned-layout-promotion.ts';
 import { assertActive, assertAllowed, toPolicySnapshot } from './group-aggregate-mutation-policy.ts';
 
 const LIFECYCLE_TRANSITION_BY_OPERATION = {
@@ -70,9 +72,6 @@ export function computeLifecycleTransition(
     if (read.activeMemberPrincipalIds === null) {
         throw new TypeError('Lifecycle transition compute requires the roster read');
     }
-    // The fence is keyed on fence presence, never on who produced the command:
-    // any lifecycle command naming stale causal expectations is rejected,
-    // and unfenced (principal) commands pass through untouched.
     const fenceRejection = computeFenceRejection({ command, read, facts, stored: stored.value });
     if (fenceRejection !== null) {
         return fenceRejection;
@@ -86,14 +85,17 @@ export function computeLifecycleTransition(
     if (!outcome.allowed) {
         throw new GroupPolicyDeniedError(outcome);
     }
+    const promotion = computeActivationPromotion(command, read, stored.value);
     const next = computeNextLifecycleGroup({
         command,
         facts,
         stored: stored.value,
         outcome,
-        formationElectorate: read.activeMemberPrincipalIds
+        formationElectorate: read.activeMemberPrincipalIds,
+        promotion
     });
     return computeGroupMutationWriteResult({
+        acceptedLayoutPromotion: promotion?.outcome === 'apply' ? promotion : null,
         command,
         read,
         facts,
@@ -132,14 +134,18 @@ function computeCorruptPolicyRejection(
 }
 
 function computeNextLifecycleGroup(
-    { command, facts, stored, outcome, formationElectorate }: Readonly<{
+    { command, facts, stored, outcome, formationElectorate, promotion }: Readonly<{
         command: Extract<GroupMutationCommand, { operation: GroupLifecycleTransitionOperation; }>;
         facts: GroupMutationFacts;
         stored: Group;
         outcome: Extract<ReturnType<typeof computeGroupLifecycleTransition>, { allowed: true; }>;
         formationElectorate: readonly string[];
+        promotion: PlannedLayoutPromotion | null;
     }>
 ): Group {
+    const acceptedLayoutIdentity = promotion?.outcome === 'apply'
+        ? promotion.acceptedIdentity
+        : stored.acceptedLayoutIdentity;
     const beginsEstablishment = command.operation === 'startGroupEstablishment' ||
         command.operation === 'reopenGroupEstablishment';
     return {
@@ -153,12 +159,52 @@ function computeNextLifecycleGroup(
             : stored.establishmentStartedAtEpochMs,
         formationAttemptCount: command.operation === 'failGroupFormation'
             ? stored.formationAttemptCount + 1
+            : command.operation === 'activateGroup'
+            ? 0
             : stored.formationAttemptCount,
+        acceptedLayoutIdentity,
         lastFormationOutcome: computeRecordedOutcome(command, stored, facts),
         formationElectorate,
         snapshotVersion: stored.snapshotVersion + 1,
         updated: auditStamp(command, facts, command.input.actorPrincipalId ?? undefined)
     };
+}
+
+/**
+ * Activation's atomic promotion (product decisions 24/42): every accepted
+ * activation promotes the stored planned layout it was fenced against. A
+ * criterion activation's fence already rejected every non-promotable state,
+ * so anything but apply/already-applied there is a programmer invariant; an
+ * operator activation with no stored plan keeps today's behavior and commits
+ * without accepted facts (dark landing — slice 5's connect makes plans
+ * universal).
+ */
+function computeActivationPromotion(
+    command: Extract<GroupMutationCommand, { operation: GroupLifecycleTransitionOperation; }>,
+    read: GroupMutationRead,
+    stored: Group
+): PlannedLayoutPromotion | null {
+    if (command.operation !== 'activateGroup') {
+        return null;
+    }
+    const promotion = computePlannedLayoutPromotion({
+        expectedFormationEpoch: command.input.expectedFormationEpoch ?? null,
+        expectedLayout: command.input.expectedLayout ?? null,
+        currentFormationEpoch: stored.formationEpoch,
+        planned: read.plannedLayoutRow,
+        acceptedIdentity: stored.acceptedLayoutIdentity,
+        acceptedRow: read.acceptedLayoutRow
+    });
+    if (
+        command.input.expectedLayout !== null &&
+        promotion.outcome !== 'apply' &&
+        promotion.outcome !== 'already-applied'
+    ) {
+        throw new TypeError(
+            `Criterion activation fence passed but promotion computed ${promotion.outcome}`
+        );
+    }
+    return promotion;
 }
 
 interface LifecycleTransitionDecisionInput {
@@ -240,7 +286,9 @@ function computeFenceRejection(
         expectedFormationEpoch,
         expectedLayout,
         currentFormationEpoch: stored.formationEpoch,
-        currentPlannedLayout: read.plannedLayoutIdentity ?? undefined
+        currentPlannedLayout: read.plannedLayoutRow === null
+            ? undefined
+            : toGroupLayoutIdentity(read.plannedLayoutRow.snapshot)
     });
     if (fence === 'match') {
         return null;

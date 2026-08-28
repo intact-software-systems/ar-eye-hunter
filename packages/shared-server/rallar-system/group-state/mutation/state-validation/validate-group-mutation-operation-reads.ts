@@ -4,7 +4,7 @@ import {
     isGroupAdmissionDecisionOperation,
     isGroupAdmissionPolicyReadOperation,
     isGroupLifecycleTransitionOperation,
-    isLayoutFencedGroupMutationCommand
+    readsGroupLayoutRows
 } from '../group-mutation-contracts.ts';
 
 export function validateGroupMutationOperationReads(
@@ -17,15 +17,22 @@ export function validateGroupMutationOperationReads(
 }
 
 /**
- * The planned layout is read exactly for commands that carry a layout fence;
- * null stays legal there because the reader may find no planned row.
+ * The layout rows are read exactly for the promotion-capable and
+ * layout-fenced commands; null stays legal there because the reader may find
+ * no stored row.
  */
 function validatePlannedLayoutIdentityRead(
     read: GroupMutationRead,
     command: GroupMutationCommand
 ): void {
-    if (!isLayoutFencedGroupMutationCommand(command) && read.plannedLayoutIdentity !== null) {
+    if (readsGroupLayoutRows(command)) {
+        return;
+    }
+    if (read.plannedLayoutRow !== null) {
         throw new TypeError('Group mutation read carries a planned layout for an unfenced command');
+    }
+    if (read.acceptedLayoutRow !== null) {
+        throw new TypeError('Group mutation read carries an accepted layout for an unfenced command');
     }
 }
 
@@ -39,7 +46,8 @@ function validateLifecyclePolicyRead(
 ): void {
     if (
         isGroupLifecycleTransitionOperation(command.operation) ||
-        isGroupAdmissionPolicyReadOperation(command.operation)
+        isGroupAdmissionPolicyReadOperation(command.operation) ||
+        command.operation === 'applyPlannedLayout'
     ) {
         if (read.lifecyclePolicy === null) {
             throw new TypeError('Group mutation read is missing the lifecycle policy read');

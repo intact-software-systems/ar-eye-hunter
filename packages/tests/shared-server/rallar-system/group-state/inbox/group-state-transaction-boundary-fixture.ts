@@ -152,7 +152,8 @@ async function createTransactionBoundaryGroupStateService(
         runtimeRepository: storage.runtimeRepository,
         groupStateEventStore: storage.database.groupEventStore,
         serviceId: 'server-12345678',
-        readPlannedLayoutIdentity: async () => null,
+        readPlannedLayoutRow: async () => null,
+        readAcceptedLayoutRow: async () => null,
         now: () => NOW_EPOCH_MS,
         randomId: () => 'fixed-random-id',
         authSessionRepository: authSessions

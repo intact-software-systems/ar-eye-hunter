@@ -21,6 +21,13 @@ import { decideTopologySnapshot, type RtcTopologySnapshotObservation } from './r
 
 export const RTC_TOPOLOGY_SNAPSHOTS_NAMESPACE = 'rtc-topology:snapshots';
 
+/**
+ * The accepted-layout slot (product decisions 24/42): a second never-expiring
+ * row per group, written only by the canonical promotion effect inside the
+ * activateGroup or applyPlannedLayout transaction — never by the planner.
+ */
+export const RTC_TOPOLOGY_ACCEPTED_SNAPSHOTS_NAMESPACE = 'rtc-topology:accepted-snapshots';
+
 export type RtcTopologySnapshotCommitResult =
     | Readonly<{
         status: 'accepted';
@@ -43,11 +50,15 @@ export type RtcTopologySnapshotConditionalResult =
 export class RtcTopologySnapshotRepository extends RuntimeStateJsonStore {
     readonly runtimeRepository: RuntimeStateRepositoryLike;
 
+    private readonly namespace: string;
+
     constructor(
-        runtimeRepository: RuntimeStateRepositoryLike
+        runtimeRepository: RuntimeStateRepositoryLike,
+        namespace: string = RTC_TOPOLOGY_SNAPSHOTS_NAMESPACE
     ) {
         super(runtimeRepository);
         this.runtimeRepository = runtimeRepository;
+        this.namespace = namespace;
     }
 
     async findSnapshotEntry(
@@ -55,10 +66,20 @@ export class RtcTopologySnapshotRepository extends RuntimeStateJsonStore {
     ): Promise<RuntimeStateEntryValue<RallarOverlayTopologySnapshot> | undefined> {
         const key = this.snapshotKey(ref);
         const entry = await this.runtimeRepository.findEntry(
-            RTC_TOPOLOGY_SNAPSHOTS_NAMESPACE,
+            this.namespace,
             key
         );
         return entry ? decodeSnapshotEntry(entry, ref) : undefined;
+    }
+
+    /**
+     * The raw entry revision without a structural decode, for consumers that
+     * guard on the slot's revision and never read the snapshot (the accepted
+     * slot's promotion CAS).
+     */
+    async findEntryRevision(ref: GroupRef): Promise<Readonly<{ revision: number; }> | null> {
+        const entry = await this.runtimeRepository.findEntry(this.namespace, this.snapshotKey(ref));
+        return entry ? { revision: entry.revision } : null;
     }
 
     async findSnapshot(
@@ -69,7 +90,7 @@ export class RtcTopologySnapshotRepository extends RuntimeStateJsonStore {
 
     async listSnapshotEntries(): Promise<readonly RuntimeStateEntryValue<RallarOverlayTopologySnapshot>[]> {
         const entries = await this.runtimeRepository.findAllEntries(
-            RTC_TOPOLOGY_SNAPSHOTS_NAMESPACE
+            this.namespace
         );
         return entries.map((entry) => decodeSnapshotEntry(entry));
     }
@@ -78,7 +99,7 @@ export class RtcTopologySnapshotRepository extends RuntimeStateJsonStore {
         options: RuntimeStateEntryPageOptions
     ): Promise<readonly RuntimeStateEntryValue<RallarOverlayTopologySnapshot>[]> {
         const entries = await this.listEntriesPage(
-            RTC_TOPOLOGY_SNAPSHOTS_NAMESPACE,
+            this.namespace,
             '',
             options
         );
@@ -92,13 +113,13 @@ export class RtcTopologySnapshotRepository extends RuntimeStateJsonStore {
         const storedSnapshot = canonicalSnapshot(snapshot);
         const result = expectedRevision === null
             ? await this.putValueIfAbsent(
-                RTC_TOPOLOGY_SNAPSHOTS_NAMESPACE,
+                this.namespace,
                 this.snapshotKey(storedSnapshot.groupRef),
                 storedSnapshot,
                 NEVER_EXPIRE_AT_TIMESTAMP
             )
             : await this.putValueIfRevision(
-                RTC_TOPOLOGY_SNAPSHOTS_NAMESPACE,
+                this.namespace,
                 this.snapshotKey(storedSnapshot.groupRef),
                 storedSnapshot,
                 NEVER_EXPIRE_AT_TIMESTAMP,
@@ -175,7 +196,7 @@ export class RtcTopologySnapshotRepository extends RuntimeStateJsonStore {
         expectedRevision: number
     ): Promise<Readonly<{ status: 'accepted' | 'conflict'; }>> {
         const deleted = await this.deleteValueIfRevision(
-            RTC_TOPOLOGY_SNAPSHOTS_NAMESPACE,
+            this.namespace,
             this.snapshotKey(ref),
             expectedRevision
         );
@@ -187,6 +208,26 @@ export class RtcTopologySnapshotRepository extends RuntimeStateJsonStore {
     snapshotKey(ref: GroupRef): string {
         return groupStateGroupStorageKey(ref);
     }
+}
+
+/**
+ * The stored-row encoding for a snapshot slot, canonical-validated: the
+ * promotion effect writes accepted rows through the group-state guarded
+ * batch and must produce exactly what this repository reads back.
+ */
+export interface StoredRtcTopologySnapshotRow {
+    readonly key: string;
+    readonly value: string;
+}
+
+export function toStoredRtcTopologySnapshotRow(
+    snapshot: RallarOverlayTopologySnapshot
+): StoredRtcTopologySnapshotRow {
+    const stored = canonicalSnapshot(snapshot);
+    return {
+        key: groupStateGroupStorageKey(stored.groupRef),
+        value: JSON.stringify(stored)
+    };
 }
 
 function canonicalSnapshot(

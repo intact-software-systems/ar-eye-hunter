@@ -71,7 +71,8 @@ Deno.test(
                 await groupRepository.putMember(member);
             }
             const groupState = createGroupStateService({
-                readPlannedLayoutIdentity: () => Promise.resolve(null),
+                readPlannedLayoutRow: () => Promise.resolve(null),
+            readAcceptedLayoutRow: () => Promise.resolve(null),
                 runtimeRepository: runtime,
                 groupStateEventStore: new PSqlGroupStateEventRepository(sql),
                 authSessionRepository: authSessions,
@@ -316,7 +317,8 @@ Deno.test('PGlite AppGroup rereads lifecycle after a retryable topology conflict
             )
         );
         const groupState = createGroupStateService({
-            readPlannedLayoutIdentity: () => Promise.resolve(null),
+            readPlannedLayoutRow: () => Promise.resolve(null),
+            readAcceptedLayoutRow: () => Promise.resolve(null),
             runtimeRepository: runtime,
             groupStateEventStore: new PSqlGroupStateEventRepository(sql),
             authSessionRepository: authSessions,

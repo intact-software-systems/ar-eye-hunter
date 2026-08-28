@@ -10,10 +10,7 @@ import type { DenoRtcBaselineAdapters } from '../runtime/rtc-baseline-deno-adapt
 import type { RtcBaselineDenoPort } from '../runtime/rtc-baseline-deno-port.ts';
 import { RTC_BASELINE_DENO_ROOT_PATH } from '../runtime/rtc-baseline-deno-runtime.ts';
 import type { RtcBaselineEnvelope } from '../runtime/rtc-baseline-envelope.ts';
-import type {
-    RtcB05ObservationOutput,
-    RtcB05ObservationRunnerDependencies
-} from './rtc-b05-observation-runner.ts';
+import type { RtcB05ObservationOutput, RtcB05ObservationRunnerDependencies } from './rtc-b05-observation-runner.ts';
 import {
     createRtcPerformanceObservationArchive,
     verifyRtcPerformanceObservationArchive

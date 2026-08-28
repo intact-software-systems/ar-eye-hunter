@@ -282,6 +282,25 @@ closing the read-to-commit fence window slice 3 documented as interim. The petit
 already at post-commit (the review moved it), so 4a consumes that ordering rather than
 re-establishing it.
 
+### Fourth checkpoint — executed 2026-08-27, after PR 4 (#359) with its review
+
+PR 4 landed slices 2 + 4a with a max-effort review (ten finder angles, cross-verified; fifteen
+confirmed findings, all repaired in the PR — the review-repairs record in slice 4a's delivery notes
+carries them; the headline was the promotion mint gate reading enqueue-time state, now fresh and
+self-reconciling). No plan-surface change arrived on `main` beyond this workstream's own PRs.
+
+**Next two PRs (I5, I20):**
+
+- **PR 5 = slices 4b + 4c — slice 4 completes.** 5b's connect fence explicitly needs 4b, so the
+  stage-keyed planning gate (replacing `isGroupTopologyPlannableAt` across every topology write
+  path) and delivery correctness (repair and hydration pinned to the accepted row, the criterion to
+  the planned one, `GroupTopologyManagementView` carrying both with `pending` populated) come
+  before the command family. Gates per slice 4's line: baseline, both profiles, medium-scale,
+  topology-replay, state-write, `test:integration:postgres`.
+- **PR 6 = slices 5a + 5b — `plan` and `connect`, dark**, with the connect fence and the two typed
+  denials; 5c's `pause`/`resume` follows separately (cheapest, `transportState`'s first writers),
+  then 5d/5e per their stated needs.
+
 ## Corrections — resolved
 
 Four corrections changed a recorded product decision and have been ruled on. They are recorded here
@@ -501,6 +520,81 @@ rule.
 **Gates:** baseline + both black-box profiles + **medium-scale** + state-write vs the slice-0 control.
 Add `apps/relic-hunter-server-v1` to the verification list (C8) and state the deploy order for the two
 servers.
+
+**Delivery record (PR 4, slices 2 + 4a, 2026-08-27).** Landed as specified with these verified
+findings:
+
+- **Apply-landing promotion is live behavior, not dark**: the default policy's
+  `reconfigureLanding: 'apply'` makes promotion-on-publication today's implicit semantics made
+  explicit. Decision 27's gate is read from the group's policy in the publication write phase
+  (`hold` promotes only through activate; corrupt fails closed; an absent consumer port mints
+  nothing) — the reconnect-resync recipe caught the missing gate before it shipped. Two recipes
+  pinning exact revisions on apply groups now create with `hold`, the first recipe coverage of it.
+- **The read-to-commit fence race is closed**: the promotion's guarded batch re-asserts the planned
+  row's revision inside the transaction, so a replan between read and commit conflicts the batch.
+  The PR 3 acceptance criterion is met one slice early via the revision assert; slice 4b+ may still
+  move the rows into group-state ownership.
+- **Measured state-write cost of apply landing** (all artifacts in `tmp/perf/pr4-*`): hot
+  `sql.statements` ≈ +4% (covered by the new `planned-layout-promotion` recorded-reason profile,
+  following the durable-append and formation-damping precedents), uncontended p99 +6–7% (promotion
+  writes on the tail), hot throughput draw-dependent within the machine's documented comparator
+  noise (control samples 38.3–48.4/s, head 30.5–49.0/s). Byte-headroom concern (C-risk in slice 2):
+  `serializedResultBytes` passed in every comparison.
+- **Promotion recipe legs** defer to slice 5's surfaces with the same reasoning as slice 3's
+  deferral; the promotion matrix is pinned at compute level and through the durable service read.
+
+**Review repairs (PR 4 max-effort review, 2026-08-27).** Ten finder angles and a cross-verified
+sweep confirmed fifteen findings, all repaired in the PR:
+
+- **The mint gate reads fresh durable facts and reconciles.** The promotion request had gated on
+  the work payload's enqueue-time group snapshot, so a plan published after activation from a
+  stale-connecting work item minted nothing and the skipped-unchanged path never healed it —
+  accepted and planned could diverge permanently on a stable group. The write phase now reads the
+  current group row, checks the group's accepted identity against the target layout, and mints in
+  both the write and the unchanged branches, so any missed request re-derives on the next cycle.
+  The cheap checks run before the policy read; the entry is stamped never-expire (it had inherited
+  a finite 24-hour expiry on the RTT-refresh path); a same-identity request that already exists is
+  treated as already-requested instead of wedging the publication transaction; and entries carry
+  the server's sender id.
+- **Compute re-checks the landing.** applyPlannedLayout reads the lifecycle policy and rejects a
+  promotion whose group has hold landing or an unreadable policy — decision 27's rule holds even
+  for entries minted before a future policy change, and slice 6's per-call overrides inherit the
+  check.
+- **The accepted-fingerprint copy is deferred to its consumer slice.** As landed it could go stale
+  (a null-fingerprint promotion left the previous row standing), pair skew (the fingerprint read
+  was not revision-fenced with the snapshot, and the unchanged path rewrites fingerprints without
+  bumping the planned revision), and throw untyped from the write path. Slice 6/7 lands the copy
+  with revision-coherent reads when the comparison consumer exists.
+- **Contracts tightened**: applyPlannedLayout's fences are non-null (no path can produce null),
+  the layout row types carry no derivable or dead fields (identity derives from the snapshot at
+  use; the accepted read is a raw revision without a structural decode), the promotion decode
+  validates against the exported layout registries with non-negative and non-empty readers, and
+  the state-write reason profile is re-attributed honestly (the bench executes no promotions; the
+  residue is row width plus documented drift).
+
+**Recorded rulings and corrections from the review:**
+
+- **Operator activation may promote a stale stored plan** (no epoch fence on principal commands):
+  ruled as today's semantics made recorded — reconnect and repair already converge on the stored
+  row, and the accepted row only records that fact. Slice 5b's connect fence closes it properly.
+- **The activation dark-landing softening** (operator activate with no stored plan commits without
+  accepted facts) is owned by **slice 5b**: when connect carries the universal fence, activate
+  tightens to the plan's "the stage cannot commit without the accepted row and identity", and the
+  softening's removal is part of 5b's acceptance.
+- **Slice 10's producer claim is superseded**: the apply-landing producer landed here, live; slice
+  10 only flips policy defaults and modes, and must not re-land a producer (decision 42's
+  one-producer story).
+- **Deploy posture (decision 14)**: the two new required group keys are a hard cutover — every
+  pre-deploy group row and every durable queue row embedding a GroupSnapshot fails decode under
+  this build. Both servers deploy before traffic; reused local or fleet databases are dropped;
+  slice 14's runbook owns production ordering.
+- **Promotion requests are per-(epoch, identity)**, not coalesced per group: the queue writer has
+  no replace primitive, so per-group keys would corrupt on payload mismatch; a burst of N replans
+  costs N−1 typed fence rejections, bounded and observable. Recorded so a future "fix" does not
+  coalesce the key without adding replace semantics.
+- **The OpenAPI `nullable: true` beside `$ref`** follows the file's established (3.0-style) idiom;
+  under strict 3.1 readers it is a no-op. Recorded as a file-wide idiom to modernize in one sweep,
+  not per-field.
 
 ## Slice 3 — Causal fences and narrow internal authority capabilities
 

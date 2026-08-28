@@ -91,7 +91,8 @@ export async function createAuthorityHarness(
         runtimeRepository,
         groupStateEventStore: database.groupEventStore,
         serviceId: 'server-12345678',
-        readPlannedLayoutIdentity: async () => null,
+        readPlannedLayoutRow: async () => null,
+        readAcceptedLayoutRow: async () => null,
         now: () => nowEpochMs,
         authSessionRepository: authSessions
     });

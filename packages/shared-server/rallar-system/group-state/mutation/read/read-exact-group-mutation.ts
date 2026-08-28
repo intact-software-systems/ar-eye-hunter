@@ -89,7 +89,8 @@ function assembleExactGroupMutationRead(
         presenceSummary: read.presenceSummaries[0] ?? null,
         lifecyclePolicy,
         activeMemberPrincipalIds: null,
-        plannedLayoutIdentity: null
+        plannedLayoutRow: null,
+        acceptedLayoutRow: null
     };
 }
 

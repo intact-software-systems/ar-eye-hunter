@@ -42,9 +42,11 @@ import {
 import { recordRallarTiming, type RallarTimingSink } from '@shared-server/rallar-system/observability/timing.ts';
 import { PSqlClientStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-client-state-event-repository.ts';
 import { PSqlGroupStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-group-state-event-repository.ts';
-import { RtcTopologySnapshotRepository } from '@shared-server/rallar-system/topology/persistence/rtc-topology-snapshot-repository.ts';
+import {
+    RTC_TOPOLOGY_ACCEPTED_SNAPSHOTS_NAMESPACE,
+    RtcTopologySnapshotRepository
+} from '@shared-server/rallar-system/topology/persistence/rtc-topology-snapshot-repository.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
-import { toGroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
 import type { RallarCrdtDocumentTypePolicy } from '@shared/crdt/mod.ts';
 import type { DequeueResourceEntryOptions, ResilienceDto } from '@shared/queuebox/DequeueResourceEntryController.ts';
 import { JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.ts';
@@ -147,8 +149,12 @@ export function createApiV1MutationRuntime(
     const resources = createApiV1MutationResources(input.database);
     const stateDependencies = createApiV1StateMutationDependencies(input, resources);
     const mutationFactories = createApiV1MutationInboxFactories(input, resources);
-    const topologySnapshotRepository = new RtcTopologySnapshotRepository(
+    const plannedSnapshotRepository = new RtcTopologySnapshotRepository(
         resources.runtimeStateRepository
+    );
+    const acceptedSnapshotRepository = new RtcTopologySnapshotRepository(
+        resources.runtimeStateRepository,
+        RTC_TOPOLOGY_ACCEPTED_SNAPSHOTS_NAMESPACE
     );
     const groupStateService = createCachedGroupStateService({
         durable: createGroupStateService({
@@ -158,10 +164,15 @@ export function createApiV1MutationRuntime(
             groupStateEventStore: resources.groupStateEventStore,
             serviceId: input.serviceId,
             timing: input.timing,
-            readPlannedLayoutIdentity: async (ref) => {
-                const planned = await topologySnapshotRepository.findSnapshot(ref);
-                return planned ? toGroupLayoutIdentity(planned) : null;
-            }
+            readPlannedLayoutRow: async (ref) => {
+                const planned = await plannedSnapshotRepository.findSnapshotEntry(ref);
+                return planned
+                    ? { snapshot: planned.value, revision: planned.entry.revision }
+                    : null;
+            },
+            // The promotion consults only the revision, so the accepted slot
+            // is read raw — no structural decode of a snapshot nothing uses.
+            readAcceptedLayoutRow: async (ref) => await acceptedSnapshotRepository.findEntryRevision(ref)
         }),
         cache: resources.groupSnapshotCache
     });

@@ -229,7 +229,8 @@ describe('AppInbox expired row replacement', () => {
                 runtimeRepository: runtime,
                 groupStateEventStore: database.groupEventStore,
                 serviceId: 'expired-group-service',
-                readPlannedLayoutIdentity: async () => null,
+                readPlannedLayoutRow: async () => null,
+                readAcceptedLayoutRow: async () => null,
                 now: () => nowEpochMs,
                 authSessionRepository: sessions
             });

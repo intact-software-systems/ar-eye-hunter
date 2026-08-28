@@ -310,7 +310,12 @@
           "kind": "room",
           "joinMode": "open",
           "maxMembers": 2,
-          "createdByPrincipalId": "{ownerClientId}"
+          "createdByPrincipalId": "{ownerClientId}",
+          "lifecyclePolicy": {
+            "topology": {
+              "reconfigureLanding": "hold"
+            }
+          }
         }
       },
       "expect": {

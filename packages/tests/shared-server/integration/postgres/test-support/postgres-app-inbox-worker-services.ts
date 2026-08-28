@@ -80,7 +80,8 @@ export function createPostgresAppInboxWorkerServices(
         authSessionRepository: authSessions,
         now: () => input.atEpochMs,
         serviceId: input.serviceId,
-        readPlannedLayoutIdentity: async () => null
+        readPlannedLayoutRow: async () => null,
+        readAcceptedLayoutRow: async () => null
     });
     const client = new AppClientInboxService(
         {

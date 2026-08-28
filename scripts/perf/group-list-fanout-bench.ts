@@ -62,7 +62,8 @@ async function main(): Promise<void> {
         groupStateEventStore,
         now: () => 1_700_000_000_000,
         serviceId: 'group-list-fanout-bench',
-        readPlannedLayoutIdentity: async () => null,
+        readPlannedLayoutRow: async () => null,
+        readAcceptedLayoutRow: async () => null,
         authSessionRepository: new AuthSessionRepository(repository)
     });
 
@@ -154,6 +155,8 @@ function createGroup(groupId: string, ownerPrincipalId: string): Group {
         lastFormationOutcome: null,
         establishmentStartedAtEpochMs: null,
         formationElectorate: [ownerPrincipalId],
+        acceptedLayoutIdentity: null,
+        transportState: 'flowing',
         snapshotVersion: 1,
         metadataVersion: 1,
         rosterVersion: 1,

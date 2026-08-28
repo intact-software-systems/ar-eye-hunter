@@ -22,7 +22,8 @@ describe('state sync event replay', () => {
             runtimeRepository,
             now: () => now,
             serviceId: 'group-service',
-            readPlannedLayoutIdentity: async () => null
+            readPlannedLayoutRow: async () => null,
+            readAcceptedLayoutRow: async () => null
         });
         const groupRef = toGroupRef('room-1');
 

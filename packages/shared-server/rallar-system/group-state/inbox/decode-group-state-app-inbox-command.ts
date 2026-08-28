@@ -29,7 +29,8 @@ export function decodeGroupStateAppInboxCommand(
 ): JsonWireValue {
     if (
         type === AppInboxType.GROUP_PRESENCE_EXPIRE ||
-        type === AppInboxType.GROUP_FORMATION_CRITERION
+        type === AppInboxType.GROUP_FORMATION_CRITERION ||
+        type === AppInboxType.GROUP_TOPOLOGY_PUBLICATION
     ) {
         return decodePreparedGroupMutationIdentity(value);
     }
@@ -115,7 +116,8 @@ function isAuthenticatedGroupMutationType(
     return type.startsWith('GROUP_') &&
         type !== AppInboxType.GROUP_PRESENCE_EXPIRE &&
         type !== AppInboxType.GROUP_PRESENCE_SESSION_CLEANUP &&
-        type !== AppInboxType.GROUP_FORMATION_CRITERION;
+        type !== AppInboxType.GROUP_FORMATION_CRITERION &&
+        type !== AppInboxType.GROUP_TOPOLOGY_PUBLICATION;
 }
 
 function toGroupMutationOperation(

@@ -48,7 +48,9 @@ export function createDeterministicRtcTopologyGroupSnapshot(
             formationAttemptCount: 0,
             lastFormationOutcome: null,
             establishmentStartedAtEpochMs: null,
-            formationElectorate: []
+            formationElectorate: [],
+            acceptedLayoutIdentity: null,
+            transportState: 'flowing'
         },
         members: memberSessionIds.map((sessionId): GroupMember => ({
             applicationId,

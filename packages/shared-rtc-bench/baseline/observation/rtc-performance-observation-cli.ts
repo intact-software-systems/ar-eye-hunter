@@ -1,8 +1,5 @@
 import type { RtcBaselineJson, RtcBaselineResult } from '../contracts/rtc-baseline-contracts.ts';
-import type {
-    RtcB05ObservationOutput,
-    RtcB05ObservationRunInput
-} from './rtc-b05-observation-runner.ts';
+import type { RtcB05ObservationOutput, RtcB05ObservationRunInput } from './rtc-b05-observation-runner.ts';
 import type { VerifyRtcPerformanceObservationArchiveInput } from './rtc-performance-observation-archive.ts';
 import { parseRtcPerformanceObservationCommand } from './rtc-performance-observation-cli-grammar.ts';
 

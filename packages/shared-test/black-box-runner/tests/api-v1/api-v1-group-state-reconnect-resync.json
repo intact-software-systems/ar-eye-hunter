@@ -203,7 +203,12 @@
           "displayName": "Reconnect group {runId}",
           "kind": "room",
           "joinMode": "open",
-          "createdByPrincipalId": "{alphaClientId}"
+          "createdByPrincipalId": "{alphaClientId}",
+          "lifecyclePolicy": {
+            "topology": {
+              "reconfigureLanding": "hold"
+            }
+          }
         }
       },
       "expect": {
