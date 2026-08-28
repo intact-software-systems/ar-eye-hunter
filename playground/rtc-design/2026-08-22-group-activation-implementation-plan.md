@@ -320,13 +320,14 @@ semantics say they must (AppInbox types and trusted vocabulary, not routing entr
 
 **Resolved at the sixth checkpoint (2026-08-28): no routes move early, and 5d does not rewrite the
 recipes.** The question was when `plan`/`connect` get HTTP routes, because a recipe rewrite needs
-reachable paths. The slice text answers it: 5d is "legacy retirement, **prepared but not cut over**",
-6a's parallel entry says "inventory every `reopen-establishment` type, operation, route, OpenAPI and
-recipe consumer for 8d. **Nothing leaves before the route cutover**", 8d's entry says the removals
-work from the consumers "inventoried by 5d and 6a", and slice 9 verifies the legacy commands "are
-gone everywhere after 5d and 6a **inventoried** them and 8d **removed** them". So the rewrite is 8d's
-and needs no early mounting; I8's atomic cutover is preserved. 5d's deliverable is the inventory that
-makes 8d mechanical.
+reachable paths. This is a **ruling between two entries that disagree**, not a reading the 5d text
+settles on its own: the 5d bullet lists the `AppInboxType`, the operation and the recipe call sites
+under 5d and carves out only "the route and OpenAPI path" for 8d, which reads as 5d retiring them.
+Three other entries say the opposite and are more explicit, so they win — 8d's entry ends "**No
+earlier slice removes them**", 6a's parallel entry says "**Nothing leaves before the route
+cutover**", and slice 9 verifies the commands are gone "after 5d and 6a **inventoried** them and 8d
+**removed** them". The rewrite is therefore 8d's, no route mounts early, and I8's atomic cutover is
+preserved. The 5d bullet above is corrected to match rather than left to contradict this.
 
 ## Corrections — resolved
 
@@ -965,7 +966,7 @@ builder; `GROUP_MUTATION_OPERATIONS` is an untyped `Set` of bare strings.
   cheapest of the three sub-slices rather than the most dangerous.
 - **5d — legacy retirement, prepared but not cut over**: `start-establishment`'s `AppInboxType`,
   operation and
-  OpenAPI block and 22 recipe call sites across 10 files, once `plan` + `connect` cover it (product
+  OpenAPI block and **21** recipe call sites across 10 files (recounted from the tree in PR 8; the 22 predates it), once `plan` + `connect` cover it (product
   decision 34). Each `POST …/lifecycle/establish/…` becomes two calls, so the recipe edit is a rewrite,
   not a path substitution. The automatic retry leg is re-expressed as `plan` plus the connect trigger.
   **The route and OpenAPI path themselves come out in 8d, not here**, so the tree stays deployable
@@ -1216,37 +1217,40 @@ inventory and `COVERED_API_MUTATIONS` are untouched. Rulings:
 ### PR 8 delivery record — slice 5d (executed 2026-08-28, branch `claude/group-activation-legacy-inventory`)
 
 Inventory only: nothing is removed, no route is mounted, no recipe is rewritten. The deliverable is
-`packages/tests/repo/legacy-establishment-retirement/`, a declared inventory of every
-`start-establishment` consumer plus a test that recomputes each entry from the tree, so a new caller
-cannot appear and a surface cannot disappear before 8d without failing.
+`packages/tests/repo/legacy-establishment-retirement/` — a declared table of every
+`start-establishment` consumer, compared against a fresh whole-tree scan **in both directions**, so a
+consumer that is added, removed, or that gains or loses an occurrence fails until it is declared.
+**50 consumer files**, occurrence-exact, `playground/**` excluded as design prose rather than
+consumers.
 
-- **The census is 21 call sites across 10 files, not 22.** Recomputed from the tree per this slice's
-  own gate line ("every hard-coded inventory recomputed from semantics rather than arithmetic"). The
-  22 figure predates the checkpoint that produced it; the recipe root holds twenty-one POSTs to
-  `lifecycle/establish/requests`. Three other `establish` matches are false positives and are
-  recorded as such: `establishmentStartedAtEpochMs` (a group field that survives the cutover),
-  `establishBaselineTopology` (an unrelated step id), and the prose in `recipe-matrix.json`.
-- **The cutover's real cost is the formation epoch, not the paths.** All ten recipes assert
-  `formationEpoch` — **47 assertions**. One `establish` POST advances the epoch once
-  (`forming → connecting`); its replacement advances it twice, because `plan` takes
-  `forming → planned` and `connect` takes `planned → connecting`. Every epoch assertion downstream of
-  a rewritten site therefore shifts by one per site. That is what makes 8d a rewrite rather than a
-  path substitution, and it is now a counted, test-pinned number instead of a sentence.
-- **Twelve non-recipe surfaces, split by disposition.** Six `remove` (the route registration, the
-  command translator's discriminant, the OpenAPI path block, the `AppInboxType`, the operation in the
-  command union, and the transition-table entry) and six `rewrite` (the routing owner inventory, three
-  api-v1 route tests, the recipe idempotency cutover test, and the architecture doc). Each carries the
-  literal marker that proves it is still present; three of the first-draft markers were wrong and the
-  test caught them.
-- **`reopen-establishment` is 6a's, and the two do not share a route.** `lifecycle/establish/requests`
-  and `lifecycle/reopen/requests` are separate registrations, so 5d's inventory is scoped to the first
-  and 6a's will be scoped to the second. One recipe request id (`establish-reopen-…`) names reopen but
-  posts to the establish path — a naming coincidence the inventory records rather than resolves.
-- **Test honesty:** the site scan was verified to fail when a new establish caller is sneaked into a
-  recipe. The first epoch assertion did **not** fail when a count was falsified — it keyed a `Map` by
-  recipe, and the per-recipe fact was duplicated across each of that recipe's sites, so only the last
-  site's value was checked. The fact now lives in its own per-recipe list, and both a falsified count
-  and a recipe missing from that list fail.
+- **The first draft was wrong in a way worth recording, because 8d would have inherited it.** It
+  keyed on the route path `lifecycle/establish` and declared 12 files. The command's internal
+  producer — `toFormationRetryEstablishCommand`, the below-floor retry leg product decision 34 names
+  explicitly — contains that string zero times, so the scan could not see it. Had 8d worked from that
+  inventory it would have removed the operation and left the retry timer submitting a command with no
+  handler: no route, no recipe and no OpenAPI entry to reveal the break. The token set now covers
+  every spelling by which the command is reached, the producer's own name and its `retry-establish`
+  command-id vocabulary included.
+- **The test's shape is the deliverable, not the table.** A one-directional check — "every declared
+  surface still exists" — passes with eleven of twelve entries deleted, which is what the first draft
+  did. The comparison is now wholesale and bidirectional, and it was mutation-checked three ways:
+  dropping a declared consumer, falsifying an occurrence count, and letting an undeclared consumer
+  appear in the tree all fail.
+- **The census is 21 recipe call sites across 10 files, not 22.** Recomputed per this slice's gate
+  line ("every hard-coded inventory recomputed from semantics rather than arithmetic"). The stale 22
+  in the slice bullet is corrected above rather than left to contradict this record.
+- **The epoch consequence is real; the number first recorded for it was not.** `plan`
+  (`forming → planned`) and `connect` (`planned → connecting`) advance the formation epoch twice
+  where the single legacy call advanced it once, so assertions after a rewritten site shift. But the
+  47 `formationEpoch` occurrences across the ten recipes are **not** the renumber set: five of the 21
+  sites expect **403** and advance nothing, and 16 of the 47 are `"formationEpoch": 0` snapshots taken
+  before any transition. `api-v1-drop-in-social-preset.json` is the clean counter-example — one
+  occurrence, asserting `0`, before its only site, which is a denial: its renumber count is zero. 8d
+  derives the shift map per site; this slice records the mechanism and declines to pin a number that
+  does not mean what it says.
+- **Scope held.** The inventory covers `start-establishment` only. `reopen-establishment` is 6a's and
+  does not share a route — `lifecycle/establish/requests` and `lifecycle/reopen/requests` are separate
+  registrations.
 
 Product decision 12 keeps one initiator policy for all eight application-facing commands, so the
 command predicate needs no per-command branch.
