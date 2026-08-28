@@ -56,6 +56,8 @@ export interface AuthorityHarness {
 interface HarnessOptions {
     readonly wakeQueue?: () => void;
     readonly serviceOptions?: AppInboxOptions;
+    /** The stored planned layout a fenced command reads, when a case needs one. */
+    readonly readPlannedLayoutRow?: Parameters<typeof createGroupStateService>[0]['readPlannedLayoutRow'];
 }
 
 export function listRoomEvents(harness: AuthorityHarness, groupId: string) {
@@ -91,7 +93,7 @@ export async function createAuthorityHarness(
         runtimeRepository,
         groupStateEventStore: database.groupEventStore,
         serviceId: 'server-12345678',
-        readPlannedLayoutRow: async () => null,
+        readPlannedLayoutRow: options.readPlannedLayoutRow ?? (async () => null),
         readAcceptedLayoutRow: async () => null,
         now: () => nowEpochMs,
         authSessionRepository: authSessions

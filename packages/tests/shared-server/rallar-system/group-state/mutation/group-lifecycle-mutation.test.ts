@@ -80,6 +80,43 @@ describe('group lifecycle transition computation', () => {
         expect(written.acceptedLayoutIdentity).toBe(null);
     });
 
+    it('carries the planned row into the write so a replan between read and commit conflicts', () => {
+        const computed = computeGroupMutation({
+            command: connectCommand({ expectedFormationEpoch: 4, expectedLayout: PLANNED_LAYOUT }),
+            read: connectRead({ lifecycleState: 'planned', formationEpoch: 4 }, PLANNED_LAYOUT),
+            facts: transitionFacts()
+        });
+
+        expect(computed.outcome).toBe('write');
+        if (computed.outcome !== 'write') {
+            return;
+        }
+        // The revision is what the guarded batch asserts at commit.
+        expect(computed.plannedLayoutFence?.revision).toBe(5);
+        expect(computed.plannedLayoutFence?.snapshot).toEqual(plannedSnapshotFor(PLANNED_LAYOUT));
+    });
+
+    it('leaves the commit guard to the promotion when the transition promotes', () => {
+        const computed = computeGroupMutation({
+            command: criterionCommand('activateGroup', {
+                observedRate: 1,
+                expectedFormationEpoch: 5,
+                expectedLayout: PLANNED_LAYOUT
+            }),
+            read: criterionRead({ lifecycleState: 'connecting', formationEpoch: 5 }),
+            facts: criterionFacts()
+        });
+
+        expect(computed.outcome).toBe('write');
+        if (computed.outcome !== 'write') {
+            return;
+        }
+        // Activation's promotion emits the same guard itself; a second one
+        // would assert the row twice in one batch.
+        expect(computed.plannedLayoutFence).toBe(null);
+        expect(computed.acceptedLayoutPromotion).not.toBe(null);
+    });
+
     it.each(
         [
             ['no-planned-layout', null],
@@ -262,6 +299,43 @@ describe('group lifecycle transition computation', () => {
 
     // The causal fence: a stale petition is a typed rejection that computes
     // no write facts at all — never a wrong transition, never a silent no-op.
+    it('carries the planned row into the write so a replan between read and commit conflicts', () => {
+        const computed = computeGroupMutation({
+            command: connectCommand({ expectedFormationEpoch: 4, expectedLayout: PLANNED_LAYOUT }),
+            read: connectRead({ lifecycleState: 'planned', formationEpoch: 4 }, PLANNED_LAYOUT),
+            facts: transitionFacts()
+        });
+
+        expect(computed.outcome).toBe('write');
+        if (computed.outcome !== 'write') {
+            return;
+        }
+        // The revision is what the guarded batch asserts at commit.
+        expect(computed.plannedLayoutFence?.revision).toBe(5);
+        expect(computed.plannedLayoutFence?.snapshot).toEqual(plannedSnapshotFor(PLANNED_LAYOUT));
+    });
+
+    it('leaves the commit guard to the promotion when the transition promotes', () => {
+        const computed = computeGroupMutation({
+            command: criterionCommand('activateGroup', {
+                observedRate: 1,
+                expectedFormationEpoch: 5,
+                expectedLayout: PLANNED_LAYOUT
+            }),
+            read: criterionRead({ lifecycleState: 'connecting', formationEpoch: 5 }),
+            facts: criterionFacts()
+        });
+
+        expect(computed.outcome).toBe('write');
+        if (computed.outcome !== 'write') {
+            return;
+        }
+        // Activation's promotion emits the same guard itself; a second one
+        // would assert the row twice in one batch.
+        expect(computed.plannedLayoutFence).toBe(null);
+        expect(computed.acceptedLayoutPromotion).not.toBe(null);
+    });
+
     it.each([
         {
             label: 'a stale epoch',

@@ -20,6 +20,8 @@ import {
     type GroupPresenceHeartbeatAppInboxPayload,
     type GroupUpdateAppInboxPayload
 } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-contracts.ts';
+import { RtcTopologySnapshotRepository } from '@shared-server/rallar-system/topology/persistence/rtc-topology-snapshot-repository.ts';
+import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -88,6 +90,12 @@ describe('GroupStateInboxService authenticated authority', () => {
     it(
         'runs every advertised group operation through real AppGroup phases and one transaction',
         runEveryAdvertisedGroupOperation,
+        30_000
+    );
+
+    it(
+        'connects against a stored planned layout and commits its revision guard',
+        runConnectAgainstStoredPlan,
         30_000
     );
 });
@@ -592,4 +600,146 @@ async function runEveryAdvertisedGroupOperation(): Promise<void> {
     // would still carry the phrase, so assert the mapped conflict itself.
     expect(connectResult.left?.code).toBe('group-connect-no-planned-layout');
     expect(connectResult.left?.status).toBe(409);
+}
+
+// `connect` succeeds only against a stored planned row, so this runs its own
+// harness with that row present: the executed request must land the stage,
+// stamp the establishment clock, and commit the planned row's revision guard
+// (the batch's fence against a replan landing between read and commit).
+async function runConnectAgainstStoredPlan(): Promise<void> {
+    const groupId = 'connect-success-room';
+    const plannedIdentity = {
+        groupRevision: 1,
+        presenceRevision: 0,
+        version: 1,
+        state: 'active' as const
+    };
+    // The guard updates the stored row, so the row must really exist in the
+    // same store the batch writes — a stubbed reader alone would make the
+    // batch conflict, which is exactly what this fence is for.
+    let plannedSnapshots: RtcTopologySnapshotRepository | undefined;
+    const harness = await createAuthorityHarness(['owner'], {
+        readPlannedLayoutRow: async (ref) => {
+            const entry = await plannedSnapshots?.findSnapshotEntry(ref);
+            return entry ? { snapshot: entry.value, revision: entry.entry.revision } : null;
+        }
+    });
+    plannedSnapshots = new RtcTopologySnapshotRepository(harness.runtimeRepository);
+    await plannedSnapshots.commitSnapshot({
+        candidate: connectPlannedSnapshot(groupId, plannedIdentity)
+    });
+    const ownerActor = { actorPrincipalId: 'owner', actorSessionId: 'owner-session' } as const;
+    const contextId = `${SCOPE.applicationId}:${SCOPE.workspaceId}:${groupId}`;
+    const created = await processAuthenticated({
+        service: harness.service,
+        reader: harness.reader,
+        authority: harness.sessions.owner,
+        input: {
+            type: AppInboxType.GROUP_CREATE,
+            resourceId: 'connect-create',
+            contextId,
+            senderId: harness.sessions.owner.clientId,
+            data: {
+                scope: SCOPE,
+                request: {
+                    groupId,
+                    displayName: 'Connect Success',
+                    kind: 'room',
+                    joinMode: 'open',
+                    createdByPrincipalId: 'owner',
+                    lifecyclePolicy: { formation: 'phased' },
+                    ...ownerActor,
+                    requestId: 'connect-create'
+                }
+            } satisfies GroupCreateAppInboxPayload
+        }
+    });
+    expect(created.right).toBeDefined();
+
+    const planned = await processAuthenticated({
+        service: harness.service,
+        reader: harness.reader,
+        authority: harness.sessions.owner,
+        input: {
+            type: AppInboxType.GROUP_PLAN,
+            resourceId: 'connect-plan',
+            contextId,
+            senderId: harness.sessions.owner.clientId,
+            data: {
+                scope: SCOPE,
+                groupId,
+                request: { ...ownerActor, requestId: 'connect-plan' }
+            } satisfies GroupLifecycleTransitionAppInboxPayload
+        }
+    });
+    expect(planned.right).toBeDefined();
+    const plannedGroup = (await harness.repository.readSnapshot({ ...SCOPE, groupId }))?.group;
+    expect(plannedGroup?.lifecycleState).toBe('planned');
+
+    const plannedBefore = (await plannedSnapshots.findSnapshotEntry({ ...SCOPE, groupId }))?.entry.revision ?? 0;
+    const connected = await processAuthenticated({
+        service: harness.service,
+        reader: harness.reader,
+        authority: harness.sessions.owner,
+        input: {
+            type: AppInboxType.GROUP_CONNECT,
+            resourceId: 'connect-success',
+            contextId,
+            senderId: harness.sessions.owner.clientId,
+            data: {
+                scope: SCOPE,
+                groupId,
+                request: {
+                    ...ownerActor,
+                    requestId: 'connect-success',
+                    expectedFormationEpoch: plannedGroup?.formationEpoch ?? 0,
+                    expectedLayout: plannedIdentity
+                }
+            } satisfies GroupConnectAppInboxPayload
+        }
+    });
+
+    expect(connected.left).toBeUndefined();
+    const group = (await harness.repository.readSnapshot({ ...SCOPE, groupId }))?.group;
+    expect(group?.lifecycleState).toBe('connecting');
+    expect(group?.formationEpoch).toBe((plannedGroup?.formationEpoch ?? 0) + 1);
+    // Entering a dialing stage starts the attempt clock.
+    expect(group?.establishmentStartedAtEpochMs).not.toBe(null);
+    // Dialing a candidate is not acceptance (decision 42).
+    expect(group?.acceptedLayoutIdentity).toBe(null);
+    // The commit re-asserted the planned row: the guard rewrote it in the
+    // same batch, so its revision advanced exactly once.
+    const plannedAfter = await plannedSnapshots.findSnapshotEntry({ ...SCOPE, groupId });
+    expect(plannedAfter?.entry.revision).toBe(plannedBefore + 1);
+    expect(plannedAfter?.value).toEqual(connectPlannedSnapshot(groupId, plannedIdentity));
+}
+
+function connectPlannedSnapshot(
+    groupId: string,
+    identity: Readonly<{
+        groupRevision: number;
+        presenceRevision: number;
+        version: number;
+        state: 'active' | 'removed';
+    }>
+) {
+    const groupRef = { ...SCOPE, groupId };
+    return {
+        sourceGroupStateCausalRevision: {
+            groupRevision: identity.groupRevision,
+            presenceRevision: identity.presenceRevision
+        },
+        state: identity.state,
+        overlayId: toScopedOverlayId(groupRef),
+        groupRef,
+        name: groupId,
+        topology: 'tree' as const,
+        activeSessionIds: [],
+        nextHopsBySessionId: {},
+        degreeLimit: 1,
+        version: identity.version,
+        createdByClientId: 'owner',
+        createdAtEpochMs: 1,
+        updatedAtEpochMs: 2
+    };
 }
