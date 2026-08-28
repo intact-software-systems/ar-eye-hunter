@@ -89,11 +89,13 @@ The applications still require `DATABASE_URL` at runtime. Their assigned Deno
 Deploy PostgreSQL databases supply that value, so the preflight intentionally
 does not require it to appear in redacted environment metadata.
 
-Relic production profiles already select `group-policy`, so
-`RELIC_REST_AUTH_MODE` may be omitted. If the variable is present, the verifier requires the exact
-value `group-policy`. The verifier reports names and policy failures only; it never prints or uploads
-the environment listing. Configure the remaining values in Deno Deploy before enabling Actions
-deployment.
+Relic production profiles select `group-policy`, so `RELIC_REST_AUTH_MODE` must be omitted. The
+verifier reports names and policy failures only; it never prints or uploads the environment listing.
+Configure the remaining values in Deno Deploy before enabling Actions deployment.
+
+The preflight rejects the retired `ENVIRONMENT` and API-v1
+`RALLAR_PRODUCTION_HARDENING` names. Select `prod-hardened` instead of configuring a separate API
+hardening switch.
 
 Each deployment uploads the repository root with this command shape:
 

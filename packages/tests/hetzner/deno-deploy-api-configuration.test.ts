@@ -62,21 +62,30 @@ describe('Deno Deploy API configuration evidence', () => {
         )).toEqual([]);
     });
 
-    it('uses the Relic production profile policy and rejects a conflicting explicit override', () => {
+    it('rejects retired production configuration names', () => {
+        for (const target of ['api-v1', 'relic'] as const) {
+            for (const name of ['ENVIRONMENT', 'RALLAR_PRODUCTION_HARDENING']) {
+                expect(validateDenoDeployApiEnvironment(
+                    [...sharedProductionEnvironment, plain(name, 'legacy-value')],
+                    target
+                )).toContain(`${name} is retired and must be removed from the production context.`);
+            }
+        }
+    });
+
+    it('uses the Relic production profile policy and rejects explicit overrides', () => {
         expect(validateDenoDeployApiEnvironment(
             sharedProductionEnvironment,
             'relic'
         )).toEqual([]);
-        expect(validateDenoDeployApiEnvironment(
-            [...sharedProductionEnvironment, plain('RELIC_REST_AUTH_MODE', 'group-policy')],
-            'relic'
-        )).toEqual([]);
-        expect(validateDenoDeployApiEnvironment(
-            [...sharedProductionEnvironment, plain('RELIC_REST_AUTH_MODE', 'authenticated')],
-            'relic'
-        )).toEqual([
-            'RELIC_REST_AUTH_MODE must equal group-policy when explicitly configured in the production context.'
-        ]);
+        for (const value of ['group-policy', 'authenticated']) {
+            expect(validateDenoDeployApiEnvironment(
+                [...sharedProductionEnvironment, plain('RELIC_REST_AUTH_MODE', value)],
+                'relic'
+            )).toEqual([
+                'RELIC_REST_AUTH_MODE is profile-owned and must be removed from the production context.'
+            ]);
+        }
     });
 
     it('rejects bundled privileged client IDs for the convenient prod profile', () => {
@@ -150,7 +159,7 @@ describe('Deno Deploy API configuration evidence', () => {
         const errors = validateDenoDeployApiEnvironment(invalid, 'relic');
 
         expect(errors).toContain(
-            'RELIC_REST_AUTH_MODE must equal group-policy when explicitly configured in the production context.'
+            'RELIC_REST_AUTH_MODE is profile-owned and must be removed from the production context.'
         );
         expect(JSON.stringify(errors)).not.toContain(secretValue);
     });

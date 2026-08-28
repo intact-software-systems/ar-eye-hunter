@@ -583,6 +583,25 @@ Deno.test('production hardening validates the effective configuration and cannot
     assert.equal(error.issues.some((issue) => issue.path === 'ice.mode'), true);
 });
 
+Deno.test('only the prod-hardened profile enables production hardening', () => {
+    for (const profileName of ['dev', 'prod', 'prod-in-memory'] as const) {
+        const input = validDecodeApiV1ConfigurationInput();
+        input.profileName = profileName;
+        input.profileSource = { profile: { productionHardening: true } };
+
+        const error = captureConfigurationError(() => decodeApiV1Configuration(input));
+
+        assert.equal(
+            error.issues.some((issue) =>
+                issue.path === 'profile.productionHardening' &&
+                issue.code === 'profile-hardening-mismatch'
+            ),
+            true,
+            profileName
+        );
+    }
+});
+
 function captureConfigurationError(run: () => void): ApiV1ConfigurationError {
     try {
         run();

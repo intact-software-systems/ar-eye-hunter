@@ -45,15 +45,15 @@ export function decodeApiV1Configuration(
     );
     const structuredValues = new ApiV1ConfigurationStructuredValueDecoder(decoder);
     const profileName = decoder.profileName(input.profileName);
-    const configuredHardening = decoder.boolean('profile.productionHardening');
-    if (profileName === 'prod-hardened' && configuredHardening === false) {
+    const configuredProductionHardening = decoder.boolean('profile.productionHardening');
+    const productionHardening = profileName === 'prod-hardened';
+    if (configuredProductionHardening !== productionHardening) {
         decoder.invariant(
             'profile.productionHardening',
-            'production-profile-hardening-required',
-            'The prod-hardened profile always enables production hardening.'
+            'profile-hardening-mismatch',
+            'Production hardening must match the selected profile.'
         );
     }
-    const productionHardening = profileName === 'prod-hardened' || configuredHardening === true;
     const appliedEnvironmentOverrideNames = structuredValues.stringSet(
         'profile.appliedEnvironmentOverrideNames',
         input.appliedEnvironmentOverrideNames,

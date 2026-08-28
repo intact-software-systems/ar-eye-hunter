@@ -22,14 +22,13 @@ The selector is `RALLAR_API_CONFIGURATION_PROFILE`. Absence selects `dev`; the o
 are the exact, case-sensitive strings `dev`, `prod`, `prod-hardened`, and `prod-in-memory`. `prod`
 uses production infrastructure with public registration and bundled ordinary users.
 `prod-hardened` always enables production hardening, admin-only registration, and disabled static
-clients. `RALLAR_PRODUCTION_HARDENING=1` can promote another profile but cannot weaken
-`prod-hardened`.
+clients. Hardening is owned only by the selected profile.
 
 ## Environment allowlist
 
 The configuration reader recognizes only these operational overrides:
 
-- Profile: `RALLAR_API_CONFIGURATION_PROFILE`, `RALLAR_PRODUCTION_HARDENING`.
+- Profile: `RALLAR_API_CONFIGURATION_PROFILE`.
 - HTTP and public URLs: `PORT`, `CORS_ORIGINS`, `RALLAR_API_BASE_URL`,
   `RALLAR_WS_BASE_URL`.
 - Database: `RALLAR_SQL_BACKEND`, `RALLAR_PGLITE_DATA_DIR`,

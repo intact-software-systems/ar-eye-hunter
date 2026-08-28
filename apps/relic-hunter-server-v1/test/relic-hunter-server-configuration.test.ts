@@ -118,22 +118,15 @@ describe('Relic Hunter server configuration', () => {
         expect(hardened.restAuthorization).toEqual({ mode: 'group-policy' });
     });
 
-    it('applies an explicit Relic policy after the convenient production profile', async () => {
-        const configuration = await readConfiguration({
-            ...productionOverrides('prod'),
-            RELIC_REST_AUTH_MODE: 'authenticated'
-        });
-
-        expect(configuration.restAuthorization).toEqual({ mode: 'authenticated' });
-    });
-
-    it('requires group policy when the embedded API enables production hardening', async () => {
-        await expect(readConfiguration({
-            ...productionOverrides('prod-hardened'),
-            RELIC_REST_AUTH_MODE: 'authenticated'
-        })).rejects.toThrow(
-            'RELIC_REST_AUTH_MODE must be group-policy when production hardening is enabled.'
-        );
+    it('rejects Relic policy overrides for production profiles', async () => {
+        for (const profile of ['prod', 'prod-hardened'] as const) {
+            await expect(readConfiguration({
+                ...productionOverrides(profile),
+                RELIC_REST_AUTH_MODE: 'group-policy'
+            })).rejects.toThrow(
+                `RELIC_REST_AUTH_MODE must be omitted when the ${profile} profile owns the policy.`
+            );
+        }
     });
 });
 
