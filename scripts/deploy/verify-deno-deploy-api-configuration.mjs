@@ -1,8 +1,10 @@
+import { readFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 
+const BUNDLED_DEMO_CLIENT_IDS = readBundledDemoClientIds();
+
 const REQUIRED_SHARED_VALUES = new Map([
-    ['RALLAR_API_CONFIGURATION_PROFILE', 'prod'],
     ['AUTH_ADMIN_CLIENT_IDS', undefined],
     ['RALLAR_BLACK_BOX_OPERATOR_CLIENT_IDS', undefined],
     ['METERED_APP_NAME', undefined]
@@ -21,21 +23,74 @@ export function validateDenoDeployApiEnvironment(document, target) {
 
     const productionEntries = collectProductionEnvironmentEntries(document);
     const errors = [];
+    const productionProfile = requireProductionProfile(errors, productionEntries);
     for (const [name, expectedValue] of REQUIRED_SHARED_VALUES) {
         requireVisibleValue({ errors, entries: productionEntries, name, expectedValue });
+    }
+    if (productionProfile === 'prod') {
+        requireNoBundledDemoClientIds(errors, productionEntries, 'AUTH_ADMIN_CLIENT_IDS');
+        requireNoBundledDemoClientIds(
+            errors,
+            productionEntries,
+            'RALLAR_BLACK_BOX_OPERATOR_CLIENT_IDS'
+        );
     }
     for (const name of REQUIRED_SHARED_SECRETS) {
         requireSecret(errors, productionEntries, name);
     }
     if (target === 'relic') {
-        requireVisibleValue({
+        requireOptionalRelicPolicy({
             errors,
             entries: productionEntries,
-            name: 'RELIC_REST_AUTH_MODE',
-            expectedValue: 'group-policy'
+            name: 'RELIC_REST_AUTH_MODE'
         });
     }
     return errors;
+}
+
+function requireProductionProfile(errors, entries) {
+    const name = 'RALLAR_API_CONFIGURATION_PROFILE';
+    const entry = entries.get(name);
+    if (!entry) {
+        errors.push(`${name} is missing from the production context.`);
+        return undefined;
+    }
+    if (entry.secret || !entry.value) {
+        errors.push(`${name} must be a visible non-empty production value.`);
+        return undefined;
+    }
+    if (entry.value !== 'prod' && entry.value !== 'prod-hardened') {
+        errors.push(`${name} must equal prod or prod-hardened in the production context.`);
+        return undefined;
+    }
+    return entry.value;
+}
+
+function requireNoBundledDemoClientIds(errors, entries, name) {
+    const entry = entries.get(name);
+    if (!entry || entry.secret || !entry.value) {
+        return;
+    }
+    const clientIds = entry.value.split(',').map((clientId) => clientId.trim());
+    if (clientIds.some((clientId) => BUNDLED_DEMO_CLIENT_IDS.has(clientId))) {
+        errors.push(`${name} must not include bundled demo client IDs for the prod profile.`);
+    }
+}
+
+function requireOptionalRelicPolicy({ errors, entries, name }) {
+    const entry = entries.get(name);
+    if (!entry) {
+        return;
+    }
+    if (entry.secret || !entry.value) {
+        errors.push(`${name} must be a visible non-empty production value when configured.`);
+        return;
+    }
+    if (entry.value !== 'group-policy') {
+        errors.push(
+            `${name} must equal group-policy when explicitly configured in the production context.`
+        );
+    }
 }
 
 function collectProductionEnvironmentEntries(document) {
@@ -141,6 +196,18 @@ function readFirstString(object, names) {
 
 function isObject(value) {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function readBundledDemoClientIds() {
+    const url = new URL('../../apps/api-v1/resources/authorised-clients.json', import.meta.url);
+    const clients = JSON.parse(readFileSync(url, 'utf8'));
+    if (
+        !Array.isArray(clients) ||
+        clients.some((client) => !isObject(client) || typeof client.clientId !== 'string')
+    ) {
+        throw new TypeError('Bundled API-v1 clients must contain string clientId values.');
+    }
+    return new Set(clients.map((client) => client.clientId));
 }
 
 async function main(args) {

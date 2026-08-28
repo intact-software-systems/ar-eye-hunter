@@ -11,11 +11,12 @@ info:
     `/api/state/apps/{applicationId}/workspaces/{workspaceId}`.
 
     Production deployments select the exact immutable profile with
-    `RALLAR_API_CONFIGURATION_PROFILE=prod`. It requires PostgreSQL and
-    PostgreSQL pub/sub, exact HTTPS/WSS public URLs and CORS origins, strict
-    state read authorization, admin-only registration, disabled static clients,
-    non-demo administrators, Metered TURN credentials, and an explicit
-    black-box operator-token issuer.
+    `RALLAR_API_CONFIGURATION_PROFILE=prod`. It uses PostgreSQL and PostgreSQL
+    pub/sub, exact HTTPS/WSS public URLs and CORS origins, strict state read
+    authorization, public registration, bundled ordinary users, Metered TURN
+    credentials, and an explicit black-box operator-token issuer. Select
+    `prod-hardened` for admin-only registration, disabled static clients, and
+    forced production hardening.
 
 servers:
   - url: http://localhost:8080

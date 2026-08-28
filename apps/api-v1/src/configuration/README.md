@@ -19,9 +19,11 @@ defaults-config.json
 ```
 
 The selector is `RALLAR_API_CONFIGURATION_PROFILE`. Absence selects `dev`; the only accepted values
-are the exact, case-sensitive strings `dev`, `prod`, and `prod-in-memory`. The `prod` profile always
-enables production hardening. `RALLAR_PRODUCTION_HARDENING=1` can promote another profile but cannot
-weaken `prod`.
+are the exact, case-sensitive strings `dev`, `prod`, `prod-hardened`, and `prod-in-memory`. `prod`
+uses production infrastructure with public registration and bundled ordinary users.
+`prod-hardened` always enables production hardening, admin-only registration, and disabled static
+clients. `RALLAR_PRODUCTION_HARDENING=1` can promote another profile but cannot weaken
+`prod-hardened`.
 
 ## Environment allowlist
 

@@ -1,0 +1,5 @@
+{
+  "restAuthorization": {
+    "mode": "authenticated"
+  }
+}

@@ -77,6 +77,21 @@ Deno.test('committed profiles resolve their intended database, delivery, and ICE
                 meteredApiKey: CONFIGURATION_SECRET_SENTINELS.meteredApiKey,
                 blackBoxOperatorTokenSecret: CONFIGURATION_SECRET_SENTINELS.blackBoxOperatorTokenSecret
             },
+            expected: ['postgres', 'postgres', 'metered', false]
+        },
+        {
+            profileName: 'prod-hardened',
+            environmentSource: {
+                authentication: { adminClientIds: ['production-operator'] },
+                ice: { appName: 'rallar-production', region: 'eu' },
+                blackBox: { operatorToken: { allowedClientIds: ['production-operator'] } }
+            },
+            secretsSource: {
+                authenticationCredentialSecret: 'production-auth-credential-secret-at-least-32-characters',
+                databaseUrl: CONFIGURATION_SECRET_SENTINELS.databaseUrl,
+                meteredApiKey: CONFIGURATION_SECRET_SENTINELS.meteredApiKey,
+                blackBoxOperatorTokenSecret: CONFIGURATION_SECRET_SENTINELS.blackBoxOperatorTokenSecret
+            },
             expected: ['postgres', 'postgres', 'metered', true]
         },
         {
@@ -557,7 +572,7 @@ Deno.test('configuration decoder never retains or renders secret values in failu
 
 Deno.test('production hardening validates the effective configuration and cannot be weakened', () => {
     const input = validDecodeApiV1ConfigurationInput();
-    input.profileName = 'prod';
+    input.profileName = 'prod-hardened';
     input.profileSource = { profile: { productionHardening: false } };
 
     const error = captureConfigurationError(() => decodeApiV1Configuration(input));

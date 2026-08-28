@@ -26,6 +26,7 @@ const configuration = await readApiV1Configuration({
     profileUrls: {
         dev: new URL('../resources/configuration/dev-config.json', import.meta.url),
         prod: new URL('../resources/configuration/prod-config.json', import.meta.url),
+        'prod-hardened': new URL('../resources/configuration/prod-hardened-config.json', import.meta.url),
         'prod-in-memory': new URL('../resources/configuration/prod-in-memory-config.json', import.meta.url)
     },
     staticClientsUrl: new URL('../resources/authorised-clients.json', import.meta.url)

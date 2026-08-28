@@ -2,7 +2,7 @@ import type { LoginClientData } from '@shared-server/rallar-system/auth/login/au
 import type { RallarCrdtDocumentTypePolicy } from '@shared/crdt/mod.ts';
 
 export interface ApiV1ConfigurationProfile {
-    readonly name: 'dev' | 'prod' | 'prod-in-memory';
+    readonly name: 'dev' | 'prod' | 'prod-hardened' | 'prod-in-memory';
     readonly productionHardening: boolean;
     readonly appliedEnvironmentOverrideNames: readonly string[];
 }

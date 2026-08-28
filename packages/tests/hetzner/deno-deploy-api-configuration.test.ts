@@ -25,6 +25,16 @@ describe('Deno Deploy API configuration evidence', () => {
             sharedProductionEnvironment,
             'api-v1'
         )).toEqual([]);
+
+        const hardenedEnvironment = sharedProductionEnvironment.map((entry) =>
+            entry.name === 'RALLAR_API_CONFIGURATION_PROFILE'
+                ? plain(entry.name, 'prod-hardened')
+                : entry
+        );
+        expect(validateDenoDeployApiEnvironment(
+            hardenedEnvironment,
+            'api-v1'
+        )).toEqual([]);
     });
 
     it('treats the Deno Deploy all-context JSON shape as production evidence', () => {
@@ -52,15 +62,54 @@ describe('Deno Deploy API configuration evidence', () => {
         )).toEqual([]);
     });
 
-    it('requires the Relic policy in addition to the embedded API-v1 prod environment', () => {
+    it('uses the Relic production profile policy and rejects a conflicting explicit override', () => {
         expect(validateDenoDeployApiEnvironment(
             sharedProductionEnvironment,
             'relic'
-        )).toEqual(['RELIC_REST_AUTH_MODE is missing from the production context.']);
+        )).toEqual([]);
         expect(validateDenoDeployApiEnvironment(
             [...sharedProductionEnvironment, plain('RELIC_REST_AUTH_MODE', 'group-policy')],
             'relic'
         )).toEqual([]);
+        expect(validateDenoDeployApiEnvironment(
+            [...sharedProductionEnvironment, plain('RELIC_REST_AUTH_MODE', 'authenticated')],
+            'relic'
+        )).toEqual([
+            'RELIC_REST_AUTH_MODE must equal group-policy when explicitly configured in the production context.'
+        ]);
+    });
+
+    it('rejects bundled privileged client IDs for the convenient prod profile', () => {
+        for (
+            const [environmentName, clientIds] of [
+                ['AUTH_ADMIN_CLIENT_IDS', 'operations-admin,alice'],
+                ['RALLAR_BLACK_BOX_OPERATOR_CLIENT_IDS', 'bob,operations-admin']
+            ] as const
+        ) {
+            const invalidEnvironment = sharedProductionEnvironment.map((entry) =>
+                entry.name === environmentName
+                    ? plain(environmentName, clientIds)
+                    : entry
+            );
+
+            expect(validateDenoDeployApiEnvironment(invalidEnvironment, 'api-v1')).toContain(
+                `${environmentName} must not include bundled demo client IDs for the prod profile.`
+            );
+        }
+
+        const hardenedEnvironment = sharedProductionEnvironment.map((entry) => {
+            if (entry.name === 'RALLAR_API_CONFIGURATION_PROFILE') {
+                return plain(entry.name, 'prod-hardened');
+            }
+            if (entry.name === 'AUTH_ADMIN_CLIENT_IDS') {
+                return plain(entry.name, 'alice');
+            }
+            if (entry.name === 'RALLAR_BLACK_BOX_OPERATOR_CLIENT_IDS') {
+                return plain(entry.name, 'bob');
+            }
+            return entry;
+        });
+        expect(validateDenoDeployApiEnvironment(hardenedEnvironment, 'api-v1')).toEqual([]);
     });
 
     it('rejects an absent or non-prod selector and missing production secrets', () => {
@@ -77,7 +126,7 @@ describe('Deno Deploy API configuration evidence', () => {
                 : entry
         );
         expect(validateDenoDeployApiEnvironment(wrongSelector, 'api-v1')).toContain(
-            'RALLAR_API_CONFIGURATION_PROFILE must equal prod in the production context.'
+            'RALLAR_API_CONFIGURATION_PROFILE must equal prod or prod-hardened in the production context.'
         );
 
         const missingSecret = sharedProductionEnvironment.filter(
@@ -101,7 +150,7 @@ describe('Deno Deploy API configuration evidence', () => {
         const errors = validateDenoDeployApiEnvironment(invalid, 'relic');
 
         expect(errors).toContain(
-            'RELIC_REST_AUTH_MODE must equal group-policy in the production context.'
+            'RELIC_REST_AUTH_MODE must equal group-policy when explicitly configured in the production context.'
         );
         expect(JSON.stringify(errors)).not.toContain(secretValue);
     });

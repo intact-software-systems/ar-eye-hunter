@@ -12,6 +12,15 @@
       "env": "RALLAR_BB_WORKSPACE_ID",
       "default": "default-{runId}"
     },
+    "defaultUsername": {
+      "env": "RALLAR_ALICE_USERNAME",
+      "default": "alice"
+    },
+    "defaultPassword": {
+      "env": "RALLAR_ALICE_PASSWORD",
+      "default": "secret",
+      "secret": true
+    },
     "runId": {
       "env": "RALLAR_BB_RUN_ID",
       "default": "local"
@@ -34,6 +43,70 @@
     }
   },
   "steps": [
+    {
+      "name": "loginDefaultUser",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login/requests/bb-login-default-user-000-{runId}",
+        "body": {
+          "username": "{defaultUsername}",
+          "password": "{defaultPassword}"
+        },
+        "outputs": {
+          "defaultClientId": "body.clientId",
+          "defaultAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "clientId": "string",
+          "accessToken": "string",
+          "username": "{defaultUsername}",
+          "sessionId": "string",
+          "expiresAtEpochMs": "integer"
+        }
+      }
+    },
+    {
+      "name": "deriveDefaultAuthHeader",
+      "type": "set",
+      "output": "defaultAuthHeader",
+      "secret": true,
+      "redactAs": "defaultAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.defaultAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "logoutDefaultUser",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/logout/requests/bb-logout-default-user-000-{runId}",
+        "headers": {
+          "Authorization": "{defaultAuthHeader}",
+          "x-client-id": "{defaultClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "loggedOut": true
+        }
+      }
+    },
     {
       "name": "setDisposableUsername",
       "type": "set",

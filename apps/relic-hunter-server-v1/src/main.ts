@@ -30,9 +30,15 @@ const configuration = await readRelicHunterServerConfiguration({
     profileUrls: {
         dev: new URL('../../api-v1/resources/configuration/dev-config.json', import.meta.url),
         prod: new URL('../../api-v1/resources/configuration/prod-config.json', import.meta.url),
+        'prod-hardened': new URL('../../api-v1/resources/configuration/prod-hardened-config.json', import.meta.url),
         'prod-in-memory': new URL('../../api-v1/resources/configuration/prod-in-memory-config.json', import.meta.url)
     },
-    staticClientsUrl: new URL('../../api-v1/resources/authorised-clients.json', import.meta.url)
+    staticClientsUrl: new URL('../../api-v1/resources/authorised-clients.json', import.meta.url),
+    relicDefaultsUrl: new URL('../resources/configuration/defaults-config.json', import.meta.url),
+    relicProfileUrls: {
+        prod: new URL('../resources/configuration/prod-config.json', import.meta.url),
+        'prod-hardened': new URL('../resources/configuration/prod-hardened-config.json', import.meta.url)
+    }
 });
 const databaseLifecycle = await createApiV1DatabaseLifecycle({
     database: configuration.apiV1.database,
