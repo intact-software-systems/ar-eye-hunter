@@ -232,7 +232,7 @@ describe('group transport mutation computation', () => {
     });
 });
 
-function readTransportDenial(run: () => unknown): GroupPolicyDenied {
+function readTransportDenial(run: () => void): GroupPolicyDenied {
     try {
         run();
     }

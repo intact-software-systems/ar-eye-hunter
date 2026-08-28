@@ -16,9 +16,12 @@ import {
 import { requireGroupLifecyclePolicyInputShape } from './require-group-lifecycle-policy-input-shape.ts';
 import { validateExpectedLayoutIdentity } from './validate-expected-layout-identity.ts';
 
+/** One name for the decoded request record every arm below reads. */
+type OperationInputRecord = Record<string, unknown>;
+
 interface ValidateGroupMutationOperationInput {
     readonly operation: GroupMutationCommand['operation'];
-    readonly input: Record<string, unknown>;
+    readonly input: OperationInputRecord;
 }
 
 export function validateGroupMutationOperationInput({
@@ -57,7 +60,7 @@ type AggregateOperation = Extract<
 
 function validateAggregateMutationInput(
     operation: AggregateOperation,
-    input: Record<string, unknown>
+    input: OperationInputRecord
 ): void {
     const optionalString = (key: string) => {
         if (input[key] !== undefined) {
@@ -121,7 +124,7 @@ function validateAggregateMutationInput(
 }
 
 function validateGroupUpdateInput(
-    input: Record<string, unknown>,
+    input: OperationInputRecord,
     optionalString: (key: string) => void,
     optionalPositiveInteger: (key: string) => void
 ): void {
@@ -158,7 +161,7 @@ type MembershipOperation = Exclude<
 
 function validateMembershipMutationInput(
     operation: MembershipOperation,
-    input: Record<string, unknown>
+    input: OperationInputRecord
 ): void {
     const optionalString = (key: string) => {
         if (input[key] !== undefined) {
