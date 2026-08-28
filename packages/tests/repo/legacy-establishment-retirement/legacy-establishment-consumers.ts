@@ -14,6 +14,13 @@
  * The first draft of this inventory keyed on the route path alone and missed
  * the command's internal producer, which never mentions a route. Hence the
  * token set below rather than a single marker per file.
+ *
+ * This table is a REMOVAL WORKLIST, never an approval to keep anything.
+ * Product decision 14 forbids retaining `start-establishment`, and the
+ * sanctioned channel for retained production legacy is
+ * `docs/production-legacy-exceptions.md`, which holds no entry for it — a
+ * fact the companion test asserts so listing a consumer here can never read
+ * as blessing it.
  */
 
 /** Every spelling a `start-establishment` consumer can carry. */
@@ -37,6 +44,9 @@ export type LegacyEstablishmentToken = (typeof LEGACY_ESTABLISHMENT_TOKENS)[numb
  * retirement rather than consume the command, and 8d removes no prose there.
  */
 export const LEGACY_ESTABLISHMENT_EXCLUDED_PREFIX = 'playground/';
+
+/** The sanctioned channel for retained production legacy; this command is not on it. */
+export const PRODUCTION_LEGACY_EXCEPTION_REGISTRY = 'docs/production-legacy-exceptions.md';
 
 export interface LegacyEstablishmentConsumer {
     /** Repository-relative path. */

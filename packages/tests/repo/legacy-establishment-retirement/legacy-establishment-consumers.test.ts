@@ -6,6 +6,7 @@ import {
     LEGACY_ESTABLISHMENT_CONSUMERS,
     LEGACY_ESTABLISHMENT_EXCLUDED_PREFIX,
     LEGACY_ESTABLISHMENT_TOKENS,
+    PRODUCTION_LEGACY_EXCEPTION_REGISTRY,
     type LegacyEstablishmentConsumer,
     type LegacyEstablishmentToken
 } from './legacy-establishment-consumers.ts';
@@ -33,6 +34,19 @@ describe('legacy start-establishment consumer inventory', () => {
         expect(declared).toContain(
             'packages/shared-server/rallar-system/topology/replay/work/create-formation-timer-work-handler.ts'
         );
+    });
+
+    // Product decision 14 forbids retaining this command. The registry is the
+    // only channel that could grant it an exception, so an entry appearing
+    // there would turn this worklist into a retention list.
+    it('holds no retained-legacy exception, so the worklist is a removal list', () => {
+        const registry = readFileSync(PRODUCTION_LEGACY_EXCEPTION_REGISTRY, 'utf8');
+
+        for (const token of LEGACY_ESTABLISHMENT_TOKENS) {
+            expect(registry, `${PRODUCTION_LEGACY_EXCEPTION_REGISTRY} retains ${token}`).not.toContain(
+                token
+            );
+        }
     });
 
     it('excludes the design documents that describe the retirement', () => {

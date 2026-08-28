@@ -1251,6 +1251,14 @@ consumers.
 - **Scope held.** The inventory covers `start-establishment` only. `reopen-establishment` is 6a's and
   does not share a route — `lifecycle/establish/requests` and `lifecycle/reopen/requests` are separate
   registrations.
+- **The worklist is a removal list, and says so under test.** Product decision 14 forbids retaining
+  this command, and the sanctioned channel for retained production legacy is
+  `docs/production-legacy-exceptions.md`, whose retained-exceptions section is empty. The inventory
+  asserts that no `start-establishment` token appears in that registry, so listing fifty consumers
+  can never read as blessing them; granting an exception fails the test. `check:retained-legacy`
+  passes, and this PR touches no production file at all, so it retains nothing by construction. The
+  dual path that exists today — the dark `plan`/`connect` beside the mounted legacy route — is the
+  plan's staged cutover with a defined end in 8d, not a compatibility shim.
 
 Product decision 12 keeps one initiator policy for all eight application-facing commands, so the
 command predicate needs no per-command branch.
