@@ -23,6 +23,7 @@ import {
 import { RtcTopologySnapshotRepository } from '@shared-server/rallar-system/topology/persistence/rtc-topology-snapshot-repository.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import { describe, expect, it } from 'vitest';
+import { FakeRuntimeStateRepository } from '../../../runtime-state/test-support/fake-runtime-state-repository.ts';
 
 import {
     createGovernedOperationCase,
@@ -616,17 +617,19 @@ async function runConnectAgainstStoredPlan(): Promise<void> {
     };
     // The guard updates the stored row, so the row must really exist in the
     // same store the batch writes — a stubbed reader alone would make the
-    // batch conflict, which is exactly what this fence is for.
-    let plannedSnapshots: RtcTopologySnapshotRepository | undefined;
-    const harness = await createAuthorityHarness(['owner'], {
-        readPlannedLayoutRow: async (ref) => {
-            const entry = await plannedSnapshots?.findSnapshotEntry(ref);
-            return entry ? { snapshot: entry.value, revision: entry.entry.revision } : null;
-        }
-    });
-    plannedSnapshots = new RtcTopologySnapshotRepository(harness.runtimeRepository);
+    // batch conflict, which is exactly what this fence is for. The store and
+    // its row are therefore built before the harness that reads them.
+    const runtimeRepository = new FakeRuntimeStateRepository();
+    const plannedSnapshots = new RtcTopologySnapshotRepository(runtimeRepository);
     await plannedSnapshots.commitSnapshot({
         candidate: connectPlannedSnapshot(groupId, plannedIdentity)
+    });
+    const harness = await createAuthorityHarness(['owner'], {
+        runtimeRepository,
+        readPlannedLayoutRow: async (ref) => {
+            const entry = await plannedSnapshots.findSnapshotEntry(ref);
+            return entry ? { snapshot: entry.value, revision: entry.entry.revision } : null;
+        }
     });
     const ownerActor = { actorPrincipalId: 'owner', actorSessionId: 'owner-session' } as const;
     const contextId = `${SCOPE.applicationId}:${SCOPE.workspaceId}:${groupId}`;
