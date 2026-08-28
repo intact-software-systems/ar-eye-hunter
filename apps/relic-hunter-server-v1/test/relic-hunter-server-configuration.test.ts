@@ -33,9 +33,15 @@ describe('Relic Hunter server configuration', () => {
             profileUrls: {
                 dev: apiV1ResourceUrl('dev-config.json'),
                 prod: apiV1ResourceUrl('prod-config.json'),
+                'prod-hardened': apiV1ResourceUrl('prod-hardened-config.json'),
                 'prod-in-memory': apiV1ResourceUrl('prod-in-memory-config.json')
             },
-            staticClientsUrl: new URL('../../api-v1/resources/authorised-clients.json', import.meta.url)
+            staticClientsUrl: new URL('../../api-v1/resources/authorised-clients.json', import.meta.url),
+            relicDefaultsUrl: relicResourceUrl('defaults-config.json'),
+            relicProfileUrls: {
+                prod: relicResourceUrl('prod-config.json'),
+                'prod-hardened': relicResourceUrl('prod-hardened-config.json')
+            }
         });
 
         expect(configuration.http).toBe(configuration.apiV1.http);
@@ -104,16 +110,27 @@ describe('Relic Hunter server configuration', () => {
         })).rejects.toThrow('RELIC_AI_EXPEDITION_OLLAMA_BASE_URL');
     });
 
+    it('defaults production profiles to group-policy without a Relic environment override', async () => {
+        const production = await readConfiguration(productionOverrides('prod'));
+        const hardened = await readConfiguration(productionOverrides('prod-hardened'));
+
+        expect(production.restAuthorization).toEqual({ mode: 'group-policy' });
+        expect(hardened.restAuthorization).toEqual({ mode: 'group-policy' });
+    });
+
+    it('applies an explicit Relic policy after the convenient production profile', async () => {
+        const configuration = await readConfiguration({
+            ...productionOverrides('prod'),
+            RELIC_REST_AUTH_MODE: 'authenticated'
+        });
+
+        expect(configuration.restAuthorization).toEqual({ mode: 'authenticated' });
+    });
+
     it('requires group policy when the embedded API enables production hardening', async () => {
         await expect(readConfiguration({
-            RALLAR_API_CONFIGURATION_PROFILE: 'prod',
-            AUTH_ADMIN_CLIENT_IDS: 'production-operator',
-            DATABASE_URL: 'postgres://configuration-test@database.example.test/rallar',
-            METERED_APP_NAME: 'rallar-production',
-            METERED_API_KEY: 'metered-configuration-test-secret',
-            METERED_REGION: 'eu',
-            RALLAR_BLACK_BOX_OPERATOR_CLIENT_IDS: 'production-operator',
-            RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET: 'operator-configuration-test-secret'
+            ...productionOverrides('prod-hardened'),
+            RELIC_REST_AUTH_MODE: 'authenticated'
         })).rejects.toThrow(
             'RELIC_REST_AUTH_MODE must be group-policy when production hardening is enabled.'
         );
@@ -135,12 +152,35 @@ async function readConfiguration(
         profileUrls: {
             dev: apiV1ResourceUrl('dev-config.json'),
             prod: apiV1ResourceUrl('prod-config.json'),
+            'prod-hardened': apiV1ResourceUrl('prod-hardened-config.json'),
             'prod-in-memory': apiV1ResourceUrl('prod-in-memory-config.json')
         },
-        staticClientsUrl: new URL('../../api-v1/resources/authorised-clients.json', import.meta.url)
+        staticClientsUrl: new URL('../../api-v1/resources/authorised-clients.json', import.meta.url),
+        relicDefaultsUrl: relicResourceUrl('defaults-config.json'),
+        relicProfileUrls: {
+            prod: relicResourceUrl('prod-config.json'),
+            'prod-hardened': relicResourceUrl('prod-hardened-config.json')
+        }
     });
 }
 
 function apiV1ResourceUrl(fileName: string): URL {
     return new URL(`../../api-v1/resources/configuration/${fileName}`, import.meta.url);
+}
+
+function relicResourceUrl(fileName: string): URL {
+    return new URL(`../resources/configuration/${fileName}`, import.meta.url);
+}
+
+function productionOverrides(profile: 'prod' | 'prod-hardened'): Readonly<Record<string, string>> {
+    return {
+        RALLAR_API_CONFIGURATION_PROFILE: profile,
+        AUTH_ADMIN_CLIENT_IDS: 'production-operator',
+        DATABASE_URL: 'postgres://configuration-test@database.example.test/rallar',
+        METERED_APP_NAME: 'rallar-production',
+        METERED_API_KEY: 'metered-configuration-test-secret',
+        METERED_REGION: 'eu',
+        RALLAR_BLACK_BOX_OPERATOR_CLIENT_IDS: 'production-operator',
+        RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET: 'operator-configuration-test-secret'
+    };
 }

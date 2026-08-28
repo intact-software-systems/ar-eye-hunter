@@ -4,7 +4,7 @@ This document inventories environment variables used by the apps in this
 repository, plus the repository-level test and infrastructure variables that
 drive those apps.
 
-Last reviewed: 2026-08-23.
+Last reviewed: 2026-08-28.
 
 ## Conventions
 
@@ -18,7 +18,8 @@ Last reviewed: 2026-08-23.
 - Values from local `.env` files are intentionally not recorded here. Only
   variable names and behavior are documented.
 - API-v1 and Relic select production behavior with
-  `RALLAR_API_CONFIGURATION_PROFILE=prod`. The black-box control process uses
+  `RALLAR_API_CONFIGURATION_PROFILE=prod`; use `prod-hardened` when public registration and bundled
+  users must be disabled. The black-box control process uses
   its separate explicit `RALLAR_PRODUCTION_HARDENING=1` switch. See
   [Production Env Hardening Checklist](./production-env-hardening-checklist.md).
 
@@ -56,9 +57,10 @@ defaults-config.json
 ```
 
 `RALLAR_API_CONFIGURATION_PROFILE` accepts only the case-sensitive values
-`dev`, `prod`, and `prod-in-memory`. Absence selects `dev`; `prod` always
-enables hardening. `RALLAR_PRODUCTION_HARDENING=1` may strengthen another
-profile but cannot weaken `prod`.
+`dev`, `prod`, `prod-hardened`, and `prod-in-memory`. Absence selects `dev`;
+`prod` uses production infrastructure with public registration and bundled ordinary users, while
+`prod-hardened` always enables hardening. `RALLAR_PRODUCTION_HARDENING=1` may strengthen another
+profile but cannot weaken `prod-hardened`.
 
 The exact non-secret override allowlist is:
 
@@ -112,7 +114,7 @@ accepted. There are no aliases or transitional readers.
 | Variable                           | Required | Default          | Usage                                                                                                                                                                        |
 | ---------------------------------- | -------- | ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `RALLAR_API_CONFIGURATION_PROFILE` | No       | `dev`            | Selects one exact committed profile.                                                                                                                                         |
-| `RALLAR_PRODUCTION_HARDENING`      | No       | Profile-owned    | `1` or `true` strengthens a non-prod profile; `0` or `false` cannot weaken `prod`.                                                                                           |
+| `RALLAR_PRODUCTION_HARDENING`      | No       | Profile-owned    | `1` or `true` strengthens another profile; `0` or `false` cannot weaken `prod-hardened`.                                                                                     |
 | `PORT`                             | No       | Profile/defaults | HTTP listen port from `1` through `65535`.                                                                                                                                   |
 | `CORS_ORIGINS`                     | No       | Profile/defaults | Exact comma-separated browser origins. Hardened production requires exact HTTPS origins.                                                                                     |
 | `RALLAR_API_BASE_URL`              | No       | Profile/defaults | Canonical public HTTP API URL.                                                                                                                                               |
@@ -261,16 +263,16 @@ repositories are used.
 
 ### Relic Server Variables
 
-| Variable                              | Required | Default                                                             | Usage                                                                                                                                                                                  |
-| ------------------------------------- | -------- | ------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `PORT`                                | No       | `8090`                                                              | HTTP listen port. Parsed with `Number(...)`; no range validation is applied here.                                                                                                      |
-| `CORS_ORIGINS`                        | No       | `http://localhost:5173,http://localhost:5174,http://localhost:5175` | Allowed browser origins for `/api/*`. Use `*` to reflect any request origin.                                                                                                           |
-| `RALLAR_API_CONFIGURATION_PROFILE`    | No       | `dev`                                                               | Selects the same immutable API-v1 profile used by the embedded server. Production must use `prod`.                                                                                     |
-| `RELIC_REST_AUTH_MODE`                | No       | `authenticated`                                                     | `authenticated` requires login only. `group-policy` requires full group read permission for snapshots, room send permission for commands, and active owner/admin permission for reset. |
-| `RELIC_AI_EXPEDITION_MODE`            | No       | `off`                                                               | Optional server-side expedition setup generation. Supported values: `off`, `mock`, and `ollama`.                                                                                       |
-| `RELIC_AI_EXPEDITION_TIMEOUT_MS`      | No       | `15000`                                                             | Timeout for server-side expedition blueprint generation before procedural fallback. Must be a positive integer.                                                                        |
-| `RELIC_AI_EXPEDITION_OLLAMA_BASE_URL` | No       | `http://127.0.0.1:11434`                                            | Private Ollama sidecar base URL used only when `RELIC_AI_EXPEDITION_MODE=ollama`.                                                                                                      |
-| `RELIC_AI_EXPEDITION_OLLAMA_MODEL`    | No       | `llama-test`                                                        | Ollama model ID used only when `RELIC_AI_EXPEDITION_MODE=ollama`.                                                                                                                      |
+| Variable                              | Required | Default                                                             | Usage                                                                                                                                                                                        |
+| ------------------------------------- | -------- | ------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `PORT`                                | No       | `8090`                                                              | HTTP listen port. Parsed with `Number(...)`; no range validation is applied here.                                                                                                            |
+| `CORS_ORIGINS`                        | No       | `http://localhost:5173,http://localhost:5174,http://localhost:5175` | Allowed browser origins for `/api/*`. Use `*` to reflect any request origin.                                                                                                                 |
+| `RALLAR_API_CONFIGURATION_PROFILE`    | No       | `dev`                                                               | Selects the same immutable API-v1 profile used by the embedded server. Production uses `prod` by default or `prod-hardened` for forced hardening.                                            |
+| `RELIC_REST_AUTH_MODE`                | No       | Profile-owned                                                       | Local profiles default to `authenticated`; production profiles default to `group-policy`. An explicit override is applied after the profile, but production deployment rejects weakening it. |
+| `RELIC_AI_EXPEDITION_MODE`            | No       | `off`                                                               | Optional server-side expedition setup generation. Supported values: `off`, `mock`, and `ollama`.                                                                                             |
+| `RELIC_AI_EXPEDITION_TIMEOUT_MS`      | No       | `15000`                                                             | Timeout for server-side expedition blueprint generation before procedural fallback. Must be a positive integer.                                                                              |
+| `RELIC_AI_EXPEDITION_OLLAMA_BASE_URL` | No       | `http://127.0.0.1:11434`                                            | Private Ollama sidecar base URL used only when `RELIC_AI_EXPEDITION_MODE=ollama`.                                                                                                            |
+| `RELIC_AI_EXPEDITION_OLLAMA_MODEL`    | No       | `llama-test`                                                        | Ollama model ID used only when `RELIC_AI_EXPEDITION_MODE=ollama`.                                                                                                                            |
 
 ### Inherited API-v1 Variables
 

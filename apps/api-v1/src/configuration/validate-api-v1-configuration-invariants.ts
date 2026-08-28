@@ -2,6 +2,7 @@ import type {
     ApiV1AppInboxConfiguration,
     ApiV1AuthenticationConfiguration,
     ApiV1BlackBoxConfiguration,
+    ApiV1ConfigurationProfile,
     ApiV1DatabaseConfiguration,
     ApiV1HttpConfiguration,
     ApiV1IceConfiguration,
@@ -16,6 +17,7 @@ export interface ApiV1ConfigurationInvariantCollector {
 }
 
 export interface ValidateApiV1ConfigurationInvariantsInput {
+    readonly profileName: ApiV1ConfigurationProfile['name'];
     readonly productionHardening: boolean;
     readonly http: ApiV1HttpConfiguration;
     readonly publicApi: ApiV1PublicApiConfiguration;
@@ -140,6 +142,44 @@ export function validateApiV1ConfigurationInvariants(
     }
     if (configuration.productionHardening) {
         validateProductionHardening(collector, configuration);
+    }
+    if (configuration.profileName === 'prod') {
+        validateConvenientProductionPrivileges(collector, configuration);
+    }
+}
+
+function validateConvenientProductionPrivileges(
+    collector: ApiV1ConfigurationInvariantCollector,
+    configuration: ValidateApiV1ConfigurationInvariantsInput
+): void {
+    const operatorToken = configuration.blackBox.operatorToken;
+    if (operatorToken.mode === 'enabled' && operatorToken.allowedClientIds.length === 0) {
+        collector.invariant(
+            'blackBox.operatorToken.allowedClientIds',
+            'production-operator-allowlist-required',
+            'Convenient production operator-token issuance requires an explicit client allowlist.'
+        );
+    }
+    const staticClientIds = new Set(
+        configuration.authentication.staticClients.map((client) => client.clientId)
+    );
+    if (
+        configuration.authentication.adminClientIds.some((clientId) => staticClientIds.has(clientId))
+    ) {
+        collector.invariant(
+            'authentication.adminClientIds',
+            'production-demo-privilege-overlap',
+            'Convenient production administrators must not use bundled demo identities.'
+        );
+    }
+    if (
+        operatorToken.allowedClientIds.some((clientId) => staticClientIds.has(clientId))
+    ) {
+        collector.invariant(
+            'blackBox.operatorToken.allowedClientIds',
+            'production-demo-privilege-overlap',
+            'Convenient production operators must not use bundled demo identities.'
+        );
     }
 }
 

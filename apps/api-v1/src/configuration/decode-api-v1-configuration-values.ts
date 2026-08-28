@@ -93,7 +93,12 @@ export class ApiV1ConfigurationValueDecoder implements ApiV1ConfigurationInvaria
     profileName(
         value: ApiV1ConfigurationSourceValue | undefined
     ): ApiV1ConfigurationProfile['name'] {
-        if (value === 'dev' || value === 'prod' || value === 'prod-in-memory') {
+        if (
+            value === 'dev' ||
+            value === 'prod' ||
+            value === 'prod-hardened' ||
+            value === 'prod-in-memory'
+        ) {
             return value;
         }
         this.#issues.push({
@@ -101,7 +106,7 @@ export class ApiV1ConfigurationValueDecoder implements ApiV1ConfigurationInvaria
             path: 'profile.name',
             environmentName: 'RALLAR_API_CONFIGURATION_PROFILE',
             code: 'invalid-profile',
-            message: 'Profile name must be dev, prod, or prod-in-memory.'
+            message: 'Profile name must be dev, prod, prod-hardened, or prod-in-memory.'
         });
         return 'dev';
     }

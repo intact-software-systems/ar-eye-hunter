@@ -96,7 +96,12 @@ function readProfileName(
     if (value === undefined) {
         return 'dev';
     }
-    if (value === 'dev' || value === 'prod' || value === 'prod-in-memory') {
+    if (
+        value === 'dev' ||
+        value === 'prod' ||
+        value === 'prod-hardened' ||
+        value === 'prod-in-memory'
+    ) {
         return value;
     }
     throw new ApiV1ConfigurationError([{
@@ -104,7 +109,7 @@ function readProfileName(
         path: 'profile.name',
         environmentName: 'RALLAR_API_CONFIGURATION_PROFILE',
         code: 'invalid-profile-selector',
-        message: 'Profile selector must be exactly dev, prod, or prod-in-memory.'
+        message: 'Profile selector must be exactly dev, prod, prod-hardened, or prod-in-memory.'
     }]);
 }
 

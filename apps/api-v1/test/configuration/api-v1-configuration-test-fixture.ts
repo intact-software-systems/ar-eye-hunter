@@ -196,13 +196,13 @@ export function validDecodeApiV1ConfigurationInput(): MutableDecodeApiV1Configur
 }
 
 export function validConfigurationEnvironment(
-    profile: 'dev' | 'prod' | 'prod-in-memory' = 'dev'
+    profile: 'dev' | 'prod' | 'prod-hardened' | 'prod-in-memory' = 'dev'
 ): Record<string, string> {
     const environment: Record<string, string> = {
         RALLAR_API_CONFIGURATION_PROFILE: profile,
         RALLAR_AUTH_CREDENTIAL_SECRET: CONFIGURATION_SECRET_SENTINELS.authenticationCredentialSecret
     };
-    if (profile === 'prod') {
+    if (profile === 'prod' || profile === 'prod-hardened') {
         return {
             ...environment,
             AUTH_ADMIN_CLIENT_IDS: 'production-operator',

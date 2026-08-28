@@ -47,15 +47,21 @@ for retries more than 30 seconds overdue. Queue locks are coordination-only. Dom
 advisory, and CRDT document locks are not queue-claim exceptions. Authoritative persisted and shared
 contracts use mandatory fields by default.
 
-## Production Hardening
+## Production Profiles
 
-Set `RALLAR_API_CONFIGURATION_PROFILE=prod` to select the hardened production snapshot. It requires
-PostgreSQL and PostgreSQL pub/sub, exact HTTPS/WSS public URLs and CORS origins, strict state read
-authorization, admin-only registration, disabled static clients, non-demo administrator identities,
-a stable `RALLAR_AUTH_CREDENTIAL_SECRET` of at least 32 characters, Metered TURN, and an explicit
-black-box operator-token issuer. API-v1 reads the selected profile, allowlisted overrides, and
-environment-only secrets once, validates the complete object, freezes it, and injects its owned
-sections into runtime consumers. There is no environment-name alias or separate hardening reader.
+Set `RALLAR_API_CONFIGURATION_PROFILE=prod` for the default production snapshot. It keeps
+PostgreSQL and PostgreSQL pub/sub, exact HTTPS/WSS public URLs and CORS origins, strict state-read
+authorization, Metered TURN, and the explicit black-box operator-token issuer while enabling public
+registration and the bundled `admin`, `user`, `guest`, `test`, `test2`, `alice`, `bob`, and `charlie`
+logins. Bundled identities are ordinary users: configured administrator and operator client IDs must
+not overlap them.
+
+Set `RALLAR_API_CONFIGURATION_PROFILE=prod-hardened` for admin-only registration, disabled static
+clients, and forced production hardening. Both profiles require a stable
+`RALLAR_AUTH_CREDENTIAL_SECRET` of at least 32 characters and keep secrets outside committed JSON.
+API-v1 reads the selected profile, allowlisted overrides, and environment-only secrets once,
+validates the complete object, freezes it, and injects its owned sections into runtime consumers.
+There is no environment-name alias or separate hardening reader.
 
 See [Production Env Hardening Checklist](../../docs/production-env-hardening-checklist.md) and
 [Environment Variables](../../docs/environment-variables.md).

@@ -6,8 +6,8 @@ info:
     Relic Hunters HTTP endpoints owned by `apps/relic-hunter-server-v1`.
     Shared Rallar APIs are documented by the API-v1 OpenAPI document.
 
-    REST auth defaults to `RELIC_REST_AUTH_MODE=authenticated` for local/demo
-    use. Production should set `RELIC_REST_AUTH_MODE=group-policy`; then
+    REST auth defaults to `authenticated` for local/demo profiles. The `prod`
+    and `prod-hardened` profiles default to `group-policy`; then
     snapshot reads require full group read permission, commands require room
     send permission, and reset requires active owner/admin permission.
 

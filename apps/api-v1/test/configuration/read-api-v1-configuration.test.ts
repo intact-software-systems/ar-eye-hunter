@@ -18,6 +18,10 @@ import {
 const DEFAULTS_URL = new URL('../../resources/configuration/defaults-config.json', import.meta.url);
 const DEV_URL = new URL('../../resources/configuration/dev-config.json', import.meta.url);
 const PROD_URL = new URL('../../resources/configuration/prod-config.json', import.meta.url);
+const PROD_HARDENED_URL = new URL(
+    '../../resources/configuration/prod-hardened-config.json',
+    import.meta.url
+);
 const PROD_IN_MEMORY_URL = new URL(
     '../../resources/configuration/prod-in-memory-config.json',
     import.meta.url
@@ -32,7 +36,7 @@ Deno.test('configuration reader selects only absent or exact canonical profiles'
         'dev'
     );
 
-    for (const profile of ['dev', 'prod', 'prod-in-memory'] as const) {
+    for (const profile of ['dev', 'prod', 'prod-hardened', 'prod-in-memory'] as const) {
         const configuration = await readApiV1Configuration(
             readerInput(validConfigurationEnvironment(profile))
         );
@@ -95,7 +99,7 @@ Deno.test('configuration reader applies exact leaf precedence and ignores unrela
     );
 });
 
-Deno.test('configuration reader loads static clients once and disables them outside demo mode', async () => {
+Deno.test('configuration reader loads static clients for convenient production and disables them for hardening', async () => {
     let staticClientReads = 0;
     const devInput = readerInput(validConfigurationEnvironment());
     const configuration = await readApiV1Configuration({
@@ -116,8 +120,54 @@ Deno.test('configuration reader loads static clients once and disables them outs
     const prodConfiguration = await readApiV1Configuration(
         readerInput(validConfigurationEnvironment('prod'))
     );
-    assert.equal(prodConfiguration.authentication.staticClientsMode, 'disabled');
-    assert.deepEqual(prodConfiguration.authentication.staticClients, []);
+    assert.equal(prodConfiguration.profile.productionHardening, false);
+    assert.equal(prodConfiguration.authentication.registrationMode, 'public');
+    assert.equal(prodConfiguration.authentication.staticClientsMode, 'demo');
+    assert.deepEqual(
+        prodConfiguration.authentication.staticClients.map((client) => client.clientId),
+        ['admin', 'user', 'guest', 'test', 'test2', 'alice', 'bob', 'charlie']
+    );
+
+    const hardenedConfiguration = await readApiV1Configuration(
+        readerInput(validConfigurationEnvironment('prod-hardened'))
+    );
+    assert.equal(hardenedConfiguration.profile.productionHardening, true);
+    assert.equal(hardenedConfiguration.authentication.registrationMode, 'admin');
+    assert.equal(hardenedConfiguration.authentication.staticClientsMode, 'disabled');
+    assert.deepEqual(hardenedConfiguration.authentication.staticClients, []);
+});
+
+Deno.test('convenient production keeps bundled users outside privileged identity lists', async () => {
+    for (
+        const [environmentName, clientId] of [
+            ['AUTH_ADMIN_CLIENT_IDS', 'alice'],
+            ['RALLAR_BLACK_BOX_OPERATOR_CLIENT_IDS', 'bob']
+        ] as const
+    ) {
+        const environment = {
+            ...validConfigurationEnvironment('prod'),
+            [environmentName]: clientId
+        };
+        const error = await captureConfigurationError(readerInput(environment));
+
+        assert.equal(
+            error.issues.some((issue) => issue.code === 'production-demo-privilege-overlap'),
+            true,
+            environmentName
+        );
+    }
+});
+
+Deno.test('convenient production requires an operator allowlist when token issuance is enabled', async () => {
+    const environment = validConfigurationEnvironment('prod');
+    delete environment.RALLAR_BLACK_BOX_OPERATOR_CLIENT_IDS;
+
+    const error = await captureConfigurationError(readerInput(environment));
+
+    assert.equal(
+        error.issues.some((issue) => issue.code === 'production-operator-allowlist-required'),
+        true
+    );
 });
 
 Deno.test('configuration reader preserves ordered arrays and isolates the frozen snapshot', async () => {
@@ -128,6 +178,7 @@ Deno.test('configuration reader preserves ordered arrays and isolates the frozen
         [DEFAULTS_URL.href, defaults],
         [DEV_URL.href, profile],
         [PROD_URL.href, profile],
+        [PROD_HARDENED_URL.href, profile],
         [PROD_IN_MEMORY_URL.href, profile],
         [STATIC_CLIENTS_URL.href, staticClients]
     ]);
@@ -159,7 +210,7 @@ Deno.test('configuration startup summary is useful and contains no secret-derive
 
     assert.deepEqual(summary, {
         profile: 'prod',
-        productionHardening: true,
+        productionHardening: false,
         databaseMode: 'postgres',
         databasePubSub: 'postgres',
         iceMode: 'metered',
@@ -201,6 +252,7 @@ function readerInput(environmentValues: Record<string, string>): ReadApiV1Config
         profileUrls: {
             dev: DEV_URL,
             prod: PROD_URL,
+            'prod-hardened': PROD_HARDENED_URL,
             'prod-in-memory': PROD_IN_MEMORY_URL
         },
         staticClientsUrl: STATIC_CLIENTS_URL

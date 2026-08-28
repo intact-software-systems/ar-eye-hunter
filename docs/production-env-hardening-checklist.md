@@ -2,7 +2,7 @@
 
 API-v1 and Relic hardening belong to the immutable API-v1 configuration
 snapshot. Select it with the exact value
-`RALLAR_API_CONFIGURATION_PROFILE=prod`; there is no environment-name alias or
+`RALLAR_API_CONFIGURATION_PROFILE=prod-hardened`; there is no environment-name alias or
 second hardening validator. The black-box control server is a separate process
 and owns its explicit `RALLAR_PRODUCTION_HARDENING=1` check.
 
@@ -12,7 +12,7 @@ names and configuration paths without reporting secret values.
 
 ## API-v1 Production
 
-- Set `RALLAR_API_CONFIGURATION_PROFILE=prod`.
+- Set `RALLAR_API_CONFIGURATION_PROFILE=prod-hardened`.
 - Keep the profile-owned PostgreSQL, PostgreSQL pub/sub, strict read auth,
   admin-only registration, disabled static clients, Metered ICE, HTTPS/WSS
   public URLs, and exact HTTPS CORS settings unless the deployment has a real
@@ -33,7 +33,7 @@ names and configuration paths without reporting secret values.
 
 The Deno Deploy preflight reads redacted environment metadata for
 `rallar-server` and refuses deployment unless the production context contains
-the exact `prod` selector, required visible values, and the three
+the exact `prod` or `prod-hardened` selector, required visible values, and the three
 repository-managed platform secret names. The assigned Deno Deploy PostgreSQL
 database supplies `DATABASE_URL`, so the preflight does not require it to
 appear in the redacted metadata. The preflight never prints or uploads the
@@ -42,14 +42,15 @@ environment document.
 ## Relic Server Production
 
 - Apply the complete API-v1 production checklist to the embedded server.
-- Set `RELIC_REST_AUTH_MODE=group-policy` in the production context.
+- Keep the `prod-hardened` profile-owned `group-policy` setting. If
+  `RELIC_REST_AUTH_MODE` is present, set it to exactly `group-policy`.
 - Keep `RELIC_AI_EXPEDITION_OLLAMA_BASE_URL` private when
   `RELIC_AI_EXPEDITION_MODE=ollama`.
 - Snapshot reads require full group read permission, commands require room send
   permission, and reset requires active owner/admin permission.
 
 The Deno Deploy preflight applies the same API-v1 evidence checks to
-`relic-hunters` and additionally requires the exact Relic group-policy value.
+`relic-hunters` and rejects an explicitly configured Relic policy that is not `group-policy`.
 
 ## Hetzner Disposable Controller
 

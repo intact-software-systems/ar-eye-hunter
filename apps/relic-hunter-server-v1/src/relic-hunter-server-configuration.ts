@@ -1,4 +1,8 @@
-import type { ApiV1Configuration, ApiV1HttpConfiguration } from '@api-v1/src/configuration/api-v1-configuration.ts';
+import type {
+    ApiV1Configuration,
+    ApiV1ConfigurationProfile,
+    ApiV1HttpConfiguration
+} from '@api-v1/src/configuration/api-v1-configuration.ts';
 import {
     readApiV1Configuration,
     type ReadApiV1ConfigurationInput
@@ -29,6 +33,11 @@ export interface RelicHunterServerConfiguration {
     readonly expeditionAi: RelicAiExpeditionConfiguration;
 }
 
+export interface ReadRelicHunterServerConfigurationInput extends ReadApiV1ConfigurationInput {
+    readonly relicDefaultsUrl: URL;
+    readonly relicProfileUrls: Readonly<Partial<Record<ApiV1ConfigurationProfile['name'], URL>>>;
+}
+
 interface RelicHunterServerEnvironmentSource {
     readonly restAuthorizationMode: string | undefined;
     readonly expeditionAiMode: string | undefined;
@@ -36,6 +45,14 @@ interface RelicHunterServerEnvironmentSource {
     readonly expeditionAiOllamaBaseUrl: string | undefined;
     readonly expeditionAiOllamaModel: string | undefined;
 }
+
+type JsonPrimitive = boolean | number | string | null;
+
+interface JsonObject {
+    readonly [key: string]: JsonValue;
+}
+
+type JsonValue = JsonPrimitive | JsonObject | readonly JsonValue[];
 
 export const RELIC_AI_EXPEDITION_DEFAULT_CONFIGURATION: RelicAiExpeditionConfiguration = Object.freeze({
     mode: 'off',
@@ -45,12 +62,12 @@ export const RELIC_AI_EXPEDITION_DEFAULT_CONFIGURATION: RelicAiExpeditionConfigu
 });
 
 export async function readRelicHunterServerConfiguration(
-    input: ReadApiV1ConfigurationInput
+    input: ReadRelicHunterServerConfigurationInput
 ): Promise<RelicHunterServerConfiguration> {
-    const source = readRelicHunterServerEnvironmentSource(input.environment);
-    const restAuthorization = decodeRelicRestAuthorization(source.restAuthorizationMode);
-    const expeditionAi = decodeRelicAiExpeditionConfiguration(source);
     const apiV1 = await readApiV1Configuration(input);
+    const source = readRelicHunterServerEnvironmentSource(input.environment);
+    const restAuthorization = await readRelicRestAuthorization(input, apiV1.profile.name, source);
+    const expeditionAi = decodeRelicAiExpeditionConfiguration(source);
     if (apiV1.profile.productionHardening && restAuthorization.mode !== 'group-policy') {
         throw new Error(
             'RELIC_REST_AUTH_MODE must be group-policy when production hardening is enabled.'
@@ -68,6 +85,54 @@ export async function readRelicHunterServerConfiguration(
     return configuration;
 }
 
+async function readRelicRestAuthorization(
+    input: ReadRelicHunterServerConfigurationInput,
+    profileName: ApiV1ConfigurationProfile['name'],
+    environment: RelicHunterServerEnvironmentSource
+): Promise<RelicRestAuthorizationConfiguration> {
+    const defaultsMode = await readRelicRestAuthorizationMode(
+        input,
+        input.relicDefaultsUrl,
+        'Relic defaults'
+    );
+    const profileUrl = input.relicProfileUrls[profileName];
+    const profileMode = profileUrl === undefined
+        ? undefined
+        : await readRelicRestAuthorizationMode(input, profileUrl, `Relic ${profileName} profile`);
+    return decodeRelicRestAuthorization(
+        environment.restAuthorizationMode ?? profileMode ?? defaultsMode,
+        environment.restAuthorizationMode === undefined
+            ? 'restAuthorization.mode'
+            : 'RELIC_REST_AUTH_MODE'
+    );
+}
+
+async function readRelicRestAuthorizationMode(
+    input: ReadRelicHunterServerConfigurationInput,
+    url: URL,
+    resourceName: string
+): Promise<string> {
+    let value: JsonValue;
+    try {
+        value = JSON.parse(await input.readTextFile(url)) as JsonValue;
+    }
+    catch {
+        throw new Error(`${resourceName} configuration must be readable JSON.`);
+    }
+    if (!isObject(value) || !hasOnlyKeys(value, ['restAuthorization'])) {
+        throw new Error(`${resourceName} configuration must contain only restAuthorization.`);
+    }
+    const restAuthorization = value.restAuthorization;
+    if (
+        !isObject(restAuthorization) ||
+        !hasOnlyKeys(restAuthorization, ['mode']) ||
+        typeof restAuthorization.mode !== 'string'
+    ) {
+        throw new Error(`${resourceName} restAuthorization must contain one string mode.`);
+    }
+    return restAuthorization.mode;
+}
+
 function readRelicHunterServerEnvironmentSource(
     environment: ReadApiV1ConfigurationInput['environment']
 ): RelicHunterServerEnvironmentSource {
@@ -81,15 +146,16 @@ function readRelicHunterServerEnvironmentSource(
 }
 
 function decodeRelicRestAuthorization(
-    rawMode: string | undefined
+    rawMode: string,
+    sourceName: string
 ): RelicRestAuthorizationConfiguration {
-    if (rawMode === undefined || rawMode === 'authenticated') {
+    if (rawMode === 'authenticated') {
         return { mode: 'authenticated' };
     }
     if (rawMode === 'group-policy') {
         return { mode: 'group-policy' };
     }
-    throw new Error('RELIC_REST_AUTH_MODE must be exactly authenticated or group-policy.');
+    throw new Error(`${sourceName} must be exactly authenticated or group-policy.`);
 }
 
 function decodeRelicAiExpeditionConfiguration(
@@ -169,4 +235,13 @@ function recursivelyFreeze(value: object): void {
         }
     }
     Object.freeze(value);
+}
+
+function hasOnlyKeys(value: JsonObject, expectedKeys: readonly string[]): boolean {
+    const keys = Object.keys(value);
+    return keys.length === expectedKeys.length && keys.every((key) => expectedKeys.includes(key));
+}
+
+function isObject(value: JsonValue): value is JsonObject {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
 }

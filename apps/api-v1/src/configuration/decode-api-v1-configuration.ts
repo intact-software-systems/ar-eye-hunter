@@ -46,14 +46,14 @@ export function decodeApiV1Configuration(
     const structuredValues = new ApiV1ConfigurationStructuredValueDecoder(decoder);
     const profileName = decoder.profileName(input.profileName);
     const configuredHardening = decoder.boolean('profile.productionHardening');
-    if (profileName === 'prod' && configuredHardening === false) {
+    if (profileName === 'prod-hardened' && configuredHardening === false) {
         decoder.invariant(
             'profile.productionHardening',
             'production-profile-hardening-required',
-            'The prod profile always enables production hardening.'
+            'The prod-hardened profile always enables production hardening.'
         );
     }
-    const productionHardening = profileName === 'prod' || configuredHardening === true;
+    const productionHardening = profileName === 'prod-hardened' || configuredHardening === true;
     const appliedEnvironmentOverrideNames = structuredValues.stringSet(
         'profile.appliedEnvironmentOverrideNames',
         input.appliedEnvironmentOverrideNames,
@@ -80,6 +80,7 @@ export function decodeApiV1Configuration(
     const observability = decodeObservability(decoder);
 
     validateApiV1ConfigurationInvariants(decoder, {
+        profileName,
         productionHardening,
         publicApi,
         database,

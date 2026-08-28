@@ -1,6 +1,6 @@
 {
   "profile": {
-    "productionHardening": false
+    "productionHardening": true
   },
   "http": {
     "corsOrigins": [
@@ -19,9 +19,8 @@
     "pubSub": "postgres"
   },
   "authentication": {
-    "registrationMode": "public",
-    "staticClientsMode": "demo",
-    "adminClientIds": []
+    "registrationMode": "admin",
+    "staticClientsMode": "disabled"
   },
   "stateApi": {
     "strictReadAuthorization": true
