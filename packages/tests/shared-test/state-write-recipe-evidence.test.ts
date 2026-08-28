@@ -56,16 +56,20 @@ describe('API-v1 state-write recipe evidence', () => {
             'assertPrimaryExactRevisions',
             'assertTertiaryExactRevisions',
             'assertEnvelopePayloadsAcrossPrimaryAndTertiary',
+            'heldLandingLeftAcceptedLayoutUnpromoted',
             'closeAliceWebSocket',
             'closeBobWebSocket',
             'logoutAliceThroughPrimary',
             'logoutBobThroughSecondary'
         ];
-        expect(recipe.steps).toHaveLength(32);
+        // The held-landing read and the four cleanup steps are not assert
+        // steps, so the synthetic execution below stands them in as SETs.
+        const trailingNonAssertCount = 5;
+        expect(recipe.steps).toHaveLength(33);
         expect(recipe.steps.slice(-terminalNames.length).map((step) => step.name))
             .toEqual(terminalNames);
 
-        const assertionSteps = recipe.steps.slice(-terminalNames.length, -4);
+        const assertionSteps = recipe.steps.slice(-terminalNames.length, -trailingNonAssertCount);
         expect(assertionSteps[0].actual).toEqual({
             firstRevision: '{primaryFirstEnvelope.resultingCausalRevision.groupRevision}',
             secondRevision: '{primarySecondEnvelope.resultingCausalRevision.groupRevision}'
@@ -105,7 +109,7 @@ describe('API-v1 state-write recipe evidence', () => {
                 },
                 [step.name]: { type: 'assert' }
             })),
-            ...terminalNames.slice(-4).map((name, index) => ({
+            ...terminalNames.slice(-trailingNonAssertCount).map((name, index) => ({
                 SET: {
                     request: {
                         output: `${name}Observed`,
@@ -123,7 +127,7 @@ describe('API-v1 state-write recipe evidence', () => {
             variables
         });
 
-        expect(report.summary).toMatchObject({ total: 7, success: 7, failure: 0 });
+        expect(report.summary).toMatchObject({ total: 8, success: 8, failure: 0 });
         for (const name of terminalNames) {
             expect(report.resultsByName[name], name).toHaveLength(1);
         }

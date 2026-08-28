@@ -204,7 +204,12 @@
           "displayName": "{groupName}",
           "kind": "room",
           "joinMode": "open",
-          "createdByPrincipalId": "{aliceClientId}"
+          "createdByPrincipalId": "{aliceClientId}",
+          "lifecyclePolicy": {
+            "topology": {
+              "reconfigureLanding": "hold"
+            }
+          }
         }
       },
       "expect": {
@@ -828,6 +833,28 @@
               "groupId": "{groupId}"
             }
           }
+        }
+      }
+    },
+    {
+      "name": "heldLandingLeftAcceptedLayoutUnpromoted",
+      "type": "http",
+      "connection": "apiPrimary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "snapshot": {
+            "state": "active"
+          },
+          "acceptedSnapshot": null
         }
       }
     },
