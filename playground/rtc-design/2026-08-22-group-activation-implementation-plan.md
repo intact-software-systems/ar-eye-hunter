@@ -327,7 +327,7 @@ Three other entries say the opposite and are more explicit, so they win — 8d's
 earlier slice removes them**", 6a's parallel entry says "**Nothing leaves before the route
 cutover**", and slice 9 verifies the commands are gone "after 5d and 6a **inventoried** them and 8d
 **removed** them". The rewrite is therefore 8d's, no route mounts early, and I8's atomic cutover is
-preserved. The 5d bullet above is corrected to match rather than left to contradict this.
+preserved. The 5d bullet above now says so in its own text rather than being left to contradict this.
 
 ## Corrections — resolved
 
@@ -966,11 +966,13 @@ builder; `GROUP_MUTATION_OPERATIONS` is an untyped `Set` of bare strings.
   cheapest of the three sub-slices rather than the most dangerous.
 - **5d — legacy retirement, prepared but not cut over**: `start-establishment`'s `AppInboxType`,
   operation and
-  OpenAPI block and **21** recipe call sites across 10 files (recounted from the tree in PR 8; the 22 predates it), once `plan` + `connect` cover it (product
-  decision 34). Each `POST …/lifecycle/establish/…` becomes two calls, so the recipe edit is a rewrite,
-  not a path substitution. The automatic retry leg is re-expressed as `plan` plus the connect trigger.
-  **The route and OpenAPI path themselves come out in 8d, not here**, so the tree stays deployable
-  throughout.
+  OpenAPI block and **21** recipe call sites across 10 files (recounted from the tree in PR 8; the
+  22 predates it), once `plan` + `connect` cover it (product decision 34). **5d inventories all of
+  these; 8d removes them** — the sixth checkpoint's ruling, which supersedes this bullet's original
+  reading that only the route and OpenAPI path waited for 8d. Each `POST …/lifecycle/establish/…`
+  becomes two calls, so the recipe edit is a rewrite, not a path substitution. The automatic retry
+  leg is re-expressed as `plan` plus the connect trigger, which makes its scheduler cutover work too.
+  Nothing comes out before 8d, so the tree stays deployable throughout.
 - **5e — `reset` and `start`, dark** (product decisions 35–37). **Needs:** 4a's accepted slot and
   promotion-owned fingerprint semantics. `start` is `dormant → forming` and is denied while the
   attempt series is exhausted. `reset` is one AppInbox transaction that advances the epoch, zeroes
@@ -1220,17 +1222,27 @@ Inventory only: nothing is removed, no route is mounted, no recipe is rewritten.
 `packages/tests/repo/legacy-establishment-retirement/` — a declared table of every
 `start-establishment` consumer, compared against a fresh whole-tree scan **in both directions**, so a
 consumer that is added, removed, or that gains or loses an occurrence fails until it is declared.
-**50 consumer files**, occurrence-exact, `playground/**` excluded as design prose rather than
-consumers.
+**54 consumer files**, occurrence-exact.
+
+**What that guarantee is bounded by**, stated because an inventory that oversells itself is worse
+than none: it is exact _for the eleven declared tokens, over git-tracked files, outside the excluded
+prose roots_ (`playground/`, `plans/`, `.agents/`, `.superpowers/`, `docs/superpowers/`, `projects/`,
+plus the inventory's own directory). A consumer reached by a twelfth spelling, or living in an
+uncommitted file, is still invisible. Nor does any of it prove the cutover finished: 8d could delete
+one call site and edit the count to match. Under-declaration is blocked; under-removal is slice 9's
+job, and this slice does not take it on.
 
 - **The first draft was wrong in a way worth recording, because 8d would have inherited it.** It
-  keyed on the route path `lifecycle/establish` and declared 12 files. The command's internal
-  producer — `toFormationRetryEstablishCommand`, the below-floor retry leg product decision 34 names
-  explicitly — contains that string zero times, so the scan could not see it. Had 8d worked from that
-  inventory it would have removed the operation and left the retry timer submitting a command with no
-  handler: no route, no recipe and no OpenAPI entry to reveal the break. The token set now covers
-  every spelling by which the command is reached, the producer's own name and its `retry-establish`
-  command-id vocabulary included.
+  hand-authored a list of twelve files and checked only that each still existed — no scan of the tree
+  at all — so the twenty-odd consumers nobody thought of stayed invisible. Among them was the
+  below-floor retry leg product decision 34 names explicitly: had 8d worked from that inventory it
+  would have removed the operation and left the retry timer submitting a command with no handler,
+  with no route, recipe or OpenAPI entry to reveal the break. **The cause was the hand-authored list,
+  not the choice of marker** — an earlier telling of this blamed route-path keying, but two of the
+  draft's markers do occur in the producer file, so a converse scan with even that marker set would
+  have caught it. What no marker set caught is the retry _scheduler_
+  (`formation-timer-outbox-entry.ts`), which names neither route nor command; the token list now
+  carries the retry leg's own vocabulary for it.
 - **The test's shape is the deliverable, not the table.** A one-directional check — "every declared
   surface still exists" — passes with eleven of twelve entries deleted, which is what the first draft
   did. The comparison is now wholesale and bidirectional, and it was mutation-checked three ways:

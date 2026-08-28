@@ -4,7 +4,8 @@ import { describe, expect, it } from 'vitest';
 
 import {
     LEGACY_ESTABLISHMENT_CONSUMERS,
-    LEGACY_ESTABLISHMENT_EXCLUDED_PREFIX,
+    LEGACY_ESTABLISHMENT_EXCLUDED_PREFIXES,
+    LEGACY_ESTABLISHMENT_SELF_PATH,
     LEGACY_ESTABLISHMENT_TOKENS,
     PRODUCTION_LEGACY_EXCEPTION_REGISTRY,
     type LegacyEstablishmentConsumer,
@@ -12,28 +13,41 @@ import {
 } from './legacy-establishment-consumers.ts';
 
 /**
- * Slice 5d inventories what slice 8d removes; nothing leaves here. The
- * inventory is only worth having if it cannot be under-declared, so the
- * comparison runs in both directions over the whole tracked tree: a consumer
- * the table omits fails just as loudly as one it invents.
+ * Slice 5d inventories what slice 8d removes; nothing leaves here. A
+ * one-directional check — every declared file still exists — passes with the
+ * list almost entirely deleted, which is how the first draft shipped
+ * incomplete. The comparison below therefore runs both ways over the tracked
+ * tree, exact to the occurrence.
  */
 describe('legacy start-establishment consumer inventory', () => {
     it('declares exactly the consumers the tracked tree carries, occurrence for occurrence', () => {
-        expect(readDeclaredConsumers()).toEqual(readTrackedConsumers());
+        const declared = getDeclaredConsumers();
+        const tracked = readTrackedConsumers();
+
+        // Compare the file list first: a fifty-entry table diff does not say
+        // which file moved, and that is the whole message.
+        expect(declared.map((consumer) => consumer.file)).toEqual(
+            tracked.map((consumer) => consumer.file)
+        );
+        expect(declared).toEqual(tracked);
     });
 
-    it('covers the command through its internal producer, not only its route', () => {
+    it('covers the retry leg through its producer and its scheduler', () => {
         const declared = new Set(LEGACY_ESTABLISHMENT_CONSUMERS.map((consumer) => consumer.file));
 
-        // The retry leg builds the command directly and names no route, so a
-        // route-keyed inventory cannot see it (product decision 34 calls it
-        // out by name). It is the consumer 8d is most likely to miss.
-        expect(declared).toContain(
-            'packages/shared-server/rallar-system/group-state/group-formation-mutation-command.ts'
-        );
-        expect(declared).toContain(
-            'packages/shared-server/rallar-system/topology/replay/work/create-formation-timer-work-handler.ts'
-        );
+        // The producer builds the command and names no route; the scheduler
+        // arms the retry and names no command. Product decision 34 re-expresses
+        // this leg, so both are cutover work an inventory keyed on either half
+        // alone would lose.
+        for (
+            const file of [
+                'packages/shared-server/rallar-system/group-state/group-formation-mutation-command.ts',
+                'packages/shared-server/rallar-system/topology/replay/work/create-formation-timer-work-handler.ts',
+                'packages/shared-server/rallar-system/group-state/formation-timer-outbox-entry.ts'
+            ]
+        ) {
+            expect(declared, file).toContain(file);
+        }
     });
 
     // Product decision 14 forbids retaining this command. The registry is the
@@ -43,20 +57,21 @@ describe('legacy start-establishment consumer inventory', () => {
         const registry = readFileSync(PRODUCTION_LEGACY_EXCEPTION_REGISTRY, 'utf8');
 
         for (const token of LEGACY_ESTABLISHMENT_TOKENS) {
-            expect(registry, `${PRODUCTION_LEGACY_EXCEPTION_REGISTRY} retains ${token}`).not.toContain(
-                token
-            );
+            expect(registry, `${PRODUCTION_LEGACY_EXCEPTION_REGISTRY} retains ${token}`)
+                .not.toContain(token);
         }
     });
 
-    it('excludes the design documents that describe the retirement', () => {
+    it('excludes the prose roots that describe the retirement', () => {
         for (const consumer of LEGACY_ESTABLISHMENT_CONSUMERS) {
-            expect(consumer.file.startsWith(LEGACY_ESTABLISHMENT_EXCLUDED_PREFIX)).toBe(false);
+            for (const prefix of LEGACY_ESTABLISHMENT_EXCLUDED_PREFIXES) {
+                expect(consumer.file.startsWith(prefix), consumer.file).toBe(false);
+            }
         }
     });
 });
 
-function readDeclaredConsumers(): readonly LegacyEstablishmentConsumer[] {
+function getDeclaredConsumers(): readonly LegacyEstablishmentConsumer[] {
     return [...LEGACY_ESTABLISHMENT_CONSUMERS].sort((left, right) => left.file.localeCompare(right.file));
 }
 
@@ -70,8 +85,9 @@ function readTrackedConsumers(): readonly LegacyEstablishmentConsumer[] {
 function readTrackedFiles(): readonly string[] {
     return execFileSync('git', ['ls-files'], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 })
         .split('\n')
-        .filter((file) => file.length > 0 && !file.startsWith(LEGACY_ESTABLISHMENT_EXCLUDED_PREFIX))
-        .filter((file) => !file.includes('legacy-establishment-retirement'))
+        .filter((file) => file.length > 0)
+        .filter((file) => !LEGACY_ESTABLISHMENT_EXCLUDED_PREFIXES.some((prefix) => file.startsWith(prefix)))
+        .filter((file) => !file.includes(LEGACY_ESTABLISHMENT_SELF_PATH))
         .filter((file) => isReadableFile(file));
 }
 
