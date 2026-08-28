@@ -370,11 +370,11 @@ export type GroupMutationRead = Readonly<{
     authorityPresenceSessions: readonly GroupPresenceSession[];
     authorityPresenceSessionEntries: readonly RuntimeStateEntryValue<GroupPresenceSession>[];
     presenceSummary: RuntimeStateEntryValue<GroupPresenceSummary> | null;
-    /** Loaded only for the operations `readsGroupLifecyclePolicy` names. */
+    /** Loaded only for the operations the read scope's policy rule names. */
     lifecyclePolicy: GroupLifecyclePolicyRead | null;
     /**
      * The active member principal ids at read time, loaded only for the
-     * operations `readsGroupActiveMemberPrincipalIds` names; the
+     * operations the read scope's roster rule names; the
      * compare-and-set on the group row (membership writes bump
      * snapshotVersion) makes the pinned electorate consistent with the
      * transition that records it.
@@ -555,38 +555,6 @@ export function isGroupTransportOperation(
     return operation === 'pauseGroupTransport' || operation === 'resumeGroupTransport';
 }
 
-/**
- * The operations whose compute consults the stored lifecycle policy: the
- * transitions and the transport commands read its initiator (product
- * decision 12's single group-authority policy), the promotion reads the
- * replanning landing, and the admission surfaces read the admission mode.
- */
-export function readsGroupLifecyclePolicy(
-    operation: GroupMutationCommand['operation']
-): boolean {
-    return (
-        isGroupLifecycleTransitionOperation(operation) ||
-        isGroupTransportOperation(operation) ||
-        isGroupAdmissionPolicyReadOperation(operation) ||
-        operation === 'applyPlannedLayout'
-    );
-}
-
-/**
- * The operations that need the full active roster: a transition pins its
- * electorate, an admission decision resolves current managers, and both
- * group-authority families resolve the manager initiator from it.
- */
-export function readsGroupActiveMemberPrincipalIds(
-    operation: GroupMutationCommand['operation']
-): boolean {
-    return (
-        isGroupLifecycleTransitionOperation(operation) ||
-        isGroupTransportOperation(operation) ||
-        isGroupAdmissionDecisionOperation(operation)
-    );
-}
-
 /** True exactly when the command names a planned layout its fence must match. */
 export function isLayoutFencedGroupMutationCommand(command: GroupMutationCommand): boolean {
     return (
@@ -598,25 +566,6 @@ export function isLayoutFencedGroupMutationCommand(command: GroupMutationCommand
         ) &&
         command.input.expectedLayout !== null
     );
-}
-
-/**
- * True when the command's compute consults the stored layout rows: every
- * activation reads them for the promotion effect (operator activations
- * included), and a layout-fenced command reads the planned row for its
- * fence and its commit-time re-assertion.
- */
-export function readsGroupLayoutRows(command: GroupMutationCommand): boolean {
-    return command.operation === 'activateGroup' || isLayoutFencedGroupMutationCommand(command);
-}
-
-/**
- * The accepted row is read only by the commands that can promote: a fenced
- * command that never promotes (connect, decision 42) consults the planned
- * row alone, so it does not pay for a slot it cannot consult.
- */
-export function readsAcceptedLayoutRow(command: GroupMutationCommand): boolean {
-    return command.operation === 'activateGroup' || command.operation === 'applyPlannedLayout';
 }
 
 export type GroupAdmissionDecisionOperation = Extract<

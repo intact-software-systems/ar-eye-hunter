@@ -1,6 +1,6 @@
 import { GroupStateRepository } from '../../persistence/group-state-repository.ts';
 import type { GroupMutationCommand, GroupMutationRead } from '../group-mutation-contracts.ts';
-import { readsGroupActiveMemberPrincipalIds, readsGroupLifecyclePolicy } from '../group-mutation-contracts.ts';
+import { readsGroupActiveMemberPrincipalIds, readsGroupLifecyclePolicy } from './group-mutation-read-scope.ts';
 import { readExactGroupMutation } from './read-exact-group-mutation.ts';
 import { readSequentialGroupMutation } from './read-sequential-group-mutation.ts';
 

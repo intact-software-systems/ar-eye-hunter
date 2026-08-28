@@ -9,9 +9,9 @@ import type {
     GroupMutationRead,
     GroupTransportOperation
 } from '../group-mutation-contracts.ts';
-import { auditStamp, computeGroupMutationWriteResult, noOp, rejected, requireGroup } from '../group-mutation-result.ts';
+import { auditStamp, computeGroupMutationWriteResult, noOp, requireGroup } from '../group-mutation-result.ts';
 import { assertActive, assertAllowed, toPolicySnapshot } from './group-aggregate-mutation-policy.ts';
-import { resolveGroupAuthorityPolicy } from './resolve-group-authority-policy.ts';
+import { resolveGroupAuthorityPolicy, toCorruptPolicyRejection } from './resolve-group-authority-policy.ts';
 
 const TRANSPORT_STATE_BY_OPERATION = {
     pauseGroupTransport: 'halted',
@@ -36,13 +36,7 @@ export function computeGroupTransportMutation(
     assertActive(stored.value, facts.nowEpochMs);
     const resolution = resolveGroupAuthorityPolicy(read);
     if (resolution.status === 'corrupt') {
-        return rejected({
-            command,
-            read,
-            facts,
-            rejectionCode: 'group-mutation-rejected',
-            message: `Group lifecycle policy is unreadable: ${resolution.reason}`
-        });
+        return toCorruptPolicyRejection({ command, read, facts, reason: resolution.reason });
     }
     if (read.activeMemberPrincipalIds === null) {
         throw new TypeError('Transport compute requires the roster read');

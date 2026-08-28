@@ -18,11 +18,11 @@ import {
     isLayoutFencedGroupMutationCommand,
     type GroupLifecycleTransitionOperation
 } from '../group-mutation-contracts.ts';
-import { auditStamp, computeGroupMutationWriteResult, rejected, requireGroup } from '../group-mutation-result.ts';
+import { auditStamp, computeGroupMutationWriteResult, requireGroup } from '../group-mutation-result.ts';
 import { computeLifecycleFenceRejection } from './compute-lifecycle-fence-rejection.ts';
 import { computePlannedLayoutPromotion, type PlannedLayoutPromotion } from './compute-planned-layout-promotion.ts';
 import { assertActive, assertAllowed, toPolicySnapshot } from './group-aggregate-mutation-policy.ts';
-import { resolveGroupAuthorityPolicy } from './resolve-group-authority-policy.ts';
+import { resolveGroupAuthorityPolicy, toCorruptPolicyRejection } from './resolve-group-authority-policy.ts';
 
 const LIFECYCLE_TRANSITION_BY_OPERATION = {
     startGroupEstablishment: 'start-establishment',
@@ -66,14 +66,7 @@ export function computeLifecycleTransition(
     assertActive(stored.value, facts.nowEpochMs);
     const resolution = resolveGroupAuthorityPolicy(read);
     if (resolution.status === 'corrupt') {
-        // Fail closed: an unreadable stored policy must not read as permissive.
-        return rejected({
-            command,
-            read,
-            facts,
-            rejectionCode: 'group-mutation-rejected',
-            message: `Group lifecycle policy is unreadable: ${resolution.reason}`
-        });
+        return toCorruptPolicyRejection({ command, read, facts, reason: resolution.reason });
     }
     const policy = resolution.policy;
     const transition = LIFECYCLE_TRANSITION_BY_OPERATION[command.operation];

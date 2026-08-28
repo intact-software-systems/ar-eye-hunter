@@ -4,7 +4,7 @@ import {
     readsGroupActiveMemberPrincipalIds,
     readsGroupLayoutRows,
     readsGroupLifecyclePolicy
-} from '../group-mutation-contracts.ts';
+} from '../read/group-mutation-read-scope.ts';
 
 export function validateGroupMutationOperationReads(
     read: GroupMutationRead,

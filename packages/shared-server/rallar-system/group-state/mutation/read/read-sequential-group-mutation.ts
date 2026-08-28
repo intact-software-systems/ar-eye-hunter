@@ -2,12 +2,12 @@ import { readRallarGroupDirectorAppointment } from '@shared/api/group-director.t
 
 import { GroupStateRepository } from '../../persistence/group-state-repository.ts';
 import type { GroupMutationCommand, GroupMutationRead } from '../group-mutation-contracts.ts';
-import { readsGroupActiveMemberPrincipalIds } from '../group-mutation-contracts.ts';
 import { groupMutationIdempotencyKey } from '../group-mutation-idempotency-key.ts';
 import {
     resolveGroupMutationTargetPrincipalId,
     resolveGroupMutationTargetSessionId
 } from '../orchestration/resolve-group-mutation-target-identity.ts';
+import { readsGroupActiveMemberPrincipalIds } from './group-mutation-read-scope.ts';
 import {
     readGroupMutationRelatedEntries,
     type SequentialRelatedEntries
