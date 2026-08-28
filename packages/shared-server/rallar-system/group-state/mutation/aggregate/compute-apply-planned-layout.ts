@@ -1,4 +1,3 @@
-import { createDefaultGroupLifecyclePolicy } from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
 import type { Group } from '@shared/api/group-types.ts';
 
 import type {
@@ -10,6 +9,7 @@ import type {
 import { auditStamp, computeGroupMutationWriteResult, noOp, rejected, requireGroup } from '../group-mutation-result.ts';
 import { computePlannedLayoutPromotion } from './compute-planned-layout-promotion.ts';
 import { assertActive } from './group-aggregate-mutation-policy.ts';
+import { resolveGroupAuthorityPolicy, toCorruptPolicyRejection } from './resolve-group-authority-policy.ts';
 
 interface ComputeApplyPreconditionRejectionInput {
     readonly command: Extract<GroupMutationCommand, { operation: 'applyPlannedLayout'; }>;
@@ -39,22 +39,11 @@ function computeApplyPreconditionRejection(
             message: `Planned layout promotion requires an active group, not ${stored.lifecycleState}`
         });
     }
-    if (read.lifecyclePolicy === null) {
-        throw new TypeError('Planned layout promotion requires the policy read');
+    const resolution = resolveGroupAuthorityPolicy(read);
+    if (resolution.status === 'corrupt') {
+        return toCorruptPolicyRejection({ command, read, facts, reason: resolution.reason });
     }
-    if (read.lifecyclePolicy.status === 'corrupt') {
-        return rejected({
-            command,
-            read,
-            facts,
-            rejectionCode: 'group-mutation-rejected',
-            message: `Group lifecycle policy is unreadable: ${read.lifecyclePolicy.reason}`
-        });
-    }
-    const landing = read.lifecyclePolicy.status === 'present'
-        ? read.lifecyclePolicy.policy.topology.reconfigureLanding
-        : createDefaultGroupLifecyclePolicy().topology.reconfigureLanding;
-    if (landing === 'apply') {
+    if (resolution.policy.topology.reconfigureLanding === 'apply') {
         return null;
     }
     return rejected({

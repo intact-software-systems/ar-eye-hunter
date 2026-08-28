@@ -14,7 +14,7 @@ import {
     requireRecord,
     validateGroupRef
 } from '../../group-state-validation-primitives.ts';
-import type { GroupMutationCommand } from '../group-mutation-contracts.ts';
+import { isGroupTransportOperation, type GroupMutationCommand } from '../group-mutation-contracts.ts';
 import { ACTOR_INPUT_KEYS } from './group-mutation-request-validation.ts';
 import { validateExpectedLayoutIdentity } from './validate-expected-layout-identity.ts';
 
@@ -74,6 +74,12 @@ function validateOperationInput(
     operation: GroupMutationCommand['operation'],
     input: Readonly<Record<string, unknown>>
 ): void {
+    // The valve carries no operation field at all (product decision 25), so
+    // the exact-key assertion above is its whole input contract and there is
+    // no family validator to route it to.
+    if (isGroupTransportOperation(operation)) {
+        return;
+    }
     if (AGGREGATE_GROUP_MUTATION_OPERATIONS.has(operation)) {
         validateAggregateOperationInput(operation, input);
         return;
@@ -302,6 +308,8 @@ const GROUP_MUTATION_OPERATIONS = new Set([
     'reopenGroupEstablishment',
     'failGroupFormation',
     'applyPlannedLayout',
+    'pauseGroupTransport',
+    'resumeGroupTransport',
     'joinGroup',
     'acceptGroupInvite',
     'createGroupInvite',
@@ -394,6 +402,8 @@ const GROUP_MUTATION_INPUT_KEYS: Readonly<Record<GroupMutationCommand['operation
     reopenGroupEstablishment: [...ACTOR_INPUT_KEYS, 'expectedFormationEpoch'],
     failGroupFormation: [...ACTOR_INPUT_KEYS, 'observedRate', 'expectedFormationEpoch', 'expectedLayout'],
     applyPlannedLayout: [...ACTOR_INPUT_KEYS, 'expectedFormationEpoch', 'expectedLayout'],
+    pauseGroupTransport: ACTOR_INPUT_KEYS,
+    resumeGroupTransport: ACTOR_INPUT_KEYS,
     joinGroup: [...ACTOR_INPUT_KEYS, 'inviteToken', 'joinCode'],
     acceptGroupInvite: [...ACTOR_INPUT_KEYS, 'inviteToken', 'joinCode'],
     createGroupInvite: [...ACTOR_INPUT_KEYS, 'invitationExpiresAtEpochMs'],

@@ -7,19 +7,32 @@ import {
     requirePositiveSafeInteger,
     requireRecord
 } from '../../group-state-validation-primitives.ts';
-import { isGroupLifecycleTransitionOperation, type GroupMutationCommand } from '../group-mutation-contracts.ts';
+import {
+    isGroupLifecycleTransitionOperation,
+    isGroupTransportOperation,
+    type GroupMutationCommand,
+    type GroupTransportOperation
+} from '../group-mutation-contracts.ts';
 import { requireGroupLifecyclePolicyInputShape } from './require-group-lifecycle-policy-input-shape.ts';
 import { validateExpectedLayoutIdentity } from './validate-expected-layout-identity.ts';
 
+/** One name for the decoded request record every arm below reads. */
+type OperationInputRecord = Record<string, unknown>;
+
 interface ValidateGroupMutationOperationInput {
     readonly operation: GroupMutationCommand['operation'];
-    readonly input: Record<string, unknown>;
+    readonly input: OperationInputRecord;
 }
 
 export function validateGroupMutationOperationInput({
     operation,
     input
 }: ValidateGroupMutationOperationInput): void {
+    // The valve's request carries only actor identity (product decision 25),
+    // which the shared request row already pins.
+    if (isGroupTransportOperation(operation)) {
+        return;
+    }
     if (isAggregateOperation(operation)) {
         validateAggregateMutationInput(operation, input);
         return;
@@ -47,7 +60,7 @@ type AggregateOperation = Extract<
 
 function validateAggregateMutationInput(
     operation: AggregateOperation,
-    input: Record<string, unknown>
+    input: OperationInputRecord
 ): void {
     const optionalString = (key: string) => {
         if (input[key] !== undefined) {
@@ -111,7 +124,7 @@ function validateAggregateMutationInput(
 }
 
 function validateGroupUpdateInput(
-    input: Record<string, unknown>,
+    input: OperationInputRecord,
     optionalString: (key: string) => void,
     optionalPositiveInteger: (key: string) => void
 ): void {
@@ -139,12 +152,16 @@ function validateGroupUpdateInput(
 
 type MembershipOperation = Exclude<
     GroupMutationCommand['operation'],
-    AggregateOperation | 'connectPresence' | 'heartbeatPresence' | 'disconnectPresence'
+    | AggregateOperation
+    | GroupTransportOperation
+    | 'connectPresence'
+    | 'heartbeatPresence'
+    | 'disconnectPresence'
 >;
 
 function validateMembershipMutationInput(
     operation: MembershipOperation,
-    input: Record<string, unknown>
+    input: OperationInputRecord
 ): void {
     const optionalString = (key: string) => {
         if (input[key] !== undefined) {

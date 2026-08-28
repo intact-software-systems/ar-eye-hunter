@@ -103,7 +103,9 @@ Every transition writes the aggregate under compare-and-set, bumps `snapshotVers
 `packages/shared-server/rallar-system/group-state/policy/group-lifecycle-policy.ts`
 decides in order: the actor must be an active member (`member-not-active`, or the blocked-member
 denials), then the policy's `initiator` decides authority, then the transition must be
-legal from the current state.
+legal from the current state. The first two questions are `canCommandGroupAuthority` in the same
+file — one initiator policy governs every application-facing group-authority command, so the
+transport valve asks the same two and adds no third.
 
 | `initiator`   | Who may command                                                                                                                                     |
 | ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |

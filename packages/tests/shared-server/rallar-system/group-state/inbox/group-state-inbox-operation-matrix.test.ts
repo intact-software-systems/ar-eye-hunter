@@ -18,6 +18,7 @@ import {
     type GroupPresenceConnectAppInboxPayload,
     type GroupPresenceDisconnectAppInboxPayload,
     type GroupPresenceHeartbeatAppInboxPayload,
+    type GroupTransportCommandAppInboxPayload,
     type GroupUpdateAppInboxPayload
 } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-contracts.ts';
 import { RtcTopologySnapshotRepository } from '@shared-server/rallar-system/topology/persistence/rtc-topology-snapshot-repository.ts';
@@ -84,7 +85,9 @@ describe('GroupStateInboxService authenticated authority', () => {
             AppInboxType.GROUP_MEMBER_UPSERT,
             AppInboxType.GROUP_PRESENCE_CONNECT,
             AppInboxType.GROUP_PRESENCE_HEARTBEAT,
-            AppInboxType.GROUP_PRESENCE_DISCONNECT
+            AppInboxType.GROUP_PRESENCE_DISCONNECT,
+            AppInboxType.GROUP_TRANSPORT_PAUSE,
+            AppInboxType.GROUP_TRANSPORT_RESUME
         ]);
     });
 
@@ -559,6 +562,40 @@ async function runEveryAdvertisedGroupOperation(): Promise<void> {
             assertDomain: async () => {
                 const group = (await harness.repository.readSnapshot({ ...SCOPE, groupId: phasedGroupId }))?.group;
                 // The idempotent replan re-pins nothing (decision 28).
+                expect(group?.lifecycleState).toBe('planned');
+                expect(group?.formationEpoch).toBe(1);
+            }
+        },
+        {
+            type: AppInboxType.GROUP_TRANSPORT_PAUSE,
+            operation: 'pauseGroupTransport',
+            authority: harness.sessions.owner,
+            data: {
+                scope: SCOPE,
+                groupId: phasedGroupId,
+                request: { ...ownerActor, requestId: 'matrix-pause' }
+            } satisfies GroupTransportCommandAppInboxPayload,
+            assertDomain: async () => {
+                const group = (await harness.repository.readSnapshot({ ...SCOPE, groupId: phasedGroupId }))?.group;
+                expect(group?.transportState).toBe('halted');
+                // The valve is not a stage (decision 25): the routing plane
+                // the replan left behind is exactly where it was.
+                expect(group?.lifecycleState).toBe('planned');
+                expect(group?.formationEpoch).toBe(1);
+            }
+        },
+        {
+            type: AppInboxType.GROUP_TRANSPORT_RESUME,
+            operation: 'resumeGroupTransport',
+            authority: harness.sessions.owner,
+            data: {
+                scope: SCOPE,
+                groupId: phasedGroupId,
+                request: { ...ownerActor, requestId: 'matrix-resume' }
+            } satisfies GroupTransportCommandAppInboxPayload,
+            assertDomain: async () => {
+                const group = (await harness.repository.readSnapshot({ ...SCOPE, groupId: phasedGroupId }))?.group;
+                expect(group?.transportState).toBe('flowing');
                 expect(group?.lifecycleState).toBe('planned');
                 expect(group?.formationEpoch).toBe(1);
             }
