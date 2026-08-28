@@ -1,5 +1,5 @@
 import { PSqlGroupStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-group-state-event-repository.ts';
-import type { ReconcileGroupTopologyResult } from '@shared-server/rallar-system/topology/planning/group-topology-planning-contracts.ts';
+import { requirePlannedTopology } from '@shared-test/shared-server/require-planned-topology.ts';
 import assert from 'node:assert/strict';
 
 import {
@@ -60,7 +60,8 @@ Deno.test(
 
             const result = requirePlannedTopology(scenario.service.planning.computeTopologyFromAuthority(
                 scenario.authority,
-                scenario.previous
+                scenario.previous,
+                { intent: 'full-rebuild', origin: 'automatic' }
             ));
 
             assert.equal(result.snapshot.state, 'removed');
@@ -83,7 +84,8 @@ Deno.test(
 
             const result = requirePlannedTopology(scenario.service.planning.computeTopologyFromAuthority(
                 scenario.authority,
-                scenario.previous
+                scenario.previous,
+                { intent: 'full-rebuild', origin: 'automatic' }
             ));
 
             assert.equal(scenario.authority.group.group.status, 'active');
@@ -109,7 +111,8 @@ Deno.test(
 
             const result = requirePlannedTopology(scenario.service.planning.computeTopologyFromAuthority(
                 scenario.authority,
-                scenario.previous
+                scenario.previous,
+                { intent: 'full-rebuild', origin: 'automatic' }
             ));
 
             assert.equal(scenario.authority.group.group.status, 'active');
@@ -135,7 +138,8 @@ Deno.test(
 
             const result = requirePlannedTopology(scenario.service.planning.computeTopologyFromAuthority(
                 scenario.authority,
-                scenario.previous
+                scenario.previous,
+                { intent: 'full-rebuild', origin: 'automatic' }
             ));
 
             assert.equal(scenario.authority.group.group.status, 'archived');
@@ -251,7 +255,10 @@ Deno.test(
             });
             assert.deepEqual(authority.rttMeasurements, [storedRtt]);
 
-            service.planning.computeTopologyFromAuthority(authority, previous);
+            service.planning.computeTopologyFromAuthority(authority, previous, {
+                intent: 'full-rebuild',
+                origin: 'automatic'
+            });
 
             assert.deepEqual(plannedRtts, []);
         });
@@ -599,12 +606,3 @@ Deno.test(
         });
     }
 );
-
-function requirePlannedTopology(
-    result: ReconcileGroupTopologyResult
-): Extract<ReconcileGroupTopologyResult, { action: 'planned'; }> {
-    if (result.action !== 'planned') {
-        throw new Error('expected a planned topology result');
-    }
-    return result;
-}

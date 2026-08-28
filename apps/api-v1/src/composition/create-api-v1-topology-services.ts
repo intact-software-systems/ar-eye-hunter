@@ -1,6 +1,4 @@
 import * as vivaldiService from '@shared-graph/vivaldi-service.ts';
-import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
-import { PSqlResourceInboxEntryRepository } from '@shared-server/queuebox/postgres/p-sql-resource-inbox-entry-repository.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
 import type {
     CachedGroupStateService
@@ -28,7 +26,8 @@ import {
 import type { GroupTopologyPlanningService } from '@shared-server/rallar-system/topology/planning/group-topology-planning-service.ts';
 import type { GroupTopologyReconfigureMutation } from '@shared-server/rallar-system/topology/reconfigure/group-topology-reconfigure-mutation.ts';
 import {
-    readPendingTopologyReplan
+    readPendingTopologyReplan,
+    type PendingTopologyReplanReader
 } from '@shared-server/rallar-system/topology/replay/work/rtc-topology-coalesced-group-revision-work.ts';
 import {
     createGroupTopologyRuntimeOwners
@@ -39,7 +38,6 @@ import {
 } from '@shared-server/rallar-system/topology/runtime/rallar-rtc-topology-service.ts';
 import type { RuntimeStateRepositoryLike } from '@shared-server/runtime-state/runtime-state-repository.ts';
 import { toWebRtcGroupKey } from '@shared/api/api-type-utils.ts';
-import { createDefaultGroupLifecyclePolicy } from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 
@@ -51,7 +49,8 @@ export interface ApiV1TopologyReplayMetrics {
 }
 
 export interface CreateApiV1TopologyServicesInput {
-    readonly database: PSqlSql;
+    /** The durable queue-entry reader the coalesced pending-replan row lives in. */
+    readonly pendingReplanReader: PendingTopologyReplanReader;
     readonly runtimeStateRepository: RuntimeStateRepositoryLike;
     readonly groupStateRepository: GroupStateRepository;
     readonly groupStateService: Pick<CachedGroupStateService, 'readSnapshotAtLeast'>;
@@ -111,7 +110,7 @@ export function createApiV1TopologyServices(
         input.runtimeStateRepository,
         RTC_TOPOLOGY_ACCEPTED_SNAPSHOTS_NAMESPACE
     );
-    const pendingReplanReader = new PSqlResourceInboxEntryRepository(input.database);
+
     const rttRepository = new RtcRttRepository(input.runtimeStateRepository, {
         now: nowEpochMs
     });
@@ -130,16 +129,9 @@ export function createApiV1TopologyServices(
         topologyService: rtcTopologyService,
         topologySnapshotRepository,
         acceptedTopologySnapshotRepository,
-        readPendingTopologyReplan: async (groupRef) => await readPendingTopologyReplan(pendingReplanReader, groupRef),
-        readTopologyReplanningMode: async (group) => {
-            const read = await groupStateRepository.readLifecyclePolicy(group.group);
-            if (read.status === 'corrupt') {
-                return 'corrupt';
-            }
-            return read.status === 'present'
-                ? read.policy.topology.replanning
-                : createDefaultGroupLifecyclePolicy().topology.replanning;
-        },
+        readPendingTopologyReplan: async (groupRef) =>
+            await readPendingTopologyReplan(input.pendingReplanReader, groupRef),
+        readLifecyclePolicy: async (ref) => await groupStateRepository.readLifecyclePolicy(ref),
         serverDefaults: {
             ...rtcTopologyOptions,
             topologyKind: rtcTopologyOptions.topologyKind ?? 'auto'

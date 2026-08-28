@@ -23,6 +23,7 @@ import {
 } from '../../mutation/rtc-topology-mutations.ts';
 import type { RtcTopologyWorkRuntime } from '../../mutation/rtc-topology-outbox-work.ts';
 import type { RtcTopologyExecutionRepository } from '../../persistence/rtc-topology-execution-repository.ts';
+import type { ReconcileGroupTopologyResult } from '../../planning/group-topology-planning-contracts.ts';
 import type { GroupTopologyPlanningService } from '../../planning/group-topology-planning-service.ts';
 import {
     materializeRtcOverlayTopologyBroadcastMessage,
@@ -36,7 +37,7 @@ import {
     toRtcTopologyDeliveryAppendInput
 } from '../delivery/rtc-topology-delivery-validation.ts';
 import { finishRtcTopologyReservation, finishRtcTopologyWork } from './finish-rtc-topology-work.ts';
-import { isChangeGatedGroupRevisionWork } from './rtc-topology-coalesced-group-revision-work.ts';
+import { isChangeGatedGroupRevisionWork, toTopologyWorkOrigin } from './rtc-topology-coalesced-group-revision-work.ts';
 import { computeAuthorityTopologyInputFingerprint } from './rtc-topology-input-fingerprint.ts';
 import {
     readRtcTopologyWorkEnvelope,
@@ -73,6 +74,7 @@ interface RtcTopologyWorkHandlerOptions {
         | 'computeTopologyFromAuthority'
         | 'observeCommittedTopology'
         | 'recordTopologyPublication'
+        | 'recordTopologyPlanFrozen'
         | 'recordTopologyRebuildSkippedFingerprint'
     >;
     readonly executionRepository: RtcTopologyExecutionRepository;
@@ -135,7 +137,7 @@ type AcceptedRtcTopologyWork =
         decision: 'skipped-frozen';
         work: PersistedRtcTopologyWork;
         group: GroupSnapshot;
-        criterionPetition: CommittedCriterionPetition | null;
+        criterionPetition: CommittedCriterionPetition;
     }>
     | Readonly<{
         decision: 'skipped-rtt-refinement';
@@ -232,33 +234,46 @@ async function processLoadedRtcTopologyWork(
     options.wakeReplay?.();
 }
 
-async function computeAcceptedRtcTopologyWork(
+/**
+ * The RTT-refinement claim gate defers the replan, never the activation
+ * decision: the measurement that carries a connecting group across its
+ * threshold must still petition the criterion, or activation waits for the
+ * next deadline evaluation. A removed stored plan never petitions — its
+ * empty edge set would read as trivially-complete readiness.
+ */
+async function computeRttRefinementSkip(
     input: ComputeAcceptedRtcTopologyWorkInput
-): Promise<AcceptedRtcTopologyWork> {
-    const { options, workEnvelope, workId, attemptCount, read } = input;
-    const work = workEnvelope.data;
+): Promise<AcceptedRtcTopologyWork | null> {
+    const work = input.workEnvelope.data;
     if (
-        work.kind === 'rtt-refresh' &&
-        options.rttRefinementService &&
-        !options.rttRefinementService.claimWork({
+        work.kind !== 'rtt-refresh' ||
+        !input.options.rttRefinementService ||
+        input.options.rttRefinementService.claimWork({
             observationId: work.refinementObservationId,
-            workId,
+            workId: input.workId,
             groupKey: toWebRtcGroupKey(work.groupSnapshot.group),
             rtt: work.rtt,
             expireAtEpochMs: input.expireAtEpochMs
         })
     ) {
-        // The gate defers the replan, never the activation decision: the
-        // measurement that carries a connecting group across its threshold
-        // must still petition the criterion, or activation waits for the next
-        // deadline evaluation. A removed stored plan never petitions — its
-        // empty edge set would read as trivially-complete readiness.
-        await input.deferredCriterionPetitioner.request(work, read);
-        return {
-            decision: 'skipped-rtt-refinement',
-            work,
-            group: work.groupSnapshot
-        };
+        return null;
+    }
+    await input.deferredCriterionPetitioner.request(work, input.read);
+    return {
+        decision: 'skipped-rtt-refinement',
+        work,
+        group: work.groupSnapshot
+    };
+}
+
+async function computeAcceptedRtcTopologyWork(
+    input: ComputeAcceptedRtcTopologyWorkInput
+): Promise<AcceptedRtcTopologyWork> {
+    const { options, workEnvelope, read } = input;
+    const work = workEnvelope.data;
+    const rttRefinementSkip = await computeRttRefinementSkip(input);
+    if (rttRefinementSkip !== null) {
+        return rttRefinementSkip;
     }
     const membershipDeltaWork = work.kind === 'group-revision';
     const authority = await options.topologyPlanning.readTopologyPlanningAuthority({
@@ -269,28 +284,24 @@ async function computeAcceptedRtcTopologyWork(
     });
     const inputFingerprint = await computeAuthorityTopologyInputFingerprint(authority);
     const changeGated = work.kind === 'group-revision' && isChangeGatedGroupRevisionWork(work);
-    if (changeGated && read.snapshot?.value.state === 'active') {
-        const storedFingerprint = await options.executionRepository.readTopologyInputFingerprint(
-            authority.group.group
-        );
-        if (storedFingerprint === inputFingerprint) {
-            return { decision: 'skipped-fingerprint', work, group: authority.group };
-        }
+    if (changeGated && await isFingerprintUnchanged(input, authority, inputFingerprint)) {
+        return { decision: 'skipped-fingerprint', work, group: authority.group };
     }
     const computedTopology = options.topologyPlanning.computeTopologyFromAuthority(
         authority,
         read.snapshot?.value,
         {
             intent: membershipDeltaWork ? 'membership-delta' : 'full-rebuild',
-            origin: work.kind === 'rtt-refresh' || changeGated ? 'automatic' : 'commanded'
+            origin: toTopologyWorkOrigin(work)
         }
     );
     if (computedTopology.action === 'frozen') {
+        // The union's own payload is the row the freeze decision named.
         return {
             decision: 'skipped-frozen',
             work,
             group: authority.group,
-            criterionPetition: read.snapshot ? { authority, planned: read.snapshot.value } : null
+            criterionPetition: { authority, planned: computedTopology.current }
         };
     }
     // RTT is deliberately outside the fingerprint, so an RTT refresh always
@@ -308,6 +319,41 @@ async function computeAcceptedRtcTopologyWork(
             criterionPetition: { authority, planned: read.snapshot.value }
         };
     }
+    return await computeCommittedTopologyWork({
+        base: input,
+        authority,
+        planned: computedTopology,
+        inputFingerprint
+    });
+}
+
+async function isFingerprintUnchanged(
+    input: ComputeAcceptedRtcTopologyWorkInput,
+    authority: GroupTopologyPlanningAuthority,
+    inputFingerprint: string
+): Promise<boolean> {
+    if (input.read.snapshot?.value.state !== 'active') {
+        return false;
+    }
+    const storedFingerprint = await input.options.executionRepository.readTopologyInputFingerprint(
+        authority.group.group
+    );
+    return storedFingerprint === inputFingerprint;
+}
+
+interface ComputeCommittedTopologyWorkInput {
+    readonly base: ComputeAcceptedRtcTopologyWorkInput;
+    readonly authority: GroupTopologyPlanningAuthority;
+    readonly planned: Extract<ReconcileGroupTopologyResult, { action: 'planned'; }>;
+    readonly inputFingerprint: string;
+}
+
+async function computeCommittedTopologyWork(
+    input: ComputeCommittedTopologyWorkInput
+): Promise<AcceptedRtcTopologyWork> {
+    const { authority, planned, inputFingerprint } = input;
+    const { options, workEnvelope, workId, attemptCount, read } = input.base;
+    const work = workEnvelope.data;
     const publicationExpireAtTimestamp = work.publish
         ? options.executionRepository.publicationExpireAtTimestamp()
         : null;
@@ -316,7 +362,7 @@ async function computeAcceptedRtcTopologyWork(
         : toTopologyPublication({
             envelope: workEnvelope,
             group: authority.group,
-            snapshot: computedTopology.snapshot,
+            snapshot: planned.snapshot,
             facts: {
                 workId,
                 createdAtEpochMs: work.requestedAtEpochMs,
@@ -336,17 +382,11 @@ async function computeAcceptedRtcTopologyWork(
         } as const);
     const computed = computeTopologyMutation({
         read,
-        candidate: computedTopology.snapshot,
+        candidate: planned.snapshot,
         publication,
         facts
     });
-    validateTopologyMutation({
-        read,
-        candidate: computedTopology.snapshot,
-        publication,
-        facts,
-        computed
-    });
+    validateTopologyMutation({ read, candidate: planned.snapshot, publication, facts, computed });
     if (computed.outcome === 'retry') {
         throw new RuntimeStateWriteConflictError();
     }
@@ -360,7 +400,7 @@ async function computeAcceptedRtcTopologyWork(
         computed,
         publication,
         inputFingerprint,
-        criterionPetition: { authority, planned: computedTopology.snapshot }
+        criterionPetition: { authority, planned: planned.snapshot }
     };
 }
 
@@ -378,12 +418,8 @@ async function writeAcceptedRtcTopologyWork(
         options.topologyPlanning.recordTopologyRebuildSkippedFingerprint();
         return;
     }
-    if (accepted.decision === 'skipped-unchanged') {
-        await writeUnchangedTopologyWork(options, entry, accepted);
-        return;
-    }
-    if (accepted.decision === 'skipped-frozen') {
-        await writeFrozenTopologyWork(options, entry, accepted);
+    if (accepted.decision === 'skipped-unchanged' || accepted.decision === 'skipped-frozen') {
+        await writeSkippedTopologyWork(options, entry, accepted);
         return;
     }
     const computed = accepted.computed;
@@ -420,15 +456,18 @@ async function writeAcceptedRtcTopologyWork(
 }
 
 /**
- * The unchanged path's transaction: the fingerprint refresh, plus the
- * promotion reconcile — a request a stale-stage cycle failed to mint is
- * re-derived from the stored row here, so accepted and planned can never
- * diverge silently.
+ * The one transaction both skip decisions share: the promotion reconcile —
+ * a request a stale cycle failed to mint is re-derived from the stored row
+ * here, so accepted and planned can never diverge silently — plus the
+ * reservation finish. Only the unchanged decision refreshes the input
+ * fingerprint: the frozen path must NOT write it, because the stale
+ * fingerprint is decision 11's latched signal that the stored layout
+ * trails the authority.
  */
-async function writeUnchangedTopologyWork(
+async function writeSkippedTopologyWork(
     options: RtcTopologyWorkHandlerOptions,
     entry: ResourceEntry,
-    accepted: Extract<AcceptedRtcTopologyWork, { decision: 'skipped-unchanged'; }>
+    accepted: Extract<AcceptedRtcTopologyWork, { decision: 'skipped-unchanged' | 'skipped-frozen'; }>
 ): Promise<void> {
     const promotionRequest = await readTopologyPromotionRequest({
         publication: options.topologyPublication,
@@ -437,41 +476,22 @@ async function writeUnchangedTopologyWork(
         target: accepted.criterionPetition?.planned ?? null
     });
     await runInPSqlTransaction(options.database, async (transaction) => {
-        await options.executionRepository.writeTopologyInputFingerprint(
-            transaction,
-            accepted.group.group,
-            accepted.inputFingerprint
-        );
+        if (accepted.decision === 'skipped-unchanged') {
+            await options.executionRepository.writeTopologyInputFingerprint(
+                transaction,
+                accepted.group.group,
+                accepted.inputFingerprint
+            );
+        }
         await writeTopologyPromotionRequest(transaction, promotionRequest);
         await finishRtcTopologyReservation(transaction, entry);
     });
-    options.topologyPlanning.recordTopologyPublication(false);
-    await petitionCommittedCriterion(options, accepted.criterionPetition);
-}
-
-/**
- * The frozen path (plan slice 4b): the stage or the commanded mode refuses a
- * replacement, so nothing is written — not even the input fingerprint, which
- * must keep signalling that the stored layout trails the authority. The
- * criterion still measures the frozen candidate, and the promotion reconcile
- * still heals an accepted row that trails it.
- */
-async function writeFrozenTopologyWork(
-    options: RtcTopologyWorkHandlerOptions,
-    entry: ResourceEntry,
-    accepted: Extract<AcceptedRtcTopologyWork, { decision: 'skipped-frozen'; }>
-): Promise<void> {
-    const promotionRequest = await readTopologyPromotionRequest({
-        publication: options.topologyPublication,
-        serviceId: options.serviceId,
-        entry,
-        target: accepted.criterionPetition?.planned ?? null
-    });
-    await runInPSqlTransaction(options.database, async (transaction) => {
-        await writeTopologyPromotionRequest(transaction, promotionRequest);
-        await finishRtcTopologyReservation(transaction, entry);
-    });
-    options.topologyPlanning.recordTopologyPublication(false);
+    if (accepted.decision === 'skipped-frozen') {
+        options.topologyPlanning.recordTopologyPlanFrozen();
+    }
+    else {
+        options.topologyPlanning.recordTopologyPublication(false);
+    }
     await petitionCommittedCriterion(options, accepted.criterionPetition);
 }
 

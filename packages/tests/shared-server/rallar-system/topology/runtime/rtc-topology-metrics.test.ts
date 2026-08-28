@@ -39,6 +39,7 @@ describe('RtcTopologyMetrics', () => {
         metrics.recordPublish(true);
         metrics.recordPublish(false);
         metrics.recordFingerprintSkip();
+        metrics.recordPlanFrozen();
         metrics.recordRemoval(true);
         metrics.recordRemoval(false);
 
@@ -74,6 +75,7 @@ describe('RtcTopologyMetrics', () => {
             topologyPublishedCount: 1,
             topologyPublishSkippedUnchangedCount: 1,
             topologyRebuildSkippedFingerprintCount: 1,
+            topologyPlanFrozenCount: 1,
             topologyRemovalRequestCount: 2,
             topologyRemovedCount: 1,
             topologyRemoveMissCount: 1,
@@ -115,6 +117,7 @@ describe('RtcTopologyMetrics', () => {
             topologyPublishedCount: 0,
             topologyPublishSkippedUnchangedCount: 0,
             topologyRebuildSkippedFingerprintCount: 0,
+            topologyPlanFrozenCount: 0,
             topologyRemovalRequestCount: 0,
             topologyRemovedCount: 0,
             topologyRemoveMissCount: 0,

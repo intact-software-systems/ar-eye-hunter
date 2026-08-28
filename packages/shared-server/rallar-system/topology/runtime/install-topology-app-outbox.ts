@@ -1,11 +1,11 @@
 import type { Group, GroupRef } from '@shared/api/group-types.ts';
+import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import type { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
 import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
 import { AppOutboxType } from '../../app-outbox/app-outbox-type.ts';
 import type { GroupMutationCommand } from '../../group-state/mutation/group-mutation-contracts.ts';
 import type { GroupLifecyclePolicyRead } from '../../group-state/persistence/group-lifecycle-policy-repository.ts';
 import type { RtcRttRefinementService } from '../../rtc-rtt/topic/rtc-rtt-refinement-service.ts';
-import type { GroupTopologyConfigQueryService } from '../config/group-topology-config-query-service.ts';
 import { createRtcTopologyOutboxPublisher } from '../mutation/rtc-topology-outbox-work.ts';
 import type { RtcTopologyExecutionRepository } from '../persistence/rtc-topology-execution-repository.ts';
 import type { GroupTopologyGroupSnapshotReader } from '../planning/group-topology-planning-contracts.ts';
@@ -26,7 +26,10 @@ export interface InstallTopologyAppOutboxOptions {
     readonly wakeReplay?: () => void;
     readonly findGroupSnapshotByRef: GroupTopologyGroupSnapshotReader;
     readonly executionRepository: RtcTopologyExecutionRepository;
-    readonly topologyQuery: GroupTopologyConfigQueryService;
+    /** The planned slot alone — the deadline timer needs no wider view. */
+    readonly readPlannedTopologySnapshot: (
+        ref: GroupRef
+    ) => Promise<RallarOverlayTopologySnapshot | undefined>;
     readonly topologyPlanning: GroupTopologyPlanningService;
     readonly rttRefinementService?: RtcRttRefinementService;
     readonly topologyDelivery?: RtcTopologyDeliveryOptions;
@@ -60,10 +63,7 @@ export function installTopologyAppOutbox(
             createFormationTimerWorkHandler({
                 findGroupSnapshotByRef: async (ref, readOptions) =>
                     await options.findGroupSnapshotByRef(ref, readOptions),
-                readPlannedTopology: async (ref) => {
-                    const view = await options.topologyQuery.readTopologyView(ref);
-                    return view.snapshot;
-                },
+                readPlannedTopology: async (ref) => await options.readPlannedTopologySnapshot(ref) ?? null,
                 topologyPlanning: options.topologyPlanning,
                 readLifecyclePolicy: options.formationCriterion.readLifecyclePolicy,
                 submitCommand: options.formationCriterion.submitCommand,

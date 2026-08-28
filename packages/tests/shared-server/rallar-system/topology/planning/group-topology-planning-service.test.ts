@@ -7,6 +7,7 @@ import type { ReconcileGroupTopologyResult } from '@shared-server/rallar-system/
 import { GroupTopologyPlanningService } from '@shared-server/rallar-system/topology/planning/group-topology-planning-service.ts';
 import type { GroupTopologyReplanningRead } from '@shared-server/rallar-system/topology/planning/resolve-topology-plan-action.ts';
 import { RallarRtcTopologyService } from '@shared-server/rallar-system/topology/runtime/rallar-rtc-topology-service.ts';
+import { requirePlannedTopology } from '@shared-test/shared-server/require-planned-topology.ts';
 import { createTestGroup } from '../../../../create-test-group.ts';
 
 import { createTopologyTestGroupRef, createTopologyTestGroupSnapshot } from '../config/mutation/group-topology-config-mutation-test-fixtures.ts';
@@ -61,7 +62,8 @@ describe('GroupTopologyPlanningService', () => {
                 replanning: 'debounced',
                 nowEpochMs: 2_000
             },
-            undefined
+            undefined,
+            { intent: 'full-rebuild', origin: 'automatic' }
         );
 
         expect(result).toMatchObject({
@@ -82,28 +84,31 @@ describe('GroupTopologyPlanningService', () => {
 
         const result = service.computeTopologyFromAuthority(
             planningAuthority(forming),
-            undefined
+            undefined,
+            { intent: 'full-rebuild', origin: 'automatic' }
         );
 
-        expect(requirePlanned(result).snapshot.state).toBe('removed');
-        expect(Object.values(requirePlanned(result).snapshot.nextHopsBySessionId).flat()).toEqual([]);
+        expect(requirePlannedTopology(result).snapshot.state).toBe('removed');
+        expect(Object.values(requirePlannedTopology(result).snapshot.nextHopsBySessionId).flat()).toEqual([]);
     });
 
     it('drops a previously planned topology when the group returns to FORMING', () => {
         const active = groupWithSessionsIn('active');
         const service = createPlanningService({ group: active });
-        const planned = requirePlanned(service.computeTopologyFromAuthority(
+        const planned = requirePlannedTopology(service.computeTopologyFromAuthority(
             planningAuthority(active),
-            undefined
+            undefined,
+            { intent: 'full-rebuild', origin: 'automatic' }
         ));
         expect(planned.snapshot.state).not.toBe('removed');
 
         const forming = groupWithSessionsIn('forming');
         const held = createPlanningService({ group: forming }).computeTopologyFromAuthority(
             planningAuthority(forming),
-            planned.snapshot
+            planned.snapshot,
+            { intent: 'full-rebuild', origin: 'automatic' }
         );
-        expect(requirePlanned(held).snapshot.state).toBe('removed');
+        expect(requirePlannedTopology(held).snapshot.state).toBe('removed');
     });
 
     it('resolves every stage with no stored layout: removal for dormant and forming, a first plan everywhere else', () => {
@@ -111,9 +116,10 @@ describe('GroupTopologyPlanningService', () => {
             const group = groupWithSessionsIn(lifecycleState);
             const service = createPlanningService({ group });
 
-            const result = requirePlanned(service.computeTopologyFromAuthority(
+            const result = requirePlannedTopology(service.computeTopologyFromAuthority(
                 planningAuthority(group),
-                undefined
+                undefined,
+                { intent: 'full-rebuild', origin: 'automatic' }
             ));
 
             if (lifecycleState === 'dormant' || lifecycleState === 'forming') {
@@ -129,10 +135,11 @@ describe('GroupTopologyPlanningService', () => {
 
     it('resolves every stage against an active stored layout to the 4b disposition table', () => {
         const seed = groupWithSessionsIn('active');
-        const stored = requirePlanned(
+        const stored = requirePlannedTopology(
             createPlanningService({ group: seed }).computeTopologyFromAuthority(
                 planningAuthority(seed),
-                undefined
+                undefined,
+                { intent: 'full-rebuild', origin: 'automatic' }
             )
         ).snapshot;
         const frozenStages: GroupLifecycleState[] = ['connecting', 'reconnecting'];
@@ -142,14 +149,15 @@ describe('GroupTopologyPlanningService', () => {
 
             const result = service.computeTopologyFromAuthority(
                 planningAuthority(group),
-                stored
+                stored,
+                { intent: 'full-rebuild', origin: 'automatic' }
             );
 
             if (frozenStages.includes(lifecycleState)) {
                 expect(result).toEqual({ action: 'frozen', current: stored });
                 continue;
             }
-            const planned = requirePlanned(result);
+            const planned = requirePlannedTopology(result);
             if (lifecycleState === 'dormant' || lifecycleState === 'forming') {
                 expect(planned.snapshot.state).toBe('removed');
                 continue;
@@ -161,9 +169,10 @@ describe('GroupTopologyPlanningService', () => {
     it('freezes automatic replanning of an active stored layout under commanded mode, but plans commanded work', () => {
         const group = groupWithSessionsIn('active');
         const service = createPlanningService({ group });
-        const stored = requirePlanned(service.computeTopologyFromAuthority(
+        const stored = requirePlannedTopology(service.computeTopologyFromAuthority(
             planningAuthority(group),
-            undefined
+            undefined,
+            { intent: 'full-rebuild', origin: 'automatic' }
         )).snapshot;
 
         const automatic = service.computeTopologyFromAuthority(
@@ -178,15 +187,16 @@ describe('GroupTopologyPlanningService', () => {
             stored,
             { intent: 'full-rebuild', origin: 'commanded' }
         );
-        expect(requirePlanned(commanded).snapshot.state).not.toBe('removed');
+        expect(requirePlannedTopology(commanded).snapshot.state).not.toBe('removed');
     });
 
     it('fails automatic replanning closed on a corrupt policy, and C7: a departure does not move a commanded layout', () => {
         const group = groupWithSessionsIn('active');
         const service = createPlanningService({ group });
-        const stored = requirePlanned(service.computeTopologyFromAuthority(
+        const stored = requirePlannedTopology(service.computeTopologyFromAuthority(
             planningAuthority(group),
-            undefined
+            undefined,
+            { intent: 'full-rebuild', origin: 'automatic' }
         )).snapshot;
 
         expect(service.computeTopologyFromAuthority(
@@ -214,9 +224,10 @@ describe('GroupTopologyPlanningService', () => {
         const group = groupWithSessionsIn('connecting');
         const topologyService = new RallarRtcTopologyService({ now: () => 2_000 });
         const service = createPlanningService({ group, topologyService });
-        const stored = requirePlanned(service.computeTopologyFromAuthority(
+        const stored = requirePlannedTopology(service.computeTopologyFromAuthority(
             planningAuthority(group),
-            undefined
+            undefined,
+            { intent: 'full-rebuild', origin: 'automatic' }
         )).snapshot;
         topologyService.observeCommittedTopologySnapshot(stored);
 
@@ -229,6 +240,9 @@ describe('GroupTopologyPlanningService', () => {
         expect(response.changed).toBe(false);
         expect(response.published).toBe(false);
         expect(response.snapshot).toEqual(topologyService.readSnapshot(group));
+        // A frozen plan is a policy hold, not a publish attempt.
+        expect(topologyService.readMetrics().topologyPlanFrozenCount).toBe(1);
+        expect(topologyService.readMetrics().topologyPublishAttemptCount).toBe(0);
     });
 
     it('does not report a topology publication when the delivery owner reaches no session', async () => {
@@ -272,7 +286,7 @@ function groupWithSessionsIn(
 
 function planningAuthority(
     group: ReturnType<typeof createTopologyTestGroupSnapshot>,
-    replanning: GroupTopologyReplanningRead = 'debounced'
+    replanning: GroupTopologyReplanningRead = 'auto'
 ) {
     return {
         group,
@@ -282,16 +296,6 @@ function planningAuthority(
         replanning,
         nowEpochMs: 2_000
     };
-}
-
-function requirePlanned(
-    result: ReconcileGroupTopologyResult
-): Extract<ReconcileGroupTopologyResult, { action: 'planned'; }> {
-    expect(result.action).toBe('planned');
-    if (result.action !== 'planned') {
-        throw new Error('expected a planned topology result');
-    }
-    return result;
 }
 
 function createPlanningService(input: {

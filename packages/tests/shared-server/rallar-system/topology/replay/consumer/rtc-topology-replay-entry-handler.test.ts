@@ -82,6 +82,35 @@ describe('RtcTopologyReplayEntryHandlerService', () => {
         expect(message.targets).toMatchObject({ recipientPeerIds: ['session-2'] });
     });
 
+    it('repairs onto the removal tombstone even when a stale accepted row survives (teardown wins)', async () => {
+        const fixture = createRtcTopologyReplayFixture();
+        const tombstone = {
+            ...fixture.currentSnapshot,
+            state: 'removed' as const,
+            nextHopsBySessionId: Object.fromEntries(
+                fixture.currentSnapshot.activeSessionIds.map((sessionId) => [sessionId, []])
+            ),
+            version: fixture.currentSnapshot.version + 2,
+            updatedAtEpochMs: fixture.currentSnapshot.updatedAtEpochMs + 2
+        };
+        const staleAccepted = {
+            ...fixture.currentSnapshot,
+            version: fixture.currentSnapshot.version + 1,
+            updatedAtEpochMs: fixture.currentSnapshot.updatedAtEpochMs + 1
+        };
+        const { handler, send } = createHandler({
+            ...fixture,
+            currentSnapshot: tombstone,
+            acceptedSnapshot: staleAccepted
+        });
+
+        await expect(
+            handler.handle(fixture.entry, fixture.databaseNowEpochMs, new AbortController().signal)
+        ).resolves.toEqual({ status: 'current-repair' });
+        const message = send.mock.calls[0]![0];
+        expect(message.payload.resource).toBe(JSON.stringify(tombstone));
+    });
+
     it('treats no current local recipient as successful handling', async () => {
         const fixture = createRtcTopologyReplayFixture();
         const { handler } = createHandler(fixture, 'no-recipients');

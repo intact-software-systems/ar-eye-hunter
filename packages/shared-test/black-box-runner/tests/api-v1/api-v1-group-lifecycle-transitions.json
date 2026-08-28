@@ -188,7 +188,9 @@
             "groupId": "{managedGroupId}",
             "lifecycleState": "forming",
             "formationEpoch": 0,
-            "formationElectorate": ["{aliceClientId}"]
+            "formationElectorate": [
+              "{aliceClientId}"
+            ]
           }
         }
       }
@@ -209,12 +211,14 @@
         "status": 200,
         "bodyAnyOf": [
           {
-            "snapshot": null
+            "snapshot": null,
+            "acceptedSnapshot": null
           },
           {
             "snapshot": {
               "state": "removed"
-            }
+            },
+            "acceptedSnapshot": null
           }
         ]
       }
@@ -238,7 +242,9 @@
           "formationEpoch": 0,
           "formationAttemptCount": 0,
           "establishmentStartedAtEpochMs": null,
-          "managerPrincipalIds": ["{aliceClientId}"]
+          "managerPrincipalIds": [
+            "{aliceClientId}"
+          ]
         }
       }
     },
@@ -498,7 +504,8 @@
         "body": {
           "snapshot": {
             "state": "active"
-          }
+          },
+          "acceptedSnapshot": null
         }
       }
     },
@@ -534,7 +541,9 @@
             "observedEdgeCount": 0,
             "observedRate": 0
           },
-          "managerPrincipalIds": ["{aliceClientId}"]
+          "managerPrincipalIds": [
+            "{aliceClientId}"
+          ]
         }
       }
     },
@@ -557,6 +566,33 @@
           "group": {
             "lifecycleState": "active",
             "formationEpoch": 2
+          }
+        }
+      }
+    },
+    {
+      "name": "acceptedLayoutPromotedAfterActivate",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{managedGroupId}/topology",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "poll": {
+          "maxAttempts": 20,
+          "maxDurationMs": 15000,
+          "backoffMs": 100,
+          "backoffMultiplier": 2
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "acceptedSnapshot": {
+            "state": "active"
           }
         }
       }

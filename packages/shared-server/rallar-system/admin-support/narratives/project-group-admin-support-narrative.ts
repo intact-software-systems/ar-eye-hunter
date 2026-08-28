@@ -273,11 +273,15 @@ function summarizeTopologyView(
     if (!topologyView) {
         return { present: false };
     }
+    // The layout carrying traffic: the accepted slot once a promotion
+    // produced one; the planned slot may run ahead as a held candidate and
+    // must not be reported as the group's exact topology (decision 24).
+    const trafficSnapshot = topologyView.acceptedSnapshot ?? topologyView.snapshot;
     return {
         present: true,
         topologyKind: topologyView.config.effective.topologyKind,
-        ...(topologyView.snapshot
-            ? { participantCount: topologyView.snapshot.activeSessionIds.length }
+        ...(trafficSnapshot
+            ? { participantCount: trafficSnapshot.activeSessionIds.length }
             : {})
     };
 }

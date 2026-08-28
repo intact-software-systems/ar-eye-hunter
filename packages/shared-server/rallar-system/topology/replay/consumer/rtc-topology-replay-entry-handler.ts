@@ -8,6 +8,7 @@ import type { WsServerLiveSendStatus } from '@shared/services/ws-queue-box-serve
 import { decodePersistedALMessageValue } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { toCanonicalRtcTopologyGroupIdentity } from '../../persistence/rtc-topology-identifiers.ts';
 import type { RtcTopologyPublication } from '../../publication/rtc-topology-publication.ts';
+import { toDeliverableTopologySnapshot } from '../deliverable-topology-snapshot.ts';
 import type { RtcTopologyDeliveryLogEntry } from '../delivery/rtc-topology-delivery-contracts.ts';
 import type {
     RtcTopologyReplayEntryHandler,
@@ -64,20 +65,18 @@ export class RtcTopologyReplayEntryHandlerService implements RtcTopologyReplayEn
         signal: AbortSignal
     ): Promise<RtcTopologyReplayEntryHandlingResult> {
         throwIfAborted(signal);
-        const [publication, outbox, acceptedSnapshot, plannedSnapshot] = await Promise.all([
+        // The decision compares against the planned row: it is written in the
+        // same transaction as every publication, so the log can never run
+        // ahead of it — the invariant the corruption checks enforce. The
+        // asynchronously promoted accepted row may trail the log and is read
+        // only when the rare repair branch needs delivery content.
+        const [publication, outbox, plannedSnapshot] = await Promise.all([
             this.#publications.findPublication(entry.groupRef, entry.publicationId),
             this.#outbox.getItem(entry.outboxKey),
-            this.#acceptedSnapshots.findSnapshot(entry.groupRef),
             this.#snapshots.findSnapshot(entry.groupRef)
         ]);
         throwIfAborted(signal);
 
-        // The decision compares against the planned row: it is written in the
-        // same transaction as every publication, so the log can never run
-        // ahead of it — the invariant the corruption checks enforce. The
-        // accepted row is promoted asynchronously and may trail the log
-        // indefinitely under a hold landing, so it must not be the
-        // comparison baseline.
         const decision = decideRtcTopologyReplayEntry({
             entry,
             publication,
@@ -89,14 +88,14 @@ export class RtcTopologyReplayEntryHandlerService implements RtcTopologyReplayEn
             return decision;
         }
 
-        // Repair content converges members on the layout carrying traffic:
-        // the accepted row whenever a promotion has produced one, the planned
-        // row only before that (product decisions 24/30, plan slice 4c).
         const isCurrentRepair = decision.status === 'deliver-current';
         const message = isCurrentRepair
             ? materializeRtcTopologyCurrentRepairMessage({
                 entry,
-                currentSnapshot: acceptedSnapshot ?? decision.currentSnapshot,
+                currentSnapshot: toDeliverableTopologySnapshot({
+                    planned: decision.currentSnapshot,
+                    accepted: await this.#acceptedSnapshots.findSnapshot(entry.groupRef)
+                }) ?? decision.currentSnapshot,
                 databaseNowEpochMs
             })
             : decision.message;

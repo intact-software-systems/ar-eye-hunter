@@ -5,6 +5,7 @@ import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persis
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import { validateAuthoritativeGroupSnapshot } from '@shared/api/authoritative-state-validation.ts';
+import type { PendingTopologyReplan } from '@shared/api/graph-topology-management-types.ts';
 import { compareGroupCausalRevision, readGroupCausalRevision } from '@shared/api/group-client-views.ts';
 import {
     isPreserveOnlyCanonicalGroupTopologyConfigPatch,
@@ -26,6 +27,7 @@ import {
 import { groupStateGroupStorageKey } from '../../../group-state/persistence/aggregate/group-aggregate-storage-keys.ts';
 import { APP_OUTBOX_RTC_TOPOLOGY_TOPIC } from '../../mutation/rtc-topology-outbox-entry.ts';
 import type { RtcTopologyGroupRevisionWork } from '../../mutation/rtc-topology-outbox-work.ts';
+import type { TopologyWorkOrigin } from '../../planning/resolve-topology-plan-action.ts';
 import type { PersistedRtcTopologyWork } from './rtc-topology-work-codec.ts';
 
 export interface RtcTopologyCoalescedGroupRevisionInput {
@@ -137,30 +139,36 @@ export interface PendingTopologyReplanReader {
     findByKey(key: Key): Promise<ResourceEntry | null>;
 }
 
-/** Decision 11's transient half: a replan is queued and due at T. */
-export interface PendingTopologyReplan {
-    readonly reconfigureQueued: boolean;
-    readonly dueAtEpochMs: number | null;
+/** The stored coalesced head row's exact durable key, shared by writer and reader. */
+export function toCoalescedGroupRevisionKey(groupRef: GroupRef): Key {
+    return toAppQueueKey({
+        topicId: APP_OUTBOX_RTC_TOPOLOGY_TOPIC,
+        resourceId: toRtcTopologyCoalescedGroupRevisionResourceId(toScopedOverlayId(groupRef)),
+        contextId: groupStateGroupStorageKey(groupRef)
+    });
 }
 
 /**
  * The transient half of product decision 11: is a replan queued for this
  * group, and when is it due? Read straight off the coalesced group-revision
- * row (I14 — its `dueAtEpochMs` doubles as the read surface's "when will
- * this settle"). A row in a terminal status is settled work, not pending; a
- * present row whose envelope no longer decodes still reports queued, with a
- * null due time, rather than hiding work the queue will attempt.
+ * head row (I14 — its `dueAtEpochMs` doubles as the read surface's "when
+ * will this settle"). Queued means the queue will still attempt it: a
+ * waiting row (NEW/RETRY) and an executing row (RESERVED) both report
+ * queued; a terminal row is settled work. A present row whose envelope no
+ * longer decodes still reports queued, with a null due time, rather than
+ * hiding work the queue will attempt. Known residue, recorded in the plan:
+ * a delta parked on a causal-suffixed successor row behind a reserved head
+ * is invisible to this point read for at most its debounce window — the
+ * head is RESERVED (reported queued) while the successor is minted, so the
+ * blind window opens only between the head completing and the successor
+ * dequeuing.
  */
 export async function readPendingTopologyReplan(
     reader: PendingTopologyReplanReader,
     groupRef: GroupRef
 ): Promise<PendingTopologyReplan | null> {
-    const entry = await reader.findByKey(toAppQueueKey({
-        topicId: APP_OUTBOX_RTC_TOPOLOGY_TOPIC,
-        resourceId: toRtcTopologyCoalescedGroupRevisionResourceId(toScopedOverlayId(groupRef)),
-        contextId: groupStateGroupStorageKey(groupRef)
-    }));
-    if (entry === null || !isMutableCoalescedStatus(entry.status)) {
+    const entry = await reader.findByKey(toCoalescedGroupRevisionKey(groupRef));
+    if (entry === null || !isPendingCoalescedStatus(entry.status)) {
         return null;
     }
     const envelope = tryReadCoalescedAppOutboxWorkEnvelope<RtcTopologyGroupRevisionWork>(entry);
@@ -170,11 +178,32 @@ export async function readPendingTopologyReplan(
     };
 }
 
+function isPendingCoalescedStatus(status: EntityStatus): boolean {
+    return isMutableCoalescedStatus(status) || status === EntityStatus.RESERVED;
+}
+
 /**
  * The M3 change gate applies only to coalesced group-revision recomputes whose
  * request carries a preserve-only topology-config patch; explicit reconfigures
  * and per-command work always rebuilds.
  */
+/**
+ * Exhaustive origin classification for every persisted work kind: RTT
+ * refreshes and the change-gated coalesced deltas (the presence-summary
+ * channel, which also carries the lifecycle transitions' follow-ups) are
+ * the machinery's own work; a per-command group-revision enqueue — the
+ * reconfigure family and config receipts — carries application or operator
+ * intent. A new work kind fails the anchor below instead of silently
+ * classifying as `commanded` past the freeze.
+ */
+export function toTopologyWorkOrigin(work: PersistedRtcTopologyWork): TopologyWorkOrigin {
+    if (work.kind === 'rtt-refresh') {
+        return 'automatic';
+    }
+    work.kind satisfies 'group-revision';
+    return isChangeGatedGroupRevisionWork(work) ? 'automatic' : 'commanded';
+}
+
 export function isChangeGatedGroupRevisionWork(work: PersistedRtcTopologyWork): boolean {
     return (
         work.kind === 'group-revision' &&

@@ -156,13 +156,14 @@ export type GroupTopologyManagementView = Readonly<{
      */
     acceptedSnapshot: RallarOverlayTopologySnapshot | null;
     config: GroupTopologyConfigView;
-    pending:
-        | Readonly<{
-            reconfigureQueued: boolean;
-            dueAtEpochMs: number | null;
-        }>
-        | null;
+    pending: PendingTopologyReplan | null;
 }>;
+
+/** Decision 11's transient half: a replan is queued and due at T. */
+export interface PendingTopologyReplan {
+    readonly reconfigureQueued: boolean;
+    readonly dueAtEpochMs: number | null;
+}
 
 export type PutGroupTopologyConfigRequest = Readonly<{
     requestId: string;

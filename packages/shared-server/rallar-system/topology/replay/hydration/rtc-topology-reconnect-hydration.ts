@@ -7,6 +7,7 @@ import type {
     RtcTopologyReplayDiagnosticsSink,
     RtcTopologyReplayHydrationOutcome
 } from '../consumer/rtc-topology-replay-diagnostics.ts';
+import { toDeliverableTopologySnapshot } from '../deliverable-topology-snapshot.ts';
 import { materializeRtcTopologyHydrationMessage } from './rtc-topology-hydration-message.ts';
 
 export const RTC_TOPOLOGY_HYDRATION_PAGE_SIZE = 100;
@@ -76,15 +77,17 @@ export class RtcTopologyReconnectHydration {
      * Both slots are scanned (plan slice 4c): the planned namespace names
      * every dialing member — a connecting group has no accepted row — while
      * the accepted namespace names members the traffic layout still carries
-     * after a replan moved the planned row past them. Delivery itself always
-     * chooses accepted-first, so the two scans agree on content and the pair
-     * set only dedupes work.
+     * after a replan moved the planned row past them. Delivery content is
+     * resolved by the one shared rule for every pair regardless of which
+     * scan found it, so a pair is attempted at most once per pass; a pair
+     * whose attempt asked for a retry keeps its retry mark for the next
+     * pass instead of being re-attempted by the second scan.
      */
     async hydrate(input: RtcTopologyReconnectHydration.Input): Promise<ReadonlySet<ConnectionContext>> {
         const state: HydrationScanState = {
             matched: new Set<ConnectionContext>(),
             retry: new Set<ConnectionContext>(),
-            hydratedPairs: new Set<string>()
+            attemptedPairs: new Set<string>()
         };
         await this.#scanTopologyPages(this.#topologies, input, state);
         await this.#scanTopologyPages(this.#acceptedTopologies, input, state);
@@ -134,17 +137,16 @@ export class RtcTopologyReconnectHydration {
         );
         for (const connection of candidates) {
             const pair = `${scannedTopology.overlayId}\u0000${connection.id}`;
-            if (state.hydratedPairs.has(pair)) {
+            if (state.attemptedPairs.has(pair)) {
                 continue;
             }
+            state.attemptedPairs.add(pair);
             state.matched.add(connection);
             const outcome = await this.#hydrateTopology(connection, scannedTopology, input);
             this.#diagnostics?.({ kind: 'hydration', outcome });
             if (outcome === 'retry') {
                 state.retry.add(connection);
-                continue;
             }
-            state.hydratedPairs.add(pair);
         }
     }
 
@@ -194,14 +196,15 @@ export class RtcTopologyReconnectHydration {
             if (!this.#isCurrent(connection)) {
                 return 'stale-generation';
             }
-            // Hydration content is accepted-first: the layout carrying
-            // traffic when it exists, the planned row only before a first
-            // promotion (product decisions 1/30).
             const [acceptedTopology, plannedTopology] = await Promise.all([
                 this.#acceptedTopologies.findSnapshot(scannedTopology.groupRef),
                 this.#topologies.findSnapshot(scannedTopology.groupRef)
             ]);
-            const currentTopology = acceptedTopology ?? plannedTopology;
+            const currentTopology = toDeliverableTopologySnapshot({
+                planned: plannedTopology,
+                accepted: acceptedTopology,
+                sessionId: connection.id
+            });
             throwIfAborted(input);
             const authorizationAfter = await this.#groups.readSnapshot(scannedTopology.groupRef);
             throwIfAborted(input);
@@ -250,7 +253,7 @@ export class RtcTopologyReconnectHydration {
 interface HydrationScanState {
     readonly matched: Set<ConnectionContext>;
     readonly retry: Set<ConnectionContext>;
-    readonly hydratedPairs: Set<string>;
+    readonly attemptedPairs: Set<string>;
 }
 
 interface IsAuthorizedInput {

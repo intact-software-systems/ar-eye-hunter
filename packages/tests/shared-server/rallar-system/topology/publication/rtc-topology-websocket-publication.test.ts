@@ -489,7 +489,7 @@ interface InstallTopologyTestTopicsOptions {
     readonly topologyQuery?: GroupTopologyRuntimeOwners['query'];
     readonly topologyPlanning?: GroupTopologyRuntimeOwners['planning'];
     readonly rtcTopologyAppOutbox?:
-        & Omit<InstallTopologyAppOutboxOptions, 'senderId' | 'findGroupSnapshotByRef' | 'topologyQuery' | 'topologyPlanning' | 'nowEpochMs'>
+        & Omit<InstallTopologyAppOutboxOptions, 'senderId' | 'findGroupSnapshotByRef' | 'readPlannedTopologySnapshot' | 'topologyPlanning' | 'nowEpochMs'>
         & Readonly<{
             findGroupSnapshotByRef?: GroupTopologyGroupSnapshotReader;
         }>;
@@ -502,15 +502,17 @@ function installTopologyTestTopics(
     if (!options.rtcTopologyAppOutbox) {
         return;
     }
-    if (!options.topologyQuery || !options.topologyPlanning) {
-        throw new TypeError('RTC topology AppOutbox requires query and planning owners');
+    if (!options.topologyPlanning) {
+        throw new TypeError('RTC topology AppOutbox requires the planning owner');
     }
     installTopologyAppOutbox({
         ...options.rtcTopologyAppOutbox,
         senderId: service.name,
         findGroupSnapshotByRef: options.rtcTopologyAppOutbox.findGroupSnapshotByRef ??
             ((ref) => groupStateSnapshotsRepository.findGroupStateSnapshotByRef(ref)),
-        topologyQuery: options.topologyQuery,
+        // No formation criterion is installed here, so the deadline timer
+        // that owns this reader never runs.
+        readPlannedTopologySnapshot: async () => undefined,
         topologyPlanning: options.topologyPlanning,
         nowEpochMs: Date.now
     });

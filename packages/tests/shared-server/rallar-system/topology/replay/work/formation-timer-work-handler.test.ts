@@ -46,7 +46,7 @@ describe('formation timer work handler', () => {
                     config: resolveGroupTopologyConfig({}),
                     kindHysteresisWidths: { meshExitWidth: 4, treeExitWidth: 0 },
                     rttMeasurements: [],
-                    replanning: 'debounced' as const,
+                    replanning: 'auto' as const,
                     nowEpochMs
                 })
             },
@@ -230,7 +230,7 @@ function unusedTopologyPlanning(group: ReturnType<typeof formationGroup>, nowEpo
             config: resolveGroupTopologyConfig({}),
             kindHysteresisWidths: { meshExitWidth: 4, treeExitWidth: 0 },
             rttMeasurements: [],
-            replanning: 'debounced' as const,
+            replanning: 'auto' as const,
             nowEpochMs
         })
     };

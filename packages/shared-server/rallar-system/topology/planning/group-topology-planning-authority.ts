@@ -19,7 +19,11 @@ export interface GroupTopologyPlanningAuthority {
     readonly config: GroupTopologyConfigView;
     readonly kindHysteresisWidths: RtcTopologyKindHysteresisWidths;
     readonly rttMeasurements: readonly RttMeasurementInfo[];
-    /** The group's replanning mode, read with the rest of the authority (4b). */
+    /**
+     * The replanning mode the planning gate consults. Read from the stored
+     * policy only for stages whose disposition follows it; every other
+     * stage carries the default preset's mode, which its row never reads.
+     */
     readonly replanning: GroupTopologyReplanningRead;
     readonly nowEpochMs: number;
 }

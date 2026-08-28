@@ -556,6 +556,16 @@ describe('readPendingTopologyReplan', () => {
         expect(keys).toEqual([computedEntry().key]);
     });
 
+    it('reads an executing (reserved) row as still queued', async () => {
+        const reserved = { ...computedEntry(), status: EntityStatus.RESERVED };
+        await expect(
+            readPendingTopologyReplan({ findByKey: async () => reserved }, GROUP_REF)
+        ).resolves.toEqual({
+            reconfigureQueued: true,
+            dueAtEpochMs: BASE_EPOCH_MS + DEBOUNCE_MS
+        });
+    });
+
     it('reads a settled row as no pending work', async () => {
         const settled = { ...computedEntry(), status: EntityStatus.COMPLETED };
         await expect(

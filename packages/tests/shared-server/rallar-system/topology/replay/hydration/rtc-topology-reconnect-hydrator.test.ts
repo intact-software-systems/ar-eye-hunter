@@ -77,6 +77,45 @@ describe('RtcTopologyReconnectHydrator', () => {
         expect(harness.outcomes).toEqual(['sent']);
     });
 
+    it('hydrates the removal tombstone even when a stale accepted row survives (teardown wins)', async () => {
+        const tombstone = { ...createTopology({ version: 8 }), state: 'removed' as const };
+        const staleAccepted = createTopology({ version: 7 });
+        const harness = createHarness({
+            scanTopology: tombstone,
+            currentTopology: tombstone,
+            acceptedTopologies: {
+                listSnapshotEntriesPage: async () => [],
+                findSnapshot: async () => staleAccepted
+            }
+        });
+        const connection = harness.addConnection('session-1', 'generation-1');
+
+        await harness.hydrator.hydrateOpenConnections(new AbortController().signal);
+
+        const message = harness.sentMessages(connection)[0] as { payload: { resource: string; }; };
+        expect(JSON.parse(message.payload.resource)).toEqual(tombstone);
+    });
+
+    it('serves a member named only in the held planned candidate their candidate assignment (4c)', async () => {
+        const planned = createTopology({ version: 9, activeSessionIds: ['session-1', 'session-2'] });
+        const accepted = createTopology({ version: 8, activeSessionIds: ['session-2'] });
+        const harness = createHarness({
+            scanTopology: planned,
+            currentTopology: planned,
+            acceptedTopologies: {
+                listSnapshotEntriesPage: async () => [],
+                findSnapshot: async () => accepted
+            }
+        });
+        const connection = harness.addConnection('session-1', 'generation-1');
+
+        await harness.hydrator.hydrateOpenConnections(new AbortController().signal);
+
+        const message = harness.sentMessages(connection)[0] as { payload: { resource: string; }; };
+        expect(JSON.parse(message.payload.resource)).toEqual(planned);
+        expect(harness.outcomes).toEqual(['sent']);
+    });
+
     it('finds a member only the accepted layout still names through the second scan (4c)', async () => {
         const planned = createTopology({ version: 7, activeSessionIds: ['session-9'] });
         const accepted = createTopology({ version: 6 });
@@ -84,10 +123,7 @@ describe('RtcTopologyReconnectHydrator', () => {
             scanTopology: planned,
             currentTopology: planned,
             acceptedTopologies: {
-                listSnapshotEntriesPage: async () => [{
-                    entry: { key: accepted.groupRef.groupId },
-                    value: accepted
-                } as never],
+                listSnapshotEntriesPage: async () => [toSnapshotPageEntry(accepted)],
                 findSnapshot: async () => accepted
             }
         });
@@ -440,6 +476,21 @@ function requireHarnessWebSocket(
         throw new Error(`Missing test WebSocket for ${context.id}`);
     }
     return webSocket;
+}
+
+function toSnapshotPageEntry(
+    snapshot: RallarOverlayTopologySnapshot
+): { entry: { key: string; value: string; expireAtTimestamp: number; updatedTimestamp: string; revision: number; }; value: RallarOverlayTopologySnapshot; } {
+    return {
+        entry: {
+            key: snapshot.groupRef.groupId,
+            value: JSON.stringify(snapshot),
+            expireAtTimestamp: Number.MAX_SAFE_INTEGER,
+            updatedTimestamp: '2026-08-10T00:00:00.000Z',
+            revision: 1
+        },
+        value: snapshot
+    };
 }
 
 function createTopology(

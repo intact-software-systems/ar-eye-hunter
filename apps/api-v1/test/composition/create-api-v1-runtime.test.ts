@@ -61,9 +61,14 @@ Deno.test('runtime construction stops at a synchronous ownership failure', () =>
     ]);
 });
 
-const MUTATION_RUNTIME = {
-    groupFormationMetrics: { rttMutation: {} }
-} as ApiV1MutationRuntime;
+const MUTATION_RUNTIME: ApiV1MutationRuntime = {
+    groupFormationMetrics: { rttMutation: {} },
+    resourceInboxRepository: {
+        entries: {
+            findByKey: () => Promise.reject(new Error('pending replan not read here'))
+        }
+    }
+} as never;
 const SHARED_RUNTIME = {
     qboxEngine: { wake: () => {} },
     appClientInboxService: {},

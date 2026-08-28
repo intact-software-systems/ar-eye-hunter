@@ -438,7 +438,7 @@ function reconfigureRead(): GroupTopologyReconfigureRead {
             },
             kindHysteresisWidths: { meshExitWidth: 1, treeExitWidth: 1 },
             rttMeasurements: [],
-            replanning: 'debounced',
+            replanning: 'auto',
             nowEpochMs: NOW_EPOCH_MS
         },
         authorityGuard: groupAuthorityGuard()

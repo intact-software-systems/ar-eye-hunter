@@ -1,4 +1,5 @@
 import { PSqlGroupStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-group-state-event-repository.ts';
+import { requirePlannedTopology } from '@shared-test/shared-server/require-planned-topology.ts';
 import assert from 'node:assert/strict';
 
 import {
@@ -217,14 +218,12 @@ export async function createPGliteTopologyWorkFixture(
         knownGroup: groupSnapshot,
         snapshotSelection: 'prefer-current'
     });
-    const computedTopology = topologyManagement.planning.computeTopologyFromAuthority(
-        authority,
-        undefined
-    );
-    if (computedTopology.action !== 'planned') {
-        throw new Error('expected a planned topology result');
-    }
-    const topology = computedTopology.snapshot;
+    const topology = requirePlannedTopology(
+        topologyManagement.planning.computeTopologyFromAuthority(authority, undefined, {
+            intent: 'full-rebuild',
+            origin: 'automatic'
+        })
+    ).snapshot;
     const expiresAtEpochMs = executionRepository.publicationExpireAtTimestamp();
     const publication = {
         publicationId: toRtcTopologyPublicationId({
