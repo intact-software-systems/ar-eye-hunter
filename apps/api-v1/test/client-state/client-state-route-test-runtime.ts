@@ -9,8 +9,8 @@ import type { StateScope } from '@shared/api/state-types.ts';
 import { Either } from '@shared/resilience/Either.ts';
 
 import type { GroupStateRouteAuthSession } from '../../src/group-state/group-state-route-contracts.ts';
-import * as clientStateRoutes from '../../src/routes/client-state-routes.ts';
 import type { ProcessClientAppInbox } from '../../src/routes/client-state-mutation-routes.ts';
+import * as clientStateRoutes from '../../src/routes/client-state-routes.ts';
 
 export const TEST_SCOPE: StateScope = {
     applicationId: 'app-1',

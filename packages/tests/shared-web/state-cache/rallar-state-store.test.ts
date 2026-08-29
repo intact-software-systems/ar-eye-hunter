@@ -1,11 +1,7 @@
 import { BrowserFacadeRuntimeState } from '@shared-web/browser/composition/browser-facade-runtime-state.ts';
 import { BrowserTransportRuntime } from '@shared-web/browser/connection/browser-transport-runtime.ts';
 import { createRoomStateStore } from '@shared-web/browser/rooms/room-state-store.ts';
-import {
-    createRallarStateCacheReadPort,
-    RallarStateStore,
-    type RallarStateCacheReadPort
-} from '@shared-web/browser/state-cache/rallar-state-store.ts';
+import { createRallarStateCacheReadPort, RallarStateStore, type RallarStateCacheReadPort } from '@shared-web/browser/state-cache/rallar-state-store.ts';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { configureTestCacheRepositories } from '../../cache-repository-config.ts';
 

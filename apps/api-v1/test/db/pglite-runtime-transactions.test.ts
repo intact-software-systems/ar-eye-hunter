@@ -289,7 +289,7 @@ Deno.test(
                 const runtime = new PSqlRuntimeStateRepository(sql);
                 const service = createGroupStateService({
                     readPlannedLayoutRow: () => Promise.resolve(null),
-            readAcceptedLayoutRow: () => Promise.resolve(null),
+                    readAcceptedLayoutRow: () => Promise.resolve(null),
                     runtimeRepository: runtime,
                     groupStateEventStore: new PSqlGroupStateEventRepository(sql),
                     authSessionRepository: {
