@@ -7,11 +7,12 @@ import {
 } from '@shared/al-contracts/al-contract.ts';
 import { AppTopics, type ClientInfo } from '@shared/api/api-config.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
+import { toGroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import { DEFAULT_STATE_APPLICATION_ID, DEFAULT_STATE_WORKSPACE_ID } from '@shared/api/state-types.ts';
 import * as clientStateSnapshotsRepository from '@shared/repository/client-state-snapshots-repository.ts';
 import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
-import { findPlannedOverlayById } from '@shared/repository/overlays-repository.ts';
+import { findAcceptedOverlayById, findPlannedOverlayById } from '@shared/repository/overlays-repository.ts';
 // dprint-ignore
 import {
     beforeEach,
@@ -591,6 +592,90 @@ describe('browser state cache lifecycle scope filtering', () => {
 
         expect(findPlannedOverlayById(topology.overlayId)).toBeUndefined();
         expect(manager.notifyOverlayTopologyChanged).toHaveBeenCalledTimes(2);
+    });
+
+    it('preserves server-planned identity when a browser graph message arrives before acceptance', async () => {
+        const manager = createWebRtcGroupManager();
+        const clientData: ClientInfo = {
+            clientId: 'alice',
+            sessionId: 'session-a',
+            isOnline: true
+        };
+        let onInboxMessage:
+            | ((message: ALMessage) => Promise<void>)
+            | undefined;
+        const webSocketQueueBox = {
+            onAllInboxMessagesDo: vi.fn((callback: {
+                onMessage: (message: ALMessage) => Promise<void>;
+            }) => {
+                onInboxMessage = callback.onMessage;
+                return webSocketQueueBox;
+            })
+        };
+        const group = createGroupSnapshot({
+            groupId: 'room-graph-ordering',
+            applicationId: DEFAULT_STATE_APPLICATION_ID,
+            workspaceId: DEFAULT_STATE_WORKSPACE_ID,
+            sessionIds: ['session-a', 'session-b'],
+            snapshotVersion: 2
+        });
+        const topology = createTopologySnapshot(
+            group,
+            { groupRevision: 2, presenceRevision: 2 },
+            3
+        );
+
+        browserStateCacheLifecycle.initialise({
+            inbox: webSocketQueueBox,
+            webRtcGroupManager: manager as never,
+            clientData
+        });
+        await browserStateCacheLifecycle.hydrate({
+            webRtcGroupManager: manager as never,
+            clientData,
+            clientSnapshots: [],
+            groupSnapshots: [group]
+        });
+        const receive = onInboxMessage;
+        if (!receive) {
+            throw new Error('WebSocket cache callback was not installed.');
+        }
+
+        await receive(newALBroadcastMessage(
+            'server-a',
+            newALEventRoute(AppTopics.overlayTopology, group.group.groupId, 'topology'),
+            'room',
+            AppTopics.overlayTopology,
+            topology,
+            { groupRef: group.group }
+        ));
+        await receive(newALBroadcastMessage(
+            'server-a',
+            newALEventRoute('graphs', group.group.groupId, 'graph'),
+            'room',
+            'graphs',
+            { version: 4 },
+            { groupRef: group.group }
+        ));
+
+        const accepted = createGroupSnapshot({
+            groupId: group.group.groupId,
+            applicationId: group.group.applicationId,
+            workspaceId: group.group.workspaceId ?? DEFAULT_STATE_WORKSPACE_ID,
+            sessionIds: ['session-a', 'session-b'],
+            snapshotVersion: 3
+        });
+        groupStateSnapshotsRepository.setGroupStateSnapshot({
+            ...accepted,
+            group: {
+                ...accepted.group,
+                acceptedLayoutIdentity: toGroupLayoutIdentity(topology)
+            }
+        });
+        await groupStateSnapshotsRepository.waitForGroupStateSnapshotChangesIdle();
+
+        expect(findAcceptedOverlayById(topology.overlayId)?.overlayVersion).toBe(3);
+        expect(findPlannedOverlayById(topology.overlayId)).toBeUndefined();
     });
 
     it.each(

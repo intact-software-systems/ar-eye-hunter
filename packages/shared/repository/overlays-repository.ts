@@ -143,24 +143,6 @@ export function readableAcceptedOverlayCache(
     return requireRoleOverlayRepository(acceptedOverlayRepositoryToken, manager).readable();
 }
 
-export function updatePlannedOverlayNextHopSessionIds(
-    overlayId: string,
-    nextHopSessionIds: readonly string[],
-    manager?: RepositoryManager
-): void {
-    const overlay = findPlannedOverlayById(overlayId, manager);
-    if (overlay === undefined) {
-        return;
-    }
-
-    setPlannedOverlayById(overlayId, {
-        ...overlay,
-        nextHopSessionIds: [...nextHopSessionIds],
-        overlayVersion: overlay.overlayVersion + 1,
-        updatedAtEpochMs: Math.max(Date.now(), overlay.updatedAtEpochMs + 1)
-    }, manager);
-}
-
 export function hasPlannedServerOverlayRecordByGroupRef(
     groupRef: GroupRef,
     manager?: RepositoryManager

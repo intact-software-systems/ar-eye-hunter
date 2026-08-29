@@ -1,6 +1,11 @@
 import type { ClientInfo } from '@shared/api/api-config.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
-import type { AuditStamp, GroupSnapshot, GroupStateCausalRevision } from '@shared/api/group-types.ts';
+// dprint-ignore
+import type {
+    AuditStamp,
+    GroupSnapshot,
+    GroupStateCausalRevision
+} from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import { LatestRepository } from '@shared/cache/LatestRepository.ts';
 import { RepositoryManager } from '@shared/cache/RepositoryManager.ts';

@@ -2,7 +2,12 @@ import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import type { ClientInfo } from '@shared/api/api-config.ts';
 import type { ClientSnapshot as ClientStateSnapshot } from '@shared/api/client-types.ts';
 import type { GroupSnapshot as GroupStateSnapshot } from '@shared/api/group-types.ts';
-import { DEFAULT_STATE_APPLICATION_ID, DEFAULT_STATE_WORKSPACE_ID, type StateScope } from '@shared/api/state-types.ts';
+// dprint-ignore
+import {
+    DEFAULT_STATE_APPLICATION_ID,
+    DEFAULT_STATE_WORKSPACE_ID,
+    type StateScope
+} from '@shared/api/state-types.ts';
 import { ObservableValueEventType } from '@shared/cache/RepositoryInterfaces.ts';
 import * as clientStateSnapshotsRepository from '@shared/repository/client-state-snapshots-repository.ts';
 import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
@@ -16,7 +21,6 @@ import {
 } from '@shared/services/group-snapshot-rtc-sync.ts';
 import type { OnMessageCallback } from '@shared/services/InboxOutboxContracts.ts';
 import { WebRtcGroupManager } from '@shared/services/WebRtcGroupManager.ts';
-import { dispatchGraphSnapshotMessage } from './graph-snapshot-message-dispatch.ts';
 import { dispatchOverlayTopologyMessage } from './overlay-topology-message-dispatch.ts';
 import {
     acceptClientStateSnapshots,
@@ -26,29 +30,29 @@ import {
 import { dispatchStateEventMessage } from './state-event-message-dispatch.ts';
 import { dispatchStateSnapshotMessage } from './state-snapshot-message-dispatch.ts';
 
-export type StateCacheChange = Readonly<{
-    clients: readonly ClientStateSnapshot[];
-    groups: readonly GroupStateSnapshot[];
-}>;
+export interface StateCacheChange {
+    readonly clients: readonly ClientStateSnapshot[];
+    readonly groups: readonly GroupStateSnapshot[];
+}
 
 export type StateCacheChangeListener = (
     change: StateCacheChange
 ) => void | Promise<void>;
 
-export type StateCacheScopeOptions = Readonly<{
-    scope?: StateScope;
-    rereadGroupSnapshots?: (
+export interface StateCacheScopeOptions {
+    readonly scope?: StateScope;
+    readonly rereadGroupSnapshots?: (
         scope: StateScope
     ) => Promise<readonly GroupStateSnapshot[]>;
-    groupFormation?: BootstrapOverlayPolicyInput;
-}>;
+    readonly groupFormation?: BootstrapOverlayPolicyInput;
+}
 
-export type StateCacheInboxSource = Readonly<{
+export interface StateCacheInboxSource {
     onAllInboxMessagesDo(
         callback: OnMessageCallback,
         forceUpdate?: boolean
     ): void;
-}>;
+}
 
 export namespace BrowserStateCacheLifecycle {
     export interface InitialiseInput {
@@ -122,11 +126,7 @@ export class BrowserStateCacheLifecycle implements BrowserStateCacheLifecyclePor
                 };
                 if (
                     await dispatchStateSnapshotMessage(lifecycleDispatch) ||
-                    await dispatchStateEventMessage(lifecycleDispatch) ||
-                    dispatchGraphSnapshotMessage({
-                        message,
-                        sessionId: myOwnClientData.sessionId
-                    })
+                    await dispatchStateEventMessage(lifecycleDispatch)
                 ) {
                     return;
                 }

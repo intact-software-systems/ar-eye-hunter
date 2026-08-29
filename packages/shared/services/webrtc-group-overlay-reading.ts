@@ -17,14 +17,6 @@ export function readAcceptedOverlayForGroup(
     return readOverlayForGroup(acceptedOverlayCache, groupRef);
 }
 
-export function readPlannedAuthoritativeOverlayForGroup(
-    plannedOverlayCache: ReadableKeyedValues<string, OverlayInfo> | undefined,
-    groupRef: GroupRef
-): OverlayInfo | undefined {
-    const overlay = readPlannedOverlayForGroup(plannedOverlayCache, groupRef);
-    return overlay?.degreeLimit !== undefined ? overlay : undefined;
-}
-
 export function computeOverlayRttReportingDegreeLimit(
     plannedOverlayCache: ReadableKeyedValues<string, OverlayInfo> | undefined,
     groupRefs: readonly GroupRef[]

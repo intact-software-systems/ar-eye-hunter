@@ -62,8 +62,9 @@ describe('rallar-black-box-headless bundle boundary', () => {
         // Strict AppInbox mutation paths and canonical failure decoding add
         // ~0.87 KiB over the stacked base; measured 202.42 at that change.
         // Slice 8a's two-role overlay caches, validated HTTP hydration, and
-        // lifecycle race fences add 1.018 KiB over the Slice 7 base:
-        // 202.944336 KiB -> 203.961914 KiB.
+        // lifecycle race fences add 0.771484 KiB over the Slice 7 base after
+        // removing the dead browser graph-to-overlay mutation path:
+        // 202.944336 KiB -> 203.715820 KiB.
         expect(result.brotliKiB).toBeLessThan(204);
     });
 });

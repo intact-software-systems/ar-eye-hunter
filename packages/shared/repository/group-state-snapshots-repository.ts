@@ -42,15 +42,15 @@ export type GroupStateSnapshotRepositoryOptions =
 
 export type GroupStateSnapshotWriteKind = ObservableValueEventType;
 
-export type GroupStateSnapshotChange = Readonly<{
-    kind: GroupStateSnapshotWriteKind;
-    groupRef: GroupRef;
-    snapshot?: GroupSnapshot;
-    previous?: GroupSnapshot;
-    version: number;
-    previousVersion?: number;
-    manager?: RepositoryManager;
-}>;
+export interface GroupStateSnapshotChange {
+    readonly kind: GroupStateSnapshotWriteKind;
+    readonly groupRef: GroupRef;
+    readonly snapshot?: GroupSnapshot;
+    readonly previous?: GroupSnapshot;
+    readonly version: number;
+    readonly previousVersion?: number;
+    readonly manager?: RepositoryManager;
+}
 
 export type GroupStateSnapshotChangeListener = (
     change: GroupStateSnapshotChange
@@ -64,6 +64,7 @@ export const groupStateSnapshotRepositoryToken = newObservableLatestRepositoryTo
 type GroupSessionIndex = Map<string, Set<string>>;
 
 const groupSessionIndexes = new WeakMap<ObservableLatestRepository<string, GroupSnapshot>, GroupSessionIndex>();
+const observedGroupSnapshotKeys = new WeakMap<ObservableLatestRepository<string, GroupSnapshot>, Set<string>>();
 
 export function configureGroupStateSnapshotRepository(
     options: GroupStateSnapshotRepositoryOptions,
@@ -78,6 +79,7 @@ export function configureGroupStateSnapshotRepository(
         manager
     );
     groupSessionIndexes.set(repository, new Map());
+    observedGroupSnapshotKeys.set(repository, new Set());
     return repository;
 }
 
@@ -120,6 +122,16 @@ export function findGroupStateSnapshotByRef(
         groupStateSnapshotRepositoryToken,
         toGroupStateSnapshotRepositoryKey(ref),
         manager
+    );
+}
+
+export function wasGroupStateSnapshotObservedByRef(
+    ref: GroupRef,
+    manager?: RepositoryManager
+): boolean {
+    const repository = requireGroupStateSnapshotRepository(manager);
+    return observedGroupSnapshotKeysForRepository(repository).has(
+        toGroupStateSnapshotRepositoryKey(ref)
     );
 }
 
@@ -220,6 +232,7 @@ function writeGroupStateSnapshot(
 
     if (decision === 'inserted' || decision === 'advanced') {
         repository.set(repositoryKey, snapshot);
+        observedGroupSnapshotKeysForRepository(repository).add(repositoryKey);
         replaceGroupSnapshotInSessionIndex(
             repository,
             repositoryKey,
@@ -297,6 +310,17 @@ function groupSessionIndexForRepository(
         groupSessionIndexes.set(repository, index);
     }
     return index;
+}
+
+function observedGroupSnapshotKeysForRepository(
+    repository: ObservableLatestRepository<string, GroupSnapshot>
+): Set<string> {
+    let observedKeys = observedGroupSnapshotKeys.get(repository);
+    if (!observedKeys) {
+        observedKeys = new Set(repository.keys());
+        observedGroupSnapshotKeys.set(repository, observedKeys);
+    }
+    return observedKeys;
 }
 
 function buildGroupSessionIndex(
