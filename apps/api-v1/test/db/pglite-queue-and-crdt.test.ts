@@ -698,6 +698,7 @@ Deno.test(
                     expireAtEpochMs: FUTURE_MS,
                     recomputeDebounceMs: 0,
                     senderId: 'fingerprint-gate-worker',
+                    origin: 'automatic',
                     previousEntry
                 });
             const coalescedKey = toCoalescedComputed(currentSnapshot, null).entry.key;
