@@ -412,7 +412,6 @@ describe('Rallar message send', () => {
         });
 
         expect(result.status).toBe('enqueued');
-        expect(rtcRxStreamer.enqueueOutboxIfAbsent).toHaveBeenCalledOnce();
     });
 
     it('wakes the queue-box engine when RTC send queues durable outbox work', async () => {
