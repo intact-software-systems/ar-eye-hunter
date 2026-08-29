@@ -36,12 +36,44 @@ import type { RallarRtcFacade } from '@shared-web/browser/rallar-rtc-facade.ts';
 import type { BrowserRallarRooms } from '@shared-web/browser/rooms/browser-rallar-rooms.ts';
 import type { RallarRoomSession } from '@shared-web/browser/rooms/rallar-room-contracts.ts';
 import { hydrateGroupTopologyOverlays } from '@shared-web/browser/state-read/hydrate-group-topology-overlays.ts';
+import type { AuthSession } from '@shared/api/api-config.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
+import type { WebRtcGroupManager } from '@shared/services/WebRtcGroupManager.ts';
 import type { BlackBoxRallarDirectorOutputRecord, BlackBoxRallarEvent } from './contracts.ts';
 
 interface BlackBoxRoomStateRefreshOptions extends RallarScopedOperationOptions {
     readonly scope: StateScope;
+    readonly timeoutMs: number;
+}
+
+interface RefreshBlackBoxBrowserRoomStateInput {
+    readonly roomRef: GroupRef;
+    readonly options: BlackBoxRoomStateRefreshOptions;
+    readonly rooms: BlackBoxRoomStateRefreshRooms;
+    readonly session: BlackBoxRoomStateRefreshSession;
+}
+
+interface BlackBoxRoomStateRefreshRooms {
+    session(roomRef: GroupRef): Readonly<{
+        refresh(
+            options: Parameters<RallarRoomSession['refresh']>[0]
+        ): Promise<Pick<RallarRoomSession, 'snapshot'>>;
+    }>;
+}
+
+interface BlackBoxRoomStateRefreshSession {
+    connect(options: RallarScopedOperationOptions): Promise<
+        Readonly<{
+            session: AuthSession;
+            middleware: Readonly<{ webRtcGroupManager: WebRtcGroupManager; }>;
+        }>
+    >;
+}
+
+interface RoomStateRefreshAbortScope {
+    readonly signal: AbortSignal;
+    cleanup(): void;
 }
 
 export interface BlackBoxBrowserRallarRuntimeDependency extends
@@ -136,27 +168,6 @@ export function createBlackBoxBrowserRallarRuntimeDependency(): BlackBoxBrowserR
         realtime,
         session: session.session
     });
-    const refreshRoomState = async (
-        roomRef: GroupRef,
-        options: BlackBoxRoomStateRefreshOptions
-    ): Promise<void> => {
-        const refreshedRoom = await rooms.rooms.session(roomRef).refresh(options);
-        const groupSnapshot = refreshedRoom.snapshot();
-        if (!groupSnapshot) {
-            return;
-        }
-        const context = await session.session.connect(options);
-        await hydrateGroupTopologyOverlays({
-            groupSnapshots: [groupSnapshot],
-            sessionId: context.session.sessionId,
-            webRtcGroupManager: context.middleware.webRtcGroupManager,
-            scope: options.scope,
-            apiRequest: {
-                authSession: context.session,
-                ...(options.signal ? { signal: options.signal } : {})
-            }
-        });
-    };
     const director = createBrowserDirectorComposition({
         state,
         messaging,
@@ -179,7 +190,13 @@ export function createBlackBoxBrowserRallarRuntimeDependency(): BlackBoxBrowserR
     });
     return {
         ...session.connection,
-        refreshRoomState,
+        refreshRoomState: async (roomRef, options) =>
+            await refreshBlackBoxBrowserRoomState({
+                roomRef,
+                options,
+                rooms: rooms.rooms,
+                session: session.session
+            }),
         auth: session.auth,
         rooms: rooms.rooms,
         messages: messaging.messages,
@@ -189,6 +206,89 @@ export function createBlackBoxBrowserRallarRuntimeDependency(): BlackBoxBrowserR
         crdt: crdt.crdt,
         director: director.director
     };
+}
+
+export async function refreshBlackBoxBrowserRoomState(
+    input: RefreshBlackBoxBrowserRoomStateInput
+): Promise<void> {
+    const abortScope = createRoomStateRefreshAbortScope(input.options);
+    const options = { ...input.options, signal: abortScope.signal };
+    try {
+        throwIfAborted(abortScope.signal);
+        const refresh = Promise.resolve().then(async () => {
+            const refreshedRoom = await input.rooms.session(input.roomRef).refresh(options);
+            const groupSnapshot = refreshedRoom.snapshot();
+            if (!groupSnapshot) {
+                return;
+            }
+            const context = await input.session.connect(options);
+            await hydrateGroupTopologyOverlays({
+                groupSnapshots: [groupSnapshot],
+                sessionId: context.session.sessionId,
+                webRtcGroupManager: context.middleware.webRtcGroupManager,
+                scope: options.scope,
+                apiRequest: {
+                    authSession: context.session,
+                    signal: abortScope.signal
+                }
+            });
+        });
+        await Promise.race([refresh, rejectOnAbort(abortScope.signal)]);
+    }
+    finally {
+        abortScope.cleanup();
+    }
+}
+
+function createRoomStateRefreshAbortScope(
+    options: BlackBoxRoomStateRefreshOptions
+): RoomStateRefreshAbortScope {
+    const controller = new AbortController();
+    const abortFromCaller = () => {
+        controller.abort(options.signal?.reason ?? new Error('Room state refresh aborted.'));
+    };
+    if (options.signal?.aborted) {
+        abortFromCaller();
+    }
+    else {
+        options.signal?.addEventListener('abort', abortFromCaller, { once: true });
+    }
+    const timeout = controller.signal.aborted
+        ? undefined
+        : setTimeout(() => {
+            const error = new Error(
+                `Room state refresh timed out after ${options.timeoutMs} ms.`
+            );
+            error.name = 'TimeoutError';
+            controller.abort(error);
+        }, Math.max(0, options.timeoutMs));
+
+    return {
+        signal: controller.signal,
+        cleanup: () => {
+            if (timeout !== undefined) {
+                clearTimeout(timeout);
+            }
+            options.signal?.removeEventListener('abort', abortFromCaller);
+        }
+    };
+}
+
+function rejectOnAbort(signal: AbortSignal): Promise<never> {
+    return new Promise((_resolve, reject) => {
+        const onAbort = () => reject(signal.reason ?? new Error('Room state refresh aborted.'));
+        if (signal.aborted) {
+            onAbort();
+            return;
+        }
+        signal.addEventListener('abort', onAbort, { once: true });
+    });
+}
+
+function throwIfAborted(signal: AbortSignal): void {
+    if (signal.aborted) {
+        throw signal.reason ?? new Error('Room state refresh aborted.');
+    }
 }
 
 interface RegisterBlackBoxBrowserRallarLifecycleInput {
