@@ -594,7 +594,7 @@ describe('browser state cache lifecycle scope filtering', () => {
         expect(manager.notifyOverlayTopologyChanged).toHaveBeenCalledTimes(2);
     });
 
-    it('preserves server-planned identity when a browser graph message arrives before acceptance', async () => {
+    it('ignores an obsolete graph message without changing server-planned identity', async () => {
         const manager = createWebRtcGroupManager();
         const clientData: ClientInfo = {
             clientId: 'alice',
@@ -649,14 +649,19 @@ describe('browser state cache lifecycle scope filtering', () => {
             topology,
             { groupRef: group.group }
         ));
+        expect(findPlannedOverlayById(topology.overlayId)?.overlayVersion).toBe(3);
+
+        // The retired topic must be ignored before payload decoding, so this
+        // sentinel is intentionally not a valid historical graph snapshot.
         await receive(newALBroadcastMessage(
             'server-a',
             newALEventRoute('graphs', group.group.groupId, 'graph'),
             'room',
             'graphs',
-            { version: 4 },
+            { intentionallyInvalid: true },
             { groupRef: group.group }
         ));
+        expect(findPlannedOverlayById(topology.overlayId)?.overlayVersion).toBe(3);
 
         const accepted = createGroupSnapshot({
             groupId: group.group.groupId,
