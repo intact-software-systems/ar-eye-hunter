@@ -79,18 +79,9 @@ type BufferedReleaseOptions = Readonly<{
 }>;
 
 export class ALInboundMessageRuntime {
-    private static readonly MAX_COMMIT_ATTEMPTS = 10;
-    private static readonly COMMIT_RETRY_INTERVAL_MSECS = 10;
-    private static readonly COMMIT_MAX_RETRY_INTERVAL_MSECS = 50;
-    private static readonly COMMIT_MAX_ELAPSED_MSECS = 500;
-    private static readonly COMMIT_RETRY_POLICY = RetryPolicies
-        .optimisticCommit('al-inbound-commit')
-        .maxAttempts(ALInboundMessageRuntime.MAX_COMMIT_ATTEMPTS)
-        .retryIntervalMsecs(ALInboundMessageRuntime.COMMIT_RETRY_INTERVAL_MSECS)
-        .maxRetryIntervalMsecs(
-            ALInboundMessageRuntime.COMMIT_MAX_RETRY_INTERVAL_MSECS
-        )
-        .maxElapsedMsecs(ALInboundMessageRuntime.COMMIT_MAX_ELAPSED_MSECS);
+    private static readonly COMMIT_RETRY_POLICY = RetryPolicies.optimisticCommit(
+        'al-inbound-commit'
+    );
     private static readonly EFFECT_LEASE_MS = 10_000;
     private static readonly MAX_EFFECT_BATCH = 16;
 
