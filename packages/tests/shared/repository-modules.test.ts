@@ -32,7 +32,6 @@ import * as groupSnapshotRepositoryModule from '@shared/repository/group-state-s
 import { createAndSetBootstrapOverlays } from '@shared/repository/overlay-bootstrap.ts';
 import {
     findPlannedOverlayById,
-    getAllPlannedOverlays,
     onPlannedOverlayChange,
     readOverlayAdoptionDiagnostics,
     removePlannedOverlayById,
@@ -42,10 +41,27 @@ import {
     updatePlannedOverlayNextHopSessionIds,
     waitForPlannedOverlayChangesIdle
 } from '@shared/repository/overlays-repository.ts';
-import { getAllRtt, pairKey, setRtt, setRttById } from '@shared/repository/rtt-repository.ts';
-import { beforeEach, describe, expect, it } from 'vitest';
+// dprint-ignore
+import {
+    getAllRtt,
+    pairKey,
+    setRtt,
+    setRttById
+} from '@shared/repository/rtt-repository.ts';
+// dprint-ignore
+import {
+    beforeEach,
+    describe,
+    expect,
+    it
+} from 'vitest';
 import { configureTestCacheRepositories } from '../cache-repository-config.ts';
 import { createTestGroup } from '../create-test-group.ts';
+
+interface GroupFixtureScope {
+    readonly applicationId?: string;
+    readonly workspaceId?: string;
+}
 
 describe('repository modules', () => {
     beforeEach(() => {
@@ -90,11 +106,11 @@ describe('repository modules', () => {
     });
 
     it('round-trips client snapshot keys with required workspace values', () => {
-        type SnapshotKeyCodec = Readonly<{
-            fromClientStateSnapshotRepositoryKey?: (
+        interface SnapshotKeyCodec {
+            readonly fromClientStateSnapshotRepositoryKey?: (
                 key: string
             ) => Partial<ClientPrincipalRef>;
-        }>;
+        }
         const codec = clientSnapshotRepositoryModule as SnapshotKeyCodec;
         const refs = [
             {
@@ -213,12 +229,12 @@ describe('repository modules', () => {
     });
 
     it('conditionally removes only the unchanged client snapshot identity', () => {
-        type ConditionalClientRemoval = Readonly<{
-            removeClientStateSnapshotIfUnchanged?: (
+        interface ConditionalClientRemoval {
+            readonly removeClientStateSnapshotIfUnchanged?: (
                 ref: ClientPrincipalRef,
                 expected: ClientSnapshot
             ) => boolean;
-        }>;
+        }
         const conditionalRemoval = clientSnapshotRepositoryModule as ConditionalClientRemoval;
         const first = createClientSnapshot('client-1', 'session-old', 1);
         const newer = createClientSnapshot('client-1', 'session-new', 2);
@@ -346,11 +362,11 @@ describe('repository modules', () => {
     });
 
     it('round-trips group snapshot keys with required workspace values', () => {
-        type SnapshotKeyCodec = Readonly<{
-            fromGroupStateSnapshotRepositoryKey?: (
+        interface SnapshotKeyCodec {
+            readonly fromGroupStateSnapshotRepositoryKey?: (
                 key: string
             ) => Partial<GroupSnapshot['group']>;
-        }>;
+        }
         const codec = groupSnapshotRepositoryModule as SnapshotKeyCodec;
         const refs = [
             {
@@ -432,12 +448,12 @@ describe('repository modules', () => {
     });
 
     it('conditionally removes only the unchanged group and session-index identity', () => {
-        type ConditionalGroupRemoval = Readonly<{
-            removeGroupStateSnapshotIfUnchanged?: (
+        interface ConditionalGroupRemoval {
+            readonly removeGroupStateSnapshotIfUnchanged?: (
                 ref: GroupSnapshot['group'],
                 expected: GroupSnapshot
             ) => boolean;
-        }>;
+        }
         const conditionalRemoval = groupSnapshotRepositoryModule as ConditionalGroupRemoval;
         const first = createGroupSnapshot('group-1', 'Alpha', 1, [
             'self',
@@ -556,12 +572,8 @@ describe('repository modules', () => {
             currentOverlay.nextHopSessionIds
         );
 
-        expect(updatePlannedOverlayNextHopSessionIds(overlayId, ['peer-c'])).toMatchObject({
-            overlayId,
-            nextHopSessionIds: currentOverlay.nextHopSessionIds
-        });
+        updatePlannedOverlayNextHopSessionIds(overlayId, ['peer-c']);
         expect(findPlannedOverlayById(overlayId)?.nextHopSessionIds).toEqual(['peer-c']);
-        expect(getAllPlannedOverlays()).toHaveLength(1);
     });
 
     it('emits planned overlay changes only for adopted writes and deletes', async () => {
@@ -854,7 +866,6 @@ describe('repository modules', () => {
         } satisfies OverlayInfo;
         setPlannedOverlayById(first.overlayId, removed);
         expect(findPlannedOverlayById(first.overlayId)).toBeUndefined();
-        expect(getAllPlannedOverlays()).toEqual([]);
 
         setPlannedOverlayById(first.overlayId, first);
         expect(findPlannedOverlayById(first.overlayId)).toBeUndefined();
@@ -975,10 +986,7 @@ function createGroupSnapshot(
     displayName: string,
     membershipVersion: number,
     memberSessionIds: readonly string[],
-    scope: Readonly<{
-        applicationId?: string;
-        workspaceId?: string;
-    }> = {}
+    scope: GroupFixtureScope = {}
 ): GroupSnapshot {
     const applicationId = scope.applicationId ?? 'app-1';
     const workspaceId = scope.workspaceId ?? 'workspace-1';

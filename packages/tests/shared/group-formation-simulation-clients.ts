@@ -1,28 +1,39 @@
 import type { ClientInfo } from '@shared/api/api-config.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
-import type { AuditStamp, GroupSnapshot } from '@shared/api/group-types.ts';
+import type { AuditStamp, GroupSnapshot, GroupStateCausalRevision } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import { LatestRepository } from '@shared/cache/LatestRepository.ts';
 import { RepositoryManager } from '@shared/cache/RepositoryManager.ts';
-import { configureOverlayRepositories, readableAcceptedOverlayCache, readablePlannedOverlayCache } from '@shared/repository/overlays-repository.ts';
+// dprint-ignore
+import {
+    configureOverlayRepositories,
+    readableAcceptedOverlayCache,
+    readablePlannedOverlayCache
+} from '@shared/repository/overlays-repository.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import { WebRtcGroupManager } from '@shared/services/WebRtcGroupManager.ts';
 import { vi } from 'vitest';
 import { createTestGroup } from '../create-test-group.ts';
 
-export type SimulatedClient = Readonly<{
-    sessionId: string;
-    repositoryManager: RepositoryManager;
-    manager: WebRtcGroupManager;
-    dialedPeerIds: () => ReadonlySet<string>;
-    connectedPeerIds: () => ReadonlySet<string>;
-}>;
+export interface SimulatedClient {
+    readonly sessionId: string;
+    readonly repositoryManager: RepositoryManager;
+    readonly manager: WebRtcGroupManager;
+    readonly connectedPeerIds: () => ReadonlySet<string>;
+}
 
-export type CreateSimulatedClientOptions = Readonly<{
-    maxPeerConnections: number;
-    overlayTransitionGraceMs?: number;
-    now?: () => number;
-}>;
+export interface CreateSimulatedClientOptions {
+    readonly maxPeerConnections: number;
+    readonly overlayTransitionGraceMs?: number;
+    readonly now?: () => number;
+}
+
+export interface RingTopologyIdentity {
+    readonly sourceGroupStateCausalRevision: GroupStateCausalRevision;
+    readonly version: number;
+    readonly degreeLimit: number;
+    readonly ringShift?: number;
+}
 
 export function createSimulatedClient(
     sessionId: string,
@@ -48,14 +59,12 @@ export function createSimulatedClient(
         });
     }
 
-    const dialedPeerIds = new Set<string>();
     const knownPeerIds = new Set<string>();
     const rtcQBox = {
         input: { sessionId },
         knownPeerIds: () => Array.from(knownPeerIds),
         peerIdsWithNoReconnectableLanes: () => Array.from(knownPeerIds),
         ensurePeerConnectionStarted: vi.fn((peerId: string) => {
-            dialedPeerIds.add(peerId);
             knownPeerIds.add(peerId);
             return Either.ofRight({ peerId } as never);
         }),
@@ -85,7 +94,6 @@ export function createSimulatedClient(
         sessionId,
         repositoryManager,
         manager,
-        dialedPeerIds: () => dialedPeerIds,
         connectedPeerIds: () => knownPeerIds
     };
 }
@@ -93,15 +101,7 @@ export function createSimulatedClient(
 export function createRingTopologySnapshot(
     group: GroupSnapshot,
     sessionIds: readonly string[],
-    identity: Readonly<{
-        sourceGroupStateCausalRevision: Readonly<{
-            groupRevision: number;
-            presenceRevision: number;
-        }>;
-        version: number;
-        degreeLimit: number;
-        ringShift?: number;
-    }>
+    identity: RingTopologyIdentity
 ): RallarOverlayTopologySnapshot {
     const shift = identity.ringShift ?? 1;
     const nextHopsBySessionId: Record<string, readonly string[]> = {};

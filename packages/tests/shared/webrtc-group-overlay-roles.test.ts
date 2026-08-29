@@ -4,7 +4,13 @@ import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { LatestRepository } from '@shared/cache/LatestRepository.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import { WebRtcGroupManager } from '@shared/services/WebRtcGroupManager.ts';
-import { describe, expect, it, vi } from 'vitest';
+// dprint-ignore
+import {
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
 
 import { createTestGroup } from '../create-test-group.ts';
 

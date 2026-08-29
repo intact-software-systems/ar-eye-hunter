@@ -6,9 +6,9 @@ import * as overlaysRepository from '@shared/repository/overlays-repository.ts';
 import { resolveBootstrapDegree } from '@shared/rtc/bootstrap-peer-selection.ts';
 import type { WebRtcGroupManager } from '@shared/services/WebRtcGroupManager.ts';
 
-export type BootstrapOverlayPolicyInput = Readonly<{
-    bootstrapDegree: number;
-}>;
+export interface BootstrapOverlayPolicyInput {
+    readonly bootstrapDegree: number;
+}
 
 export function resolveBootstrapOverlayPolicy(
     input: BootstrapOverlayPolicyInput | undefined,

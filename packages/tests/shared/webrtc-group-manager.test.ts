@@ -4,8 +4,19 @@ import type { AuditStamp, GroupMember, GroupPresenceSession, GroupSnapshot } fro
 import { LatestRepository } from '@shared/cache/LatestRepository.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import { WebRtcGroupManager } from '@shared/services/WebRtcGroupManager.ts';
-import { describe, expect, it, vi } from 'vitest';
+// dprint-ignore
+import {
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
 import { createTestGroup } from '../create-test-group.ts';
+
+interface GroupFixtureScope {
+    readonly applicationId?: string;
+    readonly workspaceId?: string;
+}
 
 describe('WebRtcGroupManager', () => {
     it('connects group-active peers before the independent client cache observes them', async () => {
@@ -865,10 +876,7 @@ function createGroupSnapshot(
     groupId: string,
     membershipVersion: number,
     memberSessionIds: readonly string[],
-    scope: Readonly<{
-        applicationId?: string;
-        workspaceId?: string;
-    }> = {}
+    scope: GroupFixtureScope = {}
 ): GroupSnapshot {
     const applicationId = scope.applicationId ?? 'app-1';
     const workspaceId = scope.workspaceId ?? 'workspace-1';

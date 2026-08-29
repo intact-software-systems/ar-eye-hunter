@@ -1,4 +1,5 @@
 import type { OverlayInfo } from '@shared/api/api-config.ts';
+import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import {
     configureOverlayRepositories,
     findAcceptedOverlayById,
@@ -6,14 +7,22 @@ import {
     onAcceptedOverlayChange,
     onPlannedOverlayChange,
     removeAcceptedOverlayById,
+    removeAcceptedOverlayByIdIfUnchanged,
     removePlannedOverlayById,
+    removePlannedOverlayByIdIfUnchanged,
     setAcceptedOverlayById,
     setCurrentPlannedServerOverlayById,
     setPlannedOverlayById,
     waitForAcceptedOverlayChangesIdle,
     waitForPlannedOverlayChangesIdle
 } from '@shared/repository/overlays-repository.ts';
-import { beforeEach, describe, expect, it } from 'vitest';
+// dprint-ignore
+import {
+    beforeEach,
+    describe,
+    expect,
+    it
+} from 'vitest';
 
 describe('overlay repository roles', () => {
     beforeEach(() => {
@@ -32,8 +41,8 @@ describe('overlay repository roles', () => {
 
         expect(findAcceptedOverlayById(accepted.overlayId)).toEqual(accepted);
         expect(findPlannedOverlayById(planned.overlayId)).toEqual(planned);
-        expect(findAcceptedOverlayById(accepted.overlayId)?.overlayId).toBe('canonical-overlay-id');
-        expect(findPlannedOverlayById(planned.overlayId)?.overlayId).toBe('canonical-overlay-id');
+        expect(findAcceptedOverlayById(accepted.overlayId)?.overlayId).toBe(accepted.overlayId);
+        expect(findPlannedOverlayById(planned.overlayId)?.overlayId).toBe(planned.overlayId);
     });
 
     it('reports conflicts as non-fatal adoption outcomes and lets fresh current state replace incomparability', () => {
@@ -69,11 +78,15 @@ describe('overlay repository roles', () => {
 
     it('exposes independent role change and idle boundaries', async () => {
         const roleChanges: string[] = [];
+        const plannedOverlayIds: string[] = [];
+        const acceptedOverlayIds: string[] = [];
         const unsubscribePlanned = onPlannedOverlayChange((change) => {
             roleChanges.push(`planned:${change.kind}`);
+            plannedOverlayIds.push(change.overlayId);
         });
         const unsubscribeAccepted = onAcceptedOverlayChange((change) => {
             roleChanges.push(`accepted:${change.kind}`);
+            acceptedOverlayIds.push(change.overlayId);
         });
 
         try {
@@ -94,11 +107,33 @@ describe('overlay repository roles', () => {
                 'planned:deleted',
                 'accepted:deleted'
             ]);
+            const canonicalOverlayId = toScopedOverlayId(planned.groupRef);
+            expect(plannedOverlayIds).toEqual([canonicalOverlayId, canonicalOverlayId]);
+            expect(acceptedOverlayIds).toEqual([canonicalOverlayId, canonicalOverlayId]);
+            expect(canonicalOverlayId).not.toContain(':planned');
+            expect(canonicalOverlayId).not.toContain(':accepted');
         }
         finally {
             unsubscribePlanned();
             unsubscribeAccepted();
         }
+    });
+
+    it('conditionally removes each role only while its exact observation remains current', () => {
+        const planned = overlay({ version: 1, nextHopSessionIds: ['planned-peer'] });
+        const accepted = overlay({ version: 1, nextHopSessionIds: ['accepted-peer'] });
+        setPlannedOverlayById(planned.overlayId, planned);
+        setAcceptedOverlayById(accepted.overlayId, accepted);
+
+        const plannedObservation = findPlannedOverlayById(planned.overlayId);
+        const acceptedObservation = findAcceptedOverlayById(accepted.overlayId);
+        const newerPlanned = overlay({ version: 2, nextHopSessionIds: ['new-planned-peer'] });
+        setPlannedOverlayById(newerPlanned.overlayId, newerPlanned);
+
+        expect(removePlannedOverlayByIdIfUnchanged(planned.overlayId, plannedObservation)).toBe(false);
+        expect(removeAcceptedOverlayByIdIfUnchanged(accepted.overlayId, acceptedObservation)).toBe(true);
+        expect(findPlannedOverlayById(planned.overlayId)).toEqual(newerPlanned);
+        expect(findAcceptedOverlayById(accepted.overlayId)).toBeUndefined();
     });
 });
 
@@ -110,6 +145,11 @@ interface OverlayFixtureInput {
 }
 
 function overlay(input: OverlayFixtureInput): OverlayInfo {
+    const groupRef = {
+        applicationId: 'app-1',
+        workspaceId: 'workspace-1',
+        groupId: 'group-1'
+    };
     return {
         sourceGroupStateCausalRevision: {
             groupRevision: input.groupRevision ?? input.version,
@@ -117,12 +157,8 @@ function overlay(input: OverlayFixtureInput): OverlayInfo {
         },
         provenance: 'server',
         state: 'active',
-        overlayId: 'canonical-overlay-id',
-        groupRef: {
-            applicationId: 'app-1',
-            workspaceId: 'workspace-1',
-            groupId: 'group-1'
-        },
+        overlayId: toScopedOverlayId(groupRef),
+        groupRef,
         topology: 'tree',
         name: 'Room',
         createdByClientId: 'server',

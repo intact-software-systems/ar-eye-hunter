@@ -8,14 +8,24 @@ import {
     resetOverlayAdoptionDiagnostics,
     setAcceptedOverlayById
 } from '@shared/repository/overlays-repository.ts';
-import { describe, expect, it } from 'vitest';
-import { createRingTopologySnapshot, createSimulatedClient, createSimulationGroupSnapshot } from './group-formation-simulation-clients.ts';
+// dprint-ignore
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
+// dprint-ignore
+import {
+    createRingTopologySnapshot,
+    createSimulatedClient,
+    createSimulationGroupSnapshot
+} from './group-formation-simulation-clients.ts';
 
-const MAX_PEER_CONNECTIONS = 10;
+const MAX_CONCURRENT_PEER_CONNECTIONS = 10;
 const BOOTSTRAP_DEGREE = 5;
 
-// The Phase 1 tier evidence for "overlay adoption ≈ 100% and outbound dials
-// bounded": N real browser-side stacks (overlay repository semantics +
+// The Phase 1 tier evidence for "overlay adoption ≈ 100% and concurrent
+// connections bounded": N real browser-side stacks (overlay repository semantics +
 // WebRtcGroupManager over a fake connection service) burst-join one group,
 // bootstrap with the bounded rendezvous star, then receive an accepted server
 // overlay in the traffic slot. The formation-burst black-box recipes cover the
@@ -27,7 +37,7 @@ describe('group formation burst simulation', () => {
         { tier: 'medium', memberCount: 20 },
         { tier: 'large', memberCount: 50 }
     ])(
-        'adopts the server overlay on every client with bounded connections ($tier, N=$memberCount)',
+        'adopts the server overlay on every client with bounded concurrent connections ($tier, N=$memberCount)',
         async ({ memberCount }) => {
             resetOverlayAdoptionDiagnostics();
             const sessionIds = Array.from(
@@ -47,7 +57,7 @@ describe('group formation burst simulation', () => {
             );
             const clients = sessionIds.map((sessionId) =>
                 createSimulatedClient(sessionId, sessionIds, {
-                    maxPeerConnections: MAX_PEER_CONNECTIONS
+                    maxPeerConnections: MAX_CONCURRENT_PEER_CONNECTIONS
                 })
             );
 
@@ -67,8 +77,8 @@ describe('group formation burst simulation', () => {
                 expect(bootstrapOverlay?.provenance).toBe('bootstrap');
                 expect(bootstrapOverlay?.nextHopSessionIds.length)
                     .toBeLessThanOrEqual(BOOTSTRAP_DEGREE);
-                expect(client.dialedPeerIds().size)
-                    .toBeLessThanOrEqual(MAX_PEER_CONNECTIONS);
+                expect(client.connectedPeerIds().size)
+                    .toBeLessThanOrEqual(MAX_CONCURRENT_PEER_CONNECTIONS);
             }
             expect(readOverlayAdoptionDiagnostics().initialSetCount)
                 .toBe(memberCount);
@@ -96,7 +106,7 @@ describe('group formation burst simulation', () => {
                     .toBe('bootstrap');
 
                 expect(client.connectedPeerIds().size)
-                    .toBeLessThanOrEqual(MAX_PEER_CONNECTIONS);
+                    .toBeLessThanOrEqual(MAX_CONCURRENT_PEER_CONNECTIONS);
                 expect(client.manager.readDiagnostics().connectFailureCount)
                     .toBe(0);
             }

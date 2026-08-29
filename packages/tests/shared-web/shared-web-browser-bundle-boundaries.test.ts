@@ -3,18 +3,29 @@ import { mkdirSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { brotliCompressSync, constants } from 'node:zlib';
-import { describe, expect, it } from 'vitest';
+// dprint-ignore
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
 
-type BundleBoundary = Readonly<{
-    label: string;
-    entry: string;
-    output: string;
-    brotliBudgetKiB: number;
-}>;
+interface BundleBoundary {
+    readonly label: string;
+    readonly entry: string;
+    readonly output: string;
+    readonly brotliBudgetKiB: number;
+}
 
-type EsbuildMetafile = Readonly<{
-    inputs: Readonly<Record<string, unknown>>;
-}>;
+interface EsbuildMetafile {
+    readonly inputs: Readonly<Record<string, unknown>>;
+}
+
+interface BrowserBundleMeasurement {
+    readonly label: string;
+    readonly brotliKiB: number;
+    readonly metafile: EsbuildMetafile;
+}
 
 const repoRoot = process.cwd();
 const outputDir = path.join(tmpdir(), 'rallar-shared-web-boundary-test');
@@ -137,11 +148,7 @@ describe('shared-web browser bundle boundaries', () => {
     });
 });
 
-function bundleForBoundary(entry: BundleBoundary): Readonly<{
-    label: string;
-    brotliKiB: number;
-    metafile: EsbuildMetafile;
-}> {
+function bundleForBoundary(entry: BundleBoundary): BrowserBundleMeasurement {
     mkdirSync(outputDir, { recursive: true });
     const outputPath = path.join(outputDir, entry.output);
     const metafilePath = `${outputPath}.meta.json`;

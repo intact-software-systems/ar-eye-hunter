@@ -65,8 +65,8 @@ export class WebRtcGroupManager {
     public readonly rtcQBox: WebRtcConnectionService;
     public readonly groupCache: ReadableKeyedValues<string, AnyGroupPresence>;
     public readonly clientCache: ReadableKeyedValues<string, AnyClientPresence>;
-    public readonly plannedOverlayCache?: ReadableKeyedValues<string, OverlayInfo>;
-    public readonly acceptedOverlayCache?: ReadableKeyedValues<string, OverlayInfo>;
+    private readonly plannedOverlayCache?: ReadableKeyedValues<string, OverlayInfo>;
+    private readonly acceptedOverlayCache?: ReadableKeyedValues<string, OverlayInfo>;
     public readonly options: WebRtcGroupManagerOptions;
 
     constructor(
