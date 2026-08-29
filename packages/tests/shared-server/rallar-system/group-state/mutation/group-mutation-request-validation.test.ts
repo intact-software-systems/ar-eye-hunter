@@ -77,6 +77,27 @@ describe('group mutation request validation', () => {
         );
     });
 
+    it('accepts only canonical reconfigure landing values', () => {
+        expect(() =>
+            validateGroupMutationRequest('reconfigureGroup', {
+                actorPrincipalId: 'owner-1',
+                actorSessionId: 'owner-session',
+                requestId: 'reconfigure-apply',
+                landing: 'apply'
+            })
+        ).not.toThrow();
+
+        const invalidLanding = () =>
+            validateGroupMutationRequest('reconfigureGroup', {
+                actorPrincipalId: 'owner-1',
+                actorSessionId: 'owner-session',
+                requestId: 'reconfigure-invalid',
+                landing: 'later'
+            });
+        expect(invalidLanding).toThrowError(TypeError);
+        expect(invalidLanding).toThrowError('Group reconfigureGroup landing is invalid');
+    });
+
     it('requires non-empty authenticated actor identity on group mutation requests', () => {
         const missingPrincipal = () =>
             validateGroupMutationRequest('updateGroup', {

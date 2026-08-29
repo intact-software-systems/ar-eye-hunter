@@ -21,6 +21,7 @@ import type {
 } from '@shared/api/state-types.ts';
 
 import type { GroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
+import type { GroupTopologyReconfigureLanding } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 
 import { AppInboxType, type AppInboxEnqueueInput } from '../../app-inbox/app-inbox-contracts.ts';
 
@@ -61,6 +62,17 @@ export type GroupLifecycleTransitionAppInboxPayload = Readonly<{
     scope: StateScope;
     groupId: string;
     request: MutationActorInput;
+}>;
+
+export type GroupReconfigureAppInboxPayload = Readonly<{
+    scope: StateScope;
+    groupId: string;
+    request:
+        & MutationActorInput
+        & Readonly<{
+            expectedFormationEpoch: number | null;
+            landing: GroupTopologyReconfigureLanding | null;
+        }>;
 }>;
 
 export type GroupJoinAppInboxPayload = Readonly<{
@@ -190,7 +202,7 @@ export interface AuthenticatedGroupMutationPayloadByType {
     [AppInboxType.GROUP_PLAN]: GroupLifecycleTransitionAppInboxPayload;
     [AppInboxType.GROUP_CONNECT]: GroupConnectAppInboxPayload;
     [AppInboxType.GROUP_ACTIVATE]: GroupLifecycleTransitionAppInboxPayload;
-    [AppInboxType.GROUP_RECONFIGURE]: GroupLifecycleTransitionAppInboxPayload;
+    [AppInboxType.GROUP_RECONFIGURE]: GroupReconfigureAppInboxPayload;
     [AppInboxType.GROUP_ESTABLISHMENT_REOPEN]: GroupLifecycleTransitionAppInboxPayload;
     [AppInboxType.GROUP_JOIN]: GroupJoinAppInboxPayload;
     [AppInboxType.GROUP_INVITE_CREATE]: GroupInviteCreateAppInboxPayload;

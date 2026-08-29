@@ -57,6 +57,34 @@ describe('computeCoalescedRtcTopologyGroupRevisionWork', () => {
         expect(isChangeGatedGroupRevisionWork(envelope.data)).toBe(false);
     });
 
+    it.each([
+        ['commanded', 'automatic'],
+        ['automatic', 'commanded']
+    ] as const)('keeps commanded origin when %s work is followed by %s work', (firstOrigin, secondOrigin) => {
+        const first = computeCoalescedRtcTopologyGroupRevisionWork({
+            aggregateRef: GROUP_REF,
+            groupSnapshot: createGroupSnapshot(4, 3),
+            requestedAtEpochMs: BASE_EPOCH_MS,
+            expireAtEpochMs: EXPIRE_AT_EPOCH_MS,
+            recomputeDebounceMs: DEBOUNCE_MS,
+            senderId: 'server-1',
+            origin: firstOrigin,
+            previousEntry: null
+        });
+        const second = computeCoalescedRtcTopologyGroupRevisionWork({
+            aggregateRef: GROUP_REF,
+            groupSnapshot: createGroupSnapshot(4, 4),
+            requestedAtEpochMs: BASE_EPOCH_MS + 1,
+            expireAtEpochMs: EXPIRE_AT_EPOCH_MS,
+            recomputeDebounceMs: DEBOUNCE_MS,
+            senderId: 'server-1',
+            origin: secondOrigin,
+            previousEntry: first.entry
+        });
+
+        expect(readPersistedGroupRevisionEnvelope(second.entry).data.origin).toBe('commanded');
+    });
+
     it('creates a per-group coalesced entry with debounce scheduling on first intent', () => {
         const computed = computeCoalescedRtcTopologyGroupRevisionWork({
             aggregateRef: GROUP_REF,
@@ -346,6 +374,7 @@ describe('computeCoalescedRtcTopologyGroupRevisionWork', () => {
                 expireAtEpochMs: EXPIRE_AT_EPOCH_MS,
                 recomputeDebounceMs: DEBOUNCE_MS,
                 senderId: 'server-1',
+                origin: 'automatic',
                 previousEntry: corrupted
             })
         ).toThrow(/not coalesced topology work/);
@@ -390,6 +419,7 @@ function createCoalescedData(
         requestedAtEpochMs,
         requestOptions: toCanonicalGroupTopologyConfigPatch({}),
         publish: true,
+        origin: 'automatic',
         [COALESCED_APP_OUTBOX_WORK_FIELD]: {
             generation: 1,
             requestedAtEpochMs,

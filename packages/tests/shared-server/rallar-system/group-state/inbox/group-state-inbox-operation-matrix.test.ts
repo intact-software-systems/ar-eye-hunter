@@ -11,6 +11,7 @@ import {
     type GroupJoinAppInboxPayload,
     type GroupJoinCodeRotateAppInboxPayload,
     type GroupLifecycleTransitionAppInboxPayload,
+    type GroupReconfigureAppInboxPayload,
     type GroupMemberRemoveAppInboxPayload,
     type GroupMemberRoleSetAppInboxPayload,
     type GroupMemberUpsertAppInboxPayload,
@@ -570,10 +571,11 @@ async function runEveryAdvertisedGroupOperation(): Promise<void> {
                 groupId: reconfigureGroupId,
                 request: {
                     expectedFormationEpoch: 0,
+                    landing: null,
                     ...ownerActor,
                     requestId: 'matrix-reconfigure'
                 }
-            } satisfies GroupLifecycleTransitionAppInboxPayload,
+            } satisfies GroupReconfigureAppInboxPayload,
             assertDomain: async () => {
                 expect(
                     (await harness.repository.readSnapshot({ ...SCOPE, groupId: reconfigureGroupId }))

@@ -114,6 +114,12 @@ function validateAggregateMutationInput(
         validateExpectedLayoutIdentity(input, 'Group connectGroup expectedLayout');
         return;
     }
+    if (operation === 'reconfigureGroup') {
+        if (input.landing !== undefined && input.landing !== null) {
+            requireOneOf(input.landing, ['apply', 'hold'], 'Group reconfigureGroup landing');
+        }
+        return;
+    }
     if (isGroupLifecycleTransitionOperation(operation) || operation === 'applyPlannedLayout') {
         // Every other lifecycle request carries only actor identity — its
         // exact-key row excludes every operation field, so there is nothing

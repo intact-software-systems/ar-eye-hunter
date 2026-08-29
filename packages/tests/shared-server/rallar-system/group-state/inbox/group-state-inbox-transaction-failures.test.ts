@@ -2,7 +2,11 @@ import { describe, expect, it } from 'vitest';
 
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 
-import { createGroupStateTransactionBoundaryHarness, type GroupTransactionFailurePhase } from './group-state-transaction-boundary-fixture.ts';
+import {
+    createGroupStateTransactionBoundaryHarness,
+    createReconfigureGroupStateTransactionBoundaryHarness,
+    type GroupTransactionFailurePhase
+} from './group-state-transaction-boundary-fixture.ts';
 
 const FAILURE_PHASES = [
     'domain-write',
@@ -36,4 +40,23 @@ describe('group-state AppInbox transaction failure boundaries', () => {
             expect(harness.formationMutationEvents).toEqual([]);
         }
     );
+
+    it('rolls back hold reconfigure group, event, and presence-summary work when commit fails', async () => {
+        const harness = await createReconfigureGroupStateTransactionBoundaryHarness(
+            'transaction-commit-return'
+        );
+
+        await expect(harness.handler.processGroupStateMutation(harness.context)).rejects.toThrow(
+            'controlled transaction-commit-return failure'
+        );
+
+        expect(harness.reachedStages).toContain('transaction-commit-return');
+        expect((await harness.repository.readSnapshot(harness.groupRef))?.group.lifecycleState).toBe('active');
+        expect(await harness.repository.listEvents(harness.groupRef)).toHaveLength(1);
+        expect(harness.outboxEntries.size).toBe(1);
+        expect(await harness.results.findByKey(harness.context.entry.key)).toBeUndefined();
+        expect(harness.transactionWriter.read(harness.context)).toEqual({ state: 'pending' });
+        expect(harness.readWakeCount()).toBe(1);
+        expect(harness.formationMutationEvents).toHaveLength(1);
+    });
 });

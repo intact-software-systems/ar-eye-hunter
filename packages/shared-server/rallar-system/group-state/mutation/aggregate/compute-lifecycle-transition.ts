@@ -86,8 +86,11 @@ export function computeLifecycleTransition(
     }
     const outcome = computeAllowedLifecycleTransition(transition, stored.value, policy);
     const promotion = computeActivationPromotion(command, read, stored.value);
+    const reconfigureLanding = command.operation === 'reconfigureGroup'
+        ? command.input.landing ?? policy.topology.reconfigureLanding
+        : null;
     const next = command.operation === 'reconfigureGroup' &&
-            policy.topology.reconfigureLanding === 'apply'
+            reconfigureLanding === 'apply'
         ? computeApplyReconfigureLandingGroup(command, facts, stored.value)
         : computeNextLifecycleGroup({
             command,

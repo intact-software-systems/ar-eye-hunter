@@ -1,5 +1,8 @@
 import type { GroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
-import type { GroupLifecyclePolicy } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
+import type {
+    GroupLifecyclePolicy,
+    GroupTopologyReconfigureLanding
+} from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import type {
     AuditStamp,
     Group,
@@ -97,12 +100,26 @@ export type GroupMutationCommand =
     | (
         & GroupMutationCommandBase
         & Readonly<{
-            operation: 'startGroupEstablishment' | 'reconfigureGroup' | 'reopenGroupEstablishment';
+            operation: 'startGroupEstablishment' | 'reopenGroupEstablishment';
             input:
                 & NullableActorInput
                 & Readonly<{
                     /** Null on principal commands; the retry leg's causal fence when internal. */
                     expectedFormationEpoch: number | null;
+                }>;
+        }>
+    )
+    | (
+        & GroupMutationCommandBase
+        & Readonly<{
+            operation: 'reconfigureGroup';
+            input:
+                & NullableActorInput
+                & Readonly<{
+                    /** Null on principal commands; the retry leg's causal fence when internal. */
+                    expectedFormationEpoch: number | null;
+                    /** Null preserves the stored or absent-policy landing decision. */
+                    landing: GroupTopologyReconfigureLanding | null;
                 }>;
         }>
     )

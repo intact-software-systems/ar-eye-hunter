@@ -159,12 +159,18 @@ function validateAggregateOperationInput(
             validateExpectedLayoutInput(input, operation);
             return;
         case 'startGroupEstablishment':
-        case 'reconfigureGroup':
         case 'reopenGroupEstablishment':
         case 'planGroupLayout':
         case 'startGroupFormation':
             assertRequiredKeys(input, GROUP_MUTATION_INPUT_KEYS[operation], `Group ${operation} input`);
             validateExpectedFormationEpochInput(input, operation);
+            return;
+        case 'reconfigureGroup':
+            assertRequiredKeys(input, GROUP_MUTATION_INPUT_KEYS[operation], `Group ${operation} input`);
+            validateExpectedFormationEpochInput(input, operation);
+            if (input.landing !== null) {
+                requireOneOf(input.landing, ['apply', 'hold'], 'Group reconfigureGroup landing');
+            }
             return;
         case 'activateGroup':
             assertRequiredKeys(input, GROUP_MUTATION_INPUT_KEYS[operation], `Group ${operation} input`);
@@ -406,7 +412,7 @@ const GROUP_MUTATION_INPUT_KEYS: Readonly<Record<GroupMutationCommand['operation
     startGroupFormation: [...ACTOR_INPUT_KEYS, 'expectedFormationEpoch'],
     connectGroup: [...ACTOR_INPUT_KEYS, 'expectedFormationEpoch', 'expectedLayout'],
     activateGroup: [...ACTOR_INPUT_KEYS, 'observedRate', 'degraded', 'expectedFormationEpoch', 'expectedLayout'],
-    reconfigureGroup: [...ACTOR_INPUT_KEYS, 'expectedFormationEpoch'],
+    reconfigureGroup: [...ACTOR_INPUT_KEYS, 'expectedFormationEpoch', 'landing'],
     reopenGroupEstablishment: [...ACTOR_INPUT_KEYS, 'expectedFormationEpoch'],
     failGroupFormation: [...ACTOR_INPUT_KEYS, 'observedRate', 'expectedFormationEpoch', 'expectedLayout'],
     applyPlannedLayout: [...ACTOR_INPUT_KEYS, 'expectedFormationEpoch', 'expectedLayout'],

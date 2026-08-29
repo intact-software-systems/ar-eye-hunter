@@ -11,6 +11,7 @@
 export const LEGACY_REOPEN_ESTABLISHMENT_TOKENS = [
     'GROUP_ESTABLISHMENT_REOPEN',
     'reopenGroupEstablishment',
+    'reopenEstablishment',
     'ReopenGroupEstablishment',
     'reopen-group-establishment',
     'reopen-establishment',
@@ -53,7 +54,10 @@ export const LEGACY_REOPEN_ESTABLISHMENT_CONSUMERS: readonly LegacyReopenEstabli
     { file: 'packages/shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts', occurrences: { reopenGroupEstablishment: 3 } },
     { file: 'packages/shared-server/rallar-system/group-state/mutation/orchestration/compute-group-mutation.ts', occurrences: { reopenGroupEstablishment: 1 } },
     { file: 'packages/shared-server/rallar-system/group-state/to-lifecycle-mutation-command.ts', occurrences: { reopenGroupEstablishment: 2 } },
-    { file: 'packages/shared-test/black-box-runner/tests/api-v1/api-v1-group-lifecycle-transitions.json', occurrences: { 'lifecycle/reopen': 1 } },
+    {
+        file: 'packages/shared-test/black-box-runner/tests/api-v1/api-v1-group-lifecycle-transitions.json',
+        occurrences: { 'lifecycle/reopen': 1, reopenEstablishment: 1 }
+    },
     { file: 'packages/shared/api/group-lifecycle/group-lifecycle-transitions.ts', occurrences: { 'reopen-establishment': 3 } },
     { file: 'packages/shared/api/group-lifecycle/resolve-formation-stage-entry.ts', occurrences: { 'reopen-establishment': 1 } },
     { file: 'packages/shared/api/group-types.ts', occurrences: { 'reopen-establishment': 1 } },

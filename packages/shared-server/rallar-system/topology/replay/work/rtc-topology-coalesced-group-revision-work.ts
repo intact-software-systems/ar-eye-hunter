@@ -234,6 +234,9 @@ export function mergeRtcTopologyGroupRevisionWork(
         groupSnapshot: selected.groupSnapshot,
         sourceGroupStateCausalRevision: selected.sourceGroupStateCausalRevision,
         requestedAtEpochMs: Math.max(existing.requestedAtEpochMs, incoming.requestedAtEpochMs),
+        origin: existing.origin === 'commanded' || incoming.origin === 'commanded'
+            ? 'commanded'
+            : 'automatic',
         [COALESCED_APP_OUTBOX_WORK_FIELD]: {
             ...next,
             dueAtEpochMs: Math.max(previous.dueAtEpochMs, next.dueAtEpochMs),

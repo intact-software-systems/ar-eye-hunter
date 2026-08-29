@@ -1,4 +1,5 @@
 import type { GroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
+import type { GroupTopologyReconfigureLanding } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import type { MutationActorInput } from '@shared/api/state-types.ts';
 
 import { toGroupMutationActorInput, toGroupMutationIdentity } from './group-mutation-command.ts';
@@ -11,11 +12,12 @@ export function toLifecycleMutationCommand(
 ): GroupMutationCommand {
     switch (descriptor.operation) {
         case 'startGroupEstablishment':
-        case 'reconfigureGroup':
         case 'reopenGroupEstablishment':
         case 'planGroupLayout':
         case 'startGroupFormation':
             return toTransitionCommand(descriptor.operation, descriptor, randomId);
+        case 'reconfigureGroup':
+            return toReconfigureCommand(descriptor, randomId);
         case 'activateGroup':
             return toActivateCommand(descriptor, randomId);
         case 'connectGroup':
@@ -27,10 +29,28 @@ export function toLifecycleMutationCommand(
     }
 }
 
+function toReconfigureCommand(
+    descriptor: GroupMutationDescriptor,
+    randomId: () => string
+): GroupMutationCommand {
+    const request = descriptor.request as MutationActorInput & Readonly<{
+        landing?: GroupTopologyReconfigureLanding | null;
+    }>;
+    return {
+        operation: 'reconfigureGroup',
+        aggregateRef: { ...descriptor.scope, groupId: descriptor.groupId },
+        ...toGroupMutationIdentity(request.requestId, randomId),
+        input: {
+            ...toGroupMutationActorInput(request),
+            expectedFormationEpoch: null,
+            landing: request.landing ?? null
+        }
+    };
+}
+
 function toTransitionCommand(
     operation:
         | 'startGroupEstablishment'
-        | 'reconfigureGroup'
         | 'reopenGroupEstablishment'
         | 'planGroupLayout'
         | 'startGroupFormation',
