@@ -317,16 +317,29 @@ const b05Cases: Case[] = [
         ]
     }
 ];
+
+function fullStackRuntimeScript(
+    database: 'memory' | 'postgres',
+    allScenarios: boolean
+): string {
+    if (database === 'memory') {
+        return 'test:rallar:full-stack:memory:live-rtc-3';
+    }
+    return allScenarios
+        ? 'test:rallar:full-stack:postgres:live-rtc-3:all'
+        : 'test:rallar:full-stack:postgres:live-rtc-3';
+}
+
 function fullStackCase(
     ...input: readonly [
         caseId: string,
         inputKey: string,
         database: 'memory' | 'postgres',
-        all: boolean,
+        allScenarios: boolean,
         retention: boolean
     ]
 ): Case {
-    const [caseId, inputKey, database, all, retention] = input;
+    const [caseId, inputKey, database, allScenarios, retention] = input;
     const caseKey = { workloadId: 'RTC-B06' as const, caseId, inputKey };
     const postgres = database === 'postgres';
     return {
@@ -336,9 +349,7 @@ function fullStackCase(
             executable: 'npm',
             prefixArguments: [
                 'run',
-                postgres
-                    ? 'test:rallar:full-stack:postgres:live-rtc-3:all'
-                    : 'test:rallar:full-stack:memory:live-rtc-3'
+                fullStackRuntimeScript(database, allScenarios)
             ]
         },
         sourcePaths: [
@@ -353,9 +364,9 @@ function fullStackCase(
                 'allScenarios',
                 '--rtc-all-scenarios',
                 'boolean',
-                all,
-                all ? 'RALLAR_BLACK_BOX_LIVE_ALL_SCENARIOS' : null,
-                all ? 'reject' : null
+                allScenarios,
+                allScenarios ? 'RALLAR_BLACK_BOX_LIVE_ALL_SCENARIOS' : null,
+                allScenarios ? 'reject' : null
             ),
             descriptor(
                 caseKey,
