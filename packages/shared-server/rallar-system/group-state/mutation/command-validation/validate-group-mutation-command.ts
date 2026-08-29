@@ -78,18 +78,18 @@ function validateOperationInput(
     if (isGroupTransportOperation(operation)) {
         return;
     }
-    if (isGroupLifecycleTransitionOperation(operation) || operation === 'applyPlannedLayout') {
-        validateLifecycleGroupMutationCommandInput({
-            operation,
-            // The enclosing command already passed requireJsonSafe before
-            // this record boundary, so lifecycle validation reads JSON-only
-            // input rather than propagating an untrusted record type.
-            input: input as JsonWireObject,
-            requiredInputKeys: GROUP_MUTATION_INPUT_KEYS[operation]
-        });
-        return;
-    }
     if (AGGREGATE_GROUP_MUTATION_OPERATIONS.has(operation)) {
+        if (isGroupLifecycleTransitionOperation(operation) || operation === 'applyPlannedLayout') {
+            validateLifecycleGroupMutationCommandInput({
+                operation,
+                // The enclosing command already passed requireJsonSafe before
+                // this record boundary, so lifecycle validation reads JSON-only
+                // input rather than propagating an untrusted record type.
+                input: input as JsonWireObject,
+                requiredInputKeys: GROUP_MUTATION_INPUT_KEYS[operation]
+            });
+            return;
+        }
         validateAggregateOperationInput(operation, input);
         return;
     }
