@@ -404,10 +404,13 @@ describe('createGroupRoomWsAuthorizer', () => {
                         transportState: 'halted'
                     }
                 };
-                const readPreActivationAppData = vi.fn(() => Promise.resolve(preActivationAppData));
                 const authorizer = createGroupRoomWsAuthorizer({
                     findGroupSnapshotById: () => haltedSnapshot,
-                    readPreActivationAppData
+                    readPreActivationAppData: () => {
+                        throw new Error(
+                            `Halted application data must not read ${preActivationAppData} policy.`
+                        );
+                    }
                 });
                 const message = newALBroadcastMessage(
                     'session-b',
@@ -427,7 +430,6 @@ describe('createGroupRoomWsAuthorizer', () => {
                     authorized: false,
                     reason: 'unauthorized'
                 });
-                expect(readPreActivationAppData).not.toHaveBeenCalled();
             }
         }
     });
@@ -444,10 +446,11 @@ describe('createGroupRoomWsAuthorizer', () => {
             ...snapshot,
             group: { ...snapshot.group, transportState: 'halted' }
         };
-        const readPreActivationAppData = vi.fn(() => Promise.resolve('blocked-until-active' as const));
         const authorizer = createGroupRoomWsAuthorizer({
             findGroupSnapshotById: () => haltedSnapshot,
-            readPreActivationAppData
+            readPreActivationAppData: () => {
+                throw new Error('CRDT transport must not read pre-activation policy.');
+            }
         });
         const message = newALBroadcastMessage(
             'session-b',
@@ -464,7 +467,6 @@ describe('createGroupRoomWsAuthorizer', () => {
             topicId: 'room.crdt',
             typeId: 'crdt.update.v1'
         }))).resolves.toBe(true);
-        expect(readPreActivationAppData).not.toHaveBeenCalled();
     });
 
     it('rejects archived and deleted room messages with lifecycle policy details', async () => {
