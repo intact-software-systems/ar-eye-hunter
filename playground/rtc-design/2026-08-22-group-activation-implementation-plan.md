@@ -1742,6 +1742,30 @@ registered in `recipe-matrix.json` plus both hand-maintained sorted id lists in 
 It also verifies that `start-establishment` and `reopen-establishment` are gone everywhere after 5d
 and 6a inventoried them and 8d removed them in the atomic route cutover.
 
+#### Carried into this slice from PR 9 (slice 5e)
+
+Two items the reset/start slice found and deliberately did not act on, because they belong with the
+enum catch-up rather than with a dark command.
+
+- **Nothing couples the OpenAPI `GroupPolicyReasonCode` enum to `GROUP_POLICY_REASON_CODES`, and that
+  absence has already cost something.** PR 9's edit adding `formation-attempts-exhausted` to the enum
+  was reverted twice by a blanket `git checkout` after a formatting run, and both times the loss was
+  silent — no gate, no test, no type error. The second time it shipped as a false claim in that PR's
+  own delivery record, caught only by review. Measured on that branch: the TypeScript const carries
+  **22** codes, the OpenAPI enum **16**, so the **6** named below are missing and
+  `formation-attempts-exhausted` is present in both — the "6 codes behind" figure above is still
+  exact, and PR 9 added no debt. The catch-up should land the coupling test as well as the six codes,
+  or the next edit disappears the same way:
+  `lifecycle-transition-invalid`, `lifecycle-manager-unavailable`, `group-admission-closed`,
+  `group-admission-deadline-passed`, `group-admission-capacity-reached`,
+  `group-data-blocked-until-active`.
+- **`RtcTopologySnapshotRepository.findEntryRevision` is dead.** PR 9 widened
+  `GroupAcceptedLayoutRow` to carry its snapshot, so the api-v1 accepted-slot reader moved to
+  `findSnapshotEntry` and left this method with zero callers repo-wide. Its doc comment still names
+  the consumer that moved ("the accepted slot's promotion CAS"). Product decision 14 forbids
+  retaining legacy, and a public method on a shared-server class with no callers is exactly that, so
+  it comes out here rather than lingering.
+
 **Nothing behavioural hides here.** The reader-default removal the first draft placed in this slice is
 already done: #319 cut `group-state-persistence-codec.ts` from 328 lines to 49 and removed
 `persistedOrDefault` entirely.
