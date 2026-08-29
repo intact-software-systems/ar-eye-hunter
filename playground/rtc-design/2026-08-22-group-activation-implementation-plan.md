@@ -974,9 +974,14 @@ builder; `GROUP_MUTATION_OPERATIONS` is an untyped `Set` of bare strings.
   leg is re-expressed as `plan` plus the connect trigger, which makes its scheduler cutover work too.
   Nothing comes out before 8d, so the tree stays deployable throughout.
 - **5e — `start`, dark** (product decisions 35/37). **Needs:** nothing beyond the transition table.
-  `start` is `dormant → forming` and is denied while the attempt series is exhausted; an explicit
-  `reset` is the only thing that clears the budget. The budget rule is a policy question, so it lives
-  with the other lifecycle predicates rather than in compute.
+  `start` is `dormant → forming` and is denied while the attempt series is exhausted. Both `reset`
+  and a successful `activate` zero `formationAttemptCount` (decision 37), though only `reset` is
+  reachable from `dormant`, which is why the denial names it. The budget is a **precondition of the
+  transition**, not a clause of the initiator policy: PR 9's review found that internal authority
+  skips the policy entirely, so a rule decision 37 calls "terminal for automation" would have been
+  the one rule automation never answered to. It sits beside `resolveFormationFailureLanding` in the
+  transitions module, layered over the table the same way, and compute consults it on both authority
+  paths.
 
   **`reset` moved to 6c** after PR 9's review (see that PR's record). The two were one slice until the
   review showed `reset`'s tombstones need changes to live topology delivery and planning that a dark
@@ -1278,20 +1283,38 @@ job, and this slice does not take it on.
 after its own review; `reset` and everything it needed are now slice 6c. The branch name predates the
 split.
 
-- **The attempt budget is a policy rule, not a compute arm.** Decision 37 denies `start` while the
-  series is spent, and the rule went beside the other lifecycle predicates, where
-  `canCommandGroupLifecycleTransition` already holds the snapshot, the policy and the transition.
-  That placement also let the existing "every reason code has a pure-helper scenario" proof cover the
-  new `formation-attempts-exhausted` code instead of leaving it uncovered.
+- **The attempt budget is a precondition of the transition, not a clause of the initiator policy.**
+  It shipped first inside `canCommandGroupLifecycleTransition`, and the review caught what that costs:
+  `validateLifecycleTransitionAuthority` returns before that policy for every internal producer, so a
+  rule decision 37 calls _terminal for automation_ would have been the one rule automation never
+  answered to. Proven by execution — a criterion-authority `start` against a spent series returned a
+  write that restarted the series. The rule now sits beside `resolveFormationFailureLanding` in the
+  transitions module, layered over the table the same way, and compute consults it on both authority
+  paths. The defect was latent, not live: `validateGroupMutationAuthority` still refuses
+  `startGroupFormation` under criterion authority, and it is the later slices that open that arm.
+- **The arithmetic has one owner now.** The same comparison existed in two off-by-one frames —
+  `formationAttemptCount + 1 < max` in the criterion evaluator, `count < max` in the timer scheduler —
+  and this slice was about to add a third. `isFormationAttemptBudgetExhausted` owns the frame (the
+  count is attempts _already recorded_) and all three call it. The two frames were equivalent; a
+  verifier checked that before the extraction rather than after.
 - **A fixture was silently dropping the field the denial keys on.** The policy suite's `snapshot`
-  helper whitelists the group fields it forwards, and `formationAttemptCount` was not among them, so
-  the first denial test passed for the wrong reason. The helper now carries it.
-- **`start` ships without an executed proof, deliberately.** `dormant` is its only legal source stage;
-  decision 35 forbids creating a group there and exhaustion's `dormant` landing is still dark, so no
-  command reaches `dormant` until 6c's `reset`. The operation matrix therefore advertises
-  `GROUP_FORMATION_START` without exercising it, and says so at the assertion. Its mapping is covered
-  by the descriptor contract — total over `AUTHENTICATED_GROUP_INBOX_TYPES` since PR #369's follow-up
-  — and its compute by the unit suite. 6c adds the matrix case.
+  helper whitelisted the group fields it forwarded, and `formationAttemptCount` was not among them, so
+  the first denial test passed for the wrong reason. Adding the one field would have left the trap
+  armed for the next five — `formationEpoch` among them, which the manager election reads — so the
+  whitelist is gone: the helper now names only what it defaults differently from `createTestGroup` and
+  spreads the rest.
+- **`start` ships without an executed proof, deliberately — and the gap is machine-checked.**
+  `dormant` is its only legal source stage; decision 35 forbids creating a group there and
+  exhaustion's `dormant` landing is still dark, so no command reaches `dormant` until 6c's `reset`.
+  The operation matrix therefore advertises `GROUP_FORMATION_START` without exercising it. That used
+  to be a prose note beside the advertised list, which is not a mechanism; it is now a declared
+  exception list the matrix asserts against, so advertising an operation and not running it fails.
+  Building that guard surfaced four _pre-existing_ advertised operations the matrix array does not
+  carry either: `GROUP_CONNECT` (exercised after the array), and `GROUP_ESTABLISHMENT_START`,
+  `GROUP_ESTABLISHMENT_REOPEN` and `GROUP_ACTIVATE`, which this file does not exercise at all. They
+  are declared with their reasons rather than quietly absorbed. `start`'s mapping is covered by the
+  descriptor contract — total over `AUTHENTICATED_GROUP_INBOX_TYPES` since PR #369's follow-up — and
+  its compute by the unit suite. 6c drops it from the list as it adds the case.
 - **The OpenAPI enum entry was lost twice before it stuck.** A blanket `git checkout -- apps` after a
   formatting run reverted it both times, silently, and the first draft of this record claimed it had
   landed. Nothing couples the YAML enum to `GROUP_POLICY_REASON_CODES`, which is why. Measured on the
@@ -1358,12 +1381,17 @@ work.
   machinery does not have. Whoever picks this up starts from these, not from rediscovery:
 
   1. **A tombstoned accepted slot breaks the delivery invariant.** `toDeliverableTopologySnapshot`
-     ends `accepted ?? planned` on the documented premise that "the accepted slot only ever holds
-     active layouts (a tombstone never promotes)". After `reset → start → plan` the accepted slot
-     holds a tombstone while the planned slot holds a fresh active layout, so reconnect hydration and
-     replay repair hand a member a teardown for the overlay it should be dialing. The recommended fix
-     is teaching delivery to fall through to planned when accepted is removed — one function, but
-     live on the activate and hydration paths, which is why it is not a dark slice's to make.
+     ends `accepted ?? planned`, preferring accepted on the premise that "the accepted slot only ever
+     holds active layouts (a tombstone never promotes)". Read the source carefully before working
+     here: that sentence is written as one of three reasons the _planned_-removal early return always
+     wins, not as the tail's own rationale — the tail's stated rationale is that "members converge on
+     the layout carrying traffic". The tail relies on the same premise silently, which is exactly why
+     falsifying it is easy to miss. After `reset → start → plan` the accepted slot holds a tombstone
+     while the planned slot holds a fresh active layout: planned is not removed, so the early return
+     does not fire and the tail returns the tombstone — reconnect hydration and replay repair hand a
+     member a teardown for the overlay it should be dialing. The recommended fix is teaching delivery
+     to fall through to planned when accepted is removed — one function, but live on the activate and
+     hydration paths, which is why it is not a dark slice's to make.
   2. **Pre-writing the planned tombstone swallows the removal publication.** The follow-up coalesced
      replan sees `previous.state === 'removed'`, so `removedTopologyResult` reports `changed: false`
      and the handler skips as unchanged; before the change the same follow-up published the removal.

@@ -197,7 +197,7 @@ export const LEGACY_ESTABLISHMENT_CONSUMERS: readonly LegacyEstablishmentConsume
     },
     {
         file: 'packages/tests/shared-server/rallar-system/group-state/inbox/group-state-inbox-operation-matrix.test.ts',
-        occurrences: { GROUP_ESTABLISHMENT_START: 1 }
+        occurrences: { GROUP_ESTABLISHMENT_START: 2 }
     },
     {
         file: 'packages/tests/shared-server/rallar-system/group-state/mutation/group-formation-fence-authority.test.ts',
@@ -207,7 +207,7 @@ export const LEGACY_ESTABLISHMENT_CONSUMERS: readonly LegacyEstablishmentConsume
         file: 'packages/tests/shared-server/rallar-system/group-state/mutation/group-formation-fence-service-read.test.ts',
         occurrences: { toFormationRetryEstablishCommand: 2 }
     },
-    { file: 'packages/tests/shared-server/rallar-system/group-state/mutation/group-lifecycle-mutation.test.ts', occurrences: { startGroupEstablishment: 7 } },
+    { file: 'packages/tests/shared-server/rallar-system/group-state/mutation/group-lifecycle-mutation.test.ts', occurrences: { startGroupEstablishment: 6 } },
     {
         file: 'packages/tests/shared-server/rallar-system/group-state/mutation/group-mutation-request-validation.test.ts',
         occurrences: { startGroupEstablishment: 1 }

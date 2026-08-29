@@ -52,10 +52,7 @@ export function readsGroupActiveMemberPrincipalIds(
  * fence and its commit-time re-assertion.
  */
 export function readsGroupLayoutRows(command: GroupMutationCommand): boolean {
-    return (
-        command.operation === 'activateGroup' ||
-        isLayoutFencedGroupMutationCommand(command)
-    );
+    return command.operation === 'activateGroup' || isLayoutFencedGroupMutationCommand(command);
 }
 
 /**
@@ -64,8 +61,5 @@ export function readsGroupLayoutRows(command: GroupMutationCommand): boolean {
  * row alone, so it does not pay for a slot it cannot consult.
  */
 export function readsAcceptedLayoutRow(command: GroupMutationCommand): boolean {
-    return (
-        command.operation === 'activateGroup' ||
-        command.operation === 'applyPlannedLayout'
-    );
+    return command.operation === 'activateGroup' || command.operation === 'applyPlannedLayout';
 }

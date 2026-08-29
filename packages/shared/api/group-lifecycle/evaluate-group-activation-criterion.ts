@@ -1,4 +1,5 @@
 import type { GroupActivationCriterion } from './group-lifecycle-policy.ts';
+import { isFormationAttemptBudgetExhausted } from './group-lifecycle-transitions.ts';
 
 /**
  * Retry pacing for below-floor returns. The criterion carries no backoff knob
@@ -63,6 +64,11 @@ export function evaluateGroupActivationCriterion(
     }
     return {
         decision: 'below-floor',
-        retryAllowed: input.formationAttemptCount + 1 < activation.maxFormationAttempts
+        // The count is attempts already recorded and this return records one,
+        // so the budget question is asked against the incremented count.
+        retryAllowed: !isFormationAttemptBudgetExhausted({
+            activation,
+            formationAttemptCount: input.formationAttemptCount + 1
+        })
     };
 }

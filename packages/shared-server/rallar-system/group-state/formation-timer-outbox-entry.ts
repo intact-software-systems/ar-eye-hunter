@@ -5,6 +5,7 @@ import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import { computeFormationRetryBackoffMs } from '@shared/api/group-lifecycle/evaluate-group-activation-criterion.ts';
 import type { GroupLifecyclePolicy } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
+import { isFormationAttemptBudgetExhausted } from '@shared/api/group-lifecycle/group-lifecycle-transitions.ts';
 import type { Group, GroupRef } from '@shared/api/group-types.ts';
 import { fnv1a64, toAppQueueCreatedBy, toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
@@ -182,7 +183,10 @@ export function computeFormationTimerEntries(
     if (consumesFormationDeadlineAt(next.lifecycleState) && deadlineArmed) {
         return [timerEntry(input, 'deadline', facts.nowEpochMs + policy.activation.deadlineMs)];
     }
-    const retryAllowed = next.formationAttemptCount < policy.activation.maxFormationAttempts;
+    const retryAllowed = !isFormationAttemptBudgetExhausted({
+        activation: policy.activation,
+        formationAttemptCount: next.formationAttemptCount
+    });
     if (command.operation === 'failGroupFormation' && retryAllowed) {
         return [
             timerEntry(

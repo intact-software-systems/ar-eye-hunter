@@ -36,6 +36,29 @@ import {
 } from './group-state-inbox-operation-matrix-runtime.ts';
 import { createAuthorityHarness, processAuthenticated, SCOPE } from './group-state-inbox-test-runtime.ts';
 
+/**
+ * Advertised operations the `cases` array below does not carry. Declared so
+ * the coupling assertion can be exact: a prose note beside the advertised list
+ * cannot stop an operation from being advertised and then silently going
+ * unrun, which is what this list existing at all makes visible.
+ *
+ * `GROUP_CONNECT` runs after the matrix, against a stored plan and against a
+ * missing one, so it is exercised by this file rather than by the array. The
+ * other three predate this list and are covered elsewhere. `start` is the one
+ * this slice adds: `dormant` is its only legal source stage and no command
+ * reaches `dormant` until slice 6c's `reset` exists -- decision 35 forbids
+ * creating a group there and exhaustion's landing is still dark -- so its
+ * mapping rides the descriptor contract and its compute the unit suite. 6c
+ * drops it from this list as it adds the case.
+ */
+const INBOX_TYPES_OUTSIDE_THE_CASE_ARRAY: readonly AppInboxType[] = [
+    AppInboxType.GROUP_CONNECT,
+    AppInboxType.GROUP_ESTABLISHMENT_START,
+    AppInboxType.GROUP_ESTABLISHMENT_REOPEN,
+    AppInboxType.GROUP_ACTIVATE,
+    AppInboxType.GROUP_FORMATION_START
+];
+
 describe('GroupStateInboxService authenticated authority', () => {
     it('exposes transaction-injected mutation phases without direct mutation bypasses', async () => {
         const harness = await createAuthorityHarness(['owner']);
@@ -90,11 +113,6 @@ describe('GroupStateInboxService authenticated authority', () => {
             AppInboxType.GROUP_TRANSPORT_RESUME,
             AppInboxType.GROUP_FORMATION_START
         ]);
-        // `start` is advertised but not exercised below: `dormant` is its only
-        // legal source stage and no command reaches `dormant` until slice 6c's
-        // `reset` exists (decision 35 forbids creating a group there, and
-        // exhaustion's landing is still dark). The descriptor contract covers
-        // its mapping, and the unit suite covers its compute.
     });
 
     it(
@@ -607,6 +625,15 @@ async function runEveryAdvertisedGroupOperation(): Promise<void> {
             }
         }
     ];
+
+    // The array carries exactly the advertised operations bar the declared
+    // exceptions. Advertising one without running it, or dropping one that was
+    // running, now fails here instead of passing quietly.
+    expect([...new Set(cases.map((operationCase) => operationCase.type))].sort()).toEqual(
+        AUTHENTICATED_GROUP_INBOX_TYPES
+            .filter((type) => !INBOX_TYPES_OUTSIDE_THE_CASE_ARRAY.includes(type))
+            .toSorted()
+    );
 
     await runOperationMatrix(harness, groupId, cases);
 

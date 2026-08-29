@@ -1,5 +1,5 @@
 import type { GroupPolicyDenied } from '../group-policy-types.ts';
-import type { GroupLifecycleState } from './group-lifecycle-policy.ts';
+import type { GroupActivationCriterion, GroupLifecycleState } from './group-lifecycle-policy.ts';
 
 export type GroupLifecycleTransition =
     | 'reset'
@@ -112,4 +112,43 @@ export function resolveFormationFailureLanding(
         return undefined;
     }
     return input.attemptBudgetExhausted ? 'dormant' : tableLanding;
+}
+
+export interface FormationAttemptBudget {
+    readonly activation: GroupActivationCriterion;
+    /**
+     * Attempts already recorded. A caller asking whether the attempt it is
+     * about to record may be followed by another passes the incremented count.
+     */
+    readonly formationAttemptCount: number;
+}
+
+export function isFormationAttemptBudgetExhausted(input: FormationAttemptBudget): boolean {
+    return input.formationAttemptCount >= input.activation.maxFormationAttempts;
+}
+
+/**
+ * Exhaustion layered over the table for `start`, the sibling of
+ * `resolveFormationFailureLanding`: the budget bounds one series (product
+ * decision 37) and `start` is the series' only entrance. It is a precondition
+ * of the transition, not a clause of the initiator policy, so the criterion
+ * owner answers to it too. `reset` clears the count, and so does a successful
+ * `activate` -- but neither is reachable from `dormant` except `reset`, which
+ * is why the denial names it.
+ */
+export function denyExhaustedFormationSeries(
+    input: FormationAttemptBudget & Readonly<{ transition: GroupLifecycleTransition; }>
+): GroupPolicyDenied | undefined {
+    if (input.transition !== 'start' || !isFormationAttemptBudgetExhausted(input)) {
+        return undefined;
+    }
+    const { formationAttemptCount } = input;
+    const { maxFormationAttempts } = input.activation;
+    return {
+        allowed: false,
+        code: 'formation-attempts-exhausted',
+        message: `Formation attempts are exhausted (${formationAttemptCount} of ` +
+            `${maxFormationAttempts}); reset the group to start a new series.`,
+        details: { formationAttemptCount, maxFormationAttempts }
+    };
 }

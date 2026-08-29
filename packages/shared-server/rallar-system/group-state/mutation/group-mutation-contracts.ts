@@ -141,9 +141,7 @@ export type GroupMutationCommand =
         & Readonly<{
             // Dark until slice 8 mounts routes (plan slice 5e). `start` opens
             // a formation series from the clean slate and is denied while the
-            // attempt budget is spent (product decisions 35/37). Its partner
-            // `reset` waits for slice 6c, which owns the topology retirement
-            // semantics it needs.
+            // attempt budget is spent (product decisions 35/37).
             operation: 'startGroupFormation';
             input:
                 & NullableActorInput

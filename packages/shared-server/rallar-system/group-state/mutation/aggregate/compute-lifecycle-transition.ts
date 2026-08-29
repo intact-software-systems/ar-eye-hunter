@@ -1,7 +1,9 @@
 import type { GroupLifecyclePolicy } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import {
     computeGroupLifecycleTransition,
-    type GroupLifecycleTransition
+    denyExhaustedFormationSeries,
+    type GroupLifecycleTransition,
+    type GroupLifecycleTransitionOutcome
 } from '@shared/api/group-lifecycle/group-lifecycle-transitions.ts';
 import { beginsGroupEstablishmentAt } from '@shared/api/group-lifecycle/resolve-formation-stage-entry.ts';
 import type { Group } from '@shared/api/group-types.ts';
@@ -81,14 +83,7 @@ export function computeLifecycleTransition(
     if (fenceRejection !== null) {
         return fenceRejection;
     }
-    const outcome = computeGroupLifecycleTransition({
-        transition,
-        lifecycleState: stored.value.lifecycleState,
-        formationEpoch: stored.value.formationEpoch
-    });
-    if (!outcome.allowed) {
-        throw new GroupPolicyDeniedError(outcome);
-    }
+    const outcome = computeAllowedLifecycleTransition(transition, stored.value, policy);
     const promotion = computeActivationPromotion(command, read, stored.value);
     const next = computeNextLifecycleGroup({
         command,
@@ -128,12 +123,42 @@ export function computeLifecycleTransition(
     });
 }
 
+/**
+ * The state machine and the preconditions the stage does not carry. Both are
+ * decided here rather than inside the initiator policy, because internal
+ * authority skips that policy and the attempt budget still binds it (product
+ * decision 37).
+ */
+function computeAllowedLifecycleTransition(
+    transition: GroupLifecycleTransition,
+    stored: Group,
+    policy: GroupLifecyclePolicy
+): Extract<GroupLifecycleTransitionOutcome, { allowed: true; }> {
+    const outcome = computeGroupLifecycleTransition({
+        transition,
+        lifecycleState: stored.lifecycleState,
+        formationEpoch: stored.formationEpoch
+    });
+    if (!outcome.allowed) {
+        throw new GroupPolicyDeniedError(outcome);
+    }
+    const exhausted = denyExhaustedFormationSeries({
+        transition,
+        activation: policy.activation,
+        formationAttemptCount: stored.formationAttemptCount
+    });
+    if (exhausted) {
+        throw new GroupPolicyDeniedError(exhausted);
+    }
+    return outcome;
+}
+
 function computeNextLifecycleGroup(
     { command, facts, stored, outcome, formationElectorate, promotion }: Readonly<{
         command: Extract<GroupMutationCommand, { operation: GroupLifecycleTransitionOperation; }>;
         facts: GroupMutationFacts;
         stored: Group;
-        outcome: Extract<ReturnType<typeof computeGroupLifecycleTransition>, { allowed: true; }>;
+        outcome: Extract<GroupLifecycleTransitionOutcome, { allowed: true; }>;
         formationElectorate: readonly string[];
         promotion: PlannedLayoutPromotion | null;
     }>

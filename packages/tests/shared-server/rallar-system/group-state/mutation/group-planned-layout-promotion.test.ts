@@ -281,7 +281,7 @@ describe('applyPlannedLayout through the durable service', () => {
                 entry: { ...read.group.entry, value: JSON.stringify(promoted) },
                 value: promoted
             },
-            acceptedLayoutRow: { revision: 1 }
+            acceptedLayoutRow: { identity: IDENTITY, revision: 1 }
         } as typeof read;
 
         const computed = service.compute(prepared, applied);
