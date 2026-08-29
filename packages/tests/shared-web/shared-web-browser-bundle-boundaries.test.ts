@@ -30,7 +30,7 @@ const budgetedEntries: readonly BundleBoundary[] = [
         label: 'browser/rallar.ts',
         entry: 'packages/shared-web/browser/rallar.ts',
         output: 'rallar-browser-facade.boundary.min.js',
-        brotliBudgetKiB: 163
+        brotliBudgetKiB: 164
     },
     {
         label: 'browser/rallar-core.ts',

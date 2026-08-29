@@ -4,7 +4,7 @@ import type { AuditStamp, GroupSnapshot } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import { LatestRepository } from '@shared/cache/LatestRepository.ts';
 import { RepositoryManager } from '@shared/cache/RepositoryManager.ts';
-import { configureOverlayRepository, readableOverlayCache } from '@shared/repository/overlays-repository.ts';
+import { configureOverlayRepositories, readableAcceptedOverlayCache, readablePlannedOverlayCache } from '@shared/repository/overlays-repository.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import { WebRtcGroupManager } from '@shared/services/WebRtcGroupManager.ts';
 import { vi } from 'vitest';
@@ -30,7 +30,13 @@ export function createSimulatedClient(
     options: CreateSimulatedClientOptions
 ): SimulatedClient {
     const repositoryManager = new RepositoryManager();
-    configureOverlayRepository({ ttlMs: 60_000 }, repositoryManager);
+    configureOverlayRepositories(
+        {
+            plannedOverlays: { ttlMs: 60_000 },
+            acceptedOverlays: { ttlMs: 60_000 }
+        },
+        repositoryManager
+    );
 
     const groupCache = new LatestRepository<string, GroupSnapshot>();
     const clientCache = new LatestRepository<string, ClientInfo>();
@@ -60,11 +66,12 @@ export function createSimulatedClient(
 
     const manager = new WebRtcGroupManager(
         rtcQBox as never,
-        groupCache,
-        clientCache,
-        // The manager reads the same per-client overlay repository the
-        // admission writes go to, exactly like the browser composition root.
-        readableOverlayCache(repositoryManager),
+        {
+            groupCache,
+            clientCache,
+            plannedOverlayCache: readablePlannedOverlayCache(repositoryManager),
+            acceptedOverlayCache: readableAcceptedOverlayCache(repositoryManager)
+        },
         {
             maxPeerConnections: options.maxPeerConnections,
             ...(options.overlayTransitionGraceMs === undefined

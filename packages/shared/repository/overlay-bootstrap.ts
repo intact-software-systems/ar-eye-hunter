@@ -10,10 +10,13 @@ import {
     readGroupVersion,
     type AnyGroupPresence
 } from '@shared/api/group-client-views.ts';
-import { readObservableLatestRepositoryValue } from '@shared/cache/LatestRepositoryHelpers.ts';
 import type { RepositoryManager } from '@shared/cache/RepositoryManager.ts';
 import { selectBootstrapPeers } from '@shared/rtc/bootstrap-peer-selection.ts';
-import { overlayRepositoryToken, setOverlayById } from './overlays-repository.ts';
+import {
+    hasAcceptedServerOverlayRecordByGroupRef,
+    hasPlannedServerOverlayRecordByGroupRef,
+    setPlannedOverlayById
+} from './overlays-repository.ts';
 
 /**
  * Resolved at the composition root: the local session identity and effective
@@ -41,7 +44,7 @@ export function createAndSetBootstrapOverlays(
         }
 
         const overlay = toBoundedBootstrapOverlay(group, policy);
-        setOverlayById(overlay.overlayId, overlay, manager);
+        setPlannedOverlayById(overlay.overlayId, overlay, manager);
     }
 }
 
@@ -81,20 +84,6 @@ function hasServerOverlayRecordForGroup(
     groupRef: AnyGroupPresence['group'],
     manager?: RepositoryManager
 ): boolean {
-    const scoped = readOverlayRecordById(toScopedOverlayId(groupRef), manager);
-    return scoped?.provenance === 'server';
-}
-
-// Raw record read: a server overlay with state 'removed' still expresses
-// server authority over the group's overlay, so the bootstrap check must see
-// it even though value readers filter removed records out.
-function readOverlayRecordById(
-    overlayId: string,
-    manager?: RepositoryManager
-): OverlayInfo | undefined {
-    return readObservableLatestRepositoryValue(
-        overlayRepositoryToken,
-        overlayId,
-        manager
-    );
+    return hasPlannedServerOverlayRecordByGroupRef(groupRef, manager) ||
+        hasAcceptedServerOverlayRecordByGroupRef(groupRef, manager);
 }

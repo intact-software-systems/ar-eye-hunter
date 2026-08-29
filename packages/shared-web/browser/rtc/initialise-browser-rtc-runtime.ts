@@ -38,7 +38,7 @@ export function initialiseRtcOverlayMulticastManager(
         createBrowserQueueBox(`rtc-overlay-outbox-${webRtcConnectionService.input.sessionId}`),
         webRtcConnectionService,
         groupStateSnapshotsRepository.readableGroupStateSnapshotCache(),
-        overlaysRepository.readableOverlayCache(),
+        overlaysRepository.readableAcceptedOverlayCache(),
         (overlayId: OverlayId): WebRtcOverlayMulticaster =>
             new WebRtcOverlayMulticastService(overlayId, webRtcConnectionService),
         {

@@ -6,7 +6,7 @@ import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology
 import { DEFAULT_STATE_APPLICATION_ID, DEFAULT_STATE_WORKSPACE_ID } from '@shared/api/state-types.ts';
 import * as clientStateSnapshotsRepository from '@shared/repository/client-state-snapshots-repository.ts';
 import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
-import { findOverlayById } from '@shared/repository/overlays-repository.ts';
+import { findPlannedOverlayById } from '@shared/repository/overlays-repository.ts';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { configureTestCacheRepositories } from '../../cache-repository-config.ts';
 import {
@@ -270,14 +270,14 @@ describe('browser state cache lifecycle scope filtering', () => {
             }
         });
 
-        expect(findOverlayById(toScopedOverlayId(joined.group))).toBeDefined();
+        expect(findPlannedOverlayById(toScopedOverlayId(joined.group))).toBeDefined();
         manager.acceptGroupUpdate.mockClear();
         manager.delete.mockClear();
 
         groupStateSnapshotsRepository.setGroupStateSnapshot(left);
         await groupStateSnapshotsRepository.waitForGroupStateSnapshotChangesIdle();
 
-        expect(findOverlayById(toScopedOverlayId(left.group))).toBeUndefined();
+        expect(findPlannedOverlayById(toScopedOverlayId(left.group))).toBeUndefined();
         expect(manager.acceptGroupUpdate).not.toHaveBeenCalled();
         expect(manager.delete).toHaveBeenCalledWith(left.group, {
             retainConnections: true
@@ -535,7 +535,7 @@ describe('browser state cache lifecycle scope filtering', () => {
             )
         );
 
-        expect(findOverlayById(topology.overlayId)).toMatchObject({
+        expect(findPlannedOverlayById(topology.overlayId)).toMatchObject({
             overlayId: topology.overlayId,
             groupRef: topology.groupRef,
             topology: 'tree',
@@ -577,8 +577,8 @@ describe('browser state cache lifecycle scope filtering', () => {
             )
         );
 
-        expect(findOverlayById(topology.overlayId)).toBeUndefined();
-        expect(manager.notifyOverlayTopologyChanged).toHaveBeenCalledTimes(3);
+        expect(findPlannedOverlayById(topology.overlayId)).toBeUndefined();
+        expect(manager.notifyOverlayTopologyChanged).toHaveBeenCalledTimes(2);
     });
 
     it.each(
@@ -660,8 +660,8 @@ describe('browser state cache lifecycle scope filtering', () => {
                     ...current,
                     version: current.version + 1
                 })
-            ))).rejects.toThrow('Overlay revision conflict');
-            expect(findOverlayById(current.overlayId)).toMatchObject({
+            ))).resolves.toBeUndefined();
+            expect(findPlannedOverlayById(current.overlayId)).toMatchObject({
                 sourceGroupStateCausalRevision: historical.sourceGroupStateCausalRevision,
                 overlayVersion: historical.version
             });
@@ -674,8 +674,8 @@ describe('browser state cache lifecycle scope filtering', () => {
                     resourceId: 'spoofed-current-topology'
                 }),
                 toCurrentTopologyMessageId(deliveryKind, current)
-            ))).rejects.toThrow('Overlay revision conflict');
-            expect(findOverlayById(current.overlayId)).toMatchObject({
+            ))).resolves.toBeUndefined();
+            expect(findPlannedOverlayById(current.overlayId)).toMatchObject({
                 sourceGroupStateCausalRevision: historical.sourceGroupStateCausalRevision,
                 overlayVersion: historical.version
             });
@@ -690,7 +690,7 @@ describe('browser state cache lifecycle scope filtering', () => {
                 toCurrentTopologyMessageId(deliveryKind, current)
             ));
 
-            expect(findOverlayById(current.overlayId)).toMatchObject({
+            expect(findPlannedOverlayById(current.overlayId)).toMatchObject({
                 sourceGroupStateCausalRevision: current.sourceGroupStateCausalRevision,
                 overlayVersion: current.version
             });
@@ -711,7 +711,7 @@ describe('browser state cache lifecycle scope filtering', () => {
                 }),
                 toCurrentTopologyMessageId(deliveryKind, delayed)
             ));
-            expect(findOverlayById(current.overlayId)).toMatchObject({
+            expect(findPlannedOverlayById(current.overlayId)).toMatchObject({
                 sourceGroupStateCausalRevision: current.sourceGroupStateCausalRevision,
                 overlayVersion: current.version
             });
@@ -726,8 +726,8 @@ describe('browser state cache lifecycle scope filtering', () => {
                     resourceId: 'conflicting-current-topology'
                 }),
                 toCurrentTopologyMessageId(deliveryKind, equalConflict)
-            ))).rejects.toThrow('Overlay revision conflict');
-            expect(findOverlayById(current.overlayId)).toMatchObject({
+            ))).resolves.toBeUndefined();
+            expect(findPlannedOverlayById(current.overlayId)).toMatchObject({
                 name: current.name,
                 sourceGroupStateCausalRevision: current.sourceGroupStateCausalRevision,
                 overlayVersion: current.version

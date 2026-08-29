@@ -354,9 +354,12 @@ function createBrowserRtcGroupManager(
 ): WebRtcGroupManager {
     const webRtcGroupManager = new WebRtcGroupManager(
         webRtcConnectionService,
-        groupStateSnapshotsRepository.readableGroupStateSnapshotCache(),
-        clientStateSnapshotsRepository.readableClientStateSnapshotCache(),
-        overlaysRepository.readableOverlayCache(),
+        {
+            groupCache: groupStateSnapshotsRepository.readableGroupStateSnapshotCache(),
+            clientCache: clientStateSnapshotsRepository.readableClientStateSnapshotCache(),
+            plannedOverlayCache: overlaysRepository.readablePlannedOverlayCache(),
+            acceptedOverlayCache: overlaysRepository.readableAcceptedOverlayCache()
+        },
         {
             maxPeerConnections: input.options.maxPeerConnections,
             onDesiredPeerIdsChanged: refreshRttReportingPeers

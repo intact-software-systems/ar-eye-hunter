@@ -31,17 +31,16 @@ import {
 import * as groupSnapshotRepositoryModule from '@shared/repository/group-state-snapshots-repository.ts';
 import { createAndSetBootstrapOverlays } from '@shared/repository/overlay-bootstrap.ts';
 import {
-    findOverlayById,
-    getAllOverlays,
-    onOverlayChange,
-    OverlayRevisionConflictError,
+    findPlannedOverlayById,
+    getAllPlannedOverlays,
+    onPlannedOverlayChange,
     readOverlayAdoptionDiagnostics,
-    removeOverlayById,
+    removePlannedOverlayById,
     resetOverlayAdoptionDiagnostics,
     setOverlayAdoptionDiagnosticsSink,
-    setOverlayById,
-    updateNextHopSessionIds,
-    waitForOverlayChangesIdle
+    setPlannedOverlayById,
+    updatePlannedOverlayNextHopSessionIds,
+    waitForPlannedOverlayChangesIdle
 } from '@shared/repository/overlays-repository.ts';
 import { getAllRtt, pairKey, setRtt, setRttById } from '@shared/repository/rtt-repository.ts';
 import { beforeEach, describe, expect, it } from 'vitest';
@@ -526,7 +525,7 @@ describe('repository modules', () => {
             bootstrapDegree: 2
         });
 
-        expect(findOverlayById(overlayId)).toEqual({
+        expect(findPlannedOverlayById(overlayId)).toEqual({
             sourceGroupStateCausalRevision: group.causalRevision,
             provenance: 'bootstrap',
             state: 'active',
@@ -542,7 +541,7 @@ describe('repository modules', () => {
             updatedAtEpochMs: 2
         });
 
-        const currentOverlay = findOverlayById(overlayId);
+        const currentOverlay = findPlannedOverlayById(overlayId);
         if (currentOverlay === undefined) {
             throw new Error('Expected seeded overlay');
         }
@@ -552,22 +551,22 @@ describe('repository modules', () => {
             overlayVersion: 1
         };
 
-        setOverlayById(overlayId, staleOverlay);
-        expect(findOverlayById(overlayId)?.nextHopSessionIds).toEqual(
+        setPlannedOverlayById(overlayId, staleOverlay);
+        expect(findPlannedOverlayById(overlayId)?.nextHopSessionIds).toEqual(
             currentOverlay.nextHopSessionIds
         );
 
-        expect(updateNextHopSessionIds(overlayId, ['peer-c'])).toMatchObject({
+        expect(updatePlannedOverlayNextHopSessionIds(overlayId, ['peer-c'])).toMatchObject({
             overlayId,
             nextHopSessionIds: currentOverlay.nextHopSessionIds
         });
-        expect(findOverlayById(overlayId)?.nextHopSessionIds).toEqual(['peer-c']);
-        expect(getAllOverlays()).toHaveLength(1);
+        expect(findPlannedOverlayById(overlayId)?.nextHopSessionIds).toEqual(['peer-c']);
+        expect(getAllPlannedOverlays()).toHaveLength(1);
     });
 
-    it('emits overlay changes only for accepted writes and deletes', async () => {
+    it('emits planned overlay changes only for adopted writes and deletes', async () => {
         const changes: string[] = [];
-        const unsubscribe = onOverlayChange((change) => {
+        const unsubscribe = onPlannedOverlayChange((change) => {
             changes.push(change.kind);
         });
 
@@ -606,15 +605,15 @@ describe('repository modules', () => {
                 updatedAtEpochMs: 2
             } satisfies OverlayInfo;
 
-            setOverlayById('group-1', first);
-            setOverlayById('group-1', first);
-            setOverlayById('group-1', stale);
-            setOverlayById('group-1', newer);
-            expect(removeOverlayById('group-1')).toBe(true);
-            await waitForOverlayChangesIdle();
+            setPlannedOverlayById('group-1', first);
+            setPlannedOverlayById('group-1', first);
+            setPlannedOverlayById('group-1', stale);
+            setPlannedOverlayById('group-1', newer);
+            expect(removePlannedOverlayById('group-1')).toBe(true);
+            await waitForPlannedOverlayChangesIdle();
 
             expect(changes).toEqual(['created', 'updated', 'deleted']);
-            expect(findOverlayById('group-1')).toBeUndefined();
+            expect(findPlannedOverlayById('group-1')).toBeUndefined();
         }
         finally {
             unsubscribe();
@@ -666,16 +665,14 @@ describe('repository modules', () => {
                 }
             } satisfies OverlayInfo;
 
-            setOverlayById(overlayId, first);
-            setOverlayById(overlayId, first);
-            setOverlayById(overlayId, stale);
-            setOverlayById(overlayId, newer);
-            expect(() => setOverlayById(overlayId, conflicting)).toThrow(
-                OverlayRevisionConflictError
-            );
-            expect(() => setOverlayById(overlayId, incomparable)).toThrow(
-                OverlayRevisionConflictError
-            );
+            setPlannedOverlayById(overlayId, first);
+            setPlannedOverlayById(overlayId, first);
+            setPlannedOverlayById(overlayId, stale);
+            setPlannedOverlayById(overlayId, newer);
+            expect(setPlannedOverlayById(overlayId, conflicting))
+                .toBe('incomparable-conflict');
+            expect(setPlannedOverlayById(overlayId, incomparable))
+                .toBe('incomparable-conflict');
 
             expect(outcomes).toEqual([
                 'initial-set',
@@ -703,8 +700,8 @@ describe('repository modules', () => {
                 ...newer,
                 overlayVersion: 3
             } satisfies OverlayInfo;
-            setOverlayById(overlayId, adoptedDespiteSinkFailure);
-            expect(findOverlayById(overlayId)?.overlayVersion).toBe(3);
+            setPlannedOverlayById(overlayId, adoptedDespiteSinkFailure);
+            expect(findPlannedOverlayById(overlayId)?.overlayVersion).toBe(3);
             expect(readOverlayAdoptionDiagnostics().adoptedCount).toBe(2);
 
             resetOverlayAdoptionDiagnostics();
@@ -774,22 +771,22 @@ describe('repository modules', () => {
                 overlayVersion: 2
             } satisfies OverlayInfo;
 
-            setOverlayById(overlayId, bootstrap);
-            setOverlayById(overlayId, dominatedServer);
-            expect(findOverlayById(overlayId)?.nextHopSessionIds)
+            setPlannedOverlayById(overlayId, bootstrap);
+            setPlannedOverlayById(overlayId, dominatedServer);
+            expect(findPlannedOverlayById(overlayId)?.nextHopSessionIds)
                 .toEqual(['peer-server']);
 
-            setOverlayById(overlayId, dominatingBootstrap);
-            expect(findOverlayById(overlayId)?.provenance).toBe('server');
-            expect(findOverlayById(overlayId)?.nextHopSessionIds)
+            setPlannedOverlayById(overlayId, dominatingBootstrap);
+            expect(findPlannedOverlayById(overlayId)?.provenance).toBe('server');
+            expect(findPlannedOverlayById(overlayId)?.nextHopSessionIds)
                 .toEqual(['peer-server']);
 
-            setOverlayById(overlayId, newerServer);
-            setOverlayById(overlayId, {
+            setPlannedOverlayById(overlayId, newerServer);
+            setPlannedOverlayById(overlayId, {
                 ...dominatedServer,
                 nextHopSessionIds: ['peer-server-stale']
             });
-            expect(findOverlayById(overlayId)?.nextHopSessionIds)
+            expect(findPlannedOverlayById(overlayId)?.nextHopSessionIds)
                 .toEqual(['peer-server-2']);
 
             expect(outcomes).toEqual([
@@ -834,8 +831,8 @@ describe('repository modules', () => {
             overlayVersion: 1,
             updatedAtEpochMs: 2
         } satisfies OverlayInfo;
-        setOverlayById(first.overlayId, first);
-        setOverlayById(first.overlayId, {
+        setPlannedOverlayById(first.overlayId, first);
+        setPlannedOverlayById(first.overlayId, {
             ...first,
             sourceGroupStateCausalRevision: {
                 groupRevision: 1,
@@ -844,7 +841,7 @@ describe('repository modules', () => {
             overlayVersion: 99,
             nextHopSessionIds: ['stale-peer']
         });
-        expect(findOverlayById(first.overlayId)).toEqual(first);
+        expect(findPlannedOverlayById(first.overlayId)).toEqual(first);
 
         const removed = {
             ...first,
@@ -855,12 +852,12 @@ describe('repository modules', () => {
             state: 'removed',
             nextHopSessionIds: []
         } satisfies OverlayInfo;
-        setOverlayById(first.overlayId, removed);
-        expect(findOverlayById(first.overlayId)).toBeUndefined();
-        expect(getAllOverlays()).toEqual([]);
+        setPlannedOverlayById(first.overlayId, removed);
+        expect(findPlannedOverlayById(first.overlayId)).toBeUndefined();
+        expect(getAllPlannedOverlays()).toEqual([]);
 
-        setOverlayById(first.overlayId, first);
-        expect(findOverlayById(first.overlayId)).toBeUndefined();
+        setPlannedOverlayById(first.overlayId, first);
+        expect(findPlannedOverlayById(first.overlayId)).toBeUndefined();
     });
 
     it('normalizes RTT pair keys and keeps only newer measurements', () => {
