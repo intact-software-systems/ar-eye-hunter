@@ -1,4 +1,8 @@
-import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
+import {
+    PSqlResourceInboxEntryRepository,
+    ResourceInboxInvariantCorruptionError
+} from '@shared-server/queuebox/postgres/p-sql-resource-inbox-entry-repository.ts';
+import { PSqlGroupStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-group-state-event-repository.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import { describe, expect, it } from 'vitest';
 import { createRuntimeStatePostgresSql } from '../../runtime-state/postgres/postgres-runtime-state-client-fixtures.ts';
@@ -7,7 +11,10 @@ import { computeGroupMutation } from '@shared-server/rallar-system/group-state/m
 import { writeGroupMutation } from '@shared-server/rallar-system/group-state/mutation/write/write-group-mutation.ts';
 import { groupStateGroupStorageKey } from '@shared-server/rallar-system/group-state/persistence/aggregate/group-aggregate-storage-keys.ts';
 import { groupStateInsertGroupDescriptor } from '@shared-server/rallar-system/group-state/persistence/aggregate/group-aggregate-write-descriptors.ts';
+import { IDEMPOTENT_NAMESPACE } from '@shared-server/rallar-system/group-state/persistence/group-state-runtime-namespaces.ts';
+import { groupStateIdempotencyStorageKey } from '@shared-server/rallar-system/group-state/persistence/idempotency/group-idempotency-storage-key.ts';
 import { groupStateMemberStorageKey } from '@shared-server/rallar-system/group-state/persistence/membership/group-membership-storage-key.ts';
+import { groupStateEventWorkspaceKey } from '@shared-server/rallar-system/state-events/postgres/group-state-event-workspace-key.ts';
 import {
     RTC_TOPOLOGY_ACCEPTED_SNAPSHOTS_NAMESPACE,
     RtcTopologySnapshotRepository
@@ -98,7 +105,7 @@ describe('Postgres runtime-state guarded batches', () => {
     );
 
     postgresIt(
-        'rolls reset group and planned-layout writes back when its accepted tombstone conflicts',
+        'rolls reset writes back when the final presence-summary outbox entry conflicts',
         async () => {
             const sql = await createRuntimeStatePostgresSql(requireDatabaseUrl());
             const runtime = new PSqlRuntimeStateRepository(sql);
@@ -120,6 +127,14 @@ describe('Postgres runtime-state guarded batches', () => {
             if (computed.outcome !== 'write' || computed.guard.kind !== 'group') {
                 throw new Error('Reset must produce a group guarded write');
             }
+            const [outboxEntry] = computed.outboxEntries;
+            if (outboxEntry === undefined || computed.idempotency === null) {
+                throw new Error('Reset must produce an idempotency receipt and presence-summary outbox entry');
+            }
+            const mismatchingOutboxEntry = {
+                ...outboxEntry,
+                resource: `${outboxEntry.resource}mismatch`
+            };
 
             try {
                 await runtime.begin(async (transactionRuntime) => {
@@ -135,11 +150,21 @@ describe('Postgres runtime-state guarded batches', () => {
                         }]
                     });
                     await new RtcTopologySnapshotRepository(transactionRuntime).commitSnapshotGuard(snapshot, null);
+                    await new RtcTopologySnapshotRepository(
+                        transactionRuntime,
+                        RTC_TOPOLOGY_ACCEPTED_SNAPSHOTS_NAMESPACE
+                    ).commitSnapshotGuard(snapshot, null);
                 });
                 const planned = new RtcTopologySnapshotRepository(runtime);
+                const accepted = new RtcTopologySnapshotRepository(
+                    runtime,
+                    RTC_TOPOLOGY_ACCEPTED_SNAPSHOTS_NAMESPACE
+                );
+                const outbox = new PSqlResourceInboxEntryRepository(sql);
+                expect(await outbox.writeIfAbsentOrMatch(mismatchingOutboxEntry)).toBe('inserted');
 
                 await expect(sql.begin(async (transaction) => await writeGroupMutation(transaction, computed)))
-                    .rejects.toBeInstanceOf(RuntimeStateWriteConflictError);
+                    .rejects.toBeInstanceOf(ResourceInboxInvariantCorruptionError);
 
                 const group = await runtime.findEntry(
                     'group-state:groups',
@@ -148,11 +173,21 @@ describe('Postgres runtime-state guarded batches', () => {
                 expect(group?.revision).toBe(0);
                 expect(group?.value).toBe(JSON.stringify(read.group!.value));
                 expect(await planned.findSnapshot(snapshot.groupRef)).toEqual(snapshot);
-                const accepted = new RtcTopologySnapshotRepository(
-                    runtime,
-                    RTC_TOPOLOGY_ACCEPTED_SNAPSHOTS_NAMESPACE
-                );
-                await expect(accepted.findSnapshot(snapshot.groupRef)).resolves.toBeUndefined();
+                expect(await accepted.findSnapshot(snapshot.groupRef)).toEqual(snapshot);
+                await expect(
+                    runtime.findEntry(
+                        IDEMPOTENT_NAMESPACE,
+                        groupStateIdempotencyStorageKey(ref, computed.idempotency.requestId)
+                    )
+                ).resolves.toBeUndefined();
+                await expect(new PSqlGroupStateEventRepository(sql).listGroupEvents(ref)).resolves.toEqual([]);
+                expect(await outbox.findAnyByKey(outboxEntry.key)).toMatchObject({
+                    key: mismatchingOutboxEntry.key,
+                    resource: mismatchingOutboxEntry.resource,
+                    typeId: mismatchingOutboxEntry.typeId,
+                    status: mismatchingOutboxEntry.status,
+                    audit: mismatchingOutboxEntry.audit
+                });
             }
             finally {
                 await sql`
@@ -161,6 +196,22 @@ describe('Postgres runtime-state guarded batches', () => {
                     store_namespace in ('group-state:groups', 'rtc-topology:snapshots', 'rtc-topology:accepted-snapshots')
                     and store_key = ${groupStateGroupStorageKey(ref)}
                 ) or store_namespace = ${seedNamespace}
+                   or (
+                       store_namespace = ${IDEMPOTENT_NAMESPACE}
+                       and store_key = ${groupStateIdempotencyStorageKey(ref, computed.idempotency?.requestId ?? '')}
+                   )
+            `;
+                await sql`
+                delete from group_state_events
+                where application_id = ${ref.applicationId}
+                  and workspace_key = ${groupStateEventWorkspaceKey(ref.workspaceId)}
+                  and group_id = ${ref.groupId}
+            `;
+                await sql`
+                delete from resource_inbox
+                where fk_ext_bank_id = ${outboxEntry?.key.contextId ?? ''}
+                  and ri_topic_id = ${outboxEntry?.key.topicId ?? ''}
+                  and ri_resource_id = ${outboxEntry?.key.resourceId ?? ''}
             `;
                 await sql.end();
             }

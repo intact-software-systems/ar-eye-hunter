@@ -5,6 +5,7 @@ import type { GroupStateMutationCommand } from '@shared-server/rallar-system/gro
 import type { GroupMutationCommand } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
 import { GroupPolicyDeniedError } from '@shared-server/rallar-system/group-state/policy/group-policy-result.ts';
 import { RtcTopologyRepositoryInvariantCorruptionError } from '@shared-server/rallar-system/topology/persistence/rtc-topology-errors.ts';
+import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import type { GroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
@@ -23,11 +24,11 @@ const PLANNED_LAYOUT: GroupLayoutIdentity = {
 
 const SUPERSEDING_LAYOUT: GroupLayoutIdentity = { ...PLANNED_LAYOUT, groupRevision: 4, version: 3 };
 
-const PLANNED_SNAPSHOT = {
+const PLANNED_SNAPSHOT: RallarOverlayTopologySnapshot = {
     groupRef: GROUP_REF,
-    overlayId: 'fence-read-overlay',
+    overlayId: toScopedOverlayId(GROUP_REF),
     name: 'fence-read-overlay',
-    kind: 'tree',
+    topology: 'tree',
     degreeLimit: 2,
     version: PLANNED_LAYOUT.version,
     state: 'active',
@@ -37,8 +38,10 @@ const PLANNED_SNAPSHOT = {
     },
     activeSessionIds: [],
     nextHopsBySessionId: {},
+    createdByClientId: 'fence-read-service',
+    createdAtEpochMs: 800,
     updatedAtEpochMs: 900
-} as never;
+};
 
 // The one place the whole fence read chain runs against the durable service:
 // the gate in service.read, the reader invocation, the attached identity, and

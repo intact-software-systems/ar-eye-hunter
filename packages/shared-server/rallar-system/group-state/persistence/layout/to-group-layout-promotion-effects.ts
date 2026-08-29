@@ -11,16 +11,6 @@ import type { PlannedLayoutPromotion } from '../../mutation/aggregate/compute-pl
 import type { GroupLayoutTombstones } from '../../mutation/group-mutation-contracts.ts';
 
 /**
- * The accepted-layout facts as guarded-batch effects, all-or-nothing with the
- * group row (product decisions 24/42): the accepted row (insert on first
- * promotion, revision-guarded update after) and a revision-guarded rewrite of
- * the planned row itself — the causal fence's re-assertion inside the
- * transaction, so a replan that landed after the read conflicts the whole
- * batch instead of promoting a superseded plan (decisions 19/32). Both rows
- * carry the identical encoded snapshot by construction: `row` is computed
- * once and spread into every effect.
- */
-/**
  * The causal fence re-asserted inside the transaction (product decisions
  * 19/32): a revision-guarded rewrite of the planned row the command was
  * fenced against, so a replan that landed between the read and the commit
@@ -44,6 +34,10 @@ export function toPlannedLayoutFenceEffect(
     };
 }
 
+/**
+ * Reset preserves both layout rows as revision-guarded removal tombstones, so
+ * teardown identity remains durable while a concurrent replan still conflicts.
+ */
 export function toGroupLayoutTombstoneEffects(
     tombstones: GroupLayoutTombstones
 ): readonly RuntimeStateGuardedBatchEffect[] {
@@ -77,6 +71,11 @@ function toLayoutTombstoneEffect(
     };
 }
 
+/**
+ * Applies an accepted-layout promotion atomically with the group row: the
+ * planned revision fence prevents a stale promotion and the accepted slot is
+ * inserted or updated at the revision compute observed.
+ */
 export function toGroupLayoutPromotionEffects(
     promotion: Extract<PlannedLayoutPromotion, { outcome: 'apply'; }>
 ): readonly RuntimeStateGuardedBatchEffect[] {
