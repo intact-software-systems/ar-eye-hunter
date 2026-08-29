@@ -1,4 +1,9 @@
-import type { GroupMutationFacts, GroupMutationRead } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
+import type {
+    GroupLifecycleTransitionOperation,
+    GroupMutationCommand,
+    GroupMutationFacts,
+    GroupMutationRead
+} from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
 import {
     type RuntimeStateGuardedBatch,
     type RuntimeStateGuardedBatchEffect,
@@ -125,6 +130,28 @@ export function createGroupAuthorityRead(
         plannedLayoutRow: null,
         acceptedLayoutRow: null
     } as GroupMutationRead;
+}
+
+export function transitionCommand(
+    operation: GroupLifecycleTransitionOperation,
+    actorPrincipalId = 'alice'
+): Extract<GroupMutationCommand, { operation: GroupLifecycleTransitionOperation; }> {
+    return {
+        operation,
+        aggregateRef: groupRef('pure-room'),
+        commandId: 'lifecycle-command',
+        requestId: 'lifecycle-command',
+        input: {
+            actorPrincipalId,
+            actorSessionId: `${actorPrincipalId}-session`,
+            reason: null,
+            traceId: null,
+            expectedFormationEpoch: null,
+            ...(operation === 'activateGroup'
+                ? { observedRate: null, degraded: null, expectedLayout: null }
+                : {})
+        }
+    } as Extract<GroupMutationCommand, { operation: GroupLifecycleTransitionOperation; }>;
 }
 
 export function createGroupAuthorityFacts(principalId = 'alice'): GroupMutationFacts {

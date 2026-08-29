@@ -378,6 +378,13 @@ const descriptorCases: readonly DescriptorCase[] = [
         'presence-session'
     ),
     descriptorCase(
+        'formation-start',
+        AppInboxType.GROUP_FORMATION_START,
+        { scope: SCOPE, groupId, request: { ...actor, requestId: 'formation-start' } },
+        'startGroupFormation',
+        { ...actor, requestId: 'formation-start' }
+    ),
+    descriptorCase(
         'transport-pause',
         AppInboxType.GROUP_TRANSPORT_PAUSE,
         { scope: SCOPE, groupId, request: { ...actor, requestId: 'transport-pause' } },

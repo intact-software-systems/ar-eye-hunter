@@ -15,6 +15,7 @@ import type { GroupPolicyActor } from '@shared-server/rallar-system/group-state/
 import { canReadGroupSnapshot, readGroupVisibility } from '@shared-server/rallar-system/group-state/policy/group-snapshot-visibility-policy.ts';
 import { computeGroupAdmissionDecision } from '@shared/api/group-lifecycle/compute-group-admission-decision.ts';
 import { resolveGroupLifecyclePolicyPreset } from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
+import { denyExhaustedFormationSeries } from '@shared/api/group-lifecycle/group-lifecycle-transitions.ts';
 import type { GroupPolicyReasonCode } from '@shared/api/group-policy-types.ts';
 import { GROUP_POLICY_REASON_CODES } from '@shared/api/group-policy-types.ts';
 import type { AuditStamp, Group, GroupMember, GroupPresenceSession, GroupSnapshot } from '@shared/api/group-types.ts';
@@ -557,6 +558,17 @@ describe('group policy helpers', () => {
                 })
             ),
             expectCode(
+                // The budget is a precondition of the `start` transition, not
+                // a clause of the initiator policy, so it answers from the
+                // transitions module. The optimistic preset allows one attempt
+                // and this group has spent it (product decision 37).
+                denyExhaustedFormationSeries({
+                    transition: 'start',
+                    activation: resolveGroupLifecyclePolicyPreset('optimistic').activation,
+                    formationAttemptCount: 1
+                }) ?? { allowed: true }
+            ),
+            expectCode(
                 canCommandGroupLifecycleTransition({
                     // An empty electorate resolves zero managers, covering the
                     // lifecycle-manager-unavailable reason code.
@@ -717,33 +729,21 @@ function snapshot(
             activeSessions?: readonly GroupPresenceSession[];
         }> = {}
 ): GroupSnapshot {
-    const members = options.members ?? [member('alice', { role: 'owner' })];
-    const activeSessions = options.activeSessions ?? [];
+    const { members: memberOverrides, activeSessions: sessionOverrides, ...groupOverrides } = options;
+    const members = memberOverrides ?? [member('alice', { role: 'owner' })];
+    const activeSessions = sessionOverrides ?? [];
+    // Only what this suite defaults differently from `createTestGroup` is
+    // named; everything else rides the spread. A whitelist here silently drops
+    // any field it forgets, which is how an epoch- or attempt-pinned scenario
+    // ends up exercising zero and passing for the wrong reason.
     const common = createTestGroup({
-        applicationId: 'app-1',
-        workspaceId: 'workspace-1',
-        groupId: 'room-1',
-        slug: options.slug ?? null,
-        displayName: options.displayName ?? 'Room 1',
-        description: options.description ?? null,
-        kind: options.kind ?? 'room',
-        joinMode: options.joinMode ?? 'open',
-        maxMembers: options.maxMembers ?? null,
-        maxSessionsPerMember: options.maxSessionsPerMember ?? null,
-        metadata: options.metadata ?? {},
-        snapshotVersion: options.snapshotVersion ?? 1,
-        metadataVersion: options.metadataVersion ?? 1,
-        rosterVersion: options.rosterVersion ?? 1,
-        presenceVersion: options.presenceVersion ?? 1,
-        created: options.created ?? audit(1),
-        updated: options.updated ?? audit(1),
-        expiresAtEpochMs: options.expiresAtEpochMs ?? null,
-        emptySinceEpochMs: options.emptySinceEpochMs ?? null,
-        purgeAfterEpochMs: options.purgeAfterEpochMs ?? null,
-        activeMemberCount: options.activeMemberCount ?? members.filter((entry) => entry.status === 'active').length,
-        ownerPrincipalId: options.ownerPrincipalId ?? members.find((entry) => entry.status === 'active' && entry.role === 'owner')?.principalId ?? 'alice',
-        ...(options.lifecycleState === undefined ? {} : { lifecycleState: options.lifecycleState }),
-        ...(options.formationElectorate === undefined ? {} : { formationElectorate: options.formationElectorate })
+        presenceVersion: 1,
+        created: audit(1),
+        updated: audit(1),
+        activeMemberCount: members.filter((entry) => entry.status === 'active').length,
+        ownerPrincipalId: members.find((entry) => entry.status === 'active' && entry.role === 'owner')?.principalId ??
+            'alice',
+        ...groupOverrides
     });
     const group: Group = options.status === 'archived'
         ? {

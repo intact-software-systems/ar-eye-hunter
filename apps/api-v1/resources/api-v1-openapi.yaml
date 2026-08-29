@@ -3097,6 +3097,7 @@ components:
         - member-banned
         - forbidden-role
         - last-owner
+        - formation-attempts-exhausted
 
     ErrorResponse:
       type: object

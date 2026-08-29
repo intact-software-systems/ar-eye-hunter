@@ -973,20 +973,25 @@ builder; `GROUP_MUTATION_OPERATIONS` is an untyped `Set` of bare strings.
   becomes two calls, so the recipe edit is a rewrite, not a path substitution. The automatic retry
   leg is re-expressed as `plan` plus the connect trigger, which makes its scheduler cutover work too.
   Nothing comes out before 8d, so the tree stays deployable throughout.
-- **5e — `reset` and `start`, dark** (product decisions 35–37). **Needs:** 4a's accepted slot and
-  promotion-owned fingerprint semantics. `start` is `dormant → forming` and is denied while the
-  attempt series is exhausted. `reset` is one AppInbox transaction that advances the epoch, zeroes
-  `formationAttemptCount`, clears `establishmentStartedAtEpochMs`, `lastFormationOutcome` and
-  `Group.acceptedLayoutIdentity`, sets `transportState: 'halted'`, and tombstones both accepted and
-  planned topology rows. It retains both valid fingerprints for tracing. The active planned-row
-  predicate—not fingerprint deletion—controls change suppression, so the planned tombstone guarantees
-  unchanged membership can rebuild after `start`.
+- **5e — `start`, dark** (product decisions 35/37). **Needs:** nothing beyond the transition table.
+  `start` is `dormant → forming` and is denied while the attempt series is exhausted. Both `reset`
+  and a successful `activate` zero `formationAttemptCount` (decision 37), though only `reset` is
+  reachable from `dormant`, which is why the denial names it. The budget is a **precondition of the
+  transition**, not a clause of the initiator policy: PR 9's review found that internal authority
+  skips the policy entirely, so a rule decision 37 calls "terminal for automation" would have been
+  the one rule automation never answered to. It sits beside `resolveFormationFailureLanding` in the
+  transitions module, layered over the table the same way, and compute consults it on both authority
+  paths.
 
-  Expiry is unavailable because `RtcTopologySnapshotRepository` rejects expiring snapshots, and lazy
-  hard delete would destroy trace evidence. Physical delete and follow-up cleanup are rejected because
-  they weaken atomicity and leave a window where hydration or change suppression can observe a
-  half-reset group. Reset's tests inject failure at each write and prove group facts, both tombstones,
-  event, receipt, result and outbox either all commit or all roll back.
+  **`reset` moved to 6c** after PR 9's review (see that PR's record). The two were one slice until the
+  review showed `reset`'s tombstones need changes to live topology delivery and planning that a dark
+  slice cannot make. `start` is unaffected by any of it.
+
+  **Consequence of the split, stated because it looks like a coverage gap and is not one:** `start`
+  cannot be exercised end-to-end until 6c lands. `dormant` is its only legal source stage, decision 35
+  forbids creating a group there, and exhaustion's `dormant` landing is still dark, so no command
+  reaches `dormant` today. 5e therefore proves `start` through its compute and its descriptor
+  mapping, and 6c adds the executed matrix case once `reset` can produce a dormant group.
 
 ### PR 6 delivery record — slices 5a + 5b (executed 2026-08-28, branch `codex/group-activation-command-family`)
 
@@ -1272,6 +1277,73 @@ job, and this slice does not take it on.
   dual path that exists today — the dark `plan`/`connect` beside the mounted legacy route — is the
   plan's staged cutover with a defined end in 8d, not a compatibility shim.
 
+### PR 9 delivery record — slice 5e (executed 2026-08-29, branch `claude/group-activation-reset-start`)
+
+**Shipped: `startGroupFormation` only.** The slice began as `reset` and `start` together and was split
+after its own review; `reset` and everything it needed are now slice 6c. The branch name predates the
+split.
+
+- **The attempt budget is a precondition of the transition, not a clause of the initiator policy.**
+  It shipped first inside `canCommandGroupLifecycleTransition`, and the review caught what that costs:
+  `validateLifecycleTransitionAuthority` returns before that policy for every internal producer, so a
+  rule decision 37 calls _terminal for automation_ would have been the one rule automation never
+  answered to. Proven by execution — a criterion-authority `start` against a spent series returned a
+  write that restarted the series. The rule now sits beside `resolveFormationFailureLanding` in the
+  transitions module, layered over the table the same way, and compute consults it on both authority
+  paths. The defect was latent, not live: `validateGroupMutationAuthority` still refuses
+  `startGroupFormation` under criterion authority, and it is the later slices that open that arm.
+- **The arithmetic has one owner now.** The same comparison existed in two off-by-one frames —
+  `formationAttemptCount + 1 < max` in the criterion evaluator, `count < max` in the timer scheduler —
+  and this slice was about to add a third. `isFormationAttemptBudgetExhausted` owns the frame (the
+  count is attempts _already recorded_) and all three call it. The two frames were equivalent; a
+  verifier checked that before the extraction rather than after.
+- **A fixture was silently dropping the field the denial keys on.** The policy suite's `snapshot`
+  helper whitelisted the group fields it forwarded, and `formationAttemptCount` was not among them, so
+  the first denial test passed for the wrong reason. Adding the one field would have left the trap
+  armed for the next five — `formationEpoch` among them, which the manager election reads — so the
+  whitelist is gone: the helper now names only what it defaults differently from `createTestGroup` and
+  spreads the rest.
+- **`start` ships without an executed proof, deliberately — and the gap is machine-checked.**
+  `dormant` is its only legal source stage; decision 35 forbids creating a group there and
+  exhaustion's `dormant` landing is still dark, so no command reaches `dormant` until 6c's `reset`.
+  The operation matrix therefore advertises `GROUP_FORMATION_START` without exercising it. That used
+  to be a prose note beside the advertised list, which is not a mechanism; it is now a declared
+  exception list the matrix asserts against, so advertising an operation and not running it fails.
+  Building that guard surfaced four _pre-existing_ advertised operations the matrix array does not
+  carry either: `GROUP_CONNECT` (exercised after the array), and `GROUP_ESTABLISHMENT_START`,
+  `GROUP_ESTABLISHMENT_REOPEN` and `GROUP_ACTIVATE`, which this file does not exercise at all. They
+  are declared with their reasons rather than quietly absorbed. `start`'s mapping is covered by the
+  descriptor contract — total over `AUTHENTICATED_GROUP_INBOX_TYPES` since PR #369's follow-up — and
+  its compute by the unit suite. 6c drops it from the list as it adds the case.
+- **The OpenAPI enum entry was lost twice before it stuck.** A blanket `git checkout -- apps` after a
+  formatting run reverted it both times, silently, and the first draft of this record claimed it had
+  landed. Nothing couples the YAML enum to `GROUP_POLICY_REASON_CODES`, which is why. Measured on the
+  final branch: the const carries **22** codes, the enum **16**, the same **6** are missing as before,
+  and `formation-attempts-exhausted` is in both — so the slice adds no contract debt and the plan's
+  "6 codes behind" figure is still exact. Slice 9 gains the coupling test.
+- **`deno check` earned its place.** The same blanket checkout reverted an api-v1 wiring change that
+  `tsc` cannot see, because the Deno app is outside its project. Only the Deno gate caught it.
+
+#### Why `reset` left, and what it took with it
+
+The review found decision 36's tombstone mechanism assumes three properties the topology machinery
+does not have — a tombstoned accepted slot shadows a fresh planned layout in delivery, pre-writing
+the planned tombstone swallows the removal publication, and whether the tombstone disarms change
+suppression is unresolved. Fixing any of them changes live delivery or planning semantics, which a
+dark slice has no authority to do. All three are written up under 6c with the evidence.
+
+One defect was found and fixed before the split, and it is worth keeping in view because it is the
+kind only execution finds: **a removed snapshot may carry no edge.**
+`decodeRtcTopologySnapshotRouting` rejects one that does, so a tombstone built as "the stored row with
+only its state changed" threw inside the write transaction for any group holding a multi-session
+layout, and AppInbox would have retried that deterministic failure forever. Every test fixture used
+empty session lists, which is exactly why nothing caught it. 6c starts from a tombstone that empties
+each session's hops.
+
+Also reverted with `reset`, and owed back in 6c: the `GroupAcceptedLayoutRow` widening and its api-v1
+reader change, and the guarded-batch rollback proof — which needs rewriting there to exercise
+`writeGroupMutation`'s rejection rather than re-implementing it inline, as the review pointed out.
+
 Product decision 12 keeps one initiator policy for all eight application-facing commands, so the
 command predicate needs no per-command branch.
 Every new command inherits the slow sequential read path, and the read step and its validator apply
@@ -1303,6 +1375,46 @@ work.
 - **6b — landing and replanning policy, dark.** **Needs:** slice 3's `formation-automation` mode for
   automatic reconfigure and its separate `topology-publication` mode for the apply command producer;
   and 4a's route-less operation. The two modes never substitute for each other.
+- **6c — `reset`, with the topology retirement semantics it needs** (product decisions 35/36).
+  **Needs:** 6b's landing policy and the delivery rules slice 4 established. Split out of 5e by PR 9's
+  review, which found that decision 36's tombstone mechanism assumes three properties the topology
+  machinery does not have. Whoever picks this up starts from these, not from rediscovery:
+
+  1. **A tombstoned accepted slot breaks the delivery invariant.** `toDeliverableTopologySnapshot`
+     ends `accepted ?? planned`, preferring accepted on the premise that "the accepted slot only ever
+     holds active layouts (a tombstone never promotes)". Read the source carefully before working
+     here: that sentence is written as one of three reasons the _planned_-removal early return always
+     wins, not as the tail's own rationale — the tail's stated rationale is that "members converge on
+     the layout carrying traffic". The tail relies on the same premise silently, which is exactly why
+     falsifying it is easy to miss. After `reset → start → plan` the accepted slot holds a tombstone
+     while the planned slot holds a fresh active layout: planned is not removed, so the early return
+     does not fire and the tail returns the tombstone — reconnect hydration and replay repair hand a
+     member a teardown for the overlay it should be dialing. The recommended fix is teaching delivery
+     to fall through to planned when accepted is removed — one function, but live on the activate and
+     hydration paths, which is why it is not a dark slice's to make.
+  2. **Pre-writing the planned tombstone swallows the removal publication.** The follow-up coalesced
+     replan sees `previous.state === 'removed'`, so `removedTopologyResult` reports `changed: false`
+     and the handler skips as unchanged; before the change the same follow-up published the removal.
+     Three ways out, and this is the decision 6c owns: let the follow-up publish it (reintroduces a
+     window where planned is active while the group is dormant), have `reset` mint the publication
+     itself (most faithful, but reset takes on topology work), or rule that the group delta — dormant
+     plus halted — is how clients learn, which I11's "the browser reads state and decides" posture
+     already implies.
+  3. **Whether the tombstone disarms change suppression is unresolved.** The semantic `changed` gate
+     never compares `state`, so with the graph preserved a rebuild of unchanged membership reported
+     `changed: false` and the planned row stayed `removed` at its old version. PR 9 then made the
+     tombstone empty each session's hops for an unrelated reason — a removed row may carry no edge or
+     the write transaction aborts — which plausibly makes a rebuild differ and the finding moot. It
+     was **not** verified either way. Verify before choosing a fix; if it still holds, the fix is
+     making `changed` compare `state`, which touches every planner.
+
+  Also carried from PR 9: `GroupAcceptedLayoutRow` must widen to carry its snapshot (a tombstone is
+  the stored row with its state changed, and a revision alone cannot express that), which moves the
+  api-v1 reader to `findSnapshotEntry` and makes `findEntryRevision` dead. That widening decodes and
+  graph-validates the accepted row on every activation, where the old reader could not fail — 6c owns
+  proving a corrupt accepted row behaves acceptably on the activate path. The guarded-batch rollback
+  proof PR 9 drafted belongs here too, rewritten to exercise `writeGroupMutation`'s rejection rather
+  than re-implementing it inline.
 
 **Gates:** baseline, both profiles, **medium-scale**, **state-write**, `topology-replay`.
 
@@ -1662,6 +1774,30 @@ codes behind** the TypeScript const, with no test coupling them); and the twenty
 registered in `recipe-matrix.json` plus both hand-maintained sorted id lists in `recipe-matrix.test.ts`.
 It also verifies that `start-establishment` and `reopen-establishment` are gone everywhere after 5d
 and 6a inventoried them and 8d removed them in the atomic route cutover.
+
+#### Carried into this slice from PR 9 (slice 5e)
+
+Two items the reset/start slice found and deliberately did not act on, because they belong with the
+enum catch-up rather than with a dark command.
+
+- **Nothing couples the OpenAPI `GroupPolicyReasonCode` enum to `GROUP_POLICY_REASON_CODES`, and that
+  absence has already cost something.** PR 9's edit adding `formation-attempts-exhausted` to the enum
+  was reverted twice by a blanket `git checkout` after a formatting run, and both times the loss was
+  silent — no gate, no test, no type error. The second time it shipped as a false claim in that PR's
+  own delivery record, caught only by review. Measured on that branch: the TypeScript const carries
+  **22** codes, the OpenAPI enum **16**, so the **6** named below are missing and
+  `formation-attempts-exhausted` is present in both — the "6 codes behind" figure above is still
+  exact, and PR 9 added no debt. The catch-up should land the coupling test as well as the six codes,
+  or the next edit disappears the same way:
+  `lifecycle-transition-invalid`, `lifecycle-manager-unavailable`, `group-admission-closed`,
+  `group-admission-deadline-passed`, `group-admission-capacity-reached`,
+  `group-data-blocked-until-active`.
+- **`RtcTopologySnapshotRepository.findEntryRevision` becomes dead when 6c lands, not before.** PR 9
+  widened `GroupAcceptedLayoutRow` and moved the api-v1 reader to `findSnapshotEntry`, which left this
+  method with no callers — but the split reverted both, so it has its caller back today. **6c owns
+  removing it** when it re-lands the widening; product decision 14 forbids retaining legacy, and a
+  public method with no callers is exactly that. Recorded here so the catch-up does not delete a
+  method that is currently live.
 
 **Nothing behavioural hides here.** The reader-default removal the first draft placed in this slice is
 already done: #319 cut `group-state-persistence-codec.ts` from 328 lines to 49 and removed

@@ -98,7 +98,8 @@ const GROUP_APP_INBOX_OPERATIONS = new Map<AppInboxType, GroupMutationDescriptor
     [AppInboxType.GROUP_PRESENCE_HEARTBEAT, 'heartbeatPresence'],
     [AppInboxType.GROUP_PRESENCE_DISCONNECT, 'disconnectPresence'],
     [AppInboxType.GROUP_TRANSPORT_PAUSE, 'pauseGroupTransport'],
-    [AppInboxType.GROUP_TRANSPORT_RESUME, 'resumeGroupTransport']
+    [AppInboxType.GROUP_TRANSPORT_RESUME, 'resumeGroupTransport'],
+    [AppInboxType.GROUP_FORMATION_START, 'startGroupFormation']
 ]);
 
 export function toGroupAppInboxOperation(

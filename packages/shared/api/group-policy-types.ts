@@ -21,7 +21,10 @@ export const GROUP_POLICY_REASON_CODES = [
     'group-admission-closed',
     'group-admission-deadline-passed',
     'group-admission-capacity-reached',
-    'group-data-blocked-until-active'
+    'group-data-blocked-until-active',
+    // Product decision 37: the attempt budget bounds one formation series, so
+    // a spent series denies `start` until an explicit `reset` clears it.
+    'formation-attempts-exhausted'
 ] as const;
 
 export type GroupPolicyReasonCode = typeof GROUP_POLICY_REASON_CODES[number];

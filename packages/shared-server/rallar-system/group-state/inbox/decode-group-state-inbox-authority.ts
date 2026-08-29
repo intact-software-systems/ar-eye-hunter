@@ -232,6 +232,7 @@ function decodeGroupMutationOperation(
         case 'startGroupEstablishment':
         case 'planGroupLayout':
         case 'connectGroup':
+        case 'startGroupFormation':
         case 'pauseGroupTransport':
         case 'resumeGroupTransport':
         case 'activateGroup':

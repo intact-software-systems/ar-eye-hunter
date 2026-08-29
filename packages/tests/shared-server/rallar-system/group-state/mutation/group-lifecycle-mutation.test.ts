@@ -14,7 +14,7 @@ import { computeGroupMutation } from '@shared-server/rallar-system/group-state/m
 import { GroupPolicyDeniedError } from '@shared-server/rallar-system/group-state/policy/group-policy-result.ts';
 import type { Group } from '@shared/api/group-types.ts';
 
-import { createGroupAuthorityFacts, createGroupAuthorityRead, groupRef } from './group-mutation-test-runtime.ts';
+import { createGroupAuthorityFacts, createGroupAuthorityRead, groupRef, transitionCommand } from './group-mutation-test-runtime.ts';
 
 describe('group lifecycle transition computation', () => {
     it('plans from forming into the planned stage and advances the epoch', () => {
@@ -457,28 +457,6 @@ describe('group lifecycle transition computation', () => {
         expect(computed.outcome).toBe('write');
     });
 });
-
-function transitionCommand(
-    operation: 'startGroupEstablishment' | 'activateGroup' | 'reopenGroupEstablishment' | 'planGroupLayout',
-    actorPrincipalId = 'alice'
-): GroupMutationCommand {
-    return {
-        operation,
-        aggregateRef: groupRef('pure-room'),
-        commandId: 'lifecycle-command',
-        requestId: 'lifecycle-command',
-        input: {
-            actorPrincipalId,
-            actorSessionId: `${actorPrincipalId}-session`,
-            reason: null,
-            traceId: null,
-            expectedFormationEpoch: null,
-            ...(operation === 'activateGroup'
-                ? { observedRate: null, degraded: null, expectedLayout: null }
-                : {})
-        }
-    } as GroupMutationCommand;
-}
 
 const PLANNED_LAYOUT = {
     groupRevision: 6,

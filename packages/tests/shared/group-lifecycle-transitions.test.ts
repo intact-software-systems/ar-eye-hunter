@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
-import { GROUP_LIFECYCLE_STATES, type GroupLifecycleState } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
+import { GROUP_LIFECYCLE_STATES, type GroupActivationCriterion, type GroupLifecycleState } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import {
     computeGroupLifecycleTransition,
+    denyExhaustedFormationSeries,
+    isFormationAttemptBudgetExhausted,
     resolveFormationFailureLanding,
     type GroupLifecycleTransition
 } from '@shared/api/group-lifecycle/group-lifecycle-transitions.ts';
@@ -151,6 +153,80 @@ describe('resolveFormationFailureLanding', () => {
             }
             expect(resolveFormationFailureLanding({ lifecycleState, attemptBudgetExhausted: true }))
                 .toBeUndefined();
+        }
+    });
+});
+
+function activationAllowing(maxFormationAttempts: number): GroupActivationCriterion {
+    return {
+        mode: 'threshold-or-deadline',
+        successRate: 1,
+        minimumViableRate: 1,
+        deadlineMs: 1_000,
+        maxFormationAttempts,
+        strictConfirmation: false
+    };
+}
+
+describe('isFormationAttemptBudgetExhausted', () => {
+    // The frame is attempts already recorded, so a two-attempt budget is spent
+    // at two and not at three. A caller asking whether the attempt it is about
+    // to record may be followed by another passes the incremented count, which
+    // is what the criterion's retryAllowed does.
+    it.each([
+        { formationAttemptCount: 0, exhausted: false },
+        { formationAttemptCount: 1, exhausted: false },
+        { formationAttemptCount: 2, exhausted: true },
+        { formationAttemptCount: 3, exhausted: true }
+    ])('$formationAttemptCount of 2 attempts is exhausted=$exhausted', (row) => {
+        expect(isFormationAttemptBudgetExhausted({
+            activation: activationAllowing(2),
+            formationAttemptCount: row.formationAttemptCount
+        })).toBe(row.exhausted);
+    });
+});
+
+describe('denyExhaustedFormationSeries', () => {
+    it.each([
+        { formationAttemptCount: 1, denied: false },
+        { formationAttemptCount: 2, denied: true }
+    ])('start with $formationAttemptCount of 2 attempts is denied=$denied', (row) => {
+        const denial = denyExhaustedFormationSeries({
+            transition: 'start',
+            activation: activationAllowing(2),
+            formationAttemptCount: row.formationAttemptCount
+        });
+        expect(denial !== undefined).toBe(row.denied);
+    });
+
+    it('names the exhausted-series code and the counts that produced it', () => {
+        expect(denyExhaustedFormationSeries({
+            transition: 'start',
+            activation: activationAllowing(2),
+            formationAttemptCount: 2
+        })).toMatchObject({
+            allowed: false,
+            code: 'formation-attempts-exhausted',
+            details: { formationAttemptCount: 2, maxFormationAttempts: 2 }
+        });
+    });
+
+    // The budget bounds one series and start is its only entrance, so every
+    // other transition passes a spent budget untouched -- the exhausted
+    // fail-formation landing is resolveFormationFailureLanding's, not this.
+    it('bounds start alone, whatever the budget says', () => {
+        for (const transition of EVERY_TRANSITION) {
+            if (transition === 'start') {
+                continue;
+            }
+            expect(
+                denyExhaustedFormationSeries({
+                    transition,
+                    activation: activationAllowing(1),
+                    formationAttemptCount: 9
+                }),
+                transition
+            ).toBeUndefined();
         }
     });
 });

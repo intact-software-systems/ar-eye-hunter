@@ -139,6 +139,21 @@ export type GroupMutationCommand =
     | (
         & GroupMutationCommandBase
         & Readonly<{
+            // Dark until slice 8 mounts routes (plan slice 5e). `start` opens
+            // a formation series from the clean slate and is denied while the
+            // attempt budget is spent (product decisions 35/37).
+            operation: 'startGroupFormation';
+            input:
+                & NullableActorInput
+                & Readonly<{
+                    /** Null on principal commands; a trigger's causal fence when internal. */
+                    expectedFormationEpoch: number | null;
+                }>;
+        }>
+    )
+    | (
+        & GroupMutationCommandBase
+        & Readonly<{
             operation: 'activateGroup';
             input:
                 & NullableActorInput
@@ -524,6 +539,7 @@ export type GroupLifecycleTransitionOperation = Extract<
     | 'failGroupFormation'
     | 'planGroupLayout'
     | 'connectGroup'
+    | 'startGroupFormation'
 >;
 
 export function isGroupLifecycleTransitionOperation(
@@ -535,7 +551,8 @@ export function isGroupLifecycleTransitionOperation(
         operation === 'reopenGroupEstablishment' ||
         operation === 'failGroupFormation' ||
         operation === 'planGroupLayout' ||
-        operation === 'connectGroup'
+        operation === 'connectGroup' ||
+        operation === 'startGroupFormation'
     );
 }
 
