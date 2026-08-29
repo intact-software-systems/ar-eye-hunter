@@ -78,7 +78,7 @@ describe('WebRtcGroupManager', () => {
             onlineDesiredPeerIds: ['peer-stale'],
             connectablePeerIds: []
         });
-        expect(rtcQBox.ensurePeerConnectionStarted).not.toHaveBeenCalled();
+        expect(rtcQBox.knownPeerIds()).toEqual([]);
     });
 
     it('reports global online state separately from group-scoped connectability', async () => {

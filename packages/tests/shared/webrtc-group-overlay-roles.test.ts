@@ -8,8 +8,7 @@ import { WebRtcGroupManager } from '@shared/services/WebRtcGroupManager.ts';
 import {
     describe,
     expect,
-    it,
-    vi
+    it
 } from 'vitest';
 
 import { createTestGroup } from '../create-test-group.ts';
@@ -49,17 +48,16 @@ describe('WebRtcGroupManager overlay roles', () => {
 
         expect(manager.rttReportingPeerIds({ degreeLimit: 1 })).toEqual(['peer-planned']);
         expect(manager.state().desiredPeerIds).toEqual(['peer-accepted']);
-        expect(rtc.ensurePeerConnectionStarted).toHaveBeenCalledWith('peer-accepted');
-        expect(rtc.ensurePeerConnectionStarted).not.toHaveBeenCalledWith('peer-planned');
+        expect(rtc.service.knownPeerIds()).toEqual(['peer-accepted']);
     });
 });
 
 function createRtcHarness() {
     const peers = new Set<string>();
-    const ensurePeerConnectionStarted = vi.fn((peerId: string) => {
+    const ensurePeerConnectionStarted = (peerId: string) => {
         peers.add(peerId);
         return Either.ofRight({ peerId } as never);
-    });
+    };
     return {
         ensurePeerConnectionStarted,
         service: {
@@ -67,9 +65,9 @@ function createRtcHarness() {
             ensurePeerConnectionStarted,
             knownPeerIds: () => [...peers],
             peerIdsWithNoReconnectableLanes: () => [] as string[],
-            disconnectPeer: vi.fn((peerId: string) => {
+            disconnectPeer: (peerId: string) => {
                 peers.delete(peerId);
-            })
+            }
         }
     };
 }
