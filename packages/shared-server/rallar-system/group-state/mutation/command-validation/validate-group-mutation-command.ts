@@ -12,6 +12,7 @@ import {
     type GroupLifecycleTransitionOperation,
     type GroupMutationCommand
 } from '../group-mutation-contracts.ts';
+import type { JsonWireObject } from '../../../protocol/json-wire-identity.ts';
 import { ACTOR_INPUT_KEYS } from './group-mutation-request-validation.ts';
 import { validateLifecycleGroupMutationCommandInput } from './validate-lifecycle-group-mutation-command-input.ts';
 
@@ -80,7 +81,10 @@ function validateOperationInput(
     if (isLifecycleCommandOperation(operation)) {
         validateLifecycleGroupMutationCommandInput({
             operation,
-            input,
+            // The enclosing command already passed requireJsonSafe before
+            // this record boundary, so lifecycle validation reads JSON-only
+            // input rather than propagating an untrusted record type.
+            input: input as JsonWireObject,
             requiredInputKeys: GROUP_MUTATION_INPUT_KEYS[operation]
         });
         return;

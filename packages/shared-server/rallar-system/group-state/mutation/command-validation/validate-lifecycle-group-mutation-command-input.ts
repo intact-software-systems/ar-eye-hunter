@@ -3,15 +3,15 @@ import {
     requireNonNegativeSafeInteger,
     requireOneOf
 } from '../../group-state-validation-primitives.ts';
+import type { JsonWireObject } from '../../../protocol/json-wire-identity.ts';
 import type { GroupLifecycleTransitionOperation } from '../group-mutation-contracts.ts';
 import { validateExpectedLayoutIdentity } from './validate-expected-layout-identity.ts';
 
 type LifecycleCommandOperation = GroupLifecycleTransitionOperation | 'applyPlannedLayout';
-type LifecycleInputRecord = Readonly<Record<string, unknown>>;
 
 interface ValidateLifecycleGroupMutationCommandInput {
     readonly operation: LifecycleCommandOperation;
-    readonly input: LifecycleInputRecord;
+    readonly input: JsonWireObject;
     readonly requiredInputKeys: readonly string[];
 }
 
@@ -62,7 +62,7 @@ export function validateLifecycleGroupMutationCommandInput({
     validateNullableFormationEpoch(input, operation);
 }
 
-function validateRequiredLayoutFence(input: LifecycleInputRecord, operation: string): void {
+function validateRequiredLayoutFence(input: JsonWireObject, operation: string): void {
     // The fences are non-null on these operations: null here is as malformed
     // as an absent key.
     requireNonNegativeSafeInteger(
@@ -75,7 +75,7 @@ function validateRequiredLayoutFence(input: LifecycleInputRecord, operation: str
     validateNullableExpectedLayout(input, operation);
 }
 
-function validateNullableFormationEpoch(input: LifecycleInputRecord, operation: string): void {
+function validateNullableFormationEpoch(input: JsonWireObject, operation: string): void {
     if (input.expectedFormationEpoch !== null) {
         requireNonNegativeSafeInteger(
             input.expectedFormationEpoch,
@@ -84,13 +84,13 @@ function validateNullableFormationEpoch(input: LifecycleInputRecord, operation: 
     }
 }
 
-function validateNullableExpectedLayout(input: LifecycleInputRecord, operation: string): void {
+function validateNullableExpectedLayout(input: JsonWireObject, operation: string): void {
     if (input.expectedLayout === null) {
         return;
     }
     validateExpectedLayoutIdentity(input, `Group ${operation} expectedLayout`);
 }
 
-function isUnitIntervalNumber(value: LifecycleInputRecord[string]): value is number {
+function isUnitIntervalNumber(value: JsonWireObject[string]): value is number {
     return typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 1;
 }
