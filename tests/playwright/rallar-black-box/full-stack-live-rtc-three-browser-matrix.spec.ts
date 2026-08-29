@@ -29,6 +29,11 @@ const CONTROL_WS_URL = 'ws://127.0.0.1:5180/control';
 type TransportUnderTest = 'realtime' | 'messages.rtc';
 type AgentPrefix = 'A' | 'B' | 'C';
 type DeliveryMode = 'direct' | 'multicast' | 'broadcast';
+type ConnectedAgent = Readonly<{ commandId: string; sessionId: string; }>;
+type ConnectedAgentTrio = Readonly<{
+    connections: readonly [ConnectedAgent, ConnectedAgent, ConnectedAgent];
+    readinessStartedAtMs: number;
+}>;
 
 type RestoredSession = Readonly<{
     clientId: string;
@@ -377,6 +382,7 @@ async function setupGroupMembership(
 ): Promise<readonly string[]> {
     const groupSegment = pathSegment(input.groupId);
     const createCommandId = `group-create-${input.suffix}`;
+    const createRequestId = `rtc-b06-create-${input.suffix}`;
     const joinCommandIds: string[] = [];
 
     await input.control.executeOk({
@@ -386,7 +392,9 @@ async function setupGroupMembership(
         command: {
             kind: 'http.request',
             request: {
-                path: `/api/state/apps/${pathSegment(applicationId)}/workspaces/${pathSegment(workspaceId)}/groups`,
+                path: `/api/state/apps/${pathSegment(applicationId)}/workspaces/${
+                    pathSegment(workspaceId)
+                }/groups/requests/${pathSegment(createRequestId)}`,
                 method: 'POST',
                 body: {
                     groupId: input.groupId,
@@ -403,7 +411,8 @@ async function setupGroupMembership(
                 }
             },
             response: {
-                body: 'json'
+                body: 'json',
+                acceptedStatusCodes: [201]
             },
             timeoutMs: 10_000
         },
@@ -411,6 +420,8 @@ async function setupGroupMembership(
 
     for (const member of input.members) {
         const commandId = `group-join-${member.agentId}-${input.suffix}`;
+        const requestId =
+            `rtc-b06-member-${member.prefix.toLowerCase()}-${input.suffix}`;
         joinCommandIds.push(commandId);
         await input.control.executeOk({
             runId: input.runId,
@@ -421,14 +432,17 @@ async function setupGroupMembership(
                 request: {
                     path: `/api/state/apps/${pathSegment(applicationId)}/workspaces/${
                         pathSegment(workspaceId)
-                    }/groups/${groupSegment}/members/{auth.clientId}`,
+                    }/groups/${groupSegment}/members/{auth.clientId}/requests/${
+                        pathSegment(requestId)
+                    }`,
                     method: 'PUT',
                     body: {
                         status: 'active'
                     }
                 },
                 response: {
-                    body: 'json'
+                    body: 'json',
+                    acceptedStatusCodes: [200]
                 },
                 timeoutMs: 10_000
             }
@@ -631,7 +645,7 @@ async function connectAgent(
         groupId: string;
         suffix: string;
     }>
-): Promise<Readonly<{ commandId: string; sessionId: string; }>> {
+): Promise<ConnectedAgent> {
     const commandId = `connect-${input.agent.prefix.toLowerCase()}-${input.transport.replace('.', '-')}-${input.suffix}`;
     const result = await input.control.executeOk({
         runId: input.runId,
@@ -659,6 +673,55 @@ async function connectAgent(
     return {
         commandId,
         sessionId: input.control.requireSessionId(result, commandId)
+    };
+}
+
+async function connectAgentTrio(
+    input: Readonly<{
+        control: LiveRtcControlClient;
+        runId: string;
+        agents: readonly [
+            LiveRtcControlClient.Agent,
+            LiveRtcControlClient.Agent,
+            LiveRtcControlClient.Agent
+        ];
+        transport: TransportUnderTest;
+        groupId: string;
+        suffix: string;
+    }>
+): Promise<ConnectedAgentTrio> {
+    const connected: ConnectedAgent[] = [];
+    for (const agent of input.agents.slice(0, 2)) {
+        connected.push(
+            await connectAgent({ ...input, agent })
+        );
+    }
+
+    const firstPairReadinessStartedAtMs = performance.now();
+    await Promise.all([
+        input.control.waitForPeerReadiness({
+            runId: input.runId,
+            agent: input.agents[0],
+            expectedPeerIds: [connected[1]!.sessionId],
+            suffix: `${input.suffix}-initial-pair`,
+            startedAtMs: firstPairReadinessStartedAtMs
+        }),
+        input.control.waitForPeerReadiness({
+            runId: input.runId,
+            agent: input.agents[1],
+            expectedPeerIds: [connected[0]!.sessionId],
+            suffix: `${input.suffix}-initial-pair`,
+            startedAtMs: firstPairReadinessStartedAtMs
+        })
+    ]);
+
+    const readinessStartedAtMs = performance.now();
+    connected.push(
+        await connectAgent({ ...input, agent: input.agents[2] })
+    );
+    return {
+        connections: [connected[0]!, connected[1]!, connected[2]!],
+        readinessStartedAtMs
     };
 }
 
@@ -732,9 +795,15 @@ async function runDeliveryMatrix(
         timings: readonly LiveRtcPerformanceTiming[];
     }>
 > {
-    const connectResults = await Promise.all(
-        input.agents.map((agent) => connectAgent({ ...input, agent }))
-    );
+    const connected = await connectAgentTrio({
+        control: input.control,
+        runId: input.runId,
+        agents: input.agents,
+        transport: input.transport,
+        groupId: input.groupId,
+        suffix: input.suffix
+    });
+    const connectResults = connected.connections;
     const sessions: Readonly<Record<AgentPrefix, string>> = {
         A: connectResults[0].sessionId,
         B: connectResults[1].sessionId,
@@ -744,7 +813,7 @@ async function runDeliveryMatrix(
 
     const [agentA, agentB, agentC] = input.agents;
     const transportSuffix = `${input.transport.replace('.', '-')}-${input.suffix}`;
-    const readinessStartedAtMs = performance.now();
+    const readinessStartedAtMs = connected.readinessStartedAtMs;
     const readinessDurationMs = await input.control.waitForPeerReadiness({
         runId: input.runId,
         agent: agentA,
@@ -936,9 +1005,15 @@ async function runAllDeliveryPermutations(
     }>
 > {
     const slug = transportSlug(input.transport);
-    const connectResults = await Promise.all(
-        input.agents.map((agent) => connectAgent({ ...input, agent }))
-    );
+    const connected = await connectAgentTrio({
+        control: input.control,
+        runId: input.runId,
+        agents: input.agents,
+        transport: input.transport,
+        groupId: input.groupId,
+        suffix: input.suffix
+    });
+    const connectResults = connected.connections;
     const sessions: Readonly<Record<AgentPrefix, string>> = {
         A: connectResults[0].sessionId,
         B: connectResults[1].sessionId,
@@ -947,7 +1022,7 @@ async function runAllDeliveryPermutations(
     expect(new Set(Object.values(sessions)).size).toBe(3);
 
     const readinessSuffix = `${slug}-${input.suffix}-all`;
-    const readinessStartedAtMs = performance.now();
+    const readinessStartedAtMs = connected.readinessStartedAtMs;
     const readinessDurations = await Promise.all(
         input.agents.map((agent) =>
             input.control.waitForPeerReadiness({
@@ -1248,6 +1323,64 @@ async function closeAndResetAgents(
     return commandIds;
 }
 
+async function closeAndResetSettledAgentTrio(
+    input: Readonly<{
+        control: LiveRtcControlClient;
+        runId: string;
+        agents: readonly [
+            LiveRtcControlClient.Agent,
+            LiveRtcControlClient.Agent,
+            LiveRtcControlClient.Agent
+        ];
+        sessions: Readonly<Record<AgentPrefix, string>>;
+        suffix: string;
+    }>
+): Promise<readonly string[]> {
+    const commandIds: string[] = [];
+    const closeAndReset = async (
+        agent: LiveRtcControlClient.Agent
+    ): Promise<void> => {
+        const closeCommandId = `close-${agent.prefix.toLowerCase()}-${input.suffix}`;
+        const resetCommandId = `reset-${agent.prefix.toLowerCase()}-${input.suffix}`;
+        commandIds.push(closeCommandId, resetCommandId);
+        await input.control.executeOk({
+            runId: input.runId,
+            agentId: agent.agentId,
+            commandId: closeCommandId,
+            command: { kind: 'close' },
+            timeoutMs: 45_000
+        });
+        await input.control.executeOk({
+            runId: input.runId,
+            agentId: agent.agentId,
+            commandId: resetCommandId,
+            command: { kind: 'reset' },
+            timeoutMs: 30_000
+        });
+    };
+
+    await closeAndReset(input.agents[2]);
+    await Promise.all(input.agents.slice(0, 2).map((agent) =>
+        input.control.waitForPeerAbsence({
+            runId: input.runId,
+            agent,
+            departedPeerIds: [input.sessions.C],
+            suffix: `${input.suffix}-retire-c`
+        })
+    ));
+
+    await closeAndReset(input.agents[1]);
+    await input.control.waitForPeerAbsence({
+        runId: input.runId,
+        agent: input.agents[0],
+        departedPeerIds: [input.sessions.B],
+        suffix: `${input.suffix}-retire-b`
+    });
+
+    await closeAndReset(input.agents[0]);
+    return commandIds;
+}
+
 async function writeAttemptEvidence(input: Readonly<{
     context: LiveRtcPerformanceAttemptContext | null;
     producerExitStatus: number;
@@ -1384,15 +1517,28 @@ test.describe('full-stack live three-browser RTC matrix', () => {
                 return agents;
             };
             const retireAgents = async (
-                agents: readonly LiveRtcControlClient.Agent[],
-                closeSuffix: string
+                agents: readonly [
+                    LiveRtcControlClient.Agent,
+                    LiveRtcControlClient.Agent,
+                    LiveRtcControlClient.Agent
+                ],
+                closeSuffix: string,
+                sessions?: Readonly<Record<AgentPrefix, string>>
             ): Promise<readonly string[]> => {
-                const retiredCommandIds = await closeAndResetAgents({
-                    control,
-                    runId,
-                    agents,
-                    suffix: closeSuffix
-                });
+                const retiredCommandIds = sessions
+                    ? await closeAndResetSettledAgentTrio({
+                        control,
+                        runId,
+                        agents,
+                        sessions,
+                        suffix: closeSuffix
+                    })
+                    : await closeAndResetAgents({
+                        control,
+                        runId,
+                        agents,
+                        suffix: closeSuffix
+                    });
                 await closeAgentContexts(agents);
                 for (const agent of agents) {
                     const index = openHandles.findIndex((candidate) => candidate.agentId === agent.agentId);
@@ -1439,22 +1585,12 @@ test.describe('full-stack live three-browser RTC matrix', () => {
                 commandIds.push(
                     ...await retireAgents(
                         realtimeAgents,
-                        `${suffix}-after-realtime`
+                        `${suffix}-after-realtime`,
+                        realtime.sessions
                     )
                 );
 
                 const messageAgents = await openAgents('live-messages');
-                commandIds.push(
-                    ...await setupGroupMembership({
-                        control,
-                        runId,
-                        owner: messageAgents[0],
-                        members: messageAgents,
-                        groupId,
-                        suffix: `${suffix}-messages`
-                    })
-                );
-
                 const messages = await runDeliveryMatrix({
                     control,
                     runId,
@@ -1628,15 +1764,28 @@ test.describe('full-stack live three-browser RTC matrix', () => {
             return agents;
         };
         const retireAgents = async (
-            agents: readonly LiveRtcControlClient.Agent[],
-            closeSuffix: string
+            agents: readonly [
+                LiveRtcControlClient.Agent,
+                LiveRtcControlClient.Agent,
+                LiveRtcControlClient.Agent
+            ],
+            closeSuffix: string,
+            sessions?: Readonly<Record<AgentPrefix, string>>
         ): Promise<readonly string[]> => {
-            const retired = await closeAndResetAgents({
-                control,
-                runId,
-                agents,
-                suffix: closeSuffix
-            });
+            const retired = sessions
+                ? await closeAndResetSettledAgentTrio({
+                    control,
+                    runId,
+                    agents,
+                    sessions,
+                    suffix: closeSuffix
+                })
+                : await closeAndResetAgents({
+                    control,
+                    runId,
+                    agents,
+                    suffix: closeSuffix
+                });
             await closeAgentContexts(agents);
             for (const agent of agents) {
                 const index = openHandles.findIndex(
@@ -1688,7 +1837,8 @@ test.describe('full-stack live three-browser RTC matrix', () => {
             diagnostics.push(realtimeDiagnostics.checkpoint);
             commandIds.push(...await retireAgents(
                 realtimeAgents,
-                `${suffix}-after-realtime-all`
+                `${suffix}-after-realtime-all`,
+                realtime.sessions
             ));
 
             const wsAgents = await openAgents('live-all-ws');
@@ -1702,14 +1852,6 @@ test.describe('full-stack live three-browser RTC matrix', () => {
             commandIds.push(...await retireAgents(wsAgents, `${suffix}-after-ws-all`));
 
             const messageAgents = await openAgents('live-all-messages');
-            commandIds.push(...await setupGroupMembership({
-                control,
-                runId,
-                owner: messageAgents[0],
-                members: messageAgents,
-                groupId,
-                suffix: `${suffix}-messages`
-            }));
             const messages = await runAllDeliveryPermutations({
                 control,
                 runId,
@@ -1961,18 +2103,18 @@ test.describe('full-stack live three-browser RTC matrix', () => {
                 groupId,
                 suffix
             }));
-            const connected = await Promise.all(
-                agents.map((agent) => connectAgent({
-                    control,
-                    runId,
-                    agent,
-                    transport: 'messages.rtc',
-                    groupId,
-                    suffix: `${suffix}-initial`
-                }))
-            );
+            const initialConnection = await connectAgentTrio({
+                control,
+                runId,
+                agents,
+                transport: 'messages.rtc',
+                groupId,
+                suffix: `${suffix}-initial`
+            });
+            const connected = initialConnection.connections;
             commandIds.push(...connected.map((connection) => connection.commandId));
-            const initialReadinessStartedAtMs = performance.now();
+            const initialReadinessStartedAtMs =
+                initialConnection.readinessStartedAtMs;
             await Promise.all(agents.map((agent, agentIndex) =>
                 control.waitForPeerReadiness({
                     runId,

@@ -216,12 +216,13 @@ export function createBlackBoxRallarMessagingController(
         lease: BlackBoxRallarMessagingLease
     ): Promise<BlackBoxRallarSendDiagnostics> => {
         const normalized = normalizeSendInput(input);
-        const peerIds = normalized.peerIds ??
+        const selectedPeerIds = normalized.peerIds ??
             (normalized.remotePeerId
                 ? [normalized.remotePeerId]
                 : config.remotePeerId
                 ? [config.remotePeerId]
                 : config.rallar.peerIds);
+        const peerIds = selectedPeerIds ?? options.rtcStatus(config).readyPeerIds;
         const laneId = normalized.laneId ?? options.laneIdOf(config);
         const roomId = normalized.roomId ?? config.roomId;
         const roomRef = options.roomRefOf(config, normalized);
