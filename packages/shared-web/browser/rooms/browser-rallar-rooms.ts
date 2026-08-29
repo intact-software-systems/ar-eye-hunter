@@ -18,6 +18,7 @@ import type {
 import { throwRallarValidationIssue } from '@shared-web/browser/rooms/rallar-room-validation.ts';
 import type { RallarStateSnapshotAcceptanceInput } from '@shared-web/browser/state-cache/rallar-state-store.ts';
 import { emitBrowserStateReadDiagnostic } from '@shared-web/browser/state-read/diagnostics.ts';
+import { hydrateGroupTopologyOverlays } from '@shared-web/browser/state-read/hydrate-group-topology-overlays.ts';
 import { readStateGroupSnapshot, type StateGroupSnapshotRead } from '@shared-web/browser/state-read/point-read.ts';
 import { refreshStateSnapshots } from '@shared-web/browser/state-read/refresh-state-snapshots.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
@@ -374,6 +375,16 @@ async function refreshRoom(
                 toRallarCommandOptions(operationOptions)
             ).run();
             await input.acceptSnapshots({ context, clients: [], groups: [response.snapshot], scope });
+            await hydrateGroupTopologyOverlays({
+                groupSnapshots: [response.snapshot],
+                sessionId: context.session.sessionId,
+                webRtcGroupManager: context.middleware.webRtcGroupManager,
+                scope,
+                apiRequest: {
+                    ...toRallarCommandOptions(operationOptions),
+                    authSession: context.session
+                }
+            });
         }
         catch (error) {
             if (error instanceof ApiHttpError && error.status === 404 && observed) {

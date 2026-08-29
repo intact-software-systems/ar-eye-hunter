@@ -440,6 +440,7 @@ export class WebRtcGroupManager {
 
     private onlinePeerIds(): Set<PeerId> {
         const onlinePeerIds = new Set<PeerId>();
+        const explicitlyOfflinePeerIds = new Set<PeerId>();
 
         for (const clientKey of this.clientCache.keys()) {
             const client = this.clientCache.read(clientKey) ??
@@ -450,6 +451,21 @@ export class WebRtcGroupManager {
 
             for (const sessionId of readActiveClientSessionIds(client)) {
                 onlinePeerIds.add(sessionId);
+            }
+            if (!('principal' in client) && !client.isOnline) {
+                explicitlyOfflinePeerIds.add(client.sessionId);
+            }
+        }
+
+        // Group presence and client presence converge independently. A fresh
+        // room point read can therefore observe a newly active session before
+        // the client collection does. The group is authoritative for its own
+        // active sessions, so that cache lag must not suppress the RTC dial.
+        for (const group of this.groupsByKey.values()) {
+            for (const peerId of group.targetPeerIds()) {
+                if (!explicitlyOfflinePeerIds.has(peerId)) {
+                    onlinePeerIds.add(peerId);
+                }
             }
         }
 

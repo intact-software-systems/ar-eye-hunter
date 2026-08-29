@@ -366,6 +366,7 @@ describe('Rallar director relay', () => {
             appointedAtEpochMs: 1,
             heartbeatTtlMs: 60_000
         }));
+        mockRtcNoRoute();
         const enqueuedWsTypeIds: string[] = [];
         mocks.webSocketQueueBox.enqueueOutboxIfAbsent.mockImplementation(
             async (message) => {
@@ -405,6 +406,7 @@ describe('Rallar director relay', () => {
             appointedAtEpochMs: 1,
             heartbeatTtlMs: 60_000
         }));
+        mockRtcNoRoute();
         const relay = createRallarFacade().director.createRelay<DirectorMove, DirectorAcknowledgement>({
             roomId: 'room-1',
             laneId: 'director',
@@ -598,6 +600,17 @@ function resetDirectorRtcDoubles(): void {
         mocks.ctx.middleware.rtcRxStreamer
     );
     mocks.rtcRxStreamer.removeInboxMessageCallback.mockReturnValue(true);
+}
+
+function mockRtcNoRoute(): void {
+    mocks.rtcRxStreamer.enqueueOutboxIfAbsent.mockImplementation(
+        async (message) => ({
+            status: 'no-route',
+            message,
+            entries: [],
+            reason: `No outbound transport route for message ${message.id.msgId}`
+        })
+    );
 }
 
 function resetDirectorWsDoubles(): void {

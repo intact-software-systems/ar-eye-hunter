@@ -20,6 +20,7 @@ import type {
     ALInboundPlanner,
     ALPersistedInboundEffect
 } from './ALInboundAdmissionStore.ts';
+import { ALAdmissionBackendConflictError } from './ALAdmissionBackendConflictError.ts';
 import {
     createALInboundAdmissionStore,
     createInMemoryALInboundAdmissionState,
@@ -140,13 +141,35 @@ export class ALInboundMessageRuntime {
         await this.ready();
 
         if (isALControlTypeId(msg.payload.typeId)) {
-            const acceptance = await this.admissionStore.acceptControlMessage(msg);
+            const acceptance = await this.acceptControlMessageWithRetry(msg);
             await this.drainDurableEffectsIfIdle();
             await this.input.onControlMessage?.(msg, acceptance);
             return;
         }
 
         await this.handleIncomingMessageWithAdmission(msg, fromPeerId);
+    }
+
+    private async acceptControlMessageWithRetry(
+        msg: ALMessage
+    ): Promise<ALControlAcceptance> {
+        return await tryWithPolicy(
+            async () => {
+                try {
+                    return await this.admissionStore.acceptControlMessage(msg);
+                }
+                catch (error) {
+                    if (error instanceof ALAdmissionBackendConflictError) {
+                        throw new RetryableConflictError(
+                            'Inbound control-message admission conflict',
+                            { cause: error }
+                        );
+                    }
+                    throw error;
+                }
+            },
+            ALInboundMessageRuntime.COMMIT_RETRY_POLICY
+        );
     }
 
     private async handleIncomingMessageWithAdmission(

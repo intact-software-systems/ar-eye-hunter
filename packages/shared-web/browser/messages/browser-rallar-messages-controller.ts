@@ -34,7 +34,6 @@ export namespace BrowserRallarMessagesController {
             room: string | GroupRef | undefined,
             explicitMinSnapshotVersion?: number
         ): number | undefined;
-        resolveRoomPeerIds(room: string | GroupRef): readonly string[];
         readMessageMaxPayloadBytes?(): number;
     }
 }
@@ -63,8 +62,7 @@ export class BrowserRallarMessagesController {
             resolveCurrentRoomRef: input.resolveCurrentRoomRef,
             toRoomId: input.toRoomId,
             resolveRoomRef: input.resolveRoomRef,
-            resolveRoomMinSnapshotVersion: input.resolveRoomMinSnapshotVersion,
-            resolveRoomPeerIds: input.resolveRoomPeerIds
+            resolveRoomMinSnapshotVersion: input.resolveRoomMinSnapshotVersion
         });
 
         const rtc: RallarMessagesOperations['rtc'] = {

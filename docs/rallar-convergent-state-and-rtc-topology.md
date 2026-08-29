@@ -468,8 +468,16 @@ only the revision probe.
 Browser point readers expose the response source and authoritative revision
 metadata. They reject malformed authoritative bodies, missing or invalid
 metadata headers, and header/body revision disagreement. A room session refresh
-uses one exact group point read without a floor; top-level room and people
-refreshes continue to use complete durable collections.
+uses one exact group point read without a floor, then performs a best-effort
+exact topology read-through for an active local session and adopts the current
+server overlay. Top-level room and people refreshes continue to use complete
+durable collections.
+
+Group presence and client presence converge independently. RTC reconciliation
+therefore treats sessions in an accepted active group snapshot as connectable
+while the client collection catches up; an explicit session-scoped offline
+observation remains a disconnect fence. This prevents a fresh room read from
+discovering a valid peer without ever starting its RTC dial.
 
 Before targeted, heartbeat, or complete collection reads, browser repair
 captures the observed snapshot identity. An authoritative `404`, heartbeat
