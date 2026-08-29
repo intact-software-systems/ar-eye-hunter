@@ -80,6 +80,37 @@ describe('group mutation command validation', () => {
             )
         ).not.toThrow();
     });
+
+    // Slice 5e's dark `start`: with no route mounted, the declared key row is
+    // the only thing between a hand-built payload and the compute, and nothing
+    // else exercises the arm.
+    it('accepts the start-formation key row and rejects a payload outside it', () => {
+        const startFormationInput = {
+            actorPrincipalId: 'alice',
+            actorSessionId: 'alice-session',
+            reason: null,
+            traceId: null,
+            expectedFormationEpoch: null
+        };
+
+        expect(() =>
+            validateGroupMutationCommand(
+                createMutationCommand({
+                    operation: 'startGroupFormation',
+                    input: startFormationInput
+                } as Partial<GroupMutationCommand>)
+            )
+        ).not.toThrow();
+
+        expect(() =>
+            validateGroupMutationCommand(
+                createMutationCommand({
+                    operation: 'startGroupFormation',
+                    input: { ...startFormationInput, expectedLayout: null }
+                } as Partial<GroupMutationCommand>)
+            )
+        ).toThrow(/unexpected|key/i);
+    });
 });
 
 function createMutationCommand(
