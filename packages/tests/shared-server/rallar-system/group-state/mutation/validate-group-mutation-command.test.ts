@@ -1,8 +1,9 @@
+import { existsSync } from 'node:fs';
+import { describe, expect, expectTypeOf, it, vi } from 'vitest';
+
 import { validateGroupMutationCommand } from '@shared-server/rallar-system/group-state/mutation/command-validation/validate-group-mutation-command.ts';
 import { type GroupMutationCommand } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
 import type { ConnectGroupPresenceSessionRequest, GroupJoinCodeResponse, HeartbeatGroupPresenceSessionRequest } from '@shared/api/state-types.ts';
-import { existsSync } from 'node:fs';
-import { describe, expect, expectTypeOf, it, vi } from 'vitest';
 
 vi.mock('@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts', async (importOriginal) => {
     const contracts = await importOriginal<typeof import('@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts')>();
