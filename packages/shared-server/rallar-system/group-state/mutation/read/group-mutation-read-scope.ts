@@ -54,7 +54,6 @@ export function readsGroupActiveMemberPrincipalIds(
 export function readsGroupLayoutRows(command: GroupMutationCommand): boolean {
     return (
         command.operation === 'activateGroup' ||
-        command.operation === 'resetGroupFormation' ||
         isLayoutFencedGroupMutationCommand(command)
     );
 }
@@ -67,7 +66,6 @@ export function readsGroupLayoutRows(command: GroupMutationCommand): boolean {
 export function readsAcceptedLayoutRow(command: GroupMutationCommand): boolean {
     return (
         command.operation === 'activateGroup' ||
-        command.operation === 'applyPlannedLayout' ||
-        command.operation === 'resetGroupFormation'
+        command.operation === 'applyPlannedLayout'
     );
 }

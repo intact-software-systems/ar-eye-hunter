@@ -209,7 +209,6 @@ export interface AuthenticatedGroupMutationPayloadByType {
     [AppInboxType.GROUP_PRESENCE_DISCONNECT]: GroupPresenceDisconnectAppInboxPayload;
     [AppInboxType.GROUP_TRANSPORT_PAUSE]: GroupTransportCommandAppInboxPayload;
     [AppInboxType.GROUP_TRANSPORT_RESUME]: GroupTransportCommandAppInboxPayload;
-    [AppInboxType.GROUP_FORMATION_RESET]: GroupLifecycleTransitionAppInboxPayload;
     [AppInboxType.GROUP_FORMATION_START]: GroupLifecycleTransitionAppInboxPayload;
 }
 
@@ -257,7 +256,6 @@ export const AUTHENTICATED_GROUP_INBOX_TYPES = [
     AppInboxType.GROUP_PRESENCE_DISCONNECT,
     AppInboxType.GROUP_TRANSPORT_PAUSE,
     AppInboxType.GROUP_TRANSPORT_RESUME,
-    AppInboxType.GROUP_FORMATION_RESET,
     AppInboxType.GROUP_FORMATION_START
 ] as const;
 

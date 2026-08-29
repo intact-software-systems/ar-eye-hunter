@@ -84,7 +84,7 @@ describe('computePlannedLayoutPromotion', () => {
             currentFormationEpoch: 2,
             planned: PLANNED,
             acceptedIdentity: { ...IDENTITY, version: 2 },
-            acceptedRow: { snapshot: SNAPSHOT, revision: 8 }
+            acceptedRow: { revision: 8 }
         });
 
         expect(promotion.outcome).toBe('apply');
@@ -142,7 +142,7 @@ describe('computePlannedLayoutPromotion', () => {
             currentFormationEpoch: 2,
             planned: PLANNED,
             acceptedIdentity: IDENTITY,
-            acceptedRow: { snapshot: SNAPSHOT, revision: 8 }
+            acceptedRow: { revision: 8 }
         });
         expect(promotion.outcome).toBe('already-applied');
     });
@@ -281,7 +281,7 @@ describe('applyPlannedLayout through the durable service', () => {
                 entry: { ...read.group.entry, value: JSON.stringify(promoted) },
                 value: promoted
             },
-            acceptedLayoutRow: { snapshot: SNAPSHOT, revision: 1 }
+            acceptedLayoutRow: { revision: 1 }
         } as typeof read;
 
         const computed = service.compute(prepared, applied);

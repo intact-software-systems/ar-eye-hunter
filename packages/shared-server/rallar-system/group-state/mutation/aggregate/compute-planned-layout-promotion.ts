@@ -16,12 +16,11 @@ export type GroupPlannedLayoutRow = Readonly<{
 }>;
 
 /**
- * The accepted slot's stored row. The revision drives promotion's
- * insert-vs-update guard; the snapshot is what `reset` turns into a tombstone
- * (product decision 36), which a revision alone cannot express.
+ * The accepted-slot row: only the revision, for the insert-vs-update guard.
+ * Slice 6c widens this to carry the snapshot when `reset` needs to tombstone
+ * it; nothing today reads the content.
  */
 export type GroupAcceptedLayoutRow = Readonly<{
-    snapshot: RallarOverlayTopologySnapshot;
     revision: number;
 }>;
 

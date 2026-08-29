@@ -162,7 +162,6 @@ function validateAggregateOperationInput(
         case 'reopenGroupEstablishment':
         case 'planGroupLayout':
         case 'startGroupFormation':
-        case 'resetGroupFormation':
             assertRequiredKeys(input, GROUP_MUTATION_INPUT_KEYS[operation], `Group ${operation} input`);
             validateExpectedFormationEpochInput(input, operation);
             return;
@@ -307,7 +306,6 @@ const GROUP_MUTATION_OPERATIONS = new Set([
     'planGroupLayout',
     'connectGroup',
     'startGroupFormation',
-    'resetGroupFormation',
     'activateGroup',
     'reopenGroupEstablishment',
     'failGroupFormation',
@@ -362,7 +360,6 @@ const AGGREGATE_GROUP_MUTATION_OPERATIONS = new Set<GroupMutationCommand['operat
     'planGroupLayout',
     'connectGroup',
     'startGroupFormation',
-    'resetGroupFormation',
     'activateGroup',
     'reopenGroupEstablishment',
     'failGroupFormation',
@@ -404,7 +401,6 @@ const GROUP_MUTATION_INPUT_KEYS: Readonly<Record<GroupMutationCommand['operation
     startGroupEstablishment: [...ACTOR_INPUT_KEYS, 'expectedFormationEpoch'],
     planGroupLayout: [...ACTOR_INPUT_KEYS, 'expectedFormationEpoch'],
     startGroupFormation: [...ACTOR_INPUT_KEYS, 'expectedFormationEpoch'],
-    resetGroupFormation: [...ACTOR_INPUT_KEYS, 'expectedFormationEpoch'],
     connectGroup: [...ACTOR_INPUT_KEYS, 'expectedFormationEpoch', 'expectedLayout'],
     activateGroup: [...ACTOR_INPUT_KEYS, 'observedRate', 'degraded', 'expectedFormationEpoch', 'expectedLayout'],
     reopenGroupEstablishment: [...ACTOR_INPUT_KEYS, 'expectedFormationEpoch'],

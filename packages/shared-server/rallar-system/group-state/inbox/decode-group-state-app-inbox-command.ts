@@ -136,8 +136,6 @@ function toGroupMutationOperation(
             return 'pauseGroupTransport';
         case AppInboxType.GROUP_TRANSPORT_RESUME:
             return 'resumeGroupTransport';
-        case AppInboxType.GROUP_FORMATION_RESET:
-            return 'resetGroupFormation';
         case AppInboxType.GROUP_FORMATION_START:
             return 'startGroupFormation';
         case AppInboxType.GROUP_PLAN:

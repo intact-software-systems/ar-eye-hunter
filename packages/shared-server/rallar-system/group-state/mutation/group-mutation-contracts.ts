@@ -139,11 +139,12 @@ export type GroupMutationCommand =
     | (
         & GroupMutationCommandBase
         & Readonly<{
-            // Dark until slice 8 mounts routes (plan slice 5e). The formation
-            // series' two ends (product decisions 35-37): `reset` returns the
-            // group to the clean slate from any stage, `start` opens a new
-            // series from it and is denied while the attempt budget is spent.
-            operation: 'startGroupFormation' | 'resetGroupFormation';
+            // Dark until slice 8 mounts routes (plan slice 5e). `start` opens
+            // a formation series from the clean slate and is denied while the
+            // attempt budget is spent (product decisions 35/37). Its partner
+            // `reset` waits for slice 6c, which owns the topology retirement
+            // semantics it needs.
+            operation: 'startGroupFormation';
             input:
                 & NullableActorInput
                 & Readonly<{
@@ -528,21 +529,7 @@ export type GroupMutationComputed =
          * same guard itself).
          */
         plannedLayoutFence: GroupPlannedLayoutRow | null;
-        /**
-         * The layout slots `reset` retires in the same transaction (product
-         * decision 36). A tombstone rather than a delete: the stored row keeps
-         * its content and fingerprint for tracing and only its state changes,
-         * and the non-active planned row is what disarms change suppression so
-         * unchanged membership can rebuild after `start`. Null per slot when
-         * nothing is stored there; null for every command but `reset`.
-         */
-        layoutTombstones: GroupLayoutTombstones | null;
     }>;
-
-export type GroupLayoutTombstones = Readonly<{
-    planned: GroupPlannedLayoutRow | null;
-    accepted: GroupPlannedLayoutRow | null;
-}>;
 
 export type GroupMutationComputedWrite = Extract<GroupMutationComputed, { outcome: 'write'; }>;
 
@@ -555,7 +542,6 @@ export type GroupLifecycleTransitionOperation = Extract<
     | 'planGroupLayout'
     | 'connectGroup'
     | 'startGroupFormation'
-    | 'resetGroupFormation'
 >;
 
 export function isGroupLifecycleTransitionOperation(
@@ -568,8 +554,7 @@ export function isGroupLifecycleTransitionOperation(
         operation === 'failGroupFormation' ||
         operation === 'planGroupLayout' ||
         operation === 'connectGroup' ||
-        operation === 'startGroupFormation' ||
-        operation === 'resetGroupFormation'
+        operation === 'startGroupFormation'
     );
 }
 

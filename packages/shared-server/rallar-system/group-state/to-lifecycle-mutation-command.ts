@@ -14,7 +14,6 @@ export function toLifecycleMutationCommand(
         case 'reopenGroupEstablishment':
         case 'planGroupLayout':
         case 'startGroupFormation':
-        case 'resetGroupFormation':
             return toTransitionCommand(descriptor.operation, descriptor, randomId);
         case 'activateGroup':
             return toActivateCommand(descriptor, randomId);
@@ -32,8 +31,7 @@ function toTransitionCommand(
         | 'startGroupEstablishment'
         | 'reopenGroupEstablishment'
         | 'planGroupLayout'
-        | 'startGroupFormation'
-        | 'resetGroupFormation',
+        | 'startGroupFormation',
     descriptor: GroupMutationDescriptor,
     randomId: () => string
 ): GroupMutationCommand {

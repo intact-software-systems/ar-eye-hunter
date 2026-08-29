@@ -88,9 +88,13 @@ describe('GroupStateInboxService authenticated authority', () => {
             AppInboxType.GROUP_PRESENCE_DISCONNECT,
             AppInboxType.GROUP_TRANSPORT_PAUSE,
             AppInboxType.GROUP_TRANSPORT_RESUME,
-            AppInboxType.GROUP_FORMATION_RESET,
             AppInboxType.GROUP_FORMATION_START
         ]);
+        // `start` is advertised but not exercised below: `dormant` is its only
+        // legal source stage and no command reaches `dormant` until slice 6c's
+        // `reset` exists (decision 35 forbids creating a group there, and
+        // exhaustion's landing is still dark). The descriptor contract covers
+        // its mapping, and the unit suite covers its compute.
     });
 
     it(
@@ -110,10 +114,6 @@ async function runEveryAdvertisedGroupOperation(): Promise<void> {
     const harness = await createAuthorityHarness(['owner', 'bob', 'charlie']);
     const groupId = 'operation-matrix-room';
     const phasedGroupId = 'operation-matrix-phased';
-    // The series pair runs on its own group: `reset` halts transport and
-    // `start` leaves the group in `forming`, either of which would change the
-    // story the phased group tells the cases after it.
-    const seriesGroupId = 'operation-matrix-series';
     const admissionGroupId = 'operation-matrix-admissions';
     const ownerActor = {
         actorPrincipalId: 'owner',
@@ -604,68 +604,6 @@ async function runEveryAdvertisedGroupOperation(): Promise<void> {
                 expect(group?.transportState).toBe('flowing');
                 expect(group?.lifecycleState).toBe('planned');
                 expect(group?.formationEpoch).toBe(1);
-            }
-        },
-        {
-            type: AppInboxType.GROUP_CREATE,
-            operation: 'createGroup',
-            authority: harness.sessions.owner,
-            data: {
-                scope: SCOPE,
-                request: {
-                    groupId: seriesGroupId,
-                    displayName: 'Operation Matrix Series',
-                    kind: 'room',
-                    joinMode: 'open',
-                    createdByPrincipalId: 'owner',
-                    lifecyclePolicy: { formation: 'phased' },
-                    ...ownerActor,
-                    requestId: 'matrix-create-series'
-                }
-            } satisfies GroupCreateAppInboxPayload,
-            assertDomain: async () => {
-                expect(
-                    (await harness.repository.readSnapshot({ ...SCOPE, groupId: seriesGroupId }))?.group
-                        .lifecycleState
-                ).toBe('forming');
-            }
-        },
-        {
-            type: AppInboxType.GROUP_FORMATION_RESET,
-            operation: 'resetGroupFormation',
-            authority: harness.sessions.owner,
-            data: {
-                scope: SCOPE,
-                groupId: seriesGroupId,
-                request: { ...ownerActor, requestId: 'matrix-reset' }
-            } satisfies GroupLifecycleTransitionAppInboxPayload,
-            assertDomain: async () => {
-                const group = (await harness.repository.readSnapshot({ ...SCOPE, groupId: seriesGroupId }))?.group;
-                // The clean slate (product decision 36).
-                expect(group?.lifecycleState).toBe('dormant');
-                expect(group?.formationAttemptCount).toBe(0);
-                expect(group?.establishmentStartedAtEpochMs).toBe(null);
-                expect(group?.acceptedLayoutIdentity).toBe(null);
-                expect(group?.transportState).toBe('halted');
-            }
-        },
-        {
-            type: AppInboxType.GROUP_FORMATION_START,
-            operation: 'startGroupFormation',
-            authority: harness.sessions.owner,
-            data: {
-                scope: SCOPE,
-                groupId: seriesGroupId,
-                request: { ...ownerActor, requestId: 'matrix-start' }
-            } satisfies GroupLifecycleTransitionAppInboxPayload,
-            assertDomain: async () => {
-                const group = (await harness.repository.readSnapshot({ ...SCOPE, groupId: seriesGroupId }))?.group;
-                // `start` is dormant's only exit, and the reset above cleared
-                // the budget that would otherwise deny it (decisions 35/37).
-                expect(group?.lifecycleState).toBe('forming');
-                // The valve stays where reset left it until the application
-                // resumes it, which is why these two run last.
-                expect(group?.transportState).toBe('halted');
             }
         }
     ];

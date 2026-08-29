@@ -185,7 +185,6 @@ const GROUP_MUTATION_REQUEST_KEYS: Readonly<Record<GroupMutationCommand['operati
     startGroupEstablishment: [...MUTATION_REQUEST_KEYS],
     planGroupLayout: [...MUTATION_REQUEST_KEYS],
     startGroupFormation: [...MUTATION_REQUEST_KEYS],
-    resetGroupFormation: [...MUTATION_REQUEST_KEYS],
     connectGroup: [...MUTATION_REQUEST_KEYS, 'expectedFormationEpoch', 'expectedLayout'],
     activateGroup: [...MUTATION_REQUEST_KEYS],
     reopenGroupEstablishment: [...MUTATION_REQUEST_KEYS],

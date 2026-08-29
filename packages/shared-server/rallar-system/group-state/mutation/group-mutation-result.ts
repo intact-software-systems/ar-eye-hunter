@@ -17,7 +17,6 @@ import type { PlannedLayoutPromotion } from './aggregate/compute-planned-layout-
 import type { GroupPlannedLayoutRow } from './aggregate/compute-planned-layout-promotion.ts';
 import type {
     GroupGuardCandidate,
-    GroupLayoutTombstones,
     GroupMutationCommand,
     GroupMutationComputed,
     GroupMutationFacts,
@@ -48,8 +47,6 @@ export interface GroupMutationWriteInput {
     readonly acceptedLayoutPromotion?: Extract<PlannedLayoutPromotion, { outcome: 'apply'; }> | null;
     /** The planned row a layout fence matched, re-asserted at commit. */
     readonly plannedLayoutFence?: GroupPlannedLayoutRow | null;
-    /** The layout slots `reset` retires in the same transaction. */
-    readonly layoutTombstones?: GroupLayoutTombstones | null;
 }
 
 export interface RejectedGroupMutationInput {
@@ -137,8 +134,7 @@ export function computeGroupMutationWriteResult(
         outboxEntries,
         lifecyclePolicy: command.operation === 'createGroup' ? (command.input.lifecyclePolicy ?? null) : null,
         acceptedLayoutPromotion,
-        plannedLayoutFence,
-        layoutTombstones: input.layoutTombstones ?? null
+        plannedLayoutFence
     };
 }
 

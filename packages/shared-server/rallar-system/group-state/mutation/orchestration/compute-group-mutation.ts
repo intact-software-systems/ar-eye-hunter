@@ -64,7 +64,6 @@ export function computeGroupMutation(
         case 'planGroupLayout':
         case 'connectGroup':
         case 'startGroupFormation':
-        case 'resetGroupFormation':
         case 'activateGroup':
         case 'reopenGroupEstablishment':
         case 'failGroupFormation':

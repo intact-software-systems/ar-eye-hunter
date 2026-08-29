@@ -973,20 +973,20 @@ builder; `GROUP_MUTATION_OPERATIONS` is an untyped `Set` of bare strings.
   becomes two calls, so the recipe edit is a rewrite, not a path substitution. The automatic retry
   leg is re-expressed as `plan` plus the connect trigger, which makes its scheduler cutover work too.
   Nothing comes out before 8d, so the tree stays deployable throughout.
-- **5e — `reset` and `start`, dark** (product decisions 35–37). **Needs:** 4a's accepted slot and
-  promotion-owned fingerprint semantics. `start` is `dormant → forming` and is denied while the
-  attempt series is exhausted. `reset` is one AppInbox transaction that advances the epoch, zeroes
-  `formationAttemptCount`, clears `establishmentStartedAtEpochMs`, `lastFormationOutcome` and
-  `Group.acceptedLayoutIdentity`, sets `transportState: 'halted'`, and tombstones both accepted and
-  planned topology rows. It retains both valid fingerprints for tracing. The active planned-row
-  predicate—not fingerprint deletion—controls change suppression, so the planned tombstone guarantees
-  unchanged membership can rebuild after `start`.
+- **5e — `start`, dark** (product decisions 35/37). **Needs:** nothing beyond the transition table.
+  `start` is `dormant → forming` and is denied while the attempt series is exhausted; an explicit
+  `reset` is the only thing that clears the budget. The budget rule is a policy question, so it lives
+  with the other lifecycle predicates rather than in compute.
 
-  Expiry is unavailable because `RtcTopologySnapshotRepository` rejects expiring snapshots, and lazy
-  hard delete would destroy trace evidence. Physical delete and follow-up cleanup are rejected because
-  they weaken atomicity and leave a window where hydration or change suppression can observe a
-  half-reset group. Reset's tests inject failure at each write and prove group facts, both tombstones,
-  event, receipt, result and outbox either all commit or all roll back.
+  **`reset` moved to 6c** after PR 9's review (see that PR's record). The two were one slice until the
+  review showed `reset`'s tombstones need changes to live topology delivery and planning that a dark
+  slice cannot make. `start` is unaffected by any of it.
+
+  **Consequence of the split, stated because it looks like a coverage gap and is not one:** `start`
+  cannot be exercised end-to-end until 6c lands. `dormant` is its only legal source stage, decision 35
+  forbids creating a group there, and exhaustion's `dormant` landing is still dark, so no command
+  reaches `dormant` today. 5e therefore proves `start` through its compute and its descriptor
+  mapping, and 6c adds the executed matrix case once `reset` can produce a dormant group.
 
 ### PR 6 delivery record — slices 5a + 5b (executed 2026-08-28, branch `codex/group-activation-command-family`)
 
@@ -1274,82 +1274,52 @@ job, and this slice does not take it on.
 
 ### PR 9 delivery record — slice 5e (executed 2026-08-29, branch `claude/group-activation-reset-start`)
 
-`startGroupFormation` and `resetGroupFormation` land dark through the full census. Slice 5's command
-family is now complete: `plan`, `connect`, `pause`, `resume`, `reset`, `start` all exist, none of them
-routed.
-
-> **BLOCKED — do not merge PR 9 as it stands.** The max-effort review found that decision 36's
-> tombstone mechanism assumes three properties the topology machinery does not have. One defect is
-> repaired (a removed row may carry no edge, or the write transaction aborts); three remain and are
-> design questions this slice has no authority to settle. They are recorded under "Blocking findings"
-> below.
+**Shipped: `startGroupFormation` only.** The slice began as `reset` and `start` together and was split
+after its own review; `reset` and everything it needed are now slice 6c. The branch name predates the
+split.
 
 - **The attempt budget is a policy rule, not a compute arm.** Decision 37 denies `start` while the
-  series is spent, and the natural place for it was beside the other lifecycle policy predicates
-  rather than inside `computeLifecycleTransition` — `canCommandGroupLifecycleTransition` already
-  holds the snapshot, the policy and the transition, and putting the rule there let the existing
-  "every reason code has a pure-helper scenario" proof cover it instead of leaving it uncovered. The
-  new `formation-attempts-exhausted` code joins the OpenAPI enum in the same change, so this slice
-  adds no contract debt; the six codes that enum was already missing stay slice 9's.
-- **`reset` gets its own shape rather than a sixth arm in five ternaries.** The clean slate zeroes
-  the count, clears the clock, the recorded outcome and the accepted identity, halts transport, and
-  still advances the epoch so every outstanding causal fence and armed timer is invalidated.
-  Membership, topology config and overrides are untouched, as decision 36 requires.
-- **The accepted slot had to widen to carry its snapshot.** `GroupAcceptedLayoutRow` was a bare
-  revision, which is all a promotion's insert-vs-update guard needs — but a tombstone is the stored
-  row with its state changed, and a revision cannot express that. The api-v1 reader now projects
-  `findSnapshotEntry` instead of `findEntryRevision`. The alternatives were fabricating tombstone
-  content or a physical delete, which decision 36 rejects because the fingerprints stay valid for
-  tracing.
-- **Atomicity is the caller's rejection, not the batch's.** The plan asks reset to prove that group
-  facts, both tombstones, event, receipt, result and outbox all commit or all roll back. Two halves,
-  proven separately because they are two different properties. Reset's half is that every write goes
-  into **one** guarded batch, pinned by materializing the batch and asserting the group guard and both
-  revision-guarded tombstones are in it. The other half is the rollback, and the first attempt to
-  prove it **failed and taught the real contract**: `executeGuardedBatch` reports a conflicting effect
-  rather than throwing, so a caller that returns normally commits the effects that already applied.
-  The rollback lives in `writeGroupMutation`'s rejection of any non-applied effect, which aborts the
-  transaction. The postgres proof models exactly that caller and asserts neither the guard nor the
-  already-applied effect survives — a property nothing in the suite covered before.
+  series is spent, and the rule went beside the other lifecycle predicates, where
+  `canCommandGroupLifecycleTransition` already holds the snapshot, the policy and the transition.
+  That placement also let the existing "every reason code has a pure-helper scenario" proof cover the
+  new `formation-attempts-exhausted` code instead of leaving it uncovered.
+- **A fixture was silently dropping the field the denial keys on.** The policy suite's `snapshot`
+  helper whitelists the group fields it forwards, and `formationAttemptCount` was not among them, so
+  the first denial test passed for the wrong reason. The helper now carries it.
+- **`start` ships without an executed proof, deliberately.** `dormant` is its only legal source stage;
+  decision 35 forbids creating a group there and exhaustion's `dormant` landing is still dark, so no
+  command reaches `dormant` until 6c's `reset`. The operation matrix therefore advertises
+  `GROUP_FORMATION_START` without exercising it, and says so at the assertion. Its mapping is covered
+  by the descriptor contract — total over `AUTHENTICATED_GROUP_INBOX_TYPES` since PR #369's follow-up
+  — and its compute by the unit suite. 6c adds the matrix case.
+- **The OpenAPI enum entry was lost twice before it stuck.** A blanket `git checkout -- apps` after a
+  formatting run reverted it both times, silently, and the first draft of this record claimed it had
+  landed. Nothing couples the YAML enum to `GROUP_POLICY_REASON_CODES`, which is why. Measured on the
+  final branch: the const carries **22** codes, the enum **16**, the same **6** are missing as before,
+  and `formation-attempts-exhausted` is in both — so the slice adds no contract debt and the plan's
+  "6 codes behind" figure is still exact. Slice 9 gains the coupling test.
+- **`deno check` earned its place.** The same blanket checkout reverted an api-v1 wiring change that
+  `tsc` cannot see, because the Deno app is outside its project. Only the Deno gate caught it.
 
-#### Blocking findings — decision 36's tombstone mechanism
+#### Why `reset` left, and what it took with it
 
-Repaired here: **a removed row may carry no edge.** `decodeRtcTopologySnapshotRouting` rejects a
-`removed` snapshot with a non-empty hop map, so the first tombstone — the stored row with only its
-state changed — threw inside the write transaction for any group holding a real multi-session
-layout, and AppInbox would have retried that deterministic failure forever. The tombstone now empties
-each session's hops, following `removedTopologyResult`, the only other producer of removed rows. The
-first fixtures used empty session lists, which is exactly why no test saw it.
+The review found decision 36's tombstone mechanism assumes three properties the topology machinery
+does not have — a tombstoned accepted slot shadows a fresh planned layout in delivery, pre-writing
+the planned tombstone swallows the removal publication, and whether the tombstone disarms change
+suppression is unresolved. Fixing any of them changes live delivery or planning semantics, which a
+dark slice has no authority to do. All three are written up under 6c with the evidence.
 
-Unresolved, and each one needs a decision the slice cannot make alone:
+One defect was found and fixed before the split, and it is worth keeping in view because it is the
+kind only execution finds: **a removed snapshot may carry no edge.**
+`decodeRtcTopologySnapshotRouting` rejects one that does, so a tombstone built as "the stored row with
+only its state changed" threw inside the write transaction for any group holding a multi-session
+layout, and AppInbox would have retried that deterministic failure forever. Every test fixture used
+empty session lists, which is exactly why nothing caught it. 6c starts from a tombstone that empties
+each session's hops.
 
-1. **A tombstoned accepted slot breaks the delivery invariant.**
-   `toDeliverableTopologySnapshot` ends `accepted ?? planned` on the documented premise that "the
-   accepted slot only ever holds active layouts (a tombstone never promotes)". After
-   `reset` → `start` → `plan`, the accepted slot holds a tombstone while the planned slot holds a
-   fresh active layout, so reconnect hydration and replay repair hand a member a teardown for the
-   overlay it should be dialing. Fixing it means teaching delivery to skip a removed accepted row —
-   live code on the activate and hydration paths, which is slice 4's territory, not 5e's.
-2. **Pre-writing the planned tombstone swallows the removal publication.** The follow-up coalesced
-   replan sees `previous.state === 'removed'`, so `removedTopologyResult` reports `changed: false`
-   and the handler skips as unchanged. Before this slice the same follow-up saw an active row and
-   published the removal, so clients keep using the overlay a reset retired.
-3. **The tombstone does not disarm change suppression.** Decision 36 says "the planned tombstone, not
-   fingerprint deletion, disarms change suppression so unchanged membership rebuilds normally". The
-   semantic gate never compares `state`, so a rebuild producing the same graph still reports
-   `changed: false` and the planned row stays `removed` at its old version indefinitely. The claim in
-   the contract comment is therefore false as written.
-
-Taken together these say the mechanism decision 36 specifies needs either a change to topology
-delivery and planning semantics, or a revision of the mechanism itself. Both are outside a dark
-slice, so the work stops here and hands the question back.
-
-- **The matrix executes both commands and needed its own group for them.** `reset` halts transport,
-  which turned the later `pause` case into the no-op slice 5c defines, and `start` leaves the group
-  in `forming`, which changed the stage the trailing `connect` denial probe depends on. Both are the
-  real semantics interacting correctly; the pair runs on `operation-matrix-series` so the other
-  groups keep telling their own stories. The matrix's outbox assertion now names the operation that
-  failed, which is how the interaction was found at all.
+Also reverted with `reset`, and owed back in 6c: the `GroupAcceptedLayoutRow` widening and its api-v1
+reader change, and the guarded-batch rollback proof — which needs rewriting there to exercise
+`writeGroupMutation`'s rejection rather than re-implementing it inline, as the review pointed out.
 
 Product decision 12 keeps one initiator policy for all eight application-facing commands, so the
 command predicate needs no per-command branch.
@@ -1379,6 +1349,42 @@ work.
 - **6a — ownership and legacy inventory.** Prove the existing hold transition's atomic enqueue and
   inventory every `reopen-establishment` type, operation, route, OpenAPI and recipe consumer for 8d.
   Nothing leaves before the route cutover.
+- **6c — `reset`, with the topology retirement semantics it needs** (product decisions 35/36).
+  **Needs:** 6b's landing policy and the delivery rules slice 4 established. Split out of 5e by PR 9's
+  review, which found that decision 36's tombstone mechanism assumes three properties the topology
+  machinery does not have. Whoever picks this up starts from these, not from rediscovery:
+
+  1. **A tombstoned accepted slot breaks the delivery invariant.** `toDeliverableTopologySnapshot`
+     ends `accepted ?? planned` on the documented premise that "the accepted slot only ever holds
+     active layouts (a tombstone never promotes)". After `reset → start → plan` the accepted slot
+     holds a tombstone while the planned slot holds a fresh active layout, so reconnect hydration and
+     replay repair hand a member a teardown for the overlay it should be dialing. The recommended fix
+     is teaching delivery to fall through to planned when accepted is removed — one function, but
+     live on the activate and hydration paths, which is why it is not a dark slice's to make.
+  2. **Pre-writing the planned tombstone swallows the removal publication.** The follow-up coalesced
+     replan sees `previous.state === 'removed'`, so `removedTopologyResult` reports `changed: false`
+     and the handler skips as unchanged; before the change the same follow-up published the removal.
+     Three ways out, and this is the decision 6c owns: let the follow-up publish it (reintroduces a
+     window where planned is active while the group is dormant), have `reset` mint the publication
+     itself (most faithful, but reset takes on topology work), or rule that the group delta — dormant
+     plus halted — is how clients learn, which I11's "the browser reads state and decides" posture
+     already implies.
+  3. **Whether the tombstone disarms change suppression is unresolved.** The semantic `changed` gate
+     never compares `state`, so with the graph preserved a rebuild of unchanged membership reported
+     `changed: false` and the planned row stayed `removed` at its old version. PR 9 then made the
+     tombstone empty each session's hops for an unrelated reason — a removed row may carry no edge or
+     the write transaction aborts — which plausibly makes a rebuild differ and the finding moot. It
+     was **not** verified either way. Verify before choosing a fix; if it still holds, the fix is
+     making `changed` compare `state`, which touches every planner.
+
+  Also carried from PR 9: `GroupAcceptedLayoutRow` must widen to carry its snapshot (a tombstone is
+  the stored row with its state changed, and a revision alone cannot express that), which moves the
+  api-v1 reader to `findSnapshotEntry` and makes `findEntryRevision` dead. That widening decodes and
+  graph-validates the accepted row on every activation, where the old reader could not fail — 6c owns
+  proving a corrupt accepted row behaves acceptably on the activate path. The guarded-batch rollback
+  proof PR 9 drafted belongs here too, rewritten to exercise `writeGroupMutation`'s rejection rather
+  than re-implementing it inline.
+
 - **6b — landing and replanning policy, dark.** **Needs:** slice 3's `formation-automation` mode for
   automatic reconfigure and its separate `topology-publication` mode for the apply command producer;
   and 4a's route-less operation. The two modes never substitute for each other.
@@ -1759,12 +1765,12 @@ enum catch-up rather than with a dark command.
   `lifecycle-transition-invalid`, `lifecycle-manager-unavailable`, `group-admission-closed`,
   `group-admission-deadline-passed`, `group-admission-capacity-reached`,
   `group-data-blocked-until-active`.
-- **`RtcTopologySnapshotRepository.findEntryRevision` is dead.** PR 9 widened
-  `GroupAcceptedLayoutRow` to carry its snapshot, so the api-v1 accepted-slot reader moved to
-  `findSnapshotEntry` and left this method with zero callers repo-wide. Its doc comment still names
-  the consumer that moved ("the accepted slot's promotion CAS"). Product decision 14 forbids
-  retaining legacy, and a public method on a shared-server class with no callers is exactly that, so
-  it comes out here rather than lingering.
+- **`RtcTopologySnapshotRepository.findEntryRevision` becomes dead when 6c lands, not before.** PR 9
+  widened `GroupAcceptedLayoutRow` and moved the api-v1 reader to `findSnapshotEntry`, which left this
+  method with no callers — but the split reverted both, so it has its caller back today. **6c owns
+  removing it** when it re-lands the widening; product decision 14 forbids retaining legacy, and a
+  public method with no callers is exactly that. Recorded here so the catch-up does not delete a
+  method that is currently live.
 
 **Nothing behavioural hides here.** The reader-default removal the first draft placed in this slice is
 already done: #319 cut `group-state-persistence-codec.ts` from 328 lines to 49 and removed

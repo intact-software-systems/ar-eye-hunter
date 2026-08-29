@@ -43,47 +43,6 @@ export function toPlannedLayoutFenceEffect(
     };
 }
 
-/**
- * `reset`'s retirement of both layout slots (product decision 36), each a
- * revision-guarded rewrite of the row already there, so the whole clean slate
- * commits or none of it does. A slot holding no row contributes no effect.
- */
-export function toGroupLayoutTombstoneEffects(
-    tombstones: Readonly<{
-        planned: Readonly<{ snapshot: RallarOverlayTopologySnapshot; revision: number; }> | null;
-        accepted: Readonly<{ snapshot: RallarOverlayTopologySnapshot; revision: number; }> | null;
-    }>
-): readonly RuntimeStateGuardedBatchEffect[] {
-    return [
-        toLayoutTombstoneEffect('planned-layout-tombstone', RTC_TOPOLOGY_SNAPSHOTS_NAMESPACE, tombstones.planned),
-        toLayoutTombstoneEffect(
-            'accepted-layout-tombstone',
-            RTC_TOPOLOGY_ACCEPTED_SNAPSHOTS_NAMESPACE,
-            tombstones.accepted
-        )
-    ].filter((effect): effect is RuntimeStateGuardedBatchEffect => effect !== null);
-}
-
-function toLayoutTombstoneEffect(
-    effectId: string,
-    namespace: string,
-    tombstone: Readonly<{ snapshot: RallarOverlayTopologySnapshot; revision: number; }> | null
-): RuntimeStateGuardedBatchEffect | null {
-    if (tombstone === null) {
-        return null;
-    }
-    const row = toStoredRtcTopologySnapshotRow(tombstone.snapshot);
-    return {
-        effectId,
-        operation: 'update',
-        namespace,
-        expectedRevision: tombstone.revision,
-        key: row.key,
-        value: row.value,
-        expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
-    };
-}
-
 export function toGroupLayoutPromotionEffects(
     promotion: Extract<PlannedLayoutPromotion, { outcome: 'apply'; }>
 ): readonly RuntimeStateGuardedBatchEffect[] {
