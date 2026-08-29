@@ -1603,6 +1603,9 @@
       "expectedExitCode": 0,
       "artifactName": "api-v1-scope-isolation",
       "requires": {
+        "livePreflight": {
+          "timeoutMs": 10000
+        },
         "httpServices": [
           {
             "name": "Rallar API",
