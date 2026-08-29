@@ -43,7 +43,6 @@ export namespace BrowserRallarMessageSender {
             room: string | GroupRef | undefined,
             explicitMinSnapshotVersion?: number
         ): number | undefined;
-        resolveRoomPeerIds(room: string | GroupRef): readonly string[];
     }
 
     export interface WsUnicastInput<T> {
@@ -92,14 +91,6 @@ export class BrowserRallarMessageSender {
         const target = this.resolveRtcMessageTarget(input);
         const context = await this.input.connect();
         const message = this.toRtcMessage(input, target, this.input.requireSession());
-        if (this.input.resolveRoomPeerIds(target.roomRef).length === 0) {
-            return toRallarMessageSendResult('rtc', message, {
-                status: 'no-route',
-                message,
-                entries: [],
-                reason: 'No RTC peers are desired for this room.'
-            });
-        }
         const enqueueResult = await context.middleware.rtcRxStreamer.enqueueOutboxIfAbsent(message);
         wakeQueueBoxEngineIfQueued(context.middleware.qboxEngine, enqueueResult);
         return toRallarMessageSendResult('rtc', message, enqueueResult);

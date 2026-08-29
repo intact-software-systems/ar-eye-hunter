@@ -196,6 +196,7 @@ describe('Rallar typed message channel', () => {
         const { createRallarFacade } = await import(
             '@shared-web/browser/rallar.ts'
         );
+        mockRtcNoRoute();
         mockGroupSnapshot(createGroupSnapshot('room-1', ['session-1']));
         const facade = createRallarFacade();
         const channel = facade.messages.channel<ChatMessage>({
@@ -255,6 +256,7 @@ describe('Rallar typed message channel', () => {
         const { createRallarFacade } = await import(
             '@shared-web/browser/rallar.ts'
         );
+        mockRtcNoRoute();
         mockGroupSnapshot(createGroupSnapshot('room-1', ['session-1']));
         const facade = createRallarFacade();
         const channel = facade.messages.room<ChatMessage>({
@@ -398,6 +400,16 @@ function resetMiddlewareDoublesToDefaults(): void {
     vi.mocked(webSocketQueueBox.removeAnyInboxMessageCallback).mockReset();
     vi.mocked(webSocketQueueBox.socket.onWebsocketCallbacksDo).mockReset();
     vi.mocked(webSocketQueueBox.socket.removeWebsocketCallbackById).mockReset();
+}
+
+function mockRtcNoRoute(): void {
+    vi.mocked(mocks.ctx.middleware.rtcRxStreamer.enqueueOutboxIfAbsent)
+        .mockImplementation(async (message) => ({
+            status: 'no-route',
+            message,
+            entries: [],
+            reason: `No outbound transport route for message ${message.id.msgId}`
+        }));
 }
 
 function mockGroupSnapshot(snapshot: GroupSnapshot): void {

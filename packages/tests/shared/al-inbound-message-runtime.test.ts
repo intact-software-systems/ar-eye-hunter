@@ -10,11 +10,13 @@ import {
     planALMessageHandling,
     QueueBoxUtilities,
     type ALControlAcceptance,
+    type ALInboundAdmissionStore,
     type ALInboundRuntimeStores,
     type ALMessage,
     type ALMessageHandlingPlan,
     type ResourceEntry
 } from '@shared/mod.ts';
+import { ALAdmissionBackendConflictError } from '@shared/alm/ALAdmissionBackendConflictError.ts';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 describe('ALInboundMessageRuntime', () => {
@@ -177,6 +179,36 @@ describe('ALInboundMessageRuntime', () => {
         expect(rejectedFirstCommit).toBe(true);
         expect(dispatchedTexts).toEqual(['one', 'two']);
         expect(forwardedIds).toEqual([seq2.id.msgId, seq1.id.msgId]);
+    });
+
+    it('retries complete control-message admission after backend conflicts', async () => {
+        vi.useFakeTimers();
+        const stores = createInMemoryALInboundRuntimeStores();
+        const baseAdmission = requireInboundAdmissionStore(stores);
+        let attempts = 0;
+        const wrappedStores = replaceInboundAdmissionStore(stores, {
+            acceptControlMessage: async (msg) => {
+                attempts += 1;
+                if (attempts < 4) {
+                    throw new ALAdmissionBackendConflictError(
+                        'simulated inbound control conflict'
+                    );
+                }
+                return await baseAdmission.acceptControlMessage(msg);
+            }
+        });
+        const { runtime, controlAcceptances } = createInboundHarness(wrappedStores);
+
+        const pending = runtime.handleIncomingMessage(
+            newALAckControlMessage('peer-2', 'self', 'missing-msg', 'delivered'),
+            'peer-2'
+        );
+        void pending.catch(() => undefined);
+        await vi.runAllTimersAsync();
+
+        await expect(pending).resolves.toBeUndefined();
+        expect(attempts).toBe(4);
+        expect(controlAcceptances).toHaveLength(1);
     });
 
     it('retries buffered release when a downstream ack updates the sender version', async () => {
@@ -706,6 +738,57 @@ function createPersistentInboundStores(
             orderingTrackTtlMs: 5 * 60_000,
             supersedenceTrackTtlMs: 5 * 60_000
         })
+    };
+}
+
+function requireInboundAdmissionStore(
+    stores: ALInboundRuntimeStores
+): ALInboundAdmissionStore {
+    if (!stores.admissionStore) {
+        throw new Error('Expected inbound admission store');
+    }
+    return stores.admissionStore;
+}
+
+function replaceInboundAdmissionStore(
+    stores: ALInboundRuntimeStores,
+    overrides: Partial<ALInboundAdmissionStore>
+): ALInboundRuntimeStores {
+    const base = requireInboundAdmissionStore(stores);
+    return {
+        ...stores,
+        admissionStore: {
+            ready: async () => await base.ready(),
+            readIncomingMessage: async (msg, fromPeerId, planner) =>
+                await base.readIncomingMessage(msg, fromPeerId, planner),
+            readBufferedRelease: async (trackKey, seq) =>
+                await base.readBufferedRelease(trackKey, seq),
+            planStoredEntry: async (msg, planner) =>
+                await base.planStoredEntry(msg, planner),
+            acceptControlMessage: async (msg) =>
+                await base.acceptControlMessage(msg),
+            commitMutations: async (request) =>
+                await base.commitMutations(request),
+            commitBundle: async (bundle) => await base.commitBundle(bundle),
+            claimReadyEffects: async (workerId, maxCount, leaseMs, nowMs) =>
+                await base.claimReadyEffects(workerId, maxCount, leaseMs, nowMs),
+            completeEffect: async (effectId, workerId) =>
+                await base.completeEffect(effectId, workerId),
+            rescheduleEffect: async (
+                effectId,
+                workerId,
+                retryAtMs,
+                lastError
+            ) => await base.rescheduleEffect(
+                effectId,
+                workerId,
+                retryAtMs,
+                lastError
+            ),
+            peekNextEffectReadyAt: async (nowMs) =>
+                await base.peekNextEffectReadyAt(nowMs),
+            ...overrides
+        }
     };
 }
 
