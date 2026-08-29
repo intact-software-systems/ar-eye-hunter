@@ -17,8 +17,8 @@ export type GroupPlannedLayoutRow = Readonly<{
 
 /**
  * The accepted-slot row: only the revision, for the insert-vs-update guard.
- * Slice 6c widens this to carry the snapshot when `reset` needs to tombstone
- * it; nothing today reads the content.
+ * The already-applied decision reads the group row's acceptedLayoutIdentity —
+ * the single authority — never a second copy from the slot.
  */
 export type GroupAcceptedLayoutRow = Readonly<{
     revision: number;
