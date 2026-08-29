@@ -1300,8 +1300,10 @@ function createBlackBoxRallarRuntimeInstallation(
     }
 
     async function refreshRoom(options: BlackBoxRallarRoomRefreshOptions): Promise<void> {
-        const roomRef = blackBoxRallarRoomRefOf(requireState().config);
-        if (!roomRef) {
+        const config = requireState().config;
+        const roomRef = blackBoxRallarRoomRefOf(config);
+        const scope = blackBoxRallarScopeOf(config);
+        if (!roomRef || !scope) {
             throwRallarValidation([
                 {
                     path: '$.roomRef',
@@ -1311,7 +1313,7 @@ function createBlackBoxRallarRuntimeInstallation(
             ]);
         }
 
-        await rallar.rooms.session(roomRef).refresh(options);
+        await rallar.refreshRoomState(roomRef, { ...options, scope });
     }
 
     const runtime: BlackBoxRallarRuntime = {

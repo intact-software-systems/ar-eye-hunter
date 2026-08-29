@@ -225,6 +225,8 @@ export class WebRtcGroupManager {
         const onlinePeerIdSet = this.onlinePeerIds();
         const onlinePeerIds = Array.from(onlinePeerIdSet);
         const onlineDesiredPeerIds = desiredPeerIds.filter((peerId) => onlinePeerIdSet.has(peerId));
+        const groupPresentDesiredPeerIds = this.groupPresentDesiredPeerIds();
+        const connectablePeerIds = desiredPeerIds.filter((peerId) => groupPresentDesiredPeerIds.has(peerId));
         const peerIdsWithNoReconnectableLanes = this.rtcQBox
             .peerIdsWithNoReconnectableLanes();
 
@@ -233,7 +235,7 @@ export class WebRtcGroupManager {
             desiredPeerIds,
             onlinePeerIds,
             onlineDesiredPeerIds,
-            connectablePeerIds: onlineDesiredPeerIds,
+            connectablePeerIds,
             peerIdsWithNoReconnectableLanes,
             peerOwners
         };
@@ -249,9 +251,7 @@ export class WebRtcGroupManager {
                 this.groups().map((group) => group.groupRef)
             )
         );
-        const onlinePeerIds = this.onlinePeerIds();
-
-        return this.rttReportingCandidatePeerIds(onlinePeerIds, degreeLimit)
+        return this.rttReportingCandidatePeerIds(degreeLimit)
             .slice(0, degreeLimit);
     }
 
@@ -322,7 +322,7 @@ export class WebRtcGroupManager {
         this.diagnostics.reconcileRunCount += 1;
         const peerOwners = this.peerOwners();
         const desiredPeerIds = new Set(peerOwners.keys());
-        const onlinePeerIds = this.onlinePeerIds();
+        const groupPresentDesiredPeerIds = this.groupPresentDesiredPeerIds();
         const peerIdsWithNoReconnectableLanes = new Set(
             this.rtcQBox.peerIdsWithNoReconnectableLanes()
         );
@@ -331,7 +331,7 @@ export class WebRtcGroupManager {
         this.diagnostics.lastDesiredPeerCount = desiredPeerIds.size;
 
         const connectablePeerIds = Array.from(desiredPeerIds).filter(
-            (peerId) => onlinePeerIds.has(peerId)
+            (peerId) => groupPresentDesiredPeerIds.has(peerId)
         );
 
         const dialPlan = computeOutboundDialPlan({
@@ -486,6 +486,19 @@ export class WebRtcGroupManager {
         return onlinePeerIds;
     }
 
+    private groupPresentDesiredPeerIds(): Set<PeerId> {
+        const peerIds = new Set<PeerId>();
+        for (const group of this.groupsByKey.values()) {
+            const groupPresentPeerIds = new Set(group.targetPeerIds());
+            for (const peerId of this.targetPeerIdsForGroup(group)) {
+                if (groupPresentPeerIds.has(peerId)) {
+                    peerIds.add(peerId);
+                }
+            }
+        }
+        return peerIds;
+    }
+
     private targetPeerIdsForGroup(group: WebRtcGroupService): readonly PeerId[] {
         const overlay = readAcceptedOverlayForGroup(
             this.acceptedOverlayCache,
@@ -500,10 +513,7 @@ export class WebRtcGroupManager {
         return group.targetPeerIds();
     }
 
-    private rttReportingCandidatePeerIds(
-        onlinePeerIds: ReadonlySet<PeerId>,
-        degreeLimit: number
-    ): readonly PeerId[] {
+    private rttReportingCandidatePeerIds(degreeLimit: number): readonly PeerId[] {
         const selectedPeerIds: PeerId[] = [];
         const seen = new Set<PeerId>([this.rtcQBox.input.sessionId]);
         const groups = [...this.groupsByKey.values()]
@@ -514,8 +524,7 @@ export class WebRtcGroupManager {
                 this.plannedOverlayCache,
                 group.groupRef
             );
-            const activePeerSessionIds = group.targetPeerIds()
-                .filter((peerId) => onlinePeerIds.has(peerId));
+            const activePeerSessionIds = group.targetPeerIds();
             const selection = selectRttReportingPeers({
                 localSessionId: this.rtcQBox.input.sessionId,
                 degreeLimit,
@@ -533,7 +542,6 @@ export class WebRtcGroupManager {
                     !this.isRttReportingPeerEligibleAcrossSharedGroups(
                         peerId,
                         groups,
-                        onlinePeerIds,
                         degreeLimit
                     )
                 ) {
@@ -551,14 +559,12 @@ export class WebRtcGroupManager {
     private isRttReportingPeerEligibleAcrossSharedGroups(
         peerId: PeerId,
         groups: readonly WebRtcGroupService[],
-        onlinePeerIds: ReadonlySet<PeerId>,
         degreeLimit: number
     ): boolean {
         let hasSharedGroup = false;
 
         for (const group of groups) {
-            const activePeerSessionIds = group.targetPeerIds()
-                .filter((candidateId) => onlinePeerIds.has(candidateId));
+            const activePeerSessionIds = group.targetPeerIds();
             if (!activePeerSessionIds.includes(peerId)) {
                 continue;
             }

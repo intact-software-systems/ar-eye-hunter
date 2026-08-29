@@ -25,14 +25,24 @@ import type {
     RallarDirectorRelayHandle
 } from '@shared-web/browser/director/rallar-director-facade.ts';
 import type { RallarMessagesOperations } from '@shared-web/browser/messages/rallar-message-operations.ts';
-import type { RallarConnectionOperations } from '@shared-web/browser/rallar-connection-facade.ts';
+import type {
+    RallarConnectionOperations,
+    RallarScopedOperationOptions
+} from '@shared-web/browser/rallar-connection-facade.ts';
 import type { RallarAuthFacade } from '@shared-web/browser/rallar-core.ts';
 import type { RallarCrdtFacade } from '@shared-web/browser/rallar-crdt.ts';
 import type { RallarRealtimeFacade, RallarWsFacade } from '@shared-web/browser/rallar-realtime-facade.ts';
 import type { RallarRtcFacade } from '@shared-web/browser/rallar-rtc-facade.ts';
 import type { BrowserRallarRooms } from '@shared-web/browser/rooms/browser-rallar-rooms.ts';
 import type { RallarRoomSession } from '@shared-web/browser/rooms/rallar-room-contracts.ts';
+import { hydrateGroupTopologyOverlays } from '@shared-web/browser/state-read/hydrate-group-topology-overlays.ts';
+import type { GroupRef } from '@shared/api/group-types.ts';
+import type { StateScope } from '@shared/api/state-types.ts';
 import type { BlackBoxRallarDirectorOutputRecord, BlackBoxRallarEvent } from './contracts.ts';
+
+interface BlackBoxRoomStateRefreshOptions extends RallarScopedOperationOptions {
+    readonly scope: StateScope;
+}
 
 export interface BlackBoxBrowserRallarRuntimeDependency extends
     Pick<
@@ -45,6 +55,7 @@ export interface BlackBoxBrowserRallarRuntimeDependency extends
     > {
     connect(options?: Parameters<RallarConnectionOperations['connect']>[0]): Promise<object>;
     disconnect(): Promise<void>;
+    refreshRoomState(roomRef: GroupRef, options: BlackBoxRoomStateRefreshOptions): Promise<void>;
     readonly auth: BlackBoxBrowserAuthDependency;
     readonly rooms: BlackBoxBrowserRoomsDependency;
     readonly messages: BlackBoxBrowserMessagesDependency;
@@ -125,6 +136,27 @@ export function createBlackBoxBrowserRallarRuntimeDependency(): BlackBoxBrowserR
         realtime,
         session: session.session
     });
+    const refreshRoomState = async (
+        roomRef: GroupRef,
+        options: BlackBoxRoomStateRefreshOptions
+    ): Promise<void> => {
+        const refreshedRoom = await rooms.rooms.session(roomRef).refresh(options);
+        const groupSnapshot = refreshedRoom.snapshot();
+        if (!groupSnapshot) {
+            return;
+        }
+        const context = await session.session.connect(options);
+        await hydrateGroupTopologyOverlays({
+            groupSnapshots: [groupSnapshot],
+            sessionId: context.session.sessionId,
+            webRtcGroupManager: context.middleware.webRtcGroupManager,
+            scope: options.scope,
+            apiRequest: {
+                authSession: context.session,
+                ...(options.signal ? { signal: options.signal } : {})
+            }
+        });
+    };
     const director = createBrowserDirectorComposition({
         state,
         messaging,
@@ -147,6 +179,7 @@ export function createBlackBoxBrowserRallarRuntimeDependency(): BlackBoxBrowserR
     });
     return {
         ...session.connection,
+        refreshRoomState,
         auth: session.auth,
         rooms: rooms.rooms,
         messages: messaging.messages,

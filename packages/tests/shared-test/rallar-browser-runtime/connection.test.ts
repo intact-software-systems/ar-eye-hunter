@@ -10,7 +10,7 @@ afterEach(() => {
     vi.unstubAllGlobals();
 });
 
-it('point-refreshes the connected room with the caller deadline and signal', async () => {
+it('refreshes connected room state with the caller deadline and signal', async () => {
     const runtime = await loadRuntime();
     const controller = new AbortController();
 
@@ -33,15 +33,20 @@ it('point-refreshes the connected room with the caller deadline and signal', asy
         timeoutMs: 321
     });
 
-    expect(facade.records.roomSessions).toContainEqual([{
+    expect(facade.records.roomStateRefreshes).toContainEqual([{
         applicationId: 'app-a',
         workspaceId: 'workspace-a',
         groupId: 'room-1'
-    }]);
-    expect(facade.records.currentRoomRefreshes).toContainEqual([{
+    }, {
+        scope: {
+            applicationId: 'app-a',
+            workspaceId: 'workspace-a'
+        },
         signal: controller.signal,
         timeoutMs: 321
     }]);
+    expect(facade.records.roomSessions).toHaveLength(0);
+    expect(facade.records.currentRoomRefreshes).toHaveLength(0);
     expect(facade.records.roomRefreshes).toHaveLength(0);
 });
 
