@@ -59,7 +59,6 @@ function createRtcHarness() {
         return Either.ofRight({ peerId } as never);
     };
     return {
-        ensurePeerConnectionStarted,
         service: {
             input: { sessionId: 'self' },
             ensurePeerConnectionStarted,
