@@ -108,6 +108,24 @@ describe('API-v1 state-write topology regression reasons', { timeout: 30_000 }, 
             /Unsupported state-write regression reason profile/
         );
     });
+
+    it('limits the slice-six presence topology origin profile to the measured transaction metric', () => {
+        const options = parseBenchmarkOptions([
+            '--regression-reason-profile=group-activation-presence-topology-origin'
+        ]);
+
+        expect(options).toMatchObject({
+            regressionReasonProfile: 'group-activation-presence-topology-origin'
+        });
+        expect(selectStateWriteRegressionReasons(options.regressionReasonProfile, [])).toEqual([
+            {
+                workload: 'uncontended',
+                metric: 'postgres.transactionDurationMs',
+                reason:
+                    'Slice 6 persists mandatory origin on presence-summary coalesced topology-work rows, widening those writes and their transaction work. The state-write benchmark executes presence connect, heartbeat, and disconnect but no reconfigure command, so the uncontended transaction-duration residue is row work rather than command execution.'
+            }
+        ]);
+    });
 });
 
 function createConflictReasonInput(): GroupTopologyConflictReasonInput {
