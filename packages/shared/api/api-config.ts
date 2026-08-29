@@ -28,7 +28,6 @@ export const EnqueuedType = {
 export type EnqueuedType = (typeof EnqueuedType)[keyof typeof EnqueuedType];
 
 export const AppTopics = {
-    chat: 'chat',
     rtcSignaling: 'rtc-signaling',
     clientStateSnapshot: 'client-state.snapshot',
     clientStateEvent: 'client-state.event',

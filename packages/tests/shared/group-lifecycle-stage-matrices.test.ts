@@ -78,11 +78,7 @@ describe('computeGroupDataGate', () => {
         }
     });
 
-    // The live predicate and the product gate deliberately disagree on the
-    // two reconfiguration stages until the transport-valve slice swaps the
-    // live rows. This pin makes that swap a conscious edit here rather than a
-    // silent drift between two packages.
-    it('the live block predicate diverges from the product gate on exactly the reconfiguration stages', () => {
+    it('the live block predicate matches the product forward gate in every stage', () => {
         for (const lifecycleState of GROUP_LIFECYCLE_STATES) {
             const liveBlocks = blocksGroupPreActivationData(lifecycleState);
             const productBlocks = computeGroupDataGate({
@@ -90,9 +86,7 @@ describe('computeGroupDataGate', () => {
                 transportState: 'flowing',
                 preActivationAppData: 'blocked-until-active'
             }) === 'blocked';
-            const deliberatelyDivergent = lifecycleState === 'reconfiguring' ||
-                lifecycleState === 'reconnecting';
-            expect(liveBlocks !== productBlocks, lifecycleState).toBe(deliberatelyDivergent);
+            expect(liveBlocks, lifecycleState).toBe(productBlocks);
         }
     });
 });

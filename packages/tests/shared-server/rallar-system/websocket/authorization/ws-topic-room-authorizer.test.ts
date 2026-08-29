@@ -5,6 +5,7 @@ import { createGroupStateSnapshotReadThroughCache } from '@shared-server/rallar-
 import { createGroupRoomWsAuthorizer } from '@shared-server/rallar-system/websocket/ws-topic-room-authorizer.ts';
 import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import { newALBroadcastMessage, newALEventRoute, newALMulticastMessage } from '@shared/al-contracts/al-contract.ts';
+import { GROUP_LIFECYCLE_STATES } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import type { AuditStamp, Group, GroupMember, GroupPresenceSummary, GroupSnapshot } from '@shared/api/group-types.ts';
 import { findGroupStateSnapshotByRef, setGroupStateSnapshot } from '@shared/repository/group-state-snapshots-repository.ts';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -383,6 +384,87 @@ describe('createGroupRoomWsAuthorizer', () => {
             logMessage: expect.stringContaining('member-not-active')
         });
         expect(readThroughCache.peek(group.group)?.activeSessions).toHaveLength(1);
+    });
+
+    it('denies halted application data without reading pre-activation policy', async () => {
+        const snapshot = createGroupSnapshot({
+            groupId: 'halted-room',
+            applicationId: 'app-1',
+            workspaceId: 'workspace-b',
+            sessionIds: ['session-b'],
+            snapshotVersion: 3
+        });
+        for (const lifecycleState of GROUP_LIFECYCLE_STATES) {
+            for (const preActivationAppData of ['allowed', 'blocked-until-active'] as const) {
+                const haltedSnapshot: GroupSnapshot = {
+                    ...snapshot,
+                    group: {
+                        ...snapshot.group,
+                        lifecycleState,
+                        transportState: 'halted'
+                    }
+                };
+                const readPreActivationAppData = vi.fn(() => Promise.resolve(preActivationAppData));
+                const authorizer = createGroupRoomWsAuthorizer({
+                    findGroupSnapshotById: () => haltedSnapshot,
+                    readPreActivationAppData
+                });
+                const message = newALBroadcastMessage(
+                    'session-b',
+                    newALEventRoute('room.chat', haltedSnapshot.group.groupId, `msg-halted-${lifecycleState}-${preActivationAppData}`),
+                    'room',
+                    'chat.message.v1',
+                    { text: 'halted' }
+                );
+
+                await expect(Promise.resolve(authorizer({
+                    message,
+                    roomId: haltedSnapshot.group.groupId,
+                    senderId: 'session-b',
+                    topicId: 'room.chat',
+                    typeId: 'chat.message.v1'
+                }))).resolves.toMatchObject({
+                    authorized: false,
+                    reason: 'unauthorized'
+                });
+                expect(readPreActivationAppData).not.toHaveBeenCalled();
+            }
+        }
+    });
+
+    it('allows CRDT while transport is halted without reading pre-activation policy', async () => {
+        const snapshot = createGroupSnapshot({
+            groupId: 'halted-crdt-room',
+            applicationId: 'app-1',
+            workspaceId: 'workspace-b',
+            sessionIds: ['session-b'],
+            snapshotVersion: 3
+        });
+        const haltedSnapshot: GroupSnapshot = {
+            ...snapshot,
+            group: { ...snapshot.group, transportState: 'halted' }
+        };
+        const readPreActivationAppData = vi.fn(() => Promise.resolve('blocked-until-active' as const));
+        const authorizer = createGroupRoomWsAuthorizer({
+            findGroupSnapshotById: () => haltedSnapshot,
+            readPreActivationAppData
+        });
+        const message = newALBroadcastMessage(
+            'session-b',
+            newALEventRoute('room.crdt', haltedSnapshot.group.groupId, 'msg-halted-crdt'),
+            'room',
+            'crdt.update.v1',
+            { update: 'halted document' }
+        );
+
+        await expect(Promise.resolve(authorizer({
+            message,
+            roomId: haltedSnapshot.group.groupId,
+            senderId: 'session-b',
+            topicId: 'room.crdt',
+            typeId: 'crdt.update.v1'
+        }))).resolves.toBe(true);
+        expect(readPreActivationAppData).not.toHaveBeenCalled();
     });
 
     it('rejects archived and deleted room messages with lifecycle policy details', async () => {

@@ -6,6 +6,7 @@ import {
     blocksGroupPreActivationData,
     canSendGroupMessage
 } from '@shared-server/rallar-system/group-state/policy/group-message-policy.ts';
+import { denyGroupPolicy } from '@shared-server/rallar-system/group-state/policy/group-policy-result.ts';
 import { isSameGroupScope } from '@shared/api/api-type-utils.ts';
 import type { GroupPreActivationAppData } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import type { GroupPolicyDenied } from '@shared/api/group-policy-types.ts';
@@ -94,7 +95,13 @@ export function createGroupRoomWsAuthorizer(
             };
         }
 
-        const preActivationAppData = await resolvePreActivationAppData(options, input, snapshot);
+        const isCrdtTopic = input.topicId === RALLAR_CRDT_ROOM_TOPIC_ID ||
+            input.topicId === RALLAR_CRDT_APP_TOPIC_ID;
+        const preActivationAppData = await resolvePreActivationAppData(
+            options,
+            snapshot,
+            isCrdtTopic
+        );
         const policyResult = canSendGroupMessage({
             snapshot,
             actor: {
@@ -108,6 +115,16 @@ export function createGroupRoomWsAuthorizer(
         if (!policyResult.allowed) {
             return toPolicyDeniedDecision(input.roomId, policyResult, serverSnapshotVersion);
         }
+        if (!isCrdtTopic && snapshot.group.transportState === 'halted') {
+            return toPolicyDeniedDecision(
+                input.roomId,
+                denyGroupPolicy(
+                    'group-policy-denied',
+                    'Group transport is halted for room application data.'
+                ),
+                serverSnapshotVersion
+            );
+        }
 
         return true;
     };
@@ -117,19 +134,15 @@ export function createGroupRoomWsAuthorizer(
  * The data-policy gate covers plain WS-relayed application data only. The
  * CRDT live topics share this choke point but are exempt by name: CRDT
  * authority is the AppInbox append path, the topic only fans out committed
- * updates, and collaborative documents stay alive while the group forms
- * (plan decision 5.4). Active groups pay no policy read at all --
- * `blocked-until-active` can only bind before activation.
+ * updates, and collaborative documents stay alive while the group forms.
+ * Stages where an accepted layout keeps carrying data pay no policy read.
  */
 async function resolvePreActivationAppData(
     options: CreateGroupRoomWsAuthorizerOptions,
-    input: Parameters<RallarServerWsRoomAuthorizer>[0],
-    snapshot: GroupSnapshot
+    snapshot: GroupSnapshot,
+    isCrdtTopic: boolean
 ): Promise<GroupPreActivationAppData | undefined> {
-    if (
-        input.topicId === RALLAR_CRDT_ROOM_TOPIC_ID ||
-        input.topicId === RALLAR_CRDT_APP_TOPIC_ID
-    ) {
+    if (isCrdtTopic || snapshot.group.transportState === 'halted') {
         return undefined;
     }
     if (!blocksGroupPreActivationData(snapshot.group.lifecycleState) || !options.readPreActivationAppData) {

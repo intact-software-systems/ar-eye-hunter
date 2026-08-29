@@ -14,11 +14,8 @@ import { denyGroupPolicy, GROUP_POLICY_ALLOWED, type GroupPolicyActor } from './
 
 /**
  * Whether `blocked-until-active` blocks application data in each stage. The
- * rows deliberately preserve today's `!== 'active'` behaviour, including for
- * the unreachable stages; the product forward gate — open in `reconfiguring`
- * and `reconnecting` (product decision 25), expressed by
- * `computeGroupDataGate` — replaces these rows in the transport-valve slice,
- * not before.
+ * accepted layout continues carrying application data while it reconfigures
+ * or reconnects (product decision 25).
  */
 const PRE_ACTIVATION_DATA_BLOCKS: Readonly<Record<GroupLifecycleState, boolean>> = {
     dormant: true,
@@ -26,8 +23,8 @@ const PRE_ACTIVATION_DATA_BLOCKS: Readonly<Record<GroupLifecycleState, boolean>>
     planned: true,
     connecting: true,
     active: false,
-    reconfiguring: true,
-    reconnecting: true
+    reconfiguring: false,
+    reconnecting: false
 };
 
 /**

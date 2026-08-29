@@ -497,7 +497,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
     // A composition that installs the topic router owns room-scoped fanout
     // behind its room authorizer, so it opts the ALM relay out — forwarding
     // here would deliver messages the authorizer rejects.
-    it('skips room-broadcast forwarding when the composition disowns it', async () => {
+    it('does not forward room application data when the production relay disowns room fanout', async () => {
         const socket = createFakeWsServer();
         const service = new shared.WsQueueBoxServerService({
             inbox: new shared.InMemoryQueueBox(new Map()),

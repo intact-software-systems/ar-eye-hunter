@@ -1,5 +1,4 @@
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
-import { installChatWsTopic } from '@shared-server/rallar-system/communication/install-chat-ws-topic.ts';
 import { installRtcSignalingWsTopic } from '@shared-server/rallar-system/communication/install-rtc-signaling-ws-topic.ts';
 import { createCrdtWsMutationIngress } from '@shared-server/rallar-system/crdt/inbox/create-crdt-ws-mutation-ingress.ts';
 import { installRallarCrdtWsTopics } from '@shared-server/rallar-system/crdt/realtime/install-rallar-crdt-ws-topics.ts';
@@ -85,9 +84,6 @@ export interface ApiV1SystemInstallerOperations<
     readonly installTopologyAppOutbox: (
         options: ApiV1SystemTopicOptions<Runtime, Topology>
     ) => void;
-    readonly installChatTopic: (
-        service: Runtime['wsQBoxServerService']
-    ) => void;
     readonly installRtcSignalingTopic: (
         service: Runtime['wsQBoxServerService']
     ) => void;
@@ -138,7 +134,6 @@ export function constructApiV1SystemInstallers<
             const topicOptions = createSystemTopicOptions(input, runtime);
 
             operations.installTopologyAppOutbox(topicOptions);
-            operations.installChatTopic(wsService);
             operations.installRtcSignalingTopic(wsService);
             operations.installRtcRttTopic(wsService, {
                 enqueueMutation: topicOptions.enqueueRtcRttMutation
@@ -281,7 +276,6 @@ const PRODUCTION_OPERATIONS: ApiV1SystemInstallerOperations<ApiV1Runtime, ApiV1T
             rttRefinementService: options.rttRefinementService,
             nowEpochMs: options.rtcTopologyOptions.now ?? Date.now
         }),
-    installChatTopic: installChatWsTopic,
     installRtcSignalingTopic: installRtcSignalingWsTopic,
     installRtcRttTopic: installRtcRttSystemTopic,
     createCrdtMutationIngress: createCrdtWsMutationIngress,

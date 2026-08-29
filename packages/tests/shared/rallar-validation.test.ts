@@ -51,8 +51,7 @@ describe('Rallar shared validation', () => {
             .toBe('invalid-ws-user-topic');
         expect(validateRallarWsUserTopicId('rallar.internal', '$.topicId').issues[0]?.code)
             .toBe('reserved-ws-topic');
-        expect(validateRallarWsUserTopicId(AppTopics.chat, '$.topicId').issues[0]?.code)
-            .toBe('reserved-ws-topic');
+        expect(AppTopics).not.toHaveProperty('chat');
     });
 
     it('validates scoped group refs', () => {

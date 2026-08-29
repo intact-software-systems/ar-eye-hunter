@@ -33,7 +33,6 @@ Deno.test('system topic installation rejects a second start before mutating inst
     installers.installSystemTopics(runtime, ws);
     const installedEvents = [
         'topology-app-outbox',
-        'chat',
         'signaling',
         'rtc-rtt',
         'crdt-ingress',
@@ -243,9 +242,6 @@ function createOperations(
     return {
         installTopologyAppOutbox: () => {
             events.push('topology-app-outbox');
-        },
-        installChatTopic: () => {
-            events.push('chat');
         },
         installRtcSignalingTopic: () => {
             events.push('signaling');
