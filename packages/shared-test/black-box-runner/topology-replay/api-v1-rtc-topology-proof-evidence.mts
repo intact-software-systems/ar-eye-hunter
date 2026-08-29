@@ -8,6 +8,7 @@ import type {
 import { requireRecord, requireSafeInteger } from './api-v1-rtc-topology-proof-api.mts';
 import {
     assertLivePassiveConsumerState,
+    assertProofDurableQuiescence,
     readRtcTopologyProofDurableState,
     type ProofDurableState
 } from './api-v1-rtc-topology-proof-postgres.mts';
@@ -152,16 +153,11 @@ export async function waitForStableRegisteredState(
                 `Expected exactly three registered proof streams; found ${state.streams.length}.`
             );
         }
-        if (state.unresolvedAppOutboxCount !== 0) {
-            throw new Error(
-                'RTC topology proof still has ' +
-                    `${state.unresolvedAppOutboxCount} unresolved APP_OUTBOX rows.`
-            );
-        }
+        assertProofDurableQuiescence(state);
     });
 }
 
-async function waitForStableDurableState(
+export async function waitForStableDurableState(
     databaseUrl: string,
     assertState: (state: ProofDurableState) => void
 ): Promise<ProofDurableState> {
