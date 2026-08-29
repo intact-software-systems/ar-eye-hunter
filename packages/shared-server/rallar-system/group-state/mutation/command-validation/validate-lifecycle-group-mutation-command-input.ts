@@ -1,9 +1,9 @@
+import type { JsonWireObject } from '../../../protocol/json-wire-identity.ts';
 import {
     assertRequiredKeys,
     requireNonNegativeSafeInteger,
     requireOneOf
 } from '../../group-state-validation-primitives.ts';
-import type { JsonWireObject } from '../../../protocol/json-wire-identity.ts';
 import type { GroupLifecycleTransitionOperation } from '../group-mutation-contracts.ts';
 import { validateExpectedLayoutIdentity } from './validate-expected-layout-identity.ts';
 

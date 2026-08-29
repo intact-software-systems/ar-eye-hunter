@@ -41,16 +41,37 @@ export const LEGACY_REOPEN_ESTABLISHMENT_CONSUMERS: readonly LegacyReopenEstabli
     { file: 'apps/api-v1/test/group-state/register-group-state-routes.test.ts', occurrences: { 'lifecycle/reopen': 1 } },
     { file: 'docs/rallar-group-formation-architecture.md', occurrences: { 'reopen-establishment': 4, 'lifecycle/reopen': 1 } },
     { file: 'packages/shared-server/rallar-system/app-inbox/app-inbox-contracts.ts', occurrences: { GROUP_ESTABLISHMENT_REOPEN: 2 } },
-    { file: 'packages/shared-server/rallar-system/app-inbox/logical-app-inbox-command.ts', occurrences: { GROUP_ESTABLISHMENT_REOPEN: 1, reopenGroupEstablishment: 1 } },
+    {
+        file: 'packages/shared-server/rallar-system/app-inbox/logical-app-inbox-command.ts',
+        occurrences: { GROUP_ESTABLISHMENT_REOPEN: 1, reopenGroupEstablishment: 1 }
+    },
     { file: 'packages/shared-server/rallar-system/group-state/group-mutation-authority.ts', occurrences: { reopenGroupEstablishment: 1 } },
-    { file: 'packages/shared-server/rallar-system/group-state/inbox/decode-group-state-app-inbox-command.ts', occurrences: { GROUP_ESTABLISHMENT_REOPEN: 1, reopenGroupEstablishment: 1 } },
+    {
+        file: 'packages/shared-server/rallar-system/group-state/inbox/decode-group-state-app-inbox-command.ts',
+        occurrences: { GROUP_ESTABLISHMENT_REOPEN: 1, reopenGroupEstablishment: 1 }
+    },
     { file: 'packages/shared-server/rallar-system/group-state/inbox/decode-group-state-inbox-authority.ts', occurrences: { reopenGroupEstablishment: 1 } },
     { file: 'packages/shared-server/rallar-system/group-state/inbox/group-state-inbox-contracts.ts', occurrences: { GROUP_ESTABLISHMENT_REOPEN: 2 } },
-    { file: 'packages/shared-server/rallar-system/group-state/inbox/to-group-mutation-descriptor.ts', occurrences: { GROUP_ESTABLISHMENT_REOPEN: 3, reopenGroupEstablishment: 2 } },
-    { file: 'packages/shared-server/rallar-system/group-state/mutation/aggregate/compute-lifecycle-transition.ts', occurrences: { reopenGroupEstablishment: 1, 'reopen-establishment': 1 } },
-    { file: 'packages/shared-server/rallar-system/group-state/mutation/command-validation/group-mutation-request-validation.ts', occurrences: { reopenGroupEstablishment: 1 } },
-    { file: 'packages/shared-server/rallar-system/group-state/mutation/command-validation/validate-group-mutation-command.ts', occurrences: { reopenGroupEstablishment: 3 } },
-    { file: 'packages/shared-server/rallar-system/group-state/mutation/command-validation/validate-group-mutation-operation-input.ts', occurrences: { reopenGroupEstablishment: 2 } },
+    {
+        file: 'packages/shared-server/rallar-system/group-state/inbox/to-group-mutation-descriptor.ts',
+        occurrences: { GROUP_ESTABLISHMENT_REOPEN: 3, reopenGroupEstablishment: 2 }
+    },
+    {
+        file: 'packages/shared-server/rallar-system/group-state/mutation/aggregate/compute-lifecycle-transition.ts',
+        occurrences: { reopenGroupEstablishment: 1, 'reopen-establishment': 1 }
+    },
+    {
+        file: 'packages/shared-server/rallar-system/group-state/mutation/command-validation/group-mutation-request-validation.ts',
+        occurrences: { reopenGroupEstablishment: 1 }
+    },
+    {
+        file: 'packages/shared-server/rallar-system/group-state/mutation/command-validation/validate-group-mutation-command.ts',
+        occurrences: { reopenGroupEstablishment: 3 }
+    },
+    {
+        file: 'packages/shared-server/rallar-system/group-state/mutation/command-validation/validate-group-mutation-operation-input.ts',
+        occurrences: { reopenGroupEstablishment: 2 }
+    },
     { file: 'packages/shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts', occurrences: { reopenGroupEstablishment: 3 } },
     { file: 'packages/shared-server/rallar-system/group-state/mutation/orchestration/compute-group-mutation.ts', occurrences: { reopenGroupEstablishment: 1 } },
     { file: 'packages/shared-server/rallar-system/group-state/to-lifecycle-mutation-command.ts', occurrences: { reopenGroupEstablishment: 2 } },
@@ -70,9 +91,15 @@ export const LEGACY_REOPEN_ESTABLISHMENT_CONSUMERS: readonly LegacyReopenEstabli
         file: 'packages/tests/shared-server/rallar-system/group-state/inbox/group-state-inbox-descriptor-contract.test.ts',
         occurrences: { GROUP_ESTABLISHMENT_REOPEN: 1, reopenGroupEstablishment: 1 }
     },
-    { file: 'packages/tests/shared-server/rallar-system/group-state/inbox/group-state-inbox-operation-matrix.test.ts', occurrences: { GROUP_ESTABLISHMENT_REOPEN: 2 } },
+    {
+        file: 'packages/tests/shared-server/rallar-system/group-state/inbox/group-state-inbox-operation-matrix.test.ts',
+        occurrences: { GROUP_ESTABLISHMENT_REOPEN: 2 }
+    },
     { file: 'packages/tests/shared-server/rallar-system/group-state/mutation/group-lifecycle-mutation.test.ts', occurrences: { reopenGroupEstablishment: 2 } },
-    { file: 'packages/tests/shared-server/rallar-system/group-state/mutation/group-mutation-request-validation.test.ts', occurrences: { reopenGroupEstablishment: 1 } },
+    {
+        file: 'packages/tests/shared-server/rallar-system/group-state/mutation/group-mutation-request-validation.test.ts',
+        occurrences: { reopenGroupEstablishment: 1 }
+    },
     { file: 'packages/tests/shared-test/api-v1-recipe-idempotency-cutover.test.ts', occurrences: { 'lifecycle/reopen': 1 } },
     { file: 'packages/tests/shared/group-lifecycle-transitions.test.ts', occurrences: { 'reopen-establishment': 2 } }
 ];

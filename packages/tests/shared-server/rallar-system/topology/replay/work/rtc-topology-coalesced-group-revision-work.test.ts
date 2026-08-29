@@ -57,10 +57,12 @@ describe('computeCoalescedRtcTopologyGroupRevisionWork', () => {
         expect(isChangeGatedGroupRevisionWork(envelope.data)).toBe(false);
     });
 
-    it.each([
-        ['commanded', 'automatic'],
-        ['automatic', 'commanded']
-    ] as const)('keeps commanded origin when %s work is followed by %s work', (firstOrigin, secondOrigin) => {
+    it.each(
+        [
+            ['commanded', 'automatic'],
+            ['automatic', 'commanded']
+        ] as const
+    )('keeps commanded origin when %s work is followed by %s work', (firstOrigin, secondOrigin) => {
         const first = computeCoalescedRtcTopologyGroupRevisionWork({
             aggregateRef: GROUP_REF,
             groupSnapshot: createGroupSnapshot(4, 3),

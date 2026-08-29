@@ -1,7 +1,7 @@
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import type { GroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
-import type { GroupTopologyReconfigureLanding } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import { resolveGroupLifecyclePolicyPreset } from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
+import type { GroupTopologyReconfigureLanding } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import { describe, expect, it } from 'vitest';
 
@@ -95,13 +95,14 @@ describe('group lifecycle transition computation', () => {
         expect(written.outboxEntries).toHaveLength(1);
     });
 
-    it.each([
-        ['hold policy to apply', resolveGroupLifecyclePolicyPreset('match'), 'apply', 'active'],
-        ['absent default to hold', null, 'hold', 'reconfiguring']
-    ] as const)(
+    it.each(
+        [
+            ['hold policy to apply', resolveGroupLifecyclePolicyPreset('match'), 'apply', 'active'],
+            ['absent default to hold', null, 'hold', 'reconfiguring']
+        ] as const
+    )(
         'lets a reconfigure landing override %s',
-        (_description, policy, landing, lifecycleState) =>
-            expectReconfigureLandingOverride(policy, landing, lifecycleState)
+        (_description, policy, landing, lifecycleState) => expectReconfigureLandingOverride(policy, landing, lifecycleState)
     );
 
     it('plans from forming into the planned stage and advances the epoch', () => {

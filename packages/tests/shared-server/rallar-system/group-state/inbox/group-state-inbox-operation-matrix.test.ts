@@ -11,7 +11,6 @@ import {
     type GroupJoinAppInboxPayload,
     type GroupJoinCodeRotateAppInboxPayload,
     type GroupLifecycleTransitionAppInboxPayload,
-    type GroupReconfigureAppInboxPayload,
     type GroupMemberRemoveAppInboxPayload,
     type GroupMemberRoleSetAppInboxPayload,
     type GroupMemberUpsertAppInboxPayload,
@@ -19,6 +18,7 @@ import {
     type GroupPresenceConnectAppInboxPayload,
     type GroupPresenceDisconnectAppInboxPayload,
     type GroupPresenceHeartbeatAppInboxPayload,
+    type GroupReconfigureAppInboxPayload,
     type GroupTransportCommandAppInboxPayload,
     type GroupUpdateAppInboxPayload
 } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-contracts.ts';

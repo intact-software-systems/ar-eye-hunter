@@ -26,11 +26,13 @@ describe('legacy reopen-establishment consumer inventory', () => {
 
     it('includes the public route, OpenAPI, and black-box recipe consumers', () => {
         const declared = new Set(LEGACY_REOPEN_ESTABLISHMENT_CONSUMERS.map((consumer) => consumer.file));
-        for (const file of [
-            'apps/api-v1/resources/api-v1-openapi.yaml',
-            'apps/api-v1/src/group-state/register-group-state-mutation-routes.ts',
-            'packages/shared-test/black-box-runner/tests/api-v1/api-v1-group-lifecycle-transitions.json'
-        ]) {
+        for (
+            const file of [
+                'apps/api-v1/resources/api-v1-openapi.yaml',
+                'apps/api-v1/src/group-state/register-group-state-mutation-routes.ts',
+                'packages/shared-test/black-box-runner/tests/api-v1/api-v1-group-lifecycle-transitions.json'
+            ]
+        ) {
             expect(declared, file).toContain(file);
         }
     });

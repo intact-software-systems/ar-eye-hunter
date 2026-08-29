@@ -1,3 +1,4 @@
+import type { JsonWireObject } from '../../../protocol/json-wire-identity.ts';
 import {
     assertExactKeys,
     requireJsonSafe,
@@ -12,7 +13,6 @@ import {
     isGroupTransportOperation,
     type GroupMutationCommand
 } from '../group-mutation-contracts.ts';
-import type { JsonWireObject } from '../../../protocol/json-wire-identity.ts';
 import { ACTOR_INPUT_KEYS } from './group-mutation-request-validation.ts';
 import { validateLifecycleGroupMutationCommandInput } from './validate-lifecycle-group-mutation-command-input.ts';
 

@@ -33,9 +33,11 @@ function toReconfigureCommand(
     descriptor: GroupMutationDescriptor,
     randomId: () => string
 ): GroupMutationCommand {
-    const request = descriptor.request as MutationActorInput & Readonly<{
-        landing?: GroupTopologyReconfigureLanding | null;
-    }>;
+    const request = descriptor.request as
+        & MutationActorInput
+        & Readonly<{
+            landing?: GroupTopologyReconfigureLanding | null;
+        }>;
     return {
         operation: 'reconfigureGroup',
         aggregateRef: { ...descriptor.scope, groupId: descriptor.groupId },
