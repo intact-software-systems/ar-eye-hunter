@@ -1349,6 +1349,9 @@ work.
 - **6a — ownership and legacy inventory.** Prove the existing hold transition's atomic enqueue and
   inventory every `reopen-establishment` type, operation, route, OpenAPI and recipe consumer for 8d.
   Nothing leaves before the route cutover.
+- **6b — landing and replanning policy, dark.** **Needs:** slice 3's `formation-automation` mode for
+  automatic reconfigure and its separate `topology-publication` mode for the apply command producer;
+  and 4a's route-less operation. The two modes never substitute for each other.
 - **6c — `reset`, with the topology retirement semantics it needs** (product decisions 35/36).
   **Needs:** 6b's landing policy and the delivery rules slice 4 established. Split out of 5e by PR 9's
   review, which found that decision 36's tombstone mechanism assumes three properties the topology
@@ -1384,10 +1387,6 @@ work.
   proving a corrupt accepted row behaves acceptably on the activate path. The guarded-batch rollback
   proof PR 9 drafted belongs here too, rewritten to exercise `writeGroupMutation`'s rejection rather
   than re-implementing it inline.
-
-- **6b — landing and replanning policy, dark.** **Needs:** slice 3's `formation-automation` mode for
-  automatic reconfigure and its separate `topology-publication` mode for the apply command producer;
-  and 4a's route-less operation. The two modes never substitute for each other.
 
 **Gates:** baseline, both profiles, **medium-scale**, **state-write**, `topology-replay`.
 
