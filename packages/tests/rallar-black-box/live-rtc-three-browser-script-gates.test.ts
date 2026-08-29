@@ -82,6 +82,35 @@ describe('live three-browser RTC npm script gates', () => {
         expect(source).toContain('crypto.randomUUID()');
     });
 
+    it('uses the current idempotent group mutation request routes', () => {
+        const source = fs.readFileSync(path.join(repoRoot, liveMatrixSpec), 'utf8');
+
+        expect(source).toMatch(
+            /groups\/requests\/\$\{pathSegment\(createRequestId\)\}/u
+        );
+        expect(source).toMatch(
+            /members\/\{auth\.clientId\}\/requests\/\$\{\s*pathSegment\(requestId\)\s*\}/u
+        );
+        expect(source).toContain('`rtc-b06-create-${input.suffix}`');
+        expect(source).toContain(
+            '`rtc-b06-member-${member.prefix.toLowerCase()}-${input.suffix}`'
+        );
+        expect(source).toContain('acceptedStatusCodes: [201]');
+        expect(source.match(/setupGroupMembership\(\{/gu)).toHaveLength(3);
+        expect(source).toMatch(
+            /for \(const agent of input\.agents\.slice\(0, 2\)\) \{\s*connected\.push\(\s*await connectAgent/u
+        );
+        expect(source).toContain('`${input.suffix}-initial-pair`');
+        expect(source).toContain('readinessStartedAtMs');
+        expect(source.match(/connectAgentTrio\(\{/gu)).toHaveLength(3);
+        expect(source).not.toMatch(
+            /input\.agents\.map\(\(agent\) => connectAgent/u
+        );
+        expect(source).toContain('departedPeerIds: [input.sessions.C]');
+        expect(source).toContain('departedPeerIds: [input.sessions.B]');
+        expect(source.match(/realtime\.sessions/gu)).toHaveLength(2);
+    });
+
     it('keeps benchmark ownership out of application and reusable product sources', () => {
         const productRoots = [path.join(repoRoot, 'apps'), path.join(repoRoot, 'packages')];
         const forbiddenImports: string[] = [];
