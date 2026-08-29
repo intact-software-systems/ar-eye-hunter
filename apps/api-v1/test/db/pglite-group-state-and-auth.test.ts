@@ -222,7 +222,7 @@ Deno.test(
             await authSessions.putSession(authority);
             const groupState = createGroupStateService({
                 readPlannedLayoutRow: () => Promise.resolve(null),
-            readAcceptedLayoutRow: () => Promise.resolve(null),
+                readAcceptedLayoutRow: () => Promise.resolve(null),
                 runtimeRepository: runtime,
                 groupStateEventStore: new PSqlGroupStateEventRepository(sql),
                 authSessionRepository: authSessions,
@@ -377,7 +377,7 @@ Deno.test(
             await authSessions.putSession(authority);
             const groupState = createGroupStateService({
                 readPlannedLayoutRow: () => Promise.resolve(null),
-            readAcceptedLayoutRow: () => Promise.resolve(null),
+                readAcceptedLayoutRow: () => Promise.resolve(null),
                 runtimeRepository: runtime,
                 groupStateEventStore: new PSqlGroupStateEventRepository(sql),
                 authSessionRepository: authSessions,

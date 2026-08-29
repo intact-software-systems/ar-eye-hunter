@@ -51,7 +51,7 @@ export async function createPGliteAppInboxWsCloseHarness(sql: PGliteSql) {
     });
     const groupState = createGroupStateService({
         readPlannedLayoutRow: () => Promise.resolve(null),
-            readAcceptedLayoutRow: () => Promise.resolve(null),
+        readAcceptedLayoutRow: () => Promise.resolve(null),
         runtimeRepository: runtime,
         groupStateEventStore: groupEvents,
         authSessionRepository: authSessions,
