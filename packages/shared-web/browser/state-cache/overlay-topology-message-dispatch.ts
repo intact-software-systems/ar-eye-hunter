@@ -1,6 +1,7 @@
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { AppTopics } from '@shared/api/api-config.ts';
 import { parseAuthoritativeOverlayTopologySnapshot } from '@shared/api/authoritative-state-validation.ts';
+import { isGroupActive, isSessionInGroup } from '@shared/api/group-client-views.ts';
 import {
     resolveGroupLayoutRole,
     toGroupLayoutIdentity,
@@ -64,12 +65,21 @@ export async function adoptOverlayTopology(
     input: AdoptOverlayTopologyInput
 ): Promise<AdoptOverlayTopologyResult> {
     const overlay = toOverlayInfoForSession(input.topology, input.sessionId);
-    const acceptedIdentity = findGroupStateSnapshotByRef(input.topology.groupRef)
-        ?.group.acceptedLayoutIdentity ?? undefined;
+    const groupSnapshot = findGroupStateSnapshotByRef(input.topology.groupRef);
+    const acceptedIdentity = groupSnapshot?.group.acceptedLayoutIdentity ?? undefined;
     const role = resolveGroupLayoutRole({
         publication: toGroupLayoutIdentity(input.topology),
         accepted: acceptedIdentity
     });
+
+    if (
+        groupSnapshot !== undefined &&
+        (!isGroupActive(groupSnapshot) || !isSessionInGroup(groupSnapshot, input.sessionId))
+    ) {
+        const outcome = 'membership-ineligible-dropped';
+        emitOverlayAdoption(input.topology.overlayId, outcome);
+        return { role, outcome, changed: false };
+    }
 
     if (role === 'superseded' || role === 'incomparable') {
         const outcome = role === 'superseded'

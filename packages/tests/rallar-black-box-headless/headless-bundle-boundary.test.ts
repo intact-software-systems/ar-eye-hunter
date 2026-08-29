@@ -3,11 +3,21 @@ import { mkdirSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { brotliCompressSync, constants } from 'node:zlib';
-import { describe, expect, it } from 'vitest';
+// dprint-ignore
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
 
-type EsbuildMetafile = Readonly<{
-    inputs: Readonly<Record<string, unknown>>;
-}>;
+interface EsbuildMetafile {
+    readonly inputs: Readonly<Record<string, unknown>>;
+}
+
+interface HeadlessBundleMeasurement {
+    readonly brotliKiB: number;
+    readonly metafile: EsbuildMetafile;
+}
 
 const repoRoot = process.cwd();
 const outputDir = path.join(tmpdir(), 'rallar-black-box-headless-boundary-test');
@@ -51,14 +61,14 @@ describe('rallar-black-box-headless bundle boundary', () => {
         // 200.40 at that change.
         // Strict AppInbox mutation paths and canonical failure decoding add
         // ~0.87 KiB over the stacked base; measured 202.42 at that change.
-        expect(result.brotliKiB).toBeLessThan(203);
+        // Slice 8a's two-role overlay caches, validated HTTP hydration, and
+        // lifecycle race fences add 1.018 KiB over the Slice 7 base:
+        // 202.944336 KiB -> 203.961914 KiB.
+        expect(result.brotliKiB).toBeLessThan(204);
     });
 });
 
-function bundleHeadlessEntry(): Readonly<{
-    brotliKiB: number;
-    metafile: EsbuildMetafile;
-}> {
+function bundleHeadlessEntry(): HeadlessBundleMeasurement {
     mkdirSync(outputDir, { recursive: true });
     const outputPath = path.join(outputDir, 'headless-agent.boundary.min.js');
     const metafilePath = `${outputPath}.meta.json`;

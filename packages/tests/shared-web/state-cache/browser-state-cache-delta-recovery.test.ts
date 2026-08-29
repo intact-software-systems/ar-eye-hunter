@@ -1,12 +1,24 @@
 import { configureApiClient } from '@shared-web/browser/api-client-config.ts';
 import { browserStateCacheLifecycle } from '@shared-web/browser/state-cache/browser-state-cache-lifecycle.ts';
-import { newALBroadcastMessage, newALEventRoute, type ALMessage } from '@shared/al-contracts/al-contract.ts';
+// dprint-ignore
+import {
+    newALBroadcastMessage,
+    newALEventRoute,
+    type ALMessage
+} from '@shared/al-contracts/al-contract.ts';
 import { AppTopics, type ClientInfo } from '@shared/api/api-config.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import { DEFAULT_STATE_APPLICATION_ID, DEFAULT_STATE_WORKSPACE_ID } from '@shared/api/state-types.ts';
 import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
 import { findPlannedOverlayById, setPlannedOverlayById } from '@shared/repository/overlays-repository.ts';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+// dprint-ignore
+import {
+    beforeEach,
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
 import { configureTestCacheRepositories } from '../../cache-repository-config.ts';
 import {
     createGroupSnapshot,

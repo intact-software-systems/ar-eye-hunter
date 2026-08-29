@@ -9,12 +9,11 @@ import type { GroupRef } from '@shared/api/group-types.ts';
 import {
     configureObservableLatestRepository,
     newObservableLatestRepositoryToken,
-    readAllObservableLatestRepository,
     readObservableLatestRepositoryValue,
     requireObservableLatestRepository
 } from '@shared/cache/LatestRepositoryHelpers.ts';
 import {
-    ObservableLatestRepository,
+    type ObservableLatestRepository,
     type ObservableLatestRepositoryOptions
 } from '@shared/cache/ObservableLatestRepository.ts';
 import {
@@ -34,11 +33,6 @@ export type OverlayRepositoryOptions =
 export interface OverlayRepositoryCacheConfiguration {
     readonly plannedOverlays: OverlayRepositoryOptions;
     readonly acceptedOverlays: OverlayRepositoryOptions;
-}
-
-export interface ConfiguredOverlayRepositories {
-    readonly planned: ObservableLatestRepository<string, OverlayInfo>;
-    readonly accepted: ObservableLatestRepository<string, OverlayInfo>;
 }
 
 export interface OverlayRepositoryChange {
@@ -68,6 +62,13 @@ interface ReconcileAcceptedOverlayIdentityInput {
     readonly manager?: RepositoryManager;
 }
 
+interface RemoveOverlayIfUnchangedInput {
+    readonly token: RepositoryToken<ObservableLatestRepository<string, OverlayInfo>>;
+    readonly overlayId: string;
+    readonly observedOverlay: OverlayInfo | undefined;
+    readonly manager?: RepositoryManager;
+}
+
 export {
     type OverlayAdoptionDiagnosticsEvent,
     type OverlayAdoptionDiagnosticsSink,
@@ -78,12 +79,12 @@ export {
     setOverlayAdoptionDiagnosticsSink
 } from './overlay-adoption-diagnostics.ts';
 
-export const plannedOverlayRepositoryToken = newObservableLatestRepositoryToken<string, OverlayInfo>(
+const plannedOverlayRepositoryToken = newObservableLatestRepositoryToken<string, OverlayInfo>(
     'shared.repository.planned-overlays',
     'Planned overlay repository is not configured'
 );
 
-export const acceptedOverlayRepositoryToken = newObservableLatestRepositoryToken<string, OverlayInfo>(
+const acceptedOverlayRepositoryToken = newObservableLatestRepositoryToken<string, OverlayInfo>(
     'shared.repository.accepted-overlays',
     'Accepted overlay repository is not configured'
 );
@@ -91,19 +92,17 @@ export const acceptedOverlayRepositoryToken = newObservableLatestRepositoryToken
 export function configureOverlayRepositories(
     config: OverlayRepositoryCacheConfiguration,
     manager?: RepositoryManager
-): ConfiguredOverlayRepositories {
-    return {
-        planned: configureRoleOverlayRepository(
-            plannedOverlayRepositoryToken,
-            config.plannedOverlays,
-            manager
-        ),
-        accepted: configureRoleOverlayRepository(
-            acceptedOverlayRepositoryToken,
-            config.acceptedOverlays,
-            manager
-        )
-    };
+): void {
+    configureRoleOverlayRepository(
+        plannedOverlayRepositoryToken,
+        config.plannedOverlays,
+        manager
+    );
+    configureRoleOverlayRepository(
+        acceptedOverlayRepositoryToken,
+        config.acceptedOverlays,
+        manager
+    );
 }
 
 export function onPlannedOverlayChange(
@@ -148,10 +147,10 @@ export function updatePlannedOverlayNextHopSessionIds(
     overlayId: string,
     nextHopSessionIds: readonly string[],
     manager?: RepositoryManager
-): OverlayInfo | undefined {
+): void {
     const overlay = findPlannedOverlayById(overlayId, manager);
     if (overlay === undefined) {
-        return undefined;
+        return;
     }
 
     setPlannedOverlayById(overlayId, {
@@ -160,22 +159,6 @@ export function updatePlannedOverlayNextHopSessionIds(
         overlayVersion: overlay.overlayVersion + 1,
         updatedAtEpochMs: Math.max(Date.now(), overlay.updatedAtEpochMs + 1)
     }, manager);
-
-    return overlay;
-}
-
-export function findPlannedOverlayByGroupRef(
-    groupRef: GroupRef,
-    manager?: RepositoryManager
-): OverlayInfo | undefined {
-    return findPlannedOverlayById(toScopedOverlayId(groupRef), manager);
-}
-
-export function findAcceptedOverlayByGroupRef(
-    groupRef: GroupRef,
-    manager?: RepositoryManager
-): OverlayInfo | undefined {
-    return findAcceptedOverlayById(toScopedOverlayId(groupRef), manager);
 }
 
 export function hasPlannedServerOverlayRecordByGroupRef(
@@ -294,6 +277,32 @@ export function removeAcceptedOverlayById(
     return requireRoleOverlayRepository(acceptedOverlayRepositoryToken, manager).delete(overlayId);
 }
 
+export function removePlannedOverlayByIdIfUnchanged(
+    overlayId: string,
+    observedOverlay: OverlayInfo | undefined,
+    manager?: RepositoryManager
+): boolean {
+    return removeRoleOverlayByIdIfUnchanged({
+        token: plannedOverlayRepositoryToken,
+        overlayId,
+        observedOverlay,
+        manager
+    });
+}
+
+export function removeAcceptedOverlayByIdIfUnchanged(
+    overlayId: string,
+    observedOverlay: OverlayInfo | undefined,
+    manager?: RepositoryManager
+): boolean {
+    return removeRoleOverlayByIdIfUnchanged({
+        token: acceptedOverlayRepositoryToken,
+        overlayId,
+        observedOverlay,
+        manager
+    });
+}
+
 export function removePlannedOverlayByIdIfIdentity(
     overlayId: string,
     identity: GroupLayoutIdentity,
@@ -335,25 +344,13 @@ export function reconcileAcceptedOverlayIdentity(
     return changed;
 }
 
-export function getAllPlannedOverlays(
-    manager?: RepositoryManager
-): OverlayInfo[] {
-    return getAllRoleOverlays(plannedOverlayRepositoryToken, manager);
-}
-
-export function getAllAcceptedOverlays(
-    manager?: RepositoryManager
-): OverlayInfo[] {
-    return getAllRoleOverlays(acceptedOverlayRepositoryToken, manager);
-}
-
 export function didOverlayAdoptionChange(outcome: OverlayAdoptionOutcome): boolean {
     return outcome === 'initial-set' ||
         outcome === 'adopted' ||
         outcome === 'server-superseded-bootstrap';
 }
 
-export function compareOverlayInfoTuple(
+function compareOverlayInfoTuple(
     left: Pick<OverlayInfo, 'sourceGroupStateCausalRevision' | 'overlayVersion'>,
     right: Pick<OverlayInfo, 'sourceGroupStateCausalRevision' | 'overlayVersion'>
 ): 'equal' | 'dominates' | 'dominated' | 'incomparable' {
@@ -418,6 +415,19 @@ function findRoleOverlayById(
 ): OverlayInfo | undefined {
     const overlay = readOverlayRecordById(token, overlayId, manager);
     return overlay?.state === 'removed' ? undefined : overlay;
+}
+
+function removeRoleOverlayByIdIfUnchanged(
+    input: RemoveOverlayIfUnchangedInput
+): boolean {
+    if (
+        input.observedOverlay === undefined ||
+        readOverlayRecordById(input.token, input.overlayId, input.manager) !== input.observedOverlay
+    ) {
+        return false;
+    }
+
+    return requireRoleOverlayRepository(input.token, input.manager).delete(input.overlayId);
 }
 
 function readOverlayRecordById(
@@ -530,14 +540,6 @@ function isOverlayIdentity(
         },
         identity
     );
-}
-
-function getAllRoleOverlays(
-    token: RepositoryToken<ObservableLatestRepository<string, OverlayInfo>>,
-    manager?: RepositoryManager
-): OverlayInfo[] {
-    return readAllObservableLatestRepository(token, manager)
-        .filter((overlay) => overlay.state !== 'removed');
 }
 
 function toOverlayRepositoryChange(

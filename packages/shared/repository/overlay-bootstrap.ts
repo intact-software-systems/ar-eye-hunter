@@ -22,10 +22,10 @@ import {
  * Resolved at the composition root: the local session identity and effective
  * bootstrap degree (already clamped to the peer connection budget).
  */
-export type BootstrapOverlayPolicy = Readonly<{
-    localSessionId: string;
-    bootstrapDegree: number;
-}>;
+export interface BootstrapOverlayPolicy {
+    readonly localSessionId: string;
+    readonly bootstrapDegree: number;
+}
 
 /**
  * Bootstrap-overlay writer for group snapshot updates. The overlay is a

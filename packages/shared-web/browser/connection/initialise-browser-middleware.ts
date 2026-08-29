@@ -1,34 +1,26 @@
 import { newALRoute, newALUntargetedMessage } from '@shared/al-contracts/al-contract.ts';
 import type { ALOutboundRuntimeDiagnosticsSink } from '@shared/alm/ALOutboundMessageRuntime.ts';
-import {
-    ApiConfig,
-    AppTopics,
-    AuthSession,
-    ClientInfo,
-    IceConfig,
-    RttMeasurementInfo
-} from '@shared/api/api-config.ts';
+import { AppTopics } from '@shared/api/api-config.ts';
+import type { ApiConfig, AuthSession, ClientInfo, IceConfig, RttMeasurementInfo } from '@shared/api/api-config.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import { Command, type CommandOptions } from '@shared/cache/Command.ts';
-import { WebRtcOverlayMulticastManager } from '@shared/multicast/WebRtcOverlayMulticastManager.ts';
+import type { WebRtcOverlayMulticastManager } from '@shared/multicast/WebRtcOverlayMulticastManager.ts';
 import * as clientStateSnapshotsRepository from '@shared/repository/client-state-snapshots-repository.ts';
 import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
 import * as overlaysRepository from '@shared/repository/overlays-repository.ts';
 import { pairKey } from '@shared/repository/rtt-repository.ts';
 import { resolveBootstrapDegree } from '@shared/rtc/bootstrap-peer-selection.ts';
-import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
-import {
+import type { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
+import type {
     QRtcPeerDto,
+    RtcDataChannelLaneConfig,
     WebRtcConnectionService,
-    type RtcDataChannelLaneConfig,
-    type WebRtcInboundPeerCreationDecision
+    WebRtcInboundPeerCreationDecision
 } from '@shared/services/WebRtcConnectionService.ts';
 import { WebRtcGroupManager } from '@shared/services/WebRtcGroupManager.ts';
-import { WebRtcRxStreamerService } from '@shared/services/WebRtcRxStreamerService.ts';
-import {
-    DEFAULT_WS_QUEUE_BOX_CLIENT_RECONNECT_OPTIONS,
-    WsQueueBoxClientService
-} from '@shared/services/WsQueueBoxClientService.ts';
+import type { WebRtcRxStreamerService } from '@shared/services/WebRtcRxStreamerService.ts';
+import { DEFAULT_WS_QUEUE_BOX_CLIENT_RECONNECT_OPTIONS } from '@shared/services/WsQueueBoxClientService.ts';
+import type { WsQueueBoxClientService } from '@shared/services/WsQueueBoxClientService.ts';
 import { JsonWebSocketClient } from '@shared/websocket/JsonWebSocketClient.ts';
 
 import { readSession } from '@shared/api/auth.ts';
