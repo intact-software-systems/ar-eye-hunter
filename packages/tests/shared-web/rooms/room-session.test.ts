@@ -64,11 +64,17 @@ it('refreshes a bound room and its current topology', async () => {
         }
     };
     seedRoomSnapshots([observed]);
+    let groupReadObserved = false;
+    let topologyReadObserved = false;
     const fetchMock = vi.fn(async (
         input: RequestInfo | URL,
         _init?: RequestInit
     ) => {
         if (String(input).endsWith('/topology')) {
+            if (!groupReadObserved) {
+                throw new Error('Topology was read before the current group snapshot.');
+            }
+            topologyReadObserved = true;
             return new Response(JSON.stringify({
                 groupRef: current.group,
                 overlayId: '["app-1","workspace-1","room-1"]',
@@ -80,6 +86,7 @@ it('refreshes a bound room and its current topology', async () => {
                 headers: { 'content-type': 'application/json' }
             });
         }
+        groupReadObserved = true;
         return new Response(JSON.stringify(current), {
             status: 200,
             headers: {
@@ -95,7 +102,8 @@ it('refreshes a bound room and its current topology', async () => {
 
     const refreshed = await createRallarFacade().rooms.session(observed.group).refresh();
 
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(groupReadObserved).toBe(true);
+    expect(topologyReadObserved).toBe(true);
     expect(fetchMock.mock.calls[0]?.[0]).toBe(
         'https://api.example.test/api/state/apps/app-1/workspaces/workspace-1/groups/room-1'
     );
