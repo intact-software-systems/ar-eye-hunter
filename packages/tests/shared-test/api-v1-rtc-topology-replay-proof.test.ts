@@ -196,7 +196,7 @@ describe('API-v1 RTC topology replay proof semantics', () => {
     });
 
     it('requires AppInbox quiescence before accepting a live publisher advance', () => {
-        const state = {
+        const state: ProofDurableState = {
             ...durableState(
                 [
                     { streamId: 'publisher-a', headSequence: 11 },
@@ -206,7 +206,7 @@ describe('API-v1 RTC topology replay proof semantics', () => {
                 [cursor('consumer-c', 'publisher-a', 11), cursor('consumer-c', 'publisher-b', 20)]
             ),
             unresolvedAppInboxCount: 1
-        } as unknown as ProofDurableState;
+        };
 
         expect(() =>
             assertSinglePublisherHeadAdvanced({
@@ -218,10 +218,10 @@ describe('API-v1 RTC topology replay proof semantics', () => {
     });
 
     it('reads AppInbox quiescence and publisher state from one repeatable-read snapshot', async () => {
-        const queryTexts: string[] = [];
+        const transactionQueryTexts: string[] = [];
         const transaction = vi.fn((strings: TemplateStringsArray) => {
             const query = strings.join('');
-            queryTexts.push(query);
+            transactionQueryTexts.push(query);
             if (query.includes('ri_type_id = \'APP_OUTBOX\'')) {
                 return Promise.resolve([{ unresolved_count: 0 }]);
             }
@@ -253,7 +253,12 @@ describe('API-v1 RTC topology replay proof semantics', () => {
             readSnapshot: (sql: typeof transaction) => Promise<ProofDurableState>
         ) => await readSnapshot(transaction));
         const end = vi.fn(async () => undefined);
-        const sql = Object.assign(transaction, { begin, end });
+        const sql = Object.assign(
+            vi.fn(() => {
+                throw new Error('Proof durable reads must run inside the repeatable-read transaction.');
+            }),
+            { begin, end }
+        );
         vi.mocked(postgres).mockReturnValue(sql as never);
 
         await expect(readRtcTopologyProofDurableState('postgres://proof')).resolves.toMatchObject({
@@ -261,9 +266,15 @@ describe('API-v1 RTC topology replay proof semantics', () => {
             unresolvedAppInboxCount: 1
         });
         expect(begin).toHaveBeenCalledWith('isolation level repeatable read read only', expect.any(Function));
-        expect(queryTexts.some((query) => query.includes('ri_type_id = \'APP_INBOX\''))).toBe(
-            true
-        );
+        expect(sql).not.toHaveBeenCalled();
+        expect(transaction).toHaveBeenCalledTimes(4);
+        expect(transactionQueryTexts).toHaveLength(4);
+        expect(transactionQueryTexts).toEqual(expect.arrayContaining([
+            expect.stringContaining('ri_type_id = \'APP_INBOX\''),
+            expect.stringContaining('ri_type_id = \'APP_OUTBOX\''),
+            expect.stringContaining('from rtc_topology_delivery_stream'),
+            expect.stringContaining('from rtc_topology_replay_cursor')
+        ]));
         expect(end).toHaveBeenCalledWith({ timeout: 5 });
     });
 
