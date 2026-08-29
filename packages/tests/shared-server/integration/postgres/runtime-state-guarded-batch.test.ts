@@ -7,6 +7,7 @@ import { computeGroupMutation } from '@shared-server/rallar-system/group-state/m
 import { writeGroupMutation } from '@shared-server/rallar-system/group-state/mutation/write/write-group-mutation.ts';
 import { groupStateGroupStorageKey } from '@shared-server/rallar-system/group-state/persistence/aggregate/group-aggregate-storage-keys.ts';
 import { groupStateInsertGroupDescriptor } from '@shared-server/rallar-system/group-state/persistence/aggregate/group-aggregate-write-descriptors.ts';
+import { groupStateMemberStorageKey } from '@shared-server/rallar-system/group-state/persistence/membership/group-membership-storage-key.ts';
 import {
     RTC_TOPOLOGY_ACCEPTED_SNAPSHOTS_NAMESPACE,
     RtcTopologySnapshotRepository
@@ -101,10 +102,12 @@ describe('Postgres runtime-state guarded batches', () => {
         async () => {
             const sql = await createRuntimeStatePostgresSql(requireDatabaseUrl());
             const runtime = new PSqlRuntimeStateRepository(sql);
-            const snapshot = resetLayoutSnapshot();
-            const read = createGroupAuthorityRead({ lifecycleState: 'active' });
+            const ref = uniqueResetGroupRef();
+            const seedNamespace = `reset-rollback-seed-${crypto.randomUUID()}`;
+            const read = resetRead(ref);
+            const snapshot = resetLayoutSnapshot(ref);
             const computed = computeGroupMutation({
-                command: transitionCommand('resetGroupFormation'),
+                command: { ...transitionCommand('resetGroupFormation'), aggregateRef: ref },
                 read: {
                     ...read,
                     plannedLayoutRow: { snapshot, revision: 0 },
@@ -119,12 +122,21 @@ describe('Postgres runtime-state guarded batches', () => {
             }
 
             try {
-                await runtime.executeGuardedBatch({
-                    guard: groupStateInsertGroupDescriptor(read.group!.value),
-                    effects: []
+                await runtime.begin(async (transactionRuntime) => {
+                    await transactionRuntime.executeGuardedBatch({
+                        guard: groupStateInsertGroupDescriptor(read.group!.value),
+                        effects: [{
+                            effectId: 'reset-rollback-seed',
+                            operation: 'insert',
+                            namespace: seedNamespace,
+                            key: 'seed',
+                            value: 'seed',
+                            expireAtTimestamp: FUTURE_MS
+                        }]
+                    });
+                    await new RtcTopologySnapshotRepository(transactionRuntime).commitSnapshotGuard(snapshot, null);
                 });
                 const planned = new RtcTopologySnapshotRepository(runtime);
-                await planned.commitSnapshotGuard(snapshot, null);
 
                 await expect(sql.begin(async (transaction) => await writeGroupMutation(transaction, computed)))
                     .rejects.toBeInstanceOf(RuntimeStateWriteConflictError);
@@ -145,8 +157,10 @@ describe('Postgres runtime-state guarded batches', () => {
             finally {
                 await sql`
                 delete from runtime_state_store
-                where store_namespace in ('group-state:groups', 'rtc-topology:snapshots', 'rtc-topology:accepted-snapshots')
-                and store_key like ${'%pure-room%'}
+                where (
+                    store_namespace in ('group-state:groups', 'rtc-topology:snapshots', 'rtc-topology:accepted-snapshots')
+                    and store_key = ${groupStateGroupStorageKey(ref)}
+                ) or store_namespace = ${seedNamespace}
             `;
                 await sql.end();
             }
@@ -154,8 +168,7 @@ describe('Postgres runtime-state guarded batches', () => {
     );
 });
 
-function resetLayoutSnapshot(): RallarOverlayTopologySnapshot {
-    const ref = groupRef('pure-room');
+function resetLayoutSnapshot(ref: ReturnType<typeof uniqueResetGroupRef>): RallarOverlayTopologySnapshot {
     return {
         sourceGroupStateCausalRevision: { groupRevision: 0, presenceRevision: 0 },
         state: 'active',
@@ -170,6 +183,39 @@ function resetLayoutSnapshot(): RallarOverlayTopologySnapshot {
         createdByClientId: 'reset-test',
         createdAtEpochMs: 1_000,
         updatedAtEpochMs: 1_000
+    };
+}
+
+function uniqueResetGroupRef() {
+    return {
+        ...groupRef('pure-room'),
+        applicationId: `reset-rollback-${crypto.randomUUID()}`
+    };
+}
+
+function resetRead(ref: ReturnType<typeof uniqueResetGroupRef>) {
+    const initial = createGroupAuthorityRead({ lifecycleState: 'active' });
+    const group = { ...initial.group!.value, ...ref };
+    const actorMember = { ...initial.actorMember!, ...ref };
+    return {
+        ...initial,
+        group: {
+            entry: {
+                ...initial.group!.entry,
+                key: groupStateGroupStorageKey(ref),
+                value: JSON.stringify(group)
+            },
+            value: group
+        },
+        actorMember,
+        actorMemberEntry: {
+            entry: {
+                ...initial.actorMemberEntry!.entry,
+                key: groupStateMemberStorageKey(actorMember),
+                value: JSON.stringify(actorMember)
+            },
+            value: actorMember
+        }
     };
 }
 

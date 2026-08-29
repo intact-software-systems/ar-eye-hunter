@@ -4,6 +4,7 @@ import { toFormationActivateCommand, toFormationRetryEstablishCommand } from '@s
 import type { GroupStateMutationCommand } from '@shared-server/rallar-system/group-state/group-state-service-contracts.ts';
 import type { GroupMutationCommand } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
 import { GroupPolicyDeniedError } from '@shared-server/rallar-system/group-state/policy/group-policy-result.ts';
+import { RtcTopologyRepositoryInvariantCorruptionError } from '@shared-server/rallar-system/topology/persistence/rtc-topology-errors.ts';
 import type { GroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
@@ -42,8 +43,13 @@ const PLANNED_SNAPSHOT = {
 // The one place the whole fence read chain runs against the durable service:
 // the gate in service.read, the reader invocation, the attached identity, and
 // compute consuming exactly what the service read — not a hand-built fixture.
-async function createFenceReadHarness() {
+interface FenceReadHarnessOptions {
+    readonly readAcceptedLayoutRow?: (ref: GroupRef) => Promise<null>;
+}
+
+async function createFenceReadHarness(options: FenceReadHarnessOptions = {}) {
     const readRefs: GroupRef[] = [];
+    const acceptedReadRefs: GroupRef[] = [];
     const service = createTestGroupStateService({
         runtimeRepository: new FakeRuntimeStateRepository(),
         now: () => 1_000,
@@ -56,7 +62,10 @@ async function createFenceReadHarness() {
             readRefs.push(ref);
             return Promise.resolve({ snapshot: PLANNED_SNAPSHOT, revision: 7 });
         },
-        readAcceptedLayoutRow: async () => null
+        readAcceptedLayoutRow: async (ref) => {
+            acceptedReadRefs.push(ref);
+            return await (options.readAcceptedLayoutRow?.(ref) ?? Promise.resolve(null));
+        }
     });
     await service.createGroup(SCOPE, {
         groupId: GROUP_REF.groupId,
@@ -75,7 +84,7 @@ async function createFenceReadHarness() {
             facts: { ...preparation.facts, attemptCount: 1 }
         };
     };
-    return { service, readRefs, prepare };
+    return { service, readRefs, acceptedReadRefs, prepare };
 }
 
 describe('formation fence through the durable service read', () => {
@@ -105,6 +114,28 @@ describe('formation fence through the durable service read', () => {
 
         expect(readRefs).toEqual([]);
         expect(read.plannedLayoutRow).toBeNull();
+    });
+
+    it('propagates an accepted-layout corruption from activation without computing', async () => {
+        const corruption = new RtcTopologyRepositoryInvariantCorruptionError(
+            'accepted-layout-key',
+            'Stored topology snapshot is malformed'
+        );
+        const { service, acceptedReadRefs, prepare } = await createFenceReadHarness({
+            readAcceptedLayoutRow: async () => {
+                throw corruption;
+            }
+        });
+        const prepared = await prepare(toFormationActivateCommand({
+            groupRef: GROUP_REF,
+            formationEpoch: 0,
+            observedRate: 0.95,
+            degraded: false,
+            expectedLayout: PLANNED_LAYOUT
+        }));
+
+        await expect(service.read(prepared)).rejects.toBe(corruption);
+        expect(acceptedReadRefs).toEqual([GROUP_REF]);
     });
 
     it('feeds compute the service-read identity: superseded fences reject, matches pass', async () => {
