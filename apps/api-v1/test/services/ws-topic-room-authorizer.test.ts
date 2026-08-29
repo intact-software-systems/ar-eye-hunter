@@ -1,12 +1,12 @@
+import assert from 'node:assert/strict';
+
 import { type GroupStateService } from '@shared-server/rallar-system/group-state/group-state-service-contracts.ts';
 import { createCachedGroupStateService } from '@shared-server/rallar-system/group-state/snapshot/cached-group-state-service.ts';
 import { newALEventRoute, newALMulticastMessage } from '@shared/al-contracts/al-contract.ts';
 import { compareGroupCausalRevision } from '@shared/api/group-client-views.ts';
-import type { AuditStamp, GroupMember, GroupSnapshot } from '@shared/api/group-types.ts';
-import assert from 'node:assert/strict';
-
 import { resolveGroupLifecyclePolicyPreset } from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
 import { GROUP_LIFECYCLE_STATES } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
+import type { AuditStamp, GroupMember, GroupSnapshot } from '@shared/api/group-types.ts';
 
 import { createTestGroup } from '../../../../packages/tests/create-test-group.ts';
 import type { ApiV1RoomWsAuthorizerDependencies } from '../../src/services/ws-topic-room-authorizer.ts';
