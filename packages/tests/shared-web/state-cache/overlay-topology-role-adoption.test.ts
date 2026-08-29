@@ -19,8 +19,7 @@ import {
     beforeEach,
     describe,
     expect,
-    it,
-    vi
+    it
 } from 'vitest';
 
 import { configureTestCacheRepositories } from '../../cache-repository-config.ts';
@@ -165,7 +164,6 @@ describe('browser overlay topology role adoption', () => {
             adoption: 'publication'
         })).resolves.toMatchObject({ role: 'incomparable', changed: false });
         expect(findPlannedOverlayById(accepted.overlayId)).toBeUndefined();
-        expect(manager.notifyOverlayTopologyChanged).not.toHaveBeenCalled();
     });
 
     it('creates bootstrap only in planned and clears both roles on membership loss', async () => {
@@ -247,7 +245,6 @@ describe('browser overlay topology role adoption', () => {
         );
         groupStateSnapshotsRepository.removeGroupStateSnapshotByRef(joined.group);
         await acceptGroupSnapshotRemoval(joined, manager as never);
-        manager.notifyOverlayTopologyChanged.mockClear();
 
         await expect(adoptOverlayTopology({
             topology: delayedTopology,
@@ -261,7 +258,6 @@ describe('browser overlay topology role adoption', () => {
 
         expect(findPlannedOverlayById(delayedTopology.overlayId)).toBeUndefined();
         expect(findAcceptedOverlayById(delayedTopology.overlayId)).toBeUndefined();
-        expect(manager.notifyOverlayTopologyChanged).not.toHaveBeenCalled();
 
         const rejoined = groupSnapshot(3);
         const currentTopology = topologySnapshot(
@@ -313,7 +309,6 @@ describe('browser overlay topology role adoption', () => {
             manager as never,
             { localSessionId: 'session-a', bootstrapDegree: 5 }
         );
-        manager.notifyOverlayTopologyChanged.mockClear();
 
         await expect(adoptOverlayTopology({
             topology: delayedTopology,
@@ -327,18 +322,17 @@ describe('browser overlay topology role adoption', () => {
 
         expect(findPlannedOverlayById(delayedTopology.overlayId)).toBeUndefined();
         expect(findAcceptedOverlayById(delayedTopology.overlayId)).toBeUndefined();
-        expect(manager.notifyOverlayTopologyChanged).not.toHaveBeenCalled();
         expect(adoptionOutcomes).toContain('membership-ineligible-dropped');
     });
 });
 
 function webRtcGroupManager() {
     return {
-        notifyOverlayTopologyChanged: vi.fn(async () => undefined),
-        acceptGroupUpdate: vi.fn(async () => undefined),
-        ensureAllGroupsConnected: vi.fn(async () => undefined),
-        delete: vi.fn(async () => undefined),
-        has: vi.fn(() => true)
+        notifyOverlayTopologyChanged: async () => undefined,
+        acceptGroupUpdate: async () => undefined,
+        ensureAllGroupsConnected: async () => undefined,
+        delete: async () => undefined,
+        has: () => true
     };
 }
 

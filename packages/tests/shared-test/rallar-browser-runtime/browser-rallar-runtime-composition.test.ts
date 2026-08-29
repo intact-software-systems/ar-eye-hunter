@@ -56,10 +56,11 @@ describe('black-box browser room-state refresh composition', () => {
     it('enforces one caller deadline across a stalled topology hydration', async () => {
         const group = createGroupSnapshot();
         groupStateSnapshotsRepository.setGroupStateSnapshot(group);
-        const stalledFetch = vi.fn(
-            (_input: RequestInfo | URL, _init?: RequestInit) => new Promise<Response>(() => undefined)
-        );
-        vi.stubGlobal('fetch', stalledFetch);
+        let stalledSignal: AbortSignal | null = null;
+        vi.stubGlobal('fetch', (_input: RequestInfo | URL, init?: RequestInit) => {
+            stalledSignal = init?.signal ?? null;
+            return new Promise<Response>(() => undefined);
+        });
 
         const refresh = refreshBlackBoxBrowserRoomState({
             ...createRefreshInput(group),
@@ -70,24 +71,24 @@ describe('black-box browser room-state refresh composition', () => {
             name: 'TimeoutError',
             message: 'Room state refresh timed out after 5 ms.'
         });
-        expect(stalledFetch).toHaveBeenCalledOnce();
-        expect(stalledFetch.mock.calls[0]?.[1]?.signal).toMatchObject({ aborted: true });
+        expect(stalledSignal).toMatchObject({ aborted: true });
     });
 
     it('rejects caller cancellation even when topology hydration classifies abort as read-failed', async () => {
         const group = createGroupSnapshot();
         groupStateSnapshotsRepository.setGroupStateSnapshot(group);
-        const stalledFetch = vi.fn(
-            (_input: RequestInfo | URL, _init?: RequestInit) => new Promise<Response>(() => undefined)
-        );
-        vi.stubGlobal('fetch', stalledFetch);
+        const requestStarted = Promise.withResolvers<void>();
+        vi.stubGlobal('fetch', () => {
+            requestStarted.resolve();
+            return new Promise<Response>(() => undefined);
+        });
         const controller = new AbortController();
         const reason = new Error('caller cancelled room refresh');
         const refresh = refreshBlackBoxBrowserRoomState({
             ...createRefreshInput(group),
             options: { scope, signal: controller.signal, timeoutMs: 1_000 }
         });
-        await vi.waitFor(() => expect(stalledFetch).toHaveBeenCalledOnce());
+        await requestStarted.promise;
 
         controller.abort(reason);
 

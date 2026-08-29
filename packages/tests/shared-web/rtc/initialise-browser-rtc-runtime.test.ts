@@ -15,8 +15,7 @@ import {
     beforeEach,
     describe,
     expect,
-    it,
-    vi
+    it
 } from 'vitest';
 
 import { configureTestCacheRepositories } from '../../cache-repository-config.ts';
@@ -80,22 +79,27 @@ describe('browser RTC runtime composition', () => {
         );
 
         expect(result).toMatchObject({ status: 'sent-immediate', entries: [] });
-        expect(acceptedChannel.send).toHaveBeenCalledOnce();
-        expect(plannedChannel.send).not.toHaveBeenCalled();
-        const sent = acceptedChannel.send.mock.calls[0]?.[0];
+        expect(acceptedChannel.sentMessages).toHaveLength(1);
+        expect(plannedChannel.sentMessages).toEqual([]);
+        const sent = acceptedChannel.sentMessages[0];
         expect(sent?.forwarding?.overlayId).toBe(overlayId);
         expect(sent?.forwarding?.nextHopPeerIds).toEqual(['accepted-peer']);
     });
 });
 
 interface TestRtcChannel {
-    readonly send: ReturnType<typeof vi.fn<(message: ALMessage) => Promise<void>>>;
+    readonly sentMessages: ALMessage[];
+    readonly send: (message: ALMessage) => Promise<void>;
     readonly readHealth: () => { readonly readyState: 'open'; };
 }
 
 function openRtcChannel(): TestRtcChannel {
+    const sentMessages: ALMessage[] = [];
     return {
-        send: vi.fn(async (_message: ALMessage) => undefined),
+        sentMessages,
+        send: async (message) => {
+            sentMessages.push(message);
+        },
         readHealth: () => ({ readyState: 'open' })
     };
 }

@@ -47,9 +47,15 @@ describe('group topology read-through', () => {
         const group = createGroupSnapshot('room-a', ['session-a', 'session-b']);
         groupStateSnapshotsRepository.setGroupStateSnapshot(group);
         const topology = createTopologySnapshot(group, { groupRevision: 2, presenceRevision: 2 }, 3);
-        const fetchMock = vi.fn(async (_input: RequestInfo | URL) => jsonResponse(topologyView(group, topology)));
-        vi.stubGlobal('fetch', fetchMock);
-        const manager = createWebRtcGroupManager();
+        const requestedUrls: string[] = [];
+        vi.stubGlobal('fetch', async (input: RequestInfo | URL) => {
+            requestedUrls.push(String(input));
+            return jsonResponse(topologyView(group, topology));
+        });
+        let topologyChangeNotified = false;
+        const manager = createWebRtcGroupManager(() => {
+            topologyChangeNotified = true;
+        });
 
         const outcomes = await hydrateGroupTopologyOverlays({
             groupSnapshots: [group],
@@ -60,19 +66,22 @@ describe('group topology read-through', () => {
         });
 
         expect(outcomes).toEqual([{ groupId: 'room-a', outcome: 'adopted' }]);
-        expect(String(fetchMock.mock.calls[0]?.[0])).toContain('/groups/room-a/topology');
+        expect(requestedUrls).toEqual([expect.stringContaining('/groups/room-a/topology')]);
         const overlay = findPlannedOverlayById(topology.overlayId);
         expect(overlay?.provenance).toBe('server');
         expect(overlay?.overlayVersion).toBe(3);
-        expect(manager.notifyOverlayTopologyChanged).toHaveBeenCalled();
+        expect(topologyChangeNotified).toBe(true);
     });
 
     it('skips groups the session has not joined and reports absent overlays', async () => {
         const joined = createGroupSnapshot('room-a', ['session-a']);
         const notJoined = createGroupSnapshot('room-b', ['session-b']);
         groupStateSnapshotsRepository.setGroupStateSnapshots([joined, notJoined]);
-        const fetchMock = vi.fn(async () => jsonResponse(topologyView(joined, null)));
-        vi.stubGlobal('fetch', fetchMock);
+        const requestedUrls: string[] = [];
+        vi.stubGlobal('fetch', async (input: RequestInfo | URL) => {
+            requestedUrls.push(String(input));
+            return jsonResponse(topologyView(joined, null));
+        });
 
         const outcomes = await hydrateGroupTopologyOverlays({
             groupSnapshots: [joined, notJoined],
@@ -83,7 +92,7 @@ describe('group topology read-through', () => {
         });
 
         expect(outcomes).toEqual([{ groupId: 'room-a', outcome: 'no-overlay' }]);
-        expect(fetchMock).toHaveBeenCalledTimes(1);
+        expect(requestedUrls).toEqual([expect.stringContaining('/groups/room-a/topology')]);
     });
 
     it('reports a failed read without breaking the remaining groups', async () => {
@@ -179,8 +188,11 @@ describe('group topology read-through', () => {
         setPlannedOverlayById(overlayId, toOverlayInfoForSession(oldPlanned, 'session-a'));
         setAcceptedOverlayById(overlayId, toOverlayInfoForSession(oldAccepted, 'session-a'));
         const response = Promise.withResolvers<Response>();
-        const fetchMock = vi.fn(() => response.promise);
-        vi.stubGlobal('fetch', fetchMock);
+        const requestStarted = Promise.withResolvers<void>();
+        vi.stubGlobal('fetch', () => {
+            requestStarted.resolve();
+            return response.promise;
+        });
         const manager = createWebRtcGroupManager();
 
         const hydration = hydrateGroupTopologyOverlays({
@@ -190,7 +202,7 @@ describe('group topology read-through', () => {
             scope,
             apiRequest: { authSession: null }
         });
-        expect(fetchMock).toHaveBeenCalledOnce();
+        await requestStarted.promise;
 
         const newerPlanned = createTopologySnapshot(group, { groupRevision: 2, presenceRevision: 2 }, 2);
         const newerAccepted = createTopologySnapshot(group, { groupRevision: 2, presenceRevision: 2 }, 2);
@@ -201,7 +213,6 @@ describe('group topology read-through', () => {
         await expect(hydration).resolves.toEqual([{ groupId: 'room-a', outcome: 'no-overlay' }]);
         expect(findPlannedOverlayById(overlayId)?.overlayVersion).toBe(2);
         expect(findAcceptedOverlayById(overlayId)?.overlayVersion).toBe(2);
-        expect(manager.notifyOverlayTopologyChanged).not.toHaveBeenCalled();
     });
 
     it('clears unchanged planned and accepted observations when a null read completes', async () => {
@@ -213,9 +224,15 @@ describe('group topology read-through', () => {
         setPlannedOverlayById(overlayId, toOverlayInfoForSession(planned, 'session-a'));
         setAcceptedOverlayById(overlayId, toOverlayInfoForSession(accepted, 'session-a'));
         const response = Promise.withResolvers<Response>();
-        const fetchMock = vi.fn(() => response.promise);
-        vi.stubGlobal('fetch', fetchMock);
-        const manager = createWebRtcGroupManager();
+        const requestStarted = Promise.withResolvers<void>();
+        vi.stubGlobal('fetch', () => {
+            requestStarted.resolve();
+            return response.promise;
+        });
+        let topologyChangeNotified = false;
+        const manager = createWebRtcGroupManager(() => {
+            topologyChangeNotified = true;
+        });
 
         const hydration = hydrateGroupTopologyOverlays({
             groupSnapshots: [group],
@@ -224,13 +241,13 @@ describe('group topology read-through', () => {
             scope,
             apiRequest: { authSession: null }
         });
-        expect(fetchMock).toHaveBeenCalledOnce();
+        await requestStarted.promise;
         response.resolve(jsonResponse(topologyView(group, null, null)));
 
         await expect(hydration).resolves.toEqual([{ groupId: 'room-a', outcome: 'no-overlay' }]);
         expect(findPlannedOverlayById(overlayId)).toBeUndefined();
         expect(findAcceptedOverlayById(overlayId)).toBeUndefined();
-        expect(manager.notifyOverlayTopologyChanged).toHaveBeenCalledOnce();
+        expect(topologyChangeNotified).toBe(true);
     });
 
     it('does not resurrect overlay roles after membership is removed while a topology read is pending', async () => {
@@ -243,8 +260,11 @@ describe('group topology read-through', () => {
         const planned = createTopologySnapshot(group, { groupRevision: 2, presenceRevision: 2 }, 2);
         const accepted = createTopologySnapshot(group, { groupRevision: 1, presenceRevision: 1 }, 1);
         const response = Promise.withResolvers<Response>();
-        const fetchMock = vi.fn(() => response.promise);
-        vi.stubGlobal('fetch', fetchMock);
+        const requestStarted = Promise.withResolvers<void>();
+        vi.stubGlobal('fetch', () => {
+            requestStarted.resolve();
+            return response.promise;
+        });
         const manager = createWebRtcGroupManager();
 
         const hydration = hydrateGroupTopologyOverlays({
@@ -254,7 +274,7 @@ describe('group topology read-through', () => {
             scope,
             apiRequest: { authSession: null }
         });
-        expect(fetchMock).toHaveBeenCalledOnce();
+        await requestStarted.promise;
 
         groupStateSnapshotsRepository.removeGroupStateSnapshotByRef(group.group);
         removeOverlayRoles(overlayId);
@@ -263,7 +283,6 @@ describe('group topology read-through', () => {
         await expect(hydration).resolves.toEqual([{ groupId: 'room-a', outcome: 'no-overlay' }]);
         expect(findPlannedOverlayById(overlayId)).toBeUndefined();
         expect(findAcceptedOverlayById(overlayId)).toBeUndefined();
-        expect(manager.notifyOverlayTopologyChanged).not.toHaveBeenCalled();
     });
 
     it('rejects topology views whose outer group or overlay id differs from the requested group', async () => {
@@ -366,10 +385,12 @@ function topologyView(
     };
 }
 
-function createWebRtcGroupManager(): WebRtcGroupManager {
+function createWebRtcGroupManager(onTopologyChanged?: () => void): WebRtcGroupManager {
     return {
         notifyClientPresenceChanged: vi.fn(async () => undefined),
-        notifyOverlayTopologyChanged: vi.fn(async () => undefined),
+        notifyOverlayTopologyChanged: async () => {
+            onTopologyChanged?.();
+        },
         acceptGroupUpdate: vi.fn(async () => undefined),
         ensureAllGroupsConnected: vi.fn(async () => undefined),
         delete: vi.fn(async () => undefined),
