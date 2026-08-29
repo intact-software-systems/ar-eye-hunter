@@ -6,6 +6,7 @@ import type { AuditStamp, GroupMember, GroupSnapshot } from '@shared/api/group-t
 import assert from 'node:assert/strict';
 
 import { resolveGroupLifecyclePolicyPreset } from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
+import { GROUP_LIFECYCLE_STATES } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 
 import { createTestGroup } from '../../../../packages/tests/create-test-group.ts';
 import type { ApiV1RoomWsAuthorizerDependencies } from '../../src/services/ws-topic-room-authorizer.ts';
@@ -240,24 +241,35 @@ Deno.test('API room authorization reads no policy during accepted-layout reconfi
     }
 });
 
-Deno.test('API room authorization denies halted application data before policy reads', async () => {
-    const current = createConnectingSnapshot();
-    const snapshot = {
-        ...current,
-        group: { ...current.group, transportState: 'halted' as const }
-    };
-    let policyReads = 0;
-    const authorizer = createApiV1RoomWsAuthorizer({
-        readCurrentSnapshot: () => Promise.resolve(snapshot)
-    }, {
-        readLifecyclePolicy: () => {
-            policyReads += 1;
-            return Promise.resolve({ status: 'absent' });
-        }
-    });
+Deno.test('API room authorization denies halted application data in every stage without policy reads', async () => {
+    for (const lifecycleState of GROUP_LIFECYCLE_STATES) {
+        for (const presetName of ['optimistic', 'match'] as const) {
+            const current = createSnapshot();
+            const snapshot = {
+                ...current,
+                group: {
+                    ...current.group,
+                    lifecycleState,
+                    transportState: 'halted' as const
+                }
+            };
+            let policyReads = 0;
+            const authorizer = createApiV1RoomWsAuthorizer({
+                readCurrentSnapshot: () => Promise.resolve(snapshot)
+            }, {
+                readLifecyclePolicy: () => {
+                    policyReads += 1;
+                    return Promise.resolve({
+                        status: 'present' as const,
+                        policy: resolveGroupLifecyclePolicyPreset(presetName)
+                    });
+                }
+            });
 
-    assert.notEqual(await authorizer(roomChatInput(snapshot)), true);
-    assert.equal(policyReads, 0);
+            assert.notEqual(await authorizer(roomChatInput(snapshot)), true);
+            assert.equal(policyReads, 0);
+        }
+    }
 });
 
 Deno.test('API room authorization exempts the CRDT topics from the data-policy gate', async () => {

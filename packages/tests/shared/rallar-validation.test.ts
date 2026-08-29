@@ -51,6 +51,9 @@ describe('Rallar shared validation', () => {
             .toBe('invalid-ws-user-topic');
         expect(validateRallarWsUserTopicId('rallar.internal', '$.topicId').issues[0]?.code)
             .toBe('reserved-ws-topic');
+    });
+
+    it('does not expose the removed global chat system topic', () => {
         expect(AppTopics).not.toHaveProperty('chat');
     });
 

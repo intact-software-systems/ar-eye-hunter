@@ -1,16 +1,16 @@
-import { readALTargetGroupRef } from '@shared/al-contracts/al-contract.ts';
-import { readGroupVersion } from '@shared/api/group-client-views.ts';
-import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
-
 import {
     blocksGroupPreActivationData,
     canSendGroupMessage
 } from '@shared-server/rallar-system/group-state/policy/group-message-policy.ts';
 import { denyGroupPolicy } from '@shared-server/rallar-system/group-state/policy/group-policy-result.ts';
+import { readALTargetGroupRef } from '@shared/al-contracts/al-contract.ts';
 import { isSameGroupScope } from '@shared/api/api-type-utils.ts';
+import { readGroupVersion } from '@shared/api/group-client-views.ts';
 import type { GroupPreActivationAppData } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import type { GroupPolicyDenied } from '@shared/api/group-policy-types.ts';
+import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import { RALLAR_CRDT_APP_TOPIC_ID, RALLAR_CRDT_ROOM_TOPIC_ID } from '@shared/crdt/crdt-types.ts';
+
 import type { RallarSnapshotPresenceClock } from '../presence/snapshot-presence.ts';
 import type {
     RallarServerWsRoomAuthorizationDecision,
@@ -18,6 +18,17 @@ import type {
 } from './router/rallar-server-ws-router-contracts.ts';
 
 type MaybePromise<T> = T | Promise<T>;
+
+type ReadRoomAuthorizationSnapshotResult =
+    | {
+        readonly kind: 'ready';
+        readonly snapshot: GroupSnapshot;
+        readonly serverSnapshotVersion: number;
+    }
+    | {
+        readonly kind: 'denied';
+        readonly decision: RallarServerWsRoomAuthorizationDecision | false;
+    };
 
 export interface CreateGroupRoomWsAuthorizerOptions {
     findGroupSnapshotByRef?: (
@@ -45,56 +56,12 @@ export function createGroupRoomWsAuthorizer(
     options: CreateGroupRoomWsAuthorizerOptions
 ): RallarServerWsRoomAuthorizer {
     return async (input) => {
-        const groupRef = input.roomRef ??
-            readALTargetGroupRef(input.message) ??
-            await options.resolveGroupRef?.(input);
-        const scopedSnapshot = groupRef
-            ? await options.findGroupSnapshotByRef?.(groupRef, input)
-            : undefined;
-        const byIdSnapshot = scopedSnapshot
-            ? undefined
-            : await options.findGroupSnapshotById?.(input.roomId);
-        if (groupRef && byIdSnapshot && !isSameGroupScope(byIdSnapshot.group, groupRef)) {
-            return {
-                authorized: false,
-                reason: 'unauthorized',
-                logMessage: `Rejected room message for ${input.roomId}: group scope mismatch.`,
-                serverSnapshotVersion: readGroupVersion(byIdSnapshot)
-            };
-        }
-        const snapshot = scopedSnapshot ?? (
-            byIdSnapshot && (!groupRef || isSameGroupScope(byIdSnapshot.group, groupRef))
-                ? byIdSnapshot
-                : undefined
-        );
-        const minSnapshotVersion = input.minSnapshotVersion;
-
-        if (!snapshot) {
-            if (minSnapshotVersion !== undefined) {
-                return {
-                    authorized: false,
-                    reason: 'not-yet-in-sync',
-                    logMessage: `Room ${input.roomId} cache is missing; requires snapshot version ${minSnapshotVersion}`
-                };
-            }
-
-            return false;
+        const snapshotRead = await readRoomAuthorizationSnapshot(options, input);
+        if (snapshotRead.kind === 'denied') {
+            return snapshotRead.decision;
         }
 
-        const serverSnapshotVersion = readGroupVersion(snapshot);
-        if (
-            minSnapshotVersion !== undefined &&
-            serverSnapshotVersion < minSnapshotVersion
-        ) {
-            return {
-                authorized: false,
-                reason: 'not-yet-in-sync',
-                logMessage:
-                    `Room ${input.roomId} cache version ${serverSnapshotVersion} is older than required version ${minSnapshotVersion}`,
-                serverSnapshotVersion
-            };
-        }
-
+        const { snapshot, serverSnapshotVersion } = snapshotRead;
         const isCrdtTopic = input.topicId === RALLAR_CRDT_ROOM_TOPIC_ID ||
             input.topicId === RALLAR_CRDT_APP_TOPIC_ID;
         const preActivationAppData = await resolvePreActivationAppData(
@@ -108,7 +75,7 @@ export function createGroupRoomWsAuthorizer(
                 sessionId: input.senderId
             },
             senderSessionId: input.senderId,
-            minSnapshotVersion,
+            minSnapshotVersion: input.minSnapshotVersion,
             nowEpochMs: options.now?.() ?? Date.now(),
             ...(preActivationAppData === undefined ? {} : { preActivationAppData })
         });
@@ -128,6 +95,65 @@ export function createGroupRoomWsAuthorizer(
 
         return true;
     };
+}
+
+async function readRoomAuthorizationSnapshot(
+    options: CreateGroupRoomWsAuthorizerOptions,
+    input: Parameters<RallarServerWsRoomAuthorizer>[0]
+): Promise<ReadRoomAuthorizationSnapshotResult> {
+    const groupRef = input.roomRef ??
+        readALTargetGroupRef(input.message) ??
+        await options.resolveGroupRef?.(input);
+    const scopedSnapshot = groupRef
+        ? await options.findGroupSnapshotByRef?.(groupRef, input)
+        : undefined;
+    const byIdSnapshot = scopedSnapshot
+        ? undefined
+        : await options.findGroupSnapshotById?.(input.roomId);
+    if (groupRef && byIdSnapshot && !isSameGroupScope(byIdSnapshot.group, groupRef)) {
+        return {
+            kind: 'denied',
+            decision: {
+                authorized: false,
+                reason: 'unauthorized',
+                logMessage: `Rejected room message for ${input.roomId}: group scope mismatch.`,
+                serverSnapshotVersion: readGroupVersion(byIdSnapshot)
+            }
+        };
+    }
+    const snapshot = scopedSnapshot ?? byIdSnapshot;
+    if (!snapshot) {
+        return {
+            kind: 'denied',
+            decision: input.minSnapshotVersion === undefined
+                ? false
+                : {
+                    authorized: false,
+                    reason: 'not-yet-in-sync',
+                    logMessage:
+                        `Room ${input.roomId} cache is missing; requires snapshot version ${input.minSnapshotVersion}`
+                }
+        };
+    }
+
+    const serverSnapshotVersion = readGroupVersion(snapshot);
+    if (
+        input.minSnapshotVersion !== undefined &&
+        serverSnapshotVersion < input.minSnapshotVersion
+    ) {
+        return {
+            kind: 'denied',
+            decision: {
+                authorized: false,
+                reason: 'not-yet-in-sync',
+                logMessage:
+                    `Room ${input.roomId} cache version ${serverSnapshotVersion} is older than required version ${input.minSnapshotVersion}`,
+                serverSnapshotVersion
+            }
+        };
+    }
+
+    return { kind: 'ready', snapshot, serverSnapshotVersion };
 }
 
 /**
