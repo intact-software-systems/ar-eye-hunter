@@ -76,6 +76,11 @@ interface RoomStateRefreshAbortScope {
     cleanup(): void;
 }
 
+interface AbortRejection {
+    readonly promise: Promise<never>;
+    cleanup(): void;
+}
+
 export interface BlackBoxBrowserRallarRuntimeDependency extends
     Pick<
         RallarConnectionOperations,
@@ -213,8 +218,10 @@ export async function refreshBlackBoxBrowserRoomState(
 ): Promise<void> {
     const abortScope = createRoomStateRefreshAbortScope(input.options);
     const options = { ...input.options, signal: abortScope.signal };
+    let abortRejection: AbortRejection | undefined;
     try {
         throwIfAborted(abortScope.signal);
+        abortRejection = createAbortRejection(abortScope.signal);
         const refresh = Promise.resolve().then(async () => {
             const refreshedRoom = await input.rooms.session(input.roomRef).refresh(options);
             const groupSnapshot = refreshedRoom.snapshot();
@@ -233,9 +240,10 @@ export async function refreshBlackBoxBrowserRoomState(
                 }
             });
         });
-        await Promise.race([refresh, rejectOnAbort(abortScope.signal)]);
+        await Promise.race([refresh, abortRejection.promise]);
     }
     finally {
+        abortRejection?.cleanup();
         abortScope.cleanup();
     }
 }
@@ -274,20 +282,28 @@ function createRoomStateRefreshAbortScope(
     };
 }
 
-function rejectOnAbort(signal: AbortSignal): Promise<never> {
-    return new Promise((_resolve, reject) => {
-        const onAbort = () => reject(signal.reason ?? new Error('Room state refresh aborted.'));
-        if (signal.aborted) {
-            onAbort();
-            return;
-        }
-        signal.addEventListener('abort', onAbort, { once: true });
+function createAbortRejection(signal: AbortSignal): AbortRejection {
+    let rejectPromise: (reason: Error) => void = () => undefined;
+    const promise = new Promise<never>((_resolve, reject) => {
+        rejectPromise = reject;
     });
+    const onAbort = () => rejectPromise(abortReason(signal));
+    signal.addEventListener('abort', onAbort, { once: true });
+    return {
+        promise,
+        cleanup: () => signal.removeEventListener('abort', onAbort)
+    };
+}
+
+function abortReason(signal: AbortSignal): Error {
+    return signal.reason instanceof Error
+        ? signal.reason
+        : new Error('Room state refresh aborted.');
 }
 
 function throwIfAborted(signal: AbortSignal): void {
     if (signal.aborted) {
-        throw signal.reason ?? new Error('Room state refresh aborted.');
+        throw abortReason(signal);
     }
 }
 
