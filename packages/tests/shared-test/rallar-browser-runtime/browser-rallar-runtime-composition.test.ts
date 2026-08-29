@@ -93,6 +93,29 @@ describe('black-box browser room-state refresh composition', () => {
         await expect(refresh).rejects.toBe(reason);
     });
 
+    it('removes the private abort-race listener after a successful refresh', async () => {
+        const group = createGroupSnapshot();
+        groupStateSnapshotsRepository.setGroupStateSnapshot(group);
+        vi.stubGlobal(
+            'fetch',
+            vi.fn(async () => jsonResponse(topologyView(group, null, null)))
+        );
+        const addEventListener = vi.spyOn(AbortSignal.prototype, 'addEventListener');
+        const removeEventListener = vi.spyOn(AbortSignal.prototype, 'removeEventListener');
+
+        await refreshBlackBoxBrowserRoomState({
+            ...createRefreshInput(group),
+            options: { scope, timeoutMs: 1_000 }
+        });
+
+        const abortRegistration = addEventListener.mock.calls.find(([event]) => event === 'abort');
+        expect(abortRegistration).toBeDefined();
+        expect(removeEventListener).toHaveBeenCalledWith(
+            'abort',
+            abortRegistration?.[1]
+        );
+    });
+
     it('hydrates and clears both topology roles through the production refresh operation', async () => {
         const group = createGroupSnapshot();
         groupStateSnapshotsRepository.setGroupStateSnapshot(group);
