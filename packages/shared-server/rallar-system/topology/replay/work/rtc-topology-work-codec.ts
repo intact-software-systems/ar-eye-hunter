@@ -194,8 +194,8 @@ function readGroupRevisionWork(input: ReadRtcTopologyWorkVariantInput): Persiste
     }
     requireWorkKeys({
         value: work,
-        required: [...commonKeys, 'sourceGroupStateCausalRevision'],
-        allowed: [...commonKeys, 'sourceGroupStateCausalRevision', COALESCED_APP_OUTBOX_WORK_FIELD],
+        required: [...commonKeys, 'sourceGroupStateCausalRevision', 'origin'],
+        allowed: [...commonKeys, 'sourceGroupStateCausalRevision', 'origin', COALESCED_APP_OUTBOX_WORK_FIELD],
         label: 'RTC topology work data'
     });
     const sourceGroupStateCausalRevision = readWorkGroupCausalRevision(
@@ -203,11 +203,15 @@ function readGroupRevisionWork(input: ReadRtcTopologyWorkVariantInput): Persiste
         'RTC topology work source causal revision'
     );
     validateWorkGroupCausalRevision(sourceGroupStateCausalRevision, commonWork.groupSnapshot);
+    if (work.origin !== 'automatic' && work.origin !== 'commanded') {
+        throw new TypeError('RTC topology group-revision work origin is invalid');
+    }
     const metadata = readOptionalCoalescedWorkMetadata(work);
     return {
         kind: 'group-revision',
         ...commonWork,
         sourceGroupStateCausalRevision,
+        origin: work.origin,
         ...optionalCoalescedMetadata(metadata)
     };
 }

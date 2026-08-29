@@ -190,6 +190,7 @@ export interface AuthenticatedGroupMutationPayloadByType {
     [AppInboxType.GROUP_PLAN]: GroupLifecycleTransitionAppInboxPayload;
     [AppInboxType.GROUP_CONNECT]: GroupConnectAppInboxPayload;
     [AppInboxType.GROUP_ACTIVATE]: GroupLifecycleTransitionAppInboxPayload;
+    [AppInboxType.GROUP_RECONFIGURE]: GroupLifecycleTransitionAppInboxPayload;
     [AppInboxType.GROUP_ESTABLISHMENT_REOPEN]: GroupLifecycleTransitionAppInboxPayload;
     [AppInboxType.GROUP_JOIN]: GroupJoinAppInboxPayload;
     [AppInboxType.GROUP_INVITE_CREATE]: GroupInviteCreateAppInboxPayload;
@@ -237,6 +238,7 @@ export const AUTHENTICATED_GROUP_INBOX_TYPES = [
     AppInboxType.GROUP_PLAN,
     AppInboxType.GROUP_CONNECT,
     AppInboxType.GROUP_ACTIVATE,
+    AppInboxType.GROUP_RECONFIGURE,
     AppInboxType.GROUP_ESTABLISHMENT_REOPEN,
     AppInboxType.GROUP_JOIN,
     AppInboxType.GROUP_INVITE_CREATE,

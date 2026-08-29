@@ -44,7 +44,7 @@ import { createAuthorityHarness, processAuthenticated, SCOPE } from './group-sta
  *
  * `GROUP_CONNECT` runs after the matrix, against a stored plan and against a
  * missing one, so it is exercised by this file rather than by the array. The
- * other three predate this list and are covered elsewhere. `start` is the one
+ * other two predate this list and are covered elsewhere. `start` is the one
  * this slice adds: `dormant` is its only legal source stage and no command
  * reaches `dormant` until slice 6c's `reset` exists -- decision 35 forbids
  * creating a group there and exhaustion's landing is still dark -- so its
@@ -92,6 +92,7 @@ describe('GroupStateInboxService authenticated authority', () => {
             AppInboxType.GROUP_PLAN,
             AppInboxType.GROUP_CONNECT,
             AppInboxType.GROUP_ACTIVATE,
+            AppInboxType.GROUP_RECONFIGURE,
             AppInboxType.GROUP_ESTABLISHMENT_REOPEN,
             AppInboxType.GROUP_JOIN,
             AppInboxType.GROUP_INVITE_CREATE,
@@ -131,6 +132,7 @@ describe('GroupStateInboxService authenticated authority', () => {
 async function runEveryAdvertisedGroupOperation(): Promise<void> {
     const harness = await createAuthorityHarness(['owner', 'bob', 'charlie']);
     const groupId = 'operation-matrix-room';
+    const reconfigureGroupId = 'operation-matrix-reconfigure';
     const phasedGroupId = 'operation-matrix-phased';
     const admissionGroupId = 'operation-matrix-admissions';
     const ownerActor = {
@@ -533,6 +535,50 @@ async function runEveryAdvertisedGroupOperation(): Promise<void> {
                 expect(await readMatrixPresenceSession(harness, groupId, 'bob-session')).toMatchObject({
                     status: 'disconnected'
                 });
+            }
+        },
+        {
+            type: AppInboxType.GROUP_CREATE,
+            operation: 'createGroup',
+            authority: harness.sessions.owner,
+            data: {
+                scope: SCOPE,
+                request: {
+                    groupId: reconfigureGroupId,
+                    displayName: 'Operation Matrix Reconfigure',
+                    kind: 'room',
+                    joinMode: 'open',
+                    createdByPrincipalId: 'owner',
+                    lifecyclePolicy: { topology: { reconfigureLanding: 'hold' } },
+                    ...ownerActor,
+                    requestId: 'matrix-create-reconfigure'
+                }
+            } satisfies GroupCreateAppInboxPayload,
+            assertDomain: async () => {
+                expect(
+                    (await harness.repository.readSnapshot({ ...SCOPE, groupId: reconfigureGroupId }))
+                        ?.group.lifecycleState
+                ).toBe('active');
+            }
+        },
+        {
+            type: AppInboxType.GROUP_RECONFIGURE,
+            operation: 'reconfigureGroup',
+            authority: harness.sessions.owner,
+            data: {
+                scope: SCOPE,
+                groupId: reconfigureGroupId,
+                request: {
+                    expectedFormationEpoch: 0,
+                    ...ownerActor,
+                    requestId: 'matrix-reconfigure'
+                }
+            } satisfies GroupLifecycleTransitionAppInboxPayload,
+            assertDomain: async () => {
+                expect(
+                    (await harness.repository.readSnapshot({ ...SCOPE, groupId: reconfigureGroupId }))
+                        ?.group.lifecycleState
+                ).toBe('reconfiguring');
             }
         },
         {

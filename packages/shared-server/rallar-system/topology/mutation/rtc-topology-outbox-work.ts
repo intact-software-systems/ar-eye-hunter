@@ -30,6 +30,7 @@ export interface RtcTopologyGroupRevisionWork {
     readonly sourceGroupStateCausalRevision: GroupStateCausalRevision;
     readonly requestedAtEpochMs: number;
     readonly requestOptions: CanonicalGroupTopologyConfigPatch;
+    readonly origin: 'automatic' | 'commanded';
     readonly publish: boolean;
 }
 
@@ -199,6 +200,7 @@ function createRtcTopologyWorkRuntime(
                 sourceGroupStateCausalRevision,
                 requestedAtEpochMs,
                 requestOptions: toCanonicalGroupTopologyConfigPatch({}),
+                origin: 'automatic',
                 publish: true
             }
         };

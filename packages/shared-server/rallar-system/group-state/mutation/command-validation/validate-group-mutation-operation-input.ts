@@ -50,6 +50,7 @@ type AggregateOperation = Extract<
     | 'appointDirector'
     | 'rotateGroupJoinCode'
     | 'startGroupEstablishment'
+    | 'reconfigureGroup'
     | 'planGroupLayout'
     | 'connectGroup'
     | 'startGroupFormation'
@@ -225,6 +226,7 @@ function isAggregateOperation(
         'appointDirector',
         'rotateGroupJoinCode',
         'startGroupEstablishment',
+        'reconfigureGroup',
         'planGroupLayout',
         'connectGroup',
         'startGroupFormation',

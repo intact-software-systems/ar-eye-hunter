@@ -117,6 +117,9 @@ export function computeGroupPresenceSummaryWork(
             expireAtEpochMs: work.expireAtEpochMs,
             recomputeDebounceMs: options.recomputeDebounceMs,
             senderId: options.serviceId,
+            origin: work.event.payload.topologyReplanOrigin === 'commanded'
+                ? 'commanded'
+                : 'automatic',
             previousEntry: read.coalescedTopologyEntry
         })
     };

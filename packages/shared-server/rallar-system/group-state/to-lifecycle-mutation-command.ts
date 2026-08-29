@@ -11,6 +11,7 @@ export function toLifecycleMutationCommand(
 ): GroupMutationCommand {
     switch (descriptor.operation) {
         case 'startGroupEstablishment':
+        case 'reconfigureGroup':
         case 'reopenGroupEstablishment':
         case 'planGroupLayout':
         case 'startGroupFormation':
@@ -29,6 +30,7 @@ export function toLifecycleMutationCommand(
 function toTransitionCommand(
     operation:
         | 'startGroupEstablishment'
+        | 'reconfigureGroup'
         | 'reopenGroupEstablishment'
         | 'planGroupLayout'
         | 'startGroupFormation',

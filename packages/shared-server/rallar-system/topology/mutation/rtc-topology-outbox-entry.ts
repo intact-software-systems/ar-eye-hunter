@@ -55,6 +55,7 @@ interface RtcTopologyGroupRevisionWork {
     readonly sourceGroupStateCausalRevision: GroupStateCausalRevision;
     readonly requestedAtEpochMs: number;
     readonly requestOptions: CanonicalGroupTopologyConfigPatch;
+    readonly origin: 'automatic' | 'commanded';
     readonly publish: boolean;
 }
 
@@ -111,7 +112,8 @@ export function computeRtcTopologyEntry(computed: ComputedRtcTopologyOutbox): Re
         : {
             ...commonWork,
             kind: 'group-revision',
-            sourceGroupStateCausalRevision
+            sourceGroupStateCausalRevision,
+            origin: 'automatic'
         };
     const envelope: RtcTopologyWorkEnvelope = {
         type: AppOutboxType.RTC_TOPOLOGY_RECOMPUTE,

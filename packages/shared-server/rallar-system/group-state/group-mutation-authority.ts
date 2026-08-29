@@ -262,6 +262,7 @@ export function toDescriptorCommand(
         case 'connectGroup':
         case 'startGroupFormation':
         case 'activateGroup':
+        case 'reconfigureGroup':
         case 'reopenGroupEstablishment':
         case 'failGroupFormation':
             return toLifecycleMutationCommand(descriptor, randomId);

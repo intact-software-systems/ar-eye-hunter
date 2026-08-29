@@ -80,6 +80,7 @@ const GROUP_APP_INBOX_OPERATIONS = new Map<AppInboxType, GroupMutationDescriptor
     [AppInboxType.GROUP_PLAN, 'planGroupLayout'],
     [AppInboxType.GROUP_CONNECT, 'connectGroup'],
     [AppInboxType.GROUP_ACTIVATE, 'activateGroup'],
+    [AppInboxType.GROUP_RECONFIGURE, 'reconfigureGroup'],
     [AppInboxType.GROUP_ESTABLISHMENT_REOPEN, 'reopenGroupEstablishment'],
     [AppInboxType.GROUP_JOIN, 'joinGroup'],
     [AppInboxType.GROUP_INVITE_CREATE, 'createGroupInvite'],

@@ -144,6 +144,8 @@ function toGroupMutationOperation(
             return 'connectGroup';
         case AppInboxType.GROUP_ACTIVATE:
             return 'activateGroup';
+        case AppInboxType.GROUP_RECONFIGURE:
+            return 'reconfigureGroup';
         case AppInboxType.GROUP_ESTABLISHMENT_REOPEN:
             return 'reopenGroupEstablishment';
         case AppInboxType.GROUP_JOIN:

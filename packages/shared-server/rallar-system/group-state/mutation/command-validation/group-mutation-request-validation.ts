@@ -187,6 +187,7 @@ const GROUP_MUTATION_REQUEST_KEYS: Readonly<Record<GroupMutationCommand['operati
     startGroupFormation: [...MUTATION_REQUEST_KEYS],
     connectGroup: [...MUTATION_REQUEST_KEYS, 'expectedFormationEpoch', 'expectedLayout'],
     activateGroup: [...MUTATION_REQUEST_KEYS],
+    reconfigureGroup: [...MUTATION_REQUEST_KEYS, 'expectedFormationEpoch'],
     reopenGroupEstablishment: [...MUTATION_REQUEST_KEYS],
     // Internal-only: never reaches the HTTP request validator, listed for the
     // Record's completeness. The criterion payload carries the observed rate.

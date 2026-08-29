@@ -9,6 +9,7 @@ import {
 import type { RtcTopologyGroupRevisionWork } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-work.ts';
 import {
     computeCoalescedRtcTopologyGroupRevisionWork,
+    isChangeGatedGroupRevisionWork,
     mergeRtcTopologyGroupRevisionWork,
     readPendingTopologyReplan,
     toRtcTopologyCoalescedGroupRevisionResourceId
@@ -39,6 +40,23 @@ const EXPIRE_AT_EPOCH_MS = BASE_EPOCH_MS + 3_600_000;
 const DEBOUNCE_MS = 500;
 
 describe('computeCoalescedRtcTopologyGroupRevisionWork', () => {
+    it('keeps a commanded reconfigure outside the automatic change gate', () => {
+        const computed = computeCoalescedRtcTopologyGroupRevisionWork({
+            aggregateRef: GROUP_REF,
+            groupSnapshot: createGroupSnapshot(4, 3),
+            requestedAtEpochMs: BASE_EPOCH_MS,
+            expireAtEpochMs: EXPIRE_AT_EPOCH_MS,
+            recomputeDebounceMs: DEBOUNCE_MS,
+            senderId: 'server-1',
+            origin: 'commanded',
+            previousEntry: null
+        });
+
+        const envelope = readPersistedGroupRevisionEnvelope(computed.entry);
+        expect(envelope.data.origin).toBe('commanded');
+        expect(isChangeGatedGroupRevisionWork(envelope.data)).toBe(false);
+    });
+
     it('creates a per-group coalesced entry with debounce scheduling on first intent', () => {
         const computed = computeCoalescedRtcTopologyGroupRevisionWork({
             aggregateRef: GROUP_REF,
@@ -47,6 +65,7 @@ describe('computeCoalescedRtcTopologyGroupRevisionWork', () => {
             expireAtEpochMs: EXPIRE_AT_EPOCH_MS,
             recomputeDebounceMs: DEBOUNCE_MS,
             senderId: 'server-1',
+            origin: 'automatic',
             previousEntry: null
         });
 
@@ -75,6 +94,7 @@ describe('computeCoalescedRtcTopologyGroupRevisionWork', () => {
             expireAtEpochMs: EXPIRE_AT_EPOCH_MS,
             recomputeDebounceMs: 0,
             senderId: 'server-1',
+            origin: 'automatic',
             previousEntry: null
         });
 
@@ -90,6 +110,7 @@ describe('computeCoalescedRtcTopologyGroupRevisionWork', () => {
             expireAtEpochMs: EXPIRE_AT_EPOCH_MS,
             recomputeDebounceMs: DEBOUNCE_MS,
             senderId: 'server-1',
+            origin: 'automatic',
             previousEntry: null
         });
         const second = computeCoalescedRtcTopologyGroupRevisionWork({
@@ -99,6 +120,7 @@ describe('computeCoalescedRtcTopologyGroupRevisionWork', () => {
             expireAtEpochMs: EXPIRE_AT_EPOCH_MS,
             recomputeDebounceMs: DEBOUNCE_MS,
             senderId: 'server-1',
+            origin: 'automatic',
             previousEntry: first.entry
         });
 
@@ -126,6 +148,7 @@ describe('computeCoalescedRtcTopologyGroupRevisionWork', () => {
             expireAtEpochMs: unexpiredExpireAtEpochMs,
             recomputeDebounceMs: DEBOUNCE_MS,
             senderId: 'server-1',
+            origin: 'automatic',
             previousEntry: null
         });
         const second = computeCoalescedRtcTopologyGroupRevisionWork({
@@ -135,6 +158,7 @@ describe('computeCoalescedRtcTopologyGroupRevisionWork', () => {
             expireAtEpochMs: unexpiredExpireAtEpochMs + 200,
             recomputeDebounceMs: DEBOUNCE_MS,
             senderId: 'server-1',
+            origin: 'automatic',
             previousEntry: first.entry
         });
         const merged = JSON.parse(second.entry.resource) as {
@@ -176,6 +200,7 @@ describe('computeCoalescedRtcTopologyGroupRevisionWork', () => {
             expireAtEpochMs: unexpiredExpireAtEpochMs,
             recomputeDebounceMs: DEBOUNCE_MS,
             senderId: 'server-1',
+            origin: 'automatic',
             previousEntry: null
         });
         const completedFirst: ResourceEntry = {
@@ -190,6 +215,7 @@ describe('computeCoalescedRtcTopologyGroupRevisionWork', () => {
             expireAtEpochMs: unexpiredExpireAtEpochMs + 5_000,
             recomputeDebounceMs: DEBOUNCE_MS,
             senderId: 'server-1',
+            origin: 'automatic',
             previousEntry: completedFirst
         });
         const revivedMessage = JSON.parse(revived.entry.resource) as {
@@ -229,6 +255,7 @@ describe('computeCoalescedRtcTopologyGroupRevisionWork', () => {
             expireAtEpochMs: EXPIRE_AT_EPOCH_MS,
             recomputeDebounceMs: DEBOUNCE_MS,
             senderId: 'server-1',
+            origin: 'automatic',
             previousEntry: null
         });
         const completed: ResourceEntry = {
@@ -244,6 +271,7 @@ describe('computeCoalescedRtcTopologyGroupRevisionWork', () => {
             expireAtEpochMs: EXPIRE_AT_EPOCH_MS + 60_000,
             recomputeDebounceMs: DEBOUNCE_MS,
             senderId: 'server-1',
+            origin: 'automatic',
             previousEntry: completed
         });
 
@@ -268,6 +296,7 @@ describe('computeCoalescedRtcTopologyGroupRevisionWork', () => {
             expireAtEpochMs: EXPIRE_AT_EPOCH_MS,
             recomputeDebounceMs: DEBOUNCE_MS,
             senderId: 'server-1',
+            origin: 'automatic',
             previousEntry: null
         });
         const reserved: ResourceEntry = { ...first.entry, status: EntityStatus.RESERVED };
@@ -279,6 +308,7 @@ describe('computeCoalescedRtcTopologyGroupRevisionWork', () => {
             expireAtEpochMs: EXPIRE_AT_EPOCH_MS,
             recomputeDebounceMs: DEBOUNCE_MS,
             senderId: 'server-1',
+            origin: 'automatic',
             previousEntry: reserved
         });
 
@@ -303,6 +333,7 @@ describe('computeCoalescedRtcTopologyGroupRevisionWork', () => {
             expireAtEpochMs: EXPIRE_AT_EPOCH_MS,
             recomputeDebounceMs: DEBOUNCE_MS,
             senderId: 'server-1',
+            origin: 'automatic',
             previousEntry: null
         });
         const corrupted: ResourceEntry = { ...first.entry, resource: '{"not":"a message"}' };
@@ -530,6 +561,7 @@ describe('readPendingTopologyReplan', () => {
             expireAtEpochMs: EXPIRE_AT_EPOCH_MS,
             recomputeDebounceMs: DEBOUNCE_MS,
             senderId: 'server-1',
+            origin: 'automatic',
             previousEntry: null
         }).entry;
     }

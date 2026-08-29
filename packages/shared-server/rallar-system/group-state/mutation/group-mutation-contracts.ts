@@ -97,7 +97,7 @@ export type GroupMutationCommand =
     | (
         & GroupMutationCommandBase
         & Readonly<{
-            operation: 'startGroupEstablishment' | 'reopenGroupEstablishment';
+            operation: 'startGroupEstablishment' | 'reconfigureGroup' | 'reopenGroupEstablishment';
             input:
                 & NullableActorInput
                 & Readonly<{
@@ -535,6 +535,7 @@ export type GroupLifecycleTransitionOperation = Extract<
     GroupMutationCommand['operation'],
     | 'startGroupEstablishment'
     | 'activateGroup'
+    | 'reconfigureGroup'
     | 'reopenGroupEstablishment'
     | 'failGroupFormation'
     | 'planGroupLayout'
@@ -548,6 +549,7 @@ export function isGroupLifecycleTransitionOperation(
     return (
         operation === 'startGroupEstablishment' ||
         operation === 'activateGroup' ||
+        operation === 'reconfigureGroup' ||
         operation === 'reopenGroupEstablishment' ||
         operation === 'failGroupFormation' ||
         operation === 'planGroupLayout' ||

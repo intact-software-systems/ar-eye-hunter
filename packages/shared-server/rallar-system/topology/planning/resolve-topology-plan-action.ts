@@ -13,9 +13,9 @@ import type { GroupLifecyclePolicyRead } from '../../group-state/persistence/gro
  * follow-up — coalesced membership deltas, including the lifecycle
  * transitions' presence-summary follow-ups, plus RTT refreshes and
  * reconcile sweeps; `commanded` carries an application or operator intent
- * (the reconfigure family). The transitions' follow-ups ride the automatic
- * channel deliberately: under `commanded` replanning a group's
- * post-transition replan also waits for the application (C7).
+ * (the reconfigure family). `reconfigureGroup` marks its own follow-up
+ * commanded; the remaining lifecycle transitions ride the automatic channel
+ * deliberately, so a `commanded` replanning policy holds their work (C7).
  */
 export type TopologyWorkOrigin = 'automatic' | 'commanded';
 

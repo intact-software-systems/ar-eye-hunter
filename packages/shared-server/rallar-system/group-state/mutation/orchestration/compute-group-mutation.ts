@@ -65,6 +65,7 @@ export function computeGroupMutation(
         case 'connectGroup':
         case 'startGroupFormation':
         case 'activateGroup':
+        case 'reconfigureGroup':
         case 'reopenGroupEstablishment':
         case 'failGroupFormation':
             return computeLifecycleTransition(command, read, facts);
