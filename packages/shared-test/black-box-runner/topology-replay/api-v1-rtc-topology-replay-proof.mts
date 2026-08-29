@@ -17,7 +17,6 @@ import {
     exactTopologyExpectation,
     waitForDurableState,
     waitForPassivePair,
-    waitForStableDurableState,
     waitForStablePassiveState,
     waitForStableRegisteredState
 } from './api-v1-rtc-topology-proof-evidence.mts';
@@ -97,9 +96,10 @@ export async function runApiV1RtcTopologyReplayProof(
                     actor: sessions[0]!,
                     phase: 'baseline-a'
                 });
-                const durable = await waitForStableDurableState(
+                const durable = await waitForDurableState(
                     input.databaseUrl,
-                    (state) => assertSinglePublisherHeadAdvanced({ state, priorHeads: preparedHeads })
+                    (state) => assertSinglePublisherHeadAdvanced({ state, priorHeads: preparedHeads }),
+                    'stable'
                 );
                 return assertSinglePublisherHeadAdvanced({ state: durable, priorHeads: preparedHeads });
             }
@@ -114,13 +114,14 @@ export async function runApiV1RtcTopologyReplayProof(
                     actor: sessions[2]!,
                     phase: 'baseline-b'
                 });
-                const durable = await waitForStableDurableState(
+                const durable = await waitForDurableState(
                     input.databaseUrl,
                     (state) =>
                         assertSinglePublisherHeadAdvanced({
                             state,
                             priorHeads: baselineA.publisherHeads
-                        })
+                        }),
+                    'stable'
                 );
                 return assertSinglePublisherHeadAdvanced({
                     state: durable,
@@ -162,14 +163,15 @@ export async function runApiV1RtcTopologyReplayProof(
                     exactPublicationExpectation(revision)
                 );
                 assertCompleteSessionTopology(observations, sessions);
-                const durable = await waitForStableDurableState(
+                const durable = await waitForDurableState(
                     input.databaseUrl,
                     (state) =>
                         assertSinglePublisherHeadAdvanced({
                             state,
                             consumerStreamId: baselineEvidence.passiveConsumerStreamId,
                             priorHeads: baselineEvidence.publisherHeads
-                        })
+                        }),
+                    'stable'
                 );
                 const evidence = assertSinglePublisherHeadAdvanced({
                     state: durable,
@@ -203,14 +205,15 @@ export async function runApiV1RtcTopologyReplayProof(
                 assertCompleteSessionTopology(observations, sessions);
                 attached[4]!.assertNoRegressionOrDuplicateLane();
                 attached[5]!.assertNoRegressionOrDuplicateLane();
-                const durable = await waitForStableDurableState(
+                const durable = await waitForDurableState(
                     input.databaseUrl,
                     (state) =>
                         assertSinglePublisherHeadAdvanced({
                             state,
                             consumerStreamId: baselineEvidence.passiveConsumerStreamId,
                             priorHeads: liveAEvidence.publisherHeads
-                        })
+                        }),
+                    'stable'
                 );
                 const evidence = assertSinglePublisherHeadAdvanced({
                     state: durable,
@@ -248,13 +251,14 @@ export async function runApiV1RtcTopologyReplayProof(
                     actor: sessions[0]!,
                     phase: 'restart-a'
                 });
-                const durable = await waitForStableDurableState(
+                const durable = await waitForDurableState(
                     input.databaseUrl,
                     (state) =>
                         assertSinglePublisherHeadAdvanced({
                             state,
                             priorHeads: liveBEvidence.publisherHeads
-                        })
+                        }),
+                    'stable'
                 );
                 const evidence = assertSinglePublisherHeadAdvanced({
                     state: durable,
@@ -278,13 +282,14 @@ export async function runApiV1RtcTopologyReplayProof(
                     actor: sessions[2]!,
                     phase: 'restart-b'
                 });
-                const durable = await waitForStableDurableState(
+                const durable = await waitForDurableState(
                     input.databaseUrl,
                     (state) =>
                         assertSinglePublisherHeadAdvanced({
                             state,
                             priorHeads: laterAEvidence.publisherHeads
-                        })
+                        }),
+                    'stable'
                 );
                 const evidence = assertSinglePublisherHeadAdvanced({
                     state: durable,

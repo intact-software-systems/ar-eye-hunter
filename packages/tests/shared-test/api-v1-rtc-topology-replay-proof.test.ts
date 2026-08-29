@@ -401,7 +401,7 @@ describe('API-v1 RTC topology replay proof semantics', () => {
                 wsBaseUrl: 'ws://127.0.0.1:18082'
             },
             'ticket'
-        ).catch((error: unknown) => {
+        ).catch((error) => {
             failure = error instanceof Error ? error : new Error(String(error));
         });
 
