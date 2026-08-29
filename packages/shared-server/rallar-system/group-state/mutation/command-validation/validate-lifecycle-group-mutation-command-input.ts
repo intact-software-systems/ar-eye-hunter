@@ -7,10 +7,8 @@ import type { JsonWireObject } from '../../../protocol/json-wire-identity.ts';
 import type { GroupLifecycleTransitionOperation } from '../group-mutation-contracts.ts';
 import { validateExpectedLayoutIdentity } from './validate-expected-layout-identity.ts';
 
-type LifecycleCommandOperation = GroupLifecycleTransitionOperation | 'applyPlannedLayout';
-
 interface ValidateLifecycleGroupMutationCommandInput {
-    readonly operation: LifecycleCommandOperation;
+    readonly operation: GroupLifecycleTransitionOperation | 'applyPlannedLayout';
     readonly input: JsonWireObject;
     readonly requiredInputKeys: readonly string[];
 }

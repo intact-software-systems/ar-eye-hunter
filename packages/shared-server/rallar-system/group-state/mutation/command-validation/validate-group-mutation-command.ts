@@ -8,8 +8,8 @@ import {
     validateGroupRef
 } from '../../group-state-validation-primitives.ts';
 import {
+    isGroupLifecycleTransitionOperation,
     isGroupTransportOperation,
-    type GroupLifecycleTransitionOperation,
     type GroupMutationCommand
 } from '../group-mutation-contracts.ts';
 import type { JsonWireObject } from '../../../protocol/json-wire-identity.ts';
@@ -78,7 +78,7 @@ function validateOperationInput(
     if (isGroupTransportOperation(operation)) {
         return;
     }
-    if (isLifecycleCommandOperation(operation)) {
+    if (isGroupLifecycleTransitionOperation(operation) || operation === 'applyPlannedLayout') {
         validateLifecycleGroupMutationCommandInput({
             operation,
             // The enclosing command already passed requireJsonSafe before
@@ -154,8 +154,6 @@ function validateAggregateOperationInput(
             return;
     }
 }
-
-type LifecycleCommandOperation = GroupLifecycleTransitionOperation | 'applyPlannedLayout';
 
 function validateMembershipOperationInput(
     operation: GroupMutationCommand['operation'],
@@ -297,24 +295,6 @@ const AGGREGATE_GROUP_MUTATION_OPERATIONS = new Set<GroupMutationCommand['operat
     'updateGroup',
     'appointDirector',
     'rotateGroupJoinCode',
-    'startGroupEstablishment',
-    'planGroupLayout',
-    'connectGroup',
-    'startGroupFormation',
-    'activateGroup',
-    'reconfigureGroup',
-    'reopenGroupEstablishment',
-    'failGroupFormation',
-    'applyPlannedLayout'
-]);
-
-function isLifecycleCommandOperation(
-    operation: GroupMutationCommand['operation']
-): operation is LifecycleCommandOperation {
-    return LIFECYCLE_COMMAND_OPERATIONS.has(operation);
-}
-
-const LIFECYCLE_COMMAND_OPERATIONS = new Set<GroupMutationCommand['operation']>([
     'startGroupEstablishment',
     'planGroupLayout',
     'connectGroup',
