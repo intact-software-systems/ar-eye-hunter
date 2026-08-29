@@ -95,7 +95,7 @@ describe('group formation series computation', () => {
     });
 });
 
-function expectPolicyDenial(run: () => unknown): GroupPolicyDenied {
+function expectPolicyDenial(run: () => void): GroupPolicyDenied {
     try {
         run();
     }
