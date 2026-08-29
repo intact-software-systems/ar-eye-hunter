@@ -8,6 +8,7 @@ import {
 } from '@shared-server/rallar-system/topology/persistence/rtc-topology-snapshot-repository.ts';
 import type { RuntimeStateGuardedBatchEffect } from '../../../../runtime-state/guarded-batch/runtime-state-guarded-batch.ts';
 import type { PlannedLayoutPromotion } from '../../mutation/aggregate/compute-planned-layout-promotion.ts';
+import type { GroupLayoutTombstones } from '../../mutation/group-mutation-contracts.ts';
 
 /**
  * The accepted-layout facts as guarded-batch effects, all-or-nothing with the
@@ -37,6 +38,39 @@ export function toPlannedLayoutFenceEffect(
         operation: 'update',
         namespace: RTC_TOPOLOGY_SNAPSHOTS_NAMESPACE,
         expectedRevision: planned.revision,
+        key: row.key,
+        value: row.value,
+        expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
+    };
+}
+
+export function toGroupLayoutTombstoneEffects(
+    tombstones: GroupLayoutTombstones
+): readonly RuntimeStateGuardedBatchEffect[] {
+    return [
+        toLayoutTombstoneEffect('planned-layout-tombstone', RTC_TOPOLOGY_SNAPSHOTS_NAMESPACE, tombstones.planned),
+        toLayoutTombstoneEffect(
+            'accepted-layout-tombstone',
+            RTC_TOPOLOGY_ACCEPTED_SNAPSHOTS_NAMESPACE,
+            tombstones.accepted
+        )
+    ].filter((effect): effect is RuntimeStateGuardedBatchEffect => effect !== null);
+}
+
+function toLayoutTombstoneEffect(
+    effectId: string,
+    namespace: string,
+    tombstone: Readonly<{ snapshot: RallarOverlayTopologySnapshot; revision: number; }> | null
+): RuntimeStateGuardedBatchEffect | null {
+    if (tombstone === null) {
+        return null;
+    }
+    const row = toStoredRtcTopologySnapshotRow(tombstone.snapshot);
+    return {
+        effectId,
+        operation: 'update',
+        namespace,
+        expectedRevision: tombstone.revision,
         key: row.key,
         value: row.value,
         expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP

@@ -54,6 +54,7 @@ type AggregateOperation = Extract<
     | 'planGroupLayout'
     | 'connectGroup'
     | 'startGroupFormation'
+    | 'resetGroupFormation'
     | 'activateGroup'
     | 'reopenGroupEstablishment'
     | 'failGroupFormation'
@@ -236,6 +237,7 @@ function isAggregateOperation(
         'planGroupLayout',
         'connectGroup',
         'startGroupFormation',
+        'resetGroupFormation',
         'activateGroup',
         'reopenGroupEstablishment',
         'failGroupFormation',

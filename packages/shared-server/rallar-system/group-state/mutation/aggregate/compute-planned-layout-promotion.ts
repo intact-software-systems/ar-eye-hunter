@@ -16,11 +16,10 @@ export type GroupPlannedLayoutRow = Readonly<{
 }>;
 
 /**
- * The accepted-slot row: only the revision, for the insert-vs-update guard.
- * The already-applied decision reads the group row's acceptedLayoutIdentity —
- * the single authority — never a second copy from the slot.
+ * The accepted-slot row is a complete decoded snapshot and its write revision.
  */
 export type GroupAcceptedLayoutRow = Readonly<{
+    snapshot: RallarOverlayTopologySnapshot;
     revision: number;
 }>;
 

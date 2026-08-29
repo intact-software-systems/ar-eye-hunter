@@ -15,6 +15,7 @@ export function toGroupMutationDescriptor(
         case AppInboxType.GROUP_PLAN:
         case AppInboxType.GROUP_CONNECT:
         case AppInboxType.GROUP_FORMATION_START:
+        case AppInboxType.GROUP_FORMATION_RESET:
         case AppInboxType.GROUP_ACTIVATE:
         case AppInboxType.GROUP_RECONFIGURE:
         case AppInboxType.GROUP_ESTABLISHMENT_REOPEN:
@@ -89,6 +90,7 @@ export function toGroupMutationDescriptorTargetIdentity(
         case 'planGroupLayout':
         case 'connectGroup':
         case 'startGroupFormation':
+        case 'resetGroupFormation':
         case 'reopenGroupEstablishment':
         case 'activateGroup':
         case 'reconfigureGroup':
@@ -118,6 +120,7 @@ function toAggregateMutationDescriptor(
         | { readonly type: typeof AppInboxType.GROUP_PLAN; }
         | { readonly type: typeof AppInboxType.GROUP_CONNECT; }
         | { readonly type: typeof AppInboxType.GROUP_FORMATION_START; }
+        | { readonly type: typeof AppInboxType.GROUP_FORMATION_RESET; }
         | { readonly type: typeof AppInboxType.GROUP_ACTIVATE; }
         | { readonly type: typeof AppInboxType.GROUP_RECONFIGURE; }
         | { readonly type: typeof AppInboxType.GROUP_ESTABLISHMENT_REOPEN; }
@@ -177,6 +180,14 @@ function toAggregateMutationDescriptor(
         case AppInboxType.GROUP_FORMATION_START: {
             return mutationDescriptor({
                 operation: 'startGroupFormation',
+                scope: enqueue.data.scope,
+                groupId: enqueue.data.groupId,
+                request: enqueue.data.request
+            });
+        }
+        case AppInboxType.GROUP_FORMATION_RESET: {
+            return mutationDescriptor({
+                operation: 'resetGroupFormation',
                 scope: enqueue.data.scope,
                 groupId: enqueue.data.groupId,
                 request: enqueue.data.request

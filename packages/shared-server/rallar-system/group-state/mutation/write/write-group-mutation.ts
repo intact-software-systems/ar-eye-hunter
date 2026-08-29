@@ -22,6 +22,7 @@ import { createTransactionBoundGroupStateRepository } from '../../persistence/gr
 import { groupStateInsertIdempotencyDescriptor } from '../../persistence/idempotency/group-idempotency-write-descriptor.ts';
 import {
     toGroupLayoutPromotionEffects,
+    toGroupLayoutTombstoneEffects,
     toPlannedLayoutFenceEffect
 } from '../../persistence/layout/to-group-layout-promotion-effects.ts';
 import { groupStateMemberPutDescriptor } from '../../persistence/membership/group-state-member-put-descriptor.ts';
@@ -70,6 +71,10 @@ export function materializeGroupStateGuardedBatch(
 
     if (computed.acceptedLayoutPromotion) {
         effects.push(...toGroupLayoutPromotionEffects(computed.acceptedLayoutPromotion));
+    }
+
+    if (computed.layoutTombstones) {
+        effects.push(...toGroupLayoutTombstoneEffects(computed.layoutTombstones));
     }
 
     if (computed.plannedLayoutFence) {

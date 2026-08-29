@@ -307,6 +307,29 @@ describe('RTC topology planning options and revisions', () => {
         expect(unchanged.snapshot).toBe(first.snapshot);
     });
 
+    it('rebuilds an active one-session plan after its empty-hop tombstone', () => {
+        const group = createRtcTopologyGroupSnapshot('room-1', ['peer-1']);
+        const active = planRallarRtcTopologySnapshot({
+            group,
+            topology: 'star',
+            nextHopsBySessionId: { 'peer-1': [] },
+            degreeLimit: 1,
+            nowEpochMs: 100
+        });
+
+        const rebuilt = planRallarRtcTopologySnapshot({
+            group,
+            previous: { ...active.snapshot, state: 'removed' },
+            topology: 'star',
+            nextHopsBySessionId: { 'peer-1': [] },
+            degreeLimit: 1,
+            nowEpochMs: 200
+        });
+
+        expect(rebuilt.changed).toBe(true);
+        expect(rebuilt.snapshot.state).toBe('active');
+    });
+
     it('advances source causality without a topology version bump', () => {
         const group = createRtcTopologyGroupSnapshot('room-1', ['peer-1', 'peer-2', 'peer-3']);
         const first = planRallarRtcTopologySnapshot({

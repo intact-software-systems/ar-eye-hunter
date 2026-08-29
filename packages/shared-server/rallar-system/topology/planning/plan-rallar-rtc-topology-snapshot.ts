@@ -28,6 +28,7 @@ export function planRallarRtcTopologySnapshot(
     );
     const name = readGroupDisplayName(input.group);
     const changed = input.previous === undefined ||
+        input.previous.state !== 'active' ||
         input.previous.topology !== input.topology ||
         input.previous.name !== name ||
         input.previous.degreeLimit !== input.degreeLimit ||

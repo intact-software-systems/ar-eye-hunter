@@ -138,6 +138,8 @@ function toGroupMutationOperation(
             return 'resumeGroupTransport';
         case AppInboxType.GROUP_FORMATION_START:
             return 'startGroupFormation';
+        case AppInboxType.GROUP_FORMATION_RESET:
+            return 'resetGroupFormation';
         case AppInboxType.GROUP_PLAN:
             return 'planGroupLayout';
         case AppInboxType.GROUP_CONNECT:

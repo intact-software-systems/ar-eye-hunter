@@ -170,9 +170,12 @@ export function createApiV1MutationRuntime(
                     ? { snapshot: planned.value, revision: planned.entry.revision }
                     : null;
             },
-            // The promotion consults only the revision, so the accepted slot
-            // is read raw — no structural decode of a snapshot nothing uses.
-            readAcceptedLayoutRow: async (ref) => await acceptedSnapshotRepository.findEntryRevision(ref)
+            readAcceptedLayoutRow: async (ref) => {
+                const accepted = await acceptedSnapshotRepository.findSnapshotEntry(ref);
+                return accepted
+                    ? { snapshot: accepted.value, revision: accepted.entry.revision }
+                    : null;
+            }
         }),
         cache: resources.groupSnapshotCache
     });

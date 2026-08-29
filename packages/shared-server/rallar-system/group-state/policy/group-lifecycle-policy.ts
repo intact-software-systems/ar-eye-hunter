@@ -1,6 +1,9 @@
 import type { GroupLifecyclePolicy } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import type { GroupLifecycleTransition } from '@shared/api/group-lifecycle/group-lifecycle-transitions.ts';
-import { computeGroupLifecycleTransition } from '@shared/api/group-lifecycle/group-lifecycle-transitions.ts';
+import {
+    computeGroupLifecycleTransition,
+    denyExhaustedFormationSeries
+} from '@shared/api/group-lifecycle/group-lifecycle-transitions.ts';
 import type { GroupPolicyDenied, GroupPolicyResult } from '@shared/api/group-policy-types.ts';
 import type { Group, GroupSnapshot } from '@shared/api/group-types.ts';
 import { denyUnlessGroupLifecycleManager } from './group-lifecycle-manager-policy.ts';
@@ -87,7 +90,14 @@ export function canCommandGroupLifecycleTransition(
         lifecycleState: input.snapshot.group.lifecycleState,
         formationEpoch: input.snapshot.group.formationEpoch
     });
-    return transition.allowed ? GROUP_POLICY_ALLOWED : transition;
+    if (!transition.allowed) {
+        return transition;
+    }
+    return denyExhaustedFormationSeries({
+        transition: input.transition,
+        activation: input.policy.activation,
+        formationAttemptCount: input.snapshot.group.formationAttemptCount
+    }) ?? GROUP_POLICY_ALLOWED;
 }
 
 function denyForGroupAuthorityInitiator(

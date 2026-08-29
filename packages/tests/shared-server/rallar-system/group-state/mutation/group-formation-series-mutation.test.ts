@@ -4,10 +4,12 @@ import { APP_OUTBOX_FORMATION_TIMER_TOPIC } from '@shared-server/rallar-system/g
 import { computeLifecycleTransition } from '@shared-server/rallar-system/group-state/mutation/aggregate/compute-lifecycle-transition.ts';
 import { computeGroupMutation } from '@shared-server/rallar-system/group-state/mutation/orchestration/compute-group-mutation.ts';
 import { GroupPolicyDeniedError } from '@shared-server/rallar-system/group-state/policy/group-policy-result.ts';
+import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import type { GroupPolicyDenied } from '@shared/api/group-policy-types.ts';
 import type { Group } from '@shared/api/group-types.ts';
+import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 
-import { createGroupAuthorityFacts, createGroupAuthorityRead, transitionCommand } from './group-mutation-test-runtime.ts';
+import { createGroupAuthorityFacts, createGroupAuthorityRead, groupRef, transitionCommand } from './group-mutation-test-runtime.ts';
 
 /**
  * `start` opens a formation series from the clean slate (product decisions
@@ -15,6 +17,96 @@ import { createGroupAuthorityFacts, createGroupAuthorityRead, transitionCommand 
  * `reset` lands in slice 6c.
  */
 describe('group formation series computation', () => {
+    it('resets the active formation series to dormant and halted', () => {
+        const computed = computeGroupMutation({
+            command: transitionCommand('resetGroupFormation'),
+            read: createGroupAuthorityRead({
+                lifecycleState: 'active',
+                formationEpoch: 4,
+                formationAttemptCount: 1,
+                establishmentStartedAtEpochMs: 1_000,
+                acceptedLayoutIdentity: {
+                    groupRevision: 4,
+                    presenceRevision: 2,
+                    version: 3,
+                    state: 'active'
+                },
+                transportState: 'flowing'
+            }),
+            facts: createGroupAuthorityFacts()
+        });
+
+        expect(computed.outcome).toBe('write');
+        if (computed.outcome !== 'write') {
+            return;
+        }
+        const written = computed.guard.value as Group;
+        expect(written).toMatchObject({
+            lifecycleState: 'dormant',
+            transportState: 'halted',
+            formationEpoch: 5,
+            formationAttemptCount: 0,
+            establishmentStartedAtEpochMs: null,
+            lastFormationOutcome: null,
+            acceptedLayoutIdentity: null
+        });
+        const summaryMessage = JSON.parse(computed.outboxEntries[0]!.resource);
+        expect(JSON.parse(summaryMessage.payload.resource)).toMatchObject({
+            data: { event: { payload: { topologyReplanOrigin: 'commanded' } } }
+        });
+    });
+
+    it('tombstones both stored layouts without losing their trace identity', () => {
+        const snapshot: RallarOverlayTopologySnapshot = {
+            sourceGroupStateCausalRevision: { groupRevision: 4, presenceRevision: 2 },
+            state: 'active',
+            overlayId: toScopedOverlayId(groupRef('pure-room')),
+            groupRef: groupRef('pure-room'),
+            name: 'formation-layout',
+            topology: 'tree',
+            activeSessionIds: ['session-a', 'session-b'],
+            nextHopsBySessionId: { 'session-a': ['session-b'], 'session-b': ['session-a'] },
+            degreeLimit: 2,
+            version: 3,
+            createdByClientId: 'topology-service',
+            createdAtEpochMs: 900,
+            updatedAtEpochMs: 1_000
+        };
+        const read = createGroupAuthorityRead({ lifecycleState: 'active' });
+        const computed = computeGroupMutation({
+            command: transitionCommand('resetGroupFormation'),
+            read: {
+                ...read,
+                plannedLayoutRow: { snapshot, revision: 7 },
+                acceptedLayoutRow: { snapshot, revision: 9 }
+            },
+            facts: createGroupAuthorityFacts()
+        });
+
+        expect(computed.outcome).toBe('write');
+        if (computed.outcome !== 'write') {
+            return;
+        }
+        expect(computed.layoutTombstones).toEqual({
+            planned: {
+                revision: 7,
+                snapshot: {
+                    ...snapshot,
+                    state: 'removed',
+                    nextHopsBySessionId: { 'session-a': [], 'session-b': [] }
+                }
+            },
+            accepted: {
+                revision: 9,
+                snapshot: {
+                    ...snapshot,
+                    state: 'removed',
+                    nextHopsBySessionId: { 'session-a': [], 'session-b': [] }
+                }
+            }
+        });
+    });
+
     it('starts a new series from dormant and advances the epoch', () => {
         const computed = computeGroupMutation({
             command: transitionCommand('startGroupFormation'),
