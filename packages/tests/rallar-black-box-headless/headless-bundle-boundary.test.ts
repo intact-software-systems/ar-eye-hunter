@@ -65,7 +65,9 @@ describe('rallar-black-box-headless bundle boundary', () => {
         // lifecycle race fences add 0.771484 KiB over the Slice 7 base after
         // removing the dead browser graph-to-overlay mutation path:
         // 202.944336 KiB -> 203.715820 KiB.
-        expect(result.brotliKiB).toBeLessThan(204);
+        // One deadline across room refresh and best-effort topology hydration
+        // adds 0.499023 KiB: 203.715820 KiB -> 204.214843 KiB.
+        expect(result.brotliKiB).toBeLessThan(205);
     });
 });
 
