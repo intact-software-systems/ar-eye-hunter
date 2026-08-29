@@ -1351,7 +1351,7 @@ test.describe('full-stack live three-browser RTC matrix', () => {
                 )
             });
 
-            const suffix = `live3-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+            const suffix = `live3-${Date.now()}-${crypto.randomUUID()}`;
             const runId = `rallar-live-three-browser-${suffix}`;
             const groupId = `${roomSeed}-${suffix}`;
             const allHandles: LiveRtcControlClient.Agent[] = [];
@@ -1602,7 +1602,7 @@ test.describe('full-stack live three-browser RTC matrix', () => {
             baseUrl: CONTROL_BASE_URL,
             diagnosticsOutDir: envValue('RALLAR_BLACK_BOX_RTC_DIAGNOSTICS_OUT_DIR')
         });
-        const suffix = `live3-all-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+        const suffix = `live3-all-${Date.now()}-${crypto.randomUUID()}`;
         const runId = `rallar-live-three-browser-all-${suffix}`;
         const groupId = `${roomSeed}-${suffix}`;
         const allHandles: LiveRtcControlClient.Agent[] = [];
@@ -1914,7 +1914,7 @@ test.describe('full-stack live three-browser RTC matrix', () => {
             baseUrl: CONTROL_BASE_URL,
             diagnosticsOutDir: envValue('RALLAR_BLACK_BOX_RTC_DIAGNOSTICS_OUT_DIR')
         });
-        const suffix = `live3-retention-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+        const suffix = `live3-retention-${Date.now()}-${crypto.randomUUID()}`;
         const runId = `rallar-live-three-browser-retention-${suffix}`;
         const groupId = `${roomSeed}-${suffix}`;
         const commandIds: string[] = [];

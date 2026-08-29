@@ -75,6 +75,13 @@ describe('live three-browser RTC npm script gates', () => {
         expect(postgres).not.toContain('RALLAR_BLACK_BOX_LIVE_RETENTION_SOAK=');
     });
 
+    it('uses cryptographically secure live run and session identities', () => {
+        const source = fs.readFileSync(path.join(repoRoot, liveMatrixSpec), 'utf8');
+
+        expect(source).not.toContain('Math.random()');
+        expect(source).toContain('crypto.randomUUID()');
+    });
+
     it('keeps benchmark ownership out of application and reusable product sources', () => {
         const productRoots = [path.join(repoRoot, 'apps'), path.join(repoRoot, 'packages')];
         const forbiddenImports: string[] = [];
