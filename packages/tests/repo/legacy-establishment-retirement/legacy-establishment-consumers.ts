@@ -221,7 +221,7 @@ export const LEGACY_ESTABLISHMENT_CONSUMERS: readonly LegacyEstablishmentConsume
     { file: 'packages/tests/shared/group-activation-criterion.test.ts', occurrences: { computeFormationRetryBackoffMs: 5 } },
     { file: 'packages/tests/shared/group-lifecycle-transitions.test.ts', occurrences: { 'start-establishment': 2 } },
     {
-        file: 'tests/playwright/rallar-black-box/full-stack-live-rtc-three-browser-matrix.spec.ts',
+        file: 'tests/playwright/rallar-black-box/group-formation-lifecycle-driver.ts',
         occurrences: { 'lifecycle/establish': 1 }
     }
 ];
