@@ -49,6 +49,7 @@ describe('black-box browser room-state refresh composition', () => {
     });
 
     afterEach(() => {
+        vi.restoreAllMocks();
         vi.unstubAllGlobals();
     });
 
