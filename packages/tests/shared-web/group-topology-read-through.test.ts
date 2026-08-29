@@ -7,7 +7,7 @@ import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology
 import { toOverlayInfoForSession } from '@shared/api/overlay-topology.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import { DEFAULT_STATE_APPLICATION_ID, DEFAULT_STATE_WORKSPACE_ID } from '@shared/api/state-types.ts';
-import { findOverlayById, setOverlayById } from '@shared/repository/overlays-repository.ts';
+import { findAcceptedOverlayById, findPlannedOverlayById, setPlannedOverlayById } from '@shared/repository/overlays-repository.ts';
 import type { WebRtcGroupManager } from '@shared/services/WebRtcGroupManager.ts';
 
 import { configureTestCacheRepositories } from '../cache-repository-config.ts';
@@ -44,7 +44,7 @@ describe('group topology read-through', () => {
 
         expect(outcomes).toEqual([{ groupId: 'room-a', outcome: 'adopted' }]);
         expect(String(fetchMock.mock.calls[0]?.[0])).toContain('/groups/room-a/topology');
-        const overlay = findOverlayById(topology.overlayId);
+        const overlay = findPlannedOverlayById(topology.overlayId);
         expect(overlay?.provenance).toBe('server');
         expect(overlay?.overlayVersion).toBe(3);
         expect(manager.notifyOverlayTopologyChanged).toHaveBeenCalled();
@@ -97,7 +97,7 @@ describe('group topology read-through', () => {
     it('force-adopts an incomparable server overlay as fresh durable current state', async () => {
         const group = createGroupSnapshot('room-a', ['session-a']);
         const existing = createTopologySnapshot(group, { groupRevision: 2, presenceRevision: 1 }, 5);
-        setOverlayById(existing.overlayId, toOverlayInfoForSession(existing, 'session-a'));
+        setPlannedOverlayById(existing.overlayId, toOverlayInfoForSession(existing, 'session-a'));
         const incoming = createTopologySnapshot(group, { groupRevision: 1, presenceRevision: 2 }, 6);
         const fetchMock = vi.fn(async () => jsonResponse(topologyView(group, incoming)));
         vi.stubGlobal('fetch', fetchMock);
@@ -111,7 +111,42 @@ describe('group topology read-through', () => {
         });
 
         expect(outcomes).toEqual([{ groupId: 'room-a', outcome: 'adopted' }]);
-        expect(findOverlayById(incoming.overlayId)?.overlayVersion).toBe(6);
+        expect(findPlannedOverlayById(incoming.overlayId)?.overlayVersion).toBe(6);
+    });
+
+    it('hydrates and clears the planned and accepted current-state fields independently', async () => {
+        const group = createGroupSnapshot('room-a', ['session-a']);
+        const planned = createTopologySnapshot(group, { groupRevision: 3, presenceRevision: 3 }, 4);
+        const accepted = createTopologySnapshot(group, { groupRevision: 2, presenceRevision: 2 }, 3);
+        const responses = [
+            topologyView(group, planned, accepted),
+            topologyView(group, null, null)
+        ];
+        vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(responses.shift())));
+        const manager = createWebRtcGroupManager();
+
+        await hydrateGroupTopologyOverlays({
+            groupSnapshots: [group],
+            sessionId: 'session-a',
+            webRtcGroupManager: manager,
+            scope,
+            apiRequest: { authSession: null }
+        });
+
+        expect(findPlannedOverlayById(planned.overlayId)?.overlayVersion).toBe(4);
+        expect(findAcceptedOverlayById(accepted.overlayId)?.overlayVersion).toBe(3);
+
+        const cleared = await hydrateGroupTopologyOverlays({
+            groupSnapshots: [group],
+            sessionId: 'session-a',
+            webRtcGroupManager: manager,
+            scope,
+            apiRequest: { authSession: null }
+        });
+
+        expect(cleared).toEqual([{ groupId: 'room-a', outcome: 'no-overlay' }]);
+        expect(findPlannedOverlayById(planned.overlayId)).toBeUndefined();
+        expect(findAcceptedOverlayById(accepted.overlayId)).toBeUndefined();
     });
 });
 
@@ -124,7 +159,8 @@ function jsonResponse(body: unknown): Response {
 
 function topologyView(
     group: GroupSnapshot,
-    snapshot: RallarOverlayTopologySnapshot | null
+    snapshot: RallarOverlayTopologySnapshot | null,
+    acceptedSnapshot: RallarOverlayTopologySnapshot | null = null
 ): unknown {
     return {
         groupRef: {
@@ -134,6 +170,7 @@ function topologyView(
         },
         overlayId: toScopedOverlayId(group.group),
         snapshot,
+        acceptedSnapshot,
         config: null,
         pending: null
     };

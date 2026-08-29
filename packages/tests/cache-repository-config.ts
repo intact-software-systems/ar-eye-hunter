@@ -2,7 +2,7 @@ import { configureSharedGraphRepositories } from '@shared-graph/repository/confi
 import { defaultRepositoryManager } from '@shared/cache/defaultRepositoryManager.ts';
 import type { RepositoryManager } from '@shared/cache/RepositoryManager.ts';
 import { configureSharedStateRepositories } from '@shared/repository/configure-shared-state-repositories.ts';
-import { configureOverlayRepository } from '@shared/repository/overlays-repository.ts';
+import { configureOverlayRepositories } from '@shared/repository/overlays-repository.ts';
 import { configureRttRepository } from '@shared/repository/rtt-repository.ts';
 
 const MINUTE_MS = 60_000;
@@ -18,7 +18,13 @@ export function configureTestCacheRepositories(
         manager
     );
 
-    configureOverlayRepository({ ttlMs: MINUTE_MS }, manager);
+    configureOverlayRepositories(
+        {
+            plannedOverlays: { ttlMs: MINUTE_MS },
+            acceptedOverlays: { ttlMs: MINUTE_MS }
+        },
+        manager
+    );
     configureRttRepository({ ttlMs: MINUTE_MS }, manager);
 
     configureSharedGraphRepositories(

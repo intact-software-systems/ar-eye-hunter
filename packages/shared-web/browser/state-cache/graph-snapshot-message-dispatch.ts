@@ -23,7 +23,7 @@ export function dispatchGraphSnapshotMessage(
     const neighbors = graph.predicted.groupGraph.hasNode(input.sessionId)
         ? graph.predicted.groupGraph.neighbors(input.sessionId)
         : [];
-    overlaysRepository.updateNextHopSessionIds(
+    overlaysRepository.updatePlannedOverlayNextHopSessionIds(
         toScopedOverlayId(graph.groupRef),
         neighbors
     );

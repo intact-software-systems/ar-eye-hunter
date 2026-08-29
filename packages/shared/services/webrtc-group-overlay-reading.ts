@@ -3,49 +3,47 @@ import type { OverlayInfo, PeerId } from '../api/api-config.ts';
 import type { GroupRef } from '../api/group-types.ts';
 import type { ReadableKeyedValues } from '../cache/RepositoryInterfaces.ts';
 
-export type OverlayCacheReader = ReadableKeyedValues<string, OverlayInfo>;
-
-export function readOverlayForGroup(
-    overlayCache: OverlayCacheReader | undefined,
+export function readPlannedOverlayForGroup(
+    plannedOverlayCache: ReadableKeyedValues<string, OverlayInfo> | undefined,
     groupRef: GroupRef
 ): OverlayInfo | undefined {
-    if (!overlayCache) {
-        return undefined;
-    }
-
-    const scopedOverlayId = toScopedOverlayId(groupRef);
-    const overlay = overlayCache.read(scopedOverlayId) ??
-        overlayCache.peek(scopedOverlayId);
-    return overlay?.state === 'removed' ? undefined : overlay;
+    return readOverlayForGroup(plannedOverlayCache, groupRef);
 }
 
-export function readAuthoritativeOverlayForGroup(
-    overlayCache: OverlayCacheReader | undefined,
+export function readAcceptedOverlayForGroup(
+    acceptedOverlayCache: ReadableKeyedValues<string, OverlayInfo> | undefined,
     groupRef: GroupRef
 ): OverlayInfo | undefined {
-    const overlay = readOverlayForGroup(overlayCache, groupRef);
+    return readOverlayForGroup(acceptedOverlayCache, groupRef);
+}
+
+export function readPlannedAuthoritativeOverlayForGroup(
+    plannedOverlayCache: ReadableKeyedValues<string, OverlayInfo> | undefined,
+    groupRef: GroupRef
+): OverlayInfo | undefined {
+    const overlay = readPlannedOverlayForGroup(plannedOverlayCache, groupRef);
     return overlay?.degreeLimit !== undefined ? overlay : undefined;
 }
 
 export function computeOverlayRttReportingDegreeLimit(
-    overlayCache: OverlayCacheReader | undefined,
+    plannedOverlayCache: ReadableKeyedValues<string, OverlayInfo> | undefined,
     groupRefs: readonly GroupRef[]
 ): number | undefined {
     const limits = groupRefs
-        .map((groupRef) => readOverlayForGroup(overlayCache, groupRef)?.degreeLimit)
+        .map((groupRef) => readPlannedOverlayForGroup(plannedOverlayCache, groupRef)?.degreeLimit)
         .filter((value): value is number => value !== undefined);
     return limits.length > 0 ? Math.min(...limits) : undefined;
 }
 
 export function computeServerDesiredPeerIds(
-    overlayCache: OverlayCacheReader | undefined,
+    acceptedOverlayCache: ReadableKeyedValues<string, OverlayInfo> | undefined,
     groupRefs: readonly GroupRef[],
     localSessionId: string
 ): ReadonlySet<PeerId> {
     const serverDesiredPeerIds = new Set<PeerId>();
 
     for (const groupRef of groupRefs) {
-        const overlay = readOverlayForGroup(overlayCache, groupRef);
+        const overlay = readAcceptedOverlayForGroup(acceptedOverlayCache, groupRef);
         if (overlay?.provenance !== 'server') {
             continue;
         }
@@ -58,4 +56,18 @@ export function computeServerDesiredPeerIds(
     }
 
     return serverDesiredPeerIds;
+}
+
+function readOverlayForGroup(
+    overlayCache: ReadableKeyedValues<string, OverlayInfo> | undefined,
+    groupRef: GroupRef
+): OverlayInfo | undefined {
+    if (!overlayCache) {
+        return undefined;
+    }
+
+    const scopedOverlayId = toScopedOverlayId(groupRef);
+    const overlay = overlayCache.read(scopedOverlayId) ??
+        overlayCache.peek(scopedOverlayId);
+    return overlay?.state === 'removed' ? undefined : overlay;
 }

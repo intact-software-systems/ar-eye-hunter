@@ -1,6 +1,10 @@
-import { OverlayInfo } from '@shared/api/api-config.ts';
+import type { OverlayInfo } from '@shared/api/api-config.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import { compareGroupCausalRevision } from '@shared/api/group-client-views.ts';
+import {
+    isSameGroupLayoutIdentity,
+    type GroupLayoutIdentity
+} from '@shared/api/group-lifecycle/group-layout-identity.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import {
     configureObservableLatestRepository,
@@ -14,39 +18,54 @@ import {
     type ObservableLatestRepositoryOptions
 } from '@shared/cache/ObservableLatestRepository.ts';
 import {
-    ObservableValueEventType,
     type ObservableKeyedValueEvent,
+    type ObservableValueEventType,
     type ReadableKeyedValues
 } from '@shared/cache/RepositoryInterfaces.ts';
 import type { RepositoryManager } from '@shared/cache/RepositoryManager.ts';
-import { emitOverlayAdoption } from './overlay-adoption-diagnostics.ts';
+import type { RepositoryToken } from '@shared/cache/RepositoryToken.ts';
+
+import { emitOverlayAdoption, type OverlayAdoptionOutcome } from './overlay-adoption-diagnostics.ts';
 
 export type OverlayRepositoryOptions =
     & Omit<ObservableLatestRepositoryOptions<string, OverlayInfo>, 'ttlMs' | 'equals'>
     & { ttlMs: number; };
 
-export type OverlayRepositoryChange = Readonly<{
-    kind: ObservableValueEventType;
-    overlayId: string;
-    overlay?: OverlayInfo;
-    previous?: OverlayInfo;
-    version: number;
-    previousVersion?: number;
-    manager?: RepositoryManager;
-}>;
+export interface OverlayRepositoryCacheConfiguration {
+    readonly plannedOverlays: OverlayRepositoryOptions;
+    readonly acceptedOverlays: OverlayRepositoryOptions;
+}
+
+export interface ConfiguredOverlayRepositories {
+    readonly planned: ObservableLatestRepository<string, OverlayInfo>;
+    readonly accepted: ObservableLatestRepository<string, OverlayInfo>;
+}
+
+export interface OverlayRepositoryChange {
+    readonly kind: ObservableValueEventType;
+    readonly overlayId: string;
+    readonly overlay?: OverlayInfo;
+    readonly previous?: OverlayInfo;
+    readonly version: number;
+    readonly previousVersion?: number;
+    readonly manager?: RepositoryManager;
+}
 
 export type OverlayRepositoryChangeListener = (
     change: OverlayRepositoryChange
 ) => void | Promise<void>;
 
-export class OverlayRevisionConflictError extends Error {
+interface SetOverlayInput {
+    readonly token: RepositoryToken<ObservableLatestRepository<string, OverlayInfo>>;
     readonly overlayId: string;
+    readonly overlay: OverlayInfo;
+    readonly manager?: RepositoryManager;
+}
 
-    constructor(overlayId: string) {
-        super(`Overlay revision conflict: ${overlayId}`);
-        this.overlayId = overlayId;
-        this.name = 'OverlayRevisionConflictError';
-    }
+interface ReconcileAcceptedOverlayIdentityInput {
+    readonly overlayId: string;
+    readonly acceptedIdentity: GroupLayoutIdentity | undefined;
+    readonly manager?: RepositoryManager;
 }
 
 export {
@@ -59,72 +78,85 @@ export {
     setOverlayAdoptionDiagnosticsSink
 } from './overlay-adoption-diagnostics.ts';
 
-export const overlayRepositoryToken = newObservableLatestRepositoryToken<string, OverlayInfo>(
-    'shared.repository.overlays',
-    'Overlay repository is not configured'
+export const plannedOverlayRepositoryToken = newObservableLatestRepositoryToken<string, OverlayInfo>(
+    'shared.repository.planned-overlays',
+    'Planned overlay repository is not configured'
 );
 
-export function configureOverlayRepository(
-    options: OverlayRepositoryOptions,
-    manager?: RepositoryManager
-): ObservableLatestRepository<string, OverlayInfo> {
-    return configureObservableLatestRepository(
-        overlayRepositoryToken,
-        {
-            ...options,
-            equals: (left, right) =>
-                compareOverlayInfoTuple(left, right) === 'equal' &&
-                JSON.stringify(left) === JSON.stringify(right)
-        },
-        manager
-    );
-}
+export const acceptedOverlayRepositoryToken = newObservableLatestRepositoryToken<string, OverlayInfo>(
+    'shared.repository.accepted-overlays',
+    'Accepted overlay repository is not configured'
+);
 
-export function onOverlayChange(
-    listener: OverlayRepositoryChangeListener,
+export function configureOverlayRepositories(
+    config: OverlayRepositoryCacheConfiguration,
     manager?: RepositoryManager
-): () => void {
-    const subscription = requireOverlayRepository(manager)
-        .onChangeDo(async (event) => {
-            await listener(toOverlayRepositoryChange(event, manager));
-        });
-
-    return () => {
-        subscription.unsubscribe();
+): ConfiguredOverlayRepositories {
+    return {
+        planned: configureRoleOverlayRepository(
+            plannedOverlayRepositoryToken,
+            config.plannedOverlays,
+            manager
+        ),
+        accepted: configureRoleOverlayRepository(
+            acceptedOverlayRepositoryToken,
+            config.acceptedOverlays,
+            manager
+        )
     };
 }
 
-export async function waitForOverlayChangesIdle(
+export function onPlannedOverlayChange(
+    listener: OverlayRepositoryChangeListener,
+    manager?: RepositoryManager
+): () => void {
+    return onRoleOverlayChange(plannedOverlayRepositoryToken, listener, manager);
+}
+
+export function onAcceptedOverlayChange(
+    listener: OverlayRepositoryChangeListener,
+    manager?: RepositoryManager
+): () => void {
+    return onRoleOverlayChange(acceptedOverlayRepositoryToken, listener, manager);
+}
+
+export async function waitForPlannedOverlayChangesIdle(
     manager?: RepositoryManager
 ): Promise<void> {
-    await requireOverlayRepository(manager).whenIdle();
+    await requireRoleOverlayRepository(plannedOverlayRepositoryToken, manager).whenIdle();
 }
 
-function requireOverlayRepository(
+export async function waitForAcceptedOverlayChangesIdle(
     manager?: RepositoryManager
-): ObservableLatestRepository<string, OverlayInfo> {
-    return requireObservableLatestRepository(overlayRepositoryToken, manager);
+): Promise<void> {
+    await requireRoleOverlayRepository(acceptedOverlayRepositoryToken, manager).whenIdle();
 }
 
-export function readableOverlayCache(
+export function readablePlannedOverlayCache(
     manager?: RepositoryManager
 ): ReadableKeyedValues<string, OverlayInfo> {
-    return requireOverlayRepository(manager).readable();
+    return requireRoleOverlayRepository(plannedOverlayRepositoryToken, manager).readable();
 }
 
-export function updateNextHopSessionIds(
+export function readableAcceptedOverlayCache(
+    manager?: RepositoryManager
+): ReadableKeyedValues<string, OverlayInfo> {
+    return requireRoleOverlayRepository(acceptedOverlayRepositoryToken, manager).readable();
+}
+
+export function updatePlannedOverlayNextHopSessionIds(
     overlayId: string,
-    nextHopSessionIds: string[],
+    nextHopSessionIds: readonly string[],
     manager?: RepositoryManager
 ): OverlayInfo | undefined {
-    const overlay: OverlayInfo | undefined = findOverlayById(overlayId, manager);
+    const overlay = findPlannedOverlayById(overlayId, manager);
     if (overlay === undefined) {
         return undefined;
     }
 
-    setOverlayById(overlayId, {
+    setPlannedOverlayById(overlayId, {
         ...overlay,
-        nextHopSessionIds: nextHopSessionIds,
+        nextHopSessionIds: [...nextHopSessionIds],
         overlayVersion: overlay.overlayVersion + 1,
         updatedAtEpochMs: Math.max(Date.now(), overlay.updatedAtEpochMs + 1)
     }, manager);
@@ -132,136 +164,193 @@ export function updateNextHopSessionIds(
     return overlay;
 }
 
-export function findOverlayByGroupRef(
+export function findPlannedOverlayByGroupRef(
     groupRef: GroupRef,
     manager?: RepositoryManager
 ): OverlayInfo | undefined {
-    return findOverlayById(toScopedOverlayId(groupRef), manager);
+    return findPlannedOverlayById(toScopedOverlayId(groupRef), manager);
 }
 
-export function setOverlayByGroupRef(
+export function findAcceptedOverlayByGroupRef(
     groupRef: GroupRef,
-    overlay: OverlayInfo,
     manager?: RepositoryManager
-): void {
-    setOverlayById(toScopedOverlayId(groupRef), overlay, manager);
+): OverlayInfo | undefined {
+    return findAcceptedOverlayById(toScopedOverlayId(groupRef), manager);
 }
 
-export function removeOverlayByGroupRef(
+export function hasPlannedServerOverlayRecordByGroupRef(
     groupRef: GroupRef,
     manager?: RepositoryManager
 ): boolean {
-    return removeOverlayById(toScopedOverlayId(groupRef), manager);
+    return readOverlayRecordById(
+        plannedOverlayRepositoryToken,
+        toScopedOverlayId(groupRef),
+        manager
+    )?.provenance === 'server';
 }
 
-export function removeOverlayById(
+export function hasAcceptedServerOverlayRecordByGroupRef(
+    groupRef: GroupRef,
+    manager?: RepositoryManager
+): boolean {
+    return readOverlayRecordById(
+        acceptedOverlayRepositoryToken,
+        toScopedOverlayId(groupRef),
+        manager
+    )?.provenance === 'server';
+}
+
+export function findPlannedOverlayById(
+    overlayId: string,
+    manager?: RepositoryManager
+): OverlayInfo | undefined {
+    return findRoleOverlayById(plannedOverlayRepositoryToken, overlayId, manager);
+}
+
+export function findAcceptedOverlayById(
+    overlayId: string,
+    manager?: RepositoryManager
+): OverlayInfo | undefined {
+    return findRoleOverlayById(acceptedOverlayRepositoryToken, overlayId, manager);
+}
+
+export function setPlannedOverlayById(
+    overlayId: string,
+    overlay: OverlayInfo,
+    manager?: RepositoryManager
+): OverlayAdoptionOutcome {
+    return setOverlay({
+        token: plannedOverlayRepositoryToken,
+        overlayId,
+        overlay,
+        manager
+    });
+}
+
+export function setAcceptedOverlayById(
+    overlayId: string,
+    overlay: OverlayInfo,
+    manager?: RepositoryManager
+): OverlayAdoptionOutcome {
+    return setOverlay({
+        token: acceptedOverlayRepositoryToken,
+        overlayId,
+        overlay,
+        manager
+    });
+}
+
+export function setCurrentPlannedServerOverlayById(
+    overlayId: string,
+    overlay: OverlayInfo,
+    manager?: RepositoryManager
+): OverlayAdoptionOutcome {
+    return setCurrentServerOverlay({
+        token: plannedOverlayRepositoryToken,
+        overlayId,
+        overlay,
+        manager
+    });
+}
+
+export function setCurrentAcceptedServerOverlayById(
+    overlayId: string,
+    overlay: OverlayInfo,
+    manager?: RepositoryManager
+): OverlayAdoptionOutcome {
+    return setCurrentServerOverlay({
+        token: acceptedOverlayRepositoryToken,
+        overlayId,
+        overlay,
+        manager
+    });
+}
+
+export function removePlannedOverlayByGroupRef(
+    groupRef: GroupRef,
+    manager?: RepositoryManager
+): boolean {
+    return removePlannedOverlayById(toScopedOverlayId(groupRef), manager);
+}
+
+export function removeAcceptedOverlayByGroupRef(
+    groupRef: GroupRef,
+    manager?: RepositoryManager
+): boolean {
+    return removeAcceptedOverlayById(toScopedOverlayId(groupRef), manager);
+}
+
+export function removePlannedOverlayById(
     overlayId: string,
     manager?: RepositoryManager
 ): boolean {
-    return requireOverlayRepository(manager).delete(overlayId);
+    return requireRoleOverlayRepository(plannedOverlayRepositoryToken, manager).delete(overlayId);
 }
 
-export function findOverlayById(
-    id: string,
+export function removeAcceptedOverlayById(
+    overlayId: string,
     manager?: RepositoryManager
-): OverlayInfo | undefined {
-    const overlay = readObservableLatestRepositoryValue(
-        overlayRepositoryToken,
-        id,
-        manager
+): boolean {
+    return requireRoleOverlayRepository(acceptedOverlayRepositoryToken, manager).delete(overlayId);
+}
+
+export function removePlannedOverlayByIdIfIdentity(
+    overlayId: string,
+    identity: GroupLayoutIdentity,
+    manager?: RepositoryManager
+): boolean {
+    const planned = readOverlayRecordById(plannedOverlayRepositoryToken, overlayId, manager);
+    return planned !== undefined && isOverlayIdentity(planned, identity)
+        ? removePlannedOverlayById(overlayId, manager)
+        : false;
+}
+
+export function reconcileAcceptedOverlayIdentity(
+    input: ReconcileAcceptedOverlayIdentityInput
+): boolean {
+    let changed = removeMismatchedAcceptedOverlay(input);
+    if (input.acceptedIdentity === undefined) {
+        return changed;
+    }
+
+    const planned = readOverlayRecordById(
+        plannedOverlayRepositoryToken,
+        input.overlayId,
+        input.manager
     );
-    return overlay?.state === 'removed' ? undefined : overlay;
-}
-
-export function setOverlayById(
-    id: string,
-    overlay: OverlayInfo,
-    manager?: RepositoryManager
-): void {
-    const repository = requireOverlayRepository(manager);
-    const current = repository.read(id);
-    if (!current) {
-        emitOverlayAdoption(id, 'initial-set');
-        repository.set(id, overlay);
-        return;
-    }
-
-    // Server overlays are authoritative over bootstrap overlays regardless of
-    // the causal tuple: a bootstrap star restamped from a newer group revision
-    // must never displace a server topology (scenario S5), and a server
-    // overlay planned against an older revision must still be adopted.
-    if (overlay.provenance === 'server' && current.provenance === 'bootstrap') {
-        emitOverlayAdoption(id, 'server-superseded-bootstrap');
-        repository.set(id, overlay);
-        return;
-    }
-
-    if (overlay.provenance === 'bootstrap' && current.provenance === 'server') {
-        emitOverlayAdoption(id, 'bootstrap-dropped-over-server');
-        return;
-    }
-
-    const comparison = compareOverlayInfoTuple(overlay, current);
-    if (comparison === 'dominates') {
-        emitOverlayAdoption(id, 'adopted');
-        console.log(`Received updated overlay details: ${JSON.stringify(overlay)}`);
-        repository.set(id, overlay);
-        return;
-    }
-
-    if (comparison === 'equal') {
-        if (JSON.stringify(overlay) === JSON.stringify(current)) {
-            emitOverlayAdoption(id, 'equal');
-            return;
-        }
-        emitOverlayAdoption(id, 'incomparable-conflict');
-        throw new OverlayRevisionConflictError(id);
-    }
-
-    if (comparison === 'incomparable') {
-        emitOverlayAdoption(id, 'incomparable-conflict');
-        throw new OverlayRevisionConflictError(id);
-    }
-
-    emitOverlayAdoption(id, 'dominated-dropped');
-    console.log(
-        'Received stale overlay data: ' +
-            JSON.stringify(overlay) +
-            ' vs ' +
-            JSON.stringify(current)
-    );
-}
-
-export function setCurrentServerOverlayById(
-    id: string,
-    overlay: OverlayInfo,
-    manager?: RepositoryManager
-): void {
-    if (overlay.provenance !== 'server') {
-        throw new TypeError('Current topology repair must contain a server overlay');
-    }
-    const repository = requireOverlayRepository(manager);
-    const current = repository.read(id);
     if (
-        !current ||
-        current.provenance === 'bootstrap' ||
-        compareOverlayInfoTuple(overlay, current) !== 'incomparable'
+        planned?.provenance !== 'server' ||
+        !isOverlayIdentity(planned, input.acceptedIdentity)
     ) {
-        setOverlayById(id, overlay, manager);
-        return;
+        return changed;
     }
 
-    // The server emits this path only from a fresh durable current-state read.
-    // It deliberately supersedes an incomparable historical server publication.
-    emitOverlayAdoption(id, 'adopted');
-    repository.set(id, overlay);
+    const outcome = setCurrentAcceptedServerOverlayById(
+        input.overlayId,
+        planned,
+        input.manager
+    );
+    changed = didOverlayAdoptionChange(outcome) || changed;
+    changed = removePlannedOverlayById(input.overlayId, input.manager) || changed;
+    return changed;
 }
 
-export function getAllOverlays(
+export function getAllPlannedOverlays(
     manager?: RepositoryManager
 ): OverlayInfo[] {
-    return readAllObservableLatestRepository(overlayRepositoryToken, manager)
-        .filter((overlay) => overlay.state !== 'removed');
+    return getAllRoleOverlays(plannedOverlayRepositoryToken, manager);
+}
+
+export function getAllAcceptedOverlays(
+    manager?: RepositoryManager
+): OverlayInfo[] {
+    return getAllRoleOverlays(acceptedOverlayRepositoryToken, manager);
+}
+
+export function didOverlayAdoptionChange(outcome: OverlayAdoptionOutcome): boolean {
+    return outcome === 'initial-set' ||
+        outcome === 'adopted' ||
+        outcome === 'server-superseded-bootstrap';
 }
 
 export function compareOverlayInfoTuple(
@@ -281,6 +370,174 @@ export function compareOverlayInfoTuple(
     return left.overlayVersion > right.overlayVersion
         ? 'dominates'
         : 'dominated';
+}
+
+function configureRoleOverlayRepository(
+    token: RepositoryToken<ObservableLatestRepository<string, OverlayInfo>>,
+    options: OverlayRepositoryOptions,
+    manager?: RepositoryManager
+): ObservableLatestRepository<string, OverlayInfo> {
+    return configureObservableLatestRepository(
+        token,
+        {
+            ...options,
+            equals: (left, right) =>
+                compareOverlayInfoTuple(left, right) === 'equal' &&
+                JSON.stringify(left) === JSON.stringify(right)
+        },
+        manager
+    );
+}
+
+function onRoleOverlayChange(
+    token: RepositoryToken<ObservableLatestRepository<string, OverlayInfo>>,
+    listener: OverlayRepositoryChangeListener,
+    manager?: RepositoryManager
+): () => void {
+    const subscription = requireRoleOverlayRepository(token, manager)
+        .onChangeDo(async (event) => {
+            await listener(toOverlayRepositoryChange(event, manager));
+        });
+
+    return () => {
+        subscription.unsubscribe();
+    };
+}
+
+function requireRoleOverlayRepository(
+    token: RepositoryToken<ObservableLatestRepository<string, OverlayInfo>>,
+    manager?: RepositoryManager
+): ObservableLatestRepository<string, OverlayInfo> {
+    return requireObservableLatestRepository(token, manager);
+}
+
+function findRoleOverlayById(
+    token: RepositoryToken<ObservableLatestRepository<string, OverlayInfo>>,
+    overlayId: string,
+    manager?: RepositoryManager
+): OverlayInfo | undefined {
+    const overlay = readOverlayRecordById(token, overlayId, manager);
+    return overlay?.state === 'removed' ? undefined : overlay;
+}
+
+function readOverlayRecordById(
+    token: RepositoryToken<ObservableLatestRepository<string, OverlayInfo>>,
+    overlayId: string,
+    manager?: RepositoryManager
+): OverlayInfo | undefined {
+    return readObservableLatestRepositoryValue(token, overlayId, manager);
+}
+
+function setOverlay(input: SetOverlayInput): OverlayAdoptionOutcome {
+    const repository = requireRoleOverlayRepository(input.token, input.manager);
+    const current = repository.read(input.overlayId);
+    if (!current) {
+        return adoptOverlay(input, repository, 'initial-set');
+    }
+
+    if (input.overlay.provenance === 'server' && current.provenance === 'bootstrap') {
+        return adoptOverlay(input, repository, 'server-superseded-bootstrap');
+    }
+    if (input.overlay.provenance === 'bootstrap' && current.provenance === 'server') {
+        return reportOverlayDrop(input.overlayId, 'bootstrap-dropped-over-server');
+    }
+
+    const comparison = compareOverlayInfoTuple(input.overlay, current);
+    if (comparison === 'dominates') {
+        console.log(`Received updated overlay details: ${JSON.stringify(input.overlay)}`);
+        return adoptOverlay(input, repository, 'adopted');
+    }
+    if (comparison === 'equal') {
+        return JSON.stringify(input.overlay) === JSON.stringify(current)
+            ? reportOverlayDrop(input.overlayId, 'equal')
+            : reportOverlayDrop(input.overlayId, 'incomparable-conflict');
+    }
+    if (comparison === 'incomparable') {
+        return reportOverlayDrop(input.overlayId, 'incomparable-conflict');
+    }
+
+    console.log(
+        'Received stale overlay data: ' +
+            JSON.stringify(input.overlay) +
+            ' vs ' +
+            JSON.stringify(current)
+    );
+    return reportOverlayDrop(input.overlayId, 'dominated-dropped');
+}
+
+function setCurrentServerOverlay(input: SetOverlayInput): OverlayAdoptionOutcome {
+    if (input.overlay.provenance !== 'server') {
+        throw new TypeError('Current topology repair must contain a server overlay');
+    }
+    const repository = requireRoleOverlayRepository(input.token, input.manager);
+    const current = repository.read(input.overlayId);
+    if (
+        current?.provenance === 'server' &&
+        compareOverlayInfoTuple(input.overlay, current) === 'incomparable'
+    ) {
+        return adoptOverlay(input, repository, 'adopted');
+    }
+
+    return setOverlay(input);
+}
+
+function adoptOverlay(
+    input: SetOverlayInput,
+    repository: ObservableLatestRepository<string, OverlayInfo>,
+    outcome: OverlayAdoptionOutcome
+): OverlayAdoptionOutcome {
+    emitOverlayAdoption(input.overlayId, outcome);
+    repository.set(input.overlayId, input.overlay);
+    return outcome;
+}
+
+function reportOverlayDrop(
+    overlayId: string,
+    outcome: OverlayAdoptionOutcome
+): OverlayAdoptionOutcome {
+    emitOverlayAdoption(overlayId, outcome);
+    return outcome;
+}
+
+function removeMismatchedAcceptedOverlay(
+    input: ReconcileAcceptedOverlayIdentityInput
+): boolean {
+    const accepted = readOverlayRecordById(
+        acceptedOverlayRepositoryToken,
+        input.overlayId,
+        input.manager
+    );
+    if (
+        accepted === undefined ||
+        (input.acceptedIdentity !== undefined && isOverlayIdentity(accepted, input.acceptedIdentity))
+    ) {
+        return false;
+    }
+
+    return removeAcceptedOverlayById(input.overlayId, input.manager);
+}
+
+function isOverlayIdentity(
+    overlay: OverlayInfo,
+    identity: GroupLayoutIdentity
+): boolean {
+    return isSameGroupLayoutIdentity(
+        {
+            groupRevision: overlay.sourceGroupStateCausalRevision.groupRevision,
+            presenceRevision: overlay.sourceGroupStateCausalRevision.presenceRevision,
+            version: overlay.overlayVersion,
+            state: overlay.state
+        },
+        identity
+    );
+}
+
+function getAllRoleOverlays(
+    token: RepositoryToken<ObservableLatestRepository<string, OverlayInfo>>,
+    manager?: RepositoryManager
+): OverlayInfo[] {
+    return readAllObservableLatestRepository(token, manager)
+        .filter((overlay) => overlay.state !== 'removed');
 }
 
 function toOverlayRepositoryChange(

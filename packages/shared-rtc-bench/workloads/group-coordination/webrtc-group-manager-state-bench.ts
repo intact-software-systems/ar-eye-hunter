@@ -149,7 +149,10 @@ export async function runWebRtcGroupManagerState(
     const groupCache = new LatestRepository<string, GroupSnapshot>();
     const clientCache = new CountingClientCache();
     const rtcQBox = createRtcQBoxHarness('self');
-    const manager = new WebRtcGroupManager(rtcQBox.service as never, groupCache, clientCache);
+    const manager = new WebRtcGroupManager(
+        rtcQBox.service as never,
+        { groupCache, clientCache }
+    );
 
     for (let index = 0; index < input.clients; index += 1) {
         const peerId = `peer-${index}`;

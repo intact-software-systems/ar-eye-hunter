@@ -5,7 +5,7 @@ import { AppTopics, type ClientInfo } from '@shared/api/api-config.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import { DEFAULT_STATE_APPLICATION_ID, DEFAULT_STATE_WORKSPACE_ID } from '@shared/api/state-types.ts';
 import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
-import { findOverlayById, setOverlayById } from '@shared/repository/overlays-repository.ts';
+import { findPlannedOverlayById, setPlannedOverlayById } from '@shared/repository/overlays-repository.ts';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { configureTestCacheRepositories } from '../../cache-repository-config.ts';
 import {
@@ -115,7 +115,7 @@ describe('browser state cache delta recovery and bootstrap topology', () => {
             groupSnapshots: [group]
         });
 
-        const overlay = findOverlayById(toScopedOverlayId(group.group));
+        const overlay = findPlannedOverlayById(toScopedOverlayId(group.group));
         expect(overlay).toMatchObject({
             provenance: 'bootstrap',
             topology: 'star',
@@ -140,7 +140,7 @@ describe('browser state cache delta recovery and bootstrap topology', () => {
             snapshotVersion: 1
         });
         const overlayId = toScopedOverlayId(group.group);
-        setOverlayById(overlayId, {
+        setPlannedOverlayById(overlayId, {
             sourceGroupStateCausalRevision: {
                 groupRevision: 1,
                 presenceRevision: 1
@@ -173,7 +173,7 @@ describe('browser state cache delta recovery and bootstrap topology', () => {
             groupSnapshots: [newerGroup]
         });
 
-        expect(findOverlayById(overlayId)).toMatchObject({
+        expect(findPlannedOverlayById(overlayId)).toMatchObject({
             provenance: 'server',
             topology: 'tree',
             nextHopSessionIds: ['session-c']

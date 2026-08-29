@@ -1,3 +1,4 @@
+import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import { isGroupActive, isSessionInGroup } from '@shared/api/group-client-views.ts';
 import type { GroupSnapshot as GroupStateSnapshot } from '@shared/api/group-types.ts';
 import { createAndSetBootstrapOverlays, type BootstrapOverlayPolicy } from '@shared/repository/overlay-bootstrap.ts';
@@ -34,14 +35,16 @@ export async function acceptGroupSnapshotUpdate(
     bootstrapOverlayPolicy: BootstrapOverlayPolicy
 ): Promise<void> {
     if (!isGroupActive(snapshot)) {
-        overlaysRepository.removeOverlayByGroupRef(snapshot.group);
+        clearGroupOverlayRoles(snapshot);
+        await waitForGroupOverlayRolesIdle();
 
         await webRtcGroupManager.delete(snapshot.group);
         return;
     }
 
     if (!isSessionInGroup(snapshot, bootstrapOverlayPolicy.localSessionId)) {
-        overlaysRepository.removeOverlayByGroupRef(snapshot.group);
+        clearGroupOverlayRoles(snapshot);
+        await waitForGroupOverlayRolesIdle();
         if (webRtcGroupManager.has(snapshot.group)) {
             await webRtcGroupManager.delete(snapshot.group, { retainConnections: true });
         }
@@ -51,7 +54,12 @@ export async function acceptGroupSnapshotUpdate(
         return;
     }
 
+    overlaysRepository.reconcileAcceptedOverlayIdentity({
+        overlayId: toScopedOverlayId(snapshot.group),
+        acceptedIdentity: snapshot.group.acceptedLayoutIdentity ?? undefined
+    });
     createAndSetBootstrapOverlays([snapshot], bootstrapOverlayPolicy);
+    await waitForGroupOverlayRolesIdle();
     await webRtcGroupManager.acceptGroupUpdate(snapshot);
 }
 
@@ -59,7 +67,20 @@ export async function acceptGroupSnapshotRemoval(
     snapshot: GroupStateSnapshot,
     webRtcGroupManager: WebRtcGroupManager
 ): Promise<void> {
-    overlaysRepository.removeOverlayByGroupRef(snapshot.group);
+    clearGroupOverlayRoles(snapshot);
+    await waitForGroupOverlayRolesIdle();
 
     await webRtcGroupManager.delete(snapshot.group);
+}
+
+function clearGroupOverlayRoles(snapshot: GroupStateSnapshot): void {
+    overlaysRepository.removePlannedOverlayByGroupRef(snapshot.group);
+    overlaysRepository.removeAcceptedOverlayByGroupRef(snapshot.group);
+}
+
+async function waitForGroupOverlayRolesIdle(): Promise<void> {
+    await Promise.all([
+        overlaysRepository.waitForPlannedOverlayChangesIdle(),
+        overlaysRepository.waitForAcceptedOverlayChangesIdle()
+    ]);
 }
