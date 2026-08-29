@@ -11,9 +11,11 @@ import type {
     BlackBoxBrowserWsDependency
 } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/browser-rallar-runtime-composition.ts';
 import type { RallarMessageHandler, RallarMessagePayload, RallarMessageSendResult } from '@shared-web/browser/messages/rallar-message-contracts.ts';
+import type { RallarScopedOperationOptions } from '@shared-web/browser/rallar-connection-facade.ts';
 import type { RallarCrdtDocument, RallarCrdtOpenOptions } from '@shared-web/browser/rallar-crdt.ts';
 import type { RallarRealtimeHandler } from '@shared-web/browser/rallar-realtime-facade.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
+import type { GroupRef } from '@shared/api/group-types.ts';
 import type { RallarCrdtOperationBatch } from '@shared/crdt/mod.ts';
 import { vi } from 'vitest';
 
@@ -26,6 +28,7 @@ export interface BrowserRuntimeFacadeRecords {
     restoreCount: number;
     readonly connectionAttempts: Array<Parameters<BlackBoxBrowserRallarRuntimeDependency['connect']>>;
     disconnectCount: number;
+    readonly roomStateRefreshes: Array<[GroupRef, RallarScopedOperationOptions]>;
     readonly roomJoins: Array<Parameters<BlackBoxBrowserRoomsDependency['join']>>;
     readonly roomLeaves: Array<Parameters<BlackBoxBrowserRoomsDependency['leave']>>;
     readonly roomRefreshes: Array<Parameters<BlackBoxBrowserRoomsDependency['refresh']>>;
@@ -63,6 +66,7 @@ const records: BrowserRuntimeFacadeRecords = {
     restoreCount: 0,
     connectionAttempts: [],
     disconnectCount: 0,
+    roomStateRefreshes: [],
     roomJoins: [],
     roomLeaves: [],
     roomRefreshes: [],
@@ -99,6 +103,7 @@ export const facadeBehavior = {
     restore: vi.fn<BlackBoxBrowserAuthDependency['restore']>(),
     connect: vi.fn<BlackBoxBrowserRallarRuntimeDependency['connect']>(),
     disconnect: vi.fn<BlackBoxBrowserRallarRuntimeDependency['disconnect']>(),
+    roomStateRefresh: vi.fn<BlackBoxBrowserRallarRuntimeDependency['refreshRoomState']>(),
     roomJoin: vi.fn<BlackBoxBrowserRoomsDependency['join']>(),
     roomLeave: vi.fn<BlackBoxBrowserRoomsDependency['leave']>(),
     roomRefresh: vi.fn<BlackBoxBrowserRoomsDependency['refresh']>(),
@@ -297,6 +302,10 @@ export const rallarFacadeTestDouble: BlackBoxBrowserRallarRuntimeDependency = {
         records.disconnectCount += 1;
         await facadeBehavior.disconnect();
     },
+    refreshRoomState: async (roomRef, options) => {
+        records.roomStateRefreshes.push([roomRef, options]);
+        await facadeBehavior.roomStateRefresh(roomRef, options);
+    },
     status: () => 'connected',
     isConnected: () => true,
     session: () => facadeSession,
@@ -319,6 +328,7 @@ export function resetBrowserRuntimeFacadeTestDouble(): void {
     facadeBehavior.restore.mockReturnValue(undefined);
     facadeBehavior.connect.mockResolvedValue({});
     facadeBehavior.disconnect.mockResolvedValue(undefined);
+    facadeBehavior.roomStateRefresh.mockResolvedValue(undefined);
     facadeBehavior.roomJoin.mockResolvedValue({});
     facadeBehavior.roomLeave.mockResolvedValue({});
     facadeBehavior.roomRefresh.mockResolvedValue({});
@@ -341,6 +351,7 @@ function clearRecords(): void {
             records.registrationAttempts,
             records.logoutAttempts,
             records.connectionAttempts,
+            records.roomStateRefreshes,
             records.roomJoins,
             records.roomLeaves,
             records.roomRefreshes,

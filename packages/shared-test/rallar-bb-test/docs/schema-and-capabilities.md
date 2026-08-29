@@ -75,7 +75,9 @@ readiness timeout so connection setup does not consume the readiness budget.
 
 For the `browser-rallar` runtime used by browser control agents and
 `rallar-remote-browser` distributed runs, missing peers trigger an immediate
-exact-room point refresh and no more than one refresh per second afterward.
+exact-room state and topology refresh and no more than one refresh per second
+afterward. The point read hydrates the group-scoped presence used for dialing,
+then reads through that room's planned and accepted topology.
 Refresh receives cancellation and the remaining readiness deadline. Transient
 refresh errors are retried, permanent errors fail, and only a later health
 result with enough ready peer IDs satisfies readiness.
