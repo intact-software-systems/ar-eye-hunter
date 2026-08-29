@@ -1,4 +1,3 @@
-import { configureSharedGraphRepositories } from '@shared-graph/repository/configure-shared-graph-repositories.ts';
 import { configureSharedStateRepositories } from '@shared/repository/configure-shared-state-repositories.ts';
 import { configureOverlayRepositories } from '@shared/repository/overlays-repository.ts';
 import { configureRttRepository } from '@shared/repository/rtt-repository.ts';
@@ -16,10 +15,5 @@ export function initialiseBrowserCacheRepositories(): void {
     configureSharedStateRepositories({
         clientSnapshots: { ttlMs: MINUTE_MS },
         groupSnapshots: { ttlMs: MINUTE_MS }
-    });
-
-    configureSharedGraphRepositories({
-        graphs: { ttlMs: MINUTE_MS },
-        vivaldi: { ttlMs: 5 * MINUTE_MS }
     });
 }

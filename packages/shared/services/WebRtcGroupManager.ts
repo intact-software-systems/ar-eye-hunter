@@ -1,5 +1,10 @@
 import { toWebRtcGroupKey } from '@shared/api/api-type-utils.ts';
-import type { GroupId, OverlayInfo, PeerId } from '../api/api-config.ts';
+// dprint-ignore
+import type {
+    GroupId,
+    OverlayInfo,
+    PeerId
+} from '../api/api-config.ts';
 import {
     readActiveClientSessionIds,
     type AnyClientPresence,
@@ -22,7 +27,7 @@ import {
     computeOverlayRttReportingDegreeLimit,
     computeServerDesiredPeerIds,
     readAcceptedOverlayForGroup,
-    readPlannedAuthoritativeOverlayForGroup
+    readPlannedOverlayForGroup
 } from './webrtc-group-overlay-reading.ts';
 import { computeOutboundDialPlan } from './webrtc-outbound-dial-plan.ts';
 import type { WebRtcConnectionService } from './WebRtcConnectionService.ts';
@@ -505,7 +510,7 @@ export class WebRtcGroupManager {
             .sort((left, right) => left.groupKey.localeCompare(right.groupKey));
 
         for (const group of groups) {
-            const overlay = readPlannedAuthoritativeOverlayForGroup(
+            const overlay = readPlannedOverlayForGroup(
                 this.plannedOverlayCache,
                 group.groupRef
             );
@@ -580,7 +585,7 @@ export class WebRtcGroupManager {
         activePeerSessionIds: readonly PeerId[],
         degreeLimit: number
     ): boolean {
-        const overlay = readPlannedAuthoritativeOverlayForGroup(
+        const overlay = readPlannedOverlayForGroup(
             this.plannedOverlayCache,
             group.groupRef
         );

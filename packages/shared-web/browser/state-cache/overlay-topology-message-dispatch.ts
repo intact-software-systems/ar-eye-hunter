@@ -9,7 +9,10 @@ import {
 } from '@shared/api/group-lifecycle/group-layout-identity.ts';
 import { toOverlayInfoForSession, type RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
-import { findGroupStateSnapshotByRef } from '@shared/repository/group-state-snapshots-repository.ts';
+import {
+    findGroupStateSnapshotByRef,
+    wasGroupStateSnapshotObservedByRef
+} from '@shared/repository/group-state-snapshots-repository.ts';
 import { emitOverlayAdoption, type OverlayAdoptionOutcome } from '@shared/repository/overlay-adoption-diagnostics.ts';
 import * as overlaysRepository from '@shared/repository/overlays-repository.ts';
 import type { WebRtcGroupManager } from '@shared/services/WebRtcGroupManager.ts';
@@ -72,10 +75,10 @@ export async function adoptOverlayTopology(
         accepted: acceptedIdentity
     });
 
-    if (
-        groupSnapshot !== undefined &&
-        (!isGroupActive(groupSnapshot) || !isSessionInGroup(groupSnapshot, input.sessionId))
-    ) {
+    const membershipIneligible = groupSnapshot === undefined
+        ? wasGroupStateSnapshotObservedByRef(input.topology.groupRef)
+        : !isGroupActive(groupSnapshot) || !isSessionInGroup(groupSnapshot, input.sessionId);
+    if (membershipIneligible) {
         const outcome = 'membership-ineligible-dropped';
         emitOverlayAdoption(input.topology.overlayId, outcome);
         return { role, outcome, changed: false };

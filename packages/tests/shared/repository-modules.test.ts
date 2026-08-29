@@ -1,8 +1,19 @@
 import type { OverlayInfo, RttMeasurementInfo } from '@shared/api/api-config.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
-import type { ClientPrincipalRef, ClientSession, ClientSnapshot } from '@shared/api/client-types.ts';
+// dprint-ignore
+import type {
+    ClientPrincipalRef,
+    ClientSession,
+    ClientSnapshot
+} from '@shared/api/client-types.ts';
 import { readClientVersion, readGroupVersion } from '@shared/api/group-client-views.ts';
-import type { AuditStamp, GroupMember, GroupPresenceSession, GroupSnapshot } from '@shared/api/group-types.ts';
+// dprint-ignore
+import type {
+    AuditStamp,
+    GroupMember,
+    GroupPresenceSession,
+    GroupSnapshot
+} from '@shared/api/group-types.ts';
 import { RepositoryManager } from '@shared/cache/RepositoryManager.ts';
 import {
     configureClientStateSnapshotRepository,
@@ -38,7 +49,6 @@ import {
     resetOverlayAdoptionDiagnostics,
     setOverlayAdoptionDiagnosticsSink,
     setPlannedOverlayById,
-    updatePlannedOverlayNextHopSessionIds,
     waitForPlannedOverlayChangesIdle
 } from '@shared/repository/overlays-repository.ts';
 // dprint-ignore
@@ -571,9 +581,6 @@ describe('repository modules', () => {
         expect(findPlannedOverlayById(overlayId)?.nextHopSessionIds).toEqual(
             currentOverlay.nextHopSessionIds
         );
-
-        updatePlannedOverlayNextHopSessionIds(overlayId, ['peer-c']);
-        expect(findPlannedOverlayById(overlayId)?.nextHopSessionIds).toEqual(['peer-c']);
     });
 
     it('emits planned overlay changes only for adopted writes and deletes', async () => {

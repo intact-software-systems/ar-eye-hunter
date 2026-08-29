@@ -13,7 +13,7 @@ import {
     setOverlayAdoptionDiagnosticsSink,
     setPlannedOverlayById
 } from '@shared/repository/overlays-repository.ts';
-import { acceptGroupSnapshotUpdate } from '@shared/services/group-snapshot-rtc-sync.ts';
+import { acceptGroupSnapshotRemoval, acceptGroupSnapshotUpdate } from '@shared/services/group-snapshot-rtc-sync.ts';
 // dprint-ignore
 import {
     beforeEach,
@@ -31,6 +31,26 @@ describe('browser overlay topology role adoption', () => {
         configureTestCacheRepositories();
         resetOverlayAdoptionDiagnostics();
         setOverlayAdoptionDiagnosticsSink(undefined);
+    });
+
+    it('allows a planned publication before the group has ever been observed', async () => {
+        const group = groupSnapshot(1);
+        const topology = topologySnapshot(
+            group,
+            { groupRevision: 2, presenceRevision: 2 },
+            2
+        );
+
+        await expect(adoptOverlayTopology({
+            topology,
+            sessionId: 'session-a',
+            webRtcGroupManager: webRtcGroupManager() as never,
+            adoption: 'publication'
+        })).resolves.toMatchObject({
+            role: 'planned',
+            changed: true
+        });
+        expect(findPlannedOverlayById(topology.overlayId)?.overlayVersion).toBe(2);
     });
 
     it('promotes a publication-first planned layout when the group snapshot accepts its full identity', async () => {
@@ -209,6 +229,63 @@ describe('browser overlay topology role adoption', () => {
             toOverlayInfoForSession(plannedB, 'session-a')
         );
         expect(findPlannedOverlayById(overlayId)).toBeUndefined();
+    });
+
+    it('drops a delayed publication after group removal and admits publication after rejoin', async () => {
+        const joined = groupSnapshot(1);
+        const delayedTopology = topologySnapshot(
+            joined,
+            { groupRevision: 2, presenceRevision: 2 },
+            2
+        );
+        const manager = webRtcGroupManager();
+        groupStateSnapshotsRepository.setGroupStateSnapshot(joined);
+        await acceptGroupSnapshotUpdate(
+            joined,
+            manager as never,
+            { localSessionId: 'session-a', bootstrapDegree: 5 }
+        );
+        groupStateSnapshotsRepository.removeGroupStateSnapshotByRef(joined.group);
+        await acceptGroupSnapshotRemoval(joined, manager as never);
+        manager.notifyOverlayTopologyChanged.mockClear();
+
+        await expect(adoptOverlayTopology({
+            topology: delayedTopology,
+            sessionId: 'session-a',
+            webRtcGroupManager: manager as never,
+            adoption: 'publication'
+        })).resolves.toMatchObject({
+            outcome: 'membership-ineligible-dropped',
+            changed: false
+        });
+
+        expect(findPlannedOverlayById(delayedTopology.overlayId)).toBeUndefined();
+        expect(findAcceptedOverlayById(delayedTopology.overlayId)).toBeUndefined();
+        expect(manager.notifyOverlayTopologyChanged).not.toHaveBeenCalled();
+
+        const rejoined = groupSnapshot(3);
+        const currentTopology = topologySnapshot(
+            rejoined,
+            { groupRevision: 4, presenceRevision: 4 },
+            4
+        );
+        groupStateSnapshotsRepository.setGroupStateSnapshot(rejoined);
+        await acceptGroupSnapshotUpdate(
+            rejoined,
+            manager as never,
+            { localSessionId: 'session-a', bootstrapDegree: 5 }
+        );
+
+        await expect(adoptOverlayTopology({
+            topology: currentTopology,
+            sessionId: 'session-a',
+            webRtcGroupManager: manager as never,
+            adoption: 'publication'
+        })).resolves.toMatchObject({
+            role: 'planned',
+            changed: true
+        });
+        expect(findPlannedOverlayById(currentTopology.overlayId)?.overlayVersion).toBe(4);
     });
 
     it('drops a delayed publication after membership loss without recreating either role', async () => {

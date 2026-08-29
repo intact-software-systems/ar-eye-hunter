@@ -13,8 +13,7 @@ heartbeat targeting, and overlay adoption all hang off cache writes.
    share this lifecycle, the persisted browser session, and the cache repositories.
 2. The inbox path delegates directly to the named
    [snapshot](./state-snapshot-message-dispatch.ts#dispatchStateSnapshotMessage),
-   [event](./state-event-message-dispatch.ts#dispatchStateEventMessage),
-   [graph](./graph-snapshot-message-dispatch.ts#dispatchGraphSnapshotMessage), and
+   [event](./state-event-message-dispatch.ts#dispatchStateEventMessage), and
    [topology](./overlay-topology-message-dispatch.ts#dispatchOverlayTopologyMessage)
    dispatch owners. Group events accept only the canonical delta envelope.
 3. [acceptGroupStateDeltaEnvelope](./group-state-delta-application.ts#acceptGroupStateDeltaEnvelope)
