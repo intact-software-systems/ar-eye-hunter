@@ -1,12 +1,9 @@
+import { describe, expect, it } from 'vitest';
+
 import {
     PSqlResourceInboxEntryRepository,
     ResourceInboxInvariantCorruptionError
 } from '@shared-server/queuebox/postgres/p-sql-resource-inbox-entry-repository.ts';
-import { PSqlGroupStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-group-state-event-repository.ts';
-import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
-import { describe, expect, it } from 'vitest';
-import { createRuntimeStatePostgresSql } from '../../runtime-state/postgres/postgres-runtime-state-client-fixtures.ts';
-
 import { computeGroupMutation } from '@shared-server/rallar-system/group-state/mutation/orchestration/compute-group-mutation.ts';
 import { writeGroupMutation } from '@shared-server/rallar-system/group-state/mutation/write/write-group-mutation.ts';
 import { groupStateGroupStorageKey } from '@shared-server/rallar-system/group-state/persistence/aggregate/group-aggregate-storage-keys.ts';
@@ -15,18 +12,22 @@ import { IDEMPOTENT_NAMESPACE } from '@shared-server/rallar-system/group-state/p
 import { groupStateIdempotencyStorageKey } from '@shared-server/rallar-system/group-state/persistence/idempotency/group-idempotency-storage-key.ts';
 import { groupStateMemberStorageKey } from '@shared-server/rallar-system/group-state/persistence/membership/group-membership-storage-key.ts';
 import { groupStateEventWorkspaceKey } from '@shared-server/rallar-system/state-events/postgres/group-state-event-workspace-key.ts';
+import { PSqlGroupStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-group-state-event-repository.ts';
 import {
     RTC_TOPOLOGY_ACCEPTED_SNAPSHOTS_NAMESPACE,
     RtcTopologySnapshotRepository
 } from '@shared-server/rallar-system/topology/persistence/rtc-topology-snapshot-repository.ts';
+import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
+
 import {
     createGroupAuthorityFacts,
     createGroupAuthorityRead,
     groupRef,
     transitionCommand
 } from '../../rallar-system/group-state/mutation/group-mutation-test-runtime.ts';
+import { createRuntimeStatePostgresSql } from '../../runtime-state/postgres/postgres-runtime-state-client-fixtures.ts';
 
 const POSTGRES_INTEGRATION_ENABLED = readEnv('RALLAR_POSTGRES_INTEGRATION') === '1';
 const postgresIt = POSTGRES_INTEGRATION_ENABLED ? it : it.skip;
@@ -118,8 +119,6 @@ describe('Postgres runtime-state guarded batches', () => {
                 read: {
                     ...read,
                     plannedLayoutRow: { snapshot, revision: 0 },
-                    // Deliberately absent in Postgres: its update arrives after
-                    // the group and planned effects and makes the batch conflict.
                     acceptedLayoutRow: { snapshot, revision: 0 }
                 },
                 facts: createGroupAuthorityFacts()
@@ -128,7 +127,7 @@ describe('Postgres runtime-state guarded batches', () => {
                 throw new Error('Reset must produce a group guarded write');
             }
             const [outboxEntry] = computed.outboxEntries;
-            if (outboxEntry === undefined || computed.idempotency === null) {
+            if (computed.outboxEntries.length !== 1 || outboxEntry === undefined || computed.idempotency === null) {
                 throw new Error('Reset must produce an idempotency receipt and presence-summary outbox entry');
             }
             const mismatchingOutboxEntry = {
