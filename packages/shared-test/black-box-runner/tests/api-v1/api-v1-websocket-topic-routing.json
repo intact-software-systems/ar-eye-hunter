@@ -273,20 +273,25 @@
             "traceId": "api-v1-bb-ws-trace-{runId}"
           },
           "route": {
-            "topicId": "chat",
+            "topicId": "room.chat",
             "resourceId": "api-v1-bb-ws-resource-{runId}",
             "contextId": "{applicationId}:{workspaceId}"
           },
           "targets": {
             "mode": "broadcast",
-            "scope": "world"
+            "scope": "room",
+            "groupRef": {
+              "applicationId": "{applicationId}",
+              "workspaceId": "{workspaceId}",
+              "groupId": "{groupId}"
+            }
           },
           "delivery": {
             "reliability": "best-effort",
             "ack": "none"
           },
           "payload": {
-            "typeId": "chat",
+            "typeId": "chat.message.v1",
             "contentType": "application/json",
             "resource": "{\"text\":\"hello over api-v1 ws\",\"groupId\":\"{groupId}\",\"runId\":\"{runId}\"}"
           }
@@ -305,11 +310,11 @@
             "traceId": "api-v1-bb-ws-trace-{runId}"
           },
           "route": {
-            "topicId": "chat",
+            "topicId": "room.chat",
             "resourceId": "api-v1-bb-ws-resource-{runId}"
           },
           "payload": {
-            "typeId": "chat",
+            "typeId": "chat.message.v1",
             "resource": "{\"text\":\"hello over api-v1 ws\",\"groupId\":\"{groupId}\",\"runId\":\"{runId}\"}"
           }
         }
