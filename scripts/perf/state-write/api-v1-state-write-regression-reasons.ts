@@ -64,20 +64,6 @@ export const PLANNED_LAYOUT_PROMOTION_REASONS = (['uncontended', 'shared', 'hot'
 
 export const PLANNED_LAYOUT_PROMOTION_REGRESSION_REASON_PROFILE = 'planned-layout-promotion' as const;
 
-const GROUP_ACTIVATION_PRESENCE_TOPOLOGY_ORIGIN_REASON =
-    'Slice 6 persists mandatory origin on presence-summary coalesced topology-work rows, widening those writes and their transaction work. The state-write benchmark executes presence connect, heartbeat, and disconnect but no reconfigure command, so the uncontended transaction-duration residue is row work rather than command execution.';
-
-export const GROUP_ACTIVATION_PRESENCE_TOPOLOGY_ORIGIN_REASONS = [
-    {
-        workload: 'uncontended',
-        metric: 'postgres.transactionDurationMs',
-        reason: GROUP_ACTIVATION_PRESENCE_TOPOLOGY_ORIGIN_REASON
-    }
-] as const;
-
-export const GROUP_ACTIVATION_PRESENCE_TOPOLOGY_ORIGIN_REGRESSION_REASON_PROFILE =
-    'group-activation-presence-topology-origin' as const;
-
 export function selectStateWriteRegressionReasons(
     profile: string | undefined,
     precommittedReasons: readonly StateWriteBenchmarkRegressionReason[]
@@ -96,9 +82,6 @@ export function selectStateWriteRegressionReasons(
     }
     if (profile === PLANNED_LAYOUT_PROMOTION_REGRESSION_REASON_PROFILE) {
         return PLANNED_LAYOUT_PROMOTION_REASONS;
-    }
-    if (profile === GROUP_ACTIVATION_PRESENCE_TOPOLOGY_ORIGIN_REGRESSION_REASON_PROFILE) {
-        return GROUP_ACTIVATION_PRESENCE_TOPOLOGY_ORIGIN_REASONS;
     }
     throw new Error('State-write regression reason selection is inconsistent');
 }
