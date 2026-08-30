@@ -16,6 +16,7 @@ import type {
     RallarRtcRoomLaneWaitResult
 } from '@shared-web/browser/rallar-rtc-facade.ts';
 import type { RallarUnsubscribe } from '@shared-web/browser/rallar-shared-contracts.ts';
+import { isAcceptedRealtimeSendResult } from '@shared-web/browser/realtime/browser-realtime-send-runtime.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 
 export namespace BrowserRoomRealtimeRuntime {
@@ -37,7 +38,6 @@ export namespace BrowserRoomRealtimeRuntime {
     }
 
     export interface Target {
-        readonly room: string | GroupRef;
         readonly laneId: string;
         readonly desiredPeerIds: readonly string[];
         readonly readyPeerIds: readonly string[];
@@ -148,7 +148,6 @@ export class BrowserRoomRealtimeRuntime {
             });
         }
         return {
-            room: input.room,
             laneId: input.laneId,
             desiredPeerIds: transportStatus.rtc.desiredPeerIds,
             readyPeerIds,
@@ -250,16 +249,11 @@ function toRoomSendStatus(
     if (peerIds.length === 0) {
         return 'not-ready';
     }
-    const sentCount = results.filter((result) => isAccepted(result)).length;
+    const sentCount = results.filter(isAcceptedRealtimeSendResult).length;
     if (sentCount === 0) {
         return 'failed';
     }
     return sentCount >= desiredPeerIds.length ? 'sent' : 'partial';
-}
-
-function isAccepted(result: RallarRealtimeSendResult): boolean {
-    return result.result.status === 'sent' || result.result.status === 'queued' ||
-        result.result.status === 'replaced';
 }
 
 function uniquePeerIds(peerIds: readonly string[]): readonly string[] {

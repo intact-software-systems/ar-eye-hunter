@@ -9,6 +9,7 @@ import type {
     RallarTargetSelector
 } from '@shared-web/browser/rallar-realtime-facade.ts';
 import type { RallarUnsubscribe } from '@shared-web/browser/rallar-shared-contracts.ts';
+import { isAcceptedRealtimeSendResult } from '@shared-web/browser/realtime/browser-realtime-send-runtime.ts';
 import type { BrowserRoomTransportTarget } from '@shared-web/browser/rooms/room-group-state-translation.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
@@ -48,16 +49,34 @@ export class BrowserTargetedRealtimeRuntime {
         return target.transportState === 'halted' ? [] : target.peerIds;
     }
 
-    create<T>(definition: RallarTargetedChannelDefinition): RallarTargetedChannel<T> {
-        const fixedPeerIds = definition.membership === 'live'
-            ? undefined
-            : this.resolvePeerIds(definition);
+    create<T>(
+        definition: RallarTargetedChannelDefinition,
+        roomScoped = false
+    ): RallarTargetedChannel<T> {
+        const fixedMembership = definition.membership
+            ? definition.membership === 'fixed'
+            : !roomScoped;
+        const fixedPeerIds = fixedMembership
+            ? this.resolvePeerIds(definition)
+            : undefined;
         const defaultLaneId = this.input.resolveLaneId(definition.laneId);
         const resolvePeerIds = (options: RallarTargetSelector = {}): readonly string[] => {
-            if (fixedPeerIds && !hasTargetSelectorOverride(options)) {
-                return fixedPeerIds;
+            const selector = { ...definition, ...options };
+            const selectedPeerIds = fixedPeerIds && !hasTargetSelectorOverride(options)
+                ? fixedPeerIds
+                : this.resolvePeerIds(selector);
+            const room = selector.roomRef ?? selector.roomId ?? (
+                roomScoped
+                    ? this.input.readDefaultRoom() ?? this.input.readCurrentRoomRef()
+                    : undefined
+            );
+            if (!room) {
+                return selectedPeerIds;
             }
-            return this.resolvePeerIds({ ...definition, ...options });
+            const target = this.input.resolveRoomTransportTarget(room);
+            return target.transportState === 'halted'
+                ? []
+                : selectedPeerIds.filter((peerId) => target.peerIds.includes(peerId));
         };
         return {
             send: async (data, options: RallarTargetedChannelSendOptions<T> = {}) => {
@@ -104,13 +123,7 @@ function toTargetedSendStatus(
     peerIds: readonly string[],
     results: readonly RallarRealtimeSendResult[]
 ): RallarTargetedSendStatus {
-    if (peerIds.length === 0) {
-        return 'no-targets';
-    }
-    const sentCount = results.filter((result) =>
-        result.result.status === 'sent' || result.result.status === 'queued' ||
-        result.result.status === 'replaced'
-    ).length;
+    const sentCount = results.filter(isAcceptedRealtimeSendResult).length;
     if (sentCount === peerIds.length) {
         return 'sent';
     }

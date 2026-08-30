@@ -520,8 +520,16 @@ describe('Rallar RTC room wait', () => {
             timeoutMs: 250
         });
 
-        expect(status.rtc.state).toBe('halted');
-        expect(status.rtc.desiredPeerIds).toEqual(['peer-a']);
+        expect(status.rtc).toMatchObject({
+            state: 'halted',
+            desiredPeerIds: ['peer-a'],
+            reason: 'Room RTC is halted by authoritative group state.'
+        });
+        expect(facade.rtc.roomStatus('room-1', { mode: 'off' }).rtc).toMatchObject({
+            mode: 'off',
+            state: 'halted',
+            reason: 'Room RTC is halted by authoritative group state.'
+        });
     });
 
     it('opens a room RTC transport when mode is warm', async () => {

@@ -120,6 +120,13 @@ export class BrowserRealtimeSendRuntime {
     }
 }
 
+export function isAcceptedRealtimeSendResult(
+    result: RallarRealtimeSendResult
+): boolean {
+    return result.result.status === 'sent' || result.result.status === 'queued' ||
+        result.result.status === 'replaced';
+}
+
 function toDataChannelSendOptions(input: RallarRealtimeSendOptions): RtcDataChannelSendOptions {
     return { key: input.key, maxAgeMs: input.maxAgeMs, now: input.now };
 }

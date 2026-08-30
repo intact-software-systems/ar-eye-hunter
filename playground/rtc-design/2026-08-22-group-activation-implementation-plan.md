@@ -1723,6 +1723,62 @@ auth behavior, not a compatibility path. Delivery status correctly remains `STOP
 #391 is stacked on #390. Refreshed remote checks on final code head `9c89e81b4` and its subsequent
 plan-only checkpoint must pass before review readiness is claimed.
 
+The independent Slice 8c review then found a real authority gap before readiness: the generic room
+channel return type still permits per-send peer selectors, and fixed room membership cached its first
+peer set, so an explicit selector could escape the accepted layout and a fixed channel could survive a
+later authoritative halt. The fail-first review suite reproduced both sends, plus the contradictory
+`empty` reason and `mode: off` state that could mask halt. Room channel creation now marks room scope
+explicitly, every room send intersects its selected peers with the current accepted target, fixed
+membership is re-authorized on every send, and authoritative halt wins in both state and explanation.
+The negative game appointment cases also install a fail-fast appointment double instead of assuming
+non-invocation. The focused correction passes 47/47 tests; the wider all-workspace typecheck passes
+with 972/0 enforced test files; and the unchanged public channel contract is retained rather than
+silently narrowed.
+
+This correction is blocked only on the unchanged browser-facade bundle gate. After removing the
+redundant post-`filter` fallback and the unused internal room field rather than retaining dead data, the
+clean bundle measures **164.0615 KiB Brotli** against the current strict `< 164 KiB` limit. The
+pre-review Slice 8c head had only 24 compressed bytes of margin, so the accepted-layout intersection
+cannot fit without either changing that gate or removing public channel behavior. No budget has been
+raised, no public surface has been removed, and no retained-legacy entry has been added. Maintainer
+direction is required before publication continues; the recommended minimal material change is a
+documented **164.25 KiB** facade budget, followed by the full final-head gate rerun and independent
+re-review. The post-format correction sweep passes six focused files / 58 tests and the root
+all-workspace typecheck with 972/0 enforced test files. #390 is fully green remotely; #391's previously
+published head has all focused remote jobs green while its release gate remains pending, but this
+unpublished correction supersedes that evidence.
+
+The follow-up bundle audit compared the published head and clean correction with identical esbuild
+entry, minification, target and Brotli-quality settings. The published head is 802,234 minified bytes
+and 167,912 Brotli bytes (163.9766 KiB); the correction is 802,327 minified bytes and 167,999 Brotli
+bytes (164.0615 KiB). The correction therefore adds only 93 minified / 87 compressed bytes, while the
+strict `< 164 KiB` ceiling is 167,935 bytes and still requires a 64-byte reduction. This rules out a
+measurement-only anomaly and confirms that further progress now requires the recorded material gate
+decision rather than another compatibility removal or retained dead path.
+
+The maintainer approved the recommended exact **164.25 KiB** browser-facade budget on 2026-08-30.
+Both authoritative budget definitions now carry that value, resolving the material gate decision
+without removing the public channel selector contract or retaining dead compatibility behavior. The
+Slice 8c checkpoint is resumed; publication still requires the complete final-head gate rerun and an
+independent re-review of the authority correction before #391 can be reported ready for its stacked
+base.
+
+The resumed checkpoint first re-proves the corrected ownership boundary: six focused files pass
+58/58 tests, the complete shared-web suite passes 110 files / 554 tests, and root typecheck again
+enforces 972 test files with zero debt. The authoritative browser-boundary test and package bundle
+measurement both pass under the approved strict budget; the facade remains 164.1 KiB Brotli at the
+human-readable reporting precision.
+
+The complete final-head rerun is green locally. Full unit passes 997 files / 8,414 tests with four
+files and nine tests skipped; Deno and every workspace build pass; and the public API, browser
+boundary and headless boundary trio passes 16/16. Browser E2E passes 39 core tests with 47 configured
+skips and 210 Recipe Console tests with one configured skip. Memory full-stack passes 7/7, and the
+enabled live three-browser RTC scenario passes with the exhaustive and 100-reconnect variants
+remaining the two configured skips. Changed repository style reports zero new findings against Slice
+8b head `b8dae45a8`, while repository structure passes with the already-reviewed Relic scene density
+and singleton bundle-measure script subtree findings. Independent re-review and remote validation on
+the resulting published commit remain before the Slice 8c checkpoint closes.
+
 **Next two PRs (I5, I20):**
 
 - **PR 15 = slice 8c, stacked on #390.** Repoint the room facade and readiness/status consumers to the

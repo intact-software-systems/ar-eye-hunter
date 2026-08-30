@@ -22,12 +22,12 @@ interface RtcRoomTransportStateInput {
 export function resolveRtcRoomTransportState(
     input: RtcRoomTransportStateInput
 ): RallarRoomTransportState {
-    if (input.mode === 'off') {
-        return 'off';
-    }
-
     if (input.transportState === 'halted') {
         return 'halted';
+    }
+
+    if (input.mode === 'off') {
+        return 'off';
     }
 
     if (!input.hasAcceptedLayout) {
@@ -65,6 +65,10 @@ export function describeRtcRoomTransport(
     state: RallarRoomTransportState,
     readiness?: RallarRtcRoomLaneWaitResult
 ): string | undefined {
+    if (state === 'halted') {
+        return 'Room RTC is halted by authoritative group state.';
+    }
+
     if (readiness?.status === 'empty') {
         return 'Room has no RTC peer targets.';
     }
@@ -80,9 +84,6 @@ export function describeRtcRoomTransport(
 
     if (state === 'idle') {
         return 'Room RTC has not started connecting yet.';
-    }
-    if (state === 'halted') {
-        return 'Room RTC is halted by authoritative group state.';
     }
     if (state === 'partial') {
         return 'Room RTC is partially ready.';

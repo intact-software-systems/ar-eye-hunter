@@ -284,6 +284,68 @@ describe('Rallar targeted channel', () => {
             );
     });
 
+    it('intersects room send overrides with the current accepted layout', async () => {
+        const { createRallarFacade } = await import(
+            '@shared-web/browser/rallar.ts'
+        );
+        mockGroupSnapshot(createGroupSnapshot('room-1', ['session-1', 'peer-a']));
+        vi.mocked(mocks.webRtcConnectionService.ensurePeerLaneOpen)
+            .mockImplementation(async (peerId, laneId = 'reliable') => {
+                if (peerId !== 'peer-a') {
+                    throw new Error('Room targeting cannot dial outside the accepted layout.');
+                }
+                return {
+                    status: 'open',
+                    peerId,
+                    laneId,
+                    channel: toDataChannelTestDouble({
+                        sendJson: () => ({ status: 'sent', bufferedAmount: 0 })
+                    })
+                };
+            });
+        const channel = createRallarFacade().channels.room<PositionUpdate>({
+            roomId: 'room-1',
+            laneId: 'realtime'
+        });
+
+        const result = await channel.send(
+            { x: 1 },
+            { peerIds: ['peer-a', 'peer-outside-layout'] }
+        );
+
+        expect(result).toMatchObject({
+            status: 'sent',
+            peerIds: ['peer-a']
+        });
+    });
+
+    it('rechecks authoritative halt before sending fixed room membership', async () => {
+        const { createRallarFacade } = await import(
+            '@shared-web/browser/rallar.ts'
+        );
+        const base = createGroupSnapshot('room-1', ['session-1', 'peer-a']);
+        mockGroupSnapshot(base);
+        const channel = createRallarFacade().channels.room<PositionUpdate>({
+            roomId: 'room-1',
+            laneId: 'realtime',
+            membership: 'fixed'
+        });
+        expect(channel.peerIds()).toEqual(['peer-a']);
+        mockGroupSnapshot({
+            ...base,
+            group: { ...base.group, transportState: 'halted' }
+        });
+        vi.mocked(mocks.webRtcConnectionService.ensurePeerLaneOpen)
+            .mockImplementation(() => {
+                throw new Error('Fixed room targeting cannot outlive an authoritative halt.');
+            });
+
+        await expect(channel.send({ x: 1 })).resolves.toMatchObject({
+            status: 'no-targets',
+            peerIds: []
+        });
+    });
+
     it('does not target accepted room peers while authoritative transport is halted', async () => {
         const { createRallarFacade } = await import(
             '@shared-web/browser/rallar.ts'

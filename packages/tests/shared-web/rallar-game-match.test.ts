@@ -245,6 +245,7 @@ describe('Rallar Game match', () => {
 
     it('does not appoint a non-admin local peer with the strict metadata-backed policy', async () => {
         const fake = createFakeRallar({ localRole: 'member' });
+        fake.failOnAppointment();
         const match = createMatch(fake, {
             directorAppointmentPolicy: 'metadata-owner-admin',
             readCapability: () => ({ scoreBias: 100 }),
@@ -277,6 +278,7 @@ describe('Rallar Game match', () => {
             localRole: 'member',
             remoteMemberKnown: false
         });
+        fake.failOnAppointment();
         const match = createMatch(fake, {
             readCapability: () => ({ scoreBias: 100 }),
             scoreHost: (capability) => capability.scoreBias ?? 0
@@ -303,6 +305,7 @@ describe('Rallar Game match', () => {
             localSessionIds: [],
             remoteMemberKnown: false
         });
+        fake.failOnAppointment();
         const match = createMatch(fake, {
             readCapability: () => ({ scoreBias: 100 }),
             scoreHost: (capability) => capability.scoreBias ?? 0
@@ -320,6 +323,7 @@ describe('Rallar Game match', () => {
 
     it('waits for local membership before metadata-backed director appointment', async () => {
         const fake = createFakeRallar({ localMemberKnown: false });
+        fake.failOnAppointment();
         const match = createMatch(fake, {
             readCapability: () => ({ scoreBias: 100 }),
             scoreHost: (capability) => capability.scoreBias ?? 0
@@ -336,6 +340,7 @@ describe('Rallar Game match', () => {
 
     it('does not appoint a non-elected local peer', async () => {
         const fake = createFakeRallar({ localRole: 'owner' });
+        fake.failOnAppointment();
         const match = createMatch(fake, {
             readCapability: () => ({ scoreBias: 1 }),
             scoreHost: (capability) => capability.scoreBias ?? 0
@@ -821,6 +826,7 @@ function createFakeRallar(
     let relayStopped = false;
     let realtimeSendCount = 0;
     let roomRealtimeSendCount = 0;
+    let appointmentMustFail = false;
     const relay: RallarDirectorRelayHandle<RallarGameEnvelope<Intent>, RallarGameEnvelope<Event>, RallarGameEnvelope<Snapshot>> = {
         status: () => directorStatus,
         sendIntent: vi.fn(async () => ({ status: 'sent' as const })),
@@ -882,6 +888,9 @@ function createFakeRallar(
         };
     });
     const appoint = vi.fn(async () => {
+        if (appointmentMustFail) {
+            throw new Error('Appointment was forbidden by this test.');
+        }
         directorStatus = createDirectorStatus('peer-a', true);
         return directorStatus;
     });
@@ -936,6 +945,9 @@ function createFakeRallar(
         realtimeSendJson,
         roomRealtimeSend,
         appoint,
+        failOnAppointment: () => {
+            appointmentMustFail = true;
+        },
         createRelay,
         waitForRoomLane,
         waitForPresence,

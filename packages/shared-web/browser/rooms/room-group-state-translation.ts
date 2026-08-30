@@ -91,7 +91,7 @@ export function resolveBrowserRoomTransportTarget(
                 ...new Set(
                     acceptedOverlay.nextHopSessionIds.filter(
                         (peerId) => peerId !== input.sessionId
-                    ) ?? []
+                    )
                 )
             ]
             : []
