@@ -129,20 +129,23 @@ describe('RTC performance observation CLI', () => {
                 output: { archivePath: 'b06.zip', indexEntryPath: 'index-entry.jsonl' }
             }
         }));
-        const browserRun = vi.fn();
+        const stdout: string[] = [];
 
         const code = await runRtcPerformanceObservationCli({
             args: liveRtcObserveArguments,
-            browserRunner: { run: browserRun },
+            browserRunner: {
+                run: async () => {
+                    throw new Error('observe-live-rtc must not invoke the browser observation runner');
+                }
+            },
             liveRtcRunner: { run },
             readFile: vi.fn(),
             verifyArchive: vi.fn(),
-            writeStdout: vi.fn(),
+            writeStdout: (value) => stdout.push(value),
             writeStderr: vi.fn()
         });
 
         expect(code).toBe(0);
-        expect(browserRun).not.toHaveBeenCalled();
         expect(run).toHaveBeenCalledWith({
             sourceRef: 'main',
             githubRunId: 123456789,
@@ -150,6 +153,9 @@ describe('RTC performance observation CLI', () => {
             githubRunUrl: 'https://github.com/intact-software-systems/ar-eye-hunter/actions/runs/123456789',
             outputDirectory: 'tmp/observation'
         });
+        expect(stdout).toEqual([
+            '{"observationId":"b06-observation-id","archivePath":"b06.zip","indexEntryPath":"index-entry.jsonl"}\n'
+        ]);
     });
 
     it('reads and verifies an archived index entry without trusting repository JSON', async () => {

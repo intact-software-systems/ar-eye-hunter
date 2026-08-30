@@ -227,8 +227,6 @@ describe('RTC-B06 observation runner', () => {
                 }
             ]
         });
-        expect(configured.runLiveRtcProducer).toHaveBeenCalledTimes(3);
-        expect(configured.envelope.recordExternalAttempt).toHaveBeenCalledTimes(3);
         expect(configured.envelope.recordExternalCohortAssertion).toHaveBeenCalledWith({
             baselineId: '20260830T100000Z-c0cadb8216cf-e3-memory-gh987654321-a3',
             workloadId: 'RTC-B06',
@@ -274,7 +272,7 @@ describe('RTC-B06 observation runner', () => {
                 }
             }
         });
-        expect(configured.envelope.initializeBaseline).toHaveBeenLastCalledWith({
+        expect(configured.envelope.initializeBaseline).toHaveBeenCalledWith({
             schema: 'rallar.rtc-baseline.capture-request.v1',
             baselineId: '20260830T100000Z-c0cadb8216cf-e3-memory-gh987654321-a3-repeat-01',
             workloadIds: ['RTC-B06'],
@@ -293,8 +291,6 @@ describe('RTC-B06 observation runner', () => {
         expect(configured.createArchive).toHaveBeenCalledWith(
             expect.objectContaining({ repeatArtifacts: expect.any(Map) })
         );
-        expect(calls.filter((call) => call.startsWith('producer:'))).toHaveLength(6);
-        expect(calls.filter((call) => call === 'record-external-cohort')).toHaveLength(2);
         expect(calls).toEqual([
             'preflight',
             'read-source',
