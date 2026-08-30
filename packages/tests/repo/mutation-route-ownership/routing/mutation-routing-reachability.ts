@@ -154,10 +154,7 @@ function findRegisteredHandlers({
         return handler ? [handler] : [];
     }
     if (item.transport === 'MAINTENANCE') {
-        const named = findFunctionLikes(program, item.registrationMarker);
-        return named.length > 0
-            ? named
-            : findFunctionsContaining(program, item.registrationMarker, containsMarker);
+        return findMaintenanceHandlers({ item, program });
     }
     if (item.transport === 'WS_LIFECYCLE') {
         const registration = findCall(program, 'onWebsocketCallbacksDo', () => true);
@@ -181,6 +178,26 @@ function findRegisteredHandlers({
         : readCallName(handlerFactory);
     const handlers = handlerName ? findFunctionLikes(program, handlerName) : [];
     return handlers.filter((handler) => hasReachableAstNode(program, handler, (node) => matchesMarker(node, item.registrationMarker)));
+}
+
+function findMaintenanceHandlers({
+    item,
+    program
+}: Pick<FindRegisteredHandlersInput, 'item' | 'program'>): readonly MutationRoutingAstNode[] {
+    const named = findFunctionLikes(program, item.registrationMarker);
+    if (named.length > 0) {
+        return named;
+    }
+    const registration = findAstNode(
+        program,
+        (node) =>
+            node.type === 'ObjectProperty' &&
+            readName(node.key) === item.registrationMarker
+    );
+    const registrationCallbacks = registration
+        ? findAll(asNode(registration.value), isFunction)
+        : [];
+    return registrationCallbacks;
 }
 
 interface FindReachableHandoffInput {
@@ -390,14 +407,6 @@ function findFunctionLikes(
         }
         return node;
     });
-}
-
-function findFunctionsContaining(
-    program: MutationRoutingAstNode,
-    marker: string,
-    hasMarker: (node: MutationRoutingAstNode, marker: string) => boolean
-): readonly MutationRoutingAstNode[] {
-    return findAll(program, (node) => isFunction(node) && hasMarker(node, marker));
 }
 
 function readObjectCallback(
