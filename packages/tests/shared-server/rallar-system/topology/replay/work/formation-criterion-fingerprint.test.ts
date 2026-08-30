@@ -1,9 +1,10 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi, type MockInstance } from 'vitest';
 
 import type { GroupMutationCommand } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
 import { createRtcTopologyOutboxPublisher } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-work.ts';
 import { RtcTopologyExecutionRepository } from '@shared-server/rallar-system/topology/persistence/rtc-topology-execution-repository.ts';
 import { RtcTopologySnapshotRepository } from '@shared-server/rallar-system/topology/persistence/rtc-topology-snapshot-repository.ts';
+import type { GroupTopologyPlanningService } from '@shared-server/rallar-system/topology/planning/group-topology-planning-service.ts';
 import { createRtcTopologyWorkHandler } from '@shared-server/rallar-system/topology/replay/work/create-rtc-topology-work-handler.ts';
 import {
     computeCoalescedRtcTopologyGroupRevisionWork,
@@ -15,15 +16,36 @@ import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persis
 import { computeExpectedLayoutFence } from '@shared/api/group-lifecycle/compute-expected-layout-fence.ts';
 import { toGroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
 import { createDefaultGroupLifecyclePolicy } from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
-import type { GroupLifecycleState } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
+import type { GroupLifecyclePolicy, GroupLifecycleState } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { EntityStatus, InMemoryQueueBox } from '@shared/mod.ts';
+import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import type { OnMessageCallback } from '@shared/services/InboxOutboxContracts.ts';
 import { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
 import { FakeRuntimeStateRepository } from '../../../../runtime-state/test-support/fake-runtime-state-repository.ts';
 import { createAppInboxTestDatabase } from '../../../app-inbox/test-support/app-inbox-test-database.ts';
 import { createTopologyTestGroupSnapshot } from '../../config/mutation/group-topology-config-mutation-test-fixtures.ts';
 
 const NOW = 1_000;
+
+interface CriterionSubmission {
+    readonly command: GroupMutationCommand;
+    readonly atEpochMs: number;
+}
+
+interface CriterionFingerprintFixture {
+    current: GroupSnapshot;
+    failCommit: boolean;
+    readonly effects: string[];
+    readonly submitted: CriterionSubmission[];
+    readonly queue: InMemoryQueueBox;
+    readonly snapshots: RtcTopologySnapshotRepository;
+    readonly handler: OnMessageCallback;
+    readonly computeTopology: MockInstance<GroupTopologyPlanningService['computeTopologyFromAuthority']>;
+    readonly skippedFingerprint: MockInstance<GroupTopologyPlanningService['recordTopologyRebuildSkippedFingerprint']>;
+    readonly recordPublication: MockInstance<GroupTopologyPlanningService['recordTopologyPublication']>;
+    process(input: ProcessGroupRevisionInput): Promise<ResourceEntry>;
+}
 
 describe('formation criterion after unchanged topology inputs', () => {
     it.each(['connecting', 'reconnecting'] as const)(
@@ -178,7 +200,7 @@ function lifecycleSnapshot(stage: GroupLifecycleState, revision: number): GroupS
     };
 }
 
-function createCriterionFingerprintFixture() {
+function createCriterionFingerprintFixture(): CriterionFingerprintFixture {
     const queue = new InMemoryQueueBox();
     const repository = new FakeRuntimeStateRepository();
     const snapshots = new RtcTopologySnapshotRepository(repository);
@@ -186,7 +208,7 @@ function createCriterionFingerprintFixture() {
         current: lifecycleSnapshot('reconfiguring', 1),
         failCommit: false,
         effects: [] as string[],
-        submitted: [] as Array<{ command: GroupMutationCommand; atEpochMs: number; }>
+        submitted: [] as CriterionSubmission[]
     };
     const planning = createGroupTopologyRuntimeOwners({
         findGroupSnapshotByRef: () => state.current,
@@ -222,7 +244,7 @@ function createCriterionFingerprintFixture() {
             }
         }
     });
-    const process = async (input: ProcessGroupRevisionInput) => {
+    const process = async (input: ProcessGroupRevisionInput): Promise<ResourceEntry> => {
         state.current = input.group;
         const entry = await reserveGroupRevision(queue, input);
         await handler.onMessage(decodePersistedALMessage(entry.resource), entry);
@@ -236,7 +258,7 @@ interface ProcessGroupRevisionInput {
     readonly origin: 'automatic' | 'commanded';
 }
 
-async function reserveGroupRevision(queue: InMemoryQueueBox, input: ProcessGroupRevisionInput) {
+async function reserveGroupRevision(queue: InMemoryQueueBox, input: ProcessGroupRevisionInput): Promise<ResourceEntry> {
     const work = computeCoalescedRtcTopologyGroupRevisionWork({
         aggregateRef: input.group.group,
         groupSnapshot: input.group,
@@ -252,7 +274,7 @@ async function reserveGroupRevision(queue: InMemoryQueueBox, input: ProcessGroup
     return entry;
 }
 
-function thresholdPolicy() {
+function thresholdPolicy(): GroupLifecyclePolicy {
     return {
         ...createDefaultGroupLifecyclePolicy(),
         activation: {

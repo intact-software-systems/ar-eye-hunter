@@ -28,7 +28,8 @@ import type { RtcRttRefinementService } from '../../../rtc-rtt/topic/rtc-rtt-ref
 import {
     computeTopologyMutation,
     validateTopologyMutation,
-    type RtcTopologyMutationComputed
+    type RtcTopologyMutationComputed,
+    type RtcTopologyMutationRead
 } from '../../mutation/rtc-topology-mutations.ts';
 import type { RtcTopologyWorkRuntime } from '../../mutation/rtc-topology-outbox-work.ts';
 import type { RtcTopologyExecutionRepository } from '../../persistence/rtc-topology-execution-repository.ts';
@@ -99,10 +100,10 @@ interface RtcTopologyWorkHandlerOptions {
  * fires only after the row it names is durable (product decisions 19/32,
  * the plan's post-publication boundary).
  */
-type CommittedCriterionPetition = Readonly<{
-    authority: GroupTopologyPlanningAuthority;
-    planned: RallarOverlayTopologySnapshot;
-}>;
+interface CommittedCriterionPetition {
+    readonly authority: GroupTopologyPlanningAuthority;
+    readonly planned: RallarOverlayTopologySnapshot;
+}
 
 type AcceptedRtcTopologyWork =
     | Readonly<{
@@ -139,14 +140,12 @@ type AcceptedRtcTopologyWork =
         group: GroupSnapshot;
     }>;
 
-type RtcTopologyExecutionRead = Awaited<ReturnType<RtcTopologyExecutionRepository['readTopologyMutation']>>;
-
-interface ComputeAcceptedRtcTopologyWorkInput {
+interface PrepareRtcTopologyWorkInput {
     readonly options: RtcTopologyWorkHandlerOptions;
     readonly workEnvelope: RtcTopologyWorkEnvelope<PersistedRtcTopologyWork>;
     readonly workId: string;
     readonly attemptCount: number;
-    readonly read: RtcTopologyExecutionRead;
+    readonly read: RtcTopologyMutationRead;
     readonly expireAtEpochMs: number;
     readonly deferredCriterionPetitioner: DeferredCriterionPetitioner | null;
 }
@@ -188,7 +187,7 @@ async function processRtcTopologyWork(input: ProcessRtcTopologyWorkInput): Promi
         await processLoadedRtcTopologyWork(options, entry, read);
         return;
     }
-    const accepted = await computeAcceptedRtcTopologyWork({
+    const accepted = await prepareRtcTopologyWork({
         options,
         workEnvelope,
         workId,
@@ -203,7 +202,7 @@ async function processRtcTopologyWork(input: ProcessRtcTopologyWorkInput): Promi
 async function processLoadedRtcTopologyWork(
     options: RtcTopologyWorkHandlerOptions,
     entry: ResourceEntry,
-    read: Awaited<ReturnType<RtcTopologyExecutionRepository['readTopologyMutation']>>
+    read: RtcTopologyMutationRead
 ): Promise<void> {
     const replayInput = {
         read,
@@ -235,8 +234,8 @@ async function processLoadedRtcTopologyWork(
  * next deadline evaluation. A removed stored plan never petitions — its
  * empty edge set would read as trivially-complete readiness.
  */
-async function computeRttRefinementSkip(
-    input: ComputeAcceptedRtcTopologyWorkInput
+async function processRttRefinementGate(
+    input: PrepareRtcTopologyWorkInput
 ): Promise<AcceptedRtcTopologyWork | null> {
     const work = input.workEnvelope.data;
     if (
@@ -260,12 +259,12 @@ async function computeRttRefinementSkip(
     };
 }
 
-async function computeAcceptedRtcTopologyWork(
-    input: ComputeAcceptedRtcTopologyWorkInput
+async function prepareRtcTopologyWork(
+    input: PrepareRtcTopologyWorkInput
 ): Promise<AcceptedRtcTopologyWork> {
     const { options, workEnvelope, read } = input;
     const work = workEnvelope.data;
-    const rttRefinementSkip = await computeRttRefinementSkip(input);
+    const rttRefinementSkip = await processRttRefinementGate(input);
     if (rttRefinementSkip !== null) {
         return rttRefinementSkip;
     }
@@ -313,7 +312,7 @@ async function computeAcceptedRtcTopologyWork(
             criterionPetition: { authority, planned: read.snapshot.value }
         };
     }
-    return await computeCommittedTopologyWork({
+    return await prepareTopologyMutation({
         base: input,
         authority,
         planned: computedTopology,
@@ -322,7 +321,7 @@ async function computeAcceptedRtcTopologyWork(
 }
 
 async function readFingerprintSkip(
-    input: ComputeAcceptedRtcTopologyWorkInput,
+    input: PrepareRtcTopologyWorkInput,
     authority: GroupTopologyPlanningAuthority,
     inputFingerprint: string
 ): Promise<Extract<AcceptedRtcTopologyWork, { decision: 'skipped-fingerprint'; }> | null> {
@@ -344,15 +343,15 @@ async function readFingerprintSkip(
         : null;
 }
 
-interface ComputeCommittedTopologyWorkInput {
-    readonly base: ComputeAcceptedRtcTopologyWorkInput;
+interface PrepareTopologyMutationInput {
+    readonly base: PrepareRtcTopologyWorkInput;
     readonly authority: GroupTopologyPlanningAuthority;
     readonly planned: Extract<ReconcileGroupTopologyResult, { action: 'planned'; }>;
     readonly inputFingerprint: string;
 }
 
-async function computeCommittedTopologyWork(
-    input: ComputeCommittedTopologyWorkInput
+async function prepareTopologyMutation(
+    input: PrepareTopologyMutationInput
 ): Promise<AcceptedRtcTopologyWork> {
     const { authority, planned, inputFingerprint } = input;
     const { options, workEnvelope, workId, attemptCount, read } = input.base;
