@@ -4,14 +4,10 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
 import { WebSocketServer } from 'ws';
 
+import { decodeJsonWireText, type JsonWireObject, type JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import { executeBlackBox } from '@shared-test/black-box-runner/execute-black-box.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
-
-interface RecipeInteraction {
-    readonly [name: string]: unknown;
-    readonly PARALLEL?: { readonly request: { readonly groups: readonly { readonly steps: readonly RecipeInteraction[]; }[]; }; };
-}
 
 interface CapturedReport {
     readonly connection: string;
@@ -42,16 +38,24 @@ const CASES = [
 ];
 
 describe('API-v1 RTC RTT recipe execution', () => {
+    it.each([
+        '[false]',
+        '[[]]',
+        '[{"PARALLEL":null}]'
+    ])('rejects malformed compiled interactions before selecting report operations: %s', (serialized) => {
+        expect(() => toFlatRecipeInteractions(decodeJsonWireText(serialized))).toThrow();
+    });
+
     it.each(CASES)('strictly validates every expanded connection in $recipe', (testCase) => {
         const report = runRecipeCli(testCase.recipe, ['--validate', '--strict']);
         expect(report.status, report.stderr).toBe(0);
-        expect(JSON.parse(report.stdout)).toMatchObject({ ok: true, connections: { missing: [] } });
+        expect(decodeJsonWireText(report.stdout)).toMatchObject({ ok: true, connections: { missing: [] } });
     });
 
     it.each(CASES)('sends from the canonical socket with either session order in $recipe', async (testCase) => {
         const expansion = runRecipeCli(testCase.recipe, ['-e', 'dry']);
         expect(expansion.status, expansion.stderr).toBe(0);
-        const compiled = flattenRecipeInteractions(JSON.parse(expansion.stdout));
+        const compiled = toFlatRecipeInteractions(decodeJsonWireText(expansion.stdout));
         const reportSteps = testCase.steps.map((name) => {
             const operation = compiled.find((interaction) => Object.hasOwn(interaction, name));
             if (!operation) {
@@ -90,7 +94,7 @@ describe('API-v1 RTC RTT recipe execution', () => {
                 await vi.waitFor(() => expect(reports).toHaveLength(1));
                 expect(reports[0].connection).toBe(`/${testCase.connections[sessionIds[0] === 'a-session' ? 0 : 1]}`);
                 expect(reports[0].message.id).toMatchObject({ senderId: 'a-session', sessionId: 'a-session' });
-                expect(JSON.parse(reports[0].message.payload.resource)).toMatchObject({
+                expect(decodeJsonWireText(reports[0].message.payload.resource)).toMatchObject({
                     sessionIdFrom: 'a-session',
                     sessionIdTo: 'z-session',
                     version: 1
@@ -106,17 +110,36 @@ describe('API-v1 RTC RTT recipe execution', () => {
     });
 });
 
+function toFlatRecipeInteractions(value: JsonWireValue | undefined): JsonWireObject[] {
+    return toRecipeObjects(value, 'compiled interactions').flatMap((interaction) => {
+        if (!Object.hasOwn(interaction, 'PARALLEL')) {
+            return [interaction];
+        }
+        const parallel = toRecipeObject(interaction.PARALLEL, 'PARALLEL');
+        const request = toRecipeObject(parallel.request, 'PARALLEL request');
+        const groups = toRecipeObjects(request.groups, 'PARALLEL groups');
+        return [interaction, ...groups.flatMap((group) => toFlatRecipeInteractions(group.steps))];
+    });
+}
+
+function toRecipeObjects(value: JsonWireValue | undefined, label: string): JsonWireObject[] {
+    if (!Array.isArray(value)) {
+        throw new Error(`Expected ${label} to be an array`);
+    }
+    return value.map((entry) => toRecipeObject(entry, label));
+}
+
+function toRecipeObject(value: JsonWireValue | undefined, label: string): JsonWireObject {
+    if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+        throw new Error(`Expected ${label} to be an object`);
+    }
+    return value as JsonWireObject;
+}
+
 function runRecipeCli(recipe: string, args: readonly string[]) {
     return spawnSync('deno', ['run', '-A', CLI, '-w', RECIPE_ROOT, '-c', recipe, ...args], {
         encoding: 'utf8',
         maxBuffer: 64 * 1024 * 1024,
         timeout: 30_000
     });
-}
-
-function flattenRecipeInteractions(interactions: readonly RecipeInteraction[]): RecipeInteraction[] {
-    return interactions.flatMap((interaction) => [
-        interaction,
-        ...interaction.PARALLEL?.request.groups.flatMap((group) => flattenRecipeInteractions(group.steps)) ?? []
-    ]);
 }
