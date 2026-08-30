@@ -1779,6 +1779,27 @@ remaining the two configured skips. Changed repository style reports zero new fi
 and singleton bundle-measure script subtree findings. Independent re-review and remote validation on
 the resulting published commit remain before the Slice 8c checkpoint closes.
 
+Independent re-review confirms the original room-override, fixed-membership halt, status precedence,
+and appointment-side-effect findings are corrected, but found three manual touched-file function-size
+violations that the changed-range automation does not classify. No exception is retained. Targeted
+channel assembly now delegates its accepted-target resolver; Relic position broadcast delegates
+sample resolution, halted diagnostics, and the room send; and the game fake separates mutable state,
+transport ports, sub-facades, and event emission. Their affected functions are now 39, 56, and 43
+physical lines respectively, with every extracted helper at or below 45 lines. The 56-line Relic
+broadcast remains in the mandatory separation-review tier and is accepted because its remaining
+single responsibility is the ordered position-broadcast lifecycle. Root typecheck remains green at
+972/0. The exact post-closure worktree passes seven focused shared-web files / 62 tests plus Relic
+scene networking 9/9, with the approved browser facade measuring 164.2 KiB Brotli under the exact
+strict **164.25 KiB** budget. Full unit passes 997 files / 8,414 tests with four files and nine tests
+skipped; the complete Deno matrix, every workspace build, and the public API/browser/headless trio
+at 16/16 pass. Browser E2E passes 39 core tests with 47 configured skips and 210 Recipe Console tests
+with one configured skip. Memory full-stack passes 7/7, while the enabled live three-browser RTC
+scenario passes with its exhaustive and 100-reconnect variants remaining the two configured skips.
+Changed repository style reports zero new findings against Slice 8b head `b8dae45a8`, and repository
+structure passes with the already-reviewed Relic scene density and singleton bundle-measure script
+subtree findings. The publication commit, independent re-review of that exact commit, and remote
+validation remain before the Slice 8c checkpoint closes.
+
 **Next two PRs (I5, I20):**
 
 - **PR 15 = slice 8c, stacked on #390.** Repoint the room facade and readiness/status consumers to the

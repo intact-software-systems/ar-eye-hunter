@@ -53,31 +53,8 @@ export class BrowserTargetedRealtimeRuntime {
         definition: RallarTargetedChannelDefinition,
         roomScoped = false
     ): RallarTargetedChannel<T> {
-        const fixedMembership = definition.membership
-            ? definition.membership === 'fixed'
-            : !roomScoped;
-        const fixedPeerIds = fixedMembership
-            ? this.resolvePeerIds(definition)
-            : undefined;
+        const resolvePeerIds = this.createPeerIdResolver(definition, roomScoped);
         const defaultLaneId = this.input.resolveLaneId(definition.laneId);
-        const resolvePeerIds = (options: RallarTargetSelector = {}): readonly string[] => {
-            const selector = { ...definition, ...options };
-            const selectedPeerIds = fixedPeerIds && !hasTargetSelectorOverride(options)
-                ? fixedPeerIds
-                : this.resolvePeerIds(selector);
-            const room = selector.roomRef ?? selector.roomId ?? (
-                roomScoped
-                    ? this.input.readDefaultRoom() ?? this.input.readCurrentRoomRef()
-                    : undefined
-            );
-            if (!room) {
-                return selectedPeerIds;
-            }
-            const target = this.input.resolveRoomTransportTarget(room);
-            return target.transportState === 'halted'
-                ? []
-                : selectedPeerIds.filter((peerId) => target.peerIds.includes(peerId));
-        };
         return {
             send: async (data, options: RallarTargetedChannelSendOptions<T> = {}) => {
                 const laneId = this.input.resolveLaneId(options.laneId ?? definition.laneId);
@@ -109,6 +86,36 @@ export class BrowserTargetedRealtimeRuntime {
             },
             on: (handler) => this.input.onJson<T>(defaultLaneId, handler),
             peerIds: resolvePeerIds
+        };
+    }
+
+    private createPeerIdResolver(
+        definition: RallarTargetedChannelDefinition,
+        roomScoped: boolean
+    ): (options?: RallarTargetSelector) => readonly string[] {
+        const fixedMembership = definition.membership
+            ? definition.membership === 'fixed'
+            : !roomScoped;
+        const fixedPeerIds = fixedMembership
+            ? this.resolvePeerIds(definition)
+            : undefined;
+        return (options: RallarTargetSelector = {}) => {
+            const selector = { ...definition, ...options };
+            const selectedPeerIds = fixedPeerIds && !hasTargetSelectorOverride(options)
+                ? fixedPeerIds
+                : this.resolvePeerIds(selector);
+            const room = selector.roomRef ?? selector.roomId ?? (
+                roomScoped
+                    ? this.input.readDefaultRoom() ?? this.input.readCurrentRoomRef()
+                    : undefined
+            );
+            if (!room) {
+                return selectedPeerIds;
+            }
+            const target = this.input.resolveRoomTransportTarget(room);
+            return target.transportState === 'halted'
+                ? []
+                : selectedPeerIds.filter((peerId) => target.peerIds.includes(peerId));
         };
     }
 }
