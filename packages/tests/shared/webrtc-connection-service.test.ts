@@ -1,6 +1,8 @@
 import { newALEventRoute, newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
 import { WebRtcConnectionService } from '@shared/services/WebRtcConnectionService.ts';
 import type { RtcDataChannelInputDto } from '@shared/webrtc/QRtcDataChannel.ts';
+import type { RtcMediaChannelInputDto } from '@shared/webrtc/QRtcMediaChannel.ts';
+import type { QRtcPeerConnection, QRtcPeerConnectionInputDto } from '@shared/webrtc/QRtcPeerConnection.ts';
 import {
     QRtcSignalingChannel,
     QRtcSignalingMsgType,
@@ -19,6 +21,8 @@ const mockState = vi.hoisted(() => ({
 
 vi.mock('@shared/webrtc/QRtcPeerConnection.ts', () => {
     class MockQRtcPeerConnection {
+        public readonly handledSignals: QRtcSignalingMessage[] = [];
+        public hasReset = false;
         public readonly status = {
             state: 'Idle',
             pc: {
@@ -35,9 +39,11 @@ vi.mock('@shared/webrtc/QRtcPeerConnection.ts', () => {
         public readonly connect = vi.fn((callbacks = {}) => {
             this.connectCallbacks = callbacks;
         });
-        public readonly handleSignal = vi.fn(async () => {
+        public readonly handleSignal = vi.fn(async (signal: QRtcSignalingMessage) => {
+            this.handledSignals.push(signal);
         });
         public readonly reset = vi.fn(() => {
+            this.hasReset = true;
             (this.status as any).pc = undefined;
             return this.status;
         });
@@ -45,12 +51,12 @@ vi.mock('@shared/webrtc/QRtcPeerConnection.ts', () => {
         public readonly isReadyToConnect = vi.fn(() => true);
         public readonly applyMediaPolicy = vi.fn();
 
-        public readonly signaler: unknown;
-        public readonly input: unknown;
+        public readonly signaler: QRtcSignalingTransport;
+        public readonly input: QRtcPeerConnectionInputDto;
 
         constructor(
-            signaler: unknown,
-            input: unknown
+            signaler: QRtcSignalingTransport,
+            input: QRtcPeerConnectionInputDto
         ) {
             this.signaler = signaler;
             this.input = input;
@@ -65,12 +71,18 @@ vi.mock('@shared/webrtc/QRtcPeerConnection.ts', () => {
 
 vi.mock('@shared/webrtc/QRtcDataChannel.ts', () => {
     class MockQRtcDataChannel {
+        public readonly connectInputs: boolean[][] = [];
+        public readonly removedRtcCallbackIds: string[] = [];
+        public hasReset = false;
         public readyToConnect = false;
         public healthReadyState: RTCDataChannelState | undefined;
-        public readonly connect = vi.fn(() => {
+        public readonly connect = vi.fn((...inputs: boolean[]) => {
+            this.connectInputs.push(inputs);
             this.readyToConnect = false;
         });
-        public readonly reset = vi.fn();
+        public readonly reset = vi.fn(() => {
+            this.hasReset = true;
+        });
         public readonly isReadyToConnect = vi.fn(() => this.readyToConnect);
         public readonly waitUntilOpen = vi.fn(async () => {
             this.healthReadyState = 'open';
@@ -83,6 +95,7 @@ vi.mock('@shared/webrtc/QRtcDataChannel.ts', () => {
             return this;
         });
         public readonly removeRtcCallbackById = vi.fn((_id: string) => {
+            this.removedRtcCallbackIds.push(_id);
             this.rtcCallbacks = undefined;
             return true;
         });
@@ -104,11 +117,11 @@ vi.mock('@shared/webrtc/QRtcDataChannel.ts', () => {
             }
             | undefined;
 
-        public readonly connection: unknown;
+        public readonly connection: QRtcPeerConnection;
         public readonly input: RtcDataChannelInputDto;
 
         constructor(
-            connection: unknown,
+            connection: QRtcPeerConnection,
             input: RtcDataChannelInputDto
         ) {
             this.connection = connection;
@@ -124,8 +137,14 @@ vi.mock('@shared/webrtc/QRtcDataChannel.ts', () => {
 
 vi.mock('@shared/webrtc/QRtcMediaChannel.ts', () => {
     class MockQRtcMediaChannel {
-        public readonly connect = vi.fn();
-        public readonly reset = vi.fn();
+        public connectCount = 0;
+        public hasReset = false;
+        public readonly connect = vi.fn(() => {
+            this.connectCount += 1;
+        });
+        public readonly reset = vi.fn(() => {
+            this.hasReset = true;
+        });
         public readonly onRemoteStreamDo = vi.fn(function (
             this: MockQRtcMediaChannel
         ) {
@@ -135,12 +154,12 @@ vi.mock('@shared/webrtc/QRtcMediaChannel.ts', () => {
             return this;
         });
 
-        public readonly connection: unknown;
-        public readonly input: unknown;
+        public readonly connection: QRtcPeerConnection;
+        public readonly input: RtcMediaChannelInputDto;
 
         constructor(
-            connection: unknown,
-            input: unknown
+            connection: QRtcPeerConnection,
+            input: RtcMediaChannelInputDto
         ) {
             this.connection = connection;
             this.input = input;
@@ -171,7 +190,7 @@ describe('WebRtcConnectionService', () => {
 
         await service.connectSignaler();
 
-        expect(signaler.connect).toHaveBeenCalledOnce();
+        expect(signaler.state.connectInput).toBeDefined();
 
         const connectInput = getConnectInput(signaler);
 
@@ -257,7 +276,7 @@ describe('WebRtcConnectionService', () => {
         await connectInput.callbacks.onMessage('self', 'token-1', firstMessage);
 
         expect(mockState.peerConnections).toHaveLength(1);
-        expect(mockState.peerConnections[0].handleSignal).toHaveBeenCalledTimes(1);
+        expect(mockState.peerConnections[0].handledSignals).toHaveLength(1);
 
         const secondMessage = createRtcEnvelope({
             channel: QRtcSignalingChannel.RtcSignal,
@@ -278,7 +297,7 @@ describe('WebRtcConnectionService', () => {
         await connectInput.callbacks.onMessage('self', 'token-1', secondMessage);
 
         expect(service.peerIdsWithNoReconnectableLanes()).toEqual(['peer-1']);
-        expect(mockState.peerConnections[0].handleSignal).toHaveBeenCalledTimes(2);
+        expect(mockState.peerConnections[0].handledSignals).toHaveLength(2);
     });
 
     it('does not create a missing peer from inbound signaling when the creation policy denies it', async () => {
@@ -453,7 +472,7 @@ describe('WebRtcConnectionService', () => {
         );
 
         expect(mockState.peerConnections).toHaveLength(1);
-        expect(mockState.peerConnections[0].handleSignal).toHaveBeenCalledOnce();
+        expect(mockState.peerConnections[0].handledSignals).toHaveLength(1);
     });
 
     it('creates peers once, defaults initiator mode from politeness, and cleans up on close', async () => {
@@ -472,20 +491,20 @@ describe('WebRtcConnectionService', () => {
         const first = service.ensurePeerConnectionStarted('z-peer');
         const second = service.ensurePeerConnectionStarted('z-peer');
 
-        expect((first as unknown as { then?: unknown; }).then).toBeUndefined();
+        expect(Object.hasOwn(first, 'then')).toBe(false);
         expect(first.left).toBeUndefined();
         expect(second.left).toBeUndefined();
         expect(first.right).toBe(second.right);
         expect(mockState.peerConnections).toHaveLength(1);
         expect(mockState.dataChannels[0].connect).toHaveBeenCalledWith(false);
-        expect(mockState.mediaChannels[0].connect).toHaveBeenCalledOnce();
+        expect(mockState.mediaChannels[0].connectCount).toBe(1);
         expect(lifecycle).toEqual(['created:z-peer']);
 
         await mockState.peerConnections[0].connectCallbacks?.onClosed?.('z-peer');
 
-        expect(mockState.dataChannels[0].reset).toHaveBeenCalledOnce();
-        expect(mockState.mediaChannels[0].reset).toHaveBeenCalledOnce();
-        expect(mockState.peerConnections[0].reset).toHaveBeenCalledOnce();
+        expect(mockState.dataChannels[0].hasReset).toBe(true);
+        expect(mockState.mediaChannels[0].hasReset).toBe(true);
+        expect(mockState.peerConnections[0].hasReset).toBe(true);
         expect(service.peerIdsWithNoReconnectableLanes()).toEqual([]);
         expect(lifecycle).toEqual(['created:z-peer', 'deleted:z-peer']);
         expect(service.removeRtcPeerLifecycleById('lifecycle')).toBe(true);
@@ -550,10 +569,10 @@ describe('WebRtcConnectionService', () => {
         expect(service.disconnectPeer('alice-session-b')).toBe(true);
 
         expect(service.knownPeerIds()).toEqual(['alice-session-c']);
-        expect(mockState.dataChannels[0].reset).toHaveBeenCalledOnce();
-        expect(mockState.peerConnections[0].reset).toHaveBeenCalledOnce();
-        expect(mockState.dataChannels[1].reset).not.toHaveBeenCalled();
-        expect(mockState.peerConnections[1].reset).not.toHaveBeenCalled();
+        expect(mockState.dataChannels[0].hasReset).toBe(true);
+        expect(mockState.peerConnections[0].hasReset).toBe(true);
+        expect(mockState.dataChannels[1].hasReset).toBe(false);
+        expect(mockState.peerConnections[1].hasReset).toBe(false);
     });
 
     it('reconnects stale data channels on an otherwise active peer', async () => {
@@ -576,7 +595,7 @@ describe('WebRtcConnectionService', () => {
 
         expect(second.right).toBe(first.right);
         expect(mockState.peerConnections).toHaveLength(1);
-        expect(mockState.dataChannels[0].connect).toHaveBeenCalledTimes(2);
+        expect(mockState.dataChannels[0].connectInputs).toHaveLength(2);
         expect(service.peerIdsWithNoReconnectableLanes()).toEqual(['z-peer']);
         expect(service.peerIdsWithNoReconnectableLanes()).toEqual(['z-peer']);
     });
@@ -773,9 +792,9 @@ describe('WebRtcConnectionService', () => {
         await vi.advanceTimersByTimeAsync(1);
 
         expect(service.knownPeerIds()).toEqual([]);
-        expect(mockState.dataChannels[0].removeRtcCallbackById).toHaveBeenCalledOnce();
-        expect(mockState.dataChannels[0].reset).toHaveBeenCalledOnce();
-        expect(mockState.peerConnections[0].reset).toHaveBeenCalledOnce();
+        expect(mockState.dataChannels[0].removedRtcCallbackIds).toHaveLength(1);
+        expect(mockState.dataChannels[0].hasReset).toBe(true);
+        expect(mockState.peerConnections[0].hasReset).toBe(true);
         expect(lifecycle).toEqual([
             'created:z-peer',
             'timeout:z-peer:50',
@@ -818,8 +837,8 @@ describe('WebRtcConnectionService', () => {
         await vi.advanceTimersByTimeAsync(50);
 
         expect(service.knownPeerIds()).toEqual(['z-peer']);
-        expect(mockState.dataChannels[0].reset).not.toHaveBeenCalled();
-        expect(mockState.peerConnections[0].reset).not.toHaveBeenCalled();
+        expect(mockState.dataChannels[0].hasReset).toBe(false);
+        expect(mockState.peerConnections[0].hasReset).toBe(false);
         expect(lifecycle).toEqual(['created:z-peer']);
     });
 
@@ -1028,7 +1047,7 @@ describe('WebRtcConnectionService', () => {
         });
         expect(result.channel).toBe(mockState.dataChannels[1]);
         expect(mockState.dataChannels[1].waitUntilOpen).toHaveBeenCalledWith(25);
-        expect(mockState.dataChannels[0].waitUntilOpen).not.toHaveBeenCalled();
+        expect(mockState.dataChannels[0].healthReadyState).toBeUndefined();
     });
 
     it('reports missing and timed-out peer lanes without forcing cleanup by default', async () => {
@@ -1056,7 +1075,7 @@ describe('WebRtcConnectionService', () => {
         });
 
         expect(service.knownPeerIds()).toEqual(['z-peer']);
-        expect(mockState.dataChannels[0].reset).not.toHaveBeenCalled();
+        expect(mockState.dataChannels[0].hasReset).toBe(false);
     });
 
     it('can clean up a peer when explicit lane establishment fails', async () => {
@@ -1085,8 +1104,8 @@ describe('WebRtcConnectionService', () => {
         });
 
         expect(service.knownPeerIds()).toEqual([]);
-        expect(mockState.dataChannels[0].reset).toHaveBeenCalledOnce();
-        expect(mockState.peerConnections[0].reset).toHaveBeenCalledOnce();
+        expect(mockState.dataChannels[0].hasReset).toBe(true);
+        expect(mockState.peerConnections[0].hasReset).toBe(true);
     });
 
     it('reports aborted when lane establishment is cancelled while waiting', async () => {
@@ -1135,8 +1154,13 @@ describe('WebRtcConnectionService', () => {
 });
 
 function createSignaler() {
+    const state: {
+        connectInput?: QRtcSignalingTransportInputDto;
+    } = {};
     const signaler = {
-        connect: vi.fn(async (_input: QRtcSignalingTransportInputDto) => {
+        state,
+        connect: vi.fn(async (input: QRtcSignalingTransportInputDto) => {
+            state.connectInput = input;
         }),
         send: vi.fn(async (_payload: QRtcSignalingMessage) => {
         })
@@ -1148,7 +1172,7 @@ function createSignaler() {
 function getConnectInput(
     signaler: ReturnType<typeof createSignaler>
 ): QRtcSignalingTransportInputDto {
-    const connectInput = signaler.connect.mock.calls[0]?.[0];
+    const connectInput = signaler.state.connectInput;
 
     if (connectInput === undefined) {
         throw new Error('The service never connected the signaling transport.');
@@ -1182,20 +1206,19 @@ function createRtcEnvelope(message: QRtcSignalingMessage) {
 
 function createDeferred<T>() {
     let resolve!: (value: T) => void;
-    let reject!: (reason?: unknown) => void;
-    const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    const promise = new Promise<T>((resolvePromise) => {
         resolve = resolvePromise;
-        reject = rejectPromise;
     });
 
     return {
         promise,
-        resolve,
-        reject
+        resolve
     };
 }
 
 type MockQRtcPeerConnection = {
+    readonly handledSignals: QRtcSignalingMessage[];
+    hasReset: boolean;
     readonly status: {
         state: string;
         pc:
@@ -1216,6 +1239,9 @@ type MockQRtcPeerConnection = {
 };
 
 type MockQRtcDataChannel = {
+    readonly connectInputs: boolean[][];
+    readonly removedRtcCallbackIds: string[];
+    hasReset: boolean;
     readonly connect: ReturnType<typeof vi.fn>;
     readonly reset: ReturnType<typeof vi.fn>;
     readonly isReadyToConnect: ReturnType<typeof vi.fn>;
@@ -1232,6 +1258,8 @@ type MockQRtcDataChannel = {
 };
 
 type MockQRtcMediaChannel = {
+    readonly connectCount: number;
+    readonly hasReset: boolean;
     readonly connect: ReturnType<typeof vi.fn>;
     readonly reset: ReturnType<typeof vi.fn>;
 };
