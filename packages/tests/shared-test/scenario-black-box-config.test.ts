@@ -744,6 +744,8 @@ describe('scenario-black-box CLI', () => {
                                 roomId: 'room-1'
                             },
                             payloadJson: '["room.join",true]',
+                            firstSessionId: 'session-a',
+                            secondSessionId: 'session-b',
                             fallback: 'fallback-value'
                         }
                     },
@@ -833,6 +835,20 @@ describe('scenario-black-box CLI', () => {
                                 { path: 'body.fallback' }
                             ]
                         },
+                        firstSessionReports: {
+                            operator: 'lexicallyBefore',
+                            values: [
+                                { path: 'body.firstSessionId' },
+                                { path: 'body.secondSessionId' }
+                            ]
+                        },
+                        secondSessionReports: {
+                            operator: 'lexicallyBefore',
+                            values: [
+                                { path: 'body.secondSessionId' },
+                                { path: 'body.firstSessionId' }
+                            ]
+                        },
                         templatedToken: {
                             template: 'token={result.actual.body.access_token}',
                             secret: true,
@@ -866,7 +882,9 @@ describe('scenario-black-box CLI', () => {
                         pendingRevision: '{pendingRevision}',
                         enabled: '{enabled}',
                         parsedPayload: '{parsedPayload}',
-                        fallbackValue: '{fallbackValue}'
+                        fallbackValue: '{fallbackValue}',
+                        firstSessionReports: '{firstSessionReports}',
+                        secondSessionReports: '{secondSessionReports}'
                     },
                     expect: {
                         body: {
@@ -879,7 +897,9 @@ describe('scenario-black-box CLI', () => {
                             pendingRevision: 47,
                             enabled: true,
                             parsedPayload: ['room.join', true],
-                            fallbackValue: 'fallback-value'
+                            fallbackValue: 'fallback-value',
+                            firstSessionReports: true,
+                            secondSessionReports: false
                         }
                     }
                 }
@@ -916,6 +936,8 @@ describe('scenario-black-box CLI', () => {
             parsedPayload: ['room.join', true],
             payloadJson: '{"roomId":"room-1"}',
             fallbackValue: 'fallback-value',
+            firstSessionReports: true,
+            secondSessionReports: false,
             templatedToken: 'token=<redacted:accessToken>'
         });
         expect(report.outputs.traceId).toMatch(/^trace-[0-9a-f-]{36}-\d+$/);

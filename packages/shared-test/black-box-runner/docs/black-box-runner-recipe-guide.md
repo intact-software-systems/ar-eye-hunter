@@ -553,6 +553,8 @@ Stable operators:
 - `coalesce`: return the first non-empty value, skipping missing optional paths
 - `add` and `max`: combine a non-empty array of finite numeric values
 - `equals`: compare exactly two evaluated values
+- `lexicallyBefore`: compare exactly two strings by deterministic JavaScript
+  code-unit ordering
 - `if`: evaluate a condition and exactly one of the required `then` or `else` branches
 - `jsonStringify` and `jsonParse`
 - `urlEncode`
