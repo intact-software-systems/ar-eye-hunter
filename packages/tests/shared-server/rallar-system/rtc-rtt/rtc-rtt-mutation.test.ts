@@ -154,6 +154,26 @@ describe('RTC RTT mutation phases', () => {
             computeAndValidateRttTwice(
                 deepFreeze({
                     ...base,
+                    command: {
+                        ...base.command,
+                        rtt: {
+                            ...rtt,
+                            sessionIdFrom: 'session-b',
+                            sessionIdTo: 'session-a'
+                        },
+                        alSenderId: 'session-b'
+                    },
+                    read: emptyRead
+                })
+            )
+        ).toMatchObject({
+            outcome: 'rejected',
+            reason: 'non-canonical-reporter'
+        });
+        expect(
+            computeAndValidateRttTwice(
+                deepFreeze({
+                    ...base,
                     read: {
                         ...emptyRead,
                         endpointAdmissions: [

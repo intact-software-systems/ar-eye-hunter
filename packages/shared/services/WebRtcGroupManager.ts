@@ -7,7 +7,11 @@ import {
 } from '../api/group-client-views.ts';
 import type { GroupRef } from '../api/group-types.ts';
 import { ReadableKeyedValues } from '../cache/RepositoryInterfaces.ts';
-import { normalizeRttReportingDegreeLimit, selectRttReportingPeers } from '../rtc/rtt-reporting-policy.ts';
+import {
+    isRtcRttCanonicalReporter,
+    normalizeRttReportingDegreeLimit,
+    selectRttReportingPeers
+} from '../rtc/rtt-reporting-policy.ts';
 import {
     clonePeerOwners,
     emptyGroupManagerDiagnostics,
@@ -508,7 +512,13 @@ export class WebRtcGroupManager {
             });
 
             for (const peerId of selection.selectedPeerIds) {
-                if (seen.has(peerId)) {
+                if (
+                    seen.has(peerId) ||
+                    !isRtcRttCanonicalReporter(
+                        this.rtcQBox.input.sessionId,
+                        peerId
+                    )
+                ) {
                     continue;
                 }
 
