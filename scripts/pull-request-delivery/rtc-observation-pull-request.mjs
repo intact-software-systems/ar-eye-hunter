@@ -6,8 +6,6 @@ import path from 'node:path';
 import { inspectRtcObservationChange } from '../validation-evidence/rtc-observation-change.mjs';
 import { armPullRequestAutoMerge } from './ready-pull-request.mjs';
 
-const indexRepositoryPath = 'performance-observations/rtc-b05/index.jsonl';
-
 export async function publishRtcObservationPullRequest(input, dependencies) {
     await dependencies.verifyObservation(input);
     const observation = dependencies.loadObservation(input);
@@ -31,7 +29,8 @@ export async function publishRtcObservationPullRequest(input, dependencies) {
         throw new Error('RTC observation archive identity is already used on main');
     }
 
-    const branchName = `automation/rtc-b05-observation-gh${input.runId}-a${input.runAttempt}`;
+    const branchName =
+        `automation/${observation.stream}-observation-gh${input.runId}-a${input.runAttempt}`;
     const branchInput = {
         baseCommit,
         branchName,
@@ -98,9 +97,12 @@ export class RtcObservationPublicationShell {
         if (JSON.stringify(entry) !== indexLine) {
             throw new Error('RTC observation index input must be canonical JSON');
         }
+        const stream = observationStream(entry);
         return {
+            stream,
             observationId: entry.observation.observationId,
             archivePath: entry.archive.path,
+            indexPath: `performance-observations/${stream}/index.jsonl`,
             indexLine,
             sourceCommit: entry.observation.source.commit,
             outcome: entry.observation.primary.outcome,
@@ -136,7 +138,7 @@ export class RtcObservationPublicationShell {
 
     inspectMain({ baseCommit, observation, sourceArchivePath }) {
         const archiveExists = this.#revisionPathExists(baseCommit, observation.archivePath);
-        const indexSource = this.#readRevisionFile(baseCommit, indexRepositoryPath) ?? '';
+        const indexSource = this.#readRevisionFile(baseCommit, observation.indexPath) ?? '';
         const exactRows = indexSource.split('\n').filter((line) => line === observation.indexLine);
         if (archiveExists && exactRows.length === 1) {
             const sourceBlob = this.#git(['hash-object', '--no-filters', sourceArchivePath]).trim();
@@ -182,8 +184,14 @@ export class RtcObservationPublicationShell {
             return 'conflict';
         }
         const parentCommit = this.#git(['rev-parse', `${remoteReference}^`]).trim();
-        const parentIndex = this.#readRevisionFile(parentCommit, indexRepositoryPath) ?? '';
-        const currentMainIndex = this.#readRevisionFile(input.baseCommit, indexRepositoryPath) ?? '';
+        const parentIndex = this.#readRevisionFile(
+            parentCommit,
+            input.observation.indexPath
+        ) ?? '';
+        const currentMainIndex = this.#readRevisionFile(
+            input.baseCommit,
+            input.observation.indexPath
+        ) ?? '';
         this.remoteBranches.set(input.branchName, remoteCommit);
         return parentIndex === currentMainIndex ? 'matching' : 'stale';
     }
@@ -198,16 +206,24 @@ export class RtcObservationPublicationShell {
         try {
             this.#git(['worktree', 'add', '--detach', worktree, input.baseCommit]);
             const archiveDestination = path.join(worktree, input.observation.archivePath);
-            const indexDestination = path.join(worktree, indexRepositoryPath);
+            const indexDestination = path.join(worktree, input.observation.indexPath);
             mkdirSync(path.dirname(archiveDestination), { recursive: true });
             mkdirSync(path.dirname(indexDestination), { recursive: true });
             copyFileSync(input.sourceArchivePath, archiveDestination);
-            const currentIndex = this.#readRevisionFile(input.baseCommit, indexRepositoryPath) ?? '';
+            const currentIndex = this.#readRevisionFile(
+                input.baseCommit,
+                input.observation.indexPath
+            ) ?? '';
             if (currentIndex !== '' && !currentIndex.endsWith('\n')) {
                 throw new Error('remote main index changed during publication');
             }
             writeFileSync(indexDestination, `${currentIndex}${input.observation.indexLine}\n`, 'utf8');
-            this.#git(['add', '--', input.observation.archivePath, indexRepositoryPath], worktree);
+            this.#git([
+                'add',
+                '--',
+                input.observation.archivePath,
+                input.observation.indexPath
+            ], worktree);
             this.#git([
                 '-c',
                 'user.name=RTC Observation Bot',
@@ -258,8 +274,14 @@ export class RtcObservationPublicationShell {
         }
         try {
             const currentMain = this.refreshMain();
-            const expectedIndex = this.#readRevisionFile(input.baseCommit, indexRepositoryPath) ?? '';
-            const currentIndex = this.#readRevisionFile(currentMain, indexRepositoryPath) ?? '';
+            const expectedIndex = this.#readRevisionFile(
+                input.baseCommit,
+                input.observation.indexPath
+            ) ?? '';
+            const currentIndex = this.#readRevisionFile(
+                currentMain,
+                input.observation.indexPath
+            ) ?? '';
             if (currentIndex !== expectedIndex) {
                 throw new Error('remote main index changed during publication');
             }
@@ -340,10 +362,14 @@ export class RtcObservationPublicationShell {
         if (!inspection.observationOnly || inspection.archivePath !== input.observation.archivePath) {
             return false;
         }
-        const parentIndex = this.#readRevisionFile(parentCommit, indexRepositoryPath, repoRoot) ?? '';
+        const parentIndex = this.#readRevisionFile(
+            parentCommit,
+            input.observation.indexPath,
+            repoRoot
+        ) ?? '';
         const branchIndex = this.#readRevisionFile(
             input.publicationCommit,
-            indexRepositoryPath,
+            input.observation.indexPath,
             repoRoot
         );
         const sourceBlob = this.#git(
@@ -427,7 +453,7 @@ function assertMatchingPullRequest(pullRequest, branchName) {
 
 function publicationBody(observation) {
     return [
-        'Automated RTC-B05 browser performance observation.',
+        `Automated ${observation.stream.toUpperCase()} performance observation.`,
         '',
         `- Observation: \`${observation.observationId}\``,
         `- Observed source: \`${observation.sourceCommit}\``,
@@ -436,6 +462,22 @@ function publicationBody(observation) {
         '',
         'This records the checked-out source snapshot; main may continue to move independently.'
     ].join('\n');
+}
+
+function observationStream(entry) {
+    const stream = entry.schema === 'rallar.rtc-performance-observation.index-entry.v1'
+        ? 'rtc-b05'
+        : entry.schema === 'rallar.rtc-b06-performance-observation.index-entry.v1'
+        ? 'rtc-b06'
+        : null;
+    if (
+        stream === null ||
+        typeof entry.archive?.path !== 'string' ||
+        !entry.archive.path.startsWith(`performance-observations/${stream}/`)
+    ) {
+        throw new Error('RTC observation index schema and archive stream must match');
+    }
+    return stream;
 }
 
 function normalizePullRequest(pullRequest) {

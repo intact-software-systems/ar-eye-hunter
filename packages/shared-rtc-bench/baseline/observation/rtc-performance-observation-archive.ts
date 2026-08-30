@@ -2,13 +2,19 @@ import { strFromU8, strToU8, unzipSync, zipSync } from 'fflate';
 
 import type { RtcBaselineJson, RtcBaselineResult } from '../contracts/rtc-baseline-contracts.ts';
 import { isRtcBaselineConfinedArtifactPath } from '../contracts/rtc-baseline-validation.ts';
+import type {
+    RtcB06PerformanceObservation,
+    RtcB06PerformanceObservationIndexEntryDto
+} from './rtc-b06-performance-observation.ts';
 import { validateRtcPerformanceObservationEvidence } from './rtc-performance-observation-evidence.ts';
 import type {
     RtcPerformanceObservation,
-    RtcPerformanceObservationIndexEntryDto
+    RtcPerformanceObservationIndexEntryDto,
+    RtcRepositoryPerformanceObservation,
+    RtcRepositoryPerformanceObservationIndexEntry
 } from './rtc-performance-observation.ts';
 import {
-    decodeRtcPerformanceObservationIndexEntry,
+    decodeRtcRepositoryPerformanceObservationIndexEntry,
     toRtcPerformanceObservationArchivePath
 } from './rtc-performance-observation.ts';
 
@@ -19,24 +25,34 @@ const MAX_ARCHIVE_EXPANDED_BYTE_LENGTH = 256 * 1024 * 1024;
 class RtcPerformanceObservationArchiveResourceError extends Error {}
 
 export interface CreateRtcPerformanceObservationArchiveInput {
-    readonly observation: RtcPerformanceObservation;
+    readonly observation: RtcRepositoryPerformanceObservation;
     readonly primaryArtifacts: ReadonlyMap<string, Uint8Array>;
     readonly repeatArtifacts?: ReadonlyMap<string, Uint8Array>;
 }
 
 export interface RtcPerformanceObservationArchiveWritten {
     readonly bytes: Uint8Array;
+    readonly indexEntry: RtcRepositoryPerformanceObservationIndexEntry;
+}
+
+interface RtcB05PerformanceObservationArchiveWritten {
+    readonly bytes: Uint8Array;
     readonly indexEntry: RtcPerformanceObservationIndexEntryDto;
+}
+
+interface RtcB06PerformanceObservationArchiveWritten {
+    readonly bytes: Uint8Array;
+    readonly indexEntry: RtcB06PerformanceObservationIndexEntryDto;
 }
 
 export interface VerifyRtcPerformanceObservationArchiveInput {
     readonly bytes: Uint8Array;
-    readonly indexEntry: RtcBaselineJson | RtcPerformanceObservationIndexEntryDto;
+    readonly indexEntry: RtcBaselineJson | RtcRepositoryPerformanceObservationIndexEntry;
 }
 
 interface VerifiedRtcPerformanceObservationArchiveInput {
     readonly bytes: Uint8Array;
-    readonly indexEntry: RtcPerformanceObservationIndexEntryDto;
+    readonly indexEntry: RtcRepositoryPerformanceObservationIndexEntry;
 }
 
 interface AppendRtcPerformanceObservationArtifactsInput {
@@ -46,6 +62,19 @@ interface AppendRtcPerformanceObservationArtifactsInput {
     readonly artifacts: ReadonlyMap<string, Uint8Array>;
 }
 
+export function createRtcPerformanceObservationArchive(
+    archive: CreateRtcPerformanceObservationArchiveInput & {
+        readonly observation: RtcPerformanceObservation;
+    }
+): Promise<RtcB05PerformanceObservationArchiveWritten>;
+export function createRtcPerformanceObservationArchive(
+    archive: CreateRtcPerformanceObservationArchiveInput & {
+        readonly observation: RtcB06PerformanceObservation;
+    }
+): Promise<RtcB06PerformanceObservationArchiveWritten>;
+export function createRtcPerformanceObservationArchive(
+    archive: CreateRtcPerformanceObservationArchiveInput
+): Promise<RtcPerformanceObservationArchiveWritten>;
 export async function createRtcPerformanceObservationArchive(
     archive: CreateRtcPerformanceObservationArchiveInput
 ): Promise<RtcPerformanceObservationArchiveWritten> {
@@ -58,24 +87,37 @@ export async function createRtcPerformanceObservationArchive(
     if (bytes.byteLength > MAX_ARCHIVE_BYTE_LENGTH) {
         throw new Error('observation archive exceeds its creation resource budget');
     }
+    const archiveRecord = {
+        path: toRtcPerformanceObservationArchivePath(archive.observation),
+        byteLength: bytes.byteLength,
+        sha256: await sha256(bytes)
+    };
+    if (archive.observation.schema === 'rallar.rtc-performance-observation.v1') {
+        return {
+            bytes,
+            indexEntry: {
+                schema: 'rallar.rtc-performance-observation.index-entry.v1',
+                observation: archive.observation,
+                archive: archiveRecord
+            }
+        };
+    }
     return {
         bytes,
         indexEntry: {
-            schema: 'rallar.rtc-performance-observation.index-entry.v1',
+            schema: 'rallar.rtc-b06-performance-observation.index-entry.v1',
             observation: archive.observation,
-            archive: {
-                path: toRtcPerformanceObservationArchivePath(archive.observation),
-                byteLength: bytes.byteLength,
-                sha256: await sha256(bytes)
-            }
+            archive: archiveRecord
         }
     };
 }
 
 export async function verifyRtcPerformanceObservationArchive(
     archive: VerifyRtcPerformanceObservationArchiveInput
-): Promise<RtcBaselineResult<RtcPerformanceObservation>> {
-    const decodedIndexEntry = decodeRtcPerformanceObservationIndexEntry(archive.indexEntry);
+): Promise<RtcBaselineResult<RtcRepositoryPerformanceObservation>> {
+    const decodedIndexEntry = decodeRtcRepositoryPerformanceObservationIndexEntry(
+        archive.indexEntry
+    );
     if (!decodedIndexEntry.ok) {
         return decodedIndexEntry;
     }
@@ -186,7 +228,7 @@ async function validateRtcPerformanceObservationArchiveIndex(
 
 async function validateRtcPerformanceObservationArchiveEntries(
     entries: Record<string, Uint8Array>,
-    observation: RtcPerformanceObservation
+    observation: RtcRepositoryPerformanceObservation
 ) {
     const contentEntries = new Map(
         Object.entries(entries).filter(([path]) => path !== 'checksums.sha256')
@@ -219,7 +261,7 @@ async function validateRtcPerformanceObservationArchiveEntries(
 
 function validateRtcPerformanceObservationEntryPaths(
     entries: ReadonlyMap<string, Uint8Array>,
-    observation: RtcPerformanceObservation
+    observation: RtcRepositoryPerformanceObservation
 ) {
     const primaryPrefix = `primary/${observation.observationId}/`;
     const repeatId = `${observation.observationId}-repeat-01`;

@@ -1,9 +1,18 @@
 import { execFileSync } from 'node:child_process';
 
-const indexPath = 'performance-observations/rtc-b05/index.jsonl';
 const observationRoot = 'performance-observations/';
 const archivePathPattern =
-    /^performance-observations\/rtc-b05\/(\d{4})\/(\d{2})\/(\d{2})\/\d{8}T\d{6}Z-[0-9a-f]{12}-e2-browser-gh[1-9]\d*-a[1-9]\d*\.zip$/u;
+    /^performance-observations\/(rtc-b05|rtc-b06)\/(\d{4})\/(\d{2})\/(\d{2})\/\d{8}T\d{6}Z-[0-9a-f]{12}-(e2-browser|e3-memory)-gh[1-9]\d*-a[1-9]\d*\.zip$/u;
+const streamConfiguration = {
+    'rtc-b05': {
+        environment: 'e2-browser',
+        indexPath: 'performance-observations/rtc-b05/index.jsonl'
+    },
+    'rtc-b06': {
+        environment: 'e3-memory',
+        indexPath: 'performance-observations/rtc-b06/index.jsonl'
+    }
+};
 
 export function inspectRtcObservationChange({ repoRoot, base, head }) {
     const changes = readNameStatus(repoRoot, base, head);
@@ -15,12 +24,15 @@ export function inspectRtcObservationChange({ repoRoot, base, head }) {
         return rejected('rtc-observation-change-count', observationTouched);
     }
     const archive = changes.value.find(({ path }) => path.endsWith('.zip'));
+    const stream = archive === undefined ? null : canonicalArchiveStream(archive.path);
+    const indexPath = stream === null ? null : streamConfiguration[stream].indexPath;
     const index = changes.value.find(({ path }) => path === indexPath);
     if (
         archive?.status !== 'A' ||
+        indexPath === null ||
         index === undefined ||
         !['A', 'M'].includes(index.status) ||
-        !canonicalArchivePath(archive.path)
+        stream === null
     ) {
         return rejected('rtc-observation-change-shape', observationTouched);
     }
@@ -45,6 +57,7 @@ export function inspectRtcObservationChange({ repoRoot, base, head }) {
         observationTouched: true,
         reason: 'rtc-observation-only',
         archivePath: archive.path,
+        indexPath,
         indexEntry: appended.value
     };
 }
@@ -117,14 +130,21 @@ function readAppendedIndexEntry(oldIndex, newIndex) {
     }
 }
 
-function canonicalArchivePath(value) {
+function canonicalArchiveStream(value) {
     const match = archivePathPattern.exec(value);
     if (match === null) {
-        return false;
+        return null;
     }
-    const isoDate = `${match[1]}-${match[2]}-${match[3]}T00:00:00.000Z`;
+    const stream = match[1];
+    const configuration = streamConfiguration[stream];
+    if (configuration === undefined || configuration.environment !== match[5]) {
+        return null;
+    }
+    const isoDate = `${match[2]}-${match[3]}-${match[4]}T00:00:00.000Z`;
     const timestamp = Date.parse(isoDate);
-    return Number.isFinite(timestamp) && new Date(timestamp).toISOString() === isoDate;
+    return Number.isFinite(timestamp) && new Date(timestamp).toISOString() === isoDate
+        ? stream
+        : null;
 }
 
 function rejected(reason, observationTouched) {

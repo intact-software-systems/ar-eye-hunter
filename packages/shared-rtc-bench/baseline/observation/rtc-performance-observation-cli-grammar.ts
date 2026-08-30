@@ -13,13 +13,20 @@ const allowed = {
         'github-run-url',
         'output'
     ],
+    'observe-live-rtc': [
+        'source-ref',
+        'github-run-id',
+        'github-run-attempt',
+        'github-run-url',
+        'output'
+    ],
     'verify-observation': ['archive', 'index-entry']
 } as const;
 const required = allowed;
 
 export type RtcPerformanceObservationParsedCommand =
     | {
-        readonly kind: 'observe-browser';
+        readonly kind: 'observe-browser' | 'observe-live-rtc';
         readonly sourceRef: 'main';
         readonly githubRunId: number;
         readonly githubRunAttempt: number;
@@ -33,7 +40,9 @@ export type RtcPerformanceObservationParsedCommand =
     };
 
 export function isRtcPerformanceObservationCommand(command: string | undefined) {
-    return command === 'observe-browser' || command === 'verify-observation';
+    return command === 'observe-browser' ||
+        command === 'observe-live-rtc' ||
+        command === 'verify-observation';
 }
 
 export function parseRtcPerformanceObservationCommand(

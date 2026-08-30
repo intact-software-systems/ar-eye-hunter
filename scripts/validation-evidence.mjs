@@ -83,7 +83,8 @@ function runSelection(options) {
         `reuse=${String(result.reuse)}`,
         `reason=${result.reason}`,
         `build_tree_digest=${result.buildTreeDigest}`,
-        `archive_path=${result.archivePath ?? ''}`
+        `archive_path=${result.archivePath ?? ''}`,
+        `index_path=${result.indexPath ?? ''}`
     ];
     writeFileSync(requiredOption(options, '--output'), `${lines.join('\n')}\n`, 'utf8');
     console.log(`PASS: validation evidence selection ${result.reason}`);

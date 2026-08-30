@@ -1,5 +1,9 @@
 import type { RtcBaselineJson, RtcBaselineResult } from '../contracts/rtc-baseline-contracts.ts';
 import { createRtcBaselineObservationId } from '../contracts/rtc-baseline-id.ts';
+import type {
+    RtcB06PerformanceObservation,
+    RtcB06PerformanceObservationIndexEntryDto
+} from './rtc-b06-performance-observation.ts';
 
 export type RtcPerformanceObservationOutcome = 'passed' | 'failed' | 'incomplete';
 
@@ -48,6 +52,14 @@ export interface RtcPerformanceObservationIndexEntryDto {
     readonly archive: RtcPerformanceObservationArchiveDto;
 }
 
+export type RtcRepositoryPerformanceObservation =
+    | RtcPerformanceObservation
+    | RtcB06PerformanceObservation;
+
+export type RtcRepositoryPerformanceObservationIndexEntry =
+    | RtcPerformanceObservationIndexEntryDto
+    | RtcB06PerformanceObservationIndexEntryDto;
+
 interface RtcPerformanceObservationJsonObject {
     readonly [key: string]: RtcBaselineJson;
 }
@@ -63,21 +75,46 @@ export function decodeRtcPerformanceObservationIndexEntry(
     return issues.length > 0 ? { ok: false, issues } : { ok: true, value: indexEntry };
 }
 
-export function toRtcPerformanceObservationArchivePath(observation: RtcPerformanceObservation) {
+export function decodeRtcRepositoryPerformanceObservationIndexEntry(
+    source: RtcBaselineJson | RtcRepositoryPerformanceObservationIndexEntry
+): RtcBaselineResult<RtcRepositoryPerformanceObservationIndexEntry> {
+    if (isRtcPerformanceObservationIndexEntry(source)) {
+        return decodeRtcPerformanceObservationIndexEntry(source);
+    }
+    if (!isRtcB06PerformanceObservationIndexEntry(source)) {
+        return failed(
+            '$.indexEntry',
+            'invalid-index-entry',
+            'Observation index entry is incomplete or malformed.'
+        );
+    }
+    const issues = validateRtcPerformanceObservationIndexEntry(source);
+    return issues.length > 0 ? { ok: false, issues } : { ok: true, value: source };
+}
+
+export function toRtcPerformanceObservationArchivePath(
+    observation: RtcRepositoryPerformanceObservation
+) {
     const year = observation.startedAt.slice(0, 4);
     const month = observation.startedAt.slice(5, 7);
     const day = observation.startedAt.slice(8, 10);
-    return `performance-observations/rtc-b05/${year}/${month}/${day}/${observation.observationId}.zip`;
+    const stream = observation.schema === 'rallar.rtc-performance-observation.v1'
+        ? 'rtc-b05'
+        : 'rtc-b06';
+    return `performance-observations/${stream}/${year}/${month}/${day}/${observation.observationId}.zip`;
 }
 
 function validateRtcPerformanceObservationIndexEntry(
-    indexEntry: RtcPerformanceObservationIndexEntryDto
+    indexEntry: RtcRepositoryPerformanceObservationIndexEntry
 ) {
     const observation = indexEntry.observation;
+    const environmentId = observation.schema === 'rallar.rtc-performance-observation.v1'
+        ? 'E2-browser'
+        : 'E3-memory';
     const expectedId = createRtcBaselineObservationId({
         startedAt: observation.startedAt,
         sourceCommit: observation.source.commit,
-        environmentId: 'E2-browser',
+        environmentId,
         githubRunId: observation.workflow.runId,
         githubRunAttempt: observation.workflow.runAttempt
     });
@@ -117,17 +154,39 @@ function validateRtcPerformanceObservationIndexEntry(
 }
 
 function isRtcPerformanceObservationIndexEntry(
-    source: RtcBaselineJson | RtcPerformanceObservationIndexEntryDto
-) {
+    source: RtcBaselineJson | RtcRepositoryPerformanceObservationIndexEntry
+): source is RtcPerformanceObservationIndexEntryDto {
     if (!exactRecord(source, ['schema', 'observation', 'archive'])) {
         return false;
     }
     return source.schema === 'rallar.rtc-performance-observation.index-entry.v1' &&
-        isRtcPerformanceObservation(source.observation) &&
+        isRtcPerformanceObservation(
+            source.observation,
+            'rallar.rtc-performance-observation.v1'
+        ) &&
         isRtcPerformanceObservationArchive(source.archive);
 }
 
-function isRtcPerformanceObservation(source: RtcBaselineJson) {
+function isRtcB06PerformanceObservationIndexEntry(
+    source: RtcBaselineJson | RtcRepositoryPerformanceObservationIndexEntry
+): source is RtcB06PerformanceObservationIndexEntryDto {
+    if (!exactRecord(source, ['schema', 'observation', 'archive'])) {
+        return false;
+    }
+    return source.schema === 'rallar.rtc-b06-performance-observation.index-entry.v1' &&
+        isRtcPerformanceObservation(
+            source.observation,
+            'rallar.rtc-b06-performance-observation.v1'
+        ) &&
+        isRtcPerformanceObservationArchive(source.archive);
+}
+
+function isRtcPerformanceObservation(
+    source: RtcBaselineJson,
+    schema:
+        | RtcPerformanceObservation['schema']
+        | RtcB06PerformanceObservation['schema']
+) {
     if (
         !exactRecord(source, [
             'schema',
@@ -142,7 +201,7 @@ function isRtcPerformanceObservation(source: RtcBaselineJson) {
     ) {
         return false;
     }
-    return source.schema === 'rallar.rtc-performance-observation.v1' &&
+    return source.schema === schema &&
         typeof source.observationId === 'string' &&
         canonicalIsoTimestamp(source.startedAt) &&
         canonicalIsoTimestamp(source.completedAt) &&
@@ -211,7 +270,7 @@ function validWorkflowUrl(value: RtcBaselineJson, runId: RtcBaselineJson) {
 }
 
 function exactRecord(
-    value: RtcBaselineJson | RtcPerformanceObservationIndexEntryDto,
+    value: RtcBaselineJson | RtcRepositoryPerformanceObservationIndexEntry,
     keys: readonly string[]
 ): value is RtcPerformanceObservationJsonObject {
     return value !== null &&

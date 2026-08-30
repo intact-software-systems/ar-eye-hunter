@@ -26,7 +26,12 @@ describe('build-affecting tree', () => {
             'RTC performance observation archive',
             'performance-observations/rtc-b05/2026/08/27/20260827T010203Z-123456789abc-e2-browser-gh42-a1.zip'
         ],
-        ['RTC performance observation index', 'performance-observations/rtc-b05/index.jsonl']
+        ['RTC performance observation index', 'performance-observations/rtc-b05/index.jsonl'],
+        [
+            'RTC-B06 performance observation archive',
+            'performance-observations/rtc-b06/2026/08/30/20260830T100000Z-123456789abc-e3-memory-gh42-a1.zip'
+        ],
+        ['RTC-B06 performance observation index', 'performance-observations/rtc-b06/index.jsonl']
     ])('ignores changed %s', (_name, changedPath) => {
         const fixture = createGitFixture();
         const before = computeBuildAffectingTreeDigest({ repoRoot: fixture, headSha: 'HEAD' });

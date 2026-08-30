@@ -7,20 +7,20 @@ import {
     createRtcBaselineFinalizedArtifactVerifier,
     type RtcBaselineFinalizedArtifactVerifier
 } from '../evidence/rtc-baseline-finalized-verification.ts';
-import type { RtcPerformanceObservation } from './rtc-performance-observation.ts';
+import type { RtcRepositoryPerformanceObservation } from './rtc-performance-observation.ts';
 
 export interface RtcPerformanceObservationEvidenceValidationInput {
     readonly entries: Readonly<Record<string, Uint8Array>>;
-    readonly observation: RtcPerformanceObservation;
+    readonly observation: RtcRepositoryPerformanceObservation;
     readonly sha256: (bytes: Uint8Array) => Promise<string>;
 }
 
 interface RtcPerformanceObservationEvidenceContractInput {
     readonly role: 'primary' | 'repeat';
     readonly evidence: RtcBaselineVerifiedArtifacts;
-    readonly declaredOutcome: RtcPerformanceObservation['primary']['outcome'];
+    readonly declaredOutcome: RtcRepositoryPerformanceObservation['primary']['outcome'];
     readonly acceptedMetrics: boolean;
-    readonly observation: RtcPerformanceObservation;
+    readonly observation: RtcRepositoryPerformanceObservation;
 }
 
 export async function validateRtcPerformanceObservationEvidence(
@@ -77,9 +77,12 @@ function validateRtcPerformanceObservationEvidenceContract(
     input: RtcPerformanceObservationEvidenceContractInput
 ) {
     const observed = input.evidence.environment.observation;
-    const contractMatches = input.evidence.environment.environmentId === 'E2-browser' &&
-        JSON.stringify(input.evidence.environment.workloadIds) === '["RTC-B05"]' &&
-        JSON.stringify(input.evidence.manifest.workloadIds) === '["RTC-B05"]' &&
+    const b05 = input.observation.schema === 'rallar.rtc-performance-observation.v1';
+    const environmentId = b05 ? 'E2-browser' : 'E3-memory';
+    const workloadId = b05 ? 'RTC-B05' : 'RTC-B06';
+    const contractMatches = input.evidence.environment.environmentId === environmentId &&
+        JSON.stringify(input.evidence.environment.workloadIds) === `["${workloadId}"]` &&
+        JSON.stringify(input.evidence.manifest.workloadIds) === `["${workloadId}"]` &&
         observed !== null &&
         observed.git.headCommit === input.observation.source.commit &&
         observed.git.headTree === input.observation.source.tree;
@@ -98,7 +101,7 @@ function validateRtcPerformanceObservationEvidenceContract(
             ? [issue(
                 `$.${input.role}.evidence`,
                 'archive-evidence-contract-mismatch',
-                'Finalized evidence must describe this RTC-B05 E2-browser source.'
+                `Finalized evidence must describe this ${workloadId} ${environmentId} source.`
             )]
             : []),
         ...(input.declaredOutcome !== actualOutcome

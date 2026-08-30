@@ -60,6 +60,51 @@ describe('pull-request release workflow', () => {
         expect(workflowSource).not.toMatch(/source.*(?:fresh|latest)|compare.*main|pin(?:ned)?/iu);
     });
 
+    it('captures RTC-B06 E3 only by manual dispatch with hermetic memory configuration', () => {
+        const workflow = readWorkflow(
+            '.github/workflows/rtc-b06-performance-observation.yml'
+        );
+        const capture = workflow.jobs.capture;
+        const publication = workflow.jobs.publication;
+        const observe = capture.steps.find(
+            (step: Record<string, any>) => step.name === 'Capture RTC-B06 E3-memory observation'
+        );
+        const upload = capture.steps.find(
+            (step: Record<string, any>) => step.name === 'Retain RTC-B06 observation output'
+        );
+        const verify = publication.steps.find(
+            (step: Record<string, any>) => step.name === 'Verify captured observation'
+        );
+        const publish = publication.steps.find(
+            (step: Record<string, any>) => step.name === 'Publish observation pull request'
+        );
+
+        expect(workflow.on).toEqual({ workflow_dispatch: null });
+        expect(workflow.concurrency).toEqual({
+            group: 'rtc-b06-performance-observation',
+            'cancel-in-progress': false
+        });
+        expect(capture['timeout-minutes']).toBe(360);
+        expect(observe.run).toContain('observe-live-rtc');
+        expect(observe.run).toContain('env -u DATABASE_URL -u RALLAR_ICE_MODE');
+        expect(observe.run).not.toContain('RALLAR_BLACK_BOX_LIVE_ALL_SCENARIOS=1');
+        expect(upload).toMatchObject({
+            if: '${{ always() }}',
+            uses: 'actions/upload-artifact@v7',
+            with: {
+                name: 'rtc-b06-observation-gh${{ github.run_id }}-a${{ github.run_attempt }}',
+                path: '${{ runner.temp }}/rtc-b06-observation'
+            }
+        });
+        expect(verify.run).toContain('verify-observation');
+        expect(publication.steps.indexOf(publish)).toBeGreaterThan(
+            publication.steps.indexOf(verify)
+        );
+        expect(publish.env).toEqual({
+            GH_TOKEN: '${{ secrets.RTC_OBSERVATION_PR_TOKEN }}'
+        });
+    });
+
     it('runs only for current pull-request changes and cancels only superseded runs of that PR', () => {
         const workflow = readWorkflow('.github/workflows/branch-release-gate.yml');
 

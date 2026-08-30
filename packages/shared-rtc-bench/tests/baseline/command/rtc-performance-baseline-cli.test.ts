@@ -63,7 +63,8 @@ describe('RTC baseline CLI application', () => {
             }
         }));
         const observation: RtcPerformanceObservationCliDependencies = {
-            runner: { run: runObservation },
+            browserRunner: { run: runObservation },
+            liveRtcRunner: { run: vi.fn() },
             readFile: vi.fn(),
             verifyArchive: vi.fn()
         };

@@ -16,54 +16,57 @@ afterEach(() => {
 });
 
 describe('RTC observation Git publication shell', () => {
-    it('pushes only the exact archive commit on a disposable branch and leaves main unchanged', async () => {
-        const fixture = gitPublicationFixture();
-        const shell = new RtcObservationPublicationShell({ repoRoot: fixture.repository });
-        const calls: string[] = [];
-        shell.verifyObservation = () => calls.push('verify');
-        shell.readDefaultBranch = () => 'main';
-        shell.configureGitAuthentication = () => undefined;
-        shell.findPullRequest = () => undefined;
-        shell.openPullRequest = () => ({
-            url: 'https://github.com/example/repository/pull/91',
-            state: 'OPEN',
-            merged: false,
-            baseBranch: 'main',
-            headBranch: fixture.branchName,
-            autoMergeArmed: false
-        });
-        shell.armAutoMerge = () => calls.push('arm-auto-merge');
+    it.each(['rtc-b05', 'rtc-b06'] as const)(
+        'pushes only the exact %s archive commit and its stream index',
+        async (stream) => {
+            const fixture = gitPublicationFixture(stream);
+            const shell = new RtcObservationPublicationShell({ repoRoot: fixture.repository });
+            const calls: string[] = [];
+            shell.verifyObservation = () => calls.push('verify');
+            shell.readDefaultBranch = () => 'main';
+            shell.configureGitAuthentication = () => undefined;
+            shell.findPullRequest = () => undefined;
+            shell.openPullRequest = () => ({
+                url: 'https://github.com/example/repository/pull/91',
+                state: 'OPEN',
+                merged: false,
+                baseBranch: 'main',
+                headBranch: fixture.branchName,
+                autoMergeArmed: false
+            });
+            shell.armAutoMerge = () => calls.push('arm-auto-merge');
 
-        await publishRtcObservationPullRequest(fixture.input, shell);
+            await publishRtcObservationPullRequest(fixture.input, shell);
 
-        runGit(fixture.repository, ['fetch', 'origin', fixture.branchName]);
-        const branchCommit = runGit(fixture.repository, ['rev-parse', 'FETCH_HEAD']).trim();
-        expect(runGit(fixture.repository, ['rev-parse', `${branchCommit}^`]).trim()).toBe(
-            fixture.mainCommit
-        );
-        expect(
-            runGit(fixture.repository, [
-                'diff',
-                '--name-status',
-                '--no-renames',
-                fixture.mainCommit,
-                branchCommit
-            ]).trim().split('\n')
-        ).toEqual([
-            `A\t${fixture.archiveRepositoryPath}`,
-            'A\tperformance-observations/rtc-b05/index.jsonl'
-        ]);
-        expect(
-            runGit(fixture.repository, [
-                'show',
-                `${branchCommit}:performance-observations/rtc-b05/index.jsonl`
-            ])
-        ).toBe(`${fixture.indexLine}\n`);
-        expect(runGit(fixture.repository, ['rev-parse', 'origin/main']).trim()).toBe(
-            fixture.mainCommit
-        );
-        expect(calls).toEqual(['verify', 'arm-auto-merge']);
-    });
+            runGit(fixture.repository, ['fetch', 'origin', fixture.branchName]);
+            const branchCommit = runGit(fixture.repository, ['rev-parse', 'FETCH_HEAD']).trim();
+            expect(runGit(fixture.repository, ['rev-parse', `${branchCommit}^`]).trim()).toBe(
+                fixture.mainCommit
+            );
+            expect(
+                runGit(fixture.repository, [
+                    'diff',
+                    '--name-status',
+                    '--no-renames',
+                    fixture.mainCommit,
+                    branchCommit
+                ]).trim().split('\n')
+            ).toEqual([
+                `A\t${fixture.archiveRepositoryPath}`,
+                `A\t${fixture.indexRepositoryPath}`
+            ]);
+            expect(
+                runGit(fixture.repository, [
+                    'show',
+                    `${branchCommit}:${fixture.indexRepositoryPath}`
+                ])
+            ).toBe(`${fixture.indexLine}\n`);
+            expect(runGit(fixture.repository, ['rev-parse', 'origin/main']).trim()).toBe(
+                fixture.mainCommit
+            );
+            expect(calls).toEqual(['verify', 'arm-auto-merge']);
+        }
+    );
 
     it('replaces a stale observation branch from the current main index with an exact lease', async () => {
         const fixture = gitPublicationFixture();
@@ -125,7 +128,7 @@ function openPullRequest(branchName: string) {
     };
 }
 
-function gitPublicationFixture() {
+function gitPublicationFixture(stream: 'rtc-b05' | 'rtc-b06' = 'rtc-b05') {
     const root = mkdtempSync(path.join(tmpdir(), 'rtc-observation-publication-test-'));
     fixtureRoots.push(root);
     const origin = path.join(root, 'origin.git');
@@ -146,13 +149,20 @@ function gitPublicationFixture() {
     runGit(repository, ['config', 'user.name', 'RTC Publication Test']);
     runGit(repository, ['config', 'user.email', 'rtc-publication@example.invalid']);
 
-    const observationId = '20260827T031500Z-eaf526518c70-e2-browser-gh123456789-a2';
-    const archiveRepositoryPath = `performance-observations/rtc-b05/2026/08/27/${observationId}.zip`;
+    const b05 = stream === 'rtc-b05';
+    const observationId = b05
+        ? '20260827T031500Z-eaf526518c70-e2-browser-gh123456789-a2'
+        : '20260830T100000Z-c0cadb8216cf-e3-memory-gh123456789-a2';
+    const datePath = b05 ? '2026/08/27' : '2026/08/30';
+    const archiveRepositoryPath = `performance-observations/${stream}/${datePath}/${observationId}.zip`;
+    const indexRepositoryPath = `performance-observations/${stream}/index.jsonl`;
     const archivePath = path.join(root, 'observation.zip');
     const indexEntryPath = path.join(root, 'index-entry.jsonl');
     writeFileSync(archivePath, 'deterministic-zip-fixture');
     const indexEntry = {
-        schema: 'rallar.rtc-performance-observation.index-entry.v1',
+        schema: b05
+            ? 'rallar.rtc-performance-observation.index-entry.v1'
+            : 'rallar.rtc-b06-performance-observation.index-entry.v1',
         observation: {
             observationId,
             source: { commit: 'eaf526518c70e3b396dad91c008125a622b38b00' },
@@ -170,8 +180,9 @@ function gitPublicationFixture() {
     return {
         repository,
         mainCommit: runGit(repository, ['rev-parse', 'HEAD']).trim(),
-        branchName: 'automation/rtc-b05-observation-gh123456789-a2',
+        branchName: `automation/${stream}-observation-gh123456789-a2`,
         archiveRepositoryPath,
+        indexRepositoryPath,
         indexLine,
         input: {
             repoRoot: repository,

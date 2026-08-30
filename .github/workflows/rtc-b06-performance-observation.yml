@@ -1,0 +1,167 @@
+name: RTC-B06 Performance Observation
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rtc-b06-performance-observation
+  cancel-in-progress: false
+
+jobs:
+  source:
+    name: Resolve RTC-B06 observation source
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Require the main branch source
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          SOURCE_REF: ${{ github.ref }}
+          SOURCE_SHA: ${{ github.sha }}
+        run: |
+          if [[ "$DEFAULT_BRANCH" != "main" || "$SOURCE_REF" != "refs/heads/main" ]]; then
+            echo "::error::RTC observations must start from the repository main branch"
+            exit 1
+          fi
+          if [[ ! "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::RTC observation source SHA is malformed"
+            exit 1
+          fi
+
+  capture:
+    name: Capture RTC-B06 E3-memory observation
+    needs: source
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Initialize recoverable diagnostics
+        run: |
+          observation_output="$RUNNER_TEMP/rtc-b06-observation"
+          mkdir -p "$observation_output"
+          git rev-parse HEAD > "$observation_output/source-commit.txt"
+          echo "RTC_OBSERVATION_OUTPUT=$observation_output" >> "$GITHUB_ENV"
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: Install repository dependencies
+        run: npm ci
+
+      - name: Install supported Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Check RTC observation tooling
+        run: npm run check --workspace=packages/shared-rtc-bench
+
+      - name: Capture RTC-B06 E3-memory observation
+        run: |
+          env -u DATABASE_URL -u RALLAR_ICE_MODE \
+            -u RALLAR_BLACK_BOX_LIVE_ALL_SCENARIOS \
+            -u RALLAR_BLACK_BOX_LIVE_RETENTION_SOAK \
+            -u RALLAR_BLACK_BOX_LIVE_RETENTION_CYCLES \
+            npm run perf:rtc-baseline -- observe-live-rtc \
+            --source-ref=main \
+            --github-run-id="$GITHUB_RUN_ID" \
+            --github-run-attempt="$GITHUB_RUN_ATTEMPT" \
+            --github-run-url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
+            --output="$RTC_OBSERVATION_OUTPUT"
+
+      - name: Retain RTC-B06 observation output
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: rtc-b06-observation-gh${{ github.run_id }}-a${{ github.run_attempt }}
+          path: ${{ runner.temp }}/rtc-b06-observation
+          if-no-files-found: error
+          retention-days: 30
+
+  publication:
+    name: Publish RTC-B06 observation
+    needs:
+      - source
+      - capture
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: Install observation verifier dependencies
+        run: npm ci
+
+      - name: Download captured observation
+        uses: actions/download-artifact@v7
+        with:
+          name: rtc-b06-observation-gh${{ github.run_id }}-a${{ github.run_attempt }}
+          path: ${{ runner.temp }}/rtc-b06-observation-publication
+
+      - name: Locate captured observation
+        id: observation
+        env:
+          RTC_OBSERVATION_DOWNLOAD: ${{ runner.temp }}/rtc-b06-observation-publication
+        run: |
+          shopt -s nullglob
+          archives=("$RTC_OBSERVATION_DOWNLOAD"/*.zip)
+          if [[ "${#archives[@]}" -ne 1 ]]; then
+            echo "::error::Expected exactly one RTC-B06 observation ZIP"
+            exit 1
+          fi
+          index_entry="$RTC_OBSERVATION_DOWNLOAD/index-entry.jsonl"
+          if [[ ! -f "$index_entry" ]]; then
+            echo "::error::Expected one RTC-B06 observation index entry"
+            exit 1
+          fi
+          echo "archive=${archives[0]}" >> "$GITHUB_OUTPUT"
+          echo "index_entry=$index_entry" >> "$GITHUB_OUTPUT"
+
+      - name: Verify captured observation
+        run: >-
+          npm run perf:rtc-baseline -- verify-observation
+          --archive="${{ steps.observation.outputs.archive }}"
+          --index-entry="${{ steps.observation.outputs.index_entry }}"
+
+      - name: Publish observation pull request
+        env:
+          GH_TOKEN: ${{ secrets.RTC_OBSERVATION_PR_TOKEN }}
+        run: |
+          if [[ -z "$GH_TOKEN" ]]; then
+            echo "::error::RTC_OBSERVATION_PR_TOKEN is required for ordinary pull-request publication"
+            exit 1
+          fi
+          npm run pr:delivery -- publish-observation \
+            --archive="${{ steps.observation.outputs.archive }}" \
+            --index-entry="${{ steps.observation.outputs.index_entry }}" \
+            --run-id="$GITHUB_RUN_ID" \
+            --run-attempt="$GITHUB_RUN_ATTEMPT"

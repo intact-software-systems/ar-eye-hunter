@@ -1,5 +1,7 @@
 import { createRtcB05ObservationDenoRuntime } from '../observation/rtc-b05-observation-deno-runtime.ts';
 import { createRtcB05ObservationRunner } from '../observation/rtc-b05-observation-runner.ts';
+import { createRtcB06ObservationDenoRuntime } from '../observation/rtc-b06-observation-deno-runtime.ts';
+import { createRtcB06ObservationRunner } from '../observation/rtc-b06-observation-runner.ts';
 import { verifyRtcPerformanceObservationArchive } from '../observation/rtc-performance-observation-archive.ts';
 import { isRtcPerformanceObservationCommand } from '../observation/rtc-performance-observation-cli-grammar.ts';
 import {
@@ -203,7 +205,12 @@ function createDefaultRtcBaselineCliComposition(): RtcBaselineCliComposition {
     const runtime = defaultRuntime();
     const adapters = createDenoRtcBaselineAdapters(runtime);
     const envelope = createRtcBaselineDenoRuntime(adapters);
-    const observationDependencies = createRtcB05ObservationDenoRuntime({
+    const browserObservation = createRtcB05ObservationDenoRuntime({
+        runtime,
+        adapters,
+        envelope
+    });
+    const liveRtcObservation = createRtcB06ObservationDenoRuntime({
         runtime,
         adapters,
         envelope
@@ -211,7 +218,8 @@ function createDefaultRtcBaselineCliComposition(): RtcBaselineCliComposition {
     return {
         envelope,
         observation: {
-            runner: createRtcB05ObservationRunner(observationDependencies),
+            browserRunner: createRtcB05ObservationRunner(browserObservation),
+            liveRtcRunner: createRtcB06ObservationRunner(liveRtcObservation),
             readFile: runtime.readFile,
             verifyArchive: verifyRtcPerformanceObservationArchive
         }
