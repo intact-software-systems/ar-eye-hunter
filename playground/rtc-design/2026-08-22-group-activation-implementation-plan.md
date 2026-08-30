@@ -1648,6 +1648,20 @@ readiness, local halt, per-peer reconnect state, AR Eye's exhaustive status mapp
 explicit-peer `sendJson` fallback; any owner or contract material change updates this checkpoint before
 implementation continues.
 
+The current-head census changes the implementation owner map without changing Slice 8c's behavior or
+gates. `createBrowserStateComposition` still resolves room peers from active sessions and feeds that
+one callback to both `BrowserRtcWaitRuntime` and `BrowserRtcRoomRuntime`; it is the cutover point for
+an accepted-layout room view. `roomStatus().rtc` already owns the desired/ready/failed arrays, while
+the global RTC status owns each peer's `reconnecting` and `reconnectAttempts`; the room status still
+lacks its accepted-layout identity, room-filtered peer repair view, and typed `halted` state. The
+explicit-peer recovery bypass has moved out of a Relic app file into shared
+`RallarGamePresenceEgressRuntime`, so removing it once closes the affected path for both games. Relic's
+separate per-frame motion sender still needs the I11 snapshot-level `transportState` guard so a halt
+does not spin sends. AR Eye's relevant room-send outcome mapping is now the shared
+`toRallarGameRoomRealtimeSendResult`, not an app-local default arm; it must become total for the new
+halted result. I17 remains authoritative: the public progress shape is the accepted layout identity
+plus the existing peer arrays, never a computed fraction.
+
 **Next two PRs (I5, I20):**
 
 - **PR 15 = slice 8c, stacked on #390.** Repoint the room facade and readiness/status consumers to the
