@@ -1,8 +1,8 @@
 import { createDefaultGroupLifecyclePolicy } from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
-import type { Group } from '@shared/api/group-types.ts';
 import { computeGroupPresenceSummaryEntry } from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { jsonEquals } from '@shared/repository/state-utils.ts';
+import { computeGroupConnectTrigger } from '../aggregate/compute-group-connect-trigger.ts';
 
 import { computeFormationTimerEntries } from '../../formation-timer-outbox-entry.ts';
 import {
@@ -28,13 +28,13 @@ export function validateComputedGroupMutationOutbox(
         }
         return;
     }
-    const expectedTimerEntries = computeExpectedFormationTimerEntries(input);
-    if (computed.outboxEntries.length !== 1 + expectedTimerEntries.length) {
+    const expectedFollowupEntries = computeExpectedFormationFollowupEntries(input);
+    if (computed.outboxEntries.length !== 1 + expectedFollowupEntries.length) {
         throw new TypeError('Group mutation must compute one presence-summary outbox entry');
     }
-    for (const [index, expectedTimer] of expectedTimerEntries.entries()) {
-        if (!jsonEquals(computed.outboxEntries[1 + index], expectedTimer)) {
-            throw new TypeError('Group mutation formation-timer outbox entry is not canonical');
+    for (const [index, expectedFollowup] of expectedFollowupEntries.entries()) {
+        if (!jsonEquals(computed.outboxEntries[1 + index], expectedFollowup)) {
+            throw new TypeError('Group mutation formation follow-up outbox entry is not canonical');
         }
     }
     const expected = computeGroupPresenceSummaryEntry(
@@ -54,7 +54,7 @@ export function validateComputedGroupMutationOutbox(
     }
 }
 
-function computeExpectedFormationTimerEntries(
+function computeExpectedFormationFollowupEntries(
     input: ValidateComputedGroupMutationWriteInput
 ): readonly ResourceEntry[] {
     const { command, read, facts, computed } = input;
@@ -70,12 +70,16 @@ function computeExpectedFormationTimerEntries(
     const policy = read.lifecyclePolicy.status === 'present'
         ? read.lifecyclePolicy.policy
         : createDefaultGroupLifecyclePolicy();
-    return computeFormationTimerEntries({
-        command: command as Extract<GroupMutationCommand, {
-            operation: GroupLifecycleTransitionOperation;
-        }>,
-        next: computed.guard.value as Group,
-        policy,
-        facts
-    });
+    const trigger = computeGroupConnectTrigger({ command, read, facts, next: computed.guard.value });
+    return [
+        ...computeFormationTimerEntries({
+            command: command as Extract<GroupMutationCommand, {
+                operation: GroupLifecycleTransitionOperation;
+            }>,
+            next: computed.guard.value,
+            policy,
+            facts
+        }),
+        ...trigger.outboxEntries
+    ];
 }

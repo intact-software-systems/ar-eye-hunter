@@ -129,13 +129,6 @@ const descriptorCases: readonly DescriptorCase[] = [
         { ...actor, requestId: 'appoint-director' }
     ),
     descriptorCase(
-        'establishment-start',
-        AppInboxType.GROUP_ESTABLISHMENT_START,
-        { scope: SCOPE, groupId, request: { ...actor, requestId: 'establishment-start' } },
-        'startGroupEstablishment',
-        { ...actor, requestId: 'establishment-start' }
-    ),
-    descriptorCase(
         'plan',
         AppInboxType.GROUP_PLAN,
         { scope: SCOPE, groupId, request: { ...actor, requestId: 'plan' } },
@@ -178,13 +171,6 @@ const descriptorCases: readonly DescriptorCase[] = [
         { scope: SCOPE, groupId, request: { ...actor, requestId: 'reconfigure' } },
         'reconfigureGroup',
         { ...actor, requestId: 'reconfigure' }
-    ),
-    descriptorCase(
-        'establishment-reopen',
-        AppInboxType.GROUP_ESTABLISHMENT_REOPEN,
-        { scope: SCOPE, groupId, request: { ...actor, requestId: 'establishment-reopen' } },
-        'reopenGroupEstablishment',
-        { ...actor, requestId: 'establishment-reopen' }
     ),
     descriptorCase('join', AppInboxType.GROUP_JOIN, { scope: SCOPE, groupId, request: { ...actor, requestId: 'join' } }, 'joinGroup', {
         ...actor,

@@ -6,10 +6,8 @@ export type GroupLifecycleTransition =
     | 'start'
     | 'plan'
     | 'connect'
-    | 'start-establishment'
     | 'activate'
     | 'reconfigure'
-    | 'reopen-establishment'
     | 'fail-formation';
 
 export type GroupLifecycleTransitionOutcome =
@@ -27,30 +25,19 @@ export type GroupLifecycleTransitionOutcome =
  * so a command may land differently per source stage and a new stage is a new
  * row, never a refactor. An absent cell is an illegal transition.
  *
- * `start-establishment` and `reopen-establishment` keep today's semantics
- * until their retirement (product decision 34), which also removes
- * `reconfiguring`'s `activate` and `fail-formation` cells — under the new
- * vocabulary that stage holds a layout and `connect` moves it to
- * `reconnecting`. `reset`, `start`, `plan`, `connect` and `reconfigure` are
- * dark: no operation dispatches them yet. `fail-formation` from `reconnecting`
- * returns to `active` because a failed reconnection keeps the accepted layout
- * (product decision 28); exhaustion's `dormant` landing is
- * `resolveFormationFailureLanding`, applied by the criterion owner, never by
- * this table.
+ * Planning holds a candidate; connect enters the dialing stage.
  */
 const TRANSITION_TABLE: Readonly<
     Record<GroupLifecycleState, Readonly<Partial<Record<GroupLifecycleTransition, GroupLifecycleState>>>>
 > = {
     dormant: { reset: 'dormant', start: 'forming' },
-    forming: { reset: 'dormant', plan: 'planned', 'start-establishment': 'connecting' },
+    forming: { reset: 'dormant', plan: 'planned' },
     planned: { reset: 'dormant', plan: 'planned', connect: 'connecting' },
     connecting: { reset: 'dormant', activate: 'active', 'fail-formation': 'forming' },
-    active: { reset: 'dormant', reconfigure: 'reconfiguring', 'reopen-establishment': 'reconfiguring' },
+    active: { reset: 'dormant', reconfigure: 'reconfiguring' },
     reconfiguring: {
         reset: 'dormant',
-        connect: 'reconnecting',
-        activate: 'active',
-        'fail-formation': 'forming'
+        connect: 'reconnecting'
     },
     reconnecting: { reset: 'dormant', activate: 'active', 'fail-formation': 'active' }
 };

@@ -13,6 +13,9 @@ export function validateGroupMutationAuthority(
         validateInternalMutationAuthority(command, facts);
         return;
     }
+    if (command.operation === 'connectGroup' && command.input.connectTriggerGeneration !== null) {
+        throw new TypeError('Principal connect cannot consume automatic trigger intent');
+    }
     if (!authority) {
         throw new TypeError('Authenticated group mutation authority is missing');
     }
@@ -54,9 +57,7 @@ function validateInternalMutationAuthority(
             }
             return;
         case 'formation-automation':
-            throw new TypeError(
-                'Formation-automation authority is limited to automatic stage commands, none of which exist yet'
-            );
+            return validateFormationAutomationAuthority(command);
         case 'topology-publication':
             return validateTopologyPublicationAuthority(command);
         case 'activation-status':
@@ -79,11 +80,6 @@ function validateInternalMutationAuthority(
 // lying stale-epoch rejection in compute.
 function validateFormationCriterionAuthority(command: GroupMutationCommand): void {
     switch (command.operation) {
-        case 'startGroupEstablishment':
-            if (command.input.expectedFormationEpoch === null || command.input.expectedFormationEpoch === undefined) {
-                throw new TypeError('Criterion transitions must carry the expected formation epoch fence');
-            }
-            return;
         case 'activateGroup':
         case 'failGroupFormation':
             if (command.input.expectedFormationEpoch === null || command.input.expectedFormationEpoch === undefined) {
@@ -98,6 +94,20 @@ function validateFormationCriterionAuthority(command: GroupMutationCommand): voi
             return;
         default:
             throw new TypeError('Formation-criterion authority is limited to criterion transitions');
+    }
+}
+
+function validateFormationAutomationAuthority(command: GroupMutationCommand): void {
+    if (
+        command.operation !== 'planGroupLayout' && command.operation !== 'connectGroup'
+    ) {
+        throw new TypeError('Formation-automation authority is limited to automatic stage commands');
+    }
+    if (command.input.expectedFormationEpoch === null || command.input.expectedFormationEpoch === undefined) {
+        throw new TypeError('Formation automation requires an expected formation epoch');
+    }
+    if (command.operation === 'connectGroup' && !command.input.connectTriggerGeneration) {
+        throw new TypeError('Automatic connect requires a durable trigger identity');
     }
 }
 

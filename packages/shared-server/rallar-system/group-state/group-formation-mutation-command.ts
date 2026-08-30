@@ -75,18 +75,18 @@ export function toFailFormationCommand(
 }
 
 /**
- * The retry leg re-enters establishment after a below-floor return: the same
- * automation that was sanctioned by the original start-establishment, bounded
+ * The retry leg replans after a below-floor return: the same
+ * automation that was sanctioned by the original plan/connect, bounded
  * by maxFormationAttempts and paced by the backoff that scheduled this.
  */
-export function toFormationRetryEstablishCommand(
+export function toFormationRetryPlanCommand(
     input: Readonly<{
         groupRef: GroupRef;
         formationEpoch: number;
     }>
 ): GroupMutationCommand {
     const semanticCommand = {
-        operation: 'startGroupEstablishment',
+        operation: 'planGroupLayout',
         aggregateRef: input.groupRef,
         input: {
             actorPrincipalId: null,
@@ -96,12 +96,7 @@ export function toFormationRetryEstablishCommand(
             expectedFormationEpoch: input.formationEpoch
         }
     } as const;
-    const commandId = toGroupFormationCriterionRequestId({
-        decision: 'retry-establish',
-        groupRef: input.groupRef,
-        formationEpoch: input.formationEpoch,
-        expectedLayout: null
-    });
+    const commandId = `formation-automation:v2:retry-plan:${serializeCanonicalJson(input)}`;
     return { ...semanticCommand, commandId, requestId: commandId };
 }
 
@@ -112,7 +107,7 @@ export function toFormationRetryEstablishCommand(
  */
 function toGroupFormationCriterionRequestId(
     input: Readonly<{
-        decision: 'activate' | 'activate-degraded' | 'fail-formation' | 'retry-establish';
+        decision: 'activate' | 'activate-degraded' | 'fail-formation';
         groupRef: GroupRef;
         formationEpoch: number;
         expectedLayout: GroupLayoutIdentity | null;

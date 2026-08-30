@@ -246,9 +246,9 @@ describe('group lifecycle transition computation', () => {
         expect(computed.outcome).toBe('rejected');
     });
 
-    it('starts establishment from forming and advances the formation epoch', () => {
+    it('publishes planning intent and advances the formation epoch', () => {
         const computed = computeGroupMutation({
-            command: transitionCommand('startGroupEstablishment'),
+            command: transitionCommand('planGroupLayout'),
             read: createGroupAuthorityRead({ lifecycleState: 'forming', formationEpoch: 2 }),
             facts: createGroupAuthorityFacts()
         });
@@ -259,7 +259,7 @@ describe('group lifecycle transition computation', () => {
         }
         expect(computed.guard.kind).toBe('group');
         const written = computed.guard.value as Group;
-        expect(written.lifecycleState).toBe('connecting');
+        expect(written.lifecycleState).toBe('planned');
         expect(written.formationEpoch).toBe(3);
         expect(written.snapshotVersion).toBe(2);
         expect(computed.event.eventType).toBe('group-updated');
@@ -267,9 +267,9 @@ describe('group lifecycle transition computation', () => {
 
     it('pins the formation electorate to the roster read at every epoch advance', () => {
         const cases = [
-            { operation: 'startGroupEstablishment', lifecycleState: 'forming' },
+            { operation: 'planGroupLayout', lifecycleState: 'forming' },
             { operation: 'activateGroup', lifecycleState: 'connecting' },
-            { operation: 'reopenGroupEstablishment', lifecycleState: 'active' }
+            { operation: 'reconfigureGroup', lifecycleState: 'active' }
         ] as const;
         for (const { operation, lifecycleState } of cases) {
             const computed = computeGroupMutation({
@@ -286,8 +286,8 @@ describe('group lifecycle transition computation', () => {
         }
     });
 
-    it('activates from connecting and from reconfiguring', () => {
-        for (const from of ['connecting', 'reconfiguring'] as const) {
+    it('activates only after initial or replacement dialing', () => {
+        for (const from of ['connecting', 'reconnecting'] as const) {
             const computed = computeGroupMutation({
                 command: transitionCommand('activateGroup'),
                 read: createGroupAuthorityRead({ lifecycleState: from, formationEpoch: 1 }),
@@ -303,9 +303,9 @@ describe('group lifecycle transition computation', () => {
         }
     });
 
-    it('reopens establishment only from active', () => {
+    it('holds the replacement layout when explicitly commanded', () => {
         const computed = computeGroupMutation({
-            command: transitionCommand('reopenGroupEstablishment'),
+            command: reconfigureCommand('hold'),
             read: createGroupAuthorityRead({ lifecycleState: 'active', formationEpoch: 4 }),
             facts: createGroupAuthorityFacts()
         });
@@ -321,7 +321,7 @@ describe('group lifecycle transition computation', () => {
     it('denies an illegal transition as a typed policy denial', () => {
         expect(() =>
             computeGroupMutation({
-                command: transitionCommand('startGroupEstablishment'),
+                command: transitionCommand('planGroupLayout'),
                 read: createGroupAuthorityRead({ lifecycleState: 'active', formationEpoch: 1 }),
                 facts: createGroupAuthorityFacts()
             })
@@ -335,7 +335,7 @@ describe('group lifecycle transition computation', () => {
         );
         expect(() =>
             computeGroupMutation({
-                command: transitionCommand('startGroupEstablishment', 'bob'),
+                command: transitionCommand('planGroupLayout', 'bob'),
                 read,
                 facts: createGroupAuthorityFacts('bob')
             })
@@ -344,7 +344,7 @@ describe('group lifecycle transition computation', () => {
 
     it('rejects on a corrupt stored policy instead of failing open', () => {
         const computed = computeGroupMutation({
-            command: transitionCommand('startGroupEstablishment'),
+            command: transitionCommand('planGroupLayout'),
             read: createGroupAuthorityRead({ lifecycleState: 'forming', formationEpoch: 0 }, { policy: 'corrupt' }),
             facts: createGroupAuthorityFacts()
         });
@@ -385,42 +385,6 @@ describe('group lifecycle transition computation', () => {
 
     // The causal fence: a stale petition is a typed rejection that computes
     // no write facts at all — never a wrong transition, never a silent no-op.
-    it('carries the planned row into the write so a replan between read and commit conflicts', () => {
-        const computed = computeGroupMutation({
-            command: connectCommand({ expectedFormationEpoch: 4, expectedLayout: PLANNED_LAYOUT }),
-            read: connectRead({ lifecycleState: 'planned', formationEpoch: 4 }, PLANNED_LAYOUT),
-            facts: createGroupAuthorityFacts()
-        });
-
-        expect(computed.outcome).toBe('write');
-        if (computed.outcome !== 'write') {
-            return;
-        }
-        // The revision is what the guarded batch asserts at commit.
-        expect(computed.plannedLayoutFence?.revision).toBe(5);
-        expect(computed.plannedLayoutFence?.snapshot).toEqual(plannedSnapshotFor(PLANNED_LAYOUT));
-    });
-
-    it('leaves the commit guard to the promotion when the transition promotes', () => {
-        const computed = computeGroupMutation({
-            command: criterionCommand('activateGroup', {
-                observedRate: 1,
-                expectedFormationEpoch: 5,
-                expectedLayout: PLANNED_LAYOUT
-            }),
-            read: criterionRead({ lifecycleState: 'connecting', formationEpoch: 5 }),
-            facts: criterionFacts()
-        });
-
-        expect(computed.outcome).toBe('write');
-        if (computed.outcome !== 'write') {
-            return;
-        }
-        // Activation's promotion emits the same guard itself; a second one
-        // would assert the row twice in one batch.
-        expect(computed.plannedLayoutFence).toBe(null);
-        expect(computed.acceptedLayoutPromotion).not.toBe(null);
-    });
 
     it.each([
         {
@@ -538,7 +502,7 @@ describe('group lifecycle transition computation', () => {
     it('treats an absent policy as the optimistic preset', () => {
         // optimistic is any-member initiated, so a plain member may command.
         const computed = computeGroupMutation({
-            command: transitionCommand('startGroupEstablishment'),
+            command: transitionCommand('planGroupLayout'),
             read: createGroupAuthorityRead({ lifecycleState: 'forming', formationEpoch: 0 }, { policy: 'absent' }),
             facts: createGroupAuthorityFacts()
         });
@@ -591,7 +555,8 @@ function connectCommand(
             reason: null,
             traceId: null,
             expectedFormationEpoch: extras.expectedFormationEpoch,
-            expectedLayout: extras.expectedLayout
+            expectedLayout: extras.expectedLayout,
+            connectTriggerGeneration: null
         }
     } as GroupMutationCommand;
 }

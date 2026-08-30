@@ -11,8 +11,6 @@ export function toLifecycleMutationCommand(
     randomId: () => string
 ): GroupMutationCommand {
     switch (descriptor.operation) {
-        case 'startGroupEstablishment':
-        case 'reopenGroupEstablishment':
         case 'planGroupLayout':
         case 'startGroupFormation':
         case 'resetGroupFormation':
@@ -53,8 +51,6 @@ function toReconfigureCommand(
 
 function toTransitionCommand(
     operation:
-        | 'startGroupEstablishment'
-        | 'reopenGroupEstablishment'
         | 'planGroupLayout'
         | 'startGroupFormation'
         | 'resetGroupFormation',
@@ -99,7 +95,8 @@ function toConnectCommand(
         input: {
             ...toGroupMutationActorInput(request),
             expectedFormationEpoch: request.expectedFormationEpoch,
-            expectedLayout: request.expectedLayout
+            expectedLayout: request.expectedLayout,
+            connectTriggerGeneration: null
         }
     };
 }

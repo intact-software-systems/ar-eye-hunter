@@ -25,12 +25,22 @@ export function toGroupStateCommand(
             return toUpdateGroupCommand(input);
         case 'appoint-group-director':
             return toAppointGroupDirectorCommand(input);
-        case 'start-group-establishment':
-            return toStartGroupEstablishmentCommand(input);
+        case 'plan-group-layout':
+            return toPlanGroupCommand(input);
+        case 'connect-group':
+            return toConnectGroupCommand(input);
         case 'activate-group':
             return toActivateGroupCommand(input);
-        case 'reopen-group-establishment':
-            return toReopenGroupEstablishmentCommand(input);
+        case 'reconfigure-group':
+            return toReconfigureGroupCommand(input);
+        case 'pause-group-transport':
+            return toPauseGroupCommand(input);
+        case 'resume-group-transport':
+            return toResumeGroupCommand(input);
+        case 'reset-group-formation':
+            return toResetGroupCommand(input);
+        case 'start-group-formation':
+            return toStartGroupCommand(input);
         case 'join-group':
             return toJoinGroupCommand(input);
         case 'accept-group-invite':
@@ -130,23 +140,33 @@ function toAppointGroupDirectorCommand(
     };
 }
 
-function toStartGroupEstablishmentCommand(
-    input: Extract<GroupStateRouteCommandInput, { operation: 'start-group-establishment'; }>
-): GroupStateCommand<typeof AppInboxType.GROUP_ESTABLISHMENT_START> {
+function toPlanGroupCommand(
+    input: Extract<GroupStateRouteCommandInput, { operation: 'plan-group-layout'; }>
+): GroupStateCommand<typeof AppInboxType.GROUP_PLAN> {
     const request = withActor(input);
-    validateGroupMutationRequest('startGroupEstablishment', request);
-
+    validateGroupMutationRequest('planGroupLayout', request);
     return {
-        type: AppInboxType.GROUP_ESTABLISHMENT_START,
-        topicId: AppInboxType.GROUP_ESTABLISHMENT_START,
+        type: AppInboxType.GROUP_PLAN,
+        topicId: AppInboxType.GROUP_PLAN,
         resourceId: request.requestId,
         contextId: toGroupAppInboxContextId(input.scope, input.groupId, input.authSession),
         senderId: input.authSession.clientId,
-        data: {
-            scope: input.scope,
-            groupId: input.groupId,
-            request
-        }
+        data: { scope: input.scope, groupId: input.groupId, request }
+    };
+}
+
+function toConnectGroupCommand(
+    input: Extract<GroupStateRouteCommandInput, { operation: 'connect-group'; }>
+): GroupStateCommand<typeof AppInboxType.GROUP_CONNECT> {
+    const request = withActor(input);
+    validateGroupMutationRequest('connectGroup', request);
+    return {
+        type: AppInboxType.GROUP_CONNECT,
+        topicId: AppInboxType.GROUP_CONNECT,
+        resourceId: request.requestId,
+        contextId: toGroupAppInboxContextId(input.scope, input.groupId, input.authSession),
+        senderId: input.authSession.clientId,
+        data: { scope: input.scope, groupId: input.groupId, request }
     };
 }
 
@@ -155,38 +175,88 @@ function toActivateGroupCommand(
 ): GroupStateCommand<typeof AppInboxType.GROUP_ACTIVATE> {
     const request = withActor(input);
     validateGroupMutationRequest('activateGroup', request);
-
     return {
         type: AppInboxType.GROUP_ACTIVATE,
         topicId: AppInboxType.GROUP_ACTIVATE,
         resourceId: request.requestId,
         contextId: toGroupAppInboxContextId(input.scope, input.groupId, input.authSession),
         senderId: input.authSession.clientId,
-        data: {
-            scope: input.scope,
-            groupId: input.groupId,
-            request
-        }
+        data: { scope: input.scope, groupId: input.groupId, request }
     };
 }
 
-function toReopenGroupEstablishmentCommand(
-    input: Extract<GroupStateRouteCommandInput, { operation: 'reopen-group-establishment'; }>
-): GroupStateCommand<typeof AppInboxType.GROUP_ESTABLISHMENT_REOPEN> {
-    const request = withActor(input);
-    validateGroupMutationRequest('reopenGroupEstablishment', request);
-
+function toReconfigureGroupCommand(
+    input: Extract<GroupStateRouteCommandInput, { operation: 'reconfigure-group'; }>
+): GroupStateCommand<typeof AppInboxType.GROUP_RECONFIGURE> {
+    const request = { ...withActor(input), expectedFormationEpoch: null, landing: input.request.landing ?? null };
+    validateGroupMutationRequest('reconfigureGroup', request);
     return {
-        type: AppInboxType.GROUP_ESTABLISHMENT_REOPEN,
-        topicId: AppInboxType.GROUP_ESTABLISHMENT_REOPEN,
+        type: AppInboxType.GROUP_RECONFIGURE,
+        topicId: AppInboxType.GROUP_RECONFIGURE,
         resourceId: request.requestId,
         contextId: toGroupAppInboxContextId(input.scope, input.groupId, input.authSession),
         senderId: input.authSession.clientId,
-        data: {
-            scope: input.scope,
-            groupId: input.groupId,
-            request
-        }
+        data: { scope: input.scope, groupId: input.groupId, request }
+    };
+}
+
+function toPauseGroupCommand(
+    input: Extract<GroupStateRouteCommandInput, { operation: 'pause-group-transport'; }>
+): GroupStateCommand<typeof AppInboxType.GROUP_TRANSPORT_PAUSE> {
+    const request = withActor(input);
+    validateGroupMutationRequest('pauseGroupTransport', request);
+    return {
+        type: AppInboxType.GROUP_TRANSPORT_PAUSE,
+        topicId: AppInboxType.GROUP_TRANSPORT_PAUSE,
+        resourceId: request.requestId,
+        contextId: toGroupAppInboxContextId(input.scope, input.groupId, input.authSession),
+        senderId: input.authSession.clientId,
+        data: { scope: input.scope, groupId: input.groupId, request }
+    };
+}
+
+function toResumeGroupCommand(
+    input: Extract<GroupStateRouteCommandInput, { operation: 'resume-group-transport'; }>
+): GroupStateCommand<typeof AppInboxType.GROUP_TRANSPORT_RESUME> {
+    const request = withActor(input);
+    validateGroupMutationRequest('resumeGroupTransport', request);
+    return {
+        type: AppInboxType.GROUP_TRANSPORT_RESUME,
+        topicId: AppInboxType.GROUP_TRANSPORT_RESUME,
+        resourceId: request.requestId,
+        contextId: toGroupAppInboxContextId(input.scope, input.groupId, input.authSession),
+        senderId: input.authSession.clientId,
+        data: { scope: input.scope, groupId: input.groupId, request }
+    };
+}
+
+function toResetGroupCommand(
+    input: Extract<GroupStateRouteCommandInput, { operation: 'reset-group-formation'; }>
+): GroupStateCommand<typeof AppInboxType.GROUP_FORMATION_RESET> {
+    const request = withActor(input);
+    validateGroupMutationRequest('resetGroupFormation', request);
+    return {
+        type: AppInboxType.GROUP_FORMATION_RESET,
+        topicId: AppInboxType.GROUP_FORMATION_RESET,
+        resourceId: request.requestId,
+        contextId: toGroupAppInboxContextId(input.scope, input.groupId, input.authSession),
+        senderId: input.authSession.clientId,
+        data: { scope: input.scope, groupId: input.groupId, request }
+    };
+}
+
+function toStartGroupCommand(
+    input: Extract<GroupStateRouteCommandInput, { operation: 'start-group-formation'; }>
+): GroupStateCommand<typeof AppInboxType.GROUP_FORMATION_START> {
+    const request = withActor(input);
+    validateGroupMutationRequest('startGroupFormation', request);
+    return {
+        type: AppInboxType.GROUP_FORMATION_START,
+        topicId: AppInboxType.GROUP_FORMATION_START,
+        resourceId: request.requestId,
+        contextId: toGroupAppInboxContextId(input.scope, input.groupId, input.authSession),
+        senderId: input.authSession.clientId,
+        data: { scope: input.scope, groupId: input.groupId, request }
     };
 }
 

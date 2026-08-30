@@ -187,7 +187,7 @@ function validateAppliedReceipt({
     requirePositiveSafeInteger(causalRevision.groupRevision, `${label} applied groupRevision`);
     // One presence-summary id, plus the formation timers a lifecycle transition
     // arms; the entries themselves are verified canonically at compute time.
-    if (outboxIds.slice(1).some((outboxId) => !outboxId.startsWith('ft-'))) {
+    if (outboxIds.slice(1).some((outboxId) => !outboxId.startsWith('ft-') && !outboxId.startsWith('ct-'))) {
         throw new TypeError(`${label} outboxIds differs from applied outcome`);
     }
 }

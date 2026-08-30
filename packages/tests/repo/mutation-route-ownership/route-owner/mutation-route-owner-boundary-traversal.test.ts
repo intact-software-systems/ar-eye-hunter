@@ -2,12 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import { findMutationBoundaryViolationsFromRoots } from '../boundary/mutation-boundary-analysis.ts';
-import {
-    EXPECTED_MUTATION_ENTRYPOINT_COUNT,
-    EXPECTED_MUTATION_TYPE_COUNT,
-    MUTATION_ROUTE_INVENTORY,
-    validateMutationRouteInventory
-} from '../routing/mutation-routing-inventory.ts';
+import { MUTATION_ROUTE_INVENTORY, validateMutationRouteInventory } from '../routing/mutation-routing-inventory.ts';
 
 const TRANSITIVE_FIXTURE = 'packages/tests/repo/mutation-route-ownership/fixtures/mutation-boundary-transitive/root.ts';
 
@@ -24,23 +19,13 @@ describe('Mutation route owner boundary traversal contracts', { timeout: 30_000 
     });
 
     it('always rejects incomplete and duplicate inventories', () => {
-        expect(validateMutationRouteInventory([])).toContain(
-            `Expected ${EXPECTED_MUTATION_ENTRYPOINT_COUNT} entrypoints, found 0`
-        );
-        expect(validateMutationRouteInventory(MUTATION_ROUTE_INVENTORY.slice(0, EXPECTED_MUTATION_ENTRYPOINT_COUNT - 1))).toContain(
-            `Expected ${EXPECTED_MUTATION_ENTRYPOINT_COUNT} entrypoints, found ${EXPECTED_MUTATION_ENTRYPOINT_COUNT - 1}`
-        );
-        expect(
-            validateMutationRouteInventory([
-                ...MUTATION_ROUTE_INVENTORY.slice(0, EXPECTED_MUTATION_ENTRYPOINT_COUNT - 1),
-                MUTATION_ROUTE_INVENTORY[0]!
-            ])
-        ).toEqual(
-            expect.arrayContaining([
-                expect.stringContaining('Duplicate mutation route'),
-                `Inventory must cover all ${EXPECTED_MUTATION_TYPE_COUNT} AppInbox command types`
-            ])
-        );
+        expect(validateMutationRouteInventory([])).toEqual(expect.arrayContaining([expect.stringContaining('Missing mutation route')]));
+        const truncated = MUTATION_ROUTE_INVENTORY.slice(0, -1);
+        expect(validateMutationRouteInventory(truncated)).toEqual(expect.arrayContaining([expect.stringContaining('Missing mutation route')]));
+        expect(validateMutationRouteInventory([...truncated, MUTATION_ROUTE_INVENTORY[0]!])).toEqual(expect.arrayContaining([
+            expect.stringContaining('Duplicate mutation route'),
+            expect.stringContaining('Missing mutation route')
+        ]));
     });
 
     it('binds authorised websocket types to their real owner methods', () => {

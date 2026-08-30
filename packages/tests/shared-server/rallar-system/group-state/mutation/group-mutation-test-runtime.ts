@@ -127,6 +127,7 @@ export function createGroupAuthorityRead(
         lifecyclePolicy: toLifecyclePolicyRead(options.policy ?? 'absent'),
         activeMemberPrincipalIds: options.activeMemberPrincipalIds ??
             (options.actorIsMember === false ? [] : [actorPrincipalId]),
+        connectTriggerLatch: null,
         plannedLayoutRow: null,
         acceptedLayoutRow: null
     } as GroupMutationRead;

@@ -112,7 +112,8 @@ function validateWriteOutcomeKeys(value: object): void {
         'lifecyclePolicy',
         'acceptedLayoutPromotion',
         'plannedLayoutFence',
-        'layoutTombstones'
+        'layoutTombstones',
+        'connectTriggerLatchEffect'
     ];
     assertExactKeys(value, keys, 'Group mutation computed result');
     assertRequiredKeys(value, keys, 'Group mutation computed result');

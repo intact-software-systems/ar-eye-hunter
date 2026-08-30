@@ -9,6 +9,7 @@ import type {
 } from '@shared/api/group-types.ts';
 import type { MutationActor } from '@shared/api/mutation-actor.ts';
 import { computeGroupPresenceSummaryEntry } from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
+import type { RuntimeStateGuardedBatchEffect } from '../../../runtime-state/guarded-batch/runtime-state-guarded-batch.ts';
 import type { RuntimeStateEntryValue } from '../../../runtime-state/runtime-state-json-store.ts';
 
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
@@ -47,6 +48,7 @@ export interface GroupMutationWriteInput {
     readonly acceptedLayoutPromotion?: Extract<PlannedLayoutPromotion, { outcome: 'apply'; }> | null;
     /** The planned row a layout fence matched, re-asserted at commit. */
     readonly plannedLayoutFence?: GroupPlannedLayoutRow | null;
+    readonly connectTriggerLatchEffect?: RuntimeStateGuardedBatchEffect | null;
     readonly layoutTombstones?: GroupLayoutTombstones | null;
 }
 
@@ -95,23 +97,7 @@ export function computeGroupMutationWriteResult(
         facts,
         members: input.members
     });
-    const summaryOutboxEntries = input.presenceSummaryWork === 'none'
-        ? []
-        : [
-            computeGroupPresenceSummaryEntry(
-                {
-                    effectKind: 'group-presence-summary',
-                    aggregateRef: command.aggregateRef,
-                    commandId: command.commandId,
-                    createdAtEpochMs: facts.nowEpochMs,
-                    expireAtEpochMs: facts.expireAtEpochMs,
-                    acceptedCausalRevision: causalRevision,
-                    event
-                },
-                facts.serviceId
-            )
-        ];
-    const outboxEntries = [...summaryOutboxEntries, ...(input.extraOutboxEntries ?? [])];
+    const outboxEntries = computeMutationFollowupEntries(input, causalRevision, event);
     const acceptedLayoutPromotion = input.acceptedLayoutPromotion ?? null;
     const plannedLayoutFence = input.plannedLayoutFence ?? null;
     const layoutTombstones = input.layoutTombstones ?? null;
@@ -137,7 +123,8 @@ export function computeGroupMutationWriteResult(
         lifecyclePolicy: command.operation === 'createGroup' ? (command.input.lifecyclePolicy ?? null) : null,
         acceptedLayoutPromotion,
         plannedLayoutFence,
-        layoutTombstones
+        layoutTombstones,
+        connectTriggerLatchEffect: input.connectTriggerLatchEffect ?? null
     };
 }
 
@@ -340,4 +327,29 @@ function toGroupEventPayload(
         return { principalId: members[0].principalId };
     }
     return {};
+}
+
+function computeMutationFollowupEntries(
+    input: GroupMutationWriteInput,
+    causalRevision: GroupStateCausalRevision,
+    event: GroupEvent
+): readonly ResourceEntry[] {
+    const { command, facts } = input;
+    const summaryOutboxEntries = input.presenceSummaryWork === 'none'
+        ? []
+        : [
+            computeGroupPresenceSummaryEntry(
+                {
+                    effectKind: 'group-presence-summary',
+                    aggregateRef: command.aggregateRef,
+                    commandId: command.commandId,
+                    createdAtEpochMs: facts.nowEpochMs,
+                    expireAtEpochMs: facts.expireAtEpochMs,
+                    acceptedCausalRevision: causalRevision,
+                    event
+                },
+                facts.serviceId
+            )
+        ];
+    return [...summaryOutboxEntries, ...(input.extraOutboxEntries ?? [])];
 }

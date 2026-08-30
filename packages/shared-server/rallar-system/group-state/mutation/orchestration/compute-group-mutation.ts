@@ -53,6 +53,14 @@ export function computeGroupMutation(
             : idempotency;
     }
 
+    return computeFreshGroupMutation(command, read, facts);
+}
+
+function computeFreshGroupMutation(
+    command: GroupMutationCommand,
+    read: GroupMutationRead,
+    facts: GroupMutationFacts
+): GroupMutationComputed {
     switch (command.operation) {
         case 'createGroup':
             return computeCreate(command, read, facts);
@@ -60,14 +68,12 @@ export function computeGroupMutation(
             return computeUpdate(command, read, facts);
         case 'appointDirector':
             return computeDirector(command, read, facts);
-        case 'startGroupEstablishment':
         case 'planGroupLayout':
         case 'connectGroup':
         case 'startGroupFormation':
         case 'resetGroupFormation':
         case 'activateGroup':
         case 'reconfigureGroup':
-        case 'reopenGroupEstablishment':
         case 'failGroupFormation':
             return computeLifecycleTransition(command, read, facts);
         case 'applyPlannedLayout':

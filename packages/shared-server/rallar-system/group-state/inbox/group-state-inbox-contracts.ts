@@ -198,12 +198,10 @@ export interface AuthenticatedGroupMutationPayloadByType {
     [AppInboxType.GROUP_CREATE]: GroupCreateAppInboxPayload;
     [AppInboxType.GROUP_UPDATE]: GroupUpdateAppInboxPayload;
     [AppInboxType.GROUP_DIRECTOR_APPOINT]: GroupDirectorAppointAppInboxPayload;
-    [AppInboxType.GROUP_ESTABLISHMENT_START]: GroupLifecycleTransitionAppInboxPayload;
     [AppInboxType.GROUP_PLAN]: GroupLifecycleTransitionAppInboxPayload;
     [AppInboxType.GROUP_CONNECT]: GroupConnectAppInboxPayload;
     [AppInboxType.GROUP_ACTIVATE]: GroupLifecycleTransitionAppInboxPayload;
     [AppInboxType.GROUP_RECONFIGURE]: GroupReconfigureAppInboxPayload;
-    [AppInboxType.GROUP_ESTABLISHMENT_REOPEN]: GroupLifecycleTransitionAppInboxPayload;
     [AppInboxType.GROUP_JOIN]: GroupJoinAppInboxPayload;
     [AppInboxType.GROUP_INVITE_CREATE]: GroupInviteCreateAppInboxPayload;
     [AppInboxType.GROUP_INVITE_REVOKE]: GroupInviteRevokeAppInboxPayload;
@@ -247,12 +245,10 @@ export const AUTHENTICATED_GROUP_INBOX_TYPES = [
     AppInboxType.GROUP_CREATE,
     AppInboxType.GROUP_UPDATE,
     AppInboxType.GROUP_DIRECTOR_APPOINT,
-    AppInboxType.GROUP_ESTABLISHMENT_START,
     AppInboxType.GROUP_PLAN,
     AppInboxType.GROUP_CONNECT,
     AppInboxType.GROUP_ACTIVATE,
     AppInboxType.GROUP_RECONFIGURE,
-    AppInboxType.GROUP_ESTABLISHMENT_REOPEN,
     AppInboxType.GROUP_JOIN,
     AppInboxType.GROUP_INVITE_CREATE,
     AppInboxType.GROUP_INVITE_REVOKE,
@@ -279,6 +275,7 @@ export const GROUP_MUTATION_INBOX_TYPES = [
     ...AUTHENTICATED_GROUP_INBOX_TYPES,
     AppInboxType.GROUP_PRESENCE_EXPIRE,
     AppInboxType.GROUP_PRESENCE_SESSION_CLEANUP,
+    AppInboxType.GROUP_FORMATION_AUTOMATION,
     AppInboxType.GROUP_FORMATION_CRITERION,
     AppInboxType.GROUP_TOPOLOGY_PUBLICATION
 ] as const;

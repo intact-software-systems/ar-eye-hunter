@@ -19,6 +19,8 @@ import type {
     GroupStatus
 } from '@shared/api/group-types.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import type { RuntimeStateGuardedBatchEffect } from '../../../runtime-state/guarded-batch/runtime-state-guarded-batch.ts';
+import type { GroupConnectTriggerLatchRow } from '../persistence/group-connect-trigger-latch-repository.ts';
 import type {
     GroupAcceptedLayoutRow,
     GroupPlannedLayoutRow,
@@ -100,18 +102,6 @@ export type GroupMutationCommand =
     | (
         & GroupMutationCommandBase
         & Readonly<{
-            operation: 'startGroupEstablishment' | 'reopenGroupEstablishment';
-            input:
-                & NullableActorInput
-                & Readonly<{
-                    /** Null on principal commands; the retry leg's causal fence when internal. */
-                    expectedFormationEpoch: number | null;
-                }>;
-        }>
-    )
-    | (
-        & GroupMutationCommandBase
-        & Readonly<{
             operation: 'reconfigureGroup';
             input:
                 & NullableActorInput
@@ -150,6 +140,7 @@ export type GroupMutationCommand =
                 & Readonly<{
                     expectedFormationEpoch: number;
                     expectedLayout: GroupLayoutIdentity;
+                    connectTriggerGeneration: string | null;
                 }>;
         }>
     )
@@ -421,6 +412,7 @@ export type GroupMutationRead = Readonly<{
      * indistinguishable here and both fence layout-bound commands closed as
      * no-planned-layout.
      */
+    connectTriggerLatch: GroupConnectTriggerLatchRow | null;
     plannedLayoutRow: GroupPlannedLayoutRow | null;
     /** The accepted slot, read only by the promotion-capable operations. */
     acceptedLayoutRow: GroupAcceptedLayoutRow | null;
@@ -545,6 +537,7 @@ export type GroupMutationComputed =
          */
         plannedLayoutFence: GroupPlannedLayoutRow | null;
         layoutTombstones: GroupLayoutTombstones | null;
+        connectTriggerLatchEffect: RuntimeStateGuardedBatchEffect | null;
     }>;
 
 export type GroupLayoutTombstones = Readonly<{
@@ -556,10 +549,8 @@ export type GroupMutationComputedWrite = Extract<GroupMutationComputed, { outcom
 
 export type GroupLifecycleTransitionOperation = Extract<
     GroupMutationCommand['operation'],
-    | 'startGroupEstablishment'
     | 'activateGroup'
     | 'reconfigureGroup'
-    | 'reopenGroupEstablishment'
     | 'failGroupFormation'
     | 'planGroupLayout'
     | 'connectGroup'
@@ -571,10 +562,8 @@ export function isGroupLifecycleTransitionOperation(
     operation: GroupMutationCommand['operation']
 ): operation is GroupLifecycleTransitionOperation {
     return (
-        operation === 'startGroupEstablishment' ||
         operation === 'activateGroup' ||
         operation === 'reconfigureGroup' ||
-        operation === 'reopenGroupEstablishment' ||
         operation === 'failGroupFormation' ||
         operation === 'planGroupLayout' ||
         operation === 'connectGroup' ||

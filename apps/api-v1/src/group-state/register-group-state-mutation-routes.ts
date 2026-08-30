@@ -1,11 +1,6 @@
 import type { Hono } from 'jsr:@hono/hono@4.11.9';
 
-import type {
-    AppointGroupDirectorRequest,
-    CreateGroupRequest,
-    MutationActorInput,
-    UpdateGroupRequest
-} from '@shared/api/state-types.ts';
+import type { AppointGroupDirectorRequest, CreateGroupRequest, UpdateGroupRequest } from '@shared/api/state-types.ts';
 import { type GroupStateRouteAuthorization } from './group-state-route-authorization.ts';
 import { toGroupStateRouteScope, type GroupStateRouteDependencies } from './group-state-route-contracts.ts';
 import { toGroupMutationErrorResponse } from './group-state-route-errors.ts';
@@ -23,105 +18,6 @@ export function registerGroupStateMutationRoutes(
     registerCreateGroupRoute(app, dependencies);
     registerUpdateGroupRoute(app, dependencies, authorization);
     registerAppointGroupDirectorRoute(app, dependencies);
-    registerStartGroupEstablishmentRoute(app, dependencies);
-    registerActivateGroupRoute(app, dependencies);
-    registerReopenGroupEstablishmentRoute(app, dependencies);
-}
-
-function registerStartGroupEstablishmentRoute(
-    app: Hono,
-    dependencies: GroupStateRouteDependencies
-): void {
-    app.post(
-        `${GROUP_PATH}/lifecycle/establish/requests/:requestId`,
-        async (context) => {
-            try {
-                const authSession = await dependencies.requireApiAuthSession(context.req);
-                const written = toGroupStateResponse({
-                    kind: 'mutation',
-                    written: await dependencies.processGroupAppInbox(
-                        authSession,
-                        toGroupStateCommand({
-                            operation: 'start-group-establishment',
-                            authSession,
-                            scope: toGroupStateRouteScope(context),
-                            groupId: context.req.param('groupId'),
-                            request: await readGroupStateRouteRequest<MutationActorInput>(context)
-                        })
-                    )
-                });
-
-                return context.json(written.snapshot);
-            }
-            catch (error) {
-                return toGroupMutationErrorResponse(context, error);
-            }
-        }
-    );
-}
-
-function registerActivateGroupRoute(
-    app: Hono,
-    dependencies: GroupStateRouteDependencies
-): void {
-    app.post(
-        `${GROUP_PATH}/lifecycle/activate/requests/:requestId`,
-        async (context) => {
-            try {
-                const authSession = await dependencies.requireApiAuthSession(context.req);
-                const written = toGroupStateResponse({
-                    kind: 'mutation',
-                    written: await dependencies.processGroupAppInbox(
-                        authSession,
-                        toGroupStateCommand({
-                            operation: 'activate-group',
-                            authSession,
-                            scope: toGroupStateRouteScope(context),
-                            groupId: context.req.param('groupId'),
-                            request: await readGroupStateRouteRequest<MutationActorInput>(context)
-                        })
-                    )
-                });
-
-                return context.json(written.snapshot);
-            }
-            catch (error) {
-                return toGroupMutationErrorResponse(context, error);
-            }
-        }
-    );
-}
-
-function registerReopenGroupEstablishmentRoute(
-    app: Hono,
-    dependencies: GroupStateRouteDependencies
-): void {
-    app.post(
-        `${GROUP_PATH}/lifecycle/reopen/requests/:requestId`,
-        async (context) => {
-            try {
-                const authSession = await dependencies.requireApiAuthSession(context.req);
-                const written = toGroupStateResponse({
-                    kind: 'mutation',
-                    written: await dependencies.processGroupAppInbox(
-                        authSession,
-                        toGroupStateCommand({
-                            operation: 'reopen-group-establishment',
-                            authSession,
-                            scope: toGroupStateRouteScope(context),
-                            groupId: context.req.param('groupId'),
-                            request: await readGroupStateRouteRequest<MutationActorInput>(context)
-                        })
-                    )
-                });
-
-                return context.json(written.snapshot);
-            }
-            catch (error) {
-                return toGroupMutationErrorResponse(context, error);
-            }
-        }
-    );
 }
 
 function registerCreateGroupRoute(

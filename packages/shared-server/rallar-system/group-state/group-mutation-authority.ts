@@ -257,14 +257,12 @@ export function toDescriptorCommand(
         case 'appointDirector':
         case 'rotateGroupJoinCode':
             return toAggregateMutationCommand(descriptor, randomId);
-        case 'startGroupEstablishment':
         case 'planGroupLayout':
         case 'connectGroup':
         case 'startGroupFormation':
         case 'resetGroupFormation':
         case 'activateGroup':
         case 'reconfigureGroup':
-        case 'reopenGroupEstablishment':
         case 'failGroupFormation':
             return toLifecycleMutationCommand(descriptor, randomId);
         case 'applyPlannedLayout':

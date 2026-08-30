@@ -229,7 +229,6 @@ function decodeGroupMutationOperation(
         case 'createGroup':
         case 'updateGroup':
         case 'appointDirector':
-        case 'startGroupEstablishment':
         case 'planGroupLayout':
         case 'connectGroup':
         case 'startGroupFormation':
@@ -238,7 +237,6 @@ function decodeGroupMutationOperation(
         case 'resumeGroupTransport':
         case 'activateGroup':
         case 'reconfigureGroup':
-        case 'reopenGroupEstablishment':
         case 'failGroupFormation':
         case 'applyPlannedLayout':
         case 'joinGroup':

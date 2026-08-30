@@ -49,14 +49,12 @@ type AggregateOperation = Extract<
     | 'updateGroup'
     | 'appointDirector'
     | 'rotateGroupJoinCode'
-    | 'startGroupEstablishment'
     | 'reconfigureGroup'
     | 'planGroupLayout'
     | 'connectGroup'
     | 'startGroupFormation'
     | 'resetGroupFormation'
     | 'activateGroup'
-    | 'reopenGroupEstablishment'
     | 'failGroupFormation'
     | 'applyPlannedLayout'
 >;
@@ -76,26 +74,7 @@ function validateAggregateMutationInput(
         }
     };
     if (operation === 'createGroup') {
-        requireNonEmptyString(input.groupId, 'Group createGroup groupId');
-        optionalString('slug');
-        requireNonEmptyString(input.displayName, 'Group createGroup displayName');
-        optionalString('description');
-        requireOneOf(input.kind, ['party', 'room', 'team', 'custom'], 'Group kind');
-        if (input.joinMode !== undefined) {
-            requireOneOf(input.joinMode, ['invite-only', 'code', 'open'], 'Group joinMode');
-        }
-        optionalPositiveInteger('maxMembers');
-        optionalPositiveInteger('maxSessionsPerMember');
-        if (input.metadata !== undefined) {
-            requireRecord(input.metadata, 'Group metadata');
-        }
-        if (input.lifecyclePolicy !== undefined) {
-            requireJsonSafe(input.lifecyclePolicy, 'Group lifecyclePolicy');
-            requireGroupLifecyclePolicyInputShape(input.lifecyclePolicy as JsonWireValue);
-        }
-        requireNonEmptyString(input.createdByPrincipalId, 'Group createGroup createdByPrincipalId');
-        optionalPositiveInteger('expiresAtEpochMs');
-        optionalPositiveInteger('purgeAfterEpochMs');
+        validateGroupCreateInput(input, optionalString, optionalPositiveInteger);
         return;
     }
     if (operation === 'updateGroup') {
@@ -232,14 +211,12 @@ function isAggregateOperation(
         'updateGroup',
         'appointDirector',
         'rotateGroupJoinCode',
-        'startGroupEstablishment',
         'reconfigureGroup',
         'planGroupLayout',
         'connectGroup',
         'startGroupFormation',
         'resetGroupFormation',
         'activateGroup',
-        'reopenGroupEstablishment',
         'failGroupFormation',
         'applyPlannedLayout'
     ].includes(operation);
@@ -251,4 +228,31 @@ function isPresenceOperation(
     operation: GroupMutationCommand['operation']
 ): operation is PresenceOperation {
     return ['connectPresence', 'heartbeatPresence', 'disconnectPresence'].includes(operation);
+}
+
+function validateGroupCreateInput(
+    input: OperationInputRecord,
+    optionalString: (key: string) => void,
+    optionalPositiveInteger: (key: string) => void
+): void {
+    requireNonEmptyString(input.groupId, 'Group createGroup groupId');
+    optionalString('slug');
+    requireNonEmptyString(input.displayName, 'Group createGroup displayName');
+    optionalString('description');
+    requireOneOf(input.kind, ['party', 'room', 'team', 'custom'], 'Group kind');
+    if (input.joinMode !== undefined) {
+        requireOneOf(input.joinMode, ['invite-only', 'code', 'open'], 'Group joinMode');
+    }
+    optionalPositiveInteger('maxMembers');
+    optionalPositiveInteger('maxSessionsPerMember');
+    if (input.metadata !== undefined) {
+        requireRecord(input.metadata, 'Group metadata');
+    }
+    if (input.lifecyclePolicy !== undefined) {
+        requireJsonSafe(input.lifecyclePolicy, 'Group lifecyclePolicy');
+        requireGroupLifecyclePolicyInputShape(input.lifecyclePolicy as JsonWireValue);
+    }
+    requireNonEmptyString(input.createdByPrincipalId, 'Group createGroup createdByPrincipalId');
+    optionalPositiveInteger('expiresAtEpochMs');
+    optionalPositiveInteger('purgeAfterEpochMs');
 }

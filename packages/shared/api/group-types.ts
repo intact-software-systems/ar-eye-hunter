@@ -90,7 +90,7 @@ type GroupBase =
 
         /**
          * When the current establishment phase began -- set by the
-         * start-establishment and reopen-establishment transitions, because
+         * connect transition into connecting or reconnecting, because
          * `updated` is overwritten by any group write and the epoch is a counter,
          * not a time. Null before the first establishment. The deadline half of
          * the activation criterion measures from here.

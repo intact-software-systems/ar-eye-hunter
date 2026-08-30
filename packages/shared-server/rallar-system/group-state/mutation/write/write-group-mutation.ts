@@ -42,32 +42,7 @@ export function materializeGroupStateGuardedBatch(
 ): RuntimeStateGuardedBatch {
     const effects: RuntimeStateGuardedBatchEffect[] = [];
 
-    if (computed.presenceAdmission) {
-        const admission = computed.presenceAdmission;
-        effects.push({
-            effectId: 'presence-admission',
-            ...(admission.operation === 'insert'
-                ? groupStateInsertPresenceAdmissionDescriptor(admission.value)
-                : groupStateUpdatePresenceAdmissionDescriptor(admission.value, admission.expectedRevision))
-        });
-    }
-
-    for (const member of computed.members) {
-        effects.push({
-            effectId: `member:${member.principalId}`,
-            ...groupStateMemberPutDescriptor(member)
-        });
-    }
-
-    if (computed.initialPresenceSummary) {
-        const summary = computed.initialPresenceSummary;
-        effects.push({
-            effectId: 'initial-presence-summary',
-            ...(summary.operation === 'insert'
-                ? groupStateInsertPresenceSummaryDescriptor(summary.value)
-                : groupStateUpdatePresenceSummaryDescriptor(summary.value, summary.expectedRevision))
-        });
-    }
+    effects.push(...materializePresenceAndMembershipEffects(computed));
 
     if (computed.acceptedLayoutPromotion) {
         effects.push(...toGroupLayoutPromotionEffects(computed.acceptedLayoutPromotion));
@@ -79,6 +54,10 @@ export function materializeGroupStateGuardedBatch(
 
     if (computed.plannedLayoutFence) {
         effects.push(toPlannedLayoutFenceEffect(computed.plannedLayoutFence));
+    }
+
+    if (computed.connectTriggerLatchEffect) {
+        effects.push(computed.connectTriggerLatchEffect);
     }
 
     if (computed.idempotency) {
@@ -155,4 +134,38 @@ function materializeGuard(computed: GroupMutationComputedWrite): RuntimeStateGua
     return guard.operation === 'insert'
         ? groupStateInsertPresenceDescriptor(guard.value)
         : groupStateUpdatePresenceDescriptor(guard.value, guard.expectedRevision);
+}
+
+function materializePresenceAndMembershipEffects(
+    computed: GroupMutationComputedWrite
+): RuntimeStateGuardedBatchEffect[] {
+    const effects: RuntimeStateGuardedBatchEffect[] = [];
+    if (computed.presenceAdmission) {
+        const admission = computed.presenceAdmission;
+        effects.push({
+            effectId: 'presence-admission',
+            ...(admission.operation === 'insert'
+                ? groupStateInsertPresenceAdmissionDescriptor(admission.value)
+                : groupStateUpdatePresenceAdmissionDescriptor(admission.value, admission.expectedRevision))
+        });
+    }
+
+    for (const member of computed.members) {
+        effects.push({
+            effectId: `member:${member.principalId}`,
+            ...groupStateMemberPutDescriptor(member)
+        });
+    }
+
+    if (computed.initialPresenceSummary) {
+        const summary = computed.initialPresenceSummary;
+        effects.push({
+            effectId: 'initial-presence-summary',
+            ...(summary.operation === 'insert'
+                ? groupStateInsertPresenceSummaryDescriptor(summary.value)
+                : groupStateUpdatePresenceSummaryDescriptor(summary.value, summary.expectedRevision))
+        });
+    }
+
+    return effects;
 }

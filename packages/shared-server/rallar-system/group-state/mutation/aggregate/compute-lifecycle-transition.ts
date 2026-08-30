@@ -8,6 +8,7 @@ import {
 import { beginsGroupEstablishmentAt } from '@shared/api/group-lifecycle/resolve-formation-stage-entry.ts';
 import type { Group } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
+import { computeGroupConnectTrigger } from './compute-group-connect-trigger.ts';
 
 import { computeFormationTimerEntries } from '../../formation-timer-outbox-entry.ts';
 import { canCommandGroupLifecycleTransition } from '../../policy/group-lifecycle-policy.ts';
@@ -33,14 +34,12 @@ import { assertActive, assertAllowed, toGroupAuthorityPolicyInput } from './grou
 import { resolveGroupAuthorityPolicy, toCorruptPolicyRejection } from './resolve-group-authority-policy.ts';
 
 const LIFECYCLE_TRANSITION_BY_OPERATION = {
-    startGroupEstablishment: 'start-establishment',
     planGroupLayout: 'plan',
     connectGroup: 'connect',
     startGroupFormation: 'start',
     resetGroupFormation: 'reset',
     activateGroup: 'activate',
     reconfigureGroup: 'reconfigure',
-    reopenGroupEstablishment: 'reopen-establishment',
     failGroupFormation: 'fail-formation'
 } as const satisfies Record<GroupLifecycleTransitionOperation, GroupLifecycleTransition>;
 
@@ -107,40 +106,7 @@ export function computeLifecycleTransition(
             formationElectorate: read.activeMemberPrincipalIds,
             promotion
         });
-    return computeGroupMutationWriteResult({
-        acceptedLayoutPromotion: promotion?.outcome === 'apply' ? promotion : null,
-        layoutTombstones: command.operation === 'resetGroupFormation'
-            ? {
-                planned: toLayoutTombstone(read.plannedLayoutRow),
-                accepted: toLayoutTombstone(read.acceptedLayoutRow)
-            }
-            : null,
-        // A promotion already re-asserts the planned row. `connect` dials a
-        // candidate without promoting it (decision 42), so it carries the
-        // guard itself and a replan landing between the read and the commit
-        // conflicts the batch instead of dialing a superseded candidate
-        // (decisions 19/32). A fenced formation failure deliberately keeps
-        // today's behavior: it discards the plan rather than binding to it,
-        // so guarding the row would only make a concurrent replan retry it.
-        plannedLayoutFence: command.operation === 'connectGroup' && command.input.expectedLayout !== null
-            ? read.plannedLayoutRow
-            : null,
-        command,
-        read,
-        facts,
-        guard: {
-            kind: 'group',
-            operation: 'update',
-            value: next,
-            expectedRevision: stored.entry.revision
-        },
-        members: [],
-        initialPresenceSummary: null,
-        presenceAdmission: null,
-        eventType: 'group-updated',
-        presenceSummaryWork: 'enqueue',
-        extraOutboxEntries: computeFormationTimerEntries({ command, next, policy, facts })
-    });
+    return computeLifecycleTransitionWrite({ command, read, facts, next, policy, promotion });
 }
 
 /**
@@ -326,7 +292,7 @@ function validateLifecycleTransitionAuthority(
             transition: GroupLifecycleTransition;
         }>
 ): void {
-    if (facts.internalAuthority === 'formation-criterion') {
+    if (facts.internalAuthority === 'formation-criterion' || facts.internalAuthority === 'formation-automation') {
         return;
     }
     if (command.operation === 'failGroupFormation') {
@@ -338,4 +304,54 @@ function validateLifecycleTransitionAuthority(
             transition
         })
     );
+}
+
+interface LifecycleTransitionWriteInput extends LifecycleTransitionDecisionInput {
+    readonly next: Group;
+    readonly policy: GroupLifecyclePolicy;
+    readonly promotion: PlannedLayoutPromotion | null;
+}
+
+function computeLifecycleTransitionWrite(
+    { command, read, facts, next, policy, promotion }: LifecycleTransitionWriteInput
+): GroupMutationComputed {
+    const connectTrigger = computeGroupConnectTrigger({ command, read, facts, next });
+    return computeGroupMutationWriteResult({
+        connectTriggerLatchEffect: connectTrigger.effect,
+        acceptedLayoutPromotion: promotion?.outcome === 'apply' ? promotion : null,
+        layoutTombstones: command.operation === 'resetGroupFormation'
+            ? {
+                planned: toLayoutTombstone(read.plannedLayoutRow),
+                accepted: toLayoutTombstone(read.acceptedLayoutRow)
+            }
+            : null,
+        // A promotion already re-asserts the planned row. `connect` dials a
+        // candidate without promoting it (decision 42), so it carries the
+        // guard itself and a replan landing between the read and the commit
+        // conflicts the batch instead of dialing a superseded candidate
+        // (decisions 19/32). A fenced formation failure deliberately keeps
+        // today's behavior: it discards the plan rather than binding to it,
+        // so guarding the row would only make a concurrent replan retry it.
+        plannedLayoutFence: command.operation === 'connectGroup' && command.input.expectedLayout !== null
+            ? read.plannedLayoutRow
+            : null,
+        command,
+        read,
+        facts,
+        guard: {
+            kind: 'group',
+            operation: 'update',
+            value: next,
+            expectedRevision: read.group!.entry.revision
+        },
+        members: [],
+        initialPresenceSummary: null,
+        presenceAdmission: null,
+        eventType: 'group-updated',
+        presenceSummaryWork: 'enqueue',
+        extraOutboxEntries: [
+            ...computeFormationTimerEntries({ command, next, policy, facts }),
+            ...connectTrigger.outboxEntries
+        ]
+    });
 }

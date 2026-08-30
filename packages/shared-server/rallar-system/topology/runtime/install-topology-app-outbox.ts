@@ -12,10 +12,12 @@ import type { GroupTopologyGroupSnapshotReader } from '../planning/group-topolog
 import type { GroupTopologyPlanningService } from '../planning/group-topology-planning-service.ts';
 import { createFormationTimerWorkHandler } from '../replay/work/create-formation-timer-work-handler.ts';
 import {
-    createRtcTopologyWorkHandler,
-    type RtcTopologyDeliveryOptions
-} from '../replay/work/create-rtc-topology-work-handler.ts';
+    createGroupConnectTriggerWorkHandler,
+    type GroupFormationAutomationPort
+} from '../replay/work/create-group-connect-trigger-work-handler.ts';
+import { createRtcTopologyWorkHandler } from '../replay/work/create-rtc-topology-work-handler.ts';
 import { createTopologyPromotionWorkHandler } from '../replay/work/create-topology-promotion-work-handler.ts';
+import type { RtcTopologyDeliveryOptions } from '../replay/work/write-rtc-topology-publication-transaction.ts';
 
 export interface InstallTopologyAppOutboxOptions {
     readonly database: PSqlSql;
@@ -34,6 +36,7 @@ export interface InstallTopologyAppOutboxOptions {
     readonly rttRefinementService?: RtcRttRefinementService;
     readonly topologyDelivery?: RtcTopologyDeliveryOptions;
     readonly nowEpochMs: () => number;
+    readonly formationAutomation: GroupFormationAutomationPort;
     readonly formationCriterion?: Readonly<{
         readLifecyclePolicy: (ref: GroupRef) => Promise<GroupLifecyclePolicyRead>;
         submitCommand: (command: GroupMutationCommand, atEpochMs: number) => Promise<void>;
@@ -57,6 +60,10 @@ export function installTopologyAppOutbox(
         wake: options.wake,
         now: options.nowEpochMs
     });
+    options.outboxQueueReader.onOutboxMessageDo(
+        AppOutboxType.GROUP_CONNECT_TRIGGER,
+        createGroupConnectTriggerWorkHandler(options.formationAutomation)
+    );
     if (options.formationCriterion) {
         options.outboxQueueReader.onOutboxMessageDo(
             AppOutboxType.FORMATION_TIMER,
@@ -67,6 +74,7 @@ export function installTopologyAppOutbox(
                 topologyPlanning: options.topologyPlanning,
                 readLifecyclePolicy: options.formationCriterion.readLifecyclePolicy,
                 submitCommand: options.formationCriterion.submitCommand,
+                submitAutomationCommand: options.formationAutomation.submitCommand,
                 nowEpochMs: options.nowEpochMs
             })
         );
@@ -90,6 +98,7 @@ export function installTopologyAppOutbox(
             rttRefinementService: options.rttRefinementService,
             topologyDelivery: options.topologyDelivery,
             formationCriterion: options.formationCriterion,
+            formationAutomation: options.formationAutomation,
             topologyPublication: options.topologyPublication,
             serviceId: options.senderId,
             wakeQueue: options.wake,

@@ -29,6 +29,7 @@ export function decodeGroupStateAppInboxCommand(
 ): JsonWireValue {
     if (
         type === AppInboxType.GROUP_PRESENCE_EXPIRE ||
+        type === AppInboxType.GROUP_FORMATION_AUTOMATION ||
         type === AppInboxType.GROUP_FORMATION_CRITERION ||
         type === AppInboxType.GROUP_TOPOLOGY_PUBLICATION
     ) {
@@ -116,6 +117,7 @@ function isAuthenticatedGroupMutationType(
     return type.startsWith('GROUP_') &&
         type !== AppInboxType.GROUP_PRESENCE_EXPIRE &&
         type !== AppInboxType.GROUP_PRESENCE_SESSION_CLEANUP &&
+        type !== AppInboxType.GROUP_FORMATION_AUTOMATION &&
         type !== AppInboxType.GROUP_FORMATION_CRITERION &&
         type !== AppInboxType.GROUP_TOPOLOGY_PUBLICATION;
 }
@@ -130,8 +132,6 @@ function toGroupMutationOperation(
             return 'updateGroup';
         case AppInboxType.GROUP_DIRECTOR_APPOINT:
             return 'appointDirector';
-        case AppInboxType.GROUP_ESTABLISHMENT_START:
-            return 'startGroupEstablishment';
         case AppInboxType.GROUP_TRANSPORT_PAUSE:
             return 'pauseGroupTransport';
         case AppInboxType.GROUP_TRANSPORT_RESUME:
@@ -148,8 +148,6 @@ function toGroupMutationOperation(
             return 'activateGroup';
         case AppInboxType.GROUP_RECONFIGURE:
             return 'reconfigureGroup';
-        case AppInboxType.GROUP_ESTABLISHMENT_REOPEN:
-            return 'reopenGroupEstablishment';
         case AppInboxType.GROUP_JOIN:
             return 'joinGroup';
         case AppInboxType.GROUP_INVITE_CREATE:

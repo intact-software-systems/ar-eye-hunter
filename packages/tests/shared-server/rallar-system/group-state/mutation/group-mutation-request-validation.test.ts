@@ -50,9 +50,9 @@ describe('group mutation request validation', () => {
     // The lifecycle request rows exclude the criterion fence keys entirely, so
     // a principal request arrives without them and must validate cleanly.
     it.each([
-        'startGroupEstablishment' as const,
+        'planGroupLayout' as const,
         'activateGroup' as const,
-        'reopenGroupEstablishment' as const
+        'reconfigureGroup' as const
     ])('accepts a fence-less principal %s request', (operation) => {
         expect(() =>
             validateGroupMutationRequest(operation, {

@@ -27,6 +27,12 @@ export function validateLifecycleGroupMutationCommandInput({
     // A wire-decoded criterion command missing its fence keys is malformed
     // here, never a lying stale-epoch rejection deep in compute.
     assertRequiredKeys(input, requiredInputKeys, `Group ${operation} input`);
+    if (
+        operation === 'connectGroup' && input.connectTriggerGeneration !== null &&
+        (typeof input.connectTriggerGeneration !== 'string' || input.connectTriggerGeneration.length === 0)
+    ) {
+        throw new TypeError('Group connect trigger generation must be null or a non-empty string');
+    }
     if (operation === 'connectGroup' || operation === 'applyPlannedLayout') {
         validateRequiredLayoutFence(input, operation);
         return;

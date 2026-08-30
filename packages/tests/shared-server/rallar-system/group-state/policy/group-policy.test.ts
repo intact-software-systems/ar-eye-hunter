@@ -566,7 +566,7 @@ describe('group policy helpers', () => {
                     snapshot: snapshot({ lifecycleState: 'active' }),
                     actor: ACTOR,
                     policy: resolveGroupLifecyclePolicyPreset('optimistic'),
-                    transition: 'start-establishment',
+                    transition: 'plan',
                     activeMemberPrincipalIds: [ACTOR.principalId ?? '']
                 })
             ),
@@ -588,7 +588,7 @@ describe('group policy helpers', () => {
                     snapshot: snapshot({ lifecycleState: 'forming', formationElectorate: [] }),
                     actor: ACTOR,
                     policy: resolveGroupLifecyclePolicyPreset('match'),
-                    transition: 'start-establishment',
+                    transition: 'plan',
                     activeMemberPrincipalIds: [ACTOR.principalId ?? '']
                 })
             ),

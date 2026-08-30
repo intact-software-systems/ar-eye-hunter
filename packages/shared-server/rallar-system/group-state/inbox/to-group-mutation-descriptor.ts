@@ -11,14 +11,12 @@ export function toGroupMutationDescriptor(
         case AppInboxType.GROUP_CREATE:
         case AppInboxType.GROUP_UPDATE:
         case AppInboxType.GROUP_DIRECTOR_APPOINT:
-        case AppInboxType.GROUP_ESTABLISHMENT_START:
         case AppInboxType.GROUP_PLAN:
         case AppInboxType.GROUP_CONNECT:
         case AppInboxType.GROUP_FORMATION_START:
         case AppInboxType.GROUP_FORMATION_RESET:
         case AppInboxType.GROUP_ACTIVATE:
         case AppInboxType.GROUP_RECONFIGURE:
-        case AppInboxType.GROUP_ESTABLISHMENT_REOPEN:
         case AppInboxType.GROUP_JOIN_CODE_ROTATE:
             return toAggregateMutationDescriptor(enqueue);
         case AppInboxType.GROUP_JOIN:
@@ -86,12 +84,10 @@ export function toGroupMutationDescriptorTargetIdentity(
         case 'createGroup':
         case 'updateGroup':
         case 'appointDirector':
-        case 'startGroupEstablishment':
         case 'planGroupLayout':
         case 'connectGroup':
         case 'startGroupFormation':
         case 'resetGroupFormation':
-        case 'reopenGroupEstablishment':
         case 'activateGroup':
         case 'reconfigureGroup':
         case 'failGroupFormation':
@@ -116,120 +112,46 @@ function toAggregateMutationDescriptor(
         | { readonly type: typeof AppInboxType.GROUP_CREATE; }
         | { readonly type: typeof AppInboxType.GROUP_UPDATE; }
         | { readonly type: typeof AppInboxType.GROUP_DIRECTOR_APPOINT; }
-        | { readonly type: typeof AppInboxType.GROUP_ESTABLISHMENT_START; }
         | { readonly type: typeof AppInboxType.GROUP_PLAN; }
         | { readonly type: typeof AppInboxType.GROUP_CONNECT; }
         | { readonly type: typeof AppInboxType.GROUP_FORMATION_START; }
         | { readonly type: typeof AppInboxType.GROUP_FORMATION_RESET; }
         | { readonly type: typeof AppInboxType.GROUP_ACTIVATE; }
         | { readonly type: typeof AppInboxType.GROUP_RECONFIGURE; }
-        | { readonly type: typeof AppInboxType.GROUP_ESTABLISHMENT_REOPEN; }
         | { readonly type: typeof AppInboxType.GROUP_JOIN_CODE_ROTATE; }
     >
 ): GroupMutationDescriptor {
     const enqueueType = enqueue.type;
+    if (enqueue.type === AppInboxType.GROUP_CREATE) {
+        return mutationDescriptor({
+            operation: 'createGroup',
+            scope: enqueue.data.scope,
+            groupId: enqueue.data.request.groupId,
+            request: enqueue.data.request
+        });
+    }
+    const common = { scope: enqueue.data.scope, groupId: enqueue.data.groupId, request: enqueue.data.request };
     switch (enqueue.type) {
-        case AppInboxType.GROUP_CREATE: {
-            return mutationDescriptor({
-                operation: 'createGroup',
-                scope: enqueue.data.scope,
-                groupId: enqueue.data.request.groupId,
-                request: enqueue.data.request
-            });
-        }
-        case AppInboxType.GROUP_UPDATE: {
-            return mutationDescriptor({
-                operation: 'updateGroup',
-                scope: enqueue.data.scope,
-                groupId: enqueue.data.groupId,
-                request: enqueue.data.request
-            });
-        }
-        case AppInboxType.GROUP_DIRECTOR_APPOINT: {
-            return mutationDescriptor({
-                operation: 'appointDirector',
-                scope: enqueue.data.scope,
-                groupId: enqueue.data.groupId,
-                request: enqueue.data.request
-            });
-        }
-        case AppInboxType.GROUP_ESTABLISHMENT_START: {
-            return mutationDescriptor({
-                operation: 'startGroupEstablishment',
-                scope: enqueue.data.scope,
-                groupId: enqueue.data.groupId,
-                request: enqueue.data.request
-            });
-        }
-        case AppInboxType.GROUP_PLAN: {
-            return mutationDescriptor({
-                operation: 'planGroupLayout',
-                scope: enqueue.data.scope,
-                groupId: enqueue.data.groupId,
-                request: enqueue.data.request
-            });
-        }
-        case AppInboxType.GROUP_CONNECT: {
-            return mutationDescriptor({
-                operation: 'connectGroup',
-                scope: enqueue.data.scope,
-                groupId: enqueue.data.groupId,
-                request: enqueue.data.request
-            });
-        }
-        case AppInboxType.GROUP_FORMATION_START: {
-            return mutationDescriptor({
-                operation: 'startGroupFormation',
-                scope: enqueue.data.scope,
-                groupId: enqueue.data.groupId,
-                request: enqueue.data.request
-            });
-        }
-        case AppInboxType.GROUP_FORMATION_RESET: {
-            return mutationDescriptor({
-                operation: 'resetGroupFormation',
-                scope: enqueue.data.scope,
-                groupId: enqueue.data.groupId,
-                request: enqueue.data.request
-            });
-        }
-        case AppInboxType.GROUP_ACTIVATE: {
-            return mutationDescriptor({
-                operation: 'activateGroup',
-                scope: enqueue.data.scope,
-                groupId: enqueue.data.groupId,
-                request: enqueue.data.request
-            });
-        }
-        case AppInboxType.GROUP_RECONFIGURE: {
-            return mutationDescriptor({
-                operation: 'reconfigureGroup',
-                scope: enqueue.data.scope,
-                groupId: enqueue.data.groupId,
-                request: enqueue.data.request
-            });
-        }
-        case AppInboxType.GROUP_ESTABLISHMENT_REOPEN: {
-            return mutationDescriptor({
-                operation: 'reopenGroupEstablishment',
-                scope: enqueue.data.scope,
-                groupId: enqueue.data.groupId,
-                request: enqueue.data.request
-            });
-        }
-        case AppInboxType.GROUP_JOIN_CODE_ROTATE: {
-            return mutationDescriptor({
-                operation: 'rotateGroupJoinCode',
-                scope: enqueue.data.scope,
-                groupId: enqueue.data.groupId,
-                request: enqueue.data.request
-            });
-        }
-        default: {
-            const exhaustiveEnqueue: never = enqueue;
-            void exhaustiveEnqueue;
+        case AppInboxType.GROUP_UPDATE:
+            return mutationDescriptor({ ...common, operation: 'updateGroup' });
+        case AppInboxType.GROUP_DIRECTOR_APPOINT:
+            return mutationDescriptor({ ...common, operation: 'appointDirector' });
+        case AppInboxType.GROUP_PLAN:
+            return mutationDescriptor({ ...common, operation: 'planGroupLayout' });
+        case AppInboxType.GROUP_CONNECT:
+            return mutationDescriptor({ ...common, operation: 'connectGroup' });
+        case AppInboxType.GROUP_FORMATION_START:
+            return mutationDescriptor({ ...common, operation: 'startGroupFormation' });
+        case AppInboxType.GROUP_FORMATION_RESET:
+            return mutationDescriptor({ ...common, operation: 'resetGroupFormation' });
+        case AppInboxType.GROUP_ACTIVATE:
+            return mutationDescriptor({ ...common, operation: 'activateGroup' });
+        case AppInboxType.GROUP_RECONFIGURE:
+            return mutationDescriptor({ ...common, operation: 'reconfigureGroup' });
+        case AppInboxType.GROUP_JOIN_CODE_ROTATE:
+            return mutationDescriptor({ ...common, operation: 'rotateGroupJoinCode' });
+        default:
             throw new TypeError(`Unsupported aggregate AppInbox type: ${enqueueType}`);
-        }
     }
 }
 
@@ -245,56 +167,42 @@ function toAdmissionMutationDescriptor(
     >
 ): GroupMutationDescriptor {
     const enqueueType = enqueue.type;
+    const common = { scope: enqueue.data.scope, groupId: enqueue.data.groupId, request: enqueue.data.request };
     switch (enqueue.type) {
         case AppInboxType.GROUP_JOIN: {
-            return mutationDescriptor({
-                operation: 'joinGroup',
-                scope: enqueue.data.scope,
-                groupId: enqueue.data.groupId,
-                request: enqueue.data.request
-            });
+            return mutationDescriptor({ operation: 'joinGroup', ...common });
         }
         case AppInboxType.GROUP_INVITE_CREATE: {
             return mutationDescriptor({
                 operation: 'createGroupInvite',
-                scope: enqueue.data.scope,
-                groupId: enqueue.data.groupId,
-                request: enqueue.data.request,
+                ...common,
                 targetPrincipalId: enqueue.data.principalId
             });
         }
         case AppInboxType.GROUP_INVITE_REVOKE: {
             return mutationDescriptor({
                 operation: 'revokeGroupInvite',
-                scope: enqueue.data.scope,
-                groupId: enqueue.data.groupId,
-                request: enqueue.data.request,
+                ...common,
                 targetPrincipalId: enqueue.data.principalId
             });
         }
         case AppInboxType.GROUP_INVITE_ACCEPT: {
             return mutationDescriptor({
                 operation: 'acceptGroupInvite',
-                scope: enqueue.data.scope,
-                groupId: enqueue.data.groupId,
-                request: enqueue.data.request
+                ...common
             });
         }
         case AppInboxType.GROUP_ADMISSION_GRANT: {
             return mutationDescriptor({
                 operation: 'grantGroupAdmission',
-                scope: enqueue.data.scope,
-                groupId: enqueue.data.groupId,
-                request: enqueue.data.request,
+                ...common,
                 targetPrincipalId: enqueue.data.principalId
             });
         }
         case AppInboxType.GROUP_ADMISSION_DECLINE: {
             return mutationDescriptor({
                 operation: 'declineGroupAdmission',
-                scope: enqueue.data.scope,
-                groupId: enqueue.data.groupId,
-                request: enqueue.data.request,
+                ...common,
                 targetPrincipalId: enqueue.data.principalId
             });
         }

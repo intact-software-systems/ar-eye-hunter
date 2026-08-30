@@ -59,7 +59,7 @@ function command(commandCase: CommandCase) {
         snapshot: snapshot(commandCase.overrides, commandCase.members),
         actor: { principalId: commandCase.actorPrincipalId },
         policy: commandCase.policy,
-        transition: commandCase.transition ?? 'start-establishment',
+        transition: commandCase.transition ?? 'plan',
         activeMemberPrincipalIds: commandCase.activeMemberPrincipalIds ??
             commandCase.members.filter((candidate) => candidate.status === 'active').map((candidate) => candidate.principalId)
     });
@@ -202,7 +202,7 @@ describe('canCommandGroupLifecycleTransition', () => {
         expect(result).toMatchObject({ allowed: false, code: 'lifecycle-transition-invalid' });
     });
 
-    it('authorizes activate and reopen-establishment against their own source states', () => {
+    it('authorizes activate and reconfigure against their own source states', () => {
         const members = [member('alice', 'owner')];
         expect(
             command({
@@ -219,7 +219,7 @@ describe('canCommandGroupLifecycleTransition', () => {
                 members,
                 actorPrincipalId: 'alice',
                 policy: OPTIMISTIC,
-                transition: 'reopen-establishment'
+                transition: 'reconfigure'
             })
         ).toEqual({ allowed: true });
     });

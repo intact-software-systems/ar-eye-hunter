@@ -1,3 +1,5 @@
+import { jsonEquals } from '@shared/repository/state-utils.ts';
+import { computeGroupConnectTrigger } from '../aggregate/compute-group-connect-trigger.ts';
 import type {
     GroupMutationCommand,
     GroupMutationComputed,
@@ -20,6 +22,12 @@ export interface ValidateComputedGroupMutationWriteInput {
 export function validateComputedGroupMutationWrite(
     input: ValidateComputedGroupMutationWriteInput
 ): void {
+    const trigger = input.computed.guard.kind === 'group'
+        ? computeGroupConnectTrigger({ ...input, next: input.computed.guard.value })
+        : { effect: null };
+    if (!jsonEquals(input.computed.connectTriggerLatchEffect, trigger.effect)) {
+        throw new TypeError('Computed connect trigger effect differs from canonical intent');
+    }
     validateComputedGroupMutationGuard(input);
     validateComputedGroupMutationMembers(input);
     validateComputedGroupMutationEvent(input);

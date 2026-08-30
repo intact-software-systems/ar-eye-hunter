@@ -9,6 +9,7 @@ const PATHS = {
     gm: 'apps/api-v1/src/group-state/register-group-membership-routes.ts',
     gp: 'apps/api-v1/src/group-state/register-group-presence-routes.ts',
     gr: 'apps/api-v1/src/group-state/register-group-state-routes.ts',
+    gl: 'apps/api-v1/src/group-state/register-group-lifecycle-routes.ts',
     gs: 'apps/api-v1/src/group-state/register-group-state-mutation-routes.ts',
     gc: 'apps/api-v1/src/group-state/to-group-state-command.ts',
     t: 'apps/api-v1/src/routes/graph-topology-routes.ts',
@@ -57,34 +58,16 @@ export function decodeMutationRouteInventory(
 function toMutationRouteInventoryEntry(
     row: MutationRouteInventoryRow
 ): MutationRouteInventoryEntry {
-    const {
-        transport,
-        entrypoint,
-        type,
-        source,
-        registrationMarker,
-        enqueueSource,
-        enqueueMarker,
-        ownerSource,
-        owner,
-        typeOwnerSource,
-        dispatchSource,
-        operationDiscriminant,
-        familyRegistrationMarker,
-        rootSource,
-        constructionRootMarker,
-        familyOwnerOrder
-    } = row;
-    const sourcePath = readStringProperty(PATHS, source);
-    const enqueueSourcePath = readStringProperty(PATHS, enqueueSource);
-    const rootSourcePath = rootSource ? readStringProperty(PATHS, rootSource) : undefined;
+    const sourcePath = readStringProperty(PATHS, row.source);
+    const enqueueSourcePath = readStringProperty(PATHS, row.enqueueSource);
+    const rootSourcePath = row.rootSource ? readStringProperty(PATHS, row.rootSource) : undefined;
     const { ownerSourcePath, ownerDispatchPath, typeOwnerSourcePath, dispatchSourcePath } = resolveInventoryOwnerPaths({
-        dispatchSource,
-        owner,
-        ownerSource,
-        typeOwnerSource
+        dispatchSource: row.dispatchSource,
+        owner: row.owner,
+        ownerSource: row.ownerSource,
+        typeOwnerSource: row.typeOwnerSource
     });
-    const appInboxType = Object.values(AppInboxType).find((candidate) => candidate === type);
+    const appInboxType = Object.values(AppInboxType).find((candidate) => candidate === row.type);
     if (
         !sourcePath ||
         !enqueueSourcePath ||
@@ -93,29 +76,29 @@ function toMutationRouteInventoryEntry(
         !typeOwnerSourcePath ||
         !dispatchSourcePath ||
         !appInboxType ||
-        (Boolean(familyRegistrationMarker) &&
-            (!rootSourcePath || !constructionRootMarker || !Number.isInteger(familyOwnerOrder)))
+        (Boolean(row.familyRegistrationMarker) &&
+            (!rootSourcePath || !row.constructionRootMarker || !Number.isInteger(row.familyOwnerOrder)))
     ) {
         throw new Error(`Invalid mutation route inventory row: ${JSON.stringify(row)}`);
     }
     return {
-        transport,
-        entrypoint,
+        transport: row.transport,
+        entrypoint: row.entrypoint,
         type: appInboxType,
-        owner,
+        owner: row.owner,
         sourcePath,
-        registrationMarker,
+        registrationMarker: row.registrationMarker,
         enqueueSourcePath,
-        enqueueMarker,
+        enqueueMarker: row.enqueueMarker,
         ownerSourcePath,
         ownerDispatchPath,
         typeOwnerSourcePath,
         dispatchSourcePath,
-        operationDiscriminant,
-        familyRegistrationMarker,
+        operationDiscriminant: row.operationDiscriminant,
+        familyRegistrationMarker: row.familyRegistrationMarker,
         constructionRootSourcePath: rootSourcePath,
-        constructionRootMarker,
-        familyOwnerOrder
+        constructionRootMarker: row.constructionRootMarker,
+        familyOwnerOrder: row.familyOwnerOrder
     };
 }
 

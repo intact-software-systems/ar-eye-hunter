@@ -76,12 +76,10 @@ const GROUP_APP_INBOX_OPERATIONS = new Map<AppInboxType, GroupMutationDescriptor
     [AppInboxType.GROUP_CREATE, 'createGroup'],
     [AppInboxType.GROUP_UPDATE, 'updateGroup'],
     [AppInboxType.GROUP_DIRECTOR_APPOINT, 'appointDirector'],
-    [AppInboxType.GROUP_ESTABLISHMENT_START, 'startGroupEstablishment'],
     [AppInboxType.GROUP_PLAN, 'planGroupLayout'],
     [AppInboxType.GROUP_CONNECT, 'connectGroup'],
     [AppInboxType.GROUP_ACTIVATE, 'activateGroup'],
     [AppInboxType.GROUP_RECONFIGURE, 'reconfigureGroup'],
-    [AppInboxType.GROUP_ESTABLISHMENT_REOPEN, 'reopenGroupEstablishment'],
     [AppInboxType.GROUP_JOIN, 'joinGroup'],
     [AppInboxType.GROUP_INVITE_CREATE, 'createGroupInvite'],
     [AppInboxType.GROUP_INVITE_REVOKE, 'revokeGroupInvite'],
@@ -119,61 +117,7 @@ function toStableAuthCommand(type: AppInboxType, value: JsonWireValue): JsonWire
         if (toAuthAppInboxType(intent) !== type) {
             return undefined;
         }
-        switch (intent.kind) {
-            case 'register-user':
-                return {
-                    kind: intent.kind,
-                    requestId: intent.requestId,
-                    registration: {
-                        username: intent.registration.username,
-                        normalizedUsername: intent.registration.normalizedUsername,
-                        displayName: intent.registration.displayName,
-                        passwordAlgorithm: intent.registration.passwordAlgorithm,
-                        passwordIterations: intent.registration.passwordIterations,
-                        roles: intent.registration.roles,
-                        status: intent.registration.status
-                    }
-                };
-            case 'issue-session':
-                return {
-                    kind: intent.kind,
-                    requestId: intent.requestId,
-                    authority: intent.authority,
-                    clientId: intent.clientId,
-                    username: intent.username,
-                    ttlMs: intent.ttlMs
-                };
-            case 'logout-session':
-                return { kind: intent.kind, requestId: intent.requestId, expected: intent.expected };
-            case 'issue-ws-ticket':
-                return {
-                    kind: intent.kind,
-                    requestId: intent.requestId,
-                    authority: intent.authority,
-                    ttlMs: intent.ttlMs
-                };
-            case 'consume-ws-ticket':
-                return {
-                    kind: intent.kind,
-                    requestId: intent.requestId,
-                    ticketDigest: intent.ticketDigest,
-                    expectedSessionId: intent.expectedSessionId
-                };
-            case 'issue-agent-tickets':
-                return {
-                    kind: intent.kind,
-                    requestId: intent.requestId,
-                    authority: intent.authority,
-                    ticketTtlMs: intent.ticketTtlMs,
-                    agentIds: intent.agentIds
-                };
-            case 'consume-agent-ticket':
-                return {
-                    kind: intent.kind,
-                    requestId: intent.requestId,
-                    ticketDigest: intent.ticketDigest
-                };
-        }
+        return toStableAuthIntent(intent);
     }
     catch {
         return undefined;
@@ -250,4 +194,62 @@ function requireLogicalJsonObject(
 
 function isJsonWireArray(value: JsonWireValue): value is readonly JsonWireValue[] {
     return Array.isArray(value);
+}
+
+function toStableAuthIntent(intent: ReturnType<typeof decodeAuthMutationIntent>): JsonWireValue {
+    switch (intent.kind) {
+        case 'register-user':
+            return {
+                kind: intent.kind,
+                requestId: intent.requestId,
+                registration: {
+                    username: intent.registration.username,
+                    normalizedUsername: intent.registration.normalizedUsername,
+                    displayName: intent.registration.displayName,
+                    passwordAlgorithm: intent.registration.passwordAlgorithm,
+                    passwordIterations: intent.registration.passwordIterations,
+                    roles: intent.registration.roles,
+                    status: intent.registration.status
+                }
+            };
+        case 'issue-session':
+            return {
+                kind: intent.kind,
+                requestId: intent.requestId,
+                authority: intent.authority,
+                clientId: intent.clientId,
+                username: intent.username,
+                ttlMs: intent.ttlMs
+            };
+        case 'logout-session':
+            return { kind: intent.kind, requestId: intent.requestId, expected: intent.expected };
+        case 'issue-ws-ticket':
+            return {
+                kind: intent.kind,
+                requestId: intent.requestId,
+                authority: intent.authority,
+                ttlMs: intent.ttlMs
+            };
+        case 'consume-ws-ticket':
+            return {
+                kind: intent.kind,
+                requestId: intent.requestId,
+                ticketDigest: intent.ticketDigest,
+                expectedSessionId: intent.expectedSessionId
+            };
+        case 'issue-agent-tickets':
+            return {
+                kind: intent.kind,
+                requestId: intent.requestId,
+                authority: intent.authority,
+                ticketTtlMs: intent.ticketTtlMs,
+                agentIds: intent.agentIds
+            };
+        case 'consume-agent-ticket':
+            return {
+                kind: intent.kind,
+                requestId: intent.requestId,
+                ticketDigest: intent.ticketDigest
+            };
+    }
 }

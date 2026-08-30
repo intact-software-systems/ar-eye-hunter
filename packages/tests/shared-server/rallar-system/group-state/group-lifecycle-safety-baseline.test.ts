@@ -151,6 +151,7 @@ function baseRead(lifecycleState: GroupLifecycleState): GroupMutationRead {
         lifecyclePolicy: null,
         activeMemberPrincipalIds: null,
         plannedLayoutRow: null,
+        connectTriggerLatch: null,
         acceptedLayoutRow: null
     } as GroupMutationRead;
 }

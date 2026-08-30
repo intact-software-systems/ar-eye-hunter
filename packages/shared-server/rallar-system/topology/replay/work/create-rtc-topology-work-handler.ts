@@ -5,6 +5,16 @@ import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import type { OnMessageCallback } from '@shared/services/InboxOutboxContracts.ts';
+import type { GroupFormationAutomationPort } from './create-group-connect-trigger-work-handler.ts';
+import {
+    computePublicationConnectTriggerRequests,
+    writeGroupConnectTriggerRequests
+} from './write-group-connect-trigger-requests.ts';
+import {
+    writePublicationDelivery,
+    writeRtcTopologyPublicationTransaction,
+    type RtcTopologyDeliveryOptions
+} from './write-rtc-topology-publication-transaction.ts';
 
 import { toRtcTopologyPublicationId } from '@shared-server/rallar-system/topology/persistence/rtc-topology-identifiers.ts';
 import type { GroupTopologyPlanningAuthority } from '@shared-server/rallar-system/topology/planning/group-topology-planning-authority.ts';
@@ -29,13 +39,6 @@ import {
     materializeRtcOverlayTopologyBroadcastMessage,
     type RtcOverlayTopologyMessageFacts
 } from '../../planning/materialize-rtc-overlay-topology-broadcast-message.ts';
-import { writeRtcTopologyPublicationOutbox } from '../../publication/rtc-topology-ws-outbox-entry.ts';
-import type { RtcTopologyDeliveryAppendPort } from '../delivery/rtc-topology-delivery-append-port.ts';
-import { RtcTopologyDeliveryLeaseLostError } from '../delivery/rtc-topology-delivery-stream-service.ts';
-import {
-    isRtcTopologyDeliveryRetryableConflict,
-    toRtcTopologyDeliveryAppendInput
-} from '../delivery/rtc-topology-delivery-validation.ts';
 import { finishRtcTopologyReservation, finishRtcTopologyWork } from './finish-rtc-topology-work.ts';
 import { isChangeGatedGroupRevisionWork, toTopologyWorkOrigin } from './rtc-topology-coalesced-group-revision-work.ts';
 import { computeAuthorityTopologyInputFingerprint } from './rtc-topology-input-fingerprint.ts';
@@ -60,11 +63,6 @@ import {
     type FormationCriterionPort
 } from './compute-formation-criterion-command.ts';
 
-export interface RtcTopologyDeliveryOptions {
-    readonly publisherStreamId: string;
-    readonly append: RtcTopologyDeliveryAppendPort;
-}
-
 interface RtcTopologyWorkHandlerOptions {
     readonly runtime: RtcTopologyWorkRuntime;
     readonly database: PSqlSql;
@@ -85,6 +83,7 @@ interface RtcTopologyWorkHandlerOptions {
      * operator command.
      */
     readonly formationCriterion?: FormationCriterionPort;
+    readonly formationAutomation?: GroupFormationAutomationPort;
     /**
      * Damping interval for criterion petitions from refinement-deferred RTT
      * work. Absent means the default; 0 petitions per deferred item.
@@ -438,9 +437,15 @@ async function writeAcceptedRtcTopologyWork(
             target: computed.snapshotGuard.candidate
         })
         : null;
+    const connectRequests = computePublicationConnectTriggerRequests({
+        automation: options.formationAutomation,
+        target: computed.outcome === 'write' ? computed.snapshotGuard.candidate : null,
+        entry
+    });
     await writeRtcTopologyPublicationTransaction(options, entry, async (transaction) => {
         await options.executionRepository.writeTopologyMutation(transaction, computed);
         await writeTopologyPromotionRequest(transaction, promotionRequest);
+        await writeGroupConnectTriggerRequests(transaction, connectRequests);
         if (computed.outcome === 'write') {
             await options.executionRepository.writeTopologyInputFingerprint(
                 transaction,
@@ -475,6 +480,11 @@ async function writeSkippedTopologyWork(
         entry,
         target: accepted.criterionPetition?.planned ?? null
     });
+    const connectRequests = computePublicationConnectTriggerRequests({
+        automation: options.formationAutomation,
+        target: accepted.criterionPetition?.planned ?? null,
+        entry
+    });
     await runInPSqlTransaction(options.database, async (transaction) => {
         if (accepted.decision === 'skipped-unchanged') {
             await options.executionRepository.writeTopologyInputFingerprint(
@@ -484,6 +494,7 @@ async function writeSkippedTopologyWork(
             );
         }
         await writeTopologyPromotionRequest(transaction, promotionRequest);
+        await writeGroupConnectTriggerRequests(transaction, connectRequests);
         await finishRtcTopologyReservation(transaction, entry);
     });
     if (accepted.decision === 'skipped-frozen') {
@@ -530,48 +541,6 @@ async function petitionCommittedCriterion(
         return;
     }
     await petitionFormationCriterion(options, petition.authority, petition.planned);
-}
-
-async function writeRtcTopologyPublicationTransaction(
-    options: Pick<RtcTopologyWorkHandlerOptions, 'database'>,
-    entry: ResourceEntry,
-    write: (transaction: PSqlSql) => Promise<void>
-): Promise<void> {
-    try {
-        await runInPSqlTransaction(options.database, async (transaction) => {
-            await write(transaction);
-            await finishRtcTopologyReservation(transaction, entry);
-        });
-    }
-    catch (error) {
-        if (error instanceof Error && isRtcTopologyDeliveryRetryableConflict(error)) {
-            throw new RuntimeStateWriteConflictError();
-        }
-        throw error;
-    }
-}
-
-async function writePublicationDelivery(
-    transaction: PSqlSql,
-    publication: RtcTopologyPublication,
-    delivery: RtcTopologyDeliveryOptions | undefined
-): Promise<void> {
-    const outbox = await writeRtcTopologyPublicationOutbox(transaction, publication);
-    if (!delivery) {
-        return;
-    }
-    const result = await delivery.append.appendOrValidate(
-        transaction,
-        toRtcTopologyDeliveryAppendInput(delivery.publisherStreamId, publication, outbox)
-    );
-    if (result.status === 'conflict') {
-        throw new RuntimeStateWriteConflictError();
-    }
-    if (result.status === 'lease-lost') {
-        throw new RtcTopologyDeliveryLeaseLostError(
-            `RTC topology publisher stream ${delivery.publisherStreamId} lost its lease`
-        );
-    }
 }
 
 function toTopologyPublication(input: ToTopologyPublicationInput): RtcTopologyPublication {

@@ -1,5 +1,6 @@
 import { Temporal } from '@js-temporal/polyfill';
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
+import { GroupConnectTriggerLatchRepository } from '@shared-server/rallar-system/group-state/persistence/group-connect-trigger-latch-repository.ts';
 import { createRtcTopologyOutboxPublisher } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-work.ts';
 import { RtcTopologyExecutionRepository } from '@shared-server/rallar-system/topology/persistence/rtc-topology-execution-repository.ts';
 import type { GroupTopologyGroupSnapshotReader } from '@shared-server/rallar-system/topology/planning/group-topology-planning-contracts.ts';
@@ -462,6 +463,15 @@ function countSentTopologyMessages(sockets: ReadonlyMap<string, FakeSocket>): nu
 function createTopologyExecutionDependencies(runtimeRepository: FakeRuntimeStateRepository) {
     return {
         database: createUnusedDatabase(),
+        formationAutomation: {
+            latches: new GroupConnectTriggerLatchRepository(runtimeRepository),
+            readGroup: async () => null,
+            readPlanned: async () => null,
+            submitCommand: async () => {
+                throw new Error('Unexpected formation automation');
+            },
+            nowEpochMs: () => 1000
+        },
         executionRepository: new RtcTopologyExecutionRepository(runtimeRepository)
     };
 }

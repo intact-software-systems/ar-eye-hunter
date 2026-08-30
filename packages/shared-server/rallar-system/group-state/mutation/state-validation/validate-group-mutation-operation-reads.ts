@@ -1,3 +1,4 @@
+import { serializeCanonicalJson } from '../../../protocol/canonical-json.ts';
 import { requireNonEmptyString, requireOneOf } from '../../group-state-validation-primitives.ts';
 import type { GroupMutationCommand, GroupMutationRead } from '../group-mutation-contracts.ts';
 import {
@@ -10,6 +11,7 @@ export function validateGroupMutationOperationReads(
     read: GroupMutationRead,
     command: GroupMutationCommand
 ): void {
+    validateConnectTriggerRead(read, command);
     validateLifecyclePolicyRead(read, command);
     validateActiveMemberPrincipalIdsRead(read, command);
     validatePlannedLayoutIdentityRead(read, command);
@@ -82,5 +84,22 @@ function validateActiveMemberPrincipalIdsRead(
         throw new TypeError(
             'Group mutation read must not carry active member principal ids for this operation'
         );
+    }
+}
+
+function validateConnectTriggerRead(read: GroupMutationRead, command: GroupMutationCommand): void {
+    const row = read.connectTriggerLatch;
+    if (row === null) {
+        return;
+    }
+    if (
+        command.operation !== 'connectGroup' || command.input.connectTriggerGeneration === null ||
+        row.latch.triggerGeneration !== command.input.connectTriggerGeneration ||
+        row.latch.formationEpoch !== command.input.expectedFormationEpoch ||
+        serializeCanonicalJson(row.latch.groupRef) !== serializeCanonicalJson(command.aggregateRef) ||
+        (row.latch.state !== 'awaiting-publication' && row.latch.state !== 'consumed') ||
+        !Number.isSafeInteger(row.revision) || row.revision < 0
+    ) {
+        throw new TypeError('Group connect trigger read differs from command identity');
     }
 }

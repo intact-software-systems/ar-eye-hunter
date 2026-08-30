@@ -44,6 +44,7 @@ const GROUP_MUTATION_READ_KEYS = [
     'presenceSummary',
     'lifecyclePolicy',
     'activeMemberPrincipalIds',
+    'connectTriggerLatch',
     'plannedLayoutRow',
     'acceptedLayoutRow'
 ] as const;

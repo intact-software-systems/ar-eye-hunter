@@ -31,6 +31,7 @@ export function createCorruptionMutationRead(): GroupMutationRead {
         lifecyclePolicy: null,
         activeMemberPrincipalIds: null,
         plannedLayoutRow: null,
+        connectTriggerLatch: null,
         acceptedLayoutRow: null
     } as GroupMutationRead;
 }
@@ -62,6 +63,7 @@ export function createIdentityMutationRead(): GroupMutationRead {
         lifecyclePolicy: null,
         activeMemberPrincipalIds: null,
         plannedLayoutRow: null,
+        connectTriggerLatch: null,
         acceptedLayoutRow: null
     } as GroupMutationRead;
 }
@@ -93,6 +95,7 @@ export function createSnapshotAssemblyMutationRead(): GroupMutationRead {
         lifecyclePolicy: null,
         activeMemberPrincipalIds: null,
         plannedLayoutRow: null,
+        connectTriggerLatch: null,
         acceptedLayoutRow: null
     } as GroupMutationRead;
 }

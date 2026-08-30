@@ -14,17 +14,12 @@ const EVERY_TRANSITION: readonly GroupLifecycleTransition[] = [
     'start',
     'plan',
     'connect',
-    'start-establishment',
     'activate',
     'reconfigure',
-    'reopen-establishment',
     'fail-formation'
 ];
 
-// The complete machine, keyed (stage, command) -> stage: every cell is either
-// the one allowed target or denied. The legacy commands keep today's cells
-// until their retirement; reconfiguring's activate/fail-formation cells leave
-// with them.
+// The complete public state machine: holds cannot activate or fail before connect.
 const ALLOWED_CELLS: ReadonlyArray<{
     transition: GroupLifecycleTransition;
     from: GroupLifecycleState;
@@ -34,7 +29,6 @@ const ALLOWED_CELLS: ReadonlyArray<{
     { transition: 'start', from: 'dormant', to: 'forming' },
     { transition: 'reset', from: 'forming', to: 'dormant' },
     { transition: 'plan', from: 'forming', to: 'planned' },
-    { transition: 'start-establishment', from: 'forming', to: 'connecting' },
     { transition: 'reset', from: 'planned', to: 'dormant' },
     { transition: 'plan', from: 'planned', to: 'planned' },
     { transition: 'connect', from: 'planned', to: 'connecting' },
@@ -43,11 +37,8 @@ const ALLOWED_CELLS: ReadonlyArray<{
     { transition: 'fail-formation', from: 'connecting', to: 'forming' },
     { transition: 'reset', from: 'active', to: 'dormant' },
     { transition: 'reconfigure', from: 'active', to: 'reconfiguring' },
-    { transition: 'reopen-establishment', from: 'active', to: 'reconfiguring' },
     { transition: 'reset', from: 'reconfiguring', to: 'dormant' },
     { transition: 'connect', from: 'reconfiguring', to: 'reconnecting' },
-    { transition: 'activate', from: 'reconfiguring', to: 'active' },
-    { transition: 'fail-formation', from: 'reconfiguring', to: 'forming' },
     { transition: 'reset', from: 'reconnecting', to: 'dormant' },
     { transition: 'activate', from: 'reconnecting', to: 'active' },
     { transition: 'fail-formation', from: 'reconnecting', to: 'active' }
@@ -69,7 +60,6 @@ describe('computeGroupLifecycleTransition', () => {
                 nextFormationEpoch: idempotentReplan ? 6 : 7
             });
         }
-        expect(ALLOWED_CELLS).toHaveLength(21);
     });
 
     // Product decision 28: plan is idempotently legal from planned. Idempotence
@@ -90,7 +80,6 @@ describe('computeGroupLifecycleTransition', () => {
     });
 
     it('denies every other cell as lifecycle-transition-invalid', () => {
-        let denied = 0;
         for (const transition of EVERY_TRANSITION) {
             for (const from of GROUP_LIFECYCLE_STATES) {
                 if (ALLOWED_CELLS.some((cell) => cell.transition === transition && cell.from === from)) {
@@ -105,10 +94,8 @@ describe('computeGroupLifecycleTransition', () => {
                     allowed: false,
                     code: 'lifecycle-transition-invalid'
                 });
-                denied += 1;
             }
         }
-        expect(denied).toBe(42);
     });
 
     it('reports the offending transition and state in the denial details', () => {
@@ -131,8 +118,6 @@ describe('resolveFormationFailureLanding', () => {
     it.each([
         { lifecycleState: 'connecting' as const, exhausted: false, landing: 'forming' },
         { lifecycleState: 'connecting' as const, exhausted: true, landing: 'dormant' },
-        { lifecycleState: 'reconfiguring' as const, exhausted: false, landing: 'forming' },
-        { lifecycleState: 'reconfiguring' as const, exhausted: true, landing: 'dormant' },
         { lifecycleState: 'reconnecting' as const, exhausted: false, landing: 'active' },
         { lifecycleState: 'reconnecting' as const, exhausted: true, landing: 'dormant' }
     ])('lands $lifecycleState exhausted=$exhausted in $landing', (row) => {
@@ -146,7 +131,6 @@ describe('resolveFormationFailureLanding', () => {
         for (const lifecycleState of GROUP_LIFECYCLE_STATES) {
             if (
                 lifecycleState === 'connecting' ||
-                lifecycleState === 'reconfiguring' ||
                 lifecycleState === 'reconnecting'
             ) {
                 continue;

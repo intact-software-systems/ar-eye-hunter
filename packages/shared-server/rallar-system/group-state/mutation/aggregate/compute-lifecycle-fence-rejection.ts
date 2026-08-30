@@ -39,6 +39,12 @@ export function computeLifecycleFenceRejection(
                 `stored ${stored.formationEpoch}`
         );
     }
+    if (
+        command.operation === 'connectGroup' && facts.internalAuthority === 'formation-automation' &&
+        (read.connectTriggerLatch === null || read.connectTriggerLatch.latch.state !== 'awaiting-publication')
+    ) {
+        return rejectedFence('Automatic connect trigger is absent or consumed');
+    }
     const expectedLayout = command.operation === 'activateGroup' ||
             command.operation === 'failGroupFormation' ||
             command.operation === 'connectGroup'
@@ -67,6 +73,13 @@ export function computeLifecycleFenceRejection(
     if (fence === 'match') {
         return null;
     }
+    return rejectLayoutFence({ command, read, facts, stored }, fence);
+}
+
+function rejectLayoutFence(
+    { command, read, facts }: LifecycleFenceInput,
+    fence: ReturnType<typeof computeExpectedLayoutFence>
+): GroupMutationComputed {
     // `connect` names the exact planned layout it dials, so its two denials
     // are distinguishable conflict codes the caller retries against the
     // current identity (product decision 32) — typed rejection values here,
@@ -85,5 +98,11 @@ export function computeLifecycleFenceRejection(
             message: `Group connect names a layout that is ${fence}`
         });
     }
-    return rejectedFence(`Criterion petition fence is ${fence} for the stored planned layout`);
+    return rejected({
+        command,
+        read,
+        facts,
+        rejectionCode: 'group-mutation-rejected',
+        message: `Criterion petition fence is ${fence} for the stored planned layout`
+    });
 }

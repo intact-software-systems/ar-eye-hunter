@@ -62,26 +62,12 @@ const CANONICAL_INVENTORY_FIELDS = [
     'familyOwnerOrder'
 ] as const;
 
-/** The census counts, spelled once: every pin derives from these two. */
-export const EXPECTED_MUTATION_ENTRYPOINT_COUNT = 57;
-export const EXPECTED_MUTATION_TYPE_COUNT = 53;
-
 export function validateMutationRouteInventory(
     inventory: readonly MutationRouteInventoryEntry[],
     options: MutationRouteValidationOptions = {}
 ): readonly string[] {
     const issues: string[] = [];
     const sources = createSourceReader(options);
-    if (inventory.length !== EXPECTED_MUTATION_ENTRYPOINT_COUNT) {
-        issues.push(
-            `Expected ${EXPECTED_MUTATION_ENTRYPOINT_COUNT} entrypoints, found ${inventory.length}`
-        );
-    }
-    if (new Set(inventory.map((item) => item.type)).size !== EXPECTED_MUTATION_TYPE_COUNT) {
-        issues.push(
-            `Inventory must cover all ${EXPECTED_MUTATION_TYPE_COUNT} AppInbox command types`
-        );
-    }
     const seen = new Set<string>();
     for (const item of inventory) {
         const itemKey = key(item);
@@ -91,6 +77,11 @@ export function validateMutationRouteInventory(
         seen.add(itemKey);
     }
     const canonicalByKey = new Map(MUTATION_ROUTE_INVENTORY.map((item) => [key(item), item]));
+    for (const expectedKey of canonicalByKey.keys()) {
+        if (!seen.has(expectedKey)) {
+            issues.push(`Missing mutation route: ${expectedKey}`);
+        }
+    }
     for (const item of inventory) {
         const canonical = canonicalByKey.get(key(item));
         if (!canonical) {

@@ -14,6 +14,7 @@ export default {
         include: [
             'packages/tests/shared-server/integration/postgres/*.test.ts',
             adminPrunePageTest,
+            'packages/tests/shared-server/rallar-system/group-state/mutation/group-connect-trigger-sql.test.ts',
             ...topologyConcurrencyTests
         ]
     }

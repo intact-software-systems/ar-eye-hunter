@@ -44,18 +44,14 @@ const COVERED_API_MUTATIONS: readonly CoveredApiMutation[] = [
         method: 'post',
         path: `${GROUP_ITEM_PATH}/director/appoint${REQUEST_PATH}`
     },
-    {
-        method: 'post',
-        path: `${GROUP_ITEM_PATH}/lifecycle/establish${REQUEST_PATH}`
-    },
-    {
-        method: 'post',
-        path: `${GROUP_ITEM_PATH}/lifecycle/activate${REQUEST_PATH}`
-    },
-    {
-        method: 'post',
-        path: `${GROUP_ITEM_PATH}/lifecycle/reopen${REQUEST_PATH}`
-    },
+    { method: 'post', path: `${GROUP_ITEM_PATH}/lifecycle/plan${REQUEST_PATH}` },
+    { method: 'post', path: `${GROUP_ITEM_PATH}/lifecycle/connect${REQUEST_PATH}` },
+    { method: 'post', path: `${GROUP_ITEM_PATH}/lifecycle/activate${REQUEST_PATH}` },
+    { method: 'post', path: `${GROUP_ITEM_PATH}/lifecycle/reconfigure${REQUEST_PATH}` },
+    { method: 'post', path: `${GROUP_ITEM_PATH}/lifecycle/pause${REQUEST_PATH}` },
+    { method: 'post', path: `${GROUP_ITEM_PATH}/lifecycle/resume${REQUEST_PATH}` },
+    { method: 'post', path: `${GROUP_ITEM_PATH}/lifecycle/reset${REQUEST_PATH}` },
+    { method: 'post', path: `${GROUP_ITEM_PATH}/lifecycle/start${REQUEST_PATH}` },
     { method: 'post', path: `${GROUP_ITEM_PATH}/join${REQUEST_PATH}` },
     {
         method: 'post',
@@ -163,12 +159,11 @@ Deno.test('OpenAPI publishes the reusable strict API mutation request path param
     assert.equal(parameters.IdempotencyKey, undefined);
 });
 
-Deno.test('OpenAPI gives all 47 AppInbox REST mutations path-only request identity', async () => {
+Deno.test('OpenAPI gives all AppInbox REST mutations path-only request identity', async () => {
     const document = await readOpenApiDocument();
     const paths = requireObject(document.paths);
     const schemas = requireObject(requireObject(document.components).schemas);
 
-    assert.equal(COVERED_API_MUTATIONS.length, 47);
     for (const mutation of COVERED_API_MUTATIONS) {
         const operation = requireObject(
             requireObject(paths[mutation.path])[mutation.method]
