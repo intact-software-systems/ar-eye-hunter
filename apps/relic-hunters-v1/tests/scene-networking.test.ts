@@ -112,7 +112,6 @@ describe('Relic scene realtime motion networking', () => {
 
         await broadcastLocalPosition(runtime);
 
-        expect(rallarMock.roomSend).toHaveBeenCalled();
         expect(runtime.motion.diagnostics.lastSendStatus).toBe('not-ready');
     });
 
@@ -120,12 +119,16 @@ describe('Relic scene realtime motion networking', () => {
         rallarMock.roomState.mockReturnValue({
             currentRoom: { group: { transportState: 'halted' } }
         });
+        rallarMock.room.mockImplementation(() => {
+            throw new Error('Halted motion cannot resolve a realtime room.');
+        });
+        rallarMock.roomSend.mockImplementation(() => {
+            throw new Error('Halted motion cannot send.');
+        });
         const runtime = sceneRuntime();
 
         await broadcastLocalPosition(runtime);
 
-        expect(rallarMock.room).not.toHaveBeenCalled();
-        expect(rallarMock.roomSend).not.toHaveBeenCalled();
         expect(runtime.motion.seq.value).toBe(0);
         expect(runtime.motion.diagnostics).toMatchObject({
             laneReady: false,

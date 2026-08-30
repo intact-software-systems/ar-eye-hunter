@@ -236,6 +236,14 @@ describe('Rallar room realtime channel', () => {
             group: { ...base.group, transportState: 'halted' as const }
         };
         mockGroupSnapshot(snapshot);
+        vi.mocked(mocks.webRtcConnectionService.ensurePeerLaneOpen).mockImplementation(
+            () => {
+                throw new Error('Halted room realtime cannot open a peer lane.');
+            }
+        );
+        vi.mocked(mocks.realtimeChannel.sendJson).mockImplementation(() => {
+            throw new Error('Halted room realtime cannot send.');
+        });
 
         const result = await createRallarFacade()
             .realtime.room<{ x: number; }>({ roomId: 'room-1', laneId: 'motion' })
@@ -244,8 +252,6 @@ describe('Rallar room realtime channel', () => {
         expect(result.status).toBe('halted');
         expect(result.desiredPeerIds).toEqual(['peer-ready']);
         expect(result.transportStatus?.rtc.state).toBe('halted');
-        expect(mocks.webRtcConnectionService.ensurePeerLaneOpen).not.toHaveBeenCalled();
-        expect(mocks.realtimeChannel.sendJson).not.toHaveBeenCalled();
     });
 });
 

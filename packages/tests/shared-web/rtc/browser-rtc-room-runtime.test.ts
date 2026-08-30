@@ -507,6 +507,11 @@ describe('Rallar RTC room wait', () => {
             group: { ...base.group, transportState: 'halted' as const }
         };
         mockGroupSnapshot(snapshot);
+        mocks.webRtcConnectionService.ensurePeerLaneOpen.mockImplementation(
+            () => {
+                throw new Error('Halted room readiness cannot open a peer lane.');
+            }
+        );
         const facade = createRallarFacade();
         await facade.connect();
 
@@ -517,7 +522,6 @@ describe('Rallar RTC room wait', () => {
 
         expect(status.rtc.state).toBe('halted');
         expect(status.rtc.desiredPeerIds).toEqual(['peer-a']);
-        expect(mocks.webRtcConnectionService.ensurePeerLaneOpen).not.toHaveBeenCalled();
     });
 
     it('opens a room RTC transport when mode is warm', async () => {

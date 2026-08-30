@@ -293,6 +293,11 @@ describe('Rallar targeted channel', () => {
             ...base,
             group: { ...base.group, transportState: 'halted' }
         });
+        vi.mocked(mocks.webRtcConnectionService.ensurePeerLaneOpen).mockImplementation(
+            () => {
+                throw new Error('Halted room targeting cannot open a peer lane.');
+            }
+        );
         const channel = createRallarFacade().channels.room<PositionUpdate>({
             roomId: 'room-1',
             laneId: 'realtime'
@@ -302,7 +307,6 @@ describe('Rallar targeted channel', () => {
             status: 'no-targets',
             peerIds: []
         });
-        expect(mocks.webRtcConnectionService.ensurePeerLaneOpen).not.toHaveBeenCalled();
     });
 });
 

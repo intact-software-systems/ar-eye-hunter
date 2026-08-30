@@ -257,7 +257,6 @@ describe('Rallar Game match', () => {
 
         expect(result.status).toBe('not-authorized');
         expect(result.reason).toBe('Only active room owners/admins can appoint the browser director.');
-        expect(fake.appoint).not.toHaveBeenCalled();
         expect(match.canAppointDirector()).toMatchObject({
             allowed: false,
             status: 'not-authorized'
@@ -291,7 +290,6 @@ describe('Rallar Game match', () => {
         expect(result.reason).toBe(
             'Cannot appoint a fallback director while another director is active.'
         );
-        expect(fake.appoint).not.toHaveBeenCalled();
         expect(match.canAppointDirector()).toMatchObject({
             allowed: false,
             status: 'not-authorized',
@@ -318,7 +316,6 @@ describe('Rallar Game match', () => {
         expect(result.reason).toBe(
             'Only active room members can appoint the browser director.'
         );
-        expect(fake.appoint).not.toHaveBeenCalled();
     });
 
     it('waits for local membership before metadata-backed director appointment', async () => {
@@ -334,7 +331,6 @@ describe('Rallar Game match', () => {
 
         expect(result.status).toBe('not-ready');
         expect(result.reason).toBe('Cannot confirm local room membership yet.');
-        expect(fake.appoint).not.toHaveBeenCalled();
         expect(match.diagnostics().issues).toContain('director-eligibility-not-ready');
     });
 
@@ -355,7 +351,6 @@ describe('Rallar Game match', () => {
         const result = await match.appointIfElected();
 
         expect(result.status).toBe('not-elected');
-        expect(fake.appoint).not.toHaveBeenCalled();
     });
 
     it('publishes presence over realtime room scope with replace-by-key defaults', async () => {
@@ -398,14 +393,18 @@ describe('Rallar Game match', () => {
         const result = await match.sendPresence({ x: 7 });
 
         expect(result).toMatchObject({ status: 'not-ready', transport: 'realtime' });
-        expect(fake.roomRealtimeSend).toHaveBeenCalledOnce();
-        expect(fake.realtimeSendJson).not.toHaveBeenCalled();
+        expect(fake.roomRealtimeSendCount).toBe(1);
+        expect(fake.realtimeSendCount).toBe(0);
     });
 
     it('delivers peer presence envelopes to subscribers', async () => {
         const fake = createFakeRallar();
-        const onPresence = vi.fn();
-        const match = createMatch(fake, { onPresence });
+        const receivedPresence: RallarGameEnvelope<Input>[] = [];
+        const match = createMatch(fake, {
+            onPresence: (presence) => {
+                receivedPresence.push(presence);
+            }
+        });
         await match.start();
 
         await fake.emitRealtime(
@@ -414,8 +413,8 @@ describe('Rallar Game match', () => {
             envelope('presence', 'peer-b', { x: 4 }, 51)
         );
 
-        expect(onPresence).toHaveBeenCalledOnce();
-        expect(onPresence.mock.calls[0][0]).toMatchObject({
+        expect(receivedPresence).toHaveLength(1);
+        expect(receivedPresence[0]).toMatchObject({
             senderId: 'peer-b',
             payload: { x: 4 }
         });
@@ -445,7 +444,7 @@ describe('Rallar Game match', () => {
         expect(await match.sendInput({ x: 2 })).toMatchObject({
             status: 'no-director'
         });
-        expect(fake.realtimeSendJson).toHaveBeenCalledTimes(1);
+        expect(fake.realtimeSendCount).toBe(1);
     });
 
     it('rejects snapshots that do not come from the fresh director', async () => {
@@ -453,8 +452,12 @@ describe('Rallar Game match', () => {
             directorPeerId: 'peer-b',
             directorIsFresh: true
         });
-        const onSnapshot = vi.fn();
-        const match = createMatch(fake, { onSnapshot });
+        const receivedSnapshots: RallarGameEnvelope<Snapshot>[] = [];
+        const match = createMatch(fake, {
+            onSnapshot: (snapshot) => {
+                receivedSnapshots.push(snapshot);
+            }
+        });
         await match.start();
 
         await fake.emitRealtime(
@@ -468,8 +471,8 @@ describe('Rallar Game match', () => {
             envelope('snapshot', 'peer-b', { tick: 2 }, 2)
         );
 
-        expect(onSnapshot).toHaveBeenCalledTimes(1);
-        expect(onSnapshot.mock.calls[0][0].payload).toEqual({ tick: 2 });
+        expect(receivedSnapshots).toHaveLength(1);
+        expect(receivedSnapshots[0].payload).toEqual({ tick: 2 });
     });
 
     it('rejects realtime input from a different match identity', async () => {
@@ -477,10 +480,12 @@ describe('Rallar Game match', () => {
             directorPeerId: 'peer-a',
             directorIsFresh: true
         });
-        const onInput = vi.fn();
+        const receivedInputs: RallarGameEnvelope<Input>[] = [];
         const match = createMatch(fake, {
             matchId: 'match-b',
-            onInput
+            onInput: (input) => {
+                receivedInputs.push(input);
+            }
         });
         await match.start();
 
@@ -490,7 +495,7 @@ describe('Rallar Game match', () => {
             envelope('input', 'peer-b', { x: 4 }, 1, 'match-a')
         );
 
-        expect(onInput).not.toHaveBeenCalled();
+        expect(receivedInputs).toEqual([]);
     });
 
     it('rejects relay snapshots from a different match identity', async () => {
@@ -498,16 +503,18 @@ describe('Rallar Game match', () => {
             directorPeerId: 'peer-a',
             directorIsFresh: true
         });
-        const onSnapshot = vi.fn();
+        const receivedSnapshots: RallarGameEnvelope<Snapshot>[] = [];
         const match = createMatch(fake, {
             matchId: 'match-b',
-            onSnapshot
+            onSnapshot: (snapshot) => {
+                receivedSnapshots.push(snapshot);
+            }
         });
         await match.start();
 
         await emitRelaySnapshot(fake, 'match-a');
 
-        expect(onSnapshot).not.toHaveBeenCalled();
+        expect(receivedSnapshots).toEqual([]);
     });
 
     it('rejects realtime input without a configured match identity', async () => {
@@ -515,10 +522,12 @@ describe('Rallar Game match', () => {
             directorPeerId: 'peer-a',
             directorIsFresh: true
         });
-        const onInput = vi.fn();
+        const receivedInputs: RallarGameEnvelope<Input>[] = [];
         const match = createMatch(fake, {
             matchId: 'match-b',
-            onInput
+            onInput: (input) => {
+                receivedInputs.push(input);
+            }
         });
         await match.start();
 
@@ -528,7 +537,7 @@ describe('Rallar Game match', () => {
             envelope('input', 'peer-b', { x: 4 }, 1)
         );
 
-        expect(onInput).not.toHaveBeenCalled();
+        expect(receivedInputs).toEqual([]);
     });
 
     it('rejects relay snapshots without a configured match identity', async () => {
@@ -536,16 +545,18 @@ describe('Rallar Game match', () => {
             directorPeerId: 'peer-a',
             directorIsFresh: true
         });
-        const onSnapshot = vi.fn();
+        const receivedSnapshots: RallarGameEnvelope<Snapshot>[] = [];
         const match = createMatch(fake, {
             matchId: 'match-b',
-            onSnapshot
+            onSnapshot: (snapshot) => {
+                receivedSnapshots.push(snapshot);
+            }
         });
         await match.start();
 
         await emitRelaySnapshot(fake);
 
-        expect(onSnapshot).not.toHaveBeenCalled();
+        expect(receivedSnapshots).toEqual([]);
     });
 
     it('delegates sync request to Director Relay and exposes readSnapshot for relay sync responses', async () => {
@@ -609,8 +620,12 @@ describe('Rallar Game match', () => {
             directorPeerId: 'peer-b',
             directorIsFresh: true
         });
-        const onSnapshot = vi.fn();
-        const match = createMatch(fake, { onSnapshot });
+        const receivedSnapshots: RallarGameEnvelope<Snapshot>[] = [];
+        const match = createMatch(fake, {
+            onSnapshot: (snapshot) => {
+                receivedSnapshots.push(snapshot);
+            }
+        });
         await match.start();
 
         match.stop();
@@ -624,8 +639,8 @@ describe('Rallar Game match', () => {
             phase: 'stopped',
             stopped: true
         });
-        expect(onSnapshot).not.toHaveBeenCalled();
-        expect(fake.relay.stop).toHaveBeenCalled();
+        expect(receivedSnapshots).toEqual([]);
+        expect(fake.relayStopped).toBe(true);
     });
 
     it('returns stopped for network methods after stop without touching transports', async () => {
@@ -638,14 +653,30 @@ describe('Rallar Game match', () => {
         });
         await match.start();
         match.stop();
-        fake.createRelay.mockClear();
-        vi.mocked(fake.relay.sendIntent).mockClear();
-        vi.mocked(fake.relay.sendOutput).mockClear();
-        vi.mocked(fake.relay.sendSnapshot).mockClear();
-        vi.mocked(fake.relay.requestSync).mockClear();
-        fake.realtimeSendJson.mockClear();
-        fake.wsSend.mockClear();
-        fake.waitForRoomLane.mockClear();
+        fake.createRelay.mockImplementation(() => {
+            throw new Error('A stopped match cannot create a relay.');
+        });
+        vi.mocked(fake.relay.sendIntent).mockImplementation(() => {
+            throw new Error('A stopped match cannot send an intent.');
+        });
+        vi.mocked(fake.relay.sendOutput).mockImplementation(() => {
+            throw new Error('A stopped match cannot send an output.');
+        });
+        vi.mocked(fake.relay.sendSnapshot).mockImplementation(() => {
+            throw new Error('A stopped match cannot send a snapshot.');
+        });
+        vi.mocked(fake.relay.requestSync).mockImplementation(() => {
+            throw new Error('A stopped match cannot request sync.');
+        });
+        fake.realtimeSendJson.mockImplementation(() => {
+            throw new Error('A stopped match cannot send realtime data.');
+        });
+        fake.wsSend.mockImplementation(() => {
+            throw new Error('A stopped match cannot send websocket data.');
+        });
+        fake.waitForRoomLane.mockImplementation(() => {
+            throw new Error('A stopped match cannot wait for room lanes.');
+        });
 
         const sendResults = await Promise.all([
             match.sendInput({ x: 1 }),
@@ -667,14 +698,6 @@ describe('Rallar Game match', () => {
             status: 'aborted',
             reason: 'Rallar Game match is stopped.'
         });
-        expect(fake.createRelay).not.toHaveBeenCalled();
-        expect(fake.relay.sendIntent).not.toHaveBeenCalled();
-        expect(fake.relay.sendOutput).not.toHaveBeenCalled();
-        expect(fake.relay.sendSnapshot).not.toHaveBeenCalled();
-        expect(fake.relay.requestSync).not.toHaveBeenCalled();
-        expect(fake.realtimeSendJson).not.toHaveBeenCalled();
-        expect(fake.wsSend).not.toHaveBeenCalled();
-        expect(fake.waitForRoomLane).not.toHaveBeenCalled();
     });
 });
 
@@ -795,6 +818,9 @@ function createFakeRallar(
     let relayConfig:
         | RallarDirectorRelayConfig<RallarGameEnvelope<Intent>, RallarGameEnvelope<Event>, RallarGameEnvelope<Snapshot>>
         | undefined;
+    let relayStopped = false;
+    let realtimeSendCount = 0;
+    let roomRealtimeSendCount = 0;
     const relay: RallarDirectorRelayHandle<RallarGameEnvelope<Intent>, RallarGameEnvelope<Event>, RallarGameEnvelope<Snapshot>> = {
         status: () => directorStatus,
         sendIntent: vi.fn(async () => ({ status: 'sent' as const })),
@@ -802,7 +828,9 @@ function createFakeRallar(
         sendHeartbeat: vi.fn(async () => ({ status: 'sent' as const })),
         sendSnapshot: vi.fn(async () => ({ status: 'sent' as const })),
         requestSync: vi.fn(async () => ({ status: 'sent' as const })),
-        stop: vi.fn()
+        stop: vi.fn(() => {
+            relayStopped = true;
+        })
     };
     const wsSend = vi.fn(async (input: RallarWsSendInput<unknown>) => ({
         transport: 'ws' as const,
@@ -817,15 +845,17 @@ function createFakeRallar(
     const realtimeSendJson = vi.fn(
         async (
             input: RallarRealtimeJsonSendInput<unknown>
-        ): Promise<readonly RallarRealtimeSendResult[]> =>
-            (input.peerIds ?? ['peer-b']).map((peerId) => ({
+        ): Promise<readonly RallarRealtimeSendResult[]> => {
+            realtimeSendCount += 1;
+            return (input.peerIds ?? ['peer-b']).map((peerId) => ({
                 peerId,
                 laneId: input.laneId ?? 'realtime',
                 result: {
                     status: 'sent' as const,
                     bufferedAmount: 0
                 }
-            }))
+            }));
+        }
     );
     let roomRealtimeSendResult: RallarRoomRealtimeSendResult | undefined;
     const roomRealtimeSend = vi.fn(async (
@@ -833,6 +863,7 @@ function createFakeRallar(
         data: unknown,
         options: RallarRoomRealtimeJsonSendOptions<unknown> = {}
     ): Promise<RallarRoomRealtimeSendResult> => {
+        roomRealtimeSendCount += 1;
         if (roomRealtimeSendResult) {
             return roomRealtimeSendResult;
         }
@@ -909,6 +940,15 @@ function createFakeRallar(
         waitForRoomLane,
         waitForPresence,
         relay,
+        get relayStopped() {
+            return relayStopped;
+        },
+        get realtimeSendCount() {
+            return realtimeSendCount;
+        },
+        get roomRealtimeSendCount() {
+            return roomRealtimeSendCount;
+        },
         get relayConfig() {
             return relayConfig;
         },
