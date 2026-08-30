@@ -3,6 +3,7 @@ import {
     expect,
     type Page
 } from '@playwright/test';
+import type { GroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
 import type { RallarBlackBoxTestCommand } from '@shared-test/rallar-bb-test/types.ts';
 import type { RtcBaselineJson } from '../../../packages/shared-rtc-bench/baseline/contracts/rtc-baseline-contracts.ts';
 import type { LiveRtcControlClient } from './live-rtc-performance-evidence.ts';
@@ -11,14 +12,6 @@ type TransportUnderTest = 'realtime' | 'messages.rtc';
 type AgentPrefix = 'A' | 'B' | 'C';
 type ReadinessScope = 'owner' | 'all';
 type FormationEntryLifecycleState = 'forming' | 'active';
-
-interface FormationAgent {
-    readonly page: Page;
-    readonly prefix: AgentPrefix;
-    readonly agentId: string;
-    readonly actor: string;
-    readonly connection: string;
-}
 
 interface CreateGroupFormationLifecycleDriverConfig {
     readonly apiBaseUrl: string | undefined;
@@ -31,7 +24,7 @@ interface CreateGroupFormationLifecycleDriverConfig {
 interface RunGroupFormationLifecycleInput {
     readonly control: LiveRtcControlClient;
     readonly runId: string;
-    readonly agents: readonly [FormationAgent, FormationAgent, FormationAgent];
+    readonly agents: readonly [LiveRtcControlClient.Agent, LiveRtcControlClient.Agent, LiveRtcControlClient.Agent];
     readonly transport: TransportUnderTest;
     readonly groupId: string;
     readonly suffix: string;
@@ -47,8 +40,8 @@ interface GroupFormationLifecycleRun {
 interface ReconnectFormationAgentInput {
     readonly control: LiveRtcControlClient;
     readonly runId: string;
-    readonly reconnectingAgent: FormationAgent;
-    readonly readinessAgent: FormationAgent;
+    readonly reconnectingAgent: LiveRtcControlClient.Agent;
+    readonly readinessAgent: LiveRtcControlClient.Agent;
     readonly transport: TransportUnderTest;
     readonly groupId: string;
     readonly suffix: string;
@@ -66,7 +59,7 @@ interface GroupFormationLifecycleDriver {
 interface ConnectFormationAgentInput {
     readonly control: LiveRtcControlClient;
     readonly runId: string;
-    readonly agent: FormationAgent;
+    readonly agent: LiveRtcControlClient.Agent;
     readonly transport: TransportUnderTest;
     readonly groupId: string;
     readonly suffix: string;
@@ -87,32 +80,45 @@ interface FormationConnections {
     readonly readinessStartedAtMs: number;
 }
 
-interface EstablishedGroupLifecycle {
+interface ConnectedGroupLifecycle {
     readonly commandIds: readonly string[];
     readonly readinessDurations: Readonly<Partial<Record<AgentPrefix, number>>>;
 }
 
-interface EstablishGroupLifecycleInput {
+interface ConnectGroupLifecycleInput {
     readonly run: RunGroupFormationLifecycleInput;
     readonly sessions: Readonly<Record<AgentPrefix, string>>;
     readonly lifecycleSuffix: string;
 }
 
+interface LifecycleStageReceipt {
+    readonly commandIds: readonly string[];
+    readonly formationEpoch: number;
+    readonly groupRevision: number;
+}
+
+interface PublishedGroupLayout {
+    readonly commandIds: readonly string[];
+    readonly identity: GroupLayoutIdentity;
+}
+
 interface GroupLifecycleCommandInput {
     readonly control: LiveRtcControlClient;
     readonly runId: string;
-    readonly owner: FormationAgent;
+    readonly owner: LiveRtcControlClient.Agent;
     readonly groupId: string;
     readonly suffix: string;
 }
 
 interface ActivateGroupInput extends GroupLifecycleCommandInput {
-    readonly agents: readonly [FormationAgent, FormationAgent, FormationAgent];
+    readonly agents: readonly [LiveRtcControlClient.Agent, LiveRtcControlClient.Agent, LiveRtcControlClient.Agent];
     readonly transport: TransportUnderTest;
 }
 
 interface WaitForPlannedLayoutInput extends GroupLifecycleCommandInput {
     readonly expectedSessionIds: readonly string[];
+    readonly expectedFormationEpoch: number;
+    readonly expectedGroupRevision: number;
 }
 
 interface WaitForPresenceRevisionInput extends GroupLifecycleCommandInput {
@@ -167,7 +173,7 @@ async function runGroupFormationLifecycle(
     const lifecycleSuffix = `${input.transport.replace('.', '-')}-${input.suffix}${
         input.readinessScope === 'all' ? '-all' : ''
     }`;
-    const established = await establishGroupLifecycle(config, {
+    const lifecycle = await connectGroupLifecycle(config, {
         run: input,
         sessions,
         lifecycleSuffix,
@@ -177,33 +183,42 @@ async function runGroupFormationLifecycle(
         commandIds: [
             ...formationConnections.connectResults.map((result) => result.commandId),
             ...formationConnections.presenceCommandIds,
-            ...established.commandIds
+            ...lifecycle.commandIds
         ],
         sessions,
-        readinessDurations: established.readinessDurations
+        readinessDurations: lifecycle.readinessDurations
     };
 }
 
-async function establishGroupLifecycle(
+async function connectGroupLifecycle(
     config: CreateGroupFormationLifecycleDriverConfig,
-    input: EstablishGroupLifecycleInput & Readonly<{ readinessStartedAtMs: number; }>
-): Promise<EstablishedGroupLifecycle> {
+    input: ConnectGroupLifecycleInput & Readonly<{ readinessStartedAtMs: number; }>
+): Promise<ConnectedGroupLifecycle> {
     const owner = input.run.agents[0];
     const topologyCommandId = await configureMeshTopology(config, {
         ...input.run,
         owner,
         suffix: input.lifecycleSuffix
     });
-    const lifecycleCommandIds = await enterGroupConnectionCycle(config, {
+    const stageReceipt = await enterGroupConnectionCycle(config, {
         ...input.run,
         owner,
         suffix: input.lifecycleSuffix
     });
-    const plannedLayoutCommandIds = await waitForPlannedLayout(config, {
+    const plannedLayout = await waitForPlannedLayout(config, {
         ...input.run,
         owner,
         suffix: input.lifecycleSuffix,
-        expectedSessionIds: Object.values(input.sessions)
+        expectedSessionIds: Object.values(input.sessions),
+        expectedFormationEpoch: stageReceipt.formationEpoch,
+        expectedGroupRevision: stageReceipt.groupRevision
+    });
+    const connectCommandId = await connectPublishedLayout(config, {
+        ...input.run,
+        owner,
+        suffix: input.lifecycleSuffix,
+        expectedFormationEpoch: stageReceipt.formationEpoch,
+        expectedLayout: plannedLayout.identity
     });
     await refreshAgentRooms(input.run.agents);
     const readinessDurations = await waitForFormationReadiness({
@@ -221,8 +236,9 @@ async function establishGroupLifecycle(
     return {
         commandIds: [
             topologyCommandId,
-            ...lifecycleCommandIds,
-            ...plannedLayoutCommandIds,
+            ...stageReceipt.commandIds,
+            ...plannedLayout.commandIds,
+            connectCommandId,
             activateCommandId
         ],
         readinessDurations
@@ -353,7 +369,7 @@ async function configureMeshTopology(
 async function enterGroupConnectionCycle(
     config: CreateGroupFormationLifecycleDriverConfig,
     input: GroupLifecycleCommandInput
-): Promise<readonly string[]> {
+): Promise<LifecycleStageReceipt> {
     const readCommandId = `group-lifecycle-read-${input.suffix}`;
     const current = await input.control.executeOk({
         ...input,
@@ -365,9 +381,9 @@ async function enterGroupConnectionCycle(
     const lifecycleState = readFormationEntryLifecycleState(
         input.control.resultValue(current)
     );
-    const operation = lifecycleState === 'forming' ? 'establish' : 'reopen';
+    const operation = lifecycleState === 'forming' ? 'plan' : 'reconfigure';
     const commandId = `group-${operation}-${input.suffix}`;
-    await input.control.executeOk({
+    const result = await input.control.executeOk({
         ...input,
         agentId: input.owner.agentId,
         commandId,
@@ -380,7 +396,7 @@ async function enterGroupConnectionCycle(
                     `lifecycle/${operation}/requests/${pathSegment(`${operation}-${input.suffix}`)}`
                 ),
                 method: 'POST',
-                body: {}
+                body: operation === 'reconfigure' ? { landing: 'hold' } : {}
             },
             response: {
                 body: 'json',
@@ -388,7 +404,45 @@ async function enterGroupConnectionCycle(
             }
         }
     });
-    return [readCommandId, commandId];
+    return {
+        commandIds: [readCommandId, commandId],
+        ...readLifecycleStageReceipt(input.control.resultValue(result), commandId)
+    };
+}
+
+async function connectPublishedLayout(
+    config: CreateGroupFormationLifecycleDriverConfig,
+    input: GroupLifecycleCommandInput & Readonly<{
+        expectedFormationEpoch: number;
+        expectedLayout: GroupLayoutIdentity;
+    }>
+): Promise<string> {
+    const commandId = `group-connect-${input.suffix}`;
+    await input.control.executeOk({
+        ...input,
+        agentId: input.owner.agentId,
+        commandId,
+        command: {
+            kind: 'http.request',
+            request: {
+                path: groupRequestPath(
+                    config,
+                    input.groupId,
+                    `lifecycle/connect/requests/${pathSegment(`connect-${input.suffix}`)}`
+                ),
+                method: 'POST',
+                body: {
+                    expectedFormationEpoch: input.expectedFormationEpoch,
+                    expectedLayout: input.expectedLayout
+                }
+            },
+            response: {
+                body: 'json',
+                acceptedStatusCodes: [200]
+            }
+        }
+    });
+    return commandId;
 }
 
 async function activateAndRefreshAcceptedLayout(
@@ -423,7 +477,7 @@ async function activateAndRefreshAcceptedLayout(
 }
 
 async function refreshAgentRooms(
-    agents: readonly [FormationAgent, FormationAgent, FormationAgent]
+    agents: readonly [LiveRtcControlClient.Agent, LiveRtcControlClient.Agent, LiveRtcControlClient.Agent]
 ): Promise<void> {
     await Promise.all(agents.map((agent) =>
         agent.page.evaluate(async () => {
@@ -443,9 +497,10 @@ async function refreshAgentRooms(
 async function waitForPlannedLayout(
     config: CreateGroupFormationLifecycleDriverConfig,
     input: WaitForPlannedLayoutInput
-): Promise<readonly string[]> {
+): Promise<PublishedGroupLayout> {
     let attempt = 0;
     const commandIds: string[] = [];
+    let plannedLayout: GroupLayoutIdentity | undefined;
     await expect.poll(async () => {
         const commandId = `topology-planned-${input.suffix}-${attempt++}`;
         commandIds.push(commandId);
@@ -457,14 +512,26 @@ async function waitForPlannedLayout(
             timeoutMs: 15_000
         }).catch(() => undefined);
         if (!result?.ok) {
-            return [];
+            return false;
         }
-        return readPlannedSessionIds(input.control.resultValue(result));
+        const candidate = readPublishedLayout(input.control.resultValue(result));
+        if (
+            candidate === undefined ||
+            candidate.identity.groupRevision !== input.expectedGroupRevision ||
+            !input.expectedSessionIds.every((sessionId) => candidate.sessionIds.includes(sessionId))
+        ) {
+            return false;
+        }
+        plannedLayout = candidate.identity;
+        return true;
     }, {
-        message: `Expected planned topology to contain ${input.expectedSessionIds.join(', ')}`,
+        message: `Expected a fresh epoch ${input.expectedFormationEpoch} planned topology with ${input.expectedSessionIds.join(', ')}`,
         timeout: 30_000
-    }).toEqual(expect.arrayContaining([...input.expectedSessionIds]));
-    return commandIds;
+    }).toBe(true);
+    if (!plannedLayout) {
+        throw new Error(`Planned layout did not resolve for formation epoch ${input.expectedFormationEpoch}.`);
+    }
+    return { commandIds, identity: plannedLayout };
 }
 
 async function waitForPresenceRevision(
@@ -562,10 +629,43 @@ function groupRequestPath(
     return suffix ? `${groupPath}/${suffix}` : groupPath;
 }
 
-function readPlannedSessionIds(value: Readonly<Record<string, RtcBaselineJson>>): readonly string[] {
+function readPublishedLayout(
+    value: Readonly<Record<string, RtcBaselineJson>>
+): Readonly<{ sessionIds: readonly string[]; identity: GroupLayoutIdentity; }> | undefined {
     const body = jsonRecord(value.body);
     const snapshot = jsonRecord(body.snapshot);
-    return stringArrayValue(snapshot.activeSessionIds);
+    const sourceRevision = jsonRecord(snapshot.sourceGroupStateCausalRevision);
+    const groupRevision = numberValue(sourceRevision.groupRevision);
+    const presenceRevision = numberValue(sourceRevision.presenceRevision);
+    const version = numberValue(snapshot.version);
+    const state = snapshot.state;
+    if (
+        groupRevision === undefined ||
+        presenceRevision === undefined ||
+        version === undefined ||
+        (state !== 'active' && state !== 'removed')
+    ) {
+        return undefined;
+    }
+    return {
+        sessionIds: stringArrayValue(snapshot.activeSessionIds),
+        identity: { groupRevision, presenceRevision, version, state }
+    };
+}
+
+function readLifecycleStageReceipt(
+    value: Readonly<Record<string, RtcBaselineJson>>,
+    commandId: string
+): Omit<LifecycleStageReceipt, 'commandIds'> {
+    const body = jsonRecord(value.body);
+    const group = jsonRecord(body.group);
+    const causalRevision = jsonRecord(body.causalRevision);
+    const formationEpoch = numberValue(group.formationEpoch);
+    const groupRevision = numberValue(causalRevision.groupRevision);
+    if (formationEpoch === undefined || groupRevision === undefined) {
+        throw new Error(`Lifecycle command ${commandId} did not return its formation epoch and group revision.`);
+    }
+    return { formationEpoch, groupRevision };
 }
 
 function readPresenceRevision(value: Readonly<Record<string, RtcBaselineJson>>): number | undefined {
@@ -595,6 +695,12 @@ function stringArrayValue(value: RtcBaselineJson | undefined): readonly string[]
     return Array.isArray(value)
         ? value.filter((entry): entry is string => typeof entry === 'string')
         : [];
+}
+
+function numberValue(value: RtcBaselineJson | undefined): number | undefined {
+    return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0
+        ? value
+        : undefined;
 }
 
 function pathSegment(value: string): string {

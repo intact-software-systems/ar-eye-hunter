@@ -147,7 +147,10 @@
         }
       },
       "expect": {
-        "statusCode": [201, 409]
+        "statusCode": [
+          201,
+          409
+        ]
       }
     },
     {
@@ -421,7 +424,9 @@
             },
             "manager": {
               "selection": "assigned",
-              "assignedPrincipalIds": ["{bobClientId}"],
+              "assignedPrincipalIds": [
+                "{bobClientId}"
+              ],
               "count": 1
             }
           }
@@ -549,7 +554,9 @@
       "expect": {
         "status": 200,
         "body": {
-          "managerPrincipalIds": ["{bobClientId}"]
+          "managerPrincipalIds": [
+            "{bobClientId}"
+          ]
         }
       }
     },
@@ -666,25 +673,94 @@
       }
     },
     {
-      "name": "creatorEstablishesPastThePark",
+      "name": "creatorPlansPastThePark",
       "type": "http",
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{epochGroupId}/lifecycle/establish/requests/establish-epoch-{runId}",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{epochGroupId}/lifecycle/plan/requests/plan-epoch-{runId}",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
         },
-        "body": {}
+        "body": {},
+        "outputs": {
+          "creatorPlansPastTheParkPlannedEpoch": "body.group.formationEpoch"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "lifecycleState": "planned",
+            "formationEpoch": 1,
+            "formationElectorate": [
+              "{aliceClientId}"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "creatorPlansPastTheParkPublication",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{epochGroupId}/topology",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "poll": {
+          "maxAttempts": 20,
+          "maxDurationMs": 15000,
+          "backoffMs": 100,
+          "backoffMultiplier": 2
+        },
+        "outputs": {
+          "creatorPlansPastTheParkLayoutGroupRevision": "body.snapshot.sourceGroupStateCausalRevision.groupRevision",
+          "creatorPlansPastTheParkLayoutPresenceRevision": "body.snapshot.sourceGroupStateCausalRevision.presenceRevision",
+          "creatorPlansPastTheParkLayoutVersion": "body.snapshot.version",
+          "creatorPlansPastTheParkLayoutState": "body.snapshot.state"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "snapshot": {
+            "state": "active"
+          }
+        }
+      }
+    },
+    {
+      "name": "creatorPlansPastTheParkConnectsPublishedLayout",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{epochGroupId}/lifecycle/connect/requests/connect-plan-epoch-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "expectedFormationEpoch": "{creatorPlansPastTheParkPlannedEpoch}",
+          "expectedLayout": {
+            "groupRevision": "{creatorPlansPastTheParkLayoutGroupRevision}",
+            "presenceRevision": "{creatorPlansPastTheParkLayoutPresenceRevision}",
+            "version": "{creatorPlansPastTheParkLayoutVersion}",
+            "state": "{creatorPlansPastTheParkLayoutState}"
+          }
+        }
       },
       "expect": {
         "status": 200,
         "body": {
           "group": {
             "lifecycleState": "connecting",
-            "formationEpoch": 1,
-            "formationElectorate": ["{aliceClientId}"]
+            "formationEpoch": 2
           }
         }
       }
@@ -711,7 +787,7 @@
         "status": 200,
         "body": {
           "lifecycleState": "active",
-          "formationEpoch": 2,
+          "formationEpoch": 3,
           "lastFormationOutcome": {
             "outcome": "activated"
           }
@@ -734,7 +810,7 @@
         "status": 200,
         "body": {
           "group": {
-            "formationEpoch": 2
+            "formationEpoch": 3
           },
           "members": [
             {
@@ -762,7 +838,7 @@
         "status": 200,
         "body": {
           "group": {
-            "formationEpoch": 2
+            "formationEpoch": 3
           },
           "members": [
             {

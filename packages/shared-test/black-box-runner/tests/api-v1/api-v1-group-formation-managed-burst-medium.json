@@ -1,5 +1,5 @@
 {
-  "description": "Managed threshold burst tier medium (N=20): 20 clients join a preset:managed phased group with open admission, the creator-manager establishes, readiness holds at zero observed edges, an all-pairs RTT burst covers every planned mesh edge, and activation fires only at threshold (outcome activated, observedRate 1).",
+  "description": "Managed threshold burst tier medium (N=20): 20 clients join a preset:managed phased group with open admission, the creator-manager planes, readiness holds at zero observed edges, an all-pairs RTT burst covers every planned mesh edge, and activation fires only at threshold (outcome activated, observedRate 1).",
   "variables": {
     "rallarApiBaseUrl": {
       "env": "RALLAR_API_BASE_URL",
@@ -222,7 +222,9 @@
               "username": "managed-burst-medium-client-{i}-{runId}",
               "displayName": "Managed medium client {i}",
               "status": "active",
-              "roles": ["black-box"]
+              "roles": [
+                "black-box"
+              ]
             }
           },
           "expect": {
@@ -322,7 +324,12 @@
             "retry": {
               "maxAttempts": 3,
               "backoffMs": 2000,
-              "onStatus": [500, 502, 503, 504]
+              "onStatus": [
+                500,
+                502,
+                503,
+                504
+              ]
             }
           },
           "expect": {
@@ -809,24 +816,91 @@
       ]
     },
     {
-      "name": "managerEstablishes",
+      "name": "managerPlans",
       "type": "http",
       "connection": "api",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/lifecycle/establish/requests/establish-{groupId}-{runId}",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/lifecycle/plan/requests/plan-{groupId}-{runId}",
         "headers": {
           "Authorization": "{creatorAuthHeader}",
           "x-client-id": "{creatorClientId}"
         },
-        "body": {}
+        "body": {},
+        "outputs": {
+          "managerPlansPlannedEpoch": "body.group.formationEpoch"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "lifecycleState": "planned",
+            "formationEpoch": 1
+          }
+        }
+      }
+    },
+    {
+      "name": "managerPlansPublication",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology",
+        "headers": {
+          "Authorization": "{creatorAuthHeader}",
+          "x-client-id": "{creatorClientId}"
+        },
+        "poll": {
+          "maxAttempts": 20,
+          "maxDurationMs": 15000,
+          "backoffMs": 100,
+          "backoffMultiplier": 2
+        },
+        "outputs": {
+          "managerPlansLayoutGroupRevision": "body.snapshot.sourceGroupStateCausalRevision.groupRevision",
+          "managerPlansLayoutPresenceRevision": "body.snapshot.sourceGroupStateCausalRevision.presenceRevision",
+          "managerPlansLayoutVersion": "body.snapshot.version",
+          "managerPlansLayoutState": "body.snapshot.state"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "snapshot": {
+            "state": "active"
+          }
+        }
+      }
+    },
+    {
+      "name": "managerPlansConnectsPublishedLayout",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/lifecycle/connect/requests/connect-plan-{groupId}-{runId}",
+        "headers": {
+          "Authorization": "{creatorAuthHeader}",
+          "x-client-id": "{creatorClientId}"
+        },
+        "body": {
+          "expectedFormationEpoch": "{managerPlansPlannedEpoch}",
+          "expectedLayout": {
+            "groupRevision": "{managerPlansLayoutGroupRevision}",
+            "presenceRevision": "{managerPlansLayoutPresenceRevision}",
+            "version": "{managerPlansLayoutVersion}",
+            "state": "{managerPlansLayoutState}"
+          }
+        }
       },
       "expect": {
         "status": 200,
         "body": {
           "group": {
             "lifecycleState": "connecting",
-            "formationEpoch": 1
+            "formationEpoch": 2
           }
         }
       }

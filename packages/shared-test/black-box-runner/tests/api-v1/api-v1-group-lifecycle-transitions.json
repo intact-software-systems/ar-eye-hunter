@@ -436,12 +436,12 @@
       }
     },
     {
-      "name": "bobCannotStartEstablishment",
+      "name": "bobCannotStartPlans",
       "type": "http",
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{managedGroupId}/lifecycle/establish/requests/bob-start-{runId}",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{managedGroupId}/lifecycle/plan/requests/bob-start-{runId}",
         "headers": {
           "Authorization": "{bobAuthHeader}",
           "x-client-id": "{bobClientId}"
@@ -459,24 +459,91 @@
       }
     },
     {
-      "name": "startEstablishment",
+      "name": "startPlan",
       "type": "http",
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{managedGroupId}/lifecycle/establish/requests/start-establishment-{runId}",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{managedGroupId}/lifecycle/plan/requests/start-establishment-{runId}",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
         },
-        "body": {}
+        "body": {},
+        "outputs": {
+          "startEstablishmentPlannedEpoch": "body.group.formationEpoch"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "lifecycleState": "planned",
+            "formationEpoch": 1
+          }
+        }
+      }
+    },
+    {
+      "name": "startPlanPublication",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{managedGroupId}/topology",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "poll": {
+          "maxAttempts": 20,
+          "maxDurationMs": 15000,
+          "backoffMs": 100,
+          "backoffMultiplier": 2
+        },
+        "outputs": {
+          "startEstablishmentLayoutGroupRevision": "body.snapshot.sourceGroupStateCausalRevision.groupRevision",
+          "startEstablishmentLayoutPresenceRevision": "body.snapshot.sourceGroupStateCausalRevision.presenceRevision",
+          "startEstablishmentLayoutVersion": "body.snapshot.version",
+          "startEstablishmentLayoutState": "body.snapshot.state"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "snapshot": {
+            "state": "active"
+          }
+        }
+      }
+    },
+    {
+      "name": "startPlanConnectsPublishedLayout",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{managedGroupId}/lifecycle/connect/requests/connect-start-establishment-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "expectedFormationEpoch": "{startEstablishmentPlannedEpoch}",
+          "expectedLayout": {
+            "groupRevision": "{startEstablishmentLayoutGroupRevision}",
+            "presenceRevision": "{startEstablishmentLayoutPresenceRevision}",
+            "version": "{startEstablishmentLayoutVersion}",
+            "state": "{startEstablishmentLayoutState}"
+          }
+        }
       },
       "expect": {
         "status": 200,
         "body": {
           "group": {
             "lifecycleState": "connecting",
-            "formationEpoch": 1
+            "formationEpoch": 2
           }
         }
       }
@@ -534,7 +601,7 @@
         "status": 200,
         "body": {
           "lifecycleState": "connecting",
-          "formationEpoch": 1,
+          "formationEpoch": 2,
           "establishmentStartedAtEpochMs": "integer",
           "readiness": {
             "plannedEdgeCount": 1,
@@ -565,7 +632,7 @@
         "body": {
           "group": {
             "lifecycleState": "active",
-            "formationEpoch": 2
+            "formationEpoch": 3
           }
         }
       }
@@ -598,12 +665,12 @@
       }
     },
     {
-      "name": "reopenEstablishment",
+      "name": "pauseBeforeHoldReconfiguration",
       "type": "http",
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{managedGroupId}/lifecycle/reopen/requests/bb-request-reopen-{runId}",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{managedGroupId}/lifecycle/pause/requests/pause-before-reconfigure-{runId}",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
@@ -614,8 +681,102 @@
         "status": 200,
         "body": {
           "group": {
+            "lifecycleState": "active",
+            "transportState": "halted"
+          }
+        }
+      }
+    },
+    {
+      "name": "reconfigureEstablishment",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{managedGroupId}/lifecycle/reconfigure/requests/bb-request-reopen-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "landing": "hold"
+        },
+        "outputs": {
+          "reopenEstablishmentPlannedEpoch": "body.group.formationEpoch"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
             "lifecycleState": "reconfiguring",
-            "formationEpoch": 3
+            "formationEpoch": 4,
+            "transportState": "halted"
+          }
+        }
+      }
+    },
+    {
+      "name": "reconfigureEstablishmentPublication",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{managedGroupId}/topology",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "poll": {
+          "maxAttempts": 20,
+          "maxDurationMs": 15000,
+          "backoffMs": 100,
+          "backoffMultiplier": 2
+        },
+        "outputs": {
+          "reopenEstablishmentLayoutGroupRevision": "body.snapshot.sourceGroupStateCausalRevision.groupRevision",
+          "reopenEstablishmentLayoutPresenceRevision": "body.snapshot.sourceGroupStateCausalRevision.presenceRevision",
+          "reopenEstablishmentLayoutVersion": "body.snapshot.version",
+          "reopenEstablishmentLayoutState": "body.snapshot.state"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "snapshot": {
+            "state": "active"
+          }
+        }
+      }
+    },
+    {
+      "name": "reconfigureEstablishmentConnectsPublishedLayout",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{managedGroupId}/lifecycle/connect/requests/connect-bb-request-reopen-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "expectedFormationEpoch": "{reopenEstablishmentPlannedEpoch}",
+          "expectedLayout": {
+            "groupRevision": "{reopenEstablishmentLayoutGroupRevision}",
+            "presenceRevision": "{reopenEstablishmentLayoutPresenceRevision}",
+            "version": "{reopenEstablishmentLayoutVersion}",
+            "state": "{reopenEstablishmentLayoutState}"
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "lifecycleState": "reconnecting",
+            "formationEpoch": 5,
+            "transportState": "halted"
           }
         }
       }
@@ -638,7 +799,8 @@
         "body": {
           "group": {
             "lifecycleState": "active",
-            "formationEpoch": 4
+            "formationEpoch": 6,
+            "transportState": "halted"
           }
         }
       }
@@ -649,7 +811,7 @@
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{managedGroupId}/lifecycle/establish/requests/start-from-active-{runId}",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{managedGroupId}/lifecycle/plan/requests/start-from-active-{runId}",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
@@ -663,6 +825,56 @@
           "version": "canonical.v2",
           "code": "lifecycle-transition-invalid",
           "status": 403
+        }
+      }
+    },
+    {
+      "name": "resetPausedLifecycleSeries",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{managedGroupId}/lifecycle/reset/requests/reset-paused-series-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {}
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "lifecycleState": "dormant",
+            "formationEpoch": 7,
+            "formationAttemptCount": 0,
+            "transportState": "halted"
+          }
+        }
+      }
+    },
+    {
+      "name": "startResetLifecycleSeries",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{managedGroupId}/lifecycle/start/requests/start-reset-series-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {}
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "lifecycleState": "forming",
+            "formationEpoch": 8,
+            "formationAttemptCount": 0,
+            "transportState": "halted"
+          }
         }
       }
     },

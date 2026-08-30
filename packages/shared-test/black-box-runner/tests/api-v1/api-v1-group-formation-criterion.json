@@ -35,7 +35,8 @@
     "rallarWsBaseUrl": {
       "env": "RALLAR_WS_BASE_URL",
       "default": "ws://127.0.0.1:18080"
-    }
+    },
+    "retryGroupId": "retry-room-{runId}"
   },
   "execution": {
     "correlation": {
@@ -197,24 +198,91 @@
       }
     },
     {
-      "name": "startAutoEstablishment",
+      "name": "startAutoPlans",
       "type": "http",
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{autoGroupId}/lifecycle/establish/requests/establish-auto-{runId}",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{autoGroupId}/lifecycle/plan/requests/establish-auto-{runId}",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
         },
-        "body": {}
+        "body": {},
+        "outputs": {
+          "startAutoEstablishmentPlannedEpoch": "body.group.formationEpoch"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "lifecycleState": "planned",
+            "formationEpoch": 1
+          }
+        }
+      }
+    },
+    {
+      "name": "startAutoPlansPublication",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{autoGroupId}/topology",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "poll": {
+          "maxAttempts": 20,
+          "maxDurationMs": 15000,
+          "backoffMs": 100,
+          "backoffMultiplier": 2
+        },
+        "outputs": {
+          "startAutoEstablishmentLayoutGroupRevision": "body.snapshot.sourceGroupStateCausalRevision.groupRevision",
+          "startAutoEstablishmentLayoutPresenceRevision": "body.snapshot.sourceGroupStateCausalRevision.presenceRevision",
+          "startAutoEstablishmentLayoutVersion": "body.snapshot.version",
+          "startAutoEstablishmentLayoutState": "body.snapshot.state"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "snapshot": {
+            "state": "active"
+          }
+        }
+      }
+    },
+    {
+      "name": "startAutoPlansConnectsPublishedLayout",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{autoGroupId}/lifecycle/connect/requests/connect-establish-auto-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "expectedFormationEpoch": "{startAutoEstablishmentPlannedEpoch}",
+          "expectedLayout": {
+            "groupRevision": "{startAutoEstablishmentLayoutGroupRevision}",
+            "presenceRevision": "{startAutoEstablishmentLayoutPresenceRevision}",
+            "version": "{startAutoEstablishmentLayoutVersion}",
+            "state": "{startAutoEstablishmentLayoutState}"
+          }
+        }
       },
       "expect": {
         "status": 200,
         "body": {
           "group": {
             "lifecycleState": "connecting",
-            "formationEpoch": 1
+            "formationEpoch": 2
           }
         }
       }
@@ -241,13 +309,15 @@
         "status": 200,
         "body": {
           "lifecycleState": "active",
-          "formationEpoch": 2,
+          "formationEpoch": 3,
           "formationAttemptCount": 0,
           "lastFormationOutcome": {
             "outcome": "activated",
             "observedRate": 1
           },
-          "managerPrincipalIds": ["{aliceClientId}"]
+          "managerPrincipalIds": [
+            "{aliceClientId}"
+          ]
         }
       }
     },
@@ -290,7 +360,9 @@
             "groupId": "{deadlineGroupId}",
             "lifecycleState": "forming",
             "formationEpoch": 0,
-            "formationElectorate": ["{aliceClientId}"]
+            "formationElectorate": [
+              "{aliceClientId}"
+            ]
           }
         }
       }
@@ -353,25 +425,95 @@
       }
     },
     {
-      "name": "startDeadlineEstablishment",
+      "name": "startDeadlinePlans",
       "type": "http",
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{deadlineGroupId}/lifecycle/establish/requests/establish-deadline-{runId}",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{deadlineGroupId}/lifecycle/plan/requests/establish-deadline-{runId}",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
         },
-        "body": {}
+        "body": {},
+        "outputs": {
+          "startDeadlineEstablishmentPlannedEpoch": "body.group.formationEpoch"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "lifecycleState": "planned",
+            "formationEpoch": 1,
+            "formationElectorate": [
+              "{aliceClientId}",
+              "{bobClientId}"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "startDeadlinePlansPublication",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{deadlineGroupId}/topology",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "poll": {
+          "maxAttempts": 20,
+          "maxDurationMs": 15000,
+          "backoffMs": 100,
+          "backoffMultiplier": 2
+        },
+        "outputs": {
+          "startDeadlineEstablishmentLayoutGroupRevision": "body.snapshot.sourceGroupStateCausalRevision.groupRevision",
+          "startDeadlineEstablishmentLayoutPresenceRevision": "body.snapshot.sourceGroupStateCausalRevision.presenceRevision",
+          "startDeadlineEstablishmentLayoutVersion": "body.snapshot.version",
+          "startDeadlineEstablishmentLayoutState": "body.snapshot.state"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "snapshot": {
+            "state": "active"
+          }
+        }
+      }
+    },
+    {
+      "name": "startDeadlinePlansConnectsPublishedLayout",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{deadlineGroupId}/lifecycle/connect/requests/connect-establish-deadline-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "expectedFormationEpoch": "{startDeadlineEstablishmentPlannedEpoch}",
+          "expectedLayout": {
+            "groupRevision": "{startDeadlineEstablishmentLayoutGroupRevision}",
+            "presenceRevision": "{startDeadlineEstablishmentLayoutPresenceRevision}",
+            "version": "{startDeadlineEstablishmentLayoutVersion}",
+            "state": "{startDeadlineEstablishmentLayoutState}"
+          }
+        }
       },
       "expect": {
         "status": 200,
         "body": {
           "group": {
             "lifecycleState": "connecting",
-            "formationEpoch": 1,
-            "formationElectorate": ["{aliceClientId}", "{bobClientId}"]
+            "formationEpoch": 2
           }
         }
       }
@@ -398,13 +540,315 @@
         "status": 200,
         "body": {
           "lifecycleState": "forming",
-          "formationEpoch": 2,
+          "formationEpoch": 3,
           "formationAttemptCount": 1,
           "lastFormationOutcome": {
             "outcome": "below-floor",
             "observedRate": 0
           },
-          "managerPrincipalIds": ["{aliceClientId}"]
+          "managerPrincipalIds": [
+            "{aliceClientId}"
+          ]
+        }
+      }
+    },
+    {
+      "name": "createAutomaticRetryGroup",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/requests/group-create-automatic-retry-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "groupId": "{retryGroupId}",
+          "displayName": "Automatic retry group {runId}",
+          "kind": "room",
+          "joinMode": "open",
+          "createdByPrincipalId": "{aliceClientId}",
+          "lifecyclePolicy": {
+            "preset": "managed",
+            "activation": {
+              "mode": "deadline",
+              "successRate": 1,
+              "minimumViableRate": 1,
+              "deadlineMs": 3000,
+              "maxFormationAttempts": 2
+            },
+            "admission": {
+              "mode": "open"
+            }
+          }
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "group": {
+            "groupId": "{retryGroupId}",
+            "lifecycleState": "forming",
+            "formationEpoch": 0,
+            "formationElectorate": [
+              "{aliceClientId}"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "joinBobToAutomaticRetryGroup",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{retryGroupId}/join/requests/join-bob-automatic-retry-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {}
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "members": [
+            {
+              "principalId": "{bobClientId}",
+              "status": "active"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "connectAliceRetryPresence",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{retryGroupId}/sessions/{aliceSessionId}/requests/presence-alice-retry-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "generationId": "generation-{runId}",
+          "principalId": "{aliceClientId}"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "connectBobRetryPresence",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{retryGroupId}/sessions/{bobSessionId}/requests/presence-bob-retry-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "generationId": "generation-{runId}",
+          "principalId": "{bobClientId}"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "planAutomaticRetryGroup",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{retryGroupId}/lifecycle/plan/requests/plan-automatic-retry-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {},
+        "outputs": {
+          "retryPlannedEpoch": "body.group.formationEpoch"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "lifecycleState": "planned",
+            "formationEpoch": 1,
+            "formationElectorate": [
+              "{aliceClientId}",
+              "{bobClientId}"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "publishedRetryLayoutBeforeInitialDial",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{retryGroupId}/topology",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "poll": {
+          "maxAttempts": 20,
+          "maxDurationMs": 15000,
+          "backoffMs": 100,
+          "backoffMultiplier": 2
+        },
+        "outputs": {
+          "retryLayoutGroupRevision": "body.snapshot.sourceGroupStateCausalRevision.groupRevision",
+          "retryLayoutPresenceRevision": "body.snapshot.sourceGroupStateCausalRevision.presenceRevision",
+          "retryLayoutVersion": "body.snapshot.version",
+          "retryLayoutState": "body.snapshot.state"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "snapshot": {
+            "state": "active"
+          }
+        }
+      }
+    },
+    {
+      "name": "connectAutomaticRetryGroup",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{retryGroupId}/lifecycle/connect/requests/connect-automatic-retry-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "expectedFormationEpoch": "{retryPlannedEpoch}",
+          "expectedLayout": {
+            "groupRevision": "{retryLayoutGroupRevision}",
+            "presenceRevision": "{retryLayoutPresenceRevision}",
+            "version": "{retryLayoutVersion}",
+            "state": "{retryLayoutState}"
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "lifecycleState": "connecting",
+            "formationEpoch": 2
+          }
+        }
+      }
+    },
+    {
+      "name": "automaticRetryReplansPublishesAndReconnects",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{retryGroupId}/formation",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "poll": {
+          "maxAttempts": 20,
+          "maxDurationMs": 15000,
+          "backoffMs": 1000,
+          "backoffMultiplier": 1
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "lifecycleState": "connecting",
+          "formationEpoch": 5,
+          "formationAttemptCount": 1,
+          "lastFormationOutcome": {
+            "outcome": "below-floor",
+            "observedRate": 0
+          },
+          "managerPrincipalIds": [
+            "{aliceClientId}"
+          ]
+        }
+      }
+    },
+    {
+      "name": "retryPublicationIsDurablyVisible",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{retryGroupId}/topology",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "poll": {
+          "maxAttempts": 20,
+          "maxDurationMs": 15000,
+          "backoffMs": 100,
+          "backoffMultiplier": 2
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "snapshot": {
+            "state": "active"
+          }
+        }
+      }
+    },
+    {
+      "name": "automaticRetryExhaustsOnlyAfterSecondFailedDial",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{retryGroupId}/formation",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "poll": {
+          "maxAttempts": 20,
+          "maxDurationMs": 15000,
+          "backoffMs": 1000,
+          "backoffMultiplier": 1
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "lifecycleState": "forming",
+          "formationEpoch": 6,
+          "formationAttemptCount": 2,
+          "lastFormationOutcome": {
+            "outcome": "below-floor",
+            "observedRate": 0
+          },
+          "managerPrincipalIds": [
+            "{aliceClientId}"
+          ]
         }
       }
     },
@@ -517,24 +961,91 @@
       }
     },
     {
-      "name": "startThresholdEstablishment",
+      "name": "startThresholdPlans",
       "type": "http",
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{thresholdGroupId}/lifecycle/establish/requests/establish-threshold-{runId}",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{thresholdGroupId}/lifecycle/plan/requests/establish-threshold-{runId}",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
         },
-        "body": {}
+        "body": {},
+        "outputs": {
+          "startThresholdEstablishmentPlannedEpoch": "body.group.formationEpoch"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "lifecycleState": "planned",
+            "formationEpoch": 1
+          }
+        }
+      }
+    },
+    {
+      "name": "startThresholdPlansPublication",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{thresholdGroupId}/topology",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "poll": {
+          "maxAttempts": 20,
+          "maxDurationMs": 15000,
+          "backoffMs": 100,
+          "backoffMultiplier": 2
+        },
+        "outputs": {
+          "startThresholdEstablishmentLayoutGroupRevision": "body.snapshot.sourceGroupStateCausalRevision.groupRevision",
+          "startThresholdEstablishmentLayoutPresenceRevision": "body.snapshot.sourceGroupStateCausalRevision.presenceRevision",
+          "startThresholdEstablishmentLayoutVersion": "body.snapshot.version",
+          "startThresholdEstablishmentLayoutState": "body.snapshot.state"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "snapshot": {
+            "state": "active"
+          }
+        }
+      }
+    },
+    {
+      "name": "startThresholdPlansConnectsPublishedLayout",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{thresholdGroupId}/lifecycle/connect/requests/connect-establish-threshold-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "expectedFormationEpoch": "{startThresholdEstablishmentPlannedEpoch}",
+          "expectedLayout": {
+            "groupRevision": "{startThresholdEstablishmentLayoutGroupRevision}",
+            "presenceRevision": "{startThresholdEstablishmentLayoutPresenceRevision}",
+            "version": "{startThresholdEstablishmentLayoutVersion}",
+            "state": "{startThresholdEstablishmentLayoutState}"
+          }
+        }
       },
       "expect": {
         "status": 200,
         "body": {
           "group": {
             "lifecycleState": "connecting",
-            "formationEpoch": 1
+            "formationEpoch": 2
           }
         }
       }
@@ -678,24 +1189,91 @@
       }
     },
     {
-      "name": "startDegradedEstablishment",
+      "name": "startDegradedPlans",
       "type": "http",
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{degradedGroupId}/lifecycle/establish/requests/establish-degraded-{runId}",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{degradedGroupId}/lifecycle/plan/requests/establish-degraded-{runId}",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
         },
-        "body": {}
+        "body": {},
+        "outputs": {
+          "startDegradedEstablishmentPlannedEpoch": "body.group.formationEpoch"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "lifecycleState": "planned",
+            "formationEpoch": 1
+          }
+        }
+      }
+    },
+    {
+      "name": "startDegradedPlansPublication",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{degradedGroupId}/topology",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "poll": {
+          "maxAttempts": 20,
+          "maxDurationMs": 15000,
+          "backoffMs": 100,
+          "backoffMultiplier": 2
+        },
+        "outputs": {
+          "startDegradedEstablishmentLayoutGroupRevision": "body.snapshot.sourceGroupStateCausalRevision.groupRevision",
+          "startDegradedEstablishmentLayoutPresenceRevision": "body.snapshot.sourceGroupStateCausalRevision.presenceRevision",
+          "startDegradedEstablishmentLayoutVersion": "body.snapshot.version",
+          "startDegradedEstablishmentLayoutState": "body.snapshot.state"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "snapshot": {
+            "state": "active"
+          }
+        }
+      }
+    },
+    {
+      "name": "startDegradedPlansConnectsPublishedLayout",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{degradedGroupId}/lifecycle/connect/requests/connect-establish-degraded-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "expectedFormationEpoch": "{startDegradedEstablishmentPlannedEpoch}",
+          "expectedLayout": {
+            "groupRevision": "{startDegradedEstablishmentLayoutGroupRevision}",
+            "presenceRevision": "{startDegradedEstablishmentLayoutPresenceRevision}",
+            "version": "{startDegradedEstablishmentLayoutVersion}",
+            "state": "{startDegradedEstablishmentLayoutState}"
+          }
+        }
       },
       "expect": {
         "status": 200,
         "body": {
           "group": {
             "lifecycleState": "connecting",
-            "formationEpoch": 1
+            "formationEpoch": 2
           }
         }
       }
@@ -722,7 +1300,7 @@
         "status": 200,
         "body": {
           "lifecycleState": "active",
-          "formationEpoch": 2,
+          "formationEpoch": 3,
           "lastFormationOutcome": {
             "outcome": "activated-degraded",
             "observedRate": 0

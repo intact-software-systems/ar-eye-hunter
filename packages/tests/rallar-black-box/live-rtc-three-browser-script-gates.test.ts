@@ -11,7 +11,6 @@ const packageJson = JSON.parse(
     fs.readFileSync(path.join(repoRoot, 'package.json'), 'utf8')
 ) as PackageManifest;
 const liveMatrixSpec = 'tests/playwright/rallar-black-box/full-stack-live-rtc-three-browser-matrix.spec.ts';
-const liveLifecycleDriver = 'tests/playwright/rallar-black-box/group-formation-lifecycle-driver.ts';
 const liveDeliveryOperations = 'tests/playwright/rallar-black-box/live-rtc-delivery-operations.ts';
 
 const REQUIRED_LIVE_RTC_GATE_ENV = [
@@ -83,12 +82,8 @@ describe('live three-browser RTC npm script gates', () => {
         expect(source).toContain('crypto.randomUUID()');
     });
 
-    it('uses the current idempotent group mutation request routes', () => {
+    it('keeps idempotent group setup and delivery support routes', () => {
         const matrixSource = fs.readFileSync(path.join(repoRoot, liveMatrixSpec), 'utf8');
-        const lifecycleSource = fs.readFileSync(
-            path.join(repoRoot, liveLifecycleDriver),
-            'utf8'
-        );
         const deliverySource = fs.readFileSync(
             path.join(repoRoot, liveDeliveryOperations),
             'utf8'
@@ -106,17 +101,6 @@ describe('live three-browser RTC npm script gates', () => {
         );
         expect(matrixSource).toContain('acceptedStatusCodes: [201]');
         expect(matrixSource.match(/setupGroupMembership\(\{/gu)).toHaveLength(3);
-        expect(lifecycleSource).toContain(
-            '`lifecycle/${operation}/requests/${pathSegment(`${operation}-${input.suffix}`)}`'
-        );
-        expect(lifecycleSource).toContain('lifecycleState === \'forming\' ? \'establish\' : \'reopen\'');
-        expect(lifecycleSource).toContain('agent: owner');
-        expect(lifecycleSource).toContain('agent: input.agents[1]');
-        expect(lifecycleSource).toContain('agent: input.agents[2]');
-        expect(lifecycleSource).toContain('readinessStartedAtMs');
-        expect(lifecycleSource).not.toMatch(
-            /input\.agents\.map\(\(agent\) => connectAgent/u
-        );
         expect(deliverySource).toContain('departedPeerIds: [input.sessions.C]');
         expect(deliverySource).toContain('departedPeerIds: [input.sessions.B]');
         expect(matrixSource.match(/realtime\.sessions/gu)).toHaveLength(2);

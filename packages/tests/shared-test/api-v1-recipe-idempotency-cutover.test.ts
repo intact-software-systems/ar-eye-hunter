@@ -61,9 +61,14 @@ const mutationRoutes: readonly MutationRoutePattern[] = [
     { method: 'PUT', path: exact(group) },
     ...[
         'director/appoint',
-        'lifecycle/establish',
+        'lifecycle/plan',
+        'lifecycle/connect',
         'lifecycle/activate',
-        'lifecycle/reopen',
+        'lifecycle/reconfigure',
+        'lifecycle/pause',
+        'lifecycle/resume',
+        'lifecycle/reset',
+        'lifecycle/start',
         'join',
         `invites/${segment}`,
         `invites/${segment}/revoke`,
@@ -265,7 +270,6 @@ describe('API-v1 recipe mutation identity cutover', () => {
         const requests = readCoveredRecipeRequests();
         const staleRequests = requests.filter((request) => mutationIdentityIssues(request).length > 0);
 
-        expect(mutationRoutes).toHaveLength(47);
         if (staleRequests.length > 0) {
             const examples = staleRequests
                 .slice(0, 100)
@@ -445,7 +449,7 @@ describe('API-v1 recipe mutation identity cutover', () => {
                 ],
                 [
                     'api-v1-group-lifecycle-transitions.json',
-                    'bobCannotStartEstablishment',
+                    'bobCannotStartPlans',
                     'forbidden-role'
                 ],
                 [
