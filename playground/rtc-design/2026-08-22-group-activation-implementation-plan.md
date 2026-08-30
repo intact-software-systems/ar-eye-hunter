@@ -1828,17 +1828,46 @@ because #391 is stacked on #390 rather than `main`, not because of a merge confl
 re-review of implementation head `ada7978d3` reports no critical, important or minor findings and
 confirms the authority race is closed, facade test doubles are shape-checked, the public budget is
 exact in both definitions, and no Slice 8d or retained-compatibility work leaked into the slice.
-Publication and remote validation remain before the Slice 8c checkpoint closes.
+Slice 8c is published and independently reviewed. Its remote Branch Release Gate, medium-scale,
+formation-large and durable topology replay checks are green, closing the checkpoint. The PR is
+ready for review on its stacked base; it is not yet a ready-for-main claim.
 
 **Next two PRs (I5, I20):**
 
-- **PR 15 = slice 8c, stacked on #390.** Repoint the room facade and readiness/status consumers to the
-  accepted-layout ownership established by 8a/8b, add the local halt/repair/progress surface, and
-  update the two game consumers; do not pull 8d's public route or recipe cutover forward.
-- **PR 16 = slice 8d, stacked on slice 8c after its review checkpoint.** Mount the seven remaining
+- **PR 16 = slice 8d, stacked on #391.** Mount the seven remaining
   lifecycle routes with the existing `activate` path, remove both inventoried legacy route families
-  and their recipe consumers atomically, and carry both black-box profiles, medium-scale and
-  state-write gates.
+  and their recipe consumers atomically, re-express the automatic retry producer through the
+  canonical plan/connect ownership, and carry both black-box profiles, medium-scale and state-write
+  gates. The approved `pause-resume` and `reconfigure-while-halted` recipe cases are acceptance here.
+- **Slice 9a, after the route-cutover checkpoint.** Expose truthful RTC attempt-started and established
+  signals and the member-policy wire path. The bound and pacing sweep remain the later 9b outcome.
+
+### Slice 8d start checkpoint — atomic lifecycle route cutover (2026-08-30)
+
+The latest `main` changes are RTC-B06 observation environment, failure-accounting and artifact work.
+They do not change the group command owners, HTTP contract, recipe runner, or state-write gate used
+by this slice. The stack remains mergeable; no base synchronization is required.
+
+The current HTTP registrar still mounts only `establish`, `activate` and `reopen`. The previously
+dark command family is the canonical replacement, not a second implementation. The legacy inventory
+also names the automatic retry timer's producer and scheduler, which must remain functional through
+the cutover. Recipe epoch expectations will be derived from actual plan/connect transitions, not a
+blanket numeric increment. Direct route and black-box behavior tests prove the public cutover;
+shared package typechecks and the API Deno check validate its consumers before the required broader
+profiles, medium-scale, state-write and browser/full-stack gates.
+
+Ownership recovery exposed a dependency gap in the earlier ordering: the automatic retry producer
+currently submits the legacy command and acknowledges its timer, while the durable connect handoff
+was scheduled only in Slice 11. Removing the legacy path cannot leave retry stuck in `planned` or
+introduce an unfenced second path into `connecting`. Slice 8d therefore brings forward only the
+canonical `GroupConnectTriggerLatch` prerequisite described in Slice 11, created with the retry
+plan and consumed with the matching connect transaction. It is keyed by group, formation epoch and
+trigger generation; submission does not consume it, publication supersession reissues against the
+current planned identity, and reset/epoch supersession invalidates it. Retry plan/connect petitions
+use `formation-automation`; neither criterion nor publication authority is widened. General
+`immediate`, `after` and `presence` policy evaluation remains Slice 11. This expands the affected
+durable surface and requires its corruption, race, rollback and replay proofs, plus topology-replay
+and formation-large validation alongside Slice 8d's existing gates.
 
 ## Slice 9 — In-flight pacing
 
@@ -1934,6 +1963,10 @@ trigger generation. It remains `awaiting-publication` while the group is `planne
 `reconfiguring`. Creating the latch immediately checks the current planned row; every later accepted
 publication checks it again and enqueues an identity-specific internal `connect`. Submission never
 consumes the latch.
+
+The canonical latch and its retry-plan producer now belong to Slice 8d's prerequisite cutover.
+Slice 11 reuses that owner for policy-trigger satisfaction; it must not add a second latch or
+connect-petition implementation.
 
 The internal command carries the latch identity plus the exact planned identity. `no-planned-layout`
 and `planned-layout-superseded` write nothing and leave the latch armed; publication B therefore
