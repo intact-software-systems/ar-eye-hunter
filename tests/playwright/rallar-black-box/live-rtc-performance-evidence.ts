@@ -541,7 +541,7 @@ export class LiveRtcControlClient {
 
 const FIVE_MEBIBYTES = 5 * 1024 * 1024;
 const LIVE_RTC_BASELINE_ID =
-    /^\d{8}-[0-9a-f]{12}-e(?:3-memory|4-pg)(?:-repeat-01)?$/u;
+    /^(?:\d{8}-[0-9a-f]{12}-e(?:3-memory|4-pg)|\d{8}T\d{9}Z-[0-9a-f]{12}-e(?:3-memory|4-pg)-local)(?:-repeat-01)?$/u;
 const attemptIdentityFields = [
     'workloadId',
     'caseId',
