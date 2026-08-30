@@ -16,6 +16,14 @@
       "env": "RALLAR_BB_WORKSPACE_ID",
       "default": "default-{runId}"
     },
+    "groupId": {
+      "env": "RALLAR_BB_GROUP_ID",
+      "default": "api-v1-bb-ws-group-{runId}"
+    },
+    "groupName": {
+      "env": "RALLAR_BB_GROUP_NAME",
+      "default": "API v1 black-box WS {runId}"
+    },
     "aliceUsername": {
       "env": "RALLAR_ALICE_USERNAME",
       "default": "alice"
@@ -98,6 +106,99 @@
       }
     },
     {
+      "name": "createGroup",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/requests/create-ws-scope-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "groupId": "{groupId}",
+          "displayName": "{groupName}",
+          "kind": "room",
+          "joinMode": "open",
+          "createdByPrincipalId": "{aliceClientId}"
+        }
+      },
+      "expect": {
+        "statusCode": [
+          201,
+          409
+        ],
+        "bodyAnyOf": [
+          {
+            "group": {
+              "groupId": "{groupId}",
+              "displayName": "{groupName}",
+              "kind": "room"
+            }
+          },
+          {
+            "error": "string"
+          }
+        ]
+      }
+    },
+    {
+      "name": "joinAliceToGroup",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{aliceClientId}/requests/join-ws-scope-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "status": "active"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "groupId": "{groupId}"
+          },
+          "members": [
+            {
+              "principalId": "{aliceClientId}",
+              "status": "active"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "connectAlicePresence",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{aliceSessionId}/requests/presence-ws-scope-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "generationId": "generation-{runId}",
+          "principalId": "{aliceClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "groupId": "{groupId}"
+          }
+        }
+      }
+    },
+    {
       "name": "createWebSocketTicket",
       "type": "http",
       "connection": "api",
@@ -172,13 +273,18 @@
             "traceId": "api-v1-bb-ws-trace-{runId}"
           },
           "route": {
-            "topicId": "app.chat",
+            "topicId": "room.chat",
             "resourceId": "api-v1-bb-ws-resource-{runId}",
             "contextId": "{applicationId}:{workspaceId}"
           },
           "targets": {
             "mode": "broadcast",
-            "scope": "all"
+            "scope": "room",
+            "groupRef": {
+              "applicationId": "{applicationId}",
+              "workspaceId": "{workspaceId}",
+              "groupId": "{groupId}"
+            }
           },
           "delivery": {
             "reliability": "best-effort",
@@ -187,7 +293,7 @@
           "payload": {
             "typeId": "chat.message.v1",
             "contentType": "application/json",
-            "resource": "{\"text\":\"hello over api-v1 ws\",\"runId\":\"{runId}\"}"
+            "resource": "{\"text\":\"hello over api-v1 ws\",\"groupId\":\"{groupId}\",\"runId\":\"{runId}\"}"
           }
         },
         "outputs": {
@@ -204,12 +310,12 @@
             "traceId": "api-v1-bb-ws-trace-{runId}"
           },
           "route": {
-            "topicId": "app.chat",
+            "topicId": "room.chat",
             "resourceId": "api-v1-bb-ws-resource-{runId}"
           },
           "payload": {
             "typeId": "chat.message.v1",
-            "resource": "{\"text\":\"hello over api-v1 ws\",\"runId\":\"{runId}\"}"
+            "resource": "{\"text\":\"hello over api-v1 ws\",\"groupId\":\"{groupId}\",\"runId\":\"{runId}\"}"
           }
         }
       }
@@ -221,6 +327,31 @@
       "request": {
         "code": 1000,
         "reason": "api-v1 black-box recipe done"
+      }
+    },
+    {
+      "name": "disconnectAlicePresence",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{aliceSessionId}/disconnect/requests/disconnect-ws-scope-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "generationId": "generation-{runId}",
+          "principalId": "{aliceClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "groupId": "{groupId}"
+          }
+        }
       }
     },
     {

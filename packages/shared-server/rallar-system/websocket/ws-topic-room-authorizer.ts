@@ -30,33 +30,22 @@ type ReadRoomAuthorizationSnapshotResult =
         readonly decision: RallarServerWsRoomAuthorizationDecision | false;
     };
 
-export interface CreateGroupRoomWsAuthorizerOptions {
-    findGroupSnapshotByRef?: (
+export interface GroupRoomWsAuthorizerDependencies {
+    readonly readGroupSnapshot: (
         ref: GroupRef,
         input: Parameters<RallarServerWsRoomAuthorizer>[0]
     ) => MaybePromise<GroupSnapshot | undefined>;
-    findGroupSnapshotById?: (
-        groupId: string
-    ) => MaybePromise<GroupSnapshot | undefined>;
-    resolveGroupRef?: (
-        input: Parameters<RallarServerWsRoomAuthorizer>[0]
-    ) => MaybePromise<GroupRef | undefined>;
-    /**
-     * Resolves the group's data-policy value for the pre-activation gate
-     * (plan decision 5.4). Absent when the runtime supplies no policy
-     * source, which leaves application data ungated -- today's behaviour.
-     */
-    readPreActivationAppData?: (
+    readonly readPreActivationAppData: (
         ref: GroupRef
     ) => MaybePromise<GroupPreActivationAppData>;
-    now?: RallarSnapshotPresenceClock;
+    readonly nowEpochMs: RallarSnapshotPresenceClock;
 }
 
 export function createGroupRoomWsAuthorizer(
-    options: CreateGroupRoomWsAuthorizerOptions
+    dependencies: GroupRoomWsAuthorizerDependencies
 ): RallarServerWsRoomAuthorizer {
     return async (input) => {
-        const snapshotRead = await readRoomAuthorizationSnapshot(options, input);
+        const snapshotRead = await readRoomAuthorizationSnapshot(dependencies, input);
         if (snapshotRead.kind === 'denied') {
             return snapshotRead.decision;
         }
@@ -64,8 +53,8 @@ export function createGroupRoomWsAuthorizer(
         const { snapshot, serverSnapshotVersion } = snapshotRead;
         const isCrdtTopic = input.topicId === RALLAR_CRDT_ROOM_TOPIC_ID ||
             input.topicId === RALLAR_CRDT_APP_TOPIC_ID;
-        const preActivationAppData = await resolvePreActivationAppData(
-            options,
+        const preActivationAppData = await readRoomMessagePreActivationAppData(
+            dependencies,
             snapshot,
             isCrdtTopic
         );
@@ -76,7 +65,7 @@ export function createGroupRoomWsAuthorizer(
             },
             senderSessionId: input.senderId,
             minSnapshotVersion: input.minSnapshotVersion,
-            nowEpochMs: options.now?.() ?? Date.now(),
+            nowEpochMs: dependencies.nowEpochMs(),
             ...(preActivationAppData === undefined ? {} : { preActivationAppData })
         });
         if (!policyResult.allowed) {
@@ -98,30 +87,25 @@ export function createGroupRoomWsAuthorizer(
 }
 
 async function readRoomAuthorizationSnapshot(
-    options: CreateGroupRoomWsAuthorizerOptions,
+    dependencies: GroupRoomWsAuthorizerDependencies,
     input: Parameters<RallarServerWsRoomAuthorizer>[0]
 ): Promise<ReadRoomAuthorizationSnapshotResult> {
     const groupRef = input.roomRef ??
-        readALTargetGroupRef(input.message) ??
-        await options.resolveGroupRef?.(input);
-    const scopedSnapshot = groupRef
-        ? await options.findGroupSnapshotByRef?.(groupRef, input)
+        readALTargetGroupRef(input.message);
+    const snapshot = groupRef
+        ? await dependencies.readGroupSnapshot(groupRef, input)
         : undefined;
-    const byIdSnapshot = scopedSnapshot
-        ? undefined
-        : await options.findGroupSnapshotById?.(input.roomId);
-    if (groupRef && byIdSnapshot && !isSameGroupScope(byIdSnapshot.group, groupRef)) {
+    if (groupRef && snapshot && !isSameGroupScope(snapshot.group, groupRef)) {
         return {
             kind: 'denied',
             decision: {
                 authorized: false,
                 reason: 'unauthorized',
                 logMessage: `Rejected room message for ${input.roomId}: group scope mismatch.`,
-                serverSnapshotVersion: readGroupVersion(byIdSnapshot)
+                serverSnapshotVersion: readGroupVersion(snapshot)
             }
         };
     }
-    const snapshot = scopedSnapshot ?? byIdSnapshot;
     if (!snapshot) {
         return {
             kind: 'denied',
@@ -163,18 +147,18 @@ async function readRoomAuthorizationSnapshot(
  * updates, and collaborative documents stay alive while the group forms.
  * Stages where an accepted layout keeps carrying data pay no policy read.
  */
-async function resolvePreActivationAppData(
-    options: CreateGroupRoomWsAuthorizerOptions,
+async function readRoomMessagePreActivationAppData(
+    dependencies: GroupRoomWsAuthorizerDependencies,
     snapshot: GroupSnapshot,
     isCrdtTopic: boolean
 ): Promise<GroupPreActivationAppData | undefined> {
     if (isCrdtTopic || snapshot.group.transportState === 'halted') {
         return undefined;
     }
-    if (!blocksGroupPreActivationData(snapshot.group.lifecycleState) || !options.readPreActivationAppData) {
+    if (!blocksGroupPreActivationData(snapshot.group.lifecycleState)) {
         return undefined;
     }
-    return await options.readPreActivationAppData({
+    return await dependencies.readPreActivationAppData({
         applicationId: snapshot.group.applicationId,
         workspaceId: snapshot.group.workspaceId,
         groupId: snapshot.group.groupId

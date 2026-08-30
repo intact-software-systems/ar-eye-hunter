@@ -2,73 +2,23 @@ import { type GroupStateService } from '@shared-server/rallar-system/group-state
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
 import { createCachedGroupStateService } from '@shared-server/rallar-system/group-state/snapshot/cached-group-state-service.ts';
 import { createGroupStateSnapshotReadThroughCache } from '@shared-server/rallar-system/group-state/snapshot/group-state-snapshot-read-through-cache.ts';
-import { createGroupRoomWsAuthorizer } from '@shared-server/rallar-system/websocket/ws-topic-room-authorizer.ts';
+import { createGroupRoomWsAuthorizer, type GroupRoomWsAuthorizerDependencies } from '@shared-server/rallar-system/websocket/ws-topic-room-authorizer.ts';
 import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import { newALBroadcastMessage, newALEventRoute, newALMulticastMessage } from '@shared/al-contracts/al-contract.ts';
 import { GROUP_LIFECYCLE_STATES } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import type { AuditStamp, Group, GroupMember, GroupPresenceSummary, GroupSnapshot } from '@shared/api/group-types.ts';
 import { findGroupStateSnapshotByRef, setGroupStateSnapshot } from '@shared/repository/group-state-snapshots-repository.ts';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { configureTestCacheRepositories } from '../../../../cache-repository-config.ts';
-import { createTestGroup } from '../../../../create-test-group.ts';
-import { FakeRuntimeStateRepository } from '../../../runtime-state/test-support/fake-runtime-state-repository.ts';
+import { configureTestCacheRepositories } from '../../../cache-repository-config.ts';
+import { createTestGroup } from '../../../create-test-group.ts';
+import { FakeRuntimeStateRepository } from '../../runtime-state/test-support/fake-runtime-state-repository.ts';
 
 describe('createGroupRoomWsAuthorizer', () => {
     afterEach(() => {
         vi.useRealTimers();
     });
 
-    it('authorizes room messages with a scoped group snapshot resolver when same group id exists in multiple workspaces', async () => {
-        const workspaceA = createGroupSnapshot({
-            groupId: 'shared-room',
-            applicationId: 'app-1',
-            workspaceId: 'workspace-a',
-            sessionIds: ['session-a'],
-            snapshotVersion: 1
-        });
-        const workspaceB = createGroupSnapshot({
-            groupId: 'shared-room',
-            applicationId: 'app-1',
-            workspaceId: 'workspace-b',
-            sessionIds: ['session-b'],
-            snapshotVersion: 1
-        });
-        const authorizer = createGroupRoomWsAuthorizer({
-            findGroupSnapshotById: () => workspaceA,
-            resolveGroupRef: (input) => ({
-                applicationId: 'app-1',
-                workspaceId: 'workspace-b',
-                groupId: input.roomId
-            }),
-            findGroupSnapshotByRef: (ref) => ref.workspaceId === 'workspace-b' ? workspaceB : undefined
-        });
-        const message = newALBroadcastMessage(
-            'session-b',
-            newALEventRoute('room.chat', 'shared-room', 'msg-1'),
-            'room',
-            'chat.message.v1',
-            { text: 'workspace-b' }
-        );
-
-        const decision = await Promise.resolve(authorizer({
-            message,
-            roomId: 'shared-room',
-            senderId: 'session-b',
-            topicId: 'room.chat',
-            typeId: 'chat.message.v1'
-        }));
-
-        expect(decision).toBe(true);
-    });
-
     it('authorizes multicast messages using target groupRef without an external resolver', async () => {
-        const workspaceA = createGroupSnapshot({
-            groupId: 'shared-room',
-            applicationId: 'app-1',
-            workspaceId: 'workspace-a',
-            sessionIds: ['session-a'],
-            snapshotVersion: 1
-        });
         const workspaceB = createGroupSnapshot({
             groupId: 'shared-room',
             applicationId: 'app-1',
@@ -76,9 +26,8 @@ describe('createGroupRoomWsAuthorizer', () => {
             sessionIds: ['session-b'],
             snapshotVersion: 1
         });
-        const authorizer = createGroupRoomWsAuthorizer({
-            findGroupSnapshotById: () => workspaceA,
-            findGroupSnapshotByRef: (ref) => ref.workspaceId === 'workspace-b' ? workspaceB : undefined
+        const authorizer = createTestGroupRoomWsAuthorizer({
+            readGroupSnapshot: (ref) => ref.workspaceId === 'workspace-b' ? workspaceB : undefined
         });
         const message = {
             ...newALMulticastMessage(
@@ -102,13 +51,6 @@ describe('createGroupRoomWsAuthorizer', () => {
     });
 
     it('authorizes room broadcasts using target groupRef without an external resolver', async () => {
-        const workspaceA = createGroupSnapshot({
-            groupId: 'shared-room',
-            applicationId: 'app-1',
-            workspaceId: 'workspace-a',
-            sessionIds: ['session-a'],
-            snapshotVersion: 1
-        });
         const workspaceB = createGroupSnapshot({
             groupId: 'shared-room',
             applicationId: 'app-1',
@@ -116,9 +58,8 @@ describe('createGroupRoomWsAuthorizer', () => {
             sessionIds: ['session-b'],
             snapshotVersion: 1
         });
-        const authorizer = createGroupRoomWsAuthorizer({
-            findGroupSnapshotById: () => workspaceA,
-            findGroupSnapshotByRef: (ref) => ref.workspaceId === 'workspace-b' ? workspaceB : undefined
+        const authorizer = createTestGroupRoomWsAuthorizer({
+            readGroupSnapshot: (ref) => ref.workspaceId === 'workspace-b' ? workspaceB : undefined
         });
         const message = newALBroadcastMessage(
             'session-b',
@@ -159,8 +100,8 @@ describe('createGroupRoomWsAuthorizer', () => {
         const readThroughCache = createGroupStateSnapshotReadThroughCache({
             groupsRepository: groupRepository
         });
-        const authorizer = createGroupRoomWsAuthorizer({
-            findGroupSnapshotByRef: async (ref, input) =>
+        const authorizer = createTestGroupRoomWsAuthorizer({
+            readGroupSnapshot: async (ref, input) =>
                 await readThroughCache.findOrLoadByRef(ref, {
                     minSnapshotVersion: input.minSnapshotVersion
                 })
@@ -224,8 +165,8 @@ describe('createGroupRoomWsAuthorizer', () => {
         ).toBe(1);
         await putDurableSnapshot(groupRepository, currentGroup);
 
-        const authorizer = createGroupRoomWsAuthorizer({
-            findGroupSnapshotByRef: async (ref, input) =>
+        const authorizer = createTestGroupRoomWsAuthorizer({
+            readGroupSnapshot: async (ref, input) =>
                 await readThroughCache.findOrLoadByRef(ref, {
                     minSnapshotVersion: input.minSnapshotVersion
                 })
@@ -284,8 +225,8 @@ describe('createGroupRoomWsAuthorizer', () => {
 
         vi.setSystemTime(1_001);
 
-        const authorizer = createGroupRoomWsAuthorizer({
-            findGroupSnapshotByRef: async (ref, input) =>
+        const authorizer = createTestGroupRoomWsAuthorizer({
+            readGroupSnapshot: async (ref, input) =>
                 await readThroughCache.findOrLoadByRef(ref, {
                     minSnapshotVersion: input.minSnapshotVersion
                 })
@@ -360,8 +301,8 @@ describe('createGroupRoomWsAuthorizer', () => {
                 observe: (snapshot) => readThroughCache.observe(snapshot)
             }
         });
-        const authorizer = createGroupRoomWsAuthorizer({
-            findGroupSnapshotByRef: (ref) => currentService.readCurrentSnapshot(ref)
+        const authorizer = createTestGroupRoomWsAuthorizer({
+            readGroupSnapshot: (ref) => currentService.readCurrentSnapshot(ref)
         });
         const message = newALBroadcastMessage(
             'session-b',
@@ -404,8 +345,8 @@ describe('createGroupRoomWsAuthorizer', () => {
                         transportState: 'halted'
                     }
                 };
-                const authorizer = createGroupRoomWsAuthorizer({
-                    findGroupSnapshotById: () => haltedSnapshot,
+                const authorizer = createTestGroupRoomWsAuthorizer({
+                    readGroupSnapshot: () => haltedSnapshot,
                     readPreActivationAppData: () => {
                         throw new Error(
                             `Halted application data must not read ${preActivationAppData} policy.`
@@ -417,7 +358,8 @@ describe('createGroupRoomWsAuthorizer', () => {
                     newALEventRoute('room.chat', haltedSnapshot.group.groupId, `msg-halted-${lifecycleState}-${preActivationAppData}`),
                     'room',
                     'chat.message.v1',
-                    { text: 'halted' }
+                    { text: 'halted' },
+                    { groupRef: haltedSnapshot.group }
                 );
 
                 await expect(Promise.resolve(authorizer({
@@ -446,8 +388,8 @@ describe('createGroupRoomWsAuthorizer', () => {
             ...snapshot,
             group: { ...snapshot.group, transportState: 'halted' }
         };
-        const authorizer = createGroupRoomWsAuthorizer({
-            findGroupSnapshotById: () => haltedSnapshot,
+        const authorizer = createTestGroupRoomWsAuthorizer({
+            readGroupSnapshot: () => haltedSnapshot,
             readPreActivationAppData: () => {
                 throw new Error('CRDT transport must not read pre-activation policy.');
             }
@@ -457,7 +399,8 @@ describe('createGroupRoomWsAuthorizer', () => {
             newALEventRoute('room.crdt', haltedSnapshot.group.groupId, 'msg-halted-crdt'),
             'room',
             'crdt.update.v1',
-            { update: 'halted document' }
+            { update: 'halted document' },
+            { groupRef: haltedSnapshot.group }
         );
 
         await expect(Promise.resolve(authorizer({
@@ -482,15 +425,16 @@ describe('createGroupRoomWsAuthorizer', () => {
                 ...group,
                 group: withGroupStatus(group.group, status)
             };
-            const authorizer = createGroupRoomWsAuthorizer({
-                findGroupSnapshotById: () => snapshot
+            const authorizer = createTestGroupRoomWsAuthorizer({
+                readGroupSnapshot: () => snapshot
             });
             const message = newALBroadcastMessage(
                 'session-b',
                 newALEventRoute('room.chat', snapshot.group.groupId, `msg-${status}`),
                 'room',
                 'chat.message.v1',
-                { text: status }
+                { text: status },
+                { groupRef: snapshot.group }
             );
 
             const decision = await Promise.resolve(authorizer({
@@ -555,16 +499,17 @@ describe('createGroupRoomWsAuthorizer', () => {
         ] as const;
 
         for (const { name, snapshot, expectedCode } of cases) {
-            const authorizer = createGroupRoomWsAuthorizer({
-                findGroupSnapshotById: () => snapshot,
-                now: () => 1
+            const authorizer = createTestGroupRoomWsAuthorizer({
+                readGroupSnapshot: () => snapshot,
+                nowEpochMs: () => 1
             });
             const message = newALBroadcastMessage(
                 'session-b',
                 newALEventRoute('room.chat', snapshot.group.groupId, `msg-${name}`),
                 'room',
                 'chat.message.v1',
-                { text: name }
+                { text: name },
+                { groupRef: snapshot.group }
             );
 
             const decision = await Promise.resolve(authorizer({
@@ -615,8 +560,8 @@ describe('createGroupRoomWsAuthorizer', () => {
         });
         await putDurableSnapshot(groupRepository, currentGroup);
 
-        const authorizer = createGroupRoomWsAuthorizer({
-            findGroupSnapshotByRef: async (ref, input) =>
+        const authorizer = createTestGroupRoomWsAuthorizer({
+            readGroupSnapshot: async (ref, input) =>
                 await readThroughCache.findOrLoadByRef(ref, {
                     minSnapshotVersion: input.minSnapshotVersion
                 })
@@ -669,9 +614,8 @@ describe('createGroupRoomWsAuthorizer', () => {
             sessionIds: ['session-b'],
             snapshotVersion: 1
         });
-        const authorizer = createGroupRoomWsAuthorizer({
-            findGroupSnapshotById: () => workspaceA,
-            findGroupSnapshotByRef: () => undefined
+        const authorizer = createTestGroupRoomWsAuthorizer({
+            readGroupSnapshot: () => workspaceA
         });
         const message = newALBroadcastMessage(
             'session-b',
@@ -699,6 +643,22 @@ describe('createGroupRoomWsAuthorizer', () => {
         });
     });
 });
+
+interface TestGroupRoomWsAuthorizerDependencies {
+    readonly readGroupSnapshot: GroupRoomWsAuthorizerDependencies['readGroupSnapshot'];
+    readonly readPreActivationAppData?: GroupRoomWsAuthorizerDependencies['readPreActivationAppData'];
+    readonly nowEpochMs?: GroupRoomWsAuthorizerDependencies['nowEpochMs'];
+}
+
+function createTestGroupRoomWsAuthorizer(
+    dependencies: TestGroupRoomWsAuthorizerDependencies
+) {
+    return createGroupRoomWsAuthorizer({
+        readGroupSnapshot: dependencies.readGroupSnapshot,
+        readPreActivationAppData: dependencies.readPreActivationAppData ?? (() => 'allowed'),
+        nowEpochMs: dependencies.nowEpochMs ?? Date.now
+    });
+}
 
 function withoutActiveSessions(snapshot: GroupSnapshot): GroupSnapshot {
     return {

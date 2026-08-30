@@ -1,4 +1,4 @@
-import { hashMutationCommand, type JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
+import { encodeJsonWireValue, hashMutationCommand } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import { computeRtcRttMutation } from '@shared-server/rallar-system/rtc-rtt/mutation/compute-rtc-rtt-mutation.ts';
 import { readRtcRttMutation } from '@shared-server/rallar-system/rtc-rtt/mutation/read-rtc-rtt-mutation.ts';
 import type { RtcRttMutationCommand, RtcRttMutationComputed } from '@shared-server/rallar-system/rtc-rtt/mutation/rtc-rtt-mutation-contracts.ts';
@@ -37,7 +37,9 @@ export async function executeRtcRttMutation(
         rtt: input.command.rtt,
         alSenderId: input.command.alSenderId
     };
-    const commandHash = await hashMutationCommand(request as JsonWireValue);
+    const commandHash = await hashMutationCommand(
+        encodeJsonWireValue(request, 'test RTC RTT stable request')
+    );
     for (let attemptCount = 1; attemptCount <= 20; attemptCount += 1) {
         try {
             const read = await readRtcRttMutation(input.repository, request);

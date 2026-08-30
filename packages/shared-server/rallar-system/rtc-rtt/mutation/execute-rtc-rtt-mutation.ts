@@ -1,6 +1,6 @@
 import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
 
-import { hashMutationCommand } from '../../protocol/json-wire-identity.ts';
+import { encodeJsonWireValue, hashMutationCommand } from '../../protocol/json-wire-identity.ts';
 import type { RtcTopologyOutboxWriter } from '../../topology/mutation/rtc-topology-outbox-writer.ts';
 import { RtcRttRepository } from '../persistence/rtc-rtt-repository.ts';
 import { computeRtcRttMutation } from './compute-rtc-rtt-mutation.ts';
@@ -34,7 +34,9 @@ export async function executeRtcRttMutation(
     input: ExecuteRtcRttMutationInput
 ): Promise<ExecuteRtcRttMutationResult> {
     const stableRequest = input.request;
-    const commandHash = await hashMutationCommand(stableRequest);
+    const commandHash = await hashMutationCommand(
+        encodeJsonWireValue(stableRequest, 'RTC RTT stable request')
+    );
     const read = await readRtcRttMutation(input.repository, stableRequest);
     let command: RtcRttMutationCommand;
     let facts: RtcRttMutationFacts;

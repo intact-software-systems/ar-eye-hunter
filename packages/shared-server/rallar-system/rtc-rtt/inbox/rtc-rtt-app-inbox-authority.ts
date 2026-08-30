@@ -55,7 +55,9 @@ export async function createRtcRttDurableEnqueue(
             sessionId: session.sessionId
         },
         requestId,
-        mutationCommandHash: await hashMutationCommand(stableRequest),
+        mutationCommandHash: await hashMutationCommand(
+            encodeJsonWireValue(stableRequest, 'RTC RTT stable request')
+        ),
         capturedAtEpochMs: input.request.capturedAtEpochMs,
         rtt: input.request.rtt
     } as const;
@@ -67,7 +69,9 @@ export async function createRtcRttDurableEnqueue(
     } as const;
     const command: RtcRttAppInboxCommand = {
         ...commandWithoutHash,
-        commandHash: await hashMutationCommand(stableCommand)
+        commandHash: await hashMutationCommand(
+            encodeJsonWireValue(stableCommand, 'RTC RTT stable command')
+        )
     };
     const proof = await createTopologyMutationAuthorityProof(session, command.commandHash);
     const authority = { kind: 'rtc-rtt', proof, command } satisfies RtcRttAppInboxAuthority;

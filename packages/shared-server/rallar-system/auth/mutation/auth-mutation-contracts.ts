@@ -1,6 +1,6 @@
 import type {
     AgentSessionTicketResponse,
-    ConsumeAgentSessionTicketResponse,
+    AuthSession,
     LoginResponse,
     LogoutResponse,
     RegisterResponse,
@@ -183,7 +183,7 @@ export type AuthMutationPublicResult =
     | WebSocketTicketResponse
     | IssuedAuthSession
     | AgentSessionTicketResponse
-    | ConsumeAgentSessionTicketResponse;
+    | AuthSession;
 
 type AuthMutationResultIdentity = Readonly<{ requestId: string; }>;
 

@@ -1,5 +1,5 @@
 import { type IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
-import type { AgentSessionTicketResponse, ConsumeAgentSessionTicketResponse } from '@shared/api/api-config.ts';
+import type { AgentSessionTicketResponse, AuthSession } from '@shared/api/api-config.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import { Hono } from 'jsr:@hono/hono@4.11.9';
 import assert from 'node:assert/strict';
@@ -36,8 +36,8 @@ Deno.test('agent session ticket route rejects unauthenticated issue requests', a
 });
 
 Deno.test('agent session ticket route mints distinct same-user sessions and consumes a ticket once', async () => {
-    const sessions = new Map<string, ConsumeAgentSessionTicketResponse>();
-    const consumedByRequest = new Map<string, ConsumeAgentSessionTicketResponse>();
+    const sessions = new Map<string, AuthSession>();
+    const consumedByRequest = new Map<string, AuthSession>();
     const app = createApp({
         requireApiAuthSession: () => Promise.resolve(createAuthSession()),
         appAuthInbox: ({
@@ -120,7 +120,7 @@ Deno.test('agent session ticket route mints distinct same-user sessions and cons
             body: JSON.stringify({ ticket: issued.tickets[0].ticket })
         }
     );
-    const consumed = await consumeResponse.json() as ConsumeAgentSessionTicketResponse;
+    const consumed = await consumeResponse.json() as AuthSession;
 
     assert.equal(consumeResponse.status, 200);
     assert.equal(consumed.clientId, 'alice-client');

@@ -664,7 +664,7 @@ Focused concurrency coverage lives in:
 - `packages/tests/shared-server/rallar-system/middleware/rallar-middleware-construction.test.ts`
 - `packages/tests/shared/ws-outbox-owner-miss-retry.test.ts`
 - `packages/tests/shared-web/state-cache/browser-state-cache-lifecycle.test.ts`
-- `packages/tests/shared-server/rallar-system/websocket/authorization/ws-topic-room-authorizer.test.ts`
+- `packages/tests/shared-server/rallar-system/websocket/ws-topic-room-authorizer.test.ts`
 - `packages/shared-test/black-box-runner/tests/api-v1/api-v1-rtc-topology-convergence.json`
 - `packages/shared-test/black-box-runner/tests/api-v1/api-v1-state-topology-churn.json`
 - `packages/shared-test/black-box-runner/topology-replay/api-v1-rtc-topology-replay-proof.mts`

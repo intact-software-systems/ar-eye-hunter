@@ -24,6 +24,7 @@ Deno.test({
             assert.ok(server.runtime.authSessionRepository);
             assert.ok(server.runtime.groupStateService);
             assert.ok(server.runtime.backgroundTasks);
+            server.installSystemTopics().installWebSocketLifecycle();
             await server.runtime.readiness;
             await server.runtime.backgroundTasks.stop();
         }
