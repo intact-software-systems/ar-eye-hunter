@@ -1418,6 +1418,21 @@ work.
 
 **Gates:** baseline, both profiles, **medium-scale**, **state-write**, `topology-replay`.
 
+### PR 10 and PR 11 delivery record — slices 6a–6c (merged 2026-08-29 as #373 and #376)
+
+Slice 6 is complete on `main`. #373 registered the dark commanded reconfigure operation, proved that
+the existing hold transition atomically enqueues topology work, made commanded replans bypass only the
+unchanged-membership suppression, and recorded the `reopen-establishment` removal inventory for 8d.
+#376 then landed `reset` with the topology retirement semantics deferred from PR 9: removed snapshots
+carry no edges, a removed accepted row cannot shadow a fresh planned row after restart, and reset
+retires the planned and accepted identities inside the authoritative mutation path. The widened
+accepted-row read replaced `findEntryRevision`; that now-consumerless method was removed rather than
+retained as legacy.
+
+Both PRs passed their focused mutation and replay proofs plus the slice's baseline, both-profile,
+medium-scale, state-write and topology-replay gates before merge. The route cutover remains deferred to
+8d: neither PR mounted a public route or removed an inventoried legacy command.
+
 ## Slice 7 — The transport valve and the forward gate
 
 Two predicates change together. `canSendGroupMessage` — renamed from `canSendRoomMessage` by #319 and
@@ -1445,8 +1460,21 @@ Extend `ws-server-qos-policy.test.ts` to assert a halted room-scoped message is 
 ALM path either.
 
 **Gates:** baseline, both profiles, **medium-scale**, `test:deno` (the api-v1 authorizer test is
-Deno-only), and `api-v1-group-data-policy.json` extended with `pause-resume` and
-`reconfigure-while-halted`.
+Deno-only), and focused policy/authorizer plus ALM-bypass coverage. The `pause-resume` and
+`reconfigure-while-halted` recipe cases move to slice 8d's public route cutover; before that cutover
+the dark commands have no supported recipe path.
+
+### PR 12 delivery record — slice 7 (merged 2026-08-30 as #378)
+
+#378 landed both halves of the valve. The group policy gate is total over the lifecycle registry, and
+the WS relay independently suppresses halted room-scoped application traffic while reserved system
+topics retain their explicit ALM bypass. Relic Hunters remains outside that transport-plane policy and
+keeps its own snapshot decision, preserving I11's ownership boundary. The review removed a stale chat
+installer path instead of retaining a second forwarding route.
+
+The focused policy/authorizer and ALM-bypass tests, Deno gate, both black-box profiles and medium-scale
+gate remained assigned to slice 7 and passed before merge. Maintainer approval on 2026-08-29 moved only
+the two recipe cases named above to slice 8; it did not weaken slice 7's executed gates.
 
 ## Slice 8 — The browser, and the routes
 
@@ -1529,6 +1557,38 @@ explicit peer ids, routing around any room-level halt.
 `shared-web-browser-bundle-boundaries.test.ts`, `check:browser-bundles`), the headless bundle boundary,
 `test:e2e`, `test:full-stack:memory`, and **`test:rallar:full-stack:memory:live-rtc-3`**, which branch
 CI does not run. 8d additionally carries both black-box profiles, medium-scale and state-write.
+
+### Current-main checkpoint — slice 8a publication in progress (2026-08-30, PR #381)
+
+The Slice 0 material-change review ran against `main` @ `2a62150d1`. The group-activation owners and
+8a's cache-role decision remain valid. The live three-browser performance harness changed materially
+through #383–#387, so #381 was rebased and its lifecycle proof adapted to the current managed/manual
+group flow before publication. The formerly monolithic live matrix was then split at its delivery-
+operation boundary to keep the touched test surface below the repository's hard size backstop.
+
+Slice 8a now has two independent repository tokens under the unchanged scoped overlay identity.
+Planned topology owns RTT evidence; accepted topology owns delivery and traffic preference. Snapshot
+observation owns planned-to-accepted promotion and role removal. The obsolete browser graph dispatch
+and its now-consumerless public topic were removed with maintainer approval; there is no graph or
+single-slot compatibility fallback and no retained legacy entry.
+
+Current-main execution exposed an independent authoritative-state defect rather than a cache-role
+defect: presence writes can advance the physical group-row revision without advancing the semantic
+group snapshot, while group reincarnation can advance the semantic version independently. No-op and
+rejected mutation receipts therefore must validate each revision domain but must not equate them.
+#381 carries the focused validator tests and the real PGlite/AppInbox rejoin proof for that rule. The
+same final focused run closed one browser diagnostic gap: global-online state now reads only the client
+cache, while group-present peers remain independently connectable during cache convergence. The
+post-integration managed lifecycle/delivery gate passes both `realtime` and `messages.rtc`; broad gates
+must be rerun on the final branch head before #381 leaves draft.
+
+**Next two PRs (I5, I20):**
+
+- **PR 13 = finish #381 / slice 8a.** Complete touched-file closure, record final local and remote gate
+  evidence, update the semantic PR explanation for current `main`, and publish the rebased branch.
+- **PR 14 = slice 8b, stacked on #381.** Add the shared total stage × layout-role dial decision,
+  suppress active-session bootstrap fallback, and drive both inbound and outbound peer creation from
+  that one matrix. Slice 8c and the 8d route/recipe cutover remain outside this next PR.
 
 ## Slice 9 — In-flight pacing
 

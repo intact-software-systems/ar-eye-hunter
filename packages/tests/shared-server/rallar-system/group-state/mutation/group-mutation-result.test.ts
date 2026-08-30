@@ -125,6 +125,42 @@ describe('group mutation receipt causal invariants', () => {
     });
 
     describe('computed group mutation validation', () => {
+        it('accepts a semantic no-op after physical authority fences advance storage', () => {
+            const command = createMutationCommand();
+            const read = createMutationRead();
+            const value = { ...read.group!.value, displayName: 'After' };
+            const fencedRead: GroupMutationRead = {
+                ...read,
+                group: {
+                    value,
+                    entry: {
+                        ...read.group!.entry,
+                        value: JSON.stringify(value),
+                        revision: 7
+                    }
+                }
+            };
+            const facts = createMutationFacts();
+            const computed = computeGroupMutation({ command, read: fencedRead, facts });
+
+            expect(computed).toMatchObject({
+                outcome: 'no-op',
+                receipt: {
+                    acceptedStorageRevision: 7,
+                    snapshotVersion: 1,
+                    causalRevision: { groupRevision: 1 }
+                }
+            });
+            expect(() =>
+                validateGroupMutation({
+                    command,
+                    read: fencedRead,
+                    facts,
+                    computed
+                })
+            ).not.toThrow();
+        });
+
         it('rejects malformed computed guards, receipts, and outbox projections', () => {
             const command = createMutationCommand();
             const read = createMutationRead();
