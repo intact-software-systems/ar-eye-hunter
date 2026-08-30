@@ -137,6 +137,67 @@ describe('RTC baseline Deno adapters', () => {
             'run:sysctl:-n,machdep.cpu.brand_string'
         ]);
     });
+    it('falls back to the macOS hardware profiler when sysctl is unavailable', async () => {
+        const double = createRuntimeDouble();
+        double.runtime.command = async (executable, arguments_) => {
+            double.calls.push(`run:${executable}:${arguments_.join(',')}`);
+            if (executable === 'uname') {
+                return {
+                    code: 0,
+                    stdout: new TextEncoder().encode('24.6.0\n'),
+                    stderr: new Uint8Array()
+                };
+            }
+            if (executable === 'sysctl') {
+                return {
+                    code: 1,
+                    stdout: new Uint8Array(),
+                    stderr: new TextEncoder().encode('Operation not permitted')
+                };
+            }
+            return {
+                code: 0,
+                stdout: new TextEncoder().encode(
+                    'Hardware:\n\n    Hardware Overview:\n\n      Chip: Apple M2 Max\n'
+                ),
+                stderr: new Uint8Array()
+            };
+        };
+        const adapters = createDenoRtcBaselineAdapters(double.runtime);
+
+        expect((await adapters.runtimeHost.read()).cpuModel).toBe('Apple M2 Max');
+        expect(double.calls.filter((call) => call.startsWith('run:'))).toEqual([
+            'run:uname:-r',
+            'run:sysctl:-n,machdep.cpu.brand_string',
+            'run:system_profiler:SPHardwareDataType,-detailLevel,mini'
+        ]);
+    });
+    it('uses Intel profiler output when sysctl is empty and fails closed without a CPU model', async () => {
+        const double = createRuntimeDouble();
+        double.runtime.command = async (executable, arguments_) => {
+            double.calls.push(`run:${executable}:${arguments_.join(',')}`);
+            const stdout = executable === 'uname'
+                ? '24.6.0\n'
+                : executable === 'system_profiler'
+                    ? '      Processor Name: 8-Core Intel Core i9\n'
+                    : '\n';
+            return {
+                code: 0,
+                stdout: new TextEncoder().encode(stdout),
+                stderr: new Uint8Array()
+            };
+        };
+        const adapters = createDenoRtcBaselineAdapters(double.runtime);
+
+        expect((await adapters.runtimeHost.read()).cpuModel).toBe('8-Core Intel Core i9');
+
+        double.runtime.command = async (executable) => ({
+            code: 0,
+            stdout: new TextEncoder().encode(executable === 'uname' ? '24.6.0\n' : '\n'),
+            stderr: new Uint8Array()
+        });
+        await expect(adapters.runtimeHost.read()).rejects.toThrow('macOS CPU model is unavailable.');
+    });
     it('reads branch and detached Git facts and preserves typed command failures', async () => {
         const double = createRuntimeDouble();
         const adapters = createDenoRtcBaselineAdapters(double.runtime);
@@ -365,6 +426,10 @@ describe('RTC baseline Deno adapters', () => {
                 adapters.process.run({
                     executable: 'sysctl',
                     arguments: ['-n', 'machdep.cpu.brand_string']
+                }),
+                adapters.process.run({
+                    executable: 'system_profiler',
+                    arguments: ['SPHardwareDataType', '-detailLevel', 'mini']
                 })
             ])
         ).toEqual([
@@ -373,7 +438,8 @@ describe('RTC baseline Deno adapters', () => {
             { ok: true, value: { exitStatus: 0, stdout: 'output\n', stderr: '' } },
             { ok: true, value: { exitStatus: 0, stdout: 'output\n', stderr: '' } },
             { ok: true, value: { exitStatus: 0, stdout: '24.6.0\n', stderr: '' } },
-            { ok: true, value: { exitStatus: 0, stdout: 'Apple M4\n', stderr: '' } }
+            { ok: true, value: { exitStatus: 0, stdout: 'Apple M4\n', stderr: '' } },
+            { ok: true, value: { exitStatus: 0, stdout: 'output\n', stderr: '' } }
         ]);
     });
     it('persists actual runtime versions and redacted secret environment presence', async () => {
