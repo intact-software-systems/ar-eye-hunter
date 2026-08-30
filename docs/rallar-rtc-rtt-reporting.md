@@ -79,6 +79,10 @@ running RTT heartbeat work.
 `WebRtcGroupManager.rttReportingPeerIds(...)` selects at most K peers for the
 local session with the shared deterministic reporting policy:
 
+- Each unordered session pair has exactly one reporter: the endpoint with the
+  lexically smaller session id. The other endpoint can keep the RTC lane open,
+  but does not run the pair's RTT heartbeat or publish a competing version
+  stream.
 - Server-published overlay `nextHopSessionIds` are preferred and sorted
   deterministically. Browser-local provisional star overlays are used for RTC
   connection bootstrap, but not as authoritative RTT reporting eligibility.
@@ -124,20 +128,24 @@ The RTT topic rejects a report with one of these policy reasons:
 - `invalid-rtt`: `rttMs` is missing, non-finite, zero, or negative.
 - `self-pair`: `sessionIdFrom` and `sessionIdTo` are the same session.
 - `sender-mismatch`: the AL sender does not match `sessionIdFrom`.
+- `non-canonical-reporter`: `sessionIdFrom` is not the lexically smaller
+  endpoint that owns reporting for the unordered pair.
 - `no-shared-active-group`: the endpoints are not both active members of any
   candidate scoped group.
 - `not-reporting-edge`: the pair is not in the group's eligible reporting
-  graph, using overlay next hops when a snapshot exists and deterministic
-  bootstrap selection otherwise.
+  graph under overlay next-hop or deterministic bootstrap selection.
 - `over-degree`: accepting the pair would put either endpoint over the
   reporting degree limit across accepted latest RTT pairs.
 
 Accepted measurements use latest-pair semantics. The key is an unordered
-session pair, newer versions win, and current runtime-state rows expire under
-the RTC-RTT retention policy. A stale or duplicate version is a no-op: it does
-not write measurement, receipt, endpoint admission, or topology work. The
-mutation guards the pair and both endpoint-admission rows so concurrent reports
-cannot exceed the reporting degree.
+session pair. Canonical reporter ownership gives that pair one heartbeat
+version stream, so independently initialized counters from the two endpoints
+cannot contend for the same pair and version. Newer versions win, and current
+runtime-state rows expire under the RTC-RTT retention policy. A stale or
+duplicate version is a no-op: it does not write measurement, receipt, endpoint
+admission, or topology work. The mutation guards the pair and both
+endpoint-admission rows so concurrent reports cannot exceed the reporting
+degree.
 
 ## How RTT Affects Topology
 
@@ -240,8 +248,8 @@ diagnostics before treating it as a production shape.
 
 ## Source Map
 
-- `packages/shared/rtc/rtt-reporting-policy.ts`: shared degree normalization
-  and deterministic RTT reporting peer selection.
+- `packages/shared/rtc/rtt-reporting-policy.ts`: shared canonical reporter,
+  degree normalization, and deterministic RTT reporting peer selection.
 - `packages/shared/services/WebRtcHeartbeatService.ts`: ping/pong heartbeat and
   RTT calculation.
 - `packages/shared/services/WebRtcRxStreamerService.ts`: per-peer heartbeat
