@@ -870,6 +870,32 @@
       }
     },
     {
+      "name": "deriveArenaRttReporter",
+      "type": "set",
+      "output": "arenaRttReporter",
+      "transform": {
+        "if": {
+          "condition": {
+            "operator": "lexicallyBefore",
+            "values": [
+              { "path": "outputs.carolSessionId" },
+              { "path": "outputs.danSessionId" }
+            ]
+          },
+          "then": {
+            "connection": "wsCarol",
+            "sessionIdFrom": { "path": "outputs.carolSessionId" },
+            "sessionIdTo": { "path": "outputs.danSessionId" }
+          },
+          "else": {
+            "connection": "wsDan",
+            "sessionIdFrom": { "path": "outputs.danSessionId" },
+            "sessionIdTo": { "path": "outputs.carolSessionId" }
+          }
+        }
+      }
+    },
+    {
       "name": "deriveArenaRttResource",
       "type": "set",
       "output": "arenaRttResource",
@@ -877,11 +903,11 @@
         "concat": [
           "{\"sessionIdFrom\":\"",
           {
-            "path": "outputs.carolSessionId"
+            "path": "outputs.arenaRttReporter.sessionIdFrom"
           },
           "\",\"sessionIdTo\":\"",
           {
-            "path": "outputs.danSessionId"
+            "path": "outputs.arenaRttReporter.sessionIdTo"
           },
           "\",\"rttMs\":21,\"createdAtEpochMs\":",
           {
@@ -894,15 +920,15 @@
     {
       "name": "reportTheArenaEdge",
       "type": "ws.send",
-      "connection": "wsCarol",
+      "connection": "{arenaRttReporter.connection}",
       "request": {
         "send": {
           "id": {
             "v": 2,
             "msgId": "match-arena-rtt-{runId}",
             "ts": 0,
-            "senderId": "{carolSessionId}",
-            "sessionId": "{carolSessionId}"
+            "senderId": "{arenaRttReporter.sessionIdFrom}",
+            "sessionId": "{arenaRttReporter.sessionIdFrom}"
           },
           "route": {
             "topicId": "rtt",
