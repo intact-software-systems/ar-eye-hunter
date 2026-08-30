@@ -2,14 +2,28 @@ import type {
     RallarDirectorRelayConfig,
     RallarDirectorRelayHandle,
     RallarDirectorStatus,
+    RallarMessage,
+    RallarMessageHandler,
+    RallarMessageSelectorInput,
+    RallarMessageSendResult,
+    RallarPeopleState,
+    RallarRealtimeHandler,
     RallarRealtimeJsonSendInput,
+    RallarRealtimeMessage,
     RallarRealtimeSendResult,
+    RallarRoomMember,
     RallarRoomRealtimeJsonDefaults,
     RallarRoomRealtimeJsonSendOptions,
     RallarRoomRealtimeSendResult,
+    RallarRoomState,
+    RallarRoomTransportStatus,
     RallarRtcRoomLaneWaitOptions,
     RallarRtcRoomLaneWaitResult,
-    RallarWsSendInput
+    RallarRtcStatus,
+    RallarRtcStatusListener,
+    RallarStateListener,
+    RallarWsSendInput,
+    RallarWsStatus
 } from '@shared-web/browser/rallar.ts';
 import { createRallarGameEnvelope, createRallarGameMatch } from '@shared-web/game/mod.ts';
 import type { RallarGameEnvelope, RallarGameMatchConfig, RallarGameRallarFacade } from '@shared-web/game/mod.ts';
@@ -776,23 +790,6 @@ interface FakeRallarOptions {
     readonly remoteMemberKnown?: boolean;
 }
 
-interface FakeRallarRoomMember {
-    readonly principalId: string;
-    readonly username: string;
-    readonly role: 'owner' | 'admin' | 'member';
-    readonly status: 'active' | 'left' | 'removed' | 'banned' | 'invited';
-    readonly isOwner: boolean;
-    readonly isOnline: boolean;
-    readonly sessionIds: readonly string[];
-}
-
-interface FakeRallarRoomState {
-    readonly rooms: readonly never[];
-    readonly currentRoomId: string;
-    readonly currentRoomRef: GroupRef;
-    readonly members: readonly FakeRallarRoomMember[];
-}
-
 interface FakeRallarState {
     directorStatus: RallarDirectorStatus;
     relayConfig:
@@ -808,7 +805,7 @@ interface FakeRallarState {
 interface FakeRallarAssembly {
     readonly handlers: ReturnType<typeof createFakeRallarHandlers>;
     readonly session: ReturnType<typeof createFakeRallarSession>;
-    readonly roomState: FakeRallarRoomState;
+    readonly roomState: RallarRoomState;
     readonly state: FakeRallarState;
     readonly relayPorts: ReturnType<typeof createFakeRelayPorts>;
     readonly realtimePorts: ReturnType<typeof createFakeRealtimePorts>;
@@ -869,10 +866,10 @@ function createFakeRallar(options: FakeRallarOptions = {}) {
 
 function createFakeRallarHandlers() {
     return {
-        roomChangeHandlers: [] as Array<(state: object) => void | Promise<void>>,
-        peopleChangeHandlers: [] as Array<(state: object) => void | Promise<void>>,
+        roomChangeHandlers: [] as Array<RallarStateListener<RallarRoomState>>,
+        peopleChangeHandlers: [] as Array<RallarStateListener<RallarPeopleState>>,
         directorStatusHandlers: [] as Array<(status: RallarDirectorStatus) => void | Promise<void>>,
-        rtcStatusHandlers: [] as Array<(status: object) => void | Promise<void>>,
+        rtcStatusHandlers: [] as RallarRtcStatusListener[],
         wsMessageHandlers: [] as Array<(message: object) => void | Promise<void>>,
         realtimeJsonHandlers: new Map<string, Array<(message: { peerId: string; data: object; }) => void | Promise<void>>>()
     };
@@ -888,8 +885,8 @@ function createFakeRallarSession() {
     };
 }
 
-function createFakeRallarRoomState(options: FakeRallarOptions): FakeRallarRoomState {
-    const localMember: FakeRallarRoomMember = {
+function createFakeRallarRoomState(options: FakeRallarOptions): RallarRoomState {
+    const localMember: RallarRoomMember = {
         principalId: 'principal-a',
         username: 'alice',
         role: options.localRole ?? 'owner',
@@ -898,7 +895,7 @@ function createFakeRallarRoomState(options: FakeRallarOptions): FakeRallarRoomSt
         isOnline: (options.localSessionIds ?? ['peer-a']).length > 0,
         sessionIds: options.localSessionIds ?? ['peer-a']
     };
-    const remoteMember: FakeRallarRoomMember = {
+    const remoteMember: RallarRoomMember = {
         principalId: 'principal-b',
         username: 'bob',
         role: 'member',
@@ -931,18 +928,20 @@ function createFakeRallarState(options: FakeRallarOptions): FakeRallarState {
 }
 
 function createFakeRelayPorts(state: FakeRallarState) {
-    const relay: RallarDirectorRelayHandle<RallarGameEnvelope<Intent>, RallarGameEnvelope<Event>, RallarGameEnvelope<Snapshot>> = {
+    const relay = {
         status: () => state.directorStatus,
-        sendIntent: vi.fn(async () => ({ status: 'sent' as const })),
-        sendOutput: vi.fn(async () => ({ status: 'sent' as const })),
+        sendIntent: vi.fn(async <T>(_intent: T) => ({ status: 'sent' as const })),
+        sendOutput: vi.fn(async <T>(_output: T) => ({ status: 'sent' as const })),
         sendHeartbeat: vi.fn(async () => ({ status: 'sent' as const })),
-        sendSnapshot: vi.fn(async () => ({ status: 'sent' as const })),
-        requestSync: vi.fn(async () => ({ status: 'sent' as const })),
+        sendSnapshot: vi.fn(async <T>(_snapshot?: T) => ({ status: 'sent' as const })),
+        requestSync: vi.fn(async <T>(_payload?: T) => ({ status: 'sent' as const })),
         stop: vi.fn(() => {
             state.relayStopped = true;
         })
     };
-    const createRelay = vi.fn((config: FakeRallarState['relayConfig']) => {
+    const createRelay = vi.fn((
+        config: RallarDirectorRelayConfig<RallarGameEnvelope<Intent>, RallarGameEnvelope<Event>, RallarGameEnvelope<Snapshot>>
+    ): RallarDirectorRelayHandle<RallarGameEnvelope<Intent>, RallarGameEnvelope<Event>, RallarGameEnvelope<Snapshot>> => {
         state.relayConfig = config;
         return relay;
     });
@@ -957,18 +956,35 @@ function createFakeRelayPorts(state: FakeRallarState) {
 }
 
 function createFakeWsSend() {
-    return vi.fn(async (input: RallarWsSendInput<object>) => ({
-        transport: 'ws' as const,
-        status: 'enqueued' as const,
-        message: input,
+    return vi.fn(async <T>(input: RallarWsSendInput<T>): Promise<RallarMessageSendResult> => ({
+        transport: 'ws',
+        status: 'enqueued',
+        message: {
+            id: {
+                v: 2,
+                msgId: 'fake-ws-message',
+                ts: 1_000,
+                senderId: 'peer-a'
+            },
+            route: {
+                topicId: input.topicId ?? 'game.topic',
+                resourceId: input.resourceId ?? 'game-resource',
+                contextId: input.contextId ?? 'room-1'
+            },
+            payload: {
+                typeId: input.typeId,
+                contentType: 'application/json',
+                resource: JSON.stringify(input.payload) ?? 'null'
+            }
+        },
         entries: []
     }));
 }
 
 function createFakeRealtimePorts(state: FakeRallarState) {
     const realtimeSendJson = vi.fn(
-        async (
-            input: RallarRealtimeJsonSendInput<object>
+        async <T>(
+            input: RallarRealtimeJsonSendInput<T>
         ): Promise<readonly RallarRealtimeSendResult[]> => {
             state.realtimeSendCount += 1;
             return (input.peerIds ?? ['peer-b']).map((peerId) => ({
@@ -978,10 +994,10 @@ function createFakeRealtimePorts(state: FakeRallarState) {
             }));
         }
     );
-    const roomRealtimeSend = vi.fn(async (
+    const roomRealtimeSend = vi.fn(async <T>(
         defaults: RallarRoomRealtimeJsonDefaults,
-        data: object,
-        options: RallarRoomRealtimeJsonSendOptions<object> = {}
+        data: T,
+        options: RallarRoomRealtimeJsonSendOptions<T> = {}
     ): Promise<RallarRoomRealtimeSendResult> => {
         state.roomRealtimeSendCount += 1;
         if (state.roomRealtimeSendResult) {
@@ -1004,7 +1020,7 @@ function createFakeRealtimePorts(state: FakeRallarState) {
 
 function createFakeWaitPorts(
     session: ReturnType<typeof createFakeRallarSession>,
-    roomState: FakeRallarRoomState
+    roomState: RallarRoomState
 ) {
     const waitForRoomLane = vi.fn(async (
         _room: string | GroupRef,
@@ -1048,6 +1064,48 @@ function createFakeWaitPorts(
     return { waitForRoomLane, waitForPresence };
 }
 
+function createFakeRtcStatus(input: FakeRallarAssembly): RallarRtcStatus {
+    return {
+        sessionId: input.session.sessionId,
+        laneId: 'game-input',
+        knownPeerIds: ['peer-b'],
+        activePeerIds: ['peer-b'],
+        peerIdsWithNoReconnectableLanes: [],
+        readyPeerIds: ['peer-b'],
+        peers: []
+    };
+}
+
+function createFakeRoomTransportStatus(input: FakeRallarAssembly): RallarRoomTransportStatus {
+    const rtc: RallarRoomTransportStatus['rtc'] = {
+        desired: true,
+        mode: 'lazy',
+        state: 'open',
+        desiredPeerIds: ['peer-b'],
+        knownPeerIds: ['peer-b'],
+        activePeerIds: ['peer-b'],
+        readyPeerIds: ['peer-b'],
+        failedPeerIds: [],
+        peers: [],
+        laneId: 'game-input'
+    };
+    return { ws: createFakeWsStatus(input), rtc };
+}
+
+function createFakeWsStatus(input: FakeRallarAssembly): RallarWsStatus {
+    return {
+        sessionId: input.session.sessionId,
+        connectState: 'connected',
+        readyState: 'open',
+        isOpen: true,
+        reconnecting: false,
+        reconnectEnabled: true,
+        reconnectAttempts: 0,
+        maxReconnectAttempts: 5,
+        reconnectExhausted: false
+    };
+}
+
 function createFakeRallarFacade(input: FakeRallarAssembly): RallarGameRallarFacade {
     return {
         session: () => input.session,
@@ -1066,7 +1124,7 @@ function createFakeRoomsFacade(input: FakeRallarAssembly): RallarGameRallarFacad
     return createPartialTestDouble<RallarGameRallarFacade['rooms']>({
         state: () => input.roomState,
         waitForPresence: input.waitPorts.waitForPresence,
-        onChange: (handler: (state: object) => void | Promise<void>) => {
+        onChange: (handler: RallarStateListener<RallarRoomState>) => {
             input.handlers.roomChangeHandlers.push(handler);
             return () => remove(input.handlers.roomChangeHandlers, handler);
         }
@@ -1075,8 +1133,8 @@ function createFakeRoomsFacade(input: FakeRallarAssembly): RallarGameRallarFacad
 
 function createFakePeopleFacade(input: FakeRallarAssembly): RallarGameRallarFacade['people'] {
     return createPartialTestDouble<RallarGameRallarFacade['people']>({
-        state: () => ({ people: [], clients: [] }),
-        onChange: (handler: (state: object) => void | Promise<void>) => {
+        state: (): RallarPeopleState => ({ people: [], clients: [] }),
+        onChange: (handler: RallarStateListener<RallarPeopleState>) => {
             input.handlers.peopleChangeHandlers.push(handler);
             return () => remove(input.handlers.peopleChangeHandlers, handler);
         }
@@ -1091,22 +1149,23 @@ function createFakeDirectorFacade(input: FakeRallarAssembly): RallarGameRallarFa
             return () => remove(input.handlers.directorStatusHandlers, handler);
         },
         appoint: input.relayPorts.appoint,
-        createRelay: input.relayPorts.createRelay
+        createRelay: <TIntent, TOutput, TSnapshot = TOutput>(
+            config: RallarDirectorRelayConfig<TIntent, TOutput, TSnapshot>
+        ): RallarDirectorRelayHandle<TIntent, TOutput, TSnapshot> => {
+            input.relayPorts.createRelay(
+                config as Partial<
+                    RallarDirectorRelayConfig<RallarGameEnvelope<Intent>, RallarGameEnvelope<Event>, RallarGameEnvelope<Snapshot>>
+                > as NonNullable<FakeRallarState['relayConfig']>
+            );
+            return input.relayPorts.relay;
+        }
     });
 }
 
 function createFakeRtcFacade(input: FakeRallarAssembly): RallarGameRallarFacade['rtc'] {
     return createPartialTestDouble<RallarGameRallarFacade['rtc']>({
-        status: () => ({
-            sessionId: input.session.sessionId,
-            laneId: 'game-input',
-            knownPeerIds: ['peer-b'],
-            activePeerIds: ['peer-b'],
-            peerIdsWithNoReconnectableLanes: [],
-            readyPeerIds: ['peer-b'],
-            peers: []
-        }),
-        onStatus: (handler: (status: object) => void | Promise<void>) => {
+        status: () => createFakeRtcStatus(input),
+        onStatus: (handler: RallarRtcStatusListener) => {
             input.handlers.rtcStatusHandlers.push(handler);
             return () => remove(input.handlers.rtcStatusHandlers, handler);
         },
@@ -1117,57 +1176,50 @@ function createFakeRtcFacade(input: FakeRallarAssembly): RallarGameRallarFacade[
 function createFakeRealtimeFacade(input: FakeRallarAssembly): RallarGameRallarFacade['realtime'] {
     return createPartialTestDouble<RallarGameRallarFacade['realtime']>({
         sendJson: input.realtimePorts.realtimeSendJson,
-        room: (defaults: RallarRoomRealtimeJsonDefaults) => ({
-            send: async (data: object, options: RallarRoomRealtimeJsonSendOptions<object> = {}) =>
-                await input.realtimePorts.roomRealtimeSend(defaults, data, options),
-            on: (handler: (message: { peerId: string; data: object; }) => void | Promise<void>) =>
-                subscribeFakeRealtime(input, defaults.laneId ?? 'realtime', handler),
-            status: () => ({ rtc: { state: 'open' as const } }),
-            wait: async () => ({ rtc: { state: 'open' as const } })
+        room: <T>(defaults: RallarRoomRealtimeJsonDefaults = {}) => ({
+            send: async (data: T, options: RallarRoomRealtimeJsonSendOptions<T> = {}) => await input.realtimePorts.roomRealtimeSend(defaults, data, options),
+            on: (handler: RallarRealtimeHandler<T>) => subscribeFakeRealtime(input, defaults.laneId ?? 'realtime', handler),
+            status: () => createFakeRoomTransportStatus(input),
+            wait: async () => createFakeRoomTransportStatus(input)
         }),
-        onJson: (
+        onJson: <T>(
             laneId: string,
-            handler: (message: { peerId: string; data: object; }) => void | Promise<void>
+            handler: RallarRealtimeHandler<T>
         ) => subscribeFakeRealtime(input, laneId, handler),
         health: () => []
     });
 }
 
-function subscribeFakeRealtime(
+function subscribeFakeRealtime<T>(
     input: FakeRallarAssembly,
     laneId: string,
-    handler: (message: { peerId: string; data: object; }) => void | Promise<void>
+    handler: RallarRealtimeHandler<T>
 ): () => void {
     const handlers = input.handlers.realtimeJsonHandlers.get(laneId) ?? [];
-    handlers.push(handler);
+    const storedHandler = (message: { peerId: string; data: object; }) => handler(message as RallarRealtimeMessage<T>);
+    handlers.push(storedHandler);
     input.handlers.realtimeJsonHandlers.set(laneId, handlers);
-    return () => remove(handlers, handler);
+    return () => remove(handlers, storedHandler);
 }
 
 function createFakeMessagesFacade(input: FakeRallarAssembly): RallarGameRallarFacade['messages'] {
     return createPartialTestDouble<RallarGameRallarFacade['messages']>({
         ws: {
             send: input.wsSend,
-            onMessage: (_selector: object | string, handler: (message: object) => void | Promise<void>) => {
-                input.handlers.wsMessageHandlers.push(handler);
-                return () => remove(input.handlers.wsMessageHandlers, handler);
+            onMessage: <T = never>(
+                _selector: RallarMessageSelectorInput,
+                handler: RallarMessageHandler<T>
+            ) => {
+                const storedHandler = (message: object) => handler(message as RallarMessage<T>);
+                input.handlers.wsMessageHandlers.push(storedHandler);
+                return () => remove(input.handlers.wsMessageHandlers, storedHandler);
             }
         }
     });
 }
 
 function createFakeWsFacade(input: FakeRallarAssembly): RallarGameRallarFacade['ws'] {
-    const status = () => ({
-        sessionId: input.session.sessionId,
-        connectState: 'connected' as const,
-        readyState: 'open' as const,
-        isOpen: true,
-        reconnecting: false,
-        reconnectEnabled: true,
-        reconnectAttempts: 0,
-        maxReconnectAttempts: 5,
-        reconnectExhausted: false
-    });
+    const status = () => createFakeWsStatus(input);
     return {
         status,
         onStatus: () => () => undefined,
@@ -1265,6 +1317,6 @@ function remove<T>(values: T[], value: T): void {
     }
 }
 
-function createPartialTestDouble<T extends object>(implementation: object): T {
+function createPartialTestDouble<T extends object>(implementation: Partial<T>): T {
     return implementation as T;
 }

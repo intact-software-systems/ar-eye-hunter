@@ -1800,6 +1800,31 @@ structure passes with the already-reviewed Relic scene density and singleton bun
 subtree findings. The publication commit, independent re-review of that exact commit, and remote
 validation remain before the Slice 8c checkpoint closes.
 
+Independent review of commit `80b327f41` reopened the checkpoint with one authority defect: a room
+lane wait refreshed transport status but retained ready peers from the pre-wait accepted layout, so
+an accepted-layout change during the asynchronous wait could still send to a removed peer. A new
+fail-fast public room-channel regression first reproduced that send. The runtime now intersects the
+wait result with both the refreshed accepted target and refreshed ready set before any send; the
+regression and existing room/game tests pass 30/30. The same review found that the newly split game
+facade double accepted an untyped `object`. Its partial boundary now accepts `Partial<T>`, and its
+supplied room, people, RTC, realtime, message, WebSocket, and director members are compile-time
+shape-checked with exact state/status returns. The replacement commit, affected and broad gate
+reruns, exact-commit re-review, and remote validation remain open.
+
+The exact post-review replacement tree is green locally. Seven focused shared-web files now pass
+63/63 tests, including the fail-fast stale-layout regression, and Relic scene networking passes 9/9.
+Root typecheck still enforces 972 test files with zero debt; the public API, browser boundary and
+headless boundary trio passes 16/16; and the browser facade passes the exact approved **164.25 KiB**
+budget at 164.1 KiB Brotli reporting precision. Full unit passes 997 files / 8,415 tests with four
+files and nine tests skipped; the complete Deno matrix and every workspace build pass. Browser E2E
+passes 39 core tests with 47 configured skips and 210 Recipe Console tests with one configured skip.
+Memory full-stack passes 7/7, while the enabled live three-browser RTC scenario passes with the
+exhaustive and 100-reconnect variants remaining the two configured skips. Changed repository style
+reports zero new findings against Slice 8b head `b8dae45a8`; repository structure passes with the
+already-reviewed Relic scene density and singleton bundle-measure script subtree findings. The
+replacement commit, slice-local legacy scan, exact-commit re-review, publication and remote
+validation remain before the Slice 8c checkpoint closes.
+
 **Next two PRs (I5, I20):**
 
 - **PR 15 = slice 8c, stacked on #390.** Repoint the room facade and readiness/status consumers to the

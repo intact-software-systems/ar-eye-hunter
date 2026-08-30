@@ -117,13 +117,20 @@ describe('Rallar room realtime channel', () => {
         const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
         mockGroupSnapshot(createGroupSnapshot('room-1', ['session-1', 'peer-ready', 'peer-slow']));
         vi.mocked(mocks.webRtcConnectionService.ensurePeerLaneOpen).mockImplementation(
-            async (peerId, laneId = 'motion') => ({
-                status: peerId === 'peer-ready' ? 'open' : 'timeout',
-                peerId,
-                laneId,
-                channel: peerId === 'peer-ready' ? mocks.realtimeChannel : undefined,
-                error: peerId === 'peer-ready' ? undefined : new Error('timeout')
-            })
+            async (peerId, laneId = 'motion') => {
+                if (peerId === 'peer-ready') {
+                    vi.mocked(mocks.webRtcConnectionService.readyPeerIdsForLane).mockReturnValue([
+                        peerId
+                    ]);
+                }
+                return {
+                    status: peerId === 'peer-ready' ? 'open' : 'timeout',
+                    peerId,
+                    laneId,
+                    channel: peerId === 'peer-ready' ? mocks.realtimeChannel : undefined,
+                    error: peerId === 'peer-ready' ? undefined : new Error('timeout')
+                };
+            }
         );
 
         const result = await createRallarFacade()
@@ -156,6 +163,38 @@ describe('Rallar room realtime channel', () => {
             'motion',
             expect.objectContaining({ timeoutMs: 100 })
         );
+    });
+
+    it('does not send to a peer removed from the accepted layout during readiness wait', async () => {
+        const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
+        mockGroupSnapshot(createGroupSnapshot('room-1', ['session-1', 'peer-removed']));
+        vi.mocked(mocks.webRtcConnectionService.ensurePeerLaneOpen).mockImplementation(
+            async (peerId, laneId = 'motion') => {
+                mockGroupSnapshot(createGroupSnapshot('room-1', ['session-1', 'peer-current']));
+                vi.mocked(mocks.webRtcConnectionService.readyPeerIdsForLane).mockReturnValue([
+                    'peer-removed'
+                ]);
+                return {
+                    status: 'open',
+                    peerId,
+                    laneId,
+                    channel: mocks.realtimeChannel
+                };
+            }
+        );
+        vi.mocked(mocks.realtimeChannel.sendJson).mockImplementation(() => {
+            throw new Error('A peer removed from the accepted layout cannot receive room traffic.');
+        });
+
+        const result = await createRallarFacade()
+            .realtime.room<{ x: number; }>({ roomId: 'room-1', laneId: 'motion' })
+            .send({ x: 1 });
+
+        expect(result.status).toBe('not-ready');
+        expect(result.peerIds).toEqual([]);
+        expect(result.desiredPeerIds).toEqual(['peer-current']);
+        expect(result.readiness?.readyPeerIds).toEqual(['peer-removed']);
+        expect(result.transportStatus?.rtc.readyPeerIds).toEqual([]);
     });
 
     it('does not send when a room lane has no ready peers after waiting', async () => {

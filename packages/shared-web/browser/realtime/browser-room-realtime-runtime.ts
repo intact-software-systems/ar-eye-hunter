@@ -146,6 +146,7 @@ export class BrowserRoomRealtimeRuntime {
                 laneId: input.laneId,
                 minReadyPeers: input.sendOptions.minReadyPeers ?? input.defaults.minReadyPeers
             });
+            readyPeerIds = reauthorizeReadyPeerIds(readyPeerIds, transportStatus);
         }
         return {
             laneId: input.laneId,
@@ -175,6 +176,15 @@ export class BrowserRoomRealtimeRuntime {
         }
         return room;
     }
+}
+
+function reauthorizeReadyPeerIds(
+    candidatePeerIds: readonly string[],
+    transportStatus: RallarRoomTransportStatus
+): readonly string[] {
+    const desiredPeerIds = new Set(transportStatus.rtc.desiredPeerIds);
+    const readyPeerIds = new Set(transportStatus.rtc.readyPeerIds);
+    return candidatePeerIds.filter((peerId) => desiredPeerIds.has(peerId) && readyPeerIds.has(peerId));
 }
 
 function noRoomResult(laneId: string): RallarRoomRealtimeSendResult {
