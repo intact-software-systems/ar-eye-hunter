@@ -495,16 +495,22 @@ describe('RTC baseline Deno adapters', () => {
         const adapters = createDenoRtcBaselineAdapters(double.runtime);
         expect(
             await Promise.all([
-                adapters.freshWorker.run({ executable: 'deno', arguments: ['run', 'worker.ts'] }),
-                adapters.freshWorker.run({ executable: 'node', arguments: ['worker.mjs'] })
+                adapters.freshWorker.run({
+                    executable: 'deno',
+                    arguments: ['run', 'worker-entrypoint']
+                }),
+                adapters.freshWorker.run({
+                    executable: 'node',
+                    arguments: ['worker-entrypoint']
+                })
             ])
         ).toEqual([
             { ok: true, value: { exitStatus: 0, stdout: 'output\n', stderr: '' } },
             { ok: true, value: { exitStatus: 0, stdout: 'output\n', stderr: '' } }
         ]);
         expect(double.calls.filter((call) => call.startsWith('run:'))).toEqual([
-            'run:deno:run,worker.ts',
-            'run:node:worker.mjs'
+            'run:deno:run,worker-entrypoint',
+            'run:node:worker-entrypoint'
         ]);
     });
 });
