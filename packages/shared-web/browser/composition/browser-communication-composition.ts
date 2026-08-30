@@ -77,7 +77,6 @@ export function createBrowserMessagingComposition(
         resolveRoomRef: (room) => input.state.roomStateStore.resolveRoomRef(room),
         resolveRoomMinSnapshotVersion: (room, explicit) =>
             input.state.roomStateStore.resolveRoomMinSnapshotVersion(room, explicit),
-        resolveRoomPeerIds: input.state.resolveRoomPeerIds,
         readMessageMaxPayloadBytes: () =>
             input.state.readDefaults()?.messages?.maxPayloadBytes ??
                 RALLAR_DEFAULT_MAX_MESSAGE_PAYLOAD_BYTES

@@ -392,6 +392,28 @@ describe('Rallar message send', () => {
         });
     });
 
+    it('delegates RTC routing when the room cache is temporarily absent', async () => {
+        const { createRallarFacade } = await import(
+            '@shared-web/browser/rallar.ts'
+        );
+
+        const result = await createRallarFacade().messages.rtc.send({
+            roomRef: {
+                applicationId: 'app-1',
+                workspaceId: 'workspace-1',
+                groupId: 'room-1'
+            },
+            nextHopPeerIds: ['peer-1'],
+            typeId: 'chat.message.v1',
+            resourceId: 'msg-cache-lag',
+            payload: {
+                text: 'route through the transport runtime'
+            }
+        });
+
+        expect(result.status).toBe('enqueued');
+    });
+
     it('wakes the queue-box engine when RTC send queues durable outbox work', async () => {
         const { createRallarFacade } = await import(
             '@shared-web/browser/rallar.ts'

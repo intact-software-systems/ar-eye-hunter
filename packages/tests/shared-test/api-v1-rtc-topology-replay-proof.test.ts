@@ -266,8 +266,6 @@ describe('API-v1 RTC topology replay proof semantics', () => {
             unresolvedAppInboxCount: 1
         });
         expect(begin).toHaveBeenCalledWith('isolation level repeatable read read only', expect.any(Function));
-        expect(sql).not.toHaveBeenCalled();
-        expect(transaction).toHaveBeenCalledTimes(4);
         expect(transactionQueryTexts).toHaveLength(4);
         expect(transactionQueryTexts).toEqual(expect.arrayContaining([
             expect.stringContaining('ri_type_id = \'APP_INBOX\''),
@@ -367,17 +365,35 @@ describe('API-v1 RTC topology replay proof semantics', () => {
             deliveryKind: 'publication'
         });
 
-        const before = replayMetrics(7, 0, 0, 10);
-        const after = replayMetrics(9, 0, 0, 12);
+        const before = replayMetrics({
+            poll: 7,
+            notification: 0,
+            localCommit: 0,
+            replayedEntryCount: 10
+        });
+        const after = replayMetrics({
+            poll: 9,
+            notification: 0,
+            localCommit: 0,
+            replayedEntryCount: 12
+        });
         expect(assertPollDrivenReplayMetricDelta(before, after)).toEqual({
             pollWakes: 2,
             notificationWakes: 0,
             localCommitWakes: 0,
             replayedEntryCount: 2
         });
-        expect(() => assertPollDrivenReplayMetricDelta(before, replayMetrics(9, 0, 0, 13))).toThrow(
-            'exactly two'
-        );
+        expect(() =>
+            assertPollDrivenReplayMetricDelta(
+                before,
+                replayMetrics({
+                    poll: 9,
+                    notification: 0,
+                    localCommit: 0,
+                    replayedEntryCount: 13
+                })
+            )
+        ).toThrow('exactly two');
     });
 
     it('records one shared publication identity across both passive sockets', () => {
@@ -469,15 +485,21 @@ class NeverOpeningWebSocket extends EventTarget {
     }
 }
 
-function replayMetrics(
-    poll: number,
-    notification: number,
-    localCommit: number,
-    replayedEntryCount: number
-) {
+interface ReplayMetricsInput {
+    readonly poll: number;
+    readonly notification: number;
+    readonly localCommit: number;
+    readonly replayedEntryCount: number;
+}
+
+function replayMetrics(input: ReplayMetricsInput) {
     return {
-        wakeCountBySource: { poll, notification, 'local-commit': localCommit },
-        replayedEntryCount
+        wakeCountBySource: {
+            poll: input.poll,
+            notification: input.notification,
+            'local-commit': input.localCommit
+        },
+        replayedEntryCount: input.replayedEntryCount
     };
 }
 

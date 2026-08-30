@@ -76,6 +76,30 @@ it('passes the connected room reference through RTC message sends', async () => 
     }));
 });
 
+it('broadcasts untargeted realtime sends to every ready peer', async () => {
+    facade.behavior.rtcStatus.mockReturnValue({
+        sessionId: 'session-1',
+        laneId: 'realtime',
+        knownPeerIds: ['bob-session', 'charlie-session'],
+        activePeerIds: ['bob-session', 'charlie-session'],
+        peerIdsWithNoReconnectableLanes: [],
+        readyPeerIds: ['bob-session', 'charlie-session'],
+        peers: []
+    });
+    const { runtime } = await loadConnectedMessageRuntime();
+
+    await runtime.send({
+        roomId: 'bb-group',
+        data: { text: 'hello ready peers' }
+    });
+
+    expect(facade.records.realtimeSends[0]?.[0]).toEqual(expect.objectContaining({
+        roomId: 'bb-group',
+        peerIds: ['bob-session', 'charlie-session'],
+        data: { text: 'hello ready peers' }
+    }));
+});
+
 it('subscribes before WebSocket sends and preserves message metadata', async () => {
     facade.behavior.wsMessageSend.mockResolvedValue({
         transport: 'ws',

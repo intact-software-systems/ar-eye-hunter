@@ -48,7 +48,7 @@ it('reports a structured validation issue when no room session can be resolved',
     });
 });
 
-it('refreshes a bound room with one tokenless durable point read', async () => {
+it('refreshes a bound room and its current topology', async () => {
     const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
     configureApiClient({ apiBaseUrl: 'https://api.example.test' });
     const observed = createRoomSnapshot('room-1', ['session-1']);
@@ -64,26 +64,51 @@ it('refreshes a bound room with one tokenless durable point read', async () => {
         }
     };
     seedRoomSnapshots([observed]);
+    let groupReadObserved = false;
+    let topologyReadObserved = false;
     const fetchMock = vi.fn(async (
-        _input: RequestInfo | URL,
+        input: RequestInfo | URL,
         _init?: RequestInit
-    ) => new Response(JSON.stringify(current), {
-        status: 200,
-        headers: {
-            'cache-control': 'no-store',
-            'content-type': 'application/json',
-            'rallar-state-source': 'durable',
-            'rallar-group-revision': String(current.causalRevision.groupRevision),
-            'rallar-presence-revision': String(current.causalRevision.presenceRevision)
+    ) => {
+        if (String(input).endsWith('/topology')) {
+            if (!groupReadObserved) {
+                throw new Error('Topology was read before the current group snapshot.');
+            }
+            topologyReadObserved = true;
+            return new Response(JSON.stringify({
+                groupRef: current.group,
+                overlayId: '["app-1","workspace-1","room-1"]',
+                snapshot: null,
+                config: null,
+                pending: null
+            }), {
+                status: 200,
+                headers: { 'content-type': 'application/json' }
+            });
         }
-    }));
+        groupReadObserved = true;
+        return new Response(JSON.stringify(current), {
+            status: 200,
+            headers: {
+                'cache-control': 'no-store',
+                'content-type': 'application/json',
+                'rallar-state-source': 'durable',
+                'rallar-group-revision': String(current.causalRevision.groupRevision),
+                'rallar-presence-revision': String(current.causalRevision.presenceRevision)
+            }
+        });
+    });
     vi.stubGlobal('fetch', fetchMock);
 
     const refreshed = await createRallarFacade().rooms.session(observed.group).refresh();
 
-    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(groupReadObserved).toBe(true);
+    expect(topologyReadObserved).toBe(true);
     expect(fetchMock.mock.calls[0]?.[0]).toBe(
         'https://api.example.test/api/state/apps/app-1/workspaces/workspace-1/groups/room-1'
+    );
+    expect(fetchMock.mock.calls[1]?.[0]).toBe(
+        'https://api.example.test/api/state/apps/app-1/workspaces/workspace-1/groups/room-1/topology'
     );
     const request = fetchMock.mock.calls[0]?.[1];
     const headers = new Headers(request?.headers);

@@ -186,6 +186,13 @@ describe('black-box runner recipe matrix', () => {
         });
     });
 
+    it('gives the scope-isolation auth preflight a realistic deadline', () => {
+        const { entries } = readMatrix();
+        const scopeIsolation = entries.find((entry) => entry.id === 'api-v1-scope-isolation');
+
+        expect(scopeIsolation?.requires?.livePreflight?.timeoutMs).toBe(10_000);
+    });
+
     it('includes gated live-provider baselines for soak, traffic, and parallel RTC patterns', () => {
         const { entries } = readMatrix();
         const byProfile = (profile: string) => entries.filter((entry) => entry.profiles.includes(profile));

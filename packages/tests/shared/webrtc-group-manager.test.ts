@@ -8,6 +8,30 @@ import { describe, expect, it, vi } from 'vitest';
 import { createTestGroup } from '../create-test-group.ts';
 
 describe('WebRtcGroupManager', () => {
+    it('connects group-active peers before the independent client cache observes them', async () => {
+        const groupCache = new LatestRepository<string, GroupSnapshot>();
+        const clientCache = new LatestRepository<string, ClientInfo>();
+        const rtcQBox = createRtcQBoxHarness('self');
+        const manager = new WebRtcGroupManager(
+            rtcQBox.service as never,
+            groupCache,
+            clientCache,
+            undefined,
+            { overlayTransitionGraceMs: 0 }
+        );
+
+        await manager.acceptGroupUpdate(
+            createGroupSnapshot('group-1', 1, ['self', 'peer-a'])
+        );
+
+        expect(rtcQBox.ensurePeerConnectionStarted).toHaveBeenCalledWith('peer-a');
+        expect(manager.state()).toMatchObject({
+            desiredPeerIds: ['peer-a'],
+            onlinePeerIds: ['peer-a'],
+            connectablePeerIds: ['peer-a']
+        });
+    });
+
     it('reconciles desired groups against online clients and connection state', async () => {
         const groupCache = new LatestRepository<string, GroupSnapshot>();
         const clientCache = new LatestRepository<string, ClientInfo>();
