@@ -91,7 +91,9 @@ env -u DATABASE_URL -u RALLAR_ICE_MODE \
 `index-entry.jsonl`. Tooling failure before initialization creates no ZIP.
 After initialization, complete failed evidence can be archived with outcome
 `failed` and `acceptedMetrics: false`; malformed or unaccounted evidence is
-rejected rather than published.
+rejected rather than published. A failed RTC-B06 producer also replays its
+captured stdout and stderr into the workflow log with the exact attempt
+identity; successful producer output remains quiet.
 
 Repository observations are append-only:
 

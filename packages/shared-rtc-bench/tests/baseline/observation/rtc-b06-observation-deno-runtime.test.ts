@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { createRtcB06LiveProducerCommand } from '../../../baseline/observation/rtc-b06-observation-deno-runtime.ts';
+import { createRtcB06LiveProducerCommand, runRtcB06LiveProducer } from '../../../baseline/observation/rtc-b06-observation-deno-runtime.ts';
 
 const baselineId = '20260830T100000Z-c0cadb8216cf-e3-memory-gh987654321-a3';
 
@@ -35,6 +35,61 @@ const commonArguments = [
 ];
 
 describe('RTC-B06 observation Deno runtime', () => {
+    it('publishes captured producer output when the live matrix fails', async () => {
+        const stdout: string[] = [];
+        const stderr: string[] = [];
+        const result = await runRtcB06LiveProducer(
+            {
+                command: async () => ({
+                    code: 1,
+                    stdout: new TextEncoder().encode('playwright failure\n'),
+                    stderr: new TextEncoder().encode('receiver timed out\n')
+                })
+            },
+            {
+                writeStdout: async (bytes) => {
+                    stdout.push(new TextDecoder().decode(bytes));
+                },
+                writeStderr: async (bytes) => {
+                    stderr.push(new TextDecoder().decode(bytes));
+                }
+            },
+            { baselineId, attempt: attempt('default') }
+        );
+
+        expect(result).toEqual({ exitStatus: 1 });
+        expect(stdout).toEqual(['playwright failure\n']);
+        expect(stderr).toEqual([
+            'RTC-B06 producer failed for default/retained/2 with exit status 1.\n',
+            'receiver timed out\n'
+        ]);
+    });
+
+    it('does not publish captured producer output from a successful matrix', async () => {
+        const writes: Uint8Array[] = [];
+        const result = await runRtcB06LiveProducer(
+            {
+                command: async () => ({
+                    code: 0,
+                    stdout: new TextEncoder().encode('normal output\n'),
+                    stderr: new Uint8Array()
+                })
+            },
+            {
+                writeStdout: async (bytes) => {
+                    writes.push(bytes);
+                },
+                writeStderr: async (bytes) => {
+                    writes.push(bytes);
+                }
+            },
+            { baselineId, attempt: attempt('default') }
+        );
+
+        expect(result).toEqual({ exitStatus: 0 });
+        expect(writes).toEqual([]);
+    });
+
     it('starts the default E3 producer with database and scenario inheritance removed', () => {
         expect(createRtcB06LiveProducerCommand({ baselineId, attempt: attempt('default') }))
             .toEqual({
