@@ -159,7 +159,7 @@ export type GroupMutationCommand =
             // Dark until slice 8 mounts routes (plan slice 5e). `start` opens
             // a formation series from the clean slate and is denied while the
             // attempt budget is spent (product decisions 35/37).
-            operation: 'startGroupFormation';
+            operation: 'startGroupFormation' | 'resetGroupFormation';
             input:
                 & NullableActorInput
                 & Readonly<{
@@ -544,7 +544,13 @@ export type GroupMutationComputed =
          * same guard itself).
          */
         plannedLayoutFence: GroupPlannedLayoutRow | null;
+        layoutTombstones: GroupLayoutTombstones | null;
     }>;
+
+export type GroupLayoutTombstones = Readonly<{
+    planned: GroupPlannedLayoutRow | null;
+    accepted: GroupAcceptedLayoutRow | null;
+}>;
 
 export type GroupMutationComputedWrite = Extract<GroupMutationComputed, { outcome: 'write'; }>;
 
@@ -558,6 +564,7 @@ export type GroupLifecycleTransitionOperation = Extract<
     | 'planGroupLayout'
     | 'connectGroup'
     | 'startGroupFormation'
+    | 'resetGroupFormation'
 >;
 
 export function isGroupLifecycleTransitionOperation(
@@ -571,7 +578,8 @@ export function isGroupLifecycleTransitionOperation(
         operation === 'failGroupFormation' ||
         operation === 'planGroupLayout' ||
         operation === 'connectGroup' ||
-        operation === 'startGroupFormation'
+        operation === 'startGroupFormation' ||
+        operation === 'resetGroupFormation'
     );
 }
 

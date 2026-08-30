@@ -8,17 +8,8 @@ import {
 } from '@shared-server/rallar-system/topology/persistence/rtc-topology-snapshot-repository.ts';
 import type { RuntimeStateGuardedBatchEffect } from '../../../../runtime-state/guarded-batch/runtime-state-guarded-batch.ts';
 import type { PlannedLayoutPromotion } from '../../mutation/aggregate/compute-planned-layout-promotion.ts';
+import type { GroupLayoutTombstones } from '../../mutation/group-mutation-contracts.ts';
 
-/**
- * The accepted-layout facts as guarded-batch effects, all-or-nothing with the
- * group row (product decisions 24/42): the accepted row (insert on first
- * promotion, revision-guarded update after) and a revision-guarded rewrite of
- * the planned row itself — the causal fence's re-assertion inside the
- * transaction, so a replan that landed after the read conflicts the whole
- * batch instead of promoting a superseded plan (decisions 19/32). Both rows
- * carry the identical encoded snapshot by construction: `row` is computed
- * once and spread into every effect.
- */
 /**
  * The causal fence re-asserted inside the transaction (product decisions
  * 19/32): a revision-guarded rewrite of the planned row the command was
@@ -43,6 +34,48 @@ export function toPlannedLayoutFenceEffect(
     };
 }
 
+/**
+ * Reset preserves both layout rows as revision-guarded removal tombstones, so
+ * teardown identity remains durable while a concurrent replan still conflicts.
+ */
+export function toGroupLayoutTombstoneEffects(
+    tombstones: GroupLayoutTombstones
+): readonly RuntimeStateGuardedBatchEffect[] {
+    return [
+        toLayoutTombstoneEffect('planned-layout-tombstone', RTC_TOPOLOGY_SNAPSHOTS_NAMESPACE, tombstones.planned),
+        toLayoutTombstoneEffect(
+            'accepted-layout-tombstone',
+            RTC_TOPOLOGY_ACCEPTED_SNAPSHOTS_NAMESPACE,
+            tombstones.accepted
+        )
+    ].filter((effect): effect is RuntimeStateGuardedBatchEffect => effect !== null);
+}
+
+function toLayoutTombstoneEffect(
+    effectId: string,
+    namespace: string,
+    tombstone: Readonly<{ snapshot: RallarOverlayTopologySnapshot; revision: number; }> | null
+): RuntimeStateGuardedBatchEffect | null {
+    if (tombstone === null) {
+        return null;
+    }
+    const row = toStoredRtcTopologySnapshotRow(tombstone.snapshot);
+    return {
+        effectId,
+        operation: 'update',
+        namespace,
+        expectedRevision: tombstone.revision,
+        key: row.key,
+        value: row.value,
+        expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
+    };
+}
+
+/**
+ * Applies an accepted-layout promotion atomically with the group row: the
+ * planned revision fence prevents a stale promotion and the accepted slot is
+ * inserted or updated at the revision compute observed.
+ */
 export function toGroupLayoutPromotionEffects(
     promotion: Extract<PlannedLayoutPromotion, { outcome: 'apply'; }>
 ): readonly RuntimeStateGuardedBatchEffect[] {

@@ -392,6 +392,13 @@ const descriptorCases: readonly DescriptorCase[] = [
         { ...actor, requestId: 'formation-start' }
     ),
     descriptorCase(
+        'formation-reset',
+        AppInboxType.GROUP_FORMATION_RESET,
+        { scope: SCOPE, groupId, request: { ...actor, requestId: 'formation-reset' } },
+        'resetGroupFormation',
+        { ...actor, requestId: 'formation-reset' }
+    ),
+    descriptorCase(
         'transport-pause',
         AppInboxType.GROUP_TRANSPORT_PAUSE,
         { scope: SCOPE, groupId, request: { ...actor, requestId: 'transport-pause' } },

@@ -45,19 +45,13 @@ import { createAuthorityHarness, processAuthenticated, SCOPE } from './group-sta
  *
  * `GROUP_CONNECT` runs after the matrix, against a stored plan and against a
  * missing one, so it is exercised by this file rather than by the array. The
- * other two predate this list and are covered elsewhere. `start` is the one
- * this slice adds: `dormant` is its only legal source stage and no command
- * reaches `dormant` until slice 6c's `reset` exists -- decision 35 forbids
- * creating a group there and exhaustion's landing is still dark -- so its
- * mapping rides the descriptor contract and its compute the unit suite. 6c
- * drops it from this list as it adds the case.
+ * other two predate this list and are covered elsewhere.
  */
 const INBOX_TYPES_OUTSIDE_THE_CASE_ARRAY: readonly AppInboxType[] = [
     AppInboxType.GROUP_CONNECT,
     AppInboxType.GROUP_ESTABLISHMENT_START,
     AppInboxType.GROUP_ESTABLISHMENT_REOPEN,
-    AppInboxType.GROUP_ACTIVATE,
-    AppInboxType.GROUP_FORMATION_START
+    AppInboxType.GROUP_ACTIVATE
 ];
 
 describe('GroupStateInboxService authenticated authority', () => {
@@ -113,7 +107,8 @@ describe('GroupStateInboxService authenticated authority', () => {
             AppInboxType.GROUP_PRESENCE_DISCONNECT,
             AppInboxType.GROUP_TRANSPORT_PAUSE,
             AppInboxType.GROUP_TRANSPORT_RESUME,
-            AppInboxType.GROUP_FORMATION_START
+            AppInboxType.GROUP_FORMATION_START,
+            AppInboxType.GROUP_FORMATION_RESET
         ]);
     });
 
@@ -135,6 +130,7 @@ async function runEveryAdvertisedGroupOperation(): Promise<void> {
     const groupId = 'operation-matrix-room';
     const reconfigureGroupId = 'operation-matrix-reconfigure';
     const phasedGroupId = 'operation-matrix-phased';
+    const resetGroupId = 'operation-matrix-reset';
     const admissionGroupId = 'operation-matrix-admissions';
     const ownerActor = {
         actorPrincipalId: 'owner',
@@ -670,6 +666,58 @@ async function runEveryAdvertisedGroupOperation(): Promise<void> {
                 expect(group?.transportState).toBe('flowing');
                 expect(group?.lifecycleState).toBe('planned');
                 expect(group?.formationEpoch).toBe(1);
+            }
+        },
+        {
+            type: AppInboxType.GROUP_CREATE,
+            operation: 'createGroup',
+            authority: harness.sessions.owner,
+            data: {
+                scope: SCOPE,
+                request: {
+                    groupId: resetGroupId,
+                    displayName: 'Operation Matrix Reset',
+                    kind: 'room',
+                    joinMode: 'open',
+                    createdByPrincipalId: 'owner',
+                    ...ownerActor,
+                    requestId: 'matrix-create-reset'
+                }
+            } satisfies GroupCreateAppInboxPayload,
+            assertDomain: async () => {
+                expect(
+                    (await harness.repository.readSnapshot({ ...SCOPE, groupId: resetGroupId }))
+                        ?.group.lifecycleState
+                ).toBe('active');
+            }
+        },
+        {
+            type: AppInboxType.GROUP_FORMATION_RESET,
+            operation: 'resetGroupFormation',
+            authority: harness.sessions.owner,
+            data: {
+                scope: SCOPE,
+                groupId: resetGroupId,
+                request: { ...ownerActor, requestId: 'matrix-reset' }
+            } satisfies GroupLifecycleTransitionAppInboxPayload,
+            assertDomain: async () => {
+                const group = (await harness.repository.readSnapshot({ ...SCOPE, groupId: resetGroupId }))?.group;
+                expect(group?.lifecycleState).toBe('dormant');
+                expect(group?.transportState).toBe('halted');
+            }
+        },
+        {
+            type: AppInboxType.GROUP_FORMATION_START,
+            operation: 'startGroupFormation',
+            authority: harness.sessions.owner,
+            data: {
+                scope: SCOPE,
+                groupId: resetGroupId,
+                request: { ...ownerActor, requestId: 'matrix-start-after-reset' }
+            } satisfies GroupLifecycleTransitionAppInboxPayload,
+            assertDomain: async () => {
+                const group = (await harness.repository.readSnapshot({ ...SCOPE, groupId: resetGroupId }))?.group;
+                expect(group?.lifecycleState).toBe('forming');
             }
         }
     ];

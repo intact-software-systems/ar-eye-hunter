@@ -30,6 +30,13 @@ describe('toDeliverableTopologySnapshot', () => {
         ).toBe(tombstone);
     });
 
+    it('falls through an accepted removal tombstone to a fresh active planned layout', () => {
+        const planned = snapshot('active', ['a', 'b']);
+        const accepted = snapshot('removed', ['a']);
+
+        expect(toDeliverableTopologySnapshot({ planned, accepted })).toBe(planned);
+    });
+
     it('serves a member named only in the held planned candidate their candidate assignment', () => {
         const planned = snapshot('active', ['a', 'newcomer']);
         const accepted = snapshot('active', ['a']);

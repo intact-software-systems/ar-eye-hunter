@@ -45,5 +45,5 @@ export function toDeliverableTopologySnapshot(
     ) {
         return planned;
     }
-    return accepted ?? planned;
+    return accepted?.state === 'removed' ? planned : accepted ?? planned;
 }

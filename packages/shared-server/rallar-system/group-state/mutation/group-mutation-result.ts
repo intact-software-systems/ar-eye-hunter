@@ -13,10 +13,10 @@ import type { RuntimeStateEntryValue } from '../../../runtime-state/runtime-stat
 
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import type { InitialGroupPresenceSummaryCandidate } from '../presence/group-initial-presence-summary.ts';
-import type { PlannedLayoutPromotion } from './aggregate/compute-planned-layout-promotion.ts';
-import type { GroupPlannedLayoutRow } from './aggregate/compute-planned-layout-promotion.ts';
+import type { GroupPlannedLayoutRow, PlannedLayoutPromotion } from './aggregate/compute-planned-layout-promotion.ts';
 import type {
     GroupGuardCandidate,
+    GroupLayoutTombstones,
     GroupMutationCommand,
     GroupMutationComputed,
     GroupMutationFacts,
@@ -47,6 +47,7 @@ export interface GroupMutationWriteInput {
     readonly acceptedLayoutPromotion?: Extract<PlannedLayoutPromotion, { outcome: 'apply'; }> | null;
     /** The planned row a layout fence matched, re-asserted at commit. */
     readonly plannedLayoutFence?: GroupPlannedLayoutRow | null;
+    readonly layoutTombstones?: GroupLayoutTombstones | null;
 }
 
 export interface RejectedGroupMutationInput {
@@ -113,6 +114,7 @@ export function computeGroupMutationWriteResult(
     const outboxEntries = [...summaryOutboxEntries, ...(input.extraOutboxEntries ?? [])];
     const acceptedLayoutPromotion = input.acceptedLayoutPromotion ?? null;
     const plannedLayoutFence = input.plannedLayoutFence ?? null;
+    const layoutTombstones = input.layoutTombstones ?? null;
     const receipt = receiptFor(command, facts, {
         outcome: 'applied',
         causalRevision,
@@ -134,7 +136,8 @@ export function computeGroupMutationWriteResult(
         outboxEntries,
         lifecyclePolicy: command.operation === 'createGroup' ? (command.input.lifecyclePolicy ?? null) : null,
         acceptedLayoutPromotion,
-        plannedLayoutFence
+        plannedLayoutFence,
+        layoutTombstones
     };
 }
 
@@ -322,7 +325,7 @@ function toGroupEventPayload(
     members: readonly GroupMember[],
     command: GroupMutationCommand
 ): GroupEvent['payload'] {
-    if (command.operation === 'reconfigureGroup') {
+    if (command.operation === 'reconfigureGroup' || command.operation === 'resetGroupFormation') {
         return { topologyReplanOrigin: 'commanded' };
     }
     if (eventType === 'ownership-transferred') {

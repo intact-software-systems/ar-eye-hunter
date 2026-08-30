@@ -7,6 +7,7 @@ import {
 } from '@shared/api/group-lifecycle/group-lifecycle-transitions.ts';
 import { beginsGroupEstablishmentAt } from '@shared/api/group-lifecycle/resolve-formation-stage-entry.ts';
 import type { Group } from '@shared/api/group-types.ts';
+import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 
 import { computeFormationTimerEntries } from '../../formation-timer-outbox-entry.ts';
 import { canCommandGroupLifecycleTransition } from '../../policy/group-lifecycle-policy.ts';
@@ -22,7 +23,12 @@ import {
 } from '../group-mutation-contracts.ts';
 import { auditStamp, computeGroupMutationWriteResult, requireGroup } from '../group-mutation-result.ts';
 import { computeLifecycleFenceRejection } from './compute-lifecycle-fence-rejection.ts';
-import { computePlannedLayoutPromotion, type PlannedLayoutPromotion } from './compute-planned-layout-promotion.ts';
+import {
+    computePlannedLayoutPromotion,
+    type GroupAcceptedLayoutRow,
+    type GroupPlannedLayoutRow,
+    type PlannedLayoutPromotion
+} from './compute-planned-layout-promotion.ts';
 import { assertActive, assertAllowed, toGroupAuthorityPolicyInput } from './group-aggregate-mutation-policy.ts';
 import { resolveGroupAuthorityPolicy, toCorruptPolicyRejection } from './resolve-group-authority-policy.ts';
 
@@ -31,6 +37,7 @@ const LIFECYCLE_TRANSITION_BY_OPERATION = {
     planGroupLayout: 'plan',
     connectGroup: 'connect',
     startGroupFormation: 'start',
+    resetGroupFormation: 'reset',
     activateGroup: 'activate',
     reconfigureGroup: 'reconfigure',
     reopenGroupEstablishment: 'reopen-establishment',
@@ -102,6 +109,12 @@ export function computeLifecycleTransition(
         });
     return computeGroupMutationWriteResult({
         acceptedLayoutPromotion: promotion?.outcome === 'apply' ? promotion : null,
+        layoutTombstones: command.operation === 'resetGroupFormation'
+            ? {
+                planned: toLayoutTombstone(read.plannedLayoutRow),
+                accepted: toLayoutTombstone(read.acceptedLayoutRow)
+            }
+            : null,
         // A promotion already re-asserts the planned row. `connect` dials a
         // candidate without promoting it (decision 42), so it carries the
         // guard itself and a replan landing between the read and the commit
@@ -170,6 +183,21 @@ function computeNextLifecycleGroup(
         promotion: PlannedLayoutPromotion | null;
     }>
 ): Group {
+    if (command.operation === 'resetGroupFormation') {
+        return {
+            ...stored,
+            lifecycleState: outcome.nextState,
+            formationEpoch: outcome.nextFormationEpoch,
+            formationAttemptCount: 0,
+            establishmentStartedAtEpochMs: null,
+            lastFormationOutcome: null,
+            acceptedLayoutIdentity: null,
+            transportState: 'halted',
+            formationElectorate,
+            snapshotVersion: stored.snapshotVersion + 1,
+            updated: auditStamp(command, facts, command.input.actorPrincipalId ?? undefined)
+        };
+    }
     const acceptedLayoutIdentity = promotion?.outcome === 'apply'
         ? promotion.acceptedIdentity
         : stored.acceptedLayoutIdentity;
@@ -198,6 +226,29 @@ function computeNextLifecycleGroup(
         formationElectorate: idempotentReplan ? stored.formationElectorate : formationElectorate,
         snapshotVersion: stored.snapshotVersion + 1,
         updated: auditStamp(command, facts, command.input.actorPrincipalId ?? undefined)
+    };
+}
+
+function toLayoutTombstone(row: GroupPlannedLayoutRow | null): GroupPlannedLayoutRow | null;
+function toLayoutTombstone(row: GroupAcceptedLayoutRow | null): GroupAcceptedLayoutRow | null;
+function toLayoutTombstone(
+    row: GroupPlannedLayoutRow | GroupAcceptedLayoutRow | null
+): GroupPlannedLayoutRow | GroupAcceptedLayoutRow | null {
+    return row === null
+        ? null
+        : {
+            ...row,
+            snapshot: toRemovedLayoutSnapshot(row.snapshot)
+        };
+}
+
+function toRemovedLayoutSnapshot(snapshot: RallarOverlayTopologySnapshot): RallarOverlayTopologySnapshot {
+    return {
+        ...snapshot,
+        state: 'removed',
+        nextHopsBySessionId: Object.fromEntries(
+            Object.keys(snapshot.nextHopsBySessionId).map((sessionId) => [sessionId, []])
+        )
     };
 }
 
