@@ -1,3 +1,4 @@
+import type { GroupPolicyDenied } from '@shared/api/group-policy-types.ts';
 import type {
     AuditStamp,
     Group,
@@ -11,6 +12,7 @@ import type { MutationActor } from '@shared/api/mutation-actor.ts';
 import { computeGroupPresenceSummaryEntry } from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
 import type { RuntimeStateGuardedBatchEffect } from '../../../runtime-state/guarded-batch/runtime-state-guarded-batch.ts';
 import type { RuntimeStateEntryValue } from '../../../runtime-state/runtime-state-json-store.ts';
+import { GroupPolicyDeniedError } from '../policy/group-policy-result.ts';
 
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import type { InitialGroupPresenceSummaryCandidate } from '../presence/group-initial-presence-summary.ts';
@@ -56,7 +58,7 @@ export interface RejectedGroupMutationInput {
     readonly command: GroupMutationCommand;
     readonly read: GroupMutationRead;
     readonly facts: GroupMutationFacts;
-    readonly rejectionCode: GroupMutationRejectionCode;
+    readonly rejectionCode: Exclude<GroupMutationRejectionCode, 'group-policy-denied'>;
     readonly message: string;
 }
 
@@ -167,7 +169,9 @@ export function noOp(
     };
 }
 
-export function rejected(input: RejectedGroupMutationInput): GroupMutationComputed {
+export function rejected(
+    input: RejectedGroupMutationInput
+): Extract<GroupMutationComputed, { rejectionCode: Exclude<GroupMutationRejectionCode, 'group-policy-denied'>; }> {
     const { command, facts, message, read, rejectionCode } = input;
     const causalRevision = currentCausalRevision(read);
     return {
@@ -185,11 +189,33 @@ export function rejected(input: RejectedGroupMutationInput): GroupMutationComput
     };
 }
 
+export function rejectedByGroupPolicy(
+    input: Readonly<{
+        command: GroupMutationCommand;
+        read: GroupMutationRead;
+        facts: GroupMutationFacts;
+        denial: GroupPolicyDenied;
+    }>
+): GroupMutationComputed {
+    return {
+        ...rejected({ ...input, rejectionCode: 'group-mutation-rejected', message: input.denial.message }),
+        rejectionCode: 'group-policy-denied',
+        policyDenial: {
+            allowed: false,
+            code: input.denial.code,
+            message: input.denial.message,
+            ...(input.denial.details === undefined ? {} : { details: input.denial.details })
+        }
+    };
+}
+
 export function toGroupMutationRejectionError(
     computed: Extract<GroupMutationComputed, { outcome: 'rejected'; }>
-): GroupAlreadyExistsError | GroupConnectDeniedError | GroupMutationRejectedError {
+): GroupAlreadyExistsError | GroupConnectDeniedError | GroupMutationRejectedError | GroupPolicyDeniedError {
     const message = computed.receipt.rejection ?? 'Group mutation rejected';
     switch (computed.rejectionCode) {
+        case 'group-policy-denied':
+            return new GroupPolicyDeniedError(computed.policyDenial);
         case 'group-already-exists':
             return new GroupAlreadyExistsError(message);
         case 'group-connect-no-planned-layout':

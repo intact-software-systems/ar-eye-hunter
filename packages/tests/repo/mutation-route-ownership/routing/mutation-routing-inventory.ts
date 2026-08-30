@@ -136,12 +136,12 @@ function checkRegistration(
         return;
     }
     const [method, routePath] = item.entrypoint.split(' ');
-    const program = sources.readProgram(issues, item.sourcePath, 'registration', item);
+    const program = sources.readProgram({ issues, filePath: item.sourcePath, label: 'registration', item });
     if (!program) {
         return;
     }
     const rootProgram = item.constructionRootSourcePath
-        ? sources.readProgram(issues, item.constructionRootSourcePath, 'registration root', item)
+        ? sources.readProgram({ issues, filePath: item.constructionRootSourcePath, label: 'registration root', item })
         : undefined;
     const handler = findExactHttpRouteHandler({
         program,
@@ -190,7 +190,7 @@ function checkAstMarker({
     item,
     sources
 }: AstMarkerCheckInput): void {
-    const program = sources.readProgram(issues, filePath, label, item);
+    const program = sources.readProgram({ issues, filePath, label, item });
     if (program && !hasExactMarker(program, marker)) {
         issues.push(`${key(item)} ${label} marker is absent from ${filePath}`);
     }
@@ -201,25 +201,27 @@ function checkOwnerMethod(
     sources: SourceReader
 ): void {
     const method = item.owner.split('.').at(-1) ?? '';
-    const program = sources.readProgram(issues, item.ownerSourcePath, 'owner', item);
+    const program = sources.readProgram({ issues, filePath: item.ownerSourcePath, label: 'owner', item });
     if (program && !hasOwnerCallable(program, method)) {
         issues.push(`${key(item)} owner method is absent from ${item.ownerSourcePath}`);
     }
 }
 
+interface ReadMutationInventoryProgramInput {
+    readonly issues: string[];
+    readonly filePath: string;
+    readonly label: string;
+    readonly item: MutationRouteInventoryEntry;
+}
+
 interface SourceReader {
-    readProgram(
-        issues: string[],
-        filePath: string,
-        label: string,
-        item: MutationRouteInventoryEntry
-    ): MutationRoutingAstNode | undefined;
+    readProgram(input: ReadMutationInventoryProgramInput): MutationRoutingAstNode | undefined;
 }
 
 function createSourceReader(options: MutationRouteValidationOptions): SourceReader {
     const cache = new Map<string, MutationRoutingAstNode>();
     return {
-        readProgram: (issues, filePath, label, item) => {
+        readProgram: ({ issues, filePath, label, item }) => {
             const cached = cache.get(filePath);
             if (cached) {
                 return cached;
@@ -248,11 +250,11 @@ function checkRegisteredHandlerCallChain(
     item: MutationRouteInventoryEntry,
     sources: SourceReader
 ): void {
-    const source = sources.readProgram(issues, item.sourcePath, 'call chain', item);
-    const enqueue = sources.readProgram(issues, item.enqueueSourcePath, 'call chain', item);
-    const owner = sources.readProgram(issues, item.ownerSourcePath, 'owner', item);
-    const typeOwner = sources.readProgram(issues, item.typeOwnerSourcePath, 'type owner', item);
-    const dispatch = sources.readProgram(issues, item.dispatchSourcePath, 'owner dispatch', item);
+    const source = sources.readProgram({ issues, filePath: item.sourcePath, label: 'call chain', item });
+    const enqueue = sources.readProgram({ issues, filePath: item.enqueueSourcePath, label: 'call chain', item });
+    const owner = sources.readProgram({ issues, filePath: item.ownerSourcePath, label: 'owner', item });
+    const typeOwner = sources.readProgram({ issues, filePath: item.typeOwnerSourcePath, label: 'type owner', item });
+    const dispatch = sources.readProgram({ issues, filePath: item.dispatchSourcePath, label: 'owner dispatch', item });
     if (!source || !enqueue || !owner || !typeOwner || !dispatch) {
         return;
     }
@@ -266,7 +268,7 @@ function checkRegisteredHandlerCallChain(
             dispatchSource: dispatch,
             containsMarker: hasExactMarker,
             matchesMarker: hasDirectExactMarker,
-            loadProgram: (filePath) => sources.readProgram(issues, filePath, 'owner dependency', item)
+            loadProgram: (filePath) => sources.readProgram({ issues, filePath, label: 'owner dependency', item })
         })
     );
 }

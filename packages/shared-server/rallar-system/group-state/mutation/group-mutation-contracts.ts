@@ -3,6 +3,7 @@ import type {
     GroupLifecyclePolicy,
     GroupTopologyReconfigureLanding
 } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
+import type { GroupPolicyDenied } from '@shared/api/group-policy-types.ts';
 import type {
     AuditStamp,
     Group,
@@ -509,7 +510,13 @@ export type GroupMutationComputed =
     }>
     | Readonly<{
         outcome: 'rejected';
-        rejectionCode: GroupMutationRejectionCode;
+        rejectionCode: Exclude<GroupMutationRejectionCode, 'group-policy-denied'>;
+        receipt: GroupMutationReceipt;
+    }>
+    | Readonly<{
+        outcome: 'rejected';
+        rejectionCode: 'group-policy-denied';
+        policyDenial: GroupPolicyDenied;
         receipt: GroupMutationReceipt;
     }>
     | Readonly<{

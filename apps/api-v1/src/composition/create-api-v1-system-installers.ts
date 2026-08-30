@@ -93,6 +93,15 @@ function createTopologyAppOutboxOptions(
             nowEpochMs: topology.rtcTopologyOptions.now ?? Date.now
         },
         formationCriterion: {
+            deferred: {
+                minIntervalMs: 1_000,
+                nowEpochMs: input.nowEpochMs,
+                schedule: (delayMs, callback) => {
+                    setTimeout(() => {
+                        void callback();
+                    }, delayMs);
+                }
+            },
             readLifecyclePolicy: (ref) => topology.groupStateRepository.readLifecyclePolicy(ref),
             submitCommand: (command, atEpochMs) =>
                 runtime.groupStateInboxService.enqueueFormationCriterionCommand(command, atEpochMs)

@@ -96,12 +96,12 @@ async function prepareAuthorizedGroupMutation(
 ): Promise<GroupMutationPreparation> {
     const { dependencies, descriptor, authority, useScopedCommandId } = input;
     const authorized = await authorizeGroupMutation(dependencies, descriptor, authority);
-    const materialized = await materializeAuthenticatedGroupMutationCommand(
-        authorized.descriptor,
-        authorized.authorityProof,
-        dependencies.randomId,
+    const materialized = await materializeAuthenticatedGroupMutationCommand({
+        descriptor: authorized.descriptor,
+        authorityProof: authorized.authorityProof,
+        randomId: dependencies.randomId,
         useScopedCommandId
-    );
+    });
     const { command } = materialized;
     const commandHash = await hashMutationCommand(
         decodeJsonWireValue(materialized.semanticCommand, 'Group semantic mutation command')
@@ -187,12 +187,12 @@ export async function verifyPreparedGroupMutationAuthority(
             'Authenticated mutation descriptor changed before execution.'
         );
     }
-    const materialized = await materializeAuthenticatedGroupMutationCommand(
-        verified.descriptor,
-        prepared.authorityProof,
-        dependencies.randomId,
-        isScopedGroupMutationCommandId(prepared.command.commandId)
-    );
+    const materialized = await materializeAuthenticatedGroupMutationCommand({
+        descriptor: verified.descriptor,
+        authorityProof: prepared.authorityProof,
+        randomId: dependencies.randomId,
+        useScopedCommandId: isScopedGroupMutationCommandId(prepared.command.commandId)
+    });
     const { command } = materialized;
     const commandHash = await hashMutationCommand(
         decodeJsonWireValue(materialized.semanticCommand, 'Group semantic mutation command')
@@ -209,11 +209,15 @@ export async function verifyPreparedGroupMutationAuthority(
     }
 }
 
+interface MaterializeAuthenticatedGroupMutationInput {
+    readonly descriptor: GroupMutationDescriptor;
+    readonly authorityProof: GroupMutationAuthorityProof;
+    readonly randomId: () => string;
+    readonly useScopedCommandId: boolean;
+}
+
 async function materializeAuthenticatedGroupMutationCommand(
-    descriptor: GroupMutationDescriptor,
-    authorityProof: GroupMutationAuthorityProof,
-    randomId: () => string,
-    useScopedCommandId: boolean
+    { descriptor, authorityProof, randomId, useScopedCommandId }: MaterializeAuthenticatedGroupMutationInput
 ): Promise<Readonly<{ command: GroupMutationCommand; semanticCommand: GroupMutationCommand; }>> {
     const semanticCommand = toDescriptorCommand(descriptor, randomId);
     return {

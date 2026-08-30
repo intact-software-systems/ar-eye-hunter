@@ -1,3 +1,4 @@
+import { validateGroupMutation } from '@shared-server/rallar-system/group-state/mutation/state-validation/validate-group-mutation.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import type { GroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
 import { resolveGroupLifecyclePolicyPreset } from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
@@ -14,7 +15,6 @@ import type {
 import { GroupConnectDeniedError } from '@shared-server/rallar-system/group-state/mutation/group-mutation-rejection-codes.ts';
 import { toGroupMutationRejectionError } from '@shared-server/rallar-system/group-state/mutation/group-mutation-result.ts';
 import { computeGroupMutation } from '@shared-server/rallar-system/group-state/mutation/orchestration/compute-group-mutation.ts';
-import { GroupPolicyDeniedError } from '@shared-server/rallar-system/group-state/policy/group-policy-result.ts';
 import type { Group } from '@shared/api/group-types.ts';
 
 import { createGroupAuthorityFacts, createGroupAuthorityRead, groupRef, transitionCommand } from './group-mutation-test-runtime.ts';
@@ -97,12 +97,12 @@ describe('group lifecycle transition computation', () => {
 
     it.each(
         [
-            ['hold policy to apply', resolveGroupLifecyclePolicyPreset('match'), 'apply', 'active'],
-            ['absent default to hold', null, 'hold', 'reconfiguring']
+            { description: 'hold policy to apply', policy: resolveGroupLifecyclePolicyPreset('match'), landing: 'apply', lifecycleState: 'active' },
+            { description: 'absent default to hold', policy: null, landing: 'hold', lifecycleState: 'reconfiguring' }
         ] as const
     )(
-        'lets a reconfigure landing override %s',
-        (_description, policy, landing, lifecycleState) => expectReconfigureLandingOverride(policy, landing, lifecycleState)
+        'lets a reconfigure landing override $description',
+        ({ policy, landing, lifecycleState }) => expectReconfigureLandingOverride(policy, landing, lifecycleState)
     );
 
     it('plans from forming into the planned stage and advances the epoch', () => {
@@ -274,7 +274,7 @@ describe('group lifecycle transition computation', () => {
         for (const { operation, lifecycleState } of cases) {
             const computed = computeGroupMutation({
                 command: transitionCommand(operation),
-                read: createGroupAuthorityRead({ lifecycleState }),
+                read: operation === 'activateGroup' ? connectRead({ lifecycleState }, PLANNED_LAYOUT) : createGroupAuthorityRead({ lifecycleState }),
                 facts: createGroupAuthorityFacts()
             });
             expect(computed.outcome).toBe('write');
@@ -286,11 +286,29 @@ describe('group lifecycle transition computation', () => {
         }
     });
 
-    it('activates only after initial or replacement dialing', () => {
+    it.each(
+        [
+            { stage: 'connecting', plan: null },
+            { stage: 'reconnecting', plan: null },
+            { stage: 'connecting', plan: { ...PLANNED_LAYOUT, state: 'removed' } },
+            { stage: 'reconnecting', plan: { ...PLANNED_LAYOUT, state: 'removed' } }
+        ] as const
+    )('rejects manual activation without a live planned layout in $stage', ({ stage, plan }) => {
+        const computed = computeGroupMutation({
+            command: transitionCommand('activateGroup'),
+            read: connectRead({ lifecycleState: stage, formationEpoch: 1 }, plan),
+            facts: createGroupAuthorityFacts()
+        });
+        expect(computed).toMatchObject({ outcome: 'rejected', receipt: { eventId: null, outboxIds: [] } });
+        expect('guard' in computed).toBe(false);
+        expect('acceptedLayoutPromotion' in computed).toBe(false);
+    });
+
+    it('activates only after initial or replacement dialing and canonically promotes the planned layout', () => {
         for (const from of ['connecting', 'reconnecting'] as const) {
             const computed = computeGroupMutation({
                 command: transitionCommand('activateGroup'),
-                read: createGroupAuthorityRead({ lifecycleState: from, formationEpoch: 1 }),
+                read: connectRead({ lifecycleState: from, formationEpoch: 1 }, PLANNED_LAYOUT),
                 facts: createGroupAuthorityFacts()
             });
             expect(computed.outcome).toBe('write');
@@ -300,6 +318,8 @@ describe('group lifecycle transition computation', () => {
             const written = computed.guard.value as Group;
             expect(written.lifecycleState).toBe('active');
             expect(written.formationEpoch).toBe(2);
+            expect(written.acceptedLayoutIdentity).toEqual(PLANNED_LAYOUT);
+            expect(computed.acceptedLayoutPromotion?.acceptedSnapshot).toEqual(plannedSnapshotFor(PLANNED_LAYOUT));
         }
     });
 
@@ -319,13 +339,34 @@ describe('group lifecycle transition computation', () => {
     });
 
     it('denies an illegal transition as a typed policy denial', () => {
-        expect(() =>
+        expect(
             computeGroupMutation({
                 command: transitionCommand('planGroupLayout'),
                 read: createGroupAuthorityRead({ lifecycleState: 'active', formationEpoch: 1 }),
                 facts: createGroupAuthorityFacts()
             })
-        ).toThrowError(GroupPolicyDeniedError);
+        ).toMatchObject({ outcome: 'rejected', rejectionCode: 'group-policy-denied' });
+    });
+
+    it('validates a serialized policy denial and rejects a changed denial message', () => {
+        const command = transitionCommand('planGroupLayout');
+        const read = createGroupAuthorityRead({ lifecycleState: 'active', formationEpoch: 1 });
+        const facts = createGroupAuthorityFacts();
+        const computed = computeGroupMutation({ command, read, facts });
+        expect(computed).toMatchObject({ outcome: 'rejected', rejectionCode: 'group-policy-denied' });
+        const serialized: GroupMutationComputed = JSON.parse(JSON.stringify(computed));
+        expect(() => validateGroupMutation({ command, read, facts, computed: serialized })).not.toThrow();
+        if (computed.outcome !== 'rejected' || computed.rejectionCode !== 'group-policy-denied') {
+            throw new Error('Expected a policy rejection');
+        }
+        expect(() =>
+            validateGroupMutation({
+                command,
+                read,
+                facts,
+                computed: { ...computed, policyDenial: { ...computed.policyDenial, message: 'forged denial' } }
+            })
+        ).toThrow(/canonical deterministic projection/);
     });
 
     it('denies a non-manager under the managed policy', () => {
@@ -333,13 +374,13 @@ describe('group lifecycle transition computation', () => {
             { lifecycleState: 'forming', formationEpoch: 0, ownerPrincipalId: 'owner-alice' },
             { policy: 'managed', actorPrincipalId: 'bob' }
         );
-        expect(() =>
+        expect(
             computeGroupMutation({
                 command: transitionCommand('planGroupLayout', 'bob'),
                 read,
                 facts: createGroupAuthorityFacts('bob')
             })
-        ).toThrowError(GroupPolicyDeniedError);
+        ).toMatchObject({ outcome: 'rejected', rejectionCode: 'group-policy-denied' });
     });
 
     it('rejects on a corrupt stored policy instead of failing open', () => {
@@ -450,13 +491,17 @@ describe('group lifecycle transition computation', () => {
                 expectedLayout: null
             }
         } as GroupMutationCommand;
-        expect(() =>
+        expect(
             computeGroupMutation({
                 command: principalFail,
                 read: createGroupAuthorityRead({ lifecycleState: 'connecting', formationEpoch: 1 }),
                 facts: createGroupAuthorityFacts()
             })
-        ).toThrowError(/criterion-commanded only/);
+        ).toMatchObject({
+            outcome: 'rejected',
+            rejectionCode: 'group-mutation-rejected',
+            receipt: { rejection: 'Formation failure is criterion-commanded only' }
+        });
     });
 
     it('records the criterion outcome on internal activation', () => {
@@ -489,7 +534,7 @@ describe('group lifecycle transition computation', () => {
     it('leaves the recorded outcome untouched on manual activation', () => {
         const computed = computeGroupMutation({
             command: transitionCommand('activateGroup'),
-            read: createGroupAuthorityRead({ lifecycleState: 'connecting', formationEpoch: 1 }),
+            read: connectRead({ lifecycleState: 'connecting', formationEpoch: 1 }, PLANNED_LAYOUT),
             facts: createGroupAuthorityFacts()
         });
         expect(computed.outcome).toBe('write');

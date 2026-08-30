@@ -110,13 +110,14 @@ async function processFormationDeadline(
     work: GroupFormationTimerWork,
     snapshot: GroupSnapshot
 ): Promise<void> {
-    const [authority, planned] = await Promise.all([
+    const [authority, planned, lifecyclePolicy] = await Promise.all([
         options.topologyPlanning.readTopologyPlanningAuthority({
             groupRef: work.groupRef,
             knownGroup: snapshot,
             snapshotSelection: 'prefer-current'
         }),
-        options.readPlannedTopology(work.groupRef)
+        options.readPlannedTopology(work.groupRef),
+        options.readLifecyclePolicy(work.groupRef)
     ]);
     if (planned === null || planned.state !== 'active') {
         // A missing or tombstoned plan retries the durable deadline rather
@@ -124,12 +125,12 @@ async function processFormationDeadline(
         // removed plan anyway, and a silent return would spend the timer.
         throw new Error('Formation topology plan is not available; retry the deadline evaluation');
     }
-    const command = await computeFormationCriterionCommand({
+    const command = computeFormationCriterionCommand({
         group: authority.group,
         planned,
         rttMeasurements: authority.rttMeasurements,
         nowEpochMs: authority.nowEpochMs,
-        readLifecyclePolicy: options.readLifecyclePolicy
+        lifecyclePolicy
     });
     if (command === null) {
         return;

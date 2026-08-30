@@ -4,11 +4,9 @@ import { evaluateGroupActivationCriterion } from '@shared/api/group-lifecycle/ev
 import { toGroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
 import { createDefaultGroupLifecyclePolicy } from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
 import { consumesFormationDeadlineAt } from '@shared/api/group-lifecycle/resolve-formation-stage-entry.ts';
-import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
+import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 
-import { toWebRtcGroupKey } from '@shared/api/api-type-utils.ts';
-import { fromCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topology-config-canonical.ts';
 import {
     toFailFormationCommand,
     toFormationActivateCommand
@@ -16,17 +14,12 @@ import {
 import type { GroupMutationCommand } from '../../../group-state/mutation/group-mutation-contracts.ts';
 import type { GroupLifecyclePolicyRead } from '../../../group-state/persistence/group-lifecycle-policy-repository.ts';
 
-import type { RtcTopologyExecutionRepository } from '../../persistence/rtc-topology-execution-repository.ts';
-import type { GroupTopologyPlanningAuthority } from '../../planning/group-topology-planning-authority.ts';
-import type { GroupTopologyPlanningService } from '../../planning/group-topology-planning-service.ts';
-import type { PersistedRtcTopologyWork } from './rtc-topology-work-codec.ts';
-
 export interface ComputeFormationCriterionCommandInput {
     readonly group: GroupSnapshot;
     readonly planned: RallarOverlayTopologySnapshot;
     readonly rttMeasurements: readonly RttMeasurementInfo[];
     readonly nowEpochMs: number;
-    readonly readLifecyclePolicy: (ref: GroupRef) => Promise<GroupLifecyclePolicyRead>;
+    readonly lifecyclePolicy: GroupLifecyclePolicyRead;
 }
 
 /**
@@ -38,9 +31,9 @@ export interface ComputeFormationCriterionCommandInput {
  * policy returns null: automation must fail closed, matching the transition
  * compute's own posture.
  */
-export async function computeFormationCriterionCommand(
+export function computeFormationCriterionCommand(
     input: ComputeFormationCriterionCommandInput
-): Promise<GroupMutationCommand | null> {
+): GroupMutationCommand | null {
     const group = input.group.group;
     if (!consumesFormationDeadlineAt(group.lifecycleState)) {
         return null;
@@ -51,7 +44,7 @@ export async function computeFormationCriterionCommand(
         // against a torn-down layout at rate 1.
         return null;
     }
-    const policyRead = await input.readLifecyclePolicy(group);
+    const policyRead = input.lifecyclePolicy;
     if (policyRead.status === 'corrupt') {
         return null;
     }
@@ -95,146 +88,5 @@ export async function computeFormationCriterionCommand(
                 observedRate: readiness.observedRate,
                 expectedLayout: toGroupLayoutIdentity(input.planned)
             });
-    }
-}
-
-export const DEFAULT_DEFERRED_CRITERION_PETITION_MIN_INTERVAL_MS = 1_000;
-
-export interface FormationCriterionPort {
-    readonly readLifecyclePolicy: (ref: GroupRef) => Promise<GroupLifecyclePolicyRead>;
-    readonly submitCommand: (command: GroupMutationCommand, atEpochMs: number) => Promise<void>;
-}
-
-export interface DeferredCriterionPetitionDependencies {
-    readonly topologyPlanning: Pick<GroupTopologyPlanningService, 'readTopologyPlanningAuthority'>;
-    readonly executionRepository: Pick<RtcTopologyExecutionRepository, 'readTopologyMutation'>;
-    readonly formationCriterion?: FormationCriterionPort;
-    readonly criterionPetitionMinIntervalMs?: number;
-}
-
-type DeferredPetitionRead = Awaited<ReturnType<RtcTopologyExecutionRepository['readTopologyMutation']>>;
-
-export interface DeferredCriterionPetitioner {
-    request(work: PersistedRtcTopologyWork, read: DeferredPetitionRead): Promise<void>;
-}
-
-/**
- * The evidence leg of the activation criterion: observation petitions intent
- * and the petitioned command re-authorizes through AppInbox with fresh state,
- * so a stale petition is a replay or a typed rejection, never a wrong
- * transition.
- */
-export async function petitionFormationCriterion(
-    dependencies: DeferredCriterionPetitionDependencies,
-    authority: GroupTopologyPlanningAuthority,
-    planned: RallarOverlayTopologySnapshot
-): Promise<void> {
-    if (!dependencies.formationCriterion) {
-        return;
-    }
-    const command = await computeFormationCriterionCommand({
-        group: authority.group,
-        planned,
-        rttMeasurements: authority.rttMeasurements,
-        nowEpochMs: authority.nowEpochMs,
-        readLifecyclePolicy: dependencies.formationCriterion.readLifecyclePolicy
-    });
-    if (command === null) {
-        return;
-    }
-    await dependencies.formationCriterion.submitCommand(command, authority.nowEpochMs);
-}
-
-/**
- * Process-local damping for criterion petitions from refinement-deferred RTT
- * work: a burst petitions at most once per interval per group, so deferred
- * work items stay cheap while the measurement that crosses the threshold
- * still activates the group within the interval. Damped requests arm one
- * trailing timer per group, because the crossing measurement lives at the
- * burst's tail by construction — leading-edge damping alone would defer the
- * decisive petition forever. The trailing petition is best-effort and only
- * warns on failure: the deadline evaluation stays the correctness backstop.
- * A removed stored plan never petitions — its empty edge set would read as
- * trivially-complete readiness.
- */
-export function createDeferredCriterionPetitioner(
-    dependencies: DeferredCriterionPetitionDependencies
-): DeferredCriterionPetitioner {
-    return new DeferredFormationCriterionPetitioner(dependencies);
-}
-
-class DeferredFormationCriterionPetitioner implements DeferredCriterionPetitioner {
-    private readonly minIntervalMs: number;
-    private readonly lastPetitionAtByGroupKey = new Map<string, number>();
-    private readonly trailingByGroupKey = new Map<string, PersistedRtcTopologyWork>();
-    private readonly dependencies: DeferredCriterionPetitionDependencies;
-
-    constructor(dependencies: DeferredCriterionPetitionDependencies) {
-        this.dependencies = dependencies;
-        this.minIntervalMs = this.dependencies.criterionPetitionMinIntervalMs ??
-            DEFAULT_DEFERRED_CRITERION_PETITION_MIN_INTERVAL_MS;
-    }
-
-    private async petition(
-        work: PersistedRtcTopologyWork,
-        planned: RallarOverlayTopologySnapshot
-    ): Promise<void> {
-        const authority = await this.dependencies.topologyPlanning.readTopologyPlanningAuthority({
-            groupRef: work.groupSnapshot.group,
-            requestOptions: fromCanonicalGroupTopologyConfigPatch(work.requestOptions),
-            knownGroup: work.groupSnapshot,
-            snapshotSelection: 'prefer-current'
-        });
-        await petitionFormationCriterion(this.dependencies, authority, planned);
-    }
-
-    private async flushTrailing(groupKey: string): Promise<void> {
-        const work = this.trailingByGroupKey.get(groupKey);
-        this.trailingByGroupKey.delete(groupKey);
-        if (!work) {
-            return;
-        }
-        this.lastPetitionAtByGroupKey.set(groupKey, Date.now());
-        try {
-            const read = await this.dependencies.executionRepository.readTopologyMutation(
-                work.groupSnapshot.group,
-                null
-            );
-            if (read.snapshot !== null && read.snapshot.value.state === 'active') {
-                await this.petition(work, read.snapshot.value);
-            }
-        }
-        catch (error) {
-            console.warn(
-                `Deferred criterion petition failed for ${groupKey}: ${
-                    error instanceof Error ? error.message : String(error)
-                }`
-            );
-        }
-    }
-
-    async request(work: PersistedRtcTopologyWork, read: DeferredPetitionRead): Promise<void> {
-        if (
-            !consumesFormationDeadlineAt(work.groupSnapshot.group.lifecycleState) ||
-            read.snapshot === null ||
-            read.snapshot.value.state !== 'active'
-        ) {
-            return;
-        }
-        const groupKey = toWebRtcGroupKey(work.groupSnapshot.group);
-        const nowEpochMs = Date.now();
-        const lastPetitionAt = this.lastPetitionAtByGroupKey.get(groupKey);
-        if (lastPetitionAt !== undefined && nowEpochMs - lastPetitionAt < this.minIntervalMs) {
-            const armTrailing = !this.trailingByGroupKey.has(groupKey);
-            this.trailingByGroupKey.set(groupKey, work);
-            if (armTrailing) {
-                setTimeout(() => {
-                    void this.flushTrailing(groupKey);
-                }, lastPetitionAt + this.minIntervalMs - nowEpochMs);
-            }
-            return;
-        }
-        this.lastPetitionAtByGroupKey.set(groupKey, nowEpochMs);
-        await this.petition(work, read.snapshot.value);
     }
 }

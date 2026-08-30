@@ -741,6 +741,13 @@ describe('RTC topology APP_OUTBOX work', () => {
             executionRepository: new RtcTopologyExecutionRepository(runtimeRepository),
             rttRefinementService: refinement,
             formationCriterion: {
+                deferred: {
+                    minIntervalMs: 1_000,
+                    nowEpochMs: () => 1_000,
+                    schedule: () => {
+                        throw new Error('Unexpected trailing criterion petition');
+                    }
+                },
                 readLifecyclePolicy: async () => ({
                     status: 'present',
                     policy: {

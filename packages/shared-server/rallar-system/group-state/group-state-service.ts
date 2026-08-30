@@ -71,7 +71,7 @@ export function createGroupStateRuntime(
     const owners: GroupStateRuntimeOwners = {
         dependencies,
         repositoryFor,
-        authorityDependencies: createAuthorityDependencies(dependencies, repositoryFor, now, randomId),
+        authorityDependencies: createAuthorityDependencies({ dependencies, repositoryFor, now, randomId }),
         prepareInternalMutation: createInternalMutationPreparer(dependencies)
     };
     const service: GroupStateService = {
@@ -106,11 +106,15 @@ interface GroupStateRuntimeOwners {
     readonly prepareInternalMutation: InternalMutationPreparer;
 }
 
+interface CreateAuthorityDependenciesInput {
+    readonly dependencies: GroupStateServiceDependencies;
+    readonly repositoryFor: GroupStateRepositoryFactory;
+    readonly now: () => number;
+    readonly randomId: () => string;
+}
+
 function createAuthorityDependencies(
-    dependencies: GroupStateServiceDependencies,
-    repositoryFor: GroupStateRepositoryFactory,
-    now: () => number,
-    randomId: () => string
+    { dependencies, repositoryFor, now, randomId }: CreateAuthorityDependenciesInput
 ): GroupMutationAuthorityDependencies {
     return {
         authSessionRepository: dependencies.authSessionRepository,

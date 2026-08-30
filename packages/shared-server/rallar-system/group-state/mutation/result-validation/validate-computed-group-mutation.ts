@@ -52,7 +52,9 @@ function validateReceiptOutcome({
     computed,
     value
 }: ValidateReceiptOutcomeInput): void {
-    const keys = ['outcome', 'rejectionCode', 'receipt'];
+    const keys = computed.outcome === 'rejected' && computed.rejectionCode === 'group-policy-denied'
+        ? ['outcome', 'rejectionCode', 'receipt', 'policyDenial']
+        : ['outcome', 'rejectionCode', 'receipt'];
     assertExactKeys(value, keys, 'Group mutation computed result');
     assertRequiredKeys(value, keys, 'Group mutation computed result');
     validateComputedRejectionCode(computed);

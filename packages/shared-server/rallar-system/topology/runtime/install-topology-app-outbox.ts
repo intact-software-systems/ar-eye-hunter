@@ -17,6 +17,7 @@ import {
 } from '../replay/work/create-group-connect-trigger-work-handler.ts';
 import { createRtcTopologyWorkHandler } from '../replay/work/create-rtc-topology-work-handler.ts';
 import { createTopologyPromotionWorkHandler } from '../replay/work/create-topology-promotion-work-handler.ts';
+import type { FormationCriterionPort } from '../replay/work/formation-criterion-observer.ts';
 import type { RtcTopologyDeliveryOptions } from '../replay/work/write-rtc-topology-publication-transaction.ts';
 
 export interface InstallTopologyAppOutboxOptions {
@@ -37,10 +38,7 @@ export interface InstallTopologyAppOutboxOptions {
     readonly topologyDelivery?: RtcTopologyDeliveryOptions;
     readonly nowEpochMs: () => number;
     readonly formationAutomation: GroupFormationAutomationPort;
-    readonly formationCriterion?: Readonly<{
-        readLifecyclePolicy: (ref: GroupRef) => Promise<GroupLifecyclePolicyRead>;
-        submitCommand: (command: GroupMutationCommand, atEpochMs: number) => Promise<void>;
-    }>;
+    readonly formationCriterion?: FormationCriterionPort;
     /** The route-less promotion consumer (decision 27); absent means no automation. */
     readonly topologyPublication?: Readonly<{
         readLifecyclePolicy: (ref: GroupRef) => Promise<GroupLifecyclePolicyRead>;

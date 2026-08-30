@@ -3,7 +3,6 @@ import { describe, expect, it } from 'vitest';
 import type { GroupMutationCommand } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
 import { GROUP_MUTATION_INTERNAL_AUTHORITY_MODES } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
 import { computeGroupMutation } from '@shared-server/rallar-system/group-state/mutation/orchestration/compute-group-mutation.ts';
-import { GroupPolicyDeniedError } from '@shared-server/rallar-system/group-state/policy/group-policy-result.ts';
 import { GROUP_LIFECYCLE_STATES } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import type { GroupPolicyDenied } from '@shared/api/group-policy-types.ts';
 import type { Group } from '@shared/api/group-types.ts';
@@ -118,7 +117,7 @@ describe('group transport mutation computation', () => {
     // Product decision 12: the valve answers to the same initiator policy as
     // the seven other application-facing group-authority commands.
     it('denies the valve to every principal under a server-auto initiator', () => {
-        const denial = readTransportDenial(() =>
+        const denial = readTransportDenial(
             computeGroupMutation({
                 command: transportCommand('pauseGroupTransport'),
                 read: createGroupAuthorityRead({ transportState: 'flowing' }, { policy: 'server-auto' }),
@@ -134,7 +133,7 @@ describe('group transport mutation computation', () => {
     // at all and the denial would come from `lifecycle-manager-unavailable`
     // without ever reaching the membership question this test is about.
     it('denies the valve to an active member who is not the resolved manager', () => {
-        const denial = readTransportDenial(() =>
+        const denial = readTransportDenial(
             computeGroupMutation({
                 command: transportCommand('resumeGroupTransport', 'bob'),
                 read: createGroupAuthorityRead(
@@ -164,7 +163,7 @@ describe('group transport mutation computation', () => {
     });
 
     it('denies the valve to an actor who is not an active member', () => {
-        const denial = readTransportDenial(() =>
+        const denial = readTransportDenial(
             computeGroupMutation({
                 command: transportCommand('pauseGroupTransport'),
                 read: createGroupAuthorityRead({ transportState: 'flowing' }, { actorIsMember: false }),
@@ -180,7 +179,7 @@ describe('group transport mutation computation', () => {
     it.each(['archived' as const, 'deleted' as const])(
         'denies the valve on a %s group',
         (status) => {
-            const denial = readTransportDenial(() =>
+            const denial = readTransportDenial(
                 computeGroupMutation({
                     command: transportCommand('pauseGroupTransport'),
                     read: createGroupAuthorityRead({
@@ -226,17 +225,13 @@ describe('group transport mutation computation', () => {
     });
 });
 
-function readTransportDenial(run: () => void): GroupPolicyDenied {
-    try {
-        run();
+function readTransportDenial(computed: ReturnType<typeof computeGroupMutation>): GroupPolicyDenied {
+    expect(computed.outcome).toBe('rejected');
+    if (computed.outcome !== 'rejected' || computed.rejectionCode !== 'group-policy-denied') {
+        throw new Error('Expected a typed policy rejection');
     }
-    catch (error) {
-        if (error instanceof GroupPolicyDeniedError) {
-            return error.denial;
-        }
-        throw error;
-    }
-    throw new Error('Expected the transport command to be denied');
+    expect(computed.receipt).toMatchObject({ eventId: null, outboxIds: [] });
+    return computed.policyDenial;
 }
 
 function internalTransportCommand(): GroupMutationCommand {

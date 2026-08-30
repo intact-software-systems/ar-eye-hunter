@@ -22,7 +22,7 @@ describe('formation timer work handler', () => {
     it.each(['reconfiguring', 'reconnecting'] as const)('observes criteria and arms deadlines only while %s is dialing', async (lifecycleState) => {
         const base = createTopologyTestGroupSnapshot();
         const group = { ...base, group: createTestGroup({ ...base.group, lifecycleState, formationEpoch: 2, establishmentStartedAtEpochMs: 1000 }) };
-        const command = await computeFormationCriterionCommand({
+        const command = computeFormationCriterionCommand({
             group,
             planned: {
                 groupRef: group.group,
@@ -41,7 +41,7 @@ describe('formation timer work handler', () => {
             },
             rttMeasurements: [],
             nowEpochMs: 2000,
-            readLifecyclePolicy: async () => ({ status: 'present', policy: resolveGroupLifecyclePolicyPreset('managed') })
+            lifecyclePolicy: { status: 'present', policy: resolveGroupLifecyclePolicyPreset('managed') }
         });
         expect(command?.operation ?? null).toBe(lifecycleState === 'reconnecting' ? 'activateGroup' : null);
         const entries = computeFormationTimerEntries({

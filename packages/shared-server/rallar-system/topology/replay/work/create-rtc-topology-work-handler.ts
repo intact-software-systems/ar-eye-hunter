@@ -61,7 +61,7 @@ import {
     petitionFormationCriterion,
     type DeferredCriterionPetitioner,
     type FormationCriterionPort
-} from './compute-formation-criterion-command.ts';
+} from './formation-criterion-observer.ts';
 
 interface RtcTopologyWorkHandlerOptions {
     readonly runtime: RtcTopologyWorkRuntime;
@@ -84,11 +84,6 @@ interface RtcTopologyWorkHandlerOptions {
      */
     readonly formationCriterion?: FormationCriterionPort;
     readonly formationAutomation?: GroupFormationAutomationPort;
-    /**
-     * Damping interval for criterion petitions from refinement-deferred RTT
-     * work. Absent means the default; 0 petitions per deferred item.
-     */
-    readonly criterionPetitionMinIntervalMs?: number;
     readonly topologyPublication?: TopologyPromotionPublicationPort;
     readonly topologyDelivery?: RtcTopologyDeliveryOptions;
     readonly onInactiveOverlay?: (overlayId: string) => void;
@@ -153,7 +148,7 @@ interface ComputeAcceptedRtcTopologyWorkInput {
     readonly attemptCount: number;
     readonly read: RtcTopologyExecutionRead;
     readonly expireAtEpochMs: number;
-    readonly deferredCriterionPetitioner: DeferredCriterionPetitioner;
+    readonly deferredCriterionPetitioner: DeferredCriterionPetitioner | null;
 }
 
 interface ToTopologyPublicationInput {
@@ -178,7 +173,7 @@ interface ProcessRtcTopologyWorkInput {
     readonly options: RtcTopologyWorkHandlerOptions;
     readonly message: ALMessage;
     readonly entry: ResourceEntry;
-    readonly deferredCriterionPetitioner: DeferredCriterionPetitioner;
+    readonly deferredCriterionPetitioner: DeferredCriterionPetitioner | null;
 }
 
 async function processRtcTopologyWork(input: ProcessRtcTopologyWorkInput): Promise<void> {
@@ -257,7 +252,7 @@ async function computeRttRefinementSkip(
     ) {
         return null;
     }
-    await input.deferredCriterionPetitioner.request(work, input.read);
+    await input.deferredCriterionPetitioner?.request(work, input.read);
     return {
         decision: 'skipped-rtt-refinement',
         work,
