@@ -116,6 +116,19 @@ vi.mock(import('@shared/repository/group-state-snapshots-repository.ts'), () => 
     waitForGroupStateSnapshotChangesIdle: vi.fn(async () => undefined)
 }));
 
+vi.mock(import('@shared/repository/overlays-repository.ts'), async (importOriginal) => {
+    const actual = await importOriginal();
+    return {
+        ...actual,
+        findPlannedOverlayById: vi.fn(),
+        findAcceptedOverlayById: vi.fn(),
+        removePlannedOverlayByIdIfUnchanged: vi.fn(() => false),
+        removeAcceptedOverlayByIdIfUnchanged: vi.fn(() => false),
+        waitForPlannedOverlayChangesIdle: vi.fn(async () => undefined),
+        waitForAcceptedOverlayChangesIdle: vi.fn(async () => undefined)
+    };
+});
+
 export function readRoomWorkflowMocks(): typeof roomWorkflowMocks {
     return roomWorkflowMocks;
 }

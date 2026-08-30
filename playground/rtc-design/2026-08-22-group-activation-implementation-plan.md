@@ -1582,6 +1582,17 @@ cache, while group-present peers remain independently connectable during cache c
 post-integration managed lifecycle/delivery gate passes both `realtime` and `messages.rtc`; broad gates
 must be rerun on the final branch head before #381 leaves draft.
 
+The final local Slice 8a checkpoint reran those broad gates on the repaired tree. The first state-write
+A/B comparison used the development database and showed order-sensitive timing noise; the governed
+pinned-Postgres A-B-B-A protocol then validated four fresh environments and the pooled comparison
+passed with complete receipt/outbox evidence. `test:unit` initially exposed three integration-test
+closure gaps from the live-matrix split and two-role cache: a stale legacy-removal inventory entry, a
+source gate still pinned to the monolith, and a room test double that bypassed both overlay repository
+roles. Their focused repairs restore the inventories and test ownership without adding a production
+fallback or retained-legacy entry. The final unit, Deno, build, shared-web/headless boundary, browser
+bundle, E2E, memory full-stack, live three-browser, topology-replay and fixed medium-scale gates all
+pass; remote CI and pull-request delivery readiness remain before #381 leaves draft.
+
 **Next two PRs (I5, I20):**
 
 - **PR 13 = finish #381 / slice 8a.** Complete touched-file closure, record final local and remote gate
