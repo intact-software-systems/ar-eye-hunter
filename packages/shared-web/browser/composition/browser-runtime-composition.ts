@@ -15,7 +15,10 @@ import {
 } from '@shared-web/browser/people/browser-rallar-people-events.ts';
 import type { RallarDefaults } from '@shared-web/browser/rallar-connection-facade.ts';
 import { createRoomEvents, type RallarRoomEventsPort } from '@shared-web/browser/rooms/room-events.ts';
-import { resolveActiveRoomPeerIds } from '@shared-web/browser/rooms/room-group-state-translation.ts';
+import {
+    resolveBrowserRoomTransportTarget,
+    type BrowserRoomTransportTarget
+} from '@shared-web/browser/rooms/room-group-state-translation.ts';
 import { createRoomStateStore, type RallarRoomStateStorePort } from '@shared-web/browser/rooms/room-state-store.ts';
 import {
     createRallarLifecycleCoordinator,
@@ -31,8 +34,11 @@ import {
     createBrowserWebSocketInbox,
     type BrowserWebSocketInbox
 } from '@shared-web/browser/websocket/browser-websocket-inbox.ts';
+import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import { readSession } from '@shared/api/auth.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
+import { readConfiguredValue } from '@shared/cache/RepositoryManager.ts';
+import { findAcceptedOverlayById } from '@shared/repository/overlays-repository.ts';
 
 export interface BrowserRuntimeFoundation {
     readonly runtime: RallarBrowserFacadeRuntimeContext;
@@ -49,7 +55,7 @@ export interface BrowserStateComposition {
     readonly readDefaults: () => RallarDefaults | undefined;
     readonly resolveDefaultRoomRef: () => GroupRef | undefined;
     readonly resolveDefaultRoom: () => string | GroupRef | undefined;
-    readonly resolveRoomPeerIds: (room: string | GroupRef) => readonly string[];
+    readonly resolveRoomTransportTarget: (room: string | GroupRef) => BrowserRoomTransportTarget;
 }
 
 export interface BrowserStateEventComposition {
@@ -146,8 +152,16 @@ export function createBrowserStateComposition(
         readDefaults,
         resolveDefaultRoomRef,
         resolveDefaultRoom,
-        resolveRoomPeerIds: (room) =>
-            resolveActiveRoomPeerIds(readSession()?.sessionId, roomStateStore.findGroupSnapshot(room))
+        resolveRoomTransportTarget: (room) => {
+            const snapshot = roomStateStore.findGroupSnapshot(room);
+            return resolveBrowserRoomTransportTarget({
+                sessionId: readSession()?.sessionId,
+                snapshot,
+                acceptedOverlay: snapshot
+                    ? readConfiguredValue(() => findAcceptedOverlayById(toScopedOverlayId(snapshot.group)))
+                    : undefined
+            });
+        }
     };
 }
 

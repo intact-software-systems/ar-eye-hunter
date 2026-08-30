@@ -1662,6 +1662,35 @@ does not spin sends. AR Eye's relevant room-send outcome mapping is now the shar
 halted result. I17 remains authoritative: the public progress shape is the accepted layout identity
 plus the existing peer arrays, never a computed fraction.
 
+The Slice 8c TDD implementation checkpoint is green on the focused surfaces. The browser now derives
+one canonical room transport target from a joined active group snapshot and the matching active,
+server-provenanced accepted overlay; active sessions that are not accepted next hops cannot become
+room RTC targets, and absence of an accepted layout exposes the group transport state but no peer
+targets or layout identity. That target now owns room lane waits, room status and live room-targeted
+channels. `roomStatus().rtc` exposes the accepted layout identity, the existing desired/known/active/
+ready/failed peer arrays, and a room-filtered peer diagnostic view carrying the existing
+`reconnecting`/`reconnectAttempts` pair. An accepted edgeless layout remains open, no accepted layout
+is idle rather than misleadingly open, and authoritative `halted` wins before any wait, dial or send.
+No readiness fraction was added.
+
+The affected game path has one send owner after the cutover. `RallarGamePresenceEgressRuntime` now
+returns the room-facade result directly; its explicit-peer `sendJson` recovery path, associated status
+probe, peer-union helper and input seams were removed rather than retained. The shared room-result
+translation is exhaustive and maps `halted` to the game contract's `stopped`. Relic's per-frame motion
+sender reads `rallar.rooms.state().currentRoom?.group.transportState` before advancing its sequence or
+send gate and records a typed halted diagnostic without sending. Focused validation passes seven
+shared-web files / 64 tests plus the Relic motion file / 9 tests. The all-workspace source typecheck
+and its enforced 972-test-file check pass with zero debt, and the complete shared-web sweep passes 110
+files / 552 tests. The first browser boundary run found a real 164.14 KiB Brotli regression against
+the unchanged `< 164 KiB` facade budget. The budget was not raised: removing the unused internal room
+reference, reusing the accepted-overlay repository's canonical identity predicate, consolidating room
+peer filtering, and keeping one room-send option projection reduced the measured facade to 163.98
+KiB. The public API, browser boundary and headless boundary trio passes 16/16; the package browser-
+bundle command passes; and AR Eye Hunter, Relic Hunters and the headless browser consumer all build.
+Full unit, Deno, repository-wide build, E2E, memory full-stack and live-three-browser gates remain for
+the slice-final checkpoint; their results will be recorded here before publication readiness is
+claimed.
+
 **Next two PRs (I5, I20):**
 
 - **PR 15 = slice 8c, stacked on #390.** Repoint the room facade and readiness/status consumers to the

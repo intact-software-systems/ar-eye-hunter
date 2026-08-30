@@ -7,6 +7,7 @@ import type {
     RallarRtcStatus,
     RallarRtcStatusOptions
 } from '@shared-web/browser/rallar-rtc-facade.ts';
+import type { BrowserRoomTransportTarget } from '@shared-web/browser/rooms/room-group-state-translation.ts';
 import {
     describeRtcRoomTransport,
     resolveRtcRoomTransportState
@@ -18,7 +19,7 @@ export namespace BrowserRtcRoomRuntime {
     export interface Input {
         readWsStatus(): RallarWsStatus;
         readRtcStatus(options?: RallarRtcStatusOptions): RallarRtcStatus;
-        resolveRoomPeerIds(room: string | GroupRef): readonly string[];
+        resolveRoomTransportTarget(room: string | GroupRef): BrowserRoomTransportTarget;
         resolveRoomRef(room: string | GroupRef | undefined): GroupRef | undefined;
         toRoomId(room: string | GroupRef | undefined): string | undefined;
         waitForRoomLane(
@@ -46,21 +47,27 @@ export class BrowserRtcRoomRuntime {
         const mode = options.mode ?? 'lazy';
         const roomRef = this.input.resolveRoomRef(room);
         const roomId = this.input.toRoomId(room);
-        const desiredPeerIds = this.input.resolveRoomPeerIds(roomRef ?? room);
+        const target = this.input.resolveRoomTransportTarget(roomRef ?? room);
+        const desiredPeerIds = target.peerIds;
         const desiredPeerIdSet = new Set(desiredPeerIds);
+        const filterRoomPeerIds = (peerIds: readonly string[]): readonly string[] =>
+            peerIds.filter((peerId) => desiredPeerIdSet.has(peerId));
         const rtcStatus = this.input.readRtcStatus({ laneId });
-        const knownPeerIds = rtcStatus.knownPeerIds.filter((peerId) => desiredPeerIdSet.has(peerId));
-        const activePeerIds = rtcStatus.activePeerIds.filter((peerId) => desiredPeerIdSet.has(peerId));
-        const readyPeerIds = rtcStatus.readyPeerIds.filter((peerId) => desiredPeerIdSet.has(peerId));
-        const failedPeerIds = rtcStatus.peerIdsWithNoReconnectableLanes.filter(
-            (peerId) => desiredPeerIdSet.has(peerId)
+        const knownPeerIds = filterRoomPeerIds(rtcStatus.knownPeerIds);
+        const activePeerIds = filterRoomPeerIds(rtcStatus.activePeerIds);
+        const readyPeerIds = filterRoomPeerIds(rtcStatus.readyPeerIds);
+        const failedPeerIds = filterRoomPeerIds(
+            rtcStatus.peerIdsWithNoReconnectableLanes
         );
+        const peers = rtcStatus.peers.filter((peer) => desiredPeerIdSet.has(peer.peerId));
         const minReadyPeers = Math.max(
             0,
             options.minReadyPeers ?? desiredPeerIds.length
         );
         const state = resolveRtcRoomTransportState({
             mode,
+            hasAcceptedLayout: target.acceptedLayoutIdentity !== undefined,
+            transportState: target.transportState,
             desiredPeerCount: desiredPeerIds.length,
             knownPeerCount: knownPeerIds.length,
             activePeerCount: activePeerIds.length,
@@ -78,11 +85,13 @@ export class BrowserRtcRoomRuntime {
                 desired: mode !== 'off',
                 mode,
                 state,
+                acceptedLayoutIdentity: target.acceptedLayoutIdentity,
                 desiredPeerIds,
                 knownPeerIds,
                 activePeerIds,
                 readyPeerIds,
                 failedPeerIds,
+                peers,
                 laneId,
                 lastChangedAtEpochMs: Date.now(),
                 reason: describeRtcRoomTransport(state, readiness)

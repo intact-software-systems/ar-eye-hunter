@@ -170,8 +170,6 @@ class RallarGameMatchRuntime<TInput, TIntent, TSnapshot, TEvent, TPresence> {
             isStopped: () => this.status.isStopped,
             readStatus: () => this.status.current,
             readRoomTarget: () => this.readRoomTarget(),
-            readLocalPeerId: () => this.readLocalPeerId(),
-            readPeerReadiness: () => this.egress.peerReadiness,
             createEnvelope: (kind, payload, options) => this.routing.createEnvelope(kind, payload, options)
         });
     }

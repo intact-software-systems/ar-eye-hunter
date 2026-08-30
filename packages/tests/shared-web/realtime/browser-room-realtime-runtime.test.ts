@@ -2,7 +2,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
 import type { RallarBrowserMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
-import type { AuthSession } from '@shared/api/api-config.ts';
+import type { AuthSession, OverlayInfo } from '@shared/api/api-config.ts';
+import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import type { QRtcDataChannel, RtcDataChannelHealth, RtcDataChannelSendResult } from '@shared/webrtc/QRtcDataChannel.ts';
@@ -33,6 +34,9 @@ const mocks = await vi.hoisted(async () => {
         }),
         getAllGroupStateSnapshots: vi.fn((): GroupSnapshot[] => {
             throw new Error('Repository not found: shared.repository.group-state-snapshots');
+        }),
+        findAcceptedOverlayById: vi.fn((_overlayId: string): OverlayInfo | undefined => {
+            throw new Error('Repository not found: shared.repository.accepted-overlays');
         }),
         findClientStateSnapshotByPrincipalId: vi.fn(
             (_principalId: string): ClientSnapshot | undefined => {
@@ -75,6 +79,11 @@ vi.mock(import('@shared/repository/group-state-snapshots-repository.ts'), () => 
     getAllGroupStateSnapshots: mocks.getAllGroupStateSnapshots
 }));
 
+vi.mock(import('@shared/repository/overlays-repository.ts'), async (importOriginal) => ({
+    ...await importOriginal(),
+    findAcceptedOverlayById: mocks.findAcceptedOverlayById
+}));
+
 describe('Rallar room realtime channel', () => {
     beforeEach(() => {
         vi.clearAllMocks();
@@ -84,6 +93,7 @@ describe('Rallar room realtime channel', () => {
         mocks.findFirstGroupStateSnapshotRefSessionIdIsIn.mockReturnValue(undefined);
         mocks.findGroupStateSnapshotByRef.mockReturnValue(undefined);
         mocks.getAllGroupStateSnapshots.mockReturnValue([]);
+        mocks.findAcceptedOverlayById.mockReturnValue(undefined);
         mocks.findClientStateSnapshotByPrincipalId.mockReturnValue(undefined);
         mocks.getAllClientStateSnapshots.mockReturnValue([]);
         vi.mocked(mocks.realtimeChannel.sendJson).mockReturnValue({
@@ -217,6 +227,26 @@ describe('Rallar room realtime channel', () => {
         expect(result.status).toBe('sent');
         expect(result.readiness).toBeUndefined();
     });
+
+    it('returns halted without waiting or sending while room transport is halted', async () => {
+        const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
+        const base = createGroupSnapshot('room-1', ['session-1', 'peer-ready']);
+        const snapshot = {
+            ...base,
+            group: { ...base.group, transportState: 'halted' as const }
+        };
+        mockGroupSnapshot(snapshot);
+
+        const result = await createRallarFacade()
+            .realtime.room<{ x: number; }>({ roomId: 'room-1', laneId: 'motion' })
+            .send({ x: 1 });
+
+        expect(result.status).toBe('halted');
+        expect(result.desiredPeerIds).toEqual(['peer-ready']);
+        expect(result.transportStatus?.rtc.state).toBe('halted');
+        expect(mocks.webRtcConnectionService.ensurePeerLaneOpen).not.toHaveBeenCalled();
+        expect(mocks.realtimeChannel.sendJson).not.toHaveBeenCalled();
+    });
 });
 
 // `QRtcDataChannel` is a class with private send-queue state, so a lane double can only supply the
@@ -290,6 +320,12 @@ function mockGroupSnapshots(snapshots: readonly GroupSnapshot[]): void {
     mocks.findFirstGroupStateSnapshotRefSessionIdIsIn.mockImplementation(
         (sessionId) => snapshots.find((snapshot) => snapshot.activeSessions.some((active) => active.sessionId === sessionId))?.group
     );
+    mocks.findAcceptedOverlayById.mockImplementation((overlayId) => {
+        const snapshot = snapshots.find(
+            (candidate) => toScopedOverlayId(candidate.group) === overlayId
+        );
+        return snapshot ? createAcceptedOverlay(snapshot) : undefined;
+    });
 }
 
 function isSameGroupRef(left: GroupRef, right: GroupRef): boolean {
@@ -303,10 +339,39 @@ function isSameGroupRef(left: GroupRef, right: GroupRef): boolean {
 function createGroupSnapshot(groupId: string, sessionIds: readonly string[]): GroupSnapshot {
     const applicationId = 'app-1';
     const workspaceId = 'workspace-1';
-    return createGroupSnapshotFixture({
+    const snapshot = createGroupSnapshotFixture({
         applicationId,
         workspaceId,
         groupId,
         sessionIds
     });
+    return {
+        ...snapshot,
+        group: {
+            ...snapshot.group,
+            acceptedLayoutIdentity: {
+                ...snapshot.causalRevision,
+                version: 1,
+                state: 'active'
+            }
+        }
+    };
+}
+
+function createAcceptedOverlay(snapshot: GroupSnapshot): OverlayInfo {
+    return {
+        sourceGroupStateCausalRevision: snapshot.causalRevision,
+        provenance: 'server',
+        state: 'active',
+        overlayId: toScopedOverlayId(snapshot.group),
+        groupRef: snapshot.group,
+        topology: 'tree',
+        name: snapshot.group.displayName,
+        createdByClientId: 'server',
+        createdAtEpochMs: 1,
+        nextHopSessionIds: snapshot.activeSessions.map(({ sessionId }) => sessionId),
+        degreeLimit: 2,
+        overlayVersion: 1,
+        updatedAtEpochMs: 1
+    };
 }

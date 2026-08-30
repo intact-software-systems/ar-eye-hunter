@@ -1,4 +1,5 @@
 import { newALRoute, newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
+import type { OverlayInfo } from '@shared/api/api-config.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import { DEFAULT_RTC_DATA_CHANNEL_LANE_ID } from '@shared/services/WebRtcConnectionService.ts';
@@ -104,6 +105,11 @@ vi.mock(
         getAllGroupStateSnapshots: mocks.getAllGroupStateSnapshots
     })
 );
+
+vi.mock(import('@shared/repository/overlays-repository.ts'), async (importOriginal) => ({
+    ...await importOriginal(),
+    findAcceptedOverlayById: mocks.findAcceptedOverlayById
+}));
 
 describe('Rallar targeted channel', () => {
     beforeEach(() => {
@@ -277,6 +283,27 @@ describe('Rallar targeted channel', () => {
                 })
             );
     });
+
+    it('does not target accepted room peers while authoritative transport is halted', async () => {
+        const { createRallarFacade } = await import(
+            '@shared-web/browser/rallar.ts'
+        );
+        const base = createGroupSnapshot('room-1', ['session-1', 'peer-a']);
+        mockGroupSnapshot({
+            ...base,
+            group: { ...base.group, transportState: 'halted' }
+        });
+        const channel = createRallarFacade().channels.room<PositionUpdate>({
+            roomId: 'room-1',
+            laneId: 'realtime'
+        });
+
+        await expect(channel.send({ x: 1 })).resolves.toMatchObject({
+            status: 'no-targets',
+            peerIds: []
+        });
+        expect(mocks.webRtcConnectionService.ensurePeerLaneOpen).not.toHaveBeenCalled();
+    });
 });
 
 function findLatestWsAnyMessageCallback() {
@@ -298,6 +325,7 @@ function resetRepositoryDoublesToMissing(): void {
     mocks.findFirstGroupStateSnapshotRefSessionIdIsIn.mockReturnValue(undefined);
     mocks.findGroupStateSnapshotByRef.mockReturnValue(undefined);
     mocks.getAllGroupStateSnapshots.mockReturnValue([]);
+    mocks.findAcceptedOverlayById.mockReturnValue(undefined);
 }
 
 function resetMiddlewareDoublesToDefaults(): void {
@@ -377,6 +405,12 @@ function mockGroupSnapshots(snapshots: readonly GroupSnapshot[]): void {
     mocks.findFirstGroupStateSnapshotRefSessionIdIsIn.mockImplementation((sessionId) =>
         snapshots.find((snapshot) => sessionId === snapshot.group.groupId)?.group
     );
+    mocks.findAcceptedOverlayById.mockImplementation((overlayId) => {
+        const snapshot = snapshots.find(
+            (candidate) => toScopedOverlayId(candidate.group) === overlayId
+        );
+        return snapshot ? createAcceptedOverlay(snapshot) : undefined;
+    });
 }
 
 function withSnapshotVersion(
@@ -399,10 +433,39 @@ function createGroupSnapshot(
 ): GroupSnapshot {
     const applicationId = scope.applicationId ?? 'app-1';
     const workspaceId = scope.workspaceId ?? 'workspace-1';
-    return createGroupSnapshotFixture({
+    const snapshot = createGroupSnapshotFixture({
         applicationId,
         workspaceId,
         groupId,
         sessionIds
     });
+    return {
+        ...snapshot,
+        group: {
+            ...snapshot.group,
+            acceptedLayoutIdentity: {
+                ...snapshot.causalRevision,
+                version: 1,
+                state: 'active'
+            }
+        }
+    };
+}
+
+function createAcceptedOverlay(snapshot: GroupSnapshot): OverlayInfo {
+    return {
+        sourceGroupStateCausalRevision: snapshot.causalRevision,
+        provenance: 'server',
+        state: 'active',
+        overlayId: toScopedOverlayId(snapshot.group),
+        groupRef: snapshot.group,
+        topology: 'tree',
+        name: snapshot.group.displayName,
+        createdByClientId: 'server',
+        createdAtEpochMs: 1,
+        nextHopSessionIds: snapshot.activeSessions.map(({ sessionId }) => sessionId),
+        degreeLimit: 2,
+        overlayVersion: 1,
+        updatedAtEpochMs: 1
+    };
 }

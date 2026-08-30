@@ -18,7 +18,8 @@ import {
 const rallarMock = vi.hoisted(() => ({
     onJson: vi.fn(),
     room: vi.fn(),
-    roomSend: vi.fn()
+    roomSend: vi.fn(),
+    roomState: vi.fn()
 }));
 
 vi.mock('@shared-web/browser/rallar.ts', () => ({
@@ -26,6 +27,9 @@ vi.mock('@shared-web/browser/rallar.ts', () => ({
         realtime: {
             onJson: rallarMock.onJson,
             room: rallarMock.room
+        },
+        rooms: {
+            state: rallarMock.roomState
         }
     }
 }));
@@ -53,6 +57,9 @@ describe('Relic scene realtime motion networking', () => {
         });
         rallarMock.room.mockReturnValue({
             send: rallarMock.roomSend
+        });
+        rallarMock.roomState.mockReturnValue({
+            currentRoom: { group: { transportState: 'flowing' } }
         });
     });
 
@@ -107,6 +114,25 @@ describe('Relic scene realtime motion networking', () => {
 
         expect(rallarMock.roomSend).toHaveBeenCalled();
         expect(runtime.motion.diagnostics.lastSendStatus).toBe('not-ready');
+    });
+
+    it('does not advance or send per-frame motion while room transport is halted', async () => {
+        rallarMock.roomState.mockReturnValue({
+            currentRoom: { group: { transportState: 'halted' } }
+        });
+        const runtime = sceneRuntime();
+
+        await broadcastLocalPosition(runtime);
+
+        expect(rallarMock.room).not.toHaveBeenCalled();
+        expect(rallarMock.roomSend).not.toHaveBeenCalled();
+        expect(runtime.motion.seq.value).toBe(0);
+        expect(runtime.motion.diagnostics).toMatchObject({
+            laneReady: false,
+            readyPeerCount: 0,
+            lastSendStatus: 'halted',
+            lastSendReason: 'Room transport is halted by authoritative group state.'
+        });
     });
 
     it('subscribes to the realtime lane for incoming motion samples', () => {

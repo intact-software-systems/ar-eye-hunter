@@ -16,6 +16,7 @@ import {
     type RallarNormalizedReadinessExpectation,
     type RallarReadinessEvaluation
 } from '@shared-web/browser/readiness.ts';
+import type { BrowserRoomTransportTarget } from '@shared-web/browser/rooms/room-group-state-translation.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import type { WebRtcPeerLaneOpenResult } from '@shared/services/WebRtcConnectionService.ts';
 import type { RtcDataChannelHealth } from '@shared/webrtc/QRtcDataChannel.ts';
@@ -24,7 +25,7 @@ export namespace BrowserRtcWaitRuntime {
     export interface Input {
         readMiddleware(): ApiMiddleware | undefined;
         readStatus(options?: RallarRtcStatusOptions): RallarRtcStatus;
-        resolveRoomPeerIds(room: string | GroupRef): readonly string[];
+        resolveRoomTransportTarget(room: string | GroupRef): BrowserRoomTransportTarget;
         resolveWaitTimeoutMs(timeoutMs?: number): number | undefined;
         resolveConnectOnWait(connect?: boolean): boolean;
     }
@@ -96,7 +97,8 @@ export class BrowserRtcWaitRuntime {
         options: RallarRtcRoomLaneWaitOptions = {}
     ): Promise<RallarRtcRoomLaneWaitResult> {
         const roomId = typeof room === 'string' ? room : room.groupId;
-        const peerIds = this.input.resolveRoomPeerIds(options.roomRef ?? room);
+        const target = this.input.resolveRoomTransportTarget(options.roomRef ?? room);
+        const peerIds = target.transportState === 'halted' ? [] : target.peerIds;
         const expectation = normalizeRallarReadinessExpectation(
             options.expect ?? { exact: peerIds.length }
         );

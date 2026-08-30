@@ -64,6 +64,7 @@ export interface RallarRealtimeJsonLane<T> {
 export type RallarRoomRealtimeSendStatus =
     | 'sent'
     | 'partial'
+    | 'halted'
     | 'not-ready'
     | 'no-targets'
     | 'failed';

@@ -509,7 +509,7 @@ function removeMismatchedAcceptedOverlay(
     return removeAcceptedOverlayById(input.overlayId, input.manager);
 }
 
-function isOverlayIdentity(
+export function isOverlayIdentity(
     overlay: OverlayInfo,
     identity: GroupLayoutIdentity
 ): boolean {

@@ -1,3 +1,5 @@
+import type { OverlayInfo } from '@shared/api/api-config.ts';
+import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import { DEFAULT_RTC_DATA_CHANNEL_LANE_ID, type QRtcPeerDto } from '@shared/services/WebRtcConnectionService.ts';
@@ -21,6 +23,7 @@ interface GroupSnapshotScopeFixture {
 
 const CLIENT_REPOSITORY_MISSING_MESSAGE = 'Repository not found: shared.repository.client-state-snapshots';
 const GROUP_REPOSITORY_MISSING_MESSAGE = 'Repository not found: shared.repository.group-state-snapshots';
+const OVERLAY_REPOSITORY_MISSING_MESSAGE = 'Repository not found: shared.repository.accepted-overlays';
 
 const mocks = await vi.hoisted(async () => {
     const { createApiMiddlewareTestDouble } = await import(
@@ -28,10 +31,13 @@ const mocks = await vi.hoisted(async () => {
     );
     const ctx = createApiMiddlewareTestDouble();
     const throwClientRepositoryMissing = (): never => {
-        throw new Error('Repository not found: shared.repository.client-state-snapshots');
+        throw new Error(CLIENT_REPOSITORY_MISSING_MESSAGE);
     };
     const throwGroupRepositoryMissing = (): never => {
-        throw new Error('Repository not found: shared.repository.group-state-snapshots');
+        throw new Error(GROUP_REPOSITORY_MISSING_MESSAGE);
+    };
+    const throwOverlayRepositoryMissing = (): never => {
+        throw new Error(OVERLAY_REPOSITORY_MISSING_MESSAGE);
     };
 
     return {
@@ -93,6 +99,7 @@ const mocks = await vi.hoisted(async () => {
         ),
         findGroupStateSnapshotByRef: vi.fn<ContractModules.GroupStateSnapshotsRepository['findGroupStateSnapshotByRef']>(throwGroupRepositoryMissing),
         getAllGroupStateSnapshots: vi.fn<ContractModules.GroupStateSnapshotsRepository['getAllGroupStateSnapshots']>(throwGroupRepositoryMissing),
+        findAcceptedOverlayById: vi.fn<ContractModules.OverlaysRepository['findAcceptedOverlayById']>(throwOverlayRepositoryMissing),
         writeSession: vi.fn<ContractModules.Auth['writeSession']>()
     };
 });
@@ -170,6 +177,11 @@ vi.mock(
     })
 );
 
+vi.mock(import('@shared/repository/overlays-repository.ts'), async (importOriginal) => ({
+    ...await importOriginal(),
+    findAcceptedOverlayById: mocks.findAcceptedOverlayById
+}));
+
 export function readRtcWaitMocks(): typeof mocks {
     return mocks;
 }
@@ -181,6 +193,7 @@ export async function resetRtcWaitTestRuntime(): Promise<void> {
     vi.useRealTimers();
     mockClientRepositoryMissing();
     mockGroupRepositoryMissing();
+    mocks.findAcceptedOverlayById.mockReturnValue(undefined);
     mocks.refreshStateSnapshots.mockResolvedValue({ clients: [], groups: [] });
     mocks.initialiseApiMiddleware.mockResolvedValue(mocks.ctx);
     mocks.clearSession.mockImplementation(() => undefined);
@@ -264,7 +277,8 @@ export function toTestDouble<TValue>(members: Partial<TValue>): TValue {
 
 export function createPeerTestDouble(
     peerId: string,
-    channels: readonly (readonly [string, Partial<QRtcDataChannel>])[]
+    channels: readonly (readonly [string, Partial<QRtcDataChannel>])[],
+    connectionStatus: Partial<QRtcPeerConnection['status']> = {}
 ): QRtcPeerDto {
     return toTestDouble<QRtcPeerDto>({
         peerId,
@@ -273,7 +287,8 @@ export function createPeerTestDouble(
                 iceCandidateQueue: [],
                 remoteStreams: new Map(),
                 makingOffer: false,
-                ignoreOffer: false
+                ignoreOffer: false,
+                ...connectionStatus
             })
         }),
         channels: new Map(
@@ -335,6 +350,17 @@ export function mockGroupSnapshot(snapshot: GroupSnapshot): void {
     mockGroupSnapshots([snapshot]);
 }
 
+export function mockAcceptedOverlay(
+    snapshot: GroupSnapshot,
+    nextHopSessionIds: readonly string[]
+): void {
+    mocks.findAcceptedOverlayById.mockImplementation((overlayId) =>
+        overlayId === toScopedOverlayId(snapshot.group)
+            ? createAcceptedOverlay(snapshot, nextHopSessionIds)
+            : undefined
+    );
+}
+
 export function mockGroupSnapshots(snapshots: readonly GroupSnapshot[]): void {
     mocks.getAllGroupStateSnapshots.mockImplementation(() => [...snapshots]);
     mocks.findGroupStateSnapshotByRef.mockImplementation((ref) =>
@@ -353,6 +379,12 @@ export function mockGroupSnapshots(snapshots: readonly GroupSnapshot[]): void {
                 )
             )?.group
     );
+    mocks.findAcceptedOverlayById.mockImplementation((overlayId) => {
+        const snapshot = snapshots.find(
+            (candidate) => toScopedOverlayId(candidate.group) === overlayId
+        );
+        return snapshot ? createAcceptedOverlay(snapshot) : undefined;
+    });
 }
 
 export function createGroupSnapshot(
@@ -360,10 +392,42 @@ export function createGroupSnapshot(
     sessionIds: readonly string[],
     scope: GroupSnapshotScopeFixture = {}
 ): GroupSnapshot {
-    return createGroupSnapshotFixture({
+    const snapshot = createGroupSnapshotFixture({
         applicationId: scope.applicationId ?? 'app-1',
         workspaceId: scope.workspaceId ?? 'workspace-1',
         groupId,
         sessionIds
     });
+    return {
+        ...snapshot,
+        group: {
+            ...snapshot.group,
+            acceptedLayoutIdentity: {
+                ...snapshot.causalRevision,
+                version: 1,
+                state: 'active'
+            }
+        }
+    };
+}
+
+function createAcceptedOverlay(
+    snapshot: GroupSnapshot,
+    nextHopSessionIds: readonly string[] = snapshot.activeSessions.map(({ sessionId }) => sessionId)
+): OverlayInfo {
+    return {
+        sourceGroupStateCausalRevision: snapshot.causalRevision,
+        provenance: 'server',
+        state: 'active',
+        overlayId: toScopedOverlayId(snapshot.group),
+        groupRef: snapshot.group,
+        topology: 'tree',
+        name: snapshot.group.displayName,
+        createdByClientId: 'server',
+        createdAtEpochMs: 1,
+        nextHopSessionIds: [...nextHopSessionIds],
+        degreeLimit: 2,
+        overlayVersion: 1,
+        updatedAtEpochMs: 1
+    };
 }

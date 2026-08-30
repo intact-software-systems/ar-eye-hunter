@@ -380,7 +380,7 @@ describe('Rallar Game match', () => {
         }));
     });
 
-    it('falls back to ready realtime peers when room-scoped presence finds no targets', async () => {
+    it('keeps the room facade as the only presence send owner when no target is ready', async () => {
         const fake = createFakeRallar();
         fake.setRoomRealtimeSendResult({
             transport: 'rtc',
@@ -397,21 +397,9 @@ describe('Rallar Game match', () => {
 
         const result = await match.sendPresence({ x: 7 });
 
-        expect(result).toMatchObject({ status: 'sent', transport: 'realtime' });
-        expect(fake.realtimeSendJson).toHaveBeenCalledOnce();
-        expect(fake.realtimeSendJson).toHaveBeenCalledWith(expect.objectContaining({
-            laneId: 'game-input',
-            roomRef,
-            peerIds: ['peer-b'],
-            data: expect.objectContaining({
-                kind: 'presence',
-                payload: { x: 7 },
-                senderId: 'peer-a'
-            }),
-            key: 'presence:peer-a',
-            maxAgeMs: 250,
-            openTimeoutMs: 500
-        }));
+        expect(result).toMatchObject({ status: 'not-ready', transport: 'realtime' });
+        expect(fake.roomRealtimeSend).toHaveBeenCalledOnce();
+        expect(fake.realtimeSendJson).not.toHaveBeenCalled();
     });
 
     it('delivers peer presence envelopes to subscribers', async () => {

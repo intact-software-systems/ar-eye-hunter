@@ -27,6 +27,23 @@ describe('Rallar Game realtime send results', () => {
         expect(result).toMatchObject({ status: 'sent', transport: 'realtime' });
         expect(result).not.toHaveProperty('reason');
     });
+
+    it('maps an authoritative room transport halt to a stopped game send', () => {
+        const result = toRallarGameRoomRealtimeSendResult(
+            toTestDouble<RallarRoomRealtimeSendResult>({
+                status: 'halted',
+                results: [],
+                reason: 'Room realtime is halted by authoritative group state.'
+            })
+        );
+
+        expect(result).toEqual({
+            status: 'stopped',
+            transport: 'realtime',
+            realtime: [],
+            reason: 'Room realtime is halted by authoritative group state.'
+        });
+    });
 });
 
 function toTestDouble<T>(members: Partial<T>): T {

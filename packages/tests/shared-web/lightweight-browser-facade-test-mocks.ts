@@ -11,6 +11,7 @@ type RoomMutationWorkflowsModule = typeof import('@shared-web/browser/rooms/room
 type RefreshStateSnapshotsModule = typeof import('@shared-web/browser/state-read/refresh-state-snapshots.ts');
 type ClientRepositoryModule = typeof import('@shared/repository/client-state-snapshots-repository.ts');
 type GroupRepositoryModule = typeof import('@shared/repository/group-state-snapshots-repository.ts');
+type OverlaysRepositoryModule = typeof import('@shared/repository/overlays-repository.ts');
 
 export function createLightweightBrowserFacadeTestMocks() {
     const ctx = createApiMiddlewareTestDouble();
@@ -87,7 +88,10 @@ function createRepositoryMocks() {
         findGroupStateSnapshotByRef: vi.fn<GroupRepositoryModule['findGroupStateSnapshotByRef']>(() =>
             missingRepository('shared.repository.group-state-snapshots')
         ),
-        getAllGroupStateSnapshots: vi.fn<GroupRepositoryModule['getAllGroupStateSnapshots']>(() => missingRepository('shared.repository.group-state-snapshots'))
+        getAllGroupStateSnapshots: vi.fn<GroupRepositoryModule['getAllGroupStateSnapshots']>(() =>
+            missingRepository('shared.repository.group-state-snapshots')
+        ),
+        findAcceptedOverlayById: vi.fn<OverlaysRepositoryModule['findAcceptedOverlayById']>(() => missingRepository('shared.repository.accepted-overlays'))
     };
 }
 

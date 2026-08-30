@@ -1,6 +1,6 @@
 import type { Vector3 } from '@babylonjs/core/Maths/math.vector.js';
 import type { RelicPublicSnapshot } from '@relic-hunters/mod.ts';
-import { rallar, type RallarRealtimeMessage } from '@shared-web/browser/rallar.ts';
+import { rallar, type RallarRealtimeMessage, type RallarRoomRealtimeSendStatus } from '@shared-web/browser/rallar.ts';
 import {
     RallarMotion,
     type RallarMotionAdaptiveDelay,
@@ -67,7 +67,7 @@ export type RelicMotionDiagnostics = {
     laneReady: boolean;
     readyPeerCount: number;
     lastReadyWaitStatus?: string;
-    lastSendStatus?: string;
+    lastSendStatus?: RallarRoomRealtimeSendStatus;
     lastSendReason?: string;
     lastSampleAgeMs?: number;
     lastEstimateMode?: RallarMotionEstimateMode;
@@ -283,6 +283,14 @@ export async function broadcastLocalPosition(
     runtime: RelicScenePositionRuntime
 ): Promise<void> {
     if (!runtime.rtcReady.value) {
+        return;
+    }
+    if (rallar.rooms.state().currentRoom?.group.transportState === 'halted') {
+        runtime.motion.laneReady.value = false;
+        runtime.motion.diagnostics.laneReady = false;
+        runtime.motion.diagnostics.readyPeerCount = 0;
+        runtime.motion.diagnostics.lastSendStatus = 'halted';
+        runtime.motion.diagnostics.lastSendReason = 'Room transport is halted by authoritative group state.';
         return;
     }
     const nowEpochMs = Date.now();

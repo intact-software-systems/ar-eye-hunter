@@ -9,4 +9,5 @@ export type BrowserALRuntimeCleanup = typeof import('@shared-web/browser/al-runt
 export type ClientStateSnapshotsRepository = typeof import('@shared/repository/client-state-snapshots-repository.ts');
 export type StateCacheLifecycle = typeof import('@shared-web/browser/state-cache/browser-state-cache-lifecycle.ts');
 export type GroupStateSnapshotsRepository = typeof import('@shared/repository/group-state-snapshots-repository.ts');
+export type OverlaysRepository = typeof import('@shared/repository/overlays-repository.ts');
 export type RoomGroupStateWorkflows = typeof import('@shared-web/browser/rooms/room-group-state-workflows.ts');

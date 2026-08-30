@@ -1,8 +1,12 @@
+import type { OverlayInfo } from '@shared/api/api-config.ts';
 import type { ApiJsonObject } from '@shared/api/api-json-value.ts';
 import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import { isGroupActive, isSessionInGroup, readGroupDisplayName, readGroupId } from '@shared/api/group-client-views.ts';
+import type { GroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
+import type { GroupTransportState } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
+import { isOverlayIdentity } from '@shared/repository/overlays-repository.ts';
 import type {
     AcceptStateGroupInviteBody,
     BanStateGroupMemberBody,
@@ -48,23 +52,50 @@ export type {
     UpdateStateGroupBody
 } from '../api/state-mutation-http-contracts.ts';
 
-export function resolveActiveRoomPeerIds(
-    sessionId: string | undefined,
-    snapshot: GroupSnapshot | undefined
-): readonly string[] {
+export interface BrowserRoomTransportTarget {
+    readonly transportState?: GroupTransportState;
+    readonly acceptedLayoutIdentity?: GroupLayoutIdentity;
+    readonly peerIds: readonly string[];
+}
+
+export interface ResolveBrowserRoomTransportTargetInput {
+    readonly sessionId: string | undefined;
+    readonly snapshot: GroupSnapshot | undefined;
+    readonly acceptedOverlay: OverlayInfo | undefined;
+}
+
+export function resolveBrowserRoomTransportTarget(
+    input: ResolveBrowserRoomTransportTargetInput
+): BrowserRoomTransportTarget {
     if (
-        !sessionId || !snapshot || !isGroupActive(snapshot) ||
-        !isSessionInGroup(snapshot, sessionId)
+        !input.sessionId ||
+        !input.snapshot ||
+        !isGroupActive(input.snapshot) ||
+        !isSessionInGroup(input.snapshot, input.sessionId)
     ) {
-        return [];
+        return { peerIds: [] };
     }
-    return [
-        ...new Set(
-            snapshot.activeSessions
-                .map((activeSession) => activeSession.sessionId)
-                .filter((activeSessionId) => activeSessionId !== sessionId)
-        )
-    ];
+
+    const acceptedOverlay = input.acceptedOverlay;
+    const acceptedLayoutIdentity = input.snapshot.group.acceptedLayoutIdentity;
+    const hasAcceptedLayout = acceptedOverlay?.provenance === 'server' &&
+        acceptedOverlay.state === 'active' &&
+        isSameGroupRef(acceptedOverlay.groupRef, input.snapshot.group) &&
+        acceptedLayoutIdentity !== null &&
+        isOverlayIdentity(acceptedOverlay, acceptedLayoutIdentity);
+    return {
+        transportState: input.snapshot.group.transportState,
+        ...(hasAcceptedLayout ? { acceptedLayoutIdentity } : {}),
+        peerIds: hasAcceptedLayout
+            ? [
+                ...new Set(
+                    acceptedOverlay.nextHopSessionIds.filter(
+                        (peerId) => peerId !== input.sessionId
+                    ) ?? []
+                )
+            ]
+            : []
+    };
 }
 
 export type RoomCreateGroupStateFields = Pick<

@@ -4,9 +4,12 @@ import type {
     RallarRtcRoomLaneWaitStatus,
     RallarRtcRoomMode
 } from '@shared-web/browser/rallar-rtc-facade.ts';
+import type { GroupTransportState } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 
 interface RtcRoomTransportStateInput {
     readonly mode: RallarRtcRoomMode;
+    readonly hasAcceptedLayout: boolean;
+    readonly transportState?: GroupTransportState;
     readonly desiredPeerCount: number;
     readonly knownPeerCount: number;
     readonly activePeerCount: number;
@@ -21,6 +24,14 @@ export function resolveRtcRoomTransportState(
 ): RallarRoomTransportState {
     if (input.mode === 'off') {
         return 'off';
+    }
+
+    if (input.transportState === 'halted') {
+        return 'halted';
+    }
+
+    if (!input.hasAcceptedLayout) {
+        return 'idle';
     }
 
     if (input.desiredPeerCount === 0 || input.readyPeerCount === input.desiredPeerCount) {
@@ -69,6 +80,9 @@ export function describeRtcRoomTransport(
 
     if (state === 'idle') {
         return 'Room RTC has not started connecting yet.';
+    }
+    if (state === 'halted') {
+        return 'Room RTC is halted by authoritative group state.';
     }
     if (state === 'partial') {
         return 'Room RTC is partially ready.';

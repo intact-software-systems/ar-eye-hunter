@@ -96,7 +96,7 @@ export class BrowserRoomRealtimeRuntime {
             return unavailable;
         }
         const results = await this.input.sendJson<T>({
-            ...toRealtimeSendDefaults<T>(defaults),
+            ...toRealtimeSendOptions<T>(defaults),
             ...toRealtimeSendOptions(sendOptions),
             laneId,
             roomId: target.transportStatus.roomRef ? undefined : target.transportStatus.roomId,
@@ -129,7 +129,11 @@ export class BrowserRoomRealtimeRuntime {
         let readiness: RallarRtcRoomLaneWaitResult | undefined;
         let readyPeerIds = transportStatus.rtc.readyPeerIds;
         const waitForReady = input.sendOptions.waitForReady ?? input.defaults.waitForReady ?? true;
-        if (readyPeerIds.length === 0 && waitForReady) {
+        if (
+            transportStatus.rtc.state !== 'halted' &&
+            readyPeerIds.length === 0 &&
+            waitForReady
+        ) {
             readiness = await this.input.rtc.waitForRoomLane(input.room, input.laneId, {
                 connect: input.sendOptions.connect ?? input.defaults.connect ?? true,
                 timeoutMs: input.sendOptions.waitTimeoutMs ?? input.defaults.waitTimeoutMs ??
@@ -200,6 +204,14 @@ function toUnavailableRoomResult(
         transportStatus: target.transportStatus,
         results: [] as readonly RallarRealtimeSendResult[]
     };
+    if (target.transportStatus.rtc.state === 'halted') {
+        return {
+            ...common,
+            status: 'halted',
+            reason: target.transportStatus.rtc.reason ??
+                'Room realtime transport is halted.'
+        };
+    }
     if (target.desiredPeerIds.length === 0) {
         return { ...common, status: 'no-targets', reason: 'Room has no RTC peer targets.' };
     }
@@ -215,31 +227,16 @@ function toUnavailableRoomResult(
     return undefined;
 }
 
-function toRealtimeSendDefaults<T>(
-    defaults: RallarRoomRealtimeJsonDefaults
-): RallarRoomRealtimeJsonSendOptions<T> {
-    const {
-        connect: _connect,
-        minReadyPeers: _minReadyPeers,
-        waitForReady: _waitForReady,
-        waitTimeoutMs: _waitTimeoutMs,
-        ...sendDefaults
-    } = defaults;
-    return sendDefaults;
-}
-
 function toRealtimeSendOptions<T>(
     options: RallarRoomRealtimeJsonSendOptions<T>
 ): RallarRoomRealtimeJsonSendOptions<T> {
     const {
-        connect: _connect,
-        minReadyPeers: _minReadyPeers,
-        signal: _signal,
-        waitForReady: _waitForReady,
-        waitTimeoutMs: _waitTimeoutMs,
-        ...sendOptions
+        key,
+        maxAgeMs,
+        now,
+        openTimeoutMs
     } = options;
-    return sendOptions;
+    return { key, maxAgeMs, now, openTimeoutMs };
 }
 
 function toRoomSendStatus(

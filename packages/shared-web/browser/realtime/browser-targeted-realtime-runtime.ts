@@ -9,6 +9,7 @@ import type {
     RallarTargetSelector
 } from '@shared-web/browser/rallar-realtime-facade.ts';
 import type { RallarUnsubscribe } from '@shared-web/browser/rallar-shared-contracts.ts';
+import type { BrowserRoomTransportTarget } from '@shared-web/browser/rooms/room-group-state-translation.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 
@@ -17,7 +18,7 @@ export namespace BrowserTargetedRealtimeRuntime {
         readSession(): AuthSession | undefined;
         readDefaultRoom(): string | GroupRef | undefined;
         readCurrentRoomRef(): GroupRef | undefined;
-        resolveRoomPeerIds(room: string | GroupRef): readonly string[];
+        resolveRoomTransportTarget(room: string | GroupRef): BrowserRoomTransportTarget;
         resolveLaneId(laneId?: string): string;
         sendJson<T>(input: RallarRealtimeJsonSendInput<T>): Promise<readonly RallarRealtimeSendResult[]>;
         onJson<T>(laneId: string, handler: RallarRealtimeHandler<T>): RallarUnsubscribe;
@@ -40,7 +41,11 @@ export class BrowserTargetedRealtimeRuntime {
         }
         const room = input.roomRef ?? input.roomId ?? this.input.readDefaultRoom() ??
             this.input.readCurrentRoomRef();
-        return room ? this.input.resolveRoomPeerIds(room) : [];
+        if (!room) {
+            return [];
+        }
+        const target = this.input.resolveRoomTransportTarget(room);
+        return target.transportState === 'halted' ? [] : target.peerIds;
     }
 
     create<T>(definition: RallarTargetedChannelDefinition): RallarTargetedChannel<T> {
