@@ -22,7 +22,6 @@ import { hashRtcTopologyExecutionCommand } from '@shared-server/rallar-system/to
 import { type RtcTopologyPublication } from '@shared-server/rallar-system/topology/publication/rtc-topology-publication.ts';
 import type { PSqlSql } from '../../../../postgres/p-sql-sql.ts';
 import { runInPSqlTransaction } from '../../../../postgres/run-in-p-sql-transaction.ts';
-import { PSqlResourceInboxRepository } from '../../../../queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 import { RuntimeStateWriteConflictError } from '../../../../runtime-state/optimistic-runtime-state-write.ts';
 import type { RallarTimingSink } from '../../../observability/timing.ts';
 import type { RtcRttRefinementService } from '../../../rtc-rtt/topic/rtc-rtt-refinement-service.ts';
@@ -119,6 +118,7 @@ type AcceptedRtcTopologyWork =
         decision: 'skipped-fingerprint';
         work: PersistedRtcTopologyWork;
         group: GroupSnapshot;
+        criterionPetition: CommittedCriterionPetition;
     }>
     | Readonly<{
         decision: 'skipped-unchanged';
@@ -277,9 +277,9 @@ async function computeAcceptedRtcTopologyWork(
         snapshotSelection: membershipDeltaWork ? 'preserve-known-revision' : 'prefer-current'
     });
     const inputFingerprint = await computeAuthorityTopologyInputFingerprint(authority);
-    const changeGated = work.kind === 'group-revision' && isChangeGatedGroupRevisionWork(work);
-    if (changeGated && await isFingerprintUnchanged(input, authority, inputFingerprint)) {
-        return { decision: 'skipped-fingerprint', work, group: authority.group };
+    const fingerprintSkip = await readFingerprintSkip(input, authority, inputFingerprint);
+    if (fingerprintSkip !== null) {
+        return fingerprintSkip;
     }
     const computedTopology = options.topologyPlanning.computeTopologyFromAuthority(
         authority,
@@ -303,7 +303,7 @@ async function computeAcceptedRtcTopologyWork(
     // criterion petition fences on the stored row, not the recomputed
     // candidate: an unchanged graph still drifts its causal revision, and a
     // candidate-identity fence would reject the decisive activation.
-    const unchangedGated = changeGated || work.kind !== 'group-revision';
+    const unchangedGated = isChangeGatedGroupRevisionWork(work) || work.kind !== 'group-revision';
     if (unchangedGated && read.snapshot !== null && !computedTopology.changed) {
         return {
             decision: 'skipped-unchanged',
@@ -321,18 +321,27 @@ async function computeAcceptedRtcTopologyWork(
     });
 }
 
-async function isFingerprintUnchanged(
+async function readFingerprintSkip(
     input: ComputeAcceptedRtcTopologyWorkInput,
     authority: GroupTopologyPlanningAuthority,
     inputFingerprint: string
-): Promise<boolean> {
-    if (input.read.snapshot?.value.state !== 'active') {
-        return false;
+): Promise<Extract<AcceptedRtcTopologyWork, { decision: 'skipped-fingerprint'; }> | null> {
+    const work = input.workEnvelope.data;
+    const snapshot = input.read.snapshot;
+    if (!isChangeGatedGroupRevisionWork(work) || snapshot?.value.state !== 'active') {
+        return null;
     }
     const storedFingerprint = await input.options.executionRepository.readTopologyInputFingerprint(
         authority.group.group
     );
-    return storedFingerprint === inputFingerprint;
+    return storedFingerprint === inputFingerprint
+        ? {
+            decision: 'skipped-fingerprint',
+            work,
+            group: authority.group,
+            criterionPetition: { authority, planned: snapshot.value }
+        }
+        : null;
 }
 
 interface ComputeCommittedTopologyWorkInput {
@@ -410,6 +419,9 @@ async function writeAcceptedRtcTopologyWork(
     if (accepted.decision === 'skipped-fingerprint') {
         await finishRtcTopologyWork(options.database, entry);
         options.topologyPlanning.recordTopologyRebuildSkippedFingerprint();
+        // Topology inputs exclude lifecycle: entering a dialing stage can
+        // activate against this stored layout without a rebuild/publication.
+        await petitionCommittedCriterion(options, accepted.criterionPetition);
         return;
     }
     if (accepted.decision === 'skipped-unchanged' || accepted.decision === 'skipped-frozen') {
