@@ -1702,6 +1702,27 @@ the latter reports zero current unclassified candidates. Slice 8c is restacked o
 head `b8dae45a8`, and both PRs must complete their refreshed remote checks before the slice-final
 checkpoint is closed.
 
+The Slice 8c final local checkpoint is green on the runtime tree. Root typecheck passes every
+workspace and all 972 enforced test files with zero debt. The complete unit run passes 997 files /
+8,412 tests with four files and nine tests skipped; the complete Deno and all-workspace build commands
+pass. Browser E2E passes 39 core tests with 47 configured skips and 210 Recipe Console tests with one
+configured skip. Memory full-stack passes 7/7, and the enabled live three-browser RTC scenario passes
+with its exhaustive and 100-reconnect variants remaining the two configured skips. The unchanged
+browser facade bundle budget still passes at 163.98 KiB Brotli.
+
+The slice-final changed-range structure review initially re-examined 32 existing mock-call assertions
+across five touched tests. As with the parent repair, no disposition or baseline was added: redundant
+call assertions were removed where typed outcomes already prove the branch, callback assertions now
+use received-envelope collections, halted/stopped tests install fail-fast transport doubles, and the
+two remaining transport counts use explicit fake state. The focused rerun passes 50 shared-web tests
+and nine Relic tests; test typecheck remains 972/0; changed repository style passes; and the exact
+structure gate now reports zero current unclassified candidates. Repository structure passes with its
+review findings, and retained-legacy review adds no registry entry: four findings are benchmark CLI
+default-value vocabulary and the remaining `register=if-needed` login attempt is current configured
+auth behavior, not a compatibility path. Delivery status correctly remains `STOP_WRONG_BASE` while
+#391 is stacked on #390. Refreshed remote checks on final code head `9c89e81b4` and its subsequent
+plan-only checkpoint must pass before review readiness is claimed.
+
 **Next two PRs (I5, I20):**
 
 - **PR 15 = slice 8c, stacked on #390.** Repoint the room facade and readiness/status consumers to the
