@@ -45,7 +45,15 @@ export interface DenoRtcBaselineAdapters {
     };
 }
 
-const allowedExecutables = new Set(['git', 'node', 'npm', 'deno', 'uname', 'sysctl']);
+const allowedExecutables = new Set([
+    'git',
+    'node',
+    'npm',
+    'deno',
+    'uname',
+    'sysctl',
+    'system_profiler'
+]);
 const decoder = new TextDecoder();
 
 function cleanMessage(value: string) {
@@ -54,6 +62,30 @@ function cleanMessage(value: string) {
 
 function bytesToHex(bytes: Uint8Array) {
     return [...bytes].map((byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+
+async function readDarwinCpuModel(run: ProcessPort['run']) {
+    const cpu = await run({
+        executable: 'sysctl',
+        arguments: ['-n', 'machdep.cpu.brand_string']
+    });
+    const sysctlCpuModel = cpu.ok ? cpu.value.stdout.trim() : '';
+    if (sysctlCpuModel.length > 0) {
+        return sysctlCpuModel;
+    }
+    const hardware = await run({
+        executable: 'system_profiler',
+        arguments: ['SPHardwareDataType', '-detailLevel', 'mini']
+    });
+    if (!hardware.ok) {
+        throw new Error(hardware.issues[0]!.message);
+    }
+    const profilerCpuModel = /^\s*(?:Chip|Processor Name)\s*:\s*(.+)$/m
+        .exec(hardware.value.stdout)?.[1]?.trim() ?? '';
+    if (profilerCpuModel.length === 0) {
+        throw new Error('macOS CPU model is unavailable.');
+    }
+    return profilerCpuModel;
 }
 
 export function createDenoRtcBaselineAdapters(
@@ -192,14 +224,7 @@ export function createDenoRtcBaselineAdapters(
                     }
                 }
                 else {
-                    const cpu = await run({
-                        executable: 'sysctl',
-                        arguments: ['-n', 'machdep.cpu.brand_string']
-                    });
-                    if (!cpu.ok) {
-                        throw new Error(cpu.issues[0]!.message);
-                    }
-                    cpuModel = cpu.value.stdout.trim();
+                    cpuModel = await readDarwinCpuModel(run);
                 }
                 return {
                     deno: runtime.version.deno,
