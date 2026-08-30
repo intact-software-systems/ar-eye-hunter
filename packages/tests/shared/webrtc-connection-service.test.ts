@@ -351,40 +351,39 @@ describe('WebRtcConnectionService', () => {
         expect(service.knownPeerIds()).toEqual([]);
     });
 
-    it('creates a tentative peer from an inbound offer while group ownership is still unknown', async () => {
-        const signaler = createSignaler();
+    it('does not create a missing peer when the outbound dial policy denies it', () => {
         const service = new WebRtcConnectionService(
-            signaler,
+            createSignaler(),
             createConnectionInput('self')
-        ).setInboundPeerCreationPolicy(() => ({ decision: 'tentative' }) as never);
+        ).setOutboundDialPolicy(() => ({
+            decision: 'deny',
+            reason: 'stage-layout-mismatch'
+        }));
 
-        await service.connectSignaler();
-        const connectInput = getConnectInput(signaler);
+        expect(service.ensurePeerConnectionStarted('peer-1')).toMatchObject({
+            left: {
+                kind: 'dial-denied',
+                peerId: 'peer-1',
+                reason: 'stage-layout-mismatch'
+            }
+        });
+        expect(mockState.peerConnections).toHaveLength(0);
+        expect(service.knownPeerIds()).toEqual([]);
+    });
 
-        await connectInput.callbacks.onMessage(
-            'self',
-            'token-1',
-            createRtcEnvelope({
-                channel: QRtcSignalingChannel.RtcSignal,
-                type: QRtcSignalingMsgType.Signal,
-                fromId: 'peer-unknown',
-                toId: 'self',
-                sessionId: 'self',
-                token: 'token-1',
-                signalType: QRtcSignalingType.Offer,
-                payload: {
-                    description: {
-                        type: 'offer',
-                        sdp: 'offer'
-                    },
-                    candidate: null
-                }
-            })
+    it('keeps an existing peer usable after outbound creation becomes denied', () => {
+        const service = new WebRtcConnectionService(
+            createSignaler(),
+            createConnectionInput('self')
         );
+        const created = service.ensurePeerConnectionStarted('peer-1');
+        service.setOutboundDialPolicy(() => false);
 
+        const reused = service.ensurePeerConnectionStarted('peer-1');
+
+        expect(created.right).toBeDefined();
+        expect(reused.right).toBe(created.right);
         expect(mockState.peerConnections).toHaveLength(1);
-        expect(mockState.peerConnections[0].handleSignal).toHaveBeenCalledOnce();
-        expect(service.knownPeerIds()).toEqual(['peer-unknown']);
     });
 
     it('does not create a missing peer from an inbound answer', async () => {

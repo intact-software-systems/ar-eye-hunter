@@ -1,6 +1,7 @@
 import { dirname } from 'node:path';
 
-import type { ClientInfo } from '@shared/api/api-config.ts';
+import type { ClientInfo, OverlayInfo } from '@shared/api/api-config.ts';
+import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { LatestRepository } from '@shared/cache/LatestRepository.ts';
 import { Either } from '@shared/resilience/Either.ts';
@@ -81,10 +82,11 @@ export async function runWebRtcGroupManagerPeerOwners(
 ): Promise<WebRtcGroupManagerPeerOwnersResult> {
     const groupCache = new LatestRepository<string, GroupSnapshot>();
     const clientCache = new LatestRepository<string, ClientInfo>();
+    const acceptedOverlayCache = new LatestRepository<string, OverlayInfo>();
     const rtcQBox = createRtcQBoxHarness('self');
     const manager = new WebRtcGroupManager(
         rtcQBox.service as never,
-        { groupCache, clientCache }
+        { groupCache, clientCache, acceptedOverlayCache }
     );
 
     for (let groupIndex = 0; groupIndex < input.groups; groupIndex += 1) {
@@ -93,6 +95,10 @@ export async function runWebRtcGroupManagerPeerOwners(
             return peerId;
         });
         const group = createGroupSnapshot(`group-${groupIndex}`, 1, ['self', ...peerIds]);
+        acceptedOverlayCache.set(
+            toScopedOverlayId(group.group),
+            createAcceptedOverlay(group, peerIds)
+        );
 
         await manager.getOrCreate(group.group).acceptGroupUpdate(group);
     }
@@ -108,7 +114,7 @@ export async function runWebRtcGroupManagerPeerOwners(
     for (const peerId of lookupPeerIds) {
         const ownerGroups = manager.ownerGroupsOfPeer(peerId);
         totalOwnerGroups += ownerGroups.length;
-        if (manager.isPeerOwnedByAnyGroup(peerId)) {
+        if (manager.isPeerDialAllowedByAnyGroup(peerId)) {
             ownedLookups += 1;
         }
     }
@@ -121,6 +127,27 @@ export async function runWebRtcGroupManagerPeerOwners(
         ownedLookups,
         totalOwnerGroups,
         desiredPeerCount: manager.state().desiredPeerIds.length
+    };
+}
+
+function createAcceptedOverlay(
+    group: GroupSnapshot,
+    nextHopSessionIds: readonly string[]
+): OverlayInfo {
+    return {
+        sourceGroupStateCausalRevision: group.causalRevision,
+        provenance: 'server',
+        state: 'active',
+        overlayId: toScopedOverlayId(group.group),
+        groupRef: group.group,
+        topology: 'tree',
+        name: group.group.displayName,
+        createdByClientId: 'server',
+        createdAtEpochMs: 1,
+        nextHopSessionIds,
+        degreeLimit: Math.max(1, nextHopSessionIds.length),
+        overlayVersion: 1,
+        updatedAtEpochMs: 1
     };
 }
 

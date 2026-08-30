@@ -13,6 +13,7 @@ import {
 import type { GroupRef } from '../api/group-types.ts';
 import type { ReadableKeyedValues } from '../cache/RepositoryInterfaces.ts';
 import { normalizeRttReportingDegreeLimit, selectRttReportingPeers } from '../rtc/rtt-reporting-policy.ts';
+import { selectGroupDialPeerIds } from './webrtc-group-dial-policy.ts';
 import {
     clonePeerOwners,
     emptyGroupManagerDiagnostics,
@@ -215,7 +216,7 @@ export class WebRtcGroupManager {
         return groupIds ? [...groupIds] : [];
     }
 
-    isPeerOwnedByAnyGroup(peerId: PeerId): boolean {
+    isPeerDialAllowedByAnyGroup(peerId: PeerId): boolean {
         return this.readPeerOwnersCache().has(peerId);
     }
 
@@ -354,7 +355,8 @@ export class WebRtcGroupManager {
             const connected = this.rtcQBox.ensurePeerConnectionStarted(peerId);
             if (connected.left) {
                 this.diagnostics.connectFailureCount += 1;
-                const error = connected.left.kind === 'self'
+                const error = connected.left.kind === 'self' ||
+                        connected.left.kind === 'dial-denied'
                     ? undefined
                     : connected.left.error;
                 console.error(
@@ -484,17 +486,23 @@ export class WebRtcGroupManager {
     }
 
     private targetPeerIdsForGroup(group: WebRtcGroupService): readonly PeerId[] {
-        const overlay = readAcceptedOverlayForGroup(
-            this.acceptedOverlayCache,
-            group.groupRef
-        );
-        if (overlay) {
-            return overlay.nextHopSessionIds.filter(
-                (peerId) => peerId !== this.rtcQBox.input.sessionId
-            );
+        const snapshot = group.readGroup();
+        if (!snapshot) {
+            return [];
         }
 
-        return group.targetPeerIds();
+        return selectGroupDialPeerIds({
+            lifecycleState: snapshot.group.lifecycleState,
+            localSessionId: this.rtcQBox.input.sessionId,
+            planned: readPlannedOverlayForGroup(
+                this.plannedOverlayCache,
+                group.groupRef
+            ),
+            accepted: readAcceptedOverlayForGroup(
+                this.acceptedOverlayCache,
+                group.groupRef
+            )
+        });
     }
 
     private rttReportingCandidatePeerIds(degreeLimit: number): readonly PeerId[] {

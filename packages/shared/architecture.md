@@ -32,9 +32,9 @@ without pulling in DOM, HTTP-server, Postgres, or app-specific runtime wiring.
 - `webrtc/` owns shared WebRTC group, multicast, overlay, and signaling
   contracts that do not depend on browser APIs directly. The shared RTC
   connection service supports bounded initial connection-attempt budgets,
-  `connect-exhausted` diagnostics, max-peer caps, and tentative inbound peer
-  admission for eventually consistent group state; browser wiring enables the
-  budget by default.
+  `connect-exhausted` diagnostics, max-peer caps, and symmetric inbound/outbound
+  missing-peer creation policies; browser wiring enables the budget by default
+  and admits new peers only from the lifecycle-selected server layouts.
 
 ## Boundaries
 

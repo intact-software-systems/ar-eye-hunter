@@ -80,7 +80,7 @@ a new mechanism instead of one of these should be challenged in review:
 | a second durable topology store    | `RtcTopologySnapshotRepository` parameterised by namespace, or its `childKey` idiom             |
 | cross-node damping                 | the coalesced APP_OUTBOX row and its generation CAS                                             |
 | hysteresis banding                 | `resolveTopologyKindWithHysteresis`                                                             |
-| gating peer creation               | `setInboundPeerCreationPolicy` + `toBrowserRtcInboundPeerCreationDecision` (mirror it outbound) |
+| gating peer creation               | symmetric `setInboundPeerCreationPolicy` / `setOutboundDialPolicy` seams                        |
 | two repository slots               | `configureSharedStateRepositories`, which already configures two independent tokens             |
 | a non-lifecycle group field        | `appointDirector`, `rotateGroupJoinCode`                                                        |
 | per-group durable policy           | `GroupLifecyclePolicy` with its nested sub-policies, presets, issue codes and repository        |
@@ -1593,9 +1593,9 @@ fallback or retained-legacy entry. The final unit, Deno, build, shared-web/headl
 bundle, E2E, memory full-stack, live three-browser, topology-replay and fixed medium-scale gates all
 pass; remote CI and pull-request delivery readiness remain before #381 leaves draft.
 
-### Slice 8b start checkpoint — stacked browser dial gate (2026-08-30)
+### Slice 8b start checkpoint — stacked browser dial gate (2026-08-30, PR #390)
 
-Slice 8b starts from #381's published head `ce3689693` on
+Slice 8b starts from #381's published head `ce3689693` as draft #390 on
 `codex/group-activation-browser-dial-gate`; #381 remains unchanged while its final release gate runs.
 The implementation boundary is the one already approved above: one total stage × layout-role peer
 selection drives both missing-peer admission seams, active-session absence fallback is removed, and
@@ -1603,6 +1603,18 @@ existing established peers remain usable. The first census found the current inb
 bookkeeping has no reader outside its own add/delete operations; unless a focused test exposes an
 independent requirement, it leaves with the touched connection-service surface instead of becoming
 retained legacy. Slice 8c facade/status work and the Slice 8d route/recipe cutover remain out of scope.
+
+The first TDD checkpoint is green. A 28-row lifecycle-stage × planned/accepted-presence matrix now
+proves outbound reconciliation and inbound admission select the same peers, with explicit cases for
+the reconnecting union, a lagging planned offer after activation, and suppression of a local bootstrap
+overlay during initial connecting. The shared connection service has the symmetric outbound policy
+seam at its missing-peer choke point; a denial creates nothing, while an existing peer remains usable.
+The consumerless tentative-admission set and decision member were removed rather than retained.
+Focused manager, connection-service and browser-wiring tests pass, and repository typecheck covers 972
+test files with zero debt. The broader shared/shared-web sweep passes 669 files / 4,907 tests (four
+files and nine tests skipped), and the peer-owner benchmark now installs accepted layouts so its
+measured lookup set remains representative; its owning test and Deno typecheck pass. Remaining slice
+gates and review still precede publication.
 
 **Next two PRs (I5, I20):**
 

@@ -128,6 +128,11 @@ export type WebRtcPeerConnectionLeft = Readonly<
         peerId: PeerId;
     }
     | {
+        kind: 'dial-denied';
+        peerId: PeerId;
+        reason?: string;
+    }
+    | {
         kind: 'connect-failed';
         peerId: PeerId;
         error: Error;
@@ -177,10 +182,17 @@ export type WebRtcRemovePeerOptions = Readonly<{
     resetAttemptBudget?: boolean;
 }>;
 
-type ComputedPeerConnection = Readonly<{
-    peerDto: QRtcPeerDto;
-    shouldConnect: boolean;
-}>;
+type ComputedPeerConnection = Readonly<
+    | {
+        decision: 'use-peer';
+        peerDto: QRtcPeerDto;
+        shouldConnect: boolean;
+    }
+    | {
+        decision: 'deny';
+        reason?: string;
+    }
+>;
 
 type WebRtcPeerConnectionAttemptState = Readonly<{
     peerId: PeerId;
@@ -191,19 +203,17 @@ type WebRtcPeerConnectionAttemptState = Readonly<{
     retryAfterEpochMs?: number;
 }>;
 
-type InboundPeerCreationDecision = Readonly<{
+type PeerCreationAdmission = Readonly<{
     allowed: boolean;
-    tentative: boolean;
     reason?: string;
 }>;
 
-export type WebRtcInboundPeerCreationDecision =
+export type WebRtcPeerCreationDecision =
     | boolean
     | 'allow'
     | 'deny'
-    | 'tentative'
     | Readonly<{
-        decision: 'allow' | 'deny' | 'tentative';
+        decision: 'allow' | 'deny';
         reason?: string;
     }>;
 
@@ -262,7 +272,15 @@ export type WebRtcInboundPeerCreationPolicyInput = Readonly<{
 
 export type WebRtcInboundPeerCreationPolicy = (
     input: WebRtcInboundPeerCreationPolicyInput
-) => WebRtcInboundPeerCreationDecision;
+) => WebRtcPeerCreationDecision;
+
+export type WebRtcOutboundDialPolicyInput = Readonly<{
+    peerId: PeerId;
+}>;
+
+export type WebRtcOutboundDialPolicy = (
+    input: WebRtcOutboundDialPolicyInput
+) => WebRtcPeerCreationDecision;
 
 export class WebRtcConnectionService {
     private static readonly PEER_ESTABLISHMENT_CALLBACK_ID = 'web-rtc-connection-service:peer-establishment';
@@ -279,8 +297,8 @@ export class WebRtcConnectionService {
         cooldownExpiredClearCount: 0,
         exhaustedCount: 0
     };
-    private readonly tentativePeerIds = new Set<PeerId>();
     private inboundPeerCreationPolicy: WebRtcInboundPeerCreationPolicy | undefined;
+    private outboundDialPolicy: WebRtcOutboundDialPolicy | undefined;
 
     public readonly signaler: QRtcSignalingTransport;
     public readonly input: WebRtcQueueBoxClientServiceInputDto;
@@ -297,6 +315,13 @@ export class WebRtcConnectionService {
         policy?: WebRtcInboundPeerCreationPolicy
     ): WebRtcConnectionService {
         this.inboundPeerCreationPolicy = policy;
+        return this;
+    }
+
+    setOutboundDialPolicy(
+        policy?: WebRtcOutboundDialPolicy
+    ): WebRtcConnectionService {
+        this.outboundDialPolicy = policy;
         return this;
     }
 
@@ -347,7 +372,6 @@ export class WebRtcConnectionService {
         }
 
         this.clearPeerEstablishmentTimeout(peerId);
-        this.tentativePeerIds.delete(peerId);
         if (options.resetAttemptBudget !== false) {
             this.clearPeerConnectionAttemptBudget(peerId, 'removal');
         }
@@ -512,9 +536,6 @@ export class WebRtcConnectionService {
                     if (accepted.left) {
                         this.logPeerConnectionLeft(peerId, accepted.left);
                     }
-                    else if (inboundDecision.tentative) {
-                        this.tentativePeerIds.add(peerId);
-                    }
                 }
                 else {
                     await peerDto.connection.handleSignal(
@@ -531,7 +552,7 @@ export class WebRtcConnectionService {
     private shouldCreatePeerFromInboundSignal(
         peerId: PeerId,
         message: QRtcSignalingMessage
-    ): InboundPeerCreationDecision {
+    ): PeerCreationAdmission {
         const plausible = this.isPlausibleMissingPeerSignal(message);
         if (!plausible.allowed) {
             return plausible;
@@ -547,7 +568,7 @@ export class WebRtcConnectionService {
         }
 
         try {
-            return this.normalizeInboundPeerCreationDecision(
+            return this.normalizePeerCreationDecision(
                 this.inboundPeerCreationPolicy({
                     peerId,
                     signalType: message.signalType,
@@ -562,7 +583,30 @@ export class WebRtcConnectionService {
             );
             return {
                 allowed: false,
-                tentative: false,
+                reason: 'policy-error'
+            };
+        }
+    }
+
+    private shouldCreatePeerFromOutboundDial(
+        peerId: PeerId
+    ): PeerCreationAdmission {
+        if (!this.outboundDialPolicy) {
+            return { allowed: true };
+        }
+
+        try {
+            return this.normalizePeerCreationDecision(
+                this.outboundDialPolicy({ peerId })
+            );
+        }
+        catch (error) {
+            console.error(
+                `Outbound RTC dial policy failed for ${peerId}`,
+                error
+            );
+            return {
+                allowed: false,
                 reason: 'policy-error'
             };
         }
@@ -570,11 +614,10 @@ export class WebRtcConnectionService {
 
     private isPlausibleMissingPeerSignal(
         message: QRtcSignalingMessage
-    ): InboundPeerCreationDecision {
+    ): PeerCreationAdmission {
         if (message.signalType === QRtcSignalingType.Answer) {
             return {
                 allowed: false,
-                tentative: false,
                 reason: 'missing-peer-answer'
             };
         }
@@ -585,7 +628,6 @@ export class WebRtcConnectionService {
         ) {
             return {
                 allowed: false,
-                tentative: false,
                 reason: 'malformed-offer'
             };
         }
@@ -596,82 +638,48 @@ export class WebRtcConnectionService {
         ) {
             return {
                 allowed: false,
-                tentative: false,
                 reason: 'malformed-ice-candidate'
             };
         }
 
-        return {
-            allowed: true,
-            tentative: false
-        };
+        return { allowed: true };
     }
 
-    private canAcceptAdditionalPeer(peerId: PeerId): InboundPeerCreationDecision {
+    private canAcceptAdditionalPeer(peerId: PeerId): PeerCreationAdmission {
         if (this.peerDtoByPeerId.has(peerId)) {
-            return {
-                allowed: true,
-                tentative: false
-            };
+            return { allowed: true };
         }
 
         if (this.peerDtoByPeerId.size < this.maxPeerConnections()) {
-            return {
-                allowed: true,
-                tentative: false
-            };
+            return { allowed: true };
         }
 
         return {
             allowed: false,
-            tentative: false,
             reason: 'max-peer-connections'
         };
     }
 
-    private normalizeInboundPeerCreationDecision(
-        decision: WebRtcInboundPeerCreationDecision
-    ): InboundPeerCreationDecision {
+    private normalizePeerCreationDecision(
+        decision: WebRtcPeerCreationDecision
+    ): PeerCreationAdmission {
         if (decision === true || decision === 'allow') {
-            return {
-                allowed: true,
-                tentative: false
-            };
-        }
-
-        if (decision === 'tentative') {
-            return {
-                allowed: true,
-                tentative: true
-            };
+            return { allowed: true };
         }
 
         if (decision === false || decision === 'deny') {
-            return {
-                allowed: false,
-                tentative: false
-            };
-        }
-
-        if (decision.decision === 'tentative') {
-            return {
-                allowed: true,
-                tentative: true,
-                reason: decision.reason
-            };
+            return { allowed: false };
         }
 
         if (decision.decision === 'allow') {
             return {
                 allowed: true,
-                tentative: false,
                 reason: decision.reason
             };
         }
 
         return {
             allowed: false,
-            tentative: false,
             reason: decision.reason
         };
     }
@@ -723,6 +731,14 @@ export class WebRtcConnectionService {
 
         try {
             const computed = this.computeRtcPeerDtoIfAbsent(peerId);
+            if (computed.decision === 'deny') {
+                return Either.ofLeft<WebRtcPeerConnectionLeft, QRtcPeerDto>({
+                    kind: 'dial-denied',
+                    peerId,
+                    reason: computed.reason
+                });
+            }
+
             if (computed.shouldConnect) {
                 this.watchPeerEstablishmentIfEnabled(computed.peerDto);
 
@@ -921,6 +937,15 @@ export class WebRtcConnectionService {
             );
         }
 
+        if (left.kind === 'dial-denied') {
+            return new WebRtcPeerLaneOpenFailure(
+                'connect-failed',
+                left.peerId,
+                laneId,
+                `RTC peer creation denied for ${left.peerId}${left.reason ? `: ${left.reason}` : ''}`
+            );
+        }
+
         return new WebRtcPeerLaneOpenFailure(
             'connect-failed',
             left.peerId,
@@ -986,6 +1011,7 @@ export class WebRtcConnectionService {
                         `Peer ${peerId} has reconnectable data channels. Reusing connection and reconnecting channels`
                     );
                     return {
+                        decision: 'use-peer',
                         peerDto: existingPeerDto,
                         shouldConnect: true
                     };
@@ -993,6 +1019,7 @@ export class WebRtcConnectionService {
 
                 // console.log(`Peer ${peerId} already in ${existingPeerDto.connection.status.state}/${connectionState}. Reuse existing connection`);
                 return {
+                    decision: 'use-peer',
                     peerDto: existingPeerDto,
                     shouldConnect: false
                 };
@@ -1003,6 +1030,7 @@ export class WebRtcConnectionService {
                     `Peer connection to ${peerId} already exists in state ${connectionState}. Reuse existing connection`
                 );
                 return {
+                    decision: 'use-peer',
                     peerDto: existingPeerDto,
                     shouldConnect: true
                 };
@@ -1012,6 +1040,14 @@ export class WebRtcConnectionService {
                 `Peer connection to ${peerId} exists in state ${connectionState}. Removing existing connection`
             );
             this.removePeerIfPresent(peerId, { resetAttemptBudget: false });
+        }
+
+        const admission = this.shouldCreatePeerFromOutboundDial(peerId);
+        if (!admission.allowed) {
+            return {
+                decision: 'deny',
+                reason: admission.reason
+            };
         }
 
         const exhaustedEvent = this.consumePeerConnectionAttempt(peerId);
@@ -1067,6 +1103,7 @@ export class WebRtcConnectionService {
         this.registerPeerEstablishmentCallbacks(rtcPeerDto);
 
         return {
+            decision: 'use-peer',
             peerDto: rtcPeerDto,
             shouldConnect: true
         };
@@ -1119,7 +1156,6 @@ export class WebRtcConnectionService {
     private markPeerEstablished(peerId: PeerId): void {
         this.clearPeerEstablishmentTimeout(peerId);
         this.clearPeerConnectionAttemptBudget(peerId, 'established');
-        this.tentativePeerIds.delete(peerId);
     }
 
     private handlePeerEstablishmentTimeout(
@@ -1408,6 +1444,13 @@ export class WebRtcConnectionService {
         if (left.kind === 'connect-exhausted') {
             console.warn(
                 `RTC peer ${peerId} connection attempt budget exhausted until ${left.event.retryAfterEpochMs}`
+            );
+            return;
+        }
+
+        if (left.kind === 'dial-denied') {
+            console.warn(
+                `RTC peer creation denied for ${peerId}${left.reason ? `: ${left.reason}` : ''}`
             );
             return;
         }

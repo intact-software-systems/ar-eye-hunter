@@ -22,7 +22,7 @@ import type {
     QRtcPeerDto,
     RtcDataChannelLaneConfig,
     WebRtcConnectionService,
-    WebRtcInboundPeerCreationDecision
+    WebRtcPeerCreationDecision
 } from '@shared/services/WebRtcConnectionService.ts';
 import { WebRtcGroupManager } from '@shared/services/WebRtcGroupManager.ts';
 import type { WebRtcRxStreamerService } from '@shared/services/WebRtcRxStreamerService.ts';
@@ -112,13 +112,29 @@ export function toBrowserRttHeartbeatMessage(
     );
 }
 
-export function toBrowserRtcInboundPeerCreationDecision(
-    isPeerOwnedByAnyGroup: boolean
-): WebRtcInboundPeerCreationDecision {
-    return isPeerOwnedByAnyGroup ? { decision: 'allow' } : {
-        decision: 'tentative',
-        reason: 'group-state-eventually-consistent'
+export function toBrowserRtcPeerCreationDecision(
+    isPeerDialAllowedByAnyGroup: boolean
+): WebRtcPeerCreationDecision {
+    return isPeerDialAllowedByAnyGroup ? { decision: 'allow' } : {
+        decision: 'deny',
+        reason: 'stage-layout-mismatch'
     };
+}
+
+export function configureBrowserRtcPeerCreationPolicies(
+    webRtcConnectionService: WebRtcConnectionService,
+    webRtcGroupManager: WebRtcGroupManager
+): void {
+    const peerCreationDecision = (peerId: string): WebRtcPeerCreationDecision =>
+        toBrowserRtcPeerCreationDecision(
+            webRtcGroupManager.isPeerDialAllowedByAnyGroup(peerId)
+        );
+    webRtcConnectionService.setInboundPeerCreationPolicy(
+        ({ peerId }) => peerCreationDecision(peerId)
+    );
+    webRtcConnectionService.setOutboundDialPolicy(
+        ({ peerId }) => peerCreationDecision(peerId)
+    );
 }
 
 interface BrowserWebSocketTransport {
@@ -372,10 +388,9 @@ function createBrowserRtcGroupManager(
         );
     }
     refreshRttReportingPeers();
-    webRtcConnectionService.setInboundPeerCreationPolicy(({ peerId }) =>
-        toBrowserRtcInboundPeerCreationDecision(
-            webRtcGroupManager.isPeerOwnedByAnyGroup(peerId)
-        )
+    configureBrowserRtcPeerCreationPolicies(
+        webRtcConnectionService,
+        webRtcGroupManager
     );
     return webRtcGroupManager;
 }
