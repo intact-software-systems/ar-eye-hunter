@@ -1635,14 +1635,28 @@ queues found no blocking issue. Publication remains intentionally draft and stac
 merges; delivery status must therefore continue to report the non-default-base stop rather than
 pretending the child is ready for main.
 
+### Slice 8c start checkpoint — accepted-layout room facade (2026-08-30)
+
+Slice 8c starts from #390's published head `079a02ba9` on
+`codex/group-activation-room-facade`, stacked on the completed Slice 8b browser dial gate. #390 stays
+draft on #381 while its final-head remote checks rerun. This slice owns only the room-facade cutover:
+accepted-layout readiness and progress, the local halt and typed status, browser-owned repair state,
+and the two game consumers named by C10. Slice 8d's HTTP/OpenAPI routes, legacy-route removal, recipe
+cutover, both black-box profiles, state-write gate and public command mounting remain outside this
+branch. Before code changes, the census must recover the current owners for room status, lane
+readiness, local halt, per-peer reconnect state, AR Eye's exhaustive status mapping, and Relic's
+explicit-peer `sendJson` fallback; any owner or contract material change updates this checkpoint before
+implementation continues.
+
 **Next two PRs (I5, I20):**
 
-- **PR 14 = slice 8b, stacked on #381.** Add the shared total stage × layout-role dial decision,
-  suppress active-session bootstrap fallback, and drive both inbound and outbound peer creation from
-  that one matrix. Slice 8c and the 8d route/recipe cutover remain outside this next PR.
-- **PR 15 = slice 8c, stacked on slice 8b after its review checkpoint.** Repoint the room facade and
-  readiness/status consumers to the accepted-layout ownership established by 8a/8b; do not pull 8d's
-  public route or recipe cutover forward.
+- **PR 15 = slice 8c, stacked on #390.** Repoint the room facade and readiness/status consumers to the
+  accepted-layout ownership established by 8a/8b, add the local halt/repair/progress surface, and
+  update the two game consumers; do not pull 8d's public route or recipe cutover forward.
+- **PR 16 = slice 8d, stacked on slice 8c after its review checkpoint.** Mount the seven remaining
+  lifecycle routes with the existing `activate` path, remove both inventoried legacy route families
+  and their recipe consumers atomically, and carry both black-box profiles, medium-scale and
+  state-write gates.
 
 ## Slice 9 — In-flight pacing
 
