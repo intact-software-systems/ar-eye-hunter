@@ -477,6 +477,31 @@ export function createRtcBaselineNotRunArtifact(
     };
 }
 
+function createRtcBaselineBlockedCohortFailures(
+    manifest: RtcBaselineCaptureManifestDto,
+    blockedSampleIds: ReadonlySet<string>,
+    causalFailureId: string
+): RtcBaselineFailureArtifact[] {
+    return manifest.expectedCohorts.flatMap((identity) => {
+        const blockedMemberSampleIds = identity.memberSampleIds.filter((sampleId) => blockedSampleIds.has(sampleId));
+        return blockedMemberSampleIds.length === 0
+            ? []
+            : [
+                createRtcBaselineFailureArtifact(
+                    { kind: 'cohort', identity },
+                    [
+                        rtcBaselineIssue(
+                            '$.identity.memberSampleIds',
+                            'cohort-members-unavailable',
+                            'Cohort assertion cannot run after a member sample failed or was causally not run.'
+                        )
+                    ],
+                    { causalFailureId, blockedMemberSampleIds }
+                )
+            ];
+    });
+}
+
 export function buildRtcBaselineFailureSequence(
     input: RtcBaselineFailureSequenceInput
 ): (RtcBaselineFailureArtifact | RtcBaselineNotRunArtifact)[] {
@@ -490,10 +515,14 @@ export function buildRtcBaselineFailureSequence(
         (identity) => identity.workloadId === ownerIdentity.workloadId
     );
     const ownerIndex = identities.findIndex((identity) => rtcBaselineSampleIdentityEquals(identity, ownerIdentity));
+    const notRunIdentities = identities.slice(ownerIndex + 1);
+    const blockedSampleIds = new Set([
+        ownerIdentity.sampleId,
+        ...notRunIdentities.map((identity) => identity.sampleId)
+    ]);
     return [
         failure,
-        ...identities
-            .slice(ownerIndex + 1)
-            .map((identity) => createRtcBaselineNotRunArtifact(identity, failureId))
+        ...notRunIdentities.map((identity) => createRtcBaselineNotRunArtifact(identity, failureId)),
+        ...createRtcBaselineBlockedCohortFailures(input.manifest, blockedSampleIds, failureId)
     ];
 }
