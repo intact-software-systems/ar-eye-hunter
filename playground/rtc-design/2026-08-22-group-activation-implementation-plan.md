@@ -1691,6 +1691,17 @@ Full unit, Deno, repository-wide build, E2E, memory full-stack and live-three-br
 the slice-final checkpoint; their results will be recorded here before publication readiness is
 claimed.
 
+The first stacked publication run exposed one parent-branch release-gate failure rather than a Slice
+8c behavior regression. Because Slice 8b replaced the removed tentative-admission test inside the
+existing `WebRtcConnectionService` suite, the changed-range structure review correctly re-examined
+22 pre-existing mock invocation-count assertions in that touched file. No exception was retained and
+the gate was not weakened: the test doubles now expose direct signal, connection and reset state, and
+the affected tests assert those observable outcomes instead of mock call counts. The focused 25-test
+service suite, formatting, changed repository style and the exact changed-range structure gate pass;
+the latter reports zero current unclassified candidates. Slice 8c is restacked on repaired Slice 8b
+head `b8dae45a8`, and both PRs must complete their refreshed remote checks before the slice-final
+checkpoint is closed.
+
 **Next two PRs (I5, I20):**
 
 - **PR 15 = slice 8c, stacked on #390.** Repoint the room facade and readiness/status consumers to the
