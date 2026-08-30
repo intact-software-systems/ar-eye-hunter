@@ -1,4 +1,8 @@
 import { ALMessage } from '../al-contracts/al-contract.ts';
+import {
+    decodePersistedALMessage,
+    decodePersistedALMessageValue
+} from '../al-contracts/al-message-persistence-validation.ts';
 import { ALMessageHandlingPlan } from '../al-contracts/al-policy.ts';
 import type { ALInboundRuntimeStores } from '../alm/ALInboundMessageRuntime.ts';
 import { ALInboundMessageRuntime } from '../alm/ALInboundMessageRuntime.ts';
@@ -21,24 +25,24 @@ import {
     WebRtcHeartbeatService
 } from './WebRtcHeartbeatService.ts';
 
-export type WebRtcRxStreamerServiceInputDto = {
-    sessionId: string;
-};
+export interface WebRtcRxStreamerServiceInputDto {
+    readonly sessionId: string;
+}
 
-type WebRtcRxStreamerServiceStatus = {
+interface WebRtcRxStreamerServiceStatus {
     localMediaStream: MediaStream | undefined;
     localAudioEnabled: boolean;
     localVideoEnabled: boolean;
     mediaPolicy: QRtcMediaPolicy | undefined;
-};
+}
 
-export type RttMeasurementCallbacks = {
-    onHeartbeat: (rtt: RttMeasurementInfo) => Promise<void>;
-};
+export interface RttMeasurementCallbacks {
+    readonly onHeartbeat: (rtt: RttMeasurementInfo) => Promise<void>;
+}
 
-export type WebRtcRxStreamerServiceOptions = Readonly<{
-    inboundStores?: ALInboundRuntimeStores;
-}>;
+export interface WebRtcRxStreamerServiceOptions {
+    readonly inboundStores?: ALInboundRuntimeStores;
+}
 
 export class WebRtcRxStreamerService {
     private static readonly ALL_IN = '*';
@@ -56,7 +60,7 @@ export class WebRtcRxStreamerService {
         (peerId: string, stream: MediaStream, event: RTCTrackEvent) => Promise<void>
     > = new Map();
 
-    private status: WebRtcRxStreamerServiceStatus = {
+    private readonly status: WebRtcRxStreamerServiceStatus = {
         localMediaStream: undefined,
         localAudioEnabled: false,
         localVideoEnabled: false,
@@ -90,7 +94,7 @@ export class WebRtcRxStreamerService {
                 planIncomingMessage: (msg, fromPeerId, runtime) => {
                     return this.multicast.planIncomingMessage(msg, fromPeerId, runtime);
                 },
-                readStoredEntry: (entry) => JSON.parse(entry.resource) as ALMessage,
+                readStoredEntry: (entry) => decodePersistedALMessage(entry.resource),
                 toInboxEntry: (msg) =>
                     QueueBoxUtilities.toResourceEntryFromMsg(
                         msg,
@@ -112,7 +116,6 @@ export class WebRtcRxStreamerService {
         );
     }
 
-    // callback from WebRtcConnectionService whenever a new connection
     addPeer(peerDto: QRtcPeerDto): void {
         if (this.peerDtoByPeerId.has(peerDto.peerId)) {
             console.warn(`Peer ${peerDto.peerId} already exists. Ignoring ...`);
@@ -120,7 +123,11 @@ export class WebRtcRxStreamerService {
         }
 
         this.peerDtoByPeerId.set(peerDto.peerId, peerDto);
+        this.registerPeerMessages(peerDto);
+        this.registerPeerMedia(peerDto);
+    }
 
+    private registerPeerMessages(peerDto: QRtcPeerDto): void {
         peerDto.channel
             .onRtcCallbacksDo(
                 this.toHeartbeatCallbackId(peerDto.peerId),
@@ -129,24 +136,16 @@ export class WebRtcRxStreamerService {
             .onRtcMessageDo(
                 this.toRtcChannelSubscriptionId(peerDto.peerId),
                 {
-                    onMessage: async (data) => {
-                        console.log(`From ${(peerDto.peerId)}: ${JSON.stringify(data)}`);
-
-                        const msg = data as ALMessage;
-
-                        if (msg.id.senderId !== peerDto.peerId) {
-                            console.warn(`Message from ${msg.id.senderId} does not match peerId ${(peerDto.peerId)}. `);
-                        }
-
-                        await this.inboundRuntime.handleIncomingMessage(msg, peerDto.peerId);
-                    }
+                    onMessage: (message) => this.receivePeerMessage(peerDto.peerId, message)
                 }
             );
 
-        for (const [id, cb] of this.onRtcMessageCallbacks.entries()) {
-            peerDto.channel.onRtcMessageDo(id, cb);
+        for (const [id, callback] of this.onRtcMessageCallbacks.entries()) {
+            peerDto.channel.onRtcMessageDo(id, callback);
         }
+    }
 
+    private registerPeerMedia(peerDto: QRtcPeerDto): void {
         if (this.status.mediaPolicy) {
             peerDto.connection.applyMediaPolicy(this.status.mediaPolicy);
         }
@@ -154,16 +153,7 @@ export class WebRtcRxStreamerService {
         peerDto.media
             .onRemoteStreamDo(
                 this.toRtcMediaSubscriptionId(peerDto.peerId),
-                async (stream, event) => {
-                    for (const cb of this.onRemoteStreamCallbacks.values()) {
-                        try {
-                            await cb(peerDto.peerId, stream, event);
-                        }
-                        catch (e) {
-                            console.error('Error calling onRemoteStream callback', e);
-                        }
-                    }
-                }
+                (stream, event) => this.publishRemoteStream(peerDto.peerId, stream, event)
             );
 
         if (this.status.localMediaStream) {
@@ -176,12 +166,31 @@ export class WebRtcRxStreamerService {
         }
     }
 
+    private async receivePeerMessage(peerId: PeerId, value: unknown): Promise<void> {
+        const message = decodePersistedALMessageValue(value);
+        if (message.id.senderId !== peerId) {
+            console.warn(`Message from ${message.id.senderId} does not match peerId ${peerId}.`);
+        }
+        await this.inboundRuntime.handleIncomingMessage(message, peerId);
+    }
+
+    private async publishRemoteStream(peerId: PeerId, stream: MediaStream, event: RTCTrackEvent): Promise<void> {
+        for (const callback of this.onRemoteStreamCallbacks.values()) {
+            try {
+                await callback(peerId, stream, event);
+            }
+            catch (error) {
+                console.error('Error calling onRemoteStream callback', error);
+            }
+        }
+    }
+
     removePeer(peerDto: QRtcPeerDto): void {
         this.peerDtoByPeerId.delete(peerDto.peerId);
 
         peerDto.media.removeOnRemoteStreamCallbackById(this.toRtcMediaSubscriptionId(peerDto.peerId));
         peerDto.channel.removeOnRtcMessageCallbackById(this.toRtcChannelSubscriptionId(peerDto.peerId));
-        peerDto.channel.removeOnRtcMessageCallbackById(this.toHeartbeatCallbackId(peerDto.peerId));
+        peerDto.channel.removeRtcCallbackById(this.toHeartbeatCallbackId(peerDto.peerId));
 
         const heartbeat = this.heartbeatByPeerId.get(peerDto.peerId);
 
@@ -201,17 +210,13 @@ export class WebRtcRxStreamerService {
         this.rttReportingPeerIds = new Set(peerIds);
         for (const [peerId, heartbeat] of this.heartbeatByPeerId.entries()) {
             if (!this.shouldReportRttForPeer(peerId)) {
-                heartbeat.stop();
-                this.heartbeatByPeerId.delete(peerId);
+                heartbeat.stopReporting();
             }
         }
 
         for (const peerId of peerIds) {
             const dto = this.peerDtoByPeerId.get(peerId);
-            if (
-                dto?.channel?.isOpen?.() &&
-                !this.heartbeatByPeerId.has(peerId)
-            ) {
+            if (dto?.channel.isOpen()) {
                 this.startRtcHeartbeats(peerId).catch((error) =>
                     console.error(`Failed to start RTT heartbeat for ${peerId}`, error)
                 );
@@ -256,67 +261,56 @@ export class WebRtcRxStreamerService {
     }
 
     private startRtcHeartbeats(peerId: string): Promise<void> {
-        if (!this.shouldReportRttForPeer(peerId)) {
-            return Promise.resolve();
-        }
-
-        console.log(`Data channel to ${peerId} opened. Starting heartbeat`);
-
-        {
-            const heartbeat = this.heartbeatByPeerId.get(peerId);
-            if (heartbeat) {
-                heartbeat.stop();
-            }
-        }
-
         const dto = this.peerDtoByPeerId.get(peerId);
-        if (!dto?.channel) {
-            console.warn(`No channel for peer ${peerId}. Ignoring heartbeat ...`);
+        if (!dto) {
             return Promise.resolve();
         }
 
-        const heartbeat = new WebRtcHeartbeatService(
-            {
+        let heartbeat = this.heartbeatByPeerId.get(peerId);
+        if (!heartbeat) {
+            heartbeat = new WebRtcHeartbeatService({
                 sessionId: this.input.sessionId,
                 peerSessionId: peerId,
                 channel: dto.channel,
                 maxMissedPings: defaultMaxMissedPings,
                 pingFrequencyMsecs: defaultPingFrequencyMsecs
-            }
-        );
+            });
+            this.heartbeatByPeerId.set(peerId, heartbeat);
+        }
+        heartbeat.startResponding();
+        if (this.shouldReportRttForPeer(peerId)) {
+            heartbeat.start(this.toRttMeasurementCallbacks(peerId));
+        }
+        return Promise.resolve();
+    }
 
-        const callbacks: WebRtcHeartbeatCallbacks = {
+    private toRttMeasurementCallbacks(peerId: string): WebRtcHeartbeatCallbacks {
+        return {
             onMissedHeartbeat: (peerId: string) => {
                 console.log(`Missed heartbeat from ${peerId}.`);
                 return Promise.resolve();
             },
-            onHeartbeat: (result: PingResult) => {
-                const previousVersion = this.rttVersionByPeerId.get(peerId) ?? 0;
-                const version = Math.max(previousVersion + 1, result.version);
-                this.rttVersionByPeerId.set(peerId, version);
-                const rtt: RttMeasurementInfo = {
-                    sessionIdFrom: this.input.sessionId,
-                    sessionIdTo: peerId,
-                    rttMs: result.rttMsecs,
-                    createdAtEpochMs: Date.now(),
-                    version
-                };
-                for (const [_, cb] of this.onRttMeasurementCallbacks.entries()) {
-                    cb.onHeartbeat(rtt)
-                        .catch(
-                            (e) => console.error('Error calling onRttMeasurementCallback', e)
-                        );
-                }
-
+            onHeartbeat: (result) => {
+                this.publishRttMeasurement(peerId, result);
                 return Promise.resolve();
             }
         };
+    }
 
-        heartbeat.start(callbacks);
-
-        this.heartbeatByPeerId.set(peerId, heartbeat);
-
-        return Promise.resolve();
+    private publishRttMeasurement(peerId: PeerId, result: PingResult): void {
+        const previousVersion = this.rttVersionByPeerId.get(peerId) ?? 0;
+        const version = Math.max(previousVersion + 1, result.version);
+        this.rttVersionByPeerId.set(peerId, version);
+        const rtt: RttMeasurementInfo = {
+            sessionIdFrom: this.input.sessionId,
+            sessionIdTo: peerId,
+            rttMs: result.rttMsecs,
+            createdAtEpochMs: Date.now(),
+            version
+        };
+        for (const callback of this.onRttMeasurementCallbacks.values()) {
+            callback.onHeartbeat(rtt).catch((error) => console.error('Error calling onRttMeasurementCallback', error));
+        }
     }
 
     private shouldReportRttForPeer(peerId: PeerId): boolean {
@@ -340,7 +334,7 @@ export class WebRtcRxStreamerService {
         entry: ResourceEntry,
         plan?: ALMessageHandlingPlan
     ): Promise<void> {
-        const message = JSON.parse(entry.resource) as ALMessage;
+        const message = decodePersistedALMessage(entry.resource);
 
         let exclusiveCallback;
         let wildcard = undefined;
@@ -376,10 +370,6 @@ export class WebRtcRxStreamerService {
             console.error('Error calling onMessage callback', e);
         }
     }
-
-    // --------------------------------------------------
-    // Callbacks
-    // --------------------------------------------------
 
     onAllInboxMessagesDo(callback: OnMessageCallback, forceUpdate: boolean = false): WebRtcRxStreamerService {
         if (!forceUpdate && this.onInboxMessageCallbacks.has(WebRtcRxStreamerService.ALL_IN)) {
@@ -437,10 +427,6 @@ export class WebRtcRxStreamerService {
         return this.onRttMeasurementCallbacks.delete(id);
     }
 
-    // --------------------------------------------------
-    // Queue management
-    // --------------------------------------------------
-
     async enqueueOutboxIfAbsent(msg: ALMessage): Promise<ALOutboundEnqueueResult> {
         return await this.multicast.enqueueIfAbsent(msg);
     }
@@ -456,20 +442,13 @@ export class WebRtcRxStreamerService {
         );
     }
 
-    // ---------------------------------------------------------------
-    // Media/remote stream callback registry and local media controls
-    // ---------------------------------------------------------------
-
     async setLocalMediaStream(stream: MediaStream): Promise<void> {
         this.status.localMediaStream = stream;
 
         for (const peer of this.peerDtoByPeerId.values()) {
-            if (peer?.media) {
-                await peer.media.setLocalMediaStream(stream);
-
-                peer.media.setLocalAudioEnabled(this.status.localAudioEnabled);
-                peer.media.setLocalVideoEnabled(this.status.localVideoEnabled);
-            }
+            await peer.media.setLocalMediaStream(stream);
+            peer.media.setLocalAudioEnabled(this.status.localAudioEnabled);
+            peer.media.setLocalVideoEnabled(this.status.localVideoEnabled);
         }
     }
 
@@ -477,7 +456,7 @@ export class WebRtcRxStreamerService {
         this.status.localAudioEnabled = enabled;
 
         for (const peer of this.peerDtoByPeerId.values()) {
-            peer.media?.setLocalAudioEnabled(enabled);
+            peer.media.setLocalAudioEnabled(enabled);
         }
     }
 
@@ -485,13 +464,13 @@ export class WebRtcRxStreamerService {
         this.status.localVideoEnabled = enabled;
 
         for (const peer of this.peerDtoByPeerId.values()) {
-            peer.media?.setLocalVideoEnabled(enabled);
+            peer.media.setLocalVideoEnabled(enabled);
         }
     }
 
     stopLocalMedia(kind: 'audio' | 'video' | 'all'): void {
         for (const peer of this.peerDtoByPeerId.values()) {
-            peer.media?.stopLocalMedia(kind);
+            peer.media.stopLocalMedia(kind);
         }
     }
 
