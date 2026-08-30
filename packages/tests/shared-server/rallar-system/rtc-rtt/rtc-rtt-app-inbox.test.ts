@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { AppOutboxType } from '@shared-server/rallar-system/app-outbox/app-outbox-type.ts';
+import { GroupMutationAuthorizationError } from '@shared-server/rallar-system/group-state/group-mutation-authority.ts';
 import { RtcRttInboxService } from '@shared-server/rallar-system/rtc-rtt/inbox/rtc-rtt-inbox-service.ts';
 import { toRtcRttMutationReceiptId } from '@shared-server/rallar-system/rtc-rtt/mutation/rtc-rtt-mutation-identifiers.ts';
 import { RtcRttRepository } from '@shared-server/rallar-system/rtc-rtt/persistence/rtc-rtt-repository.ts';
@@ -11,7 +12,7 @@ import type { AuditStamp, GroupMember, GroupPresenceSession, GroupSnapshot } fro
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 
 import { createTestGroup } from '../../../create-test-group.ts';
-import { createAuthorityHarness, createResilience, SCOPE } from '../group-state/inbox/group-state-inbox-test-runtime.ts';
+import { createAuthorityHarness, createResilience, SCOPE, type AuthorityHarness } from '../group-state/inbox/group-state-inbox-test-runtime.ts';
 
 describe('durable RTC RTT refinement work', () => {
     it('preserves the accepted RTT observation in final topology work', async () => {
@@ -23,31 +24,7 @@ describe('durable RTC RTT refinement work', () => {
             createdAtEpochMs: harness.nowEpochMs,
             version: 1
         };
-        const group = createRttGroupSnapshot(harness.nowEpochMs);
-        const service = new RtcRttInboxService(
-            {
-                inboxQueueReader: harness.reader,
-                resourceInboxRepository: harness.queue,
-                resourceInboxResultsRepository: harness.results,
-                database: harness.database,
-                groupStateService: harness.groupStateService,
-                mutationDependencies: {
-                    repository: new RtcRttRepository(harness.runtimeRepository, {
-                        now: () => harness.nowEpochMs
-                    }),
-                    outboxWriter: new RtcTopologyOutboxWriter({ recordWrite: () => undefined }),
-                    readPolicyInputs: async () => ({
-                        candidateGroups: [group],
-                        overlaySnapshotsByGroupKey: new Map(),
-                        degreeLimit: 2
-                    })
-                }
-            },
-            {
-                serviceId: 'rtc-rtt-app-inbox-test',
-                options: { nowEpochMs: () => harness.nowEpochMs }
-            }
-        );
+        const service = createRttService(harness);
 
         await service.enqueue({
             rtt,
@@ -68,11 +45,83 @@ describe('durable RTC RTT refinement work', () => {
             rtt,
             refinementObservationId: toRtcRttMutationReceiptId(rtt)
         });
-        if (envelope.data.kind !== 'rtt-refresh') {
-            throw new Error('Expected canonical durable RTT refresh work');
+    });
+
+    it.each([
+        { rejectedFrom: 'bob-session', first: 'rejected' },
+        { rejectedFrom: 'bob-session', first: 'canonical' },
+        { rejectedFrom: 'alice-session', first: 'rejected' },
+        { rejectedFrom: 'alice-session', first: 'canonical' }
+    ])('keeps the pair/version slot available when $rejectedFrom reports as bob, $first first', async ({ rejectedFrom, first }) => {
+        const harness = await createAuthorityHarness(['alice', 'bob']);
+        const service = createRttService(harness);
+        const canonical = {
+            rtt: {
+                sessionIdFrom: 'alice-session',
+                sessionIdTo: 'bob-session',
+                rttMs: 12,
+                createdAtEpochMs: harness.nowEpochMs,
+                version: 1
+            },
+            alSenderId: 'alice-session',
+            capturedAtEpochMs: harness.nowEpochMs
+        };
+        const rejected = {
+            ...canonical,
+            alSenderId: 'bob-session',
+            rtt: {
+                ...canonical.rtt,
+                sessionIdFrom: rejectedFrom,
+                sessionIdTo: rejectedFrom === 'bob-session' ? 'alice-session' : 'bob-session'
+            }
+        };
+        if (first === 'canonical') {
+            await service.enqueue(canonical);
         }
+        const before = await harness.queueEntries();
+
+        await expect(service.enqueue(rejected)).rejects.toBeInstanceOf(GroupMutationAuthorizationError);
+        expect(await harness.queueEntries()).toEqual(before);
+        await service.enqueue(canonical);
+        await service.enqueue(canonical);
+        expect(await harness.queueEntries()).toHaveLength(1);
+
+        await harness.reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
+        expect(harness.database.outboxEntries.size).toBe(1);
+        const entry = [...harness.database.outboxEntries.values()][0];
+        if (!entry) {
+            throw new Error('Expected accepted canonical RTT topology work');
+        }
+        const envelope = readRtcTopologyWorkEnvelope(
+            decodePersistedALMessage(entry.resource),
+            AppOutboxType.RTC_TOPOLOGY_RECOMPUTE
+        );
+        expect(envelope.data).toMatchObject({ kind: 'rtt-refresh', rtt: canonical.rtt });
     });
 });
+
+function createRttService(harness: AuthorityHarness): RtcRttInboxService {
+    const group = createRttGroupSnapshot(harness.nowEpochMs);
+    return new RtcRttInboxService(
+        {
+            inboxQueueReader: harness.reader,
+            resourceInboxRepository: harness.queue,
+            resourceInboxResultsRepository: harness.results,
+            database: harness.database,
+            groupStateService: harness.groupStateService,
+            mutationDependencies: {
+                repository: new RtcRttRepository(harness.runtimeRepository, { now: () => harness.nowEpochMs }),
+                outboxWriter: new RtcTopologyOutboxWriter({ recordWrite: () => undefined }),
+                readPolicyInputs: async () => ({
+                    candidateGroups: [group],
+                    overlaySnapshotsByGroupKey: new Map(),
+                    degreeLimit: 2
+                })
+            }
+        },
+        { serviceId: 'rtc-rtt-app-inbox-test', options: { nowEpochMs: () => harness.nowEpochMs } }
+    );
+}
 
 function createRttGroupSnapshot(nowEpochMs: number): GroupSnapshot {
     const groupRef = { ...SCOPE, groupId: 'rtc-room' };

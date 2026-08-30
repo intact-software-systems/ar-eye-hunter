@@ -3,43 +3,43 @@ import { QRtcDataChannel } from '../webrtc/QRtcDataChannel.ts';
 export const defaultMaxMissedPings = 5;
 export const defaultPingFrequencyMsecs = 5000;
 
-type WebRtcHeartbeatServiceStatusDto = {
+interface WebRtcHeartbeatServiceStatusDto {
     pingInterval: ReturnType<typeof setInterval> | undefined;
     missedPings: number;
-    lastRttMsecs: number;
-};
+}
 
-const pingMessageType: string = 'ping';
+const pingMessageType = 'ping';
 
-type PingPayload = {
-    type: string;
-    pingType: 'ping' | 'pong';
-    ts: number;
-};
+interface PingPayload {
+    readonly type: 'ping';
+    readonly pingType: 'ping' | 'pong';
+    readonly ts: number;
+}
 
-export type WebRtcHeartbeatCallbacks = {
-    onHeartbeat: (result: PingResult) => Promise<void>;
-    onMissedHeartbeat: (peerId: string) => Promise<void>;
-};
+export interface WebRtcHeartbeatCallbacks {
+    readonly onHeartbeat: (result: PingResult) => Promise<void>;
+    readonly onMissedHeartbeat: (peerId: string) => Promise<void>;
+}
 
-export type PingResult = {
-    peerSessionId: string;
-    rttMsecs: number;
-    version: number;
-};
+export interface PingResult {
+    readonly peerSessionId: string;
+    readonly rttMsecs: number;
+    readonly version: number;
+}
 
-export type WebRtcHeartbeatServiceInputDto = {
-    sessionId: string;
-    peerSessionId: string;
-    channel: QRtcDataChannel;
-    maxMissedPings: number;
-    pingFrequencyMsecs: number;
-};
+export interface WebRtcHeartbeatServiceInputDto {
+    readonly sessionId: string;
+    readonly peerSessionId: string;
+    readonly channel: QRtcDataChannel;
+    readonly maxMissedPings: number;
+    readonly pingFrequencyMsecs: number;
+}
 
 export class WebRtcHeartbeatService {
     private readonly status: WebRtcHeartbeatServiceStatusDto;
 
     private messageCallbackId: string | undefined;
+    private reportingCallbacks: WebRtcHeartbeatCallbacks | undefined;
     private versionCounter = 1;
 
     public readonly input: WebRtcHeartbeatServiceInputDto;
@@ -50,26 +50,48 @@ export class WebRtcHeartbeatService {
         this.input = input;
         this.status = {
             pingInterval: undefined,
-            missedPings: 0,
-            lastRttMsecs: 0
+            missedPings: 0
         };
     }
 
     start(callbacks: WebRtcHeartbeatCallbacks): void {
         if (this.status.pingInterval) {
-            console.warn('Heartbeat already started');
             return;
         }
 
-        this.messageCallbackId = this.setupMessageHandler(this.input, callbacks);
-        this.status.pingInterval = this.startHeartbeat(this.input, callbacks);
+        this.startResponding();
+        this.reportingCallbacks = callbacks;
+        this.status.missedPings = 0;
+        this.status.pingInterval = setInterval(
+            () => this.writeHeartbeatPing(callbacks),
+            this.input.pingFrequencyMsecs
+        );
     }
 
-    stop(): void {
+    startResponding(): void {
+        if (this.messageCallbackId !== undefined) {
+            return;
+        }
+
+        this.messageCallbackId = this.input.peerSessionId + '-heartbeat';
+        this.input.channel.onRtcMessageDo(
+            this.messageCallbackId,
+            { onMessage: (message) => this.receiveHeartbeatMessage(message) },
+            pingMessageType
+        );
+    }
+
+    stopReporting(): void {
         if (this.status.pingInterval) {
             clearInterval(this.status.pingInterval);
             this.status.pingInterval = undefined;
         }
+        this.reportingCallbacks = undefined;
+        this.status.missedPings = 0;
+    }
+
+    stop(): void {
+        this.stopReporting();
 
         if (this.messageCallbackId) {
             this.input.channel.removeOnRtcMessageCallbackById(
@@ -79,98 +101,66 @@ export class WebRtcHeartbeatService {
         }
     }
 
-    private setupMessageHandler(
-        input: WebRtcHeartbeatServiceInputDto,
-        callbacks: WebRtcHeartbeatCallbacks
-    ): string {
-        const callbackId = input.peerSessionId + '-heartbeat';
-        input.channel.onRtcMessageDo(
-            callbackId,
+    private async receiveHeartbeatMessage(value: unknown): Promise<void> {
+        const message = toHeartbeatMessage(value);
+        if (!message) {
+            return;
+        }
+
+        try {
+            if (message.pingType === 'ping') {
+                await this.input.channel.sendAsJsonString(JSON.stringify(
+                    {
+                        type: pingMessageType,
+                        pingType: 'pong',
+                        ts: message.ts
+                    } satisfies PingPayload
+                ));
+            }
+            else if (this.reportingCallbacks) {
+                this.status.missedPings = 0;
+                const rttMsecs = Math.round(performance.now() - message.ts);
+                await this.reportingCallbacks.onHeartbeat({
+                    peerSessionId: this.input.peerSessionId,
+                    rttMsecs,
+                    version: ++this.versionCounter
+                });
+            }
+        }
+        catch (error) {
+            console.error('Failed to process RTC heartbeat message', error);
+        }
+    }
+
+    private async writeHeartbeatPing(callbacks: WebRtcHeartbeatCallbacks): Promise<void> {
+        if (!this.input.channel.isOpen()) {
+            this.stop();
+            return;
+        }
+        if (this.status.missedPings >= this.input.maxMissedPings) {
+            await callbacks.onMissedHeartbeat(this.input.peerSessionId);
+            return;
+        }
+
+        this.status.missedPings++;
+        await this.input.channel.sendAsJsonString(JSON.stringify(
             {
-                onMessage: async (data: unknown) => {
-                    try {
-                        const msg = data as PingPayload;
-
-                        switch (msg.pingType) {
-                            // Respond to incoming Pings from the remote peer
-                            case 'ping': {
-                                // Echo the exact timestamp back
-                                const value: PingPayload = {
-                                    type: pingMessageType,
-                                    pingType: 'pong',
-                                    ts: msg.ts
-                                };
-
-                                await input.channel.sendAsJsonString(
-                                    JSON.stringify(value)
-                                );
-
-                                break;
-                            }
-
-                            // Process incoming Pongs to calculate RTT
-                            case 'pong': {
-                                this.status.missedPings = 0; // Reset failure counter
-
-                                if (msg.ts) {
-                                    // RTT = Time right now minus the time the ping was sent
-                                    const rttMsecs = Math.round(performance.now() - msg.ts);
-
-                                    this.status.lastRttMsecs = rttMsecs;
-
-                                    console.log(`RTT to ${this.input.peerSessionId}: ${rttMsecs}ms`);
-
-                                    await callbacks.onHeartbeat(
-                                        {
-                                            peerSessionId: this.input.peerSessionId,
-                                            rttMsecs: rttMsecs,
-                                            version: ++this.versionCounter
-                                        }
-                                    );
-                                }
-                                break;
-                            }
-                        }
-                    }
-                    catch (e) {
-                        console.error('Failed to parse DataChannel message', e);
-                    }
-                }
-            },
-            pingMessageType
-        );
-        return callbackId;
+                type: pingMessageType,
+                pingType: 'ping',
+                ts: performance.now()
+            } satisfies PingPayload
+        ));
     }
+}
 
-    private startHeartbeat(
-        input: WebRtcHeartbeatServiceInputDto,
-        callbacks: WebRtcHeartbeatCallbacks
-    ): ReturnType<typeof setInterval> {
-        return setInterval(
-            async () => {
-                if (!input.channel.isOpen()) {
-                    console.log('DataChannel is closed, stopping heartbeat');
-                    this.stop();
-                    return;
-                }
-
-                if (this.status.missedPings >= this.input.maxMissedPings) {
-                    await callbacks.onMissedHeartbeat(input.peerSessionId);
-                    return;
-                }
-
-                this.status.missedPings++;
-
-                // Use performance.now() for sub-millisecond precision
-                const pingPayload: PingPayload = {
-                    type: pingMessageType,
-                    pingType: 'ping',
-                    ts: performance.now()
-                };
-
-                await input.channel.sendAsJsonString(JSON.stringify(pingPayload));
-            },
-            this.input.pingFrequencyMsecs
-        );
+function toHeartbeatMessage(value: unknown): PingPayload | undefined {
+    if (
+        typeof value !== 'object' || value === null ||
+        !('type' in value) || value.type !== 'ping' ||
+        !('pingType' in value) || (value.pingType !== 'ping' && value.pingType !== 'pong') ||
+        !('ts' in value) || typeof value.ts !== 'number' || !Number.isFinite(value.ts)
+    ) {
+        return undefined;
     }
+    return { type: 'ping', pingType: value.pingType, ts: value.ts };
 }

@@ -1,3 +1,5 @@
+import { isRtcRttCanonicalReporter } from '@shared/rtc/rtt-reporting-policy.ts';
+
 import { type AppInboxEnqueueInput } from '../../app-inbox/app-inbox-contracts.ts';
 import { AppInboxType } from '../../app-inbox/app-inbox-contracts.ts';
 import { encodeAppInboxCommand } from '../../app-inbox/app-inbox-registration-codecs.ts';
@@ -38,6 +40,7 @@ export interface VerifyRtcRttAppInboxAuthorityInput {
 export async function createRtcRttDurableEnqueue(
     input: CreateRtcRttDurableEnqueueInput
 ): Promise<AppInboxEnqueueInput> {
+    requireCanonicalRtcRttSender(input.request);
     const session = await input.groupStateService.readIssuedAuthSession(input.request.alSenderId);
     if (!session || session.expiresAtEpochMs <= input.nowEpochMs()) {
         throw new GroupMutationAuthorizationError(
@@ -81,6 +84,16 @@ export async function createRtcRttDurableEnqueue(
         data: encodeAppInboxCommand(command, 'RTC RTT AppInbox command'),
         authority: decodeJsonWireValue(authority, 'RTC RTT AppInbox authority')
     };
+}
+
+function requireCanonicalRtcRttSender(request: CreateRtcRttAppInboxEnqueueInput): void {
+    validateRtcRttMeasurement(request.rtt);
+    if (
+        request.alSenderId !== request.rtt.sessionIdFrom ||
+        !isRtcRttCanonicalReporter(request.rtt.sessionIdFrom, request.rtt.sessionIdTo)
+    ) {
+        throw new GroupMutationAuthorizationError('RTC RTT sender must own the canonical reporting endpoint.');
+    }
 }
 
 export function decodeRtcRttAppInboxAuthority(
