@@ -78,9 +78,8 @@ export class WebRtcHeartbeatService {
             this.messageCallbackId,
             {
                 onMessage: async (value) => {
-                    const message = toHeartbeatMessage(value);
-                    if (message) {
-                        await this.receiveHeartbeatMessage(message);
+                    if (isHeartbeatMessage(value)) {
+                        await this.receiveHeartbeatMessage(value);
                     }
                 }
             },
@@ -155,14 +154,9 @@ export class WebRtcHeartbeatService {
     }
 }
 
-function toHeartbeatMessage(value: unknown): PingPayload | undefined {
-    if (
-        typeof value !== 'object' || value === null ||
-        !('type' in value) || value.type !== 'ping' ||
-        !('pingType' in value) || (value.pingType !== 'ping' && value.pingType !== 'pong') ||
-        !('ts' in value) || typeof value.ts !== 'number' || !Number.isFinite(value.ts)
-    ) {
-        return undefined;
-    }
-    return { type: 'ping', pingType: value.pingType, ts: value.ts };
+function isHeartbeatMessage(value: unknown): value is PingPayload {
+    return typeof value === 'object' && value !== null &&
+        'type' in value && value.type === 'ping' &&
+        'pingType' in value && (value.pingType === 'ping' || value.pingType === 'pong') &&
+        'ts' in value && typeof value.ts === 'number' && Number.isFinite(value.ts);
 }
