@@ -1869,6 +1869,13 @@ use `formation-automation`; neither criterion nor publication authority is widen
 durable surface and requires its corruption, race, rollback and replay proofs, plus topology-replay
 and formation-large validation alongside Slice 8d's existing gates.
 
+The legacy-to-canonical stage cutover also moves attempt-clock, deadline and criterion eligibility
+from the formerly dialing `reconfiguring` stage to `reconnecting`. A held layout cannot activate
+without `connect`, and a dialed reconnection must be able to reach the criterion. Automatic retry
+remains the initial-formation continuation from `forming`; an unexhausted failed reconnection returns
+to `active` with accepted traffic intact, rather than unconditionally reconfiguring past the group's
+replanning policy. Failure landings that cannot consume retry work must not arm dead timers.
+
 ## Slice 9 — In-flight pacing
 
 Three prerequisites are missing: (1) `ensurePeerConnectionStarted` returns a right value whether or not
