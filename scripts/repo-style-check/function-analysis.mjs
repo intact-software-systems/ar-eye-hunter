@@ -181,6 +181,20 @@ function extractFunctionBody(raw, closeParenthesisIndex) {
                 braceDepth === 0 &&
                 bracketDepth === 0 &&
                 angleDepth === 0 &&
+                character === ';'
+            ) {
+                return {
+                    returnType: raw.slice(returnTypeStart, cursor).trim(),
+                    bodyStart: -1,
+                    bodyEnd: -1
+                };
+            }
+
+            if (
+                parenthesisDepth === 0 &&
+                braceDepth === 0 &&
+                bracketDepth === 0 &&
+                angleDepth === 0 &&
                 character === '=' &&
                 nextCharacter === '>'
             ) {

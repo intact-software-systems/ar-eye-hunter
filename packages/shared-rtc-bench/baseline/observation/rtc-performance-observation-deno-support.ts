@@ -19,6 +19,11 @@ const encoder = new TextEncoder();
 
 export type RtcPerformanceObservationDenoPort = Pick<RtcBaselineDenoPort, 'mkdir' | 'readFile' | 'writeFile'>;
 
+export interface RtcPerformanceObservationOutputWritten {
+    readonly archivePath: string;
+    readonly indexEntryPath: string;
+}
+
 export async function readRtcPerformanceObservationSource(
     adapters: Pick<DenoRtcBaselineAdapters, 'git'>
 ) {
@@ -94,7 +99,7 @@ export async function writeRtcPerformanceObservationOutput(
     runtime: RtcPerformanceObservationDenoPort,
     outputDirectory: string,
     archive: RtcPerformanceObservationArchiveWritten
-) {
+): Promise<RtcBaselineResult<RtcPerformanceObservationOutputWritten>> {
     const archivePath = join(outputDirectory, basename(archive.indexEntry.archive.path));
     const indexEntryPath = join(outputDirectory, 'index-entry.jsonl');
     try {

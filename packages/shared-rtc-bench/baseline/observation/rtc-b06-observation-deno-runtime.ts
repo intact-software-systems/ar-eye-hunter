@@ -27,6 +27,11 @@ export interface RtcB06LiveProducerCommandInput {
     readonly attempt: RtcBaselineAttemptLocatorDto;
 }
 
+export interface RtcB06LiveProducerCommand {
+    readonly executable: string;
+    readonly arguments: readonly string[];
+}
+
 export interface RtcB06ObservationDenoRuntimeInput {
     readonly runtime: RtcBaselineDenoPort;
     readonly adapters: DenoRtcBaselineAdapters;
@@ -59,7 +64,7 @@ export function createRtcB06ObservationDenoRuntime(
 
 export function createRtcB06LiveProducerCommand(
     input: RtcB06LiveProducerCommandInput
-) {
+): RtcB06LiveProducerCommand {
     return {
         executable: 'env',
         arguments: [
