@@ -59,7 +59,7 @@ function validateReceiptOutcome({
     validateMutationReceipt(
         computed.receipt,
         command.aggregateRef,
-        'Group mutation computed receipt'
+        `Group ${command.operation} mutation computed receipt`
     );
     if (computed.receipt.commandHash !== facts.commandHash) {
         throw new TypeError('Group mutation computed receipt hash differs from facts');

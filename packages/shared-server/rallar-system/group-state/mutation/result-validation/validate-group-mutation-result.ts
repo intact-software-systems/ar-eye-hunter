@@ -161,7 +161,7 @@ function validateMutationReceiptOutcome(receipt: Record<string, unknown>, label:
         throw new TypeError(`${label} join-code fields require an applied outcome`);
     }
     if (receipt.outcome === 'no-op') {
-        validateNoOpReceipt(receipt, causalRevision, label);
+        validateNoOpReceipt(receipt, label);
         return;
     }
     validateRejectedReceipt(receipt, causalRevision, label);
@@ -192,17 +192,16 @@ function validateAppliedReceipt({
     }
 }
 
+// Physical storage revisions and semantic group revisions are independent:
+// presence writes advance the group row as an authority fence without changing
+// the group snapshot, while reincarnation can restore a newer semantic revision.
 function validateNoOpReceipt(
     receipt: Record<string, unknown>,
-    causalRevision: { readonly groupRevision: number; },
     label: string
 ): void {
     requirePositiveSafeInteger(receipt.snapshotVersion, `${label} no-op snapshotVersion`);
-    if (
-        receipt.acceptedStorageRevision === null ||
-        causalRevision.groupRevision !== (receipt.acceptedStorageRevision as number) + 1
-    ) {
-        throw new TypeError(`${label} no-op revision differs from its predecessor`);
+    if (receipt.acceptedStorageRevision === null) {
+        throw new TypeError(`${label} no-op acceptedStorageRevision is required`);
     }
 }
 
@@ -222,7 +221,4 @@ function validateRejectedReceipt(
         return;
     }
     requirePositiveSafeInteger(receipt.snapshotVersion, `${label} rejected snapshotVersion`);
-    if (causalRevision.groupRevision !== (receipt.acceptedStorageRevision as number) + 1) {
-        throw new TypeError(`${label} rejected revision differs from its predecessor`);
-    }
 }

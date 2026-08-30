@@ -200,7 +200,7 @@ Deno.test(
 );
 
 Deno.test(
-    'PGlite AppGroup commits group mutation and summary fan-out through fenced queue transactions',
+    'PGlite AppGroup commits group mutations, including active-member no-ops, through fenced queue transactions',
     async () => {
         await withPGliteSql(async (sql) => {
             const runtime = new PSqlRuntimeStateRepository(sql);
@@ -220,6 +220,17 @@ Deno.test(
             };
             const authSessions = new AuthSessionRepository(runtime);
             await authSessions.putSession(authority);
+            const joiningAuthorities = ['bob', 'carol'].map((clientId) => ({
+                clientId,
+                sessionId: `${clientId}-session`,
+                accessToken: `${clientId}-token`,
+                username: clientId,
+                issuedAtEpochMs: nowEpochMs - 1_000,
+                expiresAtEpochMs: FUTURE_MS
+            }));
+            for (const joiningAuthority of joiningAuthorities) {
+                await authSessions.putSession(joiningAuthority);
+            }
             const groupState = createGroupStateService({
                 readPlannedLayoutRow: () => Promise.resolve(null),
                 readAcceptedLayoutRow: () => Promise.resolve(null),
@@ -280,7 +291,12 @@ Deno.test(
                         createdByPrincipalId: authority.clientId,
                         actorPrincipalId: authority.clientId,
                         actorSessionId: authority.sessionId,
-                        requestId: 'pglite-app-group-create'
+                        requestId: 'pglite-app-group-create',
+                        lifecyclePolicy: {
+                            preset: 'managed',
+                            admission: { mode: 'open' },
+                            activation: { mode: 'manual' }
+                        }
                     }
                 }
             }, authority);
@@ -292,6 +308,54 @@ Deno.test(
             const result = await pending;
             assert.equal(result.right !== undefined, true);
 
+            for (const joiningAuthority of joiningAuthorities) {
+                const resourceId = `pglite-app-group-${joiningAuthority.clientId}-join`;
+                const join = appGroup.processAuthenticatedGroupEntryUntilCompletion({
+                    type: AppInboxType.GROUP_JOIN,
+                    resourceId,
+                    contextId: 'vertical-app:main:vertical-group',
+                    senderId: joiningAuthority.clientId,
+                    data: {
+                        scope: { applicationId: 'vertical-app', workspaceId: 'main' },
+                        groupId: 'vertical-group',
+                        request: {
+                            actorPrincipalId: joiningAuthority.clientId,
+                            actorSessionId: joiningAuthority.sessionId,
+                            requestId: resourceId
+                        }
+                    }
+                }, joiningAuthority);
+                await waitForPGliteQueueRow(sql, 'APP_INBOX', 'NEW');
+                await inboxReader.dequeueInbox(
+                    InboxQueueReader.INBOX_DEQUEUE_TYPES,
+                    toResilienceDto()
+                );
+                assert.equal((await join).left, undefined);
+            }
+
+            const duplicateJoin = appGroup.processAuthenticatedGroupEntryUntilCompletion({
+                type: AppInboxType.GROUP_JOIN,
+                resourceId: 'pglite-app-group-owner-rejoin',
+                contextId: 'vertical-app:main:vertical-group',
+                senderId: authority.clientId,
+                data: {
+                    scope: { applicationId: 'vertical-app', workspaceId: 'main' },
+                    groupId: 'vertical-group',
+                    request: {
+                        actorPrincipalId: authority.clientId,
+                        actorSessionId: authority.sessionId,
+                        requestId: 'pglite-app-group-owner-rejoin'
+                    }
+                }
+            }, authority);
+            await waitForPGliteQueueRow(sql, 'APP_INBOX', 'NEW');
+            await inboxReader.dequeueInbox(
+                InboxQueueReader.INBOX_DEQUEUE_TYPES,
+                toResilienceDto()
+            );
+            const duplicateJoinResult = await duplicateJoin;
+            assert.equal(duplicateJoinResult.left, undefined);
+
             const ref = {
                 applicationId: 'vertical-app',
                 workspaceId: 'main',
@@ -301,7 +365,7 @@ Deno.test(
                 (await new GroupStateRepository(runtime, new PSqlGroupStateEventRepository(runtime.sql)).findGroup(ref))?.displayName,
                 'Vertical Group'
             );
-            assert.equal((await new PSqlGroupStateEventRepository(sql).listGroupEvents(ref)).length, 1);
+            assert.equal((await new PSqlGroupStateEventRepository(sql).listGroupEvents(ref)).length, 3);
             const beforeSummary = await sql<ResourceInboxStatusRow[]>`
       select ri_type_id, ri_status from resource_inbox order by ri_row_id
     `;
@@ -310,14 +374,14 @@ Deno.test(
                     row.ri_type_id === 'APP_INBOX' &&
                     row.ri_status === 'COMPLETED'
                 ).length,
-                1
+                4
             );
             assert.equal(
                 beforeSummary.filter((row) =>
                     row.ri_type_id === 'APP_OUTBOX' &&
                     row.ri_status === 'NEW'
                 ).length,
-                1
+                3
             );
             assert.equal(beforeSummary.filter((row) => row.ri_type_id === 'WS_OUTBOX').length, 0);
             assert.equal(
@@ -326,7 +390,7 @@ Deno.test(
       select count(*) as count from resource_inbox_results
     `)[0]?.count
                 ),
-                1
+                4
             );
 
             await outboxReader.dequeueOutbox(
