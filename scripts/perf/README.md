@@ -78,10 +78,18 @@ published through an observation-only pull request when
 Requests access. Archive-only merges are excluded from product deploy and
 supported distributed-manifest push triggers.
 
+RTC-B06 E3-memory uses a separate manual-only workflow. It runs the governed
+default, all-scenarios, and 100-cycle retention catalog attempts through the
+actual three-browser memory-mode recipe, captures a controlled repeat only
+when required, and publishes the same verified append-only archive shape under
+`performance-observations/rtc-b06/**`. The producer strips inherited database,
+ICE, and scenario configuration before applying the selected case.
+
 Local capture and archive verification commands, archive contents, and
 failure semantics are documented in the package README. Local outputs still
 belong under `tmp/perf/`; only the scheduled publication path writes the
-append-only `performance-observations/rtc-b05/**` repository stream.
+append-only `performance-observations/rtc-b05/**` or
+`performance-observations/rtc-b06/**` repository stream.
 
 ## Prerequisites
 

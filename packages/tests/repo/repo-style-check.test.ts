@@ -164,6 +164,24 @@ describe('repo style checker', () => {
         expect(runChecker(fixtureRoot, '--output-contracts')).toContain('Function computeThing');
     });
 
+    it('recognizes named output contracts on overloaded functions', () => {
+        const fixtureRoot = createFixture({
+            'computed.ts': [
+                'interface FirstInput { readonly kind: \'first\'; }',
+                'interface SecondInput { readonly kind: \'second\'; }',
+                'interface Computed { readonly first: number; readonly second: number; }',
+                '',
+                'function computeThing(input: FirstInput & { readonly selected: true }): Computed;',
+                'function computeThing(input: SecondInput & { readonly selected: true }): Computed;',
+                'function computeThing(input: FirstInput | SecondInput): Computed {',
+                '  return { first: input.kind.length, second: 2 };',
+                '}'
+            ].join('\n')
+        });
+
+        expect(runChecker(fixtureRoot, '--output-contracts')).not.toContain('without an explicit output contract');
+    });
+
     it('does not report unknown when the word only appears in a string', () => {
         const fixtureRoot = createFixture({
             'message.ts': 'const message = \'Normalize unknown values at the boundary.\';'

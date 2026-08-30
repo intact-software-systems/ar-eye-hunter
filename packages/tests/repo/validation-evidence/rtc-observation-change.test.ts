@@ -38,7 +38,32 @@ describe('RTC observation-only change', () => {
             observationTouched: true,
             reason: 'rtc-observation-only',
             archivePath,
+            indexPath,
             indexEntry: JSON.parse(indexLine(archivePath))
+        });
+    });
+
+    it('accepts one canonical RTC-B06 archive and its dedicated append-only index', () => {
+        const fixture = createFixture(false);
+        const b06ObservationId = '20260830T100000Z-c0cadb8216cf-e3-memory-gh987654321-a3';
+        const b06ArchivePath = `performance-observations/rtc-b06/2026/08/30/${b06ObservationId}.zip`;
+        const b06IndexPath = 'performance-observations/rtc-b06/index.jsonl';
+        const head = commit(fixture.root, 'B06 observation', {
+            [b06ArchivePath]: 'zip-bytes',
+            [b06IndexPath]: `${indexLine(b06ArchivePath)}\n`
+        });
+
+        expect(inspectRtcObservationChange({
+            repoRoot: fixture.root,
+            base: fixture.base,
+            head
+        })).toEqual({
+            observationOnly: true,
+            observationTouched: true,
+            reason: 'rtc-observation-only',
+            archivePath: b06ArchivePath,
+            indexPath: b06IndexPath,
+            indexEntry: JSON.parse(indexLine(b06ArchivePath))
         });
     });
 

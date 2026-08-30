@@ -1,17 +1,21 @@
 import type { RtcBaselineJson, RtcBaselineResult } from '../contracts/rtc-baseline-contracts.ts';
 import type { RtcB05ObservationOutput, RtcB05ObservationRunInput } from './rtc-b05-observation-runner.ts';
+import type { RtcB06ObservationOutput } from './rtc-b06-observation-runner.ts';
 import type { VerifyRtcPerformanceObservationArchiveInput } from './rtc-performance-observation-archive.ts';
 import { parseRtcPerformanceObservationCommand } from './rtc-performance-observation-cli-grammar.ts';
 
+interface RtcPerformanceObservationRunner {
+    run(input: RtcB05ObservationRunInput): Promise<
+        RtcBaselineResult<{
+            observation: { observationId: string; };
+            output: RtcB05ObservationOutput | RtcB06ObservationOutput;
+        }>
+    >;
+}
+
 export interface RtcPerformanceObservationCliDependencies {
-    readonly runner: {
-        run(input: RtcB05ObservationRunInput): Promise<
-            RtcBaselineResult<{
-                observation: { observationId: string; };
-                output: RtcB05ObservationOutput;
-            }>
-        >;
-    };
+    readonly browserRunner: RtcPerformanceObservationRunner;
+    readonly liveRtcRunner: RtcPerformanceObservationRunner;
     readonly readFile: (path: string) => Promise<Uint8Array>;
     readonly verifyArchive: (
         input: VerifyRtcPerformanceObservationArchiveInput
@@ -34,9 +38,12 @@ export async function runRtcPerformanceObservationCli(
         input.writeStderr(`${JSON.stringify(parsed.issues)}\n`);
         return 64;
     }
-    if (parsed.value.kind === 'observe-browser') {
+    if (parsed.value.kind !== 'verify-observation') {
         const { kind: _kind, ...runInput } = parsed.value;
-        const result = await input.runner.run(runInput);
+        const runner = parsed.value.kind === 'observe-browser'
+            ? input.browserRunner
+            : input.liveRtcRunner;
+        const result = await runner.run(runInput);
         if (!result.ok) {
             input.writeStderr(`${JSON.stringify(result.issues)}\n`);
             return 1;

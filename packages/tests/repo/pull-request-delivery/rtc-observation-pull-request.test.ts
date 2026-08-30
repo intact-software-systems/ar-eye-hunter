@@ -11,8 +11,10 @@ const input = {
 };
 
 const observation = {
+    stream: 'rtc-b05',
     observationId: '20260827T031500Z-eaf526518c70-e2-browser-gh123456789-a2',
     archivePath: 'performance-observations/rtc-b05/2026/08/27/20260827T031500Z-eaf526518c70-e2-browser-gh123456789-a2.zip',
+    indexPath: 'performance-observations/rtc-b05/index.jsonl',
     indexLine: '{"schema":"rallar.rtc-performance-observation.index-entry.v1"}',
     sourceCommit: 'eaf526518c70e3b396dad91c008125a622b38b00',
     outcome: 'passed',
@@ -59,6 +61,38 @@ describe('RTC observation pull-request publication', () => {
                 headBranch: 'automation/rtc-b05-observation-gh123456789-a2',
                 title: `perf(rtc): archive ${observation.observationId}`,
                 body: expect.stringMatching(/main may continue to move/u)
+            })
+        ]);
+    });
+
+    it('uses the RTC-B06 stream identity for its branch and publication copy', async () => {
+        const b06Observation = {
+            ...observation,
+            stream: 'rtc-b06',
+            observationId: '20260830T100000Z-c0cadb8216cf-e3-memory-gh987654321-a3',
+            archivePath: 'performance-observations/rtc-b06/2026/08/30/' +
+                '20260830T100000Z-c0cadb8216cf-e3-memory-gh987654321-a3.zip',
+            indexPath: 'performance-observations/rtc-b06/index.jsonl',
+            indexLine: '{"schema":"rallar.rtc-b06-performance-observation.index-entry.v1"}',
+            runId: 987654321,
+            runAttempt: 3
+        };
+        const fixture = publicationFixture({ observation: b06Observation });
+
+        await publishRtcObservationPullRequest(
+            { ...input, runId: 987654321, runAttempt: 3 },
+            fixture.dependencies
+        );
+
+        expect(fixture.branchInputs).toEqual([
+            expect.objectContaining({
+                branchName: 'automation/rtc-b06-observation-gh987654321-a3',
+                observation: b06Observation
+            })
+        ]);
+        expect(fixture.pullRequestInputs).toEqual([
+            expect.objectContaining({
+                headBranch: 'automation/rtc-b06-observation-gh987654321-a3'
             })
         ]);
     });
@@ -162,6 +196,7 @@ interface PublicationFixtureConfiguration {
     readonly defaultBranch?: string;
     readonly dirty?: boolean;
     readonly mainState?: 'missing' | 'published' | 'conflict';
+    readonly observation?: typeof observation;
     readonly pullRequest?: PullRequestState;
     readonly verifyError?: string;
 }
@@ -194,7 +229,7 @@ function publicationFixture(configuration: PublicationFixtureConfiguration = {})
         },
         loadObservation() {
             calls.push('load-observation');
-            return observation;
+            return configuration.observation ?? observation;
         },
         assertWorkspaceClean() {
             calls.push('assert-clean');
@@ -251,7 +286,7 @@ function publicationFixture(configuration: PublicationFixtureConfiguration = {})
                 state: 'OPEN' as const,
                 merged: false,
                 baseBranch: 'main',
-                headBranch: 'automation/rtc-b05-observation-gh123456789-a2',
+                headBranch: pullRequestInput.headBranch,
                 autoMergeArmed: false
             };
         },

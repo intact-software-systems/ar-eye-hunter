@@ -1,10 +1,4 @@
-import {
-    expect,
-    type APIRequestContext,
-    type BrowserContext,
-    type Page,
-    type TestInfo
-} from '@playwright/test';
+import { expect, type APIRequestContext, type BrowserContext, type Page, type TestInfo } from '@playwright/test';
 import { lstat, mkdir, open, readFile, realpath, writeFile } from 'node:fs/promises';
 import { dirname, isAbsolute, relative, resolve, sep } from 'node:path';
 import { deriveRtcBaselineExternalAttempts } from '../../../packages/shared-rtc-bench/baseline/catalog/rtc-baseline-workload-manifest.ts';
@@ -266,11 +260,13 @@ export class LiveRtcControlClient {
     readonly #baseUrl: string;
     readonly #diagnosticsOutDir: string | undefined;
 
-    constructor(input: Readonly<{
-        request: APIRequestContext;
-        baseUrl: string;
-        diagnosticsOutDir?: string;
-    }>) {
+    constructor(
+        input: Readonly<{
+            request: APIRequestContext;
+            baseUrl: string;
+            diagnosticsOutDir?: string;
+        }>
+    ) {
         this.#request = input.request;
         this.#baseUrl = input.baseUrl;
         this.#diagnosticsOutDir = input.diagnosticsOutDir;
@@ -288,7 +284,9 @@ export class LiveRtcControlClient {
         input: LiveRtcControlClient.ExecuteInput
     ): Promise<LiveRtcControlClient.Result> {
         const response = await this.#request.post(
-            `${this.#baseUrl}/runs/${encodeURIComponent(input.runId)}/agents/${encodeURIComponent(input.agentId)}/commands`,
+            `${this.#baseUrl}/runs/${encodeURIComponent(input.runId)}/agents/${
+                encodeURIComponent(input.agentId)
+            }/commands`,
             {
                 data: {
                     commandId: input.commandId,
@@ -366,8 +364,7 @@ export class LiveRtcControlClient {
             const run = await this.fetchRun(input.runId);
             return run.events?.some((event) => isMessageFor(event, input)) ?? false;
         }, {
-            message:
-                `Expected ${input.agentId} to receive ${input.transport} ${input.deliveryMode} ${input.matrixId}`,
+            message: `Expected ${input.agentId} to receive ${input.transport} ${input.deliveryMode} ${input.matrixId}`,
             timeout: 60_000
         }).toBe(true);
         return performance.now() - input.startedAtMs;
@@ -381,8 +378,7 @@ export class LiveRtcControlClient {
             const result = await this.executeResult({
                 runId: input.runId,
                 agentId: input.agent.agentId,
-                commandId:
-                    `health-ready-${input.agent.prefix.toLowerCase()}-${input.suffix}-${attempt++}`,
+                commandId: `health-ready-${input.agent.prefix.toLowerCase()}-${input.suffix}-${attempt++}`,
                 command: { kind: 'health' },
                 timeoutMs: 15_000
             }).catch(() => undefined);
@@ -395,8 +391,9 @@ export class LiveRtcControlClient {
                 )?.readyPeerIds
             );
         }, {
-            message:
-                `Expected ${input.agent.agentId} to see ready peers ${input.expectedPeerIds.join(', ')} for ${input.suffix}`,
+            message: `Expected ${input.agent.agentId} to see ready peers ${
+                input.expectedPeerIds.join(', ')
+            } for ${input.suffix}`,
             timeout: 60_000
         }).toEqual(expect.arrayContaining([...input.expectedPeerIds]));
         return performance.now() - input.startedAtMs;
@@ -410,8 +407,7 @@ export class LiveRtcControlClient {
             const result = await this.executeResult({
                 runId: input.runId,
                 agentId: input.agent.agentId,
-                commandId:
-                    `health-absent-${input.agent.prefix.toLowerCase()}-${input.suffix}-${attempt++}`,
+                commandId: `health-absent-${input.agent.prefix.toLowerCase()}-${input.suffix}-${attempt++}`,
                 command: { kind: 'health' },
                 timeoutMs: 15_000
             }).catch(() => undefined);
@@ -421,16 +417,19 @@ export class LiveRtcControlClient {
             const readyPeerIds = this.readyPeerIds(result);
             return input.departedPeerIds.filter((peerId) => readyPeerIds.includes(peerId));
         }, {
-            message:
-                `Expected ${input.agent.agentId} to observe departed peers ${input.departedPeerIds.join(', ')} for ${input.suffix}`,
+            message: `Expected ${input.agent.agentId} to observe departed peers ${
+                input.departedPeerIds.join(', ')
+            } for ${input.suffix}`,
             timeout: 60_000
         }).toEqual([]);
     }
 
-    async unexpectedDeliveryCount(input: Readonly<{
-        runId: string;
-        scenarios: readonly LiveRtcControlClient.DeliveryScenario[];
-    }>): Promise<number> {
+    async unexpectedDeliveryCount(
+        input: Readonly<{
+            runId: string;
+            scenarios: readonly LiveRtcControlClient.DeliveryScenario[];
+        }>
+    ): Promise<number> {
         const run = await this.fetchRun(input.runId);
         return countUnexpectedLiveRtcDeliveries({
             events: run.events ?? [],
@@ -438,10 +437,12 @@ export class LiveRtcControlClient {
         });
     }
 
-    async expectArtifactBundle(input: Readonly<{
-        runId: string;
-        commandIds: readonly string[];
-    }>): Promise<void> {
+    async expectArtifactBundle(
+        input: Readonly<{
+            runId: string;
+            commandIds: readonly string[];
+        }>
+    ): Promise<void> {
         const response = await this.#request.get(
             `${this.#baseUrl}/runs/${encodeURIComponent(input.runId)}/artifacts`
         );
@@ -457,10 +458,12 @@ export class LiveRtcControlClient {
         expect(events).toContain('rallar.browser');
     }
 
-    async attachRunSummary(input: Readonly<{
-        testInfo: TestInfo;
-        runId: string;
-    }>): Promise<void> {
+    async attachRunSummary(
+        input: Readonly<{
+            testInfo: TestInfo;
+            runId: string;
+        }>
+    ): Promise<void> {
         const run = await this.fetchRun(input.runId);
         const body = JSON.stringify(
             {
@@ -488,8 +491,7 @@ export class LiveRtcControlClient {
         const commandIds: string[] = [];
         const agents: LiveRtcAgentDiagnostics[] = [];
         for (const agent of input.agents) {
-            const commandId =
-                `rtc-diagnostics-${agent.prefix.toLowerCase()}-${input.label}`;
+            const commandId = `rtc-diagnostics-${agent.prefix.toLowerCase()}-${input.label}`;
             commandIds.push(commandId);
             const result = await this.executeOk({
                 runId: input.runId,
@@ -541,7 +543,7 @@ export class LiveRtcControlClient {
 
 const FIVE_MEBIBYTES = 5 * 1024 * 1024;
 const LIVE_RTC_BASELINE_ID =
-    /^(?:\d{8}-[0-9a-f]{12}-e(?:3-memory|4-pg)|\d{8}T\d{9}Z-[0-9a-f]{12}-e(?:3-memory|4-pg)-local)(?:-repeat-01)?$/u;
+    /^(?:\d{8}-[0-9a-f]{12}-e(?:3-memory|4-pg)|\d{8}T\d{9}Z-[0-9a-f]{12}-e(?:3-memory|4-pg)-local|\d{8}T\d{6}Z-[0-9a-f]{12}-e(?:3-memory|4-pg)-gh[1-9][0-9]*-a[1-9][0-9]*)(?:-repeat-01)?$/u;
 const attemptIdentityFields = [
     'workloadId',
     'caseId',
@@ -791,23 +793,26 @@ export async function writeLiveRtcRetentionCohortIfComplete(
     }
     const memberSampleIds = new Set(identity.memberSampleIds);
     const locators = deriveRtcBaselineExternalAttempts(manifest, 'RTC-B06').filter(
-        (locator) => manifest.outerAttempts.some((attempt) =>
-            attempt.workloadId === locator.workloadId &&
-            attempt.caseId === locator.caseId &&
-            attempt.inputKey === locator.inputKey &&
-            attempt.intendedPhase === locator.intendedPhase &&
-            attempt.outerOrdinal === locator.outerOrdinal &&
-            attempt.sampleIds.length === 1 &&
-            memberSampleIds.has(attempt.sampleIds[0]!)
-        )
+        (locator) =>
+            manifest.outerAttempts.some((attempt) =>
+                attempt.workloadId === locator.workloadId &&
+                attempt.caseId === locator.caseId &&
+                attempt.inputKey === locator.inputKey &&
+                attempt.intendedPhase === locator.intendedPhase &&
+                attempt.outerOrdinal === locator.outerOrdinal &&
+                attempt.sampleIds.length === 1 &&
+                memberSampleIds.has(attempt.sampleIds[0]!)
+            )
     );
     if (locators.length !== identity.memberSampleIds.length) {
         throw new Error('Live RTC retention cohort manifest membership is incomplete.');
     }
     const attempts = await Promise.all(
-        locators.map((locator) => readExternalAttempt(
-            resolve(baselineRoot, locator.rawResultRelativePath)
-        ))
+        locators.map((locator) =>
+            readExternalAttempt(
+                resolve(baselineRoot, locator.rawResultRelativePath)
+            )
+        )
     );
     const cohort = buildLiveRtcRetentionCohort({ identity, attempts });
     return writeLiveRtcPerformanceEvidence({
@@ -961,14 +966,13 @@ function attemptIssues(input: BuildLiveRtcExternalAttemptInput): RtcBaselineIssu
         issues.push(assertionIssue('unexpectedDeliveryCount', 'Unexpected RTC deliveries were observed.'));
     }
     for (const required of requiredTimingSeries(evidence.identity.caseId)) {
-        if (!evidence.timings.some((timing) =>
-            timing.kind === required.kind && timing.transport === required.transport
-        )) {
+        if (
+            !evidence.timings.some((timing) => timing.kind === required.kind && timing.transport === required.transport)
+        ) {
             issues.push({
                 path: '$.rawEvidence.timings',
                 code: 'missing-receiver-timing',
-                message:
-                    `Receiver-observed ${required.kind} timing is required for ${required.transport}.`
+                message: `Receiver-observed ${required.kind} timing is required for ${required.transport}.`
             });
         }
     }
@@ -979,10 +983,13 @@ function attemptIssues(input: BuildLiveRtcExternalAttemptInput): RtcBaselineIssu
             message: 'At least one complete three-agent RTC diagnostics snapshot is required.'
         });
     }
-    else if (evidence.diagnostics.some(
-        (checkpoint) => checkpoint.agents.length !== 3 ||
-            new Set(checkpoint.agents.map((agent) => agent.agentId)).size !== 3
-    )) {
+    else if (
+        evidence.diagnostics.some(
+            (checkpoint) =>
+                checkpoint.agents.length !== 3 ||
+                new Set(checkpoint.agents.map((agent) => agent.agentId)).size !== 3
+        )
+    ) {
         issues.push({
             path: '$.rawEvidence.diagnostics',
             code: 'incomplete-rtc-diagnostics',
@@ -1061,7 +1068,8 @@ function retentionAttemptIssues(
         : [{
             path: '$.rawEvidence.retention.checkpoints',
             code: 'invalid-retention-checkpoints',
-            message: 'Retention requires cycle 0 and every tenth cycle through 100 with three distinct agents and post-GC facts.'
+            message:
+                'Retention requires cycle 0 and every tenth cycle through 100 with three distinct agents and post-GC facts.'
         }];
     const stateReturned = liveRtcRetentionStateReturned(
         evidence.retention.checkpoints
@@ -1371,10 +1379,10 @@ function decodeLaneDiagnostics(
 ): LiveRtcLaneDiagnostics | null {
     const lane = jsonRecord(value);
     return lane &&
-        typeof lane.peerId === 'string' &&
-        typeof lane.laneId === 'string' &&
-        typeof lane.isOpen === 'boolean' &&
-        typeof lane.isReconnectable === 'boolean'
+            typeof lane.peerId === 'string' &&
+            typeof lane.laneId === 'string' &&
+            typeof lane.isOpen === 'boolean' &&
+            typeof lane.isReconnectable === 'boolean'
         ? {
             peerId: lane.peerId,
             laneId: lane.laneId,
@@ -1388,16 +1396,16 @@ function jsonRecord(
     value: RtcBaselineJson | undefined
 ): { [key: string]: RtcBaselineJson; } | null {
     return value !== undefined &&
-        typeof value === 'object' &&
-        value !== null &&
-        !Array.isArray(value)
+            typeof value === 'object' &&
+            value !== null &&
+            !Array.isArray(value)
         ? value
         : null;
 }
 
 function exactStringArray(value: RtcBaselineJson | undefined): readonly string[] | null {
     return Array.isArray(value) &&
-        value.every((entry): entry is string => typeof entry === 'string')
+            value.every((entry): entry is string => typeof entry === 'string')
         ? value
         : null;
 }
@@ -1511,10 +1519,12 @@ function messageData(
     return jsonRecord(runtimePayload.data ?? runtimeEvent.data) ?? {};
 }
 
-export function countUnexpectedLiveRtcDeliveries(input: Readonly<{
-    events: readonly LiveRtcControlClient.Event[];
-    scenarios: readonly LiveRtcControlClient.DeliveryScenario[];
-}>): number {
+export function countUnexpectedLiveRtcDeliveries(
+    input: Readonly<{
+        events: readonly LiveRtcControlClient.Event[];
+        scenarios: readonly LiveRtcControlClient.DeliveryScenario[];
+    }>
+): number {
     const scenarioById = new Map(
         input.scenarios.map((scenario) => [scenario.matrixId, scenario])
     );
@@ -1564,9 +1574,7 @@ export function buildLiveRtcAgentDiagnostics(
         diagnostics.peers,
         '$.rallar.rtcDiagnostics.peers'
     );
-    const peerRecords = peers.map((peer, index) =>
-        requiredJsonRecord(peer, `$.rallar.rtcDiagnostics.peers[${index}]`)
-    );
+    const peerRecords = peers.map((peer, index) => requiredJsonRecord(peer, `$.rallar.rtcDiagnostics.peers[${index}]`));
     const laneStates = peerRecords.flatMap((peer) => {
         const peerId = requiredString(peer.peerId, 'RTC diagnostic peerId');
         const lanes = requiredJsonArray(peer.lanes, `RTC diagnostic lanes for ${peerId}`);

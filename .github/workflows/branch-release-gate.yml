@@ -35,6 +35,7 @@ jobs:
       reuse: ${{ steps.resolution.outputs.reuse }}
       build_tree_digest: ${{ steps.resolution.outputs.build_tree_digest }}
       archive_path: ${{ steps.resolution.outputs.archive_path }}
+      index_path: ${{ steps.resolution.outputs.index_path }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -76,12 +77,14 @@ jobs:
           SELECTION_REUSE: ${{ steps.selection.outputs.reuse }}
           SELECTION_DIGEST: ${{ steps.selection.outputs.build_tree_digest }}
           SELECTION_ARCHIVE_PATH: ${{ steps.selection.outputs.archive_path }}
+          SELECTION_INDEX_PATH: ${{ steps.selection.outputs.index_path }}
         run: |
           if [[ "$SELECTION_OUTCOME" == "success" && "$SELECTION_MODE" == "rtc-observation" ]]; then
             echo "mode=rtc-observation" >> "$GITHUB_OUTPUT"
             echo "reuse=false" >> "$GITHUB_OUTPUT"
             echo "build_tree_digest=$SELECTION_DIGEST" >> "$GITHUB_OUTPUT"
             echo "archive_path=$SELECTION_ARCHIVE_PATH" >> "$GITHUB_OUTPUT"
+            echo "index_path=$SELECTION_INDEX_PATH" >> "$GITHUB_OUTPUT"
           elif [[ "$SELECTION_OUTCOME" == "success" && "$SELECTION_MODE" == "invalid-rtc-observation" ]]; then
             echo "mode=invalid-rtc-observation" >> "$GITHUB_OUTPUT"
             echo "reuse=false" >> "$GITHUB_OUTPUT"
@@ -173,9 +176,10 @@ jobs:
       - name: Verify appended RTC observation
         env:
           RTC_OBSERVATION_ARCHIVE: ${{ needs.validation-evidence.outputs.archive_path }}
+          RTC_OBSERVATION_INDEX: ${{ needs.validation-evidence.outputs.index_path }}
         run: |
           mkdir -p .artifacts/rtc-observation
-          tail -n 1 performance-observations/rtc-b05/index.jsonl > .artifacts/rtc-observation/index-entry.jsonl
+          tail -n 1 "$RTC_OBSERVATION_INDEX" > .artifacts/rtc-observation/index-entry.jsonl
           npm run perf:rtc-baseline -- verify-observation \
             --archive="$RTC_OBSERVATION_ARCHIVE" \
             --index-entry=.artifacts/rtc-observation/index-entry.jsonl

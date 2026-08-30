@@ -14,6 +14,14 @@ const observeArguments = [
     '--github-run-url=https://github.com/intact-software-systems/ar-eye-hunter/actions/runs/123456789',
     '--output=tmp/observation'
 ];
+const liveRtcObserveArguments = [
+    'observe-live-rtc',
+    '--source-ref=main',
+    '--github-run-id=123456789',
+    '--github-run-attempt=2',
+    '--github-run-url=https://github.com/intact-software-systems/ar-eye-hunter/actions/runs/123456789',
+    '--output=tmp/observation'
+];
 
 describe('RTC performance observation CLI', () => {
     it('parses the exact observe and verify command contracts', () => {
@@ -21,6 +29,17 @@ describe('RTC performance observation CLI', () => {
             ok: true,
             value: {
                 kind: 'observe-browser',
+                sourceRef: 'main',
+                githubRunId: 123456789,
+                githubRunAttempt: 2,
+                githubRunUrl: 'https://github.com/intact-software-systems/ar-eye-hunter/actions/runs/123456789',
+                outputDirectory: 'tmp/observation'
+            }
+        });
+        expect(parseRtcPerformanceObservationCommand(liveRtcObserveArguments)).toEqual({
+            ok: true,
+            value: {
+                kind: 'observe-live-rtc',
                 sourceRef: 'main',
                 githubRunId: 123456789,
                 githubRunAttempt: 2,
@@ -41,6 +60,7 @@ describe('RTC performance observation CLI', () => {
             }
         });
         expect(isRtcPerformanceObservationCommand('observe-browser')).toBe(true);
+        expect(isRtcPerformanceObservationCommand('observe-live-rtc')).toBe(true);
         expect(isRtcPerformanceObservationCommand('validate')).toBe(false);
     });
 
@@ -80,7 +100,8 @@ describe('RTC performance observation CLI', () => {
 
         const code = await runRtcPerformanceObservationCli({
             args: observeArguments,
-            runner: { run },
+            browserRunner: { run },
+            liveRtcRunner: { run: vi.fn() },
             readFile: vi.fn(),
             verifyArchive: vi.fn(),
             writeStdout: (value) => stdout.push(value),
@@ -100,6 +121,43 @@ describe('RTC performance observation CLI', () => {
         ]);
     });
 
+    it('dispatches observe-live-rtc to the RTC-B06 runner', async () => {
+        const run = vi.fn(async () => ({
+            ok: true as const,
+            value: {
+                observation: { observationId: 'b06-observation-id' },
+                output: { archivePath: 'b06.zip', indexEntryPath: 'index-entry.jsonl' }
+            }
+        }));
+        const stdout: string[] = [];
+
+        const code = await runRtcPerformanceObservationCli({
+            args: liveRtcObserveArguments,
+            browserRunner: {
+                run: async () => {
+                    throw new Error('observe-live-rtc must not invoke the browser observation runner');
+                }
+            },
+            liveRtcRunner: { run },
+            readFile: vi.fn(),
+            verifyArchive: vi.fn(),
+            writeStdout: (value) => stdout.push(value),
+            writeStderr: vi.fn()
+        });
+
+        expect(code).toBe(0);
+        expect(run).toHaveBeenCalledWith({
+            sourceRef: 'main',
+            githubRunId: 123456789,
+            githubRunAttempt: 2,
+            githubRunUrl: 'https://github.com/intact-software-systems/ar-eye-hunter/actions/runs/123456789',
+            outputDirectory: 'tmp/observation'
+        });
+        expect(stdout).toEqual([
+            '{"observationId":"b06-observation-id","archivePath":"b06.zip","indexEntryPath":"index-entry.jsonl"}\n'
+        ]);
+    });
+
     it('reads and verifies an archived index entry without trusting repository JSON', async () => {
         const archiveBytes = new Uint8Array([1, 2, 3]);
         const indexEntry = { schema: 'index-entry' };
@@ -115,7 +173,8 @@ describe('RTC performance observation CLI', () => {
                 '--archive=tmp/observation.zip',
                 '--index-entry=tmp/index-entry.jsonl'
             ],
-            runner: { run: vi.fn() },
+            browserRunner: { run: vi.fn() },
+            liveRtcRunner: { run: vi.fn() },
             readFile: vi.fn(async (path) =>
                 path.endsWith('.zip')
                     ? archiveBytes

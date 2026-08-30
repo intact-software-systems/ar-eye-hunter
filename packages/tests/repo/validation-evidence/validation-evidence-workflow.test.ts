@@ -50,7 +50,8 @@ describe('PR-scoped validation reuse workflow', () => {
 
         expect(selection.outputs).toMatchObject({
             mode: '${{ steps.resolution.outputs.mode }}',
-            archive_path: '${{ steps.resolution.outputs.archive_path }}'
+            archive_path: '${{ steps.resolution.outputs.archive_path }}',
+            index_path: '${{ steps.resolution.outputs.index_path }}'
         });
         expect(release.if).toContain('outputs.mode == \'broad\'');
         expect(publication.if).toContain('outputs.mode == \'broad\'');
@@ -61,6 +62,8 @@ describe('PR-scoped validation reuse workflow', () => {
             ).run
         ).toContain('invalid-rtc-observation');
         expect(verify.run).toContain('npm run perf:rtc-baseline -- verify-observation');
+        expect(verify.run).toContain('RTC_OBSERVATION_INDEX');
+        expect(verify.run).not.toContain('performance-observations/rtc-b05/index.jsonl');
         expect(verify.run).not.toMatch(/build|deploy|test:ci/iu);
     });
 

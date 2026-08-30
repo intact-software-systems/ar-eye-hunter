@@ -1,6 +1,7 @@
 import { strFromU8, strToU8, unzipSync, zipSync } from 'fflate';
 import { describe, expect, it } from 'vitest';
 
+import type { RtcB06PerformanceObservation } from '../../../baseline/observation/rtc-b06-performance-observation.ts';
 import {
     createRtcPerformanceObservationArchive,
     verifyRtcPerformanceObservationArchive
@@ -10,7 +11,7 @@ import {
     type RtcPerformanceObservation,
     type RtcPerformanceObservationIndexEntryDto
 } from '../../../baseline/observation/rtc-performance-observation.ts';
-import { createRtcB05FinalizedArtifacts } from './rtc-performance-observation-fixture.ts';
+import { createRtcB05FinalizedArtifacts, createRtcB06FinalizedArtifacts } from './rtc-performance-observation-fixture.ts';
 
 const encoder = new TextEncoder();
 const observation: RtcPerformanceObservation = {
@@ -41,6 +42,24 @@ const indexEntry: RtcPerformanceObservationIndexEntryDto = {
         byteLength: 123,
         sha256: 'a'.repeat(64)
     }
+};
+const b06Observation: RtcB06PerformanceObservation = {
+    schema: 'rallar.rtc-b06-performance-observation.v1',
+    observationId: '20260830T100000Z-c0cadb8216cf-e3-memory-gh987654321-a3',
+    startedAt: '2026-08-30T10:00:00.417Z',
+    completedAt: '2026-08-30T10:30:00.417Z',
+    source: {
+        commit: 'c0cadb8216cf27d82a3143755e6965f3831ea164',
+        tree: 'd45ae178384826f49fa31ab1e52c0f66d8ff069a',
+        ref: 'main'
+    },
+    workflow: {
+        runId: 987654321,
+        runAttempt: 3,
+        url: 'https://github.com/intact-software-systems/ar-eye-hunter/actions/runs/987654321'
+    },
+    primary: { outcome: 'passed', acceptedMetrics: true },
+    repeat: { decision: 'not-required', outcome: 'not-run' }
 };
 
 async function toIndexEntry(
@@ -101,6 +120,55 @@ function withUnsafeOriginalSize(bytes: Uint8Array) {
 }
 
 describe('RTC performance observation archive', () => {
+    it('creates and verifies one canonical RTC-B06 E3 archive without changing B05', async () => {
+        const b06Artifacts = await createRtcB06FinalizedArtifacts(
+            b06Observation.observationId
+        );
+
+        const written = await createRtcPerformanceObservationArchive({
+            observation: b06Observation,
+            primaryArtifacts: b06Artifacts
+        });
+
+        expect(written.indexEntry).toMatchObject({
+            schema: 'rallar.rtc-b06-performance-observation.index-entry.v1',
+            archive: {
+                path: 'performance-observations/rtc-b06/2026/08/30/' +
+                    '20260830T100000Z-c0cadb8216cf-e3-memory-gh987654321-a3.zip'
+            }
+        });
+        await expect(verifyRtcPerformanceObservationArchive({
+            bytes: written.bytes,
+            indexEntry: written.indexEntry
+        })).resolves.toEqual({ ok: true, value: b06Observation });
+    });
+
+    it('verifies the RTC-B06 controlled repeat against its exact primary summary', async () => {
+        const b06Artifacts = await createRtcB06FinalizedArtifacts(
+            b06Observation.observationId
+        );
+        const repeatId = `${b06Observation.observationId}-repeat-01`;
+        const repeatArtifacts = await createRtcB06FinalizedArtifacts(repeatId, {
+            primaryBaselineId: b06Observation.observationId,
+            primarySummarySha256: await artifactSha256(b06Artifacts, 'summary.json')
+        });
+        const repeatedObservation: RtcB06PerformanceObservation = {
+            ...b06Observation,
+            repeat: { decision: 'required', outcome: 'passed' }
+        };
+
+        const written = await createRtcPerformanceObservationArchive({
+            observation: repeatedObservation,
+            primaryArtifacts: b06Artifacts,
+            repeatArtifacts
+        });
+
+        await expect(verifyRtcPerformanceObservationArchive({
+            bytes: written.bytes,
+            indexEntry: written.indexEntry
+        })).resolves.toEqual({ ok: true, value: repeatedObservation });
+    });
+
     it('decodes one canonical index entry from repository JSON', () => {
         expect(decodeRtcPerformanceObservationIndexEntry(indexEntry)).toEqual({ ok: true, value: indexEntry });
     });

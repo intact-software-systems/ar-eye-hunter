@@ -3,9 +3,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
+    buildLiveRtcAgentDiagnostics,
     buildLiveRtcExternalAttempt,
     buildLiveRtcRetentionCohort,
-    buildLiveRtcAgentDiagnostics,
     countUnexpectedLiveRtcDeliveries,
     liveRtcRetentionStateReturned,
     loadLiveRtcPerformanceAttempt,
@@ -24,8 +24,7 @@ const e3DefaultLocator = {
     intendedPhase: 'retained',
     outerOrdinal: 1,
     environmentId: 'E3-memory',
-    rawResultRelativePath:
-        'artifacts/staging/rtc-b06-default-e3-memory-default-retained-001.json'
+    rawResultRelativePath: 'artifacts/staging/rtc-b06-default-e3-memory-default-retained-001.json'
 } as const;
 const e3DefaultIdentity = {
     sampleId: 'rtc-b06-default-e3-memory-default-retained-001-001',
@@ -158,16 +157,13 @@ function externalLocator(
         environmentId: attempt.environmentId,
         intendedPhase: attempt.intendedPhase,
         outerOrdinal: attempt.outerOrdinal,
-        rawResultRelativePath:
-            `artifacts/staging/rtc-b06-${attempt.caseId}-${attempt.inputKey}-${attempt.intendedPhase}-${ordinal}.json`
+        rawResultRelativePath: `artifacts/staging/rtc-b06-${attempt.caseId}-${attempt.inputKey}-${attempt.intendedPhase}-${ordinal}.json`
     };
 }
 
 afterEach(async () => {
     await Promise.all(
-        temporaryDirectories.splice(0).map((directory) =>
-            rm(directory, { recursive: true, force: true })
-        )
+        temporaryDirectories.splice(0).map((directory) => rm(directory, { recursive: true, force: true }))
     );
 });
 
@@ -307,14 +303,16 @@ function defaultRawEvidence(
     };
 }
 
-function retentionRawEvidence(input: Readonly<{
-    environmentId?: 'E3-memory' | 'E4-pg';
-    inputKey?: 'e3-memory-retention-100' | 'e4-pg-retention-100';
-    outerOrdinal: number;
-    cycle0HeapBytes: number;
-    finalHeapBytes: number;
-    stateReturned?: boolean;
-}>): LiveRtcPerformanceRawEvidence {
+function retentionRawEvidence(
+    input: Readonly<{
+        environmentId?: 'E3-memory' | 'E4-pg';
+        inputKey?: 'e3-memory-retention-100' | 'e4-pg-retention-100';
+        outerOrdinal: number;
+        cycle0HeapBytes: number;
+        finalHeapBytes: number;
+        stateReturned?: boolean;
+    }>
+): LiveRtcPerformanceRawEvidence {
     const environmentId = input.environmentId ?? 'E3-memory';
     const inputKey = input.inputKey ?? 'e3-memory-retention-100';
     const stateReturned = input.stateReturned ?? true;
@@ -392,12 +390,14 @@ function retentionRawEvidence(input: Readonly<{
     };
 }
 
-function retentionAttempt(input: Readonly<{
-    outerOrdinal: number;
-    cycle0HeapBytes: number;
-    finalHeapBytes: number;
-    stateReturned?: boolean;
-}>) {
+function retentionAttempt(
+    input: Readonly<{
+        outerOrdinal: number;
+        cycle0HeapBytes: number;
+        finalHeapBytes: number;
+        stateReturned?: boolean;
+    }>
+) {
     const ordinal = String(input.outerOrdinal).padStart(3, '0');
     return buildLiveRtcExternalAttempt({
         locator: {
@@ -407,12 +407,10 @@ function retentionAttempt(input: Readonly<{
             intendedPhase: 'retained',
             outerOrdinal: input.outerOrdinal,
             environmentId: 'E3-memory',
-            rawResultRelativePath:
-                `artifacts/staging/rtc-b06-retention-100-e3-memory-retention-100-retained-${ordinal}.json`
+            rawResultRelativePath: `artifacts/staging/rtc-b06-retention-100-e3-memory-retention-100-retained-${ordinal}.json`
         },
         sampleIdentity: {
-            sampleId:
-                `rtc-b06-retention-100-e3-memory-retention-100-retained-${ordinal}-001`,
+            sampleId: `rtc-b06-retention-100-e3-memory-retention-100-retained-${ordinal}-001`,
             workloadId: 'RTC-B06',
             caseId: 'retention-100',
             inputKey: 'e3-memory-retention-100',
@@ -435,15 +433,18 @@ describe('live RTC external-attempt evidence', () => {
         const baselineRoot = join(repoRoot, 'tmp', 'perf', 'rtc-baseline', baselineId);
         await mkdir(baselineRoot, { recursive: true });
         await writeFile(join(baselineRoot, 'manifest.json'), JSON.stringify(manifest));
-        await writeFile(join(baselineRoot, 'environment.json'), JSON.stringify({
-            schema: 'rallar.rtc-baseline.environment.v1',
-            baselineId,
-            workloadIds: ['RTC-B06'],
-            environmentId: 'E3-memory',
-            repeatLink: null,
-            conditionalEnvironmentDecisions: [],
-            observation: runtimeObservation
-        }));
+        await writeFile(
+            join(baselineRoot, 'environment.json'),
+            JSON.stringify({
+                schema: 'rallar.rtc-baseline.environment.v1',
+                baselineId,
+                workloadIds: ['RTC-B06'],
+                environmentId: 'E3-memory',
+                repeatLink: null,
+                conditionalEnvironmentDecisions: [],
+                observation: runtimeObservation
+            })
+        );
 
         const context = await loadLiveRtcPerformanceAttempt({
             repoRoot,
@@ -493,6 +494,51 @@ describe('live RTC external-attempt evidence', () => {
             repoRoot,
             environment: {}
         })).resolves.toBeNull();
+    });
+
+    it('accepts the GitHub-provenanced E3 observation identity', async () => {
+        const repoRoot = await mkdtemp(join(tmpdir(), 'rallar-rtc-b06-github-context-'));
+        temporaryDirectories.push(repoRoot);
+        const githubBaselineId = '20260830T100000Z-c0cadb8216cf-e3-memory-gh987654321-a3';
+        const manifest = {
+            ...e3CaptureManifest(),
+            request: {
+                ...e3CaptureManifest().request,
+                baselineId: githubBaselineId
+            }
+        };
+        const baselineRoot = join(
+            repoRoot,
+            'tmp',
+            'perf',
+            'rtc-baseline',
+            githubBaselineId
+        );
+        await mkdir(baselineRoot, { recursive: true });
+        await writeFile(join(baselineRoot, 'manifest.json'), JSON.stringify(manifest));
+        await writeFile(
+            join(baselineRoot, 'environment.json'),
+            JSON.stringify({
+                schema: 'rallar.rtc-baseline.environment.v1',
+                baselineId: githubBaselineId,
+                workloadIds: ['RTC-B06'],
+                environmentId: 'E3-memory',
+                repeatLink: null,
+                conditionalEnvironmentDecisions: [],
+                observation: runtimeObservation
+            })
+        );
+
+        await expect(loadLiveRtcPerformanceAttempt({
+            repoRoot,
+            environment: {
+                RALLAR_BLACK_BOX_RTC_BASELINE_ID: githubBaselineId,
+                RALLAR_BLACK_BOX_RTC_CASE_ID: e3DefaultLocator.caseId,
+                RALLAR_BLACK_BOX_RTC_INPUT_KEY: e3DefaultLocator.inputKey,
+                RALLAR_BLACK_BOX_RTC_INTENDED_PHASE: e3DefaultLocator.intendedPhase,
+                RALLAR_BLACK_BOX_RTC_OUTER_ORDINAL: String(e3DefaultLocator.outerOrdinal)
+            }
+        })).resolves.toMatchObject({ baselineId: githubBaselineId });
     });
 
     it('preserves exact identity plus complete E3 default facts and timing samples', () => {
@@ -546,9 +592,7 @@ describe('live RTC external-attempt evidence', () => {
             runtimeObservation,
             rawEvidence: {
                 ...rawEvidence,
-                timings: rawEvidence.timings.filter((timing) =>
-                    timing.kind !== 'direct-delivery' || timing.transport !== 'messages.rtc'
-                )
+                timings: rawEvidence.timings.filter((timing) => timing.kind !== 'direct-delivery' || timing.transport !== 'messages.rtc')
             }
         });
 
@@ -626,8 +670,7 @@ describe('live RTC external-attempt evidence', () => {
                 intendedPhase: 'retained',
                 outerOrdinal: 1,
                 environmentId: 'E3-memory',
-                rawResultRelativePath:
-                    'artifacts/staging/rtc-b06-retention-100-e3-memory-retention-100-retained-001.json'
+                rawResultRelativePath: 'artifacts/staging/rtc-b06-retention-100-e3-memory-retention-100-retained-001.json'
             },
             sampleIdentity: {
                 sampleId: 'rtc-b06-retention-100-e3-memory-retention-100-retained-001-001',
@@ -702,8 +745,7 @@ describe('live RTC external-attempt evidence', () => {
                 intendedPhase: 'warmup',
                 outerOrdinal: 1,
                 environmentId: 'E4-pg',
-                rawResultRelativePath:
-                    'artifacts/staging/rtc-b06-all-scenarios-e4-pg-all-scenarios-warmup-001.json'
+                rawResultRelativePath: 'artifacts/staging/rtc-b06-all-scenarios-e4-pg-all-scenarios-warmup-001.json'
             },
             sampleIdentity: {
                 sampleId: 'rtc-b06-all-scenarios-e4-pg-all-scenarios-warmup-001-001',
@@ -756,42 +798,48 @@ describe('live RTC external-attempt evidence', () => {
     });
 
     it('rejects locator, raw identity, sample identity, and runtime mismatches', () => {
-        expect(() => buildLiveRtcExternalAttempt({
-            locator: e3DefaultLocator,
-            sampleIdentity: {
-                ...e3DefaultIdentity,
-                outerOrdinal: 2
-            },
-            producerExitStatus: 0,
-            runtimeObservation,
-            rawEvidence: defaultRawEvidence()
-        })).toThrow(/sample identity/i);
-
-        expect(() => buildLiveRtcExternalAttempt({
-            locator: e3DefaultLocator,
-            sampleIdentity: e3DefaultIdentity,
-            producerExitStatus: 0,
-            runtimeObservation,
-            rawEvidence: defaultRawEvidence({
-                identity: {
-                    ...defaultRawEvidence().identity,
-                    environmentId: 'E4-pg'
-                }
+        expect(() =>
+            buildLiveRtcExternalAttempt({
+                locator: e3DefaultLocator,
+                sampleIdentity: {
+                    ...e3DefaultIdentity,
+                    outerOrdinal: 2
+                },
+                producerExitStatus: 0,
+                runtimeObservation,
+                rawEvidence: defaultRawEvidence()
             })
-        })).toThrow(/raw evidence identity/i);
+        ).toThrow(/sample identity/i);
 
-        expect(() => buildLiveRtcExternalAttempt({
-            locator: e3DefaultLocator,
-            sampleIdentity: e3DefaultIdentity,
-            producerExitStatus: 0,
-            runtimeObservation,
-            rawEvidence: defaultRawEvidence({
-                runtime: {
-                    ...defaultRawEvidence().runtime,
-                    chromium: 'different-browser'
-                }
+        expect(() =>
+            buildLiveRtcExternalAttempt({
+                locator: e3DefaultLocator,
+                sampleIdentity: e3DefaultIdentity,
+                producerExitStatus: 0,
+                runtimeObservation,
+                rawEvidence: defaultRawEvidence({
+                    identity: {
+                        ...defaultRawEvidence().identity,
+                        environmentId: 'E4-pg'
+                    }
+                })
             })
-        })).toThrow(/runtime facts/i);
+        ).toThrow(/raw evidence identity/i);
+
+        expect(() =>
+            buildLiveRtcExternalAttempt({
+                locator: e3DefaultLocator,
+                sampleIdentity: e3DefaultIdentity,
+                producerExitStatus: 0,
+                runtimeObservation,
+                rawEvidence: defaultRawEvidence({
+                    runtime: {
+                        ...defaultRawEvidence().runtime,
+                        chromium: 'different-browser'
+                    }
+                })
+            })
+        ).toThrow(/runtime facts/i);
     });
 });
 
@@ -897,8 +945,7 @@ describe('live RTC retention cohort evidence', () => {
                 outerOrdinal: index + 1,
                 cycle0HeapBytes: 100 * 1024 * 1024,
                 finalHeapBytes: (index < 3 ? 116 : 104) * 1024 * 1024
-            })
-        );
+            }));
         const memberSampleIds = attempts.map(
             (attempt) => attempt.samples[0]!.identity.sampleId
         );
@@ -931,11 +978,13 @@ describe('live RTC retention cohort evidence', () => {
                 attempt.caseId === 'retention-100' &&
                 attempt.intendedPhase === 'retained'
         ).map(externalLocator);
-        const attempts = locators.map((locator) => retentionAttempt({
-            outerOrdinal: locator.outerOrdinal,
-            cycle0HeapBytes: 100 * 1024 * 1024,
-            finalHeapBytes: 104 * 1024 * 1024
-        }));
+        const attempts = locators.map((locator) =>
+            retentionAttempt({
+                outerOrdinal: locator.outerOrdinal,
+                cycle0HeapBytes: 100 * 1024 * 1024,
+                finalHeapBytes: 104 * 1024 * 1024
+            })
+        );
         const context = (index: number): LiveRtcPerformanceAttemptContext => ({
             repoRoot,
             baselineId,
