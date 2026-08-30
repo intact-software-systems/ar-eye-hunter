@@ -69,21 +69,21 @@ new machinery is concentrated in the browser and in slice 12**, and that is wher
 Everything else builds on something named. The anchors worth knowing, because a slice that reaches for
 a new mechanism instead of one of these should be challenged in review:
 
-| Need                               | Existing anchor                                                                                 |
-| ---------------------------------- | ----------------------------------------------------------------------------------------------- |
-| a new group command                | `grantGroupAdmission` (#297) and `failGroupFormation` (#282), both worked end to end            |
-| a dark, route-less command         | `failGroupFormation`, carried as `transport: 'MAINTENANCE'` in the routing-owner inventory      |
-| a caller-supplied expected value   | `computeDisconnectPresence`, and the topology reconfigure read's causal-revision compare        |
-| a compute-side 409                 | `RtcRttMutationIdempotencyConflictError`, `GroupTopologyConfigIdempotencyConflictError`         |
-| comparing layout revisions         | `compareGroupCausalRevision` → `compareOverlayTopologyCausalTuple` → `decideTopologySnapshot`   |
-| retiring a layout without a delete | `removedTopologyResult` and the `state: 'removed'` tombstone every reader already filters       |
-| a second durable topology store    | `RtcTopologySnapshotRepository` parameterised by namespace, or its `childKey` idiom             |
-| cross-node damping                 | the coalesced APP_OUTBOX row and its generation CAS                                             |
-| hysteresis banding                 | `resolveTopologyKindWithHysteresis`                                                             |
-| gating peer creation               | symmetric `setInboundPeerCreationPolicy` / `setOutboundDialPolicy` seams                        |
-| two repository slots               | `configureSharedStateRepositories`, which already configures two independent tokens             |
-| a non-lifecycle group field        | `appointDirector`, `rotateGroupJoinCode`                                                        |
-| per-group durable policy           | `GroupLifecyclePolicy` with its nested sub-policies, presets, issue codes and repository        |
+| Need                               | Existing anchor                                                                               |
+| ---------------------------------- | --------------------------------------------------------------------------------------------- |
+| a new group command                | `grantGroupAdmission` (#297) and `failGroupFormation` (#282), both worked end to end          |
+| a dark, route-less command         | `failGroupFormation`, carried as `transport: 'MAINTENANCE'` in the routing-owner inventory    |
+| a caller-supplied expected value   | `computeDisconnectPresence`, and the topology reconfigure read's causal-revision compare      |
+| a compute-side 409                 | `RtcRttMutationIdempotencyConflictError`, `GroupTopologyConfigIdempotencyConflictError`       |
+| comparing layout revisions         | `compareGroupCausalRevision` → `compareOverlayTopologyCausalTuple` → `decideTopologySnapshot` |
+| retiring a layout without a delete | `removedTopologyResult` and the `state: 'removed'` tombstone every reader already filters     |
+| a second durable topology store    | `RtcTopologySnapshotRepository` parameterised by namespace, or its `childKey` idiom           |
+| cross-node damping                 | the coalesced APP_OUTBOX row and its generation CAS                                           |
+| hysteresis banding                 | `resolveTopologyKindWithHysteresis`                                                           |
+| gating peer creation               | symmetric `setInboundPeerCreationPolicy` / `setOutboundDialPolicy` seams                      |
+| two repository slots               | `configureSharedStateRepositories`, which already configures two independent tokens           |
+| a non-lifecycle group field        | `appointDirector`, `rotateGroupJoinCode`                                                      |
+| per-group durable policy           | `GroupLifecyclePolicy` with its nested sub-policies, presets, issue codes and repository      |
 
 ## Slice 0 — Re-plan against current `main` (initial prerequisite and standing checkpoint)
 
@@ -1591,12 +1591,16 @@ source gate still pinned to the monolith, and a room test double that bypassed b
 roles. Their focused repairs restore the inventories and test ownership without adding a production
 fallback or retained-legacy entry. The final unit, Deno, build, shared-web/headless boundary, browser
 bundle, E2E, memory full-stack, live three-browser, topology-replay and fixed medium-scale gates all
-pass; remote CI and pull-request delivery readiness remain before #381 leaves draft.
+pass. #381's formation-large, topology-replay, medium-scale, CodeQL and release checks are also green;
+the delivery readiness command ran once, moved #381 out of draft, and reported the supported
+review-or-administrator-merge wait state. It is ready for main and remains unchanged while awaiting
+that human merge decision.
 
 ### Slice 8b start checkpoint — stacked browser dial gate (2026-08-30, PR #390)
 
 Slice 8b starts from #381's published head `ce3689693` as draft #390 on
-`codex/group-activation-browser-dial-gate`; #381 remains unchanged while its final release gate runs.
+`codex/group-activation-browser-dial-gate`; #381 remains unchanged while it awaits its human merge
+decision.
 The implementation boundary is the one already approved above: one total stage × layout-role peer
 selection drives both missing-peer admission seams, active-session absence fallback is removed, and
 existing established peers remain usable. The first census found the current inbound `tentative`
@@ -1613,8 +1617,23 @@ The consumerless tentative-admission set and decision member were removed rather
 Focused manager, connection-service and browser-wiring tests pass, and repository typecheck covers 972
 test files with zero debt. The broader shared/shared-web sweep passes 669 files / 4,907 tests (four
 files and nine tests skipped), and the peer-owner benchmark now installs accepted layouts so its
-measured lookup set remains representative; its owning test and Deno typecheck pass. Remaining slice
-gates and review still precede publication.
+measured lookup set remains representative; its owning test and Deno typecheck pass.
+
+The final Slice 8b local checkpoint is green at implementation head `c97d3b046`: the complete unit,
+Deno and build commands pass; shared-web public API, browser bundle and headless boundaries pass 16
+focused tests; browser bundle budgets pass; E2E passes 39 core and 210 Recipe Console tests with their
+configured skips; memory full-stack passes 7/7; and the live three-browser command passes its enabled
+scenario with two configured skips. The explicit local Postgres medium-scale profile passes 2,757
+successful operations with zero failures. #390's remote formation-large, topology-replay and
+medium-scale Postgres gates are green. Repository-structure and retained-legacy checks pass. The one
+slice-local structure finding is the existing large `WebRtcConnectionService`: review keeps its direct
+peer-lifecycle ownership because the new policy is enforced at its existing missing-peer creation
+choke point, and extracting that decision would add navigation without an independent lifecycle or
+side-effect owner. Full `format:check` still reports only five byte-identical files inherited from
+`origin/main`; all Slice 8b files are formatted. Fresh diff review and the empty #390 review/comment
+queues found no blocking issue. Publication remains intentionally draft and stacked until #381
+merges; delivery status must therefore continue to report the non-default-base stop rather than
+pretending the child is ready for main.
 
 **Next two PRs (I5, I20):**
 
