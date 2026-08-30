@@ -1822,8 +1822,10 @@ Memory full-stack passes 7/7, while the enabled live three-browser RTC scenario 
 exhaustive and 100-reconnect variants remaining the two configured skips. Changed repository style
 reports zero new findings against Slice 8b head `b8dae45a8`; repository structure passes with the
 already-reviewed Relic scene density and singleton bundle-measure script subtree findings. The
-replacement commit, slice-local legacy scan, exact-commit re-review, publication and remote
-validation remain before the Slice 8c checkpoint closes.
+replacement implementation is committed at `367cef8af`; its slice-local production legacy scan finds
+no candidates and validates the registry. Delivery status correctly reports `STOP_WRONG_BASE`
+because #391 is stacked on #390 rather than `main`, not because of a merge conflict. Exact-head
+re-review, publication and remote validation remain before the Slice 8c checkpoint closes.
 
 **Next two PRs (I5, I20):**
 
