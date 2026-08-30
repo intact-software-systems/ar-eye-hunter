@@ -76,9 +76,9 @@ The corresponding RTC-B06 E3 command is:
 
 ```bash
 env -u DATABASE_URL -u RALLAR_ICE_MODE \
-  -u RALLAR_BLACK_BOX_LIVE_ALL_SCENARIOS \
-  -u RALLAR_BLACK_BOX_LIVE_RETENTION_SOAK \
-  -u RALLAR_BLACK_BOX_LIVE_RETENTION_CYCLES \
+  RALLAR_BLACK_BOX_LIVE_ALL_SCENARIOS=1 \
+  RALLAR_BLACK_BOX_LIVE_RETENTION_SOAK=1 \
+  RALLAR_BLACK_BOX_LIVE_RETENTION_CYCLES=100 \
   npm run perf:rtc-baseline -- observe-live-rtc \
   --source-ref=main \
   --github-run-id=1 \
