@@ -459,19 +459,19 @@
       }
     },
     {
-      "name": "startPlan",
+      "name": "managerPlans",
       "type": "http",
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{managedGroupId}/lifecycle/plan/requests/start-establishment-{runId}",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{managedGroupId}/lifecycle/plan/requests/plan-managed-group-{runId}",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
         },
         "body": {},
         "outputs": {
-          "startEstablishmentPlannedEpoch": "body.group.formationEpoch"
+          "managerPlansEpoch": "body.group.formationEpoch"
         }
       },
       "expect": {
@@ -485,7 +485,7 @@
       }
     },
     {
-      "name": "startPlanPublication",
+      "name": "managerPlansPublication",
       "type": "http",
       "connection": "primary",
       "request": {
@@ -502,10 +502,10 @@
           "backoffMultiplier": 2
         },
         "outputs": {
-          "startEstablishmentLayoutGroupRevision": "body.snapshot.sourceGroupStateCausalRevision.groupRevision",
-          "startEstablishmentLayoutPresenceRevision": "body.snapshot.sourceGroupStateCausalRevision.presenceRevision",
-          "startEstablishmentLayoutVersion": "body.snapshot.version",
-          "startEstablishmentLayoutState": "body.snapshot.state"
+          "managerPlansLayoutGroupRevision": "body.snapshot.sourceGroupStateCausalRevision.groupRevision",
+          "managerPlansLayoutPresenceRevision": "body.snapshot.sourceGroupStateCausalRevision.presenceRevision",
+          "managerPlansLayoutVersion": "body.snapshot.version",
+          "managerPlansLayoutState": "body.snapshot.state"
         }
       },
       "expect": {
@@ -518,23 +518,23 @@
       }
     },
     {
-      "name": "startPlanConnectsPublishedLayout",
+      "name": "managerPlansConnectsPublishedLayout",
       "type": "http",
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{managedGroupId}/lifecycle/connect/requests/connect-start-establishment-{runId}",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{managedGroupId}/lifecycle/connect/requests/connect-plan-managed-group-{runId}",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
         },
         "body": {
-          "expectedFormationEpoch": "{startEstablishmentPlannedEpoch}",
+          "expectedFormationEpoch": "{managerPlansEpoch}",
           "expectedLayout": {
-            "groupRevision": "{startEstablishmentLayoutGroupRevision}",
-            "presenceRevision": "{startEstablishmentLayoutPresenceRevision}",
-            "version": "{startEstablishmentLayoutVersion}",
-            "state": "{startEstablishmentLayoutState}"
+            "groupRevision": "{managerPlansLayoutGroupRevision}",
+            "presenceRevision": "{managerPlansLayoutPresenceRevision}",
+            "version": "{managerPlansLayoutVersion}",
+            "state": "{managerPlansLayoutState}"
           }
         }
       },
@@ -549,7 +549,7 @@
       }
     },
     {
-      "name": "topologyPlannedAfterEstablish",
+      "name": "topologyRemainsPublishedAfterPlan",
       "type": "http",
       "connection": "primary",
       "request": {
@@ -586,7 +586,7 @@
       }
     },
     {
-      "name": "formationViewAfterEstablish",
+      "name": "formationViewAfterPlan",
       "type": "http",
       "connection": "primary",
       "request": {
@@ -688,12 +688,12 @@
       }
     },
     {
-      "name": "reconfigureEstablishment",
+      "name": "reconfigureLifecycle",
       "type": "http",
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{managedGroupId}/lifecycle/reconfigure/requests/bb-request-reopen-{runId}",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{managedGroupId}/lifecycle/reconfigure/requests/reconfigure-managed-group-{runId}",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
@@ -702,7 +702,8 @@
           "landing": "hold"
         },
         "outputs": {
-          "reopenEstablishmentPlannedEpoch": "body.group.formationEpoch"
+          "reconfigureLifecycleEpoch": "body.group.formationEpoch",
+          "reconfigureLifecycleGroupRevision": "body.causalRevision.groupRevision"
         }
       },
       "expect": {
@@ -717,7 +718,7 @@
       }
     },
     {
-      "name": "reconfigureEstablishmentPublication",
+      "name": "reconfigureLifecyclePublication",
       "type": "http",
       "connection": "primary",
       "request": {
@@ -734,39 +735,42 @@
           "backoffMultiplier": 2
         },
         "outputs": {
-          "reopenEstablishmentLayoutGroupRevision": "body.snapshot.sourceGroupStateCausalRevision.groupRevision",
-          "reopenEstablishmentLayoutPresenceRevision": "body.snapshot.sourceGroupStateCausalRevision.presenceRevision",
-          "reopenEstablishmentLayoutVersion": "body.snapshot.version",
-          "reopenEstablishmentLayoutState": "body.snapshot.state"
+          "reconfigureLifecycleLayoutGroupRevision": "body.snapshot.sourceGroupStateCausalRevision.groupRevision",
+          "reconfigureLifecycleLayoutPresenceRevision": "body.snapshot.sourceGroupStateCausalRevision.presenceRevision",
+          "reconfigureLifecycleLayoutVersion": "body.snapshot.version",
+          "reconfigureLifecycleLayoutState": "body.snapshot.state"
         }
       },
       "expect": {
         "status": 200,
         "body": {
           "snapshot": {
-            "state": "active"
+            "state": "active",
+            "sourceGroupStateCausalRevision": {
+              "groupRevision": "{reconfigureLifecycleGroupRevision}"
+            }
           }
         }
       }
     },
     {
-      "name": "reconfigureEstablishmentConnectsPublishedLayout",
+      "name": "reconfigureLifecycleConnectsPublishedLayout",
       "type": "http",
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{managedGroupId}/lifecycle/connect/requests/connect-bb-request-reopen-{runId}",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{managedGroupId}/lifecycle/connect/requests/connect-reconfigure-managed-group-{runId}",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
         },
         "body": {
-          "expectedFormationEpoch": "{reopenEstablishmentPlannedEpoch}",
+          "expectedFormationEpoch": "{reconfigureLifecycleEpoch}",
           "expectedLayout": {
-            "groupRevision": "{reopenEstablishmentLayoutGroupRevision}",
-            "presenceRevision": "{reopenEstablishmentLayoutPresenceRevision}",
-            "version": "{reopenEstablishmentLayoutVersion}",
-            "state": "{reopenEstablishmentLayoutState}"
+            "groupRevision": "{reconfigureLifecycleLayoutGroupRevision}",
+            "presenceRevision": "{reconfigureLifecycleLayoutPresenceRevision}",
+            "version": "{reconfigureLifecycleLayoutVersion}",
+            "state": "{reconfigureLifecycleLayoutState}"
           }
         }
       },

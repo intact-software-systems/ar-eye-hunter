@@ -203,14 +203,14 @@
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{autoGroupId}/lifecycle/plan/requests/establish-auto-{runId}",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{autoGroupId}/lifecycle/plan/requests/plan-auto-{runId}",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
         },
         "body": {},
         "outputs": {
-          "startAutoEstablishmentPlannedEpoch": "body.group.formationEpoch"
+          "startAutoPlanEpoch": "body.group.formationEpoch"
         }
       },
       "expect": {
@@ -241,10 +241,10 @@
           "backoffMultiplier": 2
         },
         "outputs": {
-          "startAutoEstablishmentLayoutGroupRevision": "body.snapshot.sourceGroupStateCausalRevision.groupRevision",
-          "startAutoEstablishmentLayoutPresenceRevision": "body.snapshot.sourceGroupStateCausalRevision.presenceRevision",
-          "startAutoEstablishmentLayoutVersion": "body.snapshot.version",
-          "startAutoEstablishmentLayoutState": "body.snapshot.state"
+          "startAutoPlanLayoutGroupRevision": "body.snapshot.sourceGroupStateCausalRevision.groupRevision",
+          "startAutoPlanLayoutPresenceRevision": "body.snapshot.sourceGroupStateCausalRevision.presenceRevision",
+          "startAutoPlanLayoutVersion": "body.snapshot.version",
+          "startAutoPlanLayoutState": "body.snapshot.state"
         }
       },
       "expect": {
@@ -262,18 +262,18 @@
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{autoGroupId}/lifecycle/connect/requests/connect-establish-auto-{runId}",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{autoGroupId}/lifecycle/connect/requests/connect-plan-auto-{runId}",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
         },
         "body": {
-          "expectedFormationEpoch": "{startAutoEstablishmentPlannedEpoch}",
+          "expectedFormationEpoch": "{startAutoPlanEpoch}",
           "expectedLayout": {
-            "groupRevision": "{startAutoEstablishmentLayoutGroupRevision}",
-            "presenceRevision": "{startAutoEstablishmentLayoutPresenceRevision}",
-            "version": "{startAutoEstablishmentLayoutVersion}",
-            "state": "{startAutoEstablishmentLayoutState}"
+            "groupRevision": "{startAutoPlanLayoutGroupRevision}",
+            "presenceRevision": "{startAutoPlanLayoutPresenceRevision}",
+            "version": "{startAutoPlanLayoutVersion}",
+            "state": "{startAutoPlanLayoutState}"
           }
         }
       },
@@ -430,14 +430,14 @@
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{deadlineGroupId}/lifecycle/plan/requests/establish-deadline-{runId}",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{deadlineGroupId}/lifecycle/plan/requests/plan-deadline-{runId}",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
         },
         "body": {},
         "outputs": {
-          "startDeadlineEstablishmentPlannedEpoch": "body.group.formationEpoch"
+          "startDeadlinePlanEpoch": "body.group.formationEpoch"
         }
       },
       "expect": {
@@ -472,10 +472,10 @@
           "backoffMultiplier": 2
         },
         "outputs": {
-          "startDeadlineEstablishmentLayoutGroupRevision": "body.snapshot.sourceGroupStateCausalRevision.groupRevision",
-          "startDeadlineEstablishmentLayoutPresenceRevision": "body.snapshot.sourceGroupStateCausalRevision.presenceRevision",
-          "startDeadlineEstablishmentLayoutVersion": "body.snapshot.version",
-          "startDeadlineEstablishmentLayoutState": "body.snapshot.state"
+          "startDeadlinePlanLayoutGroupRevision": "body.snapshot.sourceGroupStateCausalRevision.groupRevision",
+          "startDeadlinePlanLayoutPresenceRevision": "body.snapshot.sourceGroupStateCausalRevision.presenceRevision",
+          "startDeadlinePlanLayoutVersion": "body.snapshot.version",
+          "startDeadlinePlanLayoutState": "body.snapshot.state"
         }
       },
       "expect": {
@@ -493,18 +493,18 @@
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{deadlineGroupId}/lifecycle/connect/requests/connect-establish-deadline-{runId}",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{deadlineGroupId}/lifecycle/connect/requests/connect-plan-deadline-{runId}",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
         },
         "body": {
-          "expectedFormationEpoch": "{startDeadlineEstablishmentPlannedEpoch}",
+          "expectedFormationEpoch": "{startDeadlinePlanEpoch}",
           "expectedLayout": {
-            "groupRevision": "{startDeadlineEstablishmentLayoutGroupRevision}",
-            "presenceRevision": "{startDeadlineEstablishmentLayoutPresenceRevision}",
-            "version": "{startDeadlineEstablishmentLayoutVersion}",
-            "state": "{startDeadlineEstablishmentLayoutState}"
+            "groupRevision": "{startDeadlinePlanLayoutGroupRevision}",
+            "presenceRevision": "{startDeadlinePlanLayoutPresenceRevision}",
+            "version": "{startDeadlinePlanLayoutVersion}",
+            "state": "{startDeadlinePlanLayoutState}"
           }
         }
       },
@@ -966,14 +966,14 @@
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{thresholdGroupId}/lifecycle/plan/requests/establish-threshold-{runId}",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{thresholdGroupId}/lifecycle/plan/requests/plan-threshold-{runId}",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
         },
         "body": {},
         "outputs": {
-          "startThresholdEstablishmentPlannedEpoch": "body.group.formationEpoch"
+          "startThresholdPlanEpoch": "body.group.formationEpoch"
         }
       },
       "expect": {
@@ -1004,10 +1004,10 @@
           "backoffMultiplier": 2
         },
         "outputs": {
-          "startThresholdEstablishmentLayoutGroupRevision": "body.snapshot.sourceGroupStateCausalRevision.groupRevision",
-          "startThresholdEstablishmentLayoutPresenceRevision": "body.snapshot.sourceGroupStateCausalRevision.presenceRevision",
-          "startThresholdEstablishmentLayoutVersion": "body.snapshot.version",
-          "startThresholdEstablishmentLayoutState": "body.snapshot.state"
+          "startThresholdPlanLayoutGroupRevision": "body.snapshot.sourceGroupStateCausalRevision.groupRevision",
+          "startThresholdPlanLayoutPresenceRevision": "body.snapshot.sourceGroupStateCausalRevision.presenceRevision",
+          "startThresholdPlanLayoutVersion": "body.snapshot.version",
+          "startThresholdPlanLayoutState": "body.snapshot.state"
         }
       },
       "expect": {
@@ -1025,18 +1025,18 @@
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{thresholdGroupId}/lifecycle/connect/requests/connect-establish-threshold-{runId}",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{thresholdGroupId}/lifecycle/connect/requests/connect-plan-threshold-{runId}",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
         },
         "body": {
-          "expectedFormationEpoch": "{startThresholdEstablishmentPlannedEpoch}",
+          "expectedFormationEpoch": "{startThresholdPlanEpoch}",
           "expectedLayout": {
-            "groupRevision": "{startThresholdEstablishmentLayoutGroupRevision}",
-            "presenceRevision": "{startThresholdEstablishmentLayoutPresenceRevision}",
-            "version": "{startThresholdEstablishmentLayoutVersion}",
-            "state": "{startThresholdEstablishmentLayoutState}"
+            "groupRevision": "{startThresholdPlanLayoutGroupRevision}",
+            "presenceRevision": "{startThresholdPlanLayoutPresenceRevision}",
+            "version": "{startThresholdPlanLayoutVersion}",
+            "state": "{startThresholdPlanLayoutState}"
           }
         }
       },
@@ -1194,14 +1194,14 @@
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{degradedGroupId}/lifecycle/plan/requests/establish-degraded-{runId}",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{degradedGroupId}/lifecycle/plan/requests/plan-degraded-{runId}",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
         },
         "body": {},
         "outputs": {
-          "startDegradedEstablishmentPlannedEpoch": "body.group.formationEpoch"
+          "startDegradedPlanEpoch": "body.group.formationEpoch"
         }
       },
       "expect": {
@@ -1232,10 +1232,10 @@
           "backoffMultiplier": 2
         },
         "outputs": {
-          "startDegradedEstablishmentLayoutGroupRevision": "body.snapshot.sourceGroupStateCausalRevision.groupRevision",
-          "startDegradedEstablishmentLayoutPresenceRevision": "body.snapshot.sourceGroupStateCausalRevision.presenceRevision",
-          "startDegradedEstablishmentLayoutVersion": "body.snapshot.version",
-          "startDegradedEstablishmentLayoutState": "body.snapshot.state"
+          "startDegradedPlanLayoutGroupRevision": "body.snapshot.sourceGroupStateCausalRevision.groupRevision",
+          "startDegradedPlanLayoutPresenceRevision": "body.snapshot.sourceGroupStateCausalRevision.presenceRevision",
+          "startDegradedPlanLayoutVersion": "body.snapshot.version",
+          "startDegradedPlanLayoutState": "body.snapshot.state"
         }
       },
       "expect": {
@@ -1253,18 +1253,18 @@
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{degradedGroupId}/lifecycle/connect/requests/connect-establish-degraded-{runId}",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{degradedGroupId}/lifecycle/connect/requests/connect-plan-degraded-{runId}",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
         },
         "body": {
-          "expectedFormationEpoch": "{startDegradedEstablishmentPlannedEpoch}",
+          "expectedFormationEpoch": "{startDegradedPlanEpoch}",
           "expectedLayout": {
-            "groupRevision": "{startDegradedEstablishmentLayoutGroupRevision}",
-            "presenceRevision": "{startDegradedEstablishmentLayoutPresenceRevision}",
-            "version": "{startDegradedEstablishmentLayoutVersion}",
-            "state": "{startDegradedEstablishmentLayoutState}"
+            "groupRevision": "{startDegradedPlanLayoutGroupRevision}",
+            "presenceRevision": "{startDegradedPlanLayoutPresenceRevision}",
+            "version": "{startDegradedPlanLayoutVersion}",
+            "state": "{startDegradedPlanLayoutState}"
           }
         }
       },

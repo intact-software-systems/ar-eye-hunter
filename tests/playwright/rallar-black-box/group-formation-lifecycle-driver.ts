@@ -22,9 +22,9 @@ interface CreateGroupFormationLifecycleDriverConfig {
 }
 
 interface RunGroupFormationLifecycleInput {
-    readonly control: LiveRtcControlClient;
+    readonly control: GroupFormationLifecycleControl;
     readonly runId: string;
-    readonly agents: readonly [LiveRtcControlClient.Agent, LiveRtcControlClient.Agent, LiveRtcControlClient.Agent];
+    readonly agents: readonly [GroupFormationLifecycleAgent, GroupFormationLifecycleAgent, GroupFormationLifecycleAgent];
     readonly transport: TransportUnderTest;
     readonly groupId: string;
     readonly suffix: string;
@@ -38,10 +38,10 @@ interface GroupFormationLifecycleRun {
 }
 
 interface ReconnectFormationAgentInput {
-    readonly control: LiveRtcControlClient;
+    readonly control: GroupFormationLifecycleControl;
     readonly runId: string;
-    readonly reconnectingAgent: LiveRtcControlClient.Agent;
-    readonly readinessAgent: LiveRtcControlClient.Agent;
+    readonly reconnectingAgent: GroupFormationLifecycleAgent;
+    readonly readinessAgent: GroupFormationLifecycleAgent;
     readonly transport: TransportUnderTest;
     readonly groupId: string;
     readonly suffix: string;
@@ -57,9 +57,9 @@ interface GroupFormationLifecycleDriver {
 }
 
 interface ConnectFormationAgentInput {
-    readonly control: LiveRtcControlClient;
+    readonly control: GroupFormationLifecycleControl;
     readonly runId: string;
-    readonly agent: LiveRtcControlClient.Agent;
+    readonly agent: GroupFormationLifecycleAgent;
     readonly transport: TransportUnderTest;
     readonly groupId: string;
     readonly suffix: string;
@@ -103,15 +103,15 @@ interface PublishedGroupLayout {
 }
 
 interface GroupLifecycleCommandInput {
-    readonly control: LiveRtcControlClient;
+    readonly control: GroupFormationLifecycleControl;
     readonly runId: string;
-    readonly owner: LiveRtcControlClient.Agent;
+    readonly owner: GroupFormationLifecycleAgent;
     readonly groupId: string;
     readonly suffix: string;
 }
 
 interface ActivateGroupInput extends GroupLifecycleCommandInput {
-    readonly agents: readonly [LiveRtcControlClient.Agent, LiveRtcControlClient.Agent, LiveRtcControlClient.Agent];
+    readonly agents: readonly [GroupFormationLifecycleAgent, GroupFormationLifecycleAgent, GroupFormationLifecycleAgent];
     readonly transport: TransportUnderTest;
 }
 
@@ -128,6 +128,43 @@ interface WaitForPresenceRevisionInput extends GroupLifecycleCommandInput {
 interface WaitForFormationReadinessInput {
     readonly run: RunGroupFormationLifecycleInput;
     readonly sessions: Readonly<Record<AgentPrefix, string>>;
+    readonly suffix: string;
+    readonly startedAtMs: number;
+}
+
+interface GroupFormationLifecycleControl {
+    executeResult(
+        input: LiveRtcControlClient.ExecuteInput
+    ): Promise<LiveRtcControlClient.Result>;
+    executeOk(
+        input: LiveRtcControlClient.ExecuteInput
+    ): Promise<LiveRtcControlClient.Result>;
+    resultValue(
+        result: LiveRtcControlClient.Result
+    ): { [key: string]: RtcBaselineJson; };
+    requireSessionId(
+        result: LiveRtcControlClient.Result,
+        commandId: string
+    ): string;
+    waitForPeerReadiness(
+        input: GroupFormationLifecycleReadinessInput
+    ): Promise<number>;
+}
+
+interface GroupFormationLifecycleAgent {
+    readonly prefix: AgentPrefix;
+    readonly agentId: string;
+    readonly actor: string;
+    readonly connection: string;
+    readonly page: Readonly<{
+        evaluate(pageFunction: () => Promise<void>): Promise<void>;
+    }>;
+}
+
+interface GroupFormationLifecycleReadinessInput {
+    readonly runId: string;
+    readonly agent: GroupFormationLifecycleAgent;
+    readonly expectedPeerIds: readonly string[];
     readonly suffix: string;
     readonly startedAtMs: number;
 }
@@ -477,7 +514,7 @@ async function activateAndRefreshAcceptedLayout(
 }
 
 async function refreshAgentRooms(
-    agents: readonly [LiveRtcControlClient.Agent, LiveRtcControlClient.Agent, LiveRtcControlClient.Agent]
+    agents: readonly [GroupFormationLifecycleAgent, GroupFormationLifecycleAgent, GroupFormationLifecycleAgent]
 ): Promise<void> {
     await Promise.all(agents.map((agent) =>
         agent.page.evaluate(async () => {
@@ -514,7 +551,7 @@ async function waitForPlannedLayout(
         if (!result?.ok) {
             return false;
         }
-        const candidate = readPublishedLayout(input.control.resultValue(result));
+        const candidate = readActivePublishedLayout(input.control.resultValue(result));
         if (
             candidate === undefined ||
             candidate.identity.groupRevision !== input.expectedGroupRevision ||
@@ -629,7 +666,7 @@ function groupRequestPath(
     return suffix ? `${groupPath}/${suffix}` : groupPath;
 }
 
-function readPublishedLayout(
+function readActivePublishedLayout(
     value: Readonly<Record<string, RtcBaselineJson>>
 ): Readonly<{ sessionIds: readonly string[]; identity: GroupLayoutIdentity; }> | undefined {
     const body = jsonRecord(value.body);
@@ -643,7 +680,7 @@ function readPublishedLayout(
         groupRevision === undefined ||
         presenceRevision === undefined ||
         version === undefined ||
-        (state !== 'active' && state !== 'removed')
+        state !== 'active'
     ) {
         return undefined;
     }
