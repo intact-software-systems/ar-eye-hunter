@@ -4,7 +4,7 @@ import type {
     GroupMutationRead
 } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
 import { computeGroupMutation } from '@shared-server/rallar-system/group-state/mutation/orchestration/compute-group-mutation.ts';
-import { validateGroupMutation } from '@shared-server/rallar-system/group-state/mutation/state-validation/validate-group-mutation.ts';
+import { assertGroupMutation } from '@shared-server/rallar-system/group-state/mutation/state-validation/assert-group-mutation.ts';
 import type { AuditStamp } from '@shared/api/group-types.ts';
 import { describe, expect, it } from 'vitest';
 
@@ -19,8 +19,8 @@ describe('group aggregate mutation computation', () => {
 
         const first = computeGroupMutation({ command, read, facts });
         const second = computeGroupMutation({ command, read, facts });
-        validateGroupMutation({ command, read, facts, computed: first });
-        validateGroupMutation({ command, read, facts, computed: second });
+        assertGroupMutation({ command, read, facts, computed: first });
+        assertGroupMutation({ command, read, facts, computed: second });
 
         expect(first).toEqual(second);
         expect(command).toEqual(createMutationCommand());

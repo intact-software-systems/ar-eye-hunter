@@ -5,7 +5,7 @@ import {
     toFormationActivateCommand,
     toFormationRetryPlanCommand
 } from '@shared-server/rallar-system/group-state/group-formation-mutation-command.ts';
-import { validateGroupMutationAuthority } from '@shared-server/rallar-system/group-state/mutation/command-validation/validate-group-mutation-authority.ts';
+import { assertGroupMutationAuthority } from '@shared-server/rallar-system/group-state/mutation/command-validation/assert-group-mutation-authority.ts';
 import type { GroupMutationCommand, GroupMutationFacts } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
 import type { GroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
 
@@ -63,27 +63,26 @@ describe('internal authority capability matrix', () => {
             expectedLayout: LAYOUT_A
         });
 
-        expect(() => validateGroupMutationAuthority(command, internalFacts('formation-criterion')))
+        expect(() => assertGroupMutationAuthority(command, internalFacts('formation-criterion')))
             .not.toThrow();
     });
 
     it('fails formation-criterion closed outside its two transitions', () => {
-        expect(() => validateGroupMutationAuthority(internalJoinCommand(), internalFacts('formation-criterion'))).toThrow('limited to criterion transitions');
+        expect(() => assertGroupMutationAuthority(internalJoinCommand(), internalFacts('formation-criterion'))).toThrow('limited to criterion transitions');
     });
 
-    // The three modes registered ahead of their operations admit nothing:
-    // every cross-product outside the capability table fails closed.
+    // Each mode fails closed outside its exact operation inventory.
     it.each([
         { mode: 'topology-publication' as const, message: 'applyPlannedLayout' },
         { mode: 'activation-status' as const, message: 'status update' }
     ])('fails $mode closed on every current operation', (row) => {
-        expect(() => validateGroupMutationAuthority(internalJoinCommand(), internalFacts(row.mode)))
+        expect(() => assertGroupMutationAuthority(internalJoinCommand(), internalFacts(row.mode)))
             .toThrow(row.message);
         const criterionShaped = toFormationRetryPlanCommand({
             groupRef: GROUP_REF,
             formationEpoch: 2
         });
-        expect(() => validateGroupMutationAuthority(criterionShaped, internalFacts(row.mode)))
+        expect(() => assertGroupMutationAuthority(criterionShaped, internalFacts(row.mode)))
             .toThrow(row.message);
     });
 
@@ -93,7 +92,7 @@ describe('internal authority capability matrix', () => {
             input: { ...internalJoinCommand().input, actorPrincipalId: 'alice' }
         } as GroupMutationCommand;
 
-        expect(() => validateGroupMutationAuthority(command, internalFacts('formation-criterion')))
+        expect(() => assertGroupMutationAuthority(command, internalFacts('formation-criterion')))
             .toThrow('cannot claim semantic actor authority');
     });
 
@@ -104,7 +103,7 @@ describe('internal authority capability matrix', () => {
         };
         const command = toFormationRetryPlanCommand({ groupRef: GROUP_REF, formationEpoch: 1 });
 
-        expect(() => validateGroupMutationAuthority(command, facts))
+        expect(() => assertGroupMutationAuthority(command, facts))
             .toThrow('cannot use authenticated authority facts');
     });
 
@@ -130,9 +129,9 @@ describe('internal authority capability matrix', () => {
             input: { ...fenced.input, expectedFormationEpoch: null }
         };
 
-        expect(() => validateGroupMutationAuthority(withoutLayout, internalFacts('formation-criterion')))
+        expect(() => assertGroupMutationAuthority(withoutLayout, internalFacts('formation-criterion')))
             .toThrow('expected layout fence');
-        expect(() => validateGroupMutationAuthority(withoutEpoch, internalFacts('formation-criterion')))
+        expect(() => assertGroupMutationAuthority(withoutEpoch, internalFacts('formation-criterion')))
             .toThrow('expected formation epoch fence');
     });
 });

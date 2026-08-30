@@ -5,8 +5,7 @@ import type {
 } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
 import { computeGroupMutation } from '@shared-server/rallar-system/group-state/mutation/orchestration/compute-group-mutation.ts';
 import { validateGroupMutationIdempotencyRecord } from '@shared-server/rallar-system/group-state/mutation/result-validation/validate-group-mutation-result.ts';
-import { validateGroupMutation } from '@shared-server/rallar-system/group-state/mutation/state-validation/validate-group-mutation.ts';
-import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
+import { assertGroupMutation } from '@shared-server/rallar-system/group-state/mutation/state-validation/assert-group-mutation.ts';
 import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import type { AuditStamp, GroupPresenceAdmission, GroupPresenceSummary } from '@shared/api/group-types.ts';
 import { computeGroupPresenceSummaryEntry } from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
@@ -17,9 +16,7 @@ import { createTestGroupStateService } from '../group-state-test-runtime.ts';
 import { createTestGroup } from '../../../../create-test-group.ts';
 import { groupMemberStorageKey, groupRef as runtimeGroupRef, groupStorageKey, SCOPE, storedEntry } from './group-mutation-test-runtime.ts';
 
-class GroupBarrierRepository extends FakeRuntimeStateRepository {}
-
-function createService(runtimeRepository: GroupBarrierRepository, nowEpochMs: number) {
+function createService(runtimeRepository: FakeRuntimeStateRepository, nowEpochMs: number) {
     let id = 0;
     return createTestGroupStateService({
         runtimeRepository,
@@ -30,7 +27,7 @@ function createService(runtimeRepository: GroupBarrierRepository, nowEpochMs: nu
 }
 
 async function seedOpenGroup(
-    runtime: GroupBarrierRepository,
+    runtime: FakeRuntimeStateRepository,
     groupId: string,
     maxMembers = 10
 ): Promise<void> {
@@ -98,7 +95,7 @@ describe('group mutation receipt causal invariants', () => {
 
     describe('group mutation rejected-result persistence', () => {
         it('does not persist a rejected receipt, event, or outbox effect', async () => {
-            const runtime = new GroupBarrierRepository();
+            const runtime = new FakeRuntimeStateRepository();
             await seedOpenGroup(runtime, 'ephemeral-rejection-room');
             const mutation = createService(runtime, 2_000).createGroup(SCOPE, {
                 groupId: 'ephemeral-rejection-room',
@@ -152,7 +149,7 @@ describe('group mutation receipt causal invariants', () => {
                 }
             });
             expect(() =>
-                validateGroupMutation({
+                assertGroupMutation({
                     command,
                     read: fencedRead,
                     facts,
@@ -201,7 +198,7 @@ describe('group mutation receipt causal invariants', () => {
 
             for (const malformed of cases) {
                 expect(() =>
-                    validateGroupMutation({
+                    assertGroupMutation({
                         command,
                         read,
                         facts,
@@ -269,7 +266,7 @@ describe('group mutation receipt causal invariants', () => {
                 expect
                     .soft(
                         () =>
-                            validateGroupMutation({
+                            assertGroupMutation({
                                 command,
                                 read,
                                 facts,

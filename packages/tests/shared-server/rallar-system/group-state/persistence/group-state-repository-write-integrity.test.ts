@@ -4,7 +4,7 @@ import {
     type GroupMutationRead
 } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
 import { computeGroupMutation } from '@shared-server/rallar-system/group-state/mutation/orchestration/compute-group-mutation.ts';
-import { validateGroupMutation } from '@shared-server/rallar-system/group-state/mutation/state-validation/validate-group-mutation.ts';
+import { assertGroupMutation } from '@shared-server/rallar-system/group-state/mutation/state-validation/assert-group-mutation.ts';
 import { groupStateMemberStorageKey } from '@shared-server/rallar-system/group-state/persistence/membership/group-membership-storage-key.ts';
 import {
     groupStatePresenceAdmissionStorageKey,
@@ -72,7 +72,7 @@ describe('convergent group and presence state', () => {
         };
 
         expect(() =>
-            validateGroupMutation({
+            assertGroupMutation({
                 command,
                 read,
                 facts,

@@ -19,7 +19,7 @@ import {
     type GroupStateServiceDependencies
 } from './group-state-service-contracts.ts';
 import { createTimedGroupStateService } from './group-state-service-timing.ts';
-import { validateGroupMutationAuthority } from './mutation/command-validation/validate-group-mutation-authority.ts';
+import { assertGroupMutationAuthority } from './mutation/command-validation/assert-group-mutation-authority.ts';
 import { validateGroupMutationCommand } from './mutation/command-validation/validate-group-mutation-command.ts';
 import type {
     GroupMutationCommand,
@@ -29,7 +29,7 @@ import type {
 import { computeGroupMutation } from './mutation/orchestration/compute-group-mutation.ts';
 import { readsAcceptedLayoutRow, readsGroupLayoutRows } from './mutation/read/group-mutation-read-scope.ts';
 import { readGroupMutation } from './mutation/read/read-group-mutation.ts';
-import { validateGroupMutation } from './mutation/state-validation/validate-group-mutation.ts';
+import { assertGroupMutation } from './mutation/state-validation/assert-group-mutation.ts';
 import { writeGroupMutation } from './mutation/write/write-group-mutation.ts';
 import { GroupConnectTriggerLatchRepository } from './persistence/group-connect-trigger-latch-repository.ts';
 import { GroupStateRepository } from './persistence/group-state-repository.ts';
@@ -150,7 +150,7 @@ function createInternalMutationPreparer(
         // execute fails at the call site, never as a poison row the queue
         // retries into a terminal failure. attemptCount is a placeholder the
         // matrix never reads.
-        validateGroupMutationAuthority(command, { ...facts, attemptCount: 1 });
+        assertGroupMutationAuthority(command, { ...facts, attemptCount: 1 });
         const causalToken = await sha256CanonicalJson({ command, facts });
         return {
             authorityProof: null,
@@ -259,7 +259,7 @@ function createMutationOperations(
         read: async (prepared) => await readPreparedGroupMutation(owners, prepared),
         compute: (prepared, read) => computeGroupMutation({ command: prepared.command, read, facts: prepared.facts }),
         validate: (prepared, read, computed) => {
-            validateGroupMutation({
+            assertGroupMutation({
                 command: prepared.command,
                 read,
                 facts: prepared.facts,

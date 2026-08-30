@@ -1,16 +1,17 @@
 import type { GroupMutationCommand, GroupMutationFacts } from '../group-mutation-contracts.ts';
+import { assertGroupMutationJoinCodeFacts } from './assert-group-mutation-join-code-facts.ts';
 
-export function validateGroupMutationAuthority(
+export function assertGroupMutationAuthority(
     command: GroupMutationCommand,
     facts: GroupMutationFacts
 ): void {
-    validateResolvedJoinCodeFacts(command, facts);
+    assertGroupMutationJoinCodeFacts(command, facts);
     const authority = facts.authenticatedAuthority;
     if (facts.internalAuthority === 'none' && authority === null) {
         throw new TypeError('User group mutation requires authenticated authority facts');
     }
     if (facts.internalAuthority !== 'none') {
-        validateInternalMutationAuthority(command, facts);
+        assertInternalMutationAuthority(command, facts);
         return;
     }
     if (command.operation === 'connectGroup' && command.input.connectTriggerGeneration !== null) {
@@ -27,13 +28,8 @@ export function validateGroupMutationAuthority(
     }
 }
 
-/**
- * The total mode-by-operation capability matrix (plan decision I19): each
- * internal producer holds exactly the operations it needs, every cross-product
- * outside the table fails closed, and the three modes whose operations arrive
- * in later slices admit nothing until those operations exist.
- */
-function validateInternalMutationAuthority(
+// Internal producers hold only their own capability; reserved modes fail closed.
+function assertInternalMutationAuthority(
     command: GroupMutationCommand,
     facts: GroupMutationFacts
 ): void {
@@ -45,7 +41,7 @@ function validateInternalMutationAuthority(
     }
     switch (facts.internalAuthority) {
         case 'formation-criterion':
-            return validateFormationCriterionAuthority(command);
+            return assertFormationCriterionAuthority(command);
         case 'expiry':
             if (command.operation !== 'disconnectPresence' || command.input.reason !== 'expired') {
                 throw new TypeError('Group expiry authority requires an expiry command');
@@ -57,9 +53,9 @@ function validateInternalMutationAuthority(
             }
             return;
         case 'formation-automation':
-            return validateFormationAutomationAuthority(command);
+            return assertFormationAutomationAuthority(command);
         case 'topology-publication':
-            return validateTopologyPublicationAuthority(command);
+            return assertTopologyPublicationAuthority(command);
         case 'activation-status':
             throw new TypeError(
                 'Activation-status authority is limited to the status update, which does not exist yet'
@@ -78,7 +74,7 @@ function validateInternalMutationAuthority(
 // The fence guards reject absent (`undefined`) alongside explicit null: a
 // wire-decoded command lacking the keys is malformed here, not later as a
 // lying stale-epoch rejection in compute.
-function validateFormationCriterionAuthority(command: GroupMutationCommand): void {
+function assertFormationCriterionAuthority(command: GroupMutationCommand): void {
     switch (command.operation) {
         case 'activateGroup':
         case 'failGroupFormation':
@@ -97,7 +93,7 @@ function validateFormationCriterionAuthority(command: GroupMutationCommand): voi
     }
 }
 
-function validateFormationAutomationAuthority(command: GroupMutationCommand): void {
+function assertFormationAutomationAuthority(command: GroupMutationCommand): void {
     if (
         command.operation !== 'planGroupLayout' && command.operation !== 'connectGroup'
     ) {
@@ -111,7 +107,7 @@ function validateFormationAutomationAuthority(command: GroupMutationCommand): vo
     }
 }
 
-function validateTopologyPublicationAuthority(command: GroupMutationCommand): void {
+function assertTopologyPublicationAuthority(command: GroupMutationCommand): void {
     if (command.operation !== 'applyPlannedLayout') {
         throw new TypeError('Topology-publication authority is limited to applyPlannedLayout');
     }
@@ -122,29 +118,5 @@ function validateTopologyPublicationAuthority(command: GroupMutationCommand): vo
     }
     if (command.input.expectedLayout === null || command.input.expectedLayout === undefined) {
         throw new TypeError('Planned layout promotion must carry the expected layout fence');
-    }
-}
-
-function validateResolvedJoinCodeFacts(
-    command: GroupMutationCommand,
-    facts: GroupMutationFacts
-): void {
-    if (command.operation === 'rotateGroupJoinCode') {
-        if (facts.resolvedJoinCode === null || facts.joinCodeVerifier === null) {
-            throw new TypeError('Group rotate mutation is missing its generated join code facts');
-        }
-        if (command.input.joinCode !== null && facts.resolvedJoinCode !== command.input.joinCode) {
-            throw new TypeError('Group rotate resolved join code differs from explicit command intent');
-        }
-        return;
-    }
-    if (command.operation === 'joinGroup' || command.operation === 'acceptGroupInvite') {
-        if (facts.resolvedJoinCode !== command.input.joinCode) {
-            throw new TypeError('Group resolved join code differs from join command intent');
-        }
-        return;
-    }
-    if (facts.resolvedJoinCode !== null || facts.joinCodeVerifier !== null) {
-        throw new TypeError('Unrelated group operation contains resolved join code facts');
     }
 }

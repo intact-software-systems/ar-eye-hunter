@@ -10,11 +10,6 @@ import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology
 
 import { createGroupAuthorityFacts, createGroupAuthorityRead, groupRef, transitionCommand } from './group-mutation-test-runtime.ts';
 
-/**
- * `start` opens a formation series from the clean slate (product decisions
- * 35/37). Dark -- no route, no producer -- until slice 8 mounts it. Its partner
- * `reset` lands in slice 6c.
- */
 describe('group formation series computation', () => {
     it('resets the active formation series to dormant and halted', () => {
         const computed = computeGroupMutation({
@@ -147,10 +142,9 @@ describe('group formation series computation', () => {
     /**
      * Decision 37 calls exhaustion terminal for automation, so the budget is a
      * precondition of the transition rather than a clause of the initiator
-     * policy -- internal authority skips the policy entirely. Latent today:
-     * `validateGroupMutationAuthority` still refuses `startGroupFormation`
-     * under criterion authority, so this is asserted at the compute that owns
-     * the invariant, which is where the later slices open that arm.
+     * policy -- internal authority skips the policy entirely. The capability
+     * matrix refuses criterion-commanded start, so this test isolates the
+     * state machine's independent budget invariant, not an executable command.
      */
     it('denies a spent series on the criterion path, which answers to no initiator policy', () => {
         const denial = expectPolicyDenial(

@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
-import { validateGroupMutationAuthority } from '@shared-server/rallar-system/group-state/mutation/command-validation/validate-group-mutation-authority.ts';
+import type { GroupStateMutationCommand } from '@shared-server/rallar-system/group-state/group-state-service-contracts.ts';
+import { assertGroupMutationAuthority } from '@shared-server/rallar-system/group-state/mutation/command-validation/assert-group-mutation-authority.ts';
 import type { GroupMutationCommand } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
 import { toApplyPlannedLayoutCommand } from '@shared-server/rallar-system/group-state/to-apply-planned-layout-command.ts';
 import { computeTopologyPromotionEntry, decodeTopologyPromotionWork } from '@shared-server/rallar-system/group-state/topology-promotion-outbox-entry.ts';
 import { FakeRuntimeStateRepository } from '../../../runtime-state/test-support/fake-runtime-state-repository.ts';
-import { createTestGroupStateService } from '../group-state-test-runtime.ts';
+import { createTestGroupStateService, type GroupStateTestService } from '../group-state-test-runtime.ts';
 
 import {
     computePlannedLayoutPromotion,
@@ -56,6 +57,11 @@ const PLANNED: GroupPlannedLayoutRow = {
     snapshot: SNAPSHOT,
     revision: 11
 };
+
+interface PlannedLayoutApplyHarness {
+    readonly service: GroupStateTestService;
+    readonly prepare: (command: GroupMutationCommand) => Promise<GroupStateMutationCommand>;
+}
 
 describe('computePlannedLayoutPromotion', () => {
     it('applies the stored plan with every accepted fact computed together', () => {
@@ -188,7 +194,7 @@ describe('groupLayoutPromotionEffects', () => {
 });
 
 describe('applyPlannedLayout through the durable service', () => {
-    async function createApplyHarness() {
+    async function createApplyHarness(): Promise<PlannedLayoutApplyHarness> {
         const service = createTestGroupStateService({
             runtimeRepository: new FakeRuntimeStateRepository(),
             now: () => 1_000,
@@ -211,7 +217,7 @@ describe('applyPlannedLayout through the durable service', () => {
                 requestId: 'apply-seed'
             }
         );
-        const prepare = async (command: GroupMutationCommand) => {
+        const prepare = async (command: GroupMutationCommand): Promise<GroupStateMutationCommand> => {
             const preparation = await service.prepareTopologyPublicationMutation(command, 1_000);
             return {
                 authorityProof: null,
@@ -297,7 +303,7 @@ describe('applyPlannedLayout through the durable service', () => {
             expectedLayout: IDENTITY
         }));
 
-        expect(() => validateGroupMutationAuthority(prepared.command, prepared.facts))
+        expect(() => assertGroupMutationAuthority(prepared.command, prepared.facts))
             .not.toThrow();
     });
 });

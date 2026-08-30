@@ -7,7 +7,7 @@ import {
 } from '../aggregate/compute-group-aggregate-mutation.ts';
 import { computeGroupTransportMutation } from '../aggregate/compute-group-transport-mutation.ts';
 import { computeLifecycleTransition } from '../aggregate/compute-lifecycle-transition.ts';
-import { validateGroupMutationAuthority } from '../command-validation/validate-group-mutation-authority.ts';
+import { assertGroupMutationAuthority } from '../command-validation/assert-group-mutation-authority.ts';
 import { validateGroupMutationCommand } from '../command-validation/validate-group-mutation-command.ts';
 import type {
     GroupMutationCommand,
@@ -15,6 +15,7 @@ import type {
     GroupMutationFacts,
     GroupMutationRead
 } from '../group-mutation-contracts.ts';
+import { rejected } from '../group-mutation-result.ts';
 import {
     computeDeclineGroupAdmission,
     computeGrantGroupAdmission
@@ -34,23 +35,32 @@ import { probeGroupMutationIdempotency } from '../probe-group-mutation-idempoten
 import { validateGroupMutationFacts } from '../state-validation/validate-group-mutation-facts.ts';
 import { validateGroupMutationRead } from '../state-validation/validate-group-mutation-read.ts';
 
-export function computeGroupMutation(
-    input: Readonly<{
-        command: GroupMutationCommand;
-        read: GroupMutationRead;
-        facts: GroupMutationFacts;
-    }>
-): GroupMutationComputed {
+export interface GroupMutationInput {
+    readonly command: GroupMutationCommand;
+    readonly read: GroupMutationRead;
+    readonly facts: GroupMutationFacts;
+}
+
+export function computeGroupMutation(input: GroupMutationInput): GroupMutationComputed {
     const { command, read, facts } = input;
     validateGroupMutationCommand(command);
     validateGroupMutationRead(read, command);
     validateGroupMutationFacts(facts);
-    validateGroupMutationAuthority(command, facts);
+    assertGroupMutationAuthority(command, facts);
     const idempotency = probeGroupMutationIdempotency(command, read, facts.commandHash);
     if (idempotency.outcome !== 'miss') {
         return idempotency.outcome === 'replay'
             ? { ...idempotency, rejectionCode: null }
             : idempotency;
+    }
+    if (command.operation !== 'createGroup' && read.group === null) {
+        return rejected({
+            command,
+            read,
+            facts,
+            rejectionCode: 'group-mutation-rejected',
+            message: `Group not found: ${command.aggregateRef.groupId}`
+        });
     }
 
     return computeFreshGroupMutation(command, read, facts);

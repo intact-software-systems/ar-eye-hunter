@@ -4,7 +4,10 @@ import type { Group, GroupRef } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import type { OnMessageCallback } from '@shared/services/InboxOutboxContracts.ts';
 
-import { decodeGroupConnectTriggerWork } from '../../../group-state/group-connect-trigger-outbox-entry.ts';
+import {
+    decodeGroupConnectTriggerWork,
+    type GroupConnectTriggerWork
+} from '../../../group-state/group-connect-trigger-outbox-entry.ts';
 import type { GroupMutationCommand } from '../../../group-state/mutation/group-mutation-contracts.ts';
 import type {
     GroupConnectTriggerIdentity,
@@ -24,20 +27,27 @@ export function createGroupConnectTriggerWorkHandler(port: GroupFormationAutomat
     return {
         onMessage: async (_message, entry) => {
             const work = decodeGroupConnectTriggerWork(entry.resource);
-            if (work.kind === 'intent') {
-                await petitionGroupConnectTrigger(port, work);
-                return;
-            }
-            const group = await port.readGroup(work.groupRef);
-            if (group === null) {
-                return;
-            }
-            const latches = await port.latches.listAwaiting(work.groupRef, group.formationEpoch);
-            for (const { latch } of latches) {
-                await petitionGroupConnectTrigger(port, latch);
-            }
+            await petitionGroupConnectTriggerWork(port, work);
         }
     };
+}
+
+async function petitionGroupConnectTriggerWork(
+    port: GroupFormationAutomationPort,
+    work: GroupConnectTriggerWork
+): Promise<void> {
+    if (work.kind === 'intent') {
+        await petitionGroupConnectTrigger(port, work);
+        return;
+    }
+    const group = await port.readGroup(work.groupRef);
+    if (group === null) {
+        return;
+    }
+    const latches = await port.latches.listAwaiting(work.groupRef, group.formationEpoch);
+    for (const { latch } of latches) {
+        await petitionGroupConnectTrigger(port, latch);
+    }
 }
 
 export async function petitionGroupConnectTrigger(
@@ -69,7 +79,7 @@ export async function petitionGroupConnectTrigger(
 export function toAutomaticGroupConnectCommand(
     identity: GroupConnectTriggerIdentity,
     expectedLayout: GroupLayoutIdentity
-): Extract<GroupMutationCommand, { operation: 'connectGroup'; }> {
+): GroupMutationCommand {
     const commandId = `formation-automation:connect:${
         serializeCanonicalJson({
             groupRef: identity.groupRef,

@@ -1,14 +1,15 @@
-import { validateGroupMutation } from '@shared-server/rallar-system/group-state/mutation/state-validation/validate-group-mutation.ts';
+import { assertGroupMutation } from '@shared-server/rallar-system/group-state/mutation/state-validation/assert-group-mutation.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import type { GroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
 import { resolveGroupLifecyclePolicyPreset } from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
-import type { GroupTopologyReconfigureLanding } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
+import type { GroupLifecyclePolicy, GroupTopologyReconfigureLanding } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import { describe, expect, it } from 'vitest';
 
 import type {
     GroupMutationCommand,
     GroupMutationComputed,
+    GroupMutationComputedWrite,
     GroupMutationFacts,
     GroupMutationRead
 } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
@@ -21,8 +22,11 @@ import { createGroupAuthorityFacts, createGroupAuthorityRead, groupRef, transiti
 
 function writtenMutation(
     computed: GroupMutationComputed
-): Extract<GroupMutationComputed, { outcome: 'write'; }> {
-    return computed as Extract<GroupMutationComputed, { outcome: 'write'; }>;
+): GroupMutationComputedWrite {
+    if (computed.outcome !== 'write') {
+        throw new Error(`Expected mutation write, received ${computed.outcome}`);
+    }
+    return computed;
 }
 
 function reconfigureCommand(
@@ -39,7 +43,7 @@ function reconfigureCommand(
 }
 
 function expectReconfigureLandingOverride(
-    policy: ReturnType<typeof resolveGroupLifecyclePolicyPreset> | null,
+    policy: GroupLifecyclePolicy | null,
     landing: GroupTopologyReconfigureLanding,
     lifecycleState: Group['lifecycleState']
 ): void {
@@ -355,12 +359,12 @@ describe('group lifecycle transition computation', () => {
         const computed = computeGroupMutation({ command, read, facts });
         expect(computed).toMatchObject({ outcome: 'rejected', rejectionCode: 'group-policy-denied' });
         const serialized: GroupMutationComputed = JSON.parse(JSON.stringify(computed));
-        expect(() => validateGroupMutation({ command, read, facts, computed: serialized })).not.toThrow();
+        expect(() => assertGroupMutation({ command, read, facts, computed: serialized })).not.toThrow();
         if (computed.outcome !== 'rejected' || computed.rejectionCode !== 'group-policy-denied') {
             throw new Error('Expected a policy rejection');
         }
         expect(() =>
-            validateGroupMutation({
+            assertGroupMutation({
                 command,
                 read,
                 facts,
