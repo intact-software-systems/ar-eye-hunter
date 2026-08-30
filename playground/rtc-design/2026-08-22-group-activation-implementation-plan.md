@@ -1825,7 +1825,10 @@ already-reviewed Relic scene density and singleton bundle-measure script subtree
 replacement implementation is committed at `367cef8af`; its slice-local production legacy scan finds
 no candidates and validates the registry. Delivery status correctly reports `STOP_WRONG_BASE`
 because #391 is stacked on #390 rather than `main`, not because of a merge conflict. Exact-head
-re-review, publication and remote validation remain before the Slice 8c checkpoint closes.
+re-review of implementation head `ada7978d3` reports no critical, important or minor findings and
+confirms the authority race is closed, facade test doubles are shape-checked, the public budget is
+exact in both definitions, and no Slice 8d or retained-compatibility work leaked into the slice.
+Publication and remote validation remain before the Slice 8c checkpoint closes.
 
 **Next two PRs (I5, I20):**
 
