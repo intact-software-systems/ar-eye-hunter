@@ -2,6 +2,7 @@ import { Hono, type Context } from 'jsr:@hono/hono@4.11.9';
 
 import { readRateLimiter, readRequestClientKey } from '@shared-server/http/rate-limit-service.ts';
 import type { LoginRequest, RegisterRequest, RegisterResponse } from '@shared/api/api-config.ts';
+import type { ApiMutationFailureJsonObject } from '@shared/api/mutation/api-mutation-failure.ts';
 import { RateLimiter, RateLimiterPolicy } from '@shared/resilience/Resilience.ts';
 
 import * as apiLoginService from '../../services/api-login-service.ts';
@@ -57,7 +58,7 @@ async function issueLoginResponse(
             readRateLimiter('auth-login-ip', clientKey, runtime.rateLimits.loginIp),
             async () => {
                 const { requestId, body } = await readAuthMutationRequest(context);
-                const loginRequest = body as LoginRequest;
+                const loginRequest = readLoginRequest(body);
                 return await RateLimiter.tryToExecuteOrDefault<Response>(
                     readRateLimiter(
                         'auth-login-user',
@@ -125,7 +126,7 @@ async function registerUserResponse(
             readRateLimiter('auth-register-ip', clientKey, runtime.rateLimits.registrationIp),
             async () => {
                 const { requestId, body } = await readAuthMutationRequest(context);
-                const request = body as RegisterRequest;
+                const request = readRegisterRequest(body);
                 return await RateLimiter.tryToExecuteOrDefault<Response>(
                     readRateLimiter(
                         'auth-register-user',
@@ -188,6 +189,39 @@ async function requireRegistrationAdminIfNeeded(
     if (!dependencies.authentication.adminClientIds.includes(authSession.clientId)) {
         throw authorizationDenied('Forbidden: admin auth session required to register users');
     }
+}
+
+function readLoginRequest(body: ApiMutationFailureJsonObject): LoginRequest {
+    return {
+        username: readAuthRequestString(body, 'username'),
+        password: readAuthRequestString(body, 'password')
+    };
+}
+
+function readRegisterRequest(body: ApiMutationFailureJsonObject): RegisterRequest {
+    const displayName = body.displayName;
+    if (displayName !== undefined && typeof displayName !== 'string') {
+        throw new TypeError('displayName must be a string');
+    }
+    return {
+        username: readAuthRequestString(body, 'username'),
+        password: readAuthRequestString(body, 'password'),
+        ...(displayName === undefined ? {} : { displayName })
+    };
+}
+
+function readAuthRequestString(
+    body: ApiMutationFailureJsonObject,
+    property: 'username' | 'password'
+): string {
+    const value = body[property];
+    if (value === undefined) {
+        return '';
+    }
+    if (typeof value !== 'string') {
+        throw new TypeError(`${property} must be a string`);
+    }
+    return value;
 }
 
 function toAuthUserRouteRateLimitPolicies(

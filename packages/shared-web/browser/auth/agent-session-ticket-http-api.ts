@@ -1,8 +1,8 @@
 import type {
     AgentSessionTicketRequest,
     AgentSessionTicketResponse,
-    ConsumeAgentSessionTicketRequest,
-    ConsumeAgentSessionTicketResponse
+    AuthSession,
+    ConsumeAgentSessionTicketRequest
 } from '@shared/api/api-config.ts';
 import { toApiMutationRequestPath } from '@shared/api/mutation/api-mutation-request.ts';
 
@@ -33,7 +33,7 @@ export async function issueAgentSessionTicketsAt(
 export async function consumeAgentSessionTicket(
     request: ConsumeAgentSessionTicketRequest,
     options: ApiMutationRequestOptions
-): Promise<ConsumeAgentSessionTicketResponse> {
+): Promise<AuthSession> {
     return await consumeAgentSessionTicketAt(readApiBaseUrl(), request, options);
 }
 
@@ -41,8 +41,8 @@ export async function consumeAgentSessionTicketAt(
     apiBaseUrl: string,
     request: ConsumeAgentSessionTicketRequest,
     options: ApiMutationRequestOptions
-): Promise<ConsumeAgentSessionTicketResponse> {
-    return await executeHttpRequest<ConsumeAgentSessionTicketRequest, ConsumeAgentSessionTicketResponse>(
+): Promise<AuthSession> {
+    return await executeHttpRequest<ConsumeAgentSessionTicketRequest, AuthSession>(
         normalizeExplicitApiBaseUrl(apiBaseUrl),
         toApiMutationRequestPath(
             '/api/auth/agent-session-tickets/consume',

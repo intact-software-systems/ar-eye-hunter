@@ -397,6 +397,19 @@ describe('group policy helpers', () => {
                 nowEpochMs: NOW
             })
         ).toEqual({ allowed: true });
+        for (const lifecycleState of ['reconfiguring', 'reconnecting'] as const) {
+            expect(
+                canSendGroupMessage({
+                    snapshot: snapshot({
+                        lifecycleState,
+                        activeSessions: [session('alice-session', 'alice')]
+                    }),
+                    actor: ACTOR,
+                    senderSessionId: 'alice-session',
+                    preActivationAppData: 'blocked-until-active'
+                })
+            ).toEqual({ allowed: true });
+        }
         // Plan decision 5.4: blocked-until-active gates only before activation,
         // and an absent value leaves application data ungated.
         expect(

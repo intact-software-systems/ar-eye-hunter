@@ -3,13 +3,12 @@ import { Hono, type Context } from 'jsr:@hono/hono@4.11.9';
 import { readRateLimiter } from '@shared-server/http/rate-limit-service.ts';
 import type { IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
 import type {
-    AgentSessionTicketRequest,
     AgentSessionTicketResponse,
-    ConsumeAgentSessionTicketRequest,
-    ConsumeAgentSessionTicketResponse,
+    AuthSession,
     LogoutResponse,
     WebSocketTicketResponse
 } from '@shared/api/api-config.ts';
+import type { ApiMutationFailureJsonObject } from '@shared/api/mutation/api-mutation-failure.ts';
 import { RateLimiter, RateLimiterPolicy } from '@shared/resilience/Resilience.ts';
 
 import { readApiAuthCredentialProof, RequestAuthFailure } from '../../services/request-auth-service.ts';
@@ -134,30 +133,37 @@ function registerAgentTicketIssueRoute(
     app: Hono,
     dependencies: ConfigRouteDependencies
 ): void {
-    app.post('/api/auth/agent-session-tickets/requests/:requestId', async (context) => {
-        try {
-            const authSession = await dependencies.requireApiAuthSession(context.req);
-            const { requestId, body } = await readAuthMutationRequest(context);
-            const request = body as AgentSessionTicketRequest;
-            const agentIds = readAgentSessionTicketAgentIds(request);
-            return toJsonResponse<AgentSessionTicketResponse>(
-                requireAuthMutationResult(
-                    await dependencies.appAuthInbox.issueAgentSessionTickets({
-                        requestId,
-                        session: authSession,
-                        ticketTtlMs: dependencies.authentication.agentSessionTicketTtlMs,
-                        agents: agentIds.map((agentId) => ({ agentId }))
-                    })
-                )
-            );
-        }
-        catch (error) {
-            return toApiMutationFailureResponse(
-                context,
-                error instanceof Error ? error : new Error(String(error))
-            );
-        }
-    });
+    app.post(
+        '/api/auth/agent-session-tickets/requests/:requestId',
+        (context) => agentTicketIssueResponse(context, dependencies)
+    );
+}
+
+async function agentTicketIssueResponse(
+    context: Context,
+    dependencies: ConfigRouteDependencies
+): Promise<Response> {
+    try {
+        const authSession = await dependencies.requireApiAuthSession(context.req);
+        const { requestId, body } = await readAuthMutationRequest(context);
+        const agentIds = readAgentSessionTicketAgentIds(body);
+        return toJsonResponse<AgentSessionTicketResponse>(
+            requireAuthMutationResult(
+                await dependencies.appAuthInbox.issueAgentSessionTickets({
+                    requestId,
+                    session: authSession,
+                    ticketTtlMs: dependencies.authentication.agentSessionTicketTtlMs,
+                    agents: agentIds.map((agentId) => ({ agentId }))
+                })
+            )
+        );
+    }
+    catch (error) {
+        return toApiMutationFailureResponse(
+            context,
+            error instanceof Error ? error : new Error(String(error))
+        );
+    }
 }
 
 function registerAgentTicketConsumeRoute(
@@ -166,35 +172,36 @@ function registerAgentTicketConsumeRoute(
 ): void {
     app.post(
         '/api/auth/agent-session-tickets/consume/requests/:requestId',
-        async (context) => {
-            try {
-                const { requestId, body } = await readAuthMutationRequest(context);
-                const request = body as ConsumeAgentSessionTicketRequest;
-                const ticket = typeof request.ticket === 'string' ? request.ticket.trim() : '';
-                if (!ticket) {
-                    throw new TypeError('Agent session ticket is required.');
-                }
-                return toJsonResponse(
-                    requireAuthMutationResult(
-                        await dependencies.appAuthInbox.consumeAgentSessionTicket({
-                            requestId,
-                            ticket
-                        })
-                    ) satisfies ConsumeAgentSessionTicketResponse
-                );
-            }
-            catch (error) {
-                return toApiMutationFailureResponse(
-                    context,
-                    error instanceof Error ? error : new Error(String(error))
-                );
-            }
-        }
+        (context) => agentTicketConsumeResponse(context, dependencies)
     );
 }
 
+async function agentTicketConsumeResponse(
+    context: Context,
+    dependencies: ConfigRouteDependencies
+): Promise<Response> {
+    try {
+        const { requestId, body } = await readAuthMutationRequest(context);
+        const ticket = readAgentSessionTicket(body);
+        return toJsonResponse(
+            requireAuthMutationResult(
+                await dependencies.appAuthInbox.consumeAgentSessionTicket({
+                    requestId,
+                    ticket
+                })
+            ) satisfies AuthSession
+        );
+    }
+    catch (error) {
+        return toApiMutationFailureResponse(
+            context,
+            error instanceof Error ? error : new Error(String(error))
+        );
+    }
+}
+
 function readAgentSessionTicketAgentIds(
-    request: AgentSessionTicketRequest
+    request: ApiMutationFailureJsonObject
 ): readonly string[] {
     if (!Array.isArray(request.agentIds)) {
         throw new TypeError('agentIds must be a non-empty array');
@@ -212,4 +219,12 @@ function readAgentSessionTicketAgentIds(
         throw new TypeError('agentIds must be unique');
     }
     return agentIds;
+}
+
+function readAgentSessionTicket(request: ApiMutationFailureJsonObject): string {
+    const ticket = typeof request.ticket === 'string' ? request.ticket.trim() : '';
+    if (!ticket) {
+        throw new TypeError('Agent session ticket is required.');
+    }
+    return ticket;
 }

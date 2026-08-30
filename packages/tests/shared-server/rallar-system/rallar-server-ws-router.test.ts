@@ -234,9 +234,12 @@ describe('RallarServerWsRouter', () => {
     it('rejects room messages as not-yet-in-sync when local cache is older than minSnapshotVersion', async () => {
         const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
         try {
+            const snapshot = createGroupSnapshot('room-1', ['peer-1'], 3);
             const { router, socket } = createRouter({
                 authorizeRoomMessage: createGroupRoomWsAuthorizer({
-                    findGroupSnapshotById: () => createGroupSnapshot('room-1', ['peer-1'], 3)
+                    readGroupSnapshot: () => snapshot,
+                    readPreActivationAppData: () => 'allowed',
+                    nowEpochMs: Date.now
                 })
             });
             const message = newALBroadcastMessage(
@@ -246,6 +249,7 @@ describe('RallarServerWsRouter', () => {
                 'chat.message.v1',
                 { text: 'after join' },
                 {
+                    groupRef: snapshot.group,
                     minSnapshotVersion: 4
                 }
             );

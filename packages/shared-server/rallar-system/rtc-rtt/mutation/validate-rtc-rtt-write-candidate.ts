@@ -1,7 +1,7 @@
 import type { RttMeasurementInfo } from '@shared/api/api-config.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import * as snapshotValidation from '../../group-state/snapshot/validate-persisted-group-snapshot.ts';
-import type { JsonWireObject, JsonWireValue } from '../../protocol/json-wire-identity.ts';
+import { encodeJsonWireValue, type JsonWireObject, type JsonWireValue } from '../../protocol/json-wire-identity.ts';
 import {
     compareRtcTopologyIdentifiers,
     toCanonicalRtcTopologyGroupIdentity
@@ -21,7 +21,10 @@ export function validateRtcRttWriteCandidate(
     value: Extract<RtcRttMutationComputed, { outcome: 'write'; }>,
     mutationExpireAtTimestamp: number
 ): void {
-    const candidate = record(value as JsonWireValue, 'RTC RTT write candidate');
+    const candidate = record(
+        encodeJsonWireValue(value, 'RTC RTT write candidate'),
+        'RTC RTT write candidate'
+    );
     exactKeys(candidate, [
         'outcome',
         'reason',

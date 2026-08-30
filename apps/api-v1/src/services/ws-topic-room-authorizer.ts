@@ -15,7 +15,7 @@ export function createApiV1RoomWsAuthorizer(
     dependencies: ApiV1RoomWsAuthorizerDependencies
 ) {
     return createGroupRoomWsAuthorizer({
-        findGroupSnapshotByRef: async (ref) => await groupStateService.readCurrentSnapshot(ref),
+        readGroupSnapshot: async (ref) => await groupStateService.readCurrentSnapshot(ref),
         readPreActivationAppData: async (ref) => {
             const read = await dependencies.readLifecyclePolicy(ref);
             // Absent preserves the workstream invariant: a group with no policy
@@ -29,6 +29,7 @@ export function createApiV1RoomWsAuthorizer(
                 return 'blocked-until-active';
             }
             return read.policy.data.preActivationAppData;
-        }
+        },
+        nowEpochMs: Date.now
     });
 }

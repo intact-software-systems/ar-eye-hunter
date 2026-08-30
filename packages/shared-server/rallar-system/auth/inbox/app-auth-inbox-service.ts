@@ -1,7 +1,7 @@
 import { newALRoute, newALUntargetedMessage } from '@shared/al-contracts/al-contract.ts';
 import type {
     AgentSessionTicketResponse,
-    ConsumeAgentSessionTicketResponse,
+    AuthSession,
     LoginResponse,
     LogoutResponse,
     RegisterRequest,
@@ -185,7 +185,7 @@ export class AppAuthInboxService {
     ): Promise<Either<AppInboxFailure, AgentSessionTicketResponse>>;
     async processAuthIntentUntilCompletion(
         intent: ConsumeAuthAgentTicketIntent
-    ): Promise<Either<AppInboxFailure, ConsumeAgentSessionTicketResponse>>;
+    ): Promise<Either<AppInboxFailure, AuthSession>>;
     async processAuthIntentUntilCompletion(
         intent: AuthMutationIntent
     ): Promise<Either<AppInboxFailure, AuthMutationPublicResult>>;
@@ -530,7 +530,7 @@ export class AppAuthInboxService {
 
     async consumeAgentSessionTicket(
         input: AppAuthInboxService.RequestIdentity & Readonly<{ ticket: string; }>
-    ): Promise<Either<AppInboxFailure, ConsumeAgentSessionTicketResponse>> {
+    ): Promise<Either<AppInboxFailure, AuthSession>> {
         const ticketDigest = await hashAuthSecret(input.ticket);
         const physicalRequestId = toAppQueueKey({
             topicId: AppInboxType.AUTH_AGENT_SESSION_TICKET_CONSUME,

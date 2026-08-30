@@ -1,20 +1,21 @@
 import type { GroupRef, GroupStateCausalRevision } from '@shared/api/group-types.ts';
+import type { ApiJsonObject } from './api-json-value.ts';
 
-export type ApiConfig = {
+export interface ApiConfig {
     readonly apiBaseUrl: string;
     readonly wsBaseUrl: string;
     readonly endpoints: {
         readonly createWs: string;
     };
-};
+}
 
-export type AuthSession = {
+export interface AuthSession {
     readonly clientId: string;
     readonly accessToken: string;
     readonly username: string;
     readonly sessionId: string;
     readonly expiresAtEpochMs: number;
-};
+}
 
 export const EnqueuedType = {
     WS_INBOX: 'WS_INBOX',
@@ -28,7 +29,6 @@ export const EnqueuedType = {
 export type EnqueuedType = (typeof EnqueuedType)[keyof typeof EnqueuedType];
 
 export const AppTopics = {
-    chat: 'chat',
     rtcSignaling: 'rtc-signaling',
     clientStateSnapshot: 'client-state.snapshot',
     clientStateEvent: 'client-state.event',
@@ -46,73 +46,71 @@ export type AppTopics = (typeof AppTopics)[keyof typeof AppTopics];
 
 export type PeerId = string;
 
-export type ClientInfo = {
+export interface ClientInfo {
     readonly clientId: PeerId;
     readonly sessionId: string;
     readonly isOnline: boolean;
-};
+}
 
-export type IceConfig = {
+export interface IceConfig {
     readonly iceServers: readonly RTCIceServer[];
     readonly expiresAtEpochMs: number;
-};
+}
 
-export type LoginRequest = {
-    username: string;
-    password: string;
-};
+export interface LoginRequest {
+    readonly username: string;
+    readonly password: string;
+}
 
-export type RegisterRequest = {
-    username: string;
-    password: string;
-    displayName?: string;
-};
+export interface RegisterRequest {
+    readonly username: string;
+    readonly password: string;
+    readonly displayName?: string;
+}
 
-export type LoginResponse = {
-    clientId: PeerId;
-    accessToken: string;
-    username: string;
-    sessionId: string;
-    expiresAtEpochMs: number;
-};
+export interface LoginResponse {
+    readonly clientId: PeerId;
+    readonly accessToken: string;
+    readonly username: string;
+    readonly sessionId: string;
+    readonly expiresAtEpochMs: number;
+}
 
-export type RegisterResponse = {
-    clientId: PeerId;
-    username: string;
-    displayName: string | null;
-    registeredAtEpochMs: number;
-};
+export interface RegisterResponse {
+    readonly clientId: PeerId;
+    readonly username: string;
+    readonly displayName: string | null;
+    readonly registeredAtEpochMs: number;
+}
 
-export type LogoutResponse = {
-    loggedOut: boolean;
-};
+export interface LogoutResponse {
+    readonly loggedOut: boolean;
+}
 
-export type WebSocketTicketResponse = {
-    ticket: string;
-    sessionId: string;
-    expiresAtEpochMs: number;
-};
+export interface WebSocketTicketResponse extends ApiJsonObject {
+    readonly ticket: string;
+    readonly sessionId: string;
+    readonly expiresAtEpochMs: number;
+}
 
-export type AgentSessionTicketRequest = {
+export interface AgentSessionTicketRequest {
     readonly agentIds: readonly string[];
-};
+}
 
-export type AgentSessionTicket = {
+export interface AgentSessionTicket {
     readonly agentId: string;
     readonly ticket: string;
     readonly sessionId: string;
     readonly expiresAtEpochMs: number;
-};
+}
 
-export type AgentSessionTicketResponse = {
+export interface AgentSessionTicketResponse {
     readonly tickets: readonly AgentSessionTicket[];
-};
+}
 
-export type ConsumeAgentSessionTicketRequest = {
+export interface ConsumeAgentSessionTicketRequest {
     readonly ticket: string;
-};
-
-export type ConsumeAgentSessionTicketResponse = AuthSession;
+}
 
 export type GroupId = string;
 
@@ -125,7 +123,7 @@ export type OverlayId = string;
  */
 export type OverlayProvenance = 'server' | 'bootstrap';
 
-export type OverlayInfo = {
+export interface OverlayInfo {
     readonly sourceGroupStateCausalRevision: GroupStateCausalRevision;
     readonly provenance: OverlayProvenance;
     readonly state: 'active' | 'removed';
@@ -139,12 +137,12 @@ export type OverlayInfo = {
     readonly degreeLimit: number;
     readonly overlayVersion: number;
     readonly updatedAtEpochMs: number;
-};
+}
 
-export type RttMeasurementInfo = {
+export interface RttMeasurementInfo {
     readonly sessionIdFrom: string;
     readonly sessionIdTo: string;
     readonly rttMs: number;
     readonly createdAtEpochMs: number;
     readonly version: number;
-};
+}
