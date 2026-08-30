@@ -1593,13 +1593,25 @@ fallback or retained-legacy entry. The final unit, Deno, build, shared-web/headl
 bundle, E2E, memory full-stack, live three-browser, topology-replay and fixed medium-scale gates all
 pass; remote CI and pull-request delivery readiness remain before #381 leaves draft.
 
+### Slice 8b start checkpoint — stacked browser dial gate (2026-08-30)
+
+Slice 8b starts from #381's published head `ce3689693` on
+`codex/group-activation-browser-dial-gate`; #381 remains unchanged while its final release gate runs.
+The implementation boundary is the one already approved above: one total stage × layout-role peer
+selection drives both missing-peer admission seams, active-session absence fallback is removed, and
+existing established peers remain usable. The first census found the current inbound `tentative`
+bookkeeping has no reader outside its own add/delete operations; unless a focused test exposes an
+independent requirement, it leaves with the touched connection-service surface instead of becoming
+retained legacy. Slice 8c facade/status work and the Slice 8d route/recipe cutover remain out of scope.
+
 **Next two PRs (I5, I20):**
 
-- **PR 13 = finish #381 / slice 8a.** Complete touched-file closure, record final local and remote gate
-  evidence, update the semantic PR explanation for current `main`, and publish the rebased branch.
 - **PR 14 = slice 8b, stacked on #381.** Add the shared total stage × layout-role dial decision,
   suppress active-session bootstrap fallback, and drive both inbound and outbound peer creation from
   that one matrix. Slice 8c and the 8d route/recipe cutover remain outside this next PR.
+- **PR 15 = slice 8c, stacked on slice 8b after its review checkpoint.** Repoint the room facade and
+  readiness/status consumers to the accepted-layout ownership established by 8a/8b; do not pull 8d's
+  public route or recipe cutover forward.
 
 ## Slice 9 — In-flight pacing
 
