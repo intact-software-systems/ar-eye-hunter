@@ -98,7 +98,8 @@ export async function runApiV1RtcTopologyReplayProof(
                 });
                 const durable = await waitForDurableState(
                     input.databaseUrl,
-                    (state) => assertSinglePublisherHeadAdvanced({ state, priorHeads: preparedHeads })
+                    (state) => assertSinglePublisherHeadAdvanced({ state, priorHeads: preparedHeads }),
+                    'stable'
                 );
                 return assertSinglePublisherHeadAdvanced({ state: durable, priorHeads: preparedHeads });
             }
@@ -119,7 +120,8 @@ export async function runApiV1RtcTopologyReplayProof(
                         assertSinglePublisherHeadAdvanced({
                             state,
                             priorHeads: baselineA.publisherHeads
-                        })
+                        }),
+                    'stable'
                 );
                 return assertSinglePublisherHeadAdvanced({
                     state: durable,
@@ -168,7 +170,8 @@ export async function runApiV1RtcTopologyReplayProof(
                             state,
                             consumerStreamId: baselineEvidence.passiveConsumerStreamId,
                             priorHeads: baselineEvidence.publisherHeads
-                        })
+                        }),
+                    'stable'
                 );
                 const evidence = assertSinglePublisherHeadAdvanced({
                     state: durable,
@@ -209,7 +212,8 @@ export async function runApiV1RtcTopologyReplayProof(
                             state,
                             consumerStreamId: baselineEvidence.passiveConsumerStreamId,
                             priorHeads: liveAEvidence.publisherHeads
-                        })
+                        }),
+                    'stable'
                 );
                 const evidence = assertSinglePublisherHeadAdvanced({
                     state: durable,
@@ -253,7 +257,8 @@ export async function runApiV1RtcTopologyReplayProof(
                         assertSinglePublisherHeadAdvanced({
                             state,
                             priorHeads: liveBEvidence.publisherHeads
-                        })
+                        }),
+                    'stable'
                 );
                 const evidence = assertSinglePublisherHeadAdvanced({
                     state: durable,
@@ -283,7 +288,8 @@ export async function runApiV1RtcTopologyReplayProof(
                         assertSinglePublisherHeadAdvanced({
                             state,
                             priorHeads: laterAEvidence.publisherHeads
-                        })
+                        }),
+                    'stable'
                 );
                 const evidence = assertSinglePublisherHeadAdvanced({
                     state: durable,

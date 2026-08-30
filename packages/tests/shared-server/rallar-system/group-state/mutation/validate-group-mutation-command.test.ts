@@ -1,8 +1,22 @@
+import { existsSync } from 'node:fs';
+import { describe, expect, expectTypeOf, it, vi } from 'vitest';
+
 import { validateGroupMutationCommand } from '@shared-server/rallar-system/group-state/mutation/command-validation/validate-group-mutation-command.ts';
 import { type GroupMutationCommand } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
 import type { ConnectGroupPresenceSessionRequest, GroupJoinCodeResponse, HeartbeatGroupPresenceSessionRequest } from '@shared/api/state-types.ts';
-import { existsSync } from 'node:fs';
-import { describe, expect, expectTypeOf, it } from 'vitest';
+
+vi.mock('@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts', async (importOriginal) => {
+    const contracts = await importOriginal<typeof import('@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts')>();
+    return {
+        ...contracts,
+        isGroupLifecycleTransitionOperation(operation: GroupMutationCommand['operation']) {
+            if (operation === 'connectPresence') {
+                throw new Error('Presence validation must not evaluate lifecycle-transition policy');
+            }
+            return contracts.isGroupLifecycleTransitionOperation(operation);
+        }
+    };
+});
 
 const commandValidationOwner = 'packages/shared-server/rallar-system/group-state/mutation/command-validation/validate-group-mutation-command.ts';
 
@@ -110,6 +124,28 @@ describe('group mutation command validation', () => {
                 } as Partial<GroupMutationCommand>)
             )
         ).toThrow(/unexpected|key/i);
+    });
+
+    it('routes presence validation before lifecycle-transition policy', () => {
+        expect(() =>
+            validateGroupMutationCommand(
+                createMutationCommand({
+                    operation: 'connectPresence',
+                    sessionId: 'presence-session',
+                    input: {
+                        actorPrincipalId: 'alice',
+                        actorSessionId: 'alice-session',
+                        reason: null,
+                        traceId: null,
+                        principalId: 'alice',
+                        generationId: 'presence-generation',
+                        connectedAtEpochMs: null,
+                        lastHeartbeatAtEpochMs: null,
+                        expiresAtEpochMs: null
+                    }
+                } as Partial<GroupMutationCommand>)
+            )
+        ).not.toThrow();
     });
 });
 

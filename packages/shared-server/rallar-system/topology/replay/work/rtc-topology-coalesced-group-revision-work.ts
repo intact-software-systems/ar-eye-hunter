@@ -37,6 +37,7 @@ export interface RtcTopologyCoalescedGroupRevisionInput {
     readonly expireAtEpochMs: number;
     readonly recomputeDebounceMs: number;
     readonly senderId: string;
+    readonly origin: TopologyWorkOrigin;
     readonly previousEntry: ResourceEntry | null;
 }
 
@@ -56,6 +57,7 @@ export function computeCoalescedRtcTopologyGroupRevisionWork(
         sourceGroupStateCausalRevision: readGroupCausalRevision(input.groupSnapshot),
         requestedAtEpochMs: input.requestedAtEpochMs,
         requestOptions: toCanonicalGroupTopologyConfigPatch({}),
+        origin: input.origin,
         publish: true,
         [COALESCED_APP_OUTBOX_WORK_FIELD]: {
             generation: 1,
@@ -201,12 +203,13 @@ export function toTopologyWorkOrigin(work: PersistedRtcTopologyWork): TopologyWo
         return 'automatic';
     }
     work.kind satisfies 'group-revision';
-    return isChangeGatedGroupRevisionWork(work) ? 'automatic' : 'commanded';
+    return work.origin;
 }
 
 export function isChangeGatedGroupRevisionWork(work: PersistedRtcTopologyWork): boolean {
     return (
         work.kind === 'group-revision' &&
+        work.origin === 'automatic' &&
         work[COALESCED_APP_OUTBOX_WORK_FIELD] !== undefined &&
         isPreserveOnlyCanonicalGroupTopologyConfigPatch(work.requestOptions)
     );
@@ -231,6 +234,9 @@ export function mergeRtcTopologyGroupRevisionWork(
         groupSnapshot: selected.groupSnapshot,
         sourceGroupStateCausalRevision: selected.sourceGroupStateCausalRevision,
         requestedAtEpochMs: Math.max(existing.requestedAtEpochMs, incoming.requestedAtEpochMs),
+        origin: existing.origin === 'commanded' || incoming.origin === 'commanded'
+            ? 'commanded'
+            : 'automatic',
         [COALESCED_APP_OUTBOX_WORK_FIELD]: {
             ...next,
             dueAtEpochMs: Math.max(previous.dueAtEpochMs, next.dueAtEpochMs),

@@ -50,6 +50,7 @@ type AggregateOperation = Extract<
     | 'appointDirector'
     | 'rotateGroupJoinCode'
     | 'startGroupEstablishment'
+    | 'reconfigureGroup'
     | 'planGroupLayout'
     | 'connectGroup'
     | 'startGroupFormation'
@@ -111,6 +112,12 @@ function validateAggregateMutationInput(
         // is built.
         requireNonNegativeSafeInteger(input.expectedFormationEpoch, 'Group connectGroup expectedFormationEpoch');
         validateExpectedLayoutIdentity(input, 'Group connectGroup expectedLayout');
+        return;
+    }
+    if (operation === 'reconfigureGroup') {
+        if (input.landing !== undefined && input.landing !== null) {
+            requireOneOf(input.landing, ['apply', 'hold'], 'Group reconfigureGroup landing');
+        }
         return;
     }
     if (isGroupLifecycleTransitionOperation(operation) || operation === 'applyPlannedLayout') {
@@ -225,6 +232,7 @@ function isAggregateOperation(
         'appointDirector',
         'rotateGroupJoinCode',
         'startGroupEstablishment',
+        'reconfigureGroup',
         'planGroupLayout',
         'connectGroup',
         'startGroupFormation',

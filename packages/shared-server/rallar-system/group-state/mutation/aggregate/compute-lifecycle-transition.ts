@@ -32,6 +32,7 @@ const LIFECYCLE_TRANSITION_BY_OPERATION = {
     connectGroup: 'connect',
     startGroupFormation: 'start',
     activateGroup: 'activate',
+    reconfigureGroup: 'reconfigure',
     reopenGroupEstablishment: 'reopen-establishment',
     failGroupFormation: 'fail-formation'
 } as const satisfies Record<GroupLifecycleTransitionOperation, GroupLifecycleTransition>;
@@ -85,14 +86,20 @@ export function computeLifecycleTransition(
     }
     const outcome = computeAllowedLifecycleTransition(transition, stored.value, policy);
     const promotion = computeActivationPromotion(command, read, stored.value);
-    const next = computeNextLifecycleGroup({
-        command,
-        facts,
-        stored: stored.value,
-        outcome,
-        formationElectorate: read.activeMemberPrincipalIds,
-        promotion
-    });
+    const reconfigureLanding = command.operation === 'reconfigureGroup'
+        ? command.input.landing ?? policy.topology.reconfigureLanding
+        : null;
+    const next = command.operation === 'reconfigureGroup' &&
+            reconfigureLanding === 'apply'
+        ? computeApplyReconfigureLandingGroup(command, facts, stored.value)
+        : computeNextLifecycleGroup({
+            command,
+            facts,
+            stored: stored.value,
+            outcome,
+            formationElectorate: read.activeMemberPrincipalIds,
+            promotion
+        });
     return computeGroupMutationWriteResult({
         acceptedLayoutPromotion: promotion?.outcome === 'apply' ? promotion : null,
         // A promotion already re-asserts the planned row. `connect` dials a
@@ -189,6 +196,24 @@ function computeNextLifecycleGroup(
         acceptedLayoutIdentity,
         lastFormationOutcome: computeRecordedOutcome(command, stored, facts),
         formationElectorate: idempotentReplan ? stored.formationElectorate : formationElectorate,
+        snapshotVersion: stored.snapshotVersion + 1,
+        updated: auditStamp(command, facts, command.input.actorPrincipalId ?? undefined)
+    };
+}
+
+/**
+ * Apply landing keeps the accepted layout live while the commanded topology
+ * work produces and promotes its successor. The state-machine call above
+ * still owns legality; this branch owns only the policy's no-transition
+ * landing, so it cannot advance the formation fence or electorate.
+ */
+function computeApplyReconfigureLandingGroup(
+    command: GroupMutationCommand,
+    facts: GroupMutationFacts,
+    stored: Group
+): Group {
+    return {
+        ...stored,
         snapshotVersion: stored.snapshotVersion + 1,
         updated: auditStamp(command, facts, command.input.actorPrincipalId ?? undefined)
     };

@@ -1,3 +1,4 @@
+import postgres from 'postgres';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { ApiV1RtcTopologyProofApi } from '@shared-test/black-box-runner/topology-replay/api-v1-rtc-topology-proof-api.mts';
@@ -13,6 +14,7 @@ import {
     assertPublisherHeadsUnchanged,
     assertReplacementConsumerSeeded,
     assertSinglePublisherHeadAdvanced,
+    readRtcTopologyProofDurableState,
     type ProofDurableState
 } from '@shared-test/black-box-runner/topology-replay/api-v1-rtc-topology-proof-postgres.mts';
 import {
@@ -24,6 +26,8 @@ import {
     type ProofTopologyObservation
 } from '@shared-test/black-box-runner/topology-replay/api-v1-rtc-topology-proof-websocket.mts';
 import { withManagedApiServerSuspended } from '@shared-test/black-box-runner/topology-replay/with-managed-api-server-suspended.mts';
+
+vi.mock('postgres', () => ({ default: vi.fn() }));
 
 describe('API-v1 RTC topology replay proof semantics', () => {
     afterEach(async () => {
@@ -191,6 +195,87 @@ describe('API-v1 RTC topology replay proof semantics', () => {
         ).toThrow('exactly one publisher');
     });
 
+    it('requires AppInbox quiescence before accepting a live publisher advance', () => {
+        const state: ProofDurableState = {
+            ...durableState(
+                [
+                    { streamId: 'publisher-a', headSequence: 11 },
+                    { streamId: 'publisher-b', headSequence: 20 },
+                    { streamId: 'consumer-c', headSequence: 0 }
+                ],
+                [cursor('consumer-c', 'publisher-a', 11), cursor('consumer-c', 'publisher-b', 20)]
+            ),
+            unresolvedAppInboxCount: 1
+        };
+
+        expect(() =>
+            assertSinglePublisherHeadAdvanced({
+                state,
+                consumerStreamId: 'consumer-c',
+                priorHeads: { 'publisher-a': 10, 'publisher-b': 20 }
+            })
+        ).toThrow('unresolved APP_INBOX');
+    });
+
+    it('reads AppInbox quiescence and publisher state from one repeatable-read snapshot', async () => {
+        const transactionQueryTexts: string[] = [];
+        const transaction = vi.fn((strings: TemplateStringsArray) => {
+            const query = strings.join('');
+            transactionQueryTexts.push(query);
+            if (query.includes('ri_type_id = \'APP_OUTBOX\'')) {
+                return Promise.resolve([{ unresolved_count: 0 }]);
+            }
+            if (query.includes('ri_type_id = \'APP_INBOX\'')) {
+                return Promise.resolve([{ unresolved_count: 1 }]);
+            }
+            if (query.includes('from rtc_topology_delivery_stream')) {
+                return Promise.resolve([
+                    { stream_id: 'publisher-a', head_sequence: 11 },
+                    { stream_id: 'publisher-b', head_sequence: 20 },
+                    { stream_id: 'consumer-c', head_sequence: 0 }
+                ]);
+            }
+            return Promise.resolve([
+                {
+                    consumer_stream_id: 'consumer-c',
+                    publisher_stream_id: 'publisher-a',
+                    last_processed_sequence: 11
+                },
+                {
+                    consumer_stream_id: 'consumer-c',
+                    publisher_stream_id: 'publisher-b',
+                    last_processed_sequence: 20
+                }
+            ]);
+        });
+        const begin = vi.fn(async (
+            _options: string,
+            readSnapshot: (sql: typeof transaction) => Promise<ProofDurableState>
+        ) => await readSnapshot(transaction));
+        const end = vi.fn(async () => undefined);
+        const sql = Object.assign(
+            vi.fn(() => {
+                throw new Error('Proof durable reads must run inside the repeatable-read transaction.');
+            }),
+            { begin, end }
+        );
+        vi.mocked(postgres).mockReturnValue(sql as never);
+
+        await expect(readRtcTopologyProofDurableState('postgres://proof')).resolves.toMatchObject({
+            unresolvedAppOutboxCount: 0,
+            unresolvedAppInboxCount: 1
+        });
+        expect(begin).toHaveBeenCalledWith('isolation level repeatable read read only', expect.any(Function));
+        expect(transactionQueryTexts).toHaveLength(4);
+        expect(transactionQueryTexts).toEqual(expect.arrayContaining([
+            expect.stringContaining('ri_type_id = \'APP_INBOX\''),
+            expect.stringContaining('ri_type_id = \'APP_OUTBOX\''),
+            expect.stringContaining('from rtc_topology_delivery_stream'),
+            expect.stringContaining('from rtc_topology_replay_cursor')
+        ]));
+        expect(end).toHaveBeenCalledWith({ timeout: 5 });
+    });
+
     it('rejects any duplicate topology publication after replay', () => {
         const priorHeads = { 'publisher-a': 11, 'publisher-b': 21 };
         expect(assertPublisherHeadsUnchanged(
@@ -280,17 +365,35 @@ describe('API-v1 RTC topology replay proof semantics', () => {
             deliveryKind: 'publication'
         });
 
-        const before = replayMetrics(7, 0, 0, 10);
-        const after = replayMetrics(9, 0, 0, 12);
+        const before = replayMetrics({
+            poll: 7,
+            notification: 0,
+            localCommit: 0,
+            replayedEntryCount: 10
+        });
+        const after = replayMetrics({
+            poll: 9,
+            notification: 0,
+            localCommit: 0,
+            replayedEntryCount: 12
+        });
         expect(assertPollDrivenReplayMetricDelta(before, after)).toEqual({
             pollWakes: 2,
             notificationWakes: 0,
             localCommitWakes: 0,
             replayedEntryCount: 2
         });
-        expect(() => assertPollDrivenReplayMetricDelta(before, replayMetrics(9, 0, 0, 13))).toThrow(
-            'exactly two'
-        );
+        expect(() =>
+            assertPollDrivenReplayMetricDelta(
+                before,
+                replayMetrics({
+                    poll: 9,
+                    notification: 0,
+                    localCommit: 0,
+                    replayedEntryCount: 13
+                })
+            )
+        ).toThrow('exactly two');
     });
 
     it('records one shared publication identity across both passive sockets', () => {
@@ -325,7 +428,7 @@ describe('API-v1 RTC topology replay proof semantics', () => {
                 wsBaseUrl: 'ws://127.0.0.1:18082'
             },
             'ticket'
-        ).catch((error: unknown) => {
+        ).catch((error) => {
             failure = error instanceof Error ? error : new Error(String(error));
         });
 
@@ -382,15 +485,21 @@ class NeverOpeningWebSocket extends EventTarget {
     }
 }
 
-function replayMetrics(
-    poll: number,
-    notification: number,
-    localCommit: number,
-    replayedEntryCount: number
-) {
+interface ReplayMetricsInput {
+    readonly poll: number;
+    readonly notification: number;
+    readonly localCommit: number;
+    readonly replayedEntryCount: number;
+}
+
+function replayMetrics(input: ReplayMetricsInput) {
     return {
-        wakeCountBySource: { poll, notification, 'local-commit': localCommit },
-        replayedEntryCount
+        wakeCountBySource: {
+            poll: input.poll,
+            notification: input.notification,
+            'local-commit': input.localCommit
+        },
+        replayedEntryCount: input.replayedEntryCount
     };
 }
 
@@ -433,7 +542,12 @@ function durableState(
     streams: ProofDurableState['streams'],
     cursors: ProofDurableState['cursors']
 ): ProofDurableState {
-    return { streams, cursors, unresolvedAppOutboxCount: 0 };
+    return {
+        streams,
+        cursors,
+        unresolvedAppInboxCount: 0,
+        unresolvedAppOutboxCount: 0
+    };
 }
 
 function cursor(

@@ -14,6 +14,7 @@ export type ProofCursorRow = Readonly<{
 export type ProofDurableState = Readonly<{
     streams: readonly ProofStreamRow[];
     cursors: readonly ProofCursorRow[];
+    unresolvedAppInboxCount: number;
     unresolvedAppOutboxCount: number;
 }>;
 
@@ -42,19 +43,27 @@ export async function readRtcTopologyProofDurableState(
         connection: { application_name: 'rtc_topology_replay_proof' }
     });
     try {
-        const unresolvedRows = await sql<ProofCountDatabaseRow[]>`
+        return await sql.begin('isolation level repeatable read read only', async (transaction) => {
+            const unresolvedAppInboxRows = await transaction<ProofCountDatabaseRow[]>`
+      select count(*)::bigint as unresolved_count
+      from resource_inbox
+      where ri_type_id = 'APP_INBOX'
+        and ri_status in ('NEW', 'RETRY', 'RESERVED', 'FAILED', 'ABORTED', 'NON_RETRYABLE')
+        and expire_ts > now()
+    `;
+            const unresolvedAppOutboxRows = await transaction<ProofCountDatabaseRow[]>`
       select count(*)::bigint as unresolved_count
       from resource_inbox
       where ri_type_id = 'APP_OUTBOX'
         and ri_status in ('NEW', 'RETRY', 'RESERVED', 'FAILED', 'ABORTED', 'NON_RETRYABLE')
         and expire_ts > now()
     `;
-        const streams = await sql<ProofStreamDatabaseRow[]>`
+            const streams = await transaction<ProofStreamDatabaseRow[]>`
       select stream_id::text as stream_id, head_sequence
       from rtc_topology_delivery_stream
       order by created_at, stream_id
     `;
-        const cursors = await sql<ProofCursorDatabaseRow[]>`
+            const cursors = await transaction<ProofCursorDatabaseRow[]>`
       select
         consumer_stream_id::text as consumer_stream_id,
         publisher_stream_id::text as publisher_stream_id,
@@ -62,21 +71,26 @@ export async function readRtcTopologyProofDurableState(
       from rtc_topology_replay_cursor
       order by consumer_stream_id, publisher_stream_id
     `;
-        return {
-            streams: streams.map((row) => ({
-                streamId: requireString(row.stream_id, 'stream ID'),
-                headSequence: toSafeSequence(row.head_sequence, 'stream HEAD')
-            })),
-            cursors: cursors.map((row) => ({
-                consumerStreamId: requireString(row.consumer_stream_id, 'consumer stream ID'),
-                publisherStreamId: requireString(row.publisher_stream_id, 'publisher stream ID'),
-                lastProcessedSequence: toSafeSequence(row.last_processed_sequence, 'cursor sequence')
-            })),
-            unresolvedAppOutboxCount: toSafeSequence(
-                unresolvedRows[0]?.unresolved_count,
-                'unresolved APP_OUTBOX count'
-            )
-        };
+            return {
+                streams: streams.map((row) => ({
+                    streamId: requireString(row.stream_id, 'stream ID'),
+                    headSequence: toSafeSequence(row.head_sequence, 'stream HEAD')
+                })),
+                cursors: cursors.map((row) => ({
+                    consumerStreamId: requireString(row.consumer_stream_id, 'consumer stream ID'),
+                    publisherStreamId: requireString(row.publisher_stream_id, 'publisher stream ID'),
+                    lastProcessedSequence: toSafeSequence(row.last_processed_sequence, 'cursor sequence')
+                })),
+                unresolvedAppInboxCount: toSafeSequence(
+                    unresolvedAppInboxRows[0]?.unresolved_count,
+                    'unresolved APP_INBOX count'
+                ),
+                unresolvedAppOutboxCount: toSafeSequence(
+                    unresolvedAppOutboxRows[0]?.unresolved_count,
+                    'unresolved APP_OUTBOX count'
+                )
+            };
+        });
     }
     finally {
         await sql.end({ timeout: 5 });
@@ -87,7 +101,7 @@ export function assertLivePassiveConsumerState(state: ProofDurableState): Readon
     passiveConsumerStreamId: string;
     publisherHeads: Readonly<Record<string, number>>;
 }> {
-    assertAppOutboxDrained(state);
+    assertProofDurableQuiescence(state);
     if (state.streams.length !== 3) {
         throw new Error(`Expected exactly three live proof streams; found ${state.streams.length}.`);
     }
@@ -124,7 +138,7 @@ export function assertPublisherHeadsUnchanged(
     state: ProofDurableState,
     priorHeads: Readonly<Record<string, number>>
 ): Readonly<Record<string, number>> {
-    assertAppOutboxDrained(state);
+    assertProofDurableQuiescence(state);
     for (const [streamId, priorHead] of Object.entries(priorHeads)) {
         const stream = state.streams.find((candidate) => candidate.streamId === streamId);
         if (!stream || stream.headSequence !== priorHead) {
@@ -144,7 +158,7 @@ export function assertSinglePublisherHeadAdvanced(
     advancedPublisherStreamId: string;
     publisherHeads: Readonly<Record<string, number>>;
 }> {
-    assertAppOutboxDrained(input.state);
+    assertProofDurableQuiescence(input.state);
     const publisherHeads: Record<string, number> = {};
     const advancedPublisherStreamIds: string[] = [];
     for (const [streamId, priorHead] of Object.entries(input.priorHeads)) {
@@ -184,7 +198,7 @@ export function assertReplacementConsumerSeeded(
         publisherHeads: Readonly<Record<string, number>>;
     }>
 ): string {
-    assertAppOutboxDrained(input.state);
+    assertProofDurableQuiescence(input.state);
     if (input.state.streams.length !== input.priorStreamIds.size + 1) {
         throw new Error('Replacement C did not register exactly one new durable stream.');
     }
@@ -202,7 +216,12 @@ export function assertReplacementConsumerSeeded(
     return replacement[0]!.streamId;
 }
 
-function assertAppOutboxDrained(state: ProofDurableState): void {
+export function assertProofDurableQuiescence(state: ProofDurableState): void {
+    if (state.unresolvedAppInboxCount !== 0) {
+        throw new Error(
+            `RTC topology proof still has ${state.unresolvedAppInboxCount} unresolved APP_INBOX rows.`
+        );
+    }
     if (state.unresolvedAppOutboxCount !== 0) {
         throw new Error(
             `RTC topology proof still has ${state.unresolvedAppOutboxCount} unresolved APP_OUTBOX rows.`

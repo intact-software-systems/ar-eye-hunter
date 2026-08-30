@@ -147,6 +147,7 @@ export function transitionCommand(
             reason: null,
             traceId: null,
             expectedFormationEpoch: null,
+            ...(operation === 'reconfigureGroup' ? { landing: null } : {}),
             ...(operation === 'activateGroup'
                 ? { observedRate: null, degraded: null, expectedLayout: null }
                 : {})

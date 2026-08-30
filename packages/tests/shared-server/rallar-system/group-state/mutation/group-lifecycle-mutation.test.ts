@@ -1,10 +1,13 @@
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import type { GroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
+import { resolveGroupLifecyclePolicyPreset } from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
+import type { GroupTopologyReconfigureLanding } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import { describe, expect, it } from 'vitest';
 
 import type {
     GroupMutationCommand,
+    GroupMutationComputed,
     GroupMutationFacts,
     GroupMutationRead
 } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
@@ -16,7 +19,92 @@ import type { Group } from '@shared/api/group-types.ts';
 
 import { createGroupAuthorityFacts, createGroupAuthorityRead, groupRef, transitionCommand } from './group-mutation-test-runtime.ts';
 
+function writtenMutation(
+    computed: GroupMutationComputed
+): Extract<GroupMutationComputed, { outcome: 'write'; }> {
+    return computed as Extract<GroupMutationComputed, { outcome: 'write'; }>;
+}
+
+function reconfigureCommand(
+    landing: GroupTopologyReconfigureLanding
+): Extract<GroupMutationCommand, { operation: 'reconfigureGroup'; }> {
+    const command = transitionCommand('reconfigureGroup');
+    if (command.operation !== 'reconfigureGroup') {
+        throw new TypeError('Expected a reconfigure command');
+    }
+    return {
+        ...command,
+        input: { ...command.input, landing }
+    };
+}
+
+function expectReconfigureLandingOverride(
+    policy: ReturnType<typeof resolveGroupLifecyclePolicyPreset> | null,
+    landing: GroupTopologyReconfigureLanding,
+    lifecycleState: Group['lifecycleState']
+): void {
+    const read = createGroupAuthorityRead({ lifecycleState: 'active', formationEpoch: 4 });
+    const computed = computeGroupMutation({
+        command: reconfigureCommand(landing),
+        read: {
+            ...read,
+            lifecyclePolicy: policy === null ? read.lifecyclePolicy : { status: 'present', policy }
+        },
+        facts: createGroupAuthorityFacts()
+    });
+
+    expect(computed.outcome).toBe('write');
+    expect((writtenMutation(computed).guard.value as Group).lifecycleState).toBe(lifecycleState);
+}
+
 describe('group lifecycle transition computation', () => {
+    it('computes a hold landing and its commanded topology replan', () => {
+        const read = createGroupAuthorityRead({ lifecycleState: 'active', formationEpoch: 4 });
+        const computed = computeGroupMutation({
+            command: transitionCommand('reconfigureGroup'),
+            read: {
+                ...read,
+                lifecyclePolicy: {
+                    status: 'present',
+                    policy: resolveGroupLifecyclePolicyPreset('match')
+                }
+            },
+            facts: createGroupAuthorityFacts()
+        });
+
+        expect(computed.outcome).toBe('write');
+        const written = writtenMutation(computed);
+        expect((written.guard.value as Group).lifecycleState).toBe('reconfiguring');
+        const summaryMessage = JSON.parse(written.outboxEntries[0]!.resource);
+        expect(JSON.parse(summaryMessage.payload.resource)).toMatchObject({
+            data: { event: { payload: { topologyReplanOrigin: 'commanded' } } }
+        });
+    });
+
+    it('keeps an absent-policy group active for the apply landing while commanding its replan', () => {
+        const computed = computeGroupMutation({
+            command: transitionCommand('reconfigureGroup'),
+            read: createGroupAuthorityRead({ lifecycleState: 'active', formationEpoch: 4 }),
+            facts: createGroupAuthorityFacts()
+        });
+
+        expect(computed.outcome).toBe('write');
+        const written = writtenMutation(computed);
+        expect((written.guard.value as Group).lifecycleState).toBe('active');
+        expect((written.guard.value as Group).formationEpoch).toBe(4);
+        expect(written.outboxEntries).toHaveLength(1);
+    });
+
+    it.each(
+        [
+            ['hold policy to apply', resolveGroupLifecyclePolicyPreset('match'), 'apply', 'active'],
+            ['absent default to hold', null, 'hold', 'reconfiguring']
+        ] as const
+    )(
+        'lets a reconfigure landing override %s',
+        (_description, policy, landing, lifecycleState) => expectReconfigureLandingOverride(policy, landing, lifecycleState)
+    );
+
     it('plans from forming into the planned stage and advances the epoch', () => {
         const computed = computeGroupMutation({
             command: transitionCommand('planGroupLayout'),

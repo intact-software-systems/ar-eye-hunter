@@ -310,7 +310,7 @@ export function newGroupEvent(input: NewGroupEventInput): GroupEvent {
         reason: command.input.reason,
         traceId: command.input.traceId,
         requestId: command.requestId,
-        payload: toGroupEventPayload(eventType, input.members)
+        payload: toGroupEventPayload(eventType, input.members, command)
     };
 }
 
@@ -319,8 +319,12 @@ export function newGroupEvent(input: NewGroupEventInput): GroupEvent {
 // manager as actor and the admitted member only here.
 function toGroupEventPayload(
     eventType: GroupEventType,
-    members: readonly GroupMember[]
+    members: readonly GroupMember[],
+    command: GroupMutationCommand
 ): GroupEvent['payload'] {
+    if (command.operation === 'reconfigureGroup') {
+        return { topologyReplanOrigin: 'commanded' };
+    }
     if (eventType === 'ownership-transferred') {
         const nextOwner = members.find((member) => member.role === 'owner');
         const previousOwner = members.find((member) => member.role !== 'owner');

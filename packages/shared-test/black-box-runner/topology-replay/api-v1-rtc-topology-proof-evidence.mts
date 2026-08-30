@@ -8,6 +8,7 @@ import type {
 import { requireRecord, requireSafeInteger } from './api-v1-rtc-topology-proof-api.mts';
 import {
     assertLivePassiveConsumerState,
+    assertProofDurableQuiescence,
     readRtcTopologyProofDurableState,
     type ProofDurableState
 } from './api-v1-rtc-topology-proof-postgres.mts';
@@ -140,30 +141,26 @@ export function assertCheckpointMatchesMutation(
 }
 
 export async function waitForStablePassiveState(databaseUrl: string): Promise<ProofDurableState> {
-    return await waitForStableDurableState(databaseUrl, assertLivePassiveConsumerState);
+    return await waitForDurableState(databaseUrl, assertLivePassiveConsumerState, 'stable');
 }
 
 export async function waitForStableRegisteredState(
     databaseUrl: string
 ): Promise<ProofDurableState> {
-    return await waitForStableDurableState(databaseUrl, (state) => {
+    return await waitForDurableState(databaseUrl, (state) => {
         if (state.streams.length !== 3) {
             throw new Error(
                 `Expected exactly three registered proof streams; found ${state.streams.length}.`
             );
         }
-        if (state.unresolvedAppOutboxCount !== 0) {
-            throw new Error(
-                'RTC topology proof still has ' +
-                    `${state.unresolvedAppOutboxCount} unresolved APP_OUTBOX rows.`
-            );
-        }
-    });
+        assertProofDurableQuiescence(state);
+    }, 'stable');
 }
 
-async function waitForStableDurableState(
+export async function waitForDurableState<T>(
     databaseUrl: string,
-    assertState: (state: ProofDurableState) => void
+    assertState: (state: ProofDurableState) => T,
+    stability: 'immediate' | 'stable' = 'immediate'
 ): Promise<ProofDurableState> {
     const deadline = Date.now() + RTC_TOPOLOGY_PROOF_ASSERTION_TIMEOUT_MS;
     let previousStateJson: string | undefined;
@@ -173,6 +170,9 @@ async function waitForStableDurableState(
         const state = await readRtcTopologyProofDurableState(databaseUrl);
         try {
             assertState(state);
+            if (stability === 'immediate') {
+                return state;
+            }
             const stateJson = JSON.stringify(state);
             consecutiveStableReads = stateJson === previousStateJson ? consecutiveStableReads + 1 : 0;
             previousStateJson = stateJson;
@@ -187,27 +187,7 @@ async function waitForStableDurableState(
         }
         await new Promise((resolve) => setTimeout(resolve, PROOF_POLL_INTERVAL_MS));
     }
-    throw lastError ?? new Error('Timed out waiting for stable passive-C durable state.');
-}
-
-export async function waitForDurableState<T>(
-    databaseUrl: string,
-    assertState: (state: ProofDurableState) => T
-): Promise<ProofDurableState> {
-    const deadline = Date.now() + RTC_TOPOLOGY_PROOF_ASSERTION_TIMEOUT_MS;
-    let lastError: Error | undefined;
-    while (Date.now() < deadline) {
-        const state = await readRtcTopologyProofDurableState(databaseUrl);
-        try {
-            assertState(state);
-            return state;
-        }
-        catch (error) {
-            lastError = error instanceof Error ? error : new Error(String(error));
-        }
-        await new Promise((resolve) => setTimeout(resolve, PROOF_POLL_INTERVAL_MS));
-    }
-    throw lastError ?? new Error('Timed out waiting for durable RTC topology proof state.');
+    throw lastError ?? new Error(`Timed out waiting for ${stability} durable RTC topology proof state.`);
 }
 
 function readReplayMetricSnapshot(metrics: ProofJsonObject): ProofReplayMetricSnapshot {

@@ -152,7 +152,7 @@ export const LEGACY_ESTABLISHMENT_CONSUMERS: readonly LegacyEstablishmentConsume
     },
     {
         file: 'packages/shared-server/rallar-system/group-state/mutation/command-validation/validate-group-mutation-command.ts',
-        occurrences: { startGroupEstablishment: 4 }
+        occurrences: { startGroupEstablishment: 3 }
     },
     {
         file: 'packages/shared-server/rallar-system/group-state/mutation/command-validation/validate-group-mutation-operation-input.ts',

@@ -173,6 +173,13 @@ const descriptorCases: readonly DescriptorCase[] = [
         { ...actor, requestId: 'activate' }
     ),
     descriptorCase(
+        'reconfigure',
+        AppInboxType.GROUP_RECONFIGURE,
+        { scope: SCOPE, groupId, request: { ...actor, requestId: 'reconfigure' } },
+        'reconfigureGroup',
+        { ...actor, requestId: 'reconfigure' }
+    ),
+    descriptorCase(
         'establishment-reopen',
         AppInboxType.GROUP_ESTABLISHMENT_REOPEN,
         { scope: SCOPE, groupId, request: { ...actor, requestId: 'establishment-reopen' } },

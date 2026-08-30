@@ -1,22 +1,20 @@
-import {
-    GROUP_LAYOUT_IDENTITY_KEYS,
-    GROUP_LAYOUT_IDENTITY_STATES
-} from '@shared/api/group-lifecycle/group-layout-identity.ts';
-
+import type { JsonWireObject } from '../../../protocol/json-wire-identity.ts';
 import {
     assertExactKeys,
-    assertRequiredKeys,
     requireJsonSafe,
     requireNonEmptyString,
-    requireNonNegativeSafeInteger,
     requireOneOf,
     requirePositiveSafeInteger,
     requireRecord,
     validateGroupRef
 } from '../../group-state-validation-primitives.ts';
-import { isGroupTransportOperation, type GroupMutationCommand } from '../group-mutation-contracts.ts';
+import {
+    isGroupLifecycleTransitionOperation,
+    isGroupTransportOperation,
+    type GroupMutationCommand
+} from '../group-mutation-contracts.ts';
 import { ACTOR_INPUT_KEYS } from './group-mutation-request-validation.ts';
-import { validateExpectedLayoutIdentity } from './validate-expected-layout-identity.ts';
+import { validateLifecycleGroupMutationCommandInput } from './validate-lifecycle-group-mutation-command-input.ts';
 
 export function validateGroupMutationCommand(
     command: unknown
@@ -81,6 +79,17 @@ function validateOperationInput(
         return;
     }
     if (AGGREGATE_GROUP_MUTATION_OPERATIONS.has(operation)) {
+        if (isGroupLifecycleTransitionOperation(operation) || operation === 'applyPlannedLayout') {
+            validateLifecycleGroupMutationCommandInput({
+                operation,
+                // The enclosing command already passed requireJsonSafe before
+                // this record boundary, so lifecycle validation reads JSON-only
+                // input rather than propagating an untrusted record type.
+                input: input as JsonWireObject,
+                requiredInputKeys: GROUP_MUTATION_INPUT_KEYS[operation]
+            });
+            return;
+        }
         validateAggregateOperationInput(operation, input);
         return;
     }
@@ -141,80 +150,9 @@ function validateAggregateOperationInput(
             validateNullableString(input, 'joinCode');
             validateNullableInteger(input, 'expiresAtEpochMs', true);
             return;
-        // The lifecycle inputs require key presence, not just no-extras: a
-        // wire-decoded criterion command missing its fence keys is malformed
-        // here, never a lying stale-epoch rejection deep in compute.
-        case 'connectGroup':
-        case 'applyPlannedLayout':
-            assertRequiredKeys(input, GROUP_MUTATION_INPUT_KEYS[operation], `Group ${operation} input`);
-            // The fences are non-null on this operation: null here is as
-            // malformed as an absent key.
-            requireNonNegativeSafeInteger(
-                input.expectedFormationEpoch,
-                `Group ${operation} expectedFormationEpoch`
-            );
-            if (input.expectedLayout === null) {
-                throw new TypeError(`Group ${operation} expectedLayout must not be null`);
-            }
-            validateExpectedLayoutInput(input, operation);
-            return;
-        case 'startGroupEstablishment':
-        case 'reopenGroupEstablishment':
-        case 'planGroupLayout':
-        case 'startGroupFormation':
-            assertRequiredKeys(input, GROUP_MUTATION_INPUT_KEYS[operation], `Group ${operation} input`);
-            validateExpectedFormationEpochInput(input, operation);
-            return;
-        case 'activateGroup':
-            assertRequiredKeys(input, GROUP_MUTATION_INPUT_KEYS[operation], `Group ${operation} input`);
-            if (input.observedRate !== null && !isUnitIntervalNumber(input.observedRate)) {
-                throw new TypeError('Group activateGroup observedRate must be null or within [0, 1]');
-            }
-            if (input.degraded !== null && typeof input.degraded !== 'boolean') {
-                throw new TypeError('Group activateGroup degraded must be boolean or null');
-            }
-            validateExpectedFormationEpochInput(input, operation);
-            validateExpectedLayoutInput(input, operation);
-            return;
-        case 'failGroupFormation':
-            assertRequiredKeys(input, GROUP_MUTATION_INPUT_KEYS[operation], `Group ${operation} input`);
-            if (!isUnitIntervalNumber(input.observedRate)) {
-                throw new TypeError('Group failGroupFormation observedRate must be within [0, 1]');
-            }
-            validateExpectedFormationEpochInput(input, operation);
-            validateExpectedLayoutInput(input, operation);
-            return;
         default:
             return;
     }
-}
-
-type AggregateOperationInputRecord = Parameters<typeof validateAggregateOperationInput>[1];
-
-function isUnitIntervalNumber(value: AggregateOperationInputRecord[string]): value is number {
-    return typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 1;
-}
-
-function validateExpectedFormationEpochInput(
-    input: AggregateOperationInputRecord,
-    operation: string
-): void {
-    if (input.expectedFormationEpoch !== null) {
-        requireNonNegativeSafeInteger(
-            input.expectedFormationEpoch,
-            `Group ${operation} expectedFormationEpoch`
-        );
-    }
-}
-
-function validateExpectedLayoutInput(
-    input: AggregateOperationInputRecord,
-    operation: string
-): void {
-    if (input.expectedLayout === null) {
-        return;
-    }
-    validateExpectedLayoutIdentity(input, `Group ${operation} expectedLayout`);
 }
 
 function validateMembershipOperationInput(
@@ -307,6 +245,7 @@ const GROUP_MUTATION_OPERATIONS = new Set([
     'connectGroup',
     'startGroupFormation',
     'activateGroup',
+    'reconfigureGroup',
     'reopenGroupEstablishment',
     'failGroupFormation',
     'applyPlannedLayout',
@@ -361,6 +300,7 @@ const AGGREGATE_GROUP_MUTATION_OPERATIONS = new Set<GroupMutationCommand['operat
     'connectGroup',
     'startGroupFormation',
     'activateGroup',
+    'reconfigureGroup',
     'reopenGroupEstablishment',
     'failGroupFormation',
     'applyPlannedLayout'
@@ -403,6 +343,7 @@ const GROUP_MUTATION_INPUT_KEYS: Readonly<Record<GroupMutationCommand['operation
     startGroupFormation: [...ACTOR_INPUT_KEYS, 'expectedFormationEpoch'],
     connectGroup: [...ACTOR_INPUT_KEYS, 'expectedFormationEpoch', 'expectedLayout'],
     activateGroup: [...ACTOR_INPUT_KEYS, 'observedRate', 'degraded', 'expectedFormationEpoch', 'expectedLayout'],
+    reconfigureGroup: [...ACTOR_INPUT_KEYS, 'expectedFormationEpoch', 'landing'],
     reopenGroupEstablishment: [...ACTOR_INPUT_KEYS, 'expectedFormationEpoch'],
     failGroupFormation: [...ACTOR_INPUT_KEYS, 'observedRate', 'expectedFormationEpoch', 'expectedLayout'],
     applyPlannedLayout: [...ACTOR_INPUT_KEYS, 'expectedFormationEpoch', 'expectedLayout'],
