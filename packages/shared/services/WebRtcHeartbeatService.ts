@@ -76,7 +76,14 @@ export class WebRtcHeartbeatService {
         this.messageCallbackId = this.input.peerSessionId + '-heartbeat';
         this.input.channel.onRtcMessageDo(
             this.messageCallbackId,
-            { onMessage: (message) => this.receiveHeartbeatMessage(message) },
+            {
+                onMessage: async (value) => {
+                    const message = toHeartbeatMessage(value);
+                    if (message) {
+                        await this.receiveHeartbeatMessage(message);
+                    }
+                }
+            },
             pingMessageType
         );
     }
@@ -101,12 +108,7 @@ export class WebRtcHeartbeatService {
         }
     }
 
-    private async receiveHeartbeatMessage(value: unknown): Promise<void> {
-        const message = toHeartbeatMessage(value);
-        if (!message) {
-            return;
-        }
-
+    private async receiveHeartbeatMessage(message: PingPayload): Promise<void> {
         try {
             if (message.pingType === 'ping') {
                 await this.input.channel.sendAsJsonString(JSON.stringify(

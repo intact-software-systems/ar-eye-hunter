@@ -136,7 +136,10 @@ export class WebRtcRxStreamerService {
             .onRtcMessageDo(
                 this.toRtcChannelSubscriptionId(peerDto.peerId),
                 {
-                    onMessage: (message) => this.receivePeerMessage(peerDto.peerId, message)
+                    onMessage: async (value) => {
+                        const message = decodePersistedALMessageValue(value);
+                        await this.receivePeerMessage(peerDto.peerId, message);
+                    }
                 }
             );
 
@@ -166,8 +169,7 @@ export class WebRtcRxStreamerService {
         }
     }
 
-    private async receivePeerMessage(peerId: PeerId, value: unknown): Promise<void> {
-        const message = decodePersistedALMessageValue(value);
+    private async receivePeerMessage(peerId: PeerId, message: ALMessage): Promise<void> {
         if (message.id.senderId !== peerId) {
             console.warn(`Message from ${message.id.senderId} does not match peerId ${peerId}.`);
         }
