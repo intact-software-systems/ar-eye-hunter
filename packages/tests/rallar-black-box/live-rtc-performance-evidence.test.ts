@@ -2,11 +2,11 @@ import { mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from 'node
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
+import { countUnexpectedLiveRtcDeliveries } from '../../../tests/playwright/rallar-black-box/live-rtc-control-client.ts';
 import {
     buildLiveRtcAgentDiagnostics,
     buildLiveRtcExternalAttempt,
     buildLiveRtcRetentionCohort,
-    countUnexpectedLiveRtcDeliveries,
     liveRtcRetentionStateReturned,
     loadLiveRtcPerformanceAttempt,
     writeLiveRtcPerformanceEvidence,
@@ -189,6 +189,65 @@ function agentDiagnostics(agentId: 'agent-a' | 'agent-b' | 'agent-c') {
     } as const;
 }
 
+const defaultTimings: LiveRtcPerformanceRawEvidence['timings'] = [
+    {
+        kind: 'peer-ready',
+        transport: 'realtime',
+        senderAgentId: 'agent-a',
+        receiverAgentIds: ['agent-b', 'agent-c'],
+        durationMs: 12
+    },
+    {
+        kind: 'direct-delivery',
+        transport: 'realtime',
+        senderAgentId: 'agent-a',
+        receiverAgentIds: ['agent-b'],
+        durationMs: 4
+    },
+    {
+        kind: 'multicast-delivery',
+        transport: 'realtime',
+        senderAgentId: 'agent-a',
+        receiverAgentIds: ['agent-b', 'agent-c'],
+        durationMs: 5
+    },
+    {
+        kind: 'broadcast-delivery',
+        transport: 'realtime',
+        senderAgentId: 'agent-a',
+        receiverAgentIds: ['agent-b', 'agent-c'],
+        durationMs: 6
+    },
+    {
+        kind: 'peer-ready',
+        transport: 'messages.rtc',
+        senderAgentId: 'agent-a',
+        receiverAgentIds: ['agent-b', 'agent-c'],
+        durationMs: 13
+    },
+    {
+        kind: 'direct-delivery',
+        transport: 'messages.rtc',
+        senderAgentId: 'agent-a',
+        receiverAgentIds: ['agent-b'],
+        durationMs: 7
+    },
+    {
+        kind: 'multicast-delivery',
+        transport: 'messages.rtc',
+        senderAgentId: 'agent-a',
+        receiverAgentIds: ['agent-b', 'agent-c'],
+        durationMs: 8
+    },
+    {
+        kind: 'broadcast-delivery',
+        transport: 'messages.rtc',
+        senderAgentId: 'agent-a',
+        receiverAgentIds: ['agent-b', 'agent-c'],
+        durationMs: 9
+    }
+];
+
 function defaultRawEvidence(
     overrides: Partial<LiveRtcPerformanceRawEvidence> = {}
 ): LiveRtcPerformanceRawEvidence {
@@ -223,64 +282,7 @@ function defaultRawEvidence(
             playwright: '1.55.0',
             chromium: '140.0.0.0'
         },
-        timings: [
-            {
-                kind: 'peer-ready',
-                transport: 'realtime',
-                senderAgentId: 'agent-a',
-                receiverAgentIds: ['agent-b', 'agent-c'],
-                durationMs: 12
-            },
-            {
-                kind: 'direct-delivery',
-                transport: 'realtime',
-                senderAgentId: 'agent-a',
-                receiverAgentIds: ['agent-b'],
-                durationMs: 4
-            },
-            {
-                kind: 'multicast-delivery',
-                transport: 'realtime',
-                senderAgentId: 'agent-a',
-                receiverAgentIds: ['agent-b', 'agent-c'],
-                durationMs: 5
-            },
-            {
-                kind: 'broadcast-delivery',
-                transport: 'realtime',
-                senderAgentId: 'agent-a',
-                receiverAgentIds: ['agent-b', 'agent-c'],
-                durationMs: 6
-            },
-            {
-                kind: 'peer-ready',
-                transport: 'messages.rtc',
-                senderAgentId: 'agent-a',
-                receiverAgentIds: ['agent-b', 'agent-c'],
-                durationMs: 13
-            },
-            {
-                kind: 'direct-delivery',
-                transport: 'messages.rtc',
-                senderAgentId: 'agent-a',
-                receiverAgentIds: ['agent-b'],
-                durationMs: 7
-            },
-            {
-                kind: 'multicast-delivery',
-                transport: 'messages.rtc',
-                senderAgentId: 'agent-a',
-                receiverAgentIds: ['agent-b', 'agent-c'],
-                durationMs: 8
-            },
-            {
-                kind: 'broadcast-delivery',
-                transport: 'messages.rtc',
-                senderAgentId: 'agent-a',
-                receiverAgentIds: ['agent-b', 'agent-c'],
-                durationMs: 9
-            }
-        ],
+        timings: defaultTimings,
         diagnostics: [
             {
                 label: 'realtime-final',
@@ -303,46 +305,22 @@ function defaultRawEvidence(
     };
 }
 
+interface RetentionEvidenceInput {
+    environmentId?: 'E3-memory' | 'E4-pg';
+    inputKey?: 'e3-memory-retention-100' | 'e4-pg-retention-100';
+    outerOrdinal: number;
+    cycle0HeapBytes: number;
+    finalHeapBytes: number;
+    stateReturned?: boolean;
+}
+
 function retentionRawEvidence(
-    input: Readonly<{
-        environmentId?: 'E3-memory' | 'E4-pg';
-        inputKey?: 'e3-memory-retention-100' | 'e4-pg-retention-100';
-        outerOrdinal: number;
-        cycle0HeapBytes: number;
-        finalHeapBytes: number;
-        stateReturned?: boolean;
-    }>
+    input: RetentionEvidenceInput
 ): LiveRtcPerformanceRawEvidence {
     const environmentId = input.environmentId ?? 'E3-memory';
     const inputKey = input.inputKey ?? 'e3-memory-retention-100';
     const stateReturned = input.stateReturned ?? true;
-    const checkpoints = Array.from({ length: 11 }, (_, index) => {
-        const cycle = index * 10;
-        const progress = cycle / 100;
-        return {
-            cycle,
-            postGcHeapBytes: Math.round(
-                input.cycle0HeapBytes +
-                    (input.finalHeapBytes - input.cycle0HeapBytes) * progress
-            ),
-            agents: [
-                agentDiagnostics('agent-a'),
-                agentDiagnostics('agent-b'),
-                {
-                    ...agentDiagnostics('agent-c'),
-                    laneStates: cycle === 100 && !stateReturned
-                        ? [{
-                            peerId: 'agent-b',
-                            laneId: 'json',
-                            isOpen: false,
-                            isReconnectable: true
-                        }]
-                        : agentDiagnostics('agent-c').laneStates,
-                    connectionTimerActive: cycle === 100 && !stateReturned
-                }
-            ]
-        } as const;
-    });
+    const checkpoints = toRetentionCheckpoints(input);
     return {
         ...defaultRawEvidence(),
         identity: {
@@ -388,6 +366,36 @@ function retentionRawEvidence(
             reconnectPassed: true
         }
     };
+}
+
+function toRetentionCheckpoints(input: RetentionEvidenceInput) {
+    return Array.from({ length: 11 }, (_, index) => {
+        const cycle = index * 10;
+        const progress = cycle / 100;
+        return {
+            cycle,
+            postGcHeapBytes: Math.round(
+                input.cycle0HeapBytes +
+                    (input.finalHeapBytes - input.cycle0HeapBytes) * progress
+            ),
+            agents: [
+                agentDiagnostics('agent-a'),
+                agentDiagnostics('agent-b'),
+                {
+                    ...agentDiagnostics('agent-c'),
+                    laneStates: cycle === 100 && input.stateReturned === false
+                        ? [{
+                            peerId: 'agent-b',
+                            laneId: 'json',
+                            isOpen: false,
+                            isReconnectable: true
+                        }]
+                        : agentDiagnostics('agent-c').laneStates,
+                    connectionTimerActive: cycle === 100 && input.stateReturned === false
+                }
+            ]
+        } as const;
+    });
 }
 
 function retentionAttempt(

@@ -1,5 +1,5 @@
-import { expect, type APIRequestContext, type BrowserContext, type Page, type TestInfo } from '@playwright/test';
-import { lstat, mkdir, open, readFile, realpath, writeFile } from 'node:fs/promises';
+import type { Page } from '@playwright/test';
+import { lstat, mkdir, open, readFile, realpath } from 'node:fs/promises';
 import { dirname, isAbsolute, relative, resolve, sep } from 'node:path';
 import { deriveRtcBaselineExternalAttempts } from '../../../packages/shared-rtc-bench/baseline/catalog/rtc-baseline-workload-manifest.ts';
 import {
@@ -23,6 +23,20 @@ import type {
     RtcBaselineSampleDto,
     RtcBaselineSampleIdentityDto
 } from '../../../packages/shared-rtc-bench/baseline/contracts/rtc-baseline-contracts.ts';
+
+import {
+    exactStringArray,
+    isFiniteNonnegativeNumber,
+    jsonRecord,
+    normalizeJson,
+    numberValue,
+    requiredBoolean,
+    requiredJsonArray,
+    requiredJsonRecord,
+    requiredNonnegativeNumber,
+    requiredString,
+    requiredStringArray
+} from './live-rtc-evidence-json.ts';
 
 export interface LiveRtcPerformanceIdentity {
     workloadId: 'RTC-B06';
@@ -170,377 +184,6 @@ export interface LiveRtcPerformanceAttemptLocator extends RtcBaselineAttemptLoca
     environmentId: LiveRtcPerformanceIdentity['environmentId'];
 }
 
-export namespace LiveRtcControlClient {
-    export interface Agent {
-        context: BrowserContext;
-        page: Page;
-        prefix: 'A' | 'B' | 'C';
-        agentId: string;
-        actor: string;
-        connection: string;
-    }
-
-    export interface Result {
-        agentId?: string;
-        commandId?: string;
-        ok?: boolean;
-        result?: Readonly<{ value?: RtcBaselineJson; }>;
-        error?: RtcBaselineJson;
-    }
-
-    export interface Event {
-        kind?: string;
-        agentId?: string;
-        payload?: RtcBaselineJson;
-    }
-
-    export interface RunSnapshot {
-        agents?: readonly Readonly<{ agentId?: string; }>[];
-        results?: readonly Result[];
-        events?: readonly Event[];
-    }
-
-    export interface DeliveryScenario {
-        matrixId: string;
-        transport: 'realtime' | 'messages.rtc';
-        deliveryMode: 'direct' | 'multicast' | 'broadcast';
-        senderAgentId: string;
-        expectedAgentIds: readonly string[];
-        allowedAgentIds: readonly string[];
-    }
-
-    export interface ExecuteInput {
-        runId: string;
-        agentId: string;
-        commandId: string;
-        command: object;
-        timeoutMs?: number;
-    }
-
-    export interface WaitForMessageInput {
-        runId: string;
-        agentId: string;
-        transport: 'realtime' | 'messages.rtc';
-        matrixId: string;
-        deliveryMode: string;
-        startedAtMs: number;
-    }
-
-    export interface WaitForPeerReadinessInput {
-        runId: string;
-        agent: Agent;
-        expectedPeerIds: readonly string[];
-        suffix: string;
-        startedAtMs: number;
-    }
-
-    export interface WaitForPeerAbsenceInput {
-        runId: string;
-        agent: Agent;
-        departedPeerIds: readonly string[];
-        suffix: string;
-    }
-
-    export interface CaptureDiagnosticsInput {
-        testInfo: TestInfo;
-        runId: string;
-        agents: readonly Agent[];
-        label: string;
-        cycle: number | null;
-    }
-
-    export interface CapturedDiagnostics {
-        commandIds: readonly string[];
-        checkpoint: LiveRtcDiagnosticsCheckpoint;
-    }
-}
-
-export class LiveRtcControlClient {
-    readonly #request: APIRequestContext;
-    readonly #baseUrl: string;
-    readonly #diagnosticsOutDir: string | undefined;
-
-    constructor(
-        input: Readonly<{
-            request: APIRequestContext;
-            baseUrl: string;
-            diagnosticsOutDir?: string;
-        }>
-    ) {
-        this.#request = input.request;
-        this.#baseUrl = input.baseUrl;
-        this.#diagnosticsOutDir = input.diagnosticsOutDir;
-    }
-
-    async fetchRun(runId: string): Promise<LiveRtcControlClient.RunSnapshot> {
-        const response = await this.#request.get(
-            `${this.#baseUrl}/runs/${encodeURIComponent(runId)}`
-        );
-        expect(response.ok()).toBe(true);
-        return decodeControlRunSnapshot(normalizeJson(await response.json()));
-    }
-
-    async executeResult(
-        input: LiveRtcControlClient.ExecuteInput
-    ): Promise<LiveRtcControlClient.Result> {
-        const response = await this.#request.post(
-            `${this.#baseUrl}/runs/${encodeURIComponent(input.runId)}/agents/${
-                encodeURIComponent(input.agentId)
-            }/commands`,
-            {
-                data: {
-                    commandId: input.commandId,
-                    command: input.command
-                }
-            }
-        );
-        expect(
-            response.status(),
-            `Expected command ${input.commandId} for agent ${input.agentId} to enqueue: ${await response.text()}`
-        ).toBe(202);
-
-        let latest: LiveRtcControlClient.Result | undefined;
-        await expect.poll(async () => {
-            const run = await this.fetchRun(input.runId);
-            latest = run.results?.find(
-                (result) => result.commandId === input.commandId
-            );
-            return Boolean(latest);
-        }, {
-            timeout: input.timeoutMs ?? 45_000
-        }).toBe(true);
-        if (!latest) {
-            throw new Error(`Command ${input.commandId} did not return a result.`);
-        }
-        return latest;
-    }
-
-    async executeOk(
-        input: LiveRtcControlClient.ExecuteInput
-    ): Promise<LiveRtcControlClient.Result> {
-        const result = await this.executeResult(input);
-        expect(
-            result.ok,
-            `Expected command ${input.commandId} for agent ${input.agentId} to succeed: ${JSON.stringify(result)}`
-        ).toBe(true);
-        return result;
-    }
-
-    resultValue(
-        result: LiveRtcControlClient.Result
-    ): { [key: string]: RtcBaselineJson; } {
-        return jsonRecord(result.result?.value) ?? {};
-    }
-
-    requireSessionId(
-        result: LiveRtcControlClient.Result,
-        commandId: string
-    ): string {
-        const sessionId = stringValue(this.resultValue(result).sessionId);
-        if (!sessionId) {
-            throw new Error(`Connect result ${commandId} did not include a sessionId.`);
-        }
-        return sessionId;
-    }
-
-    readyPeerIds(result: LiveRtcControlClient.Result): readonly string[] {
-        return stringArrayValue(
-            jsonRecord(
-                jsonRecord(this.resultValue(result).rallar)?.rtcStatus
-            )?.readyPeerIds
-        );
-    }
-
-    runtimeTopics(run: LiveRtcControlClient.RunSnapshot): readonly string[] {
-        return (run.events ?? [])
-            .map((event) => stringValue(runtimeEventPayload(event).topic))
-            .filter((topic): topic is string => Boolean(topic));
-    }
-
-    async waitForMessage(
-        input: LiveRtcControlClient.WaitForMessageInput
-    ): Promise<number> {
-        await expect.poll(async () => {
-            const run = await this.fetchRun(input.runId);
-            return run.events?.some((event) => isMessageFor(event, input)) ?? false;
-        }, {
-            message: `Expected ${input.agentId} to receive ${input.transport} ${input.deliveryMode} ${input.matrixId}`,
-            timeout: 60_000
-        }).toBe(true);
-        return performance.now() - input.startedAtMs;
-    }
-
-    async waitForPeerReadiness(
-        input: LiveRtcControlClient.WaitForPeerReadinessInput
-    ): Promise<number> {
-        let attempt = 0;
-        await expect.poll(async () => {
-            const result = await this.executeResult({
-                runId: input.runId,
-                agentId: input.agent.agentId,
-                commandId: `health-ready-${input.agent.prefix.toLowerCase()}-${input.suffix}-${attempt++}`,
-                command: { kind: 'health' },
-                timeoutMs: 15_000
-            }).catch(() => undefined);
-            if (!result?.ok) {
-                return [];
-            }
-            return stringArrayValue(
-                jsonRecord(
-                    jsonRecord(this.resultValue(result).rallar)?.rtcStatus
-                )?.readyPeerIds
-            );
-        }, {
-            message: `Expected ${input.agent.agentId} to see ready peers ${
-                input.expectedPeerIds.join(', ')
-            } for ${input.suffix}`,
-            timeout: 60_000
-        }).toEqual(expect.arrayContaining([...input.expectedPeerIds]));
-        return performance.now() - input.startedAtMs;
-    }
-
-    async waitForPeerAbsence(
-        input: LiveRtcControlClient.WaitForPeerAbsenceInput
-    ): Promise<void> {
-        let attempt = 0;
-        await expect.poll(async () => {
-            const result = await this.executeResult({
-                runId: input.runId,
-                agentId: input.agent.agentId,
-                commandId: `health-absent-${input.agent.prefix.toLowerCase()}-${input.suffix}-${attempt++}`,
-                command: { kind: 'health' },
-                timeoutMs: 15_000
-            }).catch(() => undefined);
-            if (!result?.ok) {
-                return input.departedPeerIds;
-            }
-            const readyPeerIds = this.readyPeerIds(result);
-            return input.departedPeerIds.filter((peerId) => readyPeerIds.includes(peerId));
-        }, {
-            message: `Expected ${input.agent.agentId} to observe departed peers ${
-                input.departedPeerIds.join(', ')
-            } for ${input.suffix}`,
-            timeout: 60_000
-        }).toEqual([]);
-    }
-
-    async unexpectedDeliveryCount(
-        input: Readonly<{
-            runId: string;
-            scenarios: readonly LiveRtcControlClient.DeliveryScenario[];
-        }>
-    ): Promise<number> {
-        const run = await this.fetchRun(input.runId);
-        return countUnexpectedLiveRtcDeliveries({
-            events: run.events ?? [],
-            scenarios: input.scenarios
-        });
-    }
-
-    async expectArtifactBundle(
-        input: Readonly<{
-            runId: string;
-            commandIds: readonly string[];
-        }>
-    ): Promise<void> {
-        const response = await this.#request.get(
-            `${this.#baseUrl}/runs/${encodeURIComponent(input.runId)}/artifacts`
-        );
-        expect(response.ok()).toBe(true);
-        const bundle = requiredJsonRecord(
-            normalizeJson(await response.json()),
-            '$.artifactBundle'
-        );
-        const files = requiredJsonRecord(bundle.files, '$.artifactBundle.files');
-        const report = stringValue(files['report.json']) ?? '';
-        const events = stringValue(files['events.jsonl']) ?? '';
-        expect(report).toContain(input.commandIds[0]);
-        expect(events).toContain('rallar.browser');
-    }
-
-    async attachRunSummary(
-        input: Readonly<{
-            testInfo: TestInfo;
-            runId: string;
-        }>
-    ): Promise<void> {
-        const run = await this.fetchRun(input.runId);
-        const body = JSON.stringify(
-            {
-                runId: input.runId,
-                agents: run.agents?.map((agent) => agent.agentId),
-                resultCount: run.results?.length ?? 0,
-                eventCount: run.events?.length ?? 0
-            },
-            null,
-            2
-        );
-        await input.testInfo.attach('live-rtc-three-browser-run-summary.json', {
-            body,
-            contentType: 'application/json'
-        });
-        await this.#writeDiagnosticsArtifact(
-            `live-rtc-three-browser-run-summary-${safeFileName(input.runId)}.json`,
-            body
-        );
-    }
-
-    async captureDiagnostics(
-        input: LiveRtcControlClient.CaptureDiagnosticsInput
-    ): Promise<LiveRtcControlClient.CapturedDiagnostics> {
-        const commandIds: string[] = [];
-        const agents: LiveRtcAgentDiagnostics[] = [];
-        for (const agent of input.agents) {
-            const commandId = `rtc-diagnostics-${agent.prefix.toLowerCase()}-${input.label}`;
-            commandIds.push(commandId);
-            const result = await this.executeOk({
-                runId: input.runId,
-                agentId: agent.agentId,
-                commandId,
-                command: {
-                    kind: 'health',
-                    includeRtcDiagnostics: true
-                },
-                timeoutMs: 30_000
-            });
-            agents.push(
-                buildLiveRtcAgentDiagnostics(agent.agentId, this.resultValue(result))
-            );
-        }
-        const checkpoint: LiveRtcDiagnosticsCheckpoint = {
-            label: input.label,
-            cycle: input.cycle,
-            agents
-        };
-        const body = JSON.stringify(
-            {
-                runId: input.runId,
-                capturedAtEpochMs: Date.now(),
-                ...checkpoint
-            },
-            null,
-            2
-        );
-        await input.testInfo.attach(`live-rtc-diagnostics-${input.label}.json`, {
-            body,
-            contentType: 'application/json'
-        });
-        await this.#writeDiagnosticsArtifact(
-            `live-rtc-diagnostics-${safeFileName(input.label)}.json`,
-            body
-        );
-        return { commandIds, checkpoint };
-    }
-
-    async #writeDiagnosticsArtifact(fileName: string, body: string): Promise<void> {
-        if (!this.#diagnosticsOutDir) {
-            return;
-        }
-        await mkdir(this.#diagnosticsOutDir, { recursive: true });
-        await writeFile(resolve(this.#diagnosticsOutDir, fileName), body);
-    }
-}
-
 const FIVE_MEBIBYTES = 5 * 1024 * 1024;
 const LIVE_RTC_BASELINE_ID =
     /^(?:\d{8}-[0-9a-f]{12}-e(?:3-memory|4-pg)|\d{8}T\d{9}Z-[0-9a-f]{12}-e(?:3-memory|4-pg)-local|\d{8}T\d{6}Z-[0-9a-f]{12}-e(?:3-memory|4-pg)-gh[1-9][0-9]*-a[1-9][0-9]*)(?:-repeat-01)?$/u;
@@ -552,9 +195,17 @@ const attemptIdentityFields = [
     'outerOrdinal'
 ] as const;
 
-export async function loadLiveRtcPerformanceAttempt(
-    input: LoadLiveRtcPerformanceAttemptInput
-): Promise<LiveRtcPerformanceAttemptContext | null> {
+interface LiveRtcAttemptSelection {
+    baselineId: string;
+    caseId: string;
+    inputKey: string;
+    intendedPhase: string;
+    outerOrdinal: number;
+}
+
+function toLiveRtcAttemptSelection(
+    environment: Readonly<Record<string, string | undefined>>
+): LiveRtcAttemptSelection | null {
     const names = [
         'RALLAR_BLACK_BOX_RTC_BASELINE_ID',
         'RALLAR_BLACK_BOX_RTC_CASE_ID',
@@ -563,7 +214,7 @@ export async function loadLiveRtcPerformanceAttempt(
         'RALLAR_BLACK_BOX_RTC_OUTER_ORDINAL'
     ] as const;
     const values = names.map((name) => {
-        const value = input.environment[name];
+        const value = environment[name];
         return value !== undefined && value.length > 0 ? value : undefined;
     });
     if (values.every((value) => value === undefined)) {
@@ -588,6 +239,17 @@ export async function loadLiveRtcPerformanceAttempt(
     if (!Number.isSafeInteger(outerOrdinal)) {
         throw new Error('RALLAR_BLACK_BOX_RTC_OUTER_ORDINAL must be a safe positive integer.');
     }
+    return { baselineId, caseId, inputKey, intendedPhase, outerOrdinal };
+}
+
+export async function loadLiveRtcPerformanceAttempt(
+    input: LoadLiveRtcPerformanceAttemptInput
+): Promise<LiveRtcPerformanceAttemptContext | null> {
+    const selection = toLiveRtcAttemptSelection(input.environment);
+    if (!selection) {
+        return null;
+    }
+    const { baselineId, caseId, inputKey, intendedPhase, outerOrdinal } = selection;
     const baselineRoot = resolve(
         input.repoRoot,
         'tmp',
@@ -608,12 +270,7 @@ export async function loadLiveRtcPerformanceAttempt(
         throw new Error('Live RTC evidence environment does not identify a predeclared attempt.');
     }
     const outerAttempt = manifest.outerAttempts.find(
-        (attempt) =>
-            attempt.workloadId === locator.workloadId &&
-            attempt.caseId === locator.caseId &&
-            attempt.inputKey === locator.inputKey &&
-            attempt.intendedPhase === locator.intendedPhase &&
-            attempt.outerOrdinal === locator.outerOrdinal
+        (attempt) => attemptIdentityFields.every((field) => attempt[field] === locator[field])
     );
     if (!outerAttempt || outerAttempt.sampleIds.length !== 1) {
         throw new Error('Live RTC evidence requires exactly one predeclared sample per attempt.');
@@ -976,6 +633,22 @@ function attemptIssues(input: BuildLiveRtcExternalAttemptInput): RtcBaselineIssu
             });
         }
     }
+    issues.push(...diagnosticCheckpointIssues(evidence));
+    if (evidence.identity.caseId === 'retention-100') {
+        issues.push(...retentionAttemptIssues(evidence));
+    }
+    else if (evidence.retention !== null) {
+        issues.push({
+            path: '$.rawEvidence.retention',
+            code: 'unexpected-retention-evidence',
+            message: 'Only the retention-100 case may contain retention checkpoints.'
+        });
+    }
+    return issues;
+}
+
+function diagnosticCheckpointIssues(evidence: LiveRtcPerformanceRawEvidence): RtcBaselineIssueDto[] {
+    const issues: RtcBaselineIssueDto[] = [];
     if (evidence.diagnostics.length === 0) {
         issues.push({
             path: '$.rawEvidence.diagnostics',
@@ -994,16 +667,6 @@ function attemptIssues(input: BuildLiveRtcExternalAttemptInput): RtcBaselineIssu
             path: '$.rawEvidence.diagnostics',
             code: 'incomplete-rtc-diagnostics',
             message: 'Every RTC diagnostics checkpoint must contain three distinct browser agents.'
-        });
-    }
-    if (evidence.identity.caseId === 'retention-100') {
-        issues.push(...retentionAttemptIssues(evidence));
-    }
-    else if (evidence.retention !== null) {
-        issues.push({
-            path: '$.rawEvidence.retention',
-            code: 'unexpected-retention-evidence',
-            message: 'Only the retention-100 case may contain retention checkpoints.'
         });
     }
     return issues;
@@ -1392,164 +1055,6 @@ function decodeLaneDiagnostics(
         : null;
 }
 
-function jsonRecord(
-    value: RtcBaselineJson | undefined
-): { [key: string]: RtcBaselineJson; } | null {
-    return value !== undefined &&
-            typeof value === 'object' &&
-            value !== null &&
-            !Array.isArray(value)
-        ? value
-        : null;
-}
-
-function exactStringArray(value: RtcBaselineJson | undefined): readonly string[] | null {
-    return Array.isArray(value) &&
-            value.every((entry): entry is string => typeof entry === 'string')
-        ? value
-        : null;
-}
-
-function isFiniteNonnegativeNumber(
-    value: RtcBaselineJson | undefined
-): value is number {
-    return typeof value === 'number' && Number.isFinite(value) && value >= 0;
-}
-
-function decodeControlRunSnapshot(
-    value: RtcBaselineJson
-): LiveRtcControlClient.RunSnapshot {
-    const run = requiredJsonRecord(value, '$.controlRun');
-    const agents = optionalJsonArray(run.agents, '$.controlRun.agents').map(
-        (entry, index) => {
-            const agent = requiredJsonRecord(entry, `$.controlRun.agents[${index}]`);
-            return {
-                agentId: requiredString(
-                    agent.agentId,
-                    `$.controlRun.agents[${index}].agentId`
-                )
-            };
-        }
-    );
-    const results = optionalJsonArray(run.results, '$.controlRun.results').map(
-        (entry, index) => {
-            const result = requiredJsonRecord(entry, `$.controlRun.results[${index}]`);
-            const resultEnvelope = result.result === undefined
-                ? null
-                : requiredJsonRecord(
-                    result.result,
-                    `$.controlRun.results[${index}].result`
-                );
-            return {
-                agentId: optionalString(
-                    result.agentId,
-                    `$.controlRun.results[${index}].agentId`
-                ),
-                commandId: requiredString(
-                    result.commandId,
-                    `$.controlRun.results[${index}].commandId`
-                ),
-                ok: requiredBoolean(
-                    result.ok,
-                    `$.controlRun.results[${index}].ok`
-                ),
-                ...(resultEnvelope ? { result: { value: resultEnvelope.value } } : {}),
-                ...(result.error !== undefined ? { error: result.error } : {})
-            };
-        }
-    );
-    const events = optionalJsonArray(run.events, '$.controlRun.events').map(
-        (entry, index) => {
-            const event = requiredJsonRecord(entry, `$.controlRun.events[${index}]`);
-            return {
-                kind: optionalString(event.kind, `$.controlRun.events[${index}].kind`),
-                agentId: optionalString(
-                    event.agentId,
-                    `$.controlRun.events[${index}].agentId`
-                ),
-                ...(event.payload !== undefined ? { payload: event.payload } : {})
-            };
-        }
-    );
-    return { agents, results, events };
-}
-
-function optionalJsonArray(
-    value: RtcBaselineJson | undefined,
-    path: string
-): readonly RtcBaselineJson[] {
-    return value === undefined ? [] : requiredJsonArray(value, path);
-}
-
-function optionalString(
-    value: RtcBaselineJson | undefined,
-    path: string
-): string | undefined {
-    return value === undefined ? undefined : requiredString(value, path);
-}
-
-function stringValue(value: RtcBaselineJson | undefined): string | undefined {
-    return typeof value === 'string' && value.length > 0 ? value : undefined;
-}
-
-function numberValue(value: RtcBaselineJson | undefined): number | undefined {
-    return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
-}
-
-function stringArrayValue(value: RtcBaselineJson | undefined): readonly string[] {
-    return Array.isArray(value)
-        ? value.filter((entry): entry is string => typeof entry === 'string')
-        : [];
-}
-
-function runtimeEventPayload(
-    event: LiveRtcControlClient.Event
-): { [key: string]: RtcBaselineJson; } {
-    const payload = jsonRecord(event.payload) ?? {};
-    return typeof payload.kind === 'string'
-        ? payload
-        : jsonRecord(payload.payload) ?? payload;
-}
-
-function messageData(
-    event: LiveRtcControlClient.Event
-): { [key: string]: RtcBaselineJson; } {
-    const runtimeEvent = runtimeEventPayload(event);
-    const runtimePayload = jsonRecord(runtimeEvent.payload) ?? {};
-    return jsonRecord(runtimePayload.data ?? runtimeEvent.data) ?? {};
-}
-
-export function countUnexpectedLiveRtcDeliveries(
-    input: Readonly<{
-        events: readonly LiveRtcControlClient.Event[];
-        scenarios: readonly LiveRtcControlClient.DeliveryScenario[];
-    }>
-): number {
-    const scenarioById = new Map(
-        input.scenarios.map((scenario) => [scenario.matrixId, scenario])
-    );
-    return input.events.filter((event) => {
-        const matrixId = stringValue(messageData(event).matrixId);
-        const scenario = matrixId ? scenarioById.get(matrixId) : undefined;
-        return scenario !== undefined &&
-            event.agentId !== undefined &&
-            !scenario.allowedAgentIds.includes(event.agentId);
-    }).length;
-}
-
-function isMessageFor(
-    event: LiveRtcControlClient.Event,
-    input: LiveRtcControlClient.WaitForMessageInput
-): boolean {
-    const runtimeEvent = runtimeEventPayload(event);
-    const data = messageData(event);
-    return event.agentId === input.agentId &&
-        runtimeEvent.kind === 'message' &&
-        runtimeEvent.transport === input.transport &&
-        data.matrixId === input.matrixId &&
-        data.deliveryMode === input.deliveryMode;
-}
-
 export function buildLiveRtcAgentDiagnostics(
     agentId: string,
     resultValue: RtcBaselineJson | object
@@ -1575,42 +1080,12 @@ export function buildLiveRtcAgentDiagnostics(
         '$.rallar.rtcDiagnostics.peers'
     );
     const peerRecords = peers.map((peer, index) => requiredJsonRecord(peer, `$.rallar.rtcDiagnostics.peers[${index}]`));
-    const laneStates = peerRecords.flatMap((peer) => {
-        const peerId = requiredString(peer.peerId, 'RTC diagnostic peerId');
-        const lanes = requiredJsonArray(peer.lanes, `RTC diagnostic lanes for ${peerId}`);
-        return lanes.map((laneValue, index) => {
-            const lane = requiredJsonRecord(
-                laneValue,
-                `RTC diagnostic lane ${index} for ${peerId}`
-            );
-            return {
-                peerId,
-                laneId: requiredString(lane.laneId, `RTC diagnostic laneId for ${peerId}`),
-                isOpen: requiredBoolean(lane.isOpen, `RTC diagnostic isOpen for ${peerId}`),
-                isReconnectable: requiredBoolean(
-                    lane.isReconnectable,
-                    `RTC diagnostic isReconnectable for ${peerId}`
-                )
-            };
-        });
-    }).sort(compareLaneStates);
-    const connectionTimerActive = peerRecords.some((peer) => {
-        const connection = requiredJsonRecord(
-            peer.connection,
-            'RTC diagnostic peer connection'
-        );
-        const connectionDiagnostics = jsonRecord(peer.connectionDiagnostics);
-        return connection.disconnectPending === true ||
-            connection.reconnecting === true ||
-            connectionDiagnostics?.hasReconnectTimer === true ||
-            (numberValue(connectionDiagnostics?.reconnectAttemptsInFlight) ?? 0) !== 0;
-    });
     return {
         agentId,
         settledPeerIds,
         readyPeerIds,
-        laneStates,
-        connectionTimerActive,
+        laneStates: toLiveRtcLaneStates(peerRecords),
+        connectionTimerActive: hasLiveRtcConnectionTimer(peerRecords),
         peerCount: requiredNonnegativeNumber(diagnostics.peerCount, 'RTC peerCount'),
         connectedPeerCount: requiredNonnegativeNumber(
             diagnostics.connectedPeerCount,
@@ -1630,107 +1105,52 @@ export function buildLiveRtcAgentDiagnostics(
     };
 }
 
+function toLiveRtcLaneStates(
+    peerRecords: readonly { [key: string]: RtcBaselineJson; }[]
+): LiveRtcLaneDiagnostics[] {
+    return peerRecords.flatMap((peer) => {
+        const peerId = requiredString(peer.peerId, 'RTC diagnostic peerId');
+        const lanes = requiredJsonArray(peer.lanes, `RTC diagnostic lanes for ${peerId}`);
+        return lanes.map((laneValue, index) => {
+            const lane = requiredJsonRecord(
+                laneValue,
+                `RTC diagnostic lane ${index} for ${peerId}`
+            );
+            return {
+                peerId,
+                laneId: requiredString(lane.laneId, `RTC diagnostic laneId for ${peerId}`),
+                isOpen: requiredBoolean(lane.isOpen, `RTC diagnostic isOpen for ${peerId}`),
+                isReconnectable: requiredBoolean(
+                    lane.isReconnectable,
+                    `RTC diagnostic isReconnectable for ${peerId}`
+                )
+            };
+        });
+    }).sort(compareLaneStates);
+}
+
+function hasLiveRtcConnectionTimer(
+    peerRecords: readonly { [key: string]: RtcBaselineJson; }[]
+): boolean {
+    return peerRecords.some((peer) => {
+        const connection = requiredJsonRecord(
+            peer.connection,
+            'RTC diagnostic peer connection'
+        );
+        const connectionDiagnostics = jsonRecord(peer.connectionDiagnostics);
+        return connection.disconnectPending === true ||
+            connection.reconnecting === true ||
+            connectionDiagnostics?.hasReconnectTimer === true ||
+            (numberValue(connectionDiagnostics?.reconnectAttemptsInFlight) ?? 0) !== 0;
+    });
+}
+
 function compareLaneStates(
     left: LiveRtcLaneDiagnostics,
     right: LiveRtcLaneDiagnostics
 ): number {
     return left.peerId.localeCompare(right.peerId) ||
         left.laneId.localeCompare(right.laneId);
-}
-
-function requiredJsonRecord(
-    value: RtcBaselineJson | undefined,
-    path: string
-): { [key: string]: RtcBaselineJson; } {
-    const record = jsonRecord(value);
-    if (!record) {
-        throw new Error(`${path} must be a JSON object.`);
-    }
-    return record;
-}
-
-function requiredJsonArray(
-    value: RtcBaselineJson | undefined,
-    path: string
-): readonly RtcBaselineJson[] {
-    if (!Array.isArray(value)) {
-        throw new Error(`${path} must be a JSON array.`);
-    }
-    return value;
-}
-
-function requiredStringArray(
-    value: RtcBaselineJson | undefined,
-    path: string
-): string[] {
-    const values = exactStringArray(value);
-    if (!values) {
-        throw new Error(`${path} must contain only strings.`);
-    }
-    return [...values];
-}
-
-function requiredString(value: RtcBaselineJson | undefined, field: string): string {
-    if (typeof value !== 'string' || value.length === 0) {
-        throw new Error(`${field} must be a nonempty string.`);
-    }
-    return value;
-}
-
-function requiredBoolean(value: RtcBaselineJson | undefined, field: string): boolean {
-    if (typeof value !== 'boolean') {
-        throw new Error(`${field} must be boolean.`);
-    }
-    return value;
-}
-
-function requiredNonnegativeNumber(
-    value: RtcBaselineJson | undefined,
-    field: string
-): number {
-    if (!isFiniteNonnegativeNumber(value)) {
-        throw new Error(`${field} must be a finite nonnegative number.`);
-    }
-    return value;
-}
-
-function safeFileName(value: string): string {
-    return value.replace(/[^a-zA-Z0-9_.-]+/g, '-');
-}
-
-function normalizeJson(value: RtcBaselineJson | object): RtcBaselineJson {
-    assertJsonValue(value, '$');
-    return JSON.parse(JSON.stringify(value)) as RtcBaselineJson;
-}
-
-function assertJsonValue(value: RtcBaselineJson | object, path: string): void {
-    if (value === null || typeof value === 'string' || typeof value === 'boolean') {
-        return;
-    }
-    if (typeof value === 'number') {
-        if (!Number.isFinite(value)) {
-            throw new Error(`${path} contains a non-finite number.`);
-        }
-        return;
-    }
-    if (Array.isArray(value)) {
-        for (let index = 0; index < value.length; index += 1) {
-            if (!(index in value)) {
-                throw new Error(`${path}[${index}] is a sparse array entry.`);
-            }
-            assertJsonValue(value[index], `${path}[${index}]`);
-        }
-        return;
-    }
-    if (typeof value !== 'object' || Object.getPrototypeOf(value) !== Object.prototype) {
-        throw new Error(`${path} is not a plain JSON value.`);
-    }
-    for (const [field, entry] of Object.entries(value)) {
-        if (entry === undefined) {
-            throw new Error(`${path}.${field} is undefined.`);
-        }
-        assertJsonValue(entry, `${path}.${field}`);
-    }
 }
 
 async function createConfinedDirectories(
