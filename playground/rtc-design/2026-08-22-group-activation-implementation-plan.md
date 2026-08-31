@@ -1604,6 +1604,23 @@ roles, then complete the newly requested whole-PR review and refresh affected ga
 material correction through #390, #391 and #396 in order; this is not behind-only synchronization.
 The maintainer will merge each PR manually after review and validation.
 
+The complete oldest-PR review now identifies eight consolidated correction areas. Repository
+adoption must order same-tuple removed layouts after active layouts, matching the canonical
+lifecycle tombstone producer; advancing every test fixture revision hid that case. The live proof
+must repair all extracted opt-in callers and recognize structured NACK evidence rather than its
+own submitted command name. Required browser-runtime status ports must be called directly, and
+RTT observation must flow through completed construction dependencies without a callback reading
+its not-yet-constructed manager. Complete the affected runtime, fixture, helper and source-coupling
+closure at their actual ownership boundaries, retaining semantic tests and unchanged gate budgets.
+
+This correction preserves the exported `WebRtcGroupManager` class, namespace and intentional
+package entry point while moving its physical file and direct imports to canonical kebab-case.
+An unrelated public class/namespace rename is not authorized or needed for that safe file cleanup.
+No predecessor facade, rename-only alias or old physical-path forwarding module is retained.
+The implementation remains Slice 8a; the later dial matrix, facade and route cutover remain in their
+existing PRs. Complete one consolidated fix wave and independent scoped re-review before advancing
+to #390. Broader validation and publication remain pending, and #381 is draft again.
+
 ### Slice 8b start checkpoint — stacked browser dial gate (2026-08-30, PR #390)
 
 Slice 8b starts from #381's published head `ce3689693` as draft #390 on
