@@ -1591,15 +1591,51 @@ source gate still pinned to the monolith, and a room test double that bypassed b
 roles. Their focused repairs restore the inventories and test ownership without adding a production
 fallback or retained-legacy entry. The final unit, Deno, build, shared-web/headless boundary, browser
 bundle, E2E, memory full-stack, live three-browser, topology-replay and fixed medium-scale gates all
-pass; remote CI and pull-request delivery readiness remain before #381 leaves draft.
+pass on that earlier integration; they are not evidence for the later correction below.
+
+### Oldest-first cleanup checkpoint — Slice 8a (2026-08-31)
+
+The maintainer requested complete reviews and corrections of the existing unmerged stack, oldest
+to current, followed by manual merges. Actual `main` at `eab44688b0` introduced a real conflict;
+the local repair preserves canonical RTT reporter election, passive pongs and transport validation
+together with planned-RTT/accepted-traffic role separation. This is material integration work, not
+a rebase merely because the branch is behind.
+
+The complete review identified eight correction areas. The consolidated correction now orders
+same-tuple removed layouts after active layouts in both roles and rejects reverse stale delivery.
+Live proof uses executable lifecycle/send owners and independently stored, receiver/message-
+correlated NACK receipts; successful enqueue and request names are not rejection evidence.
+Required browser-runtime status ports are called directly. Authentication, connection state,
+health and resource lifecycle have explicit owners rather than one large installation closure.
+
+The existing active peer-selection callback carries separate completed desired and RTT-reporting
+sets to the already constructed streamer, removing the construction back-edge without an unused
+replacement port. Existing zero-argument observer registration remains supported. The physical
+manager, test-cache configurator and lifecycle-driver files use canonical names with direct imports;
+the public `WebRtcGroupManager` class, namespace and intentional entries remain unchanged. No old
+physical-path shim, graph path, single-slot adapter or missing-mandatory-port legacy remains.
+
+The correction's covering tests, package/native/test typing, public/room checks, affected formatting,
+changed style, structure, coupling and legacy gates pass. Exact source lineage records the actual
+runtime split for aggregate style comparison, not a standards exception. The unchanged headless
+205 KiB budget passes at 204.877 KiB after private runtime encapsulation; its margin remains narrow.
+The complete formatter still reports five byte-identical untouched baseline failures. Semantic
+recording tests and native checks do not claim execution of exhaustive live or retention-100 cases.
+
+Independent scoped re-review and broad/live/PostgreSQL/controlled state-write gates remain required.
+Keep the PR draft until supported delivery evidence permits otherwise; older green CI does not
+validate unpublished corrections. Record final remote gate state in the PR, leave merges to the
+maintainer, and carry accepted parent corrections through #390, #391 and #396 in order. No Slice 9
+implementation belongs to this cleanup campaign.
 
 **Next two PRs (I5, I20):**
 
-- **PR 13 = finish #381 / slice 8a.** Complete touched-file closure, record final local and remote gate
-  evidence, update the semantic PR explanation for current `main`, and publish the rebased branch.
-- **PR 14 = slice 8b, stacked on #381.** Add the shared total stage × layout-role dial decision,
-  suppress active-session bootstrap fallback, and drive both inbound and outbound peer creation from
-  that one matrix. Slice 8c and the 8d route/recipe cutover remain outside this next PR.
+- **PR 13 = finish #381 / slice 8a.** Independently re-review the consolidated correction, complete
+  the unchanged final gates, and publish with an accurate semantic PR explanation and manual-merge
+  delivery status.
+- **PR 14 = review existing #390 / slice 8b, stacked on #381.** Carry the material parent correction
+  into its existing total stage × layout-role dial matrix, then completely review and fix that PR.
+  The later facade and route-cutover reviews follow in order; no new slice starts here.
 
 ## Slice 9 — In-flight pacing
 
