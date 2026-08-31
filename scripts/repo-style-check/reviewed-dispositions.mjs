@@ -11,6 +11,25 @@ export const reviewedDispositions = Object.freeze([
         rule: 'boundary.unknown',
         symbol: 'toError'
     }),
+    // These exact JSON readers reject malformed input at the external boundary.
+    // The live reader recursively produces only RtcBaselineJson; the typecheck
+    // fixture reader returns only a validated string array. No unknown values
+    // propagate into their callers or domain decisions.
+    Object.freeze({
+        path: 'tests/playwright/rallar-black-box/live-rtc-evidence-json.ts',
+        rule: 'boundary.unknown',
+        symbol: 'normalizeJson'
+    }),
+    Object.freeze({
+        path: 'tests/playwright/rallar-black-box/live-rtc-evidence-json.ts',
+        rule: 'boundary.unknown',
+        symbol: 'normalizeJsonValue'
+    }),
+    Object.freeze({
+        path: 'packages/tests/repo/tests-typecheck-external-unit.test.ts',
+        rule: 'boundary.unknown',
+        symbol: 'readTestProjectIncludes'
+    }),
     // erasableSyntaxOnly migration: converting parameter properties to explicit
     // fields duplicates each `unknown`-typed parameter annotation into a field
     // declaration (+1 textual occurrence per file, no new unknown values). These

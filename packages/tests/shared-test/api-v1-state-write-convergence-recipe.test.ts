@@ -16,7 +16,11 @@ import {
     onTestFinished
 } from 'vitest';
 
-import { requireRecord } from '@shared-server/rallar-system/protocol/exact-object-decoding.ts';
+import {
+    decodeJsonWireValue,
+    type JsonWireObject,
+    type JsonWireValue
+} from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import { parseBlackBoxRunnerReport, type BlackBoxRunnerReport } from '@shared-test/black-box-runner/artifacts/artifact-reader.ts';
 import { validateBlackBoxRunnerScenarioRecipe } from '@shared-test/black-box-runner/schema.ts';
 import type { GroupPresenceSession, GroupSnapshot } from '@shared/api/group-types.ts';
@@ -29,27 +33,36 @@ const scenarioCliPath = fileURLToPath(new URL('../../shared-test/black-box-runne
 const expectedGenerationId = 'generation-2-presence-regression';
 
 interface PresenceLaneRead {
-    readonly recipe: Record<string, unknown>;
-    readonly steps: readonly Record<string, unknown>[];
-    readonly race: Record<string, unknown>;
-    readonly groups: readonly Record<string, unknown>[];
-    readonly presenceSteps: readonly Record<string, unknown>[];
+    readonly recipe: JsonWireObject;
+    readonly steps: readonly JsonWireObject[];
+    readonly race: JsonWireObject;
+    readonly groups: readonly JsonWireObject[];
+    readonly presenceSteps: readonly JsonWireObject[];
 }
 
 function readPresenceLane(): PresenceLaneRead {
-    const recipe = readApiV1Recipe(recipePath);
+    const recipe = requireRecipeObject(decodeJsonWireValue(readApiV1Recipe(recipePath)), 'recipe');
     assert.equal(validateBlackBoxRunnerScenarioRecipe(recipe).ok, true);
     assert.ok(Array.isArray(recipe.steps));
-    const steps = recipe.steps.map((step) => requireRecord(step, 'recipe step'));
+    const steps = recipe.steps.map((step) => requireRecipeObject(step, 'recipe step'));
     const race = steps.find((step) => step.name === 'raceBoundedMembershipPresenceAndConfig');
     assert.ok(race);
     assert.ok(Array.isArray(race.groups));
-    const groups = race.groups.map((group) => requireRecord(group, 'parallel lane'));
+    const groups = race.groups.map((group) => requireRecipeObject(group, 'parallel lane'));
     const lane = groups.find((group) => group.name === 'reused-session-presence-lane');
     assert.ok(lane);
     assert.ok(Array.isArray(lane.steps));
-    const presenceSteps = lane.steps.map((step) => requireRecord(step, 'presence step'));
+    const presenceSteps = lane.steps.map((step) => requireRecipeObject(step, 'presence step'));
     return { recipe, steps, race, groups, presenceSteps };
+}
+
+function isRecipeObject(value: JsonWireValue | undefined): value is JsonWireObject {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function requireRecipeObject(value: JsonWireValue | undefined, label: string): JsonWireObject {
+    assert.ok(isRecipeObject(value), `${label} must be a JSON object`);
+    return value;
 }
 
 function toPresenceSummary(presenceRevision: number, session: GroupPresenceSession | null): GroupSnapshot {
@@ -144,10 +157,10 @@ async function runPresenceLane(input: PresenceLaneRunInputDto): Promise<Presence
         if (step.type !== 'http.poll-until' || !input.pollOverride) {
             return step;
         }
-        const request = requireRecord(step.request, 'poll request');
+        const request = requireRecipeObject(step.request, 'poll request');
         return {
             ...step,
-            request: { ...request, poll: { ...requireRecord(request.poll, 'poll limits'), ...input.pollOverride } }
+            request: { ...request, poll: { ...requireRecipeObject(request.poll, 'poll limits'), ...input.pollOverride } }
         };
     });
     const configPath = path.join(directory, 'recipe.json');
@@ -221,7 +234,7 @@ describe('API-v1 state-write convergence recipe', () => {
             'reused-session-presence-lane',
             'topology-config-lane'
         ]);
-        const connections = requireRecord(recipe.connections, 'recipe connections');
+        const connections = requireRecipeObject(recipe.connections, 'recipe connections');
         expect(Object.values(connections)).toHaveLength(3);
         for (const connection of Object.values(connections)) {
             expect(connection).toMatchObject({ type: 'http', timeoutMs: 15_000 });
@@ -245,7 +258,7 @@ describe('API-v1 state-write convergence recipe', () => {
             request: { delayMs: 65_000 }
         });
         const delays = steps.filter((step) => String(step.name).startsWith('delayBeforeStateConvergencePoll'));
-        expect(delays.map((step) => requireRecord(step.request, 'delay request').delayMs)).toEqual([250, 500, 1000, 2000, 4000]);
+        expect(delays.map((step) => requireRecipeObject(step.request, 'delay request').delayMs)).toEqual([250, 500, 1000, 2000, 4000]);
         const polls = steps.filter((step) => String(step.name).startsWith('pollStateConvergenceAttempt'));
         expect(polls).toHaveLength(5);
         for (const poll of polls) {
@@ -299,11 +312,11 @@ describe('API-v1 state-write convergence recipe', () => {
         const final = steps.find((step) => step.name === 'assertIdenticalFinalStateAndCausalHistory');
         assert.ok(final);
         expect(final.type).toBe('assert');
-        const actual = requireRecord(final.actual, 'final actual state');
-        const expected = requireRecord(final.expect, 'final expectation');
-        const body = requireRecord(expected.body, 'final expected state');
-        const history = requireRecord(actual.causalHistory, 'actual causal history');
-        const expectedHistory = requireRecord(body.causalHistory, 'expected causal history');
+        const actual = requireRecipeObject(final.actual, 'final actual state');
+        const expected = requireRecipeObject(final.expect, 'final expectation');
+        const body = requireRecipeObject(expected.body, 'final expected state');
+        const history = requireRecipeObject(actual.causalHistory, 'actual causal history');
+        const expectedHistory = requireRecipeObject(body.causalHistory, 'expected causal history');
         expect(expected.missingActualValue).toBe('MISSING');
         const historyFields = ['groupState', 'presence', 'topologyGroupState', 'topologyPresence'];
         const servers = [
@@ -335,14 +348,14 @@ describe('API-v1 state-write convergence recipe', () => {
                 sourceGroupStateCausalRevision: '{resultsByName.readPrimaryGroupAttempt5.0.actual.body.causalRevision}'
             });
             if (key !== 'primary') {
-                const serverExpectedHistory = requireRecord(expectedHistory[key], `${key} expected causal history`);
+                const serverExpectedHistory = requireRecipeObject(expectedHistory[key], `${key} expected causal history`);
                 expect(serverExpectedHistory.topologyTuples).toEqual(
                     [1, 2, 3, 4, 5].map((attempt) =>
                         `{resultsByName.readPrimaryTopologyAttempt${attempt}.0.actual.body.snapshot.sourceGroupStateCausalRevision}`
                     )
                 );
             }
-            const serverHistory = requireRecord(history[key], `${key} causal history`);
+            const serverHistory = requireRecipeObject(history[key], `${key} causal history`);
             for (const field of historyFields) {
                 expect(serverHistory[field]).toHaveLength(5);
             }

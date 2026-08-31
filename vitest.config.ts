@@ -17,7 +17,11 @@ export default defineConfig({
     },
 
     test: {
-        include: ['packages/tests/**/*.test.ts', 'packages/shared-rtc-bench/tests/**/*.test.ts'],
+        include: [
+            'packages/tests/**/*.test.ts',
+            'packages/shared-rtc-bench/tests/**/*.test.ts',
+            'tests/unit/**/*.test.ts'
+        ],
         exclude: [
             'packages/tests/shared-server/integration/**',
             'packages/tests/shared-test/scenario-black-box-rtc-config.test.ts',

@@ -42,6 +42,21 @@ describe('reviewed repository style dispositions', () => {
                 symbol: 'toError'
             },
             {
+                path: 'tests/playwright/rallar-black-box/live-rtc-evidence-json.ts',
+                rule: 'boundary.unknown',
+                symbol: 'normalizeJson'
+            },
+            {
+                path: 'tests/playwright/rallar-black-box/live-rtc-evidence-json.ts',
+                rule: 'boundary.unknown',
+                symbol: 'normalizeJsonValue'
+            },
+            {
+                path: 'packages/tests/repo/tests-typecheck-external-unit.test.ts',
+                rule: 'boundary.unknown',
+                symbol: 'readTestProjectIncludes'
+            },
+            {
                 path: 'packages/shared-web/browser/rallar-data.ts',
                 rule: 'boundary.unknown',
                 symbol: undefined

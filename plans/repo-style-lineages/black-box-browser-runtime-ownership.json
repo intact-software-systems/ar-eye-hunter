@@ -2,7 +2,7 @@
   "version": 1,
   "lineages": [
     {
-      "mergeBase": "eab44688b0a971b002c8ea14ba26179fb7e02c17",
+      "mergeBase": "5530e8b43f6552c07b6ccb28055295b0776e8445",
       "source": {
         "path": "packages/shared-test/black-box-runner/browser/rallar-browser-runtime/runtime.ts",
         "blob": "05b915fe7003f4a1589a0bcf21e112cfb27d5141"
