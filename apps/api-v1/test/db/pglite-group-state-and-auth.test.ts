@@ -10,7 +10,7 @@ import { requiresClientWrite } from '@shared-server/rallar-system/client-state/c
 import { createClientStateService } from '@shared-server/rallar-system/client-state/client-state-service.ts';
 import { toClientMutationIssuedSessionAuthority } from '@shared-server/rallar-system/client-state/mutation/client-mutation-authority.ts';
 import { toClientMutationCommand } from '@shared-server/rallar-system/client-state/mutation/client-mutation-command.ts';
-import type { ClientMutationComputedWrite } from '@shared-server/rallar-system/client-state/mutation/client-mutation-contracts.ts';
+import type { ClientMutationComputedAppliedWrite } from '@shared-server/rallar-system/client-state/mutation/client-mutation-contracts.ts';
 import { toUpsertClientPrincipalMutationInput } from '@shared-server/rallar-system/client-state/mutation/command-input/to-upsert-client-principal-mutation-input.ts';
 import { ClientStateRepository } from '@shared-server/rallar-system/client-state/persistence/client-state-repository.ts';
 import { createGroupStateService } from '@shared-server/rallar-system/group-state/group-state-service.ts';
@@ -673,7 +673,7 @@ Deno.test(
             });
             const scope = { applicationId: 'pglite-app', workspaceId: 'pglite-workspace' };
 
-            const prepareClientWrite = async (principalId: string, commandId: string): Promise<ClientMutationComputedWrite> => {
+            const prepareClientWrite = async (principalId: string, commandId: string): Promise<ClientMutationComputedAppliedWrite> => {
                 const authority = {
                     clientId: principalId,
                     accessToken: `${principalId}-token`,
