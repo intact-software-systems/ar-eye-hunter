@@ -1662,6 +1662,16 @@ Complete R6 and both introduced inventory regressions in the same follow-up, the
 review the changed-file and recursive-support closure and run the unchanged gates. This approval
 supersedes the prior bounded-wave stop; it does not waive a finding or establish readiness.
 
+The follow-up reproduces both inventory regressions and then passes their seven focused tests by
+using the live control port's existing result contract and recording the exact real route consumer.
+Final source review and broad gates remain pending. A separate public-API decision is now exposed:
+the necessary multicast-manager change and recursive filename/import closure reach its exported
+eight-argument constructor and the RTC receive streamer's exported four-argument constructor.
+Replacing each with one named input, migrating all repository callers and preserving the public
+class/export identities without old overloads is proposed, not yet approved. Hold those signature
+edits while completing the independent standards corrections; do not waive full-file closure or
+introduce a second receiver path to avoid the decision.
+
 ### Slice 8b start checkpoint — stacked browser dial gate (2026-08-30, PR #390)
 
 Slice 8b starts from #381's published head `ce3689693` as draft #390 on
