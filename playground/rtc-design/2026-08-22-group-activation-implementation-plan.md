@@ -1626,8 +1626,21 @@ are closed. Covering tests, package/native/test typing and the exact committed s
 coupling and legacy gates pass. The unchanged 205 KiB headless budget passes at 204.877 KiB after
 private runtime encapsulation, with narrow remaining margin. These are implementation and focused
 validation results, not independent source acceptance or real-live exhaustive/retention evidence.
-Complete the single independent scoped re-review before advancing to #390. Broader validation and
-publication remain pending, and #381 is draft again.
+The single independent scoped re-review has now traced a load-bearing invalid assumption in the
+NACK proof: the browser RTC receiver does not produce `not-yet-in-sync`. The existing WebSocket
+server authorizer produces that reason, but the probe selects `messages.rtc` and requires a peer's
+receipt. Correlation against an injected positive fixture does not prove the missing receive-path
+behavior. Preserve the gate and resolve the browser snapshot-admission/NACK contract explicitly;
+do not substitute a server receipt or quietly weaken the negative case.
+
+Fresh full typecheck, Deno and workspace builds pass. The full unit gate fails two checks introduced
+by the new live-delivery fixture: its reverse import into the RTC benchmark package violates the
+package boundary, and its establishment-route occurrence is absent from the exact removal
+inventory. Both checks pass on the pinned main control. These are correction regressions, not
+flaky infrastructure or permission to relax either check. Independent final source acceptance,
+remaining live/native-PostgreSQL and controlled performance validation, and publication are still
+pending. Keep #381 draft and the dependent PR reviews held until the oldest PR's load-bearing
+findings are resolved; all merges remain manual.
 
 ### Slice 8b start checkpoint — stacked browser dial gate (2026-08-30, PR #390)
 
@@ -2104,10 +2117,12 @@ not itself mean ready for main; do not rebase merely for a behind status or enab
 The fresh oldest-PR check found a real conflict with actual current main. That conflict is repaired
 locally with main's canonical RTT-reporter and transport-boundary corrections preserved alongside
 Slice 8a's planned-RTT/accepted-traffic separation. The subsequent complete #381 review found the
-eight correction areas recorded in its checkpoint; its single correction wave is in progress before
-scoped re-review and broad validation. Then assess the material dependency change through the
-remaining stack. Earlier green checks do not prove this new combined behavior, and the local repair
-has not yet replaced #381's remote head.
+eight correction areas recorded in its checkpoint. Its single correction wave is committed locally,
+but scoped re-review exposes the missing browser RTC NACK producer contract and fresh unit
+validation exposes two fixture integration regressions. The oldest PR is not accepted; resolve
+those findings before assessing the material dependency change through the remaining stack.
+Earlier green checks do not prove this new combined behavior, and the local repair has not yet
+replaced #381's remote head.
 
 ## Slice 9 — In-flight pacing
 
