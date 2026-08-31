@@ -1978,15 +1978,14 @@ seventeen changed files and their recursively changed supports, including comple
 equivalence and the current authority-to-socket boundary. Independent untouched work stays outside
 that closure. This scoped approval does not establish whole-slice acceptance.
 
-The subsequent whole-slice changed-style gate fails on sixteen boundary findings outside this
-additional correction. Fifteen are raw-data validators, persisted-evidence decoders or deliberate
-invalid persistence test inputs; their classification does not itself satisfy the automated gate.
-The benchmark receipt decoder also contains a real standards violation: a sparse raw descriptor is
-double-asserted into the domain descriptor type before conversion and the later semantic equality
-check. Sparse artifact support remains required, but that assertion is not acceptable normalization.
-The reviewed-boundary dispositions and this decoder require a focused follow-on correction; no
-checker suppression, weakened validation or legacy adapter is approved. Whole-slice closure remains
-incomplete, and no further correction wave is inferred from the already-used bounded approval.
+The subsequent whole-slice changed-style gate failed on sixteen boundary findings outside this
+additional correction. Fifteen were raw-data validators, persisted-evidence decoders or deliberate
+invalid persistence test inputs; classification alone did not satisfy the automated gate. The
+benchmark receipt decoder also double-asserted a sparse raw descriptor into the domain descriptor
+before conversion and the later semantic equality check. The maintainer's continued-cleanup
+authorization enabled the focused receipt-boundary correction recorded below. Its independent
+review and whole-slice changed-style gate now pass without checker suppression, weakened validation
+or a legacy adapter. Whole-slice acceptance still requires the remaining reviews and gates.
 
 Compatibility inspection also found the affected idempotent-receipt writer had only test callers
 and no public package export or independent runtime consumer. It is removed rather than retained
@@ -2002,11 +2001,11 @@ Current evidence and remaining acceptance are deliberately separate:
 | Lifecycle, retry and match consumers | The frozen correction passes lifecycle 37/37 and criterion 52/52 in the full memory profile. Earlier elected-manager match 52/52 and live RTC primary passed, with two configured RTC opt-in skips.                                                                                                      | Refresh remaining affected final-candidate integration.                                                                          |
 | Permissive-policy valve              | A wrong-group receipt failed the new identity assertion; the corrected live recipe passes 45/45. The group remains `forming` through flowing → halted → flowing, membership/presence work while halted, and relay stops then resumes. Blocked-policy and CRDT checks remain.                             | Remaining final-profile coverage.                                                                                                |
 | Formation scale                      | Corrected declared connections pass all four formation-large recipes: managed medium 613/613 and large 3,013/3,013, with no nonblocking failures in either managed tier. Ordinary burst/churn retain configured readiness observations.                                                                  | Final-candidate assessment after remaining assertion/contract changes; this is a precommit correction checkpoint.                |
-| Memory and PostgreSQL profiles       | The additional correction passes memory 32/32 with 108 configured nonblocking observations, and ordinary uninstrumented PostgreSQL 32/32 default plus 6/6 cluster recipes. WebSocket passes 12/12 in both profiles. PostgreSQL default retains 60 configured nonblocking observations; cluster has none. | Complete remaining affected integration gates after the standards blocker is resolved.                                           |
+| Memory and PostgreSQL profiles       | The additional correction passes memory 32/32 with 108 configured nonblocking observations, and ordinary uninstrumented PostgreSQL 32/32 default plus 6/6 cluster recipes. WebSocket passes 12/12 in both profiles. PostgreSQL default retains 60 configured nonblocking observations; cluster has none. | Refresh affected final-candidate integration after the ordered parent corrections and complete current-PR review.                |
 | Medium-scale and topology replay     | Earlier fixed medium-scale passed all 2,757 interactions. Passive-C polling and replacement-process same-session hydration passed without a new mutation.                                                                                                                                                | Refresh affected final-candidate gates and inspect all process diagnostics.                                                      |
-| Package/application compatibility    | The additional correction passes focused analyzer, shared routing/QoS, native route/authority and affected type checks. Its independent scoped re-review approves all three corrections without new findings. Earlier broad unit, Deno, build, browser E2E and memory full-stack checks passed.          | Complete remaining broad baseline gates after the separate standards blocker is resolved.                                        |
+| Package/application compatibility    | The additional correction passes focused analyzer, shared routing/QoS, native route/authority and affected type checks. Its independent scoped re-review approves all three corrections without new findings. Earlier broad unit, Deno, build, browser E2E and memory full-stack checks passed.          | Refresh remaining broad baseline gates on the final integrated candidate.                                                        |
 | Formatting                           | The original affected TypeScript failures and four residual document/recipe failures are corrected. The refreshed complete formatter reports only the same five byte-identical untouched failures independently reproduced on the base.                                                                  | Full-repository formatting remains red on independent baseline files; no affected formatting finding remains in this correction. |
-| Standards and navigation             | Whole-slice structure passes with two reviewed advisory observations; all 36 test-coupling candidates are classified. All eleven legacy heuristic candidates were inspected without finding a retained retired path. The independent cold navigation probe reaches all five required landmarks.          | Resolve the sixteen changed-style findings, including the descriptor double assertion, and retain full-file closure.             |
+| Standards and navigation             | Receipt-boundary cleanup and independent review resolve the sixteen changed-style findings. Whole-slice changed style passes; structure, coupling and legacy observations remain classified, and the cold navigation probe reaches all five landmarks.                                                   | Preserve full-file and recursive-support closure through material parent integration and complete current-PR review.             |
 | State-write performance              | The latest frozen-runtime diagnostic fails the unchanged comparator: shared throughput is 17% lower and transaction duration 57% higher, despite 6,300 accepted commands and no retry-exhaustion, atomic-completion or DBW failures.                                                                     | An exact-commit controlled comparison; the earlier passing candidate no longer establishes acceptance.                           |
 
 The PostgreSQL failure is a room WebSocket echo with no recipients before local group-cache
@@ -2055,8 +2054,8 @@ the same container with its data intact. Keep it running until the measurement w
 do not reset or delete its database or volumes. No shared development container or database has
 been stopped, reset or deleted at this checkpoint; managed
 recipe runs create and clean up only their own isolated test databases. The benchmark window is
-held while the candidate has an unresolved standards defect; this keeps the performance gate
-pending, not waived. A newly isolated native-proof database is migrated, but its transaction and
+held while the ordered parent corrections and final candidate review remain incomplete; this keeps
+the performance gate pending, not waived. A newly isolated native-proof database is migrated, but its transaction and
 presence-expiry checks likewise remain unrun at this checkpoint. The independent review accepts
 the benchmark orchestration's scoped cleanup and same-container restoration checks; it has not
 executed the script or claimed a measured performance result.
@@ -2094,11 +2093,13 @@ runtime/consumer cutover atomically only when the evidence supports it, and leav
 to the maintainer one PR at a time. A mergeable stacked base is not synchronization work and does
 not itself mean ready for main; do not rebase merely for a behind status or enable auto-merge.
 
-The fresh oldest-PR check finds a real conflict with current main in the group RTC manager and its
-tests. Main's canonical RTT-reporter and transport-boundary corrections must coexist with Slice 8a's
-planned-RTT/accepted-traffic role separation. Repair that conflict before its complete review and
-broad validation, then assess the material dependency change through the remaining stack. Earlier
-green checks were on the previous main integration; they do not prove this new combined behavior.
+The fresh oldest-PR check found a real conflict with actual current main. That conflict is repaired
+locally with main's canonical RTT-reporter and transport-boundary corrections preserved alongside
+Slice 8a's planned-RTT/accepted-traffic separation. The subsequent complete #381 review found the
+eight correction areas recorded in its checkpoint; its single correction wave is in progress before
+scoped re-review and broad validation. Then assess the material dependency change through the
+remaining stack. Earlier green checks do not prove this new combined behavior, and the local repair
+has not yet replaced #381's remote head.
 
 ## Slice 9 — In-flight pacing
 
