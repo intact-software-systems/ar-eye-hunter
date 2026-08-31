@@ -14,9 +14,8 @@ import type {
     ALOutboundEnqueueResult,
     ALOutboundEnqueueStatus,
     ALOutboundPreparedSendResult,
-    ALOutboundRuntimeDiagnosticsSink,
-    ALOutboundRuntimeStores
-} from '../alm/ALOutboundMessageRuntime.ts';
+    ALOutboundRuntimeDiagnosticsSink
+} from '../alm/outbound/al-outbound-message-runtime.ts';
 import {
     ALOutboundAckTrackingPlan,
     ALOutboundDispatchPhase,
@@ -45,10 +44,34 @@ import {
     WebRtcOverlayMulticasterFactory
 } from './OverlayMulticastContracts.ts';
 
-export interface WebRtcOverlayMulticastManagerOptions {
-    readonly qosProvider?: ALQosInputProvider;
-    readonly outboundDiagnostics?: ALOutboundRuntimeDiagnosticsSink;
-    readonly outboundStores?: ALOutboundRuntimeStores;
+export namespace WebRtcOverlayMulticastManager {
+    export interface Channel {
+        readHealth(): Pick<RtcDataChannelHealth, 'readyState'>;
+        send(message: ALMessage): Promise<void>;
+    }
+
+    export interface Peer {
+        readonly channel: Channel | undefined;
+    }
+
+    export interface Connection {
+        readonly input: Pick<WebRtcConnectionService['input'], 'sessionId'>;
+        readyPeerIdsForLane(): readonly PeerId[];
+        readPeer(peerId: PeerId): Peer | undefined;
+    }
+
+    export interface Dependencies {
+        readonly outbox: QueueBoxResourceEntryRepository;
+        readonly connectionService: Connection;
+        readonly groupCache: ReadableKeyedValues<string, GroupSnapshot>;
+        readonly overlayCache: ReadableKeyedValues<string, OverlayInfo>;
+        readonly multicasterFactory: WebRtcOverlayMulticasterFactory;
+        readonly qosProvider: ALQosInputProvider | undefined;
+        readonly outboundDiagnostics: ALOutboundRuntimeDiagnosticsSink | undefined;
+        readonly outboundRuntime: ALOutboundMessageRuntime.Resources;
+        readonly circuitBreaker: CircuitBreaker;
+        readonly rateLimiter: RateLimiter;
+    }
 }
 
 export class WebRtcOverlayMulticastManager {
@@ -69,28 +92,21 @@ export class WebRtcOverlayMulticastManager {
     public readonly multicasterFactory: WebRtcOverlayMulticasterFactory;
     private readonly circuitBreaker: CircuitBreaker;
     private readonly rateLimiter: RateLimiter;
+    private readonly clock: ALOutboundMessageRuntime.Clock;
 
-    constructor(
-        outbox: QueueBoxResourceEntryRepository,
-        connectionService: WebRtcConnectionService,
-        groupCache: ReadableKeyedValues<string, AnyGroupPresence>,
-        overlayCache: ReadableKeyedValues<string, OverlayInfo>,
-        multicasterFactory: WebRtcOverlayMulticasterFactory,
-        options: WebRtcOverlayMulticastManagerOptions = {},
-        circuitBreaker: CircuitBreaker = toCircuitBreaker(),
-        rateLimiter: RateLimiter = toRateLimiter()
-    ) {
-        this.outbox = outbox;
-        this.connectionService = connectionService;
-        this.groupCache = groupCache;
-        this.overlayCache = overlayCache;
-        this.multicasterFactory = multicasterFactory;
-        this.circuitBreaker = circuitBreaker;
-        this.rateLimiter = rateLimiter;
-        this.qosProvider = options.qosProvider;
+    constructor(dependencies: WebRtcOverlayMulticastManager.Dependencies) {
+        this.outbox = dependencies.outbox;
+        this.connectionService = dependencies.connectionService;
+        this.groupCache = dependencies.groupCache;
+        this.overlayCache = dependencies.overlayCache;
+        this.multicasterFactory = dependencies.multicasterFactory;
+        this.circuitBreaker = dependencies.circuitBreaker;
+        this.rateLimiter = dependencies.rateLimiter;
+        this.qosProvider = dependencies.qosProvider;
+        this.clock = dependencies.outboundRuntime.clock;
         this.outboundRuntime = new ALOutboundMessageRuntime<ALMessage>(
             {
-                stores: options.outboundStores,
+                ...dependencies.outboundRuntime,
                 outbox: this.outbox,
                 toOutboxEntry: (msg) =>
                     QueueBoxUtilities.toResourceEntryFromMsg(
@@ -99,9 +115,12 @@ export class WebRtcOverlayMulticastManager {
                     ),
                 readMessageFromEntry: (entry) => decodePersistedALMessage(entry.resource),
                 planOutgoingMessage: (msg) => this.planOutgoingMessage(msg),
+                planDequeuedMessage: (msg) => this.planOutgoingMessage(msg),
+                beforeDequeueDispatch: undefined,
+                onFallbackDequeue: undefined,
                 sendPreparedMessage: async (msg, phase) => await this.sendPreparedMessage(msg, phase),
                 planRepairMessage: async (msg, request) => await this.planRepairMessage(msg, request),
-                diagnostics: options.outboundDiagnostics
+                diagnostics: dependencies.outboundDiagnostics
             }
         );
     }
@@ -251,7 +270,12 @@ export class WebRtcOverlayMulticastManager {
             supersedenceStore?: ALSupersedenceStoreLike;
         }>
     ): ALMessageHandlingPlan {
-        const baseContext = {
+        const nowMs = this.clock.nowMs();
+        const groupRef = readALTargetGroupRef(msg);
+        const snapshot = groupRef ? this.readGroupSnapshotByRef(groupRef) : undefined;
+        const context = msg.targets && msg.targets.mode !== 'unicast' ? this.readOverlayContext(msg) : undefined;
+        const room = snapshot ?? context?.room;
+        const messageContext = {
             selfPeerId: this.connectionService.input.sessionId,
             fromPeerId,
             connectedPeerIds: this.connectionService.readyPeerIdsForLane(),
@@ -584,6 +608,15 @@ export class WebRtcOverlayMulticastManager {
         msg: ALMessage,
         phase: ALOutboundDispatchPhase
     ): Promise<ALOutboundPreparedSendResult> {
+        // Originating copies have not visited this peer; relayed copies have.
+        // Check at the final transport boundary because durable replay can outlive the snapshot.
+        if (msg.diagnostics?.visitedPeerIds?.includes(this.connectionService.input.sessionId)) {
+            const groupRef = readALTargetGroupRef(msg);
+            const snapshot = groupRef ? this.readGroupSnapshotByRef(groupRef) : undefined;
+            if (!isRtcRoomSnapshotCurrent(msg, snapshot, this.clock.nowMs())) {
+                return { status: 'not-ready', reason: 'RTC relay is awaiting its room snapshot', retryAfterMs: 50 };
+            }
+        }
         const peerId = msg.forwarding?.nextHopPeerIds?.[0];
         if (!peerId) {
             const reason = 'Skipping RTC send without immediate next hop';

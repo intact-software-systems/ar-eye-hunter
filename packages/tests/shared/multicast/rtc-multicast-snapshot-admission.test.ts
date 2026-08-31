@@ -9,6 +9,7 @@ import {
     newALMulticastMessage,
     type ALMessage
 } from '@shared/al-contracts/al-contract.ts';
+import { createDefaultALOutboundRuntimeResources } from '@shared/alm/outbound/create-default-al-outbound-message-runtime.ts';
 import type { OverlayInfo } from '@shared/api/api-config.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { LatestRepository } from '@shared/cache/LatestRepository.ts';
@@ -132,13 +133,17 @@ describe('RTC multicast snapshot admission at the cache boundary', () => {
         manager.dispose();
     });
 
-    it('uses the injected epoch clock to reject a group that has expired', () => {
+    it.each([
+        { expiresAtEpochMs: 1_001, dropReason: undefined },
+        { expiresAtEpochMs: 1_000, dropReason: 'not-yet-in-sync' },
+        { expiresAtEpochMs: 999, dropReason: 'not-yet-in-sync' }
+    ])('uses the outbound clock for snapshot expiry at $expiresAtEpochMs', ({ expiresAtEpochMs, dropReason }) => {
         const groupCache = new LatestRepository<string, GroupSnapshot>();
         const snapshot = createSnapshot();
-        groupCache.accept('room-1', { ...snapshot, group: { ...snapshot.group, expiresAtEpochMs: 1_000 } });
+        groupCache.accept('room-1', { ...snapshot, group: { ...snapshot.group, expiresAtEpochMs } });
         const manager = createDefaultSnapshotAdmissionManager(groupCache);
 
-        expect(manager.planIncomingMessage(createRoomMessage('multicast'), 'peer-1').dropReason).toBe('not-yet-in-sync');
+        expect(manager.planIncomingMessage(createRoomMessage('multicast'), 'peer-1').dropReason).toBe(dropReason);
         manager.dispose();
     });
 
@@ -171,10 +176,9 @@ function createDefaultSnapshotAdmissionManager(
         },
         qosProvider: undefined,
         outboundDiagnostics: undefined,
-        outboundStores: undefined,
+        outboundRuntime: createDefaultALOutboundRuntimeResources({ nowMs: () => 1_000 }),
         circuitBreaker: toCircuitBreaker(),
-        rateLimiter: toRateLimiter(),
-        epochNow: () => 1_000
+        rateLimiter: toRateLimiter()
     });
 }
 

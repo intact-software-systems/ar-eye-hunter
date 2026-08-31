@@ -13,11 +13,11 @@ import { InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
 import { ALAdmissionBackendConflictError } from '@shared/alm/ALAdmissionBackendConflictError.ts';
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
 import type {
-    ALOutboundMessageRuntimeInput,
     ALOutboundRuntimeDiagnosticsEvent,
     ALOutboundRuntimeDiagnosticsSink,
     ALOutboundRuntimeStores
 } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
+import { createDefaultALOutboundMessageRuntime } from '@shared/alm/outbound/create-default-al-outbound-message-runtime.ts';
 import {
     ALOutboundMessageRuntime,
     createALOutboundAdmissionStore,
@@ -45,9 +45,9 @@ interface OutboundTestRuntimeInput {
     readonly stores?: ALOutboundRuntimeStores;
     readonly diagnostics?: ALOutboundRuntimeDiagnosticsSink;
     readonly nowMs?: () => number;
-    readonly planOutgoingMessage: ALOutboundMessageRuntimeInput<OutboundTestPayload>['planOutgoingMessage'];
-    readonly planRepairMessage?: ALOutboundMessageRuntimeInput<OutboundTestPayload>['planRepairMessage'];
-    readonly sendPreparedMessage: ALOutboundMessageRuntimeInput<OutboundTestPayload>['sendPreparedMessage'];
+    readonly planOutgoingMessage: ALOutboundMessageRuntime.Dependencies<OutboundTestPayload>['planOutgoingMessage'];
+    readonly planRepairMessage?: ALOutboundMessageRuntime.Dependencies<OutboundTestPayload>['planRepairMessage'];
+    readonly sendPreparedMessage: ALOutboundMessageRuntime.Dependencies<OutboundTestPayload>['sendPreparedMessage'];
 }
 
 describe('ALOutboundMessageRuntime', () => {
@@ -55,6 +55,48 @@ describe('ALOutboundMessageRuntime', () => {
         vi.useRealTimers();
         vi.unstubAllGlobals();
         vi.restoreAllMocks();
+    });
+
+    it('replays a deferred send using its supplied store, clock, and scheduler', async () => {
+        vi.useFakeTimers();
+        const admissionStore = createDefaultOutboundTestAdmissionStore();
+        const sent: string[] = [];
+        let nowMs = Date.now() + 1_000;
+        const runtime = new ALOutboundMessageRuntime<OutboundTestPayload>({
+            admissionStore,
+            effectWorkerId: 'injected-outbound-worker',
+            clock: { nowMs: () => nowMs },
+            scheduler: {
+                schedule: (callback, delayMs) => {
+                    const timer = setTimeout(callback, delayMs * 2);
+                    return () => clearTimeout(timer);
+                }
+            },
+            browserLocks: undefined,
+            outbox: new InMemoryQueueBox(new Map()),
+            diagnostics: undefined,
+            toOutboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox'),
+            readMessageFromEntry: (entry) => decodePersistedALMessage(entry.resource),
+            planOutgoingMessage: (msg) => ({ persist: false, preparedMessages: [{ resourceId: msg.route.resourceId }] }),
+            planDequeuedMessage: () => ({ persist: false, preparedMessages: [] }),
+            beforeDequeueDispatch: undefined,
+            planRepairMessage: undefined,
+            onFallbackDequeue: undefined,
+            sendPreparedMessage: async (prepared) => {
+                sent.push(prepared.resourceId);
+                return sent.length === 1 ? { status: 'not-ready', retryAfterMs: 25 } : { status: 'sent' };
+            }
+        });
+        onTestFinished(() => runtime.dispose());
+
+        await runtime.enqueueIfAbsent(createOutboundMessage('injected-retry'));
+        expect(await admissionStore.peekNextEffectReadyAt()).toBe(nowMs + 25);
+        nowMs += 25;
+        await vi.advanceTimersByTimeAsync(25);
+        expect(sent).toEqual(['injected-retry']);
+        await vi.advanceTimersByTimeAsync(25);
+        expect(sent).toEqual(['injected-retry', 'injected-retry']);
+        expect(await admissionStore.peekNextEffectReadyAt()).toBeUndefined();
     });
 
     it('returns no-route when the outbound planner drops enqueue', async () => {
@@ -1192,7 +1234,7 @@ describe('ALOutboundMessageRuntime', () => {
 
         const sendStarted = Promise.withResolvers<void>();
         const sendBarrier = Promise.withResolvers<void>();
-        const blockingSend: ALOutboundMessageRuntimeInput<OutboundTestPayload>['sendPreparedMessage'] = async (
+        const blockingSend: ALOutboundMessageRuntime.Dependencies<OutboundTestPayload>['sendPreparedMessage'] = async (
             prepared,
             phase
         ) => {
@@ -1551,7 +1593,7 @@ async function reserveOutbox(outbox: InMemoryQueueBox): Promise<readonly Resourc
 function createDefaultOutboundTestRuntime(options: OutboundTestRuntimeInput): ALOutboundMessageRuntime<OutboundTestPayload> {
     const outbox = options.outbox ?? new InMemoryQueueBox(new Map());
 
-    const runtime = new ALOutboundMessageRuntime<OutboundTestPayload>({
+    const runtime = createDefaultALOutboundMessageRuntime<OutboundTestPayload>({
         outbox,
         stores: options.stores ?? { admissionStore: createDefaultOutboundTestAdmissionStore() },
         diagnostics: options.diagnostics,

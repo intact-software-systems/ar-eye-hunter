@@ -7,6 +7,7 @@ import {
     vi
 } from 'vitest';
 
+import { createDefaultALOutboundRuntimeResources } from '@shared/alm/outbound/create-default-al-outbound-message-runtime.ts';
 import type { OverlayInfo } from '@shared/api/api-config.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import { LatestRepository } from '@shared/cache/LatestRepository.ts';
@@ -110,10 +111,9 @@ describe('multicast QoS integration', () => {
                 ),
             qosProvider: undefined,
             outboundDiagnostics: undefined,
-            outboundStores: undefined,
+            outboundRuntime: createDefaultALOutboundRuntimeResources(),
             circuitBreaker: toCircuitBreaker(),
-            rateLimiter: toRateLimiter(),
-            epochNow: Date.now
+            rateLimiter: toRateLimiter()
         });
 
         const msg = shared.newALMulticastMessage(
@@ -169,10 +169,9 @@ describe('multicast QoS integration', () => {
                 ),
             qosProvider: undefined,
             outboundDiagnostics: undefined,
-            outboundStores: undefined,
+            outboundRuntime: createDefaultALOutboundRuntimeResources(),
             circuitBreaker: toCircuitBreaker(),
-            rateLimiter: toRateLimiter(),
-            epochNow: Date.now
+            rateLimiter: toRateLimiter()
         });
 
         const msg = shared.newALMulticastMessage(
@@ -225,10 +224,9 @@ describe('multicast QoS integration', () => {
                 ),
             qosProvider: undefined,
             outboundDiagnostics: undefined,
-            outboundStores: undefined,
+            outboundRuntime: createDefaultALOutboundRuntimeResources(),
             circuitBreaker: toCircuitBreaker(),
-            rateLimiter: toRateLimiter(),
-            epochNow: Date.now
+            rateLimiter: toRateLimiter()
         });
 
         const msg = shared.newALMulticastMessage(
@@ -280,10 +278,9 @@ describe('multicast QoS integration', () => {
                     ),
                 qosProvider: undefined,
                 outboundDiagnostics: undefined,
-                outboundStores: undefined,
+                outboundRuntime: createDefaultALOutboundRuntimeResources(),
                 circuitBreaker: toCircuitBreaker(),
-                rateLimiter: toRateLimiter(),
-                epochNow: Date.now
+                rateLimiter: toRateLimiter()
             });
 
             const msg = shared.newALMulticastMessage(
@@ -375,10 +372,9 @@ describe('multicast QoS integration', () => {
                 ),
             qosProvider: undefined,
             outboundDiagnostics: undefined,
-            outboundStores: undefined,
+            outboundRuntime: createDefaultALOutboundRuntimeResources(),
             circuitBreaker: toCircuitBreaker(),
-            rateLimiter: toRateLimiter(),
-            epochNow: Date.now
+            rateLimiter: toRateLimiter()
         });
 
         const msg = shared.newALMulticastMessage(
@@ -440,10 +436,9 @@ describe('multicast QoS integration', () => {
                 ),
             qosProvider: undefined,
             outboundDiagnostics: undefined,
-            outboundStores: undefined,
+            outboundRuntime: createDefaultALOutboundRuntimeResources(),
             circuitBreaker: toCircuitBreaker(),
-            rateLimiter: toRateLimiter(),
-            epochNow: Date.now
+            rateLimiter: toRateLimiter()
         });
 
         const msg = shared.newALUnicastMessage(
@@ -490,10 +485,9 @@ describe('multicast QoS integration', () => {
                 ),
             qosProvider: undefined,
             outboundDiagnostics: undefined,
-            outboundStores: undefined,
+            outboundRuntime: createDefaultALOutboundRuntimeResources(),
             circuitBreaker: toCircuitBreaker(),
-            rateLimiter: toRateLimiter(),
-            epochNow: Date.now
+            rateLimiter: toRateLimiter()
         });
 
         const msg = shared.newALUnicastMessage(
@@ -537,10 +531,9 @@ describe('multicast QoS integration', () => {
                 ),
             qosProvider: undefined,
             outboundDiagnostics: undefined,
-            outboundStores: undefined,
+            outboundRuntime: createDefaultALOutboundRuntimeResources(),
             circuitBreaker: toCircuitBreaker(),
-            rateLimiter: toRateLimiter(),
-            epochNow: Date.now
+            rateLimiter: toRateLimiter()
         });
 
         const msg = shared.newALUnicastMessage(

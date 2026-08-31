@@ -8,6 +8,7 @@ import {
     vi
 } from 'vitest';
 
+import { createDefaultALOutboundRuntimeResources } from '@shared/alm/outbound/create-default-al-outbound-message-runtime.ts';
 import type { RttMeasurementInfo } from '@shared/api/api-config.ts';
 import { LatestRepository } from '@shared/cache/LatestRepository.ts';
 import { WebRtcOverlayMulticastManager } from '@shared/multicast/web-rtc-overlay-multicast-manager.ts';
@@ -196,15 +197,12 @@ function createStreamingEndpoint(sessionId: string, peerSessionId: string): Stre
         new LatestRepository(),
         () => {
             throw new Error('Heartbeat traffic must not enter multicast');
-        }
-    );
-    const streamer = new WebRtcRxStreamerService({
-        inbox: new InMemoryQueueBox(new Map()),
-        multicast,
-        sessionId,
-        inboundStores: createInMemoryALInboundRuntimeStores(),
-        nowEpochMs: Date.now,
-        heartbeat: { maxMissedPings: 5, pingFrequencyMsecs: 5000 }
+        },
+        qosProvider: undefined,
+        outboundDiagnostics: undefined,
+        outboundRuntime: createDefaultALOutboundRuntimeResources(),
+        circuitBreaker: toCircuitBreaker(),
+        rateLimiter: toRateLimiter()
     });
     const measurements: RttMeasurementInfo[] = [];
     streamer.onRttMeasurementDo('observations', {

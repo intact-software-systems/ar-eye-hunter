@@ -8,6 +8,7 @@ import {
 } from 'vitest';
 import { EmptyMediaStream, EmptyRtcTrackEvent } from './rtc-media-test-events.ts';
 
+import { createDefaultALOutboundRuntimeResources } from '@shared/alm/outbound/create-default-al-outbound-message-runtime.ts';
 import { LatestRepository } from '@shared/cache/LatestRepository.ts';
 import { WebRtcOverlayMulticastManager } from '@shared/multicast/web-rtc-overlay-multicast-manager.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
@@ -81,6 +82,30 @@ describe('WebRtcRxStreamerService media lifecycle', () => {
 });
 
 function createMediaFixture(): MediaFixture {
+    const multicast = new WebRtcOverlayMulticastManager({
+        outbox: new InMemoryQueueBox(new Map()),
+        connectionService: {
+            input: { sessionId: 'self' },
+            readyPeerIdsForLane: () => [],
+            readPeer: () => undefined
+        },
+        groupCache: new LatestRepository(),
+        overlayCache: new LatestRepository(),
+        multicasterFactory: () => {
+            throw new Error('Media control must not construct multicast messages');
+        },
+        qosProvider: undefined,
+        outboundDiagnostics: undefined,
+        outboundRuntime: createDefaultALOutboundRuntimeResources(),
+        circuitBreaker: toCircuitBreaker(),
+        rateLimiter: toRateLimiter()
+    });
+    const service = createDefaultWebRtcRxStreamerService({ inbox: new InMemoryQueueBox(new Map()), multicast, sessionId: 'self' });
+    service.setRttReportingPeerIds([]);
+    return { service, ...createMediaPeerFixture() };
+}
+
+function createMediaPeerFixture(): MediaPeerFixture {
     const signaler = { send: async () => undefined, connect: async () => undefined };
     const iceCandidates = { iceServers: [], expiresAtEpochMs: 60_000 };
     const connection = new QRtcPeerConnection(signaler, {

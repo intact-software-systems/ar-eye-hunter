@@ -1,8 +1,14 @@
+import { vi } from 'vitest';
+
 import { toResilienceDto } from '@shared-web/browser/resilience-config.ts';
 import { type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { type ALNackPayload } from '@shared/al-contracts/al-control.ts';
 import { decodePersistedALMessageValue } from '@shared/al-contracts/al-message-persistence-validation.ts';
-import { createInMemoryALInboundRuntimeStores, createInMemoryALOutboundRuntimeStores } from '@shared/alm/ALRuntimeStores.ts';
+import {
+    createDefaultInMemoryALInboundRuntimeStores,
+    createDefaultInMemoryALOutboundRuntimeStores
+} from '@shared/alm/al-runtime-stores.ts';
+import { createDefaultALOutboundRuntimeResources } from '@shared/alm/outbound/create-default-al-outbound-message-runtime.ts';
 import type { OverlayInfo } from '@shared/api/api-config.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
@@ -16,7 +22,10 @@ import { QRtcDataChannel } from '@shared/webrtc/qrtc-data-channel.ts';
 import { QRtcMediaChannel } from '@shared/webrtc/qrtc-media-channel.ts';
 import { QRtcPeerConnection } from '@shared/webrtc/qrtc-peer-connection.ts';
 import type { OnQRtcMessageCallback } from '@shared/webrtc/QRtcClientCallbacks.ts';
-import { vi } from 'vitest';
+import { QRtcDataChannel } from '@shared/webrtc/QRtcDataChannel.ts';
+import { QRtcMediaChannel } from '@shared/webrtc/QRtcMediaChannel.ts';
+import { QRtcPeerConnection } from '@shared/webrtc/QRtcPeerConnection.ts';
+
 import { createGroupSnapshotFixture } from '../shared-web/authoritative-group-fixtures.ts';
 
 export const room: GroupRef = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' };
@@ -50,15 +59,19 @@ export class RtcEndpointFixture {
         vi.spyOn(service, 'readyPeerIdsForLane').mockReturnValue([peerId]);
         const health = this.peer.channel.readHealth();
         vi.spyOn(this.peer.channel, 'readHealth').mockReturnValue({ ...health, readyState: 'open' });
-        this.multicast = new WebRtcOverlayMulticastManager(
-            new InMemoryQueueBox(),
-            service,
-            this.groups,
-            this.overlays,
-            (id) => new WebRtcOverlayMulticastService(id, service),
-            { outboundStores: this.outbound }
-        );
-        this.streamer = new WebRtcRxStreamerService({
+        this.multicast = new WebRtcOverlayMulticastManager({
+            outbox: new InMemoryQueueBox(),
+            connectionService: service,
+            groupCache: this.groups,
+            overlayCache: this.overlays,
+            multicasterFactory: (id) => new WebRtcOverlayMulticastService(id, service),
+            qosProvider: undefined,
+            outboundDiagnostics: undefined,
+            outboundRuntime: createDefaultALOutboundRuntimeResources({ stores: this.outbound }),
+            circuitBreaker: toCircuitBreaker(),
+            rateLimiter: toRateLimiter()
+        });
+        this.streamer = createDefaultWebRtcRxStreamerService({
             inbox: new InMemoryQueueBox(),
             multicast: this.multicast,
             sessionId,

@@ -11,14 +11,14 @@ import {
 } from '../../al-contracts/al-policy.ts';
 import type { ALInboundRuntimeStores } from '../../alm/inbound/al-inbound-message-runtime.ts';
 import { ALInboundMessageRuntime } from '../../alm/inbound/al-inbound-message-runtime.ts';
+import { createDefaultALInboundRuntimeResources } from '../../alm/inbound/create-default-al-inbound-message-runtime.ts';
 import type {
     ALOutboundEnqueueResult,
     ALOutboundRuntimeDiagnosticsSink,
     ALOutboundRuntimeStores
 } from '../../alm/outbound/al-outbound-message-runtime.ts';
 import { ALOutboundMessageRuntime } from '../../alm/outbound/al-outbound-message-runtime.ts';
-import { createDefaultInMemoryALOutboundRuntimeStores } from '../../alm/al-runtime-stores.ts';
-import { createDefaultALInboundRuntimeResources } from '../../alm/inbound/create-default-al-inbound-message-runtime.ts';
+import { createDefaultALOutboundRuntimeResources } from '../../alm/outbound/create-default-al-outbound-message-runtime.ts';
 import { EnqueuedType } from '../../api/api-config.ts';
 import type { ResilienceDto } from '../../queuebox/DequeueResourceEntryController.ts';
 import type { QueueBoxResourceEntryRepository } from '../../queuebox/queue-box-types.ts';
@@ -74,13 +74,12 @@ export namespace WsQueueBoxServerService {
         readonly qosProvider: ALQosInputProvider | undefined;
         readonly targetResolver: WsServerTargetResolver;
         readonly inboundRuntime: ALInboundMessageRuntime.Resources;
-        readonly outboundStores: ALOutboundRuntimeStores;
+        readonly outboundRuntime: ALOutboundMessageRuntime.Resources;
         readonly outboundDiagnostics: ALOutboundRuntimeDiagnosticsSink | undefined;
         readonly outboundDeliveryOutcome: ((outcome: WsOutboxDeliveryOutcome) => void) | undefined;
         readonly deliveryDiagnostics: WsDeliveryDiagnosticsSink | undefined;
         readonly admitInboundMessage: (message: ALMessage) => boolean;
         readonly forwardsRoomScopedMessages: boolean;
-        readonly epochNow: () => number;
     }
 }
 
@@ -158,8 +157,7 @@ export class WsQueueBoxServerService {
         dependencies: WsQueueBoxServerService.Dependencies
     ): ALOutboundMessageRuntime<WsQueueBoxServerPreparedMessage> {
         return new ALOutboundMessageRuntime<WsQueueBoxServerPreparedMessage>({
-            nowMs: dependencies.epochNow,
-            stores: dependencies.outboundStores,
+            ...dependencies.outboundRuntime,
             diagnostics: dependencies.outboundDiagnostics,
             outbox: this.outbox,
             toOutboxEntry: (message: ALMessage) =>
@@ -189,7 +187,8 @@ export class WsQueueBoxServerService {
             },
             sendPreparedMessage: async (prepared) => await this.sendPreparedMessage(prepared),
             planRepairMessage: (message, request) =>
-                Promise.resolve(this.outboundPlanning.planRepairMessage(message, request))
+                Promise.resolve(this.outboundPlanning.planRepairMessage(message, request)),
+            onFallbackDequeue: undefined
         });
     }
 
@@ -524,12 +523,11 @@ export function createDefaultWsQueueBoxServerService(input: WsQueueBoxServerServ
             toInboxEntry: (message) =>
                 QueueBoxUtilities.toResourceEntryFromMsg(message, WsQueueBoxServerService.INBOX_ENQUEUE_TYPE)
         }),
-        outboundStores: input.outboundStores ?? createDefaultInMemoryALOutboundRuntimeStores(),
+        outboundRuntime: createDefaultALOutboundRuntimeResources({ stores: input.outboundStores }),
         outboundDiagnostics: input.outboundDiagnostics,
         outboundDeliveryOutcome: input.outboundDeliveryOutcome,
         deliveryDiagnostics: input.deliveryDiagnostics,
         admitInboundMessage: input.admitInboundMessage ?? (() => true),
-        forwardsRoomScopedMessages: input.forwardsRoomScopedMessages ?? true,
-        epochNow: Date.now
+        forwardsRoomScopedMessages: input.forwardsRoomScopedMessages ?? true
     });
 }

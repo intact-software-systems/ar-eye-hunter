@@ -11,11 +11,9 @@ import {
     tryWithPolicy
 } from '../../resilience/TryWith.ts';
 import { QueueBoxUtilities } from '../../services/QueueBoxUtilities.ts';
-import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '../al-admission-backend.ts';
 import type { ALOutboundPendingAckSnapshot, ALOutboundRepairAttemptSnapshot } from '../al-runtime-state-stores.ts';
 import { ALAdmissionBackendConflictError } from '../ALAdmissionBackendConflictError.ts';
 import { resolveExplicitOutboundMessageExpireAtMs } from '../ALMessageExpiry.ts';
-import { normalizeALRuntimeStoreRetention } from '../ALStoreRetention.ts';
 import type {
     ALOutboundAdmissionMutation,
     ALOutboundAdmissionStore,
@@ -25,7 +23,6 @@ import type {
     ALOutboundRepairHint,
     ALPersistedOutboundEffect
 } from './al-outbound-admission-store.ts';
-import { createALOutboundAdmissionStore } from './al-outbound-admission-store.ts';
 import {
     computeALOutboundDispatch,
     type ALOutboundCommitDispatchOptions,
@@ -94,28 +91,8 @@ export interface ALOutboundDispatchPlan<TPrepared> {
     readonly supersedenceTracking?: ALOutboundSupersedenceTrackingPlan;
 }
 
-export interface ALOutboundMessageRuntimeInput<TPrepared> {
-    readonly outbox: QueueBoxResourceEntryRepository;
-    readonly toOutboxEntry: (msg: ALMessage) => ResourceEntry;
-    readonly readMessageFromEntry: (entry: ResourceEntry) => ALMessage;
-    readonly planOutgoingMessage: (msg: ALMessage) => ALOutboundDispatchPlan<TPrepared>;
-    readonly planDequeuedMessage?: (msg: ALMessage) => ALOutboundDispatchPlan<TPrepared>;
-    readonly beforeDequeueDispatch?: (msg: ALMessage, entry: ResourceEntry) => boolean | Promise<boolean>;
-    readonly sendPreparedMessage: (
-        prepared: TPrepared,
-        phase: ALOutboundDispatchPhase
-    ) => Promise<void | ALOutboundPreparedSendResult>;
-    readonly planRepairMessage?: (
-        msg: ALMessage,
-        request: ALOutboundRepairRequest
-    ) => Promise<ALOutboundDispatchPlan<TPrepared> | undefined>;
-    readonly onFallbackDequeue?: (msg: ALMessage, entry: ResourceEntry) => Promise<void>;
-    readonly stores?: ALOutboundRuntimeStores;
-    readonly diagnostics?: ALOutboundRuntimeDiagnosticsSink;
-    readonly nowMs?: () => number;
-}
 export interface ALOutboundRuntimeStores {
-    readonly admissionStore?: ALOutboundAdmissionStore;
+    readonly admissionStore: ALOutboundAdmissionStore;
 }
 export type ALOutboundRuntimeDiagnosticsEvent =
     | Readonly<{
@@ -151,14 +128,6 @@ export type ALOutboundRuntimeDiagnosticsEvent =
 export type ALOutboundRuntimeDiagnosticsSink = (
     event: ALOutboundRuntimeDiagnosticsEvent
 ) => void;
-
-interface BrowserLockManager {
-    request<T>(
-        name: string,
-        options: Readonly<{ mode: 'exclusive'; }>,
-        callback: () => Promise<T>
-    ): Promise<T>;
-}
 
 export type ALOutboundEnqueueStatus =
     | 'enqueued'
@@ -215,6 +184,53 @@ interface ALOutboundDurableEffectDrainCounts {
     skippedExpiredCount: number;
 }
 
+export namespace ALOutboundMessageRuntime {
+    export interface Clock {
+        nowMs(): number;
+    }
+
+    export interface Scheduler {
+        /** Runs the callback once after the delay; cancellation prevents a pending invocation. */
+        schedule(callback: () => void, delayMs: number): () => void;
+    }
+
+    export interface BrowserLocks {
+        /** Holds the named exclusive lock until the single callback invocation settles. */
+        request<T>(name: string, options: Readonly<{ mode: 'exclusive'; }>, callback: () => Promise<T>): Promise<T>;
+    }
+
+    export interface Resources {
+        readonly admissionStore: ALOutboundAdmissionStore;
+        readonly effectWorkerId: string;
+        readonly clock: Clock;
+        readonly scheduler: Scheduler;
+        readonly browserLocks: BrowserLocks | undefined;
+    }
+
+    export interface Dependencies<TPrepared> extends Resources {
+        readonly outbox: QueueBoxResourceEntryRepository;
+        readonly toOutboxEntry: (msg: ALMessage) => ResourceEntry;
+        readonly readMessageFromEntry: (entry: ResourceEntry) => ALMessage;
+        readonly planOutgoingMessage: (msg: ALMessage) => ALOutboundDispatchPlan<TPrepared>;
+        readonly planDequeuedMessage: (msg: ALMessage) => ALOutboundDispatchPlan<TPrepared>;
+        readonly beforeDequeueDispatch:
+            | ((msg: ALMessage, entry: ResourceEntry) => boolean | Promise<boolean>)
+            | undefined;
+        readonly sendPreparedMessage: (
+            prepared: TPrepared,
+            phase: ALOutboundDispatchPhase
+        ) => Promise<void | ALOutboundPreparedSendResult>;
+        readonly planRepairMessage:
+            | ((
+                msg: ALMessage,
+                request: ALOutboundRepairRequest
+            ) => Promise<ALOutboundDispatchPlan<TPrepared> | undefined>)
+            | undefined;
+        readonly onFallbackDequeue: ((msg: ALMessage, entry: ResourceEntry) => Promise<void>) | undefined;
+        readonly diagnostics: ALOutboundRuntimeDiagnosticsSink | undefined;
+    }
+}
+
 export class ALOutboundMessageRuntime<TPrepared> {
     private static readonly MAX_COMMIT_ATTEMPTS = 10;
     private static readonly COMMIT_RETRY_INTERVAL_MSECS = 10;
@@ -235,25 +251,17 @@ export class ALOutboundMessageRuntime<TPrepared> {
     private readonly admissionStore: ALOutboundAdmissionStore;
     private readonly readyPromise: Promise<void>;
     private readonly commitQueuesBySenderId = new Map<string, Promise<void>>();
-    private readonly effectWorkerId = `al-outbound:${crypto.randomUUID()}`;
     private effectDrainPromise?: Promise<void>;
-    private effectDrainTimer?: ReturnType<typeof setTimeout>;
+    private cancelEffectDrain: (() => void) | undefined;
     private bootstrappedEffects = false;
     private runningEffectDrain = false;
     private disposed = false;
 
-    private readonly input: ALOutboundMessageRuntimeInput<TPrepared>;
+    private readonly dependencies: ALOutboundMessageRuntime.Dependencies<TPrepared>;
 
-    constructor(
-        input: ALOutboundMessageRuntimeInput<TPrepared>
-    ) {
-        this.input = input;
-        this.admissionStore = input.stores?.admissionStore ?? createALOutboundAdmissionStore({
-            namespace: 'al-outbound-runtime',
-            backend: new InMemoryAdmissionBackend(createInMemoryALAdmissionState()),
-            supersedenceTrackTtlMs: 5 * 60_000,
-            retention: normalizeALRuntimeStoreRetention()
-        });
+    constructor(dependencies: ALOutboundMessageRuntime.Dependencies<TPrepared>) {
+        this.dependencies = dependencies;
+        this.admissionStore = dependencies.admissionStore;
         this.readyPromise = this.admissionStore.ready();
     }
 
@@ -266,16 +274,14 @@ export class ALOutboundMessageRuntime<TPrepared> {
 
         if (!this.bootstrappedEffects) {
             this.bootstrappedEffects = true;
-            await this.drainDurableEffectsNow();
+            await this.startEffectDrain();
         }
     }
 
     dispose(): void {
         this.disposed = true;
-        if (this.effectDrainTimer !== undefined) {
-            clearTimeout(this.effectDrainTimer);
-            this.effectDrainTimer = undefined;
-        }
+        this.cancelEffectDrain?.();
+        this.cancelEffectDrain = undefined;
     }
 
     async enqueueIfAbsent(
@@ -294,7 +300,7 @@ export class ALOutboundMessageRuntime<TPrepared> {
         const computed = await this.commitDispatchPlanWithRetry({
             msg,
             planner: dispatchPlan === undefined
-                ? this.input.planOutgoingMessage
+                ? this.dependencies.planOutgoingMessage
                 : () => dispatchPlan,
             intent: 'enqueue',
             phase: 'immediate',
@@ -320,19 +326,18 @@ export class ALOutboundMessageRuntime<TPrepared> {
             return;
         }
         await QueueBoxUtilities.defaultDequeue(
-            this.input.outbox,
+            this.dependencies.outbox,
             typesToDequeue,
             resilience,
             async (entry) => {
-                const msg = this.input.readMessageFromEntry(entry);
-                const clusterDispatch = this.input.beforeDequeueDispatch?.(msg, entry);
+                const msg = this.dependencies.readMessageFromEntry(entry);
+                const clusterDispatch = this.dependencies.beforeDequeueDispatch?.(msg, entry);
                 const clusterPublished = clusterDispatch === undefined || typeof clusterDispatch === 'boolean'
                     ? clusterDispatch ?? false
                     : await clusterDispatch;
                 const computed = await this.commitDispatchPlanWithRetry({
                     msg,
-                    planner: this.input.planDequeuedMessage ??
-                        this.input.planOutgoingMessage,
+                    planner: this.dependencies.planDequeuedMessage,
                     intent: 'dequeue',
                     phase: 'dequeue',
                     options: {
@@ -375,7 +380,7 @@ export class ALOutboundMessageRuntime<TPrepared> {
 
         const retryAtMs = await this.scheduleNotYetInSyncRetryIfRequired(msg);
         if (!this.runningEffectDrain) {
-            await this.drainDurableEffectsNow();
+            await this.startEffectDrain();
         }
         else if (retryAtMs !== undefined) {
             this.scheduleEffectDrainAt(retryAtMs);
@@ -488,7 +493,7 @@ export class ALOutboundMessageRuntime<TPrepared> {
             await runningDrain;
         }
 
-        await this.drainDurableEffectsNow();
+        await this.startEffectDrain();
     }
 
     private toRuntimeClockedBundle(
@@ -509,10 +514,6 @@ export class ALOutboundMessageRuntime<TPrepared> {
         };
     }
 
-    private async drainDurableEffectsNow(): Promise<void> {
-        await this.startEffectDrain();
-    }
-
     private requestEffectDrain(): void {
         if (this.disposed) {
             return;
@@ -528,10 +529,8 @@ export class ALOutboundMessageRuntime<TPrepared> {
         }
 
         if (!this.effectDrainPromise) {
-            if (this.effectDrainTimer !== undefined) {
-                clearTimeout(this.effectDrainTimer);
-                this.effectDrainTimer = undefined;
-            }
+            this.cancelEffectDrain?.();
+            this.cancelEffectDrain = undefined;
 
             this.effectDrainPromise = this.runDurableEffectDrainLoop()
                 .catch((error) => {
@@ -563,7 +562,7 @@ export class ALOutboundMessageRuntime<TPrepared> {
 
                 const claimed = await this.admissionStore.claimReadyEffects<TPrepared>(
                     {
-                        workerId: this.effectWorkerId,
+                        workerId: this.dependencies.effectWorkerId,
                         maxCount: ALOutboundMessageRuntime.MAX_EFFECT_BATCH,
                         leaseMs: ALOutboundMessageRuntime.EFFECT_LEASE_MS,
                         nowMs: this.readNowMs()
@@ -589,7 +588,7 @@ export class ALOutboundMessageRuntime<TPrepared> {
             this.runningEffectDrain = false;
             this.emitDiagnostics({
                 kind: 'effect-drain',
-                workerId: this.effectWorkerId,
+                workerId: this.dependencies.effectWorkerId,
                 durationMs: this.elapsedSince(startedAtMs),
                 ...counts
             });
@@ -624,7 +623,7 @@ export class ALOutboundMessageRuntime<TPrepared> {
                 return;
             }
 
-            await this.admissionStore.completeEffect(effect.effectId, this.effectWorkerId);
+            await this.admissionStore.completeEffect(effect.effectId, this.dependencies.effectWorkerId);
             counts.completedCount += 1;
         }
         catch (error) {
@@ -646,7 +645,7 @@ export class ALOutboundMessageRuntime<TPrepared> {
     ): Promise<void> {
         await this.admissionStore.rescheduleEffect({
             effectId: effect.effectId,
-            workerId: this.effectWorkerId,
+            workerId: this.dependencies.effectWorkerId,
             retryAtMs,
             lastError
         });
@@ -657,13 +656,11 @@ export class ALOutboundMessageRuntime<TPrepared> {
             return;
         }
 
-        if (this.effectDrainTimer !== undefined) {
-            clearTimeout(this.effectDrainTimer);
-        }
+        this.cancelEffectDrain?.();
 
         const delayMs = Math.max(0, readyAtMs - this.readNowMs());
-        this.effectDrainTimer = setTimeout(() => {
-            this.effectDrainTimer = undefined;
+        this.cancelEffectDrain = this.dependencies.scheduler.schedule(() => {
+            this.cancelEffectDrain = undefined;
             this.requestEffectDrain();
         }, delayMs);
     }
@@ -678,7 +675,7 @@ export class ALOutboundMessageRuntime<TPrepared> {
         switch (effect.payload.kind) {
             case 'send-prepared': {
                 const sendResult =
-                    await this.input.sendPreparedMessage(effect.payload.prepared, effect.payload.phase) ??
+                    await this.dependencies.sendPreparedMessage(effect.payload.prepared, effect.payload.phase) ??
                         { status: 'sent' };
                 if (sendResult.status === 'not-ready') {
                     return {
@@ -693,15 +690,15 @@ export class ALOutboundMessageRuntime<TPrepared> {
             }
             case 'enqueue-outbox':
                 if (effect.payload.replaceExisting) {
-                    await this.input.outbox.enqueue(effect.payload.entry);
+                    await this.dependencies.outbox.enqueue(effect.payload.entry);
                     return { status: 'completed' };
                 }
 
-                await this.input.outbox.enqueueIfAbsent(effect.payload.entry);
+                await this.dependencies.outbox.enqueueIfAbsent(effect.payload.entry);
                 return { status: 'completed' };
             case 'fallback-dispatch':
-                if (this.input.onFallbackDequeue) {
-                    await this.input.onFallbackDequeue(effect.payload.msg, effect.payload.entry);
+                if (this.dependencies.onFallbackDequeue) {
+                    await this.dependencies.onFallbackDequeue(effect.payload.msg, effect.payload.entry);
                 }
                 return { status: 'completed' };
             case 'ack-timeout':
@@ -746,7 +743,7 @@ export class ALOutboundMessageRuntime<TPrepared> {
     }
 
     private async scheduleNotYetInSyncRetryOnce(msgId: string): Promise<number | undefined> {
-        const read = await this.admissionStore.readRepairMessage(msgId, this.input.planOutgoingMessage);
+        const read = await this.admissionStore.readRepairMessage(msgId, this.dependencies.planOutgoingMessage);
         const msg = read.sentSnapshot?.msg;
         const retry = read.plan?.retryTracking;
         if (!msg || !retry?.enabled || retry.maxAttempts <= 0) {
@@ -798,13 +795,13 @@ export class ALOutboundMessageRuntime<TPrepared> {
     }
 
     private async handlePendingAckTimeoutOnce(msgId: string): Promise<void> {
-        const read = await this.admissionStore.readRepairMessage(msgId, this.input.planOutgoingMessage);
+        const read = await this.admissionStore.readRepairMessage(msgId, this.dependencies.planOutgoingMessage);
         const pending = read.pendingAck;
         const msg = read.sentSnapshot?.msg;
         if (!pending || !msg) {
             return;
         }
-        if (pending.deadlineAtMs > Date.now()) {
+        if (pending.deadlineAtMs > this.readNowMs()) {
             await this.persistNextAckTimeout(msg, pending, read.clientRecord?.version);
             return;
         }
@@ -821,7 +818,7 @@ export class ALOutboundMessageRuntime<TPrepared> {
         const nextPending: ALOutboundPendingAckSnapshot = {
             ...pending,
             attempts: pending.attempts + 1,
-            deadlineAtMs: Date.now() + pending.timeoutMs
+            deadlineAtMs: this.readNowMs() + pending.timeoutMs
         };
         const bundle = this.toAckTimeoutRepairBundle(msg, nextPending, read.clientRecord?.version);
         const status = await this.admissionStore.commitBundle(bundle);
@@ -941,7 +938,7 @@ export class ALOutboundMessageRuntime<TPrepared> {
         request: ALOutboundRepairHint
     ): Promise<void> {
         try {
-            const read = await this.admissionStore.readRepairMessage(msgId, this.input.planOutgoingMessage);
+            const read = await this.admissionStore.readRepairMessage(msgId, this.dependencies.planOutgoingMessage);
             const msg = read.sentSnapshot?.msg;
             const plan = read.plan;
             if (!msg || !plan) {
@@ -962,7 +959,7 @@ export class ALOutboundMessageRuntime<TPrepared> {
                 return;
             }
 
-            const handledPlan = await this.input.planRepairMessage?.(
+            const handledPlan = await this.dependencies.planRepairMessage?.(
                 msg,
                 {
                     ...request,
@@ -1065,7 +1062,7 @@ export class ALOutboundMessageRuntime<TPrepared> {
         task: () => Promise<T>
     ): Promise<T> {
         const lockName = `rallar:al-outbound-commit:${senderId}`;
-        const locks = this.readBrowserLockManager();
+        const locks = this.dependencies.browserLocks;
         if (!locks) {
             this.emitDiagnostics({
                 kind: 'browser-lock-wait',
@@ -1119,7 +1116,7 @@ export class ALOutboundMessageRuntime<TPrepared> {
     }
 
     private readNowMs(): number {
-        return this.input.nowMs?.() ?? Date.now();
+        return this.dependencies.clock.nowMs();
     }
 
     private elapsedSince(startedAtMs: number): number {
@@ -1128,21 +1125,11 @@ export class ALOutboundMessageRuntime<TPrepared> {
 
     private emitDiagnostics(event: ALOutboundRuntimeDiagnosticsEvent): void {
         try {
-            this.input.diagnostics?.(event);
+            this.dependencies.diagnostics?.(event);
         }
         catch (error) {
             console.error('AL outbound runtime diagnostics sink failed', error);
         }
-    }
-
-    private readBrowserLockManager(): BrowserLockManager | undefined {
-        const candidate = (globalThis as {
-            navigator?: {
-                locks?: BrowserLockManager;
-            };
-        }).navigator?.locks;
-
-        return typeof candidate?.request === 'function' ? candidate : undefined;
     }
 
     private async retransmitByMsgId(
@@ -1157,7 +1144,7 @@ export class ALOutboundMessageRuntime<TPrepared> {
 
         await this.commitDispatchPlanWithRetry({
             msg: sent.msg,
-            planner: this.input.planOutgoingMessage,
+            planner: this.dependencies.planOutgoingMessage,
             intent: 'repair',
             phase: 'immediate',
             options: {
@@ -1169,8 +1156,8 @@ export class ALOutboundMessageRuntime<TPrepared> {
 
     private toComputeDependencies(): ALOutboundComputeDependencies {
         return {
-            toOutboxEntry: this.input.toOutboxEntry,
-            canFallback: this.input.onFallbackDequeue !== undefined
+            toOutboxEntry: this.dependencies.toOutboxEntry,
+            canFallback: this.dependencies.onFallbackDequeue !== undefined
         };
     }
 

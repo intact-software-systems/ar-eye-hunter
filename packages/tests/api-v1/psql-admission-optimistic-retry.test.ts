@@ -1,12 +1,19 @@
 import {
+    describe,
+    expect,
+    it
+} from 'vitest';
+
+import {
     createDefaultPSqlALInboundRuntimeStores,
     createDefaultPSqlALOutboundRuntimeStores
 } from '@shared-server/al-runtime/postgres/create-p-sql-al-runtime-stores.ts';
 import { PSqlInboundAdmissionBackend } from '@shared-server/al-runtime/postgres/p-sql-inbound-admission-backend.ts';
 import { PSqlOutboundAdmissionBackend } from '@shared-server/al-runtime/postgres/p-sql-outbound-admission-backend.ts';
+import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { createDefaultALInboundMessageRuntime } from '@shared/alm/inbound/create-default-al-inbound-message-runtime.ts';
+import { createDefaultALOutboundMessageRuntime } from '@shared/alm/outbound/create-default-al-outbound-message-runtime.ts';
 import {
-    ALOutboundMessageRuntime,
     createALInboundAdmissionStore,
     createALOutboundAdmissionStore,
     InMemoryQueueBox,
@@ -16,11 +23,7 @@ import {
     QueueBoxUtilities,
     type ALInboundPlanner
 } from '@shared/mod.ts';
-import {
-    describe,
-    expect,
-    it
-} from 'vitest';
+
 import { FakeRuntimeStateRepository } from './fake-optimistic-runtime-state-repository.ts';
 
 describe('PSql admission optimistic retry', () => {
@@ -92,7 +95,7 @@ describe('PSql admission optimistic retry', () => {
             inbox: new InMemoryQueueBox(new Map()),
             stores: createDefaultPSqlALInboundRuntimeStores({ namespace, repository }),
             planIncomingMessage: plan,
-            readStoredEntry: (entry) => JSON.parse(entry.resource),
+            readStoredEntry: (entry) => decodePersistedALMessage(entry.resource),
             toInboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'inbox'),
             dispatchInboxEntry: () => Promise.resolve(undefined),
             sendControlMessage: () => Promise.resolve(undefined)
@@ -169,11 +172,11 @@ describe('PSql admission optimistic retry', () => {
         const repository = new FakeRuntimeStateRepository();
         const namespace = 'psql-test:outbound:runtime-retry';
         const plan = () => ({ persist: true, preparedMessages: [] });
-        const runtime = new ALOutboundMessageRuntime({
+        const runtime = createDefaultALOutboundMessageRuntime({
             outbox: new InMemoryQueueBox(new Map()),
             stores: createDefaultPSqlALOutboundRuntimeStores({ namespace, repository }),
             toOutboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox'),
-            readMessageFromEntry: (entry) => JSON.parse(entry.resource),
+            readMessageFromEntry: (entry) => decodePersistedALMessage(entry.resource),
             planOutgoingMessage: plan,
             sendPreparedMessage: () => Promise.resolve(undefined)
         });

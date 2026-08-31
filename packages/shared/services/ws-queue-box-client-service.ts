@@ -12,18 +12,25 @@ import {
     shouldPersistOutbox,
     type ALMessageHandlingPlan
 } from '../al-contracts/al-policy.ts';
-import type { ALInboundPlanner } from '../alm/ALInboundAdmissionStore.ts';
-import type { ALInboundRuntimeStores } from '../alm/ALInboundMessageRuntime.ts';
-import { ALInboundMessageRuntime } from '../alm/ALInboundMessageRuntime.ts';
-import type { ALOutboundRuntimeDiagnosticsSink, ALOutboundRuntimeStores } from '../alm/ALOutboundMessageRuntime.ts';
+import type { ALInboundPlanner } from '../alm/inbound/al-inbound-admission-store.ts';
+import type { ALInboundRuntimeStores } from '../alm/inbound/al-inbound-message-runtime.ts';
+import { ALInboundMessageRuntime } from '../alm/inbound/al-inbound-message-runtime.ts';
+import { createDefaultALInboundRuntimeResources } from '../alm/inbound/create-default-al-inbound-message-runtime.ts';
+import type {
+    ALOutboundRuntimeDiagnosticsSink,
+    ALOutboundRuntimeStores
+} from '../alm/outbound/al-outbound-message-runtime.ts';
 import {
     ALOutboundAckTrackingPlan,
     ALOutboundEnqueueResult,
     ALOutboundMessageRuntime,
-    ALOutboundRetryTrackingPlan,
-    ALOutboundSupersedenceTrackingPlan,
-    type ALOutboundDispatchPlan
-} from '../alm/ALOutboundMessageRuntime.ts';
+    type ALOutboundAckTrackingPlan,
+    type ALOutboundDispatchPlan,
+    type ALOutboundEnqueueResult,
+    type ALOutboundRetryTrackingPlan,
+    type ALOutboundSupersedenceTrackingPlan
+} from '../alm/outbound/al-outbound-message-runtime.ts';
+import { createDefaultALOutboundRuntimeResources } from '../alm/outbound/create-default-al-outbound-message-runtime.ts';
 import { EnqueuedType } from '../api/api-config.ts';
 import { Command } from '../cache/Command.ts';
 import { ResilienceDto } from '../queuebox/DequeueResourceEntryController.ts';
@@ -98,6 +105,13 @@ export namespace WsQueueBoxClientService {
         readonly inbox: QueueBoxResourceEntryRepository;
         readonly outbox: QueueBoxResourceEntryRepository;
         readonly socket: JsonWebSocketClient;
+        readonly sessionId: string;
+        readonly qosProvider: ALQosInputProvider | undefined;
+        readonly inboundRuntime: ALInboundMessageRuntime.Resources;
+        readonly outboundRuntime: ALOutboundMessageRuntime.Resources;
+        readonly outboundDiagnostics: ALOutboundRuntimeDiagnosticsSink | undefined;
+        readonly newConnectionRequestId: (() => string) | undefined;
+        readonly reconnect: WsQueueBoxClientReconnectOptions;
     }
 }
 
@@ -148,26 +162,33 @@ export class WsQueueBoxClientService {
         this.inbox = dependencies.inbox;
         this.outbox = dependencies.outbox;
         this.socket = dependencies.socket;
-        this.input = input;
-        this.options = options;
-        this.outboundRuntime = this.createOutboundRuntime();
-        this.inboundRuntime = this.createInboundRuntime();
-    }
-
-    private createOutboundRuntime(): ALOutboundMessageRuntime<ALMessage> {
-        return new ALOutboundMessageRuntime<ALMessage>({
-            stores: this.options.outboundStores,
-            diagnostics: this.options.outboundDiagnostics,
-            outbox: this.outbox,
-            toOutboxEntry: (message) =>
-                QueueBoxUtilities.toResourceEntryFromMsg(message, WsQueueBoxClientService.OUTBOX_ENQUEUE_TYPE),
-            readMessageFromEntry: (entry) => decodePersistedALMessage(entry.resource),
-            planOutgoingMessage: (message) => this.readOutgoingMessagePlan(message),
-            sendPreparedMessage: async (message) => {
-                await this.dispatchOutboxEntry(
-                    QueueBoxUtilities.toResourceEntryFromMsg(message, WsQueueBoxClientService.OUTBOX_ENQUEUE_TYPE)
-                );
-                return { status: 'sent' };
+        this.sessionId = dependencies.sessionId;
+        this.dependencies = dependencies;
+        this.outboundRuntime = new ALOutboundMessageRuntime<ALMessage>(
+            {
+                ...dependencies.outboundRuntime,
+                diagnostics: this.dependencies.outboundDiagnostics,
+                outbox: this.outbox,
+                toOutboxEntry: (msg) =>
+                    QueueBoxUtilities.toResourceEntryFromMsg(
+                        msg,
+                        WsQueueBoxClientService.OUTBOX_ENQUEUE_TYPE
+                    ),
+                readMessageFromEntry: (entry) => decodePersistedALMessage(entry.resource),
+                planOutgoingMessage: (msg) => this.planOutgoingMessage(msg),
+                planDequeuedMessage: (msg) => this.planOutgoingMessage(msg),
+                beforeDequeueDispatch: undefined,
+                planRepairMessage: undefined,
+                onFallbackDequeue: undefined,
+                sendPreparedMessage: async (msg, _phase) => {
+                    await this.dispatchOutboxEntry(
+                        QueueBoxUtilities.toResourceEntryFromMsg(
+                            msg,
+                            WsQueueBoxClientService.OUTBOX_ENQUEUE_TYPE
+                        )
+                    );
+                    return { status: 'sent' };
+                }
             }
         });
     }
@@ -658,6 +679,26 @@ export class WsQueueBoxClientService {
             replacesMsgId: effective.supersedence.opts.replacesMsgId
         };
     }
+}
+
+export function createDefaultWsQueueBoxClientService(input: WsQueueBoxClientService.Input): WsQueueBoxClientService {
+    return new WsQueueBoxClientService({
+        inbox: input.inbox,
+        outbox: input.outbox,
+        socket: input.socket,
+        sessionId: input.sessionId,
+        qosProvider: input.qosProvider,
+        inboundRuntime: createDefaultALInboundRuntimeResources({
+            stores: input.inboundStores,
+            selfPeerId: input.sessionId,
+            toInboxEntry: (message) =>
+                QueueBoxUtilities.toResourceEntryFromMsg(message, WsQueueBoxClientService.INBOX_ENQUEUE_TYPE)
+        }),
+        outboundRuntime: createDefaultALOutboundRuntimeResources({ stores: input.outboundStores }),
+        outboundDiagnostics: input.outboundDiagnostics,
+        newConnectionRequestId: input.newConnectionRequestId,
+        reconnect: input.reconnect ?? DEFAULT_WS_QUEUE_BOX_CLIENT_RECONNECT_OPTIONS
+    });
 }
 
 function toWsQueueBoxClientReadyState(

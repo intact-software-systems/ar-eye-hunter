@@ -3,7 +3,8 @@ import {
     resolveBrowserRtcRxALInboundRuntimeStores
 } from '@shared-web/browser/al-runtime/browser-al-runtime-stores.ts';
 import { createBrowserQueueBox } from '@shared-web/browser/queuebox/browser-queuebox-persistence.ts';
-import type { ALOutboundRuntimeDiagnosticsSink } from '@shared/alm/ALOutboundMessageRuntime.ts';
+import type { ALOutboundRuntimeDiagnosticsSink } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
+import { createDefaultALOutboundRuntimeResources } from '@shared/alm/outbound/create-default-al-outbound-message-runtime.ts';
 import type {
     ClientInfo,
     IceConfig,
@@ -49,13 +50,14 @@ export function initialiseRtcOverlayMulticastManager(
         overlaysRepository.readableAcceptedOverlayCache(),
         (overlayId: OverlayId): WebRtcOverlayMulticaster =>
             new WebRtcOverlayMulticastService(overlayId, webRtcConnectionService),
-        {
-            outboundStores: resolveBrowserRtcOverlayALOutboundRuntimeStores(
-                webRtcConnectionService.input.sessionId
-            ),
-            outboundDiagnostics: input.outboundDiagnostics
-        }
-    );
+        outboundRuntime: createDefaultALOutboundRuntimeResources({
+            stores: resolveBrowserRtcOverlayALOutboundRuntimeStores(webRtcConnectionService.input.sessionId)
+        }),
+        outboundDiagnostics: input.outboundDiagnostics,
+        qosProvider: undefined,
+        circuitBreaker: toCircuitBreaker(),
+        rateLimiter: toRateLimiter()
+    });
 
     qboxEngine.includeTask(
         WebRtcOverlayMulticastManager.ENQUEUE_TYPE,
