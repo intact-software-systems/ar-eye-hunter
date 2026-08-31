@@ -90,7 +90,7 @@ export async function openLiveRtcBrowserAgent(
 }
 
 export async function closeLiveRtcBrowserAgentContexts(
-    agents: readonly LiveRtcControlClient.Agent[]
+    agents: readonly Pick<LiveRtcControlClient.Agent, 'context'>[]
 ): Promise<void> {
     await Promise.all(
         agents.map((agent) => agent.context.close().catch(() => undefined))

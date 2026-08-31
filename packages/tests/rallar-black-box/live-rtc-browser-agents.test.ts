@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
-import { openLiveRtcBrowserAgent, type OpenLiveRtcBrowserAgentInput } from '../../../tests/playwright/rallar-black-box/live-rtc-browser-agents.ts';
+import {
+    closeLiveRtcBrowserAgentContexts,
+    openLiveRtcBrowserAgent,
+    type OpenLiveRtcBrowserAgentInput
+} from '../../../tests/playwright/rallar-black-box/live-rtc-browser-agents.ts';
 
 const agentInput: OpenLiveRtcBrowserAgentInput = {
     config: { spaBaseUrl: 'http://localhost', apiBaseUrl: 'http://localhost', controlWsUrl: 'ws://localhost', register: false },
@@ -36,5 +40,26 @@ describe('live RTC browser agent startup', () => {
 
         await expect(openLiveRtcBrowserAgent(browser, agentInput)).rejects.toBe(startupFailure);
         expect(allocatedContexts).toBe(0);
+    });
+    it('settles every owned context even when one close fails, so evidence finalization can continue', async () => {
+        const closed: string[] = [];
+        await closeLiveRtcBrowserAgentContexts([
+            {
+                context: {
+                    close: async () => {
+                        closed.push('A');
+                        throw new Error('close-failed');
+                    }
+                }
+            },
+            {
+                context: {
+                    close: async () => {
+                        closed.push('B');
+                    }
+                }
+            }
+        ]);
+        expect(closed.sort()).toEqual(['A', 'B']);
     });
 });
