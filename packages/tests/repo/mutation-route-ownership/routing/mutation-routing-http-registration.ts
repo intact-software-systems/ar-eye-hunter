@@ -1,3 +1,5 @@
+import { createMutationBoundaryLexicalValues, type MutationBoundaryLexicalValues } from '../boundary/lexical/mutation-boundary-lexical-values.ts';
+import { evaluateStaticTruth } from '../execution/mutation-static-semantics.ts';
 import { findRouteRegistration, type MutationRoutingAstNode } from './mutation-routing-call-graph.ts';
 import { findDirectGroupRouteHandler } from './mutation-routing-group-registration.ts';
 
@@ -275,7 +277,7 @@ function hasExactGroupTranslatorOperation(
     if (helpers.length !== 1) {
         return false;
     }
-    const result = readLiveReturnObject(helpers[0]!);
+    const result = readLiveReturnObject(helpers[0]!, createMutationBoundaryLexicalValues(program));
     return readObjectMemberPath(result, 'type') === `AppInboxType.${expectedType}`;
 }
 
@@ -288,7 +290,7 @@ function readSwitchHelperName(switchCase: MutationRoutingAstNode): string | unde
     return returned?.type === 'CallExpression' ? readName(asNode(returned.callee)) : undefined;
 }
 
-function readLiveReturnObject(owner: MutationRoutingAstNode): MutationRoutingAstNode | undefined {
+function readLiveReturnObject(owner: MutationRoutingAstNode, lexical: MutationBoundaryLexicalValues): MutationRoutingAstNode | undefined {
     for (const statement of readBlockStatements(asNode(owner.body))) {
         if (statement.type === 'ReturnStatement') {
             const returned = asNode(statement.argument);
@@ -297,15 +299,15 @@ function readLiveReturnObject(owner: MutationRoutingAstNode): MutationRoutingAst
         if (statement.type === 'ThrowStatement') {
             return undefined;
         }
-        if (statement.type !== 'VariableDeclaration' && statement.type !== 'ExpressionStatement' && !isThrowOnlyGuard(statement)) {
+        if (statement.type !== 'VariableDeclaration' && statement.type !== 'ExpressionStatement' && !isThrowOnlyGuard(statement, lexical)) {
             return undefined;
         }
     }
     return undefined;
 }
 
-function isThrowOnlyGuard(statement: MutationRoutingAstNode): boolean {
-    if (statement.type !== 'IfStatement' || statement.alternate) {
+function isThrowOnlyGuard(statement: MutationRoutingAstNode, lexical: MutationBoundaryLexicalValues): boolean {
+    if (statement.type !== 'IfStatement' || statement.alternate || evaluateStaticTruth(statement.test, lexical) === true) {
         return false;
     }
     const consequent = asNode(statement.consequent);

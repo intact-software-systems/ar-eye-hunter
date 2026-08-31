@@ -1,14 +1,22 @@
 import assert from 'node:assert/strict';
 
 import { type GroupStateService } from '@shared-server/rallar-system/group-state/group-state-service-contracts.ts';
-import { createCachedGroupStateService } from '@shared-server/rallar-system/group-state/snapshot/cached-group-state-service.ts';
+import { createGroupStateService } from '@shared-server/rallar-system/group-state/group-state-service.ts';
+import {
+    createCachedGroupStateService,
+    type CachedGroupStateServiceCache
+} from '@shared-server/rallar-system/group-state/snapshot/cached-group-state-service.ts';
+import type { RallarServerWsRoomAuthorizationInput } from '@shared-server/rallar-system/websocket/router/rallar-server-ws-router-contracts.ts';
+import type { GroupRoomWsAuthorizationDecision } from '@shared-server/rallar-system/websocket/ws-topic-room-authorizer.ts';
 import { newALEventRoute, newALMulticastMessage } from '@shared/al-contracts/al-contract.ts';
 import { compareGroupCausalRevision } from '@shared/api/group-client-views.ts';
 import { resolveGroupLifecyclePolicyPreset } from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
 import { GROUP_LIFECYCLE_STATES } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
-import type { AuditStamp, GroupMember, GroupSnapshot } from '@shared/api/group-types.ts';
+import type { AuditStamp, GroupMember } from '@shared/api/group-types.ts';
+import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 
 import { createTestGroup } from '../../../../packages/tests/create-test-group.ts';
+import { FakeRuntimeStateRepository } from '../../../../packages/tests/shared-server/runtime-state/test-support/fake-runtime-state-repository.ts';
 import type { ApiV1RoomWsAuthorizerDependencies } from '../../src/services/ws-topic-room-authorizer.ts';
 import { createApiV1RoomWsAuthorizer } from '../../src/services/ws-topic-room-authorizer.ts';
 
@@ -18,7 +26,7 @@ const ABSENT_POLICY: ApiV1RoomWsAuthorizerDependencies = {
 
 Deno.test('API room authorization reads the current scoped group snapshot', async () => {
     const snapshot = createSnapshot();
-    let requestedRef: unknown;
+    let requestedRef: GroupRef | undefined;
     const authorizer = createApiV1RoomWsAuthorizer({
         readCurrentSnapshot: (ref) => {
             requestedRef = ref;
@@ -42,7 +50,8 @@ Deno.test('API room authorization reads the current scoped group snapshot', asyn
         typeId: 'chat.message.v1'
     });
 
-    assert.equal(decision, true);
+    assert.ok(decision && decision.authorized);
+    assert.deepEqual(decision.audience, { targets: message.targets, sessions: snapshot.activeSessions });
     assert.deepEqual(requestedRef, snapshot.group);
 });
 
@@ -76,7 +85,16 @@ Deno.test('API room authorization observes remote bans and deletion across warm 
     let current: GroupSnapshot | undefined = createSnapshot();
     let revisionProbes = 0;
     let stableReads = 0;
-    const durable = {
+    const runtime = new FakeRuntimeStateRepository();
+    const durable: GroupStateService = {
+        ...createGroupStateService({
+            runtimeRepository: runtime,
+            groupStateEventStore: runtime.groupStateEventStore,
+            authSessionRepository: { findBySessionId: () => Promise.resolve(undefined) },
+            readPlannedLayoutRow: () => Promise.resolve(null),
+            readAcceptedLayoutRow: () => Promise.resolve(null),
+            serviceId: 'room-authorization-test'
+        }),
         readCausalRevision: () => {
             revisionProbes += 1;
             return Promise.resolve(current?.causalRevision);
@@ -85,7 +103,7 @@ Deno.test('API room authorization observes remote bans and deletion across warm 
             stableReads += 1;
             return Promise.resolve(current);
         }
-    } as unknown as GroupStateService;
+    };
     const serverA = createCachedGroupStateService({
         durable,
         cache: createIndependentCache(() => {
@@ -117,7 +135,7 @@ Deno.test('API room authorization observes remote bans and deletion across warm 
         typeId: 'chat.message.v1'
     };
 
-    assert.equal(await authorizer(input), true);
+    assertRoomAuthorization(await authorizer(input), true);
     const bannedSnapshot: GroupSnapshot = {
         ...createSnapshot(),
         causalRevision: { groupRevision: 3, presenceRevision: 1 },
@@ -137,7 +155,7 @@ Deno.test('API room authorization observes remote bans and deletion across warm 
     current = bannedSnapshot;
     await serverA.observeSnapshot(bannedSnapshot);
 
-    assert.notEqual(await authorizer(input), true);
+    assertRoomAuthorization(await authorizer(input), false);
     current = undefined;
     assert.equal(await authorizer(input), false);
     assert.equal(revisionProbes, 0);
@@ -158,10 +176,9 @@ Deno.test('API room authorization blocks pre-activation app data when policy say
 
     const decision = await authorizer(roomChatInput(snapshot));
 
-    assert.equal(typeof decision, 'object');
-    assert.equal((decision as { authorized: boolean; }).authorized, false);
+    assert.ok(decision && !decision.authorized);
     assert.match(
-        (decision as { logMessage?: string; }).logMessage ?? '',
+        decision.logMessage ?? '',
         /group-data-blocked-until-active/
     );
 });
@@ -184,7 +201,7 @@ Deno.test('API room authorization treats an absent pre-activation policy like an
             readCurrentSnapshot: () => Promise.resolve(snapshot)
         }, dependencies);
 
-        assert.equal(await authorizer(roomChatInput(snapshot)), true);
+        assertRoomAuthorization(await authorizer(roomChatInput(snapshot)), true);
     }
 });
 
@@ -198,7 +215,7 @@ Deno.test('API room authorization fails closed on a corrupt policy before activa
 
     const decision = await authorizer(roomChatInput(snapshot));
 
-    assert.equal((decision as { authorized: boolean; }).authorized, false);
+    assertRoomAuthorization(decision, false);
 });
 
 Deno.test('API room authorization reads no policy for active groups', async () => {
@@ -215,7 +232,7 @@ Deno.test('API room authorization reads no policy for active groups', async () =
 
     const decision = await authorizer(roomChatInput(snapshot));
 
-    assert.equal(decision, true);
+    assertRoomAuthorization(decision, true);
     assert.equal(policyReads, 0);
 });
 
@@ -236,7 +253,7 @@ Deno.test('API room authorization reads no policy during accepted-layout reconfi
             }
         });
 
-        assert.equal(await authorizer(roomChatInput(snapshot)), true);
+        assertRoomAuthorization(await authorizer(roomChatInput(snapshot)), true);
         assert.equal(policyReads, 0);
     }
 });
@@ -266,7 +283,7 @@ Deno.test('API room authorization denies halted application data in every stage 
                 }
             });
 
-            assert.notEqual(await authorizer(roomChatInput(snapshot)), true);
+            assertRoomAuthorization(await authorizer(roomChatInput(snapshot)), false);
             assert.equal(policyReads, 0);
         }
     }
@@ -303,7 +320,7 @@ Deno.test('API room authorization exempts the CRDT topics from the data-policy g
         typeId: 'crdt.update.v1'
     });
 
-    assert.equal(decision, true);
+    assertRoomAuthorization(decision, true);
     assert.equal(policyReads, 0);
 });
 
@@ -330,7 +347,7 @@ Deno.test('API room authorization allows CRDT while transport is halted without 
         { update: 'payload' }
     );
 
-    assert.equal(
+    assertRoomAuthorization(
         await authorizer({
             message,
             roomId: 'group-1',
@@ -344,7 +361,11 @@ Deno.test('API room authorization allows CRDT while transport is halted without 
     assert.equal(policyReads, 0);
 });
 
-function roomChatInput(snapshot: GroupSnapshot) {
+function assertRoomAuthorization(decision: GroupRoomWsAuthorizationDecision, expected: boolean): void {
+    assert.equal(decision !== false && decision.authorized, expected);
+}
+
+function roomChatInput(snapshot: GroupSnapshot): RallarServerWsRoomAuthorizationInput {
     return {
         message: newALMulticastMessage(
             'session-1',
@@ -371,18 +392,10 @@ function createConnectingSnapshot(): GroupSnapshot {
 
 function createIndependentCache(
     readDurable: () => Promise<GroupSnapshot | undefined>
-) {
+): CachedGroupStateServiceCache {
     let cached: GroupSnapshot | undefined;
     return {
-        findOrLoadByRef: async (
-            _ref: unknown,
-            options: {
-                minCausalRevision?: Readonly<{
-                    groupRevision: number;
-                    presenceRevision: number;
-                }>;
-            } = {}
-        ) => {
+        findOrLoadByRef: async (_ref, options = {}) => {
             if (
                 cached &&
                 (options.minCausalRevision === undefined ||

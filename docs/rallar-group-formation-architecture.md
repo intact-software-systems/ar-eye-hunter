@@ -129,12 +129,12 @@ and initiator choices plus six policy sections. Every field is required once nor
 | Section         | Fields                                                                                                 |
 | --------------- | ------------------------------------------------------------------------------------------------------ |
 | `formation`     | `'phased'` \| `'immediate'`                                                                            |
-| `initiator`     | `'manager'` \| `'any-member'` \| `'server-auto'`                                                        |
+| `initiator`     | `'manager'` \| `'any-member'` \| `'server-auto'`                                                       |
 | `manager`       | `selection`, `assignedPrincipalIds`, `count`, `succession`                                             |
-| `establishment` | `transports`, `maxConcurrentEdgeSetups`, `planTrigger`, `connectTrigger`                              |
+| `establishment` | `transports`, `maxConcurrentEdgeSetups`, `planTrigger`, `connectTrigger`                               |
 | `activation`    | `mode`, `successRate`, `minimumViableRate`, `deadlineMs`, `maxFormationAttempts`, `strictConfirmation` |
 | `admission`     | `mode`, `untilEpochMs`, `untilMemberCount` (`null` means the window does not apply)                    |
-| `topology`      | `replanning`, `reconfigureLanding`, `debounceWindowMs`, `maxReplanWaitMs`                               |
+| `topology`      | `replanning`, `reconfigureLanding`, `debounceWindowMs`, `maxReplanWaitMs`                              |
 | `data`          | `preActivationAppData`: `'allowed'` \| `'blocked-until-active'`                                        |
 
 Two fields are carried but enforced by nothing in v1: `establishment.transports` and
@@ -578,8 +578,17 @@ CRDT remains exempt. Browser send/delivery gates enforce the same authority for 
 
 The room authorizer (`rallar-system/websocket/ws-topic-room-authorizer.ts`, composed in
 `apps/api-v1/src/services/ws-topic-room-authorizer.ts`) supplies the value lazily: it reads the
-policy only when the group is not `active`, so steady-state room traffic pays no policy read. An
+policy only in dormant, forming, planned, or connecting stages while transport is flowing;
+active and accepted-layout reconfiguration stages pay no policy read. An
 absent policy is `allowed` (main parity); a corrupt one is `blocked-until-active` (fail closed).
+
+Successful built-in authorization retains its current durable audience for the unchanged room
+target's live fanout. The router does not reconstruct that audience from the local snapshot cache.
+The publisher rechecks session expiry and target/exclusion identity after awaited handlers, and the
+live transport intersects the result with currently open local sockets. An empty authorized audience
+stays empty; transformed proxy targets use their own target resolution. The frame stays unchanged,
+delivery stays live-only, and no liveness-filtered durable projection is observed in the monotonic
+canonical cache. Generic custom authorizers may instead leave audience ownership with their resolver.
 
 The CRDT live topics `room.crdt` and `app.crdt` are exempt by name at the authorizer. CRDT `update`
 envelopes are never relayed by the topic — they enter the AppInbox append path and fan out from its
@@ -606,7 +615,7 @@ only in the authorizer's rejection log line. No HTTP route supplies `preActivati
 The allowed group remains forming throughout pause, presence/membership round trips, and resume:
 relay succeeds before halt, is absent while halted, and succeeds again after resume.
 The authorizer's absent-policy branch has no recipe pin: an absent policy creates the group
-`active`, so the gate reads it only after a `reconfigure`. `api-v1-match-preset` pins the
+`active`, and accepted-layout reconfiguration also bypasses that policy read. `api-v1-match-preset` pins the
 lobby NACK and the post-activation flow composed with the rest of the preset;
 `api-v1-drop-in-social-preset` pins data flowing from birth.
 
@@ -701,7 +710,7 @@ backend runs them in the fast loop and the Postgres CI job runs them in its base
 | `api-v1-group-manager-succession`    | assigned managers, succession on removal and on leave, the zero-manager fallback                                                                                                                                               |
 | `api-v1-group-admission-approval`    | parking, grant, decline, re-request, zero-manager recovery, epoch survival, park while active                                                                                                                                  |
 | `api-v1-group-admission-windows`     | the binding phases of capacity, deadline, and `closed`                                                                                                                                                                         |
-| `api-v1-group-data-policy`           | the data gate, the CRDT exemption, `allowed` and default-group flows, post-activation flow, and the forming allowed-group transport valve                                                                                       |
+| `api-v1-group-data-policy`           | the data gate, the CRDT exemption, `allowed` and default-group flows, post-activation flow, and the forming allowed-group transport valve                                                                                      |
 | `api-v1-match-preset`                | the composed `match` preset, including all-or-nothing failure and lobby re-opening                                                                                                                                             |
 | `api-v1-drop-in-social-preset`       | the composed `drop-in-social` preset                                                                                                                                                                                           |
 

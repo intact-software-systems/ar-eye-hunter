@@ -409,8 +409,8 @@ export class WsQueueBoxServerService {
         return this.liveDelivery.sendToTargets(message);
     }
 
-    sendToTargetsWithResult(message: ALMessage): WsServerLiveSendResult {
-        return this.liveDelivery.sendToTargetsWithResult(message);
+    sendToTargetsWithResult(message: ALMessage, recipientSessionIds?: readonly string[]): WsServerLiveSendResult {
+        return this.liveDelivery.sendToTargetsWithResult(message, recipientSessionIds);
     }
 
     private async sendPreparedMessage(

@@ -842,9 +842,9 @@
       }
     },
     {
-            "name": "managerPlansPublication",
-            "type": "http",
-            "connection": "api",
+      "name": "managerPlansPublication",
+      "type": "http",
+      "connection": "api",
       "request": {
         "method": "GET",
         "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology",
@@ -875,9 +875,9 @@
       }
     },
     {
-            "name": "managerPlansConnectsPublishedLayout",
-            "type": "http",
-            "connection": "api",
+      "name": "managerPlansConnectsPublishedLayout",
+      "type": "http",
+      "connection": "api",
       "request": {
         "method": "POST",
         "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/lifecycle/connect/requests/connect-plan-{groupId}-{runId}",

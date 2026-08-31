@@ -80,6 +80,14 @@ moved or changed test.
   "version": 1,
   "contracts": [
     {
+      "id": "group-http-translator-guard-reachability",
+      "domain": "Authoritative group mutation route ownership",
+      "owner": "Rallar server maintainers",
+      "summary": "Input rejection guards and statically unreachable throws preserve a reachable authenticated AppInbox command translator; unconditional throws do not.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-http-shapes.test.ts#accepts legitimate input rejection guards and an unreachable throwing branch",
+      "coverageRelation": "The named test executes the actual route inventory analyzer on the shipped translator and a source mutation adding a false throwing branch. Both must retain the operation connection. Its neighboring parameterized negative executes unconditional throwing guards and requires loss of that connection. Source reads and mutation non-vacuity are inputs to these executable security assertions, not private-name or statement-order requirements."
+    },
+    {
       "id": "api-v1-medium-scale-routing",
       "domain": "API-v1 medium-scale recipe routing",
       "owner": "Rallar server maintainers",
@@ -1429,6 +1437,28 @@ moved or changed test.
     }
   ],
   "entries": [
+    {
+      "id": "test-structure-coupling-2587ac15f9ef4b7a",
+      "path": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-http-shapes.test.ts",
+      "kind": "production-source-read",
+      "contract": "group-http-translator-guard-reachability",
+      "disposition": "durable-boundary",
+      "boundary": "security",
+      "owner": "Rallar server maintainers",
+      "rationale": "Reads the actual translator as executable analyzer input, preserving its real input-validation guards while testing an added statically unreachable throw. The test requires semantic route ownership to survive both inputs.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-http-shapes.test.ts#accepts legitimate input rejection guards and an unreachable throwing branch"
+    },
+    {
+      "id": "test-structure-coupling-cc1a11e1ef4e42a1",
+      "path": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-http-shapes.test.ts",
+      "kind": "symbol-assertion",
+      "contract": "group-http-translator-guard-reachability",
+      "disposition": "durable-boundary",
+      "boundary": "security",
+      "owner": "Rallar server maintainers",
+      "rationale": "Asserts only that the source mutation actually changed the analyzer input before the semantic acceptance assertion. This prevents a vacuous passing security regression; it does not require any private symbol spelling, file size, or order.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-http-shapes.test.ts#accepts legitimate input rejection guards and an unreachable throwing branch"
+    },
     {
       "id": "test-structure-coupling-a5d5fdeb1214727a",
       "path": "packages/shared-rtc-bench/tests/architecture/rtc-benchmark-navigation-contract.test.ts",

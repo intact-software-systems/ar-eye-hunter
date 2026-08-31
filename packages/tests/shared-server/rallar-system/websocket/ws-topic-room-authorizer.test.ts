@@ -1,14 +1,21 @@
-import { type GroupStateService } from '@shared-server/rallar-system/group-state/group-state-service-contracts.ts';
+import { afterEach, vi } from 'vitest';
+import { describe, it } from 'vitest';
+import { expect } from 'vitest';
+
+import { createGroupStateService } from '@shared-server/rallar-system/group-state/group-state-service.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
 import { createCachedGroupStateService } from '@shared-server/rallar-system/group-state/snapshot/cached-group-state-service.ts';
 import { createGroupStateSnapshotReadThroughCache } from '@shared-server/rallar-system/group-state/snapshot/group-state-snapshot-read-through-cache.ts';
 import { createGroupRoomWsAuthorizer, type GroupRoomWsAuthorizerDependencies } from '@shared-server/rallar-system/websocket/ws-topic-room-authorizer.ts';
 import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
-import { newALBroadcastMessage, newALEventRoute, newALMulticastMessage } from '@shared/al-contracts/al-contract.ts';
+import { newALBroadcastMessage, newALMulticastMessage } from '@shared/al-contracts/al-contract.ts';
+import { newALEventRoute } from '@shared/al-contracts/al-contract.ts';
 import { GROUP_LIFECYCLE_STATES } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
-import type { AuditStamp, Group, GroupMember, GroupPresenceSummary, GroupSnapshot } from '@shared/api/group-types.ts';
+import type { AuditStamp, Group } from '@shared/api/group-types.ts';
+import type { GroupMember, GroupPresenceSession } from '@shared/api/group-types.ts';
+import type { GroupPresenceSummary, GroupSnapshot } from '@shared/api/group-types.ts';
 import { findGroupStateSnapshotByRef, setGroupStateSnapshot } from '@shared/repository/group-state-snapshots-repository.ts';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+
 import { configureTestCacheRepositories } from '../../../cache-repository-config.ts';
 import { createTestGroup } from '../../../create-test-group.ts';
 import { FakeRuntimeStateRepository } from '../../runtime-state/test-support/fake-runtime-state-repository.ts';
@@ -47,7 +54,7 @@ describe('createGroupRoomWsAuthorizer', () => {
             typeId: 'chat.message.v1'
         }));
 
-        expect(decision).toBe(true);
+        expect(decision).toMatchObject({ authorized: true });
     });
 
     it('authorizes room broadcasts using target groupRef without an external resolver', async () => {
@@ -80,7 +87,7 @@ describe('createGroupRoomWsAuthorizer', () => {
             typeId: 'chat.message.v1'
         }));
 
-        expect(decision).toBe(true);
+        expect(decision).toMatchObject({ authorized: true });
     });
 
     it('hydrates a cold group snapshot cache from durable state before authorizing', async () => {
@@ -129,7 +136,7 @@ describe('createGroupRoomWsAuthorizer', () => {
             minSnapshotVersion: 3
         }));
 
-        expect(decision).toBe(true);
+        expect(decision).toMatchObject({ authorized: true });
         expect(findGroupStateSnapshotByRef(group.group)?.group.snapshotVersion).toBe(3);
     });
 
@@ -193,7 +200,7 @@ describe('createGroupRoomWsAuthorizer', () => {
             minSnapshotVersion: 4
         }));
 
-        expect(decision).toBe(true);
+        expect(decision).toMatchObject({ authorized: true });
         expect(
             findGroupStateSnapshotByRef(currentGroup.group)?.group.snapshotVersion
         ).toBe(4);
@@ -294,8 +301,16 @@ describe('createGroupRoomWsAuthorizer', () => {
 
         const currentService = createCachedGroupStateService({
             durable: {
+                ...createGroupStateService({
+                    runtimeRepository,
+                    groupStateEventStore: runtimeRepository.groupStateEventStore,
+                    authSessionRepository: { findBySessionId: () => Promise.resolve(undefined) },
+                    readPlannedLayoutRow: () => Promise.resolve(null),
+                    readAcceptedLayoutRow: () => Promise.resolve(null),
+                    serviceId: 'room-authorization-test'
+                }),
                 readSnapshot: (ref) => groupRepository.readSnapshot(ref)
-            } as GroupStateService,
+            },
             cache: {
                 findOrLoadByRef: (ref, options) => readThroughCache.findOrLoadByRef(ref, options),
                 observe: (snapshot) => readThroughCache.observe(snapshot)
@@ -409,7 +424,7 @@ describe('createGroupRoomWsAuthorizer', () => {
             senderId: 'session-b',
             topicId: 'room.crdt',
             typeId: 'crdt.update.v1'
-        }))).resolves.toBe(true);
+        }))).resolves.toMatchObject({ authorized: true });
     });
 
     it('rejects archived and deleted room messages with lifecycle policy details', async () => {
@@ -795,39 +810,47 @@ function createGroupSnapshot(input: CreateGroupSnapshotInput): GroupSnapshot {
             created,
             updated
         }),
-        members: sessionIds.map((sessionId, index) => ({
-            applicationId,
-            workspaceId,
-            groupId,
-            principalId: sessionId,
-            role: index === 0 ? 'owner' : 'member',
-            status: 'active',
-            joined: created,
-            updated,
-            invitedByPrincipalId: null,
-            invitationExpiresAtEpochMs: null,
-            left: null,
-            removed: null,
-            banned: null
-        })),
-        activeSessions: sessionIds.map((sessionId) => ({
-            applicationId,
-            workspaceId,
-            groupId,
-            sessionId,
-            principalId: sessionId,
-            generationId: `generation-${sessionId}`,
-            generationVersion: 1,
-            status: 'active',
-            disconnectedAtEpochMs: null,
-            disconnectReason: null,
-            connectedAtEpochMs: 1,
-            lastHeartbeatAtEpochMs: snapshotVersion,
-            expiresAtEpochMs
-        })),
+        members: createSnapshotMembers(input, created, updated),
+        activeSessions: createSnapshotPresence(input, expiresAtEpochMs),
         memberCount: sessionIds.length,
         onlineMemberCount: sessionIds.length
     };
+}
+
+function createSnapshotMembers(input: CreateGroupSnapshotInput, created: AuditStamp, updated: AuditStamp): readonly GroupMember[] {
+    return input.sessionIds.map((sessionId, index) => ({
+        applicationId: input.applicationId,
+        workspaceId: input.workspaceId,
+        groupId: input.groupId,
+        principalId: sessionId,
+        role: index === 0 ? 'owner' : 'member',
+        status: 'active',
+        joined: created,
+        updated,
+        invitedByPrincipalId: null,
+        invitationExpiresAtEpochMs: null,
+        left: null,
+        removed: null,
+        banned: null
+    }));
+}
+
+function createSnapshotPresence(input: CreateGroupSnapshotInput, expiresAtEpochMs: number): readonly GroupPresenceSession[] {
+    return input.sessionIds.map((sessionId) => ({
+        applicationId: input.applicationId,
+        workspaceId: input.workspaceId,
+        groupId: input.groupId,
+        sessionId,
+        principalId: sessionId,
+        generationId: `generation-${sessionId}`,
+        generationVersion: 1,
+        status: 'active',
+        disconnectedAtEpochMs: null,
+        disconnectReason: null,
+        connectedAtEpochMs: 1,
+        lastHeartbeatAtEpochMs: input.snapshotVersion,
+        expiresAtEpochMs
+    }));
 }
 
 function withGroupStatus(group: Group, status: 'archived' | 'deleted'): Group {

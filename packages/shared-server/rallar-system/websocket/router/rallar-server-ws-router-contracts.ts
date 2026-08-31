@@ -1,7 +1,7 @@
 import type { ALMessage, ALTargets } from '@shared/al-contracts/al-contract.ts';
 import type { ALNackReason } from '@shared/al-contracts/al-control.ts';
 import type { ALOutboundEnqueueStatus } from '@shared/alm/ALOutboundMessageRuntime.ts';
-import type { GroupRef } from '@shared/api/group-types.ts';
+import type { GroupPresenceSession, GroupRef } from '@shared/api/group-types.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import type {
     WsServerLiveSendFailure,
@@ -90,15 +90,28 @@ export interface RallarServerWsRoomAuthorizationInput {
     readonly minSnapshotVersion?: number;
 }
 
+export interface RallarServerWsRoomAudience {
+    readonly targets: ALTargets;
+    readonly sessions: readonly GroupPresenceSession[];
+}
+
+export interface RallarServerWsRoomAuthorizationDenied {
+    readonly authorized: false;
+    readonly reason?: ALNackReason;
+    readonly logMessage?: string;
+    readonly serverSnapshotVersion?: number;
+}
+
+export interface RallarServerWsRoomAuthorizationAllowed {
+    readonly authorized: true;
+    /** Absent only for generic authorizers whose target resolver owns the audience. */
+    readonly audience?: RallarServerWsRoomAudience;
+}
+
 export type RallarServerWsRoomAuthorizationDecision =
     | boolean
-    | Readonly<{ authorized: true; }>
-    | Readonly<{
-        authorized: false;
-        reason?: ALNackReason;
-        logMessage?: string;
-        serverSnapshotVersion?: number;
-    }>;
+    | RallarServerWsRoomAuthorizationAllowed
+    | RallarServerWsRoomAuthorizationDenied;
 
 export type RallarServerWsRoomAuthorizer = (
     input: RallarServerWsRoomAuthorizationInput
@@ -137,6 +150,7 @@ export interface RallarServerWsRouterOptions {
     readonly defaultFanout?: RallarServerWsFanout;
     readonly authorizeRoomMessage?: RallarServerWsRoomAuthorizer;
     readonly wakeOutbox?: () => void;
+    readonly nowEpochMs?: () => number;
 }
 
 export interface RallarServerWsMessageContext {
@@ -161,16 +175,15 @@ export interface RallarServerWsProxyContext {
     toRoom(
         roomId: string,
         message: ALMessage,
-        options?: Readonly<{
-            exceptPeerIds?: readonly string[];
-            fanout?: RallarServerWsFanout;
-        }>
+        options?: RallarServerWsBroadcastOptions
     ): Promise<RallarServerWsPublishResult>;
     toAll(
         message: ALMessage,
-        options?: Readonly<{
-            exceptPeerIds?: readonly string[];
-            fanout?: RallarServerWsFanout;
-        }>
+        options?: RallarServerWsBroadcastOptions
     ): Promise<RallarServerWsPublishResult>;
+}
+
+export interface RallarServerWsBroadcastOptions {
+    readonly exceptPeerIds?: readonly string[];
+    readonly fanout?: RallarServerWsFanout;
 }

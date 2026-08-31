@@ -1007,8 +1007,8 @@
         }
       }
     },
-        {
-            "name": "pauseAllowedDataGroup",
+    {
+      "name": "pauseAllowedDataGroup",
       "type": "http",
       "connection": "primary",
       "request": {
@@ -1022,11 +1022,11 @@
       },
       "expect": {
         "status": 200,
-                "body": {
-                    "group": {
-                        "groupId": "{allowedGroupId}",
-                        "lifecycleState": "forming",
-                        "transportState": "halted"
+        "body": {
+          "group": {
+            "groupId": "{allowedGroupId}",
+            "lifecycleState": "forming",
+            "transportState": "halted"
           }
         }
       }

@@ -1,8 +1,10 @@
-import { isRoomScopedALMessage, readALTargetGroupRef, type ALMessage } from '@shared/al-contracts/al-contract.ts';
+import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { isRoomScopedALMessage, readALTargetGroupRef } from '@shared/al-contracts/al-contract.ts';
 import type { ALNackReason } from '@shared/al-contracts/al-control.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import { decodeJsonWireValue, type JsonWireValue } from '../../protocol/json-wire-identity.ts';
 import type {
+    RallarServerWsRoomAudience,
     RallarServerWsRoomAuthorizationDecision,
     RallarServerWsRoomAuthorizer,
     RallarServerWsTopicDefinition,
@@ -21,6 +23,7 @@ export interface AuthorizeRallarServerWsIngressInput {
 
 export interface RallarServerWsAuthorizationResult {
     readonly authorized: boolean;
+    readonly audience?: RallarServerWsRoomAudience;
     readonly reason?: ALNackReason;
     readonly logMessage?: string;
     readonly serverSnapshotVersion?: number;
@@ -114,7 +117,7 @@ function normalizeRoomAuthorizationDecision(
         return { authorized: decision };
     }
     if (decision.authorized) {
-        return { authorized: true };
+        return { authorized: true, audience: decision.audience };
     }
     return {
         authorized: false,

@@ -42,8 +42,14 @@ export class WsQueueBoxServerLiveDelivery {
         return this.sendToTargetsWithResult(message).sentCount;
     }
 
-    sendToTargetsWithResult(message: ALMessage): WsServerLiveSendResult {
-        const recipients = this.#targetResolution.resolveOutboundRecipients(message);
+    sendToTargetsWithResult(message: ALMessage, recipientSessionIds?: readonly string[]): WsServerLiveSendResult {
+        // Explicit authority, including an empty audience, replaces cache-based
+        // target resolution; local socket liveness remains a send-time decision.
+        const recipients = recipientSessionIds === undefined
+            ? this.#targetResolution.resolveOutboundRecipients(message)
+            : [...new Set(recipientSessionIds)]
+                .filter((sessionId) => this.#socket.connections.get(sessionId)?.isOpen)
+                .map((sessionId) => ({ peerId: sessionId, connectionId: sessionId }));
         if (recipients.length === 0) {
             this.#deliveryReporting.recordDiagnostics({
                 kind: 'no-local-recipient',

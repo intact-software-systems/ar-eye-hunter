@@ -2,10 +2,12 @@ import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import type { ALOutboundEnqueueResult, ALOutboundEnqueueStatus } from '@shared/alm/ALOutboundMessageRuntime.ts';
 import type { WsServerLiveSendResult } from '@shared/services/ws-queue-box-server/ws-queue-box-server-contracts.ts';
 import type { WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
+import { isGroupSnapshotSessionLive } from '../../presence/snapshot-presence.ts';
 import type {
     RallarServerWsFanout,
     RallarServerWsPublishResult,
-    RallarServerWsPublishStatus
+    RallarServerWsPublishStatus,
+    RallarServerWsRoomAudience
 } from './rallar-server-ws-router-contracts.ts';
 
 export interface PublishRallarServerWsMessageInput {
@@ -13,6 +15,8 @@ export interface PublishRallarServerWsMessageInput {
     readonly message: ALMessage;
     readonly fanout: RallarServerWsFanout;
     readonly wakeOutbox?: () => void;
+    readonly audience?: RallarServerWsRoomAudience;
+    readonly nowEpochMs: number;
 }
 
 export async function publishRallarServerWsMessage(
@@ -35,13 +39,34 @@ export async function publishRallarServerWsMessage(
             return toOutboxPublishResult(input.message, input.fanout, result);
         }
         case 'live-only': {
-            const result = input.service.sendToTargetsWithResult(input.message);
+            const result = input.service.sendToTargetsWithResult(
+                input.message,
+                input.audience === undefined
+                    ? undefined
+                    : resolveAuthorizedRoomSessionIds(input.message, input.audience, input.nowEpochMs)
+            );
             if (result.status === 'no-recipients') {
                 console.warn(`Rallar server WS topic had no recipients: ${input.message.route.topicId}`);
             }
             return toLivePublishResult(input.message, input.fanout, result);
         }
     }
+}
+
+function resolveAuthorizedRoomSessionIds(
+    message: ALMessage,
+    audience: RallarServerWsRoomAudience,
+    nowEpochMs: number
+): readonly string[] {
+    // A handler may change targets after authorization. Never reuse that authority
+    // for a different scope or exclusions, or fall back to a cached audience.
+    if (JSON.stringify(message.targets) !== JSON.stringify(audience.targets)) {
+        return [];
+    }
+    const excluded = message.targets?.mode === 'broadcast' ? message.targets.exceptPeerIds : undefined;
+    return audience.sessions
+        .filter((session) => isGroupSnapshotSessionLive(session, nowEpochMs) && !excluded?.includes(session.sessionId))
+        .map((session) => session.sessionId);
 }
 
 function toLivePublishResult(
