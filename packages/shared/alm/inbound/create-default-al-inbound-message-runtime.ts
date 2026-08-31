@@ -35,7 +35,7 @@ export function createDefaultALInboundRuntimeResources(
 ): ALInboundMessageRuntime.Resources {
     const admissionStore = input.stores?.admissionStore ?? createALInboundAdmissionStore({
         namespace: 'al-inbound-runtime',
-        backend: new InMemoryAdmissionBackend(createInMemoryALAdmissionState()),
+        backend: new InMemoryAdmissionBackend(createInMemoryALAdmissionState(), Date.now),
         orderingTrackTtlMs: 5 * 60_000,
         supersedenceTrackTtlMs: 5 * 60_000,
         retention: normalizeALRuntimeStoreRetention()

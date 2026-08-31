@@ -25,7 +25,6 @@ export interface ALOutboundComputeDependencies {
 export interface ALOutboundCommitDispatchOptions<TPrepared> {
     readonly fallbackEntry?: ResourceEntry;
     readonly replaceExistingOutbox?: boolean;
-    readonly deferEffectDrain?: boolean;
     readonly extraMutations?: (
         read: ALOutboundMessageReadDto<TPrepared>
     ) => readonly ALOutboundAdmissionMutation[] | 'skip' | undefined;

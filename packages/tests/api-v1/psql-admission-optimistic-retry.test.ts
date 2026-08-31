@@ -1,7 +1,8 @@
 import {
     describe,
     expect,
-    it
+    it,
+    onTestFinished
 } from 'vitest';
 
 import {
@@ -12,6 +13,7 @@ import { PSqlInboundAdmissionBackend } from '@shared-server/al-runtime/postgres/
 import { PSqlOutboundAdmissionBackend } from '@shared-server/al-runtime/postgres/p-sql-outbound-admission-backend.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { createDefaultALInboundMessageRuntime } from '@shared/alm/inbound/create-default-al-inbound-message-runtime.ts';
+import { decodeALOutboundPreparedMessage } from '@shared/alm/outbound/al-outbound-effect-validation.ts';
 import { createDefaultALOutboundMessageRuntime } from '@shared/alm/outbound/create-default-al-outbound-message-runtime.ts';
 import {
     createALInboundAdmissionStore,
@@ -100,6 +102,7 @@ describe('PSql admission optimistic retry', () => {
             dispatchInboxEntry: () => Promise.resolve(undefined),
             sendControlMessage: () => Promise.resolve(undefined)
         });
+        onTestFinished(() => runtime.dispose());
         repository.conflictNextConditionalWrite = true;
         const msg = newALUnicastMessage(
             'peer-1',
@@ -142,7 +145,7 @@ describe('PSql admission optimistic retry', () => {
                 senderId: 'self'
             }],
             durableEffects: []
-        })).resolves.toBe('conflict');
+        }, decodeALOutboundPreparedMessage)).resolves.toBe('conflict');
     });
 
     it('does not translate an unexpected outbound apply failure into a conflict', async () => {
@@ -165,7 +168,7 @@ describe('PSql admission optimistic retry', () => {
                 senderId: 'self'
             }],
             durableEffects: []
-        })).rejects.toThrow('outbound storage unavailable');
+        }, decodeALOutboundPreparedMessage)).rejects.toThrow('outbound storage unavailable');
     });
 
     it('commits an outbound message after an apply-time CAS loss', async () => {
@@ -177,9 +180,11 @@ describe('PSql admission optimistic retry', () => {
             stores: createDefaultPSqlALOutboundRuntimeStores({ namespace, repository }),
             toOutboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox'),
             readMessageFromEntry: (entry) => decodePersistedALMessage(entry.resource),
+            decodePreparedMessage: decodeALOutboundPreparedMessage,
             planOutgoingMessage: plan,
             sendPreparedMessage: () => Promise.resolve(undefined)
         });
+        onTestFinished(() => runtime.dispose());
         repository.conflictNextConditionalWrite = true;
 
         const result = await runtime.enqueueIfAbsent(

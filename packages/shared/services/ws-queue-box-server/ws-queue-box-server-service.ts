@@ -26,7 +26,7 @@ import type { ResourceEntry } from '../../queuebox/ResourceEntry.ts';
 import { JsonWebSocketServer, type ConnectionContext } from '../../websocket/JsonWebSocketServer.ts';
 import type { OnWebSocketServerMessageCallback } from '../queue-message-callbacks.ts';
 import { QueueBoxUtilities } from '../QueueBoxUtilities.ts';
-
+import { decodeWsQueueBoxServerPreparedMessage } from './decode-ws-queue-box-server-prepared-message.ts';
 import {
     type WsDeliveryDiagnosticsSink,
     type WsOutboxDeliveryOutcome,
@@ -157,6 +157,7 @@ export class WsQueueBoxServerService {
         dependencies: WsQueueBoxServerService.Dependencies
     ): ALOutboundMessageRuntime<WsQueueBoxServerPreparedMessage> {
         return new ALOutboundMessageRuntime<WsQueueBoxServerPreparedMessage>({
+            decodePreparedMessage: decodeWsQueueBoxServerPreparedMessage,
             ...dependencies.outboundRuntime,
             diagnostics: dependencies.outboundDiagnostics,
             outbox: this.outbox,

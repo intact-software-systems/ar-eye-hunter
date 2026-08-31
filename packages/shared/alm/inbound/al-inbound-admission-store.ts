@@ -4,10 +4,8 @@ import type {
     ALCompletedPendingAck,
     ALControlAcceptance,
     ALControlPersistenceValue,
-    ALNackPayload,
     ALParsedControlMessage,
-    ALPendingAckSnapshot,
-    ALRepairPayload
+    ALPendingAckSnapshot
 } from '../../al-contracts/al-control.ts';
 import { newALAckControlMessage, parseALControlMessage } from '../../al-contracts/al-control.ts';
 import type { ALMessageHandlingPlan } from '../../al-contracts/al-policy.ts';
@@ -18,12 +16,18 @@ import type {
     ALOrderingTrackSnapshot,
     ALReadyable,
     ALSupersedenceInput,
-    ALSupersedenceObservation,
-    ALSupersedencePersistenceValue
+    ALSupersedenceObservation
 } from '../../al-contracts/al-runtime.ts';
 import { toALOrderingTrackKey } from '../../al-contracts/al-runtime.ts';
 import type { ResourceEntry } from '../../queuebox/ResourceEntry.ts';
 import { type ALAdmissionBackend, type ALAdmissionWriteContext } from '../al-admission-backend.ts';
+import {
+    decodeALAdmissionClientRecord,
+    decodeALAdmissionControlValue,
+    decodeALAdmissionNumber,
+    decodeALAdmissionString,
+    decodeALAdmissionSupersedenceValue
+} from '../al-admission-value-validation.ts';
 import type { ALBufferedOrderedMessageSnapshot } from '../al-runtime-state-stores.ts';
 import { ALAdmissionBackendConflictError } from '../ALAdmissionBackendConflictError.ts';
 import type { NormalizedALRuntimeStoreRetentionConfig } from '../ALStoreRetention.ts';
@@ -31,16 +35,12 @@ import { resolveExpireAtTimestampWithFallback, toExpireAtTimestampFromNow } from
 import { computeALOrderingObservation, type ALOrderingAcceptance } from '../compute-al-ordering-observation.ts';
 import {
     acceptALSupersedenceObservation,
-    computeALSupersedenceObservation,
     type ALLatestSupersedenceValue,
     type ALReplacementSupersedenceValue,
     type ALSupersedenceAcceptance
 } from '../compute-al-supersedence-observation.ts';
-import {
-    toPersistedInboundEffect,
-    toStoredPersistedInboundEffect,
-    type StoredALPersistedInboundEffect
-} from './al-inbound-durable-effect-codec.ts';
+import { ALInboundDurableEffectStore } from './al-inbound-durable-effect-store.ts';
+import { decodeALInboundBufferedSnapshot, decodeALInboundOrderingSnapshot } from './al-inbound-ordering-validation.ts';
 import { toALInboundPlannerState, type ALInboundPlannerSnapshot } from './al-inbound-planner-snapshot.ts';
 import { acceptALPendingAckPayload } from './transition-al-pending-ack.ts';
 
@@ -101,15 +101,6 @@ export interface ALInboundBufferedReleaseReadDto {
     readonly supersedenceAcceptance?: ALSupersedenceAcceptance;
     readonly pendingAck?: ALPendingAckSnapshot;
     readonly acks: readonly ALAckPayload[];
-}
-
-interface ALInboundDeliveryOwner {
-    readonly effectId: string;
-    readonly inboxKey: ResourceEntry['key'] | undefined;
-}
-
-interface ALInboundOrderedDeliverySnapshot extends ALBufferedOrderedMessageSnapshot {
-    readonly delivery?: ALInboundDeliveryOwner;
 }
 
 export type ALInboundDeliveryPredecessor =
@@ -303,7 +294,8 @@ export function createALInboundAdmissionStore(
         orderingTrackTtlMs: input.orderingTrackTtlMs,
         supersedenceTrackTtlMs: input.supersedenceTrackTtlMs,
         retention: input.retention,
-        backend: input.backend
+        backend: input.backend,
+        nowMs: () => Date.now()
     });
 }
 
@@ -333,6 +325,7 @@ namespace ProviderBackedALInboundAdmissionStore {
         readonly supersedenceTrackTtlMs: number;
         readonly retention: NormalizedALRuntimeStoreRetentionConfig;
         readonly backend: ALAdmissionBackend;
+        readonly nowMs: () => number;
     }
 }
 
@@ -342,6 +335,8 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
     private readonly supersedenceTrackTtlMs: number;
     private readonly retention: NormalizedALRuntimeStoreRetentionConfig;
     private readonly backend: ALAdmissionBackend;
+    private readonly effects: ALInboundDurableEffectStore;
+    private readonly nowMs: () => number;
 
     constructor(input: ProviderBackedALInboundAdmissionStore.Dependencies) {
         this.namespace = input.namespace;
@@ -349,6 +344,13 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
         this.supersedenceTrackTtlMs = input.supersedenceTrackTtlMs;
         this.retention = input.retention;
         this.backend = input.backend;
+        this.nowMs = input.nowMs;
+        this.effects = new ALInboundDurableEffectStore({
+            backend: input.backend,
+            namespace: input.namespace,
+            retention: input.retention,
+            nowMs: input.nowMs
+        });
     }
 
     async ready(): Promise<void> {
@@ -399,20 +401,27 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
         fromPeerId: string,
         planner: ALInboundPlanner
     ): Promise<ProviderBackedALInboundAdmissionStore.AdmissionRead> {
-        const nowMs = Date.now();
-        const clientRecord = await this.backend.get<ALVersionedClientRecord>(this.toVersionKey(msg.id.senderId));
+        const nowMs = this.nowMs();
+        const clientRecord = await this.backend.read(
+            this.toVersionKey(msg.id.senderId),
+            (value) => decodeALAdmissionClientRecord(value, msg.id.senderId)
+        );
         const prePlan = planner(msg, fromPeerId, {
             dedupStore: undefined,
             orderingStore: undefined,
             supersedenceStore: undefined
         });
-        const dedupExpiresAt = await this.backend.get<number>(this.toDedupKey(prePlan.dedupKey));
+        const dedupExpiresAt = await this.backend.read(this.toDedupKey(prePlan.dedupKey), decodeALAdmissionNumber);
         const ordering = await this.readOrderingState(msg);
         const supersedence = await this.readSupersedenceState(prePlan.supersedence.key, msg.id.msgId);
-        const pendingAck = toPendingSnapshot(
-            await this.backend.get<ALControlPersistenceValue>(this.toControlPendingKey(msg.id.msgId))
-        );
-        const acks = toAcks(await this.backend.get<ALControlPersistenceValue>(this.toControlAcksKey(msg.id.msgId)));
+        const pendingAck = (await this.backend.read(
+            this.toControlPendingKey(msg.id.msgId),
+            (value) => decodeALAdmissionControlValue(value, msg.id.msgId, 'pending')
+        ))?.value;
+        const acks = (await this.backend.read(
+            this.toControlAcksKey(msg.id.msgId),
+            (value) => decodeALAdmissionControlValue(value, msg.id.msgId, 'acks')
+        ))?.values ?? [];
         return {
             msg,
             prePlan,
@@ -436,9 +445,11 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
         if (trackKey === undefined) {
             return { trackKey, snapshot: undefined, buffered: [] };
         }
-        const snapshot = await this.backend.get<ALOrderingTrackSnapshot>(this.toOrderingKey(trackKey));
-        const buffered = await this.backend.list<ALBufferedOrderedMessageSnapshot>(
-            this.toBufferedTrackPrefix(trackKey)
+        const snapshot = await this.backend.read(this.toOrderingKey(trackKey), decodeALInboundOrderingSnapshot);
+        const prefix = this.toBufferedTrackPrefix(trackKey);
+        const buffered = await this.backend.list(
+            prefix,
+            (value, key) => decodeALInboundBufferedSnapshot(value, { trackKey, prefix, key })
         );
         return {
             trackKey,
@@ -451,16 +462,19 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
         trackKey: string,
         seq: number
     ): Promise<ALInboundBufferedReleaseReadDto | undefined> {
-        const snapshot = await this.backend.get<ALBufferedOrderedMessageSnapshot>(
-            this.toBufferedKey(trackKey, seq)
+        const prefix = this.toBufferedTrackPrefix(trackKey);
+        const snapshot = await this.backend.read(
+            this.toBufferedKey(trackKey, seq),
+            (value, key) => decodeALInboundBufferedSnapshot(value, { trackKey, prefix, key })
         );
         if (!snapshot) {
             return undefined;
         }
 
-        const nowMs = Date.now();
-        const clientRecord = await this.backend.get<ALVersionedClientRecord>(
-            this.toVersionKey(snapshot.msg.id.senderId)
+        const nowMs = this.nowMs();
+        const clientRecord = await this.backend.read(
+            this.toVersionKey(snapshot.msg.id.senderId),
+            (value) => decodeALAdmissionClientRecord(value, snapshot.msg.id.senderId)
         );
         const supersedence = await this.readSupersedenceState(
             snapshot.plan.supersedence.key,
@@ -475,12 +489,14 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
             }
         } satisfies ALMessageHandlingPlan;
         const supersedenceInput = toSupersedenceInput(snapshot.msg, releasedPlan);
-        const pendingAck = toPendingSnapshot(
-            await this.backend.get<ALControlPersistenceValue>(this.toControlPendingKey(snapshot.msg.id.msgId))
-        );
-        const acks = toAcks(
-            await this.backend.get<ALControlPersistenceValue>(this.toControlAcksKey(snapshot.msg.id.msgId))
-        );
+        const pendingAck = (await this.backend.read(
+            this.toControlPendingKey(snapshot.msg.id.msgId),
+            (value) => decodeALAdmissionControlValue(value, snapshot.msg.id.msgId, 'pending')
+        ))?.value;
+        const acks = (await this.backend.read(
+            this.toControlAcksKey(snapshot.msg.id.msgId),
+            (value) => decodeALAdmissionControlValue(value, snapshot.msg.id.msgId, 'acks')
+        ))?.values ?? [];
 
         return {
             kind: 'buffered-release',
@@ -506,25 +522,7 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
         trackKey: string,
         beforeSeq: number
     ): Promise<readonly ALInboundDeliveryPredecessor[]> {
-        return await this.backend.write(async (tx) => {
-            const predecessors: ALInboundDeliveryPredecessor[] = [];
-            const snapshots = await tx.list<ALInboundOrderedDeliverySnapshot>(this.toBufferedTrackPrefix(trackKey));
-            for (const { value: snapshot } of snapshots) {
-                if (snapshot.seq >= beforeSeq || !snapshot.delivery) {
-                    continue;
-                }
-                const effect = await tx.get<StoredALPersistedInboundEffect>(
-                    this.toEffectKey(snapshot.delivery.effectId)
-                );
-                if (effect && effect.expireAtTimestamp > Date.now()) {
-                    predecessors.push({ kind: 'effect' });
-                }
-                else if (snapshot.delivery.inboxKey) {
-                    predecessors.push({ kind: 'inbox', msg: snapshot.msg, key: snapshot.delivery.inboxKey });
-                }
-            }
-            return predecessors;
-        });
+        return await this.effects.readDeliveryPredecessors(trackKey, beforeSeq);
     }
 
     async planStoredEntry(
@@ -540,7 +538,7 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
                 supersedenceStore: undefined
             }
         );
-        const nowMs = Date.now();
+        const nowMs = this.nowMs();
         const supersedence = await this.readSupersedenceState(prePlan.supersedence.key, msg.id.msgId);
 
         return planner(
@@ -580,25 +578,7 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
         }
 
         try {
-            return await this.backend.write(async (tx) => {
-                const current = await tx.get<ALVersionedClientRecord>(this.toVersionKey(bundle.senderId));
-                const currentVersion = current?.version;
-                if (currentVersion !== bundle.expectedVersion) {
-                    return 'conflict';
-                }
-
-                for (const mutation of bundle.mutations) {
-                    await this.applyMutation(tx, mutation);
-                }
-
-                for (const effect of bundle.durableEffects) {
-                    await this.persistEffect(tx, effect);
-                }
-
-                await this.bumpVersion(tx, bundle.senderId, currentVersion);
-
-                return 'committed';
-            });
+            return await this.backend.write((transaction) => this.writeCommitBundle(transaction, bundle));
         }
         catch (error) {
             if (error instanceof ALAdmissionBackendConflictError) {
@@ -608,127 +588,42 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
         }
     }
 
-    async claimReadyEffects(input: ClaimALInboundEffectsInput): Promise<readonly ALPersistedInboundEffect[]> {
-        const { workerId, maxCount, leaseMs, nowMs } = input;
-        if (maxCount <= 0) {
-            return [];
+    private async writeCommitBundle(
+        transaction: ALAdmissionWriteContext,
+        bundle: ALInboundCommitBundle
+    ): Promise<'committed' | 'conflict'> {
+        const current = await transaction.read(
+            this.toVersionKey(bundle.senderId),
+            (value) => decodeALAdmissionClientRecord(value, bundle.senderId)
+        );
+        const currentVersion = current?.version;
+        if (currentVersion !== bundle.expectedVersion) {
+            return 'conflict';
         }
-
-        return await this.backend.write(async (tx) => {
-            const claimed: ALPersistedInboundEffect[] = [];
-            const effects = [
-                ...await tx.list<StoredALPersistedInboundEffect>(this.toEffectPrefix())
-            ]
-                .map((entry) => toPersistedInboundEffect(entry.value))
-                .filter((effect): effect is ALPersistedInboundEffect => effect !== undefined)
-                .sort((left, right) =>
-                    left.retryAtMs - right.retryAtMs ||
-                    left.effectId.localeCompare(right.effectId)
-                );
-
-            for (const effect of effects) {
-                if (claimed.length >= maxCount) {
-                    break;
-                }
-
-                if (!this.isEffectReady(effect, nowMs)) {
-                    continue;
-                }
-
-                const nextEffect: ALPersistedInboundEffect = {
-                    ...effect,
-                    status: 'running',
-                    attempts: effect.attempts + 1,
-                    leaseOwner: workerId,
-                    leaseUntilMs: nowMs + leaseMs,
-                    updatedAtMs: nowMs
-                };
-                await tx.set(
-                    this.toEffectKey(effect.effectId),
-                    toStoredPersistedInboundEffect(nextEffect),
-                    effect.expireAtTimestamp
-                );
-                claimed.push(nextEffect);
-            }
-
-            return claimed;
-        });
+        for (const mutation of bundle.mutations) {
+            await this.applyMutation(transaction, mutation);
+        }
+        for (const effect of bundle.durableEffects) {
+            await this.effects.persistEffect(transaction, effect);
+        }
+        await this.bumpVersion(transaction, bundle.senderId, currentVersion);
+        return 'committed';
     }
 
-    async completeEffect(
-        effectId: string,
-        workerId: string
-    ): Promise<void> {
-        await this.backend.write(async (tx) => {
-            const current = toPersistedInboundEffect(
-                await tx.get<StoredALPersistedInboundEffect>(this.toEffectKey(effectId))
-            );
-            if (!current || current.leaseOwner !== workerId) {
-                return;
-            }
+    async claimReadyEffects(input: ClaimALInboundEffectsInput): Promise<readonly ALPersistedInboundEffect[]> {
+        return await this.effects.claimReadyEffects(input);
+    }
 
-            await tx.remove(this.toEffectKey(effectId));
-        });
+    async completeEffect(effectId: string, workerId: string): Promise<void> {
+        await this.effects.completeEffect(effectId, workerId);
     }
 
     async rescheduleEffect(input: RescheduleALInboundEffectInput): Promise<void> {
-        const { effectId, workerId, retryAtMs, lastError } = input;
-        await this.backend.write(async (tx) => {
-            const current = toPersistedInboundEffect(
-                await tx.get<StoredALPersistedInboundEffect>(this.toEffectKey(effectId))
-            );
-            if (!current || current.leaseOwner !== workerId) {
-                return;
-            }
-
-            await tx.set(
-                this.toEffectKey(effectId),
-                toStoredPersistedInboundEffect(
-                    {
-                        ...current,
-                        status: 'pending',
-                        retryAtMs,
-                        leaseOwner: undefined,
-                        leaseUntilMs: undefined,
-                        lastError,
-                        updatedAtMs: Date.now()
-                    } satisfies ALPersistedInboundEffect
-                ),
-                current.expireAtTimestamp
-            );
-        });
+        await this.effects.rescheduleEffect(input);
     }
 
-    async peekNextEffectReadyAt(
-        nowMs = Date.now()
-    ): Promise<number | undefined> {
-        let nextAt: number | undefined;
-
-        for (
-            const entry of await this.backend.list<StoredALPersistedInboundEffect>(
-                this.toEffectPrefix()
-            )
-        ) {
-            const effect = toPersistedInboundEffect(entry.value);
-            if (!effect) {
-                continue;
-            }
-            const candidateAt = effect.status === 'running'
-                ? effect.leaseUntilMs
-                : effect.retryAtMs;
-            if (candidateAt === undefined) {
-                continue;
-            }
-
-            if (effect.status === 'running' && candidateAt > nowMs) {
-                nextAt = nextAt === undefined ? candidateAt : Math.min(nextAt, candidateAt);
-                continue;
-            }
-
-            nextAt = nextAt === undefined ? candidateAt : Math.min(nextAt, candidateAt);
-        }
-
-        return nextAt;
+    async peekNextEffectReadyAt(_nowMs?: number): Promise<number | undefined> {
+        return await this.effects.readNextEffectReadyAt();
     }
 
     async acceptControlMessage(msg: ALMessage): Promise<ALControlAcceptance> {
@@ -738,8 +633,8 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
         }
         return await this.backend.write(async (tx) => {
             const msgId = parsed.type === 'ack' ? parsed.payload.ackedMsgId : parsed.payload.msgId;
-            const ownerSenderId = await tx.get<string>(this.toMsgOwnerKey(msgId));
-            const nowMs = Date.now();
+            const ownerSenderId = await tx.read(this.toMsgOwnerKey(msgId), decodeALAdmissionString);
+            const nowMs = this.nowMs();
             const acceptance = parsed.type === 'ack'
                 ? await this.writeAcknowledgement(tx, parsed.payload, nowMs)
                 : await this.writeNegativeControlHistory(tx, parsed, nowMs);
@@ -755,10 +650,14 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
         ack: ALAckPayload,
         nowMs: number
     ): Promise<ALControlAcceptance> {
-        const currentAcks = toAcks(await tx.get<ALControlPersistenceValue>(this.toControlAcksKey(ack.ackedMsgId)));
-        const current = toPendingSnapshot(
-            await tx.get<ALControlPersistenceValue>(this.toControlPendingKey(ack.ackedMsgId))
-        );
+        const currentAcks = (await tx.read(
+            this.toControlAcksKey(ack.ackedMsgId),
+            (value) => decodeALAdmissionControlValue(value, ack.ackedMsgId, 'acks')
+        ))?.values ?? [];
+        const current = (await tx.read(
+            this.toControlPendingKey(ack.ackedMsgId),
+            (value) => decodeALAdmissionControlValue(value, ack.ackedMsgId, 'pending')
+        ))?.value;
         const nextAcks = [...currentAcks, ack];
         const acceptance = acceptALPendingAckPayload({ current, nextAcks, ack });
         await tx.set(
@@ -773,7 +672,7 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
             await tx.remove(this.toControlPendingKey(ack.ackedMsgId));
         }
         if (acceptance.completed) {
-            await this.persistEffect(tx, this.toAckEffectWrite(ack.toPeerId, acceptance.completed));
+            await this.effects.persistEffect(tx, this.toAckEffectWrite(ack.toPeerId, acceptance.completed));
         }
         return { handled: true, completedPendingAcks: acceptance.completed ? [acceptance.completed] : [] };
     }
@@ -786,7 +685,8 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
         const expiresAt = toExpireAtTimestampFromNow(this.retention.controlHistoryTtlMs, nowMs);
         if (parsed.type === 'nack') {
             const key = this.toControlNacksKey(parsed.payload.msgId);
-            const current = toNacks(await tx.get<ALControlPersistenceValue>(key));
+            const current = (await tx.read(key, (value) =>
+                decodeALAdmissionControlValue(value, parsed.payload.msgId, 'nacks')))?.values ?? [];
             await tx.set(
                 key,
                 { kind: 'nacks', values: [...current, parsed.payload] } satisfies NacksControlValue,
@@ -795,7 +695,8 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
         }
         else {
             const key = this.toControlRepairsKey(parsed.payload.msgId);
-            const current = toRepairs(await tx.get<ALControlPersistenceValue>(key));
+            const current = (await tx.read(key, (value) =>
+                decodeALAdmissionControlValue(value, parsed.payload.msgId, 'repairs')))?.values ?? [];
             await tx.set(
                 key,
                 { kind: 'repairs', values: [...current, parsed.payload] } satisfies RepairsControlValue,
@@ -813,11 +714,13 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
             return {};
         }
 
-        const latest = toLatestSupersedence(
-            await this.backend.get<ALSupersedencePersistenceValue>(this.toSupersedenceLatestKey(key))
+        const latest = await this.backend.read(
+            this.toSupersedenceLatestKey(key),
+            (value) => decodeALAdmissionSupersedenceValue(value, 'latest')
         );
-        const replacement = toReplacementSupersedence(
-            await this.backend.get<ALSupersedencePersistenceValue>(this.toSupersedenceReplacementKey(msgId))
+        const replacement = await this.backend.read(
+            this.toSupersedenceReplacementKey(msgId),
+            (value) => decodeALAdmissionSupersedenceValue(value, 'replacement')
         );
 
         return {
@@ -836,7 +739,7 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
                 return await tx.set(
                     this.toMsgOwnerKey(mutation.msgId),
                     mutation.senderId,
-                    toExpireAtTimestampFromNow(this.retention.msgOwnerTtlMs)
+                    toExpireAtTimestampFromNow(this.retention.msgOwnerTtlMs, this.nowMs())
                 );
             case 'set-dedup':
                 return await tx.set(
@@ -868,7 +771,7 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
                 return await this.writePendingAck(tx, {
                     msgId: mutation.msgId,
                     pending: mutation.value.value,
-                    nowMs: Date.now()
+                    nowMs: this.nowMs()
                 });
             case 'delete-control-pending':
                 return await tx.remove(this.toControlPendingKey(mutation.msgId));
@@ -903,113 +806,10 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
             snapshot,
             resolveExpireAtTimestampWithFallback(
                 resolveALMessageExpireAtMs(snapshot.msg, snapshot.plan.effective),
-                this.retention.bufferedMessageTtlMs
+                this.retention.bufferedMessageTtlMs,
+                this.nowMs()
             )
         );
-    }
-
-    private async persistEffect(
-        tx: ALAdmissionWriteContext,
-        effect: ALInboundDurableEffectWrite
-    ): Promise<void> {
-        const key = this.toEffectKey(effect.effectId);
-        const expireAtTimestamp = effect.expireAtTimestamp ?? this.resolveEffectExpireAtTimestamp(effect.payload);
-        if (expireAtTimestamp <= Date.now()) {
-            return;
-        }
-
-        const existing = toPersistedInboundEffect(
-            await tx.get<StoredALPersistedInboundEffect>(key)
-        );
-        if (existing) {
-            return;
-        }
-
-        await tx.set(
-            key,
-            toStoredPersistedInboundEffect(
-                {
-                    effectId: effect.effectId,
-                    payload: effect.payload,
-                    status: 'pending',
-                    attempts: 0,
-                    retryAtMs: Date.now(),
-                    updatedAtMs: Date.now(),
-                    expireAtTimestamp
-                } satisfies ALPersistedInboundEffect
-            ),
-            expireAtTimestamp
-        );
-        await this.trackEffectDelivery(tx, effect, expireAtTimestamp);
-    }
-
-    private async trackEffectDelivery(
-        tx: ALAdmissionWriteContext,
-        effect: ALInboundDurableEffectWrite,
-        expireAtTimestamp: number
-    ): Promise<void> {
-        const payload = effect.payload;
-        if (
-            payload.kind !== 'dispatch-local' && payload.kind !== 'enqueue-inbox' && payload.kind !== 'release-buffered'
-        ) {
-            return;
-        }
-        const trackKey = payload.kind === 'release-buffered' ? payload.trackKey : toALOrderingTrackKey(payload.msg);
-        const seq = payload.kind === 'release-buffered' ? payload.seq : payload.msg.ordering?.seq;
-        if (trackKey === undefined || seq === undefined) {
-            return;
-        }
-        const key = this.toBufferedKey(trackKey, seq);
-        const snapshot = await tx.get<ALInboundOrderedDeliverySnapshot>(key);
-        if (!snapshot || (payload.kind !== 'release-buffered' && snapshot.msg.id.msgId !== payload.msg.id.msgId)) {
-            return;
-        }
-        // Once admission has scheduled delivery, its real owner sets the fence lifetime.
-        // Queue ownership is verified on consumption, including identity, status and expiry.
-        const inboxKey = payload.kind === 'enqueue-inbox' ? payload.entry.key : undefined;
-        const deliveryExpiry = payload.kind === 'enqueue-inbox'
-            ? Math.max(expireAtTimestamp, payload.entry.audit.expiryTs.epochMilliseconds)
-            : expireAtTimestamp;
-        await tx.set(
-            key,
-            {
-                ...snapshot,
-                delivery: { effectId: effect.effectId, inboxKey }
-            } satisfies ALInboundOrderedDeliverySnapshot,
-            deliveryExpiry
-        );
-    }
-
-    private resolveEffectExpireAtTimestamp(
-        effect: ALInboundDurableEffect
-    ): number {
-        switch (effect.kind) {
-            case 'dispatch-local':
-            case 'enqueue-inbox':
-            case 'forward-message':
-                return resolveExpireAtTimestampWithFallback(
-                    resolveALMessageExpireAtMs(effect.msg, effect.plan.effective),
-                    this.retention.durableEffectTtlMs
-                );
-            case 'send-control':
-                return resolveExpireAtTimestampWithFallback(
-                    resolveALMessageExpireAtMs(effect.msg),
-                    this.retention.durableEffectTtlMs
-                );
-            case 'release-buffered':
-                return toExpireAtTimestampFromNow(this.retention.durableEffectTtlMs);
-        }
-    }
-
-    private isEffectReady(
-        effect: ALPersistedInboundEffect,
-        nowMs: number
-    ): boolean {
-        if (effect.status === 'pending') {
-            return effect.retryAtMs <= nowMs;
-        }
-
-        return effect.leaseUntilMs !== undefined && effect.leaseUntilMs <= nowMs;
     }
 
     private toAckEffectWrite(
@@ -1036,14 +836,16 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
         senderId: string,
         currentVersion?: number
     ): Promise<void> {
-        const version = currentVersion ?? (await tx.get<ALVersionedClientRecord>(this.toVersionKey(senderId)))?.version;
+        const version = currentVersion ??
+            (await tx.read(this.toVersionKey(senderId), (value) => decodeALAdmissionClientRecord(value, senderId)))
+                ?.version;
         await tx.set(
             this.toVersionKey(senderId),
             {
                 senderId,
                 version: (version ?? 0) + 1
             } satisfies ALVersionedClientRecord,
-            toExpireAtTimestampFromNow(this.retention.versionTtlMs)
+            toExpireAtTimestampFromNow(this.retention.versionTtlMs, this.nowMs())
         );
     }
 
@@ -1095,14 +897,6 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
         return `${this.namespace}:buffered:${trackKey}:`;
     }
 
-    private toEffectKey(effectId: string): string {
-        return `${this.namespace}:effect:${effectId}`;
-    }
-
-    private toEffectPrefix(): string {
-        return `${this.namespace}:effect:`;
-    }
-
     private toEffectId(
         ...parts: readonly (number | string)[]
     ): string {
@@ -1139,52 +933,4 @@ function toSupersedenceInput(
         seq: msg.ordering?.seq,
         ts: msg.audit?.createdTs ?? msg.id.ts
     };
-}
-
-function toPendingSnapshot(
-    value: ALControlPersistenceValue | undefined
-): ALPendingAckSnapshot | undefined {
-    return value?.kind === 'pending'
-        ? value.value
-        : undefined;
-}
-
-function toAcks(
-    value: ALControlPersistenceValue | undefined
-): readonly ALAckPayload[] {
-    return value?.kind === 'acks'
-        ? value.values
-        : [];
-}
-
-function toNacks(
-    value: ALControlPersistenceValue | undefined
-): readonly ALNackPayload[] {
-    return value?.kind === 'nacks'
-        ? value.values
-        : [];
-}
-
-function toRepairs(
-    value: ALControlPersistenceValue | undefined
-): readonly ALRepairPayload[] {
-    return value?.kind === 'repairs'
-        ? value.values
-        : [];
-}
-
-function toLatestSupersedence(
-    value: ALSupersedencePersistenceValue | undefined
-): ALLatestSupersedenceValue | undefined {
-    return value?.kind === 'latest'
-        ? value
-        : undefined;
-}
-
-function toReplacementSupersedence(
-    value: ALSupersedencePersistenceValue | undefined
-): ALReplacementSupersedenceValue | undefined {
-    return value?.kind === 'replacement'
-        ? value
-        : undefined;
 }

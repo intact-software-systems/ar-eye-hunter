@@ -40,9 +40,7 @@ import {
     type ResourceEntry
 } from '@shared/mod.ts';
 
-interface OutboundTestPayload {
-    readonly [field: string]: string;
-}
+import { decodeOutboundTestPayload, type OutboundTestPayload } from './alm/outbound-test-payload.ts';
 
 interface PersistentAdmissionStorage {
     readonly admissionProvider: InMemoryPersistenceProvider<string, unknown>;
@@ -379,7 +377,8 @@ function createDefaultPersistentInboundStoreSet(
                 namespace: 'durable-test:inbound:admission',
                 backend: new PersistenceProviderAdmissionBackend(
                     admissionProvider,
-                    'durable-test:inbound:admission'
+                    'durable-test:inbound:admission',
+                    Date.now
                 ),
                 orderingTrackTtlMs: 5 * 60_000,
                 supersedenceTrackTtlMs: 5 * 60_000,
@@ -436,7 +435,8 @@ function createDefaultPersistentOutboundStoreSet(
                 namespace: 'durable-test:outbound:admission',
                 backend: new PersistenceProviderAdmissionBackend(
                     admissionProvider,
-                    'durable-test:outbound:admission'
+                    'durable-test:outbound:admission',
+                    Date.now
                 ),
                 supersedenceTrackTtlMs: 5 * 60_000,
                 retention: normalizeALRuntimeStoreRetention()
@@ -454,6 +454,7 @@ function createDefaultOutboundRuntime(
         outbox,
         stores: stores.runtimeStores,
         toOutboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox'),
+        decodePreparedMessage: decodeOutboundTestPayload,
         readMessageFromEntry: (entry) => decodePersistedALMessage(entry.resource),
         planOutgoingMessage: (msg) => ({
             persist: msg.payload.typeId === 'presence.state.v1',

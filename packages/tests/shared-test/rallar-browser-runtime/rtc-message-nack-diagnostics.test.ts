@@ -3,6 +3,7 @@ import { readBlackBoxRtcMessageNacks } from '@shared-test/black-box-runner/brows
 import { deleteBrowserALRuntimeEntriesForSession } from '@shared-web/browser/al-runtime/browser-al-runtime-cleanup.ts';
 import { configureBrowserALRuntimeStores, resolveBrowserRtcOverlayALOutboundRuntimeStores } from '@shared-web/browser/al-runtime/browser-al-runtime-stores.ts';
 import { newALNackControlMessage } from '@shared/al-contracts/al-control.ts';
+import { decodeALOutboundPreparedMessage } from '@shared/alm/outbound/al-outbound-effect-validation.ts';
 import {
     describe,
     expect,
@@ -16,11 +17,11 @@ describe('RTC message diagnostic receipts', () => {
         configureBrowserALRuntimeStores(sessionId);
         try {
             const { admissionStore } = resolveBrowserRtcOverlayALOutboundRuntimeStores(sessionId);
-            if (!admissionStore) {
-                throw new Error('Fixture did not configure its admission store.');
-            }
             expect(await readBlackBoxRtcMessageNacks(sessionId, 'attempted')).toEqual([]);
-            await admissionStore.acceptControlMessage(newALNackControlMessage('receiver', sessionId, 'attempted', 'not-yet-in-sync'));
+            await admissionStore.acceptControlMessage(
+                newALNackControlMessage('receiver', sessionId, 'attempted', 'not-yet-in-sync'),
+                decodeALOutboundPreparedMessage
+            );
             const receipt = await readBlackBoxRtcMessageNacks(sessionId, 'attempted');
             expect(receipt).toEqual([expect.objectContaining({
                 msgId: 'attempted',

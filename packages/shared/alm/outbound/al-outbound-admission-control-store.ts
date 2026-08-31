@@ -5,16 +5,21 @@ import type {
     ALRepairPayload
 } from '../../al-contracts/al-control.ts';
 import { parseALControlMessage } from '../../al-contracts/al-control.ts';
-import type { ALOutboundPendingAckSnapshot, ALOutboundRepairAttemptSnapshot } from '../al-runtime-state-stores.ts';
-import { toExpireAtTimestampFromNow, type NormalizedALRuntimeStoreRetentionConfig } from '../ALStoreRetention.ts';
 import type { ALAdmissionBackend, ALAdmissionWriteContext } from '../al-admission-backend.ts';
+import {
+    decodeALAdmissionClientRecord,
+    decodeALAdmissionControlValue,
+    decodeALAdmissionString
+} from '../al-admission-value-validation.ts';
+import { toExpireAtTimestampFromNow, type NormalizedALRuntimeStoreRetentionConfig } from '../ALStoreRetention.ts';
 import { ALOutboundAdmissionEffectStore } from './al-outbound-admission-effect-store.ts';
 import type {
     ALOutboundControlAcceptance,
     ALOutboundDurableEffectWrite,
-    ALOutboundRepairHint,
-    ALOutboundVersionedClientRecord
+    ALOutboundPreparedMessageDecoder,
+    ALOutboundRepairHint
 } from './al-outbound-admission-store.ts';
+import { decodeALOutboundPendingAck } from './al-outbound-admission-validation.ts';
 import { toALOutboundEffectId } from './to-al-outbound-effect-id.ts';
 import {
     acceptALOutboundPendingAckSnapshot,
@@ -29,11 +34,6 @@ export interface CreateALOutboundAdmissionControlStoreInput {
     readonly retention: NormalizedALRuntimeStoreRetentionConfig;
 }
 
-type OutboundControlValue =
-    | Readonly<{ kind: 'acks'; values: readonly ALAckPayload[]; }>
-    | Readonly<{ kind: 'nacks'; values: readonly ALNackPayload[]; }>
-    | Readonly<{ kind: 'repairs'; values: readonly ALRepairPayload[]; }>;
-
 export class ALOutboundAdmissionControlStore {
     private readonly backend: ALAdmissionBackend;
     private readonly effectStore: ALOutboundAdmissionEffectStore;
@@ -47,7 +47,10 @@ export class ALOutboundAdmissionControlStore {
         this.retention = input.retention;
     }
 
-    async acceptControlMessage<TPrepared>(msg: ALMessage): Promise<ALOutboundControlAcceptance> {
+    async acceptControlMessage<TPrepared>(
+        msg: ALMessage,
+        decodePrepared: ALOutboundPreparedMessageDecoder<TPrepared>
+    ): Promise<ALOutboundControlAcceptance> {
         const parsed = parseALControlMessage(msg);
         if (!parsed) {
             return { handled: false };
@@ -59,10 +62,10 @@ export class ALOutboundAdmissionControlStore {
                     await this.acceptAck(tx, parsed.payload, Date.now());
                     break;
                 case 'nack':
-                    await this.acceptNack<TPrepared>(tx, parsed.payload, Date.now());
+                    await this.acceptNack(tx, parsed.payload, decodePrepared);
                     break;
                 case 'repair':
-                    await this.acceptRepair<TPrepared>(tx, parsed.payload, Date.now());
+                    await this.acceptRepair(tx, parsed.payload, decodePrepared);
                     break;
             }
             return { handled: true };
@@ -70,23 +73,36 @@ export class ALOutboundAdmissionControlStore {
     }
 
     async readAcks(msgId: string): Promise<readonly ALAckPayload[]> {
-        return toAcks(await this.backend.get<OutboundControlValue>(this.toAcksKey(msgId)));
+        return (await this.backend.read(
+            this.toAcksKey(msgId),
+            (value) => decodeALAdmissionControlValue(value, msgId, 'acks')
+        ))?.values ?? [];
     }
 
     async readNacks(msgId: string): Promise<readonly ALNackPayload[]> {
-        return toNacks(await this.backend.get<OutboundControlValue>(this.toNacksKey(msgId)));
+        return (await this.backend.read(
+            this.toNacksKey(msgId),
+            (value) => decodeALAdmissionControlValue(value, msgId, 'nacks')
+        ))?.values ?? [];
     }
 
     async readRepairs(msgId: string): Promise<readonly ALRepairPayload[]> {
-        return toRepairs(await this.backend.get<OutboundControlValue>(this.toRepairsKey(msgId)));
+        return (await this.backend.read(
+            this.toRepairsKey(msgId),
+            (value) => decodeALAdmissionControlValue(value, msgId, 'repairs')
+        ))?.values ?? [];
     }
 
     private async acceptAck(tx: ALAdmissionWriteContext, ack: ALAckPayload, nowMs: number): Promise<void> {
         const nextAcks = appendUniqueALAck({
-            current: toAcks(await tx.get<OutboundControlValue>(this.toAcksKey(ack.ackedMsgId))),
+            current: (await tx.read(this.toAcksKey(ack.ackedMsgId), (value) =>
+                decodeALAdmissionControlValue(value, ack.ackedMsgId, 'acks')))?.values ?? [],
             next: ack
         });
-        const current = await tx.get<ALOutboundPendingAckSnapshot>(this.toPendingAckKey(ack.ackedMsgId));
+        const current = await tx.read(
+            this.toPendingAckKey(ack.ackedMsgId),
+            (value) => decodeALOutboundPendingAck(value, ack.ackedMsgId)
+        );
         const pending = acceptALOutboundPendingAckSnapshot({ current, acks: nextAcks, ack });
         await tx.set(this.toAcksKey(ack.ackedMsgId), { kind: 'acks', values: nextAcks }, this.controlExpireAt(nowMs));
         if (pending) {
@@ -106,9 +122,14 @@ export class ALOutboundAdmissionControlStore {
     private async acceptNack<TPrepared>(
         tx: ALAdmissionWriteContext,
         nack: ALNackPayload,
-        nowMs: number
+        decodePrepared: ALOutboundPreparedMessageDecoder<TPrepared>
     ): Promise<void> {
-        const nextNacks = [...toNacks(await tx.get<OutboundControlValue>(this.toNacksKey(nack.msgId))), nack];
+        const nowMs = Date.now();
+        const prior = await tx.read(
+            this.toNacksKey(nack.msgId),
+            (value) => decodeALAdmissionControlValue(value, nack.msgId, 'nacks')
+        );
+        const nextNacks = [...(prior?.values ?? []), nack];
         await tx.set(this.toNacksKey(nack.msgId), { kind: 'nacks', values: nextNacks }, this.controlExpireAt(nowMs));
         if (nack.reason === 'expired' || nack.reason === 'unauthorized' || nack.reason === 'stale') {
             await tx.remove(this.toPendingAckKey(nack.msgId));
@@ -123,7 +144,8 @@ export class ALOutboundAdmissionControlStore {
                     orderingTrackKey: nack.orderingKey,
                     missingSeqs: nack.missingSeqs ?? [],
                     failedPeerIds: []
-                }, nack.observedAtEpochMs)
+                }, nack.observedAtEpochMs),
+                decodePrepared
             );
         }
         await this.bumpOwnerVersion(tx, nack.msgId);
@@ -132,9 +154,14 @@ export class ALOutboundAdmissionControlStore {
     private async acceptRepair<TPrepared>(
         tx: ALAdmissionWriteContext,
         repair: ALRepairPayload,
-        nowMs: number
+        decodePrepared: ALOutboundPreparedMessageDecoder<TPrepared>
     ): Promise<void> {
-        const nextRepairs = [...toRepairs(await tx.get<OutboundControlValue>(this.toRepairsKey(repair.msgId))), repair];
+        const nowMs = Date.now();
+        const prior = await tx.read(
+            this.toRepairsKey(repair.msgId),
+            (value) => decodeALAdmissionControlValue(value, repair.msgId, 'repairs')
+        );
+        const nextRepairs = [...(prior?.values ?? []), repair];
         await tx.set(
             this.toRepairsKey(repair.msgId),
             { kind: 'repairs', values: nextRepairs },
@@ -148,18 +175,20 @@ export class ALOutboundAdmissionControlStore {
                 orderingTrackKey: repair.orderingKey,
                 missingSeqs: repair.missingSeqs ?? [],
                 failedPeerIds: []
-            }, repair.observedAtEpochMs)
+            }, repair.observedAtEpochMs),
+            decodePrepared
         );
         await this.bumpOwnerVersion(tx, repair.msgId);
     }
 
     private async bumpOwnerVersion(tx: ALAdmissionWriteContext, msgId: string): Promise<void> {
-        const senderId = await tx.get<string>(`${this.namespace}:msg-owner:${msgId}`);
+        const senderId = await tx.read(`${this.namespace}:msg-owner:${msgId}`, decodeALAdmissionString);
         if (!senderId) {
             return;
         }
         const versionKey = `${this.namespace}:version:${senderId}`;
-        const version = (await tx.get<ALOutboundVersionedClientRecord>(versionKey))?.version ?? 0;
+        const version =
+            (await tx.read(versionKey, (value) => decodeALAdmissionClientRecord(value, senderId)))?.version ?? 0;
         await tx.set(
             versionKey,
             { senderId, version: version + 1 },
@@ -205,14 +234,4 @@ export class ALOutboundAdmissionControlStore {
     private toRepairAttemptKey(msgId: string): string {
         return `${this.namespace}:repair-attempt:${msgId}`;
     }
-}
-
-function toAcks(value: OutboundControlValue | undefined): readonly ALAckPayload[] {
-    return value?.kind === 'acks' ? value.values : [];
-}
-function toNacks(value: OutboundControlValue | undefined): readonly ALNackPayload[] {
-    return value?.kind === 'nacks' ? value.values : [];
-}
-function toRepairs(value: OutboundControlValue | undefined): readonly ALRepairPayload[] {
-    return value?.kind === 'repairs' ? value.values : [];
 }

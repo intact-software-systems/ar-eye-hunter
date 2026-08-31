@@ -11,7 +11,12 @@ export interface CreateDefaultALOutboundMessageRuntimeDependencies<TPrepared>
         DefaultALOutboundRuntimeResourceInput,
         Pick<
             ALOutboundMessageRuntime.Dependencies<TPrepared>,
-            'outbox' | 'toOutboxEntry' | 'readMessageFromEntry' | 'planOutgoingMessage' | 'sendPreparedMessage'
+            | 'outbox'
+            | 'toOutboxEntry'
+            | 'readMessageFromEntry'
+            | 'planOutgoingMessage'
+            | 'sendPreparedMessage'
+            | 'decodePreparedMessage'
         >,
         Partial<
             Pick<

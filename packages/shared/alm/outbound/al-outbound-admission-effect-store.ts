@@ -1,12 +1,14 @@
+import type { ALAdmissionBackend, ALAdmissionWriteContext } from '../al-admission-backend.ts';
 import { resolveExplicitOutboundMessageExpireAtMs } from '../ALMessageExpiry.ts';
 import type { NormalizedALRuntimeStoreRetentionConfig } from '../ALStoreRetention.ts';
 import { resolveExpireAtTimestampWithFallback, toExpireAtTimestampFromNow } from '../ALStoreRetention.ts';
-import type { ALAdmissionBackend, ALAdmissionWriteContext } from '../al-admission-backend.ts';
 import type {
     ALOutboundDurableEffect,
     ALOutboundDurableEffectWrite,
+    ALOutboundPreparedMessageDecoder,
     ALPersistedOutboundEffect
 } from './al-outbound-admission-store.ts';
+import { decodeALOutboundEffect, encodeALOutboundEffect } from './al-outbound-effect-validation.ts';
 
 export interface ClaimALOutboundEffectsInput {
     readonly workerId: string;
@@ -43,7 +45,8 @@ export class ALOutboundAdmissionEffectStore {
 
     async persistEffect<TPrepared>(
         tx: ALAdmissionWriteContext,
-        effect: ALOutboundDurableEffectWrite<TPrepared>
+        effect: ALOutboundDurableEffectWrite<TPrepared>,
+        decodePrepared: ALOutboundPreparedMessageDecoder<TPrepared>
     ): Promise<void> {
         const expireAtTimestamp = effect.expireAtTimestamp ?? this.resolveExpireAtTimestamp(effect.payload);
         if (expireAtTimestamp <= Date.now()) {
@@ -51,7 +54,7 @@ export class ALOutboundAdmissionEffectStore {
         }
 
         const key = this.toEffectKey(effect.effectId);
-        const existing = await tx.get<ALPersistedOutboundEffect<TPrepared>>(key);
+        const existing = await tx.read(key, (value) => decodeALOutboundEffect(value, effect.effectId, decodePrepared));
         if (existing) {
             return;
         }
@@ -59,7 +62,7 @@ export class ALOutboundAdmissionEffectStore {
         const nowMs = Date.now();
         await tx.set(
             key,
-            {
+            encodeALOutboundEffect({
                 effectId: effect.effectId,
                 payload: effect.payload,
                 status: 'pending',
@@ -67,20 +70,27 @@ export class ALOutboundAdmissionEffectStore {
                 retryAtMs: effect.retryAtMs ?? nowMs,
                 updatedAtMs: nowMs,
                 expireAtTimestamp
-            } satisfies ALPersistedOutboundEffect<TPrepared>,
+            }),
             expireAtTimestamp
         );
     }
 
     async claimReadyEffects<TPrepared>(
-        input: ClaimALOutboundEffectsInput
+        input: ClaimALOutboundEffectsInput,
+        decodePrepared: ALOutboundPreparedMessageDecoder<TPrepared>
     ): Promise<readonly ALPersistedOutboundEffect<TPrepared>[]> {
         if (input.maxCount <= 0) {
             return [];
         }
 
         return await this.backend.write(async (tx) => {
-            const effects = [...await tx.list<ALPersistedOutboundEffect<TPrepared>>(this.toEffectPrefix())]
+            const effects = [
+                ...await tx.list(
+                    this.toEffectPrefix(),
+                    (value, key) =>
+                        decodeALOutboundEffect(value, key.slice(this.toEffectPrefix().length), decodePrepared)
+                )
+            ]
                 .map((entry) => entry.value)
                 .sort((left, right) => left.retryAtMs - right.retryAtMs || left.effectId.localeCompare(right.effectId));
             const claimed: ALPersistedOutboundEffect<TPrepared>[] = [];
@@ -100,37 +110,49 @@ export class ALOutboundAdmissionEffectStore {
                     leaseUntilMs: input.nowMs + input.leaseMs,
                     updatedAtMs: input.nowMs
                 };
-                await tx.set(this.toEffectKey(effect.effectId), claimedEffect, effect.expireAtTimestamp);
+                await tx.set(
+                    this.toEffectKey(effect.effectId),
+                    encodeALOutboundEffect(claimedEffect),
+                    effect.expireAtTimestamp
+                );
                 claimed.push(claimedEffect);
             }
             return claimed;
         });
     }
 
-    async completeEffect(
+    async completeEffect<TPrepared>(
         effectId: string,
-        workerId: string
+        workerId: string,
+        decodePrepared: ALOutboundPreparedMessageDecoder<TPrepared>
     ): Promise<void> {
         await this.backend.write(async (tx) => {
-            const current = await tx.get<ALPersistedOutboundEffect<never>>(this.toEffectKey(effectId));
+            const current = await tx.read(
+                this.toEffectKey(effectId),
+                (value) => decodeALOutboundEffect(value, effectId, decodePrepared)
+            );
             if (current?.leaseOwner === workerId) {
                 await tx.remove(this.toEffectKey(effectId));
             }
         });
     }
 
-    async rescheduleEffect(
-        input: RescheduleALOutboundEffectInput
+    async rescheduleEffect<TPrepared>(
+        input: RescheduleALOutboundEffectInput,
+        decodePrepared: ALOutboundPreparedMessageDecoder<TPrepared>
     ): Promise<void> {
         await this.backend.write(async (tx) => {
-            const current = await tx.get<ALPersistedOutboundEffect<never>>(this.toEffectKey(input.effectId));
+            const current = await tx.read(
+                this.toEffectKey(input.effectId),
+                (value) => decodeALOutboundEffect(value, input.effectId, decodePrepared)
+            );
             if (current?.leaseOwner !== input.workerId) {
                 return;
             }
 
             await tx.set(
                 this.toEffectKey(input.effectId),
-                {
+                encodeALOutboundEffect({
                     ...current,
                     status: 'pending',
                     retryAtMs: input.retryAtMs,
@@ -138,16 +160,21 @@ export class ALOutboundAdmissionEffectStore {
                     leaseUntilMs: undefined,
                     lastError: input.lastError,
                     updatedAtMs: Date.now()
-                } satisfies ALPersistedOutboundEffect<never>,
+                }),
                 current.expireAtTimestamp
             );
         });
     }
 
-    async peekNextReadyAt(): Promise<number | undefined> {
+    async peekNextReadyAt<TPrepared>(
+        decodePrepared: ALOutboundPreparedMessageDecoder<TPrepared>
+    ): Promise<number | undefined> {
         let nextAt: number | undefined;
         for (
-            const { value: effect } of await this.backend.list<ALPersistedOutboundEffect<never>>(this.toEffectPrefix())
+            const { value: effect } of await this.backend.list(
+                this.toEffectPrefix(),
+                (value, key) => decodeALOutboundEffect(value, key.slice(this.toEffectPrefix().length), decodePrepared)
+            )
         ) {
             const candidateAt = effect.status === 'running' ? effect.leaseUntilMs : effect.retryAtMs;
             if (candidateAt === undefined) {

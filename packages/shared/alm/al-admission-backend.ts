@@ -1,15 +1,17 @@
-import { openIndexedDbWithStore } from '../persistence/openIndexedDb.ts';
 import type { PersistenceProvider } from '../persistence/PersistenceProvider.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '../persistence/PersistenceProvider.ts';
 
-interface StoredValue {
+import { decodeALAdmissionValue, type ALAdmissionDecoder } from './al-admission-decoder.ts';
+import { decodeALAdmissionNumber, decodeALAdmissionRecord } from './al-admission-value-validation.ts';
+
+export interface ALAdmissionStoredValue {
     readonly key: string;
     readonly value: unknown;
     readonly expireAtTimestamp: number;
 }
 
 export interface ALAdmissionMemoryState {
-    readonly data: Map<string, StoredValue>;
+    readonly data: Map<string, ALAdmissionStoredValue>;
     writeTail: Promise<void>;
 }
 
@@ -20,14 +22,14 @@ export interface ALAdmissionBackendEntry<V> {
 
 export interface ALAdmissionBackend {
     ready(): Promise<void>;
-    get<V>(key: string): Promise<V | undefined>;
-    list<V>(prefix: string): Promise<readonly ALAdmissionBackendEntry<V>[]>;
+    read<V>(key: string, decode: ALAdmissionDecoder<V>): Promise<V | undefined>;
+    list<V>(prefix: string, decode: ALAdmissionDecoder<V>): Promise<readonly ALAdmissionBackendEntry<V>[]>;
     write<T>(fn: (tx: ALAdmissionWriteContext) => Promise<T>): Promise<T>;
 }
 
 export interface ALAdmissionWriteContext {
-    get<V>(key: string): Promise<V | undefined>;
-    list<V>(prefix: string): Promise<readonly ALAdmissionBackendEntry<V>[]>;
+    read<V>(key: string, decode: ALAdmissionDecoder<V>): Promise<V | undefined>;
+    list<V>(prefix: string, decode: ALAdmissionDecoder<V>): Promise<readonly ALAdmissionBackendEntry<V>[]>;
     set<V>(key: string, value: V, expireAtTimestamp?: number): Promise<void>;
     remove(key: string): Promise<void>;
 }
@@ -36,53 +38,60 @@ const providerWriteTailByCoordinationKey = new Map<string, Promise<void>>();
 
 export function createInMemoryALAdmissionState(): ALAdmissionMemoryState {
     return {
-        data: new Map<string, StoredValue>(),
+        data: new Map<string, ALAdmissionStoredValue>(),
         writeTail: Promise.resolve()
     };
 }
 
 export class InMemoryAdmissionBackend implements ALAdmissionBackend {
     private readonly state: ALAdmissionMemoryState;
+    private readonly nowMs: () => number;
 
     constructor(
-        state: ALAdmissionMemoryState
+        state: ALAdmissionMemoryState,
+        nowMs: () => number
     ) {
         this.state = state;
+        this.nowMs = nowMs;
     }
 
     async ready(): Promise<void> {
     }
 
-    async get<V>(key: string): Promise<V | undefined> {
-        const stored = this.state.data.get(key);
-        if (!stored) {
+    async read<V>(key: string, decode: ALAdmissionDecoder<V>): Promise<V | undefined> {
+        const value = this.state.data.get(key);
+        if (value === undefined) {
             return undefined;
         }
+        const stored = decodeALAdmissionValue(value, key, decodeALAdmissionStoredValue);
+        const decoded = decodeALAdmissionValue(stored.value, key, decode);
 
-        if (isExpired(stored.expireAtTimestamp)) {
+        if (stored.expireAtTimestamp <= this.nowMs()) {
             this.state.data.delete(key);
             return undefined;
         }
 
-        return stored.value as V;
+        return decoded;
     }
 
-    async list<V>(prefix: string): Promise<readonly ALAdmissionBackendEntry<V>[]> {
+    async list<V>(prefix: string, decode: ALAdmissionDecoder<V>): Promise<readonly ALAdmissionBackendEntry<V>[]> {
         const entries: ALAdmissionBackendEntry<V>[] = [];
 
-        for (const [key, stored] of this.state.data.entries()) {
+        for (const [key, value] of this.state.data.entries()) {
             if (!key.startsWith(prefix)) {
                 continue;
             }
+            const stored = decodeALAdmissionValue(value, key, decodeALAdmissionStoredValue);
+            const decoded = decodeALAdmissionValue(stored.value, key, decode);
 
-            if (isExpired(stored.expireAtTimestamp)) {
+            if (stored.expireAtTimestamp <= this.nowMs()) {
                 this.state.data.delete(key);
                 continue;
             }
 
             entries.push({
                 key,
-                value: stored.value as V
+                value: decoded
             });
         }
 
@@ -99,9 +108,9 @@ export class InMemoryAdmissionBackend implements ALAdmissionBackend {
         await previous;
 
         try {
-            return await fn({
-                get: async (key) => await this.get(key),
-                list: async (prefix) => await this.list(prefix),
+            const pending = new ALAdmissionWriteBuffer({
+                read: async (key, decode) => await this.read(key, decode),
+                list: async (prefix, decode) => await this.list(prefix, decode),
                 set: async (key, value, expireAtTimestamp = NEVER_EXPIRE_AT_TIMESTAMP) => {
                     this.state.data.set(
                         key,
@@ -115,7 +124,10 @@ export class InMemoryAdmissionBackend implements ALAdmissionBackend {
                 remove: async (key) => {
                     this.state.data.delete(key);
                 }
-            });
+            }, this.nowMs);
+            const result = await fn(pending);
+            await pending.flush();
+            return result;
         }
         finally {
             release?.();
@@ -123,171 +135,30 @@ export class InMemoryAdmissionBackend implements ALAdmissionBackend {
     }
 }
 
-export class IndexedDbAdmissionBackend implements ALAdmissionBackend {
-    private dbPromise?: Promise<IDBDatabase>;
-
-    private readonly dbName: string;
-    private readonly storeName: string;
-
-    constructor(
-        dbName: string,
-        storeName: string
-    ) {
-        this.dbName = dbName;
-        this.storeName = storeName;
-    }
-
-    async ready(): Promise<void> {
-        await this.openDb();
-    }
-
-    async get<V>(key: string): Promise<V | undefined> {
-        const db = await this.openDb();
-        const tx = db.transaction(this.storeName, 'readwrite');
-        const store = tx.objectStore(this.storeName);
-        const stored = await requestToPromise<StoredValue | undefined>(store.get(key));
-        if (!stored) {
-            await transactionDone(tx);
-            return undefined;
-        }
-
-        if (isExpired(stored.expireAtTimestamp)) {
-            store.delete(key);
-            await transactionDone(tx);
-            return undefined;
-        }
-
-        await transactionDone(tx);
-        return stored.value as V;
-    }
-
-    async list<V>(prefix: string): Promise<readonly ALAdmissionBackendEntry<V>[]> {
-        const db = await this.openDb();
-        const tx = db.transaction(this.storeName, 'readwrite');
-        const store = tx.objectStore(this.storeName);
-        const values: ALAdmissionBackendEntry<V>[] = [];
-
-        await cursorEach(store, async (cursor) => {
-            const stored = cursor.value as StoredValue;
-            if (!stored.key.startsWith(prefix)) {
-                return;
-            }
-
-            if (isExpired(stored.expireAtTimestamp)) {
-                cursor.delete();
-                return;
-            }
-
-            values.push({
-                key: stored.key,
-                value: stored.value as V
-            });
-        });
-
-        await transactionDone(tx);
-        return values;
-    }
-
-    async write<T>(fn: (tx: ALAdmissionWriteContext) => Promise<T>): Promise<T> {
-        const db = await this.openDb();
-        const tx = db.transaction(this.storeName, 'readwrite');
-        const store = tx.objectStore(this.storeName);
-
-        const result = await fn({
-            get: async <V>(key: string): Promise<V | undefined> => {
-                const stored = await requestToPromise<StoredValue | undefined>(store.get(key));
-                if (!stored) {
-                    return undefined;
-                }
-
-                if (isExpired(stored.expireAtTimestamp)) {
-                    store.delete(key);
-                    return undefined;
-                }
-
-                return stored.value as V;
-            },
-            list: async <V>(prefix: string): Promise<readonly ALAdmissionBackendEntry<V>[]> => {
-                const values: ALAdmissionBackendEntry<V>[] = [];
-                await cursorEach(store, async (cursor) => {
-                    const stored = cursor.value as StoredValue;
-                    if (!stored.key.startsWith(prefix)) {
-                        return;
-                    }
-
-                    if (isExpired(stored.expireAtTimestamp)) {
-                        cursor.delete();
-                        return;
-                    }
-
-                    values.push({
-                        key: stored.key,
-                        value: stored.value as V
-                    });
-                });
-                return values;
-            },
-            set: async (key, value, expireAtTimestamp = NEVER_EXPIRE_AT_TIMESTAMP) => {
-                await requestToPromise(
-                    store.put(
-                        {
-                            key,
-                            value,
-                            expireAtTimestamp
-                        } satisfies StoredValue
-                    )
-                );
-            },
-            remove: async (key) => {
-                await requestToPromise(store.delete(key));
-            }
-        });
-
-        await transactionDone(tx);
-        return result;
-    }
-
-    private async openDb(): Promise<IDBDatabase> {
-        if (!this.dbPromise) {
-            this.dbPromise = openIndexedDbWithStore(
-                this.dbName,
-                {
-                    name: this.storeName,
-                    keyPath: 'key'
-                }
-            ).then((db) => {
-                db.onversionchange = () => {
-                    db.close();
-                    this.dbPromise = undefined;
-                };
-                return db;
-            });
-        }
-
-        return await this.dbPromise;
-    }
-}
-
 export class PersistenceProviderAdmissionBackend implements ALAdmissionBackend {
     private readonly provider: PersistenceProvider<string, unknown>;
     private readonly coordinationKey: string;
+    private readonly nowMs: () => number;
 
     constructor(
         provider: PersistenceProvider<string, unknown>,
-        coordinationKey: string
+        coordinationKey: string,
+        nowMs: () => number
     ) {
         this.provider = provider;
         this.coordinationKey = coordinationKey;
+        this.nowMs = nowMs;
     }
 
     async ready(): Promise<void> {
     }
 
-    async get<V>(key: string): Promise<V | undefined> {
-        return await this.provider.getItem(key) as V | undefined;
+    async read<V>(key: string, decode: ALAdmissionDecoder<V>): Promise<V | undefined> {
+        const value = await this.provider.getItem(key);
+        return value === undefined ? undefined : decodeALAdmissionValue(value, key, decode);
     }
 
-    async list<V>(prefix: string): Promise<readonly ALAdmissionBackendEntry<V>[]> {
+    async list<V>(prefix: string, decode: ALAdmissionDecoder<V>): Promise<readonly ALAdmissionBackendEntry<V>[]> {
         const entries: ALAdmissionBackendEntry<V>[] = [];
 
         for (const key of await this.provider.getAllKeys()) {
@@ -302,7 +173,7 @@ export class PersistenceProviderAdmissionBackend implements ALAdmissionBackend {
 
             entries.push({
                 key,
-                value: value as V
+                value: decodeALAdmissionValue(value, key, decode)
             });
         }
 
@@ -321,9 +192,9 @@ export class PersistenceProviderAdmissionBackend implements ALAdmissionBackend {
         await previous;
 
         try {
-            return await fn({
-                get: async (key) => await this.get(key),
-                list: async (prefix) => await this.list(prefix),
+            const pending = new ALAdmissionWriteBuffer({
+                read: async (key, decode) => await this.read(key, decode),
+                list: async (prefix, decode) => await this.list(prefix, decode),
                 set: async (key, value, expireAtTimestamp = NEVER_EXPIRE_AT_TIMESTAMP) => {
                     await this.provider.setItem(
                         key,
@@ -336,7 +207,10 @@ export class PersistenceProviderAdmissionBackend implements ALAdmissionBackend {
                 remove: async (key) => {
                     await this.provider.removeItem(key);
                 }
-            });
+            }, this.nowMs);
+            const result = await fn(pending);
+            await pending.flush();
+            return result;
         }
         finally {
             release?.();
@@ -347,46 +221,81 @@ export class PersistenceProviderAdmissionBackend implements ALAdmissionBackend {
     }
 }
 
-function isExpired(expireAtTimestamp: number): boolean {
-    return !Number.isFinite(expireAtTimestamp) || expireAtTimestamp <= Date.now();
-}
+class ALAdmissionWriteBuffer implements ALAdmissionWriteContext {
+    private readonly pending = new Map<string, ALAdmissionStoredValue | undefined>();
+    private readonly storage: ALAdmissionWriteContext;
+    private readonly nowMs: () => number;
 
-async function requestToPromise<T>(
-    request: IDBRequest<T>
-): Promise<T> {
-    return await new Promise<T>((resolve, reject) => {
-        request.onsuccess = () => resolve(request.result);
-        request.onerror = () => reject(request.error ?? new Error('IndexedDB request failed'));
-    });
-}
+    constructor(storage: ALAdmissionWriteContext, nowMs: () => number) {
+        this.storage = storage;
+        this.nowMs = nowMs;
+    }
 
-async function cursorEach(
-    store: IDBObjectStore,
-    handler: (cursor: IDBCursorWithValue) => Promise<void> | void
-): Promise<void> {
-    await new Promise<void>((resolve, reject) => {
-        const request = store.openCursor();
-        request.onerror = () => reject(request.error ?? new Error('IndexedDB cursor failed'));
-        request.onsuccess = () => {
-            const cursor = request.result;
-            if (!cursor) {
-                resolve();
-                return;
+    async read<V>(key: string, decode: ALAdmissionDecoder<V>): Promise<V | undefined> {
+        if (!this.pending.has(key)) {
+            return await this.storage.read(key, decode);
+        }
+        const stored = this.pending.get(key);
+        if (!stored) {
+            return undefined;
+        }
+        const value = decodeALAdmissionValue(stored.value, key, decode);
+        return stored.expireAtTimestamp <= this.nowMs() ? undefined : value;
+    }
+
+    async list<V>(prefix: string, decode: ALAdmissionDecoder<V>): Promise<readonly ALAdmissionBackendEntry<V>[]> {
+        const values = new Map<string, V>();
+        const entries = await this.storage.list(prefix, (value, key) =>
+            this.pending.has(key)
+                ? { kind: 'shadowed' as const }
+                : { kind: 'decoded' as const, value: decodeALAdmissionValue(value, key, decode) });
+        for (const entry of entries) {
+            if (entry.value.kind === 'decoded') {
+                values.set(entry.key, entry.value.value);
             }
+        }
+        for (const [key, stored] of this.pending) {
+            if (!key.startsWith(prefix)) {
+                continue;
+            }
+            if (!stored) {
+                values.delete(key);
+                continue;
+            }
+            const value = decodeALAdmissionValue(stored.value, key, decode);
+            if (stored.expireAtTimestamp <= this.nowMs()) {
+                values.delete(key);
+                continue;
+            }
+            values.set(key, value);
+        }
+        return [...values].map(([key, value]) => ({ key, value }));
+    }
 
-            Promise.resolve(handler(cursor))
-                .then(() => cursor.continue())
-                .catch(reject);
-        };
-    });
+    async set<V>(key: string, value: V, expireAtTimestamp = NEVER_EXPIRE_AT_TIMESTAMP): Promise<void> {
+        this.pending.set(key, { key, value, expireAtTimestamp: decodeALAdmissionNumber(expireAtTimestamp) });
+    }
+
+    async remove(key: string): Promise<void> {
+        this.pending.set(key, undefined);
+    }
+
+    async flush(): Promise<void> {
+        for (const [key, stored] of this.pending) {
+            if (stored) {
+                await this.storage.set(key, stored.value, stored.expireAtTimestamp);
+            }
+            else {
+                await this.storage.remove(key);
+            }
+        }
+    }
 }
 
-async function transactionDone(
-    tx: IDBTransaction
-): Promise<void> {
-    await new Promise<void>((resolve, reject) => {
-        tx.oncomplete = () => resolve();
-        tx.onabort = () => reject(tx.error ?? new Error('IndexedDB transaction aborted'));
-        tx.onerror = () => reject(tx.error ?? new Error('IndexedDB transaction failed'));
-    });
+export function decodeALAdmissionStoredValue(value: unknown, key: string): ALAdmissionStoredValue {
+    const record = decodeALAdmissionRecord(value, ['key', 'value', 'expireAtTimestamp']);
+    if (record.key !== key) {
+        throw new TypeError('Stored admission envelope belongs to another key');
+    }
+    return { key, value: record.value, expireAtTimestamp: decodeALAdmissionNumber(record.expireAtTimestamp) };
 }

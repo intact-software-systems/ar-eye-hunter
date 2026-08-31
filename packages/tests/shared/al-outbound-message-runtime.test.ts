@@ -1,54 +1,28 @@
-import {
-    afterEach,
-    describe,
-    expect,
-    it,
-    onTestFinished,
-    vi
-} from 'vitest';
+import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { toALOrderingTrackKey } from '@shared/al-contracts/al-runtime.ts';
-import { InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
-import { ALAdmissionBackendConflictError } from '@shared/alm/ALAdmissionBackendConflictError.ts';
-import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
-import type {
-    ALOutboundRuntimeDiagnosticsEvent,
-    ALOutboundRuntimeDiagnosticsSink,
-    ALOutboundRuntimeStores
-} from '@shared/alm/outbound/al-outbound-message-runtime.ts';
-import { createDefaultALOutboundMessageRuntime } from '@shared/alm/outbound/create-default-al-outbound-message-runtime.ts';
+import type { ALOutboundRuntimeDiagnosticsEvent } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import {
     ALOutboundMessageRuntime,
-    createALOutboundAdmissionStore,
-    createInMemoryALAdmissionState,
     EntityStatus,
     InMemoryQueueBox,
     newALAckControlMessage,
     newALNackControlMessage,
     newALUnicastMessage,
-    QueueBoxUtilities,
-    type ALMessage,
-    type ALOutboundAdmissionStore,
-    type ALOutboundCommitBundle,
-    type ALOutboundPlanner,
-    type ClaimALOutboundEffectsInput,
-    type ResourceEntry
+    QueueBoxUtilities
 } from '@shared/mod.ts';
 
-interface OutboundTestPayload {
-    readonly [field: string]: string;
-}
-
-interface OutboundTestRuntimeInput {
-    readonly outbox?: InMemoryQueueBox;
-    readonly stores?: ALOutboundRuntimeStores;
-    readonly diagnostics?: ALOutboundRuntimeDiagnosticsSink;
-    readonly nowMs?: () => number;
-    readonly planOutgoingMessage: ALOutboundMessageRuntime.Dependencies<OutboundTestPayload>['planOutgoingMessage'];
-    readonly planRepairMessage?: ALOutboundMessageRuntime.Dependencies<OutboundTestPayload>['planRepairMessage'];
-    readonly sendPreparedMessage: ALOutboundMessageRuntime.Dependencies<OutboundTestPayload>['sendPreparedMessage'];
-}
+import {
+    createDefaultOutboundTestAdmissionStore,
+    createDefaultOutboundTestRuntime,
+    createOutboundMessage,
+    enqueueOutboundOrThrow,
+    firstValue,
+    reserveOutbox,
+    waitUntil
+} from './alm/outbound-runtime-test-fixture.ts';
+import { decodeOutboundTestPayload, type OutboundTestPayload } from './alm/outbound-test-payload.ts';
 
 describe('ALOutboundMessageRuntime', () => {
     afterEach(() => {
@@ -63,6 +37,7 @@ describe('ALOutboundMessageRuntime', () => {
         const sent: string[] = [];
         let nowMs = Date.now() + 1_000;
         const runtime = new ALOutboundMessageRuntime<OutboundTestPayload>({
+            decodePreparedMessage: decodeOutboundTestPayload,
             admissionStore,
             effectWorkerId: 'injected-outbound-worker',
             clock: { nowMs: () => nowMs },
@@ -90,13 +65,13 @@ describe('ALOutboundMessageRuntime', () => {
         onTestFinished(() => runtime.dispose());
 
         await runtime.enqueueIfAbsent(createOutboundMessage('injected-retry'));
-        expect(await admissionStore.peekNextEffectReadyAt()).toBe(nowMs + 25);
+        expect(await admissionStore.peekNextEffectReadyAt(decodeOutboundTestPayload)).toBe(nowMs + 25);
         nowMs += 25;
         await vi.advanceTimersByTimeAsync(25);
         expect(sent).toEqual(['injected-retry']);
         await vi.advanceTimersByTimeAsync(25);
         expect(sent).toEqual(['injected-retry', 'injected-retry']);
-        expect(await admissionStore.peekNextEffectReadyAt()).toBeUndefined();
+        expect(await admissionStore.peekNextEffectReadyAt(decodeOutboundTestPayload)).toBeUndefined();
     });
 
     it('returns no-route when the outbound planner drops enqueue', async () => {
@@ -235,7 +210,7 @@ describe('ALOutboundMessageRuntime', () => {
         expect(sent).toEqual([msg.id.msgId]);
         await vi.advanceTimersByTimeAsync(500);
         expect(sent).toEqual([msg.id.msgId]);
-        expect(await admissionStore.peekNextEffectReadyAt()).toBeUndefined();
+        expect(await admissionStore.peekNextEffectReadyAt(decodeOutboundTestPayload)).toBeUndefined();
         restarted.dispose();
     });
 
@@ -258,7 +233,7 @@ describe('ALOutboundMessageRuntime', () => {
         const result = await runtime.enqueueIfAbsent(createOutboundMessage('msg-no-targets'));
 
         expect(result.status).toBe('sent-immediate');
-        expect(await admissionStore.peekNextEffectReadyAt()).toBeUndefined();
+        expect(await admissionStore.peekNextEffectReadyAt(decodeOutboundTestPayload)).toBeUndefined();
         runtime.dispose();
         const restarted = createDefaultOutboundTestRuntime({
             stores: { admissionStore },
@@ -1118,589 +1093,4 @@ describe('ALOutboundMessageRuntime', () => {
         const storedMsg = decodePersistedALMessage(stored.resource);
         expect(storedMsg.id.msgId).toBe(msg.id.msgId);
     });
-
-    it('drains committed send effects after a restart when the first runtime crashes before drain', async () => {
-        const sent: Array<OutboundTestPayload> = [];
-        const admissionStore = createDefaultOutboundTestAdmissionStore();
-        const msg = createOutboundMessage('msg-crash-before-drain');
-        const runtime1 = createDefaultOutboundTestRuntime({
-            stores: {
-                admissionStore: createFlakyOutboundAdmissionStore(admissionStore, {
-                    claimReadyEffects: async () => []
-                })
-            },
-            sendPreparedMessage: async (prepared, phase) => {
-                sent.push({ ...prepared, phase });
-            },
-            planOutgoingMessage: (plannedMsg) => ({
-                persist: false,
-                preparedMessages: [{ kind: 'send', msgId: plannedMsg.id.msgId }]
-            })
-        });
-
-        await enqueueOutboundOrThrow(runtime1, msg);
-        runtime1.dispose();
-
-        expect(sent).toEqual([]);
-
-        const runtime2 = createDefaultOutboundTestRuntime({
-            stores: {
-                admissionStore
-            },
-            sendPreparedMessage: async (prepared, phase) => {
-                sent.push({ ...prepared, phase });
-            },
-            planOutgoingMessage: (plannedMsg) => ({
-                persist: false,
-                preparedMessages: [{ kind: 'send', msgId: plannedMsg.id.msgId }]
-            })
-        });
-
-        await runtime2.ready();
-
-        expect(sent).toEqual([
-            { kind: 'send', msgId: msg.id.msgId, phase: 'immediate' }
-        ]);
-        runtime2.dispose();
-    });
-
-    it('replays a sent effect when completion fails after transport send', async () => {
-        vi.useFakeTimers();
-
-        const sent: Array<OutboundTestPayload> = [];
-        const admissionStore = createDefaultOutboundTestAdmissionStore();
-        let failFirstComplete = true;
-        const msg = createOutboundMessage('msg-complete-fails-after-send');
-        const runtime = createDefaultOutboundTestRuntime({
-            stores: {
-                admissionStore: createFlakyOutboundAdmissionStore(admissionStore, {
-                    completeEffect: async (effectId, workerId) => {
-                        if (failFirstComplete) {
-                            failFirstComplete = false;
-                            throw new Error('complete failed after send');
-                        }
-
-                        await admissionStore.completeEffect(effectId, workerId);
-                    }
-                })
-            },
-            sendPreparedMessage: async (prepared, phase) => {
-                sent.push({ ...prepared, phase });
-            },
-            planOutgoingMessage: (plannedMsg) => ({
-                persist: false,
-                preparedMessages: [{ kind: 'send', msgId: plannedMsg.id.msgId }]
-            })
-        });
-
-        await enqueueOutboundOrThrow(runtime, msg);
-        expect(sent).toEqual([
-            { kind: 'send', msgId: msg.id.msgId, phase: 'immediate' }
-        ]);
-
-        await vi.advanceTimersByTimeAsync(49);
-        expect(sent).toHaveLength(1);
-
-        await vi.advanceTimersByTimeAsync(1);
-        expect(sent).toEqual([
-            { kind: 'send', msgId: msg.id.msgId, phase: 'immediate' },
-            { kind: 'send', msgId: msg.id.msgId, phase: 'immediate' }
-        ]);
-        runtime.dispose();
-    });
-
-    it('lets only one runtime claim the same committed send effect', async () => {
-        const sent: Array<OutboundTestPayload> = [];
-        const admissionStore = createDefaultOutboundTestAdmissionStore();
-        const msg = createOutboundMessage('msg-single-claim');
-        const runtime1 = createDefaultOutboundTestRuntime({
-            stores: {
-                admissionStore: createFlakyOutboundAdmissionStore(admissionStore, {
-                    claimReadyEffects: async () => []
-                })
-            },
-            sendPreparedMessage: async (prepared, phase) => {
-                sent.push({ ...prepared, phase });
-            },
-            planOutgoingMessage: (plannedMsg) => ({
-                persist: false,
-                preparedMessages: [{ kind: 'send', msgId: plannedMsg.id.msgId }]
-            })
-        });
-
-        await enqueueOutboundOrThrow(runtime1, msg);
-        runtime1.dispose();
-        expect(sent).toEqual([]);
-
-        const sendStarted = Promise.withResolvers<void>();
-        const sendBarrier = Promise.withResolvers<void>();
-        const blockingSend: ALOutboundMessageRuntime.Dependencies<OutboundTestPayload>['sendPreparedMessage'] = async (
-            prepared,
-            phase
-        ) => {
-            sent.push({ ...prepared, phase });
-            sendStarted.resolve();
-            await sendBarrier.promise;
-        };
-        const runtime2 = createDefaultOutboundTestRuntime({
-            stores: {
-                admissionStore
-            },
-            sendPreparedMessage: blockingSend,
-            planOutgoingMessage: (plannedMsg) => ({
-                persist: false,
-                preparedMessages: [{ kind: 'send', msgId: plannedMsg.id.msgId }]
-            })
-        });
-        const runtime3 = createDefaultOutboundTestRuntime({
-            stores: {
-                admissionStore
-            },
-            sendPreparedMessage: blockingSend,
-            planOutgoingMessage: (plannedMsg) => ({
-                persist: false,
-                preparedMessages: [{ kind: 'send', msgId: plannedMsg.id.msgId }]
-            })
-        });
-        const drain = Promise.all([runtime2.ready(), runtime3.ready()]);
-
-        await sendStarted.promise;
-        await Promise.resolve();
-        expect(sent).toEqual([
-            { kind: 'send', msgId: msg.id.msgId, phase: 'immediate' }
-        ]);
-
-        sendBarrier.resolve();
-        await drain;
-        runtime2.dispose();
-        runtime3.dispose();
-    });
-
-    it('does not repair when an acknowledgement is accepted while the timeout effect is claimed', async () => {
-        vi.useFakeTimers();
-
-        const sent: Array<OutboundTestPayload> = [];
-        const admissionStore = createDefaultOutboundTestAdmissionStore();
-        const msg = createOutboundMessage('msg-ack-during-timeout');
-        let acceptedAckDuringTimeout = false;
-        const runtime = createDefaultOutboundTestRuntime({
-            stores: {
-                admissionStore: createFlakyOutboundAdmissionStore(admissionStore, {
-                    claimReadyEffects: async <TPrepared>(input: ClaimALOutboundEffectsInput) => {
-                        const effects = await admissionStore.claimReadyEffects<TPrepared>(input);
-                        if (
-                            !acceptedAckDuringTimeout &&
-                            effects.some((effect) => effect.payload.kind === 'ack-timeout')
-                        ) {
-                            acceptedAckDuringTimeout = true;
-                            await admissionStore.acceptControlMessage(
-                                newALAckControlMessage('peer-1', 'self', msg.id.msgId)
-                            );
-                        }
-
-                        return effects;
-                    }
-                })
-            },
-            sendPreparedMessage: async (prepared, phase) => {
-                sent.push({ ...prepared, phase });
-            },
-            planOutgoingMessage: (plannedMsg) => ({
-                persist: false,
-                preparedMessages: [{ kind: 'send', msgId: plannedMsg.id.msgId }],
-                ackTracking: {
-                    enabled: true,
-                    timeoutMs: 100,
-                    maxAttempts: 1,
-                    expectedPeerIds: ['peer-1']
-                },
-                repairTracking: {
-                    enabled: true,
-                    algo: 'retransmit',
-                    maxAttempts: 1
-                }
-            }),
-            planRepairMessage: async (plannedMsg, request) => ({
-                persist: false,
-                preparedMessages: [
-                    {
-                        kind: 'repair',
-                        msgId: plannedMsg.id.msgId,
-                        trigger: request.trigger
-                    }
-                ]
-            })
-        });
-
-        await enqueueOutboundOrThrow(runtime, msg);
-        expect(sent).toEqual([
-            { kind: 'send', msgId: msg.id.msgId, phase: 'immediate' }
-        ]);
-
-        await vi.advanceTimersByTimeAsync(100);
-
-        expect(acceptedAckDuringTimeout).toBe(true);
-        expect(sent).toEqual([
-            { kind: 'send', msgId: msg.id.msgId, phase: 'immediate' }
-        ]);
-        runtime.dispose();
-    });
-
-    it('recomputes from the latest read after a commit conflict', async () => {
-        vi.useFakeTimers();
-
-        const sent: Array<OutboundTestPayload> = [];
-        const admissionStore = createDefaultOutboundTestAdmissionStore();
-        const msg = createOutboundMessage('msg-conflict-recompute');
-        let rejectedFirstCommit = false;
-        const runtime = createDefaultOutboundTestRuntime({
-            stores: {
-                admissionStore: createFlakyOutboundAdmissionStore(admissionStore, {
-                    commitBundle: async <TPrepared>(bundle: ALOutboundCommitBundle<TPrepared>) => {
-                        if (!rejectedFirstCommit) {
-                            rejectedFirstCommit = true;
-                            await admissionStore.acceptControlMessage(
-                                newALAckControlMessage('peer-1', 'self', msg.id.msgId)
-                            );
-                            return 'conflict';
-                        }
-
-                        return await admissionStore.commitBundle(bundle);
-                    }
-                })
-            },
-            sendPreparedMessage: async (prepared, phase) => {
-                sent.push({ ...prepared, phase });
-            },
-            planOutgoingMessage: (plannedMsg) => ({
-                persist: false,
-                preparedMessages: [{ kind: 'send', msgId: plannedMsg.id.msgId }],
-                ackTracking: {
-                    enabled: true,
-                    timeoutMs: 100,
-                    maxAttempts: 1,
-                    expectedPeerIds: ['peer-1']
-                },
-                repairTracking: {
-                    enabled: true,
-                    algo: 'retransmit',
-                    maxAttempts: 1
-                }
-            }),
-            planRepairMessage: async (plannedMsg, request) => ({
-                persist: false,
-                preparedMessages: [
-                    {
-                        kind: 'repair',
-                        msgId: plannedMsg.id.msgId,
-                        trigger: request.trigger
-                    }
-                ]
-            })
-        });
-
-        const conflictEnqueue = enqueueOutboundOrThrow(runtime, msg);
-        await vi.advanceTimersByTimeAsync(10);
-        await conflictEnqueue;
-        await vi.advanceTimersByTimeAsync(200);
-
-        expect(rejectedFirstCommit).toBe(true);
-        expect(sent).toEqual([
-            { kind: 'send', msgId: msg.id.msgId, phase: 'immediate' }
-        ]);
-        runtime.dispose();
-    });
-
-    it('skips outbound enqueue after dispose without storing or sending', async () => {
-        const outbox = new InMemoryQueueBox();
-        const admissionStore = createDefaultOutboundTestAdmissionStore();
-        const sent: string[] = [];
-        const runtime = createDefaultOutboundTestRuntime({
-            outbox,
-            stores: { admissionStore },
-            planOutgoingMessage: (msg) => ({
-                persist: true,
-                preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }]
-            }),
-            sendPreparedMessage: async (prepared) => {
-                sent.push(String(prepared.msgId));
-            }
-        });
-        runtime.dispose();
-        const msg = createOutboundMessage('msg-after-dispose');
-        const result = await runtime.enqueueIfAbsent(msg);
-
-        expect(result).toMatchObject({
-            status: 'skipped',
-            reason: 'Outbound runtime is disposed.',
-            entries: []
-        });
-        expect(sent).toEqual([]);
-        expect(await reserveOutbox(outbox)).toEqual([]);
-        expect(await admissionStore.getSentMessage(msg.id.msgId)).toBeUndefined();
-    });
-
-    it('ignores control messages after dispose without bootstrapping durable effects', async () => {
-        const admissionStore = createDefaultOutboundTestAdmissionStore();
-        const sent: string[] = [];
-        const msg = createOutboundMessage('pending-before-dispose');
-        const payload = {
-            kind: 'send-prepared',
-            msg,
-            prepared: { kind: 'send', msgId: msg.id.msgId },
-            phase: 'immediate'
-        } as const;
-        await admissionStore.commitBundle({
-            senderId: 'self',
-            mutations: [],
-            durableEffects: [{ effectId: 'pending-before-dispose', payload }]
-        });
-        const runtime = createDefaultOutboundTestRuntime({
-            stores: { admissionStore },
-            sendPreparedMessage: async (prepared) => {
-                sent.push(String(prepared.msgId));
-            },
-            planOutgoingMessage: (msg) => ({
-                persist: false,
-                preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }]
-            })
-        });
-        runtime.dispose();
-
-        const handled = await runtime.acceptControlMessage(
-            newALNackControlMessage('peer-1', 'self', 'missing-msg', 'gap')
-        );
-
-        expect(handled).toBe(false);
-        expect(sent).toEqual([]);
-        const pending = await admissionStore.claimReadyEffects({
-            workerId: 'next-runtime',
-            maxCount: 10,
-            leaseMs: 100,
-            nowMs: Date.now()
-        });
-        expect(pending.map((effect) => effect.payload)).toEqual([payload]);
-    });
-
-    it('retries the complete control-message admission after optimistic conflicts', async () => {
-        vi.useFakeTimers();
-        const admissionStore = createDefaultOutboundTestAdmissionStore();
-        let attempts = 0;
-        const runtime = createDefaultOutboundTestRuntime({
-            stores: {
-                admissionStore: createFlakyOutboundAdmissionStore(admissionStore, {
-                    acceptControlMessage: async (msg) => {
-                        attempts += 1;
-                        if (attempts < 4) {
-                            throw new ALAdmissionBackendConflictError(
-                                'simulated outbound control conflict'
-                            );
-                        }
-                        return await admissionStore.acceptControlMessage(msg);
-                    }
-                })
-            },
-            sendPreparedMessage: async () => Promise.resolve(),
-            planOutgoingMessage: (msg) => ({
-                persist: false,
-                preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }]
-            })
-        });
-
-        const accepted = runtime.acceptControlMessage(
-            newALNackControlMessage('peer-1', 'self', 'missing-msg', 'expired')
-        );
-        await vi.runAllTimersAsync();
-
-        await expect(accepted).resolves.toBe(true);
-        expect(attempts).toBe(4);
-        runtime.dispose();
-    });
-
-    it('leaves an interrupted send leased until a new runtime can recover it', async () => {
-        vi.useFakeTimers();
-        const msg = createOutboundMessage('msg-dispose-during-effect');
-        const admissionStore = createDefaultOutboundTestAdmissionStore();
-        const sendStarted = Promise.withResolvers<void>();
-        const sendCompleted = Promise.withResolvers<void>();
-        const runtime = createDefaultOutboundTestRuntime({
-            stores: { admissionStore },
-            sendPreparedMessage: async () => {
-                sendStarted.resolve();
-                await sendCompleted.promise;
-                throw new Error('network closed');
-            },
-            planOutgoingMessage: (plannedMsg) => ({
-                persist: false,
-                preparedMessages: [{ kind: 'send', msgId: plannedMsg.id.msgId }]
-            })
-        });
-
-        const enqueue = enqueueOutboundOrThrow(runtime, msg);
-        await sendStarted.promise;
-        const leaseExpiresAt = await admissionStore.peekNextEffectReadyAt();
-        if (leaseExpiresAt === undefined) {
-            throw new Error('Expected the in-flight send to retain its durable lease');
-        }
-        expect(leaseExpiresAt).toBeGreaterThan(Date.now());
-        runtime.dispose();
-        sendCompleted.resolve();
-        await enqueue;
-        expect(await admissionStore.peekNextEffectReadyAt()).toBe(leaseExpiresAt);
-
-        const recovered: string[] = [];
-        const restarted = createDefaultOutboundTestRuntime({
-            stores: { admissionStore },
-            sendPreparedMessage: async (prepared) => {
-                recovered.push(String(prepared.msgId));
-            },
-            planOutgoingMessage: () => ({ persist: false, preparedMessages: [] })
-        });
-        await restarted.ready();
-        await vi.advanceTimersByTimeAsync(leaseExpiresAt - Date.now() - 1);
-        expect(recovered).toEqual([]);
-        await vi.advanceTimersByTimeAsync(1);
-        expect(recovered).toEqual([msg.id.msgId]);
-        expect(await admissionStore.peekNextEffectReadyAt()).toBeUndefined();
-        restarted.dispose();
-    });
 });
-
-async function enqueueOutboundOrThrow(
-    runtime: Pick<ALOutboundMessageRuntime<OutboundTestPayload>, 'enqueueIfAbsent'>,
-    msg: ALMessage
-): Promise<readonly ResourceEntry[]> {
-    const enqueued = await runtime.enqueueIfAbsent(msg);
-    if (enqueued.status === 'failed') {
-        throw new Error(enqueued.reason);
-    }
-
-    return enqueued.entries;
-}
-
-async function reserveOutbox(outbox: InMemoryQueueBox): Promise<readonly ResourceEntry[]> {
-    return [
-        ...(
-            await outbox.reserveEntries(
-                new Set(['outbox']),
-                new Set([EntityStatus.NEW]),
-                10
-            )
-        ).values()
-    ];
-}
-
-function createDefaultOutboundTestRuntime(options: OutboundTestRuntimeInput): ALOutboundMessageRuntime<OutboundTestPayload> {
-    const outbox = options.outbox ?? new InMemoryQueueBox(new Map());
-
-    const runtime = createDefaultALOutboundMessageRuntime<OutboundTestPayload>({
-        outbox,
-        stores: options.stores ?? { admissionStore: createDefaultOutboundTestAdmissionStore() },
-        diagnostics: options.diagnostics,
-        nowMs: options.nowMs ?? Date.now,
-        toOutboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox'),
-        readMessageFromEntry: (entry) => decodePersistedALMessage(entry.resource),
-        planOutgoingMessage: options.planOutgoingMessage,
-        planRepairMessage: options.planRepairMessage,
-        sendPreparedMessage: options.sendPreparedMessage
-    });
-    onTestFinished(() => runtime.dispose());
-    return runtime;
-}
-
-async function waitUntil(predicate: () => boolean): Promise<void> {
-    for (let i = 0; i < 20; i += 1) {
-        if (predicate()) {
-            return;
-        }
-        await new Promise((resolve) => setTimeout(resolve, 0));
-    }
-    expect(predicate()).toBe(true);
-}
-
-function createDefaultOutboundTestAdmissionStore(): ALOutboundAdmissionStore {
-    return createALOutboundAdmissionStore({
-        namespace: 'outbound-test',
-        supersedenceTrackTtlMs: 5 * 60_000,
-        backend: new InMemoryAdmissionBackend(createInMemoryALAdmissionState()),
-        retention: normalizeALRuntimeStoreRetention()
-    });
-}
-
-function createFlakyOutboundAdmissionStore(
-    inner: ALOutboundAdmissionStore,
-    hooks: Partial<
-        Pick<
-            ALOutboundAdmissionStore,
-            | 'acceptControlMessage'
-            | 'claimReadyEffects'
-            | 'commitBundle'
-            | 'completeEffect'
-            | 'rescheduleEffect'
-        >
-    >
-): ALOutboundAdmissionStore {
-    return {
-        ready: () => inner.ready(),
-        readOutgoingMessage: <TPrepared>(
-            msg: ALMessage,
-            planner: ALOutboundPlanner<TPrepared>
-        ) => inner.readOutgoingMessage<TPrepared>(msg, planner),
-        readRepairMessage: <TPrepared>(
-            msgId: string,
-            planner: ALOutboundPlanner<TPrepared>
-        ) => inner.readRepairMessage<TPrepared>(msgId, planner),
-        getSentMessage: (msgId: string) => inner.getSentMessage(msgId),
-        getAllSentMessages: () => inner.getAllSentMessages(),
-        getPendingAck: (msgId: string) => inner.getPendingAck(msgId),
-        commitBundle: <TPrepared>(bundle: ALOutboundCommitBundle<TPrepared>) =>
-            hooks.commitBundle
-                ? hooks.commitBundle<TPrepared>(bundle)
-                : inner.commitBundle<TPrepared>(bundle),
-        acceptControlMessage: <TPrepared>(msg: ALMessage) =>
-            hooks.acceptControlMessage
-                ? hooks.acceptControlMessage<TPrepared>(msg)
-                : inner.acceptControlMessage<TPrepared>(msg),
-        claimReadyEffects: <TPrepared>(input: ClaimALOutboundEffectsInput) =>
-            hooks.claimReadyEffects
-                ? hooks.claimReadyEffects<TPrepared>(input)
-                : inner.claimReadyEffects<TPrepared>(input),
-        completeEffect: (effectId: string, workerId: string) =>
-            hooks.completeEffect
-                ? hooks.completeEffect(effectId, workerId)
-                : inner.completeEffect(effectId, workerId),
-        rescheduleEffect: (input) =>
-            hooks.rescheduleEffect
-                ? hooks.rescheduleEffect(input)
-                : inner.rescheduleEffect(input),
-        peekNextEffectReadyAt: () => inner.peekNextEffectReadyAt()
-    };
-}
-
-function createOutboundMessage(
-    resourceId: string,
-    options?: { ttlMs?: number; }
-) {
-    return newALUnicastMessage(
-        'self',
-        {
-            topicId: 'chat',
-            resourceId,
-            contextId: 'conversation-1'
-        },
-        'peer-1',
-        'chat.private-text.v1',
-        {
-            text: resourceId
-        },
-        options
-    );
-}
-
-function firstValue<K, V>(map: Map<K, V>): V {
-    const first = map.values().next().value;
-    if (first === undefined) {
-        throw new Error('Expected at least one map value');
-    }
-    return first;
-}

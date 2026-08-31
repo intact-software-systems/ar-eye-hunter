@@ -1,5 +1,7 @@
 import { Temporal } from '@js-temporal/polyfill';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
+import { decodePersistedALRecord } from '@shared/al-contracts/al-message-persistence/persisted-al-value-validation.ts';
 import * as shared from '@shared/mod.ts';
 import type { WsServerTargetResolver } from '@shared/services/ws-queue-box-server/ws-queue-box-server-contracts.ts';
 import {
@@ -88,6 +90,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
                 text: 'broadcast'
             },
             {
+                groupRef: groupRef('room-1'),
                 exceptPeerIds: ['peer-2']
             }
         );
@@ -127,7 +130,8 @@ describe('WsQueueBoxServerService QoS runtime', () => {
                 'chat.message.v1',
                 {
                     text: 'partial'
-                }
+                },
+                { groupRef: groupRef('room-1') }
             );
 
             const result = service.sendToTargetsWithResult(msg);
@@ -178,7 +182,8 @@ describe('WsQueueBoxServerService QoS runtime', () => {
             'chat.message.v1',
             {
                 text: 'nobody hears this'
-            }
+            },
+            { groupRef: groupRef('room-1') }
         );
 
         const result = await service.enqueueOutboxIfAbsent(msg);
@@ -665,18 +670,15 @@ function createFakeWsServer(
     return new RecordingJsonWebSocketServer(options.failingConnectionIds ?? []);
 }
 
-interface RecordedMessage {
-    readonly id: Readonly<{ msgId: string; }>;
-    readonly payload: Readonly<{ typeId: string; }>;
-}
-
-interface RecordedSend {
-    readonly connectionId: string;
-    readonly data: RecordedMessage;
+namespace RecordingJsonWebSocketServer {
+    export interface RecordedSend {
+        readonly connectionId: string;
+        readonly data: ALMessage;
+    }
 }
 
 class RecordingJsonWebSocketServer extends JsonWebSocketServer {
-    readonly sent: RecordedSend[] = [];
+    readonly sent: RecordingJsonWebSocketServer.RecordedSend[] = [];
     private readonly failingConnectionIds: ReadonlySet<string>;
     private readonly sockets = new Map<string, ReceivingWebSocket>();
 
@@ -700,7 +702,7 @@ class RecordingJsonWebSocketServer extends JsonWebSocketServer {
         if (!this.connections.get(connectionId)?.isOpen) {
             throw new Error(`Connection is not open: ${connectionId}`);
         }
-        this.sent.push({ connectionId, data: parseRecordedMessage(encoded.text) });
+        this.sent.push({ connectionId, data: decodePersistedALMessage(encoded.text) });
     }
 
     async receive(message: ALMessage, connectionId: string): Promise<void> {
@@ -757,36 +759,12 @@ class ReceivingWebSocket extends EventTarget implements WebSocket {
     }
 }
 
-function parseRecordedMessage(serialized: string): RecordedMessage {
-    const value = JSON.parse(serialized);
-    if (typeof value !== 'object' || value === null) {
-        throw new TypeError('Test message must be an object');
-    }
-    const id = Reflect.get(value, 'id');
-    const payload = Reflect.get(value, 'payload');
-    if (
-        typeof id !== 'object' || id === null ||
-        typeof Reflect.get(id, 'msgId') !== 'string' ||
-        typeof payload !== 'object' || payload === null ||
-        typeof Reflect.get(payload, 'typeId') !== 'string'
-    ) {
-        throw new TypeError('Test message envelope is invalid');
-    }
-    return {
-        id: { msgId: Reflect.get(id, 'msgId') },
-        payload: { typeId: Reflect.get(payload, 'typeId') }
-    };
-}
-
 function readTextPayload(serialized: string): string {
-    const value = JSON.parse(serialized);
-    if (
-        typeof value !== 'object' || value === null ||
-        typeof Reflect.get(value, 'text') !== 'string'
-    ) {
+    const value = decodePersistedALRecord(serialized, 'test text payload');
+    if (typeof value.text !== 'string') {
         throw new TypeError('Expected text payload');
     }
-    return Reflect.get(value, 'text');
+    return value.text;
 }
 
 function createTargetResolver(): WsServerTargetResolver {

@@ -22,12 +22,12 @@ import {
     resolveBrowserRtcOverlayALOutboundRuntimeStores,
     resolveBrowserWsClientALOutboundRuntimeStores
 } from '@shared-web/browser/al-runtime/browser-al-runtime-stores.ts';
+import { decodeALOutboundPreparedMessage } from '@shared/alm/outbound/al-outbound-effect-validation.ts';
 import {
     IndexedDbStringPersistenceProvider,
     newALUnicastMessage,
     type ALMessage,
     type ALOutboundAdmissionStore,
-    type ALOutboundRuntimeStores,
     type ALOutboundSentMessageSnapshot
 } from '@shared/mod.ts';
 import {
@@ -38,11 +38,6 @@ import {
     it,
     vi
 } from 'vitest';
-
-type RawBrowserALRuntimeEntry = Readonly<{
-    key: string;
-    expireAtTimestamp: number;
-}>;
 
 describe('Browser AL runtime IndexedDB stores', () => {
     beforeEach(async () => {
@@ -69,15 +64,9 @@ describe('Browser AL runtime IndexedDB stores', () => {
         const unrelatedRuntimeName = `unrelated-${crypto.randomUUID()}`;
         configureBrowserALRuntimeStores(currentSessionId, { retention });
         configureBrowserALRuntimeStores(oldSessionId, { retention });
-        const currentAdmissionStore = requireOutboundAdmissionStore(
-            resolveBrowserWsClientALOutboundRuntimeStores(currentSessionId)
-        );
-        const oldAdmissionStore = requireOutboundAdmissionStore(
-            resolveBrowserWsClientALOutboundRuntimeStores(oldSessionId)
-        );
-        const unrelatedAdmissionStore = requireOutboundAdmissionStore(
-            createBrowserALOutboundRuntimeStores(unrelatedRuntimeName, { retention })
-        );
+        const currentAdmissionStore = resolveBrowserWsClientALOutboundRuntimeStores(currentSessionId).admissionStore;
+        const oldAdmissionStore = resolveBrowserWsClientALOutboundRuntimeStores(oldSessionId).admissionStore;
+        const unrelatedAdmissionStore = createBrowserALOutboundRuntimeStores(unrelatedRuntimeName, { retention }).admissionStore;
         const currentExpiredMsgId = 'current-expired';
         const currentFreshMsgId = 'current-fresh';
         const oldExpiredMsgId = 'old-expired';
@@ -121,9 +110,7 @@ describe('Browser AL runtime IndexedDB stores', () => {
 
         const freshSessionId = `fresh-${crypto.randomUUID()}`;
         configureBrowserALRuntimeStores(freshSessionId, { retention });
-        const freshSessionAdmissionStore = requireOutboundAdmissionStore(
-            resolveBrowserWsClientALOutboundRuntimeStores(freshSessionId)
-        );
+        const freshSessionAdmissionStore = resolveBrowserWsClientALOutboundRuntimeStores(freshSessionId).admissionStore;
 
         expect(await readSentMessageIds(freshSessionAdmissionStore)).toEqual([]);
         expect(await readBrowserALRuntimeEntryKeys(oldSentPrefix)).toEqual([
@@ -142,19 +129,13 @@ describe('Browser AL runtime IndexedDB stores', () => {
         const replacementSessionId = `replacement-${crypto.randomUUID()}`;
         configureBrowserALRuntimeStores(sessionId, { retention });
         configureBrowserALRuntimeStores(replacementSessionId, { retention });
-        const firstSessionAdmissionStore = requireOutboundAdmissionStore(
-            resolveBrowserWsClientALOutboundRuntimeStores(sessionId)
-        );
+        const firstSessionAdmissionStore = resolveBrowserWsClientALOutboundRuntimeStores(sessionId).admissionStore;
         const persistedMsgId = 'restore-unexpired';
 
         await persistSentMessage(firstSessionAdmissionStore, persistedMsgId);
 
-        const reusedSessionAdmissionStore = requireOutboundAdmissionStore(
-            resolveBrowserWsClientALOutboundRuntimeStores(sessionId)
-        );
-        const replacementSessionAdmissionStore = requireOutboundAdmissionStore(
-            resolveBrowserWsClientALOutboundRuntimeStores(replacementSessionId)
-        );
+        const reusedSessionAdmissionStore = resolveBrowserWsClientALOutboundRuntimeStores(sessionId).admissionStore;
+        const replacementSessionAdmissionStore = resolveBrowserWsClientALOutboundRuntimeStores(replacementSessionId).admissionStore;
 
         expect(await readSentMessageIds(reusedSessionAdmissionStore)).toEqual([persistedMsgId]);
         expect(await readSentMessageIds(replacementSessionAdmissionStore)).toEqual([]);
@@ -172,15 +153,9 @@ describe('Browser AL runtime IndexedDB stores', () => {
         const unrelatedRuntimeName = `cleanup-unrelated-${crypto.randomUUID()}`;
         configureBrowserALRuntimeStores(currentSessionId, { retention });
         configureBrowserALRuntimeStores(oldSessionId, { retention });
-        const currentAdmissionStore = requireOutboundAdmissionStore(
-            resolveBrowserWsClientALOutboundRuntimeStores(currentSessionId)
-        );
-        const oldAdmissionStore = requireOutboundAdmissionStore(
-            resolveBrowserWsClientALOutboundRuntimeStores(oldSessionId)
-        );
-        const unrelatedAdmissionStore = requireOutboundAdmissionStore(
-            createBrowserALOutboundRuntimeStores(unrelatedRuntimeName, { retention })
-        );
+        const currentAdmissionStore = resolveBrowserWsClientALOutboundRuntimeStores(currentSessionId).admissionStore;
+        const oldAdmissionStore = resolveBrowserWsClientALOutboundRuntimeStores(oldSessionId).admissionStore;
+        const unrelatedAdmissionStore = createBrowserALOutboundRuntimeStores(unrelatedRuntimeName, { retention }).admissionStore;
         const nonBrowserProvider = new IndexedDbStringPersistenceProvider<{ value: string; }>({
             dbName: BROWSER_AL_RUNTIME_DB_NAME,
             keyPrefix: 'custom:outside-browser-al-runtime'
@@ -239,12 +214,8 @@ describe('Browser AL runtime IndexedDB stores', () => {
         const otherSessionId = `expired-other-${crypto.randomUUID()}`;
         configureBrowserALRuntimeStores(targetSessionId, { retention });
         configureBrowserALRuntimeStores(otherSessionId, { retention });
-        const targetAdmissionStore = requireOutboundAdmissionStore(
-            resolveBrowserWsClientALOutboundRuntimeStores(targetSessionId)
-        );
-        const otherAdmissionStore = requireOutboundAdmissionStore(
-            resolveBrowserWsClientALOutboundRuntimeStores(otherSessionId)
-        );
+        const targetAdmissionStore = resolveBrowserWsClientALOutboundRuntimeStores(targetSessionId).admissionStore;
+        const otherAdmissionStore = resolveBrowserWsClientALOutboundRuntimeStores(otherSessionId).admissionStore;
 
         await persistSentMessage(targetAdmissionStore, 'target-expired');
         await persistSentMessage(otherAdmissionStore, 'other-expired');
@@ -281,10 +252,6 @@ describe('Browser AL runtime IndexedDB stores', () => {
         const expireAtTimestamp = Date.now() + 15_000;
         configureBrowserALRuntimeStores(sessionId);
         const stores = resolveBrowserWsClientALOutboundRuntimeStores(sessionId);
-        if (!stores.admissionStore) {
-            throw new Error('Expected outbound admission store');
-        }
-
         await stores.admissionStore.commitBundle({
             senderId: sessionId,
             expectedVersion: undefined,
@@ -297,7 +264,7 @@ describe('Browser AL runtime IndexedDB stores', () => {
                 }
             ],
             durableEffects: []
-        });
+        }, decodeALOutboundPreparedMessage);
 
         const ownerPrefix = `${
             toBrowserALRuntimeEntryKeyPrefix(
@@ -328,15 +295,9 @@ describe('Browser AL runtime IndexedDB stores', () => {
         const otherSessionId = `purge-other-${crypto.randomUUID()}`;
         configureBrowserALRuntimeStores(targetSessionId, { retention });
         configureBrowserALRuntimeStores(otherSessionId, { retention });
-        const targetWsAdmissionStore = requireOutboundAdmissionStore(
-            resolveBrowserWsClientALOutboundRuntimeStores(targetSessionId)
-        );
-        const targetOverlayAdmissionStore = requireOutboundAdmissionStore(
-            resolveBrowserRtcOverlayALOutboundRuntimeStores(targetSessionId)
-        );
-        const otherAdmissionStore = requireOutboundAdmissionStore(
-            resolveBrowserWsClientALOutboundRuntimeStores(otherSessionId)
-        );
+        const targetWsAdmissionStore = resolveBrowserWsClientALOutboundRuntimeStores(targetSessionId).admissionStore;
+        const targetOverlayAdmissionStore = resolveBrowserRtcOverlayALOutboundRuntimeStores(targetSessionId).admissionStore;
+        const otherAdmissionStore = resolveBrowserWsClientALOutboundRuntimeStores(otherSessionId).admissionStore;
         const targetRtcRxProvider = new IndexedDbStringPersistenceProvider<{ value: string; }>({
             dbName: BROWSER_AL_RUNTIME_DB_NAME,
             keyPrefix: `${
@@ -389,9 +350,7 @@ describe('Browser AL runtime IndexedDB stores', () => {
             sentMessageTtlMs: 20
         };
         const runtimeName = `interval-runtime-${crypto.randomUUID()}`;
-        const admissionStore = requireOutboundAdmissionStore(
-            createBrowserALOutboundRuntimeStores(runtimeName, { retention })
-        );
+        const admissionStore = createBrowserALOutboundRuntimeStores(runtimeName, { retention }).admissionStore;
         const sentPrefix = toBrowserOutboundSentPrefix(runtimeName);
 
         await persistSentMessage(admissionStore, 'initial-expired');
@@ -412,16 +371,6 @@ describe('Browser AL runtime IndexedDB stores', () => {
         expect(await readBrowserALRuntimeEntryKeys(sentPrefix)).toEqual([]);
     });
 });
-
-function requireOutboundAdmissionStore(
-    stores: ALOutboundRuntimeStores
-): ALOutboundAdmissionStore {
-    if (!stores.admissionStore) {
-        throw new Error('Expected outbound admission store');
-    }
-
-    return stores.admissionStore;
-}
 
 async function readSentMessageIds(
     admissionStore: ALOutboundAdmissionStore
@@ -445,7 +394,7 @@ async function persistSentMessage(
         expectedVersion: read.clientRecord?.version,
         mutations: [{ kind: 'set-sent-message', snapshot }],
         durableEffects: []
-    });
+    }, decodeALOutboundPreparedMessage);
 
     if (status !== 'committed') {
         throw new Error(`Failed to persist sent message ${msgId}`);
@@ -453,9 +402,10 @@ async function persistSentMessage(
 }
 
 function createSentSnapshot(msgId: string): ALOutboundSentMessageSnapshot {
+    const msg = createOutboundUnicastMessage(msgId);
     return {
         msgId,
-        msg: createOutboundUnicastMessage(msgId)
+        msg: { ...msg, id: { ...msg.id, msgId } }
     };
 }
 
@@ -482,27 +432,19 @@ function toBrowserOutboundSentPrefix(runtimeStoreName: string): string {
 async function readBrowserALRuntimeEntryKeys(
     keyPrefix: string
 ): Promise<readonly string[]> {
-    const entries = await readBrowserALRuntimeEntries(keyPrefix);
-
-    return entries.map((entry) => entry.key).sort();
-}
-
-async function readBrowserALRuntimeEntries(
-    keyPrefix: string
-): Promise<readonly RawBrowserALRuntimeEntry[]> {
     const db = await openBrowserALRuntimeDatabase();
 
     try {
-        return await new Promise<readonly RawBrowserALRuntimeEntry[]>((resolve, reject) => {
+        return await new Promise<readonly string[]>((resolve, reject) => {
             const tx = db.transaction(
                 BROWSER_AL_RUNTIME_STORE_NAME,
                 'readonly'
             );
             const store = tx.objectStore(BROWSER_AL_RUNTIME_STORE_NAME);
             const request = store.openCursor();
-            const entries: RawBrowserALRuntimeEntry[] = [];
+            const keys: string[] = [];
 
-            tx.oncomplete = () => resolve(entries);
+            tx.oncomplete = () => resolve(keys.sort());
             tx.onabort = () => reject(tx.error ?? new Error('IndexedDB read aborted'));
             tx.onerror = () => reject(tx.error ?? new Error('IndexedDB read failed'));
             request.onerror = () => reject(request.error ?? new Error('IndexedDB cursor failed'));
@@ -512,9 +454,14 @@ async function readBrowserALRuntimeEntries(
                     return;
                 }
 
-                const entry = cursor.value as RawBrowserALRuntimeEntry;
-                if (entry.key.startsWith(keyPrefix)) {
-                    entries.push(entry);
+                const key = cursor.primaryKey;
+                if (typeof key !== 'string') {
+                    reject(new TypeError('Expected a string browser-runtime key'));
+                    tx.abort();
+                    return;
+                }
+                if (key.startsWith(keyPrefix)) {
+                    keys.push(key);
                 }
 
                 cursor.continue();

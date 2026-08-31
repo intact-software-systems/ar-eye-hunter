@@ -50,11 +50,15 @@ export * from './resilience/TryWith.ts';
 export * from './websocket/JsonWebSocketClient.ts';
 export * from './websocket/JsonWebSocketServer.ts';
 
-export * from './alm/ALInboundAdmissionStore.ts';
-export * from './alm/ALInboundMessageRuntime.ts';
-export * from './alm/ALOutboundAdmissionStore.ts';
-export * from './alm/ALOutboundMessageRuntime.ts';
-export * from './alm/ALRuntimeStateStores.ts';
+export {
+    type ALAdmissionBackend,
+    type ALAdmissionMemoryState,
+    type ALAdmissionWriteContext,
+    createInMemoryALAdmissionState
+} from './alm/al-admission-backend.ts';
+export { ALAdmissionCorruptionError, type ALAdmissionDecoder } from './alm/al-admission-decoder.ts';
+export * from './alm/al-runtime-state-stores.ts';
+export * from './alm/al-runtime-stores.ts';
 export * from './alm/ALRuntimeStoreRegistry.ts';
 export * from './alm/ALRuntimeStores.ts';
 export * from './alm/ALStoreRetention.ts';

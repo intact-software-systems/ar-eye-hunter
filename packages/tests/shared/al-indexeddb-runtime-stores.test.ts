@@ -33,15 +33,13 @@ import {
     type ALOutboundAdmissionStore,
     type ALOutboundCommitBundle,
     type ALOutboundPlanner,
+    type ALOutboundPreparedMessageDecoder,
     type ClaimALOutboundEffectsInput,
     type ResourceEntry
 } from '@shared/mod.ts';
 
 import '../setup-browser-indexeddb.ts';
-
-interface OutboundTestPayload {
-    readonly [field: string]: string;
-}
+import { decodeOutboundTestPayload, type OutboundTestPayload } from './alm/outbound-test-payload.ts';
 
 describe('IndexedDB AL runtime stores', () => {
     afterEach(() => {
@@ -360,11 +358,12 @@ describe('IndexedDB AL runtime stores', () => {
                     }
                 ],
                 durableEffects: []
-            })
+            }, decodeOutboundTestPayload)
         ).toBe('committed');
 
         await admissionStore.acceptControlMessage(
-            newALNackControlMessage('peer-1', 'self', msg.id.msgId, 'gap')
+            newALNackControlMessage('peer-1', 'self', msg.id.msgId, 'gap'),
+            decodeOutboundTestPayload
         );
 
         const beforeExpiry = await admissionStore.readOutgoingMessage(msg, planner);
@@ -550,15 +549,16 @@ describe('IndexedDB AL runtime stores', () => {
             stores: {
                 ...stores,
                 admissionStore: createFlakyOutboundAdmissionStore(admissionStore, {
-                    claimReadyEffects: async <TPrepared>(input: ClaimALOutboundEffectsInput) => {
-                        const effects = await admissionStore.claimReadyEffects<TPrepared>(input);
+                    claimReadyEffects: async <TPrepared>(input: ClaimALOutboundEffectsInput, decode: ALOutboundPreparedMessageDecoder<TPrepared>) => {
+                        const effects = await admissionStore.claimReadyEffects(input, decode);
                         if (
                             !acceptedAckDuringTimeout &&
                             effects.some((effect) => effect.payload.kind === 'ack-timeout')
                         ) {
                             acceptedAckDuringTimeout = true;
                             await admissionStore.acceptControlMessage(
-                                newALAckControlMessage('peer-1', 'self', msg.id.msgId)
+                                newALAckControlMessage('peer-1', 'self', msg.id.msgId),
+                                decode
                             );
                         }
 
@@ -715,6 +715,7 @@ function createDefaultOutboundRuntime(input: IndexedDbOutboundFixtureInput) {
             namespace
         }),
         toOutboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox'),
+        decodePreparedMessage: decodeOutboundTestPayload,
         readMessageFromEntry: (entry) => decodePersistedALMessage(entry.resource),
         planOutgoingMessage: input.planOutgoingMessage ?? ((msg) => ({
             persist: false,
@@ -772,24 +773,24 @@ function createFlakyOutboundAdmissionStore(
         getSentMessage: (msgId: string) => inner.getSentMessage(msgId),
         getAllSentMessages: () => inner.getAllSentMessages(),
         getPendingAck: (msgId: string) => inner.getPendingAck(msgId),
-        commitBundle: <TPrepared>(bundle: ALOutboundCommitBundle<TPrepared>) =>
+        commitBundle: <TPrepared>(bundle: ALOutboundCommitBundle<TPrepared>, decode: ALOutboundPreparedMessageDecoder<TPrepared>) =>
             hooks.commitBundle
-                ? hooks.commitBundle<TPrepared>(bundle)
-                : inner.commitBundle<TPrepared>(bundle),
-        acceptControlMessage: <TPrepared>(msg: ALMessage) => inner.acceptControlMessage<TPrepared>(msg),
-        claimReadyEffects: <TPrepared>(input: ClaimALOutboundEffectsInput) =>
+                ? hooks.commitBundle(bundle, decode)
+                : inner.commitBundle(bundle, decode),
+        acceptControlMessage: (msg, decode) => inner.acceptControlMessage(msg, decode),
+        claimReadyEffects: <TPrepared>(input: ClaimALOutboundEffectsInput, decode: ALOutboundPreparedMessageDecoder<TPrepared>) =>
             hooks.claimReadyEffects
-                ? hooks.claimReadyEffects<TPrepared>(input)
-                : inner.claimReadyEffects<TPrepared>(input),
-        completeEffect: (effectId: string, workerId: string) =>
+                ? hooks.claimReadyEffects(input, decode)
+                : inner.claimReadyEffects(input, decode),
+        completeEffect: (effectId, workerId, decode) =>
             hooks.completeEffect
-                ? hooks.completeEffect(effectId, workerId)
-                : inner.completeEffect(effectId, workerId),
-        rescheduleEffect: (input) =>
+                ? hooks.completeEffect(effectId, workerId, decode)
+                : inner.completeEffect(effectId, workerId, decode),
+        rescheduleEffect: (input, decode) =>
             hooks.rescheduleEffect
-                ? hooks.rescheduleEffect(input)
-                : inner.rescheduleEffect(input),
-        peekNextEffectReadyAt: () => inner.peekNextEffectReadyAt()
+                ? hooks.rescheduleEffect(input, decode)
+                : inner.rescheduleEffect(input, decode),
+        peekNextEffectReadyAt: (decode) => inner.peekNextEffectReadyAt(decode)
     };
 }
 

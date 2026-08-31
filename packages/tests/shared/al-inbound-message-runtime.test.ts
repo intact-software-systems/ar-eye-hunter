@@ -697,7 +697,8 @@ function createInboundPersistenceFixture() {
                     namespace: 'al-inbound-runtime-test:provider',
                     backend: new PersistenceProviderAdmissionBackend(
                         provider,
-                        'al-inbound-runtime-test:provider'
+                        'al-inbound-runtime-test:provider',
+                        Date.now
                     ),
                     orderingTrackTtlMs: 5 * 60_000,
                     supersedenceTrackTtlMs: 5 * 60_000,

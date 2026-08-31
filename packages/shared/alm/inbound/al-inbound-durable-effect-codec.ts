@@ -1,40 +1,47 @@
-import { Temporal } from '@js-temporal/polyfill';
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
+import {
+    AL_CONTROL_ACK_TYPE_ID,
+    AL_CONTROL_NACK_TYPE_ID,
+    AL_CONTROL_REPAIR_TYPE_ID,
+    type ALAckPayload,
+    type ALNackPayload,
+    type ALRepairPayload
+} from '../../al-contracts/al-control.ts';
+import {
+    decodePersistedALMessage,
+    decodePersistedALMessageValue
+} from '../../al-contracts/al-message-persistence-validation.ts';
+import type {
+    PersistedALRecord,
+    PersistedALValue
+} from '../../al-contracts/al-message-persistence/persisted-al-value-validation.ts';
 import type { ALMessageHandlingPlan } from '../../al-contracts/al-policy.ts';
 import type { ResourceEntry } from '../../queuebox/ResourceEntry.ts';
+import {
+    decodeALAdmissionResourceEntry,
+    encodeALAdmissionResourceEntry,
+    type StoredALAdmissionResourceEntry
+} from '../al-admission-resource-entry-validation.ts';
+import {
+    decodeALAdmissionControlValue,
+    decodeALAdmissionNumber,
+    decodeALAdmissionRecord,
+    decodeALAdmissionString
+} from '../al-admission-value-validation.ts';
 import type { ALInboundDurableEffect, ALPersistedInboundEffect } from './al-inbound-admission-store.ts';
-
-interface StoredResourceEntry {
-    readonly key: ResourceEntry['key'];
-    readonly resource: string;
-    readonly typeId: string;
-    readonly audit: Readonly<{
-        date: string;
-        createdBy: string;
-        createdTs: string;
-        expiryTs: string;
-    }>;
-    readonly status: ResourceEntry['status'];
-    readonly dequeueAudit: Readonly<{
-        startTs?: string;
-        endTs?: string;
-        nextTs?: string;
-        attempts: number;
-    }>;
-    readonly db?: ResourceEntry['db'];
-}
+import { decodeALInboundPlan } from './decode-al-inbound-plan.ts';
 
 type StoredALInboundDurableEffect =
     | Readonly<{
         kind: 'dispatch-local';
         msg: ALMessage;
-        entry: StoredResourceEntry;
+        entry: StoredALAdmissionResourceEntry;
         plan: ALMessageHandlingPlan;
     }>
     | Readonly<{
         kind: 'enqueue-inbox';
         msg: ALMessage;
-        entry: StoredResourceEntry;
+        entry: StoredALAdmissionResourceEntry;
         plan: ALMessageHandlingPlan;
     }>
     | Extract<ALInboundDurableEffect, Readonly<{ kind: 'send-control'; }>>
@@ -54,16 +61,45 @@ export function toStoredPersistedInboundEffect(
     };
 }
 
-export function toPersistedInboundEffect(
-    effect: StoredALPersistedInboundEffect | undefined
-): ALPersistedInboundEffect | undefined {
-    if (!effect) {
-        return undefined;
+export function decodeALPersistedInboundEffect(value: unknown, expectedEffectId: string): ALPersistedInboundEffect {
+    const effect = decodeALAdmissionRecord(value, [
+        'effectId',
+        'payload',
+        'status',
+        'attempts',
+        'retryAtMs',
+        'updatedAtMs',
+        'expireAtTimestamp'
+    ], ['leaseOwner', 'leaseUntilMs', 'lastError']);
+    const effectId = decodeALAdmissionString(effect.effectId);
+    if (effectId !== expectedEffectId) {
+        throw new TypeError('Persisted inbound effect does not match its storage slot');
     }
-
+    if (effect.status !== 'pending' && effect.status !== 'running') {
+        throw new TypeError('Persisted inbound effect status is invalid');
+    }
+    const leaseOwner = effect.leaseOwner === undefined ? undefined : decodeALAdmissionString(effect.leaseOwner);
+    const leaseUntilMs = effect.leaseUntilMs === undefined ? undefined : decodeALAdmissionNumber(effect.leaseUntilMs);
+    if (effect.status === 'running' && (leaseOwner === undefined || leaseUntilMs === undefined)) {
+        throw new TypeError('Persisted running inbound effect has no complete lease');
+    }
+    if (effect.status === 'pending' && (leaseOwner !== undefined || leaseUntilMs !== undefined)) {
+        throw new TypeError('Persisted pending inbound effect unexpectedly has a lease');
+    }
+    if (effect.lastError !== undefined && typeof effect.lastError !== 'string') {
+        throw new TypeError('Persisted inbound effect error must be a string');
+    }
     return {
-        ...effect,
-        payload: toInboundDurableEffect(effect.payload)
+        effectId,
+        payload: decodeInboundDurableEffect(effect.payload),
+        status: effect.status,
+        attempts: decodeALAdmissionNumber(effect.attempts),
+        retryAtMs: decodeALAdmissionNumber(effect.retryAtMs),
+        updatedAtMs: decodeALAdmissionNumber(effect.updatedAtMs),
+        expireAtTimestamp: decodeALAdmissionNumber(effect.expireAtTimestamp),
+        leaseOwner,
+        leaseUntilMs,
+        lastError: effect.lastError
     };
 }
 
@@ -75,7 +111,7 @@ function toStoredInboundDurableEffect(
         case 'enqueue-inbox':
             return {
                 ...effect,
-                entry: toStoredResourceEntry(effect.entry)
+                entry: encodeALAdmissionResourceEntry(effect.entry)
             };
         case 'send-control':
         case 'forward-message':
@@ -84,73 +120,108 @@ function toStoredInboundDurableEffect(
     }
 }
 
-function toInboundDurableEffect(
-    effect: StoredALInboundDurableEffect
-): ALInboundDurableEffect {
+function decodeInboundDurableEffect(value: PersistedALValue): ALInboundDurableEffect {
+    const effect = decodeALAdmissionRecord(value, ['kind'], ['msg', 'entry', 'plan', 'fromPeerId', 'trackKey', 'seq']);
     switch (effect.kind) {
         case 'dispatch-local':
-        case 'enqueue-inbox':
+        case 'enqueue-inbox': {
+            decodeALAdmissionRecord(effect, ['kind', 'msg', 'entry', 'plan']);
+            const msg = decodePersistedALMessageValue(effect.msg);
+            const entry = decodeALAdmissionResourceEntry(effect.entry);
+            assertEntryMessage(entry, msg);
+            return { kind: effect.kind, msg, entry, plan: decodeALInboundPlan(effect.plan) };
+        }
+        case 'send-control': {
+            decodeALAdmissionRecord(effect, ['kind', 'msg']);
+            const msg = decodePersistedALMessageValue(effect.msg);
+            assertControlMessage(msg);
+            return { kind: effect.kind, msg };
+        }
+        case 'forward-message': {
+            decodeALAdmissionRecord(effect, ['kind', 'msg', 'fromPeerId', 'plan']);
             return {
-                ...effect,
-                entry: toResourceEntry(effect.entry)
+                kind: effect.kind,
+                msg: decodePersistedALMessageValue(effect.msg),
+                fromPeerId: decodeALAdmissionString(effect.fromPeerId),
+                plan: decodeALInboundPlan(effect.plan)
             };
-        case 'send-control':
-        case 'forward-message':
+        }
         case 'release-buffered':
-            return effect;
+            decodeALAdmissionRecord(effect, ['kind', 'trackKey', 'seq']);
+            return {
+                kind: effect.kind,
+                trackKey: decodeALAdmissionString(effect.trackKey),
+                seq: decodeALAdmissionNumber(effect.seq)
+            };
+        default:
+            throw new TypeError('Persisted inbound effect payload kind is invalid');
     }
 }
 
-function toStoredResourceEntry(
-    entry: ResourceEntry
-): StoredResourceEntry {
-    return {
-        key: entry.key,
-        resource: entry.resource,
-        typeId: entry.typeId,
-        audit: {
-            date: entry.audit.date.toString(),
-            createdBy: entry.audit.createdBy,
-            createdTs: entry.audit.createdTs.toString(),
-            expiryTs: entry.audit.expiryTs.toString()
-        },
-        status: entry.status,
-        dequeueAudit: {
-            startTs: entry.dequeueAudit.startTs?.toString(),
-            endTs: entry.dequeueAudit.endTs?.toString(),
-            nextTs: entry.dequeueAudit.nextTs?.toString(),
-            attempts: entry.dequeueAudit.attempts
-        },
-        db: entry.db
-    };
+function assertControlMessage(msg: ALMessage): void {
+    const raw: unknown = JSON.parse(msg.payload.resource);
+    const routeSuffix = `:${msg.payload.typeId}`;
+    if (!msg.route.resourceId.endsWith(routeSuffix)) {
+        throw new TypeError('Persisted inbound control route has the wrong type');
+    }
+    const expectedMsgId = msg.route.resourceId.slice(0, -routeSuffix.length);
+    let payload: ALAckPayload | ALNackPayload | ALRepairPayload | undefined;
+    switch (msg.payload.typeId) {
+        case AL_CONTROL_ACK_TYPE_ID:
+            payload = decodeALAdmissionControlValue({ kind: 'acks', values: [raw] }, expectedMsgId, 'acks').values[0];
+            break;
+        case AL_CONTROL_NACK_TYPE_ID:
+            payload = decodeALAdmissionControlValue({ kind: 'nacks', values: [raw] }, expectedMsgId, 'nacks').values[0];
+            break;
+        case AL_CONTROL_REPAIR_TYPE_ID:
+            payload =
+                decodeALAdmissionControlValue({ kind: 'repairs', values: [raw] }, expectedMsgId, 'repairs').values[0];
+            break;
+        default:
+            throw new TypeError('Persisted inbound control effect contains no control message');
+    }
+    if (
+        !payload || payload.fromPeerId !== msg.id.senderId || msg.targets?.mode !== 'unicast' ||
+        payload.toPeerId !== msg.targets.toPeerId
+    ) {
+        throw new TypeError('Persisted inbound control routing does not match its envelope');
+    }
 }
 
-function toResourceEntry(
-    entry: StoredResourceEntry
-): ResourceEntry {
-    return {
-        key: entry.key,
-        resource: entry.resource,
-        typeId: entry.typeId,
-        audit: {
-            date: Temporal.PlainTime.from(entry.audit.date),
-            createdBy: entry.audit.createdBy,
-            createdTs: Temporal.PlainDateTime.from(entry.audit.createdTs),
-            expiryTs: Temporal.Instant.from(entry.audit.expiryTs)
-        },
-        status: entry.status,
-        dequeueAudit: {
-            startTs: entry.dequeueAudit.startTs
-                ? Temporal.Instant.from(entry.dequeueAudit.startTs)
-                : undefined,
-            endTs: entry.dequeueAudit.endTs
-                ? Temporal.Instant.from(entry.dequeueAudit.endTs)
-                : undefined,
-            nextTs: entry.dequeueAudit.nextTs
-                ? Temporal.Instant.from(entry.dequeueAudit.nextTs)
-                : undefined,
-            attempts: entry.dequeueAudit.attempts
-        },
-        db: entry.db
-    };
+function assertEntryMessage(entry: ResourceEntry, msg: ALMessage): void {
+    const embedded = decodePersistedALMessage(entry.resource);
+    if (
+        entry.key.topicId !== msg.route.topicId || entry.key.resourceId !== msg.route.resourceId ||
+        entry.key.contextId !== msg.route.contextId || !areMessageValuesEqual(embedded, msg)
+    ) {
+        throw new TypeError('Persisted inbound queue entry does not match its message');
+    }
+}
+
+function areMessageValuesEqual(left: ALMessage, right: ALMessage): boolean {
+    // JSON normalizes optional undefined fields exactly as the stored queue envelope does.
+    const leftValue: PersistedALValue = JSON.parse(JSON.stringify(left));
+    const rightValue: PersistedALValue = JSON.parse(JSON.stringify(right));
+    return arePersistedValuesEqual(leftValue, rightValue);
+}
+
+function arePersistedValuesEqual(left: PersistedALValue, right: PersistedALValue): boolean {
+    if (left === right) {
+        return true;
+    }
+    if (Array.isArray(left) && Array.isArray(right)) {
+        return left.length === right.length &&
+            left.every((entry, index) => arePersistedValuesEqual(entry, right[index]));
+    }
+    if (
+        !left || !right || typeof left !== 'object' || typeof right !== 'object' || Array.isArray(left) ||
+        Array.isArray(right)
+    ) {
+        return false;
+    }
+    const leftRecord = left as PersistedALRecord;
+    const rightRecord = right as PersistedALRecord;
+    const keys = Object.keys(leftRecord);
+    return keys.length === Object.keys(rightRecord).length &&
+        keys.every((key) => arePersistedValuesEqual(leftRecord[key], rightRecord[key]));
 }

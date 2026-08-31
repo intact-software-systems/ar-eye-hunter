@@ -12,13 +12,13 @@ import type {
 } from '../../al-contracts/al-runtime.ts';
 import type { Key, ResourceEntry } from '../../queuebox/ResourceEntry.ts';
 import { type ALAdmissionBackend, type ALAdmissionWriteContext } from '../al-admission-backend.ts';
+import { decodeALAdmissionClientRecord, decodeALAdmissionSupersedenceValue } from '../al-admission-value-validation.ts';
 import type {
     ALOutboundPendingAckSnapshot,
     ALOutboundRepairAttemptSnapshot,
     ALOutboundSentMessageSnapshot
 } from '../al-runtime-state-stores.ts';
 import { ALAdmissionBackendConflictError } from '../ALAdmissionBackendConflictError.ts';
-import { resolveExplicitOutboundMessageExpireAtMs } from '../ALMessageExpiry.ts';
 import type { NormalizedALRuntimeStoreRetentionConfig } from '../ALStoreRetention.ts';
 import { resolveExpireAtTimestampWithFallback, toExpireAtTimestampFromNow } from '../ALStoreRetention.ts';
 import { acceptALSupersedenceObservation } from '../compute-al-supersedence-observation.ts';
@@ -28,18 +28,17 @@ import {
     type ClaimALOutboundEffectsInput,
     type RescheduleALOutboundEffectInput
 } from './al-outbound-admission-effect-store.ts';
+import {
+    decodeALOutboundPendingAck,
+    decodeALOutboundRepairAttempt,
+    decodeALOutboundSentMessage
+} from './al-outbound-admission-validation.ts';
 import type {
-    ALOutboundAckTrackingPlan,
     ALOutboundDispatchPhase,
     ALOutboundDispatchPlan,
     ALOutboundRepairTrigger
 } from './al-outbound-message-runtime.ts';
-import { toALOutboundEffectId } from './to-al-outbound-effect-id.ts';
-import {
-    acceptALOutboundPendingAckSnapshot,
-    appendUniqueALAck,
-    toALOutboundPendingAckExpireAtTimestamp
-} from './transition-al-outbound-pending-ack.ts';
+import { toALOutboundPendingAckExpireAtTimestamp } from './transition-al-outbound-pending-ack.ts';
 
 export interface CreateALOutboundAdmissionStoreInput {
     readonly namespace: string;
@@ -59,6 +58,8 @@ export interface ALOutboundVersionedClientRecord {
     readonly senderId: string;
     readonly version: number;
 }
+
+export type ALOutboundPreparedMessageDecoder<TPrepared> = (value: unknown, msg: ALMessage) => TPrepared;
 
 export type ALOutboundPlanner<TPrepared> = (
     msg: ALMessage
@@ -246,27 +247,34 @@ export interface ALOutboundAdmissionStore extends ALReadyable {
     getPendingAck(msgId: string): Promise<ALOutboundPendingAckSnapshot | undefined>;
 
     commitBundle<TPrepared>(
-        bundle: ALOutboundCommitBundle<TPrepared>
+        bundle: ALOutboundCommitBundle<TPrepared>,
+        decodePrepared: ALOutboundPreparedMessageDecoder<TPrepared>
     ): Promise<'committed' | 'conflict'>;
 
     acceptControlMessage<TPrepared>(
-        msg: ALMessage
+        msg: ALMessage,
+        decodePrepared: ALOutboundPreparedMessageDecoder<TPrepared>
     ): Promise<ALOutboundControlAcceptance>;
 
     claimReadyEffects<TPrepared>(
-        input: ClaimALOutboundEffectsInput
+        input: ClaimALOutboundEffectsInput,
+        decodePrepared: ALOutboundPreparedMessageDecoder<TPrepared>
     ): Promise<readonly ALPersistedOutboundEffect<TPrepared>[]>;
 
-    completeEffect(
+    completeEffect<TPrepared>(
         effectId: string,
-        workerId: string
+        workerId: string,
+        decodePrepared: ALOutboundPreparedMessageDecoder<TPrepared>
     ): Promise<void>;
 
-    rescheduleEffect(
-        input: RescheduleALOutboundEffectInput
+    rescheduleEffect<TPrepared>(
+        input: RescheduleALOutboundEffectInput,
+        decodePrepared: ALOutboundPreparedMessageDecoder<TPrepared>
     ): Promise<void>;
 
-    peekNextEffectReadyAt(): Promise<number | undefined>;
+    peekNextEffectReadyAt<TPrepared>(
+        decodePrepared: ALOutboundPreparedMessageDecoder<TPrepared>
+    ): Promise<number | undefined>;
 }
 
 export function createALOutboundAdmissionStore(
@@ -334,12 +342,16 @@ class ProviderBackedALOutboundAdmissionStore implements ALOutboundAdmissionStore
             kind: 'outgoing',
             msg,
             nowMs,
-            clientRecord: await this.backend.get<ALOutboundVersionedClientRecord>(this.toVersionKey(msg.id.senderId)),
+            clientRecord: await this.backend.read(
+                this.toVersionKey(msg.id.senderId),
+                (value) => decodeALAdmissionClientRecord(value, msg.id.senderId)
+            ),
             plan,
             sentSnapshot,
             pendingAck: await this.getPendingAck(msg.id.msgId),
-            repairAttempt: await this.backend.get<ALOutboundRepairAttemptSnapshot>(
-                this.toRepairAttemptKey(msg.id.msgId)
+            repairAttempt: await this.backend.read(
+                this.toRepairAttemptKey(msg.id.msgId),
+                (value) => decodeALOutboundRepairAttempt(value, msg.id.msgId)
             ),
             acks: await this.controlStore.readAcks(msg.id.msgId),
             nacks: await this.controlStore.readNacks(msg.id.msgId),
@@ -369,11 +381,17 @@ class ProviderBackedALOutboundAdmissionStore implements ALOutboundAdmissionStore
             msgId,
             nowMs: Date.now(),
             clientRecord: msg
-                ? await this.backend.get<ALOutboundVersionedClientRecord>(this.toVersionKey(msg.id.senderId))
+                ? await this.backend.read(
+                    this.toVersionKey(msg.id.senderId),
+                    (value) => decodeALAdmissionClientRecord(value, msg.id.senderId)
+                )
                 : undefined,
             sentSnapshot,
             pendingAck: await this.getPendingAck(msgId),
-            repairAttempt: await this.backend.get<ALOutboundRepairAttemptSnapshot>(this.toRepairAttemptKey(msgId)),
+            repairAttempt: await this.backend.read(
+                this.toRepairAttemptKey(msgId),
+                (value) => decodeALOutboundRepairAttempt(value, msgId)
+            ),
             acks: await this.controlStore.readAcks(msgId),
             nacks: await this.controlStore.readNacks(msgId),
             plan: msg ? planner(msg) : undefined
@@ -381,11 +399,19 @@ class ProviderBackedALOutboundAdmissionStore implements ALOutboundAdmissionStore
     }
 
     async getSentMessage(msgId: string): Promise<ALOutboundSentMessageSnapshot | undefined> {
-        return await this.backend.get<ALOutboundSentMessageSnapshot>(this.toSentMessageKey(msgId));
+        return await this.backend.read(
+            this.toSentMessageKey(msgId),
+            (value) => decodeALOutboundSentMessage(value, msgId)
+        );
     }
 
     async getAllSentMessages(): Promise<readonly ALOutboundSentMessageSnapshot[]> {
-        return [...await this.backend.list<ALOutboundSentMessageSnapshot>(this.toSentMessagePrefix())]
+        return [
+            ...await this.backend.list(
+                this.toSentMessagePrefix(),
+                (value, key) => decodeALOutboundSentMessage(value, key.slice(this.toSentMessagePrefix().length))
+            )
+        ]
             .map((entry) => entry.value)
             .sort(
                 (left, right) =>
@@ -395,11 +421,15 @@ class ProviderBackedALOutboundAdmissionStore implements ALOutboundAdmissionStore
     }
 
     async getPendingAck(msgId: string): Promise<ALOutboundPendingAckSnapshot | undefined> {
-        return await this.backend.get<ALOutboundPendingAckSnapshot>(this.toPendingAckKey(msgId));
+        return await this.backend.read(
+            this.toPendingAckKey(msgId),
+            (value) => decodeALOutboundPendingAck(value, msgId)
+        );
     }
 
     async commitBundle<TPrepared>(
-        bundle: ALOutboundCommitBundle<TPrepared>
+        bundle: ALOutboundCommitBundle<TPrepared>,
+        decodePrepared: ALOutboundPreparedMessageDecoder<TPrepared>
     ): Promise<'committed' | 'conflict'> {
         if (bundle.mutations.length === 0 && bundle.durableEffects.length === 0) {
             return 'committed';
@@ -407,7 +437,10 @@ class ProviderBackedALOutboundAdmissionStore implements ALOutboundAdmissionStore
 
         try {
             return await this.backend.write(async (tx) => {
-                const current = await tx.get<ALOutboundVersionedClientRecord>(this.toVersionKey(bundle.senderId));
+                const current = await tx.read(
+                    this.toVersionKey(bundle.senderId),
+                    (value) => decodeALAdmissionClientRecord(value, bundle.senderId)
+                );
                 const currentVersion = current?.version;
                 if (currentVersion !== bundle.expectedVersion) {
                     return 'conflict';
@@ -418,7 +451,7 @@ class ProviderBackedALOutboundAdmissionStore implements ALOutboundAdmissionStore
                 }
 
                 for (const effect of bundle.durableEffects) {
-                    await this.effectStore.persistEffect(tx, effect);
+                    await this.effectStore.persistEffect(tx, effect, decodePrepared);
                 }
 
                 await this.bumpVersion(tx, bundle.senderId, currentVersion);
@@ -433,31 +466,39 @@ class ProviderBackedALOutboundAdmissionStore implements ALOutboundAdmissionStore
         }
     }
 
-    async acceptControlMessage<TPrepared>(msg: ALMessage): Promise<ALOutboundControlAcceptance> {
-        return await this.controlStore.acceptControlMessage<TPrepared>(msg);
+    async acceptControlMessage<TPrepared>(
+        msg: ALMessage,
+        decodePrepared: ALOutboundPreparedMessageDecoder<TPrepared>
+    ): Promise<ALOutboundControlAcceptance> {
+        return await this.controlStore.acceptControlMessage(msg, decodePrepared);
     }
 
     async claimReadyEffects<TPrepared>(
-        input: ClaimALOutboundEffectsInput
+        input: ClaimALOutboundEffectsInput,
+        decodePrepared: ALOutboundPreparedMessageDecoder<TPrepared>
     ): Promise<readonly ALPersistedOutboundEffect<TPrepared>[]> {
-        return await this.effectStore.claimReadyEffects<TPrepared>(input);
+        return await this.effectStore.claimReadyEffects(input, decodePrepared);
     }
 
-    async completeEffect(
+    async completeEffect<TPrepared>(
         effectId: string,
-        workerId: string
+        workerId: string,
+        decodePrepared: ALOutboundPreparedMessageDecoder<TPrepared>
     ): Promise<void> {
-        await this.effectStore.completeEffect(effectId, workerId);
+        await this.effectStore.completeEffect(effectId, workerId, decodePrepared);
     }
 
-    async rescheduleEffect(
-        input: RescheduleALOutboundEffectInput
+    async rescheduleEffect<TPrepared>(
+        input: RescheduleALOutboundEffectInput,
+        decodePrepared: ALOutboundPreparedMessageDecoder<TPrepared>
     ): Promise<void> {
-        await this.effectStore.rescheduleEffect(input);
+        await this.effectStore.rescheduleEffect(input, decodePrepared);
     }
 
-    async peekNextEffectReadyAt(): Promise<number | undefined> {
-        return await this.effectStore.peekNextReadyAt();
+    async peekNextEffectReadyAt<TPrepared>(
+        decodePrepared: ALOutboundPreparedMessageDecoder<TPrepared>
+    ): Promise<number | undefined> {
+        return await this.effectStore.peekNextReadyAt(decodePrepared);
     }
 
     private async readSupersedenceState(
@@ -470,11 +511,13 @@ class ProviderBackedALOutboundAdmissionStore implements ALOutboundAdmissionStore
 
         return {
             key,
-            latest: toLatestSupersedence(
-                await this.backend.get<ALSupersedencePersistenceValue>(this.toSupersedenceLatestKey(key))
+            latest: await this.backend.read(
+                this.toSupersedenceLatestKey(key),
+                (value) => decodeALAdmissionSupersedenceValue(value, 'latest')
             ),
-            replacement: toReplacementSupersedence(
-                await this.backend.get<ALSupersedencePersistenceValue>(this.toSupersedenceReplacementKey(msgId))
+            replacement: await this.backend.read(
+                this.toSupersedenceReplacementKey(msgId),
+                (value) => decodeALAdmissionSupersedenceValue(value, 'replacement')
             )
         };
     }
@@ -544,7 +587,8 @@ class ProviderBackedALOutboundAdmissionStore implements ALOutboundAdmissionStore
         currentVersion: number | undefined
     ): Promise<void> {
         const version = currentVersion ??
-            (await tx.get<ALOutboundVersionedClientRecord>(this.toVersionKey(senderId)))?.version;
+            (await tx.read(this.toVersionKey(senderId), (value) => decodeALAdmissionClientRecord(value, senderId)))
+                ?.version;
         await tx.set(
             this.toVersionKey(senderId),
             { senderId, version: (version ?? 0) + 1 } satisfies ALOutboundVersionedClientRecord,
@@ -599,16 +643,4 @@ function toSupersedenceInput<TPrepared>(
             ts: msg.audit?.createdTs ?? msg.id.ts
         }
         : undefined;
-}
-
-function toLatestSupersedence(
-    value: ALSupersedencePersistenceValue | undefined
-): LatestSupersedenceValue | undefined {
-    return value?.kind === 'latest' ? value : undefined;
-}
-
-function toReplacementSupersedence(
-    value: ALSupersedencePersistenceValue | undefined
-): ReplacementSupersedenceValue | undefined {
-    return value?.kind === 'replacement' ? value : undefined;
 }

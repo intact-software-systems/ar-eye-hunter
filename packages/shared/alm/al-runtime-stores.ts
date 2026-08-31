@@ -1,13 +1,13 @@
 import { IndexedDbStringPersistenceProvider } from '../persistence/IndexedDbStringPersistenceProvider.ts';
 import {
     createInMemoryALAdmissionState,
-    IndexedDbAdmissionBackend,
     InMemoryAdmissionBackend
 } from './al-admission-backend.ts';
 import type { ALRuntimeStoreRetentionConfig } from './ALStoreRetention.ts';
 import { normalizeALRuntimeStoreRetention } from './ALStoreRetention.ts';
 import { createALInboundAdmissionStore } from './inbound/al-inbound-admission-store.ts';
 import type { ALInboundRuntimeStores } from './inbound/al-inbound-message-runtime.ts';
+import { IndexedDbAdmissionBackend } from './indexed-db-admission-backend.ts';
 
 import { createALOutboundAdmissionStore } from './outbound/al-outbound-admission-store.ts';
 import type { ALOutboundRuntimeStores } from './outbound/al-outbound-message-runtime.ts';
@@ -39,7 +39,7 @@ export function createInMemoryALInboundRuntimeStores(
     return {
         admissionStore: createALInboundAdmissionStore({
             namespace: `${input.namespace}:inbound:admission`,
-            backend: new InMemoryAdmissionBackend(createInMemoryALAdmissionState()),
+            backend: new InMemoryAdmissionBackend(createInMemoryALAdmissionState(), Date.now),
             orderingTrackTtlMs: input.orderingTrackTtlMs,
             supersedenceTrackTtlMs: input.supersedenceTrackTtlMs,
             retention: normalizeALRuntimeStoreRetention(input.retention)
@@ -53,7 +53,7 @@ export function createInMemoryALOutboundRuntimeStores(
     return {
         admissionStore: createALOutboundAdmissionStore({
             namespace: `${input.namespace}:outbound:admission`,
-            backend: new InMemoryAdmissionBackend(createInMemoryALAdmissionState()),
+            backend: new InMemoryAdmissionBackend(createInMemoryALAdmissionState(), Date.now),
             supersedenceTrackTtlMs: input.supersedenceTrackTtlMs,
             retention: normalizeALRuntimeStoreRetention(input.retention)
         })
@@ -68,7 +68,8 @@ export function createIndexedDbALInboundRuntimeStores(
             namespace: `${input.namespace}:inbound:admission`,
             backend: new IndexedDbAdmissionBackend(
                 input.dbName ?? IndexedDbStringPersistenceProvider.DEFAULT_DB_NAME,
-                IndexedDbStringPersistenceProvider.DEFAULT_STORE_NAME
+                IndexedDbStringPersistenceProvider.DEFAULT_STORE_NAME,
+                Date.now
             ),
             orderingTrackTtlMs: input.orderingTrackTtlMs,
             supersedenceTrackTtlMs: input.supersedenceTrackTtlMs,
@@ -85,7 +86,8 @@ export function createIndexedDbALOutboundRuntimeStores(
             namespace: `${input.namespace}:outbound:admission`,
             backend: new IndexedDbAdmissionBackend(
                 input.dbName ?? IndexedDbStringPersistenceProvider.DEFAULT_DB_NAME,
-                IndexedDbStringPersistenceProvider.DEFAULT_STORE_NAME
+                IndexedDbStringPersistenceProvider.DEFAULT_STORE_NAME,
+                Date.now
             ),
             supersedenceTrackTtlMs: input.supersedenceTrackTtlMs,
             retention: normalizeALRuntimeStoreRetention(input.retention)

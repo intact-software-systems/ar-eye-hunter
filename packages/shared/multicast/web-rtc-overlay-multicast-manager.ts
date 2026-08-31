@@ -9,7 +9,12 @@ import {
     resolveALQosNormalizationInput,
     resolveSupersedenceKey
 } from '../al-contracts/al-policy.ts';
-import type { ALDedupStoreLike, ALOrderingStoreLike, ALSupersedenceStoreLike } from '../al-contracts/al-runtime.ts';
+import type {
+    ALDedupStoreLike,
+    ALOrderingStoreLike,
+    ALSupersedenceStoreLike
+} from '../al-contracts/al-runtime.ts';
+import { decodeALOutboundPreparedMessage } from '../alm/outbound/al-outbound-effect-validation.ts';
 import type {
     ALOutboundEnqueueResult,
     ALOutboundEnqueueStatus,
@@ -107,6 +112,7 @@ export class WebRtcOverlayMulticastManager {
         this.outboundRuntime = new ALOutboundMessageRuntime<ALMessage>(
             {
                 ...dependencies.outboundRuntime,
+                decodePreparedMessage: decodeALOutboundPreparedMessage,
                 outbox: this.outbox,
                 toOutboxEntry: (msg) =>
                     QueueBoxUtilities.toResourceEntryFromMsg(

@@ -16,6 +16,7 @@ import type { ALInboundPlanner } from '../alm/inbound/al-inbound-admission-store
 import type { ALInboundRuntimeStores } from '../alm/inbound/al-inbound-message-runtime.ts';
 import { ALInboundMessageRuntime } from '../alm/inbound/al-inbound-message-runtime.ts';
 import { createDefaultALInboundRuntimeResources } from '../alm/inbound/create-default-al-inbound-message-runtime.ts';
+import { decodeALOutboundPreparedMessage } from '../alm/outbound/al-outbound-effect-validation.ts';
 import type {
     ALOutboundRuntimeDiagnosticsSink,
     ALOutboundRuntimeStores
@@ -167,6 +168,7 @@ export class WsQueueBoxClientService {
         this.outboundRuntime = new ALOutboundMessageRuntime<ALMessage>(
             {
                 ...dependencies.outboundRuntime,
+                decodePreparedMessage: decodeALOutboundPreparedMessage,
                 diagnostics: this.dependencies.outboundDiagnostics,
                 outbox: this.outbox,
                 toOutboxEntry: (msg) =>
