@@ -1943,6 +1943,15 @@ regression. The complete formatter also identifies four affected document/recipe
 remain unformatted despite the corrected TypeScript check. Both findings remain open; earlier
 scoped approvals and checker counts do not establish whole-branch standards closure.
 
+The approved additional correction is now committed locally. The real analyzer rejects
+unconditional throwing guards, including a locally bound truthy condition, while retaining valid
+input-dependent guards. The four affected document/recipe files are formatted; parsed recipe
+equivalence preserves all workloads, targets, budgets and assertions. Current focused checks pass
+340 analyzer tests, 123 shared routing/QoS tests, 62 native route/authority tests and the maintained
+980-file test type gate. These sets overlap and are not a summed unique-test count. The one
+independent scoped re-review still determines whether the residual findings and new routing change
+meet full-file standards and safety requirements.
+
 Compatibility inspection also found the affected idempotent-receipt writer had only test callers
 and no public package export or independent runtime consumer. It is removed rather than retained
 behind a new input wrapper. Receipt identity/corruption tests exercise the production guarded-batch
@@ -1952,22 +1961,22 @@ must also prove that rejected input caused no mutation.
 
 Current evidence and remaining acceptance are deliberately separate:
 
-| Boundary                             | Supported evidence                                                                                                                                                                                                                                                           | Still required                                                                                                     |
-| ------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| Lifecycle, retry and match consumers | The frozen correction passes lifecycle 37/37 and criterion 52/52 in the full memory profile. Earlier elected-manager match 52/52 and live RTC primary passed, with two configured RTC opt-in skips.                                                                          | Refresh remaining affected final-candidate integration.                                                            |
-| Permissive-policy valve              | A wrong-group receipt failed the new identity assertion; the corrected live recipe passes 45/45. The group remains `forming` through flowing → halted → flowing, membership/presence work while halted, and relay stops then resumes. Blocked-policy and CRDT checks remain. | Remaining final-profile coverage.                                                                                  |
-| Formation scale                      | Corrected declared connections pass all four formation-large recipes: managed medium 613/613 and large 3,013/3,013, with no nonblocking failures in either managed tier. Ordinary burst/churn retain configured readiness observations.                                      | Final-candidate assessment after remaining assertion/contract changes; this is a precommit correction checkpoint.  |
-| Memory and PostgreSQL profiles       | The full frozen-candidate memory profile passes 32/32 with 108 nonblocking observations and none of the checked invariant/unhandled diagnostics. The committed correction repeats the earlier PostgreSQL result: 31/32, WebSocket echo failure, cluster phase not run.       | Resolve the repeated recipient failure and complete the full PostgreSQL profile, including its cluster phase.      |
-| Medium-scale and topology replay     | Earlier fixed medium-scale passed all 2,757 interactions. Passive-C polling and replacement-process same-session hydration passed without a new mutation.                                                                                                                    | Refresh affected final-candidate gates and inspect all process diagnostics.                                        |
-| Package/application compatibility    | The correction aggregate passes 974 tests, affected types, 50 route tests and native receipt-evidence consumer checks. Earlier broad unit, Deno, build, browser E2E and memory full-stack checks passed.                                                                     | Repair the reproduced analyzer regression and complete remaining broad baseline gates.                             |
-| Formatting                           | The original three affected TypeScript failures are corrected. The complete formatter still fails on the changed architecture document and three changed recipes, plus five byte-identical untouched files independently reproduced on the clean pre-cutover base.           | Format the four affected files; report the five independent baseline failures without claiming a full-format pass. |
-| State-write performance              | The latest frozen-runtime diagnostic fails the unchanged comparator: shared throughput is 17% lower and transaction duration 57% higher, despite 6,300 accepted commands and no retry-exhaustion, atomic-completion or DBW failures.                                         | An exact-commit controlled comparison; the earlier passing candidate no longer establishes acceptance.             |
+| Boundary                             | Supported evidence                                                                                                                                                                                                                                                                                                               | Still required                                                                                                                   |
+| ------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| Lifecycle, retry and match consumers | The frozen correction passes lifecycle 37/37 and criterion 52/52 in the full memory profile. Earlier elected-manager match 52/52 and live RTC primary passed, with two configured RTC opt-in skips.                                                                                                                              | Refresh remaining affected final-candidate integration.                                                                          |
+| Permissive-policy valve              | A wrong-group receipt failed the new identity assertion; the corrected live recipe passes 45/45. The group remains `forming` through flowing → halted → flowing, membership/presence work while halted, and relay stops then resumes. Blocked-policy and CRDT checks remain.                                                     | Remaining final-profile coverage.                                                                                                |
+| Formation scale                      | Corrected declared connections pass all four formation-large recipes: managed medium 613/613 and large 3,013/3,013, with no nonblocking failures in either managed tier. Ordinary burst/churn retain configured readiness observations.                                                                                          | Final-candidate assessment after remaining assertion/contract changes; this is a precommit correction checkpoint.                |
+| Memory and PostgreSQL profiles       | The earlier frozen-candidate memory profile passes 32/32 with 108 nonblocking observations. The additional correction passes the ordinary uninstrumented PostgreSQL profile: 32/32 default recipes and 6/6 cluster recipes, including WebSocket 12/12. Default retains 60 configured nonblocking observations; cluster has none. | Refresh the memory profile on the corrected runtime and complete the remaining affected integration gates.                       |
+| Medium-scale and topology replay     | Earlier fixed medium-scale passed all 2,757 interactions. Passive-C polling and replacement-process same-session hydration passed without a new mutation.                                                                                                                                                                        | Refresh affected final-candidate gates and inspect all process diagnostics.                                                      |
+| Package/application compatibility    | The additional correction passes focused analyzer, shared routing/QoS, native route/authority and affected type checks. Earlier broad unit, Deno, build, browser E2E and memory full-stack checks passed.                                                                                                                        | Complete remaining broad baseline gates and independent scoped review.                                                           |
+| Formatting                           | The original affected TypeScript failures and four residual document/recipe failures are corrected. The refreshed complete formatter reports only the same five byte-identical untouched failures independently reproduced on the base.                                                                                          | Full-repository formatting remains red on independent baseline files; no affected formatting finding remains in this correction. |
+| State-write performance              | The latest frozen-runtime diagnostic fails the unchanged comparator: shared throughput is 17% lower and transaction duration 57% higher, despite 6,300 accepted commands and no retry-exhaustion, atomic-completion or DBW failures.                                                                                             | An exact-commit controlled comparison; the earlier passing candidate no longer establishes acceptance.                           |
 
 The PostgreSQL failure is a room WebSocket echo with no recipients before local group-cache
 updates arrive. The unchanged recipe passes isolated three-process probes on both base and
 candidate, and in a full baseline run before unrelated later failures. This narrows the timing
 investigation but neither erases the failed candidate profile nor proves its cause. Preserve the
-original timeout and delivery assertion; no speculative routing change is justified yet.
+original timeout and delivery assertion; corrections must address a demonstrated loss mechanism.
 Diagnostic-only instrumentation captures durable authorization and cached recipient snapshots
 without changing production files. Its prefix and full-default diagnostic selections pass 4/4 and
 32/32 respectively; neither runs the cluster phase. The passing WebSocket observations show the
@@ -1985,12 +1994,29 @@ the cache/authority mismatch as a viable mechanism, not the exact cache contents
 live run or a completed fix. Any correction must preserve current durable authorization and the
 monotonic-cache contract; a liveness-filtered authority projection is not a canonical cache observation.
 
+The approved correction carries the built-in authorizer's complete current recipient decision to
+the unchanged room-target live send, without observing that projection in the cache. Generic custom
+authorization remains a current public capability, not a fallback for an incomplete durable decision.
+An empty authoritative audience must remain empty; target/exclusion fences, current socket liveness
+and expiration, and transformed-proxy isolation require direct positive and negative regressions.
+
+The actual authorizer-to-socket regressions now pass for cold/stale cache, revoked/expired recipients,
+wrong scope, exclusions, awaited handlers and replacement sockets. The subsequent ordinary
+PostgreSQL profile passes both default and cluster phases. All three process logs contain none of
+the checked DBW, unhandled, no-recipient, immutable-collision, lost-reservation or callback-failure
+diagnostics. The runtime/recipe tree remained byte-identical throughout that run. A subsequent
+type-only import separation preserves byte-identical emitted JavaScript and leaves the remaining
+runtime unchanged. These results close the repeated live-profile failure for this correction,
+without claiming warning-free behavior in other workloads or closing performance acceptance.
+
 The performance diagnostic began before the final server closure commit, so it is not exact-commit
 publication evidence. Neither a code regression nor harmless host noise has been established.
 The prescribed order-balanced comparison requires four fresh pinned PostgreSQL containers, with
-nine measured runs per position and no other running containers. It awaits explicit approval to
-temporarily stop only the shared development PostgreSQL container and restore it with its data
-intact. No shared development container or database has been stopped, reset or deleted; managed
+nine measured runs per position and no other running containers. The maintainer has approved
+temporarily stopping only `ar-eye-hunter-postgres` for that controlled benchmark, then restarting
+the same container with its data intact. Keep it running until the measurement window is ready;
+do not reset or delete its database or volumes. No shared development container or database has
+been stopped, reset or deleted at this checkpoint; managed
 recipe runs create and clean up only their own isolated test databases.
 
 Medium-scale coalesced-outbox successor collision diagnostics also reproduce on the unchanged
@@ -2000,11 +2026,13 @@ not harmlessness. The separate owner and controlled evidence remain in
 Topology replay and live RTC likewise retain their observed runtime warnings; no warning-free
 claim is made.
 
-The single final correction wave and scoped re-review are exhausted. The next checkpoint requires
-explicit direction for a bounded additional correction of the analyzer and affected formatting,
-root-cause resolution of the repeated PostgreSQL failure, and the remaining required validation.
-Do not waive those findings or start Slice 9a on an unaccepted checkpoint. The controlled benchmark
-still needs its separate shared-container approval. Keep the PR a draft and publish the
+The original final correction wave and scoped re-review are complete. The maintainer has approved
+one additional bounded, consolidated fix-and-review pass for the analyzer, affected formatting
+and reproduced cold-cache routing mechanism. Keep the direct behavioral regressions and affected
+package/API checks ahead of the remaining broad and live validation; a passing diagnostic alone
+does not close the repeated PostgreSQL failure. All acceptance gates and the no-retained-legacy
+constraint remain. Do not start another correction wave or Slice 9a on an unaccepted checkpoint.
+Keep the PR a draft and publish the
 runtime/consumer cutover atomically only when the evidence supports it. A mergeable stacked base
 is not synchronization work and does not itself mean ready for main.
 
