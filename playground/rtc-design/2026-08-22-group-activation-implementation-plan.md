@@ -1622,17 +1622,37 @@ runtime split for aggregate style comparison, not a standards exception. The unc
 The complete formatter still reports five byte-identical untouched baseline failures. Semantic
 recording tests and native checks do not claim execution of exhaustive live or retention-100 cases.
 
-Independent scoped re-review and broad/live/PostgreSQL/controlled state-write gates remain required.
-Keep the PR draft until supported delivery evidence permits otherwise; older green CI does not
-validate unpublished corrections. Record final remote gate state in the PR, leave merges to the
-maintainer, and carry accepted parent corrections through #390, #391 and #396 in order. No Slice 9
-implementation belongs to this cleanup campaign.
+The single independent scoped re-review requests changes: six original findings are addressed,
+but the browser NACK contract and complete-file standards closure remain open. The RTC receive
+path has no producer for the required `not-yet-in-sync` receipt; that reason currently comes from
+the server WebSocket authorizer, not the peer selected by this probe. Positive injected receipts
+prove the reader/matcher, not production rejection. Resolve browser snapshot-admission/NACK
+semantics explicitly without substituting a server receipt or weakening the gate.
+
+Remaining closure includes known fixture outputs without their canonical named contracts,
+optional test facades over required APIs and cleanup errors that propagate without normalization.
+Every changed human-authored file was reviewed in full; every support file changed by subsequent
+remediation must enter closure recursively. Independent untouched code remains outside closure.
+A lineage-aware changed-style PASS does not waive these concrete findings.
+
+Fresh full typecheck, Deno and workspace builds pass. Full unit validation fails two introduced
+checks: the new operation fixture reverse-imports a benchmark-package type and adds an unlisted
+establishment-route consumer to the exact removal inventory. Both checks pass on pinned main.
+These are two additional Important regressions, not flaky infrastructure or obsolete test coupling.
+
+The final whole-PR correction wave and its one scoped re-review are complete, with four Important
+findings still open. No second correction wave or changed product contract is inferred. Keep this
+PR draft and dependent advancement held for the maintainer's direction. Remaining browser/live,
+native PostgreSQL and controlled state-write gates are required and unrun on this candidate.
+Older green CI does not validate unpublished corrections. Leave merges to the maintainer and
+carry accepted parent corrections through #390, #391 and #396 in order. No Slice 9 implementation
+belongs to this cleanup campaign.
 
 **Next two PRs (I5, I20):**
 
-- **PR 13 = finish #381 / slice 8a.** Independently re-review the consolidated correction, complete
-  the unchanged final gates, and publish with an accurate semantic PR explanation and manual-merge
-  delivery status.
+- **PR 13 = finish #381 / slice 8a.** Obtain the explicit browser NACK contract and bounded-follow-up
+  direction, resolve the four remaining findings, then complete the unchanged final gates and
+  publish with an accurate semantic PR explanation and manual-merge delivery status.
 - **PR 14 = review existing #390 / slice 8b, stacked on #381.** Carry the material parent correction
   into its existing total stage × layout-role dial matrix, then completely review and fix that PR.
   The later facade and route-cutover reviews follow in order; no new slice starts here.
