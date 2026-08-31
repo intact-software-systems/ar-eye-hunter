@@ -1618,8 +1618,16 @@ package entry point while moving its physical file and direct imports to canonic
 An unrelated public class/namespace rename is not authorized or needed for that safe file cleanup.
 No predecessor facade, rename-only alias or old physical-path forwarding module is retained.
 The implementation remains Slice 8a; the later dial matrix, facade and route cutover remain in their
-existing PRs. Complete one consolidated fix wave and independent scoped re-review before advancing
-to #390. Broader validation and publication remain pending, and #381 is draft again.
+existing PRs. The consolidated fix wave is now committed locally. Its executable proof reads
+receiver/message-correlated NACK receipts, and its single active callback sends distinct completed
+desired and RTT-reporting peer sets to the existing streamer. Runtime authentication, connection
+state, health and resource cleanup have explicit owners; recursively touched fixtures and imports
+are closed. Covering tests, package/native/test typing and the exact committed style, structure,
+coupling and legacy gates pass. The unchanged 205 KiB headless budget passes at 204.877 KiB after
+private runtime encapsulation, with narrow remaining margin. These are implementation and focused
+validation results, not independent source acceptance or real-live exhaustive/retention evidence.
+Complete the single independent scoped re-review before advancing to #390. Broader validation and
+publication remain pending, and #381 is draft again.
 
 ### Slice 8b start checkpoint — stacked browser dial gate (2026-08-30, PR #390)
 
