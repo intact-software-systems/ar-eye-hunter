@@ -1622,8 +1622,9 @@ existing PRs. The consolidated fix wave is now committed locally. Its executable
 receiver/message-correlated NACK receipts, and its single active callback sends distinct completed
 desired and RTT-reporting peer sets to the existing streamer. Runtime authentication, connection
 state, health and resource cleanup have explicit owners; recursively touched fixtures and imports
-are closed. Covering tests, package/native/test typing and the exact committed style, structure,
-coupling and legacy gates pass. The unchanged 205 KiB headless budget passes at 204.877 KiB after
+were remediated, subject to the independent closure findings below. Covering tests,
+package/native/test typing and the exact committed style, structure, coupling and legacy gates pass.
+The unchanged 205 KiB headless budget passes at 204.877 KiB after
 private runtime encapsulation, with narrow remaining margin. These are implementation and focused
 validation results, not independent source acceptance or real-live exhaustive/retention evidence.
 The single independent scoped re-review has now traced a load-bearing invalid assumption in the
@@ -1632,6 +1633,14 @@ server authorizer produces that reason, but the probe selects `messages.rtc` and
 receipt. Correlation against an injected positive fixture does not prove the missing receive-path
 behavior. Preserve the gate and resolve the browser snapshot-admission/NACK contract explicitly;
 do not substitute a server receipt or quietly weaken the negative case.
+
+The terminal re-review requests changes: six original findings are addressed, but this NACK
+contract and complete-file standards closure remain open. Known fixture outputs still hide their
+contracts, some tests weaken required APIs into optional facades, and cleanup errors propagate
+without a named normalized failure. These are real affected-file findings, not exceptions granted
+by the lineage-aware scanner. Every changed human-authored file was reviewed in full; any support
+file changed by the remaining remediation must enter closure recursively. Independent untouched
+code remains outside closure.
 
 Fresh full typecheck, Deno and workspace builds pass. The full unit gate fails two checks introduced
 by the new live-delivery fixture: its reverse import into the RTC benchmark package violates the
@@ -2118,9 +2127,10 @@ The fresh oldest-PR check found a real conflict with actual current main. That c
 locally with main's canonical RTT-reporter and transport-boundary corrections preserved alongside
 Slice 8a's planned-RTT/accepted-traffic separation. The subsequent complete #381 review found the
 eight correction areas recorded in its checkpoint. Its single correction wave is committed locally,
-but scoped re-review exposes the missing browser RTC NACK producer contract and fresh unit
-validation exposes two fixture integration regressions. The oldest PR is not accepted; resolve
-those findings before assessing the material dependency change through the remaining stack.
+but scoped re-review leaves the browser RTC NACK producer contract and full-file standards closure
+open, and fresh unit validation exposes two fixture integration regressions. All four Important
+findings remain required work. The oldest PR is not accepted; resolve those findings before
+assessing the material dependency change through the remaining stack.
 Earlier green checks do not prove this new combined behavior, and the local repair has not yet
 replaced #381's remote head.
 
