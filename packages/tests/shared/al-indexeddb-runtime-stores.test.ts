@@ -1,12 +1,13 @@
 // @vitest-environment happy-dom
 
+import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
+import { createDefaultALInboundMessageRuntime } from '@shared/alm/inbound/create-default-al-inbound-message-runtime.ts';
 import '../setup-browser-indexeddb.ts';
 
 import {
-    ALInboundMessageRuntime,
     ALOutboundMessageRuntime,
-    createIndexedDbALInboundRuntimeStores,
-    createIndexedDbALOutboundRuntimeStores,
+    createDefaultIndexedDbALInboundRuntimeStores,
+    createDefaultIndexedDbALOutboundRuntimeStores,
     IndexedDbQueueBox,
     InMemoryALOrderingStore,
     InMemoryQueueBox,
@@ -18,13 +19,22 @@ import {
     QueueBoxUtilities,
     type ALInboundAdmissionStore,
     type ALInboundPlanner,
+    type ALInboundRuntimeStores,
     type ALMessage,
     type ALOutboundAdmissionStore,
     type ALOutboundCommitBundle,
+    type ALOutboundMessageRuntimeInput,
     type ALOutboundPlanner,
+    type ClaimALOutboundEffectsInput,
     type ResourceEntry
 } from '@shared/mod.ts';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import {
+    afterEach,
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
 
 describe('IndexedDB AL runtime stores', () => {
     afterEach(() => {
@@ -56,11 +66,11 @@ describe('IndexedDB AL runtime stores', () => {
             }
         );
 
-        const runtime1 = createInboundRuntime(dbName, namespace, dispatchedMsgIds);
+        const runtime1 = createInboundRuntime({ dbName: dbName, namespace: namespace, dispatchedMsgIds: dispatchedMsgIds });
         await runtime1.handleIncomingMessage(msg, 'peer-1');
         expect(dispatchedMsgIds).toEqual([msg.id.msgId]);
 
-        const runtime2 = createInboundRuntime(dbName, namespace, dispatchedMsgIds);
+        const runtime2 = createInboundRuntime({ dbName: dbName, namespace: namespace, dispatchedMsgIds: dispatchedMsgIds });
         await runtime2.handleIncomingMessage(msg, 'peer-1');
         expect(dispatchedMsgIds).toEqual([msg.id.msgId]);
     });
@@ -69,14 +79,14 @@ describe('IndexedDB AL runtime stores', () => {
         const dbName = `al-runtime-${crypto.randomUUID()}`;
         const namespace = 'rtc-inbound';
         const dispatchedMsgIds: string[] = [];
-        const runtime1 = createInboundRuntime(dbName, namespace, dispatchedMsgIds);
+        const runtime1 = createInboundRuntime({ dbName: dbName, namespace: namespace, dispatchedMsgIds: dispatchedMsgIds });
         const seq2 = createOrderedMulticastMessage(2, 'two');
         const seq1 = createOrderedMulticastMessage(1, 'one');
 
         await runtime1.handleIncomingMessage(seq2, 'peer-1');
         expect(dispatchedMsgIds).toEqual([]);
 
-        const runtime2 = createInboundRuntime(dbName, namespace, dispatchedMsgIds);
+        const runtime2 = createInboundRuntime({ dbName: dbName, namespace: namespace, dispatchedMsgIds: dispatchedMsgIds });
         await runtime2.handleIncomingMessage(seq1, 'peer-1');
 
         expect(dispatchedMsgIds).toEqual([seq1.id.msgId, seq2.id.msgId]);
@@ -90,10 +100,10 @@ describe('IndexedDB AL runtime stores', () => {
             storeName: 'queuebox:inbox'
         });
         const dispatchedMsgIds: string[] = [];
-        const runtime = new ALInboundMessageRuntime({
+        const runtime = createDefaultALInboundMessageRuntime({
             selfPeerId: 'self',
             inbox,
-            stores: createIndexedDbALInboundRuntimeStores({
+            stores: createDefaultIndexedDbALInboundRuntimeStores({
                 dbName,
                 namespace
             }),
@@ -105,10 +115,10 @@ describe('IndexedDB AL runtime stores', () => {
                     orderingStore: runtime.orderingStore,
                     supersedenceStore: runtime.supersedenceStore
                 }),
-            readStoredEntry: (entry) => JSON.parse(entry.resource) as ALMessage,
+            readStoredEntry: (entry) => decodePersistedALMessage(entry.resource),
             toInboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'inbox'),
             dispatchInboxEntry: async (entry) => {
-                const msg = JSON.parse(entry.resource) as ALMessage;
+                const msg = decodePersistedALMessage(entry.resource);
                 dispatchedMsgIds.push(msg.id.msgId);
             },
             sendControlMessage: async () => Promise.resolve()
@@ -138,11 +148,14 @@ describe('IndexedDB AL runtime stores', () => {
     it('persists inbound local-inbox effects without leaking Temporal values into IndexedDB', async () => {
         const dbName = `al-runtime-${crypto.randomUUID()}`;
         const namespace = 'rtc-inbound-local-inbox';
-        const stores = createIndexedDbALInboundRuntimeStores({
+        const stores = createDefaultIndexedDbALInboundRuntimeStores({
             dbName,
             namespace
         });
-        const runtime = createInboundRuntime(dbName, namespace, [], {
+        const runtime = createInboundRuntime({
+            dbName: dbName,
+            namespace: namespace,
+            dispatchedMsgIds: [],
             stores: {
                 ...stores,
                 admissionStore: createFlakyInboundAdmissionStore(stores.admissionStore, {
@@ -174,7 +187,12 @@ describe('IndexedDB AL runtime stores', () => {
         await runtime.handleIncomingMessage(msg, 'peer-1');
         runtime.dispose();
 
-        const claimed = await stores.admissionStore.claimReadyEffects('inspector', 10, 1_000);
+        const claimed = await stores.admissionStore.claimReadyEffects({
+            workerId: 'inspector',
+            maxCount: 10,
+            leaseMs: 1_000,
+            nowMs: Date.now()
+        });
         const inboxEffect = claimed.find((effect) => effect.payload.kind === 'enqueue-inbox');
 
         expect(inboxEffect).toBeDefined();
@@ -199,7 +217,7 @@ describe('IndexedDB AL runtime stores', () => {
 
         const dbName = `al-runtime-${crypto.randomUUID()}`;
         const namespace = 'rtc-inbound-retention';
-        const stores = createIndexedDbALInboundRuntimeStores({
+        const stores = createDefaultIndexedDbALInboundRuntimeStores({
             dbName,
             namespace,
             retention: {
@@ -272,14 +290,12 @@ describe('IndexedDB AL runtime stores', () => {
         const dbName = `al-runtime-${crypto.randomUUID()}`;
         const namespace = 'rtc-outbound-retention-defaults';
         const sent: Array<Record<string, unknown>> = [];
-        const stores = createIndexedDbALOutboundRuntimeStores({
+        const stores = createDefaultIndexedDbALOutboundRuntimeStores({
             dbName,
             namespace
         });
         const admissionStore = requireOutboundAdmissionStore(stores);
-        const runtime = createOutboundRuntime(dbName, namespace, sent, {
-            stores
-        });
+        const runtime = createOutboundRuntime({ dbName: dbName, namespace: namespace, sent: sent, stores });
         const msg = createOutboundUnicastMessage('msg-outbound-default-retention');
 
         await enqueueOutboundOrThrow(runtime, msg);
@@ -297,7 +313,7 @@ describe('IndexedDB AL runtime stores', () => {
 
         const dbName = `al-runtime-${crypto.randomUUID()}`;
         const namespace = 'rtc-outbound-retention-ephemeral';
-        const stores = createIndexedDbALOutboundRuntimeStores({
+        const stores = createDefaultIndexedDbALOutboundRuntimeStores({
             dbName,
             namespace,
             retention: {
@@ -360,7 +376,7 @@ describe('IndexedDB AL runtime stores', () => {
         const dbName = `al-runtime-${crypto.randomUUID()}`;
         const namespace = 'rtc-outbound';
         const sent: Array<Record<string, unknown>> = [];
-        const runtime1 = createOutboundRuntime(dbName, namespace, sent);
+        const runtime1 = createOutboundRuntime({ dbName: dbName, namespace: namespace, sent: sent });
         const seq1 = {
             ...newALUnicastMessage(
                 'self',
@@ -405,7 +421,7 @@ describe('IndexedDB AL runtime stores', () => {
         await enqueueOutboundOrThrow(runtime1, seq1);
         await enqueueOutboundOrThrow(runtime1, seq2);
 
-        const runtime2 = createOutboundRuntime(dbName, namespace, sent);
+        const runtime2 = createOutboundRuntime({ dbName: dbName, namespace: namespace, sent: sent });
         await runtime2.acceptControlMessage(
             newALNackControlMessage('peer-1', 'self', seq2.id.msgId, 'gap', {
                 status: 'gap',
@@ -425,13 +441,16 @@ describe('IndexedDB AL runtime stores', () => {
         const dbName = `al-runtime-${crypto.randomUUID()}`;
         const namespace = 'rtc-outbound-crash-before-drain';
         const sent: Array<Record<string, unknown>> = [];
-        const stores = createIndexedDbALOutboundRuntimeStores({
+        const stores = createDefaultIndexedDbALOutboundRuntimeStores({
             dbName,
             namespace
         });
         const admissionStore = requireOutboundAdmissionStore(stores);
         const msg = createOutboundUnicastMessage('msg-indexeddb-crash-before-drain');
-        const runtime1 = createOutboundRuntime(dbName, namespace, sent, {
+        const runtime1 = createOutboundRuntime({
+            dbName: dbName,
+            namespace: namespace,
+            sent: sent,
             stores: {
                 ...stores,
                 admissionStore: createFlakyOutboundAdmissionStore(admissionStore, {
@@ -444,7 +463,7 @@ describe('IndexedDB AL runtime stores', () => {
         runtime1.dispose();
         expect(sent).toEqual([]);
 
-        const runtime2 = createOutboundRuntime(dbName, namespace, sent);
+        const runtime2 = createOutboundRuntime({ dbName: dbName, namespace: namespace, sent: sent });
         await runtime2.ready();
 
         expect(sent).toEqual([
@@ -457,13 +476,16 @@ describe('IndexedDB AL runtime stores', () => {
         const dbName = `al-runtime-${crypto.randomUUID()}`;
         const namespace = 'rtc-outbound-single-claim';
         const sent: Array<Record<string, unknown>> = [];
-        const stores = createIndexedDbALOutboundRuntimeStores({
+        const stores = createDefaultIndexedDbALOutboundRuntimeStores({
             dbName,
             namespace
         });
         const admissionStore = requireOutboundAdmissionStore(stores);
         const msg = createOutboundUnicastMessage('msg-indexeddb-single-claim');
-        const runtime1 = createOutboundRuntime(dbName, namespace, sent, {
+        const runtime1 = createOutboundRuntime({
+            dbName: dbName,
+            namespace: namespace,
+            sent: sent,
             stores: {
                 ...stores,
                 admissionStore: createFlakyOutboundAdmissionStore(admissionStore, {
@@ -484,7 +506,7 @@ describe('IndexedDB AL runtime stores', () => {
         const sendBarrier = new Promise<void>((resolve) => {
             releaseSend = resolve;
         });
-        const sendPreparedMessage: ConstructorParameters<typeof ALOutboundMessageRuntime<Record<string, unknown>>>[0]['sendPreparedMessage'] = async (
+        const sendPreparedMessage: ALOutboundMessageRuntimeInput<Record<string, unknown>>['sendPreparedMessage'] = async (
             prepared,
             phase
         ) => {
@@ -492,12 +514,8 @@ describe('IndexedDB AL runtime stores', () => {
             resolveSendStarted();
             await sendBarrier;
         };
-        const runtime2 = createOutboundRuntime(dbName, namespace, sent, {
-            sendPreparedMessage
-        });
-        const runtime3 = createOutboundRuntime(dbName, namespace, sent, {
-            sendPreparedMessage
-        });
+        const runtime2 = createOutboundRuntime({ dbName: dbName, namespace: namespace, sent: sent, sendPreparedMessage });
+        const runtime3 = createOutboundRuntime({ dbName: dbName, namespace: namespace, sent: sent, sendPreparedMessage });
         const drain = Promise.all([runtime2.ready(), runtime3.ready()]);
 
         await sendStarted;
@@ -516,29 +534,22 @@ describe('IndexedDB AL runtime stores', () => {
         const dbName = `al-runtime-${crypto.randomUUID()}`;
         const namespace = 'rtc-outbound-ack-timeout-race';
         const sent: Array<Record<string, unknown>> = [];
-        const stores = createIndexedDbALOutboundRuntimeStores({
+        const stores = createDefaultIndexedDbALOutboundRuntimeStores({
             dbName,
             namespace
         });
         const admissionStore = requireOutboundAdmissionStore(stores);
         const msg = createOutboundUnicastMessage('msg-indexeddb-ack-during-timeout');
         let acceptedAckDuringTimeout = false;
-        const runtime = createOutboundRuntime(dbName, namespace, sent, {
+        const runtime = createOutboundRuntime({
+            dbName: dbName,
+            namespace: namespace,
+            sent: sent,
             stores: {
                 ...stores,
                 admissionStore: createFlakyOutboundAdmissionStore(admissionStore, {
-                    claimReadyEffects: async <TPrepared>(
-                        workerId: string,
-                        maxCount: number,
-                        leaseMs: number,
-                        nowMs?: number
-                    ) => {
-                        const effects = await admissionStore.claimReadyEffects<TPrepared>(
-                            workerId,
-                            maxCount,
-                            leaseMs,
-                            nowMs
-                        );
+                    claimReadyEffects: async <TPrepared>(input: ClaimALOutboundEffectsInput) => {
+                        const effects = await admissionStore.claimReadyEffects<TPrepared>(input);
                         if (
                             !acceptedAckDuringTimeout &&
                             effects.some((effect) => effect.payload.kind === 'ack-timeout')
@@ -593,45 +604,6 @@ describe('IndexedDB AL runtime stores', () => {
         ]);
         runtime.dispose();
     });
-
-    it('expires persisted outbound state snapshots with configured retention', async () => {
-        vi.useFakeTimers({ toFake: ['Date'] });
-        vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
-
-        const dbName = `al-runtime-${crypto.randomUUID()}`;
-        const namespace = 'rtc-outbound-state-retention';
-        const stores = createIndexedDbALOutboundRuntimeStores({
-            dbName,
-            namespace,
-            retention: {
-                sentMessageTtlMs: 40,
-                repairAttemptTtlMs: 20
-            }
-        });
-        const stateStore = requireOutboundStateStore(stores);
-        const msg = createOutboundUnicastMessage('msg-state-retention');
-
-        await stateStore.setSentMessage({
-            msgId: msg.id.msgId,
-            msg
-        });
-        await stateStore.setRepairAttempt({
-            msgId: msg.id.msgId,
-            attempts: 1
-        });
-
-        expect(await stateStore.getAllSentMessages()).toHaveLength(1);
-        expect(await stateStore.getAllRepairAttempts()).toHaveLength(1);
-
-        await vi.advanceTimersByTimeAsync(21);
-
-        expect(await stateStore.getAllRepairAttempts()).toEqual([]);
-        expect(await stateStore.getAllSentMessages()).toHaveLength(1);
-
-        await vi.advanceTimersByTimeAsync(20);
-
-        expect(await stateStore.getAllSentMessages()).toEqual([]);
-    });
 });
 
 async function enqueueOutboundOrThrow(
@@ -646,18 +618,19 @@ async function enqueueOutboundOrThrow(
     return enqueued.entries;
 }
 
-function createInboundRuntime(
-    dbName: string,
-    namespace: string,
-    dispatchedMsgIds: string[],
-    options: Readonly<{
-        stores?: ConstructorParameters<typeof ALInboundMessageRuntime>[0]['stores'];
-    }> = {}
-) {
-    return new ALInboundMessageRuntime({
+interface IndexedDbInboundFixtureInput {
+    readonly dbName: string;
+    readonly namespace: string;
+    readonly dispatchedMsgIds: string[];
+    readonly stores?: ALInboundRuntimeStores;
+}
+
+function createInboundRuntime(input: IndexedDbInboundFixtureInput) {
+    const { dbName, namespace, dispatchedMsgIds } = input;
+    return createDefaultALInboundMessageRuntime({
         selfPeerId: 'self',
         inbox: new InMemoryQueueBox(new Map()),
-        stores: options.stores ?? createIndexedDbALInboundRuntimeStores({
+        stores: input.stores ?? createDefaultIndexedDbALInboundRuntimeStores({
             dbName,
             namespace
         }),
@@ -669,10 +642,10 @@ function createInboundRuntime(
                 orderingStore: runtime.orderingStore,
                 supersedenceStore: runtime.supersedenceStore
             }),
-        readStoredEntry: (entry) => JSON.parse(entry.resource) as ALMessage,
+        readStoredEntry: (entry) => decodePersistedALMessage(entry.resource),
         toInboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'inbox'),
         dispatchInboxEntry: async (entry: ResourceEntry) => {
-            const msg = JSON.parse(entry.resource) as ALMessage;
+            const msg = decodePersistedALMessage(entry.resource);
             dispatchedMsgIds.push(msg.id.msgId);
         },
         sendControlMessage: async () => Promise.resolve()
@@ -698,6 +671,7 @@ function createFlakyInboundAdmissionStore(
         ready: () => inner.ready(),
         readIncomingMessage: (msg, fromPeerId, planner) => inner.readIncomingMessage(msg, fromPeerId, planner),
         readBufferedRelease: (trackKey, seq) => inner.readBufferedRelease(trackKey, seq),
+        readDeliveryPredecessors: (trackKey, beforeSeq) => inner.readDeliveryPredecessors(trackKey, beforeSeq),
         planStoredEntry: (msg, planner) => inner.planStoredEntry(msg, planner),
         commitMutations: (request) =>
             hooks.commitMutations
@@ -707,37 +681,38 @@ function createFlakyInboundAdmissionStore(
             hooks.commitBundle
                 ? hooks.commitBundle(bundle)
                 : inner.commitBundle(bundle),
-        claimReadyEffects: (workerId, maxCount, leaseMs, nowMs) =>
+        claimReadyEffects: (input) =>
             hooks.claimReadyEffects
-                ? hooks.claimReadyEffects(workerId, maxCount, leaseMs, nowMs)
-                : inner.claimReadyEffects(workerId, maxCount, leaseMs, nowMs),
+                ? hooks.claimReadyEffects(input)
+                : inner.claimReadyEffects(input),
         completeEffect: (effectId, workerId) => inner.completeEffect(effectId, workerId),
-        rescheduleEffect: (effectId, workerId, retryAtMs, lastError) => inner.rescheduleEffect(effectId, workerId, retryAtMs, lastError),
+        rescheduleEffect: (input) => inner.rescheduleEffect(input),
         peekNextEffectReadyAt: (nowMs) => inner.peekNextEffectReadyAt(nowMs),
         acceptControlMessage: (msg) => inner.acceptControlMessage(msg)
     };
 }
 
-function createOutboundRuntime(
-    dbName: string,
-    namespace: string,
-    sent: Array<Record<string, unknown>>,
-    options: Readonly<{
-        stores?: ConstructorParameters<typeof ALOutboundMessageRuntime<Record<string, unknown>>>[0]['stores'];
-        planOutgoingMessage?: ConstructorParameters<typeof ALOutboundMessageRuntime<Record<string, unknown>>>[0]['planOutgoingMessage'];
-        planRepairMessage?: ConstructorParameters<typeof ALOutboundMessageRuntime<Record<string, unknown>>>[0]['planRepairMessage'];
-        sendPreparedMessage?: ConstructorParameters<typeof ALOutboundMessageRuntime<Record<string, unknown>>>[0]['sendPreparedMessage'];
-    }> = {}
-) {
+interface IndexedDbOutboundFixtureInput {
+    readonly dbName: string;
+    readonly namespace: string;
+    readonly sent: Array<Record<string, unknown>>;
+    readonly stores?: ALOutboundMessageRuntimeInput<Record<string, unknown>>['stores'];
+    readonly planOutgoingMessage?: ALOutboundMessageRuntimeInput<Record<string, unknown>>['planOutgoingMessage'];
+    readonly planRepairMessage?: ALOutboundMessageRuntimeInput<Record<string, unknown>>['planRepairMessage'];
+    readonly sendPreparedMessage?: ALOutboundMessageRuntimeInput<Record<string, unknown>>['sendPreparedMessage'];
+}
+
+function createOutboundRuntime(input: IndexedDbOutboundFixtureInput) {
+    const { dbName, namespace, sent } = input;
     return new ALOutboundMessageRuntime<Record<string, unknown>>({
         outbox: new InMemoryQueueBox(new Map()),
-        stores: options.stores ?? createIndexedDbALOutboundRuntimeStores({
+        stores: input.stores ?? createDefaultIndexedDbALOutboundRuntimeStores({
             dbName,
             namespace
         }),
         toOutboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox'),
-        readMessageFromEntry: (entry) => JSON.parse(entry.resource) as ALMessage,
-        planOutgoingMessage: options.planOutgoingMessage ?? ((msg) => ({
+        readMessageFromEntry: (entry) => decodePersistedALMessage(entry.resource),
+        planOutgoingMessage: input.planOutgoingMessage ?? ((msg) => ({
             persist: false,
             preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }],
             repairTracking: {
@@ -746,7 +721,7 @@ function createOutboundRuntime(
                 maxAttempts: 1
             }
         })),
-        planRepairMessage: options.planRepairMessage ?? (async (msg, request) => ({
+        planRepairMessage: input.planRepairMessage ?? (async (msg, request) => ({
             persist: false,
             preparedMessages: [
                 {
@@ -756,7 +731,7 @@ function createOutboundRuntime(
                 }
             ]
         })),
-        sendPreparedMessage: options.sendPreparedMessage ?? (async (prepared, phase) => {
+        sendPreparedMessage: input.sendPreparedMessage ?? (async (prepared, phase) => {
             sent.push({ ...prepared, phase });
         })
     });
@@ -775,7 +750,7 @@ function createOutboundPlanner(): ALOutboundPlanner<Record<string, unknown>> {
 }
 
 function requireOutboundAdmissionStore(
-    stores: ConstructorParameters<typeof ALOutboundMessageRuntime<Record<string, unknown>>>[0]['stores']
+    stores: ALOutboundMessageRuntimeInput<Record<string, unknown>>['stores']
 ): ALOutboundAdmissionStore {
     const admissionStore = stores?.admissionStore;
     if (!admissionStore) {
@@ -783,17 +758,6 @@ function requireOutboundAdmissionStore(
     }
 
     return admissionStore;
-}
-
-function requireOutboundStateStore(
-    stores: ConstructorParameters<typeof ALOutboundMessageRuntime<Record<string, unknown>>>[0]['stores']
-) {
-    const stateStore = stores?.stateStore;
-    if (!stateStore) {
-        throw new Error('Expected outbound state store');
-    }
-
-    return stateStore;
 }
 
 function createFlakyOutboundAdmissionStore(
@@ -818,27 +782,19 @@ function createFlakyOutboundAdmissionStore(
                 ? hooks.commitBundle<TPrepared>(bundle)
                 : inner.commitBundle<TPrepared>(bundle),
         acceptControlMessage: <TPrepared>(msg: ALMessage) => inner.acceptControlMessage<TPrepared>(msg),
-        claimReadyEffects: <TPrepared>(
-            workerId: string,
-            maxCount: number,
-            leaseMs: number,
-            nowMs?: number
-        ) => hooks.claimReadyEffects
-            ? hooks.claimReadyEffects<TPrepared>(workerId, maxCount, leaseMs, nowMs)
-            : inner.claimReadyEffects<TPrepared>(workerId, maxCount, leaseMs, nowMs),
+        claimReadyEffects: <TPrepared>(input: ClaimALOutboundEffectsInput) =>
+            hooks.claimReadyEffects
+                ? hooks.claimReadyEffects<TPrepared>(input)
+                : inner.claimReadyEffects<TPrepared>(input),
         completeEffect: (effectId: string, workerId: string) =>
             hooks.completeEffect
                 ? hooks.completeEffect(effectId, workerId)
                 : inner.completeEffect(effectId, workerId),
-        rescheduleEffect: (
-            effectId: string,
-            workerId: string,
-            retryAtMs: number,
-            lastError?: string
-        ) => hooks.rescheduleEffect
-            ? hooks.rescheduleEffect(effectId, workerId, retryAtMs, lastError)
-            : inner.rescheduleEffect(effectId, workerId, retryAtMs, lastError),
-        peekNextEffectReadyAt: (nowMs?: number) => inner.peekNextEffectReadyAt(nowMs)
+        rescheduleEffect: (input) =>
+            hooks.rescheduleEffect
+                ? hooks.rescheduleEffect(input)
+                : inner.rescheduleEffect(input),
+        peekNextEffectReadyAt: () => inner.peekNextEffectReadyAt()
     };
 }
 

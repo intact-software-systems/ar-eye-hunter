@@ -1,4 +1,4 @@
-import type { ALOutboundEnqueueStatus } from '@shared/alm/ALOutboundMessageRuntime.ts';
+import type { ALOutboundEnqueueStatus } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import type { RallarGameAuthorityCommandResult, RallarGameAuthoritySendResult } from '@shared/rallar-game/mod.ts';
 
 export function notReadyAuthoritySendResult(

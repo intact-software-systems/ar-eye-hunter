@@ -14,7 +14,7 @@ import type {
     ALOutboundRepairRequest,
     ALOutboundRepairTrackingPlan,
     ALOutboundSupersedenceTrackingPlan
-} from '../../alm/ALOutboundMessageRuntime.ts';
+} from '../../alm/outbound/al-outbound-message-runtime.ts';
 import type { WsServerResolvedRecipient } from './ws-queue-box-server-contracts.ts';
 import type { WsQueueBoxServerDeliveryReporting } from './ws-queue-box-server-delivery-reporting.ts';
 import type { WsQueueBoxServerTargetResolution } from './ws-queue-box-server-target-resolution.ts';

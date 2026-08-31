@@ -112,7 +112,7 @@ export class BrowserTransportRuntime implements BrowserTransportRuntimePort {
         reason = 'rallar-disconnect'
     ): void {
         runShutdownStep(() => middleware.heartbeat?.stop());
-        runShutdownStep(() => middleware.rtcRxStreamer.stopAllHeartbeats());
+        runShutdownStep(() => middleware.rtcRxStreamer.dispose());
         runShutdownStep(() => {
             for (const peerId of middleware.webRtcConnectionService.knownPeerIds()) {
                 middleware.webRtcConnectionService.disconnectPeer(peerId);

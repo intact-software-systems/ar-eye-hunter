@@ -1,6 +1,7 @@
+import { PersistenceProviderAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
+import { createDefaultALInboundMessageRuntime } from '@shared/alm/inbound/create-default-al-inbound-message-runtime.ts';
 import {
     ALControlPersistenceValue,
-    ALInboundMessageRuntime,
     ALOrderingTrackSnapshot,
     ALOutboundMessageRuntime,
     ALSupersedencePersistenceValue,
@@ -13,6 +14,7 @@ import {
     newALMulticastMessage,
     newALNackControlMessage,
     newALUnicastMessage,
+    normalizeALRuntimeStoreRetention,
     PersistentALControlTracker,
     PersistentALDedupStore,
     PersistentALOrderingStore,
@@ -23,7 +25,13 @@ import {
     type Key,
     type ResourceEntry
 } from '@shared/mod.ts';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import {
+    afterEach,
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
 
 describe('Durable AL runtime stores', () => {
     afterEach(() => {
@@ -349,12 +357,14 @@ function createPersistentInboundStoreSet(existing?: {
         admissionProvider,
         runtimeStores: {
             admissionStore: createALInboundAdmissionStore({
-                kind: 'provider',
                 namespace: 'durable-test:inbound:admission',
-                provider: admissionProvider,
-                coordinationKey: 'durable-test:inbound:admission',
+                backend: new PersistenceProviderAdmissionBackend(
+                    admissionProvider,
+                    'durable-test:inbound:admission'
+                ),
                 orderingTrackTtlMs: 5 * 60_000,
-                supersedenceTrackTtlMs: 5 * 60_000
+                supersedenceTrackTtlMs: 5 * 60_000,
+                retention: normalizeALRuntimeStoreRetention()
             })
         }
     };
@@ -365,7 +375,7 @@ function createInboundRuntime(
     dispatchedMsgIds: string[],
     controlMessages: ALMessage[] = []
 ) {
-    return new ALInboundMessageRuntime({
+    return createDefaultALInboundMessageRuntime({
         selfPeerId: 'self',
         inbox: new InMemoryQueueBox(new Map<Key, ResourceEntry>()),
         stores: stores.runtimeStores,
@@ -402,11 +412,13 @@ function createPersistentOutboundStoreSet(existing?: {
         admissionProvider,
         runtimeStores: {
             admissionStore: createALOutboundAdmissionStore({
-                kind: 'provider',
                 namespace: 'durable-test:outbound:admission',
-                provider: admissionProvider,
-                coordinationKey: 'durable-test:outbound:admission',
-                supersedenceTrackTtlMs: 5 * 60_000
+                backend: new PersistenceProviderAdmissionBackend(
+                    admissionProvider,
+                    'durable-test:outbound:admission'
+                ),
+                supersedenceTrackTtlMs: 5 * 60_000,
+                retention: normalizeALRuntimeStoreRetention()
             })
         }
     };

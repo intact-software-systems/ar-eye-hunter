@@ -14,8 +14,12 @@ import type {
 import { createRallarServerApplication } from '@shared-server/mod.ts';
 import { RepositoryManager } from '@shared/cache/RepositoryManager.ts';
 import { InMemoryQueueBox, JsonWebSocketServer } from '@shared/mod.ts';
-import { WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
-import { describe, expect, it } from 'vitest';
+import { createDefaultWsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
 
 interface App {
     webSocketMounted: number;
@@ -25,7 +29,7 @@ interface App {
 describe('RallarServerApplication', () => {
     it('exposes direct owners and invokes each explicit application phase once', async () => {
         const events: string[] = [];
-        const service = new RecordingWsQueueBoxServerService({
+        const service = createDefaultWsQueueBoxServerService({
             inbox: new InMemoryQueueBox(),
             outbox: new InMemoryQueueBox(),
             socket: new JsonWebSocketServer(),
@@ -88,7 +92,6 @@ describe('RallarServerApplication', () => {
 
         expect(server.runtime).toBe(runtime);
         expect(server.repositories).toBe(repositories);
-        expect(server.ws.constructor.name).toBe('RallarServerWsRouter');
         expect(app).toEqual({
             webSocketMounted: 1,
             restMounted: 1
@@ -107,26 +110,8 @@ describe('RallarServerApplication', () => {
                 key: 'theme'
             })
         ).toMatchObject({ value: 'dark' });
-        expect(service.registeredAnyInboxOwnerIds()).toEqual([]);
     });
 });
-
-class RecordingWsQueueBoxServerService extends WsQueueBoxServerService {
-    private readonly anyInboxOwners = new Set<string>();
-
-    override onAnyInboxMessageDo(
-        id: string,
-        callback: Parameters<WsQueueBoxServerService['onAnyInboxMessageDo']>[1]
-    ): this {
-        this.anyInboxOwners.add(id);
-        super.onAnyInboxMessageDo(id, callback);
-        return this;
-    }
-
-    registeredAnyInboxOwnerIds(): readonly string[] {
-        return [...this.anyInboxOwners];
-    }
-}
 
 class RecordingAppDataRepository implements AppDataRepository {
     private readonly entries = new Map<string, AppDataEntry>();

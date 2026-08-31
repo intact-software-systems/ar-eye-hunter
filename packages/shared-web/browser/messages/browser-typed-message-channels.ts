@@ -10,7 +10,7 @@ import type {
 } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type { RallarMessagesOperations } from '@shared-web/browser/messages/rallar-message-operations.ts';
 import { normalizeRallarMessageSelector } from '@shared-web/browser/messages/rallar-message-selectors.ts';
-import type { ALOutboundEnqueueStatus } from '@shared/alm/ALOutboundMessageRuntime.ts';
+import type { ALOutboundEnqueueStatus } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 
 export namespace BrowserTypedMessageChannels {
     export interface Input {

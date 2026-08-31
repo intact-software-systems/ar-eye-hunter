@@ -1,6 +1,16 @@
 import type { RallarAuthState } from '@shared-web/browser/session/rallar-auth-facade.ts';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { createAuthSessionApiHttpError, createAuthSessionGroupSnapshot, installGroupSnapshotRepositoryMocks } from '../auth-session-contract-fixtures.ts';
+import {
+    beforeEach,
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
+import {
+    createAuthSessionApiHttpError,
+    createAuthSessionGroupSnapshot,
+    installGroupSnapshotRepositoryMocks
+} from '../auth-session-contract-fixtures.ts';
 import type * as ContractModules from '../auth-session-contract-modules.ts';
 import { readAuthSessionContractMocks, resetAuthSessionContractMocks } from './browser-auth-session-contract-fixture.ts';
 
@@ -94,7 +104,7 @@ describe('Rallar auth login, expiry, and registration contract', () => {
         );
         const transportState = {
             heartbeatStopped: false,
-            rtcHeartbeatsStopped: false,
+            rtcReceiverDisposed: false,
             remoteLogoutRequested: false,
             sessionCleared: false
         };
@@ -102,8 +112,8 @@ describe('Rallar auth login, expiry, and registration contract', () => {
         mocks.heartbeat.stop.mockImplementation(() => {
             transportState.heartbeatStopped = true;
         });
-        mocks.rtcRxStreamer.stopAllHeartbeats.mockImplementation(() => {
-            transportState.rtcHeartbeatsStopped = true;
+        mocks.rtcRxStreamer.dispose.mockImplementation(() => {
+            transportState.rtcReceiverDisposed = true;
         });
         mocks.logoutFromApi.mockImplementation(async () => {
             transportState.remoteLogoutRequested = true;
@@ -132,7 +142,7 @@ describe('Rallar auth login, expiry, and registration contract', () => {
 
         expect({ ...transportState, webSocketClose }).toEqual({
             heartbeatStopped: true,
-            rtcHeartbeatsStopped: true,
+            rtcReceiverDisposed: true,
             remoteLogoutRequested: false,
             sessionCleared: true,
             webSocketClose: { code: 1000, reason: 'rallar-disconnect' }

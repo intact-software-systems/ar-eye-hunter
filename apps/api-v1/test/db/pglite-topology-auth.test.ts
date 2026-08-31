@@ -28,11 +28,11 @@ import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persis
 import {
     AppTopics,
     ConnectionContext,
+    createDefaultWsQueueBoxServerService,
     InMemoryQueueBox,
     JsonWebSocketServer,
     newALBroadcastMessage,
-    newALEventRoute,
-    WsQueueBoxServerService
+    newALEventRoute
 } from '@shared/mod.ts';
 import { configureRttRepository } from '@shared/repository/rtt-repository.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
@@ -501,7 +501,7 @@ Deno.test(
             const wsServer = new JsonWebSocketServer();
             const wsSocket = new PGliteTestSocket();
             wsServer.addConnection(new ConnectionContext(authority.sessionId, wsSocket));
-            const wsService = new WsQueueBoxServerService({
+            const wsService = createDefaultWsQueueBoxServerService({
                 inbox: new InMemoryQueueBox(new Map()),
                 outbox: new InMemoryQueueBox(new Map()),
                 socket: wsServer,

@@ -1,5 +1,9 @@
 import { Temporal } from '@js-temporal/polyfill';
-import type { PSqlParameter, PSqlRows, PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
+import type {
+    PSqlParameter,
+    PSqlRows,
+    PSqlSql
+} from '@shared-server/postgres/p-sql-sql.ts';
 import { runInPSqlTransaction } from '@shared-server/postgres/run-in-p-sql-transaction.ts';
 import {
     createPSqlResourceInboxRepository,
@@ -18,15 +22,29 @@ import { RtcTopologyOutboxWriter } from '@shared-server/rallar-system/topology/m
 import type { ClientEvent, ClientSnapshot } from '@shared/api/client-types.ts';
 import type { GroupStateDeltaEnvelope } from '@shared/api/group-state-delta.ts';
 import { toCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topology-config-canonical.ts';
-import type { AuditStamp, GroupEvent, GroupSnapshot } from '@shared/api/group-types.ts';
-import { CircuitBreakerPolicy, EnqueuedType, InMemoryQueueBox, ResilienceDto } from '@shared/mod.ts';
+import type {
+    AuditStamp,
+    GroupEvent,
+    GroupSnapshot
+} from '@shared/api/group-types.ts';
+import {
+    CircuitBreakerPolicy,
+    EnqueuedType,
+    InMemoryQueueBox,
+    ResilienceDto
+} from '@shared/mod.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 import type { WsOutboxDeliveryOutcome } from '@shared/services/ws-queue-box-server/ws-queue-box-server-contracts.ts';
-import { WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
+import { createDefaultWsQueueBoxServerService, WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 import { JsonWebSocketServer, type EncodedJsonWebSocketMessage } from '@shared/websocket/JsonWebSocketServer.ts';
-import { describe, expect, it, vi } from 'vitest';
+import {
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
 import { createTestGroup } from '../../../create-test-group.ts';
 import { createDeltaEnvelopeFixture } from '../group-state/presence/group-state-delta-envelope-fixtures.ts';
 import { createOpenTestWebSocket } from '../websocket/test-support/open-test-websocket.ts';
@@ -510,7 +528,7 @@ describe('direct resource outbox writes', () => {
                 connectionId: 'session-alice'
             }
         ]);
-        const service = new WsQueueBoxServerService({
+        const service = createDefaultWsQueueBoxServerService({
             inbox: new InMemoryQueueBox(),
             outbox: outbox,
             socket: socket,
@@ -544,7 +562,7 @@ describe('direct resource outbox writes', () => {
         const socket = createSocket();
         const resolveBroadcastRecipients = vi.fn(() => []);
         const deliveryOutcomes: WsOutboxDeliveryOutcome[] = [];
-        const service = new WsQueueBoxServerService({
+        const service = createDefaultWsQueueBoxServerService({
             inbox: new InMemoryQueueBox(),
             outbox: outbox,
             socket: socket,

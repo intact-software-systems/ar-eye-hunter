@@ -26,11 +26,18 @@ import {
     IndexedDbStringPersistenceProvider,
     newALUnicastMessage,
     type ALMessage,
-    type ALOutboundRuntimeStateStore,
+    type ALOutboundAdmissionStore,
     type ALOutboundRuntimeStores,
     type ALOutboundSentMessageSnapshot
 } from '@shared/mod.ts';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+    afterEach,
+    beforeEach,
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
 
 type RawBrowserALRuntimeEntry = Readonly<{
     key: string;
@@ -62,13 +69,13 @@ describe('Browser AL runtime IndexedDB stores', () => {
         const unrelatedRuntimeName = `unrelated-${crypto.randomUUID()}`;
         configureBrowserALRuntimeStores(currentSessionId, { retention });
         configureBrowserALRuntimeStores(oldSessionId, { retention });
-        const currentStateStore = requireOutboundStateStore(
+        const currentAdmissionStore = requireOutboundAdmissionStore(
             resolveBrowserWsClientALOutboundRuntimeStores(currentSessionId)
         );
-        const oldStateStore = requireOutboundStateStore(
+        const oldAdmissionStore = requireOutboundAdmissionStore(
             resolveBrowserWsClientALOutboundRuntimeStores(oldSessionId)
         );
-        const unrelatedStateStore = requireOutboundStateStore(
+        const unrelatedAdmissionStore = requireOutboundAdmissionStore(
             createBrowserALOutboundRuntimeStores(unrelatedRuntimeName, { retention })
         );
         const currentExpiredMsgId = 'current-expired';
@@ -76,11 +83,11 @@ describe('Browser AL runtime IndexedDB stores', () => {
         const oldExpiredMsgId = 'old-expired';
         const unrelatedExpiredMsgId = 'unrelated-expired';
 
-        await currentStateStore.setSentMessage(createSentSnapshot(currentExpiredMsgId));
-        await oldStateStore.setSentMessage(createSentSnapshot(oldExpiredMsgId));
-        await unrelatedStateStore.setSentMessage(createSentSnapshot(unrelatedExpiredMsgId));
+        await persistSentMessage(currentAdmissionStore, currentExpiredMsgId);
+        await persistSentMessage(oldAdmissionStore, oldExpiredMsgId);
+        await persistSentMessage(unrelatedAdmissionStore, unrelatedExpiredMsgId);
         await vi.advanceTimersByTimeAsync(21);
-        await currentStateStore.setSentMessage(createSentSnapshot(currentFreshMsgId));
+        await persistSentMessage(currentAdmissionStore, currentFreshMsgId);
 
         const currentSentPrefix = toBrowserOutboundSentPrefix(
             toBrowserWsClientALRuntimeStoreId(currentSessionId)
@@ -101,7 +108,7 @@ describe('Browser AL runtime IndexedDB stores', () => {
             `${unrelatedSentPrefix}:${unrelatedExpiredMsgId}`
         ]);
 
-        expect(await readSentMessageIds(currentStateStore)).toEqual([currentFreshMsgId]);
+        expect(await readSentMessageIds(currentAdmissionStore)).toEqual([currentFreshMsgId]);
         expect(await readBrowserALRuntimeEntryKeys(currentSentPrefix)).toEqual([
             `${currentSentPrefix}:${currentFreshMsgId}`
         ]);
@@ -114,11 +121,11 @@ describe('Browser AL runtime IndexedDB stores', () => {
 
         const freshSessionId = `fresh-${crypto.randomUUID()}`;
         configureBrowserALRuntimeStores(freshSessionId, { retention });
-        const freshSessionStateStore = requireOutboundStateStore(
+        const freshSessionAdmissionStore = requireOutboundAdmissionStore(
             resolveBrowserWsClientALOutboundRuntimeStores(freshSessionId)
         );
 
-        expect(await readSentMessageIds(freshSessionStateStore)).toEqual([]);
+        expect(await readSentMessageIds(freshSessionAdmissionStore)).toEqual([]);
         expect(await readBrowserALRuntimeEntryKeys(oldSentPrefix)).toEqual([
             `${oldSentPrefix}:${oldExpiredMsgId}`
         ]);
@@ -135,22 +142,22 @@ describe('Browser AL runtime IndexedDB stores', () => {
         const replacementSessionId = `replacement-${crypto.randomUUID()}`;
         configureBrowserALRuntimeStores(sessionId, { retention });
         configureBrowserALRuntimeStores(replacementSessionId, { retention });
-        const firstSessionStateStore = requireOutboundStateStore(
+        const firstSessionAdmissionStore = requireOutboundAdmissionStore(
             resolveBrowserWsClientALOutboundRuntimeStores(sessionId)
         );
         const persistedMsgId = 'restore-unexpired';
 
-        await firstSessionStateStore.setSentMessage(createSentSnapshot(persistedMsgId));
+        await persistSentMessage(firstSessionAdmissionStore, persistedMsgId);
 
-        const reusedSessionStateStore = requireOutboundStateStore(
+        const reusedSessionAdmissionStore = requireOutboundAdmissionStore(
             resolveBrowserWsClientALOutboundRuntimeStores(sessionId)
         );
-        const replacementSessionStateStore = requireOutboundStateStore(
+        const replacementSessionAdmissionStore = requireOutboundAdmissionStore(
             resolveBrowserWsClientALOutboundRuntimeStores(replacementSessionId)
         );
 
-        expect(await readSentMessageIds(reusedSessionStateStore)).toEqual([persistedMsgId]);
-        expect(await readSentMessageIds(replacementSessionStateStore)).toEqual([]);
+        expect(await readSentMessageIds(reusedSessionAdmissionStore)).toEqual([persistedMsgId]);
+        expect(await readSentMessageIds(replacementSessionAdmissionStore)).toEqual([]);
     });
 
     it('deletes expired rows across browser runtime prefixes without touching non-browser rows', async () => {
@@ -165,13 +172,13 @@ describe('Browser AL runtime IndexedDB stores', () => {
         const unrelatedRuntimeName = `cleanup-unrelated-${crypto.randomUUID()}`;
         configureBrowserALRuntimeStores(currentSessionId, { retention });
         configureBrowserALRuntimeStores(oldSessionId, { retention });
-        const currentStateStore = requireOutboundStateStore(
+        const currentAdmissionStore = requireOutboundAdmissionStore(
             resolveBrowserWsClientALOutboundRuntimeStores(currentSessionId)
         );
-        const oldStateStore = requireOutboundStateStore(
+        const oldAdmissionStore = requireOutboundAdmissionStore(
             resolveBrowserWsClientALOutboundRuntimeStores(oldSessionId)
         );
-        const unrelatedStateStore = requireOutboundStateStore(
+        const unrelatedAdmissionStore = requireOutboundAdmissionStore(
             createBrowserALOutboundRuntimeStores(unrelatedRuntimeName, { retention })
         );
         const nonBrowserProvider = new IndexedDbStringPersistenceProvider<{ value: string; }>({
@@ -179,9 +186,9 @@ describe('Browser AL runtime IndexedDB stores', () => {
             keyPrefix: 'custom:outside-browser-al-runtime'
         });
 
-        await currentStateStore.setSentMessage(createSentSnapshot('current-expired'));
-        await oldStateStore.setSentMessage(createSentSnapshot('old-expired'));
-        await unrelatedStateStore.setSentMessage(createSentSnapshot('unrelated-expired'));
+        await persistSentMessage(currentAdmissionStore, 'current-expired');
+        await persistSentMessage(oldAdmissionStore, 'old-expired');
+        await persistSentMessage(unrelatedAdmissionStore, 'unrelated-expired');
         await nonBrowserProvider.setItem(
             'expired',
             { value: 'keep' },
@@ -189,8 +196,8 @@ describe('Browser AL runtime IndexedDB stores', () => {
         );
 
         await vi.advanceTimersByTimeAsync(21);
-        await currentStateStore.setSentMessage(createSentSnapshot('current-fresh'));
-        await oldStateStore.setSentMessage(createSentSnapshot('old-fresh'));
+        await persistSentMessage(currentAdmissionStore, 'current-fresh');
+        await persistSentMessage(oldAdmissionStore, 'old-fresh');
 
         const currentSentPrefix = toBrowserOutboundSentPrefix(
             toBrowserWsClientALRuntimeStoreId(currentSessionId)
@@ -206,7 +213,7 @@ describe('Browser AL runtime IndexedDB stores', () => {
             dbName: BROWSER_AL_RUNTIME_DB_NAME,
             storeName: BROWSER_AL_RUNTIME_STORE_NAME,
             keyPrefixes: ['browser:'],
-            scanned: 5,
+            scanned: 8,
             deleted: 3
         });
         expect(await readBrowserALRuntimeEntryKeys(currentSentPrefix)).toEqual([
@@ -232,18 +239,18 @@ describe('Browser AL runtime IndexedDB stores', () => {
         const otherSessionId = `expired-other-${crypto.randomUUID()}`;
         configureBrowserALRuntimeStores(targetSessionId, { retention });
         configureBrowserALRuntimeStores(otherSessionId, { retention });
-        const targetStateStore = requireOutboundStateStore(
+        const targetAdmissionStore = requireOutboundAdmissionStore(
             resolveBrowserWsClientALOutboundRuntimeStores(targetSessionId)
         );
-        const otherStateStore = requireOutboundStateStore(
+        const otherAdmissionStore = requireOutboundAdmissionStore(
             resolveBrowserWsClientALOutboundRuntimeStores(otherSessionId)
         );
 
-        await targetStateStore.setSentMessage(createSentSnapshot('target-expired'));
-        await otherStateStore.setSentMessage(createSentSnapshot('other-expired'));
+        await persistSentMessage(targetAdmissionStore, 'target-expired');
+        await persistSentMessage(otherAdmissionStore, 'other-expired');
         await vi.advanceTimersByTimeAsync(21);
-        await targetStateStore.setSentMessage(createSentSnapshot('target-fresh'));
-        await otherStateStore.setSentMessage(createSentSnapshot('other-fresh'));
+        await persistSentMessage(targetAdmissionStore, 'target-fresh');
+        await persistSentMessage(otherAdmissionStore, 'other-fresh');
 
         const targetSentPrefix = toBrowserOutboundSentPrefix(
             toBrowserWsClientALRuntimeStoreId(targetSessionId)
@@ -254,7 +261,7 @@ describe('Browser AL runtime IndexedDB stores', () => {
 
         const result = await deleteExpiredBrowserALRuntimeEntriesForSession(targetSessionId);
 
-        expect(result.scanned).toBe(2);
+        expect(result.scanned).toBe(3);
         expect(result.deleted).toBe(1);
         expect(await readBrowserALRuntimeEntryKeys(targetSentPrefix)).toEqual([
             `${targetSentPrefix}:target-fresh`
@@ -321,13 +328,13 @@ describe('Browser AL runtime IndexedDB stores', () => {
         const otherSessionId = `purge-other-${crypto.randomUUID()}`;
         configureBrowserALRuntimeStores(targetSessionId, { retention });
         configureBrowserALRuntimeStores(otherSessionId, { retention });
-        const targetWsStateStore = requireOutboundStateStore(
+        const targetWsAdmissionStore = requireOutboundAdmissionStore(
             resolveBrowserWsClientALOutboundRuntimeStores(targetSessionId)
         );
-        const targetOverlayStateStore = requireOutboundStateStore(
+        const targetOverlayAdmissionStore = requireOutboundAdmissionStore(
             resolveBrowserRtcOverlayALOutboundRuntimeStores(targetSessionId)
         );
-        const otherStateStore = requireOutboundStateStore(
+        const otherAdmissionStore = requireOutboundAdmissionStore(
             resolveBrowserWsClientALOutboundRuntimeStores(otherSessionId)
         );
         const targetRtcRxProvider = new IndexedDbStringPersistenceProvider<{ value: string; }>({
@@ -339,14 +346,14 @@ describe('Browser AL runtime IndexedDB stores', () => {
             }inbound:admission`
         });
 
-        await targetWsStateStore.setSentMessage(createSentSnapshot('target-ws'));
-        await targetOverlayStateStore.setSentMessage(createSentSnapshot('target-overlay'));
+        await persistSentMessage(targetWsAdmissionStore, 'target-ws');
+        await persistSentMessage(targetOverlayAdmissionStore, 'target-overlay');
         await targetRtcRxProvider.setItem(
             'target-rx',
             { value: 'target-rx' },
             { expireAtTimestamp: Date.now() + 60_000 }
         );
-        await otherStateStore.setSentMessage(createSentSnapshot('other-ws'));
+        await persistSentMessage(otherAdmissionStore, 'other-ws');
 
         const targetWsSentPrefix = toBrowserOutboundSentPrefix(
             toBrowserWsClientALRuntimeStoreId(targetSessionId)
@@ -363,8 +370,8 @@ describe('Browser AL runtime IndexedDB stores', () => {
 
         const result = await deleteBrowserALRuntimeEntriesForSession(targetSessionId);
 
-        expect(result.scanned).toBe(3);
-        expect(result.deleted).toBe(3);
+        expect(result.scanned).toBe(5);
+        expect(result.deleted).toBe(5);
         expect(await readBrowserALRuntimeEntryKeys(targetWsSentPrefix)).toEqual([]);
         expect(await readBrowserALRuntimeEntryKeys(targetRtcRxPrefix)).toEqual([]);
         expect(await readBrowserALRuntimeEntryKeys(targetOverlaySentPrefix)).toEqual([]);
@@ -382,19 +389,19 @@ describe('Browser AL runtime IndexedDB stores', () => {
             sentMessageTtlMs: 20
         };
         const runtimeName = `interval-runtime-${crypto.randomUUID()}`;
-        const stateStore = requireOutboundStateStore(
+        const admissionStore = requireOutboundAdmissionStore(
             createBrowserALOutboundRuntimeStores(runtimeName, { retention })
         );
         const sentPrefix = toBrowserOutboundSentPrefix(runtimeName);
 
-        await stateStore.setSentMessage(createSentSnapshot('initial-expired'));
+        await persistSentMessage(admissionStore, 'initial-expired');
         await vi.advanceTimersByTimeAsync(21);
 
         await initBrowserALRuntimeExpiryEviction(50);
 
         expect(await readBrowserALRuntimeEntryKeys(sentPrefix)).toEqual([]);
 
-        await stateStore.setSentMessage(createSentSnapshot('interval-expired'));
+        await persistSentMessage(admissionStore, 'interval-expired');
         await vi.advanceTimersByTimeAsync(21);
         expect(await readBrowserALRuntimeEntryKeys(sentPrefix)).toEqual([
             `${sentPrefix}:interval-expired`
@@ -406,22 +413,43 @@ describe('Browser AL runtime IndexedDB stores', () => {
     });
 });
 
-function requireOutboundStateStore(
+function requireOutboundAdmissionStore(
     stores: ALOutboundRuntimeStores
-): ALOutboundRuntimeStateStore {
-    if (!stores.stateStore) {
-        throw new Error('Expected outbound state store');
+): ALOutboundAdmissionStore {
+    if (!stores.admissionStore) {
+        throw new Error('Expected outbound admission store');
     }
 
-    return stores.stateStore;
+    return stores.admissionStore;
 }
 
 async function readSentMessageIds(
-    stateStore: ALOutboundRuntimeStateStore
+    admissionStore: ALOutboundAdmissionStore
 ): Promise<readonly string[]> {
-    const snapshots = await stateStore.getAllSentMessages();
+    const snapshots = await admissionStore.getAllSentMessages();
 
     return snapshots.map((snapshot) => snapshot.msgId).sort();
+}
+
+async function persistSentMessage(
+    admissionStore: ALOutboundAdmissionStore,
+    msgId: string
+): Promise<void> {
+    const snapshot = createSentSnapshot(msgId);
+    const read = await admissionStore.readOutgoingMessage(
+        snapshot.msg,
+        () => ({ persist: true, preparedMessages: [] })
+    );
+    const status = await admissionStore.commitBundle({
+        senderId: snapshot.msg.id.senderId,
+        expectedVersion: read.clientRecord?.version,
+        mutations: [{ kind: 'set-sent-message', snapshot }],
+        durableEffects: []
+    });
+
+    if (status !== 'committed') {
+        throw new Error(`Failed to persist sent message ${msgId}`);
+    }
 }
 
 function createSentSnapshot(msgId: string): ALOutboundSentMessageSnapshot {
@@ -448,7 +476,7 @@ function createOutboundUnicastMessage(resourceId: string): ALMessage {
 }
 
 function toBrowserOutboundSentPrefix(runtimeStoreName: string): string {
-    return `${toBrowserALRuntimeEntryKeyPrefix(runtimeStoreName)}outbound:sent`;
+    return `${toBrowserALRuntimeEntryKeyPrefix(runtimeStoreName)}outbound:admission:sent`;
 }
 
 async function readBrowserALRuntimeEntryKeys(

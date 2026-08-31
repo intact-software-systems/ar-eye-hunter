@@ -1,4 +1,4 @@
-import type { ALOutboundSentMessageSnapshot } from '@shared/alm/ALRuntimeStateStores.ts';
+import type { ALOutboundSentMessageSnapshot } from '@shared/alm/al-runtime-state-stores.ts';
 import type { JsonWireValue } from '../../rallar-system/protocol/json-wire-identity.ts';
 import {
     createALJsonPersistenceCodec,

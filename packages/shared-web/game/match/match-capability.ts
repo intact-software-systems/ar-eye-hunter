@@ -1,6 +1,6 @@
 import type { RallarMessagePayload } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type { RallarRoomState } from '@shared-web/browser/rallar.ts';
-import type { ALOutboundEnqueueStatus } from '@shared/alm/ALOutboundMessageRuntime.ts';
+import type { ALOutboundEnqueueStatus } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import type { RallarGameHostCapability } from '../director/election.ts';
 import type { RallarGameEnvelope } from '../envelopes.ts';

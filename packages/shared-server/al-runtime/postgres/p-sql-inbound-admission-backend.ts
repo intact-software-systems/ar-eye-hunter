@@ -2,11 +2,11 @@ import type {
     RuntimeStateOptimisticTransactionalRepositoryLike
 } from '@shared-server/runtime-state/runtime-state-repository.ts';
 import { ALAdmissionBackendConflictError } from '@shared/alm/ALAdmissionBackendConflictError.ts';
-import type { ALInboundAdmissionBackend, ALInboundAdmissionWriteContext } from '@shared/alm/ALInboundAdmissionStore.ts';
+import type { ALAdmissionBackend, ALAdmissionWriteContext } from '@shared/alm/al-admission-backend.ts';
 import { RuntimeStateWriteConflictError } from '../../runtime-state/optimistic-runtime-state-write.ts';
 import { PSqlAdmissionMutationCollector } from './p-sql-admission-mutation-collector.ts';
 
-export class PSqlInboundAdmissionBackend implements ALInboundAdmissionBackend {
+export class PSqlInboundAdmissionBackend implements ALAdmissionBackend {
     private readonly repository: RuntimeStateOptimisticTransactionalRepositoryLike;
     private readonly namespace: string;
 
@@ -35,7 +35,7 @@ export class PSqlInboundAdmissionBackend implements ALInboundAdmissionBackend {
         ).list<V>(prefix);
     }
 
-    async write<T>(fn: (tx: ALInboundAdmissionWriteContext) => Promise<T>): Promise<T> {
+    async write<T>(fn: (tx: ALAdmissionWriteContext) => Promise<T>): Promise<T> {
         const collector = new PSqlAdmissionMutationCollector(
             this.repository,
             this.namespace

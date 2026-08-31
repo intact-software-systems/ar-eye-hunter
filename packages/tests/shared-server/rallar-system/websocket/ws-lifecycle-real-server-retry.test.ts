@@ -1,9 +1,14 @@
-import { describe, expect, it, vi } from 'vitest';
+import {
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
 
 import { initWsLifecycle } from '@shared-server/rallar-system/websocket/ws-lifecycle-service.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { toKeyAsString, toResourceEntryWithKey } from '@shared/queuebox/ResourceEntry.ts';
-import { WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
+import { createDefaultWsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 import { JsonWebSocketServer, type ConnectionContext } from '@shared/websocket/JsonWebSocketServer.ts';
 
 describe('real websocket close lifecycle retry ownership', () => {
@@ -11,7 +16,7 @@ describe('real websocket close lifecycle retry ownership', () => {
         const server = new JsonWebSocketServer();
         const oldSocket = new CloseSocket();
         const newSocket = new CloseSocket();
-        const service = new WsQueueBoxServerService({
+        const service = createDefaultWsQueueBoxServerService({
             inbox: new InMemoryQueueBox(new Map()),
             outbox: new InMemoryQueueBox(new Map()),
             socket: server,
@@ -93,7 +98,7 @@ describe('real websocket close lifecycle retry ownership', () => {
             1_000
         );
         const durableRows = new InMemoryQueueBox(new Map());
-        const service = new WsQueueBoxServerService({
+        const service = createDefaultWsQueueBoxServerService({
             inbox: durableRows,
             outbox: new InMemoryQueueBox(new Map()),
             socket: server,
@@ -171,7 +176,7 @@ describe('real websocket close lifecycle retry ownership', () => {
         const oldSocket = new CloseSocket();
         const newSocket = new CloseSocket();
         const closed: string[] = [];
-        const service = new WsQueueBoxServerService({
+        const service = createDefaultWsQueueBoxServerService({
             inbox: new InMemoryQueueBox(new Map()),
             outbox: new InMemoryQueueBox(new Map()),
             socket: server,

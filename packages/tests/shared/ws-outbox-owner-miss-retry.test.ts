@@ -4,8 +4,10 @@ import { installQueueBoxPubSubBridge } from '@shared-server/rallar-system/queue-
 import type { QueueBoxPubSubBridge, QueueBoxPubSubMessage } from '@shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-contracts.ts';
 import { requeueRemoteWsOutboxDeliveryFailure } from '@shared-server/rallar-system/queue-pubsub/requeue-remote-ws-outbox-delivery-failure.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
 import { ALAdmissionBackendConflictError } from '@shared/alm/ALAdmissionBackendConflictError.ts';
-import { createALOutboundAdmissionStore, createInMemoryALOutboundAdmissionState, type ALOutboundAdmissionStore } from '@shared/alm/ALOutboundAdmissionStore.ts';
+import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
+import { createALOutboundAdmissionStore, type ALOutboundAdmissionStore } from '@shared/alm/outbound/al-outbound-admission-store.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import { ResilienceDto } from '@shared/queuebox/DequeueResourceEntryController.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
@@ -13,9 +15,20 @@ import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry
 import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
 import { QueueBoxUtilities } from '@shared/services/QueueBoxUtilities.ts';
 import type { WsOutboxDeliveryOutcome, WsServerResolvedRecipient } from '@shared/services/ws-queue-box-server/ws-queue-box-server-contracts.ts';
-import { WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
-import { ConnectionContext, JsonWebSocketServer, type EncodedJsonWebSocketMessage } from '@shared/websocket/JsonWebSocketServer.ts';
-import { afterEach, describe, expect, it, vi, type MockInstance } from 'vitest';
+import { createDefaultWsQueueBoxServerService, WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
+import {
+    ConnectionContext,
+    JsonWebSocketServer,
+    type EncodedJsonWebSocketMessage
+} from '@shared/websocket/JsonWebSocketServer.ts';
+import {
+    afterEach,
+    describe,
+    expect,
+    it,
+    vi,
+    type MockInstance
+} from 'vitest';
 
 interface WsOutboxTestSocket {
     readonly socket: JsonWebSocketServer;
@@ -46,7 +59,7 @@ describe('durable WS outbox owner misses', () => {
         await outbox.enqueue(entry);
         const ownerSocket = createSocket();
         const misses: WsOutboxDeliveryOutcome[] = [];
-        const nonOwner = new WsQueueBoxServerService({
+        const nonOwner = createDefaultWsQueueBoxServerService({
             inbox: new InMemoryQueueBox(),
             outbox: outbox,
             socket: createSocket().socket,
@@ -54,7 +67,7 @@ describe('durable WS outbox owner misses', () => {
             targetResolver: { resolvePeerRecipients: () => [] },
             outboundDeliveryOutcome: (outcome) => misses.push(outcome)
         });
-        const owner = new WsQueueBoxServerService({
+        const owner = createDefaultWsQueueBoxServerService({
             inbox: new InMemoryQueueBox(),
             outbox: outbox,
             socket: ownerSocket.socket,
@@ -90,10 +103,10 @@ describe('durable WS outbox owner misses', () => {
         ));
         const ownerSocket = createSocket();
         const base = createALOutboundAdmissionStore({
-            kind: 'memory',
             namespace: 'ws-owner-claim-conflict',
             supersedenceTrackTtlMs: 60_000,
-            state: createInMemoryALOutboundAdmissionState()
+            backend: new InMemoryAdmissionBackend(createInMemoryALAdmissionState()),
+            retention: normalizeALRuntimeStoreRetention()
         });
         let claimCalls = 0;
         const admissionStore = proxyAdmissionStore(base, async (...args) => {
@@ -103,7 +116,7 @@ describe('durable WS outbox owner misses', () => {
             }
             return await base.claimReadyEffects(...args);
         });
-        const owner = new WsQueueBoxServerService({
+        const owner = createDefaultWsQueueBoxServerService({
             inbox: new InMemoryQueueBox(),
             outbox: outbox,
             socket: ownerSocket.socket,
@@ -457,7 +470,7 @@ function createSocket(): WsOutboxTestSocket {
 }
 
 function createService(input: CreateWsOutboxServiceInput): WsQueueBoxServerService {
-    return new WsQueueBoxServerService({
+    return createDefaultWsQueueBoxServerService({
         inbox: new InMemoryQueueBox(),
         outbox: input.outbox,
         socket: input.socket.socket,

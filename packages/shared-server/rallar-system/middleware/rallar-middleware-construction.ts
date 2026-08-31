@@ -1,5 +1,5 @@
-import type { ALInboundRuntimeStores } from '@shared/alm/ALInboundMessageRuntime.ts';
-import type { ALOutboundRuntimeStores } from '@shared/alm/ALOutboundMessageRuntime.ts';
+import type { ALInboundRuntimeStores } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
+import type { ALOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import type { DequeueResourceEntryOptions, ResilienceDto } from '@shared/queuebox/DequeueResourceEntryController.ts';
 import type { QueueBoxResourceEntryRepository } from '@shared/queuebox/queue-box-types.ts';
 import type { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';

@@ -9,14 +9,16 @@ import {
     type ALMessageHandlingPlan,
     type ALQosInputProvider
 } from '../../al-contracts/al-policy.ts';
-import type { ALInboundRuntimeStores } from '../../alm/ALInboundMessageRuntime.ts';
-import { ALInboundMessageRuntime } from '../../alm/ALInboundMessageRuntime.ts';
+import type { ALInboundRuntimeStores } from '../../alm/inbound/al-inbound-message-runtime.ts';
+import { ALInboundMessageRuntime } from '../../alm/inbound/al-inbound-message-runtime.ts';
 import type {
     ALOutboundEnqueueResult,
     ALOutboundRuntimeDiagnosticsSink,
     ALOutboundRuntimeStores
-} from '../../alm/ALOutboundMessageRuntime.ts';
-import { ALOutboundMessageRuntime } from '../../alm/ALOutboundMessageRuntime.ts';
+} from '../../alm/outbound/al-outbound-message-runtime.ts';
+import { ALOutboundMessageRuntime } from '../../alm/outbound/al-outbound-message-runtime.ts';
+import { createDefaultInMemoryALOutboundRuntimeStores } from '../../alm/al-runtime-stores.ts';
+import { createDefaultALInboundRuntimeResources } from '../../alm/inbound/create-default-al-inbound-message-runtime.ts';
 import { EnqueuedType } from '../../api/api-config.ts';
 import type { ResilienceDto } from '../../queuebox/DequeueResourceEntryController.ts';
 import type { QueueBoxResourceEntryRepository } from '../../queuebox/queue-box-types.ts';
@@ -40,7 +42,7 @@ import {
 import { WsQueueBoxServerTargetResolution } from './ws-queue-box-server-target-resolution.ts';
 
 export namespace WsQueueBoxServerService {
-    export interface Dependencies {
+    export interface Input {
         readonly inbox: QueueBoxResourceEntryRepository;
         readonly outbox: QueueBoxResourceEntryRepository;
         readonly socket: JsonWebSocketServer;
@@ -62,6 +64,23 @@ export namespace WsQueueBoxServerService {
          * it accepts).
          */
         readonly forwardsRoomScopedMessages?: boolean;
+    }
+
+    export interface Dependencies {
+        readonly inbox: QueueBoxResourceEntryRepository;
+        readonly outbox: QueueBoxResourceEntryRepository;
+        readonly socket: JsonWebSocketServer;
+        readonly name: string;
+        readonly qosProvider: ALQosInputProvider | undefined;
+        readonly targetResolver: WsServerTargetResolver;
+        readonly inboundRuntime: ALInboundMessageRuntime.Resources;
+        readonly outboundStores: ALOutboundRuntimeStores;
+        readonly outboundDiagnostics: ALOutboundRuntimeDiagnosticsSink | undefined;
+        readonly outboundDeliveryOutcome: ((outcome: WsOutboxDeliveryOutcome) => void) | undefined;
+        readonly deliveryDiagnostics: WsDeliveryDiagnosticsSink | undefined;
+        readonly admitInboundMessage: (message: ALMessage) => boolean;
+        readonly forwardsRoomScopedMessages: boolean;
+        readonly epochNow: () => number;
     }
 }
 
@@ -111,14 +130,14 @@ export class WsQueueBoxServerService {
         this.qosProvider = dependencies.qosProvider;
         this.targetResolution = new WsQueueBoxServerTargetResolution({
             socket: dependencies.socket,
-            targetResolver: dependencies.targetResolver ?? {}
+            targetResolver: dependencies.targetResolver
         });
         this.deliveryReporting = new WsQueueBoxServerDeliveryReporting({
             outboundOutcome: dependencies.outboundDeliveryOutcome,
             diagnostics: dependencies.deliveryDiagnostics
         });
-        this.admitInboundMessage = dependencies.admitInboundMessage ?? (() => true);
-        this.forwardsRoomScopedMessages = dependencies.forwardsRoomScopedMessages ?? true;
+        this.admitInboundMessage = dependencies.admitInboundMessage;
+        this.forwardsRoomScopedMessages = dependencies.forwardsRoomScopedMessages;
         this.liveDelivery = new WsQueueBoxServerLiveDelivery({
             socket: dependencies.socket,
             targetResolution: this.targetResolution,
@@ -139,6 +158,7 @@ export class WsQueueBoxServerService {
         dependencies: WsQueueBoxServerService.Dependencies
     ): ALOutboundMessageRuntime<WsQueueBoxServerPreparedMessage> {
         return new ALOutboundMessageRuntime<WsQueueBoxServerPreparedMessage>({
+            nowMs: dependencies.epochNow,
             stores: dependencies.outboundStores,
             diagnostics: dependencies.outboundDiagnostics,
             outbox: this.outbox,
@@ -177,8 +197,7 @@ export class WsQueueBoxServerService {
         dependencies: WsQueueBoxServerService.Dependencies
     ): ALInboundMessageRuntime {
         return new ALInboundMessageRuntime({
-            stores: dependencies.inboundStores,
-            selfPeerId: dependencies.name,
+            ...dependencies.inboundRuntime,
             inbox: this.inbox,
             planIncomingMessage: (message, fromPeerId, runtime) => {
                 const recipientPeerIds = this.targetResolution.resolveInboundRecipients(message)
@@ -203,11 +222,6 @@ export class WsQueueBoxServerService {
                 );
             },
             readStoredEntry: (entry) => decodePersistedALMessage(entry.resource),
-            toInboxEntry: (message) =>
-                QueueBoxUtilities.toResourceEntryFromMsg(
-                    message,
-                    WsQueueBoxServerService.INBOX_ENQUEUE_TYPE
-                ),
             dispatchInboxEntry: (entry, plan) => this.dispatchInboxEntry(entry, plan),
             sendControlMessage: (message) => this.sendControlMessage(message),
             onControlMessage: async (message) => {
@@ -494,4 +508,28 @@ export class WsQueueBoxServerService {
             console.error('Error calling onMessage callback', e);
         }
     }
+}
+
+export function createDefaultWsQueueBoxServerService(input: WsQueueBoxServerService.Input): WsQueueBoxServerService {
+    return new WsQueueBoxServerService({
+        inbox: input.inbox,
+        outbox: input.outbox,
+        socket: input.socket,
+        name: input.name,
+        qosProvider: input.qosProvider,
+        targetResolver: input.targetResolver ?? {},
+        inboundRuntime: createDefaultALInboundRuntimeResources({
+            stores: input.inboundStores,
+            selfPeerId: input.name,
+            toInboxEntry: (message) =>
+                QueueBoxUtilities.toResourceEntryFromMsg(message, WsQueueBoxServerService.INBOX_ENQUEUE_TYPE)
+        }),
+        outboundStores: input.outboundStores ?? createDefaultInMemoryALOutboundRuntimeStores(),
+        outboundDiagnostics: input.outboundDiagnostics,
+        outboundDeliveryOutcome: input.outboundDeliveryOutcome,
+        deliveryDiagnostics: input.deliveryDiagnostics,
+        admitInboundMessage: input.admitInboundMessage ?? (() => true),
+        forwardsRoomScopedMessages: input.forwardsRoomScopedMessages ?? true,
+        epochNow: Date.now
+    });
 }

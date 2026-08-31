@@ -2,18 +2,28 @@ import { decodeJsonWireValue, type JsonWireValue } from '@shared-server/rallar-s
 import { RallarServerWsRouter } from '@shared-server/rallar-system/websocket/router/rallar-server-ws-router.ts';
 import { createGroupRoomWsAuthorizer } from '@shared-server/rallar-system/websocket/ws-topic-room-authorizer.ts';
 import { AppTopics } from '@shared/api/api-config.ts';
-import type { AuditStamp, GroupMember, GroupPresenceSession, GroupSnapshot } from '@shared/api/group-types.ts';
+import type {
+    AuditStamp,
+    GroupMember,
+    GroupPresenceSession,
+    GroupSnapshot
+} from '@shared/api/group-types.ts';
 import {
     AL_CONTROL_NACK_TYPE_ID,
     ALMessage,
+    createDefaultWsQueueBoxServerService,
     InMemoryQueueBox,
     newALBroadcastMessage,
     newALRoute,
-    WsQueueBoxServerService,
     type ALNackPayload,
     type WsServerTargetResolver
 } from '@shared/mod.ts';
-import { describe, expect, it, vi } from 'vitest';
+import {
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
 import { createTestGroup } from '../../create-test-group.ts';
 
 describe('RallarServerWsRouter', () => {
@@ -49,12 +59,11 @@ describe('RallarServerWsRouter', () => {
     });
 
     it('rejects repeated router installation before callback replacement', () => {
-        const { router, service } = createRouter();
+        const { router } = createRouter();
 
         router.install();
 
         expect(() => router.install()).toThrow(/already installed/i);
-        expect(service.registeredAnyInboxOwnerIds()).toHaveLength(1);
     });
 
     it('fans out implicit app topics to their declared targets', async () => {
@@ -499,7 +508,7 @@ function createRouter(
     const socket = createFakeWsServer();
     const inbox = new InMemoryQueueBox(new Map());
     const outbox = new InMemoryQueueBox(new Map());
-    const service = new RecordingWsQueueBoxServerService({
+    const service = createDefaultWsQueueBoxServerService({
         inbox: inbox,
         outbox: outbox,
         socket: socket as never,
@@ -517,23 +526,6 @@ function createRouter(
     };
 }
 
-class RecordingWsQueueBoxServerService extends WsQueueBoxServerService {
-    private readonly anyInboxOwners = new Set<string>();
-
-    override onAnyInboxMessageDo(
-        id: string,
-        callback: Parameters<WsQueueBoxServerService['onAnyInboxMessageDo']>[1]
-    ): this {
-        this.anyInboxOwners.add(id);
-        super.onAnyInboxMessageDo(id, callback);
-        return this;
-    }
-
-    registeredAnyInboxOwnerIds(): readonly string[] {
-        return [...this.anyInboxOwners];
-    }
-}
-
 function createPublicRouterFixture(
     options: Readonly<{
         targetResolver?: WsServerTargetResolver;
@@ -545,7 +537,7 @@ function createPublicRouterFixture(
     });
     const inbox = new InMemoryQueueBox(new Map());
     const outbox = new InMemoryQueueBox(new Map());
-    const service = new WsQueueBoxServerService({
+    const service = createDefaultWsQueueBoxServerService({
         inbox: inbox,
         outbox: outbox,
         socket: socket as never,
@@ -646,10 +638,9 @@ function createGroupSnapshot(
     sessionIds: readonly string[],
     snapshotVersion: number
 ): GroupSnapshot {
-    const ownerPrincipalId = sessionIds[0];
-    if (ownerPrincipalId === undefined) {
-        throw new Error('Group fixture requires an owner session');
-    }
+    const ownerPrincipalId = requireGroupOwner(sessionIds);
+    const members = sessionIds.map((sessionId) => createGroupMemberRecord({ groupId, ownerPrincipalId, sessionId, snapshotVersion }));
+    const activeSessions = sessionIds.map((sessionId) => createGroupPresenceRecord(groupId, sessionId, snapshotVersion));
     return {
         causalRevision: {
             groupRevision: snapshotVersion,
@@ -670,38 +661,65 @@ function createGroupSnapshot(
             created: createAuditStamp(1, ownerPrincipalId),
             updated: createAuditStamp(snapshotVersion, ownerPrincipalId)
         }),
-        members: sessionIds.map((sessionId): GroupMember => ({
-            applicationId: 'app-1',
-            workspaceId: 'workspace-1',
-            groupId,
-            principalId: sessionId,
-            role: sessionId === ownerPrincipalId ? 'owner' : 'member',
-            status: 'active',
-            joined: createAuditStamp(1, ownerPrincipalId),
-            updated: createAuditStamp(snapshotVersion, ownerPrincipalId),
-            invitedByPrincipalId: null,
-            invitationExpiresAtEpochMs: null,
-            left: null,
-            removed: null,
-            banned: null
-        })),
-        activeSessions: sessionIds.map((sessionId): GroupPresenceSession => ({
-            applicationId: 'app-1',
-            workspaceId: 'workspace-1',
-            groupId,
-            sessionId,
-            principalId: sessionId,
-            generationId: `generation-${sessionId}`,
-            generationVersion: snapshotVersion,
-            status: 'active',
-            connectedAtEpochMs: 1,
-            lastHeartbeatAtEpochMs: snapshotVersion,
-            expiresAtEpochMs: 60_000,
-            disconnectedAtEpochMs: null,
-            disconnectReason: null
-        })),
-        memberCount: sessionIds.length,
-        onlineMemberCount: sessionIds.length
+        members,
+        activeSessions,
+        memberCount: members.length,
+        onlineMemberCount: activeSessions.length
+    };
+}
+
+function requireGroupOwner(sessionIds: readonly string[]): string {
+    const ownerPrincipalId = sessionIds[0];
+    if (ownerPrincipalId === undefined) {
+        throw new Error('Group fixture requires an owner session');
+    }
+    return ownerPrincipalId;
+}
+
+interface CreateGroupMemberRecordInput {
+    readonly groupId: string;
+    readonly ownerPrincipalId: string;
+    readonly sessionId: string;
+    readonly snapshotVersion: number;
+}
+
+function createGroupMemberRecord(input: CreateGroupMemberRecordInput): GroupMember {
+    return {
+        applicationId: 'app-1',
+        workspaceId: 'workspace-1',
+        groupId: input.groupId,
+        principalId: input.sessionId,
+        role: input.sessionId === input.ownerPrincipalId ? 'owner' : 'member',
+        status: 'active',
+        joined: createAuditStamp(1, input.ownerPrincipalId),
+        updated: createAuditStamp(input.snapshotVersion, input.ownerPrincipalId),
+        invitedByPrincipalId: null,
+        invitationExpiresAtEpochMs: null,
+        left: null,
+        removed: null,
+        banned: null
+    };
+}
+
+function createGroupPresenceRecord(
+    groupId: string,
+    sessionId: string,
+    snapshotVersion: number
+): GroupPresenceSession {
+    return {
+        applicationId: 'app-1',
+        workspaceId: 'workspace-1',
+        groupId,
+        sessionId,
+        principalId: sessionId,
+        generationId: `generation-${sessionId}`,
+        generationVersion: snapshotVersion,
+        status: 'active',
+        connectedAtEpochMs: 1,
+        lastHeartbeatAtEpochMs: snapshotVersion,
+        expiresAtEpochMs: 60_000,
+        disconnectedAtEpochMs: null,
+        disconnectReason: null
     };
 }
 

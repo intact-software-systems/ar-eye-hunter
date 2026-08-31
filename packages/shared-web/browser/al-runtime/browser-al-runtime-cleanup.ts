@@ -1,4 +1,4 @@
-import { isIndexedDbALRuntimeStoreSupported } from '@shared/alm/ALRuntimeStores.ts';
+import { isIndexedDbALRuntimeStoreSupported } from '@shared/alm/al-runtime-stores.ts';
 import { openIndexedDbWithStore } from '@shared/persistence/openIndexedDb.ts';
 import { tryRunInIntervals } from '@shared/resilience/TryWith.ts';
 

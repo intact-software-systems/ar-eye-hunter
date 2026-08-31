@@ -1,8 +1,10 @@
+import { InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
 import { ALAdmissionBackendConflictError } from '@shared/alm/ALAdmissionBackendConflictError.ts';
+import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
 import {
     ALOutboundMessageRuntime,
     createALOutboundAdmissionStore,
-    createInMemoryALOutboundAdmissionState,
+    createInMemoryALAdmissionState,
     EntityStatus,
     InMemoryALOrderingStore,
     InMemoryQueueBox,
@@ -14,9 +16,16 @@ import {
     type ALOutboundAdmissionStore,
     type ALOutboundCommitBundle,
     type ALOutboundPlanner,
+    type ClaimALOutboundEffectsInput,
     type ResourceEntry
 } from '@shared/mod.ts';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import {
+    afterEach,
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
 
 describe('ALOutboundMessageRuntime', () => {
     afterEach(() => {
@@ -133,17 +142,7 @@ describe('ALOutboundMessageRuntime', () => {
 
     it('reschedules durable send-prepared effects when the transport is not ready', async () => {
         const admissionStore = createMemoryOutboundAdmissionStore();
-        const rescheduleEffect = vi.fn(async (
-            effectId: string,
-            workerId: string,
-            retryAtMs: number,
-            lastError?: string
-        ) => await admissionStore.rescheduleEffect(
-            effectId,
-            workerId,
-            retryAtMs,
-            lastError
-        ));
+        const rescheduleEffect = vi.fn(async (input) => await admissionStore.rescheduleEffect(input));
         const completeEffect = vi.fn(async (effectId: string, workerId: string) => await admissionStore.completeEffect(effectId, workerId));
         const runtime = createOutboundRuntime({
             stores: {
@@ -168,10 +167,12 @@ describe('ALOutboundMessageRuntime', () => {
 
         expect(result.status).toBe('sent-immediate');
         expect(rescheduleEffect).toHaveBeenCalledWith(
-            expect.stringContaining('send:'),
-            expect.any(String),
-            1_025,
-            'RTC lane warming'
+            expect.objectContaining({
+                effectId: expect.stringContaining('send:'),
+                workerId: expect.any(String),
+                retryAtMs: 1_025,
+                lastError: 'RTC lane warming'
+            })
         );
         expect(completeEffect).not.toHaveBeenCalled();
         runtime.dispose();
@@ -179,17 +180,7 @@ describe('ALOutboundMessageRuntime', () => {
 
     it('completes durable send-prepared effects when there are no RTC targets', async () => {
         const admissionStore = createMemoryOutboundAdmissionStore();
-        const rescheduleEffect = vi.fn(async (
-            effectId: string,
-            workerId: string,
-            retryAtMs: number,
-            lastError?: string
-        ) => await admissionStore.rescheduleEffect(
-            effectId,
-            workerId,
-            retryAtMs,
-            lastError
-        ));
+        const rescheduleEffect = vi.fn(async (input) => await admissionStore.rescheduleEffect(input));
         const completeEffect = vi.fn(async (effectId: string, workerId: string) => await admissionStore.completeEffect(effectId, workerId));
         const runtime = createOutboundRuntime({
             stores: {
@@ -1233,18 +1224,8 @@ describe('ALOutboundMessageRuntime', () => {
         const runtime = createOutboundRuntime({
             stores: {
                 admissionStore: createFlakyOutboundAdmissionStore(admissionStore, {
-                    claimReadyEffects: async <TPrepared>(
-                        workerId: string,
-                        maxCount: number,
-                        leaseMs: number,
-                        nowMs?: number
-                    ) => {
-                        const effects = await admissionStore.claimReadyEffects<TPrepared>(
-                            workerId,
-                            maxCount,
-                            leaseMs,
-                            nowMs
-                        );
+                    claimReadyEffects: async <TPrepared>(input: ClaimALOutboundEffectsInput) => {
+                        const effects = await admissionStore.claimReadyEffects<TPrepared>(input);
                         if (
                             !acceptedAckDuringTimeout &&
                             effects.some((effect) => effect.payload.kind === 'ack-timeout')
@@ -1570,10 +1551,10 @@ function createDeferred<T>(): {
 
 function createMemoryOutboundAdmissionStore(): ALOutboundAdmissionStore {
     return createALOutboundAdmissionStore({
-        kind: 'memory',
         namespace: `outbound-test:${crypto.randomUUID()}`,
         supersedenceTrackTtlMs: 5 * 60_000,
-        state: createInMemoryALOutboundAdmissionState()
+        backend: new InMemoryAdmissionBackend(createInMemoryALAdmissionState()),
+        retention: normalizeALRuntimeStoreRetention()
     });
 }
 
@@ -1611,27 +1592,19 @@ function createFlakyOutboundAdmissionStore(
             hooks.acceptControlMessage
                 ? hooks.acceptControlMessage<TPrepared>(msg)
                 : inner.acceptControlMessage<TPrepared>(msg),
-        claimReadyEffects: <TPrepared>(
-            workerId: string,
-            maxCount: number,
-            leaseMs: number,
-            nowMs?: number
-        ) => hooks.claimReadyEffects
-            ? hooks.claimReadyEffects<TPrepared>(workerId, maxCount, leaseMs, nowMs)
-            : inner.claimReadyEffects<TPrepared>(workerId, maxCount, leaseMs, nowMs),
+        claimReadyEffects: <TPrepared>(input: ClaimALOutboundEffectsInput) =>
+            hooks.claimReadyEffects
+                ? hooks.claimReadyEffects<TPrepared>(input)
+                : inner.claimReadyEffects<TPrepared>(input),
         completeEffect: (effectId: string, workerId: string) =>
             hooks.completeEffect
                 ? hooks.completeEffect(effectId, workerId)
                 : inner.completeEffect(effectId, workerId),
-        rescheduleEffect: (
-            effectId: string,
-            workerId: string,
-            retryAtMs: number,
-            lastError?: string
-        ) => hooks.rescheduleEffect
-            ? hooks.rescheduleEffect(effectId, workerId, retryAtMs, lastError)
-            : inner.rescheduleEffect(effectId, workerId, retryAtMs, lastError),
-        peekNextEffectReadyAt: (nowMs?: number) => inner.peekNextEffectReadyAt(nowMs)
+        rescheduleEffect: (input) =>
+            hooks.rescheduleEffect
+                ? hooks.rescheduleEffect(input)
+                : inner.rescheduleEffect(input),
+        peekNextEffectReadyAt: () => inner.peekNextEffectReadyAt()
     };
 }
 

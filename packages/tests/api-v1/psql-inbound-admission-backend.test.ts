@@ -1,8 +1,20 @@
 import { PSqlInboundAdmissionBackend } from '@shared-server/al-runtime/postgres/p-sql-inbound-admission-backend.ts';
 import { PSqlOutboundAdmissionBackend } from '@shared-server/al-runtime/postgres/p-sql-outbound-admission-backend.ts';
 import { RUNTIME_STATE_PREFIX_READ_PAGE_SIZE } from '@shared-server/al-runtime/postgres/read-runtime-state-entries-by-prefix.ts';
-import { createALInboundAdmissionStore, createALOutboundAdmissionStore, newALAckControlMessage, newALUnicastMessage } from '@shared/mod.ts';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import {
+    createALInboundAdmissionStore,
+    createALOutboundAdmissionStore,
+    newALAckControlMessage,
+    newALUnicastMessage,
+    normalizeALRuntimeStoreRetention
+} from '@shared/mod.ts';
+import {
+    afterEach,
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
 import { FakeRuntimeStateRepository } from './fake-optimistic-runtime-state-repository.ts';
 
 afterEach(() => {
@@ -64,11 +76,11 @@ describe('PSqlInboundAdmissionBackend', () => {
         const repository = new FakeRuntimeStateRepository();
         const namespace = 'psql-test:inbound:admission';
         const store = createALInboundAdmissionStore({
-            kind: 'backend',
             namespace,
             backend: new PSqlInboundAdmissionBackend(repository, namespace),
             orderingTrackTtlMs: 5 * 60_000,
-            supersedenceTrackTtlMs: 5 * 60_000
+            supersedenceTrackTtlMs: 5 * 60_000,
+            retention: normalizeALRuntimeStoreRetention()
         });
 
         const status = await store.commitMutations({
@@ -98,11 +110,11 @@ describe('PSqlInboundAdmissionBackend', () => {
         const repository = new FakeRuntimeStateRepository();
         const namespace = 'psql-test:inbound:admission';
         const store = createALInboundAdmissionStore({
-            kind: 'backend',
             namespace,
             backend: new PSqlInboundAdmissionBackend(repository, namespace),
             orderingTrackTtlMs: 5 * 60_000,
-            supersedenceTrackTtlMs: 5 * 60_000
+            supersedenceTrackTtlMs: 5 * 60_000,
+            retention: normalizeALRuntimeStoreRetention()
         });
 
         await store.commitMutations({
@@ -176,10 +188,10 @@ describe('PSqlOutboundAdmissionBackend', () => {
         const repository = new FakeRuntimeStateRepository();
         const namespace = 'psql-test:outbound:admission';
         const store = createALOutboundAdmissionStore({
-            kind: 'backend',
             namespace,
             backend: new PSqlOutboundAdmissionBackend(repository, namespace),
-            supersedenceTrackTtlMs: 5 * 60_000
+            supersedenceTrackTtlMs: 5 * 60_000,
+            retention: normalizeALRuntimeStoreRetention()
         });
         const msg = createOutboundMessage('msg-outbound-1');
         const effectId = `send:${msg.id.msgId}`;
@@ -233,12 +245,12 @@ describe('PSqlOutboundAdmissionBackend', () => {
             }
         });
 
-        const claimed = await store.claimReadyEffects<TestPreparedOutboundSend>(
-            'worker-1',
-            1,
-            10_000,
-            Date.now()
-        );
+        const claimed = await store.claimReadyEffects<TestPreparedOutboundSend>({
+            workerId: 'worker-1',
+            maxCount: 1,
+            leaseMs: 10_000,
+            nowMs: Date.now()
+        });
 
         expect(claimed).toHaveLength(1);
         expect(claimed[0].effectId).toBe(effectId);
@@ -252,10 +264,10 @@ describe('PSqlOutboundAdmissionBackend', () => {
         const repository = new FakeRuntimeStateRepository();
         const namespace = 'psql-test:outbound:admission';
         const store = createALOutboundAdmissionStore({
-            kind: 'backend',
             namespace,
             backend: new PSqlOutboundAdmissionBackend(repository, namespace),
-            supersedenceTrackTtlMs: 5 * 60_000
+            supersedenceTrackTtlMs: 5 * 60_000,
+            retention: normalizeALRuntimeStoreRetention()
         });
         const msg = createOutboundMessage('msg-outbound-ack');
 
@@ -290,12 +302,12 @@ describe('PSqlOutboundAdmissionBackend', () => {
     });
 
     it('wires PostgreSQL outbound admission into the server runtime store factory', async () => {
-        const { createPSqlALOutboundRuntimeStores } = await import(
+        const { createDefaultPSqlALOutboundRuntimeStores } = await import(
             '@shared-server/al-runtime/postgres/create-p-sql-al-runtime-stores.ts'
         );
         const repository = new FakeRuntimeStateRepository();
         const namespace = 'psql-test:factory';
-        const stores = createPSqlALOutboundRuntimeStores({
+        const stores = createDefaultPSqlALOutboundRuntimeStores({
             namespace,
             repository
         });
@@ -343,7 +355,7 @@ function createOutboundMessage(resourceId: string) {
     );
 }
 
-type TestPreparedOutboundSend = Readonly<{
-    kind: 'send';
-    msgId: string;
-}>;
+interface TestPreparedOutboundSend {
+    readonly kind: 'send';
+    readonly msgId: string;
+}

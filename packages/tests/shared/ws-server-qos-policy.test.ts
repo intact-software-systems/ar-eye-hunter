@@ -2,14 +2,23 @@ import { Temporal } from '@js-temporal/polyfill';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import * as shared from '@shared/mod.ts';
 import type { WsServerTargetResolver } from '@shared/services/ws-queue-box-server/ws-queue-box-server-contracts.ts';
-import { ConnectionContext, JsonWebSocketServer, type EncodedJsonWebSocketMessage } from '@shared/websocket/JsonWebSocketServer.ts';
-import { describe, expect, it, vi } from 'vitest';
+import {
+    ConnectionContext,
+    JsonWebSocketServer,
+    type EncodedJsonWebSocketMessage
+} from '@shared/websocket/JsonWebSocketServer.ts';
+import {
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
 
 describe('WsQueueBoxServerService QoS runtime', () => {
     it('sends volatile targeted unicast messages directly from the server outbox', async () => {
         const socket = createFakeWsServer();
         const outbox = new shared.InMemoryQueueBox(new Map());
-        const service = new shared.WsQueueBoxServerService({
+        const service = shared.createDefaultWsQueueBoxServerService({
             inbox: new shared.InMemoryQueueBox(new Map()),
             outbox: outbox,
             socket: socket,
@@ -45,7 +54,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
         const socket = createFakeWsServer();
         const outbox = new shared.InMemoryQueueBox(new Map());
         let providerEvaluationCount = 0;
-        const service = new shared.WsQueueBoxServerService({
+        const service = shared.createDefaultWsQueueBoxServerService({
             inbox: new shared.InMemoryQueueBox(new Map()),
             outbox: outbox,
             socket: socket,
@@ -100,7 +109,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
             const socket = createFakeWsServer({
                 failingConnectionIds: ['conn-2']
             });
-            const service = new shared.WsQueueBoxServerService({
+            const service = shared.createDefaultWsQueueBoxServerService({
                 inbox: new shared.InMemoryQueueBox(new Map()),
                 outbox: new shared.InMemoryQueueBox(new Map()),
                 socket: socket,
@@ -147,7 +156,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
     it('treats targeted broadcast messages with no recipients as a successful no-op', async () => {
         const socket = createFakeWsServer();
         const outbox = new shared.InMemoryQueueBox(new Map());
-        const service = new shared.WsQueueBoxServerService({
+        const service = shared.createDefaultWsQueueBoxServerService({
             inbox: new shared.InMemoryQueueBox(new Map()),
             outbox: outbox,
             socket: socket,
@@ -184,7 +193,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
     it('routes targeted multicast messages to resolved group recipients', async () => {
         const socket = createFakeWsServer();
         const outbox = new shared.InMemoryQueueBox(new Map());
-        const service = new shared.WsQueueBoxServerService({
+        const service = shared.createDefaultWsQueueBoxServerService({
             inbox: new shared.InMemoryQueueBox(new Map()),
             outbox: outbox,
             socket: socket,
@@ -222,7 +231,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
     it('persists server outbox entries with the message expiry timestamp', async () => {
         const socket = createFakeWsServer();
         const outbox = new shared.InMemoryQueueBox(new Map());
-        const service = new shared.WsQueueBoxServerService({
+        const service = shared.createDefaultWsQueueBoxServerService({
             inbox: new shared.InMemoryQueueBox(new Map()),
             outbox: outbox,
             socket: socket,
@@ -288,7 +297,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
     it('returns no-route for untargeted outbound messages', async () => {
         const socket = createFakeWsServer();
         const outbox = new shared.InMemoryQueueBox(new Map());
-        const service = new shared.WsQueueBoxServerService({
+        const service = shared.createDefaultWsQueueBoxServerService({
             inbox: new shared.InMemoryQueueBox(new Map()),
             outbox: outbox,
             socket: socket,
@@ -320,7 +329,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
     it('drops unresolved queued outbound messages', async () => {
         const socket = createFakeWsServer();
         const outbox = new shared.InMemoryQueueBox(new Map());
-        const service = new shared.WsQueueBoxServerService({
+        const service = shared.createDefaultWsQueueBoxServerService({
             inbox: new shared.InMemoryQueueBox(new Map()),
             outbox: outbox,
             socket: socket,
@@ -368,7 +377,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
     it('targets server repair retransmits to the requesting recipient', async () => {
         const socket = createFakeWsServer();
         const outbox = new shared.InMemoryQueueBox(new Map());
-        const service = new shared.WsQueueBoxServerService({
+        const service = shared.createDefaultWsQueueBoxServerService({
             inbox: new shared.InMemoryQueueBox(new Map()),
             outbox: outbox,
             socket: socket,
@@ -421,7 +430,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
 
     it('forwards inbound client unicast messages to the targeted peer', async () => {
         const socket = createFakeWsServer();
-        const service = new shared.WsQueueBoxServerService({
+        const service = shared.createDefaultWsQueueBoxServerService({
             inbox: new shared.InMemoryQueueBox(new Map()),
             outbox: new shared.InMemoryQueueBox(new Map()),
             socket: socket,
@@ -463,7 +472,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
 
     it('forwards inbound room broadcasts to resolved group recipients', async () => {
         const socket = createFakeWsServer();
-        const service = new shared.WsQueueBoxServerService({
+        const service = shared.createDefaultWsQueueBoxServerService({
             inbox: new shared.InMemoryQueueBox(new Map()),
             outbox: new shared.InMemoryQueueBox(new Map()),
             socket: socket,
@@ -499,7 +508,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
     // here would deliver messages the authorizer rejects.
     it('does not forward room application data when the production relay disowns room fanout', async () => {
         const socket = createFakeWsServer();
-        const service = new shared.WsQueueBoxServerService({
+        const service = shared.createDefaultWsQueueBoxServerService({
             inbox: new shared.InMemoryQueueBox(new Map()),
             outbox: new shared.InMemoryQueueBox(new Map()),
             socket: socket,
@@ -527,7 +536,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
 
     it('suppresses duplicate inbound delivery on the server wrapper', async () => {
         const socket = createFakeWsServer();
-        const service = new shared.WsQueueBoxServerService({
+        const service = shared.createDefaultWsQueueBoxServerService({
             inbox: new shared.InMemoryQueueBox(new Map()),
             outbox: new shared.InMemoryQueueBox(new Map()),
             socket: socket,
@@ -566,7 +575,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
 
     it('emits nack and repair controls for ordered gaps on inbound server messages', async () => {
         const socket = createFakeWsServer();
-        const service = new shared.WsQueueBoxServerService({
+        const service = shared.createDefaultWsQueueBoxServerService({
             inbox: new shared.InMemoryQueueBox(new Map()),
             outbox: new shared.InMemoryQueueBox(new Map()),
             socket: socket,
