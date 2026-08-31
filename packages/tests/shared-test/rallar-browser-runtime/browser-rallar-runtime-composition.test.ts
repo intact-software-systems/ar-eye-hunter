@@ -167,13 +167,13 @@ function createRefreshInput(group: GroupSnapshot): Omit<Parameters<typeof refres
     } as const;
 }
 
-function createWebRtcGroupManager(): WebRtcGroupManager {
+function createWebRtcGroupManager(): Pick<WebRtcGroupManager, 'notifyOverlayTopologyChanged'> {
     return {
         notifyOverlayTopologyChanged: vi.fn(async () => undefined)
-    } as never;
+    };
 }
 
-function jsonResponse(body: object): Response {
+function jsonResponse(body: TestTopologyView): Response {
     return new Response(JSON.stringify(body), {
         status: 200,
         headers: { 'content-type': 'application/json' }

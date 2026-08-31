@@ -2,6 +2,11 @@ import { expect } from '@playwright/test';
 import type { ALNackPayload } from '@shared/al-contracts/al-control.ts';
 import type { RtcBaselineJson } from '../../../packages/shared-rtc-bench/baseline/contracts/rtc-baseline-contracts.ts';
 import type { BlackBoxRallarRuntime } from '../../../packages/shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-runtime-contract.ts';
+import type { BlackBoxRallarSendInput } from '../../../packages/shared-test/black-box-runner/browser/rallar-browser-runtime/contracts.ts';
+import type {
+    RallarBlackBoxTestRtcSendCommand,
+    RallarBlackBoxTestWsSendCommand
+} from '../../../packages/shared-test/rallar-bb-test/types.ts';
 import {
     createGroupFormationLifecycleDriver,
     type GroupFormationLifecycleDriver,
@@ -92,6 +97,15 @@ export interface LiveRtcDeliveryOperations {
     closeAndResetSettledAgentTrio(input: CloseAndResetSettledAgentTrioInput): Promise<readonly string[]>;
 }
 
+interface LiveRtcMatrixPayload {
+    readonly topic: string;
+    readonly matrixId: string;
+    readonly deliveryMode: string;
+    readonly transport: TransportUnderTest;
+    readonly runId: string;
+    readonly groupId?: string;
+}
+
 interface SendMatrixPayloadInput {
     readonly control: LiveRtcControlPort;
     readonly runId: string;
@@ -150,10 +164,10 @@ function sendPayload(
         transport: TransportUnderTest;
         groupId: string;
         targetSessionIds?: readonly string[];
-        payload: object;
+        payload: LiveRtcMatrixPayload;
         minSnapshotVersion?: number;
     }>
-): object {
+): BlackBoxRallarSendInput {
     if (input.transport === 'messages.rtc') {
         return {
             roomId: input.groupId,
@@ -664,7 +678,7 @@ function toWebSocketMatrixSendCommand(
     runtime: LiveRtcDeliveryRuntime,
     input: RunWebSocketOpenSendCloseMatrixInput,
     agent: LiveRtcControlClient.Agent
-): object {
+): RallarBlackBoxTestWsSendCommand {
     return {
         kind: 'ws.send',
         connection: `ws-${agent.prefix.toLowerCase()}-${input.suffix}`,
@@ -703,7 +717,10 @@ function toWebSocketMatrixSendCommand(
         }
     };
 }
-function toNackProbeCommand(runtime: LiveRtcDeliveryRuntime, input: RtcFailureProbeInput): object {
+function toNackProbeCommand(
+    runtime: LiveRtcDeliveryRuntime,
+    input: RtcFailureProbeInput
+): RallarBlackBoxTestRtcSendCommand {
     return {
         kind: 'rtc.send',
         connection: `${input.agent.connection}-messages-rtc`,

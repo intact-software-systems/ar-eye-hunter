@@ -1,4 +1,5 @@
 import { toWebRtcGroupKey } from '@shared/api/api-type-utils.ts';
+import { toError } from '../resilience/to-error.ts';
 // dprint-ignore
 import type {
     GroupId,
@@ -402,7 +403,7 @@ export class WebRtcGroupManager {
                 this.diagnostics.retainedEvictionCount += 1;
             }
             catch (error) {
-                console.error(`Failed to disconnect retained peer ${peerId}`, error);
+                console.error(`Failed to disconnect retained peer ${peerId}`, toError(error));
             }
         }
     }
@@ -452,7 +453,7 @@ export class WebRtcGroupManager {
                 this.diagnostics.retainedExpiredCount += 1;
             }
             catch (error) {
-                console.error(`Failed to disconnect retained peer ${retained.peerId}`, error);
+                console.error(`Failed to disconnect retained peer ${retained.peerId}`, toError(error));
             }
         }
     }

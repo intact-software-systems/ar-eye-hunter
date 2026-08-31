@@ -186,6 +186,7 @@ export const LEGACY_ESTABLISHMENT_CONSUMERS: readonly LegacyEstablishmentConsume
     { file: 'packages/shared/api/group-lifecycle/group-lifecycle-transitions.ts', occurrences: { 'start-establishment': 3 } },
     { file: 'packages/shared/api/group-lifecycle/resolve-formation-stage-entry.ts', occurrences: { 'start-establishment': 1 } },
     { file: 'packages/shared/api/group-types.ts', occurrences: { 'start-establishment': 1 } },
+    { file: 'packages/tests/rallar-black-box/live-rtc-delivery-operations.test.ts', occurrences: { 'lifecycle/establish': 1 } },
     {
         file: 'packages/tests/repo/mutation-route-ownership/routing/mutation-routing-owner-inventory.ts',
         occurrences: { GROUP_ESTABLISHMENT_START: 2, StartGroupEstablishment: 1, 'start-group-establishment': 1, 'lifecycle/establish': 1 }

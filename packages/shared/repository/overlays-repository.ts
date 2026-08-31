@@ -394,7 +394,7 @@ function removeRoleOverlayByIdIfUnchanged(
     input: RemoveOverlayIfUnchangedInput
 ): boolean {
     if (
-        input.observedOverlay === undefined ||
+        input.observedOverlay?.state !== 'active' ||
         readObservableLatestRepositoryValue(input.token, input.overlayId, input.manager) !== input.observedOverlay
     ) {
         return false;
@@ -419,7 +419,6 @@ function setOverlay(input: SetOverlayInput): OverlayAdoptionOutcome {
 
     const comparison = compareOverlayInfoIdentity(input.overlay, current);
     if (comparison === 'dominates') {
-        console.log(`Received updated overlay details: ${JSON.stringify(input.overlay)}`);
         return adoptOverlay(input, repository, 'adopted');
     }
     if (comparison === 'equal') {
@@ -431,12 +430,6 @@ function setOverlay(input: SetOverlayInput): OverlayAdoptionOutcome {
         return reportOverlayDrop(input.overlayId, 'incomparable-conflict');
     }
 
-    console.log(
-        'Received stale overlay data: ' +
-            JSON.stringify(input.overlay) +
-            ' vs ' +
-            JSON.stringify(current)
-    );
     return reportOverlayDrop(input.overlayId, 'dominated-dropped');
 }
 

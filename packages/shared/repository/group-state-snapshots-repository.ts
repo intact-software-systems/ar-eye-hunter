@@ -237,9 +237,6 @@ function writeGroupStateSnapshot(
             previous: previousForIndex,
             next: snapshot
         });
-        if (decision === 'advanced') {
-            console.log(`Received updated group snapshot: ${snapshot.group.groupId}`);
-        }
         return decision;
     }
 

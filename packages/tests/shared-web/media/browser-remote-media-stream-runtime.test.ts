@@ -1,68 +1,50 @@
 import { BrowserRemoteMediaStreamRuntime } from '@shared-web/browser/media/browser-remote-media-stream-runtime.ts';
-import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
-import type { WebRtcRxStreamerService } from '@shared/services/WebRtcRxStreamerService.ts';
-import { describe, expect, it, vi } from 'vitest';
+import type { RallarRemoteStream } from '@shared-web/browser/rallar-media-facade.ts';
+import { describe, expect, it } from 'vitest';
+import { EmptyMediaStream, EmptyRtcTrackEvent } from '../../shared/rtc-media-test-events.ts';
 
 describe('BrowserRemoteMediaStreamRuntime', () => {
     it('owns middleware registration from connection attach through final unsubscribe', async () => {
-        let context: ApiMiddleware | undefined;
-        let middlewareCallback: (
-            peerId: string,
-            stream: MediaStream,
-            event: RTCTrackEvent
-        ) => Promise<void> = async () => undefined;
-        let rtcRxStreamer: WebRtcRxStreamerService;
-        const onRemoteStreamDo = vi.fn((
-            _callbackId: string,
-            callback: typeof middlewareCallback
-        ) => {
-            middlewareCallback = callback;
-            return rtcRxStreamer;
-        });
-        const removeOnRemoteStreamCallbackById = vi.fn();
-        rtcRxStreamer = toTestDouble<WebRtcRxStreamerService>({
-            onRemoteStreamDo,
-            removeOnRemoteStreamCallbackById
-        });
-        const runtime = new BrowserRemoteMediaStreamRuntime({
-            readMiddleware: () => context
-        });
+        let context: BrowserRemoteMediaStreamRuntime.Connection | undefined;
+        const subscriptions = new RemoteStreamSubscriptions();
+        const runtime = new BrowserRemoteMediaStreamRuntime({ readMiddleware: () => context });
         const receivedPeerIds: string[] = [];
-
         const unsubscribe = runtime.onRemoteStream((remote) => {
             receivedPeerIds.push(remote.peerId);
         });
-        expect(onRemoteStreamDo).not.toHaveBeenCalled();
+        expect(subscriptions.callbacks.size).toBe(0);
 
-        context = createMiddleware(rtcRxStreamer);
+        context = { middleware: { rtcRxStreamer: subscriptions } };
         runtime.attach();
-        await middlewareCallback(
-            'peer-1',
-            toTestDouble<MediaStream>({ id: 'stream-1' }),
-            toTestDouble<RTCTrackEvent>({})
-        );
+        expect(subscriptions.callbacks.size).toBe(1);
+        const stream = new EmptyMediaStream('stream-1');
+        const remote = { peerId: 'peer-1', stream, event: new EmptyRtcTrackEvent(stream) };
+        await subscriptions.publish(remote);
         unsubscribe();
+        await subscriptions.publish(remote);
 
-        expect(onRemoteStreamDo).toHaveBeenCalledWith(
-            'rallar:remote-stream',
-            expect.any(Function)
-        );
         expect(receivedPeerIds).toEqual(['peer-1']);
-        expect(removeOnRemoteStreamCallbackById)
-            .toHaveBeenCalledWith('rallar:remote-stream');
+        expect(subscriptions.callbacks.size).toBe(0);
     });
 });
 
-function createMiddleware(
-    rtcRxStreamer: WebRtcRxStreamerService
-): ApiMiddleware {
-    return toTestDouble<ApiMiddleware>({
-        middleware: toTestDouble<ApiMiddleware['middleware']>({
-            rtcRxStreamer
-        })
-    });
-}
+class RemoteStreamSubscriptions implements BrowserRemoteMediaStreamRuntime.StreamSubscriptions {
+    readonly callbacks = new Map<string, Parameters<BrowserRemoteMediaStreamRuntime.StreamSubscriptions['onRemoteStreamDo']>[1]>();
 
-function toTestDouble<T>(members: Partial<T>): T {
-    return members as T;
+    onRemoteStreamDo(
+        id: string,
+        callback: Parameters<BrowserRemoteMediaStreamRuntime.StreamSubscriptions['onRemoteStreamDo']>[1]
+    ): void {
+        this.callbacks.set(id, callback);
+    }
+
+    removeOnRemoteStreamCallbackById(id: string): boolean {
+        return this.callbacks.delete(id);
+    }
+
+    async publish(remote: RallarRemoteStream): Promise<void> {
+        for (const callback of this.callbacks.values()) {
+            await callback(remote.peerId, remote.stream, remote.event);
+        }
+    }
 }

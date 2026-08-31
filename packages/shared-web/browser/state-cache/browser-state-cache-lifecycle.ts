@@ -2,6 +2,7 @@ import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import type { ClientInfo } from '@shared/api/api-config.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
+import { toError } from '@shared/resilience/to-error.ts';
 // dprint-ignore
 import {
     DEFAULT_STATE_APPLICATION_ID,
@@ -17,10 +18,11 @@ import {
     acceptGroupSnapshotUpdate,
     isSameBootstrapOverlayPolicy,
     resolveBootstrapOverlayPolicy,
-    type BootstrapOverlayPolicyInput
+    type BootstrapOverlayPolicyInput,
+    type GroupSnapshotRtcSyncPort
 } from '@shared/services/group-snapshot-rtc-sync.ts';
 import type { OnMessageCallback } from '@shared/services/InboxOutboxContracts.ts';
-import { WebRtcGroupManager } from '@shared/services/web-rtc-group-manager.ts';
+import type { WebRtcGroupManager } from '@shared/services/web-rtc-group-manager.ts';
 import { dispatchOverlayTopologyMessage } from './overlay-topology-message-dispatch.ts';
 import {
     acceptClientStateSnapshots,
@@ -54,16 +56,27 @@ export interface StateCacheInboxSource {
     ): void;
 }
 
+export interface BrowserStateCacheLifecyclePort {
+    onChange(listener: StateCacheChangeListener): () => void;
+    initialise(input: BrowserStateCacheLifecycle.InitialiseInput): void;
+    hydrate(input: BrowserStateCacheLifecycle.HydrateInput): Promise<void>;
+}
+
 export namespace BrowserStateCacheLifecycle {
+    export interface RtcGroupPort
+        extends
+            GroupSnapshotRtcSyncPort,
+            Pick<WebRtcGroupManager, 'notifyClientPresenceChanged' | 'notifyOverlayTopologyChanged'> {}
+
     export interface InitialiseInput {
         readonly inbox: StateCacheInboxSource;
-        readonly webRtcGroupManager: WebRtcGroupManager;
+        readonly webRtcGroupManager: RtcGroupPort;
         readonly clientData: ClientInfo;
         readonly options?: StateCacheScopeOptions;
     }
 
     export interface HydrateInput {
-        readonly webRtcGroupManager: WebRtcGroupManager;
+        readonly webRtcGroupManager: RtcGroupPort;
         readonly clientData: ClientInfo;
         readonly clientSnapshots: readonly ClientSnapshot[];
         readonly groupSnapshots: readonly GroupSnapshot[];
@@ -71,7 +84,7 @@ export namespace BrowserStateCacheLifecycle {
     }
 
     export interface ObserverContext {
-        readonly webRtcGroupManager: WebRtcGroupManager;
+        readonly webRtcGroupManager: RtcGroupPort;
         readonly sessionId: string;
         readonly scope: StateScope;
         readonly bootstrapOverlayPolicy: BootstrapOverlayPolicy;
@@ -79,12 +92,6 @@ export namespace BrowserStateCacheLifecycle {
             scope: StateScope
         ) => Promise<readonly GroupSnapshot[]>;
     }
-}
-
-export interface BrowserStateCacheLifecyclePort {
-    onChange(listener: StateCacheChangeListener): () => void;
-    initialise(input: BrowserStateCacheLifecycle.InitialiseInput): void;
-    hydrate(input: BrowserStateCacheLifecycle.HydrateInput): Promise<void>;
 }
 
 export class BrowserStateCacheLifecycle implements BrowserStateCacheLifecyclePort {
@@ -215,7 +222,7 @@ export class BrowserStateCacheLifecycle implements BrowserStateCacheLifecyclePor
     }
 
     private observeClientStateChanges(
-        webRtcGroupManager: WebRtcGroupManager
+        webRtcGroupManager: Pick<BrowserStateCacheLifecycle.RtcGroupPort, 'notifyClientPresenceChanged'>
     ): () => void {
         return clientStateSnapshotsRepository.onClientStateSnapshotChange((change) => {
             const snapshot = change.snapshot;
@@ -235,7 +242,7 @@ export class BrowserStateCacheLifecycle implements BrowserStateCacheLifecyclePor
     }
 
     private observeGroupStateChanges(
-        webRtcGroupManager: WebRtcGroupManager,
+        webRtcGroupManager: BrowserStateCacheLifecycle.RtcGroupPort,
         bootstrapOverlayPolicy: BootstrapOverlayPolicy
     ): () => void {
         return groupStateSnapshotsRepository.onGroupStateSnapshotChange((change) => {
@@ -283,7 +290,10 @@ export class BrowserStateCacheLifecycle implements BrowserStateCacheLifecyclePor
                     await listener(change);
                 }
                 catch (error) {
-                    console.error('Error notifying state cache listener', error);
+                    console.error(
+                        'Error notifying state cache listener',
+                        toError(error)
+                    );
                 }
             })
         );

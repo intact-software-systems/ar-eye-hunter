@@ -48,22 +48,14 @@ describe('GroupStateSnapshotReadThroughCache', () => {
         const cache = createGroupStateSnapshotReadThroughCache({
             groupsRepository: repository
         });
-        const revisionTwo = {
-            ...createGroupSnapshot(1, ['session-new']),
-            causalRevision: { groupRevision: 2, presenceRevision: 2 }
-        } satisfies GroupSnapshot;
-        const revisionOne = {
-            ...createGroupSnapshot(99, ['session-stale']),
-            causalRevision: { groupRevision: 1, presenceRevision: 1 }
-        } satisfies GroupSnapshot;
+        const revisionTwo = createGroupSnapshot(2, ['session-new', 'session-other']);
+        const revisionOne = createGroupSnapshot(1, ['session-stale']);
+        const incomparable = createGroupSnapshot(3, ['session-new']);
 
         expect(cache.observe(revisionTwo)).toBe('inserted');
         expect(cache.observe(revisionOne)).toBe('stale');
         expect(
-            cache.observe({
-                ...revisionTwo,
-                causalRevision: { groupRevision: 3, presenceRevision: 1 }
-            })
+            cache.observe(incomparable)
         ).toBe('incomparable');
         expect(cache.observe(revisionTwo)).toBe('duplicate');
         expect(() =>
@@ -161,9 +153,6 @@ describe('GroupStateSnapshotReadThroughCache', () => {
     });
 
     it('evicts only identities that have not advanced in either cache layer', async () => {
-        type ConditionallyEvictable = Readonly<{
-            evictIfUnchanged?: (ref: GroupRef, expected: GroupSnapshot) => boolean;
-        }>;
         configureTestCacheRepositories();
         const repository = createTestGroupStateRepository(new FakeRuntimeStateRepository());
         const cache = createGroupStateSnapshotReadThroughCache({
@@ -178,12 +167,10 @@ describe('GroupStateSnapshotReadThroughCache', () => {
         }
 
         expect(cache.observe(newer)).toBe('advanced');
-        const conditionallyEvictable = cache as ConditionallyEvictable;
-
-        expect(conditionallyEvictable.evictIfUnchanged?.(loaded.group, loaded) ?? false).toBe(true);
+        expect(cache.evictIfUnchanged(loaded.group, loaded)).toBe(true);
         expect(cache.peek(newer.group)).toBe(newer);
 
-        expect(conditionallyEvictable.evictIfUnchanged?.(newer.group, newer) ?? false).toBe(true);
+        expect(cache.evictIfUnchanged(newer.group, newer)).toBe(true);
         expect(cache.peek(newer.group)).toBeUndefined();
     });
 });
@@ -204,7 +191,7 @@ async function convergePresenceSummaryForCacheTest(
         throw new Error('Expected stored group');
     }
     const acceptedCausalRevision = {
-        groupRevision: group.entry.revision + 1,
+        groupRevision: group.value.snapshotVersion,
         presenceRevision: current?.value.causalRevision.presenceRevision ?? 0
     };
     const command = createCacheConvergenceCommand({
@@ -291,7 +278,7 @@ async function putGroupSnapshot(
         workspaceId: snapshot.group.workspaceId,
         groupId: snapshot.group.groupId,
         causalRevision: {
-            groupRevision: group.entry.revision + 1,
+            groupRevision: group.value.snapshotVersion,
             presenceRevision
         },
         activePrincipalIds: snapshot.activeSessions.map((session) => session.principalId),

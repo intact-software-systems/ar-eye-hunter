@@ -1,3 +1,4 @@
+import { decodeJsonWireText, type JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import { configureApiClient } from '@shared-web/browser/api-client-config.ts';
 import { toCreateWsUrl } from '@shared-web/browser/connection/initialise-browser-middleware.ts';
 import { initHeartbeat } from '@shared-web/browser/session/browser-session-heartbeat.ts';
@@ -19,7 +20,7 @@ import {
 interface FetchCall {
     readonly url: string;
     readonly method: string;
-    readonly body?: unknown;
+    readonly body: JsonWireValue | undefined;
 }
 
 describe('Browser session heartbeat', () => {
@@ -145,8 +146,9 @@ describe('Browser session heartbeat', () => {
             principalId: authSession.clientId,
             sessionId: authSession.sessionId
         });
-        const newer = {
+        const newer: GroupSnapshot = {
             ...observed,
+            group: { ...observed.group, snapshotVersion: observed.group.snapshotVersion + 1 },
             causalRevision: {
                 groupRevision: observed.causalRevision.groupRevision + 1,
                 presenceRevision: observed.causalRevision.presenceRevision
@@ -249,7 +251,7 @@ describe('Browser session heartbeat', () => {
                 const call: FetchCall = {
                     url: String(input),
                     method: init?.method ?? 'GET',
-                    body: init?.body ? JSON.parse(String(init.body)) : undefined
+                    body: init?.body ? decodeJsonWireText(String(init.body)) : undefined
                 };
                 fetchCalls.push(call);
                 return handler(call);
@@ -258,7 +260,7 @@ describe('Browser session heartbeat', () => {
     }
 });
 
-function jsonResponse(body: unknown, status = 200): Response {
+function jsonResponse(body: ClientSnapshot, status = 200): Response {
     return new Response(JSON.stringify(body), {
         status,
         headers: { 'content-type': 'application/json' }
@@ -269,7 +271,7 @@ function textResponse(body: string, status: number): Response {
     return new Response(body, { status });
 }
 
-function hasRequestId<Value>(value: Value): boolean {
+function hasRequestId(value: JsonWireValue | undefined): boolean {
     return typeof value === 'object' && value !== null && 'requestId' in value;
 }
 
@@ -322,11 +324,13 @@ function groupSnapshot(input: GroupSnapshotFixtureInput): GroupSnapshot {
     });
     return {
         ...snapshot,
+        causalRevision: { groupRevision: 3, presenceRevision: 1 },
         group: {
             ...snapshot.group,
             slug: groupId,
             joinMode: 'invite-only',
             snapshotVersion: 3,
+            presenceVersion: 1,
             metadataVersion: 1,
             activeMemberCount: 1,
             ownerPrincipalId: principalId
@@ -337,7 +341,7 @@ function groupSnapshot(input: GroupSnapshotFixtureInput): GroupSnapshot {
                 workspaceId,
                 groupId,
                 principalId,
-                role: 'member',
+                role: 'owner',
                 actorPrincipalId: principalId
             })
         ],

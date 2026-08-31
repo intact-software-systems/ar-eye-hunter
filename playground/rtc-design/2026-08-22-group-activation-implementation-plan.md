@@ -1593,69 +1593,70 @@ fallback or retained-legacy entry. The final unit, Deno, build, shared-web/headl
 bundle, E2E, memory full-stack, live three-browser, topology-replay and fixed medium-scale gates all
 pass on that earlier integration; they are not evidence for the later correction below.
 
-### Oldest-first cleanup checkpoint — Slice 8a (2026-08-31)
+### Slice 8a review refinements — receiver admission and current-state hydration
 
-The maintainer requested complete reviews and corrections of the existing unmerged stack, oldest
-to current, followed by manual merges. Actual `main` at `eab44688b0` introduced a real conflict;
-the local repair preserves canonical RTT reporter election, passive pongs and transport validation
-together with planned-RTT/accepted-traffic role separation. This is material integration work, not
-a rebase merely because the branch is behind.
+The oldest-first review keeps Slice 8a's planned-RTT/accepted-traffic separation and
+canonical RTT reporter election, passive pongs and transport validation. The previous
+bounded-wave stop is superseded by the maintainer's instruction to fix the findings and
+continue. A prior review limit is not an acceptance waiver or a product constraint.
 
-The complete review identified eight correction areas. The consolidated correction now orders
-same-tuple removed layouts after active layouts in both roles and rejects reverse stale delivery.
-Live proof uses executable lifecycle/send owners and independently stored, receiver/message-
-correlated NACK receipts; successful enqueue and request names are not rejection evidence.
-Required browser-runtime status ports are called directly. Authentication, connection state,
-health and resource lifecycle have explicit owners rather than one large installation closure.
+Two recovered ownership facts refine the remaining implementation:
 
-The existing active peer-selection callback carries separate completed desired and RTT-reporting
-sets to the already constructed streamer, removing the construction back-edge without an unused
-replacement port. Existing zero-argument observer registration remains supported. The physical
-manager, test-cache configurator and lifecycle-driver files use canonical names with direct imports;
-the public `WebRtcGroupManager` class, namespace and intentional entries remain unchanged. No old
-physical-path shim, graph path, single-slot adapter or missing-mandatory-port legacy remains.
+- The browser's remote RTC receiver owns snapshot-floor admission. After transport
+  decoding, a room message whose `minSnapshotVersion` exceeds the exact scoped local
+  `GroupSnapshot.group.snapshotVersion` must not enter deduplication, ordering,
+  application delivery or forwarding. The receiver emits a `not-yet-in-sync` NACK
+  through the existing RTC outbox, correlated to the original message and immediate
+  sending peer. Control messages bypass this gate so a rejection cannot create a
+  rejection loop. No-floor traffic retains its existing behavior, and retrying the
+  same message after snapshot advancement remains admissible. The local outbound
+  planning path is unchanged. Injected receipts and server WebSocket rejection do not
+  prove this receiver behavior.
+- An HTTP topology read observes the current immutable group snapshot before awaiting
+  its response. If group authority changes during that await, neither role may be
+  adopted or removed from that response. Checking membership alone allows an old
+  accepted layout to be recreated after newer acceptance revoked it. Current-state
+  repair still accepts an incomparable topology observation when its group and role
+  observations remain current. Each role also captures its raw repository record,
+  including tombstones: an intervening role publication fences that role's delayed
+  non-monotonic repair even when the group object is unchanged. Null results remove
+  only the original active role observations and retain tombstone fences.
 
-The correction's covering tests, package/native/test typing, public/room checks, affected formatting,
-changed style, structure, coupling and legacy gates pass. Exact source lineage records the actual
-runtime split for aggregate style comparison, not a standards exception. The unchanged headless
-205 KiB budget passes at 204.877 KiB after private runtime encapsulation; its margin remains narrow.
-The complete formatter still reports five byte-identical untouched baseline failures. Semantic
-recording tests and native checks do not claim execution of exhaustive live or retention-100 cases.
+The receiver constructor uses a named required input with explicit stores, clock and
+heartbeat policy. Its class identity remains public; the positional constructor and
+uninvoked receiver outbox-callback registry have no retained overload or shim. The
+consumerless receiver raw-message callback registry is also removed: it bypassed
+admission, had no corresponding peer teardown and had no verified repository caller.
+The data-channel and heartbeat callback ports remain independently required. The
+multicast manager already owns the group cache and outbound control path, so this
+receiver fix does not require changing that independent owner's constructor.
 
-The single independent scoped re-review requests changes: six original findings are addressed,
-but the browser NACK contract and complete-file standards closure remain open. The RTC receive
-path has no producer for the required `not-yet-in-sync` receipt; that reason currently comes from
-the server WebSocket authorizer, not the peer selected by this probe. Positive injected receipts
-prove the reader/matcher, not production rejection. Resolve browser snapshot-admission/NACK
-semantics explicitly without substituting a server receipt or weakening the gate.
+The black-box runtime and live proof use required production lifecycle ports and
+canonical command/result contracts. Cleanup normalizes caught failures once and
+preserves every diagnostic in a named serializable shape. Existing source-inventory
+checks remain supplementary to real receiver, lifecycle and cleanup behavior tests;
+no package-boundary or legacy-removal check is waived.
 
-Remaining closure includes known fixture outputs without their canonical named contracts,
-optional test facades over required APIs and cleanup errors that propagate without normalization.
-Every changed human-authored file was reviewed in full; every support file changed by subsequent
-remediation must enter closure recursively. Independent untouched code remains outside closure.
-A lineage-aware changed-style PASS does not waive these concrete findings.
+Every changed human-authored file must be reviewed and remediated in full. Every support
+file modified during remediation enters that closure recursively. Independent untouched
+code remains outside closure. Remove affected graph, single-slot and missing-port legacy;
+keep no production compatibility shim merely to preserve a coupled test.
 
-Fresh full typecheck, Deno and workspace builds pass. Full unit validation fails two introduced
-checks: the new operation fixture reverse-imports a benchmark-package type and adds an unlisted
-establishment-route consumer to the exact removal inventory. Both checks pass on pinned main.
-These are two additional Important regressions, not flaky infrastructure or obsolete test coupling.
-
-The final whole-PR correction wave and its one scoped re-review are complete, with four Important
-findings still open. No second correction wave or changed product contract is inferred. Keep this
-PR draft and dependent advancement held for the maintainer's direction. Remaining browser/live,
-native PostgreSQL and controlled state-write gates are required and unrun on this candidate.
-Older green CI does not validate unpublished corrections. Leave merges to the maintainer and
-carry accepted parent corrections through #390, #391 and #396 in order. No Slice 9 implementation
-belongs to this cleanup campaign.
+The Slice 8 gates above and condition-based gate assignment below remain acceptance requirements. In particular, real
+three-browser delivery must observe receiver-generated NACKs, and current-candidate
+public-surface, bundle, native PostgreSQL and state-write evidence must support delivery.
+Published PR checks and review conversations own readiness; this document is not their
+status ledger. Merges remain manual.
 
 **Next two PRs (I5, I20):**
 
-- **PR 13 = finish #381 / slice 8a.** Obtain the explicit browser NACK contract and bounded-follow-up
-  direction, resolve the four remaining findings, then complete the unchanged final gates and
-  publish with an accurate semantic PR explanation and manual-merge delivery status.
-- **PR 14 = review existing #390 / slice 8b, stacked on #381.** Carry the material parent correction
-  into its existing total stage × layout-role dial matrix, then completely review and fix that PR.
-  The later facade and route-cutover reviews follow in order; no new slice starts here.
+- **Finish existing #381 / slice 8a.** Close receiver admission, hydration races and
+  full-file review findings; validate the corrected capability and publish it for the
+  maintainer's manual merge.
+- **Review existing #390 / slice 8b, stacked on #381.** Carry the material parent
+  correction into its total stage × layout-role dial matrix, then review and fix that
+  capability. Review the existing facade and route-cutover PRs in order afterwards;
+  resume Slice 9 only after the newest existing PR has completed review.
 
 ## Slice 9 — In-flight pacing
 

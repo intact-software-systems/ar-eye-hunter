@@ -1,4 +1,4 @@
-import { execFileSync } from 'node:child_process';
+import { buildSync, type Metafile } from 'esbuild';
 import { mkdirSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -10,23 +10,13 @@ import {
     it
 } from 'vitest';
 
-interface EsbuildMetafile {
-    readonly inputs: Readonly<Record<string, unknown>>;
-}
-
 interface HeadlessBundleMeasurement {
     readonly brotliKiB: number;
-    readonly metafile: EsbuildMetafile;
+    readonly metafile: Metafile;
 }
 
 const repoRoot = process.cwd();
 const outputDir = path.join(tmpdir(), 'rallar-black-box-headless-boundary-test');
-const esbuildBin = path.join(
-    repoRoot,
-    'node_modules',
-    '.bin',
-    process.platform === 'win32' ? 'esbuild.cmd' : 'esbuild'
-);
 
 describe('rallar-black-box-headless bundle boundary', () => {
     it('excludes operator UI dependencies and surfaces', () => {
@@ -74,26 +64,18 @@ describe('rallar-black-box-headless bundle boundary', () => {
 function bundleHeadlessEntry(): HeadlessBundleMeasurement {
     mkdirSync(outputDir, { recursive: true });
     const outputPath = path.join(outputDir, 'headless-agent.boundary.min.js');
-    const metafilePath = `${outputPath}.meta.json`;
-
-    execFileSync(
-        esbuildBin,
-        [
-            'apps/rallar-black-box-headless/src/main.ts',
-            '--bundle',
-            '--minify',
-            '--format=esm',
-            '--platform=browser',
-            '--target=es2023',
-            '--tsconfig=apps/rallar-black-box-headless/tsconfig.json',
-            `--outfile=${outputPath}`,
-            `--metafile=${metafilePath}`
-        ],
-        {
-            cwd: repoRoot,
-            stdio: ['ignore', 'ignore', 'pipe']
-        }
-    );
+    const result = buildSync({
+        absWorkingDir: repoRoot,
+        entryPoints: ['apps/rallar-black-box-headless/src/main.ts'],
+        bundle: true,
+        minify: true,
+        format: 'esm',
+        platform: 'browser',
+        target: 'es2023',
+        tsconfig: 'apps/rallar-black-box-headless/tsconfig.json',
+        outfile: outputPath,
+        metafile: true
+    });
 
     const bytes = readFileSync(outputPath);
     const brotliBytes = brotliCompressSync(bytes, {
@@ -104,6 +86,6 @@ function bundleHeadlessEntry(): HeadlessBundleMeasurement {
 
     return {
         brotliKiB: brotliBytes / 1024,
-        metafile: JSON.parse(readFileSync(metafilePath, 'utf8')) as EsbuildMetafile
+        metafile: result.metafile
     };
 }

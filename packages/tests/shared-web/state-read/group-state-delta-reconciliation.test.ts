@@ -1,10 +1,10 @@
 import { configureApiClient } from '@shared-web/browser/api-client-config.ts';
-import { browserStateCacheLifecycle } from '@shared-web/browser/state-cache/browser-state-cache-lifecycle.ts';
+import { browserStateCacheLifecycle, type BrowserStateCacheLifecycle } from '@shared-web/browser/state-cache/browser-state-cache-lifecycle.ts';
 import { setBrowserStateReadDiagnosticsSink, type BrowserStateReadDiagnosticEvent } from '@shared-web/browser/state-read/diagnostics.ts';
 import { newALBroadcastMessage, newALEventRoute, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { AppTopics, type ClientInfo } from '@shared/api/api-config.ts';
 import { validateGroupStateDeltaEnvelope, type GroupStateDeltaEnvelope } from '@shared/api/group-state-delta.ts';
-import type { GroupEvent, GroupMember, GroupPresenceSession, GroupSnapshot, GroupStateCausalRevision } from '@shared/api/group-types.ts';
+import type { AuditStamp, GroupEvent, GroupMember, GroupPresenceSession, GroupSnapshot, GroupStateCausalRevision } from '@shared/api/group-types.ts';
 import { DEFAULT_STATE_APPLICATION_ID, DEFAULT_STATE_WORKSPACE_ID } from '@shared/api/state-types.ts';
 import { decideGroupSnapshotCausalRevision } from '@shared/repository/group-state-snapshot-revision.ts';
 import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
@@ -276,9 +276,9 @@ class StateCacheRuntime {
         notifyOverlayTopologyChanged: vi.fn(async () => undefined),
         acceptGroupUpdate: vi.fn(async () => undefined),
         ensureAllGroupsConnected: vi.fn(async () => undefined),
-        delete: vi.fn(async () => undefined),
+        delete: vi.fn(async () => false),
         has: vi.fn(() => false)
-    };
+    } satisfies BrowserStateCacheLifecycle.RtcGroupPort;
     private readonly clientData: ClientInfo = {
         clientId: 'm-alpha',
         sessionId: 'session-m-alpha',
@@ -294,7 +294,7 @@ class StateCacheRuntime {
                     };
                 }
             },
-            webRtcGroupManager: this.manager as never,
+            webRtcGroupManager: this.manager,
             clientData: this.clientData
         });
     }
@@ -304,15 +304,15 @@ class StateCacheRuntime {
         }
         await this.onInboxMessage(message);
     }
-    hydrate = async (snapshots: readonly GroupSnapshot[]) => {
+    hydrate = async (snapshots: readonly GroupSnapshot[]): Promise<void> => {
         await browserStateCacheLifecycle.hydrate({
-            webRtcGroupManager: this.manager as never,
+            webRtcGroupManager: this.manager,
             clientData: this.clientData,
             clientSnapshots: [],
             groupSnapshots: snapshots
         });
     };
-    receiveDeltaMessage = async (envelope: GroupStateDeltaEnvelope) => {
+    receiveDeltaMessage = async (envelope: GroupStateDeltaEnvelope): Promise<void> => {
         await this.receiveMessage(
             newALBroadcastMessage(
                 'server-1',
@@ -327,7 +327,7 @@ class StateCacheRuntime {
             )
         );
     };
-    receiveSnapshotMessage = async (snapshot: GroupSnapshot) => {
+    receiveSnapshotMessage = async (snapshot: GroupSnapshot): Promise<void> => {
         await this.receiveMessage(
             newALBroadcastMessage(
                 'server-1',
@@ -470,14 +470,14 @@ function createDeltaGroupSession(
     };
 }
 
-function deltaAuditStamp() {
+function deltaAuditStamp(): AuditStamp {
     return {
         atEpochMs: 1,
         actor: { kind: 'service', serviceId: 'test' },
         reason: null,
         traceId: null,
         requestId: null
-    } as const;
+    };
 }
 
 function groupSnapshotResponse(snapshot: GroupSnapshot): Response {

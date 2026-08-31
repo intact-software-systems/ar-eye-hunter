@@ -1,10 +1,12 @@
+import { createInMemoryALInboundRuntimeStores } from '@shared/alm/ALRuntimeStores.ts';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { EmptyMediaStream, EmptyRtcTrackEvent } from './rtc-media-test-events.ts';
 
 import { LatestRepository } from '@shared/cache/LatestRepository.ts';
 import { WebRtcOverlayMulticastManager } from '@shared/multicast/WebRtcOverlayMulticastManager.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
+import { WebRtcRxStreamerService } from '@shared/services/web-rtc-rx-streamer-service.ts';
 import { WebRtcConnectionService, type QRtcPeerDto } from '@shared/services/WebRtcConnectionService.ts';
-import { WebRtcRxStreamerService } from '@shared/services/WebRtcRxStreamerService.ts';
 import { QRtcDataChannel } from '@shared/webrtc/QRtcDataChannel.ts';
 import { QRtcMediaChannel } from '@shared/webrtc/QRtcMediaChannel.ts';
 import { QRtcPeerConnection, type QRtcOnRemoteStreamCallback } from '@shared/webrtc/QRtcPeerConnection.ts';
@@ -40,7 +42,7 @@ describe('WebRtcRxStreamerService media lifecycle', () => {
         expect(fixture.attachedStreams).toEqual([localStream]);
         expect(fixture.peer.media.status.localAudioEnabled).toBe(true);
         const remoteStream = new EmptyMediaStream('remote-1');
-        await fixture.publishRemoteStream(remoteStream, new Event('track') as RTCTrackEvent);
+        await fixture.publishRemoteStream(remoteStream, new EmptyRtcTrackEvent(remoteStream));
         expect(received).toEqual([remoteStream]);
     });
 
@@ -66,7 +68,8 @@ describe('WebRtcRxStreamerService media lifecycle', () => {
         expect(fixture.stoppedMediaKinds).toEqual(['video']);
         expect(fixture.peer.connection.status.mediaPolicy).toEqual(policy);
         fixture.service.removePeer(fixture.peer);
-        await fixture.publishRemoteStream(new EmptyMediaStream('removed-remote'), new Event('track') as RTCTrackEvent);
+        const remoteStream = new EmptyMediaStream('removed-remote');
+        await fixture.publishRemoteStream(remoteStream, new EmptyRtcTrackEvent(remoteStream));
         expect(received).toEqual([]);
     });
 });
@@ -113,7 +116,14 @@ function createMediaFixture(): MediaFixture {
             throw new Error('Media control must not construct multicast messages');
         }
     );
-    const service = new WebRtcRxStreamerService(new InMemoryQueueBox(new Map()), multicast, { sessionId: 'self' });
+    const service = new WebRtcRxStreamerService({
+        inbox: new InMemoryQueueBox(new Map()),
+        multicast,
+        sessionId: 'self',
+        inboundStores: createInMemoryALInboundRuntimeStores(),
+        nowEpochMs: Date.now,
+        heartbeat: { maxMissedPings: 5, pingFrequencyMsecs: 5000 }
+    });
     service.setRttReportingPeerIds([]);
     return {
         service,
@@ -122,38 +132,4 @@ function createMediaFixture(): MediaFixture {
         attachedStreams,
         stoppedMediaKinds
     };
-}
-
-class EmptyMediaStream extends EventTarget implements MediaStream {
-    readonly active = true;
-    readonly id: string;
-    onaddtrack: MediaStream['onaddtrack'] = null;
-    onremovetrack: MediaStream['onremovetrack'] = null;
-
-    constructor(id: string) {
-        super();
-        this.id = id;
-    }
-
-    getTracks(): MediaStreamTrack[] {
-        return [];
-    }
-    getAudioTracks(): MediaStreamTrack[] {
-        return [];
-    }
-    getVideoTracks(): MediaStreamTrack[] {
-        return [];
-    }
-    getTrackById(_id: string): null {
-        return null;
-    }
-    clone(): MediaStream {
-        return new EmptyMediaStream(this.id);
-    }
-    addTrack(_track: MediaStreamTrack): void {
-        throw new Error('This media fixture has no native tracks');
-    }
-    removeTrack(_track: MediaStreamTrack): void {
-        throw new Error('This media fixture has no native tracks');
-    }
 }

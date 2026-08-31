@@ -22,7 +22,7 @@ import { isRtcTopologyCurrentStateMessage } from './is-rtc-topology-current-stat
 export interface AdoptOverlayTopologyInput {
     readonly topology: RallarOverlayTopologySnapshot;
     readonly sessionId: string;
-    readonly webRtcGroupManager: WebRtcGroupManager;
+    readonly webRtcGroupManager: Pick<WebRtcGroupManager, 'notifyOverlayTopologyChanged'>;
     readonly adoption: 'current-state' | 'publication';
 }
 
@@ -30,7 +30,7 @@ export interface DispatchOverlayTopologyMessageInput {
     readonly message: ALMessage;
     readonly scope: StateScope;
     readonly sessionId: string;
-    readonly webRtcGroupManager: WebRtcGroupManager;
+    readonly webRtcGroupManager: Pick<WebRtcGroupManager, 'notifyOverlayTopologyChanged'>;
 }
 
 export interface AdoptOverlayTopologyResult {

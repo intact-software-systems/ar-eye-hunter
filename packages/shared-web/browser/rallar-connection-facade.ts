@@ -13,8 +13,8 @@ import type { CommandsOrchestrator, CommandsOrchestratorPolicies } from '@shared
 import type { WebRtcOverlayMulticastManager } from '@shared/multicast/WebRtcOverlayMulticastManager.ts';
 import type { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
 import type { WebRtcGroupManager } from '@shared/services/web-rtc-group-manager.ts';
+import type { WebRtcRxStreamerService } from '@shared/services/web-rtc-rx-streamer-service.ts';
 import type { RtcDataChannelLaneConfig, WebRtcConnectionService } from '@shared/services/WebRtcConnectionService.ts';
-import type { WebRtcRxStreamerService } from '@shared/services/WebRtcRxStreamerService.ts';
 import type { WsQueueBoxClientService } from '@shared/services/WsQueueBoxClientService.ts';
 
 /** Controls the single active heartbeat for a connected browser session. */

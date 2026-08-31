@@ -15,10 +15,9 @@ import {
     readableAcceptedOverlayCache,
     readablePlannedOverlayCache
 } from '@shared/repository/overlays-repository.ts';
-import { Either } from '@shared/resilience/Either.ts';
 import { WebRtcGroupManager } from '@shared/services/web-rtc-group-manager.ts';
-import { vi } from 'vitest';
 import { createTestGroup } from '../create-test-group.ts';
+import { createSimulatedRtcConnections } from './simulated-rtc-connection-service.ts';
 
 export interface SimulatedClient {
     readonly sessionId: string;
@@ -64,22 +63,10 @@ export function createSimulatedClient(
         });
     }
 
-    const knownPeerIds = new Set<string>();
-    const rtcQBox = {
-        input: { sessionId },
-        knownPeerIds: () => Array.from(knownPeerIds),
-        peerIdsWithNoReconnectableLanes: () => Array.from(knownPeerIds),
-        ensurePeerConnectionStarted: vi.fn((peerId: string) => {
-            knownPeerIds.add(peerId);
-            return Either.ofRight({ peerId } as never);
-        }),
-        disconnectPeer: vi.fn((peerId: string) => {
-            knownPeerIds.delete(peerId);
-        })
-    };
+    const { service } = createSimulatedRtcConnections(sessionId);
 
     const manager = new WebRtcGroupManager(
-        rtcQBox as never,
+        service,
         {
             groupCache,
             clientCache,
@@ -97,7 +84,7 @@ export function createSimulatedClient(
         sessionId,
         repositoryManager,
         manager,
-        connectedPeerIds: () => knownPeerIds
+        connectedPeerIds: () => new Set(service.knownPeerIds())
     };
 }
 

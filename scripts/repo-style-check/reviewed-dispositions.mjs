@@ -3,6 +3,14 @@ import path from 'node:path';
 import { findingMagnitude } from './finding-magnitude.mjs';
 
 export const reviewedDispositions = Object.freeze([
+    // This caught-value boundary immediately normalizes arbitrary thrown values
+    // to Error, exactly as required by the code standard. No unknown value
+    // propagates to callers; the textual checker cannot distinguish that case.
+    Object.freeze({
+        path: 'packages/shared/resilience/to-error.ts',
+        rule: 'boundary.unknown',
+        symbol: 'toError'
+    }),
     // erasableSyntaxOnly migration: converting parameter properties to explicit
     // fields duplicates each `unknown`-typed parameter annotation into a field
     // declaration (+1 textual occurrence per file, no new unknown values). These

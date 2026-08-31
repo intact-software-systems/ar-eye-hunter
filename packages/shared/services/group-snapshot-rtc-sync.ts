@@ -10,6 +10,14 @@ export interface BootstrapOverlayPolicyInput {
     readonly bootstrapDegree: number;
 }
 
+export interface GroupSnapshotRtcSyncPort
+    extends Pick<WebRtcGroupManager, 'delete' | 'has' | 'ensureAllGroupsConnected'> {
+    // Snapshot adoption waits for reconciliation, but does not read the manager's service result.
+    acceptGroupUpdate(
+        snapshot: GroupSnapshot
+    ): Promise<void | Awaited<ReturnType<WebRtcGroupManager['acceptGroupUpdate']>>>;
+}
+
 export function resolveBootstrapOverlayPolicy(
     input: BootstrapOverlayPolicyInput | undefined,
     localSessionId: string
@@ -31,7 +39,7 @@ export function isSameBootstrapOverlayPolicy(
 
 export async function acceptGroupSnapshotUpdate(
     snapshot: GroupSnapshot,
-    webRtcGroupManager: WebRtcGroupManager,
+    webRtcGroupManager: GroupSnapshotRtcSyncPort,
     bootstrapOverlayPolicy: BootstrapOverlayPolicy
 ): Promise<void> {
     if (!isGroupActive(snapshot)) {
@@ -65,7 +73,7 @@ export async function acceptGroupSnapshotUpdate(
 
 export async function acceptGroupSnapshotRemoval(
     snapshot: GroupSnapshot,
-    webRtcGroupManager: WebRtcGroupManager
+    webRtcGroupManager: Pick<WebRtcGroupManager, 'delete'>
 ): Promise<void> {
     clearGroupOverlayRoles(snapshot);
     await waitForGroupOverlayRolesIdle();

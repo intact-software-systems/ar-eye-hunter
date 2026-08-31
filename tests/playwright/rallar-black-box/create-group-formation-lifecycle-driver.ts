@@ -46,7 +46,7 @@ interface ReconnectFormationAgentInput {
 }
 
 export interface GroupFormationLifecycleDriver {
-    setupGroupMembership(input: Parameters<typeof setupGroupMembership>[1]): Promise<readonly string[]>;
+    setupGroupMembership(input: SetupGroupMembershipInput): Promise<readonly string[]>;
     run(
         input: RunGroupFormationLifecycleInput
     ): Promise<GroupFormationLifecycleRun>;
@@ -67,6 +67,15 @@ export interface LiveRtcControlPort extends
         | 'waitForMessage'
         | 'readyPeerIds'
     > {}
+
+interface SetupGroupMembershipInput {
+    readonly control: LiveRtcControlPort;
+    readonly runId: string;
+    readonly owner: LiveRtcControlClient.Agent;
+    readonly members: readonly LiveRtcControlClient.Agent[];
+    readonly groupId: string;
+    readonly suffix: string;
+}
 
 interface ConnectFormationAgentInput {
     readonly control: LiveRtcControlPort;
@@ -98,6 +107,7 @@ interface EstablishedGroupLifecycle {
 }
 
 interface EstablishGroupLifecycleInput {
+    readonly readinessStartedAtMs: number;
     readonly run: RunGroupFormationLifecycleInput;
     readonly sessions: Readonly<Record<AgentPrefix, string>>;
     readonly lifecycleSuffix: string;
@@ -192,7 +202,7 @@ async function runGroupFormationLifecycle(
 
 async function establishGroupLifecycle(
     config: CreateGroupFormationLifecycleDriverConfig,
-    input: EstablishGroupLifecycleInput & Readonly<{ readinessStartedAtMs: number; }>
+    input: EstablishGroupLifecycleInput
 ): Promise<EstablishedGroupLifecycle> {
     const owner = input.run.agents[0];
     const topologyCommandId = await configureMeshTopology(config, {
@@ -368,7 +378,7 @@ async function enterGroupConnectionCycle(
         command: groupReadCommand(config, input.groupId),
         timeoutMs: 15_000
     });
-    const lifecycleState = readFormationEntryLifecycleState(
+    const lifecycleState = decodeFormationEntryLifecycleState(
         input.control.resultValue(current)
     );
     const operation = lifecycleState === 'forming' ? 'establish' : 'reopen';
@@ -465,7 +475,7 @@ async function waitForPlannedLayout(
         if (!result?.ok) {
             return [];
         }
-        return readPlannedSessionIds(input.control.resultValue(result));
+        return toPlannedSessionIds(input.control.resultValue(result));
     }, {
         message: `Expected planned topology to contain ${input.expectedSessionIds.join(', ')}`,
         timeout: 30_000
@@ -492,7 +502,7 @@ async function waitForPresenceRevision(
         if (!result?.ok) {
             return -1;
         }
-        return readPresenceRevision(input.control.resultValue(result)) ?? -1;
+        return toPresenceRevision(input.control.resultValue(result)) ?? -1;
     }, {
         message: `Expected presence revision ${input.minimumRevision} for ${input.groupId}`,
         timeout: 30_000
@@ -568,36 +578,36 @@ function groupRequestPath(
     return suffix ? `${groupPath}/${suffix}` : groupPath;
 }
 
-function readPlannedSessionIds(value: Readonly<Record<string, RtcBaselineJson>>): readonly string[] {
-    const body = jsonRecord(value.body);
-    const snapshot = jsonRecord(body.snapshot);
-    return stringArrayValue(snapshot.activeSessionIds);
+function toPlannedSessionIds(value: Readonly<Record<string, RtcBaselineJson>>): readonly string[] {
+    const body = toJsonRecord(value.body);
+    const snapshot = toJsonRecord(body.snapshot);
+    return toStringArray(snapshot.activeSessionIds);
 }
 
-function readPresenceRevision(value: Readonly<Record<string, RtcBaselineJson>>): number | undefined {
-    const body = jsonRecord(value.body);
-    const revision = jsonRecord(body.causalRevision).presenceRevision;
+function toPresenceRevision(value: Readonly<Record<string, RtcBaselineJson>>): number | undefined {
+    const body = toJsonRecord(value.body);
+    const revision = toJsonRecord(body.causalRevision).presenceRevision;
     return typeof revision === 'number' ? revision : undefined;
 }
 
-function readFormationEntryLifecycleState(
+function decodeFormationEntryLifecycleState(
     value: Readonly<Record<string, RtcBaselineJson>>
 ): FormationEntryLifecycleState {
-    const body = jsonRecord(value.body);
-    const lifecycleState = jsonRecord(body.group).lifecycleState;
+    const body = toJsonRecord(value.body);
+    const lifecycleState = toJsonRecord(body.group).lifecycleState;
     if (lifecycleState === 'forming' || lifecycleState === 'active') {
         return lifecycleState;
     }
     throw new Error(`Expected forming or active group lifecycle state; received ${String(lifecycleState)}`);
 }
 
-function jsonRecord(value: RtcBaselineJson | undefined): Readonly<Record<string, RtcBaselineJson>> {
+function toJsonRecord(value: RtcBaselineJson | undefined): Readonly<Record<string, RtcBaselineJson>> {
     return typeof value === 'object' && value !== null && !Array.isArray(value)
         ? value
         : {};
 }
 
-function stringArrayValue(value: RtcBaselineJson | undefined): readonly string[] {
+function toStringArray(value: RtcBaselineJson | undefined): readonly string[] {
     return Array.isArray(value)
         ? value.filter((entry): entry is string => typeof entry === 'string')
         : [];
@@ -605,18 +615,10 @@ function stringArrayValue(value: RtcBaselineJson | undefined): readonly string[]
 
 async function setupGroupMembership(
     config: CreateGroupFormationLifecycleDriverConfig,
-    input: Readonly<{
-        control: LiveRtcControlPort;
-        runId: string;
-        owner: LiveRtcControlClient.Agent;
-        members: readonly LiveRtcControlClient.Agent[];
-        groupId: string;
-        suffix: string;
-    }>
+    input: SetupGroupMembershipInput
 ): Promise<readonly string[]> {
     const groupSegment = encodeURIComponent(input.groupId);
     const createCommandId = `group-create-${input.suffix}`;
-    const createRequestId = `rtc-b06-create-${input.suffix}`;
     const joinCommandIds: string[] = [];
 
     await input.control.executeOk({
@@ -661,7 +663,7 @@ async function setupGroupMembership(
 }
 function toGroupCreationCommand(
     config: CreateGroupFormationLifecycleDriverConfig,
-    input: Parameters<typeof setupGroupMembership>[1]
+    input: SetupGroupMembershipInput
 ): RallarBlackBoxTestCommand {
     return {
         kind: 'http.request',

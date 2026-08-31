@@ -1,6 +1,7 @@
 import type { AuthSession, LoginResponse } from '@shared/api/api-config.ts';
 import { throwRallarValidation } from '@shared/api/rallar-validation.ts';
 import type { RallarCrdtTransportStrategy } from '@shared/crdt/mod.ts';
+import { toError } from '@shared/resilience/to-error.ts';
 import { BlackBoxRallarAuthentication } from './black-box-rallar-authentication.ts';
 import {
     DEFAULT_LANE_ID,
@@ -17,6 +18,10 @@ import {
 import { BlackBoxRallarConnectionState } from './black-box-rallar-connection-state.ts';
 import { BlackBoxRallarHealthReader } from './black-box-rallar-health-reader.ts';
 import type { BlackBoxRallarRoomRefreshOptions, BlackBoxRallarRuntime } from './black-box-rallar-runtime-contract.ts';
+import {
+    toBlackBoxRallarSerializedError,
+    type BlackBoxRallarSerializedError
+} from './black-box-rallar-serialized-error.ts';
 import {
     createBlackBoxBrowserRallarRuntimeDependency,
     type BlackBoxBrowserRallarRuntimeDependency
@@ -104,6 +109,11 @@ interface RuntimeProductControllers {
     readonly director: ReturnType<typeof createBlackBoxRallarDirectorController>;
     readonly messaging: ReturnType<typeof createBlackBoxRallarMessagingController>;
 }
+interface RuntimeTransportCloseResult {
+    readonly logout: boolean;
+    readonly disconnected: boolean;
+}
+
 interface RuntimeClosePreparation {
     runtimeState?: BlackBoxRallarConnectionState.Value;
     config?: BlackBoxRallarConnectionConfig;
@@ -123,11 +133,11 @@ interface BlackBoxRallarRuntimeInstallation {
 
 interface CreateBlackBoxRallarRuntimeOptions {
     facade: BlackBoxBrowserRallarRuntimeDependency;
-    targetWindow: Window;
-    clock?: {
+    targetWindow: Pick<Window, '__blackBoxRallarEmit'>;
+    clock: {
         now(): number;
     };
-    delay?: (ms: number) => Promise<void>;
+    delay: (ms: number) => Promise<void>;
 }
 
 class BlackBoxRallarConnectionRuntime {
@@ -148,9 +158,8 @@ class BlackBoxRallarConnectionRuntime {
     constructor(options: CreateBlackBoxRallarRuntimeOptions) {
         this.#rallar = options.facade;
         this.#targetWindow = options.targetWindow;
-        this.#now = options.clock?.now ?? Date.now;
-        this.#wait = options.delay ??
-            ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, Math.max(0, ms))));
+        this.#now = options.clock.now;
+        this.#wait = options.delay;
         this.#runtimeDiagnostics = createBlackBoxRallarRuntimeDiagnostics({
             now: this.#now,
             publish: (event) => this.#targetWindow.__blackBoxRallarEmit?.(event),
@@ -343,22 +352,14 @@ class BlackBoxRallarConnectionRuntime {
         const { ws, rtc } = this.#rallar;
 
         return {
-            unsubscribeWsLifecycle: ws?.onLifecycle
-                ? ws.onLifecycle(
-                    (event) => {
-                        this.#runtimeDiagnostics.emitDiagnostic(config, 'rallar.browser.ws.lifecycle', event);
-                    },
-                    { emitCurrent: true }
-                )
-                : undefined,
-            unsubscribeRtcLifecycle: rtc?.onLifecycle
-                ? rtc.onLifecycle(
-                    (event) => {
-                        this.#runtimeDiagnostics.emitDiagnostic(config, 'rallar.browser.rtc.lifecycle', event);
-                    },
-                    { emitCurrent: true }
-                )
-                : undefined
+            unsubscribeWsLifecycle: ws.onLifecycle(
+                (event) => this.#runtimeDiagnostics.emitDiagnostic(config, 'rallar.browser.ws.lifecycle', event),
+                { emitCurrent: true }
+            ),
+            unsubscribeRtcLifecycle: rtc.onLifecycle(
+                (event) => this.#runtimeDiagnostics.emitDiagnostic(config, 'rallar.browser.rtc.lifecycle', event),
+                { emitCurrent: true }
+            )
         };
     };
     #prepareConnection = (attempt: RuntimeConnectionAttempt): void => {
@@ -568,7 +569,8 @@ class BlackBoxRallarConnectionRuntime {
             this.#runtimeDiagnostics.emitDiagnostic(config, 'rallar.browser.connect_completed', diagnostics);
             return diagnostics;
         }
-        catch (error) {
+        catch (caught) {
+            const error = toError(caught);
             attempt.lifecycleSubscriptions?.unsubscribeRtcLifecycle?.();
             attempt.lifecycleSubscriptions?.unsubscribeWsLifecycle?.();
             attempt.unsubscribeConsoleDiagnostics?.();
@@ -680,31 +682,34 @@ class BlackBoxRallarConnectionRuntime {
     };
     #closeResources = async (
         preparation: RuntimeClosePreparation,
-        cleanupErrors: unknown[]
+        cleanupErrors: BlackBoxRallarSerializedError[]
     ): Promise<number> => {
         const { runtimeState, config } = preparation;
         let unsubscribed = 0;
         try {
             unsubscribed = this.#cleanupRuntimeSubscriptions(runtimeState, config);
         }
-        catch (error) {
-            cleanupErrors.push(this.#runtimeDiagnostics.serializeError(error));
+        catch (caught) {
+            const error = toError(caught);
+            cleanupErrors.push(toBlackBoxRallarSerializedError(error));
             this.#runtimeDiagnostics.emitError(config, 'rallar.browser.cleanup.unsubscribe_failed', error);
         }
 
-        for (const error of this.#directorController.closeAll(config)) {
-            cleanupErrors.push(this.#runtimeDiagnostics.serializeError(error));
+        for (const caught of this.#directorController.closeAll(config)) {
+            const error = toError(caught);
+            cleanupErrors.push(toBlackBoxRallarSerializedError(error));
         }
 
-        for (const error of await this.#crdtController.closeAll(config)) {
-            cleanupErrors.push(this.#runtimeDiagnostics.serializeError(error));
+        for (const caught of await this.#crdtController.closeAll(config)) {
+            const error = toError(caught);
+            cleanupErrors.push(toBlackBoxRallarSerializedError(error));
         }
 
         return unsubscribed;
     };
     #leaveRoomForClose = async (
         config: BlackBoxRallarConnectionConfig | undefined,
-        cleanupErrors: unknown[]
+        cleanupErrors: BlackBoxRallarSerializedError[]
     ): Promise<boolean> => {
         if (config?.roomId && config.rallar.leaveRoomOnClose !== false) {
             const roomRef = blackBoxRallarRoomRefOf(config);
@@ -730,8 +735,9 @@ class BlackBoxRallarConnectionRuntime {
                 });
                 return true;
             }
-            catch (error) {
-                cleanupErrors.push(this.#runtimeDiagnostics.serializeError(error));
+            catch (caught) {
+                const error = toError(caught);
+                cleanupErrors.push(toBlackBoxRallarSerializedError(error));
                 this.#runtimeDiagnostics.emitError(config, 'rallar.browser.cleanup.room_leave_failed', error, {
                     roomId: config.roomId,
                     roomRef,
@@ -750,7 +756,7 @@ class BlackBoxRallarConnectionRuntime {
     };
     #disconnectForClose = async (
         config: BlackBoxRallarConnectionConfig | undefined
-    ): Promise<{ readonly logout: boolean; readonly disconnected: boolean; }> => {
+    ): Promise<RuntimeTransportCloseResult> => {
         if (config?.rallar.logoutOnClose) {
             this.#runtimeDiagnostics.emitDiagnostic(config, 'rallar.browser.cleanup.logout_started');
             await this.#rallar.auth.logout({
@@ -774,7 +780,7 @@ class BlackBoxRallarConnectionRuntime {
     };
     #closeEffect = async (preparation: RuntimeClosePreparation): Promise<BlackBoxRallarCloseDiagnostics> => {
         const config = preparation.config;
-        const cleanupErrors: unknown[] = [];
+        const cleanupErrors: BlackBoxRallarSerializedError[] = [];
         try {
             if (config) {
                 this.#runtimeDiagnostics.emitDiagnostic(config, 'rallar.browser.cleanup.started', {
@@ -816,7 +822,8 @@ class BlackBoxRallarConnectionRuntime {
             });
             return diagnostics;
         }
-        catch (error) {
+        catch (caught) {
+            const error = toError(caught);
             this.#runtimeDiagnostics.emitError(config, 'rallar.browser.close_failed', error);
             throw error;
         }
@@ -851,7 +858,8 @@ class BlackBoxRallarConnectionRuntime {
                 this.#closeRetryConfig = undefined;
                 return diagnostics;
             }
-            catch (error) {
+            catch (caught) {
+                const error = toError(caught);
                 // Cleanup already dropped this runtime's subscriptions, so it
                 // must stop naming the target it tried to leave. closeRetryConfig
                 // survives so a later close can still reach that target.
@@ -920,7 +928,9 @@ export function createBlackBoxRallarRuntime(options: CreateBlackBoxRallarRuntime
 export function installBlackBoxRallarRuntime(targetWindow: Window): BlackBoxRallarRuntime {
     const installation = createBlackBoxRallarRuntimeInstallation({
         facade: createBlackBoxBrowserRallarRuntimeDependency(),
-        targetWindow
+        targetWindow,
+        clock: { now: Date.now },
+        delay: (ms) => new Promise<void>((resolve) => setTimeout(resolve, Math.max(0, ms)))
     });
     targetWindow.__blackBoxRallar = installation.runtime;
     installation.emitRuntimeLoaded();

@@ -1,27 +1,22 @@
 // dprint-ignore
 import {
+    afterEach,
     describe,
     expect,
-    it
+    it,
+    vi
 } from 'vitest';
 
 import type { ClientInfo, OverlayInfo } from '@shared/api/api-config.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { LatestRepository } from '@shared/cache/LatestRepository.ts';
-import { Either } from '@shared/resilience/Either.ts';
 import { WebRtcGroupManager } from '@shared/services/web-rtc-group-manager.ts';
+import { WebRtcConnectionService } from '@shared/services/WebRtcConnectionService.ts';
 import { createTestGroup } from '../create-test-group.ts';
 
-interface RtcServiceDouble {
-    readonly input: { readonly sessionId: string; };
-    ensurePeerConnectionStarted(peerId: string): Either<never, { readonly peerId: string; }>;
-    knownPeerIds(): string[];
-    peerIdsWithNoReconnectableLanes(): string[];
-    disconnectPeer(peerId: string): void;
-}
-
 describe('WebRtcGroupManager overlay roles', () => {
+    afterEach(() => vi.restoreAllMocks());
     it('uses planned topology for RTT evidence and accepted topology for traffic dials', async () => {
         const groupCache = new LatestRepository<string, GroupSnapshot>();
         const clientCache = new LatestRepository<string, ClientInfo>();
@@ -31,7 +26,7 @@ describe('WebRtcGroupManager overlay roles', () => {
         const group = createGroupSnapshot();
         const overlayId = toScopedOverlayId(group.group);
         const manager = new WebRtcGroupManager(
-            rtc as never,
+            rtc,
             {
                 groupCache,
                 clientCache,
@@ -60,21 +55,22 @@ describe('WebRtcGroupManager overlay roles', () => {
     });
 });
 
-function createRtcService(): RtcServiceDouble {
-    const peers = new Set<string>();
-    const ensurePeerConnectionStarted = (peerId: string) => {
-        peers.add(peerId);
-        return Either.ofRight<never, { readonly peerId: string; }>({ peerId });
-    };
-    return {
-        input: { sessionId: 'local' },
-        ensurePeerConnectionStarted,
-        knownPeerIds: () => [...peers],
-        peerIdsWithNoReconnectableLanes: () => [] as string[],
-        disconnectPeer: (peerId: string) => {
-            peers.delete(peerId);
-        }
-    };
+function createRtcService(): WebRtcConnectionService {
+    const service = new WebRtcConnectionService({ send: async () => undefined, connect: async () => undefined }, {
+        sessionId: 'local',
+        token: 'fixture-token',
+        iceCandidates: { iceServers: [], expiresAtEpochMs: 60_000 },
+        dataChannelName: 'test',
+        rtcSignalingTopicId: 'rtc'
+    });
+    service.onRtcPeerLifecycleDo('fixture-transport', {
+        onCreated: (peer) => {
+            vi.spyOn(peer.connection, 'connect').mockImplementation(() => undefined);
+            vi.spyOn(peer.channel, 'connect').mockImplementation(() => undefined);
+        },
+        onDeleted: () => undefined
+    });
+    return service;
 }
 
 function createClientInfo(sessionId: string): ClientInfo {

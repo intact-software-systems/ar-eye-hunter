@@ -13,7 +13,8 @@ import {
     setOverlayAdoptionDiagnosticsSink,
     setPlannedOverlayById
 } from '@shared/repository/overlays-repository.ts';
-import { acceptGroupSnapshotRemoval, acceptGroupSnapshotUpdate } from '@shared/services/group-snapshot-rtc-sync.ts';
+import { acceptGroupSnapshotRemoval, acceptGroupSnapshotUpdate, type GroupSnapshotRtcSyncPort } from '@shared/services/group-snapshot-rtc-sync.ts';
+import type { WebRtcGroupManager } from '@shared/services/web-rtc-group-manager.ts';
 // dprint-ignore
 import {
     beforeEach,
@@ -43,7 +44,7 @@ describe('browser overlay topology role adoption', () => {
         await expect(adoptOverlayTopology({
             topology,
             sessionId: 'session-a',
-            webRtcGroupManager: webRtcGroupManager() as never,
+            webRtcGroupManager: webRtcGroupManager(),
             adoption: 'publication'
         })).resolves.toMatchObject({
             role: 'planned',
@@ -68,7 +69,7 @@ describe('browser overlay topology role adoption', () => {
                 await expect(adoptOverlayTopology({
                     topology,
                     sessionId: 'session-a',
-                    webRtcGroupManager: manager as never,
+                    webRtcGroupManager: manager,
                     adoption
                 })).resolves.toMatchObject({ role: 'planned', changed: true });
             }
@@ -76,7 +77,7 @@ describe('browser overlay topology role adoption', () => {
             await expect(adoptOverlayTopology({
                 topology: active,
                 sessionId: 'session-a',
-                webRtcGroupManager: manager as never,
+                webRtcGroupManager: manager,
                 adoption
             })).resolves.toMatchObject({ outcome: 'dominated-dropped', changed: false });
             expect(findPlannedOverlayById(active.overlayId)).toBeUndefined();
@@ -92,7 +93,7 @@ describe('browser overlay topology role adoption', () => {
         const publication = await adoptOverlayTopology({
             topology,
             sessionId: 'session-a',
-            webRtcGroupManager: manager as never,
+            webRtcGroupManager: manager,
             adoption: 'publication'
         });
 
@@ -104,7 +105,7 @@ describe('browser overlay topology role adoption', () => {
         groupStateSnapshotsRepository.setGroupStateSnapshot(acceptedGroup);
         await acceptGroupSnapshotUpdate(
             acceptedGroup,
-            manager as never,
+            manager,
             { localSessionId: 'session-a', bootstrapDegree: 5 }
         );
 
@@ -120,14 +121,14 @@ describe('browser overlay topology role adoption', () => {
         groupStateSnapshotsRepository.setGroupStateSnapshot(acceptedGroup);
         await acceptGroupSnapshotUpdate(
             acceptedGroup,
-            manager as never,
+            manager,
             { localSessionId: 'session-a', bootstrapDegree: 5 }
         );
 
         const publication = await adoptOverlayTopology({
             topology,
             sessionId: 'session-a',
-            webRtcGroupManager: manager as never,
+            webRtcGroupManager: manager,
             adoption: 'publication'
         });
 
@@ -141,7 +142,7 @@ describe('browser overlay topology role adoption', () => {
         const manager = webRtcGroupManager();
         await acceptGroupSnapshotUpdate(
             initialGroup,
-            manager as never,
+            manager,
             { localSessionId: 'session-a', bootstrapDegree: 5 }
         );
 
@@ -153,7 +154,7 @@ describe('browser overlay topology role adoption', () => {
                 version: 1,
                 state: 'active'
             }),
-            manager as never,
+            manager,
             { localSessionId: 'session-a', bootstrapDegree: 5 }
         );
 
@@ -185,13 +186,13 @@ describe('browser overlay topology role adoption', () => {
         await expect(adoptOverlayTopology({
             topology: superseded,
             sessionId: 'session-a',
-            webRtcGroupManager: manager as never,
+            webRtcGroupManager: manager,
             adoption: 'publication'
         })).resolves.toMatchObject({ role: 'superseded', changed: false });
         await expect(adoptOverlayTopology({
             topology: incomparable,
             sessionId: 'session-a',
-            webRtcGroupManager: manager as never,
+            webRtcGroupManager: manager,
             adoption: 'publication'
         })).resolves.toMatchObject({ role: 'incomparable', changed: false });
         expect(findPlannedOverlayById(accepted.overlayId)).toBeUndefined();
@@ -203,7 +204,7 @@ describe('browser overlay topology role adoption', () => {
 
         await acceptGroupSnapshotUpdate(
             joined,
-            manager as never,
+            manager,
             { localSessionId: 'session-a', bootstrapDegree: 5 }
         );
 
@@ -215,7 +216,7 @@ describe('browser overlay topology role adoption', () => {
 
         await acceptGroupSnapshotUpdate(
             groupSnapshot(2, undefined, ['session-b', 'session-c']),
-            manager as never,
+            manager,
             { localSessionId: 'session-a', bootstrapDegree: 5 }
         );
 
@@ -250,7 +251,7 @@ describe('browser overlay topology role adoption', () => {
 
         await acceptGroupSnapshotUpdate(
             acceptedGroupB,
-            webRtcGroupManager() as never,
+            webRtcGroupManager(),
             { localSessionId: 'session-a', bootstrapDegree: 5 }
         );
 
@@ -271,16 +272,16 @@ describe('browser overlay topology role adoption', () => {
         groupStateSnapshotsRepository.setGroupStateSnapshot(joined);
         await acceptGroupSnapshotUpdate(
             joined,
-            manager as never,
+            manager,
             { localSessionId: 'session-a', bootstrapDegree: 5 }
         );
         groupStateSnapshotsRepository.removeGroupStateSnapshotByRef(joined.group);
-        await acceptGroupSnapshotRemoval(joined, manager as never);
+        await acceptGroupSnapshotRemoval(joined, manager);
 
         await expect(adoptOverlayTopology({
             topology: delayedTopology,
             sessionId: 'session-a',
-            webRtcGroupManager: manager as never,
+            webRtcGroupManager: manager,
             adoption: 'publication'
         })).resolves.toMatchObject({
             outcome: 'membership-ineligible-dropped',
@@ -299,14 +300,14 @@ describe('browser overlay topology role adoption', () => {
         groupStateSnapshotsRepository.setGroupStateSnapshot(rejoined);
         await acceptGroupSnapshotUpdate(
             rejoined,
-            manager as never,
+            manager,
             { localSessionId: 'session-a', bootstrapDegree: 5 }
         );
 
         await expect(adoptOverlayTopology({
             topology: currentTopology,
             sessionId: 'session-a',
-            webRtcGroupManager: manager as never,
+            webRtcGroupManager: manager,
             adoption: 'publication'
         })).resolves.toMatchObject({
             role: 'planned',
@@ -331,20 +332,20 @@ describe('browser overlay topology role adoption', () => {
         groupStateSnapshotsRepository.setGroupStateSnapshot(joined);
         await acceptGroupSnapshotUpdate(
             joined,
-            manager as never,
+            manager,
             { localSessionId: 'session-a', bootstrapDegree: 5 }
         );
         groupStateSnapshotsRepository.setGroupStateSnapshot(lostMembership);
         await acceptGroupSnapshotUpdate(
             lostMembership,
-            manager as never,
+            manager,
             { localSessionId: 'session-a', bootstrapDegree: 5 }
         );
 
         await expect(adoptOverlayTopology({
             topology: delayedTopology,
             sessionId: 'session-a',
-            webRtcGroupManager: manager as never,
+            webRtcGroupManager: manager,
             adoption: 'publication'
         })).resolves.toMatchObject({
             outcome: 'membership-ineligible-dropped',
@@ -357,12 +358,12 @@ describe('browser overlay topology role adoption', () => {
     });
 });
 
-function webRtcGroupManager() {
+function webRtcGroupManager(): GroupSnapshotRtcSyncPort & Pick<WebRtcGroupManager, 'notifyOverlayTopologyChanged'> {
     return {
         notifyOverlayTopologyChanged: async () => undefined,
         acceptGroupUpdate: async () => undefined,
         ensureAllGroupsConnected: async () => undefined,
-        delete: async () => undefined,
+        delete: async () => false,
         has: () => true
     };
 }

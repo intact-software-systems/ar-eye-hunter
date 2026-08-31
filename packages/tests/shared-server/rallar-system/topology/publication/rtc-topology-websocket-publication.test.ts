@@ -1,9 +1,11 @@
 import { Temporal } from '@js-temporal/polyfill';
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
+import { AppOutboxType } from '@shared-server/rallar-system/app-outbox/app-outbox-type.ts';
 import { createRtcTopologyOutboxPublisher } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-work.ts';
 import { RtcTopologyExecutionRepository } from '@shared-server/rallar-system/topology/persistence/rtc-topology-execution-repository.ts';
 import type { GroupTopologyGroupSnapshotReader } from '@shared-server/rallar-system/topology/planning/group-topology-planning-contracts.ts';
 import { RtcTopologyReplayEntryHandlerService } from '@shared-server/rallar-system/topology/replay/consumer/rtc-topology-replay-entry-handler.ts';
+import { readRtcTopologyWorkEnvelope } from '@shared-server/rallar-system/topology/replay/work/rtc-topology-work-codec.ts';
 import {
     createGroupTopologyRuntimeOwners,
     type GroupTopologyRuntimeOwners
@@ -11,7 +13,7 @@ import {
 import { installTopologyAppOutbox, type InstallTopologyAppOutboxOptions } from '@shared-server/rallar-system/topology/runtime/install-topology-app-outbox.ts';
 import { RallarRtcTopologyService } from '@shared-server/rallar-system/topology/runtime/rallar-rtc-topology-service.ts';
 import { createWsServerTargetResolver } from '@shared-server/rallar-system/websocket/targets/create-ws-server-target-resolver.ts';
-import { decodePersistedALMessageValue } from '@shared/al-contracts/al-message-persistence-validation.ts';
+import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import type { AuditStamp, GroupSnapshot } from '@shared/api/group-types.ts';
 import {
@@ -73,7 +75,7 @@ describe('RTC topology websocket publication', () => {
                 new AbortController().signal
             )
         ).resolves.toEqual({ status: 'delivered' });
-        expect(recordedSocket.sent).toEqual([parsePersistedMessage(fixture.outbox.resource)]);
+        expect(recordedSocket.sent).toEqual([decodePersistedALMessage(fixture.outbox.resource)]);
         expect(outsideSocket.sent).toEqual([]);
     });
 
@@ -95,7 +97,6 @@ describe('RTC topology websocket publication', () => {
             socket: server,
             name: 'server-1'
         });
-        installTopologyTestTopics(service);
 
         const group = createGroupSnapshot('room-1', ['session-a', 'session-b']);
         clientStateSnapshotsRepository.setClientStateSnapshots([
@@ -151,8 +152,8 @@ describe('RTC topology websocket publication', () => {
         const topologyOutbox = createRtcTopologyOutboxPublisher({
             outboxQueueReader
         });
-        installTopologyTestTopics(service, {
-            ...topologyOptions(createTopologyOwners(topologyService)),
+        installTestTopologyOutbox(service, {
+            topologyPlanning: createTopologyOwners(topologyService).planning,
             rtcTopologyAppOutbox: {
                 outboxQueueReader,
                 ...createTopologyExecutionDependencies(runtimeRepository),
@@ -189,17 +190,8 @@ describe('RTC topology websocket publication', () => {
             resourceId: expect.any(String)
         });
         const activeEntry = await appOutbox.getItem(activeKey!);
-        const activeMessage = parsePersistedMessage(activeEntry!.resource);
-        const activeEnvelope = JSON.parse(activeMessage.payload.resource) as {
-            resourceId: string;
-            contextId: string;
-            senderId: string;
-            data: {
-                groupSnapshot: GroupSnapshot;
-                requestOptions: object;
-                publish: boolean;
-            };
-        };
+        const activeMessage = decodePersistedALMessage(activeEntry!.resource);
+        const activeEnvelope = readRtcTopologyWorkEnvelope(activeMessage, AppOutboxType.RTC_TOPOLOGY_RECOMPUTE);
         expect(activeMessage.route).toEqual(activeKey);
         expect(activeEnvelope).toMatchObject({
             resourceId: expect.stringContaining(
@@ -256,8 +248,8 @@ describe('RTC topology websocket publication', () => {
             socket: server,
             name: 'server-1'
         });
-        installTopologyTestTopics(service, {
-            ...topologyOptions(createTopologyOwners()),
+        installTestTopologyOutbox(service, {
+            topologyPlanning: createTopologyOwners().planning,
             rtcTopologyAppOutbox: {
                 outboxQueueReader,
                 ...createTopologyExecutionDependencies(runtimeRepository)
@@ -304,8 +296,8 @@ describe('RTC topology websocket publication', () => {
             socket: server,
             name: 'server-1'
         });
-        installTopologyTestTopics(service, {
-            ...topologyOptions(createTopologyOwners()),
+        installTestTopologyOutbox(service, {
+            topologyPlanning: createTopologyOwners().planning,
             rtcTopologyAppOutbox: {
                 outboxQueueReader,
                 ...createTopologyExecutionDependencies(runtimeRepository)
@@ -366,16 +358,8 @@ describe('RTC topology websocket publication', () => {
         expect(key?.resourceId).toEqual(expect.any(String));
         expect(await appOutboxQueue.getAllKeys()).toHaveLength(1);
         const entry = await appOutboxQueue.getItem(key!);
-        const message = parsePersistedMessage(entry!.resource);
-        const envelope = JSON.parse(message.payload.resource) as {
-            resourceId: string;
-            senderId: string;
-            data: {
-                groupSnapshot: GroupSnapshot;
-                requestOptions: object;
-                publish: boolean;
-            };
-        };
+        const message = decodePersistedALMessage(entry!.resource);
+        const envelope = readRtcTopologyWorkEnvelope(message, AppOutboxType.RTC_TOPOLOGY_RECOMPUTE);
         expect(message.route).toEqual(key);
         expect(envelope).toMatchObject({
             resourceId: deliveryId,
@@ -424,7 +408,7 @@ class FakeSocket extends EventTarget implements WebSocket {
         if (typeof data !== 'string') {
             throw new TypeError('RTC topology publication tests require JSON text messages');
         }
-        this.sent.push(parsePersistedMessage(data));
+        this.sent.push(decodePersistedALMessage(data));
     }
 
     async dispatchMessage(message: ALMessage): Promise<void> {
@@ -441,10 +425,6 @@ class FakeSocket extends EventTarget implements WebSocket {
     }
 }
 
-function parsePersistedMessage(serialized: string): ALMessage {
-    const message = JSON.parse(serialized);
-    return decodePersistedALMessageValue(message);
-}
 function createSockets(sessionIds: readonly string[]): Map<string, FakeSocket> {
     return new Map(sessionIds.map((sessionId) => [sessionId, new FakeSocket()]));
 }
@@ -483,33 +463,19 @@ function createTopologyOwners(
     });
 }
 
-function topologyOptions(owners: GroupTopologyRuntimeOwners): Pick<InstallTopologyTestTopicsOptions, 'topologyQuery' | 'topologyPlanning'> {
-    return {
-        topologyQuery: owners.query,
-        topologyPlanning: owners.planning
-    };
-}
-
-interface InstallTopologyTestTopicsOptions {
-    readonly topologyQuery?: GroupTopologyRuntimeOwners['query'];
-    readonly topologyPlanning?: GroupTopologyRuntimeOwners['planning'];
-    readonly rtcTopologyAppOutbox?:
+interface InstallTestTopologyOutboxOptions {
+    readonly topologyPlanning: GroupTopologyRuntimeOwners['planning'];
+    readonly rtcTopologyAppOutbox:
         & Omit<InstallTopologyAppOutboxOptions, 'senderId' | 'findGroupSnapshotByRef' | 'readPlannedTopologySnapshot' | 'topologyPlanning' | 'nowEpochMs'>
         & Readonly<{
             findGroupSnapshotByRef?: GroupTopologyGroupSnapshotReader;
         }>;
 }
 
-function installTopologyTestTopics(
+function installTestTopologyOutbox(
     service: WsQueueBoxServerService,
-    options: InstallTopologyTestTopicsOptions = {}
+    options: InstallTestTopologyOutboxOptions
 ): void {
-    if (!options.rtcTopologyAppOutbox) {
-        return;
-    }
-    if (!options.topologyPlanning) {
-        throw new TypeError('RTC topology AppOutbox requires the planning owner');
-    }
     installTopologyAppOutbox({
         ...options.rtcTopologyAppOutbox,
         senderId: service.name,

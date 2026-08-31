@@ -8,6 +8,7 @@ interface SnapshotConstruction {
 
 interface SnapshotGroupConstruction {
     readonly snapshotVersion: number;
+    readonly presenceVersion: number;
     readonly memberCount: number;
 }
 
@@ -23,6 +24,7 @@ export function createGroupSnapshot(
     const members = createSnapshotMembers(construction);
     const group = createSnapshotGroup({
         snapshotVersion,
+        presenceVersion: sessionIds.length,
         memberCount: members.length
     });
     const activeSessions = createSnapshotPresenceSessions({
@@ -82,7 +84,7 @@ function createSnapshotMembers(construction: SnapshotConstruction): readonly Gro
 }
 
 function createSnapshotGroup(construction: SnapshotGroupConstruction): Group {
-    const { snapshotVersion, memberCount } = construction;
+    const { snapshotVersion, presenceVersion, memberCount } = construction;
 
     return createTestGroup({
         applicationId: 'app-1',
@@ -94,7 +96,7 @@ function createSnapshotGroup(construction: SnapshotGroupConstruction): Group {
         snapshotVersion,
         metadataVersion: 1,
         rosterVersion: 1,
-        presenceVersion: snapshotVersion,
+        presenceVersion,
         created: audit(1),
         updated: audit(snapshotVersion)
     });

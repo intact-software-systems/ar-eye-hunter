@@ -1,9 +1,11 @@
 import type { AuthSession, LoginResponse } from '@shared/api/api-config.ts';
+import { toError } from '@shared/resilience/to-error.ts';
 import {
     toBlackBoxRallarAuthenticationKey,
     toBlackBoxRallarSessionDiagnostic
 } from './black-box-rallar-connection-policy.ts';
 import type { BlackBoxRallarConnectionState } from './black-box-rallar-connection-state.ts';
+import { toBlackBoxRallarSerializedError } from './black-box-rallar-serialized-error.ts';
 import type { BlackBoxBrowserRallarRuntimeDependency } from './browser-rallar-runtime-composition.ts';
 import type {
     BlackBoxRallarAuthenticateDiagnostics,
@@ -78,7 +80,8 @@ export class BlackBoxRallarAuthentication {
                 });
                 return registered;
             }
-            catch (error) {
+            catch (caught) {
+                const error = toError(caught);
                 this.#dependencies.runtimeDiagnostics.emitError(config, 'rallar.browser.auth.register_failed', error, {
                     phase: 'auth-register',
                     register
@@ -90,7 +93,7 @@ export class BlackBoxRallarAuthentication {
                     config,
                     'rallar.browser.register_failed_login_fallback',
                     {
-                        error: this.#dependencies.runtimeDiagnostics.serializeError(error)
+                        error: toBlackBoxRallarSerializedError(error)
                     }
                 );
             }
@@ -106,7 +109,8 @@ export class BlackBoxRallarAuthentication {
             });
             return loggedIn;
         }
-        catch (error) {
+        catch (caught) {
+            const error = toError(caught);
             this.#dependencies.runtimeDiagnostics.emitError(config, 'rallar.browser.auth.login_failed', error, {
                 phase: 'auth-login'
             });
@@ -273,7 +277,8 @@ export class BlackBoxRallarAuthentication {
             );
             return diagnostics;
         }
-        catch (error) {
+        catch (caught) {
+            const error = toError(caught);
             this.#dependencies.runtimeDiagnostics.emitError(config, 'rallar.browser.authenticate_failed', error);
             throw error;
         }

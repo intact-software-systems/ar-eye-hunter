@@ -21,13 +21,14 @@ const runtime = await vi.hoisted(async () => {
 
 vi.mock(
     import('@shared-web/browser/connection/initialise-browser-middleware.ts'),
-    async (importOriginal): Promise<Partial<MiddlewareModule>> => ({
+    async (importOriginal): Promise<MiddlewareModule> => ({
         ...await importOriginal(),
         initialiseMiddleware: runtime.initialiseMiddleware
     })
 );
 
-vi.mock(import('@shared/api/auth.ts'), (): Partial<AuthModule> => ({
+vi.mock(import('@shared/api/auth.ts'), async (importOriginal): Promise<AuthModule> => ({
+    ...await importOriginal(),
     clearSession: vi.fn(),
     isLoggedIn: () => true,
     readSession: runtime.readSession,

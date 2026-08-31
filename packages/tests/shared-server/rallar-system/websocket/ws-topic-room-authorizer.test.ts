@@ -1,4 +1,5 @@
-import { type GroupStateService } from '@shared-server/rallar-system/group-state/group-state-service-contracts.ts';
+import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
+import { createGroupStateService } from '@shared-server/rallar-system/group-state/group-state-service.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
 import { createCachedGroupStateService } from '@shared-server/rallar-system/group-state/snapshot/cached-group-state-service.ts';
 import { createGroupStateSnapshotReadThroughCache } from '@shared-server/rallar-system/group-state/snapshot/group-state-snapshot-read-through-cache.ts';
@@ -293,9 +294,14 @@ describe('createGroupRoomWsAuthorizer', () => {
         ).toMatchObject({ status: 'applied' });
 
         const currentService = createCachedGroupStateService({
-            durable: {
-                readSnapshot: (ref) => groupRepository.readSnapshot(ref)
-            } as GroupStateService,
+            durable: createGroupStateService({
+                runtimeRepository,
+                groupStateEventStore: runtimeRepository.groupStateEventStore,
+                authSessionRepository: new AuthSessionRepository(runtimeRepository),
+                serviceId: 'ws-room-authorizer-test',
+                readPlannedLayoutRow: async () => null,
+                readAcceptedLayoutRow: async () => null
+            }),
             cache: {
                 findOrLoadByRef: (ref, options) => readThroughCache.findOrLoadByRef(ref, options),
                 observe: (snapshot) => readThroughCache.observe(snapshot)
@@ -738,7 +744,7 @@ async function putDurableSnapshot(
         workspaceId: snapshot.group.workspaceId,
         groupId: snapshot.group.groupId,
         causalRevision: {
-            groupRevision: group.entry.revision + 1,
+            groupRevision: group.value.snapshotVersion,
             presenceRevision: snapshot.group.presenceVersion
         },
         activePrincipalIds: snapshot.activeSessions.map((session) => session.principalId),
@@ -771,8 +777,7 @@ function createGroupSnapshot(input: CreateGroupSnapshotInput): GroupSnapshot {
         applicationId,
         workspaceId,
         sessionIds,
-        snapshotVersion,
-        expiresAtEpochMs = 4_000_000_000_000
+        snapshotVersion
     } = input;
     const created = createAuditStamp(1);
     const updated = createAuditStamp(snapshotVersion);

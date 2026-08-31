@@ -22,6 +22,11 @@ describe('reviewed repository style dispositions', () => {
         expect(Object.isFrozen(reviewedDispositions)).toBe(true);
         expect(reviewedDispositions).toEqual([
             {
+                path: 'packages/shared/resilience/to-error.ts',
+                rule: 'boundary.unknown',
+                symbol: 'toError'
+            },
+            {
                 path: 'packages/shared-web/browser/rallar-data.ts',
                 rule: 'boundary.unknown',
                 symbol: undefined

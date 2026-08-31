@@ -1,11 +1,12 @@
+import { createInMemoryALInboundRuntimeStores } from '@shared/alm/ALRuntimeStores.ts';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { RttMeasurementInfo } from '@shared/api/api-config.ts';
 import { LatestRepository } from '@shared/cache/LatestRepository.ts';
 import { WebRtcOverlayMulticastManager } from '@shared/multicast/WebRtcOverlayMulticastManager.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
+import { WebRtcRxStreamerService } from '@shared/services/web-rtc-rx-streamer-service.ts';
 import { WebRtcConnectionService, type QRtcPeerDto } from '@shared/services/WebRtcConnectionService.ts';
-import { WebRtcRxStreamerService } from '@shared/services/WebRtcRxStreamerService.ts';
 import { QRtcDataChannel } from '@shared/webrtc/QRtcDataChannel.ts';
 import { QRtcMediaChannel } from '@shared/webrtc/QRtcMediaChannel.ts';
 import { QRtcPeerConnection } from '@shared/webrtc/QRtcPeerConnection.ts';
@@ -190,7 +191,14 @@ function createStreamingEndpoint(sessionId: string, peerSessionId: string): Stre
             throw new Error('Heartbeat traffic must not enter multicast');
         }
     );
-    const streamer = new WebRtcRxStreamerService(new InMemoryQueueBox(new Map()), multicast, { sessionId });
+    const streamer = new WebRtcRxStreamerService({
+        inbox: new InMemoryQueueBox(new Map()),
+        multicast,
+        sessionId,
+        inboundStores: createInMemoryALInboundRuntimeStores(),
+        nowEpochMs: Date.now,
+        heartbeat: { maxMissedPings: 5, pingFrequencyMsecs: 5000 }
+    });
     const measurements: RttMeasurementInfo[] = [];
     streamer.onRttMeasurementDo('observations', {
         onHeartbeat: async (measurement) => {

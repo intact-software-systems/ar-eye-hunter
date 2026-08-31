@@ -110,7 +110,9 @@ export async function loadRuntime(): Promise<BlackBoxRallarRuntime> {
     };
     return createBlackBoxRallarRuntime({
         facade: facade.rallar,
-        targetWindow: target as Window
+        targetWindow: target,
+        clock: { now: Date.now },
+        delay: (ms) => new Promise<void>((resolve) => setTimeout(resolve, ms))
     });
 }
 

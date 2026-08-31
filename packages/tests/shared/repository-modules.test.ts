@@ -12,6 +12,7 @@ import type {
     AuditStamp,
     GroupMember,
     GroupPresenceSession,
+    GroupRef,
     GroupSnapshot
 } from '@shared/api/group-types.ts';
 import { RepositoryManager } from '@shared/cache/RepositoryManager.ts';
@@ -116,12 +117,6 @@ describe('repository modules', () => {
     });
 
     it('round-trips client snapshot keys with required workspace values', () => {
-        interface SnapshotKeyCodec {
-            readonly fromClientStateSnapshotRepositoryKey?: (
-                key: string
-            ) => Partial<ClientPrincipalRef>;
-        }
-        const codec = clientSnapshotRepositoryModule as SnapshotKeyCodec;
         const refs = [
             {
                 applicationId: 'app|with:delimiters',
@@ -138,7 +133,7 @@ describe('repository modules', () => {
         const keys = refs.map(toClientStateSnapshotRepositoryKey);
         expect(new Set(keys).size).toBe(refs.length);
         expect(
-            keys.map((key) => codec.fromClientStateSnapshotRepositoryKey?.(key) ?? null)
+            keys.map(clientSnapshotRepositoryModule.fromClientStateSnapshotRepositoryKey)
         ).toEqual(refs);
         expect(() =>
             toClientStateSnapshotRepositoryKey({
@@ -239,13 +234,6 @@ describe('repository modules', () => {
     });
 
     it('conditionally removes only the unchanged client snapshot identity', () => {
-        interface ConditionalClientRemoval {
-            readonly removeClientStateSnapshotIfUnchanged?: (
-                ref: ClientPrincipalRef,
-                expected: ClientSnapshot
-            ) => boolean;
-        }
-        const conditionalRemoval = clientSnapshotRepositoryModule as ConditionalClientRemoval;
         const first = createClientSnapshot('client-1', 'session-old', 1);
         const newer = createClientSnapshot('client-1', 'session-new', 2);
 
@@ -253,18 +241,18 @@ describe('repository modules', () => {
         expect(setClientStateSnapshotByPrincipalId('client-1', newer)).toBe(true);
 
         expect(
-            conditionalRemoval.removeClientStateSnapshotIfUnchanged?.(
+            clientSnapshotRepositoryModule.removeClientStateSnapshotIfUnchanged(
                 first.principal,
                 first
-            ) ?? false
+            )
         ).toBe(false);
         expect(findClientStateSnapshotByRef(first.principal)).toBe(newer);
 
         expect(
-            conditionalRemoval.removeClientStateSnapshotIfUnchanged?.(
+            clientSnapshotRepositoryModule.removeClientStateSnapshotIfUnchanged(
                 newer.principal,
                 newer
-            ) ?? false
+            )
         ).toBe(true);
         expect(findClientStateSnapshotByRef(newer.principal)).toBeUndefined();
     });
@@ -397,29 +385,23 @@ describe('repository modules', () => {
     });
 
     it('round-trips group snapshot keys with required workspace values', () => {
-        interface SnapshotKeyCodec {
-            readonly fromGroupStateSnapshotRepositoryKey?: (
-                key: string
-            ) => Partial<GroupSnapshot['group']>;
-        }
-        const codec = groupSnapshotRepositoryModule as SnapshotKeyCodec;
         const refs = [
             {
                 applicationId: 'app|with:delimiters',
                 workspaceId: '_',
                 groupId: 'group%2Fname'
-            } as GroupSnapshot['group'],
+            },
             {
                 applicationId: 'app|with:delimiters',
                 workspaceId: 'workspace:%25',
                 groupId: 'group%2Fname'
-            } as GroupSnapshot['group']
-        ] satisfies readonly GroupSnapshot['group'][];
+            }
+        ] satisfies readonly GroupRef[];
 
         const keys = refs.map(toGroupStateSnapshotRepositoryKey);
         expect(new Set(keys).size).toBe(refs.length);
         expect(
-            keys.map((key) => codec.fromGroupStateSnapshotRepositoryKey?.(key) ?? null)
+            keys.map(groupSnapshotRepositoryModule.fromGroupStateSnapshotRepositoryKey)
         ).toEqual(refs);
         expect(() =>
             toGroupStateSnapshotRepositoryKey({
@@ -431,32 +413,31 @@ describe('repository modules', () => {
     });
 
     it('uses the full group causal tuple for cache ordering', () => {
-        const first = {
-            ...createGroupSnapshot({ groupId: 'group-1', displayName: 'Alpha', membershipVersion: 1, memberSessionIds: ['self'] }),
-            group: {
-                ...createGroupSnapshot({ groupId: 'group-1', displayName: 'Alpha', membershipVersion: 1, memberSessionIds: ['self'] }).group,
-                snapshotVersion: 10
-            }
-        } satisfies GroupSnapshot;
-        const staleBySnapshotVersion = {
-            ...createGroupSnapshot({ groupId: 'group-1', displayName: 'Alpha', membershipVersion: 99, memberSessionIds: ['self', 'peer-stale'] }),
-            causalRevision: { groupRevision: 0, presenceRevision: 0 },
-            group: {
-                ...createGroupSnapshot({ groupId: 'group-1', displayName: 'Alpha', membershipVersion: 99, memberSessionIds: ['self', 'peer-stale'] }).group,
-                snapshotVersion: 9
-            }
-        } satisfies GroupSnapshot;
-        const newer = {
-            ...createGroupSnapshot({ groupId: 'group-1', displayName: 'Alpha', membershipVersion: 2, memberSessionIds: ['self', 'peer-a'] }),
-            group: {
-                ...createGroupSnapshot({ groupId: 'group-1', displayName: 'Alpha', membershipVersion: 2, memberSessionIds: ['self', 'peer-a'] }).group,
-                snapshotVersion: 11
-            }
-        } satisfies GroupSnapshot;
+        const first = createGroupSnapshot({
+            groupId: 'group-1',
+            displayName: 'Alpha',
+            membershipVersion: 10,
+            presenceVersion: 1,
+            memberSessionIds: ['self']
+        });
+        const stalePresence = createGroupSnapshot({
+            groupId: 'group-1',
+            displayName: 'Alpha',
+            membershipVersion: 10,
+            presenceVersion: 0,
+            memberSessionIds: ['self', 'peer-stale']
+        });
+        const newer = createGroupSnapshot({
+            groupId: 'group-1',
+            displayName: 'Alpha',
+            membershipVersion: 10,
+            presenceVersion: 2,
+            memberSessionIds: ['self', 'peer-a']
+        });
 
         expect(readGroupVersion(first)).toBe(10);
         expect(setGroupStateSnapshot(first)).toBe(true);
-        expect(setGroupStateSnapshot(staleBySnapshotVersion)).toBe(false);
+        expect(setGroupStateSnapshot(stalePresence)).toBe(false);
         expect(findGroupStateSnapshotByRef(first.group)).toEqual(first);
         expect(setGroupStateSnapshot(newer)).toBe(true);
         expect(findGroupStateSnapshotByRef(newer.group)).toEqual(newer);
@@ -464,12 +445,14 @@ describe('repository modules', () => {
 
     it('rejects stale and conflicting group causal revisions', () => {
         const accepted = {
-            ...createGroupSnapshot({ groupId: 'group-1', displayName: 'Alpha', membershipVersion: 1, memberSessionIds: ['session-new'] })
+            ...createGroupSnapshot({ groupId: 'group-1', displayName: 'Alpha', membershipVersion: 2, memberSessionIds: ['session-new'] })
         } satisfies GroupSnapshot;
-        const stale = {
-            ...createGroupSnapshot({ groupId: 'group-1', displayName: 'Stale', membershipVersion: 99, memberSessionIds: ['session-stale'] }),
-            causalRevision: { groupRevision: 0, presenceRevision: 0 }
-        } satisfies GroupSnapshot;
+        const stale = createGroupSnapshot({
+            groupId: 'group-1',
+            displayName: 'Stale',
+            membershipVersion: 1,
+            memberSessionIds: ['session-stale']
+        });
         const conflict = {
             ...accepted,
             onlineMemberCount: 0
@@ -483,13 +466,6 @@ describe('repository modules', () => {
     });
 
     it('conditionally removes only the unchanged group and session-index identity', () => {
-        interface ConditionalGroupRemoval {
-            readonly removeGroupStateSnapshotIfUnchanged?: (
-                ref: GroupSnapshot['group'],
-                expected: GroupSnapshot
-            ) => boolean;
-        }
-        const conditionalRemoval = groupSnapshotRepositoryModule as ConditionalGroupRemoval;
         const first = createGroupSnapshot({
             groupId: 'group-1',
             displayName: 'Alpha',
@@ -513,20 +489,20 @@ describe('repository modules', () => {
         expect(setGroupStateSnapshot(newer)).toBe(true);
 
         expect(
-            conditionalRemoval.removeGroupStateSnapshotIfUnchanged?.(
+            groupSnapshotRepositoryModule.removeGroupStateSnapshotIfUnchanged(
                 first.group,
                 first
-            ) ?? false
+            )
         ).toBe(false);
         expect(findGroupStateSnapshotByRef(first.group)).toBe(newer);
         expect(findGroupStateSnapshotsBySessionIds(['self', 'session-new']))
             .toEqual([newer]);
 
         expect(
-            conditionalRemoval.removeGroupStateSnapshotIfUnchanged?.(
+            groupSnapshotRepositoryModule.removeGroupStateSnapshotIfUnchanged(
                 newer.group,
                 newer
-            ) ?? false
+            )
         ).toBe(true);
         expect(findGroupStateSnapshotByRef(newer.group)).toBeUndefined();
         expect(findGroupStateSnapshotsBySessionIds(['self', 'session-new']))
@@ -1014,7 +990,7 @@ function createClientSnapshot(
 }
 
 function createGroupSnapshot(input: CreateGroupSnapshotInput): GroupSnapshot {
-    const { groupId, displayName, membershipVersion, memberSessionIds, scope = {} } = input;
+    const { groupId, displayName, membershipVersion, presenceVersion = membershipVersion, memberSessionIds, scope = {} } = input;
     const applicationId = scope.applicationId ?? 'app-1';
     const workspaceId = scope.workspaceId ?? 'workspace-1';
     const ownerPrincipalId = memberSessionIds[0];
@@ -1025,7 +1001,7 @@ function createGroupSnapshot(input: CreateGroupSnapshotInput): GroupSnapshot {
     return {
         causalRevision: {
             groupRevision: membershipVersion,
-            presenceRevision: membershipVersion
+            presenceRevision: presenceVersion
         },
         group: createTestGroup({
             applicationId,
@@ -1036,9 +1012,9 @@ function createGroupSnapshot(input: CreateGroupSnapshotInput): GroupSnapshot {
             activeMemberCount: memberSessionIds.length,
             ownerPrincipalId,
             snapshotVersion: membershipVersion,
-            metadataVersion: 0,
+            metadataVersion: 1,
             rosterVersion: membershipVersion,
-            presenceVersion: 0,
+            presenceVersion,
             created: createPrincipalAuditStamp(1, ownerPrincipalId),
             updated: createPrincipalAuditStamp(
                 membershipVersion,
@@ -1096,6 +1072,7 @@ interface CreateGroupSnapshotInput {
     readonly groupId: string;
     readonly displayName: string;
     readonly membershipVersion: number;
+    readonly presenceVersion?: number;
     readonly memberSessionIds: readonly string[];
     readonly scope?: GroupFixtureScope;
 }

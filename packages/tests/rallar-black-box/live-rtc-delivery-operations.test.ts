@@ -1,7 +1,6 @@
 import type { BrowserContext, Page } from '@playwright/test';
 import type { ALNackPayload } from '@shared/al-contracts/al-control.ts';
 import { describe, expect, it } from 'vitest';
-import type { RtcBaselineJson } from '../../../packages/shared-rtc-bench/baseline/contracts/rtc-baseline-contracts.ts';
 import type { LiveRtcControlPort } from '../../../tests/playwright/rallar-black-box/create-group-formation-lifecycle-driver.ts';
 import { createLiveRtcDeliveryOperations, hasReceiverNotInSyncNack } from '../../../tests/playwright/rallar-black-box/live-rtc-delivery-operations.ts';
 import type { LiveRtcControlClient } from '../../../tests/playwright/rallar-black-box/live-rtc-performance-evidence.ts';
@@ -293,7 +292,10 @@ class RecordingLiveRtcControl implements LiveRtcControlPort {
         };
     };
     executeResult = this.executeOk;
-    private recordCommand(input: LiveRtcControlClient.ExecuteInput, command: { kind: string; request?: { path: string; method: string; }; }): RtcBaselineJson {
+    private recordCommand(
+        input: LiveRtcControlClient.ExecuteInput,
+        command: { kind: string; request?: { path: string; method: string; }; }
+    ): ReturnType<LiveRtcControlPort['resultValue']> {
         if (command.kind === 'rtc.connect') {
             this.connected.add(input.agentId);
             this.milestones.push(`connect:${input.agentId}`);
@@ -327,8 +329,12 @@ class RecordingLiveRtcControl implements LiveRtcControlPort {
         }
         return {};
     }
-    resultValue(result: LiveRtcControlClient.Result): Record<string, RtcBaselineJson> {
-        return result.result?.value as Record<string, RtcBaselineJson>;
+    resultValue(result: LiveRtcControlClient.Result): ReturnType<LiveRtcControlPort['resultValue']> {
+        const value = result.result?.value;
+        if (!value || typeof value !== 'object' || Array.isArray(value)) {
+            throw new Error('Recorded control result must contain an object value');
+        }
+        return value as ReturnType<LiveRtcControlPort['resultValue']>;
     }
     requireSessionId(result: LiveRtcControlClient.Result): string {
         return `session-${result.agentId}`;

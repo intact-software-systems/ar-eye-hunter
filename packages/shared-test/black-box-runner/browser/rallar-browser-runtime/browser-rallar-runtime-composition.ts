@@ -68,7 +68,9 @@ interface BlackBoxRoomStateRefreshSession {
     connect(options: RallarScopedOperationOptions): Promise<
         Readonly<{
             session: AuthSession;
-            middleware: Readonly<{ webRtcGroupManager: WebRtcGroupManager; }>;
+            middleware: Readonly<{
+                webRtcGroupManager: Pick<WebRtcGroupManager, 'notifyOverlayTopologyChanged'>;
+            }>;
         }>
     >;
 }
@@ -83,6 +85,7 @@ interface AbortRejection {
     cleanup(): void;
 }
 
+// The runner awaits these effects but deliberately does not expose browser middleware or room handles.
 export interface BlackBoxBrowserRallarRuntimeDependency extends
     Pick<
         RallarConnectionOperations,
@@ -92,7 +95,7 @@ export interface BlackBoxBrowserRallarRuntimeDependency extends
         | 'isConnected'
         | 'session'
     > {
-    connect(options?: Parameters<RallarConnectionOperations['connect']>[0]): Promise<object>;
+    connect(options?: Parameters<RallarConnectionOperations['connect']>[0]): Promise<void>;
     disconnect(): Promise<void>;
     refreshRoomState(roomRef: GroupRef, options: BlackBoxRoomStateRefreshOptions): Promise<void>;
     readRtcMessageNacks(messageId: string): Promise<readonly ALNackPayload[]>;
@@ -113,14 +116,9 @@ export interface BlackBoxBrowserRoomsDependency {
     join(
         room: Parameters<BrowserRallarRooms['join']>[0],
         options?: Parameters<BrowserRallarRooms['join']>[1]
-    ): Promise<object>;
-    leave(input?: Parameters<BrowserRallarRooms['leave']>[0]): Promise<object | undefined>;
-    refresh(input?: Parameters<BrowserRallarRooms['refresh']>[0]): Promise<object>;
-    session(room?: Parameters<BrowserRallarRooms['session']>[0]): BlackBoxBrowserRoomSessionDependency;
-}
-
-export interface BlackBoxBrowserRoomSessionDependency {
-    refresh(options?: Parameters<RallarRoomSession['refresh']>[0]): Promise<object>;
+    ): Promise<void>;
+    leave(input?: Parameters<BrowserRallarRooms['leave']>[0]): Promise<void>;
+    refresh(input?: Parameters<BrowserRallarRooms['refresh']>[0]): Promise<void>;
 }
 
 export interface BlackBoxBrowserMessagesDependency extends Pick<RallarMessagesOperations, 'rtc' | 'ws'> {}
@@ -128,13 +126,9 @@ export interface BlackBoxBrowserMessagesDependency extends Pick<RallarMessagesOp
 export interface BlackBoxBrowserRealtimeDependency
     extends Pick<RallarRealtimeFacade, 'sendJson' | 'onJson' | 'health'> {}
 
-export interface BlackBoxBrowserWsDependency extends Pick<RallarWsFacade, 'status'> {
-    readonly onLifecycle?: RallarWsFacade['onLifecycle'];
-}
+export interface BlackBoxBrowserWsDependency extends Pick<RallarWsFacade, 'status' | 'onLifecycle'> {}
 
-export interface BlackBoxBrowserRtcDependency extends Pick<RallarRtcFacade, 'status' | 'diagnostics'> {
-    readonly onLifecycle?: RallarRtcFacade['onLifecycle'];
-}
+export interface BlackBoxBrowserRtcDependency extends Pick<RallarRtcFacade, 'status' | 'diagnostics' | 'onLifecycle'> {}
 
 export interface BlackBoxBrowserCrdtDependency extends Pick<RallarCrdtFacade, 'open'> {}
 
@@ -356,6 +350,9 @@ function toBlackBoxBrowserRuntimeDependency(
     const { session, rooms, messaging, realtime, crdt, director } = components;
     return {
         ...session.connection,
+        connect: async (options) => {
+            await session.connection.connect(options);
+        },
         readRtcMessageNacks: async (messageId) =>
             await readBlackBoxRtcMessageNacks(session.connection.session()?.sessionId, messageId),
         refreshRoomState: async (roomRef, options) =>
@@ -366,7 +363,17 @@ function toBlackBoxBrowserRuntimeDependency(
                 session: session.session
             }),
         auth: session.auth,
-        rooms: rooms.rooms,
+        rooms: {
+            join: async (room, options) => {
+                await rooms.rooms.join(room, options);
+            },
+            leave: async (options) => {
+                await rooms.rooms.leave(options);
+            },
+            refresh: async (options) => {
+                await rooms.rooms.refresh(options);
+            }
+        },
         messages: messaging.messages,
         realtime: realtime.realtime,
         ws: realtime.wsController.facade,

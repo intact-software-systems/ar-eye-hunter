@@ -2,22 +2,26 @@ import type { AuditStamp, GroupMember, GroupPresenceSession, GroupSnapshot } fro
 import { LatestRepository } from '@shared/cache/LatestRepository.ts';
 import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
 import { WebRtcGroupService } from '@shared/services/WebRtcGroupService.ts';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { configureTestCacheRepositories } from '../configure-test-cache-repositories.ts';
 import { createTestGroup } from '../create-test-group.ts';
+import { createSimulatedRtcConnections } from './simulated-rtc-connection-service.ts';
+
+interface GroupStateObservation {
+    readonly source: 'push' | 'pull';
+    readonly joinedPeerIds: readonly string[];
+    readonly leftPeerIds: readonly string[];
+    readonly targetPeerIds: readonly string[];
+}
 
 describe('WebRtcGroupService', () => {
+    afterEach(() => vi.restoreAllMocks());
     it('accepts newer snapshots, filters self from targets, and ignores stale updates', async () => {
         const cache = new LatestRepository<string, GroupSnapshot>();
-        const rtcQBox = createRtcHarness('self');
+        const rtcQBox = createSimulatedRtcConnections('self').service;
         const initial = createGroupSnapshot({ groupId: 'group-1', membershipVersion: 1, memberSessionIds: ['self'] });
-        const service = new WebRtcGroupService(rtcQBox as never, initial.group, cache);
-        const events: Array<{
-            source: string;
-            joinedPeerIds: readonly string[];
-            leftPeerIds: readonly string[];
-            targetPeerIds: readonly string[];
-        }> = [];
+        const service = new WebRtcGroupService(rtcQBox, initial.group, cache);
+        const events: GroupStateObservation[] = [];
 
         service.onStateDo('state', async (state, diff, source) => {
             events.push({
@@ -81,15 +85,14 @@ describe('WebRtcGroupService', () => {
 
     it('refreshes from cache using read or peek and supports callback removal', async () => {
         const snapshot = createGroupSnapshot({ groupId: 'group-1', membershipVersion: 1, memberSessionIds: ['self', 'peer-a'] });
-        const cache = {
-            read: vi.fn(() => undefined),
-            peek: vi.fn(() => snapshot)
-        };
-        const rtcQBox = createRtcHarness('self');
+        const cache = new LatestRepository<string, GroupSnapshot>();
+        vi.spyOn(cache, 'read').mockReturnValue(undefined);
+        vi.spyOn(cache, 'peek').mockReturnValue(snapshot);
+        const rtcQBox = createSimulatedRtcConnections('self').service;
         const service = new WebRtcGroupService(
-            rtcQBox as never,
+            rtcQBox,
             snapshot.group,
-            cache as never
+            cache
         );
         const callbackSources: string[] = [];
 
@@ -117,9 +120,9 @@ describe('WebRtcGroupService', () => {
         const snapshot = createGroupSnapshot({ groupId: 'group-1', membershipVersion: 1, memberSessionIds: ['self', 'peer-a'] });
         groupStateSnapshotsRepository.setGroupStateSnapshot(snapshot);
 
-        const rtcQBox = createRtcHarness('self');
+        const rtcQBox = createSimulatedRtcConnections('self').service;
         const service = new WebRtcGroupService(
-            rtcQBox as never,
+            rtcQBox,
             snapshot.group,
             groupStateSnapshotsRepository.readableGroupStateSnapshotCache()
         );
@@ -153,9 +156,9 @@ describe('WebRtcGroupService', () => {
         });
         groupStateSnapshotsRepository.setGroupStateSnapshots([workspaceA, workspaceB]);
 
-        const rtcQBox = createRtcHarness('self');
+        const rtcQBox = createSimulatedRtcConnections('self').service;
         const service = new WebRtcGroupService(
-            rtcQBox as never,
+            rtcQBox,
             workspaceB.group,
             groupStateSnapshotsRepository.readableGroupStateSnapshotCache()
         );
@@ -189,20 +192,15 @@ describe('WebRtcGroupService', () => {
                 workspaceId: 'workspace-a'
             }
         });
-        const cache = {
-            read: () => undefined,
-            peek: () => undefined,
-            readAllValues: () => [
-                older,
-                newerWrongScope,
-                latest
-            ]
-        };
-        const rtcQBox = createRtcHarness('self');
+        const cache = new LatestRepository<string, GroupSnapshot>();
+        cache.set('older', older);
+        cache.set('wrong-scope', newerWrongScope);
+        cache.set('latest', latest);
+        const rtcQBox = createSimulatedRtcConnections('self').service;
         const service = new WebRtcGroupService(
-            rtcQBox as never,
+            rtcQBox,
             latest.group,
-            cache as never
+            cache
         );
 
         expect(service.readGroup()).toEqual(latest);
@@ -210,9 +208,9 @@ describe('WebRtcGroupService', () => {
 
     it('rejects updates for the wrong group id', async () => {
         const cache = new LatestRepository<string, GroupSnapshot>();
-        const rtcQBox = createRtcHarness('self');
+        const rtcQBox = createSimulatedRtcConnections('self').service;
         const snapshot = createGroupSnapshot({ groupId: 'group-1', membershipVersion: 1, memberSessionIds: ['self'] });
-        const service = new WebRtcGroupService(rtcQBox as never, snapshot.group, cache);
+        const service = new WebRtcGroupService(rtcQBox, snapshot.group, cache);
 
         await expect(
             service.acceptGroupUpdate(createGroupSnapshot({ groupId: 'group-2', membershipVersion: 1, memberSessionIds: ['self'] }))
@@ -221,14 +219,6 @@ describe('WebRtcGroupService', () => {
         );
     });
 });
-
-function createRtcHarness(sessionId: string) {
-    return {
-        input: {
-            sessionId
-        }
-    };
-}
 
 function createGroupSnapshot(input: CreateGroupSnapshotInput): GroupSnapshot {
     const { groupId, membershipVersion, memberSessionIds, scope = {} } = input;
