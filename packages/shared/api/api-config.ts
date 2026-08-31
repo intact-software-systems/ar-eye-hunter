@@ -35,7 +35,6 @@ export const AppTopics = {
     groupStateSnapshot: 'group-state.snapshot',
     groupStateEvent: 'group-state.event',
     groupDirectorySnapshot: 'group-directory.snapshot',
-    graphs: 'graphs',
     overlayTopology: 'overlay.topology',
     rtt: 'rtt'
 } as const;

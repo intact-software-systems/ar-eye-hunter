@@ -1,25 +1,37 @@
 import type {
     GroupMutationCommand,
     GroupMutationFacts,
+    GroupMutationIdempotencyRecord,
     GroupMutationRead
 } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
 import { computeGroupMutation } from '@shared-server/rallar-system/group-state/mutation/orchestration/compute-group-mutation.ts';
 import { validateGroupMutationIdempotencyRecord } from '@shared-server/rallar-system/group-state/mutation/result-validation/validate-group-mutation-result.ts';
 import { validateGroupMutation } from '@shared-server/rallar-system/group-state/mutation/state-validation/validate-group-mutation.ts';
-import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
 import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
-import type { AuditStamp, GroupPresenceAdmission, GroupPresenceSummary } from '@shared/api/group-types.ts';
+import type {
+    AuditStamp,
+    GroupPresenceAdmission,
+    GroupPresenceSummary
+} from '@shared/api/group-types.ts';
 import { computeGroupPresenceSummaryEntry } from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
-import { describe, expect, it } from 'vitest';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
 import { FakeRuntimeStateRepository } from '../../../runtime-state/test-support/fake-runtime-state-repository.ts';
 import { createTestGroupStateService } from '../group-state-test-runtime.ts';
 
 import { createTestGroup } from '../../../../create-test-group.ts';
-import { groupMemberStorageKey, groupRef as runtimeGroupRef, groupStorageKey, SCOPE, storedEntry } from './group-mutation-test-runtime.ts';
+import {
+    groupMemberStorageKey,
+    groupRef as runtimeGroupRef,
+    groupStorageKey,
+    SCOPE,
+    storedEntry
+} from './group-mutation-test-runtime.ts';
 
-class GroupBarrierRepository extends FakeRuntimeStateRepository {}
-
-function createService(runtimeRepository: GroupBarrierRepository, nowEpochMs: number) {
+function createService(runtimeRepository: FakeRuntimeStateRepository, nowEpochMs: number): ReturnType<typeof createTestGroupStateService> {
     let id = 0;
     return createTestGroupStateService({
         runtimeRepository,
@@ -30,7 +42,7 @@ function createService(runtimeRepository: GroupBarrierRepository, nowEpochMs: nu
 }
 
 async function seedOpenGroup(
-    runtime: GroupBarrierRepository,
+    runtime: FakeRuntimeStateRepository,
     groupId: string,
     maxMembers = 10
 ): Promise<void> {
@@ -51,7 +63,7 @@ const groupRef = {
     groupId: 'group-1'
 };
 
-function idempotencyRecord() {
+function idempotencyRecord(): GroupMutationIdempotencyRecord {
     const commandHash = `sha256:${'a'.repeat(64)}`;
     return {
         aggregateRef: groupRef,
@@ -98,7 +110,7 @@ describe('group mutation receipt causal invariants', () => {
 
     describe('group mutation rejected-result persistence', () => {
         it('does not persist a rejected receipt, event, or outbox effect', async () => {
-            const runtime = new GroupBarrierRepository();
+            const runtime = new FakeRuntimeStateRepository();
             await seedOpenGroup(runtime, 'ephemeral-rejection-room');
             const mutation = createService(runtime, 2_000).createGroup(SCOPE, {
                 groupId: 'ephemeral-rejection-room',
@@ -125,6 +137,42 @@ describe('group mutation receipt causal invariants', () => {
     });
 
     describe('computed group mutation validation', () => {
+        it('accepts a semantic no-op after physical authority fences advance storage', () => {
+            const command = createMutationCommand();
+            const read = createMutationRead();
+            const value = { ...read.group!.value, displayName: 'After' };
+            const fencedRead: GroupMutationRead = {
+                ...read,
+                group: {
+                    value,
+                    entry: {
+                        ...read.group!.entry,
+                        value: JSON.stringify(value),
+                        revision: 7
+                    }
+                }
+            };
+            const facts = createMutationFacts();
+            const computed = computeGroupMutation({ command, read: fencedRead, facts });
+
+            expect(computed).toMatchObject({
+                outcome: 'no-op',
+                receipt: {
+                    acceptedStorageRevision: 7,
+                    snapshotVersion: 1,
+                    causalRevision: { groupRevision: 1 }
+                }
+            });
+            expect(() =>
+                validateGroupMutation({
+                    command,
+                    read: fencedRead,
+                    facts,
+                    computed
+                })
+            ).not.toThrow();
+        });
+
         it('rejects malformed computed guards, receipts, and outbox projections', () => {
             const command = createMutationCommand();
             const read = createMutationRead();
@@ -247,9 +295,7 @@ describe('group mutation receipt causal invariants', () => {
     });
 }
 
-function createMutationCommand(
-    overrides: Partial<GroupMutationCommand> = {}
-): GroupMutationCommand {
+function createMutationCommand(): GroupMutationCommand {
     return {
         operation: 'updateGroup',
         aggregateRef: runtimeGroupRef('pure-room'),
@@ -272,9 +318,8 @@ function createMutationCommand(
             actorSessionId: 'alice-session',
             reason: null,
             traceId: null
-        },
-        ...overrides
-    } as GroupMutationCommand;
+        }
+    };
 }
 
 function auditStamp(atEpochMs: number, principalId: string, requestId: string | null): AuditStamp {
@@ -338,7 +383,7 @@ function createMutationRead(): GroupMutationRead {
         activeMemberPrincipalIds: null,
         plannedLayoutRow: null,
         acceptedLayoutRow: null
-    } as GroupMutationRead;
+    };
 }
 
 function createMutationFacts(): GroupMutationFacts {

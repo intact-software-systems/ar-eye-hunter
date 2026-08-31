@@ -1,3 +1,4 @@
+import { resolveBrowserRtcOverlayALOutboundRuntimeStores } from '@shared-web/browser/al-runtime/browser-al-runtime-stores.ts';
 import {
     createBrowserMessagingComposition,
     createBrowserRealtimeCoreComposition
@@ -25,15 +26,66 @@ import type {
     RallarDirectorRelayHandle
 } from '@shared-web/browser/director/rallar-director-facade.ts';
 import type { RallarMessagesOperations } from '@shared-web/browser/messages/rallar-message-operations.ts';
-import type { RallarConnectionOperations } from '@shared-web/browser/rallar-connection-facade.ts';
+import type {
+    RallarConnectionOperations,
+    RallarScopedOperationOptions
+} from '@shared-web/browser/rallar-connection-facade.ts';
 import type { RallarAuthFacade } from '@shared-web/browser/rallar-core.ts';
 import type { RallarCrdtFacade } from '@shared-web/browser/rallar-crdt.ts';
 import type { RallarRealtimeFacade, RallarWsFacade } from '@shared-web/browser/rallar-realtime-facade.ts';
 import type { RallarRtcFacade } from '@shared-web/browser/rallar-rtc-facade.ts';
 import type { BrowserRallarRooms } from '@shared-web/browser/rooms/browser-rallar-rooms.ts';
 import type { RallarRoomSession } from '@shared-web/browser/rooms/rallar-room-contracts.ts';
+import { hydrateGroupTopologyOverlays } from '@shared-web/browser/state-read/hydrate-group-topology-overlays.ts';
+import type { ALNackPayload } from '@shared/al-contracts/al-control.ts';
+import type { AuthSession } from '@shared/api/api-config.ts';
+import type { GroupRef } from '@shared/api/group-types.ts';
+import type { StateScope } from '@shared/api/state-types.ts';
+import type { WebRtcGroupManager } from '@shared/services/web-rtc-group-manager.ts';
 import type { BlackBoxRallarDirectorOutputRecord, BlackBoxRallarEvent } from './contracts.ts';
 
+interface BlackBoxRoomStateRefreshOptions extends RallarScopedOperationOptions {
+    readonly scope: StateScope;
+    readonly timeoutMs: number;
+}
+
+interface RefreshBlackBoxBrowserRoomStateInput {
+    readonly roomRef: GroupRef;
+    readonly options: BlackBoxRoomStateRefreshOptions;
+    readonly rooms: BlackBoxRoomStateRefreshRooms;
+    readonly session: BlackBoxRoomStateRefreshSession;
+}
+
+interface BlackBoxRoomStateRefreshRooms {
+    session(roomRef: GroupRef): Readonly<{
+        refresh(
+            options: Parameters<RallarRoomSession['refresh']>[0]
+        ): Promise<Pick<RallarRoomSession, 'snapshot'>>;
+    }>;
+}
+
+interface BlackBoxRoomStateRefreshSession {
+    connect(options: RallarScopedOperationOptions): Promise<
+        Readonly<{
+            session: AuthSession;
+            middleware: Readonly<{
+                webRtcGroupManager: Pick<WebRtcGroupManager, 'notifyOverlayTopologyChanged'>;
+            }>;
+        }>
+    >;
+}
+
+interface RoomStateRefreshAbortScope {
+    readonly signal: AbortSignal;
+    cleanup(): void;
+}
+
+interface AbortRejection {
+    readonly promise: Promise<never>;
+    cleanup(): void;
+}
+
+// The runner awaits these effects but deliberately does not expose browser middleware or room handles.
 export interface BlackBoxBrowserRallarRuntimeDependency extends
     Pick<
         RallarConnectionOperations,
@@ -43,8 +95,10 @@ export interface BlackBoxBrowserRallarRuntimeDependency extends
         | 'isConnected'
         | 'session'
     > {
-    connect(options?: Parameters<RallarConnectionOperations['connect']>[0]): Promise<object>;
+    connect(options?: Parameters<RallarConnectionOperations['connect']>[0]): Promise<void>;
     disconnect(): Promise<void>;
+    refreshRoomState(roomRef: GroupRef, options: BlackBoxRoomStateRefreshOptions): Promise<void>;
+    readRtcMessageNacks(messageId: string): Promise<readonly ALNackPayload[]>;
     readonly auth: BlackBoxBrowserAuthDependency;
     readonly rooms: BlackBoxBrowserRoomsDependency;
     readonly messages: BlackBoxBrowserMessagesDependency;
@@ -62,14 +116,9 @@ export interface BlackBoxBrowserRoomsDependency {
     join(
         room: Parameters<BrowserRallarRooms['join']>[0],
         options?: Parameters<BrowserRallarRooms['join']>[1]
-    ): Promise<object>;
-    leave(input?: Parameters<BrowserRallarRooms['leave']>[0]): Promise<object | undefined>;
-    refresh(input?: Parameters<BrowserRallarRooms['refresh']>[0]): Promise<object>;
-    session(room?: Parameters<BrowserRallarRooms['session']>[0]): BlackBoxBrowserRoomSessionDependency;
-}
-
-export interface BlackBoxBrowserRoomSessionDependency {
-    refresh(options?: Parameters<RallarRoomSession['refresh']>[0]): Promise<object>;
+    ): Promise<void>;
+    leave(input?: Parameters<BrowserRallarRooms['leave']>[0]): Promise<void>;
+    refresh(input?: Parameters<BrowserRallarRooms['refresh']>[0]): Promise<void>;
 }
 
 export interface BlackBoxBrowserMessagesDependency extends Pick<RallarMessagesOperations, 'rtc' | 'ws'> {}
@@ -77,9 +126,9 @@ export interface BlackBoxBrowserMessagesDependency extends Pick<RallarMessagesOp
 export interface BlackBoxBrowserRealtimeDependency
     extends Pick<RallarRealtimeFacade, 'sendJson' | 'onJson' | 'health'> {}
 
-export interface BlackBoxBrowserWsDependency extends Pick<RallarWsFacade, 'status'> {}
+export interface BlackBoxBrowserWsDependency extends Pick<RallarWsFacade, 'status' | 'onLifecycle'> {}
 
-export interface BlackBoxBrowserRtcDependency extends Pick<RallarRtcFacade, 'status' | 'diagnostics'> {}
+export interface BlackBoxBrowserRtcDependency extends Pick<RallarRtcFacade, 'status' | 'diagnostics' | 'onLifecycle'> {}
 
 export interface BlackBoxBrowserCrdtDependency extends Pick<RallarCrdtFacade, 'open'> {}
 
@@ -145,17 +194,119 @@ export function createBlackBoxBrowserRallarRuntimeDependency(): BlackBoxBrowserR
         state,
         messaging
     });
-    return {
-        ...session.connection,
-        auth: session.auth,
-        rooms: rooms.rooms,
-        messages: messaging.messages,
-        realtime: realtime.realtime,
-        ws: realtime.wsController.facade,
-        rtc: realtime.rtc,
-        crdt: crdt.crdt,
-        director: director.director
+    return toBlackBoxBrowserRuntimeDependency({ session, rooms, messaging, realtime, crdt, director });
+}
+
+export async function readBlackBoxRtcMessageNacks(
+    sessionId: string | undefined,
+    messageId: string
+): Promise<readonly ALNackPayload[]> {
+    if (!sessionId) {
+        throw new Error('RTC message diagnostics require an authenticated session.');
+    }
+    const { admissionStore } = resolveBrowserRtcOverlayALOutboundRuntimeStores(sessionId);
+    if (!admissionStore) {
+        throw new Error('RTC outbound admission diagnostics are unavailable.');
+    }
+    const observation = await admissionStore.readRepairMessage(messageId, () => ({
+        persist: false,
+        preparedMessages: []
+    }));
+    return observation.nacks;
+}
+
+export async function refreshBlackBoxBrowserRoomState(
+    input: RefreshBlackBoxBrowserRoomStateInput
+): Promise<void> {
+    const abortScope = createRoomStateRefreshAbortScope(input.options);
+    const options = { ...input.options, signal: abortScope.signal };
+    let abortRejection: AbortRejection | undefined;
+    try {
+        throwIfAborted(abortScope.signal);
+        abortRejection = createAbortRejection(abortScope.signal);
+        const refresh = Promise.resolve().then(async () => {
+            const refreshedRoom = await input.rooms.session(input.roomRef).refresh(options);
+            const groupSnapshot = refreshedRoom.snapshot();
+            if (!groupSnapshot) {
+                return;
+            }
+            const context = await input.session.connect(options);
+            await hydrateGroupTopologyOverlays({
+                groupSnapshots: [groupSnapshot],
+                sessionId: context.session.sessionId,
+                webRtcGroupManager: context.middleware.webRtcGroupManager,
+                scope: options.scope,
+                apiRequest: {
+                    authSession: context.session,
+                    signal: abortScope.signal
+                }
+            });
+        });
+        await Promise.race([refresh, abortRejection.promise]);
+    }
+    finally {
+        abortRejection?.cleanup();
+        abortScope.cleanup();
+    }
+}
+
+function createRoomStateRefreshAbortScope(
+    options: BlackBoxRoomStateRefreshOptions
+): RoomStateRefreshAbortScope {
+    const controller = new AbortController();
+    const abortFromCaller = () => {
+        controller.abort(options.signal?.reason ?? new Error('Room state refresh aborted.'));
     };
+    if (options.signal?.aborted) {
+        abortFromCaller();
+    }
+    else {
+        options.signal?.addEventListener('abort', abortFromCaller, { once: true });
+    }
+    const timeout = controller.signal.aborted
+        ? undefined
+        : setTimeout(() => {
+            const error = new Error(
+                `Room state refresh timed out after ${options.timeoutMs} ms.`
+            );
+            error.name = 'TimeoutError';
+            controller.abort(error);
+        }, Math.max(0, options.timeoutMs));
+
+    return {
+        signal: controller.signal,
+        cleanup: () => {
+            if (timeout !== undefined) {
+                clearTimeout(timeout);
+            }
+            options.signal?.removeEventListener('abort', abortFromCaller);
+        }
+    };
+}
+
+function createAbortRejection(signal: AbortSignal): AbortRejection {
+    let rejectPromise: (reason: Error) => void = () => undefined;
+    const promise = new Promise<never>((_resolve, reject) => {
+        rejectPromise = reject;
+    });
+    const onAbort = () => rejectPromise(abortReason(signal));
+    signal.addEventListener('abort', onAbort, { once: true });
+    return {
+        promise,
+        cleanup: () => signal.removeEventListener('abort', onAbort)
+    };
+}
+
+function abortReason(signal: AbortSignal): Error {
+    return signal.reason instanceof Error
+        ? signal.reason
+        : new Error('Room state refresh aborted.');
+}
+
+function throwIfAborted(signal: AbortSignal): void {
+    if (signal.aborted) {
+        throw abortReason(signal);
+    }
 }
 
 interface RegisterBlackBoxBrowserRallarLifecycleInput {
@@ -183,4 +334,51 @@ function registerBlackBoxBrowserRallarLifecycle(
         realtimeReceive: input.realtime.realtimeReceive,
         rtcLifecycle: input.realtime.rtcController.lifecycle
     });
+}
+
+interface BlackBoxBrowserRuntimeComponents {
+    readonly session: ReturnType<typeof createBrowserSessionCoreComposition>;
+    readonly rooms: ReturnType<typeof createBrowserRoomsComposition>;
+    readonly messaging: ReturnType<typeof createBrowserMessagingComposition>;
+    readonly realtime: ReturnType<typeof createBrowserRealtimeCoreComposition>;
+    readonly crdt: ReturnType<typeof createBrowserCrdtComposition>;
+    readonly director: ReturnType<typeof createBrowserDirectorComposition>;
+}
+function toBlackBoxBrowserRuntimeDependency(
+    components: BlackBoxBrowserRuntimeComponents
+): BlackBoxBrowserRallarRuntimeDependency {
+    const { session, rooms, messaging, realtime, crdt, director } = components;
+    return {
+        ...session.connection,
+        connect: async (options) => {
+            await session.connection.connect(options);
+        },
+        readRtcMessageNacks: async (messageId) =>
+            await readBlackBoxRtcMessageNacks(session.connection.session()?.sessionId, messageId),
+        refreshRoomState: async (roomRef, options) =>
+            await refreshBlackBoxBrowserRoomState({
+                roomRef,
+                options,
+                rooms: rooms.rooms,
+                session: session.session
+            }),
+        auth: session.auth,
+        rooms: {
+            join: async (room, options) => {
+                await rooms.rooms.join(room, options);
+            },
+            leave: async (options) => {
+                await rooms.rooms.leave(options);
+            },
+            refresh: async (options) => {
+                await rooms.rooms.refresh(options);
+            }
+        },
+        messages: messaging.messages,
+        realtime: realtime.realtime,
+        ws: realtime.wsController.facade,
+        rtc: realtime.rtc,
+        crdt: crdt.crdt,
+        director: director.director
+    };
 }

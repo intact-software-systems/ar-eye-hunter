@@ -3,18 +3,29 @@ export type OverlayAdoptionOutcome =
     | 'adopted'
     | 'equal'
     | 'dominated-dropped'
+    | 'membership-ineligible-dropped'
     | 'incomparable-conflict'
     | 'server-superseded-bootstrap'
     | 'bootstrap-dropped-over-server';
 
-export type OverlayAdoptionDiagnosticsEvent = Readonly<{
-    overlayId: string;
-    outcome: OverlayAdoptionOutcome;
-}>;
+export interface OverlayAdoptionDiagnosticsEvent {
+    readonly overlayId: string;
+    readonly outcome: OverlayAdoptionOutcome;
+}
 
 export type OverlayAdoptionDiagnosticsSink = (
     event: OverlayAdoptionDiagnosticsEvent
 ) => void;
+
+export interface RallarOverlayAdoptionDiagnostics {
+    readonly initialSetCount: number;
+    readonly adoptedCount: number;
+    readonly equalCount: number;
+    readonly dominatedDroppedCount: number;
+    readonly incomparableConflictCount: number;
+    readonly serverSupersededBootstrapCount: number;
+    readonly bootstrapDroppedOverServerCount: number;
+}
 
 interface MutableOverlayAdoptionDiagnostics {
     initialSetCount: number;
@@ -25,8 +36,6 @@ interface MutableOverlayAdoptionDiagnostics {
     serverSupersededBootstrapCount: number;
     bootstrapDroppedOverServerCount: number;
 }
-
-export type RallarOverlayAdoptionDiagnostics = Readonly<MutableOverlayAdoptionDiagnostics>;
 
 // One process-wide sink and counter object keep the adoption surface additive and opt-in.
 let adoptionDiagnosticsSink: OverlayAdoptionDiagnosticsSink | undefined;
@@ -62,7 +71,12 @@ export function emitOverlayAdoption(
     overlayId: string,
     outcome: OverlayAdoptionOutcome
 ): void {
-    if (outcome === 'initial-set') {
+    if (outcome === 'membership-ineligible-dropped') {
+        // Membership eligibility is a routing/lifecycle admission decision, not
+        // a repository adoption aggregate. Slice 8a emits the sink event but
+        // adds no public diagnostics-facade counter for this outcome.
+    }
+    else if (outcome === 'initial-set') {
         adoptionCounters.initialSetCount += 1;
     }
     else if (outcome === 'adopted') {

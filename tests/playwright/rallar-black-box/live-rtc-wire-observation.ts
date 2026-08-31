@@ -1,4 +1,8 @@
-import { jsonRecord, normalizeJson, stringValue } from './live-rtc-evidence-json.ts';
+import {
+    jsonRecord,
+    normalizeJson,
+    stringValue
+} from './live-rtc-evidence-json.ts';
 
 export interface LiveRtcWireObservation {
     start(): void;
@@ -64,13 +68,15 @@ export function installLiveRtcWireObservation(): void {
     };
 }
 
+export interface LiveRtcReceivedNackProbe {
+    readonly frames: readonly string[];
+    readonly messageId: string;
+    readonly senderSessionId: string;
+    readonly targetSessionId: string;
+}
+
 export function hasLiveRtcNotYetInSyncNack(
-    input: Readonly<{
-        frames: readonly string[];
-        messageId: string;
-        senderSessionId: string;
-        targetSessionId: string;
-    }>
+    input: LiveRtcReceivedNackProbe
 ): boolean {
     return input.frames.some((frame) => {
         let message;

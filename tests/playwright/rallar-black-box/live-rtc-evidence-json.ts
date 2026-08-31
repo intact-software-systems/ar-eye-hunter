@@ -1,8 +1,12 @@
 import type { RtcBaselineJson } from '../../../packages/shared-rtc-bench/baseline/contracts/rtc-baseline-contracts.ts';
 
+export interface LiveRtcJsonRecord {
+    [key: string]: RtcBaselineJson;
+}
+
 export function jsonRecord(
     value: RtcBaselineJson | undefined
-): { [key: string]: RtcBaselineJson; } | null {
+): LiveRtcJsonRecord | null {
     return value !== undefined &&
             typeof value === 'object' &&
             value !== null &&
@@ -55,7 +59,7 @@ export function stringArrayValue(value: RtcBaselineJson | undefined): readonly s
 export function requiredJsonRecord(
     value: RtcBaselineJson | undefined,
     path: string
-): { [key: string]: RtcBaselineJson; } {
+): LiveRtcJsonRecord {
     const record = jsonRecord(value);
     if (!record) {
         throw new Error(`${path} must be a JSON object.`);
@@ -108,37 +112,39 @@ export function requiredNonnegativeNumber(
     return value;
 }
 
-export function normalizeJson(value: RtcBaselineJson | object): RtcBaselineJson {
-    assertJsonValue(value, '$');
-    return JSON.parse(JSON.stringify(value)) as RtcBaselineJson;
+export function normalizeJson(value: unknown): RtcBaselineJson {
+    return normalizeJsonValue(value, '$');
 }
 
-function assertJsonValue(value: RtcBaselineJson | object, path: string): void {
+function normalizeJsonValue(value: unknown, path: string): RtcBaselineJson {
     if (value === null || typeof value === 'string' || typeof value === 'boolean') {
-        return;
+        return value;
     }
     if (typeof value === 'number') {
         if (!Number.isFinite(value)) {
             throw new Error(`${path} contains a non-finite number.`);
         }
-        return;
+        return Object.is(value, -0) ? 0 : value;
     }
     if (Array.isArray(value)) {
+        const entries: RtcBaselineJson[] = [];
         for (let index = 0; index < value.length; index += 1) {
             if (!(index in value)) {
                 throw new Error(`${path}[${index}] is a sparse array entry.`);
             }
-            assertJsonValue(value[index], `${path}[${index}]`);
+            entries.push(normalizeJsonValue(value[index], `${path}[${index}]`));
         }
-        return;
+        return entries;
     }
     if (typeof value !== 'object' || Object.getPrototypeOf(value) !== Object.prototype) {
         throw new Error(`${path} is not a plain JSON value.`);
     }
-    for (const [field, entry] of Object.entries(value)) {
-        if (entry === undefined) {
-            throw new Error(`${path}.${field} is undefined.`);
-        }
-        assertJsonValue(entry, `${path}.${field}`);
-    }
+    return Object.fromEntries(
+        Object.entries(value).map(([field, entry]) => {
+            if (entry === undefined) {
+                throw new Error(`${path}.${field} is undefined.`);
+            }
+            return [field, normalizeJsonValue(entry, `${path}.${field}`)];
+        })
+    );
 }

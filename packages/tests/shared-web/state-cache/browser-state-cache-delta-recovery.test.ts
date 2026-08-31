@@ -1,13 +1,27 @@
 import { configureApiClient } from '@shared-web/browser/api-client-config.ts';
 import { browserStateCacheLifecycle } from '@shared-web/browser/state-cache/browser-state-cache-lifecycle.ts';
-import { newALBroadcastMessage, newALEventRoute, type ALMessage } from '@shared/al-contracts/al-contract.ts';
+// dprint-ignore
+import {
+    newALBroadcastMessage,
+    newALEventRoute,
+    type ALMessage
+} from '@shared/al-contracts/al-contract.ts';
 import { AppTopics, type ClientInfo } from '@shared/api/api-config.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import { DEFAULT_STATE_APPLICATION_ID, DEFAULT_STATE_WORKSPACE_ID } from '@shared/api/state-types.ts';
 import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
-import { findOverlayById, setOverlayById } from '@shared/repository/overlays-repository.ts';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { configureTestCacheRepositories } from '../../cache-repository-config.ts';
+import { findPlannedOverlayById, setPlannedOverlayById } from '@shared/repository/overlays-repository.ts';
+// dprint-ignore
+import {
+    afterEach,
+    beforeEach,
+    describe,
+    expect,
+    it,
+    onTestFinished,
+    vi
+} from 'vitest';
+import { configureTestCacheRepositories } from '../../configure-test-cache-repositories.ts';
 import {
     createGroupSnapshot,
     createGroupStateDeltaEnvelope,
@@ -16,6 +30,7 @@ import {
 } from './browser-state-cache-lifecycle-fixtures.ts';
 
 describe('browser state cache delta recovery and bootstrap topology', () => {
+    afterEach(() => vi.unstubAllGlobals());
     beforeEach(() => {
         configureTestCacheRepositories();
     });
@@ -35,11 +50,11 @@ describe('browser state cache delta recovery and bootstrap topology', () => {
                 onMessage: (message: ALMessage) => Promise<void>;
             }) => {
                 onInboxMessage = callback.onMessage;
-                return webSocketQueueBox;
             })
         };
         const listener = vi.fn();
         const unsubscribe = browserStateCacheLifecycle.onChange(listener);
+        onTestFinished(unsubscribe);
         const resulting = createGroupSnapshot({
             groupId: 'room-a',
             applicationId: DEFAULT_STATE_APPLICATION_ID,
@@ -58,7 +73,7 @@ describe('browser state cache delta recovery and bootstrap topology', () => {
 
         browserStateCacheLifecycle.initialise({
             inbox: webSocketQueueBox,
-            webRtcGroupManager: manager as never,
+            webRtcGroupManager: manager,
             clientData
         });
 
@@ -84,9 +99,6 @@ describe('browser state cache delta recovery and bootstrap topology', () => {
             clients: [],
             groups: [resulting]
         });
-
-        vi.unstubAllGlobals();
-        unsubscribe();
     });
 
     it('creates a bounded bootstrap overlay for active group snapshots', async () => {
@@ -109,13 +121,13 @@ describe('browser state cache delta recovery and bootstrap topology', () => {
         });
 
         await browserStateCacheLifecycle.hydrate({
-            webRtcGroupManager: manager as never,
+            webRtcGroupManager: manager,
             clientData,
             clientSnapshots: [],
             groupSnapshots: [group]
         });
 
-        const overlay = findOverlayById(toScopedOverlayId(group.group));
+        const overlay = findPlannedOverlayById(toScopedOverlayId(group.group));
         expect(overlay).toMatchObject({
             provenance: 'bootstrap',
             topology: 'star',
@@ -140,7 +152,7 @@ describe('browser state cache delta recovery and bootstrap topology', () => {
             snapshotVersion: 1
         });
         const overlayId = toScopedOverlayId(group.group);
-        setOverlayById(overlayId, {
+        setPlannedOverlayById(overlayId, {
             sourceGroupStateCausalRevision: {
                 groupRevision: 1,
                 presenceRevision: 1
@@ -167,13 +179,13 @@ describe('browser state cache delta recovery and bootstrap topology', () => {
             snapshotVersion: 5
         });
         await browserStateCacheLifecycle.hydrate({
-            webRtcGroupManager: manager as never,
+            webRtcGroupManager: manager,
             clientData,
             clientSnapshots: [],
             groupSnapshots: [newerGroup]
         });
 
-        expect(findOverlayById(overlayId)).toMatchObject({
+        expect(findPlannedOverlayById(overlayId)).toMatchObject({
             provenance: 'server',
             topology: 'tree',
             nextHopSessionIds: ['session-c']

@@ -1,46 +1,139 @@
+// dprint-ignore
+import {
+    afterEach,
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
+
 import type { ClientInfo, OverlayInfo } from '@shared/api/api-config.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
-import type { AuditStamp, GroupMember, GroupPresenceSession, GroupSnapshot } from '@shared/api/group-types.ts';
+// dprint-ignore
+import type {
+    AuditStamp,
+    Group,
+    GroupMember,
+    GroupPresenceSession,
+    GroupSnapshot
+} from '@shared/api/group-types.ts';
 import { LatestRepository } from '@shared/cache/LatestRepository.ts';
-import { Either } from '@shared/resilience/Either.ts';
-import { WebRtcGroupManager } from '@shared/services/WebRtcGroupManager.ts';
-import { describe, expect, it, vi } from 'vitest';
+import { WebRtcGroupManager, type WebRtcGroupManagerOptions } from '@shared/services/web-rtc-group-manager.ts';
+import type { WebRtcGroupPeerSelection } from '@shared/services/webrtc-group-manager-contracts.ts';
+import type { WebRtcConnectionService } from '@shared/services/WebRtcConnectionService.ts';
 import { createTestGroup } from '../create-test-group.ts';
+import { createSimulatedRtcConnections } from './simulated-rtc-connection-service.ts';
+
+interface GroupSnapshotFixture {
+    readonly groupId: string;
+    readonly membershipVersion: number;
+    readonly memberSessionIds: readonly string[];
+    readonly applicationId?: string;
+    readonly workspaceId?: string;
+}
+
+interface RtcConnectionHarness {
+    readonly service: WebRtcConnectionService;
+    readonly ensurePeerConnectionStarted: WebRtcConnectionService['ensurePeerConnectionStarted'];
+    readonly disconnectPeer: WebRtcConnectionService['disconnectPeer'];
+    knownPeerIds(): string[];
+    peerIdsWithNoReconnectableLanes(): string[];
+    markReconnectable(peerId: string): boolean;
+}
 
 describe('WebRtcGroupManager', () => {
-    it('connects group-active peers before the independent client cache observes them', async () => {
+    afterEach(() => vi.restoreAllMocks());
+    it('notifies with final desired and canonical degree-limited RTT peers after dial reconciliation', async () => {
+        const rtcQBox = createRtcConnectionHarness('session-b');
+        const notifications: ReconciledPeerSelectionObservation[] = [];
+        const manager = new WebRtcGroupManager(rtcQBox.service, {
+            groupCache: new LatestRepository<string, GroupSnapshot>(),
+            clientCache: new LatestRepository<string, ClientInfo>()
+        }, {
+            rttReportingDegreeLimit: 1,
+            onDesiredPeerIdsChanged: (selection) =>
+                notifications.push({
+                    ...selection,
+                    knownPeerIds: rtcQBox.knownPeerIds()
+                })
+        });
+        await manager.acceptGroupUpdate(createGroupSnapshot({
+            groupId: 'room',
+            membershipVersion: 1,
+            memberSessionIds: ['session-a', 'session-b', 'session-c', 'session-d']
+        }));
+        expect(notifications).toEqual([{
+            desiredPeerIds: ['session-a', 'session-c', 'session-d'],
+            rttReportingPeerIds: ['session-d'],
+            knownPeerIds: ['session-a', 'session-c', 'session-d']
+        }]);
+        const oldObserver: NonNullable<WebRtcGroupManagerOptions['onDesiredPeerIdsChanged']> = () => {};
+        expect(() => oldObserver({ desiredPeerIds: [], rttReportingPeerIds: [] })).not.toThrow();
+    });
+
+    it('dials group-present peers before the global client cache converges', async () => {
         const groupCache = new LatestRepository<string, GroupSnapshot>();
         const clientCache = new LatestRepository<string, ClientInfo>();
-        const rtcQBox = createRtcQBoxHarness('self');
+        const rtcQBox = createRtcConnectionHarness('local');
         const manager = new WebRtcGroupManager(
-            rtcQBox.service as never,
-            groupCache,
-            clientCache,
-            undefined,
+            rtcQBox.service,
+            { groupCache, clientCache },
             { overlayTransitionGraceMs: 0 }
         );
 
         await manager.acceptGroupUpdate(
-            createGroupSnapshot('group-1', 1, ['self', 'peer-a'])
+            createGroupSnapshot({ groupId: 'group-1', membershipVersion: 1, memberSessionIds: ['local', 'peer-a'] })
         );
 
         expect(rtcQBox.ensurePeerConnectionStarted).toHaveBeenCalledWith('peer-a');
+        expect(manager.rttReportingPeerIds({ degreeLimit: 1 })).toEqual(['peer-a']);
         expect(manager.state()).toMatchObject({
-            desiredPeerIds: ['peer-a'],
-            onlinePeerIds: ['peer-a'],
+            onlinePeerIds: [],
+            onlineDesiredPeerIds: [],
             connectablePeerIds: ['peer-a']
         });
     });
 
-    it('reconciles desired groups against online clients and connection state', async () => {
+    it('does not dial a stale accepted peer absent from current group presence', async () => {
         const groupCache = new LatestRepository<string, GroupSnapshot>();
         const clientCache = new LatestRepository<string, ClientInfo>();
-        const rtcQBox = createRtcQBoxHarness('self', ['peer-orphan']);
+        const acceptedOverlayCache = new LatestRepository<string, OverlayInfo>();
+        const rtcQBox = createRtcConnectionHarness('self');
         const manager = new WebRtcGroupManager(
-            rtcQBox.service as never,
-            groupCache,
-            clientCache,
-            undefined,
+            rtcQBox.service,
+            { groupCache, clientCache, acceptedOverlayCache },
+            { overlayTransitionGraceMs: 0 }
+        );
+        const group = createGroupSnapshot({ groupId: 'group-1', membershipVersion: 1, memberSessionIds: ['self'] });
+        const otherGroup = createGroupSnapshot({ groupId: 'group-2', membershipVersion: 1, memberSessionIds: ['self', 'peer-stale'] });
+        acceptedOverlayCache.set(
+            toScopedOverlayId(group.group),
+            createOverlayInfo(group, ['peer-stale'])
+        );
+        acceptedOverlayCache.set(
+            toScopedOverlayId(otherGroup.group),
+            createOverlayInfo(otherGroup, [])
+        );
+        clientCache.set('peer-stale', createClientInfo('peer-stale', true));
+
+        await manager.acceptGroupUpdate(group);
+        await manager.acceptGroupUpdate(otherGroup);
+
+        expect(manager.state()).toMatchObject({
+            desiredPeerIds: ['peer-stale'],
+            onlineDesiredPeerIds: ['peer-stale'],
+            connectablePeerIds: []
+        });
+        expect(rtcQBox.knownPeerIds()).toEqual([]);
+    });
+
+    it('reports global online state separately from group-scoped connectability', async () => {
+        const groupCache = new LatestRepository<string, GroupSnapshot>();
+        const clientCache = new LatestRepository<string, ClientInfo>();
+        const rtcQBox = createRtcConnectionHarness('self', ['peer-orphan']);
+        const manager = new WebRtcGroupManager(
+            rtcQBox.service,
+            { groupCache, clientCache },
             { overlayTransitionGraceMs: 0 }
         );
 
@@ -49,13 +142,13 @@ describe('WebRtcGroupManager', () => {
         clientCache.set('peer-c', createClientInfo('peer-c', true));
 
         await manager.acceptGroupUpdate(
-            createGroupSnapshot('group-1', 1, ['self', 'peer-a', 'peer-b'])
+            createGroupSnapshot({ groupId: 'group-1', membershipVersion: 1, memberSessionIds: ['self', 'peer-a', 'peer-b'] })
         );
         await manager.acceptGroupUpdate(
-            createGroupSnapshot('group-2', 1, ['self', 'peer-a', 'peer-c'])
+            createGroupSnapshot({ groupId: 'group-2', membershipVersion: 1, memberSessionIds: ['self', 'peer-a', 'peer-c'] })
         );
 
-        expect(rtcQBox.knownPeerIds().sort()).toEqual(['peer-a', 'peer-c']);
+        expect(rtcQBox.knownPeerIds().sort()).toEqual(['peer-a', 'peer-b', 'peer-c']);
         expect(rtcQBox.disconnectPeer).toHaveBeenCalledWith('peer-orphan', {
             resetAttemptBudget: false
         });
@@ -67,8 +160,8 @@ describe('WebRtcGroupManager', () => {
             desiredPeerIds: ['peer-a', 'peer-b', 'peer-c'],
             onlinePeerIds: ['peer-a', 'peer-c'],
             onlineDesiredPeerIds: ['peer-a', 'peer-c'],
-            connectablePeerIds: ['peer-a', 'peer-c'],
-            peerIdsWithNoReconnectableLanes: ['peer-a', 'peer-c'],
+            connectablePeerIds: ['peer-a', 'peer-b', 'peer-c'],
+            peerIdsWithNoReconnectableLanes: ['peer-a', 'peer-b', 'peer-c'],
             peerOwners: new Map([
                 ['peer-a', ['group-1', 'group-2']],
                 ['peer-b', ['group-1']],
@@ -80,12 +173,10 @@ describe('WebRtcGroupManager', () => {
     it('reads online peers once when materializing manager state', async () => {
         const groupCache = new LatestRepository<string, GroupSnapshot>();
         const clientCache = new CountingClientCache();
-        const rtcQBox = createRtcQBoxHarness('self');
+        const rtcQBox = createRtcConnectionHarness('self');
         const manager = new WebRtcGroupManager(
-            rtcQBox.service as never,
-            groupCache,
-            clientCache,
-            undefined,
+            rtcQBox.service,
+            { groupCache, clientCache },
             { overlayTransitionGraceMs: 0 }
         );
 
@@ -94,12 +185,16 @@ describe('WebRtcGroupManager', () => {
         clientCache.set('peer-c', createClientInfo('peer-c', false));
 
         await manager.acceptGroupUpdate(
-            createGroupSnapshot('group-1', 1, [
-                'self',
-                'peer-a',
-                'peer-b',
-                'peer-c'
-            ])
+            createGroupSnapshot({
+                groupId: 'group-1',
+                membershipVersion: 1,
+                memberSessionIds: [
+                    'self',
+                    'peer-a',
+                    'peer-b',
+                    'peer-c'
+                ]
+            })
         );
 
         clientCache.resetCounters();
@@ -114,12 +209,10 @@ describe('WebRtcGroupManager', () => {
     it('updates cached peer owners after group membership changes', async () => {
         const groupCache = new LatestRepository<string, GroupSnapshot>();
         const clientCache = new LatestRepository<string, ClientInfo>();
-        const rtcQBox = createRtcQBoxHarness('self');
+        const rtcQBox = createRtcConnectionHarness('self');
         const manager = new WebRtcGroupManager(
-            rtcQBox.service as never,
-            groupCache,
-            clientCache,
-            undefined,
+            rtcQBox.service,
+            { groupCache, clientCache },
             { overlayTransitionGraceMs: 0 }
         );
 
@@ -127,14 +220,14 @@ describe('WebRtcGroupManager', () => {
         clientCache.set('peer-b', createClientInfo('peer-b', true));
 
         await manager.acceptGroupUpdate(
-            createGroupSnapshot('group-1', 1, ['self', 'peer-a'])
+            createGroupSnapshot({ groupId: 'group-1', membershipVersion: 1, memberSessionIds: ['self', 'peer-a'] })
         );
 
         expect(manager.ownerGroupsOfPeer('peer-a')).toEqual(['group-1']);
         expect(manager.isPeerOwnedByAnyGroup('peer-b')).toBe(false);
 
         await manager.acceptGroupUpdate(
-            createGroupSnapshot('group-1', 2, ['self', 'peer-b'])
+            createGroupSnapshot({ groupId: 'group-1', membershipVersion: 2, memberSessionIds: ['self', 'peer-b'] })
         );
 
         expect(manager.ownerGroupsOfPeer('peer-a')).toEqual([]);
@@ -145,19 +238,17 @@ describe('WebRtcGroupManager', () => {
     it('does not duplicate reconciliations once sync start records a peer', async () => {
         const groupCache = new LatestRepository<string, GroupSnapshot>();
         const clientCache = new LatestRepository<string, ClientInfo>();
-        const rtcQBox = createRtcQBoxHarness('self');
+        const rtcQBox = createRtcConnectionHarness('self');
         const manager = new WebRtcGroupManager(
-            rtcQBox.service as never,
-            groupCache,
-            clientCache,
-            undefined,
+            rtcQBox.service,
+            { groupCache, clientCache },
             { overlayTransitionGraceMs: 0 }
         );
 
         clientCache.set('peer-a', createClientInfo('peer-a', true));
 
         const first = manager.acceptGroupUpdate(
-            createGroupSnapshot('group-1', 1, ['self', 'peer-a'])
+            createGroupSnapshot({ groupId: 'group-1', membershipVersion: 1, memberSessionIds: ['self', 'peer-a'] })
         );
         const second = manager.ensureAllGroupsConnected();
         const third = manager.notifyClientPresenceChanged();
@@ -170,12 +261,10 @@ describe('WebRtcGroupManager', () => {
     it('tracks same group id snapshots from different workspaces independently', async () => {
         const groupCache = new LatestRepository<string, GroupSnapshot>();
         const clientCache = new LatestRepository<string, ClientInfo>();
-        const rtcQBox = createRtcQBoxHarness('self');
+        const rtcQBox = createRtcConnectionHarness('self');
         const manager = new WebRtcGroupManager(
-            rtcQBox.service as never,
-            groupCache,
-            clientCache,
-            undefined,
+            rtcQBox.service,
+            { groupCache, clientCache },
             { overlayTransitionGraceMs: 0 }
         );
 
@@ -183,24 +272,20 @@ describe('WebRtcGroupManager', () => {
         clientCache.set('peer-b', createClientInfo('peer-b', true));
 
         await manager.acceptGroupUpdate(
-            createGroupSnapshot(
-                'shared-room',
-                1,
-                ['self', 'peer-a'],
-                {
-                    workspaceId: 'workspace-a'
-                }
-            )
+            createGroupSnapshot({
+                groupId: 'shared-room',
+                membershipVersion: 1,
+                memberSessionIds: ['self', 'peer-a'],
+                workspaceId: 'workspace-a'
+            })
         );
         await manager.acceptGroupUpdate(
-            createGroupSnapshot(
-                'shared-room',
-                1,
-                ['self', 'peer-b'],
-                {
-                    workspaceId: 'workspace-b'
-                }
-            )
+            createGroupSnapshot({
+                groupId: 'shared-room',
+                membershipVersion: 1,
+                memberSessionIds: ['self', 'peer-b'],
+                workspaceId: 'workspace-b'
+            })
         );
 
         expect(manager.size()).toBe(2);
@@ -212,30 +297,24 @@ describe('WebRtcGroupManager', () => {
     it('deletes only the matching scoped group when same group id exists in multiple workspaces', async () => {
         const groupCache = new LatestRepository<string, GroupSnapshot>();
         const clientCache = new LatestRepository<string, ClientInfo>();
-        const rtcQBox = createRtcQBoxHarness('self');
+        const rtcQBox = createRtcConnectionHarness('self');
         const manager = new WebRtcGroupManager(
-            rtcQBox.service as never,
-            groupCache,
-            clientCache,
-            undefined,
+            rtcQBox.service,
+            { groupCache, clientCache },
             { overlayTransitionGraceMs: 0 }
         );
-        const workspaceA = createGroupSnapshot(
-            'shared-room',
-            1,
-            ['self', 'peer-a'],
-            {
-                workspaceId: 'workspace-a'
-            }
-        );
-        const workspaceB = createGroupSnapshot(
-            'shared-room',
-            1,
-            ['self', 'peer-b'],
-            {
-                workspaceId: 'workspace-b'
-            }
-        );
+        const workspaceA = createGroupSnapshot({
+            groupId: 'shared-room',
+            membershipVersion: 1,
+            memberSessionIds: ['self', 'peer-a'],
+            workspaceId: 'workspace-a'
+        });
+        const workspaceB = createGroupSnapshot({
+            groupId: 'shared-room',
+            membershipVersion: 1,
+            memberSessionIds: ['self', 'peer-b'],
+            workspaceId: 'workspace-b'
+        });
 
         clientCache.set('peer-a', createClientInfo('peer-a', true));
         clientCache.set('peer-b', createClientInfo('peer-b', true));
@@ -253,17 +332,15 @@ describe('WebRtcGroupManager', () => {
     it('disconnects peers when groups are deleted or cleared', async () => {
         const groupCache = new LatestRepository<string, GroupSnapshot>();
         const clientCache = new LatestRepository<string, ClientInfo>();
-        const rtcQBox = createRtcQBoxHarness('self');
+        const rtcQBox = createRtcConnectionHarness('self');
         const manager = new WebRtcGroupManager(
-            rtcQBox.service as never,
-            groupCache,
-            clientCache,
-            undefined,
+            rtcQBox.service,
+            { groupCache, clientCache },
             { overlayTransitionGraceMs: 0 }
         );
 
         clientCache.set('peer-a', createClientInfo('peer-a', true));
-        const group1 = createGroupSnapshot('group-1', 1, ['self', 'peer-a']);
+        const group1 = createGroupSnapshot({ groupId: 'group-1', membershipVersion: 1, memberSessionIds: ['self', 'peer-a'] });
         await manager.acceptGroupUpdate(group1);
 
         expect(rtcQBox.peerIdsWithNoReconnectableLanes()).toEqual(['peer-a']);
@@ -273,7 +350,7 @@ describe('WebRtcGroupManager', () => {
         expect(rtcQBox.peerIdsWithNoReconnectableLanes()).toEqual([]);
 
         await manager.acceptGroupUpdate(
-            createGroupSnapshot('group-2', 1, ['self', 'peer-a'])
+            createGroupSnapshot({ groupId: 'group-2', membershipVersion: 1, memberSessionIds: ['self', 'peer-a'] })
         );
         expect(rtcQBox.peerIdsWithNoReconnectableLanes()).toEqual(['peer-a']);
 
@@ -286,23 +363,21 @@ describe('WebRtcGroupManager', () => {
     it('disconnects stale known peers when they leave all groups', async () => {
         const groupCache = new LatestRepository<string, GroupSnapshot>();
         const clientCache = new LatestRepository<string, ClientInfo>();
-        const rtcQBox = createRtcQBoxHarness('self', ['peer-a']);
+        const rtcQBox = createRtcConnectionHarness('self', ['peer-a']);
         const manager = new WebRtcGroupManager(
-            rtcQBox.service as never,
-            groupCache,
-            clientCache,
-            undefined,
+            rtcQBox.service,
+            { groupCache, clientCache },
             { overlayTransitionGraceMs: 0 }
         );
 
         clientCache.set('peer-a', createClientInfo('peer-a', true));
         await manager.acceptGroupUpdate(
-            createGroupSnapshot('group-1', 1, ['self', 'peer-a'])
+            createGroupSnapshot({ groupId: 'group-1', membershipVersion: 1, memberSessionIds: ['self', 'peer-a'] })
         );
 
         rtcQBox.markReconnectable('peer-a');
         await manager.acceptGroupUpdate(
-            createGroupSnapshot('group-1', 2, ['self'])
+            createGroupSnapshot({ groupId: 'group-1', membershipVersion: 2, memberSessionIds: ['self'] })
         );
 
         expect(rtcQBox.disconnectPeer).toHaveBeenCalledWith('peer-a', { resetAttemptBudget: false });
@@ -313,17 +388,15 @@ describe('WebRtcGroupManager', () => {
     it('retains left-room peers below the inactive connection budget', async () => {
         const groupCache = new LatestRepository<string, GroupSnapshot>();
         const clientCache = new LatestRepository<string, ClientInfo>();
-        const rtcQBox = createRtcQBoxHarness('self');
+        const rtcQBox = createRtcConnectionHarness('self');
         const manager = new WebRtcGroupManager(
-            rtcQBox.service as never,
-            groupCache,
-            clientCache,
-            undefined,
+            rtcQBox.service,
+            { groupCache, clientCache },
             { maxPeerConnections: 10, overlayTransitionGraceMs: 0 }
         );
 
         clientCache.set('peer-a', createClientInfo('peer-a', true));
-        const group = createGroupSnapshot('group-1', 1, ['self', 'peer-a']);
+        const group = createGroupSnapshot({ groupId: 'group-1', membershipVersion: 1, memberSessionIds: ['self', 'peer-a'] });
         await manager.acceptGroupUpdate(group);
 
         await expect(manager.delete(group.group, { retainConnections: true }))
@@ -336,12 +409,10 @@ describe('WebRtcGroupManager', () => {
     it('evicts the oldest retained inactive peers when the connection budget is exceeded', async () => {
         const groupCache = new LatestRepository<string, GroupSnapshot>();
         const clientCache = new LatestRepository<string, ClientInfo>();
-        const rtcQBox = createRtcQBoxHarness('self');
+        const rtcQBox = createRtcConnectionHarness('self');
         const manager = new WebRtcGroupManager(
-            rtcQBox.service as never,
-            groupCache,
-            clientCache,
-            undefined,
+            rtcQBox.service,
+            { groupCache, clientCache },
             { maxPeerConnections: 5, overlayTransitionGraceMs: 0 }
         );
         const retainedPeerIds = ['peer-a', 'peer-b', 'peer-c', 'peer-d', 'peer-e'];
@@ -349,15 +420,19 @@ describe('WebRtcGroupManager', () => {
         for (const peerId of [...retainedPeerIds, 'peer-f']) {
             clientCache.set(peerId, createClientInfo(peerId, true));
         }
-        const oldGroup = createGroupSnapshot('group-1', 1, [
-            'self',
-            ...retainedPeerIds
-        ]);
+        const oldGroup = createGroupSnapshot({
+            groupId: 'group-1',
+            membershipVersion: 1,
+            memberSessionIds: [
+                'self',
+                ...retainedPeerIds
+            ]
+        });
         await manager.acceptGroupUpdate(oldGroup);
         await manager.delete(oldGroup.group, { retainConnections: true });
 
         await manager.acceptGroupUpdate(
-            createGroupSnapshot('group-2', 1, ['self', 'peer-f'])
+            createGroupSnapshot({ groupId: 'group-2', membershipVersion: 1, memberSessionIds: ['self', 'peer-f'] })
         );
 
         expect(rtcQBox.disconnectPeer).toHaveBeenCalledWith('peer-a', { resetAttemptBudget: false });
@@ -373,12 +448,10 @@ describe('WebRtcGroupManager', () => {
     it('selects at most the configured RTT reporting peers from bootstrap room peers', async () => {
         const groupCache = new LatestRepository<string, GroupSnapshot>();
         const clientCache = new LatestRepository<string, ClientInfo>();
-        const rtcQBox = createRtcQBoxHarness('local');
+        const rtcQBox = createRtcConnectionHarness('local');
         const manager = new WebRtcGroupManager(
-            rtcQBox.service as never,
-            groupCache,
-            clientCache,
-            undefined,
+            rtcQBox.service,
+            { groupCache, clientCache },
             { maxPeerConnections: 10, overlayTransitionGraceMs: 0 }
         );
         for (const peerId of ['peer-a', 'peer-b', 'peer-c', 'peer-d']) {
@@ -386,11 +459,7 @@ describe('WebRtcGroupManager', () => {
         }
 
         await manager.acceptGroupUpdate(
-            createGroupSnapshot(
-                'group-1',
-                1,
-                ['local', 'peer-a', 'peer-b', 'peer-c', 'peer-d']
-            )
+            createGroupSnapshot({ groupId: 'group-1', membershipVersion: 1, memberSessionIds: ['local', 'peer-a', 'peer-b', 'peer-c', 'peer-d'] })
         );
 
         const selected = manager.rttReportingPeerIds({ degreeLimit: 2 });
@@ -403,23 +472,23 @@ describe('WebRtcGroupManager', () => {
         const groupCache = new LatestRepository<string, GroupSnapshot>();
         const clientCache = new LatestRepository<string, ClientInfo>();
         const sessionAManager = new WebRtcGroupManager(
-            createRtcQBoxHarness('session-a').service as never,
-            groupCache,
-            clientCache,
-            undefined,
+            createRtcConnectionHarness('session-a').service,
+            { groupCache, clientCache },
             { maxPeerConnections: 10, overlayTransitionGraceMs: 0 }
         );
         const sessionBManager = new WebRtcGroupManager(
-            createRtcQBoxHarness('session-b').service as never,
-            groupCache,
-            clientCache,
-            undefined,
+            createRtcConnectionHarness('session-b').service,
+            { groupCache, clientCache },
             { maxPeerConnections: 10, overlayTransitionGraceMs: 0 }
         );
-        const group = createGroupSnapshot('group-1', 1, [
-            'session-a',
-            'session-b'
-        ]);
+        const group = createGroupSnapshot({
+            groupId: 'group-1',
+            membershipVersion: 1,
+            memberSessionIds: [
+                'session-a',
+                'session-b'
+            ]
+        });
         clientCache.set('session-a', createClientInfo('session-a', true));
         clientCache.set('session-b', createClientInfo('session-b', true));
 
@@ -435,26 +504,32 @@ describe('WebRtcGroupManager', () => {
     it('prefers overlay next hops for RTT reporting selection', async () => {
         const groupCache = new LatestRepository<string, GroupSnapshot>();
         const clientCache = new LatestRepository<string, ClientInfo>();
-        const overlayCache = new LatestRepository<string, OverlayInfo>();
-        const rtcQBox = createRtcQBoxHarness('local');
+        const plannedOverlayCache = new LatestRepository<string, OverlayInfo>();
+        const rtcQBox = createRtcConnectionHarness('local');
         const manager = new WebRtcGroupManager(
-            rtcQBox.service as never,
-            groupCache,
-            clientCache,
-            overlayCache,
+            rtcQBox.service,
+            {
+                groupCache,
+                clientCache,
+                plannedOverlayCache
+            },
             { maxPeerConnections: 10, overlayTransitionGraceMs: 0 }
         );
-        const group = createGroupSnapshot('group-1', 1, [
-            'local',
-            'peer-a',
-            'peer-b',
-            'peer-c'
-        ]);
+        const group = createGroupSnapshot({
+            groupId: 'group-1',
+            membershipVersion: 1,
+            memberSessionIds: [
+                'local',
+                'peer-a',
+                'peer-b',
+                'peer-c'
+            ]
+        });
         for (const peerId of ['peer-a', 'peer-b', 'peer-c']) {
             clientCache.set(peerId, createClientInfo(peerId, true));
         }
 
-        overlayCache.set(toScopedOverlayId(group.group), {
+        plannedOverlayCache.set(toScopedOverlayId(group.group), {
             ...createOverlayInfo(group, ['peer-c']),
             degreeLimit: 1
         });
@@ -466,26 +541,32 @@ describe('WebRtcGroupManager', () => {
     it('uses complete star overlays for RTT bootstrap selection', async () => {
         const groupCache = new LatestRepository<string, GroupSnapshot>();
         const clientCache = new LatestRepository<string, ClientInfo>();
-        const overlayCache = new LatestRepository<string, OverlayInfo>();
-        const rtcQBox = createRtcQBoxHarness('local');
+        const plannedOverlayCache = new LatestRepository<string, OverlayInfo>();
+        const rtcQBox = createRtcConnectionHarness('local');
         const manager = new WebRtcGroupManager(
-            rtcQBox.service as never,
-            groupCache,
-            clientCache,
-            overlayCache,
+            rtcQBox.service,
+            {
+                groupCache,
+                clientCache,
+                plannedOverlayCache
+            },
             { maxPeerConnections: 10, overlayTransitionGraceMs: 0 }
         );
-        const group = createGroupSnapshot('group-1', 1, [
-            'local',
-            'peer-a',
-            'peer-b',
-            'peer-c'
-        ]);
+        const group = createGroupSnapshot({
+            groupId: 'group-1',
+            membershipVersion: 1,
+            memberSessionIds: [
+                'local',
+                'peer-a',
+                'peer-b',
+                'peer-c'
+            ]
+        });
         for (const peerId of ['peer-a', 'peer-b', 'peer-c']) {
             clientCache.set(peerId, createClientInfo(peerId, true));
         }
 
-        overlayCache.set(toScopedOverlayId(group.group), {
+        plannedOverlayCache.set(toScopedOverlayId(group.group), {
             ...createOverlayInfo(group, ['peer-a']),
             topology: 'star'
         });
@@ -497,12 +578,10 @@ describe('WebRtcGroupManager', () => {
     it('uses server-compatible per-group bootstrap candidates for RTT reporting', async () => {
         const groupCache = new LatestRepository<string, GroupSnapshot>();
         const clientCache = new LatestRepository<string, ClientInfo>();
-        const rtcQBox = createRtcQBoxHarness('local');
+        const rtcQBox = createRtcConnectionHarness('local');
         const manager = new WebRtcGroupManager(
-            rtcQBox.service as never,
-            groupCache,
-            clientCache,
-            undefined,
+            rtcQBox.service,
+            { groupCache, clientCache },
             { maxPeerConnections: 10, overlayTransitionGraceMs: 0 }
         );
         for (
@@ -519,10 +598,10 @@ describe('WebRtcGroupManager', () => {
         }
 
         await manager.acceptGroupUpdate(
-            createGroupSnapshot('group-1', 1, ['local', 'peer-a', 'peer-b', 'peer-c'])
+            createGroupSnapshot({ groupId: 'group-1', membershipVersion: 1, memberSessionIds: ['local', 'peer-a', 'peer-b', 'peer-c'] })
         );
         await manager.acceptGroupUpdate(
-            createGroupSnapshot('group-2', 1, ['local', 'peer-ax', 'peer-bx', 'peer-cx'])
+            createGroupSnapshot({ groupId: 'group-2', membershipVersion: 1, memberSessionIds: ['local', 'peer-ax', 'peer-bx', 'peer-cx'] })
         );
 
         const selected = manager.rttReportingPeerIds({ degreeLimit: 1 });
@@ -535,12 +614,10 @@ describe('WebRtcGroupManager', () => {
     it('does not report RTT peers rejected by another shared active group', async () => {
         const groupCache = new LatestRepository<string, GroupSnapshot>();
         const clientCache = new LatestRepository<string, ClientInfo>();
-        const rtcQBox = createRtcQBoxHarness('local');
+        const rtcQBox = createRtcConnectionHarness('local');
         const manager = new WebRtcGroupManager(
-            rtcQBox.service as never,
-            groupCache,
-            clientCache,
-            undefined,
+            rtcQBox.service,
+            { groupCache, clientCache },
             { maxPeerConnections: 10, overlayTransitionGraceMs: 0 }
         );
         for (const peerId of ['peer-a', 'peer-b', 'peer-c']) {
@@ -548,10 +625,10 @@ describe('WebRtcGroupManager', () => {
         }
 
         await manager.acceptGroupUpdate(
-            createGroupSnapshot('group-1', 1, ['local', 'peer-a', 'peer-b', 'peer-c'])
+            createGroupSnapshot({ groupId: 'group-1', membershipVersion: 1, memberSessionIds: ['local', 'peer-a', 'peer-b', 'peer-c'] })
         );
         await manager.acceptGroupUpdate(
-            createGroupSnapshot('group-2', 1, ['local', 'peer-a', 'peer-b', 'peer-c'])
+            createGroupSnapshot({ groupId: 'group-2', membershipVersion: 1, memberSessionIds: ['local', 'peer-a', 'peer-b', 'peer-c'] })
         );
 
         expect(manager.rttReportingPeerIds({ degreeLimit: 1 })).toEqual([]);
@@ -560,25 +637,31 @@ describe('WebRtcGroupManager', () => {
     it('uses overlay degree limit as RTT reporting fallback', async () => {
         const groupCache = new LatestRepository<string, GroupSnapshot>();
         const clientCache = new LatestRepository<string, ClientInfo>();
-        const overlayCache = new LatestRepository<string, OverlayInfo>();
-        const rtcQBox = createRtcQBoxHarness('local');
+        const plannedOverlayCache = new LatestRepository<string, OverlayInfo>();
+        const rtcQBox = createRtcConnectionHarness('local');
         const manager = new WebRtcGroupManager(
-            rtcQBox.service as never,
-            groupCache,
-            clientCache,
-            overlayCache
+            rtcQBox.service,
+            {
+                groupCache,
+                clientCache,
+                plannedOverlayCache
+            }
         );
-        const group = createGroupSnapshot('group-1', 1, [
-            'local',
-            'peer-a',
-            'peer-b',
-            'peer-c'
-        ]);
+        const group = createGroupSnapshot({
+            groupId: 'group-1',
+            membershipVersion: 1,
+            memberSessionIds: [
+                'local',
+                'peer-a',
+                'peer-b',
+                'peer-c'
+            ]
+        });
         for (const peerId of ['peer-a', 'peer-b', 'peer-c']) {
             clientCache.set(peerId, createClientInfo(peerId, true));
         }
 
-        overlayCache.set(
+        plannedOverlayCache.set(
             toScopedOverlayId(group.group),
             {
                 ...createOverlayInfo(group, ['peer-a', 'peer-b', 'peer-c']),
@@ -593,27 +676,33 @@ describe('WebRtcGroupManager', () => {
     it('uses overlay next hops as desired RTC peers when topology is available', async () => {
         const groupCache = new LatestRepository<string, GroupSnapshot>();
         const clientCache = new LatestRepository<string, ClientInfo>();
-        const overlayCache = new LatestRepository<string, OverlayInfo>();
-        const rtcQBox = createRtcQBoxHarness('self');
+        const acceptedOverlayCache = new LatestRepository<string, OverlayInfo>();
+        const rtcQBox = createRtcConnectionHarness('self');
         const manager = new WebRtcGroupManager(
-            rtcQBox.service as never,
-            groupCache,
-            clientCache,
-            overlayCache,
+            rtcQBox.service,
+            {
+                groupCache,
+                clientCache,
+                acceptedOverlayCache
+            },
             { maxPeerConnections: 10, overlayTransitionGraceMs: 0 }
         );
-        const group = createGroupSnapshot('group-1', 1, [
-            'self',
-            'peer-a',
-            'peer-b',
-            'peer-c'
-        ]);
+        const group = createGroupSnapshot({
+            groupId: 'group-1',
+            membershipVersion: 1,
+            memberSessionIds: [
+                'self',
+                'peer-a',
+                'peer-b',
+                'peer-c'
+            ]
+        });
         const overlayId = toScopedOverlayId(group.group);
 
         clientCache.set('peer-a', createClientInfo('peer-a', true));
         clientCache.set('peer-b', createClientInfo('peer-b', true));
         clientCache.set('peer-c', createClientInfo('peer-c', true));
-        overlayCache.set(overlayId, createOverlayInfo(group, ['peer-a']));
+        acceptedOverlayCache.set(overlayId, createOverlayInfo(group, ['peer-a']));
 
         await manager.acceptGroupUpdate(group);
 
@@ -622,7 +711,7 @@ describe('WebRtcGroupManager', () => {
         expect(manager.ownerGroupsOfPeer('peer-a')).toEqual(['group-1']);
         expect(manager.ownerGroupsOfPeer('peer-b')).toEqual([]);
 
-        overlayCache.set(overlayId, createOverlayInfo(group, ['peer-b'], 2));
+        acceptedOverlayCache.set(overlayId, createOverlayInfo(group, ['peer-b'], 2));
         await manager.notifyOverlayTopologyChanged();
 
         expect(rtcQBox.ensurePeerConnectionStarted).toHaveBeenCalledWith('peer-b');
@@ -635,12 +724,10 @@ describe('WebRtcGroupManager', () => {
     it('counts reconcile runs, connects, and disconnects in diagnostics', async () => {
         const groupCache = new LatestRepository<string, GroupSnapshot>();
         const clientCache = new LatestRepository<string, ClientInfo>();
-        const rtcQBox = createRtcQBoxHarness('self', ['peer-orphan']);
+        const rtcQBox = createRtcConnectionHarness('self', ['peer-orphan']);
         const manager = new WebRtcGroupManager(
-            rtcQBox.service as never,
-            groupCache,
-            clientCache,
-            undefined,
+            rtcQBox.service,
+            { groupCache, clientCache },
             { overlayTransitionGraceMs: 0 }
         );
 
@@ -662,13 +749,13 @@ describe('WebRtcGroupManager', () => {
         clientCache.set('peer-b', createClientInfo('peer-b', false));
 
         await manager.acceptGroupUpdate(
-            createGroupSnapshot('group-1', 1, ['self', 'peer-a', 'peer-b'])
+            createGroupSnapshot({ groupId: 'group-1', membershipVersion: 1, memberSessionIds: ['self', 'peer-a', 'peer-b'] })
         );
 
         const afterFirstReconcile = manager.readDiagnostics();
         expect(afterFirstReconcile.reconcileRunCount).toBe(1);
         expect(afterFirstReconcile.lastDesiredPeerCount).toBe(2);
-        expect(afterFirstReconcile.connectAttemptCount).toBe(1);
+        expect(afterFirstReconcile.connectAttemptCount).toBe(2);
         expect(afterFirstReconcile.connectFailureCount).toBe(0);
         expect(afterFirstReconcile.disconnectCount).toBe(1);
 
@@ -689,12 +776,10 @@ describe('WebRtcGroupManager', () => {
     it('caps outbound dials at the connection budget and counts deferrals', async () => {
         const groupCache = new LatestRepository<string, GroupSnapshot>();
         const clientCache = new LatestRepository<string, ClientInfo>();
-        const rtcQBox = createRtcQBoxHarness('self');
+        const rtcQBox = createRtcConnectionHarness('self');
         const manager = new WebRtcGroupManager(
-            rtcQBox.service as never,
-            groupCache,
-            clientCache,
-            undefined,
+            rtcQBox.service,
+            { groupCache, clientCache },
             { maxPeerConnections: 5, overlayTransitionGraceMs: 0 }
         );
         const peerIds = Array.from({ length: 8 }, (_, index) => `peer-${index}`);
@@ -703,7 +788,7 @@ describe('WebRtcGroupManager', () => {
         }
 
         await manager.acceptGroupUpdate(
-            createGroupSnapshot('group-1', 1, ['self', ...peerIds])
+            createGroupSnapshot({ groupId: 'group-1', membershipVersion: 1, memberSessionIds: ['self', ...peerIds] })
         );
 
         expect(rtcQBox.knownPeerIds()).toHaveLength(5);
@@ -713,31 +798,41 @@ describe('WebRtcGroupManager', () => {
     it('dials server-overlay next hops before bootstrap peers under the budget', async () => {
         const groupCache = new LatestRepository<string, GroupSnapshot>();
         const clientCache = new LatestRepository<string, ClientInfo>();
-        const overlayCache = new LatestRepository<string, OverlayInfo>();
-        const rtcQBox = createRtcQBoxHarness('self');
+        const acceptedOverlayCache = new LatestRepository<string, OverlayInfo>();
+        const rtcQBox = createRtcConnectionHarness('self');
         const manager = new WebRtcGroupManager(
-            rtcQBox.service as never,
-            groupCache,
-            clientCache,
-            overlayCache,
+            rtcQBox.service,
+            {
+                groupCache,
+                clientCache,
+                acceptedOverlayCache
+            },
             { maxPeerConnections: 5, overlayTransitionGraceMs: 0 }
         );
         const bootstrapPeerIds = Array.from(
             { length: 6 },
             (_, index) => `peer-x${index + 1}`
         );
-        const bootstrapGroup = createGroupSnapshot('group-boot', 1, [
-            'self',
-            ...bootstrapPeerIds
-        ]);
-        const serverGroup = createGroupSnapshot('group-server', 1, [
-            'self',
-            'peer-s1'
-        ]);
+        const bootstrapGroup = createGroupSnapshot({
+            groupId: 'group-boot',
+            membershipVersion: 1,
+            memberSessionIds: [
+                'self',
+                ...bootstrapPeerIds
+            ]
+        });
+        const serverGroup = createGroupSnapshot({
+            groupId: 'group-server',
+            membershipVersion: 1,
+            memberSessionIds: [
+                'self',
+                'peer-s1'
+            ]
+        });
         for (const peerId of ['peer-s1', ...bootstrapPeerIds]) {
             clientCache.set(peerId, createClientInfo(peerId, true));
         }
-        overlayCache.set(
+        acceptedOverlayCache.set(
             toScopedOverlayId(serverGroup.group),
             createOverlayInfo(serverGroup, ['peer-s1'])
         );
@@ -760,22 +855,17 @@ describe('WebRtcGroupManager', () => {
     it('counts connect failures in diagnostics', async () => {
         const groupCache = new LatestRepository<string, GroupSnapshot>();
         const clientCache = new LatestRepository<string, ClientInfo>();
-        const failingService = {
-            input: { sessionId: 'self' },
-            knownPeerIds: () => [] as string[],
-            peerIdsWithNoReconnectableLanes: () => [] as string[],
-            ensurePeerConnectionStarted: vi.fn(() => Either.ofLeft({ kind: 'error', error: new Error('dial failed') })),
-            disconnectPeer: vi.fn()
-        };
+        const failingService = createSimulatedRtcConnections('self', () => {
+            throw new Error('dial failed');
+        }).service;
         const manager = new WebRtcGroupManager(
-            failingService as never,
-            groupCache,
-            clientCache
+            failingService,
+            { groupCache, clientCache }
         );
 
         clientCache.set('peer-a', createClientInfo('peer-a', true));
         await manager.acceptGroupUpdate(
-            createGroupSnapshot('group-1', 1, ['self', 'peer-a'])
+            createGroupSnapshot({ groupId: 'group-1', membershipVersion: 1, memberSessionIds: ['self', 'peer-a'] })
         );
 
         const diagnostics = manager.readDiagnostics();
@@ -786,14 +876,10 @@ describe('WebRtcGroupManager', () => {
     it('counts retained peer evictions in diagnostics', async () => {
         const groupCache = new LatestRepository<string, GroupSnapshot>();
         const clientCache = new LatestRepository<string, ClientInfo>();
-        const rtcQBox = createRtcQBoxHarness('self', [], (peerId, connectedPeerIds) => {
-            connectedPeerIds.delete(peerId);
-        });
+        const rtcQBox = createRtcConnectionHarness('self', [], () => false);
         const manager = new WebRtcGroupManager(
-            rtcQBox.service as never,
-            groupCache,
-            clientCache,
-            undefined,
+            rtcQBox.service,
+            { groupCache, clientCache },
             { maxPeerConnections: 5, overlayTransitionGraceMs: 0 }
         );
         const retainedPeerIds = ['peer-a', 'peer-b', 'peer-c', 'peer-d'];
@@ -802,16 +888,20 @@ describe('WebRtcGroupManager', () => {
             clientCache.set(peerId, createClientInfo(peerId, true));
         }
 
-        const oldGroup = createGroupSnapshot('group-1', 1, [
-            'self',
-            ...retainedPeerIds
-        ]);
+        const oldGroup = createGroupSnapshot({
+            groupId: 'group-1',
+            membershipVersion: 1,
+            memberSessionIds: [
+                'self',
+                ...retainedPeerIds
+            ]
+        });
         await manager.acceptGroupUpdate(oldGroup);
         expect(rtcQBox.knownPeerIds()).toHaveLength(4);
         await manager.delete(oldGroup.group, { retainConnections: true });
 
         await manager.acceptGroupUpdate(
-            createGroupSnapshot('group-2', 1, ['self', ...replacementPeerIds])
+            createGroupSnapshot({ groupId: 'group-2', membershipVersion: 1, memberSessionIds: ['self', ...replacementPeerIds] })
         );
 
         const diagnostics = manager.readDiagnostics();
@@ -820,50 +910,30 @@ describe('WebRtcGroupManager', () => {
     });
 });
 
-function createRtcQBoxHarness(
+interface ReconciledPeerSelectionObservation extends WebRtcGroupPeerSelection {
+    readonly knownPeerIds: readonly string[];
+}
+
+function createRtcConnectionHarness(
     sessionId: string,
     initiallyConnectedPeerIds: readonly string[] = [],
-    connectImpl?: (
-        peerId: string,
-        connectedPeerIds: Set<string>
-    ) => void
-) {
-    const knownPeerIds = new Set(initiallyConnectedPeerIds);
-    const connectedPeerIds = new Set(initiallyConnectedPeerIds);
-
-    const ensurePeerConnectionStarted = vi.fn((peerId: string) => {
-        knownPeerIds.add(peerId);
-        if (connectImpl) {
-            connectImpl(peerId, connectedPeerIds);
-            return Either.ofRight({ peerId } as never);
+    connect?: (peerId: string) => boolean
+): RtcConnectionHarness {
+    const simulation = createSimulatedRtcConnections(sessionId, connect);
+    const { service } = simulation;
+    for (const peerId of initiallyConnectedPeerIds) {
+        const result = service.ensurePeerConnectionStarted(peerId);
+        if (result.left) {
+            throw new Error(`Failed to seed simulated peer ${peerId}`);
         }
-
-        connectedPeerIds.add(peerId);
-        return Either.ofRight({ peerId } as never);
-    });
-
-    const disconnectPeer = vi.fn((peerId: string) => {
-        knownPeerIds.delete(peerId);
-        return connectedPeerIds.delete(peerId);
-    });
-
-    const service = {
-        input: {
-            sessionId
-        },
-        knownPeerIds: () => Array.from(knownPeerIds),
-        peerIdsWithNoReconnectableLanes: () => Array.from(connectedPeerIds),
-        ensurePeerConnectionStarted,
-        disconnectPeer
-    };
-
+    }
     return {
         service,
-        ensurePeerConnectionStarted,
-        disconnectPeer,
-        knownPeerIds: service.knownPeerIds,
-        peerIdsWithNoReconnectableLanes: service.peerIdsWithNoReconnectableLanes,
-        markReconnectable: (peerId: string) => connectedPeerIds.delete(peerId)
+        ensurePeerConnectionStarted: vi.spyOn(service, 'ensurePeerConnectionStarted'),
+        disconnectPeer: vi.spyOn(service, 'disconnectPeer'),
+        knownPeerIds: () => [...service.knownPeerIds()],
+        peerIdsWithNoReconnectableLanes: () => [...service.peerIdsWithNoReconnectableLanes()],
+        markReconnectable: simulation.markReconnectable
     };
 }
 
@@ -889,73 +959,76 @@ function createClientInfo(sessionId: string, isOnline: boolean): ClientInfo {
 }
 
 function createGroupSnapshot(
-    groupId: string,
-    membershipVersion: number,
-    memberSessionIds: readonly string[],
-    scope: Readonly<{
-        applicationId?: string;
-        workspaceId?: string;
-    }> = {}
+    fixture: GroupSnapshotFixture
 ): GroupSnapshot {
-    const applicationId = scope.applicationId ?? 'app-1';
-    const workspaceId = scope.workspaceId ?? 'workspace-1';
-    const ownerPrincipalId = memberSessionIds[0];
+    const applicationId = fixture.applicationId ?? 'app-1';
+    const workspaceId = fixture.workspaceId ?? 'workspace-1';
+    const ownerPrincipalId = fixture.memberSessionIds[0];
     if (ownerPrincipalId === undefined) {
         throw new Error('Group fixture requires an owner session');
     }
 
+    const group = createTestGroup({
+        applicationId,
+        workspaceId,
+        groupId: fixture.groupId,
+        slug: fixture.groupId,
+        displayName: fixture.groupId,
+        activeMemberCount: fixture.memberSessionIds.length,
+        ownerPrincipalId,
+        snapshotVersion: fixture.membershipVersion,
+        metadataVersion: 0,
+        rosterVersion: fixture.membershipVersion,
+        presenceVersion: 0,
+        created: createAuditStamp(1, ownerPrincipalId),
+        updated: createAuditStamp(fixture.membershipVersion, ownerPrincipalId)
+    });
     return {
         causalRevision: {
-            groupRevision: membershipVersion,
-            presenceRevision: membershipVersion
+            groupRevision: fixture.membershipVersion,
+            presenceRevision: fixture.membershipVersion
         },
-        group: createTestGroup({
-            applicationId,
-            workspaceId,
-            groupId,
-            slug: groupId,
-            displayName: groupId,
-            activeMemberCount: memberSessionIds.length,
-            ownerPrincipalId,
-            snapshotVersion: membershipVersion,
-            metadataVersion: 0,
-            rosterVersion: membershipVersion,
-            presenceVersion: 0,
-            created: createAuditStamp(1, ownerPrincipalId),
-            updated: createAuditStamp(membershipVersion, ownerPrincipalId)
-        }),
-        members: memberSessionIds.map((sessionId): GroupMember => ({
-            applicationId,
-            workspaceId,
-            groupId,
-            principalId: sessionId,
-            role: sessionId === ownerPrincipalId ? 'owner' : 'member',
-            status: 'active',
-            joined: createAuditStamp(1, ownerPrincipalId),
-            updated: createAuditStamp(membershipVersion, ownerPrincipalId),
-            invitedByPrincipalId: null,
-            invitationExpiresAtEpochMs: null,
-            left: null,
-            removed: null,
-            banned: null
-        })),
-        activeSessions: memberSessionIds.map((sessionId): GroupPresenceSession => ({
-            applicationId,
-            workspaceId,
-            groupId,
-            sessionId,
-            principalId: sessionId,
-            generationId: `generation-${sessionId}`,
-            generationVersion: membershipVersion,
-            status: 'active',
-            connectedAtEpochMs: 1,
-            lastHeartbeatAtEpochMs: membershipVersion,
-            expiresAtEpochMs: membershipVersion + 60_000,
-            disconnectedAtEpochMs: null,
-            disconnectReason: null
-        })),
-        memberCount: memberSessionIds.length,
-        onlineMemberCount: memberSessionIds.length
+        group,
+        members: fixture.memberSessionIds.map((sessionId) => createGroupMember(group, sessionId)),
+        activeSessions: fixture.memberSessionIds.map((sessionId) => createGroupPresenceSession(group, sessionId)),
+        memberCount: fixture.memberSessionIds.length,
+        onlineMemberCount: fixture.memberSessionIds.length
+    };
+}
+
+function createGroupMember(group: Group, sessionId: string): GroupMember {
+    return {
+        applicationId: group.applicationId,
+        workspaceId: group.workspaceId,
+        groupId: group.groupId,
+        principalId: sessionId,
+        role: sessionId === group.ownerPrincipalId ? 'owner' : 'member',
+        status: 'active',
+        joined: group.created,
+        updated: group.updated,
+        invitedByPrincipalId: null,
+        invitationExpiresAtEpochMs: null,
+        left: null,
+        removed: null,
+        banned: null
+    };
+}
+
+function createGroupPresenceSession(group: Group, sessionId: string): GroupPresenceSession {
+    return {
+        applicationId: group.applicationId,
+        workspaceId: group.workspaceId,
+        groupId: group.groupId,
+        sessionId,
+        principalId: sessionId,
+        generationId: `generation-${sessionId}`,
+        generationVersion: group.rosterVersion,
+        status: 'active',
+        connectedAtEpochMs: 1,
+        lastHeartbeatAtEpochMs: group.rosterVersion,
+        expiresAtEpochMs: group.rosterVersion + 60_000,
+        disconnectedAtEpochMs: null,
+        disconnectReason: null
     };
 }
 

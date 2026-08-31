@@ -1,14 +1,27 @@
 import { browserStateCacheLifecycle } from '@shared-web/browser/state-cache/browser-state-cache-lifecycle.ts';
-import { newALBroadcastMessage, newALEventRoute, type ALMessage } from '@shared/al-contracts/al-contract.ts';
+// dprint-ignore
+import {
+    newALBroadcastMessage,
+    newALEventRoute,
+    type ALMessage
+} from '@shared/al-contracts/al-contract.ts';
 import { AppTopics, type ClientInfo } from '@shared/api/api-config.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
+import { toGroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import { DEFAULT_STATE_APPLICATION_ID, DEFAULT_STATE_WORKSPACE_ID } from '@shared/api/state-types.ts';
 import * as clientStateSnapshotsRepository from '@shared/repository/client-state-snapshots-repository.ts';
 import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
-import { findOverlayById } from '@shared/repository/overlays-repository.ts';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { configureTestCacheRepositories } from '../../cache-repository-config.ts';
+import { findAcceptedOverlayById, findPlannedOverlayById } from '@shared/repository/overlays-repository.ts';
+// dprint-ignore
+import {
+    beforeEach,
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
+import { configureTestCacheRepositories } from '../../configure-test-cache-repositories.ts';
 import {
     createClientSnapshot,
     createGroupSnapshot,
@@ -62,7 +75,7 @@ describe('browser state cache lifecycle scope filtering', () => {
         });
 
         await browserStateCacheLifecycle.hydrate({
-            webRtcGroupManager: manager as never,
+            webRtcGroupManager: manager,
             clientData,
             clientSnapshots: [sameScopeClient, otherWorkspaceClient],
             groupSnapshots: [sameScopeGroup, otherWorkspaceGroup]
@@ -117,7 +130,7 @@ describe('browser state cache lifecycle scope filtering', () => {
         });
 
         await browserStateCacheLifecycle.hydrate({
-            webRtcGroupManager: manager as never,
+            webRtcGroupManager: manager,
             clientData,
             clientSnapshots: [defaultScopeClient, customScopeClient],
             groupSnapshots: [defaultScopeGroup, customScopeGroup],
@@ -171,7 +184,7 @@ describe('browser state cache lifecycle scope filtering', () => {
         const rereadGroupSnapshots = vi.fn(async () => [recovered]);
 
         await browserStateCacheLifecycle.hydrate({
-            webRtcGroupManager: manager as never,
+            webRtcGroupManager: manager,
             clientData,
             clientSnapshots: [],
             groupSnapshots: [current]
@@ -179,7 +192,7 @@ describe('browser state cache lifecycle scope filtering', () => {
         acceptUpdate.mockClear();
 
         await browserStateCacheLifecycle.hydrate({
-            webRtcGroupManager: manager as never,
+            webRtcGroupManager: manager,
             clientData,
             clientSnapshots: [],
             groupSnapshots: [incomparable],
@@ -199,12 +212,8 @@ describe('browser state cache lifecycle scope filtering', () => {
             sessionIds: ['session-b'],
             snapshotVersion: 1
         });
-        const manager = {
-            notifyClientPresenceChanged: vi.fn(async () => undefined),
-            acceptGroupUpdate: vi.fn(async () => undefined),
-            has: vi.fn((input) => input === group.group),
-            delete: vi.fn(async () => undefined)
-        };
+        const manager = createWebRtcGroupManager();
+        manager.has.mockImplementation((input) => input === group.group);
         const clientData: ClientInfo = {
             clientId: 'alice',
             sessionId: 'session-a',
@@ -212,7 +221,7 @@ describe('browser state cache lifecycle scope filtering', () => {
         };
 
         await browserStateCacheLifecycle.hydrate({
-            webRtcGroupManager: manager as never,
+            webRtcGroupManager: manager,
             clientData,
             clientSnapshots: [],
             groupSnapshots: [group],
@@ -245,12 +254,8 @@ describe('browser state cache lifecycle scope filtering', () => {
             sessionIds: ['session-b'],
             snapshotVersion: 2
         });
-        const manager = {
-            notifyClientPresenceChanged: vi.fn(async () => undefined),
-            acceptGroupUpdate: vi.fn(async () => undefined),
-            has: vi.fn(() => true),
-            delete: vi.fn(async () => undefined)
-        };
+        const manager = createWebRtcGroupManager();
+        manager.has.mockImplementation(() => true);
         const clientData: ClientInfo = {
             clientId: 'alice',
             sessionId: 'session-a',
@@ -258,7 +263,7 @@ describe('browser state cache lifecycle scope filtering', () => {
         };
 
         await browserStateCacheLifecycle.hydrate({
-            webRtcGroupManager: manager as never,
+            webRtcGroupManager: manager,
             clientData,
             clientSnapshots: [],
             groupSnapshots: [joined],
@@ -270,14 +275,14 @@ describe('browser state cache lifecycle scope filtering', () => {
             }
         });
 
-        expect(findOverlayById(toScopedOverlayId(joined.group))).toBeDefined();
+        expect(findPlannedOverlayById(toScopedOverlayId(joined.group))).toBeDefined();
         manager.acceptGroupUpdate.mockClear();
         manager.delete.mockClear();
 
         groupStateSnapshotsRepository.setGroupStateSnapshot(left);
         await groupStateSnapshotsRepository.waitForGroupStateSnapshotChangesIdle();
 
-        expect(findOverlayById(toScopedOverlayId(left.group))).toBeUndefined();
+        expect(findPlannedOverlayById(toScopedOverlayId(left.group))).toBeUndefined();
         expect(manager.acceptGroupUpdate).not.toHaveBeenCalled();
         expect(manager.delete).toHaveBeenCalledWith(left.group, {
             retainConnections: true
@@ -292,14 +297,8 @@ describe('browser state cache lifecycle scope filtering', () => {
             sessionIds: ['session-b'],
             snapshotVersion: 1
         });
-        const manager = {
-            notifyClientPresenceChanged: vi.fn(async () => undefined),
-            notifyOverlayTopologyChanged: vi.fn(async () => undefined),
-            acceptGroupUpdate: vi.fn(async () => undefined),
-            has: vi.fn(() => false),
-            delete: vi.fn(async () => undefined),
-            ensureAllGroupsConnected: vi.fn(async () => undefined)
-        };
+        const manager = createWebRtcGroupManager();
+        manager.has.mockImplementation(() => false);
         const clientData: ClientInfo = {
             clientId: 'alice',
             sessionId: 'session-a',
@@ -307,7 +306,7 @@ describe('browser state cache lifecycle scope filtering', () => {
         };
 
         await browserStateCacheLifecycle.hydrate({
-            webRtcGroupManager: manager as never,
+            webRtcGroupManager: manager,
             clientData,
             clientSnapshots: [],
             groupSnapshots: [directoryOnly],
@@ -332,13 +331,8 @@ describe('browser state cache lifecycle scope filtering', () => {
             sessionIds: ['session-a'],
             snapshotVersion: 1
         });
-        const manager = {
-            notifyClientPresenceChanged: vi.fn(async () => undefined),
-            notifyOverlayTopologyChanged: vi.fn(async () => undefined),
-            acceptGroupUpdate: vi.fn(async () => undefined),
-            has: vi.fn((input) => input === group.group),
-            delete: vi.fn(async () => undefined)
-        };
+        const manager = createWebRtcGroupManager();
+        manager.has.mockImplementation((input) => input === group.group);
         const clientData: ClientInfo = {
             clientId: 'alice',
             sessionId: 'session-a',
@@ -348,7 +342,7 @@ describe('browser state cache lifecycle scope filtering', () => {
         const unsubscribe = browserStateCacheLifecycle.onChange(listener);
 
         await browserStateCacheLifecycle.hydrate({
-            webRtcGroupManager: manager as never,
+            webRtcGroupManager: manager,
             clientData,
             clientSnapshots: [],
             groupSnapshots: [group],
@@ -392,7 +386,6 @@ describe('browser state cache lifecycle scope filtering', () => {
                 onMessage: (message: ALMessage) => Promise<void>;
             }) => {
                 onInboxMessage = callback.onMessage;
-                return webSocketQueueBox;
             })
         };
         const listener = vi.fn();
@@ -423,12 +416,12 @@ describe('browser state cache lifecycle scope filtering', () => {
 
         browserStateCacheLifecycle.initialise({
             inbox: webSocketQueueBox,
-            webRtcGroupManager: manager as never,
+            webRtcGroupManager: manager,
             clientData,
             options: cacheOptions
         });
         await browserStateCacheLifecycle.hydrate({
-            webRtcGroupManager: manager as never,
+            webRtcGroupManager: manager,
             clientData,
             clientSnapshots: [],
             groupSnapshots: [current],
@@ -480,7 +473,6 @@ describe('browser state cache lifecycle scope filtering', () => {
                 onMessage: (message: ALMessage) => Promise<void>;
             }) => {
                 onInboxMessage = callback.onMessage;
-                return webSocketQueueBox;
             })
         };
         const groupSnapshot = createGroupSnapshot({
@@ -518,7 +510,7 @@ describe('browser state cache lifecycle scope filtering', () => {
 
         browserStateCacheLifecycle.initialise({
             inbox: webSocketQueueBox,
-            webRtcGroupManager: manager as never,
+            webRtcGroupManager: manager,
             clientData
         });
 
@@ -535,7 +527,7 @@ describe('browser state cache lifecycle scope filtering', () => {
             )
         );
 
-        expect(findOverlayById(topology.overlayId)).toMatchObject({
+        expect(findPlannedOverlayById(topology.overlayId)).toMatchObject({
             overlayId: topology.overlayId,
             groupRef: topology.groupRef,
             topology: 'tree',
@@ -577,8 +569,96 @@ describe('browser state cache lifecycle scope filtering', () => {
             )
         );
 
-        expect(findOverlayById(topology.overlayId)).toBeUndefined();
-        expect(manager.notifyOverlayTopologyChanged).toHaveBeenCalledTimes(3);
+        expect(findPlannedOverlayById(topology.overlayId)).toBeUndefined();
+        expect(manager.notifyOverlayTopologyChanged).toHaveBeenCalledTimes(2);
+    });
+
+    it('ignores an obsolete graph message without changing server-planned identity', async () => {
+        const manager = createWebRtcGroupManager();
+        const clientData: ClientInfo = {
+            clientId: 'alice',
+            sessionId: 'session-a',
+            isOnline: true
+        };
+        let onInboxMessage:
+            | ((message: ALMessage) => Promise<void>)
+            | undefined;
+        const webSocketQueueBox = {
+            onAllInboxMessagesDo: vi.fn((callback: {
+                onMessage: (message: ALMessage) => Promise<void>;
+            }) => {
+                onInboxMessage = callback.onMessage;
+            })
+        };
+        const group = createGroupSnapshot({
+            groupId: 'room-graph-ordering',
+            applicationId: DEFAULT_STATE_APPLICATION_ID,
+            workspaceId: DEFAULT_STATE_WORKSPACE_ID,
+            sessionIds: ['session-a', 'session-b'],
+            snapshotVersion: 2
+        });
+        const topology = createTopologySnapshot(
+            group,
+            { groupRevision: 2, presenceRevision: 2 },
+            3
+        );
+
+        browserStateCacheLifecycle.initialise({
+            inbox: webSocketQueueBox,
+            webRtcGroupManager: manager,
+            clientData
+        });
+        await browserStateCacheLifecycle.hydrate({
+            webRtcGroupManager: manager,
+            clientData,
+            clientSnapshots: [],
+            groupSnapshots: [group]
+        });
+        const receive = onInboxMessage;
+        if (!receive) {
+            throw new Error('WebSocket cache callback was not installed.');
+        }
+
+        await receive(newALBroadcastMessage(
+            'server-a',
+            newALEventRoute(AppTopics.overlayTopology, group.group.groupId, 'topology'),
+            'room',
+            AppTopics.overlayTopology,
+            topology,
+            { groupRef: group.group }
+        ));
+        expect(findPlannedOverlayById(topology.overlayId)?.overlayVersion).toBe(3);
+
+        // The retired topic must be ignored before payload decoding, so this
+        // sentinel is intentionally not a valid historical graph snapshot.
+        await receive(newALBroadcastMessage(
+            'server-a',
+            newALEventRoute('graphs', group.group.groupId, 'graph'),
+            'room',
+            'graphs',
+            { intentionallyInvalid: true },
+            { groupRef: group.group }
+        ));
+        expect(findPlannedOverlayById(topology.overlayId)?.overlayVersion).toBe(3);
+
+        const accepted = createGroupSnapshot({
+            groupId: group.group.groupId,
+            applicationId: group.group.applicationId,
+            workspaceId: group.group.workspaceId ?? DEFAULT_STATE_WORKSPACE_ID,
+            sessionIds: ['session-a', 'session-b'],
+            snapshotVersion: 3
+        });
+        groupStateSnapshotsRepository.setGroupStateSnapshot({
+            ...accepted,
+            group: {
+                ...accepted.group,
+                acceptedLayoutIdentity: toGroupLayoutIdentity(topology)
+            }
+        });
+        await groupStateSnapshotsRepository.waitForGroupStateSnapshotChangesIdle();
+
+        expect(findAcceptedOverlayById(topology.overlayId)?.overlayVersion).toBe(3);
+        expect(findPlannedOverlayById(topology.overlayId)).toBeUndefined();
     });
 
     it.each(
@@ -603,7 +683,6 @@ describe('browser state cache lifecycle scope filtering', () => {
                     onMessage: (message: ALMessage) => Promise<void>;
                 }) => {
                     onInboxMessage = callback.onMessage;
-                    return webSocketQueueBox;
                 })
             };
             const groupSnapshot = createGroupSnapshot({
@@ -625,7 +704,7 @@ describe('browser state cache lifecycle scope filtering', () => {
             );
             browserStateCacheLifecycle.initialise({
                 inbox: webSocketQueueBox,
-                webRtcGroupManager: manager as never,
+                webRtcGroupManager: manager,
                 clientData
             });
             const receive = onInboxMessage;
@@ -660,8 +739,8 @@ describe('browser state cache lifecycle scope filtering', () => {
                     ...current,
                     version: current.version + 1
                 })
-            ))).rejects.toThrow('Overlay revision conflict');
-            expect(findOverlayById(current.overlayId)).toMatchObject({
+            ))).resolves.toBeUndefined();
+            expect(findPlannedOverlayById(current.overlayId)).toMatchObject({
                 sourceGroupStateCausalRevision: historical.sourceGroupStateCausalRevision,
                 overlayVersion: historical.version
             });
@@ -674,8 +753,8 @@ describe('browser state cache lifecycle scope filtering', () => {
                     resourceId: 'spoofed-current-topology'
                 }),
                 toCurrentTopologyMessageId(deliveryKind, current)
-            ))).rejects.toThrow('Overlay revision conflict');
-            expect(findOverlayById(current.overlayId)).toMatchObject({
+            ))).resolves.toBeUndefined();
+            expect(findPlannedOverlayById(current.overlayId)).toMatchObject({
                 sourceGroupStateCausalRevision: historical.sourceGroupStateCausalRevision,
                 overlayVersion: historical.version
             });
@@ -690,7 +769,7 @@ describe('browser state cache lifecycle scope filtering', () => {
                 toCurrentTopologyMessageId(deliveryKind, current)
             ));
 
-            expect(findOverlayById(current.overlayId)).toMatchObject({
+            expect(findPlannedOverlayById(current.overlayId)).toMatchObject({
                 sourceGroupStateCausalRevision: current.sourceGroupStateCausalRevision,
                 overlayVersion: current.version
             });
@@ -711,7 +790,7 @@ describe('browser state cache lifecycle scope filtering', () => {
                 }),
                 toCurrentTopologyMessageId(deliveryKind, delayed)
             ));
-            expect(findOverlayById(current.overlayId)).toMatchObject({
+            expect(findPlannedOverlayById(current.overlayId)).toMatchObject({
                 sourceGroupStateCausalRevision: current.sourceGroupStateCausalRevision,
                 overlayVersion: current.version
             });
@@ -726,8 +805,8 @@ describe('browser state cache lifecycle scope filtering', () => {
                     resourceId: 'conflicting-current-topology'
                 }),
                 toCurrentTopologyMessageId(deliveryKind, equalConflict)
-            ))).rejects.toThrow('Overlay revision conflict');
-            expect(findOverlayById(current.overlayId)).toMatchObject({
+            ))).resolves.toBeUndefined();
+            expect(findPlannedOverlayById(current.overlayId)).toMatchObject({
                 name: current.name,
                 sourceGroupStateCausalRevision: current.sourceGroupStateCausalRevision,
                 overlayVersion: current.version

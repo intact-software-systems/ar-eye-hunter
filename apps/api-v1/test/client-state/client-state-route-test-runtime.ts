@@ -4,21 +4,43 @@ import { type AppInboxEnqueueInput } from '@shared-server/rallar-system/app-inbo
 import type { AppInboxFailure } from '@shared-server/rallar-system/app-inbox/app-inbox-failure.ts';
 import type { ClientStateWritten } from '@shared-server/rallar-system/client-state/client-state-service-contracts.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
-import type { AuditStamp, ClientEvent, ClientSnapshot } from '@shared/api/client-types.ts';
+import type {
+    AuditStamp,
+    ClientEvent,
+    ClientSnapshot
+} from '@shared/api/client-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import { Either } from '@shared/resilience/Either.ts';
 
 import type { GroupStateRouteAuthSession } from '../../src/group-state/group-state-route-contracts.ts';
-import * as clientStateRoutes from '../../src/routes/client-state-routes.ts';
 import type { ProcessClientAppInbox } from '../../src/routes/client-state-mutation-routes.ts';
+import * as clientStateRoutes from '../../src/routes/client-state-routes.ts';
 
 export const TEST_SCOPE: StateScope = {
     applicationId: 'app-1',
     workspaceId: 'workspace-1'
 };
 
+interface CreateClientRouteDepsInput {
+    readonly session: AuthSession & GroupStateRouteAuthSession;
+    readonly clientService: Partial<clientStateRoutes.ClientStateRouteService>;
+    readonly hydrateStateSyncSnapshotCaches?: clientStateRoutes.ClientStateRouteDependencies[
+        'hydrateStateSyncSnapshotCaches'
+    ];
+    readonly processClientAppInbox?: (
+        enqueue: AppInboxEnqueueInput,
+        authority: Parameters<ProcessClientAppInbox>[1]
+    ) => Promise<Either<AppInboxFailure, ClientStateWritten> | ClientStateWritten>;
+    readonly readClientSnapshot?: clientStateRoutes.ClientStateRouteDependencies['readClientSnapshot'];
+    readonly strictReadAuthorization?: boolean;
+}
+
+interface ClientRouteDeps extends Required<clientStateRoutes.ClientStateRouteDependencies> {
+    authCallCount(): number;
+}
+
 export function createClientRouteApp(
-    deps: ReturnType<typeof createClientRouteDeps>
+    deps: ClientRouteDeps
 ): Hono {
     const app = new Hono();
     installClientStateRouteAuthMiddleware(app, deps.requireApiAuthSession);
@@ -39,53 +61,35 @@ export function installClientStateRouteAuthMiddleware(
 }
 
 export function createClientRouteDeps(
-    input: Readonly<{
-        session: AuthSession & GroupStateRouteAuthSession;
-        clientService: Partial<clientStateRoutes.ClientStateRouteService>;
-        hydrateStateSyncSnapshotCaches?: clientStateRoutes.ClientStateRouteDependencies[
-            'hydrateStateSyncSnapshotCaches'
-        ];
-        processClientAppInbox?: (
-            enqueue: AppInboxEnqueueInput,
-            authority: Parameters<ProcessClientAppInbox>[1]
-        ) => Promise<Either<AppInboxFailure, ClientStateWritten> | ClientStateWritten>;
-        readClientSnapshot?: clientStateRoutes.ClientStateRouteDependencies[
-            'readClientSnapshot'
-        ];
-        strictReadAuthorization?: boolean;
-    }>
-):
-    & Required<clientStateRoutes.ClientStateRouteDependencies>
-    & Readonly<{
-        authCallCount(): number;
-    }> {
+    input: CreateClientRouteDepsInput
+): ClientRouteDeps {
     let authCalls = 0;
+    const clientStateService: clientStateRoutes.ClientStateRouteService = {
+        listSnapshots: () => Promise.resolve([]),
+        readSnapshot: () => Promise.resolve(undefined),
+        readPresenceSnapshot: () => Promise.resolve(undefined),
+        listEvents: () => Promise.resolve([]),
+        listRecentEvents: () => Promise.resolve([]),
+        listEventPage: () => Promise.resolve({ events: [], hasMore: false }),
+        ...input.clientService
+    };
+    const processClientAppInbox = input.processClientAppInbox;
     return {
-        clientStateService: {
-            listSnapshots: () => Promise.resolve([]),
-            readSnapshot: () => Promise.resolve(undefined),
-            readPresenceSnapshot: () => Promise.resolve(undefined),
-            listEvents: () => Promise.resolve([]),
-            listEventPage: () => Promise.resolve({ events: [], hasMore: false }),
-            ...input.clientService
-        } as clientStateRoutes.ClientStateRouteService,
+        clientStateService,
         requireApiAuthSession: () => {
             authCalls += 1;
             return Promise.resolve(input.session);
         },
-        processClientAppInbox: input.processClientAppInbox
+        processClientAppInbox: processClientAppInbox
             ? async (enqueue, authority) => {
-                const result = await input.processClientAppInbox?.(enqueue, authority);
-                if (result === undefined) {
-                    throw new Error('Client mutation test result is unavailable');
-                }
+                const result = await processClientAppInbox(enqueue, authority);
                 return result instanceof Either ? result : Either.ofRight(result);
             }
             : () => Promise.reject(new Error('Unexpected client mutation route call')),
         hydrateStateSyncSnapshotCaches: input.hydrateStateSyncSnapshotCaches ??
             (() => Promise.resolve({ clientSnapshotCount: 0, groupSnapshotCount: 0 })),
         readClientSnapshot: input.readClientSnapshot ?? (async (ref) => {
-            const snapshot = await input.clientService.readSnapshot?.(ref);
+            const snapshot = await clientStateService.readSnapshot(ref);
             return snapshot
                 ? { status: 'found', source: 'durable', snapshot }
                 : { status: 'not-found', source: 'durable' };

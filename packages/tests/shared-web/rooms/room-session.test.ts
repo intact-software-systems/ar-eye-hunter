@@ -1,18 +1,33 @@
-import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import {
+    afterEach,
+    beforeEach,
+    expect,
+    it,
+    vi
+} from 'vitest';
 
 import { configureApiClient } from '@shared-web/browser/api-client-config.ts';
 import { ApiHttpError } from '@shared-web/browser/api/http-error.ts';
+import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
+import type { GroupTopologyManagementView } from '@shared/api/graph-topology-management-types.ts';
 import { isRallarValidationError } from '@shared/api/rallar-validation.ts';
+import { configureOverlayRepositories } from '@shared/repository/overlays-repository.ts';
+import { toError } from '@shared/resilience/to-error.ts';
 
-import { createRoomSnapshot, resetRoomWorkflowTestRuntime, seedRoomSnapshots } from './room-workflow-test-runtime.ts';
+import {
+    createRoomSnapshot,
+    resetRoomWorkflowTestRuntime,
+    seedRoomSnapshots
+} from './room-workflow-test-runtime.ts';
 
-beforeEach(resetRoomWorkflowTestRuntime);
-afterEach(() => vi.unstubAllGlobals());
-
-it('exposes the owning room session operation', async () => {
-    const { createRoomSession } = await import('@shared-web/browser/rooms/room-session.ts');
-    expect(typeof createRoomSession).toBe('function');
+beforeEach(() => {
+    resetRoomWorkflowTestRuntime();
+    configureOverlayRepositories({
+        plannedOverlays: { ttlMs: 60_000 },
+        acceptedOverlays: { ttlMs: 60_000 }
+    });
 });
+afterEach(() => vi.unstubAllGlobals());
 
 it('binds a session to the selected room snapshot', async () => {
     const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
@@ -27,13 +42,13 @@ it('binds a session to the selected room snapshot', async () => {
 
 it('reports a structured validation issue when no room session can be resolved', async () => {
     const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
-    let thrown: unknown;
+    let thrown: Error | undefined;
 
     try {
         createRallarFacade().rooms.session();
     }
     catch (error) {
-        thrown = error;
+        thrown = toError(error);
     }
 
     expect(isRallarValidationError(thrown)).toBe(true);
@@ -63,6 +78,20 @@ it('refreshes a bound room and its current topology', async () => {
             presenceRevision: observed.causalRevision.presenceRevision
         }
     };
+    const topology: GroupTopologyManagementView = {
+        groupRef: current.group,
+        overlayId: toScopedOverlayId(current.group),
+        snapshot: null,
+        acceptedSnapshot: null,
+        config: {
+            serverDefaults: { topologyKind: 'auto', degreeLimit: 5, treeMinSize: 3, meshMinSize: 8, meshParamK: 2 },
+            durable: null,
+            temporary: null,
+            requestOptions: null,
+            effective: { topologyKind: 'auto', degreeLimit: 5, treeMinSize: 3, meshMinSize: 8, meshParamK: 2 }
+        },
+        pending: null
+    };
     seedRoomSnapshots([observed]);
     let groupReadObserved = false;
     let topologyReadObserved = false;
@@ -75,13 +104,7 @@ it('refreshes a bound room and its current topology', async () => {
                 throw new Error('Topology was read before the current group snapshot.');
             }
             topologyReadObserved = true;
-            return new Response(JSON.stringify({
-                groupRef: current.group,
-                overlayId: '["app-1","workspace-1","room-1"]',
-                snapshot: null,
-                config: null,
-                pending: null
-            }), {
+            return new Response(JSON.stringify(topology), {
                 status: 200,
                 headers: { 'content-type': 'application/json' }
             });
@@ -125,16 +148,16 @@ it('conditionally cleans a targeted 404 and rethrows the original HTTP error', a
     vi.stubGlobal('fetch', vi.fn(async () => new Response('missing', { status: 404 })));
 
     const session = createRallarFacade().rooms.session(observed.group);
-    let thrown: unknown;
+    let thrown: Error | undefined;
     try {
         await session.refresh();
     }
     catch (error) {
-        thrown = error;
+        thrown = toError(error);
     }
 
     expect(thrown).toBeInstanceOf(ApiHttpError);
-    expect((thrown as ApiHttpError).status).toBe(404);
+    expect(thrown).toMatchObject({ status: 404 });
     expect(session.snapshot()).toBeUndefined();
 });
 
@@ -144,6 +167,10 @@ it('preserves a newer publication that races targeted 404 cleanup', async () => 
     const observed = createRoomSnapshot('room-1', ['session-1']);
     const newer = {
         ...observed,
+        group: {
+            ...observed.group,
+            snapshotVersion: observed.group.snapshotVersion + 1
+        },
         causalRevision: {
             groupRevision: observed.causalRevision.groupRevision + 1,
             presenceRevision: observed.causalRevision.presenceRevision

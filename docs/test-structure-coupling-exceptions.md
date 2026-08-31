@@ -617,21 +617,6 @@ moved or changed test.
       }
     },
     {
-      "id": "shared-web-remote-media-attachment-lifecycle",
-      "domain": "Shared-web remote media attachment lifecycle",
-      "owner": "Shared Web maintainers",
-      "summary": "Remote-media registration waits for connection attachment. Executable assertion: “owns middleware registration from connection attach through final unsubscribe”.",
-      "semanticCoverage": "packages/tests/shared-web/media/browser-remote-media-stream-runtime.test.ts#owns middleware registration from connection attach through final unsubscribe",
-      "coverageRelation": "The named assertion executes this lifecycle and observes its owned side-effect port; the registered evidence directly proves the stated constraint.",
-      "interactionRequirement": {
-        "interactionKind": "absence",
-        "ownedPort": "RTC remote-stream middleware registration port",
-        "observableEffect": "Subscribing before attachment does not register against an unavailable connection.",
-        "requiredConstraint": "The registration port remains unused until attach supplies middleware.",
-        "failureRationale": "Early registration binds to missing or stale connection state."
-      }
-    },
-    {
       "id": "shared-web-create-room-failure-atomicity",
       "domain": "Shared-web create-and-switch room workflow",
       "owner": "Shared Web maintainers",
@@ -2553,17 +2538,6 @@ moved or changed test.
       "owner": "Shared Web maintainers",
       "rationale": "The unchanged one-fetch count directly proves that fetch remains at one across repeated circuit-open requests.",
       "semanticCoverage": "packages/tests/shared-web/auth/websocket-ticket-http-api.test.ts#keeps circuit-open diagnostics ahead of the local rate limiter while open"
-    },
-    {
-      "id": "test-structure-coupling-a90a04906ba9c761",
-      "path": "packages/tests/shared-web/media/browser-remote-media-stream-runtime.test.ts",
-      "kind": "mock-invocation-count-or-order",
-      "contract": "shared-web-remote-media-attachment-lifecycle",
-      "disposition": "durable-boundary",
-      "boundary": "interaction",
-      "owner": "Shared Web maintainers",
-      "rationale": "The pre-attach registration absence assertion directly proves that registration remains unused until middleware attachment.",
-      "semanticCoverage": "packages/tests/shared-web/media/browser-remote-media-stream-runtime.test.ts#owns middleware registration from connection attach through final unsubscribe"
     },
     {
       "id": "test-structure-coupling-b501ba3cfcd7af87",

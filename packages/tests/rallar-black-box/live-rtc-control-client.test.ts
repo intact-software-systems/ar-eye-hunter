@@ -1,27 +1,28 @@
-import { request, type APIRequestContext, type Page } from '@playwright/test';
+import { request, type APIRequestContext } from '@playwright/test';
 import { createServer, type Server } from 'node:http';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+    afterEach,
+    beforeEach,
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
 
 import { LiveRtcControlClient } from '../../../tests/playwright/rallar-black-box/live-rtc-control-client.ts';
 import { normalizeJson } from '../../../tests/playwright/rallar-black-box/live-rtc-evidence-json.ts';
-
-interface ControlResult {
-    commandId: string;
-    ok: boolean;
-    result: { value: { rallar: { rtcStatus: { readyPeerIds: string[]; }; }; }; };
-}
 
 describe('live RTC control client', () => {
     let server: Server;
     let api: APIRequestContext;
     let control: LiveRtcControlClient;
     let nowMs: number;
-    const evaluate = vi.fn<Page['evaluate']>();
-    const agent = { agentId: 'agent-a', prefix: 'A' as const, page: { evaluate } };
+    const refreshRoom = vi.fn<LiveRtcControlClient.FormationAgent['refreshRoom']>();
+    const agent = { agentId: 'agent-a', prefix: 'A' as const, refreshRoom };
 
     beforeEach(async () => {
         nowMs = 100;
-        const results: ControlResult[] = [];
+        const results: LiveRtcControlClient.Result[] = [];
         server = createServer(async (incoming, response) => {
             if (incoming.method === 'POST') {
                 const chunks: Buffer[] = [];
@@ -55,12 +56,7 @@ describe('live RTC control client', () => {
             monotonicNow: () => nowMs,
             epochNow: () => 0
         });
-        evaluate.mockImplementation(async (callback, argument) => {
-            if (typeof callback !== 'function') {
-                throw new Error('Expected a browser callback.');
-            }
-            return callback(argument);
-        });
+        refreshRoom.mockResolvedValue(undefined);
     });
 
     afterEach(async () => {
@@ -68,7 +64,7 @@ describe('live RTC control client', () => {
         await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
         vi.unstubAllGlobals();
         vi.restoreAllMocks();
-        evaluate.mockReset();
+        refreshRoom.mockReset();
     });
 
     it('waits for refreshed room membership and includes refresh time in readiness', async () => {
@@ -76,15 +72,11 @@ describe('live RTC control client', () => {
         let roomMembers = ['session-a'];
         let refreshStarted = false;
         let completed = false;
-        vi.stubGlobal('window', {
-            __blackBoxRallar: {
-                refreshRoom: async () => {
-                    refreshStarted = true;
-                    await refresh.promise;
-                    roomMembers = ['session-a', 'session-b', 'session-c'];
-                    nowMs = 350;
-                }
-            }
+        refreshRoom.mockImplementation(async () => {
+            refreshStarted = true;
+            await refresh.promise;
+            roomMembers = ['session-a', 'session-b', 'session-c'];
+            nowMs = 350;
         });
 
         const readiness = control.waitForPeerReadiness({
@@ -110,12 +102,8 @@ describe('live RTC control client', () => {
     });
 
     it('rejects readiness when authoritative room refresh fails', async () => {
-        vi.stubGlobal('window', {
-            __blackBoxRallar: {
-                refreshRoom: async () => {
-                    throw new Error('room refresh unavailable');
-                }
-            }
+        refreshRoom.mockImplementation(async () => {
+            throw new Error('room refresh unavailable');
         });
 
         await expect(control.waitForPeerReadiness({
@@ -127,25 +115,9 @@ describe('live RTC control client', () => {
         })).rejects.toThrow('room refresh unavailable');
     });
 
-    it('rejects readiness when the browser runtime is missing', async () => {
-        vi.stubGlobal('window', {});
-
-        await expect(control.waitForPeerReadiness({
-            runId: 'run-readiness',
-            agent,
-            expectedPeerIds: ['session-b'],
-            suffix: 'delivery',
-            startedAtMs: 100
-        })).rejects.toThrow('room refresh');
-    });
-
     it('does not report readiness after room refresh exhausts the shared deadline', async () => {
-        vi.stubGlobal('window', {
-            __blackBoxRallar: {
-                refreshRoom: async () => {
-                    nowMs = 60_101;
-                }
-            }
+        refreshRoom.mockImplementation(async () => {
+            nowMs = 60_101;
         });
 
         await expect(control.waitForPeerReadiness({
@@ -182,7 +154,7 @@ describe('live RTC control client', () => {
             targetSessionId: 'session-b',
             frames: ['received-wire-frame']
         });
-        expect(JSON.parse(artifact)).toEqual({
+        expect(normalizeJson(JSON.parse(artifact))).toEqual({
             observation: 'received-protocol-nack',
             runId: 'run-nack',
             agentId: 'agent-a',

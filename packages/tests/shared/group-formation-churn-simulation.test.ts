@@ -1,7 +1,12 @@
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import { toOverlayInfoForSession } from '@shared/api/overlay-topology.ts';
-import { resetOverlayAdoptionDiagnostics, setOverlayById } from '@shared/repository/overlays-repository.ts';
-import { describe, expect, it } from 'vitest';
+import { resetOverlayAdoptionDiagnostics, setAcceptedOverlayById } from '@shared/repository/overlays-repository.ts';
+// dprint-ignore
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
 import {
     createRingTopologySnapshot,
     createSimulatedClient,
@@ -32,7 +37,7 @@ describe('group formation churn simulation', () => {
             ringShift: 1
         });
         for (const client of formed.clients) {
-            setOverlayById(
+            setAcceptedOverlayById(
                 formed.overlayId,
                 toOverlayInfoForSession(republished, client.sessionId),
                 client.repositoryManager
@@ -57,7 +62,7 @@ describe('group formation churn simulation', () => {
             ringShift: 7
         });
         for (const client of formed.clients) {
-            setOverlayById(
+            setAcceptedOverlayById(
                 formed.overlayId,
                 toOverlayInfoForSession(reshuffled, client.sessionId),
                 client.repositoryManager
@@ -96,7 +101,7 @@ describe('group formation churn simulation', () => {
         });
         for (const client of formed.clients) {
             for (const epoch of [reshuffled, revertedToFormedEdges]) {
-                setOverlayById(
+                setAcceptedOverlayById(
                     formed.overlayId,
                     toOverlayInfoForSession(epoch, client.sessionId),
                     client.repositoryManager
@@ -131,7 +136,7 @@ describe('group formation churn simulation', () => {
             ringShift: 7
         });
         for (const client of formed.clients) {
-            setOverlayById(
+            setAcceptedOverlayById(
                 formed.overlayId,
                 toOverlayInfoForSession(reshuffled, client.sessionId),
                 client.repositoryManager
@@ -154,18 +159,18 @@ describe('group formation churn simulation', () => {
     });
 });
 
-type FormedClients = Readonly<{
-    group: ReturnType<typeof createSimulationGroupSnapshot>;
-    sessionIds: readonly string[];
-    overlayId: string;
-    clients: readonly SimulatedClient[];
-    formationDialCount: number;
-}>;
+interface FormedClients {
+    readonly group: ReturnType<typeof createSimulationGroupSnapshot>;
+    readonly sessionIds: readonly string[];
+    readonly overlayId: string;
+    readonly clients: readonly SimulatedClient[];
+    readonly formationDialCount: number;
+}
 
-type FormedClientOptions = Readonly<{
-    overlayTransitionGraceMs?: number;
-    now?: () => number;
-}>;
+interface FormedClientOptions {
+    readonly overlayTransitionGraceMs?: number;
+    readonly now?: () => number;
+}
 
 async function createFormedClients(options: FormedClientOptions = {}): Promise<FormedClients> {
     resetOverlayAdoptionDiagnostics();
@@ -189,7 +194,7 @@ async function createFormedClients(options: FormedClientOptions = {}): Promise<F
         })
     );
     for (const client of clients) {
-        setOverlayById(
+        setAcceptedOverlayById(
             overlayId,
             toOverlayInfoForSession(formedTopology, client.sessionId),
             client.repositoryManager

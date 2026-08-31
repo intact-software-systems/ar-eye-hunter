@@ -1,13 +1,16 @@
-import { type GroupMutationIdempotencyRecord, type GroupMutationRead } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
+import { type GroupMutationIdempotencyRecord } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
 import { groupStateGroupStorageKey } from '@shared-server/rallar-system/group-state/persistence/aggregate/group-aggregate-storage-keys.ts';
-import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
 import { groupStateIdempotencyStorageKey } from '@shared-server/rallar-system/group-state/persistence/idempotency/group-idempotency-storage-key.ts';
 import type { JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
-import type { AuditStamp, Group } from '@shared/api/group-types.ts';
-import { describe, expect, it, vi } from 'vitest';
+import type { Group } from '@shared/api/group-types.ts';
+import {
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
 import { FakeRuntimeStateRepository } from '../../../runtime-state/test-support/fake-runtime-state-repository.ts';
-import { groupMemberStorageKey, groupRef, groupStorageKey, storedEntry } from '../mutation/group-mutation-test-runtime.ts';
 import { createIdentityMutationRead } from './group-state-persistence-mutation-read-fixtures.ts';
 
 describe('GroupStateRepository persistence', () => {
@@ -220,13 +223,6 @@ describe('GroupStateRepository persistence', () => {
                 }
             ],
             [
-                'no-op receipt with a divergent predecessor revision',
-                {
-                    ...valid,
-                    receipt: { ...valid.receipt, acceptedStorageRevision: 1 }
-                }
-            ],
-            [
                 'no-op receipt with an unexpected outbox effect',
                 {
                     ...valid,
@@ -259,18 +255,6 @@ describe('GroupStateRepository persistence', () => {
                         ...valid.receipt,
                         outcome: 'rejected',
                         acceptedStorageRevision: null,
-                        rejection: 'rejected'
-                    }
-                }
-            ],
-            [
-                'rejected receipt with a divergent predecessor revision',
-                {
-                    ...valid,
-                    receipt: {
-                        ...valid.receipt,
-                        outcome: 'rejected',
-                        acceptedStorageRevision: 1,
                         rejection: 'rejected'
                     }
                 }
@@ -325,6 +309,28 @@ describe('GroupStateRepository persistence', () => {
         await expect(
             validRepository.findIdempotentGroupMutationReceipt(ref, requestId)
         ).resolves.toEqual(valid);
+
+        const fencedRequestId = 'authority-fenced-no-op-request';
+        const authorityFencedNoOp: GroupMutationIdempotencyRecord = {
+            ...valid,
+            requestId: fencedRequestId,
+            receipt: {
+                ...valid.receipt,
+                commandId: fencedRequestId,
+                requestId: fencedRequestId,
+                acceptedStorageRevision: 7
+            }
+        };
+        await expect(
+            validRepository.insertIdempotentGroupMutationReceipt(
+                ref,
+                fencedRequestId,
+                authorityFencedNoOp
+            )
+        ).resolves.toMatchObject({ status: 'applied', revision: 0 });
+        await expect(
+            validRepository.findIdempotentGroupMutationReceipt(ref, fencedRequestId)
+        ).resolves.toEqual(authorityFencedNoOp);
 
         const absentRequestId = 'absent-group-rejected-request';
         const absentRejected: GroupMutationIdempotencyRecord = {

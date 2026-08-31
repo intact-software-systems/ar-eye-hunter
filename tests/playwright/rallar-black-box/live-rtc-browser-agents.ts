@@ -1,4 +1,6 @@
 import { expect, type BrowserContext } from '@playwright/test';
+import { toError } from '@shared/resilience/to-error.ts';
+import type { BlackBoxRallarRoomRefreshOptions } from '../../../packages/shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-runtime-contract.ts';
 
 import { openTab } from './full-stack-helpers.ts';
 import type { LiveRtcControlClient } from './live-rtc-control-client.ts';
@@ -80,21 +82,46 @@ export async function openLiveRtcBrowserAgent(
             prefix: input.prefix,
             agentId: input.agentId,
             actor: input.actor,
-            connection: input.connection
+            connection: input.connection,
+            refreshRoom: async (options) =>
+                await page.evaluate(refreshLiveRtcBrowserRoom, { timeoutMs: options.timeoutMs })
         };
     }
     catch (error) {
-        await context.close().catch(() => undefined);
-        throw error;
+        try {
+            await context.close();
+        }
+        catch (cleanupCause) {
+            console.error('Failed to close browser context after startup failure', toError(cleanupCause));
+        }
+        throw toError(error);
     }
+}
+
+/** Serialized in the owned browser page; imports are type-only at this boundary. */
+export async function refreshLiveRtcBrowserRoom(options: BlackBoxRallarRoomRefreshOptions): Promise<void> {
+    if (!('__blackBoxRallar' in window)) {
+        throw new Error('RTC room refresh requires the browser Rallar runtime.');
+    }
+    const runtime = window.__blackBoxRallar;
+    if (
+        !runtime || typeof runtime !== 'object' || !('refreshRoom' in runtime) ||
+        typeof runtime.refreshRoom !== 'function'
+    ) {
+        throw new Error('RTC room refresh requires the browser Rallar runtime.');
+    }
+    await runtime.refreshRoom(options);
 }
 
 export async function closeLiveRtcBrowserAgentContexts(
     agents: readonly Pick<LiveRtcControlClient.Agent, 'context'>[]
-): Promise<void> {
-    await Promise.all(
-        agents.map((agent) => agent.context.close().catch(() => undefined))
-    );
+): Promise<readonly Error[]> {
+    const results = await Promise.allSettled(agents.map(async (agent) => await agent.context.close()));
+    const errors = results.flatMap((result) => result.status === 'rejected' ? [toError(result.reason)] : []);
+    for (const error of errors) {
+        console.error('Failed to close live RTC browser context', error);
+    }
+    return errors;
 }
 
 function toLiveRtcBrowserAgentQuery(input: OpenLiveRtcBrowserAgentInput): URLSearchParams {

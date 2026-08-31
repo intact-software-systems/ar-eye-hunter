@@ -1,13 +1,22 @@
+import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import { isGroupActive, isSessionInGroup } from '@shared/api/group-client-views.ts';
-import type { GroupSnapshot as GroupStateSnapshot } from '@shared/api/group-types.ts';
+import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { createAndSetBootstrapOverlays, type BootstrapOverlayPolicy } from '@shared/repository/overlay-bootstrap.ts';
 import * as overlaysRepository from '@shared/repository/overlays-repository.ts';
 import { resolveBootstrapDegree } from '@shared/rtc/bootstrap-peer-selection.ts';
-import type { WebRtcGroupManager } from '@shared/services/WebRtcGroupManager.ts';
+import type { WebRtcGroupManager } from '@shared/services/web-rtc-group-manager.ts';
 
-export type BootstrapOverlayPolicyInput = Readonly<{
-    bootstrapDegree: number;
-}>;
+export interface BootstrapOverlayPolicyInput {
+    readonly bootstrapDegree: number;
+}
+
+export interface GroupSnapshotRtcSyncPort
+    extends Pick<WebRtcGroupManager, 'delete' | 'has' | 'ensureAllGroupsConnected'> {
+    // Snapshot adoption waits for reconciliation, but does not read the manager's service result.
+    acceptGroupUpdate(
+        snapshot: GroupSnapshot
+    ): Promise<void | Awaited<ReturnType<WebRtcGroupManager['acceptGroupUpdate']>>>;
+}
 
 export function resolveBootstrapOverlayPolicy(
     input: BootstrapOverlayPolicyInput | undefined,
@@ -29,19 +38,21 @@ export function isSameBootstrapOverlayPolicy(
 }
 
 export async function acceptGroupSnapshotUpdate(
-    snapshot: GroupStateSnapshot,
-    webRtcGroupManager: WebRtcGroupManager,
+    snapshot: GroupSnapshot,
+    webRtcGroupManager: GroupSnapshotRtcSyncPort,
     bootstrapOverlayPolicy: BootstrapOverlayPolicy
 ): Promise<void> {
     if (!isGroupActive(snapshot)) {
-        overlaysRepository.removeOverlayByGroupRef(snapshot.group);
+        clearGroupOverlayRoles(snapshot);
+        await waitForGroupOverlayRolesIdle();
 
         await webRtcGroupManager.delete(snapshot.group);
         return;
     }
 
     if (!isSessionInGroup(snapshot, bootstrapOverlayPolicy.localSessionId)) {
-        overlaysRepository.removeOverlayByGroupRef(snapshot.group);
+        clearGroupOverlayRoles(snapshot);
+        await waitForGroupOverlayRolesIdle();
         if (webRtcGroupManager.has(snapshot.group)) {
             await webRtcGroupManager.delete(snapshot.group, { retainConnections: true });
         }
@@ -51,15 +62,33 @@ export async function acceptGroupSnapshotUpdate(
         return;
     }
 
+    overlaysRepository.reconcileAcceptedOverlayIdentity({
+        overlayId: toScopedOverlayId(snapshot.group),
+        acceptedIdentity: snapshot.group.acceptedLayoutIdentity ?? undefined
+    });
     createAndSetBootstrapOverlays([snapshot], bootstrapOverlayPolicy);
+    await waitForGroupOverlayRolesIdle();
     await webRtcGroupManager.acceptGroupUpdate(snapshot);
 }
 
 export async function acceptGroupSnapshotRemoval(
-    snapshot: GroupStateSnapshot,
-    webRtcGroupManager: WebRtcGroupManager
+    snapshot: GroupSnapshot,
+    webRtcGroupManager: Pick<WebRtcGroupManager, 'delete'>
 ): Promise<void> {
-    overlaysRepository.removeOverlayByGroupRef(snapshot.group);
+    clearGroupOverlayRoles(snapshot);
+    await waitForGroupOverlayRolesIdle();
 
     await webRtcGroupManager.delete(snapshot.group);
+}
+
+function clearGroupOverlayRoles(snapshot: GroupSnapshot): void {
+    overlaysRepository.removePlannedOverlayByGroupRef(snapshot.group);
+    overlaysRepository.removeAcceptedOverlayByGroupRef(snapshot.group);
+}
+
+async function waitForGroupOverlayRolesIdle(): Promise<void> {
+    await Promise.all([
+        overlaysRepository.waitForPlannedOverlayChangesIdle(),
+        overlaysRepository.waitForAcceptedOverlayChangesIdle()
+    ]);
 }

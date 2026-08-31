@@ -1,9 +1,6 @@
 import assert from 'node:assert/strict';
 
-import {
-    createPSqlResourceInboxRepository,
-    type PSqlResourceInboxRepository
-} from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
+import { createPSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 import { ResourceInboxInvariantCorruptionError } from '@shared-server/queuebox/postgres/p-sql-resource-inbox-entry-repository.ts';
 import { mutationDescriptor } from '@shared-server/rallar-system/group-state/group-mutation-authority.ts';
 import { createGroupStateService } from '@shared-server/rallar-system/group-state/group-state-service.ts';
@@ -315,7 +312,7 @@ Deno.test(
             const persistedAuthority = await toPersistedAuthSessionFixture(authority);
             const service = createGroupStateService({
                 readPlannedLayoutRow: () => Promise.resolve(null),
-            readAcceptedLayoutRow: () => Promise.resolve(null),
+                readAcceptedLayoutRow: () => Promise.resolve(null),
                 runtimeRepository: runtime,
                 groupStateEventStore: new PSqlGroupStateEventRepository(sql),
                 authSessionRepository: {
@@ -418,7 +415,7 @@ Deno.test(
             const persistedAuthority = await toPersistedAuthSessionFixture(authority);
             const service = createGroupStateService({
                 readPlannedLayoutRow: () => Promise.resolve(null),
-            readAcceptedLayoutRow: () => Promise.resolve(null),
+                readAcceptedLayoutRow: () => Promise.resolve(null),
                 runtimeRepository: runtime,
                 groupStateEventStore: new PSqlGroupStateEventRepository(sql),
                 authSessionRepository: {

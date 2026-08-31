@@ -1,4 +1,4 @@
-import type { GroupRef } from '@shared/api/group-types.ts';
+import type { GroupRef, GroupStateCausalRevision } from '@shared/api/group-types.ts';
 
 import {
     assertExactKeys,
@@ -47,11 +47,11 @@ export function validateGroupMutationIdempotencyRecord(
         'Stored group idempotency value'
     );
     validateGroupRef(value.aggregateRef);
-    validateScopedValue(value.aggregateRef as GroupRef, ref, 'Stored group idempotency aggregateRef');
+    validateScopedValue(value.aggregateRef, ref, 'Stored group idempotency aggregateRef');
     requireNonEmptyString(value.requestId, 'Stored group idempotency requestId');
     validateCommandHash(value.commandHash, 'Stored group idempotency commandHash');
-    validateMutationReceipt(value.receipt, ref, 'Stored group idempotency receipt');
-    const receipt = value.receipt as GroupMutationReceipt;
+    const receipt = value.receipt;
+    validateMutationReceipt(receipt, ref, 'Stored group idempotency receipt');
     if (receipt.commandHash !== value.commandHash) {
         throw new TypeError('Stored group idempotency hashes differ');
     }
@@ -67,7 +67,11 @@ export function validateGroupMutationIdempotencyRecord(
     }
 }
 
-export function validateMutationReceipt(value: unknown, ref: GroupRef, label: string): void {
+export function validateMutationReceipt(
+    value: unknown,
+    ref: GroupRef,
+    label: string
+): asserts value is GroupMutationReceipt {
     const receipt = requireRecord(value, label);
     assertExactKeys(receipt, MUTATION_RECEIPT_KEYS, label);
     assertRequiredKeys(receipt, MUTATION_RECEIPT_KEYS, label);
@@ -145,10 +149,7 @@ export function validateCommandHash(value: unknown, label: string): void {
 }
 
 function validateMutationReceiptOutcome(receipt: Record<string, unknown>, label: string): void {
-    const causalRevision = receipt.causalRevision as {
-        readonly groupRevision: number;
-        readonly presenceRevision: number;
-    };
+    const causalRevision = receipt.causalRevision as GroupStateCausalRevision;
     const outboxIds = receipt.outboxIds as readonly string[];
     if (receipt.outcome === 'applied') {
         validateAppliedReceipt({ receipt, causalRevision, outboxIds, label });
@@ -161,7 +162,7 @@ function validateMutationReceiptOutcome(receipt: Record<string, unknown>, label:
         throw new TypeError(`${label} join-code fields require an applied outcome`);
     }
     if (receipt.outcome === 'no-op') {
-        validateNoOpReceipt(receipt, causalRevision, label);
+        validateNoOpReceipt(receipt, label);
         return;
     }
     validateRejectedReceipt(receipt, causalRevision, label);
@@ -169,7 +170,7 @@ function validateMutationReceiptOutcome(receipt: Record<string, unknown>, label:
 
 interface ValidateAppliedReceiptInput {
     readonly receipt: Record<string, unknown>;
-    readonly causalRevision: { readonly groupRevision: number; };
+    readonly causalRevision: GroupStateCausalRevision;
     readonly outboxIds: readonly string[];
     readonly label: string;
 }
@@ -192,23 +193,22 @@ function validateAppliedReceipt({
     }
 }
 
+// Physical storage revisions and semantic group revisions are independent:
+// presence writes advance the group row as an authority fence without changing
+// the group snapshot, while reincarnation can restore a newer semantic revision.
 function validateNoOpReceipt(
     receipt: Record<string, unknown>,
-    causalRevision: { readonly groupRevision: number; },
     label: string
 ): void {
     requirePositiveSafeInteger(receipt.snapshotVersion, `${label} no-op snapshotVersion`);
-    if (
-        receipt.acceptedStorageRevision === null ||
-        causalRevision.groupRevision !== (receipt.acceptedStorageRevision as number) + 1
-    ) {
-        throw new TypeError(`${label} no-op revision differs from its predecessor`);
+    if (receipt.acceptedStorageRevision === null) {
+        throw new TypeError(`${label} no-op acceptedStorageRevision is required`);
     }
 }
 
 function validateRejectedReceipt(
     receipt: Record<string, unknown>,
-    causalRevision: { readonly groupRevision: number; readonly presenceRevision: number; },
+    causalRevision: GroupStateCausalRevision,
     label: string
 ): void {
     if (receipt.acceptedStorageRevision === null) {
@@ -222,7 +222,4 @@ function validateRejectedReceipt(
         return;
     }
     requirePositiveSafeInteger(receipt.snapshotVersion, `${label} rejected snapshotVersion`);
-    if (causalRevision.groupRevision !== (receipt.acceptedStorageRevision as number) + 1) {
-        throw new TypeError(`${label} rejected revision differs from its predecessor`);
-    }
 }

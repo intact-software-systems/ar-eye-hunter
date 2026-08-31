@@ -1,33 +1,18 @@
-import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import {
+    afterEach,
+    beforeEach,
+    expect,
+    it,
+    vi
+} from 'vitest';
 
-import { facade, loadRuntime, resetFacade, topics } from './browser-rallar-runtime-test-harness.ts';
+import {
+    facade,
+    loadRuntime,
+    resetFacade,
+    topics
+} from './browser-rallar-runtime-test-harness.ts';
 import { CrdtDocumentTestDouble } from './crdt-document-test-double.ts';
-
-interface CrdtTestDeferred<T> {
-    readonly promise: Promise<T>;
-    resolve(value: T): void;
-}
-
-interface CrdtTestDeferredState<T> {
-    resolve?: (value: T) => void;
-}
-
-function createCrdtTestDeferred<T>(): CrdtTestDeferred<T> {
-    const state: CrdtTestDeferredState<T> = {};
-    const promise = new Promise<T>((resolve) => {
-        state.resolve = resolve;
-    });
-
-    return {
-        promise,
-        resolve: (value) => {
-            if (!state.resolve) {
-                throw new Error('CRDT test deferred was resolved before construction completed.');
-            }
-            state.resolve(value);
-        }
-    };
-}
 
 beforeEach(() => {
     resetFacade();
@@ -38,7 +23,7 @@ afterEach(() => {
 });
 
 it('revalidates queued live CRDT bootstrap before mutating the facade', async () => {
-    const firstConnect = createCrdtTestDeferred<object>();
+    const firstConnect = Promise.withResolvers<void>();
     facade.behavior.connect.mockReturnValueOnce(firstConnect.promise);
     facade.behavior.crdtOpen.mockResolvedValueOnce(
         new CrdtDocumentTestDouble({
@@ -74,7 +59,7 @@ it('revalidates queued live CRDT bootstrap before mutating the facade', async ()
         'Connected Rallar identity, scope, or room changes require close first.'
     );
 
-    firstConnect.resolve({});
+    firstConnect.resolve(undefined);
     await connecting;
     await openingFailure;
     expect(facade.records.configurationWrites).not.toContainEqual({
@@ -84,7 +69,7 @@ it('revalidates queued live CRDT bootstrap before mutating the facade', async ()
 });
 
 it('reserves CRDT handles before awaiting document creation', async () => {
-    const openedDocument = createCrdtTestDeferred<CrdtDocumentTestDouble>();
+    const openedDocument = Promise.withResolvers<CrdtDocumentTestDouble>();
     facade.behavior.crdtOpen.mockReturnValueOnce(openedDocument.promise);
     const runtime = await loadRuntime();
     const opening = runtime.crdt.open({
@@ -113,7 +98,7 @@ it('reserves CRDT handles before awaiting document creation', async () => {
 });
 
 it('waits for a late CRDT open and disposes the document during close', async () => {
-    const openedDocument = createCrdtTestDeferred<CrdtDocumentTestDouble>();
+    const openedDocument = Promise.withResolvers<CrdtDocumentTestDouble>();
     facade.behavior.crdtOpen.mockReturnValueOnce(openedDocument.promise);
     const runtime = await loadRuntime();
     const document = new CrdtDocumentTestDouble({
@@ -193,7 +178,7 @@ it('cancels a sleeping CRDT wait before close cleanup', async () => {
 it('rejects a queued CRDT wait before it starts polling after close', async () => {
     vi.useFakeTimers();
     try {
-        const applyCompletion = createCrdtTestDeferred<void>();
+        const applyCompletion = Promise.withResolvers<void>();
         const document = new CrdtDocumentTestDouble({
             documentId: 'queued-wait-during-close',
             initialValue: { title: 'initial' },
@@ -252,7 +237,7 @@ it('rejects a queued CRDT wait before it starts polling after close', async () =
 });
 
 it('rejects a CRDT wait while close drains its in-flight sync', async () => {
-    const syncCompletion = createCrdtTestDeferred<void>();
+    const syncCompletion = Promise.withResolvers<void>();
     const document = new CrdtDocumentTestDouble({
         documentId: 'sync-wait-during-close',
         initialValue: { title: 'initial' },
@@ -297,7 +282,7 @@ it('rejects a CRDT wait while close drains its in-flight sync', async () => {
 });
 
 it('does not close a CRDT document twice when explicit close races runtime close', async () => {
-    const closeCompletion = createCrdtTestDeferred<void>();
+    const closeCompletion = Promise.withResolvers<void>();
     const document = new CrdtDocumentTestDouble({
         documentId: 'doc-closing',
         initialValue: { title: 'initial' },
@@ -326,7 +311,7 @@ it('does not close a CRDT document twice when explicit close races runtime close
 });
 
 it('does not close a destroyed CRDT document when destroy races runtime close', async () => {
-    const destroyCompletion = createCrdtTestDeferred<void>();
+    const destroyCompletion = Promise.withResolvers<void>();
     const document = new CrdtDocumentTestDouble({
         documentId: 'doc-destroying',
         initialValue: { title: 'initial' },

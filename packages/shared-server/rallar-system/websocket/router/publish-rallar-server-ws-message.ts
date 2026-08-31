@@ -1,7 +1,9 @@
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import type { ALOutboundEnqueueResult, ALOutboundEnqueueStatus } from '@shared/alm/ALOutboundMessageRuntime.ts';
+import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import type { WsServerLiveSendResult } from '@shared/services/ws-queue-box-server/ws-queue-box-server-contracts.ts';
 import type { WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
+
 import type {
     RallarServerWsFanout,
     RallarServerWsPublishResult,
@@ -13,6 +15,7 @@ export interface PublishRallarServerWsMessageInput {
     readonly message: ALMessage;
     readonly fanout: RallarServerWsFanout;
     readonly wakeOutbox?: () => void;
+    readonly authorizedRoomSnapshot?: GroupSnapshot;
 }
 
 export async function publishRallarServerWsMessage(
@@ -35,7 +38,7 @@ export async function publishRallarServerWsMessage(
             return toOutboxPublishResult(input.message, input.fanout, result);
         }
         case 'live-only': {
-            const result = input.service.sendToTargetsWithResult(input.message);
+            const result = input.service.sendToTargetsWithResult(input.message, input.authorizedRoomSnapshot);
             if (result.status === 'no-recipients') {
                 console.warn(`Rallar server WS topic had no recipients: ${input.message.route.topicId}`);
             }

@@ -1,12 +1,18 @@
 import { toWebRtcGroupKey } from '@shared/api/api-type-utils.ts';
-import { GroupId, OverlayInfo, PeerId } from '../api/api-config.ts';
+import { toError } from '../resilience/to-error.ts';
+// dprint-ignore
+import type {
+    GroupId,
+    OverlayInfo,
+    PeerId
+} from '../api/api-config.ts';
 import {
     readActiveClientSessionIds,
     type AnyClientPresence,
     type AnyGroupPresence
 } from '../api/group-client-views.ts';
 import type { GroupRef } from '../api/group-types.ts';
-import { ReadableKeyedValues } from '../cache/RepositoryInterfaces.ts';
+import type { ReadableKeyedValues } from '../cache/RepositoryInterfaces.ts';
 import {
     isRtcRttCanonicalReporter,
     normalizeRttReportingDegreeLimit,
@@ -25,11 +31,10 @@ import {
 import {
     computeOverlayRttReportingDegreeLimit,
     computeServerDesiredPeerIds,
-    readAuthoritativeOverlayForGroup,
     readOverlayForGroup
 } from './webrtc-group-overlay-reading.ts';
-import { computeOutboundDialPlan } from './webrtc-outbound-dial-plan.ts';
-import { WebRtcConnectionService } from './WebRtcConnectionService.ts';
+import { computeOutboundDialPlan, type OutboundDialPlan } from './webrtc-outbound-dial-plan.ts';
+import type { WebRtcConnectionService } from './WebRtcConnectionService.ts';
 import { WebRtcGroupService } from './WebRtcGroupService.ts';
 
 export type {
@@ -44,6 +49,22 @@ export const DEFAULT_WEBRTC_MAX_PEER_CONNECTIONS = 10;
 export const MIN_WEBRTC_MAX_PEER_CONNECTIONS = 5;
 export const DEFAULT_WEBRTC_OVERLAY_TRANSITION_GRACE_MS = 15_000;
 
+interface RttReportingGroupPair {
+    readonly group: WebRtcGroupService;
+    readonly peerId: PeerId;
+    readonly activePeerSessionIds: readonly PeerId[];
+    readonly degreeLimit: number;
+}
+
+export namespace WebRtcGroupManager {
+    export interface Repositories {
+        readonly groupCache: ReadableKeyedValues<string, AnyGroupPresence>;
+        readonly clientCache: ReadableKeyedValues<string, AnyClientPresence>;
+        readonly plannedOverlayCache?: ReadableKeyedValues<string, OverlayInfo>;
+        readonly acceptedOverlayCache?: ReadableKeyedValues<string, OverlayInfo>;
+    }
+}
+
 export class WebRtcGroupManager {
     private readonly groupsByKey = new Map<string, WebRtcGroupService>();
     private readonly retainedPeerConnections = new Map<PeerId, RetainedPeerConnection>();
@@ -56,20 +77,20 @@ export class WebRtcGroupManager {
     public readonly rtcQBox: WebRtcConnectionService;
     public readonly groupCache: ReadableKeyedValues<string, AnyGroupPresence>;
     public readonly clientCache: ReadableKeyedValues<string, AnyClientPresence>;
-    public readonly overlayCache?: ReadableKeyedValues<string, OverlayInfo>;
+    private readonly plannedOverlayCache?: ReadableKeyedValues<string, OverlayInfo>;
+    private readonly acceptedOverlayCache?: ReadableKeyedValues<string, OverlayInfo>;
     public readonly options: WebRtcGroupManagerOptions;
 
     constructor(
         rtcQBox: WebRtcConnectionService,
-        groupCache: ReadableKeyedValues<string, AnyGroupPresence>,
-        clientCache: ReadableKeyedValues<string, AnyClientPresence>,
-        overlayCache?: ReadableKeyedValues<string, OverlayInfo>,
+        repositories: WebRtcGroupManager.Repositories,
         options: WebRtcGroupManagerOptions = {}
     ) {
         this.rtcQBox = rtcQBox;
-        this.groupCache = groupCache;
-        this.clientCache = clientCache;
-        this.overlayCache = overlayCache;
+        this.groupCache = repositories.groupCache;
+        this.clientCache = repositories.clientCache;
+        this.plannedOverlayCache = repositories.plannedOverlayCache;
+        this.acceptedOverlayCache = repositories.acceptedOverlayCache;
         this.options = options;
     }
 
@@ -163,22 +184,19 @@ export class WebRtcGroupManager {
         return Array.from(this.groupsByKey.values());
     }
 
-    /**
-     * Returns peer -> owning groups.
-     */
     peerOwners(): ReadonlyMap<PeerId, readonly GroupId[]> {
         return clonePeerOwners(this.readPeerOwnersCache());
     }
 
     private readPeerOwnersCache(): ReadonlyMap<PeerId, readonly GroupId[]> {
         if (!this.peerOwnersCache) {
-            this.peerOwnersCache = this.buildPeerOwners();
+            this.peerOwnersCache = this.readCurrentPeerOwners();
         }
 
         return this.peerOwnersCache;
     }
 
-    private buildPeerOwners(): ReadonlyMap<PeerId, readonly GroupId[]> {
+    private readCurrentPeerOwners(): ReadonlyMap<PeerId, readonly GroupId[]> {
         const owners = new Map<PeerId, GroupId[]>();
 
         for (const group of this.groupsByKey.values()) {
@@ -215,6 +233,8 @@ export class WebRtcGroupManager {
         const onlinePeerIdSet = this.onlinePeerIds();
         const onlinePeerIds = Array.from(onlinePeerIdSet);
         const onlineDesiredPeerIds = desiredPeerIds.filter((peerId) => onlinePeerIdSet.has(peerId));
+        const groupPresentDesiredPeerIds = this.groupPresentDesiredPeerIds();
+        const connectablePeerIds = desiredPeerIds.filter((peerId) => groupPresentDesiredPeerIds.has(peerId));
         const peerIdsWithNoReconnectableLanes = this.rtcQBox
             .peerIdsWithNoReconnectableLanes();
 
@@ -223,7 +243,7 @@ export class WebRtcGroupManager {
             desiredPeerIds,
             onlinePeerIds,
             onlineDesiredPeerIds,
-            connectablePeerIds: onlineDesiredPeerIds,
+            connectablePeerIds,
             peerIdsWithNoReconnectableLanes,
             peerOwners
         };
@@ -235,13 +255,11 @@ export class WebRtcGroupManager {
         const degreeLimit = normalizeRttReportingDegreeLimit(
             options.degreeLimit,
             computeOverlayRttReportingDegreeLimit(
-                this.overlayCache,
+                this.plannedOverlayCache,
                 this.groups().map((group) => group.groupRef)
             )
         );
-        const onlinePeerIds = this.onlinePeerIds();
-
-        return this.rttReportingCandidatePeerIds(onlinePeerIds, degreeLimit)
+        return this.rttReportingCandidatePeerIds(degreeLimit)
             .slice(0, degreeLimit);
     }
 
@@ -270,7 +288,7 @@ export class WebRtcGroupManager {
      * A reconcile request arriving while a run is in flight is never dropped:
      * the flag survives the run, and either the drain loop or the awaiting
      * caller re-runs against the newest state. Without this the single-flight
-     * guard silently lost the second trigger's mutations (M9).
+     * guard would silently lose the second trigger's mutations.
      */
     private async reconcileAllGroups(): Promise<void> {
         this.reconcileRequested = true;
@@ -312,16 +330,16 @@ export class WebRtcGroupManager {
         this.diagnostics.reconcileRunCount += 1;
         const peerOwners = this.peerOwners();
         const desiredPeerIds = new Set(peerOwners.keys());
-        const onlinePeerIds = this.onlinePeerIds();
+        const groupPresentDesiredPeerIds = this.groupPresentDesiredPeerIds();
         const peerIdsWithNoReconnectableLanes = new Set(
             this.rtcQBox.peerIdsWithNoReconnectableLanes()
         );
-        let knownPeerIds = new Set(this.rtcQBox.knownPeerIds());
+        const knownPeerIds = new Set(this.rtcQBox.knownPeerIds());
         this.removeRetainedDesiredPeers(desiredPeerIds);
         this.diagnostics.lastDesiredPeerCount = desiredPeerIds.size;
 
         const connectablePeerIds = Array.from(desiredPeerIds).filter(
-            (peerId) => onlinePeerIds.has(peerId)
+            (peerId) => groupPresentDesiredPeerIds.has(peerId)
         );
 
         const dialPlan = computeOutboundDialPlan({
@@ -332,13 +350,30 @@ export class WebRtcGroupManager {
                 (peerId) => !peerIdsWithNoReconnectableLanes.has(peerId)
             ),
             serverDesiredPeerIds: computeServerDesiredPeerIds(
-                this.overlayCache,
+                this.acceptedOverlayCache,
                 this.groups().map((group) => group.groupRef),
                 this.rtcQBox.input.sessionId
             )
         });
         this.diagnostics.connectDeferredBudgetCount += dialPlan.deferredPeerIds.length;
+        this.connectDesiredPeers(dialPlan, peerOwners);
 
+        const reconciledKnownPeerIds = new Set(this.rtcQBox.knownPeerIds());
+        this.removeUnknownRetainedPeers(reconciledKnownPeerIds);
+        this.retainUndesiredKnownPeers(desiredPeerIds, reconciledKnownPeerIds);
+        this.disconnectExpiredRetainedPeers(reconciledKnownPeerIds);
+        this.evictRetainedPeers(desiredPeerIds, reconciledKnownPeerIds);
+
+        this.options.onDesiredPeerIdsChanged?.({
+            desiredPeerIds: [...desiredPeerIds],
+            rttReportingPeerIds: this.rttReportingPeerIds({ degreeLimit: this.options.rttReportingDegreeLimit })
+        });
+    }
+
+    private connectDesiredPeers(
+        dialPlan: OutboundDialPlan,
+        peerOwners: ReadonlyMap<PeerId, readonly GroupId[]>
+    ): void {
         for (const peerId of dialPlan.peersToConnect) {
             this.diagnostics.connectAttemptCount += 1;
             const connected = this.rtcQBox.ensurePeerConnectionStarted(peerId);
@@ -355,12 +390,12 @@ export class WebRtcGroupManager {
                 );
             }
         }
+    }
 
-        knownPeerIds = new Set(this.rtcQBox.knownPeerIds());
-        this.removeUnknownRetainedPeers(knownPeerIds);
-        this.retainUndesiredKnownPeers(desiredPeerIds, knownPeerIds);
-        this.disconnectExpiredRetainedPeers(knownPeerIds);
-
+    private evictRetainedPeers(
+        desiredPeerIds: Set<PeerId>,
+        knownPeerIds: Set<PeerId>
+    ): void {
         for (const peerId of this.retainedPeersToEvict(desiredPeerIds, knownPeerIds)) {
             try {
                 this.rtcQBox.disconnectPeer(peerId, { resetAttemptBudget: false });
@@ -368,16 +403,14 @@ export class WebRtcGroupManager {
                 this.diagnostics.retainedEvictionCount += 1;
             }
             catch (error) {
-                console.error(`Failed to disconnect retained peer ${peerId}`, error);
+                console.error(`Failed to disconnect retained peer ${peerId}`, toError(error));
             }
         }
-
-        this.options.onDesiredPeerIdsChanged?.();
     }
 
     /**
      * An established edge the previous overlay wanted survives a replan for
-     * the grace window instead of being torn down in the same pass (M11) —
+     * the grace window instead of being torn down in the same pass —
      * a flapping overlay converges to zero churn because the edge is still
      * there when the next epoch wants it back.
      */
@@ -420,7 +453,7 @@ export class WebRtcGroupManager {
                 this.diagnostics.retainedExpiredCount += 1;
             }
             catch (error) {
-                console.error(`Failed to disconnect retained peer ${retained.peerId}`, error);
+                console.error(`Failed to disconnect retained peer ${retained.peerId}`, toError(error));
             }
         }
     }
@@ -444,7 +477,6 @@ export class WebRtcGroupManager {
 
     private onlinePeerIds(): Set<PeerId> {
         const onlinePeerIds = new Set<PeerId>();
-        const explicitlyOfflinePeerIds = new Set<PeerId>();
 
         for (const clientKey of this.clientCache.keys()) {
             const client = this.clientCache.read(clientKey) ??
@@ -456,28 +488,29 @@ export class WebRtcGroupManager {
             for (const sessionId of readActiveClientSessionIds(client)) {
                 onlinePeerIds.add(sessionId);
             }
-            if (!('principal' in client) && !client.isOnline) {
-                explicitlyOfflinePeerIds.add(client.sessionId);
-            }
-        }
-
-        // Group presence and client presence converge independently. A fresh
-        // room point read can therefore observe a newly active session before
-        // the client collection does. The group is authoritative for its own
-        // active sessions, so that cache lag must not suppress the RTC dial.
-        for (const group of this.groupsByKey.values()) {
-            for (const peerId of group.targetPeerIds()) {
-                if (!explicitlyOfflinePeerIds.has(peerId)) {
-                    onlinePeerIds.add(peerId);
-                }
-            }
         }
 
         return onlinePeerIds;
     }
 
+    private groupPresentDesiredPeerIds(): Set<PeerId> {
+        const peerIds = new Set<PeerId>();
+        for (const group of this.groupsByKey.values()) {
+            const groupPresentPeerIds = new Set(group.targetPeerIds());
+            for (const peerId of this.targetPeerIdsForGroup(group)) {
+                if (groupPresentPeerIds.has(peerId)) {
+                    peerIds.add(peerId);
+                }
+            }
+        }
+        return peerIds;
+    }
+
     private targetPeerIdsForGroup(group: WebRtcGroupService): readonly PeerId[] {
-        const overlay = readOverlayForGroup(this.overlayCache, group.groupRef);
+        const overlay = readOverlayForGroup(
+            this.acceptedOverlayCache,
+            group.groupRef
+        );
         if (overlay) {
             return overlay.nextHopSessionIds.filter(
                 (peerId) => peerId !== this.rtcQBox.input.sessionId
@@ -487,22 +520,18 @@ export class WebRtcGroupManager {
         return group.targetPeerIds();
     }
 
-    private rttReportingCandidatePeerIds(
-        onlinePeerIds: ReadonlySet<PeerId>,
-        degreeLimit: number
-    ): readonly PeerId[] {
+    private rttReportingCandidatePeerIds(degreeLimit: number): readonly PeerId[] {
         const selectedPeerIds: PeerId[] = [];
         const seen = new Set<PeerId>([this.rtcQBox.input.sessionId]);
         const groups = [...this.groupsByKey.values()]
             .sort((left, right) => left.groupKey.localeCompare(right.groupKey));
 
         for (const group of groups) {
-            const overlay = readAuthoritativeOverlayForGroup(
-                this.overlayCache,
+            const overlay = readOverlayForGroup(
+                this.plannedOverlayCache,
                 group.groupRef
             );
-            const activePeerSessionIds = group.targetPeerIds()
-                .filter((peerId) => onlinePeerIds.has(peerId));
+            const activePeerSessionIds = group.targetPeerIds();
             const selection = selectRttReportingPeers({
                 localSessionId: this.rtcQBox.input.sessionId,
                 degreeLimit,
@@ -526,7 +555,6 @@ export class WebRtcGroupManager {
                     !this.isRttReportingPeerEligibleAcrossSharedGroups(
                         peerId,
                         groups,
-                        onlinePeerIds,
                         degreeLimit
                     )
                 ) {
@@ -544,26 +572,24 @@ export class WebRtcGroupManager {
     private isRttReportingPeerEligibleAcrossSharedGroups(
         peerId: PeerId,
         groups: readonly WebRtcGroupService[],
-        onlinePeerIds: ReadonlySet<PeerId>,
         degreeLimit: number
     ): boolean {
         let hasSharedGroup = false;
 
         for (const group of groups) {
-            const activePeerSessionIds = group.targetPeerIds()
-                .filter((candidateId) => onlinePeerIds.has(candidateId));
+            const activePeerSessionIds = group.targetPeerIds();
             if (!activePeerSessionIds.includes(peerId)) {
                 continue;
             }
 
             hasSharedGroup = true;
             if (
-                !this.isRttReportingPairEligibleForGroup(
+                !this.isRttReportingPairEligibleForGroup({
                     group,
                     peerId,
                     activePeerSessionIds,
                     degreeLimit
-                )
+                })
             ) {
                 return false;
             }
@@ -573,23 +599,20 @@ export class WebRtcGroupManager {
     }
 
     private isRttReportingPairEligibleForGroup(
-        group: WebRtcGroupService,
-        peerId: PeerId,
-        activePeerSessionIds: readonly PeerId[],
-        degreeLimit: number
+        pair: RttReportingGroupPair
     ): boolean {
-        const overlay = readAuthoritativeOverlayForGroup(
-            this.overlayCache,
-            group.groupRef
+        const overlay = readOverlayForGroup(
+            this.plannedOverlayCache,
+            pair.group.groupRef
         );
         const localSelection = selectRttReportingPeers({
             localSessionId: this.rtcQBox.input.sessionId,
-            degreeLimit,
+            degreeLimit: pair.degreeLimit,
             overlayNextHopSessionIds: overlay?.nextHopSessionIds ?? [],
-            activePeerSessionIds,
-            groupKey: group.groupKey
+            activePeerSessionIds: pair.activePeerSessionIds,
+            groupKey: pair.group.groupKey
         });
-        if (localSelection.selectedPeerIds.includes(peerId)) {
+        if (localSelection.selectedPeerIds.includes(pair.peerId)) {
             return true;
         }
 
@@ -598,13 +621,13 @@ export class WebRtcGroupManager {
         }
 
         const peerSelection = selectRttReportingPeers({
-            localSessionId: peerId,
-            degreeLimit,
+            localSessionId: pair.peerId,
+            degreeLimit: pair.degreeLimit,
             activePeerSessionIds: [
                 this.rtcQBox.input.sessionId,
-                ...activePeerSessionIds
+                ...pair.activePeerSessionIds
             ],
-            groupKey: group.groupKey
+            groupKey: pair.group.groupKey
         });
 
         return peerSelection.selectedPeerIds.includes(this.rtcQBox.input.sessionId);

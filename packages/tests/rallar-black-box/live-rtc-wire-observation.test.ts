@@ -1,4 +1,10 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import {
+    afterEach,
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
 
 import { hasLiveRtcNotYetInSyncNack, installLiveRtcWireObservation } from '../../../tests/playwright/rallar-black-box/live-rtc-wire-observation.ts';
 

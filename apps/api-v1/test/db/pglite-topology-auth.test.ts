@@ -2,12 +2,10 @@ import { PSqlGroupStateEventRepository } from '@shared-server/rallar-system/stat
 import assert from 'node:assert/strict';
 
 import { configureSharedGraphRepositories } from '@shared-graph/repository/configure-shared-graph-repositories.ts';
-import {
-    createPSqlResourceInboxRepository,
-    type PSqlResourceInboxRepository
-} from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
+import { createPSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
 import { ResourceInboxResultsRepository } from '@shared-server/queuebox/postgres/resource-inbox-results-repository.ts';
+import { decodeAppInboxEnqueue } from '@shared-server/rallar-system/app-inbox/app-inbox-command-decoding.ts';
 import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
 import { type IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
 import { createGroupStateService } from '@shared-server/rallar-system/group-state/group-state-service.ts';
@@ -16,7 +14,8 @@ import { RtcRttInboxService } from '@shared-server/rallar-system/rtc-rtt/inbox/r
 import { RtcRttRepository } from '@shared-server/rallar-system/rtc-rtt/persistence/rtc-rtt-repository.ts';
 import { installRtcRttSystemTopic } from '@shared-server/rallar-system/rtc-rtt/topic/install-rtc-rtt-system-topic.ts';
 import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/topology/config/persistence/group-topology-config-repository.ts';
-import { toTopologyAppInboxCommand } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-command.ts';
+import { decodeTopologyAppInboxAuthority } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-authority.ts';
+import { readDurableTopologyAppInboxCommand, toTopologyAppInboxCommand } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-command.ts';
 import { type TopologyAppInboxCommand, type TopologyAppInboxRequestPayload } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-contracts.ts';
 import type { TopologyAppInboxResult } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-handler.ts';
 import { TopologyInboxService } from '@shared-server/rallar-system/topology/inbox/topology-inbox-service.ts';
@@ -25,7 +24,7 @@ import { RtcTopologyOutboxWriter } from '@shared-server/rallar-system/topology/m
 import { createGroupTopologyRuntimeOwners } from '@shared-server/rallar-system/topology/runtime/create-group-topology-runtime-owners.ts';
 import { RallarRtcTopologyService } from '@shared-server/rallar-system/topology/runtime/rallar-rtc-topology-service.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
-import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import {
     AppTopics,
     ConnectionContext,
@@ -59,10 +58,6 @@ interface ResourceInboxPayloadRow {
     readonly ri_resource: string;
 }
 
-interface TopologyCommandPayload {
-    readonly data: TopologyAppInboxCommand;
-}
-
 interface AcceptedTopologyHttpCommand {
     readonly command: TopologyAppInboxCommand;
     readonly requestPayload: TopologyAppInboxRequestPayload;
@@ -70,18 +65,9 @@ interface AcceptedTopologyHttpCommand {
     readonly result: TopologyAppInboxResult;
 }
 
-interface DurableTopologyAuthorityProof {
-    readonly principalId: string;
-    readonly sessionId: string;
-    readonly sessionIssuedAtEpochMs: number;
-}
-
-interface DurableTopologyAuthorityValue {
-    readonly proof: DurableTopologyAuthorityProof;
-}
-
-interface DurableTopologyAuthority {
-    readonly authority: DurableTopologyAuthorityValue;
+interface ProcessedTopologyCommand {
+    readonly command: TopologyAppInboxCommand;
+    readonly result: Awaited<ReturnType<typeof submitPGliteTopologyCommand>>;
 }
 
 Deno.test(
@@ -116,7 +102,7 @@ Deno.test(
             }
             const groupState = createGroupStateService({
                 readPlannedLayoutRow: () => Promise.resolve(null),
-            readAcceptedLayoutRow: () => Promise.resolve(null),
+                readAcceptedLayoutRow: () => Promise.resolve(null),
                 runtimeRepository: runtime,
                 groupStateEventStore: new PSqlGroupStateEventRepository(sql),
                 authSessionRepository: authSessions,
@@ -211,9 +197,10 @@ Deno.test(
         and ri_resource_id = ${first.requestId}
     `;
             assert.ok(persisted);
-            const message = JSON.parse(persisted.ri_resource) as ALMessage;
-            const envelope = JSON.parse(message.payload.resource) as TopologyCommandPayload;
-            assert.equal(envelope.data.capturedAtEpochMs, 1_000);
+            const message = decodePersistedALMessage(persisted.ri_resource);
+            const envelope = decodeAppInboxEnqueue(JSON.parse(message.payload.resource));
+            const command = readDurableTopologyAppInboxCommand(envelope.data);
+            assert.equal(command.capturedAtEpochMs, 1_000);
             assert.equal(
                 Number(
                     (await sql<NumericCountRow[]>`
@@ -349,20 +336,19 @@ Deno.test(
           and ri_resource_id = ${accepted.command.requestId}
       `;
                 assert.ok(durable);
-                const durableMessage = JSON.parse(durable.ri_resource) as ALMessage;
-                const durableEnvelope = JSON.parse(
-                    durableMessage.payload.resource
-                ) as DurableTopologyAuthority;
+                const durableMessage = decodePersistedALMessage(durable.ri_resource);
+                const durableEnvelope = decodeAppInboxEnqueue(JSON.parse(durableMessage.payload.resource));
+                const durableAuthority = decodeTopologyAppInboxAuthority(durableEnvelope.authority);
                 assert.equal(
-                    durableEnvelope.authority.proof.principalId,
+                    durableAuthority.proof.principalId,
                     authority.clientId
                 );
                 assert.equal(
-                    durableEnvelope.authority.proof.sessionId,
+                    durableAuthority.proof.sessionId,
                     authority.sessionId
                 );
                 assert.equal(
-                    durableEnvelope.authority.proof.sessionIssuedAtEpochMs,
+                    durableAuthority.proof.sessionIssuedAtEpochMs,
                     authority.issuedAtEpochMs
                 );
             }
@@ -379,7 +365,7 @@ Deno.test(
             const processCommand = async (
                 requestId: string,
                 payload: TopologyAppInboxRequestPayload
-            ) => {
+            ): Promise<ProcessedTopologyCommand> => {
                 const command = await toTopologyAppInboxCommand({
                     actor: first.actor,
                     groupRef,

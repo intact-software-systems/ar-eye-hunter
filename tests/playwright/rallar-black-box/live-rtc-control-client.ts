@@ -1,9 +1,21 @@
-import { expect, type APIRequestContext, type BrowserContext, type Page, type TestInfo } from '@playwright/test';
+import {
+    expect,
+    type APIRequestContext,
+    type BrowserContext,
+    type Page,
+    type TestInfo
+} from '@playwright/test';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
 import type { RtcBaselineJson } from '../../../packages/shared-rtc-bench/baseline/contracts/rtc-baseline-contracts.ts';
+import type { BlackBoxRallarRuntime } from '../../../packages/shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-runtime-contract.ts';
+import type { RallarBlackBoxTestCommand } from '../../../packages/shared-test/rallar-bb-test/types.ts';
 
+import {
+    buildLiveRtcAgentDiagnostics,
+    type LiveRtcAgentDiagnostics
+} from './live-rtc-agent-diagnostics.ts';
 import {
     jsonRecord,
     normalizeJson,
@@ -13,22 +25,56 @@ import {
     requiredJsonRecord,
     requiredString,
     stringArrayValue,
-    stringValue
+    stringValue,
+    type LiveRtcJsonRecord
 } from './live-rtc-evidence-json.ts';
-import {
-    buildLiveRtcAgentDiagnostics,
-    type LiveRtcAgentDiagnostics,
-    type LiveRtcDiagnosticsCheckpoint
-} from './live-rtc-performance-evidence.ts';
+import type { LiveRtcDiagnosticsCheckpoint } from './live-rtc-performance-evidence.ts';
 
 export namespace LiveRtcControlClient {
-    export interface Agent {
+    export interface FormationAgent {
+        readonly prefix: 'A' | 'B' | 'C';
+        readonly agentId: string;
+        readonly actor: string;
+        readonly connection: string;
+        readonly refreshRoom: BlackBoxRallarRuntime['refreshRoom'];
+    }
+
+    export interface UnexpectedDeliveryInput {
+        readonly runId: string;
+        readonly scenarios: readonly LiveRtcControlClient.DeliveryScenario[];
+    }
+
+    export interface ArtifactBundleInput {
+        readonly runId: string;
+        readonly commandIds: readonly string[];
+    }
+
+    export interface RunSummaryInput {
+        readonly testInfo: TestInfo;
+        readonly runId: string;
+    }
+
+    export interface ReceivedNackInput {
+        readonly testInfo: Pick<TestInfo, 'attach'>;
+        readonly runId: string;
+        readonly agentId: string;
+        readonly messageId: string;
+        readonly senderSessionId: string;
+        readonly targetSessionId: string;
+        readonly frames: readonly string[];
+    }
+
+    export interface Dependencies {
+        readonly request: APIRequestContext;
+        readonly baseUrl: string;
+        readonly diagnosticsOutDir?: string;
+        readonly monotonicNow: () => number;
+        readonly epochNow: () => number;
+    }
+
+    export interface Agent extends FormationAgent {
         context: Pick<BrowserContext, 'close'>;
         page: Page;
-        prefix: 'A' | 'B' | 'C';
-        agentId: string;
-        actor: string;
-        connection: string;
     }
 
     export interface Result {
@@ -64,7 +110,7 @@ export namespace LiveRtcControlClient {
         runId: string;
         agentId: string;
         commandId: string;
-        command: object;
+        command: RallarBlackBoxTestCommand;
         timeoutMs?: number;
     }
 
@@ -79,7 +125,7 @@ export namespace LiveRtcControlClient {
 
     export interface WaitForPeerReadinessInput {
         runId: string;
-        agent: Pick<Agent, 'agentId' | 'prefix'> & { page: Pick<Page, 'evaluate'>; };
+        agent: Pick<FormationAgent, 'agentId' | 'prefix' | 'refreshRoom'>;
         expectedPeerIds: readonly string[];
         suffix: string;
         startedAtMs: number;
@@ -87,7 +133,7 @@ export namespace LiveRtcControlClient {
 
     export interface WaitForPeerAbsenceInput {
         runId: string;
-        agent: Agent;
+        agent: Pick<FormationAgent, 'agentId' | 'prefix'>;
         departedPeerIds: readonly string[];
         suffix: string;
     }
@@ -113,15 +159,7 @@ export class LiveRtcControlClient {
     readonly #monotonicNow: () => number;
     readonly #epochNow: () => number;
 
-    constructor(
-        input: Readonly<{
-            request: APIRequestContext;
-            baseUrl: string;
-            diagnosticsOutDir?: string;
-            monotonicNow: () => number;
-            epochNow: () => number;
-        }>
-    ) {
+    constructor(input: LiveRtcControlClient.Dependencies) {
         this.#request = input.request;
         this.#baseUrl = input.baseUrl;
         this.#diagnosticsOutDir = input.diagnosticsOutDir;
@@ -185,7 +223,7 @@ export class LiveRtcControlClient {
 
     resultValue(
         result: LiveRtcControlClient.Result
-    ): { [key: string]: RtcBaselineJson; } {
+    ): LiveRtcJsonRecord {
         return jsonRecord(result.result?.value) ?? {};
     }
 
@@ -268,19 +306,7 @@ export class LiveRtcControlClient {
         if (timeoutMs <= 0) {
             throw new Error(`RTC room refresh for ${input.agent.agentId} exceeded the readiness deadline.`);
         }
-        await input.agent.page.evaluate(async (timeoutMs) => {
-            if (!('__blackBoxRallar' in window)) {
-                throw new Error('RTC room refresh requires the browser Rallar runtime.');
-            }
-            const runtime = window.__blackBoxRallar;
-            if (
-                !runtime || typeof runtime !== 'object' ||
-                !('refreshRoom' in runtime) || typeof runtime.refreshRoom !== 'function'
-            ) {
-                throw new Error('RTC room refresh requires the browser Rallar runtime.');
-            }
-            await runtime.refreshRoom({ timeoutMs });
-        }, timeoutMs);
+        await input.agent.refreshRoom({ timeoutMs });
         const readyAtMs = this.#monotonicNow();
         if (readyAtMs >= deadlineMs) {
             throw new Error(`RTC room refresh for ${input.agent.agentId} exceeded the readiness deadline.`);
@@ -314,10 +340,7 @@ export class LiveRtcControlClient {
     }
 
     async unexpectedDeliveryCount(
-        input: Readonly<{
-            runId: string;
-            scenarios: readonly LiveRtcControlClient.DeliveryScenario[];
-        }>
+        input: LiveRtcControlClient.UnexpectedDeliveryInput
     ): Promise<number> {
         const run = await this.fetchRun(input.runId);
         return countUnexpectedLiveRtcDeliveries({
@@ -327,10 +350,7 @@ export class LiveRtcControlClient {
     }
 
     async expectArtifactBundle(
-        input: Readonly<{
-            runId: string;
-            commandIds: readonly string[];
-        }>
+        input: LiveRtcControlClient.ArtifactBundleInput
     ): Promise<void> {
         const response = await this.#request.get(
             `${this.#baseUrl}/runs/${encodeURIComponent(input.runId)}/artifacts`
@@ -348,10 +368,7 @@ export class LiveRtcControlClient {
     }
 
     async attachRunSummary(
-        input: Readonly<{
-            testInfo: TestInfo;
-            runId: string;
-        }>
+        input: LiveRtcControlClient.RunSummaryInput
     ): Promise<void> {
         const run = await this.fetchRun(input.runId);
         const body = JSON.stringify(
@@ -430,15 +447,7 @@ export class LiveRtcControlClient {
     }
 
     async recordReceivedNack(
-        input: Readonly<{
-            testInfo: Pick<TestInfo, 'attach'>;
-            runId: string;
-            agentId: string;
-            messageId: string;
-            senderSessionId: string;
-            targetSessionId: string;
-            frames: readonly string[];
-        }>
+        input: LiveRtcControlClient.ReceivedNackInput
     ): Promise<void> {
         const { testInfo, ...evidence } = input;
         const body = JSON.stringify({ observation: 'received-protocol-nack', ...evidence }, null, 2);
@@ -508,7 +517,7 @@ function decodeControlRunSnapshot(
 
 function runtimeEventPayload(
     event: LiveRtcControlClient.Event
-): { [key: string]: RtcBaselineJson; } {
+): LiveRtcJsonRecord {
     const payload = jsonRecord(event.payload) ?? {};
     return typeof payload.kind === 'string'
         ? payload
@@ -517,17 +526,19 @@ function runtimeEventPayload(
 
 function messageData(
     event: LiveRtcControlClient.Event
-): { [key: string]: RtcBaselineJson; } {
+): LiveRtcJsonRecord {
     const runtimeEvent = runtimeEventPayload(event);
     const runtimePayload = jsonRecord(runtimeEvent.payload) ?? {};
     return jsonRecord(runtimePayload.data ?? runtimeEvent.data) ?? {};
 }
 
+export interface LiveRtcObservedDeliveries {
+    readonly events: readonly LiveRtcControlClient.Event[];
+    readonly scenarios: readonly LiveRtcControlClient.DeliveryScenario[];
+}
+
 export function countUnexpectedLiveRtcDeliveries(
-    input: Readonly<{
-        events: readonly LiveRtcControlClient.Event[];
-        scenarios: readonly LiveRtcControlClient.DeliveryScenario[];
-    }>
+    input: LiveRtcObservedDeliveries
 ): number {
     const scenarioById = new Map(
         input.scenarios.map((scenario) => [scenario.matrixId, scenario])

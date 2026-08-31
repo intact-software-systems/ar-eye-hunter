@@ -4,22 +4,28 @@ import {
 } from '@shared-web/browser/al-runtime/browser-al-runtime-stores.ts';
 import { createBrowserQueueBox } from '@shared-web/browser/queuebox/browser-queuebox-persistence.ts';
 import type { ALOutboundRuntimeDiagnosticsSink } from '@shared/alm/ALOutboundMessageRuntime.ts';
-import { ClientInfo, IceConfig, OverlayId } from '@shared/api/api-config.ts';
-import { WebRtcOverlayMulticaster } from '@shared/multicast/OverlayMulticastContracts.ts';
+import { defaultMaxMissedPings, defaultPingFrequencyMsecs } from '@shared/services/WebRtcHeartbeatService.ts';
+// dprint-ignore
+import type {
+    ClientInfo,
+    IceConfig,
+    OverlayId
+} from '@shared/api/api-config.ts';
+import type { WebRtcOverlayMulticaster } from '@shared/multicast/OverlayMulticastContracts.ts';
 import { WebRtcOverlayMulticastManager } from '@shared/multicast/WebRtcOverlayMulticastManager.ts';
 import { WebRtcOverlayMulticastService } from '@shared/multicast/WebRtcOverlayMulticastService.ts';
-import { ResilienceDto } from '@shared/queuebox/DequeueResourceEntryController.ts';
+import type { ResilienceDto } from '@shared/queuebox/DequeueResourceEntryController.ts';
 import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
 import * as overlaysRepository from '@shared/repository/overlays-repository.ts';
-import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
+import type { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
+import { WebRtcRxStreamerService } from '@shared/services/web-rtc-rx-streamer-service.ts';
 import {
     DEFAULT_WEB_RTC_PEER_CONNECTION_ATTEMPT_BUDGET_POLICY,
     DEFAULT_WEB_RTC_PEER_ESTABLISHMENT_TIMEOUT_POLICY,
     WebRtcConnectionService,
     type RtcDataChannelLaneConfig
 } from '@shared/services/WebRtcConnectionService.ts';
-import { WebRtcRxStreamerService } from '@shared/services/WebRtcRxStreamerService.ts';
-import { WsQueueBoxClientService } from '@shared/services/WsQueueBoxClientService.ts';
+import type { WsQueueBoxClientService } from '@shared/services/WsQueueBoxClientService.ts';
 import { WsRtcSignalingTransportUsingWsQBox } from '@shared/webrtc/WsRtcSignalingTransportUsingWsQBox.ts';
 
 /** Inputs for constructing the browser RTC overlay multicast owner. */
@@ -38,7 +44,7 @@ export function initialiseRtcOverlayMulticastManager(
         createBrowserQueueBox(`rtc-overlay-outbox-${webRtcConnectionService.input.sessionId}`),
         webRtcConnectionService,
         groupStateSnapshotsRepository.readableGroupStateSnapshotCache(),
-        overlaysRepository.readableOverlayCache(),
+        overlaysRepository.readableAcceptedOverlayCache(),
         (overlayId: OverlayId): WebRtcOverlayMulticaster =>
             new WebRtcOverlayMulticastService(overlayId, webRtcConnectionService),
         {
@@ -84,17 +90,14 @@ export function initialiseRtcRxStreamer(
     input: InitialiseRtcRxStreamerInput
 ): WebRtcRxStreamerService {
     const { webRtcOverlayMulticastManager, qboxEngine, clientData, resilience } = input;
-    const rtcRxStreamer: WebRtcRxStreamerService = new WebRtcRxStreamerService(
-        createBrowserQueueBox(`rtc-inbox-${clientData.sessionId}`),
-        webRtcOverlayMulticastManager,
-        {
-            sessionId: clientData.sessionId
-        },
-        {
-            inboundStores: resolveBrowserRtcRxALInboundRuntimeStores(clientData.sessionId)
-        }
-    )
-        .enableDefaultCallbacks();
+    const rtcRxStreamer: WebRtcRxStreamerService = new WebRtcRxStreamerService({
+        inbox: createBrowserQueueBox(`rtc-inbox-${clientData.sessionId}`),
+        multicast: webRtcOverlayMulticastManager,
+        sessionId: clientData.sessionId,
+        inboundStores: resolveBrowserRtcRxALInboundRuntimeStores(clientData.sessionId),
+        nowEpochMs: Date.now,
+        heartbeat: { maxMissedPings: defaultMaxMissedPings, pingFrequencyMsecs: defaultPingFrequencyMsecs }
+    });
 
     qboxEngine.includeTask(
         WebRtcRxStreamerService.ENQUEUE_TYPE,

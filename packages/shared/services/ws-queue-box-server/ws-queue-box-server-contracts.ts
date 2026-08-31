@@ -1,4 +1,5 @@
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
+import type { GroupSnapshot } from '../../api/group-types.ts';
 
 export interface WsServerResolvedRecipient {
     readonly peerId: string;
@@ -34,11 +35,13 @@ export interface WsServerTargetResolver {
     ) => readonly WsServerResolvedRecipient[];
     readonly resolveGroupRecipients?: (
         groupId: string,
-        message: ALMessage
+        message: ALMessage,
+        authorizedRoomSnapshot?: GroupSnapshot
     ) => readonly WsServerResolvedRecipient[];
     readonly resolveBroadcastRecipients?: (
         scope: 'room' | 'world' | 'all' | 'principal',
-        message: ALMessage
+        message: ALMessage,
+        authorizedRoomSnapshot?: GroupSnapshot
     ) => readonly WsServerResolvedRecipient[];
     readonly resolvePeerIdForConnection?: (
         connectionId: string,

@@ -1,9 +1,6 @@
 import assert from 'node:assert/strict';
 
-import {
-    createPSqlResourceInboxRepository,
-    type PSqlResourceInboxRepository
-} from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
+import { createPSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
 import { ResourceInboxResultsRepository } from '@shared-server/queuebox/postgres/resource-inbox-results-repository.ts';
 import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
@@ -13,6 +10,7 @@ import { requiresClientWrite } from '@shared-server/rallar-system/client-state/c
 import { createClientStateService } from '@shared-server/rallar-system/client-state/client-state-service.ts';
 import { toClientMutationIssuedSessionAuthority } from '@shared-server/rallar-system/client-state/mutation/client-mutation-authority.ts';
 import { toClientMutationCommand } from '@shared-server/rallar-system/client-state/mutation/client-mutation-command.ts';
+import type { ClientMutationComputedAppliedWrite } from '@shared-server/rallar-system/client-state/mutation/client-mutation-contracts.ts';
 import { toUpsertClientPrincipalMutationInput } from '@shared-server/rallar-system/client-state/mutation/command-input/to-upsert-client-principal-mutation-input.ts';
 import { ClientStateRepository } from '@shared-server/rallar-system/client-state/persistence/client-state-repository.ts';
 import { createGroupStateService } from '@shared-server/rallar-system/group-state/group-state-service.ts';
@@ -24,8 +22,8 @@ import { PSqlClientStateEventRepository } from '@shared-server/rallar-system/sta
 import { PSqlGroupStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-group-state-event-repository.ts';
 import { APP_OUTBOX_RTC_TOPOLOGY_TOPIC } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-entry.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
-import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
-import { GROUP_PRESENCE_SUMMARY_TOPIC as APP_OUTBOX_GROUP_PRESENCE_SUMMARY_TOPIC } from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
+import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
+import { GROUP_PRESENCE_SUMMARY_TOPIC } from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 import { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
@@ -200,7 +198,7 @@ Deno.test(
 );
 
 Deno.test(
-    'PGlite AppGroup commits group mutation and summary fan-out through fenced queue transactions',
+    'PGlite AppGroup commits group mutations, including active-member no-ops, through fenced queue transactions',
     async () => {
         await withPGliteSql(async (sql) => {
             const runtime = new PSqlRuntimeStateRepository(sql);
@@ -220,9 +218,20 @@ Deno.test(
             };
             const authSessions = new AuthSessionRepository(runtime);
             await authSessions.putSession(authority);
+            const joiningAuthorities = ['bob', 'carol'].map((clientId) => ({
+                clientId,
+                sessionId: `${clientId}-session`,
+                accessToken: `${clientId}-token`,
+                username: clientId,
+                issuedAtEpochMs: nowEpochMs - 1_000,
+                expiresAtEpochMs: FUTURE_MS
+            }));
+            for (const joiningAuthority of joiningAuthorities) {
+                await authSessions.putSession(joiningAuthority);
+            }
             const groupState = createGroupStateService({
                 readPlannedLayoutRow: () => Promise.resolve(null),
-            readAcceptedLayoutRow: () => Promise.resolve(null),
+                readAcceptedLayoutRow: () => Promise.resolve(null),
                 runtimeRepository: runtime,
                 groupStateEventStore: new PSqlGroupStateEventRepository(sql),
                 authSessionRepository: authSessions,
@@ -280,7 +289,12 @@ Deno.test(
                         createdByPrincipalId: authority.clientId,
                         actorPrincipalId: authority.clientId,
                         actorSessionId: authority.sessionId,
-                        requestId: 'pglite-app-group-create'
+                        requestId: 'pglite-app-group-create',
+                        lifecyclePolicy: {
+                            preset: 'managed',
+                            admission: { mode: 'open' },
+                            activation: { mode: 'manual' }
+                        }
                     }
                 }
             }, authority);
@@ -292,6 +306,54 @@ Deno.test(
             const result = await pending;
             assert.equal(result.right !== undefined, true);
 
+            for (const joiningAuthority of joiningAuthorities) {
+                const resourceId = `pglite-app-group-${joiningAuthority.clientId}-join`;
+                const join = appGroup.processAuthenticatedGroupEntryUntilCompletion({
+                    type: AppInboxType.GROUP_JOIN,
+                    resourceId,
+                    contextId: 'vertical-app:main:vertical-group',
+                    senderId: joiningAuthority.clientId,
+                    data: {
+                        scope: { applicationId: 'vertical-app', workspaceId: 'main' },
+                        groupId: 'vertical-group',
+                        request: {
+                            actorPrincipalId: joiningAuthority.clientId,
+                            actorSessionId: joiningAuthority.sessionId,
+                            requestId: resourceId
+                        }
+                    }
+                }, joiningAuthority);
+                await waitForPGliteQueueRow(sql, 'APP_INBOX', 'NEW');
+                await inboxReader.dequeueInbox(
+                    InboxQueueReader.INBOX_DEQUEUE_TYPES,
+                    toResilienceDto()
+                );
+                assert.equal((await join).left, undefined);
+            }
+
+            const duplicateJoin = appGroup.processAuthenticatedGroupEntryUntilCompletion({
+                type: AppInboxType.GROUP_JOIN,
+                resourceId: 'pglite-app-group-owner-rejoin',
+                contextId: 'vertical-app:main:vertical-group',
+                senderId: authority.clientId,
+                data: {
+                    scope: { applicationId: 'vertical-app', workspaceId: 'main' },
+                    groupId: 'vertical-group',
+                    request: {
+                        actorPrincipalId: authority.clientId,
+                        actorSessionId: authority.sessionId,
+                        requestId: 'pglite-app-group-owner-rejoin'
+                    }
+                }
+            }, authority);
+            await waitForPGliteQueueRow(sql, 'APP_INBOX', 'NEW');
+            await inboxReader.dequeueInbox(
+                InboxQueueReader.INBOX_DEQUEUE_TYPES,
+                toResilienceDto()
+            );
+            const duplicateJoinResult = await duplicateJoin;
+            assert.equal(duplicateJoinResult.left, undefined);
+
             const ref = {
                 applicationId: 'vertical-app',
                 workspaceId: 'main',
@@ -301,7 +363,7 @@ Deno.test(
                 (await new GroupStateRepository(runtime, new PSqlGroupStateEventRepository(runtime.sql)).findGroup(ref))?.displayName,
                 'Vertical Group'
             );
-            assert.equal((await new PSqlGroupStateEventRepository(sql).listGroupEvents(ref)).length, 1);
+            assert.equal((await new PSqlGroupStateEventRepository(sql).listGroupEvents(ref)).length, 3);
             const beforeSummary = await sql<ResourceInboxStatusRow[]>`
       select ri_type_id, ri_status from resource_inbox order by ri_row_id
     `;
@@ -310,14 +372,14 @@ Deno.test(
                     row.ri_type_id === 'APP_INBOX' &&
                     row.ri_status === 'COMPLETED'
                 ).length,
-                1
+                4
             );
             assert.equal(
                 beforeSummary.filter((row) =>
                     row.ri_type_id === 'APP_OUTBOX' &&
                     row.ri_status === 'NEW'
                 ).length,
-                1
+                3
             );
             assert.equal(beforeSummary.filter((row) => row.ri_type_id === 'WS_OUTBOX').length, 0);
             assert.equal(
@@ -326,7 +388,7 @@ Deno.test(
       select count(*) as count from resource_inbox_results
     `)[0]?.count
                 ),
-                1
+                4
             );
 
             await outboxReader.dequeueOutbox(
@@ -340,7 +402,7 @@ Deno.test(
             assertGroupPresenceSummaryAppToWsLifecycle(
                 afterSummary,
                 afterSummary
-                    .filter((row) => row.ri_topic_id === APP_OUTBOX_GROUP_PRESENCE_SUMMARY_TOPIC)
+                    .filter((row) => row.ri_topic_id === GROUP_PRESENCE_SUMMARY_TOPIC)
                     .map((row) => row.ri_resource_id)
             );
             assert.equal(
@@ -377,7 +439,7 @@ Deno.test(
             await authSessions.putSession(authority);
             const groupState = createGroupStateService({
                 readPlannedLayoutRow: () => Promise.resolve(null),
-            readAcceptedLayoutRow: () => Promise.resolve(null),
+                readAcceptedLayoutRow: () => Promise.resolve(null),
                 runtimeRepository: runtime,
                 groupStateEventStore: new PSqlGroupStateEventRepository(sql),
                 authSessionRepository: authSessions,
@@ -433,7 +495,7 @@ Deno.test(
             const [summaryKey] = await sql<ResourceInboxForeignKeyRow[]>`
       select ri_topic_id, ri_resource_id, fk_ext_bank_id
       from resource_inbox
-      where ri_topic_id = ${APP_OUTBOX_GROUP_PRESENCE_SUMMARY_TOPIC}
+      where ri_topic_id = ${GROUP_PRESENCE_SUMMARY_TOPIC}
     `;
             assert.ok(summaryKey);
             await sql`
@@ -451,7 +513,7 @@ Deno.test(
             };
             const reserved = await resourceInbox.entries.findAnyByKey(key);
             assert.ok(reserved);
-            const message = JSON.parse(reserved.resource) as ALMessage;
+            const message = decodePersistedALMessage(reserved.resource);
             const ref = {
                 applicationId: 'fence-app',
                 workspaceId: 'main',
@@ -487,7 +549,7 @@ Deno.test(
       select ri_topic_id, ri_type_id
       from resource_inbox
       where ri_type_id in ('WS_OUTBOX', 'APP_OUTBOX')
-        and ri_topic_id <> ${APP_OUTBOX_GROUP_PRESENCE_SUMMARY_TOPIC}
+        and ri_topic_id <> ${GROUP_PRESENCE_SUMMARY_TOPIC}
     `;
             assert.deepEqual(downstream, []);
         });
@@ -611,7 +673,7 @@ Deno.test(
             });
             const scope = { applicationId: 'pglite-app', workspaceId: 'pglite-workspace' };
 
-            const compute = async (principalId: string, commandId: string) => {
+            const prepareClientWrite = async (principalId: string, commandId: string): Promise<ClientMutationComputedAppliedWrite> => {
                 const authority = {
                     clientId: principalId,
                     accessToken: `${principalId}-token`,
@@ -655,7 +717,7 @@ Deno.test(
                 return computed;
             };
 
-            const committed = await compute('alice', 'pglite-client-commit');
+            const committed = await prepareClientWrite('alice', 'pglite-client-commit');
             await sql.begin(async (transaction) => {
                 await service.write(transaction, committed);
             });
@@ -671,7 +733,7 @@ Deno.test(
                 assert.equal((await outbox.entries.findByKey(entry.key))?.typeId, 'WS_OUTBOX');
             }
 
-            const rolledBack = await compute('bob', 'pglite-client-rollback');
+            const rolledBack = await prepareClientWrite('bob', 'pglite-client-rollback');
             await assert.rejects(
                 async () => {
                     await sql.begin(async (transaction) => {

@@ -1,6 +1,19 @@
 import type { Page } from '@playwright/test';
-import { lstat, mkdir, open, readFile, realpath } from 'node:fs/promises';
-import { dirname, isAbsolute, relative, resolve, sep } from 'node:path';
+import { toError } from '@shared/resilience/to-error.ts';
+import {
+    lstat,
+    mkdir,
+    open,
+    readFile,
+    realpath
+} from 'node:fs/promises';
+import {
+    dirname,
+    isAbsolute,
+    relative,
+    resolve,
+    sep
+} from 'node:path';
 import { deriveRtcBaselineExternalAttempts } from '../../../packages/shared-rtc-bench/baseline/catalog/rtc-baseline-workload-manifest.ts';
 import {
     decodeRtcBaselineEnvironment,
@@ -13,6 +26,7 @@ import {
 } from '../../../packages/shared-rtc-bench/baseline/contracts/rtc-baseline-artifact-validation.ts';
 import type {
     RtcBaselineAttemptLocatorDto,
+    RtcBaselineCaptureManifestDto,
     RtcBaselineCohortIdentityDto,
     RtcBaselineEnvironmentDto,
     RtcBaselineExternalAttemptDto,
@@ -21,21 +35,20 @@ import type {
     RtcBaselineJson,
     RtcBaselineRuntimeObservationDto,
     RtcBaselineSampleDto,
-    RtcBaselineSampleIdentityDto
+    RtcBaselineSampleIdentityDto,
+    RtcBaselineSampleOutcomeDto
 } from '../../../packages/shared-rtc-bench/baseline/contracts/rtc-baseline-contracts.ts';
 
 import {
-    exactStringArray,
+    compareLaneStates,
+    decodeAgentDiagnostics,
+    type LiveRtcAgentDiagnostics
+} from './live-rtc-agent-diagnostics.ts';
+import {
     isFiniteNonnegativeNumber,
     jsonRecord,
     normalizeJson,
-    numberValue,
-    requiredBoolean,
-    requiredJsonArray,
-    requiredJsonRecord,
-    requiredNonnegativeNumber,
-    requiredString,
-    requiredStringArray
+    requiredJsonRecord
 } from './live-rtc-evidence-json.ts';
 
 export interface LiveRtcPerformanceIdentity {
@@ -56,11 +69,7 @@ export interface LiveRtcPerformanceIdentity {
 export interface LiveRtcPerformanceProducer {
     provider: 'browser-rallar';
     browserCount: 3;
-    auth: Readonly<{
-        A: 'login' | 'restore';
-        B: 'login' | 'restore';
-        C: 'login' | 'restore';
-    }>;
+    auth: Readonly<Record<'A' | 'B' | 'C', 'login' | 'restore'>>;
     databaseProvider: 'memory' | 'postgres';
     databaseUrl: 'present' | 'absent';
     iceMode: 'repository-default' | 'local';
@@ -88,25 +97,6 @@ export interface LiveRtcPerformanceTiming {
     senderAgentId: string;
     receiverAgentIds: readonly string[];
     durationMs: number;
-}
-
-export interface LiveRtcAgentDiagnostics {
-    agentId: string;
-    settledPeerIds: readonly string[];
-    readyPeerIds: readonly string[];
-    laneStates: readonly LiveRtcLaneDiagnostics[];
-    connectionTimerActive: boolean;
-    peerCount: number;
-    connectedPeerCount: number;
-    relayPeerCount: number;
-    details: RtcBaselineJson;
-}
-
-export interface LiveRtcLaneDiagnostics {
-    peerId: string;
-    laneId: string;
-    isOpen: boolean;
-    isReconnectable: boolean;
 }
 
 export interface LiveRtcDiagnosticsCheckpoint {
@@ -224,13 +214,10 @@ function toLiveRtcAttemptSelection(
     if (missing.length > 0) {
         throw new Error(`Live RTC evidence environment is missing ${missing.join(', ')}.`);
     }
-    const [baselineId, caseId, inputKey, intendedPhase, ordinalRaw] = values as [
-        string,
-        string,
-        string,
-        string,
-        string
-    ];
+    const [baselineId, caseId, inputKey, intendedPhase, ordinalRaw] = values;
+    if (!baselineId || !caseId || !inputKey || !intendedPhase || !ordinalRaw) {
+        throw new Error('Live RTC evidence environment selection is incomplete.');
+    }
     assertCanonicalLiveRtcBaselineId(baselineId);
     if (!/^[1-9][0-9]*$/u.test(ordinalRaw)) {
         throw new Error('RALLAR_BLACK_BOX_RTC_OUTER_ORDINAL must be a positive integer.');
@@ -685,10 +672,7 @@ function assertionIssue(
 
 function requiredTimingSeries(
     caseId: LiveRtcPerformanceIdentity['caseId']
-): readonly Readonly<{
-    kind: LiveRtcPerformanceTiming['kind'];
-    transport: LiveRtcPerformanceTiming['transport'];
-}>[] {
+): readonly Pick<LiveRtcPerformanceTiming, 'kind' | 'transport'>[] {
     if (caseId === 'retention-100') {
         return [{ kind: 'reconnect-ready', transport: 'messages.rtc' }];
     }
@@ -754,7 +738,7 @@ function retentionAttemptIssues(
     return issues;
 }
 
-function producerFacts(rawEvidence: LiveRtcPerformanceRawEvidence) {
+function producerFacts(rawEvidence: LiveRtcPerformanceRawEvidence): RtcBaselineExternalAttemptDto['producerFacts'] {
     const producer = rawEvidence.producer;
     return {
         databaseUrl: producer.databaseUrl,
@@ -769,7 +753,7 @@ function producerFacts(rawEvidence: LiveRtcPerformanceRawEvidence) {
     } as const;
 }
 
-function performanceMetrics(rawEvidence: LiveRtcPerformanceRawEvidence) {
+function performanceMetrics(rawEvidence: LiveRtcPerformanceRawEvidence): RtcBaselineSampleDto['metrics'] {
     const timingGroups = new Map<string, number[]>();
     for (const timing of rawEvidence.timings) {
         if (!Number.isFinite(timing.durationMs) || timing.durationMs < 0) {
@@ -815,7 +799,7 @@ function median(values: readonly number[]): number {
         : sorted[middle]!;
 }
 
-function sampleOutcome(sample: RtcBaselineSampleDto) {
+function sampleOutcome(sample: RtcBaselineSampleDto): RtcBaselineSampleOutcomeDto {
     return {
         identity: sample.identity,
         outcome: sample.outcome,
@@ -957,7 +941,7 @@ function retentionEvidence(sample: RtcBaselineSampleDto): LiveRtcRetentionEviden
     };
 }
 
-function stableAgentState(agent: LiveRtcAgentDiagnostics) {
+function stableAgentState(agent: LiveRtcAgentDiagnostics): Omit<LiveRtcAgentDiagnostics, 'agentId' | 'details'> {
     return {
         settledPeerIds: [...agent.settledPeerIds].sort(),
         readyPeerIds: [...agent.readyPeerIds].sort(),
@@ -996,163 +980,6 @@ function decodeRetentionCheckpoint(
     };
 }
 
-function decodeAgentDiagnostics(
-    value: RtcBaselineJson
-): LiveRtcAgentDiagnostics | null {
-    const agent = jsonRecord(value);
-    const settledPeerIds = agent ? exactStringArray(agent.settledPeerIds) : null;
-    const readyPeerIds = agent ? exactStringArray(agent.readyPeerIds) : null;
-    if (
-        !agent ||
-        typeof agent.agentId !== 'string' ||
-        !settledPeerIds ||
-        !readyPeerIds ||
-        !Array.isArray(agent.laneStates) ||
-        typeof agent.connectionTimerActive !== 'boolean' ||
-        !isFiniteNonnegativeNumber(agent.peerCount) ||
-        !isFiniteNonnegativeNumber(agent.connectedPeerCount) ||
-        !isFiniteNonnegativeNumber(agent.relayPeerCount) ||
-        agent.details === undefined
-    ) {
-        return null;
-    }
-    const laneStates: LiveRtcLaneDiagnostics[] = [];
-    for (const laneValue of agent.laneStates) {
-        const lane = decodeLaneDiagnostics(laneValue);
-        if (!lane) {
-            return null;
-        }
-        laneStates.push(lane);
-    }
-    return {
-        agentId: agent.agentId,
-        settledPeerIds,
-        readyPeerIds,
-        laneStates,
-        connectionTimerActive: agent.connectionTimerActive,
-        peerCount: agent.peerCount,
-        connectedPeerCount: agent.connectedPeerCount,
-        relayPeerCount: agent.relayPeerCount,
-        details: agent.details
-    };
-}
-
-function decodeLaneDiagnostics(
-    value: RtcBaselineJson
-): LiveRtcLaneDiagnostics | null {
-    const lane = jsonRecord(value);
-    return lane &&
-            typeof lane.peerId === 'string' &&
-            typeof lane.laneId === 'string' &&
-            typeof lane.isOpen === 'boolean' &&
-            typeof lane.isReconnectable === 'boolean'
-        ? {
-            peerId: lane.peerId,
-            laneId: lane.laneId,
-            isOpen: lane.isOpen,
-            isReconnectable: lane.isReconnectable
-        }
-        : null;
-}
-
-export function buildLiveRtcAgentDiagnostics(
-    agentId: string,
-    resultValue: RtcBaselineJson | object
-): LiveRtcAgentDiagnostics {
-    const normalized = normalizeJson(resultValue);
-    const root = requiredJsonRecord(normalized, '$');
-    const rallar = requiredJsonRecord(root.rallar, '$.rallar');
-    const status = requiredJsonRecord(rallar.rtcStatus, '$.rallar.rtcStatus');
-    const diagnostics = requiredJsonRecord(
-        rallar.rtcDiagnostics,
-        '$.rallar.rtcDiagnostics'
-    );
-    const settledPeerIds = requiredStringArray(
-        status.activePeerIds,
-        '$.rallar.rtcStatus.activePeerIds'
-    ).sort();
-    const readyPeerIds = requiredStringArray(
-        status.readyPeerIds,
-        '$.rallar.rtcStatus.readyPeerIds'
-    ).sort();
-    const peers = requiredJsonArray(
-        diagnostics.peers,
-        '$.rallar.rtcDiagnostics.peers'
-    );
-    const peerRecords = peers.map((peer, index) => requiredJsonRecord(peer, `$.rallar.rtcDiagnostics.peers[${index}]`));
-    return {
-        agentId,
-        settledPeerIds,
-        readyPeerIds,
-        laneStates: toLiveRtcLaneStates(peerRecords),
-        connectionTimerActive: hasLiveRtcConnectionTimer(peerRecords),
-        peerCount: requiredNonnegativeNumber(diagnostics.peerCount, 'RTC peerCount'),
-        connectedPeerCount: requiredNonnegativeNumber(
-            diagnostics.connectedPeerCount,
-            'RTC connectedPeerCount'
-        ),
-        relayPeerCount: requiredNonnegativeNumber(
-            diagnostics.relayPeerCount,
-            'RTC relayPeerCount'
-        ),
-        details: normalizeJson({
-            sessionId: diagnostics.sessionId ?? null,
-            generatedAtEpochMs: diagnostics.generatedAtEpochMs,
-            status,
-            diagnostics,
-            rtcDiagnosticsError: rallar.rtcDiagnosticsError ?? null
-        })
-    };
-}
-
-function toLiveRtcLaneStates(
-    peerRecords: readonly { [key: string]: RtcBaselineJson; }[]
-): LiveRtcLaneDiagnostics[] {
-    return peerRecords.flatMap((peer) => {
-        const peerId = requiredString(peer.peerId, 'RTC diagnostic peerId');
-        const lanes = requiredJsonArray(peer.lanes, `RTC diagnostic lanes for ${peerId}`);
-        return lanes.map((laneValue, index) => {
-            const lane = requiredJsonRecord(
-                laneValue,
-                `RTC diagnostic lane ${index} for ${peerId}`
-            );
-            return {
-                peerId,
-                laneId: requiredString(lane.laneId, `RTC diagnostic laneId for ${peerId}`),
-                isOpen: requiredBoolean(lane.isOpen, `RTC diagnostic isOpen for ${peerId}`),
-                isReconnectable: requiredBoolean(
-                    lane.isReconnectable,
-                    `RTC diagnostic isReconnectable for ${peerId}`
-                )
-            };
-        });
-    }).sort(compareLaneStates);
-}
-
-function hasLiveRtcConnectionTimer(
-    peerRecords: readonly { [key: string]: RtcBaselineJson; }[]
-): boolean {
-    return peerRecords.some((peer) => {
-        const connection = requiredJsonRecord(
-            peer.connection,
-            'RTC diagnostic peer connection'
-        );
-        const connectionDiagnostics = jsonRecord(peer.connectionDiagnostics);
-        return connection.disconnectPending === true ||
-            connection.reconnecting === true ||
-            connectionDiagnostics?.hasReconnectTimer === true ||
-            (numberValue(connectionDiagnostics?.reconnectAttemptsInFlight) ?? 0) !== 0;
-    });
-}
-
-function compareLaneStates(
-    left: LiveRtcLaneDiagnostics,
-    right: LiveRtcLaneDiagnostics
-): number {
-    return left.peerId.localeCompare(right.peerId) ||
-        left.laneId.localeCompare(right.laneId);
-}
-
 async function createConfinedDirectories(
     root: string,
     targetDirectory: string
@@ -1174,8 +1001,9 @@ async function createConfinedDirectories(
                 throw new Error(`Live RTC evidence directory component is unsafe: ${current}`);
             }
         }
-        catch (error) {
-            if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT')) {
+        catch (cause) {
+            const error = toError(cause);
+            if (!('code' in error && error.code === 'ENOENT')) {
                 throw error;
             }
             await mkdir(current);
@@ -1195,7 +1023,7 @@ function assertCanonicalLiveRtcBaselineId(baselineId: string): void {
     }
 }
 
-async function readBaselineManifest(baselineRoot: string) {
+async function readBaselineManifest(baselineRoot: string): Promise<RtcBaselineCaptureManifestDto> {
     const value = normalizeJson(JSON.parse(
         await readFile(resolve(baselineRoot, 'manifest.json'), 'utf8')
     ));

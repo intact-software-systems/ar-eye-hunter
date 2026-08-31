@@ -1,7 +1,6 @@
 import { vi } from 'vitest';
 
-import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
-import type { RallarBrowserMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
+import type { ApiMiddleware, RallarBrowserMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 
 import { createGroupSnapshotFixture } from '../authoritative-group-fixtures.ts';
@@ -115,6 +114,19 @@ vi.mock(import('@shared/repository/group-state-snapshots-repository.ts'), () => 
     }),
     waitForGroupStateSnapshotChangesIdle: vi.fn(async () => undefined)
 }));
+
+vi.mock(import('@shared/repository/overlays-repository.ts'), async (importOriginal) => {
+    const actual = await importOriginal();
+    return {
+        ...actual,
+        findPlannedOverlayById: vi.fn(),
+        findAcceptedOverlayById: vi.fn(),
+        removePlannedOverlayByIdIfUnchanged: vi.fn(() => false),
+        removeAcceptedOverlayByIdIfUnchanged: vi.fn(() => false),
+        waitForPlannedOverlayChangesIdle: vi.fn(async () => undefined),
+        waitForAcceptedOverlayChangesIdle: vi.fn(async () => undefined)
+    };
+});
 
 export function readRoomWorkflowMocks(): typeof roomWorkflowMocks {
     return roomWorkflowMocks;

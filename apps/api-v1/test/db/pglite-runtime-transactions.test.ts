@@ -11,7 +11,11 @@ import { groupStateMemberStorageKey } from '@shared-server/rallar-system/group-s
 import { groupStatePresenceSessionStorageKey } from '@shared-server/rallar-system/group-state/persistence/presence/group-presence-storage-keys.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import { toPersistedAuthSessionFixture, withPGliteSql } from './pglite-auth-test-harness.ts';
-import { applyPGliteGroupMutation, canonicalAuditStamp, groupFixture } from './pglite-state-mutation-test-runtime.ts';
+import {
+    applyPGliteGroupMutation,
+    canonicalAuditStamp,
+    groupFixture
+} from './pglite-state-mutation-test-runtime.ts';
 
 const FUTURE_MS = Date.parse('9999-12-31T23:59:59.999Z');
 
@@ -289,7 +293,7 @@ Deno.test(
                 const runtime = new PSqlRuntimeStateRepository(sql);
                 const service = createGroupStateService({
                     readPlannedLayoutRow: () => Promise.resolve(null),
-            readAcceptedLayoutRow: () => Promise.resolve(null),
+                    readAcceptedLayoutRow: () => Promise.resolve(null),
                     runtimeRepository: runtime,
                     groupStateEventStore: new PSqlGroupStateEventRepository(sql),
                     authSessionRepository: {

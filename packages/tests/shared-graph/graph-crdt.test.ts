@@ -5,12 +5,25 @@ import {
     rallarGraphCrdtRemoveNodeOperation,
     rallarGraphCrdtSetNodePropertyOperation
 } from '@shared-graph/crdt/graph-crdt.ts';
-import { findGraphByRef, readableGraphCache, setGraph } from '@shared-graph/repository/graphs-repository.ts';
+import {
+    findGraphByRef,
+    readableGraphCache,
+    setGraph
+} from '@shared-graph/repository/graphs-repository.ts';
 import type { GraphInfoSnapshot } from '@shared-graph/shared-graph-types.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
-import { createRallarCrdtDocument, rallarCrdtBatch, type RallarCrdtDocumentRef } from '@shared/crdt/mod.ts';
-import { beforeEach, describe, expect, it } from 'vitest';
-import { configureTestCacheRepositories } from '../cache-repository-config.ts';
+import {
+    createRallarCrdtDocument,
+    rallarCrdtBatch,
+    type RallarCrdtDocumentRef
+} from '@shared/crdt/mod.ts';
+import {
+    beforeEach,
+    describe,
+    expect,
+    it
+} from 'vitest';
+import { configureTestCacheRepositories } from '../configure-test-cache-repositories.ts';
 
 const roomRef: GroupRef = {
     applicationId: 'rallar-test',
