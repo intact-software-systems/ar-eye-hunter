@@ -4,7 +4,7 @@ import {
 } from '@shared-server/rallar-system/group-state/policy/group-message-policy.ts';
 import { denyGroupPolicy } from '@shared-server/rallar-system/group-state/policy/group-policy-result.ts';
 import { readALTargetGroupRef } from '@shared/al-contracts/al-contract.ts';
-import { isSameGroupScope } from '@shared/api/api-type-utils.ts';
+import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import { readGroupVersion } from '@shared/api/group-client-views.ts';
 import type { GroupPreActivationAppData } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import type { GroupPolicyDenied } from '@shared/api/group-policy-types.ts';
@@ -14,6 +14,7 @@ import { RALLAR_CRDT_APP_TOPIC_ID, RALLAR_CRDT_ROOM_TOPIC_ID } from '@shared/crd
 import type { RallarSnapshotPresenceClock } from '../presence/snapshot-presence.ts';
 import type {
     RallarServerWsRoomAuthorizationDecision,
+    RallarServerWsRoomAuthorizationInput,
     RallarServerWsRoomAuthorizer
 } from './router/rallar-server-ws-router-contracts.ts';
 
@@ -27,13 +28,13 @@ type ReadRoomAuthorizationSnapshotResult =
     }
     | {
         readonly kind: 'denied';
-        readonly decision: RallarServerWsRoomAuthorizationDecision | false;
+        readonly decision: RallarServerWsRoomAuthorizationDecision;
     };
 
 export interface GroupRoomWsAuthorizerDependencies {
     readonly readGroupSnapshot: (
         ref: GroupRef,
-        input: Parameters<RallarServerWsRoomAuthorizer>[0]
+        input: RallarServerWsRoomAuthorizationInput
     ) => MaybePromise<GroupSnapshot | undefined>;
     readonly readPreActivationAppData: (
         ref: GroupRef
@@ -82,20 +83,20 @@ export function createGroupRoomWsAuthorizer(
             );
         }
 
-        return true;
+        return { authorized: true, authorizedRoomSnapshot: snapshot };
     };
 }
 
 async function readRoomAuthorizationSnapshot(
     dependencies: GroupRoomWsAuthorizerDependencies,
-    input: Parameters<RallarServerWsRoomAuthorizer>[0]
+    input: RallarServerWsRoomAuthorizationInput
 ): Promise<ReadRoomAuthorizationSnapshotResult> {
     const groupRef = input.roomRef ??
         readALTargetGroupRef(input.message);
     const snapshot = groupRef
         ? await dependencies.readGroupSnapshot(groupRef, input)
         : undefined;
-    if (groupRef && snapshot && !isSameGroupScope(snapshot.group, groupRef)) {
+    if (groupRef && snapshot && !isSameGroupRef(snapshot.group, groupRef)) {
         return {
             kind: 'denied',
             decision: {

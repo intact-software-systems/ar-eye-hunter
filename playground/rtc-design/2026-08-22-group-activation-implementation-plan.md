@@ -1679,11 +1679,44 @@ third peer before promoting the replacement would depend on a race or on Slice 8
 future dial policy. Establishing again from ACTIVE is not a valid transition.
 Rerun the affected live-browser and evidence tests after resolving the source conflict.
 
+Native release validation also exposed a separate WebSocket authority/fanout
+boundary: room authorization reads current durable membership, while default live
+fanout resolves recipients from an independently populated snapshot cache. An
+authorized message can therefore have no recipients even while its sender's socket
+is live. Preserve the fresh authorization read and carry its scoped membership
+observation into the original message's default live fanout. Keep that observation
+server-side; do not rewrite AL targets, widen fixed recipient audiences or broadcast
+exclusions, reuse it for proxy-transformed targets, or change queued delivery.
+Recipient resolution must still check the exact application, workspace and group,
+current leases and open connections. Canonical cache warming is insufficient: same-tuple liveness/lease
+projections can legitimately differ from stored snapshots and are not new canonical
+observations. Prove cold-cache, older-empty-cache and renewed-lease cases through the
+actual API authorizer and live recipient path, while retaining fresh ban/deletion
+rejections. The WebSocket recipe's echo assertion and existing budget remain intact.
+
+Full-file closure removes the unused optional context arguments from the public
+`RallarServerWsRouter.route` method and its internal install adapter. The class and
+export remain unchanged; TypeScript callers now call `route(message)`. Repository
+consumer and documentation review found no independent requirement for the ignored
+arguments. This is a disclosed signature narrowing under the requested legacy
+removal, with no compatibility shim or retained-legacy exception.
+
+For the governed state-write A-B-B-A comparison, every fresh position requires
+exactly nine measured runs, one warmup and concurrency ten. The general harness's
+three-run example does not satisfy the pooling protocol. Preserve all four source
+artifacts and environment descriptors, and diagnose failed comparisons without
+selecting favorable samples or relaxing timing, resource or correctness limits.
+The complete nine-run comparison for `7e6b213` failed uncontended p99, shared
+throughput and hot throughput. Its retained artifacts remain the acceptance result.
+A separate frozen-checkout profile captured CPU, garbage collection, event-loop
+gaps and PostgreSQL waits/checkpoints; instrumented timings are diagnostic only.
+
 **Next two PRs (I5, I20):**
 
-- **Finish existing #381 / slice 8a.** Close receiver admission, hydration races and
-  full-file review findings; validate the corrected capability and publish it for the
-  maintainer's manual merge.
+- **Finish existing #381 / slice 8a.** Close receiver admission, hydration races,
+  authorized WebSocket fanout and full-file review findings; resolve the performance
+  gate, validate the corrected capability and publish it for the maintainer's manual
+  merge.
 - **Review existing #390 / slice 8b, stacked on #381.** Carry the material parent
   correction into its total stage × layout-role dial matrix, then review and fix that
   capability. Review the existing facade and route-cutover PRs in order afterwards;
