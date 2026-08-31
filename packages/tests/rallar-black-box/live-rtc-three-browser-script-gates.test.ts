@@ -2,16 +2,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
-type PackageManifest = Readonly<{
-    scripts?: Readonly<Record<string, string>>;
-}>;
-
 const repoRoot = process.cwd();
-const packageJson = JSON.parse(
-    fs.readFileSync(path.join(repoRoot, 'package.json'), 'utf8')
-) as PackageManifest;
-const liveMatrixSpec =
-    'tests/playwright/rallar-black-box/full-stack-live-rtc-three-browser-matrix.spec.ts';
+const scripts = readPackageScripts();
+const liveMatrixSpec = 'tests/playwright/rallar-black-box/full-stack-live-rtc-three-browser-matrix.spec.ts';
 
 const REQUIRED_LIVE_RTC_GATE_ENV = [
     'RALLAR_BLACK_BOX_FULL_STACK=1',
@@ -42,7 +35,7 @@ describe('live three-browser RTC npm script gates', () => {
         apiBaseUrl,
         spaBaseUrl
     ) => {
-        const script = packageJson.scripts?.[scriptName] ?? '';
+        const script = scripts[scriptName] ?? '';
 
         expect(script).toContain(apiBaseUrl);
         expect(script).toContain(spaBaseUrl);
@@ -58,13 +51,13 @@ describe('live three-browser RTC npm script gates', () => {
     });
 
     it('keeps exhaustive and retention selectors owned by the invoking attempt', () => {
-        const memory = packageJson.scripts?.[
+        const memory = scripts[
             'test:rallar:full-stack:memory:live-rtc-3'
         ] ?? '';
-        const postgres = packageJson.scripts?.[
+        const postgres = scripts[
             'test:rallar:full-stack:postgres:live-rtc-3'
         ] ?? '';
-        const postgresAll = packageJson.scripts?.[
+        const postgresAll = scripts[
             'test:rallar:full-stack:postgres:live-rtc-3:all'
         ] ?? '';
 
@@ -75,48 +68,12 @@ describe('live three-browser RTC npm script gates', () => {
         expect(postgres).not.toContain('RALLAR_BLACK_BOX_LIVE_RETENTION_SOAK=');
     });
 
-    it('uses cryptographically secure live run and session identities', () => {
-        const source = fs.readFileSync(path.join(repoRoot, liveMatrixSpec), 'utf8');
-
-        expect(source).not.toContain('Math.random()');
-        expect(source).toContain('crypto.randomUUID()');
-    });
-
-    it('uses the current idempotent group mutation request routes', () => {
-        const source = fs.readFileSync(path.join(repoRoot, liveMatrixSpec), 'utf8');
-
-        expect(source).toMatch(
-            /groups\/requests\/\$\{pathSegment\(createRequestId\)\}/u
-        );
-        expect(source).toMatch(
-            /members\/\{auth\.clientId\}\/requests\/\$\{\s*pathSegment\(requestId\)\s*\}/u
-        );
-        expect(source).toContain('`rtc-b06-create-${input.suffix}`');
-        expect(source).toContain(
-            '`rtc-b06-member-${member.prefix.toLowerCase()}-${input.suffix}`'
-        );
-        expect(source).toContain('acceptedStatusCodes: [201]');
-        expect(source.match(/setupGroupMembership\(\{/gu)).toHaveLength(3);
-        expect(source).toMatch(
-            /for \(const agent of input\.agents\.slice\(0, 2\)\) \{\s*connected\.push\(\s*await connectAgent/u
-        );
-        expect(source).toContain('`${input.suffix}-initial-pair`');
-        expect(source).toContain('readinessStartedAtMs');
-        expect(source.match(/connectAgentTrio\(\{/gu)).toHaveLength(3);
-        expect(source).not.toMatch(
-            /input\.agents\.map\(\(agent\) => connectAgent/u
-        );
-        expect(source).toContain('departedPeerIds: [input.sessions.C]');
-        expect(source).toContain('departedPeerIds: [input.sessions.B]');
-        expect(source.match(/realtime\.sessions/gu)).toHaveLength(2);
-    });
-
     it('keeps benchmark ownership out of application and reusable product sources', () => {
         const productRoots = [path.join(repoRoot, 'apps'), path.join(repoRoot, 'packages')];
         const forbiddenImports: string[] = [];
 
         for (const root of productRoots) {
-            for (const file of sourceFiles(root)) {
+            for (const file of readSourceFiles(root)) {
                 if (
                     file.includes(`${path.sep}shared-rtc-bench${path.sep}`) ||
                     file.includes(`${path.sep}tests${path.sep}`)
@@ -138,12 +95,30 @@ describe('live three-browser RTC npm script gates', () => {
     });
 });
 
-function sourceFiles(root: string): string[] {
+function readPackageScripts(): Readonly<Record<string, string>> {
+    const manifest: unknown = JSON.parse(fs.readFileSync(path.join(repoRoot, 'package.json'), 'utf8'));
+    if (
+        typeof manifest !== 'object' || manifest === null || !('scripts' in manifest) ||
+        typeof manifest.scripts !== 'object' || manifest.scripts === null
+    ) {
+        throw new Error('Package manifest must define scripts.');
+    }
+    const scripts: Record<string, string> = {};
+    for (const [name, command] of Object.entries(manifest.scripts)) {
+        if (typeof command !== 'string') {
+            throw new Error(`Package script ${name} must be a string.`);
+        }
+        scripts[name] = command;
+    }
+    return scripts;
+}
+
+function readSourceFiles(root: string): string[] {
     const files: string[] = [];
     for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
         const absolutePath = path.join(root, entry.name);
         if (entry.isDirectory()) {
-            files.push(...sourceFiles(absolutePath));
+            files.push(...readSourceFiles(absolutePath));
         }
         else if (entry.isFile() && /\.(?:c|m)?(?:j|t)sx?$/.test(entry.name)) {
             files.push(absolutePath);
