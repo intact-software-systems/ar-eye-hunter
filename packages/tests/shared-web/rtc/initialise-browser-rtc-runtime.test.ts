@@ -18,7 +18,7 @@ import {
     it
 } from 'vitest';
 
-import { configureTestCacheRepositories } from '../../cache-repository-config.ts';
+import { configureTestCacheRepositories } from '../../configure-test-cache-repositories.ts';
 import { createGroupSnapshotFixture } from '../authoritative-group-fixtures.ts';
 
 describe('browser RTC runtime composition', () => {

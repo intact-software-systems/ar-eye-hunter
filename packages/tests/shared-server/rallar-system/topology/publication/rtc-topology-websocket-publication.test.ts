@@ -29,8 +29,8 @@ import {
 import * as clientStateSnapshotsRepository from '@shared/repository/client-state-snapshots-repository.ts';
 import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
 import { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
-import { describe, expect, it, vi } from 'vitest';
-import { configureTestCacheRepositories } from '../../../../cache-repository-config.ts';
+import { describe, expect, it } from 'vitest';
+import { configureTestCacheRepositories } from '../../../../configure-test-cache-repositories.ts';
 import { createTestGroup } from '../../../../create-test-group.ts';
 import { FakeRuntimeStateRepository } from '../../../runtime-state/test-support/fake-runtime-state-repository.ts';
 import { createRtcTopologyReplayFixture } from '../replay/consumer/rtc-topology-replay-fixture.ts';
@@ -459,7 +459,12 @@ function countSentTopologyMessages(sockets: ReadonlyMap<string, FakeSocket>): nu
         .filter((sent) => sent.payload.typeId === AppTopics.overlayTopology).length;
 }
 
-function createTopologyExecutionDependencies(runtimeRepository: FakeRuntimeStateRepository) {
+interface TopologyExecutionDependencies {
+    readonly database: PSqlSql;
+    readonly executionRepository: RtcTopologyExecutionRepository;
+}
+
+function createTopologyExecutionDependencies(runtimeRepository: FakeRuntimeStateRepository): TopologyExecutionDependencies {
     return {
         database: createUnusedDatabase(),
         executionRepository: new RtcTopologyExecutionRepository(runtimeRepository)
@@ -478,7 +483,7 @@ function createTopologyOwners(
     });
 }
 
-function topologyOptions(owners: GroupTopologyRuntimeOwners) {
+function topologyOptions(owners: GroupTopologyRuntimeOwners): Pick<InstallTopologyTestTopicsOptions, 'topologyQuery' | 'topologyPlanning'> {
     return {
         topologyQuery: owners.query,
         topologyPlanning: owners.planning

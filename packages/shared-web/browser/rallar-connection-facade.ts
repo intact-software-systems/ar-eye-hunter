@@ -12,8 +12,8 @@ import type { StateScope } from '@shared/api/state-types.ts';
 import type { CommandsOrchestrator, CommandsOrchestratorPolicies } from '@shared/cache/CommandsOrchestrator.ts';
 import type { WebRtcOverlayMulticastManager } from '@shared/multicast/WebRtcOverlayMulticastManager.ts';
 import type { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
+import type { WebRtcGroupManager } from '@shared/services/web-rtc-group-manager.ts';
 import type { RtcDataChannelLaneConfig, WebRtcConnectionService } from '@shared/services/WebRtcConnectionService.ts';
-import type { WebRtcGroupManager } from '@shared/services/WebRtcGroupManager.ts';
 import type { WebRtcRxStreamerService } from '@shared/services/WebRtcRxStreamerService.ts';
 import type { WsQueueBoxClientService } from '@shared/services/WsQueueBoxClientService.ts';
 

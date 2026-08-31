@@ -1,7 +1,6 @@
 // dprint-ignore
 import {
-    expect,
-    type Page
+    expect
 } from '@playwright/test';
 import type { RallarBlackBoxTestCommand } from '@shared-test/rallar-bb-test/types.ts';
 import type { RtcBaselineJson } from '../../../packages/shared-rtc-bench/baseline/contracts/rtc-baseline-contracts.ts';
@@ -12,14 +11,6 @@ type AgentPrefix = 'A' | 'B' | 'C';
 type ReadinessScope = 'owner' | 'all';
 type FormationEntryLifecycleState = 'forming' | 'active';
 
-interface FormationAgent {
-    readonly page: Page;
-    readonly prefix: AgentPrefix;
-    readonly agentId: string;
-    readonly actor: string;
-    readonly connection: string;
-}
-
 interface CreateGroupFormationLifecycleDriverConfig {
     readonly apiBaseUrl: string | undefined;
     readonly applicationId: string;
@@ -29,9 +20,9 @@ interface CreateGroupFormationLifecycleDriverConfig {
 }
 
 interface RunGroupFormationLifecycleInput {
-    readonly control: LiveRtcControlClient;
+    readonly control: LiveRtcControlPort;
     readonly runId: string;
-    readonly agents: readonly [FormationAgent, FormationAgent, FormationAgent];
+    readonly agents: readonly [LiveRtcControlClient.Agent, LiveRtcControlClient.Agent, LiveRtcControlClient.Agent];
     readonly transport: TransportUnderTest;
     readonly groupId: string;
     readonly suffix: string;
@@ -45,16 +36,17 @@ interface GroupFormationLifecycleRun {
 }
 
 interface ReconnectFormationAgentInput {
-    readonly control: LiveRtcControlClient;
+    readonly control: LiveRtcControlPort;
     readonly runId: string;
-    readonly reconnectingAgent: FormationAgent;
-    readonly readinessAgent: FormationAgent;
+    readonly reconnectingAgent: LiveRtcControlClient.Agent;
+    readonly readinessAgent: LiveRtcControlClient.Agent;
     readonly transport: TransportUnderTest;
     readonly groupId: string;
     readonly suffix: string;
 }
 
-interface GroupFormationLifecycleDriver {
+export interface GroupFormationLifecycleDriver {
+    setupGroupMembership(input: Parameters<typeof setupGroupMembership>[1]): Promise<readonly string[]>;
     run(
         input: RunGroupFormationLifecycleInput
     ): Promise<GroupFormationLifecycleRun>;
@@ -63,10 +55,23 @@ interface GroupFormationLifecycleDriver {
     ): Promise<FormationAgentConnection>;
 }
 
+export interface LiveRtcControlPort extends
+    Pick<
+        LiveRtcControlClient,
+        | 'executeOk'
+        | 'executeResult'
+        | 'resultValue'
+        | 'requireSessionId'
+        | 'waitForPeerReadiness'
+        | 'waitForPeerAbsence'
+        | 'waitForMessage'
+        | 'readyPeerIds'
+    > {}
+
 interface ConnectFormationAgentInput {
-    readonly control: LiveRtcControlClient;
+    readonly control: LiveRtcControlPort;
     readonly runId: string;
-    readonly agent: FormationAgent;
+    readonly agent: LiveRtcControlClient.Agent;
     readonly transport: TransportUnderTest;
     readonly groupId: string;
     readonly suffix: string;
@@ -99,15 +104,15 @@ interface EstablishGroupLifecycleInput {
 }
 
 interface GroupLifecycleCommandInput {
-    readonly control: LiveRtcControlClient;
+    readonly control: LiveRtcControlPort;
     readonly runId: string;
-    readonly owner: FormationAgent;
+    readonly owner: LiveRtcControlClient.Agent;
     readonly groupId: string;
     readonly suffix: string;
 }
 
 interface ActivateGroupInput extends GroupLifecycleCommandInput {
-    readonly agents: readonly [FormationAgent, FormationAgent, FormationAgent];
+    readonly agents: readonly [LiveRtcControlClient.Agent, LiveRtcControlClient.Agent, LiveRtcControlClient.Agent];
     readonly transport: TransportUnderTest;
 }
 
@@ -130,6 +135,7 @@ export function createGroupFormationLifecycleDriver(
     config: CreateGroupFormationLifecycleDriverConfig
 ): GroupFormationLifecycleDriver {
     return {
+        setupGroupMembership: (input) => setupGroupMembership(config, input),
         run: async (input) => await runGroupFormationLifecycle(config, input),
         reconnectAndWaitForPeerReadiness: async (input) => {
             const connection = await connectFormationAgent(config, {
@@ -330,7 +336,7 @@ async function configureMeshTopology(
                 path: groupRequestPath(
                     config,
                     input.groupId,
-                    `topology/config/requests/${pathSegment(`topology-mesh-${input.suffix}`)}`
+                    `topology/config/requests/${encodeURIComponent(`topology-mesh-${input.suffix}`)}`
                 ),
                 method: 'PUT',
                 body: {
@@ -377,7 +383,7 @@ async function enterGroupConnectionCycle(
                 path: groupRequestPath(
                     config,
                     input.groupId,
-                    `lifecycle/${operation}/requests/${pathSegment(`${operation}-${input.suffix}`)}`
+                    `lifecycle/${operation}/requests/${encodeURIComponent(`${operation}-${input.suffix}`)}`
                 ),
                 method: 'POST',
                 body: {}
@@ -407,7 +413,7 @@ async function activateAndRefreshAcceptedLayout(
                 path: groupRequestPath(
                     config,
                     input.groupId,
-                    `lifecycle/activate/requests/${pathSegment(`activate-${transport}-${input.suffix}`)}`
+                    `lifecycle/activate/requests/${encodeURIComponent(`activate-${transport}-${input.suffix}`)}`
                 ),
                 method: 'POST',
                 body: {}
@@ -423,7 +429,7 @@ async function activateAndRefreshAcceptedLayout(
 }
 
 async function refreshAgentRooms(
-    agents: readonly [FormationAgent, FormationAgent, FormationAgent]
+    agents: readonly [LiveRtcControlClient.Agent, LiveRtcControlClient.Agent, LiveRtcControlClient.Agent]
 ): Promise<void> {
     await Promise.all(agents.map((agent) =>
         agent.page.evaluate(async () => {
@@ -556,9 +562,9 @@ function groupRequestPath(
     groupId: string,
     suffix?: string
 ): string {
-    const groupPath = `/api/state/apps/${pathSegment(config.applicationId)}/workspaces/${
-        pathSegment(config.workspaceId)
-    }/groups/${pathSegment(groupId)}`;
+    const groupPath = `/api/state/apps/${encodeURIComponent(config.applicationId)}/workspaces/${
+        encodeURIComponent(config.workspaceId)
+    }/groups/${encodeURIComponent(groupId)}`;
     return suffix ? `${groupPath}/${suffix}` : groupPath;
 }
 
@@ -597,6 +603,100 @@ function stringArrayValue(value: RtcBaselineJson | undefined): readonly string[]
         : [];
 }
 
-function pathSegment(value: string): string {
-    return encodeURIComponent(value);
+async function setupGroupMembership(
+    config: CreateGroupFormationLifecycleDriverConfig,
+    input: Readonly<{
+        control: LiveRtcControlPort;
+        runId: string;
+        owner: LiveRtcControlClient.Agent;
+        members: readonly LiveRtcControlClient.Agent[];
+        groupId: string;
+        suffix: string;
+    }>
+): Promise<readonly string[]> {
+    const groupSegment = encodeURIComponent(input.groupId);
+    const createCommandId = `group-create-${input.suffix}`;
+    const createRequestId = `rtc-b06-create-${input.suffix}`;
+    const joinCommandIds: string[] = [];
+
+    await input.control.executeOk({
+        runId: input.runId,
+        agentId: input.owner.agentId,
+        commandId: createCommandId,
+        command: toGroupCreationCommand(config, input)
+    });
+
+    for (const member of input.members) {
+        if (member.agentId === input.owner.agentId) {
+            continue;
+        }
+        const commandId = `group-join-${member.agentId}-${input.suffix}`;
+        const requestId = `rtc-b06-member-${member.prefix.toLowerCase()}-${input.suffix}`;
+        joinCommandIds.push(commandId);
+        await input.control.executeOk({
+            runId: input.runId,
+            agentId: member.agentId,
+            commandId,
+            command: {
+                kind: 'http.request',
+                request: {
+                    path: `/api/state/apps/${encodeURIComponent(config.applicationId)}/workspaces/${
+                        encodeURIComponent(config.workspaceId)
+                    }/groups/${groupSegment}/members/{auth.clientId}/requests/${encodeURIComponent(requestId)}`,
+                    method: 'PUT',
+                    body: {
+                        status: 'active'
+                    }
+                },
+                response: {
+                    body: 'json',
+                    acceptedStatusCodes: [200]
+                },
+                timeoutMs: 10_000
+            }
+        });
+    }
+
+    return [createCommandId, ...joinCommandIds];
+}
+function toGroupCreationCommand(
+    config: CreateGroupFormationLifecycleDriverConfig,
+    input: Parameters<typeof setupGroupMembership>[1]
+): RallarBlackBoxTestCommand {
+    return {
+        kind: 'http.request',
+        request: {
+            path: `/api/state/apps/${encodeURIComponent(config.applicationId)}/workspaces/${
+                encodeURIComponent(config.workspaceId)
+            }/groups/requests/${encodeURIComponent(`rtc-b06-create-${input.suffix}`)}`,
+            method: 'POST',
+            body: {
+                groupId: input.groupId,
+                displayName: input.groupId,
+                description: 'Created by rallar-black-box live three-browser matrix',
+                kind: 'room',
+                joinMode: 'open',
+                createdByPrincipalId: '{auth.clientId}',
+                metadata: {
+                    source: 'rallar-black-box',
+                    matrix: 'live-three-browser',
+                    suffix: input.suffix
+                },
+                lifecyclePolicy: {
+                    preset: 'managed',
+                    admission: {
+                        mode: 'open'
+                    },
+                    activation: {
+                        mode: 'manual'
+                    }
+                }
+            }
+        },
+        response: {
+            body: 'json',
+            acceptedStatusCodes: [201]
+        },
+        timeoutMs: 10_000
+    };
 }

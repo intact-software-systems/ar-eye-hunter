@@ -40,10 +40,8 @@ export type GroupStateSnapshotRepositoryOptions =
     & Omit<ObservableLatestRepositoryOptions<string, GroupSnapshot>, 'ttlMs' | 'equals'>
     & { ttlMs: number; };
 
-export type GroupStateSnapshotWriteKind = ObservableValueEventType;
-
 export interface GroupStateSnapshotChange {
-    readonly kind: GroupStateSnapshotWriteKind;
+    readonly kind: ObservableValueEventType;
     readonly groupRef: GroupRef;
     readonly snapshot?: GroupSnapshot;
     readonly previous?: GroupSnapshot;
@@ -233,12 +231,12 @@ function writeGroupStateSnapshot(
     if (decision === 'inserted' || decision === 'advanced') {
         repository.set(repositoryKey, snapshot);
         observedGroupSnapshotKeysForRepository(repository).add(repositoryKey);
-        replaceGroupSnapshotInSessionIndex(
+        replaceGroupSnapshotInSessionIndex({
             repository,
-            repositoryKey,
-            previousForIndex,
-            snapshot
-        );
+            key: repositoryKey,
+            previous: previousForIndex,
+            next: snapshot
+        });
         if (decision === 'advanced') {
             console.log(`Received updated group snapshot: ${snapshot.group.groupId}`);
         }
@@ -297,16 +295,12 @@ export function findLatestGroupSnapshotById(groupId: string) {
         .at(0);
 }
 
-function toGroupSnapshotVersion(snapshot: GroupSnapshot): number {
-    return readGroupVersion(snapshot);
-}
-
 function groupSessionIndexForRepository(
     repository: ObservableLatestRepository<string, GroupSnapshot>
 ): GroupSessionIndex {
     let index = groupSessionIndexes.get(repository);
     if (!index) {
-        index = buildGroupSessionIndex(repository);
+        index = readGroupSessionIndex(repository);
         groupSessionIndexes.set(repository, index);
     }
     return index;
@@ -323,7 +317,7 @@ function observedGroupSnapshotKeysForRepository(
     return observedKeys;
 }
 
-function buildGroupSessionIndex(
+function readGroupSessionIndex(
     repository: ObservableLatestRepository<string, GroupSnapshot>
 ): GroupSessionIndex {
     const index: GroupSessionIndex = new Map();
@@ -336,12 +330,15 @@ function buildGroupSessionIndex(
     return index;
 }
 
-function replaceGroupSnapshotInSessionIndex(
-    repository: ObservableLatestRepository<string, GroupSnapshot>,
-    key: string,
-    previous: GroupSnapshot | undefined,
-    next: GroupSnapshot
-): void {
+interface GroupSnapshotIndexReplacement {
+    readonly repository: ObservableLatestRepository<string, GroupSnapshot>;
+    readonly key: string;
+    readonly previous: GroupSnapshot | undefined;
+    readonly next: GroupSnapshot;
+}
+
+function replaceGroupSnapshotInSessionIndex(input: GroupSnapshotIndexReplacement): void {
+    const { repository, key, previous, next } = input;
     const index = groupSessionIndexForRepository(repository);
     removeGroupSnapshotFromSessionIndex(index, key, previous);
     addGroupSnapshotToSessionIndex(index, key, next);
@@ -424,12 +421,12 @@ function toGroupStateSnapshotChange(
         snapshot: event.value,
         previous: event.previous,
         version: event.value
-            ? toGroupSnapshotVersion(event.value)
+            ? readGroupVersion(event.value)
             : event.previous
-            ? toGroupSnapshotVersion(event.previous)
+            ? readGroupVersion(event.previous)
             : 0,
         previousVersion: event.previous
-            ? toGroupSnapshotVersion(event.previous)
+            ? readGroupVersion(event.previous)
             : undefined,
         manager
     };

@@ -4,7 +4,7 @@ import type { ClientInfo } from '@shared/api/api-config.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { LatestRepository } from '@shared/cache/LatestRepository.ts';
 import { Either } from '@shared/resilience/Either.ts';
-import { WebRtcGroupManager } from '@shared/services/WebRtcGroupManager.ts';
+import { WebRtcGroupManager } from '@shared/services/web-rtc-group-manager.ts';
 
 import {
     parseRtcBaselineAcceptedWorker,

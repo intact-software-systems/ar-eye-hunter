@@ -3,7 +3,7 @@ import { BrowserTransportRuntime } from '@shared-web/browser/connection/browser-
 import { createRoomStateStore } from '@shared-web/browser/rooms/room-state-store.ts';
 import { createRallarStateCacheReadPort, RallarStateStore, type RallarStateCacheReadPort } from '@shared-web/browser/state-cache/rallar-state-store.ts';
 import { beforeEach, describe, expect, it } from 'vitest';
-import { configureTestCacheRepositories } from '../../cache-repository-config.ts';
+import { configureTestCacheRepositories } from '../../configure-test-cache-repositories.ts';
 
 describe('Rallar state store', () => {
     beforeEach(() => {
@@ -59,9 +59,15 @@ describe('Rallar state store', () => {
     });
 });
 
+interface StateStoreFixture {
+    readonly roomStateStore: ReturnType<typeof createRoomStateStore>;
+    readonly stateCache: RallarStateCacheReadPort;
+    readonly stateStore: RallarStateStore;
+}
+
 function createStateStoreFixture(
     cacheOverrides: Partial<RallarStateCacheReadPort> = {}
-) {
+): StateStoreFixture {
     const runtime = new BrowserFacadeRuntimeState(new BrowserTransportRuntime());
     const stateCache: RallarStateCacheReadPort = {
         ...createRallarStateCacheReadPort(),

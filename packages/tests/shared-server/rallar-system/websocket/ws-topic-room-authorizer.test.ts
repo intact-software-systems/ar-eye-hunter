@@ -7,9 +7,9 @@ import { createTestGroupStateRepository } from '@shared-test/shared-server/creat
 import { newALBroadcastMessage, newALEventRoute, newALMulticastMessage } from '@shared/al-contracts/al-contract.ts';
 import { GROUP_LIFECYCLE_STATES } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import type { AuditStamp, Group, GroupMember, GroupPresenceSummary, GroupSnapshot } from '@shared/api/group-types.ts';
-import { findGroupStateSnapshotByRef, setGroupStateSnapshot } from '@shared/repository/group-state-snapshots-repository.ts';
+import { findGroupStateSnapshotByRef } from '@shared/repository/group-state-snapshots-repository.ts';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { configureTestCacheRepositories } from '../../../cache-repository-config.ts';
+import { configureTestCacheRepositories } from '../../../configure-test-cache-repositories.ts';
 import { createTestGroup } from '../../../create-test-group.ts';
 import { FakeRuntimeStateRepository } from '../../runtime-state/test-support/fake-runtime-state-repository.ts';
 
@@ -810,21 +810,7 @@ function createGroupSnapshot(input: CreateGroupSnapshotInput): GroupSnapshot {
             removed: null,
             banned: null
         })),
-        activeSessions: sessionIds.map((sessionId) => ({
-            applicationId,
-            workspaceId,
-            groupId,
-            sessionId,
-            principalId: sessionId,
-            generationId: `generation-${sessionId}`,
-            generationVersion: 1,
-            status: 'active',
-            disconnectedAtEpochMs: null,
-            disconnectReason: null,
-            connectedAtEpochMs: 1,
-            lastHeartbeatAtEpochMs: snapshotVersion,
-            expiresAtEpochMs
-        })),
+        activeSessions: createGroupSessions(input),
         memberCount: sessionIds.length,
         onlineMemberCount: sessionIds.length
     };
@@ -855,4 +841,22 @@ function createAuditStamp(atEpochMs: number): AuditStamp {
         traceId: null,
         requestId: null
     };
+}
+function createGroupSessions(input: CreateGroupSnapshotInput): GroupSnapshot['activeSessions'] {
+    const { groupId, applicationId, workspaceId, sessionIds, snapshotVersion, expiresAtEpochMs = 4_000_000_000_000 } = input;
+    return sessionIds.map((sessionId) => ({
+        applicationId,
+        workspaceId,
+        groupId,
+        sessionId,
+        principalId: sessionId,
+        generationId: `generation-${sessionId}`,
+        generationVersion: 1,
+        status: 'active',
+        disconnectedAtEpochMs: null,
+        disconnectReason: null,
+        connectedAtEpochMs: 1,
+        lastHeartbeatAtEpochMs: snapshotVersion,
+        expiresAtEpochMs
+    }));
 }

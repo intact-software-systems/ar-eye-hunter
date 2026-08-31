@@ -18,7 +18,8 @@ import type {
 } from '@shared/api/group-types.ts';
 import { LatestRepository } from '@shared/cache/LatestRepository.ts';
 import { Either } from '@shared/resilience/Either.ts';
-import { WebRtcGroupManager } from '@shared/services/WebRtcGroupManager.ts';
+import { WebRtcGroupManager, type WebRtcGroupManagerOptions } from '@shared/services/web-rtc-group-manager.ts';
+import type { WebRtcGroupPeerSelection } from '@shared/services/webrtc-group-manager-contracts.ts';
 import { createTestGroup } from '../create-test-group.ts';
 
 interface GroupSnapshotFixture {
@@ -47,6 +48,34 @@ interface RtcQBoxHarness {
 }
 
 describe('WebRtcGroupManager', () => {
+    it('notifies with final desired and canonical degree-limited RTT peers after dial reconciliation', async () => {
+        const rtcQBox = createRtcQBoxHarness('session-b');
+        const notifications: ReconciledPeerSelectionObservation[] = [];
+        const manager = new WebRtcGroupManager(rtcQBox.service as never, {
+            groupCache: new LatestRepository<string, GroupSnapshot>(),
+            clientCache: new LatestRepository<string, ClientInfo>()
+        }, {
+            rttReportingDegreeLimit: 1,
+            onDesiredPeerIdsChanged: (selection) =>
+                notifications.push({
+                    ...selection,
+                    knownPeerIds: rtcQBox.knownPeerIds()
+                })
+        });
+        await manager.acceptGroupUpdate(createGroupSnapshot({
+            groupId: 'room',
+            membershipVersion: 1,
+            memberSessionIds: ['session-a', 'session-b', 'session-c', 'session-d']
+        }));
+        expect(notifications).toEqual([{
+            desiredPeerIds: ['session-a', 'session-c', 'session-d'],
+            rttReportingPeerIds: ['session-d'],
+            knownPeerIds: ['session-a', 'session-c', 'session-d']
+        }]);
+        const oldObserver: NonNullable<WebRtcGroupManagerOptions['onDesiredPeerIdsChanged']> = () => {};
+        expect(() => oldObserver({ desiredPeerIds: [], rttReportingPeerIds: [] })).not.toThrow();
+    });
+
     it('dials group-present peers before the global client cache converges', async () => {
         const groupCache = new LatestRepository<string, GroupSnapshot>();
         const clientCache = new LatestRepository<string, ClientInfo>();
@@ -891,6 +920,10 @@ describe('WebRtcGroupManager', () => {
         expect(rtcQBox.knownPeerIds()).toHaveLength(5);
     });
 });
+
+interface ReconciledPeerSelectionObservation extends WebRtcGroupPeerSelection {
+    readonly knownPeerIds: readonly string[];
+}
 
 function createRtcQBoxHarness(
     sessionId: string,

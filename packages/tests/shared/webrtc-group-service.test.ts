@@ -3,14 +3,14 @@ import { LatestRepository } from '@shared/cache/LatestRepository.ts';
 import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
 import { WebRtcGroupService } from '@shared/services/WebRtcGroupService.ts';
 import { describe, expect, it, vi } from 'vitest';
-import { configureTestCacheRepositories } from '../cache-repository-config.ts';
+import { configureTestCacheRepositories } from '../configure-test-cache-repositories.ts';
 import { createTestGroup } from '../create-test-group.ts';
 
 describe('WebRtcGroupService', () => {
     it('accepts newer snapshots, filters self from targets, and ignores stale updates', async () => {
         const cache = new LatestRepository<string, GroupSnapshot>();
         const rtcQBox = createRtcHarness('self');
-        const initial = createGroupSnapshot('group-1', 1, ['self']);
+        const initial = createGroupSnapshot({ groupId: 'group-1', membershipVersion: 1, memberSessionIds: ['self'] });
         const service = new WebRtcGroupService(rtcQBox as never, initial.group, cache);
         const events: Array<{
             source: string;
@@ -28,17 +28,25 @@ describe('WebRtcGroupService', () => {
             });
         });
 
-        const first = createGroupSnapshot('group-1', 1, [
-            'self',
-            'peer-a',
-            'peer-b'
-        ]);
-        const stale = createGroupSnapshot('group-1', 0, ['self', 'peer-c']);
-        const second = createGroupSnapshot('group-1', 2, [
-            'self',
-            'peer-b',
-            'peer-c'
-        ]);
+        const first = createGroupSnapshot({
+            groupId: 'group-1',
+            membershipVersion: 1,
+            memberSessionIds: [
+                'self',
+                'peer-a',
+                'peer-b'
+            ]
+        });
+        const stale = createGroupSnapshot({ groupId: 'group-1', membershipVersion: 0, memberSessionIds: ['self', 'peer-c'] });
+        const second = createGroupSnapshot({
+            groupId: 'group-1',
+            membershipVersion: 2,
+            memberSessionIds: [
+                'self',
+                'peer-b',
+                'peer-c'
+            ]
+        });
 
         await expect(service.acceptGroupUpdate(first)).resolves.toEqual({
             joinedPeerIds: ['peer-a', 'peer-b'],
@@ -72,7 +80,7 @@ describe('WebRtcGroupService', () => {
     });
 
     it('refreshes from cache using read or peek and supports callback removal', async () => {
-        const snapshot = createGroupSnapshot('group-1', 1, ['self', 'peer-a']);
+        const snapshot = createGroupSnapshot({ groupId: 'group-1', membershipVersion: 1, memberSessionIds: ['self', 'peer-a'] });
         const cache = {
             read: vi.fn(() => undefined),
             peek: vi.fn(() => snapshot)
@@ -106,7 +114,7 @@ describe('WebRtcGroupService', () => {
     it('reads from the scoped group snapshot repository by group id', async () => {
         configureTestCacheRepositories();
 
-        const snapshot = createGroupSnapshot('group-1', 1, ['self', 'peer-a']);
+        const snapshot = createGroupSnapshot({ groupId: 'group-1', membershipVersion: 1, memberSessionIds: ['self', 'peer-a'] });
         groupStateSnapshotsRepository.setGroupStateSnapshot(snapshot);
 
         const rtcQBox = createRtcHarness('self');
@@ -127,22 +135,22 @@ describe('WebRtcGroupService', () => {
     it('reads the matching scoped snapshot when same group id exists in multiple workspaces', () => {
         configureTestCacheRepositories();
 
-        const workspaceA = createGroupSnapshot(
-            'shared-room',
-            1,
-            ['self', 'peer-a'],
-            {
+        const workspaceA = createGroupSnapshot({
+            groupId: 'shared-room',
+            membershipVersion: 1,
+            memberSessionIds: ['self', 'peer-a'],
+            scope: {
                 workspaceId: 'workspace-a'
             }
-        );
-        const workspaceB = createGroupSnapshot(
-            'shared-room',
-            1,
-            ['self', 'peer-b'],
-            {
+        });
+        const workspaceB = createGroupSnapshot({
+            groupId: 'shared-room',
+            membershipVersion: 1,
+            memberSessionIds: ['self', 'peer-b'],
+            scope: {
                 workspaceId: 'workspace-b'
             }
-        );
+        });
         groupStateSnapshotsRepository.setGroupStateSnapshots([workspaceA, workspaceB]);
 
         const rtcQBox = createRtcHarness('self');
@@ -157,30 +165,30 @@ describe('WebRtcGroupService', () => {
     });
 
     it('selects the latest matching cached snapshot without direct cache hits', () => {
-        const older = createGroupSnapshot(
-            'shared-room',
-            1,
-            ['self', 'peer-old'],
-            {
+        const older = createGroupSnapshot({
+            groupId: 'shared-room',
+            membershipVersion: 1,
+            memberSessionIds: ['self', 'peer-old'],
+            scope: {
                 workspaceId: 'workspace-b'
             }
-        );
-        const latest = createGroupSnapshot(
-            'shared-room',
-            3,
-            ['self', 'peer-latest'],
-            {
+        });
+        const latest = createGroupSnapshot({
+            groupId: 'shared-room',
+            membershipVersion: 3,
+            memberSessionIds: ['self', 'peer-latest'],
+            scope: {
                 workspaceId: 'workspace-b'
             }
-        );
-        const newerWrongScope = createGroupSnapshot(
-            'shared-room',
-            99,
-            ['self', 'peer-wrong'],
-            {
+        });
+        const newerWrongScope = createGroupSnapshot({
+            groupId: 'shared-room',
+            membershipVersion: 99,
+            memberSessionIds: ['self', 'peer-wrong'],
+            scope: {
                 workspaceId: 'workspace-a'
             }
-        );
+        });
         const cache = {
             read: () => undefined,
             peek: () => undefined,
@@ -203,11 +211,11 @@ describe('WebRtcGroupService', () => {
     it('rejects updates for the wrong group id', async () => {
         const cache = new LatestRepository<string, GroupSnapshot>();
         const rtcQBox = createRtcHarness('self');
-        const snapshot = createGroupSnapshot('group-1', 1, ['self']);
+        const snapshot = createGroupSnapshot({ groupId: 'group-1', membershipVersion: 1, memberSessionIds: ['self'] });
         const service = new WebRtcGroupService(rtcQBox as never, snapshot.group, cache);
 
         await expect(
-            service.acceptGroupUpdate(createGroupSnapshot('group-2', 1, ['self']))
+            service.acceptGroupUpdate(createGroupSnapshot({ groupId: 'group-2', membershipVersion: 1, memberSessionIds: ['self'] }))
         ).rejects.toThrow(
             'Received update for wrong room group-2, expected group-1'
         );
@@ -222,15 +230,8 @@ function createRtcHarness(sessionId: string) {
     };
 }
 
-function createGroupSnapshot(
-    groupId: string,
-    membershipVersion: number,
-    memberSessionIds: readonly string[],
-    scope: Readonly<{
-        applicationId?: string;
-        workspaceId?: string;
-    }> = {}
-): GroupSnapshot {
+function createGroupSnapshot(input: CreateGroupSnapshotInput): GroupSnapshot {
+    const { groupId, membershipVersion, memberSessionIds, scope = {} } = input;
     const applicationId = scope.applicationId ?? 'app-1';
     const workspaceId = scope.workspaceId ?? 'workspace-1';
     const ownerPrincipalId = memberSessionIds[0];
@@ -273,21 +274,7 @@ function createGroupSnapshot(
             removed: null,
             banned: null
         })),
-        activeSessions: memberSessionIds.map((sessionId): GroupPresenceSession => ({
-            applicationId,
-            workspaceId,
-            groupId,
-            sessionId,
-            principalId: sessionId,
-            generationId: `generation-${sessionId}`,
-            generationVersion: membershipVersion,
-            status: 'active',
-            connectedAtEpochMs: 1,
-            lastHeartbeatAtEpochMs: membershipVersion,
-            expiresAtEpochMs: membershipVersion + 60_000,
-            disconnectedAtEpochMs: null,
-            disconnectReason: null
-        })),
+        activeSessions: createGroupSessions(input),
         memberCount: memberSessionIds.length,
         onlineMemberCount: memberSessionIds.length
     };
@@ -301,4 +288,33 @@ function createAuditStamp(atEpochMs: number, principalId: string): AuditStamp {
         traceId: null,
         requestId: null
     };
+}
+interface CreateGroupSnapshotInput {
+    readonly groupId: string;
+    readonly membershipVersion: number;
+    readonly memberSessionIds: readonly string[];
+    readonly scope?: Readonly<{
+        applicationId?: string;
+        workspaceId?: string;
+    }>;
+}
+function createGroupSessions(input: CreateGroupSnapshotInput): GroupSnapshot['activeSessions'] {
+    const { groupId, membershipVersion, memberSessionIds, scope = {} } = input;
+    const applicationId = scope.applicationId ?? 'app-1';
+    const workspaceId = scope.workspaceId ?? 'workspace-1';
+    return memberSessionIds.map((sessionId): GroupPresenceSession => ({
+        applicationId,
+        workspaceId,
+        groupId,
+        sessionId,
+        principalId: sessionId,
+        generationId: `generation-${sessionId}`,
+        generationVersion: membershipVersion,
+        status: 'active',
+        connectedAtEpochMs: 1,
+        lastHeartbeatAtEpochMs: membershipVersion,
+        expiresAtEpochMs: membershipVersion + 60_000,
+        disconnectedAtEpochMs: null,
+        disconnectReason: null
+    }));
 }

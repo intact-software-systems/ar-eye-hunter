@@ -1,7 +1,7 @@
 import { createBrowserRuntimeFoundation } from '@shared-web/browser/composition/browser-runtime-composition.ts';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { configureTestCacheRepositories } from '../../cache-repository-config.ts';
+import { configureTestCacheRepositories } from '../../configure-test-cache-repositories.ts';
 
 type MiddlewareModule = typeof import('@shared-web/browser/connection/initialise-browser-middleware.ts');
 type AuthModule = typeof import('@shared/api/auth.ts');

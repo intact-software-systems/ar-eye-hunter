@@ -10,7 +10,7 @@ import type { StateScope } from '@shared/api/state-types.ts';
 import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
 import type { OverlayAdoptionOutcome } from '@shared/repository/overlays-repository.ts';
 import * as overlaysRepository from '@shared/repository/overlays-repository.ts';
-import type { WebRtcGroupManager } from '@shared/services/WebRtcGroupManager.ts';
+import type { WebRtcGroupManager } from '@shared/services/web-rtc-group-manager.ts';
 
 import type { ApiRequestOptions } from '../api/http-request.ts';
 import { readStateGroupTopology } from '../rtc/rtc-topology-http-api.ts';

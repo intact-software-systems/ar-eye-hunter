@@ -30,8 +30,7 @@ import {
 import {
     computeOverlayRttReportingDegreeLimit,
     computeServerDesiredPeerIds,
-    readAcceptedOverlayForGroup,
-    readPlannedOverlayForGroup
+    readOverlayForGroup
 } from './webrtc-group-overlay-reading.ts';
 import { computeOutboundDialPlan, type OutboundDialPlan } from './webrtc-outbound-dial-plan.ts';
 import type { WebRtcConnectionService } from './WebRtcConnectionService.ts';
@@ -364,7 +363,10 @@ export class WebRtcGroupManager {
         this.disconnectExpiredRetainedPeers(reconciledKnownPeerIds);
         this.evictRetainedPeers(desiredPeerIds, reconciledKnownPeerIds);
 
-        this.options.onDesiredPeerIdsChanged?.();
+        this.options.onDesiredPeerIdsChanged?.({
+            desiredPeerIds: [...desiredPeerIds],
+            rttReportingPeerIds: this.rttReportingPeerIds({ degreeLimit: this.options.rttReportingDegreeLimit })
+        });
     }
 
     private connectDesiredPeers(
@@ -504,7 +506,7 @@ export class WebRtcGroupManager {
     }
 
     private targetPeerIdsForGroup(group: WebRtcGroupService): readonly PeerId[] {
-        const overlay = readAcceptedOverlayForGroup(
+        const overlay = readOverlayForGroup(
             this.acceptedOverlayCache,
             group.groupRef
         );
@@ -524,7 +526,7 @@ export class WebRtcGroupManager {
             .sort((left, right) => left.groupKey.localeCompare(right.groupKey));
 
         for (const group of groups) {
-            const overlay = readPlannedOverlayForGroup(
+            const overlay = readOverlayForGroup(
                 this.plannedOverlayCache,
                 group.groupRef
             );
@@ -598,7 +600,7 @@ export class WebRtcGroupManager {
     private isRttReportingPairEligibleForGroup(
         pair: RttReportingGroupPair
     ): boolean {
-        const overlay = readPlannedOverlayForGroup(
+        const overlay = readOverlayForGroup(
             this.plannedOverlayCache,
             pair.group.groupRef
         );

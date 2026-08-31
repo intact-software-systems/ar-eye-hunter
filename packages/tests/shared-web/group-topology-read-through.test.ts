@@ -24,9 +24,9 @@ import {
     setAcceptedOverlayById,
     setPlannedOverlayById
 } from '@shared/repository/overlays-repository.ts';
-import type { WebRtcGroupManager } from '@shared/services/WebRtcGroupManager.ts';
+import type { WebRtcGroupManager } from '@shared/services/web-rtc-group-manager.ts';
 
-import { configureTestCacheRepositories } from '../cache-repository-config.ts';
+import { configureTestCacheRepositories } from '../configure-test-cache-repositories.ts';
 import { createTestGroup } from '../create-test-group.ts';
 
 const scope: StateScope = {
@@ -177,6 +177,38 @@ describe('group topology read-through', () => {
         expect(cleared).toEqual([{ groupId: 'room-a', outcome: 'no-overlay' }]);
         expect(findPlannedOverlayById(planned.overlayId)).toBeUndefined();
         expect(findAcceptedOverlayById(accepted.overlayId)).toBeUndefined();
+    });
+
+    it('hydrates same-tuple tombstones into both roles without reviving a delayed active copy', async () => {
+        const group = createGroupSnapshot('room-a', ['session-a']);
+        groupStateSnapshotsRepository.setGroupStateSnapshot(group);
+        const active = createTopologySnapshot(group, { groupRevision: 2, presenceRevision: 2 }, 3);
+        const removed: RallarOverlayTopologySnapshot = {
+            ...active,
+            state: 'removed',
+            nextHopsBySessionId: { 'session-a': [] }
+        };
+        const responses = [active, removed, active];
+        vi.stubGlobal('fetch', async () => {
+            const snapshot = responses.shift()!;
+            return jsonResponse(topologyView(group, snapshot, snapshot));
+        });
+        const input = {
+            groupSnapshots: [group],
+            sessionId: 'session-a',
+            scope,
+            webRtcGroupManager: createWebRtcGroupManager(),
+            apiRequest: { authSession: null }
+        };
+        await hydrateGroupTopologyOverlays(input);
+        expect(findPlannedOverlayById(active.overlayId)?.state).toBe('active');
+        expect(findAcceptedOverlayById(active.overlayId)?.state).toBe('active');
+        for (const delivery of ['retirement', 'delayed active']) {
+            expect(await hydrateGroupTopologyOverlays(input), delivery)
+                .toEqual([{ groupId: 'room-a', outcome: 'adopted' }]);
+            expect(findPlannedOverlayById(active.overlayId)).toBeUndefined();
+            expect(findAcceptedOverlayById(active.overlayId)).toBeUndefined();
+        }
     });
 
     it('preserves newer planned and accepted publications that arrive while a null read is pending', async () => {

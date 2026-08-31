@@ -18,7 +18,7 @@ import { WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws
 import { describe, expect, it } from 'vitest';
 
 import { findCurrentClientSnapshot } from '../../../../../../apps/api-v1/src/crdt/create-api-crdt-document-authorizer.ts';
-import { configureTestCacheRepositories } from '../../../../cache-repository-config.ts';
+import { configureTestCacheRepositories } from '../../../../configure-test-cache-repositories.ts';
 import { FakeRuntimeStateRepository } from '../../../runtime-state/test-support/fake-runtime-state-repository.ts';
 
 const NOW = Date.now();
@@ -123,27 +123,7 @@ async function putSnapshot(repository: ClientStateRepository, snapshot: ClientSn
 }
 
 function clientSnapshot(): ClientSnapshot {
-    const principal: ClientPrincipal = {
-        applicationId: 'app-1',
-        workspaceId: DEFAULT_STATE_WORKSPACE_ID,
-        principalId: 'alice',
-        username: 'alice',
-        displayName: 'Alice',
-        avatarUrl: null,
-        authProvider: null,
-        externalSubjectId: null,
-        roles: [],
-        metadata: {},
-        status: 'active',
-        disabled: null,
-        deleted: null,
-        snapshotVersion: 1,
-        profileVersion: 1,
-        presenceVersion: 1,
-        created: audit(),
-        updated: audit(),
-        lastSeenAtEpochMs: NOW
-    };
+    const principal: ClientPrincipal = createAlicePrincipal();
     const instance: ClientInstance = {
         applicationId: principal.applicationId,
         workspaceId: principal.workspaceId,
@@ -226,5 +206,28 @@ function audit(): AuditStamp {
         reason: null,
         traceId: null,
         requestId: null
+    };
+}
+function createAlicePrincipal(): ClientPrincipal {
+    return {
+        applicationId: 'app-1',
+        workspaceId: DEFAULT_STATE_WORKSPACE_ID,
+        principalId: 'alice',
+        username: 'alice',
+        displayName: 'Alice',
+        avatarUrl: null,
+        authProvider: null,
+        externalSubjectId: null,
+        roles: [],
+        metadata: {},
+        status: 'active',
+        disabled: null,
+        deleted: null,
+        snapshotVersion: 1,
+        profileVersion: 1,
+        presenceVersion: 1,
+        created: audit(),
+        updated: audit(),
+        lastSeenAtEpochMs: NOW
     };
 }

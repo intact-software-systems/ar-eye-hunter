@@ -16,9 +16,9 @@ import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology
 import { DEFAULT_STATE_APPLICATION_ID, DEFAULT_STATE_WORKSPACE_ID, type StateScope } from '@shared/api/state-types.ts';
 import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
 import { findAcceptedOverlayById, findPlannedOverlayById } from '@shared/repository/overlays-repository.ts';
-import type { WebRtcGroupManager } from '@shared/services/WebRtcGroupManager.ts';
+import type { WebRtcGroupManager } from '@shared/services/web-rtc-group-manager.ts';
 
-import { configureTestCacheRepositories } from '../../cache-repository-config.ts';
+import { configureTestCacheRepositories } from '../../configure-test-cache-repositories.ts';
 import { createTestGroup } from '../../create-test-group.ts';
 
 const scope: StateScope = {
@@ -149,7 +149,7 @@ describe('black-box browser room-state refresh composition', () => {
     });
 });
 
-function createRefreshInput(group: GroupSnapshot) {
+function createRefreshInput(group: GroupSnapshot): Omit<Parameters<typeof refreshBlackBoxBrowserRoomState>[0], 'options'> {
     const manager = createWebRtcGroupManager();
     return {
         roomRef: group.group,

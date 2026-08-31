@@ -4,7 +4,7 @@ import { createTestClientStateRepository } from '@shared-test/shared-server/crea
 import type { AuditStamp, ClientInstance, ClientPrincipal, ClientSession, ClientSnapshot } from '@shared/api/client-types.ts';
 import { findClientStateSnapshotByPrincipalId, findClientStateSnapshotByRef } from '@shared/repository/client-state-snapshots-repository.ts';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { configureTestCacheRepositories } from '../../../cache-repository-config.ts';
+import { configureTestCacheRepositories } from '../../../configure-test-cache-repositories.ts';
 import { FakeRuntimeStateRepository } from '../../runtime-state/test-support/fake-runtime-state-repository.ts';
 
 interface CreateClientSnapshotFixtureInput {

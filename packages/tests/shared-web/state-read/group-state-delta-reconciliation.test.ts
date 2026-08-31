@@ -9,8 +9,9 @@ import { DEFAULT_STATE_APPLICATION_ID, DEFAULT_STATE_WORKSPACE_ID } from '@share
 import { decideGroupSnapshotCausalRevision } from '@shared/repository/group-state-snapshot-revision.ts';
 import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
 import { StateSnapshotRevisionConflictError } from '@shared/repository/state-snapshot-revision.ts';
+import { QueueBoxUtilities } from '@shared/services/QueueBoxUtilities.ts';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { configureTestCacheRepositories } from '../../cache-repository-config.ts';
+import { configureTestCacheRepositories } from '../../configure-test-cache-repositories.ts';
 import { createTestGroup } from '../../create-test-group.ts';
 
 vi.mock('@shared/repository/group-state-snapshot-revision.ts', async (importOriginal) => {
@@ -38,7 +39,7 @@ describe('browser group-state delta reconciliation', () => {
     });
 
     it('applies a delta at the cached predecessor and materializes the server-canonical snapshot', async () => {
-        const runtime = createStateCacheRuntime();
+        const runtime = new StateCacheRuntime();
         const predecessor = createDeltaGroupSnapshot({
             groupId: 'room-delta-apply',
             memberPrincipalIds: ['m-alpha', 'm-charlie'],
@@ -84,7 +85,7 @@ describe('browser group-state delta reconciliation', () => {
     });
 
     it('resolves equal-resulting and summary no-op envelopes as typed no-ops before the apply rule', async () => {
-        const runtime = createStateCacheRuntime();
+        const runtime = new StateCacheRuntime();
         const cached = createDeltaGroupSnapshot({
             groupId: 'room-delta-noop',
             memberPrincipalIds: ['m-alpha'],
@@ -114,7 +115,7 @@ describe('browser group-state delta reconciliation', () => {
     });
 
     it('pulls at the resulting floor when the cached snapshot is dominated but not the predecessor', async () => {
-        const runtime = createStateCacheRuntime();
+        const runtime = new StateCacheRuntime();
         const stale = createDeltaGroupSnapshot({
             groupId: 'room-delta-gap',
             memberPrincipalIds: ['m-alpha'],
@@ -150,7 +151,7 @@ describe('browser group-state delta reconciliation', () => {
     });
 
     it('resolves an out-of-order envelope after a newer snapshot as a no-op', async () => {
-        const runtime = createStateCacheRuntime();
+        const runtime = new StateCacheRuntime();
         const newer = createDeltaGroupSnapshot({
             groupId: 'room-delta-order',
             memberPrincipalIds: ['m-alpha'],
@@ -181,7 +182,7 @@ describe('browser group-state delta reconciliation', () => {
     });
 
     it('pulls at the floor when an active session record is missing from the delta and the cache', async () => {
-        const runtime = createStateCacheRuntime();
+        const runtime = new StateCacheRuntime();
         const cached = createDeltaGroupSnapshot({
             groupId: 'room-delta-session',
             memberPrincipalIds: ['m-alpha', 'm-bravo'],
@@ -220,7 +221,7 @@ describe('browser group-state delta reconciliation', () => {
     });
 
     it('counts a revision conflict from the divergence oracle and self-heals with the floored pull', async () => {
-        const runtime = createStateCacheRuntime();
+        const runtime = new StateCacheRuntime();
         const cached = createDeltaGroupSnapshot({
             groupId: 'room-delta-oracle',
             memberPrincipalIds: ['m-alpha'],
@@ -269,8 +270,8 @@ describe('browser group-state delta reconciliation', () => {
     }
 });
 
-function createStateCacheRuntime() {
-    const manager = {
+class StateCacheRuntime {
+    readonly manager = {
         notifyClientPresenceChanged: vi.fn(async () => undefined),
         notifyOverlayTopologyChanged: vi.fn(async () => undefined),
         acceptGroupUpdate: vi.fn(async () => undefined),
@@ -278,66 +279,68 @@ function createStateCacheRuntime() {
         delete: vi.fn(async () => undefined),
         has: vi.fn(() => false)
     };
-    const clientData: ClientInfo = {
+    private readonly clientData: ClientInfo = {
         clientId: 'm-alpha',
         sessionId: 'session-m-alpha',
         isOnline: true
     };
-    let onInboxMessage: ((message: ALMessage) => Promise<void>) | undefined;
-    const webSocketQueueBox = {
-        onAllInboxMessagesDo: vi.fn((callback: {
-            onMessage: (message: ALMessage) => Promise<void>;
-        }) => {
-            onInboxMessage = callback.onMessage;
-            return webSocketQueueBox;
-        })
-    };
-    browserStateCacheLifecycle.initialise({
-        inbox: webSocketQueueBox,
-        webRtcGroupManager: manager as never,
-        clientData
-    });
-
-    return {
-        manager,
-        hydrate: async (snapshots: readonly GroupSnapshot[]) => {
-            await browserStateCacheLifecycle.hydrate({
-                webRtcGroupManager: manager as never,
-                clientData,
-                clientSnapshots: [],
-                groupSnapshots: snapshots
-            });
-        },
-        receiveDeltaMessage: async (envelope: GroupStateDeltaEnvelope) => {
-            await onInboxMessage?.(
-                newALBroadcastMessage(
-                    'server-1',
-                    newALEventRoute(
-                        AppTopics.groupStateEvent,
-                        envelope.event.groupId,
-                        envelope.event.eventId
-                    ),
-                    'all',
-                    AppTopics.groupStateEvent,
-                    envelope
-                )
-            );
-        },
-        receiveSnapshotMessage: async (snapshot: GroupSnapshot) => {
-            await onInboxMessage?.(
-                newALBroadcastMessage(
-                    'server-1',
-                    newALEventRoute(
-                        AppTopics.groupStateSnapshot,
-                        snapshot.group.groupId,
-                        snapshot.group.groupId
-                    ),
-                    'all',
-                    AppTopics.groupStateSnapshot,
-                    snapshot
-                )
-            );
+    private onInboxMessage: ((message: ALMessage) => Promise<void>) | undefined;
+    constructor() {
+        browserStateCacheLifecycle.initialise({
+            inbox: {
+                onAllInboxMessagesDo: (callback) => {
+                    this.onInboxMessage = async (message) => {
+                        await callback.onMessage(message, QueueBoxUtilities.toResourceEntryFromMsg(message, 'TEST_INBOX'));
+                    };
+                }
+            },
+            webRtcGroupManager: this.manager as never,
+            clientData: this.clientData
+        });
+    }
+    private async receiveMessage(message: ALMessage): Promise<void> {
+        if (!this.onInboxMessage) {
+            throw new Error('Fixture inbox subscription was not installed.');
         }
+        await this.onInboxMessage(message);
+    }
+    hydrate = async (snapshots: readonly GroupSnapshot[]) => {
+        await browserStateCacheLifecycle.hydrate({
+            webRtcGroupManager: this.manager as never,
+            clientData: this.clientData,
+            clientSnapshots: [],
+            groupSnapshots: snapshots
+        });
+    };
+    receiveDeltaMessage = async (envelope: GroupStateDeltaEnvelope) => {
+        await this.receiveMessage(
+            newALBroadcastMessage(
+                'server-1',
+                newALEventRoute(
+                    AppTopics.groupStateEvent,
+                    envelope.event.groupId,
+                    envelope.event.eventId
+                ),
+                'all',
+                AppTopics.groupStateEvent,
+                envelope
+            )
+        );
+    };
+    receiveSnapshotMessage = async (snapshot: GroupSnapshot) => {
+        await this.receiveMessage(
+            newALBroadcastMessage(
+                'server-1',
+                newALEventRoute(
+                    AppTopics.groupStateSnapshot,
+                    snapshot.group.groupId,
+                    snapshot.group.groupId
+                ),
+                'all',
+                AppTopics.groupStateSnapshot,
+                snapshot
+            )
+        );
     };
 }
 

@@ -16,7 +16,7 @@ import {
     readablePlannedOverlayCache
 } from '@shared/repository/overlays-repository.ts';
 import { Either } from '@shared/resilience/Either.ts';
-import { WebRtcGroupManager } from '@shared/services/WebRtcGroupManager.ts';
+import { WebRtcGroupManager } from '@shared/services/web-rtc-group-manager.ts';
 import { vi } from 'vitest';
 import { createTestGroup } from '../create-test-group.ts';
 
@@ -88,10 +88,8 @@ export function createSimulatedClient(
         },
         {
             maxPeerConnections: options.maxPeerConnections,
-            ...(options.overlayTransitionGraceMs === undefined
-                ? {}
-                : { overlayTransitionGraceMs: options.overlayTransitionGraceMs }),
-            ...(options.now === undefined ? {} : { now: options.now })
+            overlayTransitionGraceMs: options.overlayTransitionGraceMs,
+            now: options.now
         }
     );
 
@@ -176,21 +174,7 @@ export function createSimulationGroupSnapshot(
             invitedByPrincipalId: null,
             invitationExpiresAtEpochMs: null
         })),
-        activeSessions: sessionIds.map((sessionId) => ({
-            applicationId,
-            workspaceId,
-            groupId,
-            sessionId,
-            principalId: sessionId,
-            generationId: `generation-${snapshotVersion}`,
-            generationVersion: snapshotVersion,
-            status: 'active',
-            connectedAtEpochMs: 1,
-            lastHeartbeatAtEpochMs: snapshotVersion,
-            expiresAtEpochMs: 60_000,
-            disconnectedAtEpochMs: null,
-            disconnectReason: null
-        })),
+        activeSessions: createSimulationGroupSessions(groupId, snapshotVersion, sessionIds),
         memberCount: sessionIds.length,
         onlineMemberCount: sessionIds.length
     };
@@ -204,4 +188,23 @@ export function simulationAuditStamp(atEpochMs: number): AuditStamp {
         traceId: null,
         requestId: null
     };
+}
+function createSimulationGroupSessions(groupId: string, snapshotVersion: number, sessionIds: readonly string[]): GroupSnapshot['activeSessions'] {
+    const applicationId = 'app-1';
+    const workspaceId = 'workspace-1';
+    return sessionIds.map((sessionId) => ({
+        applicationId,
+        workspaceId,
+        groupId,
+        sessionId,
+        principalId: sessionId,
+        generationId: `generation-${snapshotVersion}`,
+        generationVersion: snapshotVersion,
+        status: 'active',
+        connectedAtEpochMs: 1,
+        lastHeartbeatAtEpochMs: snapshotVersion,
+        expiresAtEpochMs: 60_000,
+        disconnectedAtEpochMs: null,
+        disconnectReason: null
+    }));
 }

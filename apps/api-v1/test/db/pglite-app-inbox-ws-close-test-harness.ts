@@ -6,6 +6,7 @@ import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.t
 import { ResourceInboxResultsRepository } from '@shared-server/queuebox/postgres/resource-inbox-results-repository.ts';
 import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
+import type { IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
 import { type ClientStateService } from '@shared-server/rallar-system/client-state/client-state-service-contracts.ts';
 import { createClientStateService } from '@shared-server/rallar-system/client-state/client-state-service.ts';
 import { AppClientInboxService } from '@shared-server/rallar-system/client-state/inbox/app-client-inbox-service.ts';
@@ -21,22 +22,14 @@ import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 import type { PGliteSql } from '../../src/db/pglite-sql-adapter.ts';
 import { FUTURE_MS } from './pglite-auth-test-harness.ts';
 
-export async function createPGliteAppInboxWsCloseHarness(sql: PGliteSql) {
+export async function createPGliteAppInboxWsCloseHarness(sql: PGliteSql): Promise<PGliteAppInboxWsCloseHarness> {
     const runtime = new PSqlRuntimeStateRepository(sql);
     const resourceInbox = createPSqlResourceInboxRepository(sql);
     const resourceResults = new ResourceInboxResultsRepository(sql);
     const reader = new InboxQueueReader(new PSqlQueueBox(resourceInbox));
     const secondReader = new InboxQueueReader(new PSqlQueueBox(resourceInbox));
-    const authority = {
-        clientId: 'owner',
-        username: 'owner',
-        sessionId: 'owner-session',
-        accessToken: 'owner-token',
-        issuedAtEpochMs: Date.now() - 2_000,
-        expiresAtEpochMs: FUTURE_MS
-    };
     const authSessions = new AuthSessionRepository(runtime);
-    await authSessions.putSession(authority);
+    const authority = await createPGliteCloseOwnerSession(authSessions);
     const options = {
         waitMaxElapsedMsecs: 5_000,
         waitRetryIntervalMsecs: 1,
@@ -57,62 +50,9 @@ export async function createPGliteAppInboxWsCloseHarness(sql: PGliteSql) {
         authSessionRepository: authSessions,
         serviceId: 'pglite-close-test'
     });
-    const client = new AppClientInboxService(
-        {
-            inboxQueueReader: reader,
-            resourceInboxRepository: resourceInbox.entries,
-            resourceInboxResultsRepository: resourceResults,
-            database: sql,
-            clientStateService: clientState
-        },
-        {
-            serviceId: 'pglite-close-test',
-            timing: undefined,
-            options: options
-        }
-    );
-    const group = new GroupStateInboxService(
-        {
-            inboxQueueReader: reader,
-            resourceInboxRepository: resourceInbox.entries,
-            resourceInboxResultsRepository: resourceResults,
-            database: sql,
-            groupStateService: groupState
-        },
-        {
-            serviceId: 'pglite-close-test',
-            timing: undefined,
-            options: options
-        }
-    );
-    new AppClientInboxService(
-        {
-            inboxQueueReader: secondReader,
-            resourceInboxRepository: resourceInbox.entries,
-            resourceInboxResultsRepository: resourceResults,
-            database: sql,
-            clientStateService: clientState
-        },
-        {
-            serviceId: 'pglite-close-test',
-            timing: undefined,
-            options: options
-        }
-    );
-    new GroupStateInboxService(
-        {
-            inboxQueueReader: secondReader,
-            resourceInboxRepository: resourceInbox.entries,
-            resourceInboxResultsRepository: resourceResults,
-            database: sql,
-            groupStateService: groupState
-        },
-        {
-            serviceId: 'pglite-close-test',
-            timing: undefined,
-            options: options
-        }
-    );
+    const consumers = { sql, resourceInbox, resourceResults, clientState, groupState, options };
+    const { client, group } = createPGliteStateInboxConsumers({ ...consumers, reader });
+    createPGliteStateInboxConsumers({ ...consumers, reader: secondReader });
     return {
         authority,
         runtime,
@@ -133,21 +73,19 @@ export function pauseNextPGliteLifecycleRead(
 ): Readonly<{ reached: Promise<void>; resume(): void; }> {
     const lifecycle = state.sessionGenerationLifecycle;
     const originalRead = lifecycle.read.bind(lifecycle);
-    let release!: () => void;
-    let announce!: () => void;
-    const reached = new Promise<void>((resolve) => announce = resolve);
-    const resumed = new Promise<void>((resolve) => release = resolve);
+    const reached = Promise.withResolvers<void>();
+    const resumed = Promise.withResolvers<void>();
     let pause = true;
     lifecycle.read = async (identity) => {
         const read = await originalRead(identity);
         if (pause) {
             pause = false;
-            announce();
-            await resumed;
+            reached.resolve();
+            await resumed.promise;
         }
         return read;
     };
-    return { reached, resume: release };
+    return { reached: reached.promise, resume: resumed.resolve };
 }
 
 export async function assertPGliteQueuedTypes(
@@ -181,4 +119,79 @@ function assertPGliteQueueRow(found: boolean, type: AppInboxType): void {
     if (!found) {
         throw new Error(`Expected a real ${type} queue row`);
     }
+}
+
+interface PGliteAppInboxWsCloseHarness {
+    readonly authority: IssuedAuthSession;
+    readonly runtime: PSqlRuntimeStateRepository;
+    readonly resourceInbox: PSqlResourceInboxRepository;
+    readonly reader: InboxQueueReader;
+    readonly secondReader: InboxQueueReader;
+    readonly client: AppClientInboxService;
+    readonly group: GroupStateInboxService;
+    readonly clientState: ClientStateService;
+    readonly groupState: GroupStateService;
+    readonly clients: ClientStateRepository;
+    readonly groups: GroupStateRepository;
+}
+interface PGliteStateInboxConsumerInput {
+    readonly sql: PGliteSql;
+    readonly reader: InboxQueueReader;
+    readonly resourceInbox: PSqlResourceInboxRepository;
+    readonly resourceResults: ResourceInboxResultsRepository;
+    readonly clientState: ClientStateService;
+    readonly groupState: GroupStateService;
+    readonly options: {
+        readonly waitMaxElapsedMsecs: number;
+        readonly waitRetryIntervalMsecs: number;
+        readonly waitMaxRetryIntervalMsecs: number;
+        readonly waitJitterRatio: number;
+    };
+}
+interface PGliteStateInboxConsumers {
+    readonly client: AppClientInboxService;
+    readonly group: GroupStateInboxService;
+}
+function createPGliteStateInboxConsumers(input: PGliteStateInboxConsumerInput): PGliteStateInboxConsumers {
+    const client = new AppClientInboxService(
+        {
+            inboxQueueReader: input.reader,
+            resourceInboxRepository: input.resourceInbox.entries,
+            resourceInboxResultsRepository: input.resourceResults,
+            database: input.sql,
+            clientStateService: input.clientState
+        },
+        {
+            serviceId: 'pglite-close-test',
+            timing: undefined,
+            options: input.options
+        }
+    );
+    const group = new GroupStateInboxService(
+        {
+            inboxQueueReader: input.reader,
+            resourceInboxRepository: input.resourceInbox.entries,
+            resourceInboxResultsRepository: input.resourceResults,
+            database: input.sql,
+            groupStateService: input.groupState
+        },
+        {
+            serviceId: 'pglite-close-test',
+            timing: undefined,
+            options: input.options
+        }
+    );
+    return { client, group };
+}
+async function createPGliteCloseOwnerSession(authSessions: AuthSessionRepository): Promise<IssuedAuthSession> {
+    const authority = {
+        clientId: 'owner',
+        username: 'owner',
+        sessionId: 'owner-session',
+        accessToken: 'owner-token',
+        issuedAtEpochMs: Date.now() - 2_000,
+        expiresAtEpochMs: FUTURE_MS
+    };
+    await authSessions.putSession(authority);
+    return authority;
 }

@@ -5,7 +5,7 @@ import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { LatestRepository } from '@shared/cache/LatestRepository.ts';
 import type { ReadableKeyedValues } from '@shared/cache/RepositoryInterfaces.ts';
 import { Either } from '@shared/resilience/Either.ts';
-import { WebRtcGroupManager } from '@shared/services/WebRtcGroupManager.ts';
+import { WebRtcGroupManager } from '@shared/services/web-rtc-group-manager.ts';
 
 import {
     parseRtcBaselineAcceptedWorker,

@@ -1,6 +1,9 @@
 import type { BlackBoxRallarRuntime } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-runtime-contract.ts';
+import {
+    createBlackBoxRallarRuntime,
+    installBlackBoxRallarRuntime
+} from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-runtime.ts';
 import type { BlackBoxRallarEvent } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/contracts.ts';
-import { createBlackBoxRallarRuntime, installBlackBoxRallarRuntime } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/runtime.ts';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { facade, resetFacade } from './browser-rallar-runtime-test-harness.ts';
 

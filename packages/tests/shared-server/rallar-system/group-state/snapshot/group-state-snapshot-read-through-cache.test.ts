@@ -10,7 +10,7 @@ import type { GroupPresenceSummaryWorkData } from '@shared/queuebox/GroupPresenc
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
 import { describe, expect, it } from 'vitest';
-import { configureTestCacheRepositories } from '../../../../cache-repository-config.ts';
+import { configureTestCacheRepositories } from '../../../../configure-test-cache-repositories.ts';
 import { FakeRuntimeStateRepository } from '../../../runtime-state/test-support/fake-runtime-state-repository.ts';
 import { createGroupStateServiceStub } from '../../state-sync/test-support/group-state-service-stub.ts';
 import { createGroupSnapshot } from './group-state-snapshot-test-fixtures.ts';

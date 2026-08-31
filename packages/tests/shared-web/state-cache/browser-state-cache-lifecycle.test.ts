@@ -21,7 +21,7 @@ import {
     it,
     vi
 } from 'vitest';
-import { configureTestCacheRepositories } from '../../cache-repository-config.ts';
+import { configureTestCacheRepositories } from '../../configure-test-cache-repositories.ts';
 import {
     createClientSnapshot,
     createGroupSnapshot,

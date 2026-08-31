@@ -1,3 +1,4 @@
+import type { ALNackPayload } from '@shared/al-contracts/al-control.ts';
 import type {
     BlackBoxRallarAuthenticateDiagnostics,
     BlackBoxRallarCloseDiagnostics,
@@ -49,6 +50,7 @@ export interface BlackBoxRallarRuntime {
     send(input: BlackBoxRallarSendInput): Promise<BlackBoxRallarSendDiagnostics>;
     sendWs(input: BlackBoxRallarWsSendInput): Promise<BlackBoxRallarWsSendDiagnostics>;
     refreshRoom(options: BlackBoxRallarRoomRefreshOptions): Promise<void>;
+    readRtcMessageNacks(messageId: string): Promise<readonly ALNackPayload[]>;
     readonly crdt: BlackBoxRallarCrdtRuntime;
     readonly director: BlackBoxRallarDirectorRuntime;
     close(): Promise<BlackBoxRallarCloseDiagnostics>;

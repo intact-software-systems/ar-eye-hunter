@@ -18,16 +18,16 @@ import * as overlaysRepository from '@shared/repository/overlays-repository.ts';
 import { pairKey } from '@shared/repository/rtt-repository.ts';
 import { resolveBootstrapDegree } from '@shared/rtc/bootstrap-peer-selection.ts';
 import type { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
+import { WebRtcGroupManager } from '@shared/services/web-rtc-group-manager.ts';
 import type {
     QRtcPeerDto,
     RtcDataChannelLaneConfig,
     WebRtcConnectionService,
     WebRtcInboundPeerCreationDecision
 } from '@shared/services/WebRtcConnectionService.ts';
-import { WebRtcGroupManager } from '@shared/services/WebRtcGroupManager.ts';
 import type { WebRtcRxStreamerService } from '@shared/services/WebRtcRxStreamerService.ts';
-import { DEFAULT_WS_QUEUE_BOX_CLIENT_RECONNECT_OPTIONS } from '@shared/services/WsQueueBoxClientService.ts';
 import type { WsQueueBoxClientService } from '@shared/services/WsQueueBoxClientService.ts';
+import { DEFAULT_WS_QUEUE_BOX_CLIENT_RECONNECT_OPTIONS } from '@shared/services/WsQueueBoxClientService.ts';
 import { JsonWebSocketClient } from '@shared/websocket/JsonWebSocketClient.ts';
 
 import { readSession } from '@shared/api/auth.ts';
@@ -361,17 +361,14 @@ function createBrowserRtcGroupManager(
         },
         {
             maxPeerConnections: input.options.maxPeerConnections,
-            onDesiredPeerIdsChanged: refreshRttReportingPeers
+            rttReportingDegreeLimit: input.options.rttReportingDegreeLimit,
+            onDesiredPeerIdsChanged: ({ rttReportingPeerIds }) =>
+                rtcRxStreamer.setRttReportingPeerIds(rttReportingPeerIds)
         }
     );
-    function refreshRttReportingPeers(): void {
-        rtcRxStreamer.setRttReportingPeerIds(
-            webRtcGroupManager.rttReportingPeerIds({
-                degreeLimit: input.options.rttReportingDegreeLimit
-            })
-        );
-    }
-    refreshRttReportingPeers();
+    rtcRxStreamer.setRttReportingPeerIds(
+        webRtcGroupManager.rttReportingPeerIds({ degreeLimit: input.options.rttReportingDegreeLimit })
+    );
     webRtcConnectionService.setInboundPeerCreationPolicy(({ peerId }) =>
         toBrowserRtcInboundPeerCreationDecision(
             webRtcGroupManager.isPeerOwnedByAnyGroup(peerId)

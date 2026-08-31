@@ -5,7 +5,7 @@ import type { ClientPrincipalRef, ClientSnapshot } from '@shared/api/client-type
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import type { StateSnapshotReadDiagnosticEvent } from '@shared/api/state-snapshot-read.ts';
 import { describe, expect, it } from 'vitest';
-import { configureTestCacheRepositories } from '../../../../cache-repository-config.ts';
+import { configureTestCacheRepositories } from '../../../../configure-test-cache-repositories.ts';
 import { createClientCache, createClientSnapshot, createGroupCache, createGroupSnapshot } from './rest-state-snapshot-read-test-fixtures.ts';
 
 describe('client REST snapshot read selector', () => {

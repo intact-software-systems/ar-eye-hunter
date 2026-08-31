@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "lineages": [
+    {
+      "mergeBase": "eab44688b0a971b002c8ea14ba26179fb7e02c17",
+      "source": {
+        "path": "packages/shared-test/black-box-runner/browser/rallar-browser-runtime/runtime.ts",
+        "blob": "05b915fe7003f4a1589a0bcf21e112cfb27d5141"
+      },
+      "targets": [
+        "packages/shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-authentication.ts",
+        "packages/shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-connection-policy.ts",
+        "packages/shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-connection-state.ts",
+        "packages/shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-health-reader.ts",
+        "packages/shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-runtime.ts"
+      ]
+    }
+  ]
+}

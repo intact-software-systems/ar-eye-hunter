@@ -1,4 +1,5 @@
 import { adoptOverlayTopology } from '@shared-web/browser/state-cache/overlay-topology-message-dispatch.ts';
+import type { OverlayInfo } from '@shared/api/api-config.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import { toGroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
 import type { GroupSnapshot, GroupStateCausalRevision } from '@shared/api/group-types.ts';
@@ -7,7 +8,6 @@ import * as groupStateSnapshotsRepository from '@shared/repository/group-state-s
 import {
     findAcceptedOverlayById,
     findPlannedOverlayById,
-    readOverlayAdoptionDiagnostics,
     resetOverlayAdoptionDiagnostics,
     setAcceptedOverlayById,
     setOverlayAdoptionDiagnosticsSink,
@@ -22,7 +22,7 @@ import {
     it
 } from 'vitest';
 
-import { configureTestCacheRepositories } from '../../cache-repository-config.ts';
+import { configureTestCacheRepositories } from '../../configure-test-cache-repositories.ts';
 import { createTestGroup } from '../../create-test-group.ts';
 
 describe('browser overlay topology role adoption', () => {
@@ -51,6 +51,37 @@ describe('browser overlay topology role adoption', () => {
         });
         expect(findPlannedOverlayById(topology.overlayId)?.overlayVersion).toBe(2);
     });
+
+    it.each(['publication', 'current-state'] as const)(
+        'retires a producer-shaped same-tuple plan through %s and rejects its delayed active copy',
+        async (adoption) => {
+            const group = groupSnapshot(1);
+            const active = topologySnapshot(group, { groupRevision: 2, presenceRevision: 2 }, 2);
+            const removed: RallarOverlayTopologySnapshot = {
+                ...active,
+                state: 'removed',
+                nextHopsBySessionId: { 'session-a': [], 'session-b': [] }
+            };
+            const manager = webRtcGroupManager();
+            groupStateSnapshotsRepository.setGroupStateSnapshot(group);
+            for (const topology of [active, removed]) {
+                await expect(adoptOverlayTopology({
+                    topology,
+                    sessionId: 'session-a',
+                    webRtcGroupManager: manager as never,
+                    adoption
+                })).resolves.toMatchObject({ role: 'planned', changed: true });
+            }
+            expect(findPlannedOverlayById(active.overlayId)).toBeUndefined();
+            await expect(adoptOverlayTopology({
+                topology: active,
+                sessionId: 'session-a',
+                webRtcGroupManager: manager as never,
+                adoption
+            })).resolves.toMatchObject({ outcome: 'dominated-dropped', changed: false });
+            expect(findPlannedOverlayById(active.overlayId)).toBeUndefined();
+        }
+    );
 
     it('promotes a publication-first planned layout when the group snapshot accepts its full identity', async () => {
         const initialGroup = groupSnapshot(1);
@@ -404,7 +435,7 @@ function topologyOverlay(
     group: GroupSnapshot,
     nextHopSessionIds: readonly string[],
     version: number
-) {
+): OverlayInfo {
     return {
         sourceGroupStateCausalRevision: {
             groupRevision: version,

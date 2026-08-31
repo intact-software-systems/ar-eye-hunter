@@ -10,7 +10,7 @@ import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { LatestRepository } from '@shared/cache/LatestRepository.ts';
 import { Either } from '@shared/resilience/Either.ts';
-import { WebRtcGroupManager } from '@shared/services/WebRtcGroupManager.ts';
+import { WebRtcGroupManager } from '@shared/services/web-rtc-group-manager.ts';
 import { createTestGroup } from '../create-test-group.ts';
 
 interface RtcServiceDouble {

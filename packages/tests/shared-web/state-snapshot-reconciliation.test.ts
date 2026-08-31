@@ -4,7 +4,7 @@ import { captureStateSnapshotCollectionObservations, reconcileCompleteStateSnaps
 import * as clientSnapshots from '@shared/repository/client-state-snapshots-repository.ts';
 import * as groupSnapshots from '@shared/repository/group-state-snapshots-repository.ts';
 
-import { configureTestCacheRepositories } from '../cache-repository-config.ts';
+import { configureTestCacheRepositories } from '../configure-test-cache-repositories.ts';
 import { createClientSnapshotFixture, createGroupSnapshotFixture } from './authoritative-group-fixtures.ts';
 
 const scope = { applicationId: 'app-1', workspaceId: 'workspace-1' };

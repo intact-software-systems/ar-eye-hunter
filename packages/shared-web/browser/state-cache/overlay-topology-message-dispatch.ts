@@ -15,7 +15,7 @@ import {
 } from '@shared/repository/group-state-snapshots-repository.ts';
 import { emitOverlayAdoption, type OverlayAdoptionOutcome } from '@shared/repository/overlay-adoption-diagnostics.ts';
 import * as overlaysRepository from '@shared/repository/overlays-repository.ts';
-import type { WebRtcGroupManager } from '@shared/services/WebRtcGroupManager.ts';
+import type { WebRtcGroupManager } from '@shared/services/web-rtc-group-manager.ts';
 
 import { isRtcTopologyCurrentStateMessage } from './is-rtc-topology-current-state-message.ts';
 

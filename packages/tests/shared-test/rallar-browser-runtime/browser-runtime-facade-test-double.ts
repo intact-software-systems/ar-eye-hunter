@@ -286,6 +286,7 @@ const director: BlackBoxBrowserDirectorDependency = {
 };
 
 export const rallarFacadeTestDouble: BlackBoxBrowserRallarRuntimeDependency = {
+    readRtcMessageNacks: async () => [],
     configure: (config) => {
         records.configurationWrites.push(config);
         facadeBehavior.configure(config);

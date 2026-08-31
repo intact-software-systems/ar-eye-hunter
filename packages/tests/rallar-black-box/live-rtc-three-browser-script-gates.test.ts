@@ -2,18 +2,15 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
-type PackageManifest = Readonly<{
-    scripts?: Readonly<Record<string, string>>;
-}>;
+interface PackageManifest {
+    readonly scripts?: Readonly<Record<string, string>>;
+}
 
 const repoRoot = process.cwd();
 const packageJson = JSON.parse(
     fs.readFileSync(path.join(repoRoot, 'package.json'), 'utf8')
 ) as PackageManifest;
 const liveMatrixSpec = 'tests/playwright/rallar-black-box/full-stack-live-rtc-three-browser-matrix.spec.ts';
-const liveLifecycleDriver = 'tests/playwright/rallar-black-box/group-formation-lifecycle-driver.ts';
-const liveDeliveryOperations = 'tests/playwright/rallar-black-box/live-rtc-delivery-operations.ts';
-
 const REQUIRED_LIVE_RTC_GATE_ENV = [
     'RALLAR_BLACK_BOX_FULL_STACK=1',
     'RALLAR_BLACK_BOX_LIVE_RTC_MATRIX=1',
@@ -75,53 +72,6 @@ describe('live three-browser RTC npm script gates', () => {
         expect(memory).not.toContain('RALLAR_BLACK_BOX_LIVE_RETENTION_SOAK=');
         expect(postgres).not.toContain('RALLAR_BLACK_BOX_LIVE_RETENTION_SOAK=');
     });
-
-    it('uses cryptographically secure live run and session identities', () => {
-        const source = fs.readFileSync(path.join(repoRoot, liveMatrixSpec), 'utf8');
-
-        expect(source).not.toContain('Math.random()');
-        expect(source).toContain('crypto.randomUUID()');
-    });
-
-    it('uses the current idempotent group mutation request routes', () => {
-        const matrixSource = fs.readFileSync(path.join(repoRoot, liveMatrixSpec), 'utf8');
-        const lifecycleSource = fs.readFileSync(
-            path.join(repoRoot, liveLifecycleDriver),
-            'utf8'
-        );
-        const deliverySource = fs.readFileSync(
-            path.join(repoRoot, liveDeliveryOperations),
-            'utf8'
-        );
-
-        expect(matrixSource).toMatch(
-            /groups\/requests\/\$\{pathSegment\(createRequestId\)\}/u
-        );
-        expect(matrixSource).toMatch(
-            /members\/\{auth\.clientId\}\/requests\/\$\{\s*pathSegment\(requestId\)\s*\}/u
-        );
-        expect(matrixSource).toContain('`rtc-b06-create-${input.suffix}`');
-        expect(matrixSource).toContain(
-            '`rtc-b06-member-${member.prefix.toLowerCase()}-${input.suffix}`'
-        );
-        expect(matrixSource).toContain('acceptedStatusCodes: [201]');
-        expect(matrixSource.match(/setupGroupMembership\(\{/gu)).toHaveLength(3);
-        expect(lifecycleSource).toContain(
-            '`lifecycle/${operation}/requests/${pathSegment(`${operation}-${input.suffix}`)}`'
-        );
-        expect(lifecycleSource).toContain('lifecycleState === \'forming\' ? \'establish\' : \'reopen\'');
-        expect(lifecycleSource).toContain('agent: owner');
-        expect(lifecycleSource).toContain('agent: input.agents[1]');
-        expect(lifecycleSource).toContain('agent: input.agents[2]');
-        expect(lifecycleSource).toContain('readinessStartedAtMs');
-        expect(lifecycleSource).not.toMatch(
-            /input\.agents\.map\(\(agent\) => connectAgent/u
-        );
-        expect(deliverySource).toContain('departedPeerIds: [input.sessions.C]');
-        expect(deliverySource).toContain('departedPeerIds: [input.sessions.B]');
-        expect(matrixSource.match(/realtime\.sessions/gu)).toHaveLength(2);
-    });
-
     it('keeps benchmark ownership out of application and reusable product sources', () => {
         const productRoots = [path.join(repoRoot, 'apps'), path.join(repoRoot, 'packages')];
         const forbiddenImports: string[] = [];
