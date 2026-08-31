@@ -1,10 +1,12 @@
 import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
 import type { RallarRealtimeHandler, RallarRealtimeMessage } from '@shared-web/browser/rallar-realtime-facade.ts';
 import type { RallarUnsubscribe } from '@shared-web/browser/rallar-shared-contracts.ts';
-import type { QRtcPeerDto } from '@shared/services/WebRtcConnectionService.ts';
+import type { ApiJsonValue } from '@shared/api/api-json-value.ts';
+import { toError } from '@shared/resilience/to-error.ts';
+import type { QRtcPeerDto } from '@shared/services/web-rtc-connection-service.ts';
+import type { RtcDataChannelPayload } from '@shared/webrtc/qrtc-data-channel.ts';
 
 const RALLAR_REALTIME_LIFECYCLE_CALLBACK_ID = 'rallar:realtime:lifecycle';
-type RallarRealtimeJsonValue = object | string | number | boolean | null;
 
 export namespace BrowserRealtimeReceiveRuntime {
     export interface Input {
@@ -14,15 +16,15 @@ export namespace BrowserRealtimeReceiveRuntime {
     export interface MessageInput {
         readonly peerId: string;
         readonly laneId: string;
-        readonly data: MessageEvent['data'];
-        readonly event: MessageEvent;
+        readonly data: RtcDataChannelPayload;
+        readonly event: MessageEvent<RtcDataChannelPayload>;
     }
 }
 
 /** Owns realtime lane subscriptions, inbound decoding, and peer callback lifetime. */
 export class BrowserRealtimeReceiveRuntime {
     private readonly binaryListeners = new Map<string, Set<RallarRealtimeHandler<ArrayBuffer>>>();
-    private readonly jsonListeners = new Map<string, Set<RallarRealtimeHandler<RallarRealtimeJsonValue>>>();
+    private readonly jsonListeners = new Map<string, Set<RallarRealtimeHandler<ApiJsonValue>>>();
     private readonly input: BrowserRealtimeReceiveRuntime.Input;
 
     constructor(input: BrowserRealtimeReceiveRuntime.Input) {
@@ -31,12 +33,13 @@ export class BrowserRealtimeReceiveRuntime {
 
     onJson<T>(laneId: string, handler: RallarRealtimeHandler<T>): RallarUnsubscribe {
         const listeners = this.jsonListeners.get(laneId) ??
-            new Set<RallarRealtimeHandler<RallarRealtimeJsonValue>>();
-        listeners.add(handler as RallarRealtimeHandler<RallarRealtimeJsonValue>);
+            new Set<RallarRealtimeHandler<ApiJsonValue>>();
+        // JSON syntax is validated below; the public generic remains the caller's application payload contract.
+        listeners.add(handler as RallarRealtimeHandler<ApiJsonValue>);
         this.jsonListeners.set(laneId, listeners);
         this.registerLaneCallbacks(laneId);
         return () => {
-            listeners.delete(handler as RallarRealtimeHandler<RallarRealtimeJsonValue>);
+            listeners.delete(handler as RallarRealtimeHandler<ApiJsonValue>);
             this.deleteLaneIfUnused(laneId);
         };
     }
@@ -139,37 +142,39 @@ export class BrowserRealtimeReceiveRuntime {
 
     private async dispatchMessage(input: BrowserRealtimeReceiveRuntime.MessageInput): Promise<void> {
         if (typeof input.data === 'string') {
-            await this.dispatchJson(input);
+            await this.dispatchJson(input, input.data);
             return;
         }
-        await this.dispatchBinary(input);
+        await this.dispatchBinary(input, input.data);
     }
 
-    private async dispatchJson(input: BrowserRealtimeReceiveRuntime.MessageInput): Promise<void> {
+    private async dispatchJson(input: BrowserRealtimeReceiveRuntime.MessageInput, data: string): Promise<void> {
         const listeners = this.jsonListeners.get(input.laneId);
         if (!listeners || listeners.size === 0) {
             return;
         }
-        let parsed: object | string | number | boolean | null;
+        let parsed: ApiJsonValue;
         try {
-            parsed = JSON.parse(input.data as string);
+            // Without a reviver, JSON.parse produces only JSON values.
+            parsed = JSON.parse(data) as ApiJsonValue;
         }
-        catch (error) {
-            console.error('Error parsing Rallar realtime JSON message', error);
+        catch {
+            console.error('Error parsing Rallar realtime JSON message');
             return;
         }
         await notifyListeners(listeners, toRealtimeMessage(input, parsed));
     }
 
-    private async dispatchBinary(input: BrowserRealtimeReceiveRuntime.MessageInput): Promise<void> {
+    private async dispatchBinary(
+        input: BrowserRealtimeReceiveRuntime.MessageInput,
+        data: Exclude<RtcDataChannelPayload, string>
+    ): Promise<void> {
         const listeners = this.binaryListeners.get(input.laneId);
         if (!listeners || listeners.size === 0) {
             return;
         }
-        const bytes = await toArrayBuffer(input.data);
-        if (bytes) {
-            await notifyListeners(listeners, toRealtimeMessage(input, bytes));
-        }
+        const bytes = await toArrayBuffer(data);
+        await notifyListeners(listeners, toRealtimeMessage(input, bytes));
     }
 
     private deleteLaneIfUnused(laneId: string): void {
@@ -212,20 +217,17 @@ async function notifyListeners<T>(
             await listener(message);
         }
         catch (error) {
-            console.error('Error notifying Rallar realtime listener', error);
+            console.error('Error notifying Rallar realtime listener', toError(error));
         }
     }));
 }
 
-async function toArrayBuffer(data: MessageEvent['data']): Promise<ArrayBuffer | undefined> {
+async function toArrayBuffer(data: Exclude<RtcDataChannelPayload, string>): Promise<ArrayBuffer> {
     if (data instanceof ArrayBuffer) {
         return data;
     }
     if (ArrayBuffer.isView(data)) {
         return new Uint8Array(data.buffer, data.byteOffset, data.byteLength).slice().buffer;
     }
-    if (typeof Blob !== 'undefined' && data instanceof Blob) {
-        return await data.arrayBuffer();
-    }
-    return undefined;
+    return await data.arrayBuffer();
 }

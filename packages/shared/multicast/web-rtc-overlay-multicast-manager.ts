@@ -1,5 +1,6 @@
 import { isOverlayForGroupRef, isSameGroupRef, toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import { ALMessage, readALMulticastTargetGroupRef } from '../al-contracts/al-contract.ts';
+import { decodePersistedALMessage } from '../al-contracts/al-message-persistence-validation.ts';
 import {
     ALMessageHandlingPlan,
     ALQosInputProvider,
@@ -36,7 +37,7 @@ import { ResourceEntry } from '../queuebox/ResourceEntry.ts';
 import { CircuitBreaker, toCircuitBreaker } from '../resilience/circuit-breaker.ts';
 import { RateLimiter, toRateLimiter } from '../resilience/Resilience.ts';
 import { QueueBoxUtilities } from '../services/QueueBoxUtilities.ts';
-import { WebRtcConnectionService } from '../services/WebRtcConnectionService.ts';
+import { WebRtcConnectionService } from '../services/web-rtc-connection-service.ts';
 import {
     OverlayMulticastDispatchPlan,
     OverlayMulticasterContext,
@@ -44,11 +45,11 @@ import {
     WebRtcOverlayMulticasterFactory
 } from './OverlayMulticastContracts.ts';
 
-export type WebRtcOverlayMulticastManagerOptions = Readonly<{
-    qosProvider?: ALQosInputProvider;
-    outboundDiagnostics?: ALOutboundRuntimeDiagnosticsSink;
-    outboundStores?: ALOutboundRuntimeStores;
-}>;
+export interface WebRtcOverlayMulticastManagerOptions {
+    readonly qosProvider?: ALQosInputProvider;
+    readonly outboundDiagnostics?: ALOutboundRuntimeDiagnosticsSink;
+    readonly outboundStores?: ALOutboundRuntimeStores;
+}
 
 export class WebRtcOverlayMulticastManager {
     public static readonly ENQUEUE_TYPE = EnqueuedType.RTC_OUTBOX;
@@ -96,7 +97,7 @@ export class WebRtcOverlayMulticastManager {
                         msg,
                         WebRtcOverlayMulticastManager.ENQUEUE_TYPE
                     ),
-                readMessageFromEntry: (entry) => JSON.parse(entry.resource) as ALMessage,
+                readMessageFromEntry: (entry) => decodePersistedALMessage(entry.resource),
                 planOutgoingMessage: (msg) => this.planOutgoingMessage(msg),
                 sendPreparedMessage: async (msg, phase) => await this.sendPreparedMessage(msg, phase),
                 planRepairMessage: async (msg, request) => await this.planRepairMessage(msg, request),
@@ -350,7 +351,7 @@ export class WebRtcOverlayMulticastManager {
             return undefined;
         }
 
-        const groupRef = this.resolveTargetGroupRef(msg);
+        const groupRef = readALMulticastTargetGroupRef(msg);
         const room = groupRef
             ? this.resolveGroupByRef(groupRef)
             : this.groupCache.read(overlayId) ?? this.groupCache.peek(overlayId);
@@ -379,17 +380,13 @@ export class WebRtcOverlayMulticastManager {
         };
     }
 
-    private resolveTargetGroupRef(msg: ALMessage): GroupRef | undefined {
-        return readALMulticastTargetGroupRef(msg);
-    }
-
     private resolveGroupByRef(ref: GroupRef): AnyGroupPresence | undefined {
         return this.groupCache.readAllValues()
             .find((group) => isSameGroupRef(group.group, ref));
     }
 
     private resolveOverlayId(msg: ALMessage): OverlayId | undefined {
-        const targetGroupRef = this.resolveTargetGroupRef(msg);
+        const targetGroupRef = readALMulticastTargetGroupRef(msg);
         const explicitOverlayId = msg.forwarding?.overlayId;
 
         if (explicitOverlayId && this.hasOverlay(explicitOverlayId)) {
@@ -465,7 +462,7 @@ export class WebRtcOverlayMulticastManager {
         );
     }
 
-    private planOutgoingMessage(msg: ALMessage) {
+    private planOutgoingMessage(msg: ALMessage): ALOutboundDispatchPlan<ALMessage> {
         const context = this.resolveContext(msg);
         const normalized = this.normalizeOutgoingPolicy(msg, context);
 
@@ -523,7 +520,7 @@ export class WebRtcOverlayMulticastManager {
         );
     }
 
-    private toOutboundDispatchPlan(plan: OverlayMulticastDispatchPlan) {
+    private toOutboundDispatchPlan(plan: OverlayMulticastDispatchPlan): ALOutboundDispatchPlan<ALMessage> {
         if (plan.handlingPlan.dropReason) {
             return {
                 dropReason: `Skipping planned RTC dispatch: ${plan.handlingPlan.dropReason}`,

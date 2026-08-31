@@ -3,11 +3,12 @@ import {
     createRallarGameLanePresets,
     createRallarGameMatch,
     type RallarGameEnvelopeHandler,
+    type RallarGameHostCapability,
     type RallarGameLaneIds,
     type RallarGameMatchHandle,
     type RallarGameRallarFacade
 } from '@shared-web/game/mod.ts';
-import type { RtcDataChannelLaneConfig } from '@shared/services/WebRtcConnectionService.ts';
+import type { RtcDataChannelLaneConfig } from '@shared/services/web-rtc-connection-service.ts';
 import {
     GAME_AI_LANE_ID,
     GAME_COMBAT_LANE_ID,
@@ -135,7 +136,7 @@ export function isArenaMatchStartIntentFromSender(
         message.intent.directorSessionId === senderId;
 }
 
-function readArenaHostCapability() {
+function readArenaHostCapability(): Omit<RallarGameHostCapability, 'peerId' | 'reportedAtEpochMs'> {
     return {
         canHost: true,
         hardwareConcurrency: navigator.hardwareConcurrency,

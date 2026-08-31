@@ -1,55 +1,37 @@
 import type { GroupRef } from '@shared/api/group-types.ts';
 import type {
+    BlackBoxRallarConfig,
     BlackBoxRallarConnectionConfig,
     BlackBoxRallarRoomRef,
     BlackBoxRallarSendInput,
     ResolvedBlackBoxRallarScope
-} from './contracts.ts';
+} from './black-box-rallar-operation-contracts.ts';
 
-export type BlackBoxRallarSessionIdentity = Readonly<{
-    clientId: string;
-    sessionId: string;
-    username: string;
-}>;
+export interface BlackBoxRallarSessionIdentity {
+    readonly clientId: string;
+    readonly sessionId: string;
+    readonly username: string;
+}
 
-export type BlackBoxRallarAuthenticationIdentity = Readonly<{
-    apiBaseUrl: string;
-    username: string;
-}>;
+export interface BlackBoxRallarAuthenticationIdentity {
+    readonly apiBaseUrl: string;
+    readonly username: string;
+}
 
-export type BlackBoxRallarConnectionTarget = Readonly<{
-    apiBaseUrl: string;
-    username: string;
-    applicationId?: string;
-    workspaceId?: string;
-    roomId?: string;
-    roomRef?: Readonly<{
-        applicationId: string;
-        workspaceId?: string;
-        groupId: string;
-    }>;
-}>;
+export interface BlackBoxRallarConnectionTarget {
+    readonly apiBaseUrl: string;
+    readonly username: string;
+    readonly applicationId?: string;
+    readonly workspaceId?: string;
+    readonly roomId?: string;
+    readonly roomRef?: BlackBoxRallarRoomRef;
+}
 
-type AuthenticationConfig = Readonly<{
-    apiBaseUrl: string;
-    username?: string;
-}>;
-
-type ConnectionConfig = Readonly<{
-    roomId?: string;
-    roomRef?: BlackBoxRallarConnectionTarget['roomRef'];
-    rallar:
-        & AuthenticationConfig
-        & Readonly<{
-            applicationId?: string;
-            workspaceId?: string;
-            scope?: Readonly<{
-                applicationId?: string;
-                workspaceId?: string;
-            }>;
-            roomRef?: BlackBoxRallarConnectionTarget['roomRef'];
-        }>;
-}>;
+interface BlackBoxRallarConnectionPolicyInput {
+    readonly roomId?: string;
+    readonly roomRef?: BlackBoxRallarRoomRef;
+    readonly rallar: BlackBoxRallarConfig;
+}
 
 const DEFAULT_WORKSPACE_ID = 'default';
 
@@ -64,7 +46,7 @@ function normalizedRoomRef(roomRef: BlackBoxRallarRoomRef | undefined): GroupRef
 }
 
 export function blackBoxRallarRoomRefOf(
-    config: ConnectionConfig,
+    config: BlackBoxRallarConnectionPolicyInput,
     input?: BlackBoxRallarSendInput
 ): GroupRef | undefined {
     const explicit = input?.roomRef ?? config.rallar.roomRef ?? config.roomRef;
@@ -99,7 +81,7 @@ export function blackBoxRallarRoomRefOf(
 
 function normalizedMessageSelector(
     selector: BlackBoxRallarConnectionConfig['rallar']['messageSelector']
-): unknown {
+): BlackBoxRallarConfig['messageSelector'] {
     return typeof selector === 'string'
         ? selector
         : selector
@@ -112,7 +94,7 @@ function normalizedMessageSelector(
 
 function normalizedDataChannelLanes(
     lanes: BlackBoxRallarConnectionConfig['rallar']['dataChannelLanes']
-): unknown {
+): BlackBoxRallarConfig['dataChannelLanes'] {
     return lanes?.map((lane) => ({
         id: lane.id,
         label: lane.label,
@@ -138,15 +120,15 @@ function normalizedDataChannelLanes(
     }));
 }
 
-export type BlackBoxRallarLifecyclePolicyState = Readonly<{
-    status: 'idle' | 'authenticating' | 'authenticated' | 'connecting' | 'connected' | 'closing' | 'faulted';
-    activeTarget?: BlackBoxRallarConnectionTarget;
-}>;
+export interface BlackBoxRallarLifecyclePolicyState {
+    readonly status: 'idle' | 'authenticating' | 'authenticated' | 'connecting' | 'connected' | 'closing' | 'faulted';
+    readonly activeTarget?: BlackBoxRallarConnectionTarget;
+}
 
-export type BlackBoxRallarLifecycleRequest = Readonly<{
-    kind: 'authenticate' | 'connect';
-    target: BlackBoxRallarConnectionTarget;
-}>;
+export interface BlackBoxRallarLifecycleRequest {
+    readonly kind: 'authenticate' | 'connect';
+    readonly target: BlackBoxRallarConnectionTarget;
+}
 
 export type BlackBoxRallarLifecycleDecision =
     | Readonly<{ kind: 'allow'; }>
@@ -158,7 +140,7 @@ export function normalizeBlackBoxRallarApiBaseUrl(value: string): string {
 }
 
 export function blackBoxRallarAuthenticationIdentityOf(
-    config: AuthenticationConfig,
+    config: Pick<BlackBoxRallarConfig, 'apiBaseUrl' | 'username'>,
     restoredSession?: Pick<BlackBoxRallarSessionIdentity, 'username'>
 ): BlackBoxRallarAuthenticationIdentity {
     return {
@@ -168,7 +150,7 @@ export function blackBoxRallarAuthenticationIdentityOf(
 }
 
 export function blackBoxRallarConnectionTargetOf(
-    config: ConnectionConfig,
+    config: BlackBoxRallarConnectionPolicyInput,
     restoredSession?: Pick<BlackBoxRallarSessionIdentity, 'username'>
 ): BlackBoxRallarConnectionTarget {
     const identity = blackBoxRallarAuthenticationIdentityOf(config.rallar, restoredSession);
@@ -297,15 +279,15 @@ export function decideBlackBoxRallarLifecycleRequest(
     return { kind: 'allow' };
 }
 
-export type BlackBoxRallarScopeDiagnostics = Readonly<{
-    applicationId?: string;
-    workspaceId?: string;
-    scope?: ResolvedBlackBoxRallarScope;
-    roomRef?: GroupRef;
-}>;
+export interface BlackBoxRallarScopeDiagnostics {
+    readonly applicationId?: string;
+    readonly workspaceId?: string;
+    readonly scope?: ResolvedBlackBoxRallarScope;
+    readonly roomRef?: GroupRef;
+}
 
 export function blackBoxRallarScopeOf(
-    config: ConnectionConfig,
+    config: BlackBoxRallarConnectionPolicyInput,
     input?: BlackBoxRallarSendInput
 ): ResolvedBlackBoxRallarScope | undefined {
     const scope = input?.scope ?? config.rallar.scope;
@@ -334,7 +316,7 @@ export function blackBoxRallarScopeOf(
 }
 
 export function blackBoxRallarScopeDiagnosticsOf(
-    config: ConnectionConfig,
+    config: BlackBoxRallarConnectionPolicyInput,
     input?: BlackBoxRallarSendInput
 ): BlackBoxRallarScopeDiagnostics {
     const scope = blackBoxRallarScopeOf(config, input);

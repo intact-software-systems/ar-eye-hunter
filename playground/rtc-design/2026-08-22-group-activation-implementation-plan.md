@@ -1,6 +1,7 @@
 # Group Activation — Implementation Plan (2026-08-22)
 
-Status: **planning — re-baselined against product decisions 1–42. The product decisions are settled;
+Status: **implementation in progress — Slice 8b is under review in #390; the existing
+Slice 8c and 8d PRs follow it in review order. Re-baselined against product decisions 1–42. The product decisions are settled;
 the implementation decisions record current reasoning, while ownership, decomposition, file and
 symbol inventories, dependencies and gates must be refreshed against the actual delivery head before
 the first implementation PR and whenever later changes to `main` materially affect the plan.**
@@ -1711,16 +1712,90 @@ throughput and hot throughput. Its retained artifacts remain the acceptance resu
 A separate frozen-checkout profile captured CPU, garbage collection, event-loop
 gaps and PostgreSQL waits/checkpoints; instrumented timings are diagnostic only.
 
+### Review checkpoint — slice 8b admission and consumer closure (2026-08-31, PR #390)
+
+PR #381 completed review at `7bac6e40194356cdc08da07a5890372d16cbd695` and the
+maintainer merged it into `main` as `1bee0b239`. Its final native release gate,
+three-browser live RTC proof and complete nine-run state-write A-B-B-A comparison
+passed. The earlier failed comparison remains preserved and is not overwritten by
+the later passing evidence. No agent merge or auto-merge was used.
+
+The oldest remaining PR is #390. Reapply its actual Slice 8b delta over the reviewed
+parent; do not resurrect predecessor cache, RTT or test owners from its old parent
+history. GitHub has retargeted it to `main`; repair the actual conflict before broad
+final validation. Later PRs remain unreviewed until this capability is closed.
+
+The review found four concrete admission/security defects and two evidence gaps:
+
+- A desired overlay edge alone authorized direct dialing, while reconciliation also
+  required that peer in the same scoped room's current presence. One cached peer
+  ownership computation now supplies both ownership and the layout/presence
+  intersection used by every creation policy and reconciliation. Presence in another
+  room is not authority for the selected edge. Existing established peers remain
+  reusable after admission changes.
+- A retained peer DTO could bypass admission after native failure or reset. Reuse
+  requires a live connected or in-progress native connection; a DTO alone is not
+  evidence of reusable transport. Remove unusable resources, then apply current
+  inbound or outbound admission, capacity and establishment-attempt accounting
+  before replacement allocation. Preserve attempt history across replacement.
+- The browser started the signaling transport before its group manager installed
+  admission policies. Install deny policies before connecting signaling, then replace
+  them with the lifecycle policy during normal middleware composition. A real queued
+  incoming offer during pending transport connection must allocate no native peer
+  and consume no establishment attempt; the same peer must be admissible after a
+  valid accepted layout arrives.
+- Signaling decoded unchecked payloads and logged credentials, SDP and ICE. Validate
+  the envelope and operation payload before allocation, including direct public
+  accept calls. Keep untrusted wire data at the decoder and do not retain parser
+  causes that may quote secrets. Attempt budget state has one explicit lifecycle
+  owner; no fallback connection implementation remains.
+- Replace callback-only policy tests and whole-peer mocks with real browser policy,
+  connection service and native RTC boundary effects for the complete lifecycle ×
+  planned/accepted matrix, scope isolation, initial denial and established reuse.
+- Keep the peer-owner benchmark's accepted-layout, electorate, causal-version and
+  generation fixture internally coherent. Preserve measured work and acceptance
+  constants while removing private-state benchmark/test access in affected files.
+
+The server already freezes a connecting/reconnecting plan through its canonical
+plan resolver; no second browser freeze owner or tentative-state fallback is
+justified. Full touched-file closure includes consumers reached by canonical RTC
+filename/type migrations: native channel/queue owners, browser facade fixtures,
+multicast/group owners, reusable benchmark ports and black-box command contracts.
+This is still review work for #390, not a new product slice. Remove affected dead
+exports and unsafe predecessor test doubles rather than adding compatibility shims.
+
+The recursive review also corrected queue-reader disposal, channel callback
+cleanup, persisted/network AL decoding, and raw browser command decoding. Native
+fixtures now exercise the actual RTC/WS owners; server fixtures use real state
+services and transactional persistence. The browser bridge validates connection
+configuration before calling the runtime, and no longer falls back from missing
+authentication support to a full connection. No verified consumer required that
+fallback. Generic application message payloads remain application-owned.
+
+**Delivery decomposition:** keep these corrections in #390. The canonical RTC and
+queue owner renames cross their production, browser, server, benchmark and test
+consumers; splitting that migration would leave broken imports or require the very
+legacy forwarding owners this review removes. The native fixtures and decoder
+regressions are the evidence for the corrected production boundaries and belong
+with them. This is an unusually large atomic review correction, not a precedent
+for combining later product slices. The browser transport ownership table in
+`docs/rallar-convergent-state-and-rtc-topology.md` is the durable read-first map.
+Keep #391 and #396 as separate capability PRs and reassess Slice 9 only afterward.
+
+Intermediate evidence: browser admission/manager/RTT tests passed (62 assertions),
+connection-service native effects passed (31 tests), and shared/shared-web plus
+985 maintained test files typechecked before the later recursive closure edits.
+These are diagnostic checkpoints; integrated final checks, current-head review and
+remote release evidence are still required before #390 is marked ready.
+
 **Next two PRs (I5, I20):**
 
-- **Finish existing #381 / slice 8a.** Close receiver admission, hydration races,
-  authorized WebSocket fanout and full-file review findings; resolve the performance
-  gate, validate the corrected capability and publish it for the maintainer's manual
-  merge.
-- **Review existing #390 / slice 8b, stacked on #381.** Carry the material parent
-  correction into its total stage × layout-role dial matrix, then review and fix that
-  capability. Review the existing facade and route-cutover PRs in order afterwards;
-  resume Slice 9 only after the newest existing PR has completed review.
+- **Finish existing #390 / slice 8b.** Close the reviewed admission and signaling
+  defects, recursive standards/legacy cleanup, actual main conflict and integrated
+  validation; publish corrections and mark ready for the maintainer's manual merge.
+- **Review existing #391 / slice 8c.** Carry the reviewed #390 changes into the room
+  facade, then review its accepted-layout/status behavior and consumer tests. Review
+  #396 next; resume Slice 9 only after the newest existing PR completes review.
 
 ## Slice 9 — In-flight pacing
 

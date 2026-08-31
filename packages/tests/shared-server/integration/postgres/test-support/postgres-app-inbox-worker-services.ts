@@ -1,7 +1,7 @@
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
 import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
-import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
+import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 
 import {
     createPSqlResourceInboxRepository,

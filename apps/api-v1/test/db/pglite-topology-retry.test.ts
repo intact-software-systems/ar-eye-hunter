@@ -24,7 +24,7 @@ import type { GroupTopologyConfigPatch } from '@shared/api/graph-topology-manage
 import type { Group, GroupRef } from '@shared/api/group-types.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { Either } from '@shared/resilience/Either.ts';
-import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
+import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 
 import * as graphTopologyRoutes from '../../src/routes/graph-topology-routes.ts';
 import { toResilienceDto } from '../api-v1-test-queue-resilience.ts';

@@ -1,10 +1,11 @@
 import type { RallarRtcLifecycleEvent, RallarRtcStatus } from '@shared-web/browser/rallar-rtc-facade.ts';
 import { Either } from '@shared/resilience/Either.ts';
-import { DEFAULT_RTC_DATA_CHANNEL_LANE_ID, type QRtcPeerDto } from '@shared/services/WebRtcConnectionService.ts';
+import { DEFAULT_RTC_DATA_CHANNEL_LANE_ID } from '@shared/services/web-rtc-connection-service.ts';
+import type { QRtcDataChannel, RtcDataChannelHealth } from '@shared/webrtc/qrtc-data-channel.ts';
 import type { QRtcClientCallbacks } from '@shared/webrtc/QRtcClientCallbacks.ts';
-import type { QRtcDataChannel, RtcDataChannelHealth } from '@shared/webrtc/QRtcDataChannel.ts';
-import type { QRtcPeerConnection } from '@shared/webrtc/QRtcPeerConnection.ts';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { SimulatedNativeRtcPeerConnection } from '../../shared/native-rtc-connection-fixture.ts';
+import { createBrowserRtcPeerTestDouble } from './browser-rtc-peer-test-double.ts';
 
 import type { BrowserTransportRuntimePort } from '@shared-web/browser/connection/browser-transport-runtime.ts';
 type MiddlewareModule = typeof import('@shared-web/browser/connection/initialise-browser-middleware.ts');
@@ -22,10 +23,10 @@ const CLIENT_REPOSITORY_MISSING_MESSAGE = 'Repository not found: shared.reposito
 const GROUP_REPOSITORY_MISSING_MESSAGE = 'Repository not found: shared.repository.group-state-snapshots';
 
 const mocks = await vi.hoisted(async () => {
-    const { createApiMiddlewareTestDouble } = await import(
+    const { createDefaultApiMiddlewareTestDouble } = await import(
         '../api-middleware-test-double.ts'
     );
-    const ctx = createApiMiddlewareTestDouble();
+    const ctx = createDefaultApiMiddlewareTestDouble();
     const throwClientRepositoryMissing = (): never => {
         throw new Error('Repository not found: shared.repository.client-state-snapshots');
     };
@@ -250,11 +251,12 @@ describe('Rallar RTC recovery', () => {
         const restartIce = () => {
             restartCount += 1;
         };
-        const peer = createPeerTestDouble({
+        const peer = createBrowserRtcPeerTestDouble({
+            channels: [],
             peerId: 'peer-1',
             status: {
                 state: 'Open',
-                pc: toTestDouble<RTCPeerConnection>({
+                pc: Object.assign(new SimulatedNativeRtcPeerConnection(), {
                     connectionState: 'connected',
                     restartIce
                 }),
@@ -328,11 +330,11 @@ describe('Rallar RTC recovery', () => {
             state: 'Closed',
             readyState: 'closed'
         });
-        const peer = createPeerTestDouble({
+        const peer = createBrowserRtcPeerTestDouble({
             peerId: 'peer-1',
             status: {
                 state: 'Open',
-                pc: toTestDouble<RTCPeerConnection>({
+                pc: Object.assign(new SimulatedNativeRtcPeerConnection(), {
                     connectionState: 'connected'
                 }),
                 reconnectAttempts: 0,
@@ -382,7 +384,7 @@ describe('Rallar RTC recovery', () => {
         const onRtcCallbacksDo = vi.fn(
             (_id: string, callbacks: QRtcClientCallbacks): QRtcDataChannel => {
                 laneCallbacks = callbacks;
-                return realtimeChannel;
+                return peer.channel;
             }
         );
         const removalEvents: string[] = [];
@@ -390,16 +392,16 @@ describe('Rallar RTC recovery', () => {
             removalEvents.push(`lane:${id}`);
             return true;
         };
-        const realtimeChannel = toTestDouble<QRtcDataChannel>({
+        const realtimeChannel = {
             readHealth: vi.fn(() => health),
             onRtcCallbacksDo,
             removeRtcCallbackById
-        });
-        const peer = createPeerTestDouble({
+        };
+        const peer = createBrowserRtcPeerTestDouble({
             peerId: 'peer-1',
             status: {
                 state: 'Open',
-                pc: toTestDouble<RTCPeerConnection>({
+                pc: Object.assign(new SimulatedNativeRtcPeerConnection(), {
                     connectionState: 'connected',
                     iceConnectionState: 'connected',
                     signalingState: 'stable'
@@ -512,8 +514,8 @@ describe('Rallar RTC recovery', () => {
         const { createRallarFacade } = await import(
             '@shared-web/browser/rallar.ts'
         );
-        const onRtcCallbacksDo = vi.fn((): QRtcDataChannel => realtimeChannel);
-        const realtimeChannel = toTestDouble<QRtcDataChannel>({
+        const onRtcCallbacksDo = vi.fn((): QRtcDataChannel => peer.channel);
+        const realtimeChannel = {
             readHealth: vi.fn(() =>
                 createChannelHealth({
                     peerId: 'peer-1',
@@ -524,12 +526,12 @@ describe('Rallar RTC recovery', () => {
             ),
             onRtcCallbacksDo,
             removeRtcCallbackById: vi.fn(() => true)
-        });
-        const peer = createPeerTestDouble({
+        };
+        const peer = createBrowserRtcPeerTestDouble({
             peerId: 'peer-1',
             status: {
                 state: 'Open',
-                pc: toTestDouble<RTCPeerConnection>({
+                pc: Object.assign(new SimulatedNativeRtcPeerConnection(), {
                     connectionState: 'connected'
                 }),
                 reconnectAttempts: 0,
@@ -588,11 +590,12 @@ describe('Rallar RTC recovery', () => {
         const { createRallarFacade } = await import(
             '@shared-web/browser/rallar.ts'
         );
-        const peer = createPeerTestDouble({
+        const peer = createBrowserRtcPeerTestDouble({
+            channels: [],
             peerId: 'peer-1',
             status: {
                 state: 'Connecting',
-                pc: toTestDouble<RTCPeerConnection>({
+                pc: Object.assign(new SimulatedNativeRtcPeerConnection(), {
                     connectionState: 'connecting'
                 }),
                 reconnectAttempts: 0,
@@ -644,33 +647,6 @@ describe('Rallar RTC recovery', () => {
         });
     });
 });
-
-function toTestDouble<TValue>(members: Partial<TValue>): TValue {
-    return members as TValue;
-}
-function createPeerTestDouble(
-    input: Readonly<{
-        peerId: string;
-        status?: Partial<QRtcPeerConnection['status']>;
-        channels?: readonly (readonly [string, Partial<QRtcDataChannel>])[];
-    }>
-): QRtcPeerDto {
-    return toTestDouble<QRtcPeerDto>({
-        peerId: input.peerId,
-        connection: toTestDouble<QRtcPeerConnection>({
-            status: toTestDouble<QRtcPeerConnection['status']>({
-                makingOffer: false,
-                ignoreOffer: false,
-                iceCandidateQueue: [],
-                remoteStreams: new Map(),
-                ...input.status
-            })
-        }),
-        channels: new Map(
-            (input.channels ?? []).map(([laneId, channel]) => [laneId, toTestDouble<QRtcDataChannel>(channel)] as const)
-        )
-    });
-}
 
 function createChannelHealth(
     input: Readonly<{

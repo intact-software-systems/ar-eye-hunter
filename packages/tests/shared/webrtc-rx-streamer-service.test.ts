@@ -9,13 +9,13 @@ import {
 import { EmptyMediaStream, EmptyRtcTrackEvent } from './rtc-media-test-events.ts';
 
 import { LatestRepository } from '@shared/cache/LatestRepository.ts';
-import { WebRtcOverlayMulticastManager } from '@shared/multicast/WebRtcOverlayMulticastManager.ts';
+import { WebRtcOverlayMulticastManager } from '@shared/multicast/web-rtc-overlay-multicast-manager.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
+import { WebRtcConnectionService, type QRtcPeerDto } from '@shared/services/web-rtc-connection-service.ts';
 import { WebRtcRxStreamerService } from '@shared/services/web-rtc-rx-streamer-service.ts';
-import { WebRtcConnectionService, type QRtcPeerDto } from '@shared/services/WebRtcConnectionService.ts';
-import { QRtcDataChannel } from '@shared/webrtc/QRtcDataChannel.ts';
-import { QRtcMediaChannel } from '@shared/webrtc/QRtcMediaChannel.ts';
-import { QRtcPeerConnection, type QRtcOnRemoteStreamCallback } from '@shared/webrtc/QRtcPeerConnection.ts';
+import { QRtcDataChannel } from '@shared/webrtc/qrtc-data-channel.ts';
+import { QRtcMediaChannel } from '@shared/webrtc/qrtc-media-channel.ts';
+import { QRtcPeerConnection, type QRtcOnRemoteStreamCallback } from '@shared/webrtc/qrtc-peer-connection.ts';
 
 interface MediaFixture {
     readonly service: WebRtcRxStreamerService;

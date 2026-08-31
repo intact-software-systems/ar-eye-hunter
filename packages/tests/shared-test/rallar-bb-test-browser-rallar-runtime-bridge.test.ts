@@ -9,6 +9,7 @@ import {
     createSpaBrowserRallarRuntime,
     installSpaBrowserRallarEventBridge
 } from '../../shared-test/rallar-bb-test/browser-rallar-runtime-bridge.ts';
+import { SimulatedWebSocket } from '../shared/native-websocket-fixture.ts';
 
 describe('browser Rallar runtime bridge', () => {
     afterEach(() => {
@@ -45,6 +46,7 @@ describe('browser Rallar runtime bridge', () => {
             actor: 'alice',
             roomId: 'room-1',
             rallar: {
+                apiBaseUrl: 'https://api.example.test',
                 applicationId: 'app-1'
             }
         };
@@ -73,7 +75,7 @@ describe('browser Rallar runtime bridge', () => {
             .resolves.toEqual({
                 action: 'health',
                 input: {
-                    connection: 'aliceRtc'
+                    includeRtcDiagnostics: false
                 }
             });
         await expect(bridge.close()).resolves.toEqual({ action: 'close' });
@@ -96,7 +98,7 @@ describe('browser Rallar runtime bridge', () => {
         });
     });
 
-    it('falls back to full connect when an older window runtime cannot authenticate separately', async () => {
+    it('rejects missing authentication capability without starting a full connection', async () => {
         const runtime: RallarBlackBoxBrowserRallarRuntime = {
             connect: vi.fn(async (input) => ({ action: 'connect', input })),
             send: vi.fn(async (input) => ({ action: 'send', input })),
@@ -115,11 +117,48 @@ describe('browser Rallar runtime bridge', () => {
             }
         };
 
-        await expect(bridge.authenticate?.(input)).resolves.toEqual({
-            action: 'connect',
-            input
-        });
-        expect(runtime.connect).toHaveBeenCalledWith(input);
+        await expect(bridge.authenticate?.(input)).rejects.toThrow('authenticate');
+        expect(runtime.connect).not.toHaveBeenCalled();
+    });
+
+    it('validates connection configuration before calling the native runtime', async () => {
+        const connect = vi.fn(async (input) => input);
+        vi.stubGlobal('window', { __blackBoxRallar: { connect } });
+        const bridge = createSpaBrowserRallarRuntime();
+        const input = {
+            connection: 'alice',
+            roomRef: { applicationId: 'app', workspaceId: 'space', groupId: 'room' },
+            rallar: {
+                apiBaseUrl: 'https://api.example.test',
+                transport: 'messages.rtc',
+                messageSelector: { topicId: 'topic', typeId: 'message' },
+                register: 'if-needed',
+                dataChannelLanes: [{
+                    id: 'reliable',
+                    label: '',
+                    init: { ordered: false, protocol: '' },
+                    flowControl: { maxQueueItems: 20 }
+                }],
+                logoutOnClose: false
+            }
+        };
+        await expect(bridge.connect(input)).resolves.toEqual(input);
+        const forwarded = connect.mock.calls[0][0];
+        expect(Object.keys(forwarded.rallar.dataChannelLanes[0].flowControl)).toEqual(['maxQueueItems']);
+
+        for (
+            const rallar of [
+                { apiBaseUrl: 42 },
+                { apiBaseUrl: input.rallar.apiBaseUrl, transport: 'unsupported' },
+                { apiBaseUrl: input.rallar.apiBaseUrl, timeoutMs: Number.NaN },
+                { apiBaseUrl: input.rallar.apiBaseUrl, peerIds: [4] },
+                { apiBaseUrl: input.rallar.apiBaseUrl, dataChannelLanes: [{ id: 'lane', label: 1 }] }
+            ]
+        ) {
+            await expect(bridge.connect({ ...input, rallar })).rejects.toThrow(TypeError);
+        }
+        await expect(bridge.connect({ ...input, roomRef: { groupId: 'unscoped' } })).rejects.toThrow('applicationId');
+        expect(connect).toHaveBeenCalledTimes(1);
     });
 
     it('installs and restores the SPA browser event bridge', async () => {
@@ -129,9 +168,9 @@ describe('browser Rallar runtime bridge', () => {
         } = {
             __blackBoxRallarEmit: previousEmitter
         };
-        const runtime = {
+        const runtime: Pick<RallarBlackBoxBrowserTestRuntime, 'receiveRallarBrowserEvent'> = {
             receiveRallarBrowserEvent: vi.fn()
-        } as unknown as RallarBlackBoxBrowserTestRuntime;
+        };
         vi.stubGlobal('window', fakeWindow);
 
         const restore = installSpaBrowserRallarEventBridge(runtime);
@@ -151,30 +190,48 @@ describe('browser Rallar runtime bridge', () => {
         expect(fakeWindow.__blackBoxRallarEmit).toBe(previousEmitter);
     });
 
-    it('creates browser WebSockets through the global constructor', () => {
-        class FakeWebSocket {
-            readonly url: string;
-            readonly protocols?: string | readonly string[];
-
-            constructor(url: string, protocols?: string | readonly string[]) {
-                this.url = url;
-                this.protocols = protocols;
+    it('connects native WebSocket effects and removes event listeners through the bridge', async () => {
+        const constructed: Array<{ readonly socket: SimulatedWebSocket; readonly protocols: string | string[] | undefined; }> = [];
+        const binarySends: Uint8Array[] = [];
+        class NativeBridgeSocket extends SimulatedWebSocket {
+            constructor(url: string, protocols?: string | string[]) {
+                super(url);
+                constructed.push({ socket: this, protocols });
             }
-
-            send(): void {}
-
-            close(): void {}
+            override send(data: Parameters<WebSocket['send']>[0]): void {
+                if (this.readyState === WebSocket.OPEN && ArrayBuffer.isView(data)) {
+                    binarySends.push(new Uint8Array(data.buffer, data.byteOffset, data.byteLength));
+                    return;
+                }
+                super.send(data);
+            }
         }
-
-        vi.stubGlobal('WebSocket', FakeWebSocket);
-
-        const socket = createBrowserWebSocketFactory()(
-            'wss://control.example.test/agent',
-            ['control.v1']
-        ) as FakeWebSocket;
-
-        expect(socket).toBeInstanceOf(FakeWebSocket);
+        vi.stubGlobal('WebSocket', NativeBridgeSocket);
+        const socket = createBrowserWebSocketFactory()('wss://control.example.test/agent', ['control.v1']);
+        const native = constructed[0].socket;
+        expect(constructed[0].protocols).toEqual(['control.v1']);
         expect(socket.url).toBe('wss://control.example.test/agent');
-        expect(socket.protocols).toEqual(['control.v1']);
+        const received: string[] = [];
+        const receive = (event: unknown) => {
+            if (!(event instanceof MessageEvent) || typeof event.data !== 'string') {
+                throw new TypeError('Expected a native text message');
+            }
+            received.push(event.data);
+        };
+        socket.addEventListener?.('message', receive);
+        await native.open();
+        expect(socket.readyState).toBe(WebSocket.OPEN);
+        socket.send('outgoing');
+        expect(native.sent).toEqual(['outgoing']);
+        socket.send(new Uint8Array([0, 1, 2, 3]).subarray(1, 3));
+        expect(binarySends).toEqual([new Uint8Array([1, 2])]);
+        await native.receive('incoming');
+        socket.removeEventListener?.('message', receive);
+        await native.receive('after unsubscribe');
+        expect(received).toEqual(['incoming']);
+        expect(() => socket.send({ arbitrary: 'object' })).toThrow('WebSocket data');
+        socket.close(1000, 'done');
+        expect(native.closedWith).toEqual({ code: 1000, reason: 'done' });
+        expect(socket.readyState).toBe(WebSocket.CLOSED);
     });
 });

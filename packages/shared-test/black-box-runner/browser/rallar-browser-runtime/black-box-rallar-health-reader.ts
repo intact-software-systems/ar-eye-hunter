@@ -2,18 +2,18 @@ import type { RallarRealtimeLaneHealth } from '@shared-web/browser/rallar-realti
 import type { RallarRtcDiagnostics } from '@shared-web/browser/rallar-rtc-facade.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 import { resolveBlackBoxRallarLaneId, resolveBlackBoxRallarTransport } from './black-box-rallar-connection-policy.ts';
+import type { BlackBoxRallarRuntimeDiagnostics } from './black-box-rallar-diagnostics.ts';
+import type {
+    BlackBoxRallarConnectionConfig,
+    BlackBoxRallarHealthDiagnostics,
+    BlackBoxRallarHealthInput
+} from './black-box-rallar-operation-contracts.ts';
+import { blackBoxRallarScopeDiagnosticsOf } from './black-box-rallar-operation-policy.ts';
 import {
     toBlackBoxRallarSerializedError,
     type BlackBoxRallarSerializedError
 } from './black-box-rallar-serialized-error.ts';
 import type { BlackBoxBrowserRallarRuntimeDependency } from './browser-rallar-runtime-composition.ts';
-import type {
-    BlackBoxRallarConnectionConfig,
-    BlackBoxRallarHealthDiagnostics,
-    BlackBoxRallarHealthInput
-} from './contracts.ts';
-import type { BlackBoxRallarRuntimeDiagnostics } from './diagnostics.ts';
-import { blackBoxRallarScopeDiagnosticsOf } from './policy.ts';
 export namespace BlackBoxRallarHealthReader {
     export interface Dependencies {
         readonly rallar: BlackBoxBrowserRallarRuntimeDependency;
@@ -84,7 +84,11 @@ export class BlackBoxRallarHealthReader {
             catch (caught) {
                 const error = toError(caught);
                 rtcDiagnosticsError = toBlackBoxRallarSerializedError(error);
-                this.#runtimeDiagnostics.emitError(config, 'rallar.browser.rtc.diagnostics_failed', error);
+                this.#runtimeDiagnostics.emitError({
+                    config: config,
+                    topic: 'rallar.browser.rtc.diagnostics_failed',
+                    error: error
+                });
             }
         }
         return {

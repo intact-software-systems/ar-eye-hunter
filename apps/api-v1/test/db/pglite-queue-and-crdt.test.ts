@@ -23,7 +23,7 @@ import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgre
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
-import { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
+import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 
 import { readPGliteDatabaseEpochMs } from './pglite-app-inbox-test-runtime.ts';
 import { withPGliteSql } from './pglite-auth-test-harness.ts';

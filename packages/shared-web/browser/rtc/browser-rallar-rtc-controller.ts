@@ -9,7 +9,7 @@ import { BrowserRtcStatusRuntime } from '@shared-web/browser/rtc/browser-rtc-sta
 import { BrowserRtcWaitRuntime } from '@shared-web/browser/rtc/browser-rtc-wait-runtime.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
-import { DEFAULT_RTC_DATA_CHANNEL_LANE_ID } from '@shared/services/WebRtcConnectionService.ts';
+import { DEFAULT_RTC_DATA_CHANNEL_LANE_ID } from '@shared/services/web-rtc-connection-service.ts';
 
 export namespace BrowserRallarRtcController {
     export interface Input {

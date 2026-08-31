@@ -1,4 +1,21 @@
-import { WebRtcConnectionService } from '@shared/services/WebRtcConnectionService.ts';
+import { onTestFinished } from 'vitest';
+
+import { WebRtcConnectionService } from '@shared/services/web-rtc-connection-service.ts';
+import { installNativeRtcRuntime, NativeRtcRuntime } from './native-rtc-connection-fixture.ts';
+
+let nativeRuntime: NativeRtcRuntime | undefined;
+
+function installSimulationNativeRuntime(): void {
+    if (nativeRuntime) {
+        return;
+    }
+    const runtime = installNativeRtcRuntime();
+    nativeRuntime = runtime;
+    onTestFinished(() => {
+        runtime.dispose();
+        nativeRuntime = undefined;
+    });
+}
 
 export interface SimulatedRtcConnections {
     readonly service: WebRtcConnectionService;
@@ -10,6 +27,7 @@ export function createSimulatedRtcConnections(
     sessionId: string,
     connect: (peerId: string) => boolean = () => true
 ): SimulatedRtcConnections {
+    installSimulationNativeRuntime();
     const connectedPeerIds = new Set<string>();
     const service = new WebRtcConnectionService({ send: async () => undefined, connect: async () => undefined }, {
         sessionId,
@@ -20,20 +38,25 @@ export function createSimulatedRtcConnections(
     });
     service.onRtcPeerLifecycleDo('simulated-native-transport', {
         onCreated: (peer) => {
-            peer.connection.connect = () => {
-                if (connect(peer.peerId)) {
-                    connectedPeerIds.add(peer.peerId);
-                }
-            };
             for (const channel of peer.channels.values()) {
-                channel.connect = () => undefined;
+                channel.connect = () => {
+                    try {
+                        if (connect(peer.peerId)) {
+                            connectedPeerIds.add(peer.peerId);
+                        }
+                    }
+                    catch (error) {
+                        peer.connection.reset();
+                        throw error;
+                    }
+                };
             }
         },
         onDeleted: (peer) => {
             connectedPeerIds.delete(peer.peerId);
         }
     });
-    // This query otherwise reads native RTCPeerConnection.connectionState, absent in the simulation.
+    // Group scenarios control lane readiness independently of the complete native peer fixture.
     service.peerIdsWithNoReconnectableLanes = () => [...connectedPeerIds];
     return {
         service,

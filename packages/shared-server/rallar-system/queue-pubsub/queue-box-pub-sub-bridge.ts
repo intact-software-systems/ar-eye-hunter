@@ -7,7 +7,7 @@ import {
     DEFAULT_RESOURCE_INBOX_RETRY_POLICY,
     type ResourceInboxRetryPolicy
 } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
-import type { OnWebSocketServerMessageCallback } from '@shared/services/InboxOutboxContracts.ts';
+import type { OnWebSocketServerMessageCallback } from '@shared/services/queue-message-callbacks.ts';
 import type { WsServerLiveSendResult } from '@shared/services/ws-queue-box-server/ws-queue-box-server-contracts.ts';
 import {
     recordRallarTiming,

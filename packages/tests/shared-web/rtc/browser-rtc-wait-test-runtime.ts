@@ -1,8 +1,7 @@
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { Either } from '@shared/resilience/Either.ts';
-import { DEFAULT_RTC_DATA_CHANNEL_LANE_ID, type QRtcPeerDto } from '@shared/services/WebRtcConnectionService.ts';
-import type { QRtcDataChannel, RtcDataChannelHealth } from '@shared/webrtc/QRtcDataChannel.ts';
-import type { QRtcPeerConnection } from '@shared/webrtc/QRtcPeerConnection.ts';
+import { DEFAULT_RTC_DATA_CHANNEL_LANE_ID } from '@shared/services/web-rtc-connection-service.ts';
+import type { RtcDataChannelHealth } from '@shared/webrtc/qrtc-data-channel.ts';
 import { vi } from 'vitest';
 import type * as ContractModules from '../auth-session-contract-modules.ts';
 import { createGroupSnapshotFixture } from '../authoritative-group-fixtures.ts';
@@ -23,10 +22,10 @@ const CLIENT_REPOSITORY_MISSING_MESSAGE = 'Repository not found: shared.reposito
 const GROUP_REPOSITORY_MISSING_MESSAGE = 'Repository not found: shared.repository.group-state-snapshots';
 
 const mocks = await vi.hoisted(async () => {
-    const { createApiMiddlewareTestDouble } = await import(
+    const { createDefaultApiMiddlewareTestDouble } = await import(
         '../api-middleware-test-double.ts'
     );
-    const ctx = createApiMiddlewareTestDouble();
+    const ctx = createDefaultApiMiddlewareTestDouble();
     const throwClientRepositoryMissing = (): never => {
         throw new Error('Repository not found: shared.repository.client-state-snapshots');
     };
@@ -256,30 +255,6 @@ function resetRtcTransportMocks(): void {
     });
     mocks.webSocketClient.onWebsocketCallbacksDo.mockReturnValue(mocks.webSocketClient);
     mocks.webSocketClient.removeWebsocketCallbackById.mockReturnValue(true);
-}
-
-export function toTestDouble<TValue>(members: Partial<TValue>): TValue {
-    return members as TValue;
-}
-
-export function createPeerTestDouble(
-    peerId: string,
-    channels: readonly (readonly [string, Partial<QRtcDataChannel>])[]
-): QRtcPeerDto {
-    return toTestDouble<QRtcPeerDto>({
-        peerId,
-        connection: toTestDouble<QRtcPeerConnection>({
-            status: toTestDouble<QRtcPeerConnection['status']>({
-                iceCandidateQueue: [],
-                remoteStreams: new Map(),
-                makingOffer: false,
-                ignoreOffer: false
-            })
-        }),
-        channels: new Map(
-            channels.map(([laneId, channel]) => [laneId, toTestDouble<QRtcDataChannel>(channel)] as const)
-        )
-    });
 }
 
 export function createChannelHealth(

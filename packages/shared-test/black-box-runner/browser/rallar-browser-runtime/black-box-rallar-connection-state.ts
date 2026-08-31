@@ -1,5 +1,5 @@
 import type { AuthSession } from '@shared/api/api-config.ts';
-import type { BlackBoxRallarConnectionConfig } from './contracts.ts';
+import type { BlackBoxRallarConnectionConfig } from './black-box-rallar-operation-contracts.ts';
 export namespace BlackBoxRallarConnectionState {
     export type Session = Pick<AuthSession, 'clientId' | 'sessionId' | 'username'>;
     export interface Value {

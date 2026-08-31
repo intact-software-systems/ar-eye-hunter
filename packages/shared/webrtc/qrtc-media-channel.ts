@@ -1,32 +1,30 @@
-import { QRtcOnRemoteStreamCallback, QRtcOnTrackCallback, QRtcPeerConnection } from './QRtcPeerConnection.ts';
+import { toError } from '../resilience/to-error.ts';
+
+import { QRtcOnRemoteStreamCallback, QRtcOnTrackCallback, QRtcPeerConnection } from './qrtc-peer-connection.ts';
 
 export const MediaSessionState = {
     Idle: 'Idle',
     Connecting: 'Connecting',
-    Open: 'Open',
-    Closed: 'Closed',
-    Failed: 'Failed'
+    Open: 'Open'
 } as const;
 
 export type MediaSessionState = (typeof MediaSessionState)[keyof typeof MediaSessionState];
 
-export type RtcMediaChannelInputDto = {
-    readonly peerId: string;
-};
+export namespace QRtcMediaChannel {
+    export interface InputDto {
+        readonly peerId: string;
+    }
 
-type QRtcMediaChannelStatus = {
-    state: MediaSessionState;
-
-    // Convenience flags (source of truth is track.enabled)
-    localAudioEnabled: boolean;
-    localVideoEnabled: boolean;
-
-    // Convenience cache for UI (mirrors peerConnection.status.remoteStreams)
-    remoteStreams: Map<string, MediaStream>;
-};
+    export interface Status {
+        state: MediaSessionState;
+        localAudioEnabled: boolean;
+        localVideoEnabled: boolean;
+        remoteStreams: Map<string, MediaStream>;
+    }
+}
 
 export class QRtcMediaChannel {
-    public readonly status: QRtcMediaChannelStatus;
+    public readonly status: QRtcMediaChannel.Status;
 
     private readonly onTrackCallbacks = new Map<string, QRtcOnTrackCallback>();
     private readonly onRemoteStreamCallbacks = new Map<string, QRtcOnRemoteStreamCallback>();
@@ -34,19 +32,15 @@ export class QRtcMediaChannel {
     private subscribed: boolean = false;
 
     public readonly peerConnection: QRtcPeerConnection;
-    public readonly input: RtcMediaChannelInputDto;
+    public readonly input: QRtcMediaChannel.InputDto;
 
     constructor(
         peerConnection: QRtcPeerConnection,
-        input: RtcMediaChannelInputDto
+        input: QRtcMediaChannel.InputDto
     ) {
         this.peerConnection = peerConnection;
         this.input = input;
-        this.status = this.toInitialStatus();
-    }
-
-    private toInitialStatus(): QRtcMediaChannelStatus {
-        return {
+        this.status = {
             state: MediaSessionState.Idle,
             localAudioEnabled: true,
             localVideoEnabled: true,
@@ -56,13 +50,9 @@ export class QRtcMediaChannel {
 
     reset(): void {
         this.unsubscribe();
-        this.clearRemoteStreams();
+        this.status.remoteStreams.clear();
 
         this.status.state = MediaSessionState.Idle;
-    }
-
-    clearRemoteStreams(): void {
-        this.status.remoteStreams = new Map<string, MediaStream>();
     }
 
     clearCallbacks(): void {
@@ -70,12 +60,8 @@ export class QRtcMediaChannel {
         this.onRemoteStreamCallbacks.clear();
     }
 
-    // ----------------------------------------
-    // Callback registry
-    // ----------------------------------------
-
-    onTrackDo(id: string, cb: QRtcOnTrackCallback): QRtcMediaChannel {
-        this.onTrackCallbacks.set(id, cb);
+    onTrackDo(id: string, callback: QRtcOnTrackCallback): QRtcMediaChannel {
+        this.onTrackCallbacks.set(id, callback);
         return this;
     }
 
@@ -83,8 +69,8 @@ export class QRtcMediaChannel {
         return this.onTrackCallbacks.delete(id);
     }
 
-    onRemoteStreamDo(id: string, cb: QRtcOnRemoteStreamCallback): QRtcMediaChannel {
-        this.onRemoteStreamCallbacks.set(id, cb);
+    onRemoteStreamDo(id: string, callback: QRtcOnRemoteStreamCallback): QRtcMediaChannel {
+        this.onRemoteStreamCallbacks.set(id, callback);
         return this;
     }
 
@@ -92,27 +78,17 @@ export class QRtcMediaChannel {
         return this.onRemoteStreamCallbacks.delete(id);
     }
 
-    // ----------------------------------------
-    // Connect / subscribe
-    // ----------------------------------------
-
-    /**
-     * Ensures the underlying PeerConnection exists and subscribes to remote track/stream events.
-     * Media does not require creating a DataChannel.
-     */
-    connect() {
+    connect(): void {
         this.status.state = MediaSessionState.Connecting;
 
         this.subscribe();
 
-        // Mark open when the underlying pc is connected
         if (this.peerConnection.isOpen()) {
             this.status.state = MediaSessionState.Open;
         }
     }
 
     private subscriptionId(kind: 'track' | 'stream'): string {
-        // stable per-peer, used to overwrite rather than accumulate callbacks
         return `${this.input.peerId}:media:${kind}`;
     }
 
@@ -120,39 +96,38 @@ export class QRtcMediaChannel {
         if (this.subscribed) {
             return;
         }
-
         this.subscribed = true;
-
         this.peerConnection.onRemoteStreamDo(
             this.subscriptionId('stream'),
-            async (stream, event) => {
-                // Cache for UI convenience (drawing remote videos, etc.)
-                this.status.remoteStreams.set(stream.id, stream);
-
-                for (const cb of this.onRemoteStreamCallbacks.values()) {
-                    try {
-                        await cb(stream, event);
-                    }
-                    catch (e) {
-                        console.error('QRtcMediaChannel onRemoteStream callback failed', e);
-                    }
-                }
-            }
+            (stream, event) => this.publishRemoteStream(stream, event)
         );
-
         this.peerConnection.onTrackDo(
             this.subscriptionId('track'),
-            async (event) => {
-                for (const cb of this.onTrackCallbacks.values()) {
-                    try {
-                        await cb(event);
-                    }
-                    catch (e) {
-                        console.error('QRtcMediaChannel onTrack callback failed', e);
-                    }
-                }
-            }
+            (event) => this.publishRemoteTrack(event)
         );
+    }
+
+    private async publishRemoteStream(stream: MediaStream, event: RTCTrackEvent): Promise<void> {
+        this.status.remoteStreams.set(stream.id, stream);
+        for (const callback of this.onRemoteStreamCallbacks.values()) {
+            try {
+                await callback(stream, event);
+            }
+            catch (error) {
+                console.error('QRtcMediaChannel onRemoteStream callback failed', toError(error));
+            }
+        }
+    }
+
+    private async publishRemoteTrack(event: RTCTrackEvent): Promise<void> {
+        for (const callback of this.onTrackCallbacks.values()) {
+            try {
+                await callback(event);
+            }
+            catch (error) {
+                console.error('QRtcMediaChannel onTrack callback failed', toError(error));
+            }
+        }
     }
 
     private unsubscribe(): void {
@@ -166,28 +141,19 @@ export class QRtcMediaChannel {
         this.peerConnection.removeOnTrackCallbackById(this.subscriptionId('track'));
     }
 
-    // ----------------------------------------
-    // Local media attachment & toggles
-    // ----------------------------------------
-
     async setParameters(
         stream: MediaStream,
         audioEnabled: boolean,
         videoEnabled: boolean
-    ) {
+    ): Promise<void> {
         await this.setLocalMediaStream(stream);
         this.setLocalAudioEnabled(audioEnabled);
         this.setLocalVideoEnabled(videoEnabled);
     }
 
-    /**
-     * Attach or replace the local MediaStream on this peer connection.
-     * Uses addTrack/replaceTrack inside QRtcPeerConnection.
-     */
     async setLocalMediaStream(stream: MediaStream): Promise<void> {
         await this.peerConnection.setLocalMediaStream(stream);
 
-        // Apply current toggle state after attaching
         this.peerConnection.setLocalAudioEnabled(this.status.localAudioEnabled);
         this.peerConnection.setLocalVideoEnabled(this.status.localVideoEnabled);
     }
@@ -206,10 +172,6 @@ export class QRtcMediaChannel {
         this.peerConnection.stopLocalMedia(kind);
     }
 
-    // ----------------------------------------
-    // Accessors
-    // ----------------------------------------
-
     getRemoteStreams(): readonly MediaStream[] {
         return [...this.status.remoteStreams.values()];
     }
@@ -219,10 +181,6 @@ export class QRtcMediaChannel {
     }
 
     isReadyToConnect(): boolean {
-        return (
-            this.status.state === MediaSessionState.Idle ||
-            this.status.state === MediaSessionState.Failed ||
-            this.status.state === MediaSessionState.Closed
-        );
+        return this.status.state === MediaSessionState.Idle;
     }
 }

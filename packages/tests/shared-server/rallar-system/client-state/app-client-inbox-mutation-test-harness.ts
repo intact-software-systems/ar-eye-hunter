@@ -1,19 +1,10 @@
 import { Temporal } from '@js-temporal/polyfill';
 
-import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
-import { type IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
-import type { ClientSnapshot } from '@shared/api/client-types.ts';
-import type { StateScope } from '@shared/api/state-types.ts';
-import { ResilienceDto } from '@shared/queuebox/DequeueResourceEntryController.ts';
-import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
-import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
-import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
-import { Either } from '@shared/resilience/Either.ts';
-import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
-
 import { AppInboxType, type AppInboxEnqueueInput } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import type { AppInboxFailure } from '@shared-server/rallar-system/app-inbox/app-inbox-failure.ts';
 import { encodeAppInboxCommand } from '@shared-server/rallar-system/app-inbox/app-inbox-registration-codecs.ts';
+import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
+import { type IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
 import {
     type ClientMutationWritten,
     type ClientStateService,
@@ -24,10 +15,17 @@ import { AppClientInboxService } from '@shared-server/rallar-system/client-state
 import { toAuthenticatedClientMutationContextId } from '@shared-server/rallar-system/client-state/inbox/authenticated-client-mutation-ingress.ts';
 import type { JsonWireObject, JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import type { ClientStateEventStore } from '@shared-server/rallar-system/state-events/client-state-event-store.ts';
+import type { ClientSnapshot } from '@shared/api/client-types.ts';
+import type { StateScope } from '@shared/api/state-types.ts';
+import { ResilienceDto } from '@shared/queuebox/DequeueResourceEntryController.ts';
+import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
+import { type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
+import { Either } from '@shared/resilience/Either.ts';
+import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 
 import { FakeRuntimeStateRepository } from '../../runtime-state/test-support/fake-runtime-state-repository.ts';
-import { createAppInboxTestDatabase } from '../app-inbox/test-support/app-inbox-test-database.ts';
-import { TestResourceInbox, TestResourceInboxResults } from './app-client-inbox-resource-fixtures.ts';
+import type { AppInboxTestDatabase } from '../app-inbox/test-support/app-inbox-test-database.ts';
 
 export const CLIENT_STATE_TEST_SCOPE: StateScope = {
     applicationId: 'ar-eye-hunter',
@@ -42,7 +40,7 @@ export function requireRightSnapshot(
         throw new Error(result.left?.message ?? 'Expected client app-inbox right result');
     }
 
-    return requireClientStateWrittenSnapshot(result.right);
+    return result.right.result.snapshot;
 }
 
 export function requireRightWritten(
@@ -52,28 +50,28 @@ export function requireRightWritten(
         throw new Error(result.left?.message ?? 'Expected client app-inbox right result');
     }
 
-    return requireClientMutationWritten(result.right);
+    return result.right.result;
 }
 
-function requireClientStateWrittenSnapshot(written: ClientStateWritten): ClientSnapshot {
-    return requireClientMutationWritten(written).snapshot;
+interface ClientTestEnqueueInput<TPayload> {
+    readonly type: AppInboxType;
+    readonly topicId?: string;
+    readonly resourceId?: string;
+    readonly contextId?: string;
+    readonly senderId?: string;
+    readonly data: TPayload;
 }
 
-function requireClientMutationWritten(written: ClientStateWritten): ClientMutationWritten {
-    return written.result;
+interface AuthenticatedClientTestCommand {
+    readonly scope: StateScope;
+    readonly principalId: string;
+    readonly requestId: string;
 }
 
 export async function processAppInbox<V>(
     service: AppClientInboxService,
     reader: InboxQueueReader,
-    input: {
-        type: AppInboxType;
-        topicId?: string;
-        resourceId?: string;
-        contextId?: string;
-        senderId?: string;
-        data: V;
-    }
+    input: ClientTestEnqueueInput<V>
 ): Promise<Either<AppInboxFailure, ClientStateWritten>> {
     const authority = toTestIssuedAuthority(service, input);
     const resultPromise = service.processAuthenticatedEntryUntilCompletion(
@@ -87,17 +85,13 @@ export async function processAppInbox<V>(
 
 function toTestIssuedAuthority<V>(
     service: AppClientInboxService,
-    input: Readonly<{
-        senderId?: string;
-        data: V;
-    }>
+    input: ClientTestEnqueueInput<V>
 ): IssuedAuthSession {
-    const data = typeof input.data === 'object' && input.data !== null
-        ? Object.fromEntries(Object.entries(input.data))
-        : {};
-    const request = typeof data.request === 'object' && data.request !== null
-        ? Object.fromEntries(Object.entries(data.request))
-        : {};
+    const data = requireJsonObject(
+        encodeAppInboxCommand(input.data, 'Client mutation test authority'),
+        'Client mutation test authority'
+    );
+    const request = requireJsonObject(data.request, 'Client mutation test request');
     const principalId = typeof data.principalId === 'string'
         ? data.principalId
         : (input.senderId ?? 'alice');
@@ -123,14 +117,7 @@ function toTestIssuedAuthority<V>(
 
 export async function processAuthenticatedClientMutation<V>(
     service: AppClientInboxService,
-    input: {
-        type: AppInboxType;
-        topicId?: string;
-        resourceId?: string;
-        contextId?: string;
-        senderId?: string;
-        data: V;
-    },
+    input: ClientTestEnqueueInput<V>,
     authority: IssuedAuthSession
 ): Promise<Either<AppInboxFailure, ClientStateWritten>> {
     return await service.processAuthenticatedEntryUntilCompletion(
@@ -140,14 +127,7 @@ export async function processAuthenticatedClientMutation<V>(
 }
 
 function toAuthenticatedClientTestEnqueue<V>(
-    input: Readonly<{
-        type: AppInboxType;
-        topicId?: string;
-        resourceId?: string;
-        contextId?: string;
-        senderId?: string;
-        data: V;
-    }>,
+    input: ClientTestEnqueueInput<V>,
     authority: IssuedAuthSession
 ): AppInboxEnqueueInput {
     const wireData = encodeAppInboxCommand(input.data, 'Client mutation test command');
@@ -155,7 +135,7 @@ function toAuthenticatedClientTestEnqueue<V>(
     return {
         ...input,
         topicId: input.type,
-        resourceId: data.request.requestId,
+        resourceId: data.requestId,
         contextId: toAuthenticatedClientMutationContextId({
             scope: data.scope,
             principalId: data.principalId,
@@ -166,11 +146,7 @@ function toAuthenticatedClientTestEnqueue<V>(
     };
 }
 
-function readAuthenticatedClientTestCommand(value: JsonWireValue): Readonly<{
-    scope: StateScope;
-    principalId: string;
-    request: Readonly<{ requestId: string; }>;
-}> {
+function readAuthenticatedClientTestCommand(value: JsonWireValue): AuthenticatedClientTestCommand {
     const command = requireJsonObject(value, 'Client mutation test command');
     const scope = requireJsonObject(command.scope, 'Client mutation test scope');
     const request = requireJsonObject(command.request, 'Client mutation test request');
@@ -188,7 +164,7 @@ function readAuthenticatedClientTestCommand(value: JsonWireValue): Readonly<{
             workspaceId: scope.workspaceId
         },
         principalId: command.principalId,
-        request: { requestId: request.requestId }
+        requestId: request.requestId
     };
 }
 
@@ -215,21 +191,6 @@ export function issuedSession(clientId: string, sessionId: string): IssuedAuthSe
     };
 }
 
-async function waitForQueueEntryStatus(
-    queue: InMemoryQueueBox,
-    status: EntityStatus
-): Promise<void> {
-    for (let i = 0; i < 20; i += 1) {
-        if ((await readEntries(queue)).some((entry) => entry.status === status)) {
-            return;
-        }
-
-        await new Promise((resolve) => setTimeout(resolve, 0));
-    }
-
-    throw new Error(`Expected app inbox entry with status ${status}`);
-}
-
 export async function readEntries(queue: InMemoryQueueBox): Promise<ResourceEntry[]> {
     const entries = await Promise.all((await queue.getAllKeys()).map((key) => queue.getItem(key)));
 
@@ -238,7 +199,7 @@ export async function readEntries(queue: InMemoryQueueBox): Promise<ResourceEntr
 
 export function createAutoAuthorizingClientStateService(
     runtimeRepository: FakeRuntimeStateRepository,
-    database: ReturnType<typeof createAppInboxTestDatabase>,
+    database: AppInboxTestDatabase,
     eventStore: ClientStateEventStore = database.clientEventStore
 ): ClientStateService {
     const authSessions = new AuthSessionRepository(runtimeRepository);

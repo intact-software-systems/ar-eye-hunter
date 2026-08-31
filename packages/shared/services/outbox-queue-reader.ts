@@ -3,8 +3,8 @@ import { EnqueuedType } from '@shared/api/api-config.ts';
 import type { ResilienceDto } from '@shared/queuebox/DequeueResourceEntryController.ts';
 import type { QueueBoxResourceEntryRepository } from '@shared/queuebox/queue-box-types.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
-import type { OnMessageCallback } from '@shared/services/InboxOutboxContracts.ts';
-import { createQueueMessageReader, type QueueMessageReader } from '@shared/services/QueueMessageReader.ts';
+import type { OnMessageCallback } from '@shared/services/queue-message-callbacks.ts';
+import { QueueMessageReader } from './queue-message-reader.ts';
 
 export class OutboxQueueReader {
     public static readonly OUTBOX_ENQUEUE_TYPE = EnqueuedType.APP_OUTBOX;
@@ -18,10 +18,9 @@ export class OutboxQueueReader {
 
     constructor(outbox: QueueBoxResourceEntryRepository) {
         this.outbox = outbox;
-        this.reader = createQueueMessageReader({
-            repository: outbox,
+        this.reader = new QueueMessageReader(outbox, {
             enqueueType: OutboxQueueReader.OUTBOX_ENQUEUE_TYPE,
-            queueName: 'APP_OUTBOX'
+            dequeueOptions: {}
         });
     }
 

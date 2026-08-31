@@ -1,7 +1,9 @@
 import { resolveBrowserRtcOverlayALOutboundRuntimeStores } from '@shared-web/browser/al-runtime/browser-al-runtime-stores.ts';
 import {
     createBrowserMessagingComposition,
-    createBrowserRealtimeCoreComposition
+    createBrowserRealtimeCoreComposition,
+    type BrowserMessagingComposition,
+    type BrowserRealtimeCoreComposition
 } from '@shared-web/browser/composition/browser-communication-composition.ts';
 import {
     registerBrowserStateLifecycle,
@@ -9,16 +11,23 @@ import {
 } from '@shared-web/browser/composition/browser-lifecycle-composition.ts';
 import {
     createBrowserDirectorComposition,
-    createBrowserRoomsComposition
+    createBrowserRoomsComposition,
+    type BrowserDirectorComposition,
+    type BrowserRoomsComposition
 } from '@shared-web/browser/composition/browser-product-composition.ts';
 import {
     createBrowserRuntimeFoundation,
     createBrowserStateComposition,
-    createBrowserStateEventComposition
+    createBrowserStateEventComposition,
+    type BrowserRuntimeFoundation,
+    type BrowserStateComposition,
+    type BrowserStateEventComposition
 } from '@shared-web/browser/composition/browser-runtime-composition.ts';
 import {
     createBrowserCrdtComposition,
-    createBrowserSessionCoreComposition
+    createBrowserSessionCoreComposition,
+    type BrowserCrdtComposition,
+    type BrowserSessionCoreComposition
 } from '@shared-web/browser/composition/browser-session-composition.ts';
 import type {
     RallarDirectorFacade,
@@ -42,7 +51,10 @@ import type { AuthSession } from '@shared/api/api-config.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import type { WebRtcGroupManager } from '@shared/services/web-rtc-group-manager.ts';
-import type { BlackBoxRallarDirectorOutputRecord, BlackBoxRallarEvent } from './contracts.ts';
+import type {
+    BlackBoxRallarDirectorOutputRecord,
+    BlackBoxRallarEvent
+} from './black-box-rallar-operation-contracts.ts';
 
 interface BlackBoxRoomStateRefreshOptions extends RallarScopedOperationOptions {
     readonly scope: StateScope;
@@ -56,23 +68,23 @@ interface RefreshBlackBoxBrowserRoomStateInput {
     readonly session: BlackBoxRoomStateRefreshSession;
 }
 
+interface BlackBoxRoomStateRefreshRoom {
+    refresh(options: Parameters<RallarRoomSession['refresh']>[0]): Promise<Pick<RallarRoomSession, 'snapshot'>>;
+}
+
 interface BlackBoxRoomStateRefreshRooms {
-    session(roomRef: GroupRef): Readonly<{
-        refresh(
-            options: Parameters<RallarRoomSession['refresh']>[0]
-        ): Promise<Pick<RallarRoomSession, 'snapshot'>>;
-    }>;
+    session(roomRef: GroupRef): BlackBoxRoomStateRefreshRoom;
+}
+
+interface BlackBoxRoomStateRefreshContext {
+    readonly session: AuthSession;
+    readonly middleware: {
+        readonly webRtcGroupManager: Pick<WebRtcGroupManager, 'notifyOverlayTopologyChanged'>;
+    };
 }
 
 interface BlackBoxRoomStateRefreshSession {
-    connect(options: RallarScopedOperationOptions): Promise<
-        Readonly<{
-            session: AuthSession;
-            middleware: Readonly<{
-                webRtcGroupManager: Pick<WebRtcGroupManager, 'notifyOverlayTopologyChanged'>;
-            }>;
-        }>
-    >;
+    connect(options: RallarScopedOperationOptions): Promise<BlackBoxRoomStateRefreshContext>;
 }
 
 interface RoomStateRefreshAbortScope {
@@ -310,12 +322,12 @@ function throwIfAborted(signal: AbortSignal): void {
 }
 
 interface RegisterBlackBoxBrowserRallarLifecycleInput {
-    readonly foundation: ReturnType<typeof createBrowserRuntimeFoundation>;
-    readonly state: ReturnType<typeof createBrowserStateComposition>;
-    readonly stateEvents: ReturnType<typeof createBrowserStateEventComposition>;
-    readonly messaging: ReturnType<typeof createBrowserMessagingComposition>;
-    readonly realtime: ReturnType<typeof createBrowserRealtimeCoreComposition>;
-    readonly director: ReturnType<typeof createBrowserDirectorComposition>;
+    readonly foundation: BrowserRuntimeFoundation;
+    readonly state: BrowserStateComposition;
+    readonly stateEvents: BrowserStateEventComposition;
+    readonly messaging: BrowserMessagingComposition;
+    readonly realtime: BrowserRealtimeCoreComposition;
+    readonly director: BrowserDirectorComposition;
 }
 
 function registerBlackBoxBrowserRallarLifecycle(
@@ -337,12 +349,12 @@ function registerBlackBoxBrowserRallarLifecycle(
 }
 
 interface BlackBoxBrowserRuntimeComponents {
-    readonly session: ReturnType<typeof createBrowserSessionCoreComposition>;
-    readonly rooms: ReturnType<typeof createBrowserRoomsComposition>;
-    readonly messaging: ReturnType<typeof createBrowserMessagingComposition>;
-    readonly realtime: ReturnType<typeof createBrowserRealtimeCoreComposition>;
-    readonly crdt: ReturnType<typeof createBrowserCrdtComposition>;
-    readonly director: ReturnType<typeof createBrowserDirectorComposition>;
+    readonly session: BrowserSessionCoreComposition;
+    readonly rooms: BrowserRoomsComposition;
+    readonly messaging: BrowserMessagingComposition;
+    readonly realtime: BrowserRealtimeCoreComposition;
+    readonly crdt: BrowserCrdtComposition;
+    readonly director: BrowserDirectorComposition;
 }
 function toBlackBoxBrowserRuntimeDependency(
     components: BlackBoxBrowserRuntimeComponents

@@ -9,9 +9,10 @@ import { readSession } from '@shared/api/auth.ts';
 import { Command } from '@shared/cache/Command.ts';
 import type { ResilienceDto } from '@shared/queuebox/DequeueResourceEntryController.ts';
 import type { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
-import WsQueueBoxClientService, {
-    DEFAULT_WS_QUEUE_BOX_CLIENT_RECONNECT_OPTIONS
-} from '@shared/services/WsQueueBoxClientService.ts';
+import {
+    DEFAULT_WS_QUEUE_BOX_CLIENT_RECONNECT_OPTIONS,
+    WsQueueBoxClientService
+} from '@shared/services/ws-queue-box-client-service.ts';
 import type { JsonWebSocketClient } from '@shared/websocket/JsonWebSocketClient.ts';
 
 export namespace CreateBrowserWebSocketQueueBox {
@@ -51,9 +52,11 @@ function createBrowserWebSocketQueueBoxService(
 ): WsQueueBoxClientService {
     const { clientData, socket } = input;
     const wsQueueBox = new WsQueueBoxClientService(
-        createBrowserQueueBox(`ws-inbox-${clientData.sessionId}`),
-        createBrowserQueueBox(`ws-outbox-${clientData.sessionId}`),
-        socket,
+        {
+            inbox: createBrowserQueueBox(`ws-inbox-${clientData.sessionId}`),
+            outbox: createBrowserQueueBox(`ws-outbox-${clientData.sessionId}`),
+            socket: socket
+        },
         {
             sessionId: clientData.sessionId
         },

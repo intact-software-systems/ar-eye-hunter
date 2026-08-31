@@ -1,5 +1,7 @@
-import { QRtcPeerConnection, type QRtcPeerConnectionDiagnostics } from '@shared/webrtc/QRtcPeerConnection.ts';
+import { QRtcPeerConnection } from '@shared/webrtc/qrtc-peer-connection.ts';
 import { QRtcSignalingType } from '@shared/webrtc/QRtcSignalingContracts.ts';
+
+import { installRtcBenchmarkNativeRuntime, RtcBenchmarkNativePeer } from '../native-rtc/rtc-benchmark-native-peer.ts';
 
 export interface RtcPeerConnectionDiagnosticsInputDto {
     readonly peers: number;
@@ -23,7 +25,7 @@ export interface RtcPeerConnectionDiagnosticsPeer {
     reconnect(): Promise<void>;
     drainSignaling(): Promise<void>;
     exhaustReconnects(): Promise<void>;
-    readDiagnostics(): QRtcPeerConnectionDiagnostics;
+    readDiagnostics(): QRtcPeerConnection.Diagnostics;
 }
 
 export interface RtcPeerConnectionDiagnosticsDependencies {
@@ -56,7 +58,7 @@ interface RunRtcPeerConnectionDiagnosticsPeerInput {
 }
 
 interface QueuedTimer {
-    readonly id: number;
+    readonly id: ReturnType<typeof setTimeout>;
     readonly callback: () => void | Promise<void>;
 }
 
@@ -100,7 +102,7 @@ export async function runRtcPeerConnectionDiagnostics(
 async function runPolitePeer(
     input: RunRtcPeerConnectionDiagnosticsPeerInput,
     dependencies: RtcPeerConnectionDiagnosticsDependencies
-): Promise<QRtcPeerConnectionDiagnostics> {
+): Promise<QRtcPeerConnection.Diagnostics> {
     const peer = dependencies.createPeer({
         id: `polite-${input.index}`,
         isPolite: true,
@@ -121,7 +123,7 @@ async function runPolitePeer(
 async function runImpolitePeer(
     input: RunRtcPeerConnectionDiagnosticsPeerInput,
     dependencies: RtcPeerConnectionDiagnosticsDependencies
-): Promise<QRtcPeerConnectionDiagnostics> {
+): Promise<QRtcPeerConnection.Diagnostics> {
     const peer = dependencies.createPeer({
         id: `impolite-${input.index}`,
         isPolite: false,
@@ -147,7 +149,7 @@ async function runImpolitePeer(
 
 function addNumericDiagnostics(
     aggregate: Record<string, number>,
-    diagnostics: QRtcPeerConnectionDiagnostics
+    diagnostics: QRtcPeerConnection.Diagnostics
 ): void {
     for (const [key, value] of Object.entries(diagnostics)) {
         if (typeof value === 'number') {
@@ -156,30 +158,39 @@ function addNumericDiagnostics(
     }
 }
 
-export function createRtcPeerConnectionDiagnosticsDependencies(): {
-    dependencies: RtcPeerConnectionDiagnosticsDependencies;
+export interface RtcPeerConnectionDiagnosticsRuntime {
+    readonly dependencies: RtcPeerConnectionDiagnosticsDependencies;
     restore(): void;
-} {
-    const hadPeerConnection = Object.hasOwn(globalThis, 'RTCPeerConnection');
-    const originalPeerConnection = globalThis.RTCPeerConnection;
+}
+
+export function createRtcPeerConnectionDiagnosticsDependencies(): RtcPeerConnectionDiagnosticsRuntime {
+    const nativeRuntime = installRtcBenchmarkNativeRuntime();
     const originalSetTimeout = globalThis.setTimeout;
     const originalClearTimeout = globalThis.clearTimeout;
-    let nextTimerId = 1;
     let timers: QueuedTimer[] = [];
-    Reflect.set(globalThis, 'RTCPeerConnection', FakeRTCPeerConnection);
-    globalThis.setTimeout = ((callback: () => void | Promise<void>) => {
-        const id = nextTimerId++;
-        timers.push({ id, callback });
+    const scheduleTimer = (...arguments_: Parameters<typeof setTimeout>): ReturnType<typeof setTimeout> => {
+        const [callback, _delayMs, ...callbackArguments] = arguments_;
+        if (typeof callback !== 'function') {
+            throw new Error('The RTC benchmark requires callable timer callbacks');
+        }
+        // Keep the platform's complete handle shape while the benchmark owns
+        // deterministic dispatch. No native timer remains scheduled.
+        const id = originalSetTimeout(() => {}, 2_147_483_647);
+        originalClearTimeout(id);
+        timers.push({ id, callback: () => callback(...callbackArguments) });
         return id;
-    }) as typeof setTimeout;
-    globalThis.clearTimeout = ((id: number) => {
+    };
+    const cancelTimer = (...arguments_: Parameters<typeof clearTimeout>): void => {
+        const [id] = arguments_;
         timers = timers.filter((timer) => timer.id !== id);
-    }) as typeof clearTimeout;
+    };
+    Object.defineProperty(globalThis, 'setTimeout', { configurable: true, writable: true, value: scheduleTimer });
+    Object.defineProperty(globalThis, 'clearTimeout', { configurable: true, writable: true, value: cancelTimer });
     return {
         dependencies: {
             createPeer: createPeerAdapter,
             reset() {
-                FakeRTCPeerConnection.instances = [];
+                nativeRuntime.peers.length = 0;
                 timers = [];
             },
             async drainTimers() {
@@ -195,12 +206,7 @@ export function createRtcPeerConnectionDiagnosticsDependencies(): {
             monotonicNowMs: () => performance.now()
         },
         restore() {
-            if (hadPeerConnection) {
-                Reflect.set(globalThis, 'RTCPeerConnection', originalPeerConnection);
-            }
-            else {
-                Reflect.deleteProperty(globalThis, 'RTCPeerConnection');
-            }
+            nativeRuntime.restore();
             globalThis.setTimeout = originalSetTimeout;
             globalThis.clearTimeout = originalClearTimeout;
         }
@@ -210,7 +216,59 @@ export function createRtcPeerConnectionDiagnosticsDependencies(): {
 function createPeerAdapter(
     input: RtcPeerConnectionDiagnosticsPeerInput
 ): RtcPeerConnectionDiagnosticsPeer {
-    const peer = new QRtcPeerConnection(
+    const peer = createDiagnosticsPeerConnection(input);
+    let nativePeer: RtcBenchmarkNativePeer | undefined;
+    const requireNativePeer = (): RtcBenchmarkNativePeer => {
+        if (!nativePeer) {
+            throw new Error('Expected fake RTCPeerConnection instance.');
+        }
+        return nativePeer;
+    };
+    return {
+        connect() {
+            peer.connect();
+            if (!(peer.status.pc instanceof RtcBenchmarkNativePeer)) {
+                throw new Error('Expected the installed native RTC peer');
+            }
+            nativePeer = peer.status.pc;
+        },
+        receiveIceCandidate: (index) =>
+            peer.handleSignal(QRtcSignalingType.IceCandidate, {
+                description: null,
+                candidate: { candidate: `candidate-${input.id}-${index}`, sdpMid: '0', sdpMLineIndex: 0 }
+            }),
+        receiveOffer: () =>
+            peer.handleSignal(QRtcSignalingType.Offer, {
+                description: { type: 'offer', sdp: `remote-offer-${input.id}` },
+                candidate: null
+            }),
+        beginOfferCollision() {
+            requireNativePeer().signalingState = 'have-local-offer';
+        },
+        receiveCollidingOffer: (index) =>
+            peer.handleSignal(QRtcSignalingType.Offer, {
+                description: {
+                    type: 'offer',
+                    sdp: `colliding-offer-${input.id}-${index}`
+                },
+                candidate: null
+            }),
+        failConnection: () => {
+            requireNativePeer().connectionState = 'failed';
+        },
+        reconnect: () => peer.handleReconnect(),
+        drainSignaling: () => requireNativePeer().whenIceRestarted(),
+        exhaustReconnects: async () => {
+            // Accepted B01 input: one retry followed by the exhausted starting state.
+            peer.status.reconnectAttempts = 5;
+            await peer.handleReconnect();
+        },
+        readDiagnostics: () => peer.readDiagnostics()
+    };
+}
+
+function createDiagnosticsPeerConnection(input: RtcPeerConnectionDiagnosticsPeerInput): QRtcPeerConnection {
+    return new QRtcPeerConnection(
         { send: async () => input.onSend() },
         {
             sessionId: `self-${input.id}`,
@@ -220,103 +278,4 @@ function createPeerAdapter(
             isPolite: input.isPolite
         }
     );
-    let nativePeer: FakeRTCPeerConnection | undefined;
-    const requireNativePeer = () => {
-        if (!nativePeer) {
-            throw new Error('Expected fake RTCPeerConnection instance.');
-        }
-        return nativePeer;
-    };
-    return {
-        connect() {
-            peer.connect();
-            nativePeer = FakeRTCPeerConnection.instances.at(-1);
-        },
-        receiveIceCandidate: (index) =>
-            peer.handleSignal(QRtcSignalingType.IceCandidate, {
-                description: null,
-                candidate: { candidate: `candidate-${input.id}-${index}`, sdpMid: '0', sdpMLineIndex: 0 }
-            }),
-        receiveOffer: () =>
-            peer.handleSignal(QRtcSignalingType.Offer, {
-                description: { type: 'offer', sdp: `remote-offer-${input.id}` } as RTCSessionDescription,
-                candidate: null
-            }),
-        beginOfferCollision() {
-            peer.status.makingOffer = true;
-            requireNativePeer().signalingState = 'have-local-offer';
-        },
-        receiveCollidingOffer: (index) =>
-            peer.handleSignal(QRtcSignalingType.Offer, {
-                description: {
-                    type: 'offer',
-                    sdp: `colliding-offer-${input.id}-${index}`
-                } as RTCSessionDescription,
-                candidate: null
-            }),
-        failConnection: () => {
-            requireNativePeer().connectionState = 'failed';
-        },
-        reconnect: () => peer.handleReconnect(),
-        drainSignaling: () => readSignalingChain(peer),
-        exhaustReconnects: async () => {
-            peer.status.reconnectAttempts = 5;
-            await peer.handleReconnect();
-        },
-        readDiagnostics: () => peer.readDiagnostics()
-    };
-}
-
-function readSignalingChain(peer: QRtcPeerConnection): Promise<void> {
-    const signalingChain = Reflect.get(peer, 'signalingChain');
-    if (!(signalingChain instanceof Promise)) {
-        throw new Error('Expected QRtcPeerConnection signaling chain.');
-    }
-    return signalingChain;
-}
-
-class FakeRTCPeerConnection {
-    static instances: FakeRTCPeerConnection[] = [];
-    connectionState: RTCPeerConnectionState = 'new';
-    signalingState: RTCSignalingState = 'stable';
-    iceConnectionState: RTCIceConnectionState = 'new';
-    iceGatheringState: RTCIceGatheringState = 'new';
-    localDescription: RTCSessionDescription | null = null;
-    remoteDescription: RTCSessionDescription | null = null;
-    onnegotiationneeded: (() => Promise<void>) | null = null;
-    onicecandidate: ((event: { candidate: RTCIceCandidateInit | null; }) => Promise<void>) | null = null;
-    ondatachannel: ((event: RTCDataChannelEvent) => Promise<void>) | null = null;
-    ontrack: ((event: RTCTrackEvent) => Promise<void>) | null = null;
-    oniceconnectionstatechange: (() => void) | null = null;
-    onsignalingstatechange: (() => void) | null = null;
-    onconnectionstatechange: (() => void) | null = null;
-    constructor(_configuration: RTCConfiguration) {
-        FakeRTCPeerConnection.instances.push(this);
-    }
-    addEventListener(_type: string, _listener: (event?: Event) => void): void {}
-    removeEventListener(_type: string, _listener: (event?: Event) => void): void {}
-    getTransceivers(): Array<{ stop: () => void; }> {
-        return [];
-    }
-    close(): void {
-        this.connectionState = 'closed';
-    }
-    restartIce(): void {}
-    createDataChannel(_label: string): RTCDataChannel {
-        return {} as RTCDataChannel;
-    }
-    addIceCandidate(_candidate?: RTCIceCandidateInit): Promise<void> {
-        return Promise.resolve();
-    }
-    async setRemoteDescription(description: RTCSessionDescription): Promise<void> {
-        this.remoteDescription = description;
-        this.signalingState = description.type === 'offer' ? 'have-remote-offer' : 'stable';
-    }
-    async setLocalDescription(description?: RTCSessionDescriptionInit): Promise<void> {
-        this.localDescription = (description ?? {
-            type: this.remoteDescription?.type === 'offer' ? 'answer' : 'offer',
-            sdp: this.remoteDescription?.type === 'offer' ? 'answer-sdp' : 'offer-sdp'
-        }) as RTCSessionDescription;
-        this.signalingState = this.localDescription.type === 'offer' ? 'have-local-offer' : 'stable';
-    }
 }

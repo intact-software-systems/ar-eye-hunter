@@ -24,7 +24,7 @@ import { createDefaultGroupLifecyclePolicy } from '@shared/api/group-lifecycle/g
 import type { AuditStamp, GroupPresenceSummary, GroupRef, GroupSnapshot, GroupStateCausalRevision } from '@shared/api/group-types.ts';
 import { EntityStatus, InMemoryQueueBox, type ALMessage } from '@shared/mod.ts';
 import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
-import { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
+import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 import { readFileSync } from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
 import { createTestGroup } from '../../../../create-test-group.ts';

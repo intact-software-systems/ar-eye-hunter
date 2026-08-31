@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 
-import { newALBroadcastMessage, newALRoute } from '@shared/al-contracts/al-contract.ts';
+import { newALBroadcastMessage, newALRoute, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import type { AuditStamp, ClientInstance, ClientPrincipal, ClientSession } from '@shared/api/client-types.ts';
 import { DEFAULT_STATE_WORKSPACE_ID } from '@shared/api/state-types.ts';
 import {
@@ -13,7 +13,7 @@ import {
 } from '@shared/crdt/mod.ts';
 import { ConnectionContext, JsonWebSocketServer } from '@shared/mod.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
-import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
+import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 import { WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 
 import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
@@ -32,6 +32,10 @@ import { RallarServerWsRouter } from '@shared-server/rallar-system/websocket/rou
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 
 import { createCrdtWsMutationIngress } from '@shared-server/rallar-system/crdt/inbox/create-crdt-ws-mutation-ingress.ts';
+
+import type { AppCrdtInboxService } from '@shared-server/rallar-system/crdt/inbox/app-crdt-inbox-service.ts';
+import type { CrdtMutationResult } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-contracts.ts';
+import type { PGliteSql } from '../../src/db/pglite-sql-adapter.ts';
 
 import { decodeCrdtMutationResult } from '@shared-server/rallar-system/crdt/mutation/decode-crdt-mutation-result.ts';
 
@@ -84,7 +88,7 @@ Deno.test(
         'PGlite AppInbox',
     async () => {
         await withPGliteSql(async (sql) => {
-            const fixture = await createFixture(sql);
+            const fixture = await createCrdtWebSocketAuthorityFixture(sql);
             await fixture.addCurrentSession(SESSION_A);
             await fixture.addCurrentSession(SESSION_B);
 
@@ -134,7 +138,7 @@ Deno.test(
 
 Deno.test('production app-scope authorization rejects a foreign application context', async () => {
     await withPGliteSql(async (sql) => {
-        const fixture = await createFixture(sql);
+        const fixture = await createCrdtWebSocketAuthorityFixture(sql);
         await fixture.addCurrentSession(SESSION_A);
         const foreign = {
             ...DOCUMENT,
@@ -156,17 +160,24 @@ Deno.test('production app-scope authorization rejects a foreign application cont
     });
 });
 
-async function createFixture(
-    sql: Parameters<Parameters<typeof withPGliteSql>[0]>[0]
-) {
-    const runtime = new PSqlRuntimeStateRepository(sql);
-    const auth = new AuthSessionRepository(runtime);
-    const clients = new ClientStateRepository(runtime, new PSqlClientStateEventRepository(sql));
-    await clients.insertPrincipal(principal());
-    await clients.insertInstance(instance());
-    const resourceInbox = createPSqlResourceInboxRepository(sql);
-    const inboxQueueReader = new InboxQueueReader(new PSqlQueueBox(resourceInbox));
-    const service = createApiCrdtInboxService({
+interface CrdtWebSocketAuthorityFixture {
+    readonly inboxQueueReader: InboxQueueReader;
+    send(connectionId: string, message: ALMessage): Promise<void>;
+    addCurrentSession(sessionId: string): Promise<void>;
+    revokeAuthSession(sessionId: string): Promise<void>;
+}
+
+interface CrdtAuthorityInboxInput {
+    readonly sql: PGliteSql;
+    readonly auth: AuthSessionRepository;
+    readonly clients: ClientStateRepository;
+    readonly resourceInbox: PSqlResourceInboxRepository;
+    readonly inboxQueueReader: InboxQueueReader;
+}
+
+function createCrdtAuthorityInbox(input: CrdtAuthorityInboxInput): AppCrdtInboxService {
+    const { sql, auth, clients, resourceInbox, inboxQueueReader } = input;
+    return createApiCrdtInboxService({
         inboxQueueReader,
         resourceInboxRepository: resourceInbox.entries,
         resourceInboxResultsRepository: new ResourceInboxResultsRepository(sql),
@@ -190,6 +201,19 @@ async function createFixture(
             flags: { appScope: true }
         }]
     });
+}
+
+async function createCrdtWebSocketAuthorityFixture(
+    sql: PGliteSql
+): Promise<CrdtWebSocketAuthorityFixture> {
+    const runtime = new PSqlRuntimeStateRepository(sql);
+    const auth = new AuthSessionRepository(runtime);
+    const clients = new ClientStateRepository(runtime, new PSqlClientStateEventRepository(sql));
+    await clients.insertPrincipal(principal());
+    await clients.insertInstance(instance());
+    const resourceInbox = createPSqlResourceInboxRepository(sql);
+    const inboxQueueReader = new InboxQueueReader(new PSqlQueueBox(resourceInbox));
+    const service = createCrdtAuthorityInbox({ sql, auth, clients, resourceInbox, inboxQueueReader });
     const queue = new InMemoryQueueBox();
     const socketServer = new JsonWebSocketServer();
     const sockets = new Map<string, FakeSocket>();
@@ -210,9 +234,8 @@ async function createFixture(
         }]
     });
     return {
-        service,
         inboxQueueReader,
-        send: async (connectionId: string, value: ReturnType<typeof message>) => {
+        send: async (connectionId: string, value: ALMessage) => {
             const socket = sockets.get(connectionId);
             assert.ok(socket);
             await socket.dispatchMessage(value);
@@ -242,8 +265,8 @@ async function createFixture(
 }
 
 async function drain(
-    fixture: Awaited<ReturnType<typeof createFixture>>,
-    sql: Parameters<Parameters<typeof withPGliteSql>[0]>[0],
+    fixture: CrdtWebSocketAuthorityFixture,
+    sql: PGliteSql,
     expectedResults: number
 ): Promise<void> {
     await waitForPGliteQueueRow(sql, 'APP_INBOX', 'NEW');
@@ -260,7 +283,7 @@ async function drain(
     throw new Error('Timed out waiting for CRDT AppInbox results');
 }
 
-async function readResults(sql: Parameters<Parameters<typeof withPGliteSql>[0]>[0]) {
+async function readResults(sql: PGliteSql): Promise<CrdtMutationResult[]> {
     const rows = await sql<PersistedResultRow[]>`
         select ris_resource from resource_inbox_results
         where ris_topic_id = 'app-inbox.crdt-state'
@@ -270,7 +293,7 @@ async function readResults(sql: Parameters<Parameters<typeof withPGliteSql>[0]>[
 }
 
 async function readDurableEffects(
-    sql: Parameters<Parameters<typeof withPGliteSql>[0]>[0]
+    sql: PGliteSql
 ): Promise<DurableEffects> {
     const [row] = await sql<DurableEffectsRow[]>`
         select
@@ -285,7 +308,7 @@ function message(
     sessionId: string,
     msgId: string,
     envelope: RallarCrdtUpdateEnvelope
-) {
+): ALMessage {
     const value = newALBroadcastMessage(
         sessionId,
         newALRoute(
@@ -421,7 +444,7 @@ class FakeSocket extends EventTarget implements WebSocket {
     send(_data: string): void {
     }
 
-    async dispatchMessage(value: ReturnType<typeof message>): Promise<void> {
+    async dispatchMessage(value: ALMessage): Promise<void> {
         this.dispatchEvent(new MessageEvent('message', { data: JSON.stringify(value) }));
         await Promise.resolve();
     }

@@ -10,10 +10,10 @@ type ClientStateSnapshotsRepositoryModule = typeof import('@shared/repository/cl
 type GroupStateSnapshotsRepositoryModule = typeof import('@shared/repository/group-state-snapshots-repository.ts');
 
 const runtime = await vi.hoisted(async () => {
-    const { createApiMiddlewareTestDouble } = await import(
+    const { createDefaultApiMiddlewareTestDouble } = await import(
         '../api-middleware-test-double.ts'
     );
-    const middleware = createApiMiddlewareTestDouble();
+    const middleware = createDefaultApiMiddlewareTestDouble();
     return {
         middleware,
         initialiseMiddleware: vi.fn<MiddlewareModule['initialiseMiddleware']>(),

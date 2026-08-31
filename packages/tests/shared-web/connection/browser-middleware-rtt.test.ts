@@ -1,6 +1,5 @@
 import {
     BROWSER_RTT_HEARTBEAT_TTL_MS,
-    toBrowserRtcInboundPeerCreationDecision,
     toBrowserRttHeartbeatMessage
 } from '@shared-web/browser/connection/initialise-browser-middleware.ts';
 import { AppTopics, type RttMeasurementInfo } from '@shared/api/api-config.ts';
@@ -19,18 +18,6 @@ describe('Browser middleware RTT heartbeat messages', () => {
         expect(first.payload.typeId).toBe(AppTopics.rtt);
         expect(first.constraints?.expiresAtMs).toBe(first.id.ts + BROWSER_RTT_HEARTBEAT_TTL_MS);
         expect(second.constraints?.expiresAtMs).toBe(second.id.ts + BROWSER_RTT_HEARTBEAT_TTL_MS);
-    });
-});
-
-describe('browser middleware RTC inbound peer admission', () => {
-    it('treats unknown group ownership as tentative instead of denied', () => {
-        expect(toBrowserRtcInboundPeerCreationDecision(false)).toEqual({
-            decision: 'tentative',
-            reason: 'group-state-eventually-consistent'
-        });
-        expect(toBrowserRtcInboundPeerCreationDecision(true)).toEqual({
-            decision: 'allow'
-        });
     });
 });
 

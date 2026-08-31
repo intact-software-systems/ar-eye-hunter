@@ -11,8 +11,8 @@ import type {
 import type { RallarUnsubscribe } from '@shared-web/browser/rallar-shared-contracts.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
-import type { WebRtcPeerLaneOpenResult } from '@shared/services/WebRtcConnectionService.ts';
-import type { RtcDataChannelSendOptions, RtcDataChannelSendResult } from '@shared/webrtc/QRtcDataChannel.ts';
+import type { WebRtcConnectionService } from '@shared/services/web-rtc-connection-service.ts';
+import type { RtcDataChannelSendOptions, RtcDataChannelSendResult } from '@shared/webrtc/qrtc-data-channel.ts';
 
 export namespace BrowserRealtimeSendRuntime {
     export interface Input {
@@ -111,7 +111,9 @@ export class BrowserRealtimeSendRuntime {
         ];
     }
 
-    private async ensureLaneOpen(input: BrowserRealtimeSendRuntime.LaneInput): Promise<WebRtcPeerLaneOpenResult> {
+    private async ensureLaneOpen(
+        input: BrowserRealtimeSendRuntime.LaneInput
+    ): Promise<WebRtcConnectionService.PeerLaneOpenResult> {
         return await input.ctx.middleware.webRtcConnectionService.ensurePeerLaneOpen(
             input.peerId,
             input.laneId,

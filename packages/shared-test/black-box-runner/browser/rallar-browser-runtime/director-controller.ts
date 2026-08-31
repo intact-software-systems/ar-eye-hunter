@@ -1,12 +1,13 @@
+import type { RallarMessagePayload } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type {
     RallarDirectorRelayHandle,
     RallarDirectorRelayMessage,
     RallarDirectorStatus
 } from '@shared-web/browser/rallar.ts';
-import type {
-    BlackBoxBrowserDirectorDependency,
-    BlackBoxBrowserRoomsDependency
-} from './browser-rallar-runtime-composition.ts';
+import type { GroupRef } from '@shared/api/group-types.ts';
+import { toError } from '@shared/resilience/to-error.ts';
+
+import type { BlackBoxRallarRuntimeDiagnostics } from './black-box-rallar-diagnostics.ts';
 import type {
     BlackBoxRallarConnectionConfig,
     BlackBoxRallarDirectorAppointInput,
@@ -17,136 +18,122 @@ import type {
     BlackBoxRallarDirectorRelayStartInput,
     BlackBoxRallarDirectorRelaySummary,
     BlackBoxRallarDirectorRoomInput,
-    BlackBoxRallarDirectorRuntime,
     BlackBoxRallarDirectorStatusInput,
     BlackBoxRallarDirectorSyncRequestInput,
     BlackBoxRallarEvent,
-    BlackBoxRallarRoomRef,
     BlackBoxRallarSendInput,
     BlackBoxRallarTransport,
     ResolvedBlackBoxRallarScope
-} from './contracts.ts';
+} from './black-box-rallar-operation-contracts.ts';
+import type { BlackBoxRallarScopeDiagnostics } from './black-box-rallar-operation-policy.ts';
+import type {
+    BlackBoxBrowserDirectorDependency,
+    BlackBoxBrowserRoomsDependency
+} from './browser-rallar-runtime-composition.ts';
+import { decodeBlackBoxCommandRoomRef, decodeBlackBoxCommandScope } from './decode-black-box-rallar-command-input.ts';
 import type { BlackBoxRallarGenerationPort } from './ports.ts';
 
-export type BlackBoxRallarDirectorLease = Readonly<{
-    generation: number;
-}>;
+export interface BlackBoxRallarDirectorLease {
+    readonly generation: number;
+}
 
-export type BlackBoxRallarDirectorResourceController<TRelay> = Readonly<{
-    lease(): BlackBoxRallarDirectorLease;
-    assertCurrent(lease: BlackBoxRallarDirectorLease, message: string): void;
-    add(handle: string, relay: TRelay): void;
-    require(handle: string): TRelay;
-    take(handle: string): TRelay;
-    delete(handle: string): boolean;
-    entries(): readonly (readonly [string, TRelay])[];
-    handles(): readonly string[];
-}>;
-
-export function createBlackBoxRallarDirectorResourceController<TRelay>(
-    generationPort: BlackBoxRallarGenerationPort
-): BlackBoxRallarDirectorResourceController<TRelay> {
-    const relays = new Map<string, TRelay>();
-
-    const add = (handle: string, relay: TRelay): void => {
-        if (relays.has(handle)) {
+export class BlackBoxRallarDirectorResourceController<TRelay> {
+    readonly #generation: BlackBoxRallarGenerationPort;
+    readonly #relays = new Map<string, TRelay>();
+    constructor(generation: BlackBoxRallarGenerationPort) {
+        this.#generation = generation;
+    }
+    lease(): BlackBoxRallarDirectorLease {
+        return { generation: this.#generation.generation() };
+    }
+    assertCurrent(lease: BlackBoxRallarDirectorLease, message: string): void {
+        if (!this.#generation.isCurrent(lease.generation)) {
+            throw new Error(message);
+        }
+    }
+    add(handle: string, relay: TRelay): void {
+        if (this.#relays.has(handle)) {
             throw new Error('Director relay handle is already active: ' + handle);
         }
-        relays.set(handle, relay);
-    };
-
-    const requireRelay = (handle: string): TRelay => {
-        const relay = relays.get(handle);
-        if (!relay) {
+        this.#relays.set(handle, relay);
+    }
+    require(handle: string): TRelay {
+        const relay = this.#relays.get(handle);
+        if (relay === undefined) {
             throw new Error('Director relay handle is not active: ' + handle);
         }
         return relay;
-    };
-
-    const take = (handle: string): TRelay => {
-        const relay = requireRelay(handle);
-        relays.delete(handle);
+    }
+    take(handle: string): TRelay {
+        const relay = this.require(handle);
+        this.#relays.delete(handle);
         return relay;
-    };
-
-    return {
-        lease: () => ({ generation: generationPort.generation() }),
-        assertCurrent: (lease, message) => {
-            if (!generationPort.isCurrent(lease.generation)) {
-                throw new Error(message);
-            }
-        },
-        add,
-        require: requireRelay,
-        take,
-        delete: (handle) => relays.delete(handle),
-        entries: () => [...relays.entries()],
-        handles: () => [...relays.keys()]
-    };
+    }
+    delete(handle: string): boolean {
+        return this.#relays.delete(handle);
+    }
+    entries(): readonly (readonly [string, TRelay])[] {
+        return [...this.#relays.entries()];
+    }
+    handles(): readonly string[] {
+        return [...this.#relays.keys()];
+    }
 }
 
-type DirectorRelayState = {
-    handle: string;
-    input: BlackBoxRallarDirectorRelayStartInput;
-    relay: RallarDirectorRelayHandle<unknown, BlackBoxRallarDirectorOutputRecord, unknown>;
-    acceptedIntents: unknown[];
-    outputs: unknown[];
-    snapshots: unknown[];
-    syncRequests: unknown[];
+interface DirectorAcceptedIntent {
+    readonly intentId: string;
+    readonly senderId: string;
+    readonly epoch: number | undefined;
+    readonly receivedAtEpochMs: number;
+    readonly payload: unknown;
+}
+interface DirectorSyncRequest {
+    readonly senderId: string;
+    readonly epoch: number | undefined;
+    readonly receivedAtEpochMs: number;
+    readonly payload: RallarMessagePayload;
+}
+interface DirectorRelayObservations {
+    readonly acceptedIntents: DirectorAcceptedIntent[];
+    readonly outputs: BlackBoxRallarDirectorOutputRecord[];
+    readonly snapshots: unknown[];
+    readonly syncRequests: DirectorSyncRequest[];
     sequence: number;
-};
+}
+interface DirectorRelayContext {
+    readonly input: BlackBoxRallarDirectorRelayStartInput;
+    readonly config: BlackBoxRallarConnectionConfig;
+    readonly lease: BlackBoxRallarDirectorLease;
+    readonly observations: DirectorRelayObservations;
+}
+interface DirectorRelayState {
+    readonly handle: string;
+    readonly input: BlackBoxRallarDirectorRelayStartInput;
+    readonly relay: RallarDirectorRelayHandle<unknown, BlackBoxRallarDirectorOutputRecord, unknown>;
+    readonly observations: DirectorRelayObservations;
+}
+interface DirectorRelaySnapshot extends DirectorRelayObservations {
+    readonly handle: string;
+    readonly status: RallarDirectorStatus;
+    readonly generatedAtEpochMs: number;
+}
+interface DirectorStaticSnapshot {
+    readonly handle: string;
+    readonly static: true;
+    readonly status: RallarDirectorStatus;
+    readonly snapshot: unknown;
+}
 
 interface DirectorFacade {
     readonly director: BlackBoxBrowserDirectorDependency;
     readonly rooms: BlackBoxBrowserRoomsDependency;
 }
 
-type ScopeDiagnostics = Readonly<{
-    scope?: Readonly<{
-        applicationId?: string;
-        workspaceId?: string;
-    }>;
-    applicationId?: string;
-    workspaceId?: string;
-}>;
-
-export type CreateBlackBoxRallarDirectorControllerOptions =
-    & BlackBoxRallarGenerationPort
-    & Readonly<{
-        facade: DirectorFacade;
-        now(): number;
-        requireConfig(): BlackBoxRallarConnectionConfig;
-        transportOf(config: BlackBoxRallarConnectionConfig): BlackBoxRallarTransport;
-        roomRefOf(
-            config: BlackBoxRallarConnectionConfig,
-            input?: BlackBoxRallarSendInput
-        ): BlackBoxRallarRoomRef | undefined;
-        scopeOf(
-            config: BlackBoxRallarConnectionConfig,
-            input?: BlackBoxRallarSendInput
-        ): ResolvedBlackBoxRallarScope | undefined;
-        scopeDiagnostics(config: BlackBoxRallarConnectionConfig): ScopeDiagnostics;
-        emit(event: Omit<BlackBoxRallarEvent, 'atEpochMs'>): void;
-        emitError(
-            config: BlackBoxRallarConnectionConfig | undefined,
-            topic: string,
-            error: unknown,
-            data?: unknown
-        ): void;
-    }>;
-
-export type BlackBoxRallarDirectorController =
-    & BlackBoxRallarDirectorRuntime
-    & Readonly<{
-        summary(): BlackBoxRallarDirectorRelaySummary;
-        closeAll(config?: BlackBoxRallarConnectionConfig): readonly unknown[];
-    }>;
-
 function isRecord(value: unknown): value is Record<string, unknown> {
     return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
 
-function asRecord(value: unknown): Record<string, unknown> {
+function readDirectorCommandRecord(value: unknown): Record<string, unknown> {
     return isRecord(value) ? value : {};
 }
 
@@ -164,22 +151,22 @@ function optionalNumber(value: unknown): number | undefined {
 }
 
 function normalizeDirectorRoomInput(input: unknown): BlackBoxRallarDirectorRoomInput {
-    const record = asRecord(input);
-    const rallarConfig = asRecord(record.rallar);
+    const record = readDirectorCommandRecord(input);
+    const rallarConfig = readDirectorCommandRecord(record.rallar);
     const scope = optionalRecord(record.scope) ?? optionalRecord(rallarConfig.scope);
     const roomRef = optionalRecord(record.roomRef) ?? optionalRecord(rallarConfig.roomRef);
     return {
         roomId: stringValue(record.roomId) ?? stringValue(record.groupId) ?? stringValue(rallarConfig.roomId),
         applicationId: stringValue(record.applicationId) ?? stringValue(rallarConfig.applicationId),
         workspaceId: stringValue(record.workspaceId) ?? stringValue(rallarConfig.workspaceId),
-        scope,
-        roomRef: roomRef as BlackBoxRallarRoomRef | undefined,
+        scope: decodeBlackBoxCommandScope(scope),
+        roomRef: decodeBlackBoxCommandRoomRef(roomRef),
         timeoutMs: optionalNumber(record.timeoutMs)
     };
 }
 
 function normalizeDirectorAppointInput(input: unknown): BlackBoxRallarDirectorAppointInput {
-    const record = asRecord(input);
+    const record = readDirectorCommandRecord(input);
     return {
         ...normalizeDirectorRoomInput(record),
         heartbeatTtlMs: optionalNumber(record.heartbeatTtlMs)
@@ -187,7 +174,7 @@ function normalizeDirectorAppointInput(input: unknown): BlackBoxRallarDirectorAp
 }
 
 function normalizeDirectorStatusInput(input: unknown): BlackBoxRallarDirectorStatusInput {
-    const record = asRecord(input);
+    const record = readDirectorCommandRecord(input);
     return {
         ...normalizeDirectorRoomInput(record),
         refresh: typeof record.refresh === 'boolean' ? record.refresh : undefined,
@@ -196,7 +183,7 @@ function normalizeDirectorStatusInput(input: unknown): BlackBoxRallarDirectorSta
 }
 
 function normalizeDirectorRelayStartInput(input: unknown): BlackBoxRallarDirectorRelayStartInput {
-    const record = asRecord(input);
+    const record = readDirectorCommandRecord(input);
     const handle = stringValue(record.handle);
     const intentTypeId = stringValue(record.intentTypeId);
     const outputTypeId = stringValue(record.outputTypeId);
@@ -220,7 +207,7 @@ function normalizeDirectorRelayStartInput(input: unknown): BlackBoxRallarDirecto
 }
 
 function normalizeDirectorHandleInput(input: unknown): BlackBoxRallarDirectorHandleInput {
-    const record = asRecord(input);
+    const record = readDirectorCommandRecord(input);
     const handle = stringValue(record.handle);
     if (!handle) {
         throw new Error('Director relay command requires handle.');
@@ -229,60 +216,73 @@ function normalizeDirectorHandleInput(input: unknown): BlackBoxRallarDirectorHan
 }
 
 function normalizeDirectorIntentInput(input: unknown): BlackBoxRallarDirectorIntentInput {
-    const record = asRecord(input);
+    const record = readDirectorCommandRecord(input);
     return { ...normalizeDirectorHandleInput(record), intent: record.intent };
 }
 
 function normalizeDirectorSyncRequestInput(input: unknown): BlackBoxRallarDirectorSyncRequestInput {
-    const record = asRecord(input);
+    const record = readDirectorCommandRecord(input);
     return { ...normalizeDirectorHandleInput(record), payload: record.payload };
 }
 
 function intentIdFromPayload(payload: unknown, fallback: string): string {
-    const record = asRecord(payload);
+    const record = readDirectorCommandRecord(payload);
     return stringValue(record.intentId) ?? stringValue(record.id) ?? stringValue(record.messageId) ?? fallback;
 }
 
-export function createBlackBoxRallarDirectorController(
-    options: CreateBlackBoxRallarDirectorControllerOptions
-): BlackBoxRallarDirectorController {
-    const resources = createBlackBoxRallarDirectorResourceController<DirectorRelayState>(options);
-    const rallar = options.facade;
-    const assertCurrent = (lease: BlackBoxRallarDirectorLease): void => {
-        resources.assertCurrent(lease, 'Director operation completed after the runtime closed.');
+interface DirectorStatusDiagnosticsInput {
+    readonly status: BlackBoxRallarDirectorCommandDiagnostics['status'];
+    readonly input: BlackBoxRallarDirectorRoomInput;
+    readonly directorStatus: RallarDirectorStatus;
+    readonly config: BlackBoxRallarConnectionConfig;
+    readonly extra?: Pick<
+        BlackBoxRallarDirectorCommandDiagnostics,
+        'handle' | 'relay' | 'sendResult' | 'acceptedIntentCount' | 'outputCount' | 'snapshotCount' | 'syncRequestCount'
+    >;
+}
+interface DirectorDiagnosticInput {
+    readonly topic: string;
+    readonly handle: string | undefined;
+    readonly data: object;
+    readonly config: BlackBoxRallarConnectionConfig;
+}
+
+export namespace BlackBoxRallarDirectorController {
+    export interface Input extends BlackBoxRallarGenerationPort {
+        readonly facade: DirectorFacade;
+        now(): number;
+        requireConfig(): BlackBoxRallarConnectionConfig;
+        transportOf(config: BlackBoxRallarConnectionConfig): BlackBoxRallarTransport;
+        roomRefOf(
+            config: BlackBoxRallarConnectionConfig,
+            input?: BlackBoxRallarSendInput
+        ): GroupRef | undefined;
+        scopeOf(
+            config: BlackBoxRallarConnectionConfig,
+            input?: BlackBoxRallarSendInput
+        ): ResolvedBlackBoxRallarScope | undefined;
+        scopeDiagnostics(config: BlackBoxRallarConnectionConfig): BlackBoxRallarScopeDiagnostics;
+        emit(event: Omit<BlackBoxRallarEvent, 'atEpochMs'>): void;
+        readonly emitError: BlackBoxRallarRuntimeDiagnostics['emitError'];
+    }
+}
+export class BlackBoxRallarDirectorController {
+    readonly #options: BlackBoxRallarDirectorController.Input;
+    readonly #resources: BlackBoxRallarDirectorResourceController<DirectorRelayState>;
+    constructor(options: BlackBoxRallarDirectorController.Input) {
+        this.#options = options;
+        this.#resources = new BlackBoxRallarDirectorResourceController(options);
+    }
+    private assertCurrent = (lease: BlackBoxRallarDirectorLease): void => {
+        this.#resources.assertCurrent(lease, 'Director operation completed after the runtime closed.');
     };
-    const toRoomRef = (
+    private toTarget = (
         input: BlackBoxRallarDirectorRoomInput,
         config: BlackBoxRallarConnectionConfig
-    ): BlackBoxRallarRoomRef | undefined =>
-        input.roomRef ?? options.roomRefOf(config, input as BlackBoxRallarSendInput);
-    const toTarget = (
-        input: BlackBoxRallarDirectorRoomInput,
-        config: BlackBoxRallarConnectionConfig
-    ): string | BlackBoxRallarRoomRef | undefined => toRoomRef(input, config) ?? input.roomId ?? config.roomId;
-    const toScope = (
-        input: BlackBoxRallarDirectorRoomInput,
-        config: BlackBoxRallarConnectionConfig
-    ): ResolvedBlackBoxRallarScope | undefined => options.scopeOf(config, input as BlackBoxRallarSendInput);
-    const statusDiagnostics = (
-        status: BlackBoxRallarDirectorCommandDiagnostics['status'],
-        input: BlackBoxRallarDirectorRoomInput,
-        directorStatus: RallarDirectorStatus,
-        config: BlackBoxRallarConnectionConfig,
-        extra: Omit<
-            BlackBoxRallarDirectorCommandDiagnostics,
-            | 'status'
-            | 'roomId'
-            | 'roomRef'
-            | 'role'
-            | 'state'
-            | 'isDirector'
-            | 'isFresh'
-            | 'appointment'
-            | 'directorStatus'
-        > = {}
-    ): BlackBoxRallarDirectorCommandDiagnostics => {
-        const roomRef = toRoomRef(input, config);
+    ): string | GroupRef | undefined => this.#options.roomRefOf(config, input) ?? input.roomId ?? config.roomId;
+    private statusDiagnostics = (request: DirectorStatusDiagnosticsInput): BlackBoxRallarDirectorCommandDiagnostics => {
+        const { status, input, directorStatus, config, extra } = request;
+        const roomRef = this.#options.roomRefOf(config, input);
         return {
             status,
             roomId: input.roomId ?? roomRef?.groupId ?? config.roomId ?? directorStatus.roomId,
@@ -296,195 +296,257 @@ export function createBlackBoxRallarDirectorController(
             ...extra
         };
     };
-    const emitDiagnostic = (
-        topic: string,
-        handle: string | undefined,
-        data: unknown,
-        config: BlackBoxRallarConnectionConfig
-    ): void => {
-        options.emit({
+    private emitDiagnostic = (request: DirectorDiagnosticInput): void => {
+        const { topic, handle, data, config } = request;
+        this.#options.emit({
             kind: 'diagnostic',
             topic,
             connection: config.connection,
             actor: config.actor,
-            transport: options.transportOf(config),
+            transport: this.#options.transportOf(config),
             roomId: config.roomId,
-            ...options.scopeDiagnostics(config),
+            ...this.#options.scopeDiagnostics(config),
             data: {
                 ...(handle ? { handle } : {}),
-                ...(isRecord(data) ? data : { value: data })
+                ...data
             }
         });
     };
-    const relaySnapshot = (entry: DirectorRelayState): Record<string, unknown> => {
-        const status = entry.relay.status();
-        return entry.input.snapshot !== undefined
-            ? { handle: entry.handle, static: true, status, snapshot: entry.input.snapshot }
+    private relaySnapshot = (context: DirectorRelayContext): DirectorRelaySnapshot | DirectorStaticSnapshot => {
+        const status = this.#options.facade.director.status(this.toTarget(context.input, context.config));
+        return context.input.snapshot !== undefined
+            ? { handle: context.input.handle, static: true, status, snapshot: context.input.snapshot }
             : {
-                handle: entry.handle,
+                handle: context.input.handle,
                 status,
-                acceptedIntents: entry.acceptedIntents,
-                outputs: entry.outputs,
-                snapshots: entry.snapshots,
-                syncRequests: entry.syncRequests,
-                sequence: entry.sequence,
-                generatedAtEpochMs: options.now()
+                ...context.observations,
+                generatedAtEpochMs: this.#options.now()
             };
     };
-    const requireRelay = (handle: string): DirectorRelayState => {
+    private requireRelay = (handle: string): DirectorRelayState => {
         try {
-            return resources.require(handle);
+            return this.#resources.require(handle);
         }
         catch {
             throw new Error('Director relay handle is not open: ' + handle);
         }
     };
+    appoint = async (input: unknown): Promise<BlackBoxRallarDirectorCommandDiagnostics> => {
+        const config = this.#options.requireConfig();
+        const lease = this.#resources.lease();
+        this.assertCurrent(lease);
+        const normalized = normalizeDirectorAppointInput(input);
+        const directorStatus = await this.#options.facade.director.appoint(this.toTarget(normalized, config), {
+            heartbeatTtlMs: normalized.heartbeatTtlMs,
+            scope: this.#options.scopeOf(config, normalized),
+            timeoutMs: normalized.timeoutMs
+        });
+        this.assertCurrent(lease);
+        const diagnostics = this.statusDiagnostics({
+            status: 'appointed',
+            input: normalized,
+            directorStatus: directorStatus,
+            config: config
+        });
+        this.emitDiagnostic({
+            topic: 'rallar.browser.director.appointed',
+            handle: undefined,
+            data: diagnostics,
+            config: config
+        });
+        return diagnostics;
+    };
+    resign = async (input: unknown): Promise<BlackBoxRallarDirectorCommandDiagnostics> => {
+        const config = this.#options.requireConfig();
+        const lease = this.#resources.lease();
+        this.assertCurrent(lease);
+        const normalized = normalizeDirectorRoomInput(input);
+        const directorStatus = await this.#options.facade.director.resign(this.toTarget(normalized, config), {
+            scope: this.#options.scopeOf(config, normalized),
+            timeoutMs: normalized.timeoutMs
+        });
+        this.assertCurrent(lease);
+        const diagnostics = this.statusDiagnostics({
+            status: 'resigned',
+            input: normalized,
+            directorStatus: directorStatus,
+            config: config
+        });
+        this.emitDiagnostic({
+            topic: 'rallar.browser.director.resigned',
+            handle: undefined,
+            data: diagnostics,
+            config: config
+        });
+        return diagnostics;
+    };
+    status = async (input: unknown): Promise<BlackBoxRallarDirectorCommandDiagnostics> => {
+        const config = this.#options.requireConfig();
+        const lease = this.#resources.lease();
+        this.assertCurrent(lease);
+        const normalized = normalizeDirectorStatusInput(input);
+        if (normalized.refresh) {
+            await this.#options.facade.rooms.refresh({
+                scope: this.#options.scopeOf(config, normalized),
+                timeoutMs: normalized.timeoutMs
+            });
+        }
+        this.assertCurrent(lease);
+        const directorStatus = this.#options.facade.director.status(this.toTarget(normalized, config), {
+            now: normalized.now
+        });
+        const diagnostics = this.statusDiagnostics({
+            status: 'status',
+            input: normalized,
+            directorStatus: directorStatus,
+            config: config
+        });
+        this.emitDiagnostic({
+            topic: 'rallar.browser.director.status',
+            handle: undefined,
+            data: diagnostics,
+            config: config
+        });
+        return diagnostics;
+    };
+    private createRelay(
+        context: DirectorRelayContext
+    ): RallarDirectorRelayHandle<unknown, BlackBoxRallarDirectorOutputRecord, unknown> {
+        return this.#options.facade.director.createRelay({
+            roomId: context.input.roomId ?? context.config.roomId,
+            roomRef: this.#options.roomRefOf(context.config, context.input),
+            laneId: context.input.laneId,
+            topicId: context.input.topicId,
+            intentTypeId: context.input.intentTypeId,
+            outputTypeId: context.input.outputTypeId,
+            heartbeatTypeId: context.input.heartbeatTypeId,
+            snapshotTypeId: context.input.snapshotTypeId,
+            syncRequestTypeId: context.input.syncRequestTypeId,
+            heartbeatIntervalMs: context.input.heartbeatIntervalMs,
+            snapshotIntervalMs: context.input.snapshotIntervalMs,
+            readSnapshot: () => this.relaySnapshot(context),
+            onIntent: (message, relay) => this.receiveIntent(context, message, relay),
+            onOutput: (message) => this.receiveOutput(context, message),
+            onSnapshot: (message) => this.receiveSnapshot(context, message),
+            onSyncRequest: (message) => this.receiveSyncRequest(context, message)
+        });
+    }
+    private receiveIntent(
+        context: DirectorRelayContext,
+        message: RallarDirectorRelayMessage<unknown>,
+        relay: RallarDirectorRelayHandle<unknown, BlackBoxRallarDirectorOutputRecord, unknown>
+    ): BlackBoxRallarDirectorOutputRecord {
+        this.assertCurrent(context.lease);
+        const nextSequence = context.observations.sequence + 1;
+        const output: BlackBoxRallarDirectorOutputRecord = {
+            kind: 'black-box-director-output',
+            intentId: intentIdFromPayload(message.data, `intent-${nextSequence}`),
+            sequence: nextSequence,
+            senderId: message.senderId,
+            directorSessionId: relay.status().appointment?.sessionId,
+            directorPrincipalId: relay.status().appointment?.principalId,
+            epoch: message.envelope.epoch,
+            receivedAtEpochMs: message.receivedAtEpochMs,
+            payload: message.data
+        };
+        context.observations.sequence = nextSequence;
+        context.observations.acceptedIntents.push({
+            intentId: output.intentId,
+            senderId: message.senderId,
+            epoch: message.envelope.epoch,
+            receivedAtEpochMs: message.receivedAtEpochMs,
+            payload: message.data
+        });
+        context.observations.outputs.push(output);
+        this.emitDiagnostic({
+            topic: 'rallar.browser.director.intent_received',
+            handle: context.input.handle,
+            data: {
+                intent: context.observations.acceptedIntents.at(-1),
+                output
+            },
+            config: context.config
+        });
+        return output;
+    }
+    private receiveOutput(
+        context: DirectorRelayContext,
+        message: RallarDirectorRelayMessage<BlackBoxRallarDirectorOutputRecord>
+    ): void {
+        this.assertCurrent(context.lease);
+        context.observations.outputs.push(message.data);
+        this.emitDiagnostic({
+            topic: 'rallar.browser.director.output_received',
+            handle: context.input.handle,
+            data: {
+                output: message.data,
+                senderId: message.senderId,
+                epoch: message.envelope.epoch,
+                receivedAtEpochMs: message.receivedAtEpochMs
+            },
+            config: context.config
+        });
+    }
+    private receiveSnapshot(context: DirectorRelayContext, message: RallarDirectorRelayMessage<unknown>): void {
+        this.assertCurrent(context.lease);
+        context.observations.snapshots.push(message.data);
+        this.emitDiagnostic({
+            topic: 'rallar.browser.director.snapshot_received',
+            handle: context.input.handle,
+            data: {
+                snapshot: message.data,
+                senderId: message.senderId,
+                epoch: message.envelope.epoch,
+                receivedAtEpochMs: message.receivedAtEpochMs
+            },
+            config: context.config
+        });
+    }
+    private receiveSyncRequest(
+        context: DirectorRelayContext,
+        message: RallarDirectorRelayMessage<RallarMessagePayload>
+    ): void {
+        this.assertCurrent(context.lease);
+        context.observations.syncRequests.push({
+            senderId: message.senderId,
+            epoch: message.envelope.epoch,
+            receivedAtEpochMs: message.receivedAtEpochMs,
+            payload: message.data
+        });
+        this.emitDiagnostic({
+            topic: 'rallar.browser.director.sync_request_received',
+            handle: context.input.handle,
+            data: {
+                syncRequest: context.observations.syncRequests.at(-1)
+            },
+            config: context.config
+        });
+    }
 
-    return {
-        appoint: async (input) => {
-            const config = options.requireConfig();
-            const lease = resources.lease();
-            assertCurrent(lease);
-            const normalized = normalizeDirectorAppointInput(input);
-            const directorStatus = await rallar.director.appoint(toTarget(normalized, config) as any, {
-                heartbeatTtlMs: normalized.heartbeatTtlMs,
-                scope: toScope(normalized, config),
-                timeoutMs: normalized.timeoutMs
-            } as any);
-            assertCurrent(lease);
-            const diagnostics = statusDiagnostics('appointed', normalized, directorStatus, config);
-            emitDiagnostic('rallar.browser.director.appointed', undefined, diagnostics, config);
-            return diagnostics;
-        },
-        resign: async (input) => {
-            const config = options.requireConfig();
-            const lease = resources.lease();
-            assertCurrent(lease);
-            const normalized = normalizeDirectorRoomInput(input);
-            const directorStatus = await rallar.director.resign(toTarget(normalized, config) as any, {
-                scope: toScope(normalized, config),
-                timeoutMs: normalized.timeoutMs
-            } as any);
-            assertCurrent(lease);
-            const diagnostics = statusDiagnostics('resigned', normalized, directorStatus, config);
-            emitDiagnostic('rallar.browser.director.resigned', undefined, diagnostics, config);
-            return diagnostics;
-        },
-        status: async (input) => {
-            const config = options.requireConfig();
-            const lease = resources.lease();
-            assertCurrent(lease);
-            const normalized = normalizeDirectorStatusInput(input);
-            if (normalized.refresh) {
-                await rallar.rooms.refresh({
-                    scope: toScope(normalized, config),
-                    timeoutMs: normalized.timeoutMs
-                } as any);
-            }
-            assertCurrent(lease);
-            const directorStatus = rallar.director.status(toTarget(normalized, config) as any, {
-                now: normalized.now
-            });
-            const diagnostics = statusDiagnostics('status', normalized, directorStatus, config);
-            emitDiagnostic('rallar.browser.director.status', undefined, diagnostics, config);
-            return diagnostics;
-        },
-        relayStart: async (input) => {
-            const config = options.requireConfig();
-            const lease = resources.lease();
-            assertCurrent(lease);
-            const normalized = normalizeDirectorRelayStartInput(input);
-            if (resources.handles().includes(normalized.handle)) {
-                throw new Error('Director relay handle is already open: ' + normalized.handle);
-            }
-            let entry!: DirectorRelayState;
-            const relay = rallar.director.createRelay({
-                roomId: normalized.roomId ?? config.roomId,
-                roomRef: toRoomRef(normalized, config) as any,
-                laneId: normalized.laneId,
-                topicId: normalized.topicId,
-                intentTypeId: normalized.intentTypeId,
-                outputTypeId: normalized.outputTypeId,
-                heartbeatTypeId: normalized.heartbeatTypeId,
-                snapshotTypeId: normalized.snapshotTypeId,
-                syncRequestTypeId: normalized.syncRequestTypeId,
-                heartbeatIntervalMs: normalized.heartbeatIntervalMs,
-                snapshotIntervalMs: normalized.snapshotIntervalMs,
-                readSnapshot: () => relaySnapshot(entry),
-                onIntent: (message: RallarDirectorRelayMessage<unknown>) => {
-                    assertCurrent(lease);
-                    const nextSequence = entry.sequence + 1;
-                    const output: BlackBoxRallarDirectorOutputRecord = {
-                        kind: 'black-box-director-output',
-                        intentId: intentIdFromPayload(message.data, `intent-${nextSequence}`),
-                        sequence: nextSequence,
-                        senderId: message.senderId,
-                        directorSessionId: entry.relay.status().appointment?.sessionId,
-                        directorPrincipalId: entry.relay.status().appointment?.principalId,
-                        epoch: message.envelope.epoch,
-                        receivedAtEpochMs: message.receivedAtEpochMs,
-                        payload: message.data
-                    };
-                    entry.sequence = nextSequence;
-                    entry.acceptedIntents.push({
-                        intentId: output.intentId,
-                        senderId: message.senderId,
-                        epoch: message.envelope.epoch,
-                        receivedAtEpochMs: message.receivedAtEpochMs,
-                        payload: message.data
-                    });
-                    entry.outputs.push(output);
-                    emitDiagnostic('rallar.browser.director.intent_received', entry.handle, {
-                        intent: entry.acceptedIntents.at(-1),
-                        output
-                    }, config);
-                    return output;
-                },
-                onOutput: (message: RallarDirectorRelayMessage<BlackBoxRallarDirectorOutputRecord>) => {
-                    assertCurrent(lease);
-                    entry.outputs.push(message.data);
-                    emitDiagnostic('rallar.browser.director.output_received', entry.handle, {
-                        output: message.data,
-                        senderId: message.senderId,
-                        epoch: message.envelope.epoch,
-                        receivedAtEpochMs: message.receivedAtEpochMs
-                    }, config);
-                },
-                onSnapshot: (message: RallarDirectorRelayMessage<unknown>) => {
-                    assertCurrent(lease);
-                    entry.snapshots.push(message.data);
-                    emitDiagnostic('rallar.browser.director.snapshot_received', entry.handle, {
-                        snapshot: message.data,
-                        senderId: message.senderId,
-                        epoch: message.envelope.epoch,
-                        receivedAtEpochMs: message.receivedAtEpochMs
-                    }, config);
-                },
-                onSyncRequest: (message: RallarDirectorRelayMessage<unknown>) => {
-                    assertCurrent(lease);
-                    entry.syncRequests.push({
-                        senderId: message.senderId,
-                        epoch: message.envelope.epoch,
-                        receivedAtEpochMs: message.receivedAtEpochMs,
-                        payload: message.data
-                    });
-                    emitDiagnostic('rallar.browser.director.sync_request_received', entry.handle, {
-                        syncRequest: entry.syncRequests.at(-1)
-                    }, config);
-                }
-            });
-            entry = {
-                handle: normalized.handle,
-                input: normalized,
-                relay,
-                acceptedIntents: [],
-                outputs: [],
-                snapshots: [],
-                syncRequests: [],
-                sequence: 0
-            };
-            resources.add(normalized.handle, entry);
-            const diagnostics = statusDiagnostics('relay_started', normalized, relay.status(), config, {
+    relayStart = async (input: unknown): Promise<BlackBoxRallarDirectorCommandDiagnostics> => {
+        const config = this.#options.requireConfig();
+        const lease = this.#resources.lease();
+        this.assertCurrent(lease);
+        const normalized = normalizeDirectorRelayStartInput(input);
+        if (this.#resources.handles().includes(normalized.handle)) {
+            throw new Error('Director relay handle is already open: ' + normalized.handle);
+        }
+        const observations: DirectorRelayObservations = {
+            acceptedIntents: [],
+            outputs: [],
+            snapshots: [],
+            syncRequests: [],
+            sequence: 0
+        };
+        const relay = this.createRelay({ input: normalized, config, lease, observations });
+        const entry: DirectorRelayState = { handle: normalized.handle, input: normalized, relay, observations };
+        this.#resources.add(normalized.handle, entry);
+        const diagnostics = this.statusDiagnostics({
+            status: 'relay_started',
+            input: normalized,
+            directorStatus: relay.status(),
+            config: config,
+            extra: {
                 handle: normalized.handle,
                 relay: {
                     handle: normalized.handle,
@@ -495,107 +557,156 @@ export function createBlackBoxRallarDirectorController(
                     snapshotTypeId: normalized.snapshotTypeId,
                     syncRequestTypeId: normalized.syncRequestTypeId
                 }
-            });
-            emitDiagnostic('rallar.browser.director.relay_started', normalized.handle, diagnostics, config);
-            return diagnostics;
-        },
-        intent: async (input) => {
-            const config = options.requireConfig();
-            const lease = resources.lease();
-            assertCurrent(lease);
-            const normalized = normalizeDirectorIntentInput(input);
-            const relay = requireRelay(normalized.handle);
-            const sendResult = await relay.relay.sendIntent(normalized.intent);
-            assertCurrent(lease);
-            const diagnostics = statusDiagnostics('intent_sent', relay.input, relay.relay.status(), config, {
+            }
+        });
+        this.emitDiagnostic({
+            topic: 'rallar.browser.director.relay_started',
+            handle: normalized.handle,
+            data: diagnostics,
+            config: config
+        });
+        return diagnostics;
+    };
+    intent = async (input: unknown): Promise<BlackBoxRallarDirectorCommandDiagnostics> => {
+        const config = this.#options.requireConfig();
+        const lease = this.#resources.lease();
+        this.assertCurrent(lease);
+        const normalized = normalizeDirectorIntentInput(input);
+        const relay = this.requireRelay(normalized.handle);
+        const sendResult = await relay.relay.sendIntent(normalized.intent);
+        this.assertCurrent(lease);
+        const diagnostics = this.statusDiagnostics({
+            status: 'intent_sent',
+            input: relay.input,
+            directorStatus: relay.relay.status(),
+            config: config,
+            extra: {
                 handle: normalized.handle,
                 sendResult
-            });
-            emitDiagnostic('rallar.browser.director.intent_sent', normalized.handle, {
+            }
+        });
+        this.emitDiagnostic({
+            topic: 'rallar.browser.director.intent_sent',
+            handle: normalized.handle,
+            data: {
                 ...diagnostics,
                 intent: normalized.intent
-            }, config);
-            return diagnostics;
-        },
-        syncRequest: async (input) => {
-            const config = options.requireConfig();
-            const lease = resources.lease();
-            assertCurrent(lease);
-            const normalized = normalizeDirectorSyncRequestInput(input);
-            const relay = requireRelay(normalized.handle);
-            const sendResult = await relay.relay.requestSync(normalized.payload);
-            assertCurrent(lease);
-            const diagnostics = statusDiagnostics('sync_requested', relay.input, relay.relay.status(), config, {
+            },
+            config: config
+        });
+        return diagnostics;
+    };
+    syncRequest = async (input: unknown): Promise<BlackBoxRallarDirectorCommandDiagnostics> => {
+        const config = this.#options.requireConfig();
+        const lease = this.#resources.lease();
+        this.assertCurrent(lease);
+        const normalized = normalizeDirectorSyncRequestInput(input);
+        const relay = this.requireRelay(normalized.handle);
+        const sendResult = await relay.relay.requestSync(normalized.payload);
+        this.assertCurrent(lease);
+        const diagnostics = this.statusDiagnostics({
+            status: 'sync_requested',
+            input: relay.input,
+            directorStatus: relay.relay.status(),
+            config: config,
+            extra: {
                 handle: normalized.handle,
                 sendResult
-            });
-            emitDiagnostic('rallar.browser.director.sync_requested', normalized.handle, {
+            }
+        });
+        this.emitDiagnostic({
+            topic: 'rallar.browser.director.sync_requested',
+            handle: normalized.handle,
+            data: {
                 ...diagnostics,
                 payload: normalized.payload
-            }, config);
-            return diagnostics;
-        },
-        relayStop: async (input) => {
-            const config = options.requireConfig();
-            const lease = resources.lease();
-            assertCurrent(lease);
-            const normalized = normalizeDirectorHandleInput(input);
-            const relay = requireRelay(normalized.handle);
-            const status = relay.relay.status();
-            relay.relay.stop();
-            resources.delete(normalized.handle);
-            const diagnostics = statusDiagnostics('relay_stopped', relay.input, status, config, {
+            },
+            config: config
+        });
+        return diagnostics;
+    };
+    relayStop = async (input: unknown): Promise<BlackBoxRallarDirectorCommandDiagnostics> => {
+        const config = this.#options.requireConfig();
+        const lease = this.#resources.lease();
+        this.assertCurrent(lease);
+        const normalized = normalizeDirectorHandleInput(input);
+        const relay = this.requireRelay(normalized.handle);
+        const status = relay.relay.status();
+        relay.relay.stop();
+        this.#resources.delete(normalized.handle);
+        const diagnostics = this.statusDiagnostics({
+            status: 'relay_stopped',
+            input: relay.input,
+            directorStatus: status,
+            config: config,
+            extra: {
                 handle: normalized.handle,
-                acceptedIntentCount: relay.acceptedIntents.length,
-                outputCount: relay.outputs.length,
-                snapshotCount: relay.snapshots.length,
-                syncRequestCount: relay.syncRequests.length
-            });
-            emitDiagnostic('rallar.browser.director.relay_stopped', normalized.handle, diagnostics, config);
-            return diagnostics;
-        },
-        summary: () => ({
-            handles: resources.handles(),
-            relays: resources.entries().map(([, entry]) => ({
-                handle: entry.handle,
-                roomId: entry.input.roomId,
-                topicId: entry.input.topicId,
-                intentTypeId: entry.input.intentTypeId,
-                outputTypeId: entry.input.outputTypeId,
-                acceptedIntentCount: entry.acceptedIntents.length,
-                outputCount: entry.outputs.length,
-                snapshotCount: entry.snapshots.length,
-                syncRequestCount: entry.syncRequests.length,
-                status: entry.relay.status()
-            }))
-        }),
-        closeAll: (config) => {
-            const errors: unknown[] = [];
-            for (const [handle, relay] of resources.entries()) {
-                try {
-                    relay.relay.stop();
-                    resources.delete(handle);
-                    if (config) {
-                        emitDiagnostic('rallar.browser.director.relay_stopped', handle, {
+                acceptedIntentCount: relay.observations.acceptedIntents.length,
+                outputCount: relay.observations.outputs.length,
+                snapshotCount: relay.observations.snapshots.length,
+                syncRequestCount: relay.observations.syncRequests.length
+            }
+        });
+        this.emitDiagnostic({
+            topic: 'rallar.browser.director.relay_stopped',
+            handle: normalized.handle,
+            data: diagnostics,
+            config: config
+        });
+        return diagnostics;
+    };
+    summary = (): BlackBoxRallarDirectorRelaySummary => ({
+        handles: this.#resources.handles(),
+        relays: this.#resources.entries().map(([, entry]) => ({
+            handle: entry.handle,
+            roomId: entry.input.roomId,
+            topicId: entry.input.topicId,
+            intentTypeId: entry.input.intentTypeId,
+            outputTypeId: entry.input.outputTypeId,
+            acceptedIntentCount: entry.observations.acceptedIntents.length,
+            outputCount: entry.observations.outputs.length,
+            snapshotCount: entry.observations.snapshots.length,
+            syncRequestCount: entry.observations.syncRequests.length,
+            status: entry.relay.status()
+        }))
+    });
+    closeAll = (config?: BlackBoxRallarConnectionConfig): readonly Error[] => {
+        const errors: Error[] = [];
+        for (const [handle, relay] of this.#resources.entries()) {
+            try {
+                relay.relay.stop();
+                this.#resources.delete(handle);
+                if (config) {
+                    this.emitDiagnostic({
+                        topic: 'rallar.browser.director.relay_stopped',
+                        handle: handle,
+                        data: {
                             status: 'relay_stopped',
                             handle,
                             reason: 'runtime-close',
-                            acceptedIntentCount: relay.acceptedIntents.length,
-                            outputCount: relay.outputs.length,
-                            snapshotCount: relay.snapshots.length,
-                            syncRequestCount: relay.syncRequests.length
-                        }, config);
-                    }
-                }
-                catch (error) {
-                    errors.push(error);
-                    options.emitError(config, 'rallar.browser.director.relay_stop_failed', error, {
-                        handle,
-                        reason: 'runtime-close'
+                            acceptedIntentCount: relay.observations.acceptedIntents.length,
+                            outputCount: relay.observations.outputs.length,
+                            snapshotCount: relay.observations.snapshots.length,
+                            syncRequestCount: relay.observations.syncRequests.length
+                        },
+                        config: config
                     });
                 }
             }
-            return errors;
+            catch (caught) {
+                const error = toError(caught);
+                errors.push(error);
+                this.#options.emitError({
+                    config: config,
+                    topic: 'rallar.browser.director.relay_stop_failed',
+                    error: error,
+                    data: {
+                        handle,
+                        reason: 'runtime-close'
+                    }
+                });
+            }
         }
+        return errors;
     };
 }

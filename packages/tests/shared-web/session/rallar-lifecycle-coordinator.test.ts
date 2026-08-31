@@ -1,6 +1,6 @@
 import { createRallarLifecycleCoordinator, type RallarLifecycleParticipant } from '@shared-web/browser/session/rallar-lifecycle-coordinator.ts';
 import { describe, expect, it } from 'vitest';
-import { createApiMiddlewareTestDouble } from '../api-middleware-test-double.ts';
+import { createDefaultApiMiddlewareTestDouble } from '../api-middleware-test-double.ts';
 
 describe('Rallar lifecycle coordinator', () => {
     it('runs every lifecycle phase in ascending participant order', () => {
@@ -21,7 +21,7 @@ describe('Rallar lifecycle coordinator', () => {
         lifecycle.register(participant('rtc', 60));
         lifecycle.register(participant('state', 20));
         lifecycle.register(participant('messages', 30));
-        const middleware = createApiMiddlewareTestDouble();
+        const middleware = createDefaultApiMiddlewareTestDouble();
 
         lifecycle.attach(middleware);
         lifecycle.connected();

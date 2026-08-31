@@ -173,7 +173,7 @@ describe('distributed validation risk classification', () => {
         },
         {
             family: 'realtime-routing-topology',
-            path: 'packages/shared/multicast/WebRtcOverlayMulticastService.ts'
+            path: 'packages/shared/multicast/web-rtc-overlay-multicast-service.ts'
         },
         {
             family: 'realtime-routing-topology',

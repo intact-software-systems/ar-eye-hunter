@@ -2,7 +2,7 @@ import { createBrowserWebSocketInbox } from '@shared-web/browser/websocket/brows
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { toResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { describe, expect, it, vi } from 'vitest';
-import { createApiMiddlewareTestDouble } from '../api-middleware-test-double.ts';
+import { createDefaultApiMiddlewareTestDouble } from '../api-middleware-test-double.ts';
 
 const testMessage: ALMessage = {
     id: {
@@ -27,7 +27,7 @@ describe('Browser WebSocket inbox', () => {
     it('multiplexes one WebSocket callback and dispatches handlers in order', async () => {
         const events: string[] = [];
         const subscriptionEvents: string[] = [];
-        const middleware = createApiMiddlewareTestDouble();
+        const middleware = createDefaultApiMiddlewareTestDouble();
         let onMessage: ((message: ALMessage) => Promise<void>) | undefined;
         vi.mocked(
             middleware.middleware.webSocketQueueBox.onAnyInboxMessageDo

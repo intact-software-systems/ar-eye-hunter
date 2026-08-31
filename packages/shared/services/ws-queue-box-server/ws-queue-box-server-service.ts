@@ -25,7 +25,7 @@ import type { QueueBoxResourceEntryRepository } from '../../queuebox/queue-box-t
 import type { ResourceEntry } from '../../queuebox/ResourceEntry.ts';
 import { toError } from '../../resilience/to-error.ts';
 import { JsonWebSocketServer, type ConnectionContext } from '../../websocket/JsonWebSocketServer.ts';
-import type { OnWebSocketServerMessageCallback } from '../InboxOutboxContracts.ts';
+import type { OnWebSocketServerMessageCallback } from '../queue-message-callbacks.ts';
 import { QueueBoxUtilities } from '../QueueBoxUtilities.ts';
 import {
     type WsDeliveryDiagnosticsSink,

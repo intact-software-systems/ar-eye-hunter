@@ -1,6 +1,6 @@
-import type { QRtcPeerDto } from '@shared/services/WebRtcConnectionService.ts';
-import type { RtcDataChannelHealth } from '@shared/webrtc/QRtcDataChannel.ts';
-import type { QRtcPeerConnectionDiagnostics } from '@shared/webrtc/QRtcPeerConnection.ts';
+import type { QRtcPeerDto } from '@shared/services/web-rtc-connection-service.ts';
+import type { RtcDataChannelHealth } from '@shared/webrtc/qrtc-data-channel.ts';
+import type { QRtcPeerConnection } from '@shared/webrtc/qrtc-peer-connection.ts';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 // The factories below annotate their return type on purpose: without it the contextual type of a
@@ -13,10 +13,10 @@ type ClientStateSnapshotsModule = typeof import('@shared/repository/client-state
 type GroupStateSnapshotsModule = typeof import('@shared/repository/group-state-snapshots-repository.ts');
 
 const mocks = await vi.hoisted(async () => {
-    const { createApiMiddlewareTestDouble } = await import(
+    const { createDefaultApiMiddlewareTestDouble } = await import(
         '../api-middleware-test-double.ts'
     );
-    const ctx = createApiMiddlewareTestDouble();
+    const ctx = createDefaultApiMiddlewareTestDouble();
 
     return {
         ctx,
@@ -26,16 +26,11 @@ const mocks = await vi.hoisted(async () => {
         initialiseApiMiddleware: vi.fn(() => Promise.resolve(ctx)),
         onCacheChange: vi.fn(() => vi.fn()),
         readSession: vi.fn(() => ctx.session),
-        clientRepositoryMissing: vi.fn((): never => {
-            throw new Error(
-                'Repository not found: shared.repository.client-state-snapshots'
-            );
-        }),
-        groupRepositoryMissing: vi.fn((): never => {
-            throw new Error(
-                'Repository not found: shared.repository.group-state-snapshots'
-            );
-        })
+        findClientStateSnapshotByPrincipalId: vi.fn<ClientStateSnapshotsModule['findClientStateSnapshotByPrincipalId']>(() => undefined),
+        getAllClientStateSnapshots: vi.fn<ClientStateSnapshotsModule['getAllClientStateSnapshots']>(() => []),
+        findFirstGroupStateSnapshotRefSessionIdIsIn: vi.fn<GroupStateSnapshotsModule['findFirstGroupStateSnapshotRefSessionIdIsIn']>(() => undefined),
+        findGroupStateSnapshotByRef: vi.fn<GroupStateSnapshotsModule['findGroupStateSnapshotByRef']>(() => undefined),
+        getAllGroupStateSnapshots: vi.fn<GroupStateSnapshotsModule['getAllGroupStateSnapshots']>(() => [])
     };
 });
 
@@ -70,29 +65,28 @@ vi.mock(
 vi.mock(
     import('@shared/repository/client-state-snapshots-repository.ts'),
     (): Partial<ClientStateSnapshotsModule> => ({
-        findClientStateSnapshotByPrincipalId: mocks.clientRepositoryMissing,
-        getAllClientStateSnapshots: mocks.clientRepositoryMissing
+        findClientStateSnapshotByPrincipalId: mocks.findClientStateSnapshotByPrincipalId,
+        getAllClientStateSnapshots: mocks.getAllClientStateSnapshots
     })
 );
 
 vi.mock(
     import('@shared/repository/group-state-snapshots-repository.ts'),
     (): Partial<GroupStateSnapshotsModule> => ({
-        findFirstGroupStateSnapshotRefSessionIdIsIn: mocks.groupRepositoryMissing,
-        findGroupStateSnapshotByRef: mocks.groupRepositoryMissing,
-        getAllGroupStateSnapshots: mocks.groupRepositoryMissing
+        findFirstGroupStateSnapshotRefSessionIdIsIn: mocks.findFirstGroupStateSnapshotRefSessionIdIsIn,
+        findGroupStateSnapshotByRef: mocks.findGroupStateSnapshotByRef,
+        getAllGroupStateSnapshots: mocks.getAllGroupStateSnapshots
     })
 );
 
 describe('Rallar RTC diagnostics', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        mocks.clientRepositoryMissing.mockImplementation(
-            (principalId?: string): never => (principalId === undefined ? [] : undefined) as never
-        );
-        mocks.groupRepositoryMissing.mockImplementation(
-            (value?: string): never => (value === undefined ? [] : undefined) as never
-        );
+        mocks.findClientStateSnapshotByPrincipalId.mockReturnValue(undefined);
+        mocks.getAllClientStateSnapshots.mockReturnValue([]);
+        mocks.findFirstGroupStateSnapshotRefSessionIdIsIn.mockReturnValue(undefined);
+        mocks.findGroupStateSnapshotByRef.mockReturnValue(undefined);
+        mocks.getAllGroupStateSnapshots.mockReturnValue([]);
         mocks.hydrateStateCache.mockResolvedValue(undefined);
         mocks.initialiseApiMiddleware.mockResolvedValue(mocks.ctx);
         mocks.readSession.mockReturnValue(mocks.ctx.session);
@@ -466,7 +460,7 @@ interface ChannelHealthFixtureInput {
 interface RtcPeerTestDoubleInput {
     readonly peerId: QRtcPeerDto['peerId'];
     readonly status: RtcPeerStatusTestDouble;
-    readonly readDiagnostics?: () => QRtcPeerConnectionDiagnostics;
+    readonly readDiagnostics?: () => QRtcPeerConnection.Diagnostics;
     readonly lanes: ReadonlyMap<string, () => RtcDataChannelHealth>;
 }
 
@@ -528,8 +522,8 @@ function createChannelHealth(input: ChannelHealthFixtureInput): RtcDataChannelHe
 }
 
 function createPeerConnectionDiagnostics(
-    overrides: Partial<QRtcPeerConnectionDiagnostics> = {}
-): QRtcPeerConnectionDiagnostics {
+    overrides: Partial<QRtcPeerConnection.Diagnostics> = {}
+): QRtcPeerConnection.Diagnostics {
     return {
         connectCallCount: 0,
         connectIgnoredCount: 0,

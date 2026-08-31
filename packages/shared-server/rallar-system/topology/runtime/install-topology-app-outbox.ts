@@ -1,6 +1,6 @@
 import type { Group, GroupRef } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
-import type { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
+import type { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
 import { AppOutboxType } from '../../app-outbox/app-outbox-type.ts';
 import type { GroupMutationCommand } from '../../group-state/mutation/group-mutation-contracts.ts';

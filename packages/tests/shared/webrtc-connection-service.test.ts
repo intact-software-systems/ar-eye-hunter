@@ -1,1238 +1,622 @@
-import { newALEventRoute, newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
-import { WebRtcConnectionService } from '@shared/services/WebRtcConnectionService.ts';
-import type { RtcDataChannelInputDto } from '@shared/webrtc/QRtcDataChannel.ts';
+import {
+    afterEach,
+    beforeEach,
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
+
+import { QRtcPeerDto, WebRtcConnectionService } from '@shared/services/web-rtc-connection-service.ts';
 import {
     QRtcSignalingChannel,
+    QRtcSignalingMessage,
     QRtcSignalingMsgType,
-    QRtcSignalingType,
-    type QRtcSignalingMessage,
-    type QRtcSignalingTransport,
-    type QRtcSignalingTransportInputDto
+    QRtcSignalingType
 } from '@shared/webrtc/QRtcSignalingContracts.ts';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const mockState = vi.hoisted(() => ({
-    peerConnections: [] as MockQRtcPeerConnection[],
-    dataChannels: [] as MockQRtcDataChannel[],
-    mediaChannels: [] as MockQRtcMediaChannel[]
-}));
+import {
+    createNativeRtcConnectionFixture,
+    installNativeRtcRuntime,
+    NativeRtcConnectionFixture,
+    NativeRtcRuntime
+} from './native-rtc-connection-fixture.ts';
 
-vi.mock('@shared/webrtc/QRtcPeerConnection.ts', () => {
-    class MockQRtcPeerConnection {
-        public readonly status = {
-            state: 'Idle',
-            pc: {
-                connectionState: 'new'
-            }
-        };
-        public connectCallbacks:
-            | {
-                onConnected?: () => Promise<void>;
-                onClosed?: (peerId: string) => Promise<void>;
-            }
-            | undefined;
-
-        public readonly connect = vi.fn((callbacks = {}) => {
-            this.connectCallbacks = callbacks;
-        });
-        public readonly handleSignal = vi.fn(async () => {
-        });
-        public readonly reset = vi.fn(() => {
-            (this.status as any).pc = undefined;
-            return this.status;
-        });
-        public readonly isOpen = vi.fn(() => false);
-        public readonly isReadyToConnect = vi.fn(() => true);
-        public readonly applyMediaPolicy = vi.fn();
-
-        public readonly signaler: unknown;
-        public readonly input: unknown;
-
-        constructor(
-            signaler: unknown,
-            input: unknown
-        ) {
-            this.signaler = signaler;
-            this.input = input;
-            mockState.peerConnections.push(this);
-        }
+let runtime: NativeRtcRuntime;
+const fixtures: NativeRtcConnectionFixture[] = [];
+beforeEach(() => {
+    runtime = installNativeRtcRuntime();
+});
+afterEach(() => {
+    for (const fixture of fixtures.splice(0)) {
+        fixture.dispose();
     }
-
-    return {
-        QRtcPeerConnection: MockQRtcPeerConnection
-    };
+    runtime.dispose();
+    vi.useRealTimers();
+    vi.restoreAllMocks();
 });
 
-vi.mock('@shared/webrtc/QRtcDataChannel.ts', () => {
-    class MockQRtcDataChannel {
-        public readyToConnect = false;
-        public healthReadyState: RTCDataChannelState | undefined;
-        public readonly connect = vi.fn(() => {
-            this.readyToConnect = false;
-        });
-        public readonly reset = vi.fn();
-        public readonly isReadyToConnect = vi.fn(() => this.readyToConnect);
-        public readonly waitUntilOpen = vi.fn(async () => {
-            this.healthReadyState = 'open';
-            return true;
-        });
-        public readonly onRtcCallbacksDo = vi.fn((_id: string, callbacks: {
-            onOpen?: () => void;
-        }) => {
-            this.rtcCallbacks = callbacks;
-            return this;
-        });
-        public readonly removeRtcCallbackById = vi.fn((_id: string) => {
-            this.rtcCallbacks = undefined;
-            return true;
-        });
-        public readonly readHealth = vi.fn(() => ({
-            peerId: this.input.peerId,
-            label: this.input.dataChannelName,
-            ...(this.healthReadyState
-                ? {
-                    readyState: this.healthReadyState
-                }
-                : {}),
-            counters: {
-                sent: 0
-            }
-        }));
-        public rtcCallbacks:
-            | {
-                onOpen?: () => void;
-            }
-            | undefined;
-
-        public readonly connection: unknown;
-        public readonly input: RtcDataChannelInputDto;
-
-        constructor(
-            connection: unknown,
-            input: RtcDataChannelInputDto
-        ) {
-            this.connection = connection;
-            this.input = input;
-            mockState.dataChannels.push(this);
-        }
-    }
-
+function createInput(): WebRtcConnectionService.InputDto {
     return {
-        QRtcDataChannel: MockQRtcDataChannel
+        sessionId: 'a-self',
+        token: 'private-transport-token',
+        dataChannelName: 'room',
+        rtcSignalingTopicId: 'rtc',
+        iceCandidates: { iceServers: [], expiresAtEpochMs: Date.now() + 1_000 }
     };
-});
+}
 
-vi.mock('@shared/webrtc/QRtcMediaChannel.ts', () => {
-    class MockQRtcMediaChannel {
-        public readonly connect = vi.fn();
-        public readonly reset = vi.fn();
-        public readonly onRemoteStreamDo = vi.fn(function (
-            this: MockQRtcMediaChannel
-        ) {
-            return this;
-        });
-        public readonly onTrackDo = vi.fn(function (this: MockQRtcMediaChannel) {
-            return this;
-        });
+function createFixture(input = createInput()): NativeRtcConnectionFixture {
+    const fixture = createNativeRtcConnectionFixture(input, runtime);
+    fixtures.push(fixture);
+    return fixture;
+}
 
-        public readonly connection: unknown;
-        public readonly input: unknown;
-
-        constructor(
-            connection: unknown,
-            input: unknown
-        ) {
-            this.connection = connection;
-            this.input = input;
-            mockState.mediaChannels.push(this);
-        }
-    }
-
+function offer(peerId = 'z-peer'): QRtcSignalingMessage {
     return {
-        QRtcMediaChannel: MockQRtcMediaChannel
+        channel: QRtcSignalingChannel.RtcSignal,
+        type: QRtcSignalingMsgType.Signal,
+        fromId: peerId,
+        toId: 'a-self',
+        sessionId: peerId,
+        token: 'private-peer-token',
+        signalType: QRtcSignalingType.Offer,
+        payload: { description: { type: 'offer', sdp: 'private-offer-sdp' }, candidate: null }
     };
-});
+}
 
-describe('WebRtcConnectionService', () => {
-    beforeEach(() => {
-        vi.useRealTimers();
-        mockState.peerConnections.length = 0;
-        mockState.dataChannels.length = 0;
-        mockState.mediaChannels.length = 0;
-        vi.restoreAllMocks();
-    });
+function budgetInput(): WebRtcConnectionService.InputDto {
+    return {
+        ...createInput(),
+        peerEstablishmentTimeout: { enabled: true, timeoutMs: 50 },
+        peerConnectionAttemptBudget: { enabled: true, maxAttempts: 2, maxTotalDurationMs: 100, cooldownMs: 30 }
+    };
+}
 
-    it('connects the signaler and routes incoming signaling messages to peers', async () => {
-        const signaler = createSignaler();
-        const service = new WebRtcConnectionService(
-            signaler,
-            createConnectionInput('self')
-        );
-
-        await service.connectSignaler();
-
-        expect(signaler.connect).toHaveBeenCalledOnce();
-
-        const connectInput = getConnectInput(signaler);
-
-        await expect(
-            connectInput.callbacks.onMessage(
-                'wrong-session',
-                'token-1',
-                createRtcEnvelope({
-                    channel: QRtcSignalingChannel.RtcSignal,
-                    type: QRtcSignalingMsgType.Signal,
-                    fromId: 'peer-1',
-                    toId: 'self',
-                    sessionId: 'self',
-                    token: 'token-1',
-                    signalType: QRtcSignalingType.Offer,
-                    payload: {
-                        description: null,
-                        candidate: null
-                    }
-                })
-            )
-        ).rejects.toThrow(
-            'Message received for wrong session id: wrong-session expected: self'
-        );
-
-        await connectInput.callbacks.onMessage(
-            'self',
-            'token-1',
-            createRtcEnvelope({
-                channel: QRtcSignalingChannel.RtcSignal,
-                type: QRtcSignalingMsgType.Signal,
-                fromId: 'peer-1',
-                toId: 'other',
-                sessionId: 'other',
-                token: 'token-1',
-                signalType: QRtcSignalingType.Offer,
-                payload: {
-                    description: null,
-                    candidate: null
-                }
-            })
-        );
-
-        expect(service.peerIdsWithNoReconnectableLanes()).toEqual([]);
-
-        await connectInput.callbacks.onMessage(
-            'self',
-            'token-1',
-            createRtcEnvelope({
-                channel: QRtcSignalingChannel.RtcSignal,
-                type: QRtcSignalingMsgType.Signal,
-                fromId: 'self',
-                toId: 'self',
-                sessionId: 'self',
-                token: 'token-1',
-                signalType: QRtcSignalingType.Offer,
-                payload: {
-                    description: null,
-                    candidate: null
-                }
-            })
-        );
-
-        expect(service.peerIdsWithNoReconnectableLanes()).toEqual([]);
-
-        const firstMessage = createRtcEnvelope({
-            channel: QRtcSignalingChannel.RtcSignal,
-            type: QRtcSignalingMsgType.Signal,
-            fromId: 'peer-1',
-            toId: 'self',
-            sessionId: 'self',
-            token: 'token-1',
-            signalType: QRtcSignalingType.Offer,
-            payload: {
-                description: {
-                    type: 'offer',
-                    sdp: 'offer'
-                },
-                candidate: null
-            }
-        });
-
-        await connectInput.callbacks.onMessage('self', 'token-1', firstMessage);
-
-        expect(mockState.peerConnections).toHaveLength(1);
-        expect(mockState.peerConnections[0].handleSignal).toHaveBeenCalledTimes(1);
-
-        const secondMessage = createRtcEnvelope({
-            channel: QRtcSignalingChannel.RtcSignal,
-            type: QRtcSignalingMsgType.Signal,
-            fromId: 'peer-1',
-            toId: 'self',
-            sessionId: 'self',
-            token: 'token-1',
+describe('WebRtcConnectionService signaling and creation', () => {
+    it('decodes a real offer and ICE into the native peer without logging credentials or payloads', async () => {
+        const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+        const fixture = createFixture();
+        await fixture.service.connectSignaler();
+        await fixture.receive(offer());
+        await fixture.receive({
+            ...offer(),
             signalType: QRtcSignalingType.IceCandidate,
-            payload: {
-                description: null,
-                candidate: {
-                    candidate: 'ice-1'
-                }
-            }
+            payload: { description: null, candidate: { candidate: 'private-candidate', sdpMid: '0', sdpMLineIndex: 0 } }
         });
-
-        await connectInput.callbacks.onMessage('self', 'token-1', secondMessage);
-
-        expect(service.peerIdsWithNoReconnectableLanes()).toEqual(['peer-1']);
-        expect(mockState.peerConnections[0].handleSignal).toHaveBeenCalledTimes(2);
+        expect(fixture.nativePeer('z-peer').receivedDescriptions).toEqual([{ type: 'offer', sdp: 'private-offer-sdp' }]);
+        expect(fixture.nativePeer('z-peer').receivedCandidates).toEqual([{ candidate: 'private-candidate', sdpMid: '0', sdpMLineIndex: 0 }]);
+        expect(fixture.sentSignals).toMatchObject([{ signalType: 'Answer', toId: 'z-peer' }]);
+        expect(JSON.stringify(log.mock.calls)).not.toMatch(/private-(transport-token|peer-token|offer-sdp|candidate)/);
     });
 
-    it('does not create a missing peer from inbound signaling when the creation policy denies it', async () => {
-        const signaler = createSignaler();
-        const service = new WebRtcConnectionService(
-            signaler,
-            createConnectionInput('self')
-        ).setInboundPeerCreationPolicy(({ peerId, signalType }) => peerId !== 'peer-1' || signalType !== QRtcSignalingType.Offer);
-
-        await service.connectSignaler();
-        const connectInput = getConnectInput(signaler);
-
-        await connectInput.callbacks.onMessage(
-            'self',
-            'token-1',
-            createRtcEnvelope({
-                channel: QRtcSignalingChannel.RtcSignal,
-                type: QRtcSignalingMsgType.Signal,
-                fromId: 'peer-1',
-                toId: 'self',
-                sessionId: 'self',
-                token: 'token-1',
-                signalType: QRtcSignalingType.Offer,
-                payload: {
-                    description: {
-                        type: 'offer',
-                        sdp: 'offer'
-                    },
-                    candidate: null
-                }
-            })
-        );
-
-        expect(mockState.peerConnections).toHaveLength(0);
-        expect(service.peerIdsWithNoReconnectableLanes()).toEqual([]);
+    it.each([
+        { channel: 'wrong' },
+        { type: 'wrong' },
+        { signalType: 'unknown' },
+        { fromId: '' },
+        { token: 1 },
+        { payload: { description: { type: 'offer', sdp: 42 }, candidate: null } },
+        { payload: { description: { type: 'answer', sdp: 'sdp' }, candidate: null } },
+        { payload: { description: { type: 'offer', sdp: 'sdp' }, candidate: { candidate: 'extra' } } },
+        { signalType: 'IceCandidate', payload: { description: null, candidate: { candidate: 12 } } }
+    ])('rejects malformed signaling before native creation: %j', async (invalid) => {
+        const fixture = createFixture(budgetInput());
+        await fixture.service.connectSignaler();
+        await expect(fixture.receiveResource(JSON.stringify({ ...offer(), ...invalid }))).rejects.toThrow();
+        expect(runtime.createdConnections).toHaveLength(0);
+        expect(fixture.service.readPeerConnectionAttemptBudgetDiagnostics().consumedCount).toBe(0);
     });
 
-    it('does not create a missing peer when the creation policy returns a deny decision', async () => {
-        const signaler = createSignaler();
-        const service = new WebRtcConnectionService(
-            signaler,
-            createConnectionInput('self')
-        ).setInboundPeerCreationPolicy(() => ({ decision: 'deny' }) as never);
-
-        await service.connectSignaler();
-        const connectInput = getConnectInput(signaler);
-
-        await connectInput.callbacks.onMessage(
-            'self',
-            'token-1',
-            createRtcEnvelope({
-                channel: QRtcSignalingChannel.RtcSignal,
-                type: QRtcSignalingMsgType.Signal,
-                fromId: 'peer-1',
-                toId: 'self',
-                sessionId: 'self',
-                token: 'token-1',
-                signalType: QRtcSignalingType.Offer,
-                payload: {
-                    description: {
-                        type: 'offer',
-                        sdp: 'offer'
-                    },
-                    candidate: null
-                }
-            })
-        );
-
-        expect(mockState.peerConnections).toHaveLength(0);
-        expect(service.knownPeerIds()).toEqual([]);
+    it('keeps malformed JSON diagnostics free of serialized secret fragments', async () => {
+        const fixture = createFixture();
+        await fixture.service.connectSignaler();
+        const received = fixture.receiveResource('{"private-peer-token":"private-offer-sdp",BROKEN}');
+        await expect(received).rejects.toThrow('Invalid RTC signaling message');
+        await expect(received).rejects.not.toHaveProperty('cause');
+        expect(runtime.createdConnections).toHaveLength(0);
     });
 
-    it('creates a tentative peer from an inbound offer while group ownership is still unknown', async () => {
-        const signaler = createSignaler();
-        const service = new WebRtcConnectionService(
-            signaler,
-            createConnectionInput('self')
-        ).setInboundPeerCreationPolicy(() => ({ decision: 'tentative' }) as never);
-
-        await service.connectSignaler();
-        const connectInput = getConnectInput(signaler);
-
-        await connectInput.callbacks.onMessage(
-            'self',
-            'token-1',
-            createRtcEnvelope({
-                channel: QRtcSignalingChannel.RtcSignal,
-                type: QRtcSignalingMsgType.Signal,
-                fromId: 'peer-unknown',
-                toId: 'self',
-                sessionId: 'self',
-                token: 'token-1',
-                signalType: QRtcSignalingType.Offer,
-                payload: {
-                    description: {
-                        type: 'offer',
-                        sdp: 'offer'
-                    },
-                    candidate: null
-                }
-            })
-        );
-
-        expect(mockState.peerConnections).toHaveLength(1);
-        expect(mockState.peerConnections[0].handleSignal).toHaveBeenCalledOnce();
-        expect(service.knownPeerIds()).toEqual(['peer-unknown']);
+    it('validates direct accepted-peer signaling before allocating native resources', async () => {
+        const fixture = createFixture(budgetInput());
+        const result = await fixture.service.acceptPeerIfAbsent('z-peer', { ...offer(), payload: { description: 17, candidate: null } });
+        expect(result.left?.kind).toBe('signal-handle-failed');
+        expect(runtime.createdConnections).toHaveLength(0);
+        expect(fixture.service.readPeerConnectionAttemptBudgetDiagnostics().consumedCount).toBe(0);
     });
 
-    it('does not create a missing peer from an inbound answer', async () => {
-        const signaler = createSignaler();
-        const service = new WebRtcConnectionService(
-            signaler,
-            createConnectionInput('self')
-        );
-
-        await service.connectSignaler();
-        const connectInput = getConnectInput(signaler);
-
-        await connectInput.callbacks.onMessage(
-            'self',
-            'token-1',
-            createRtcEnvelope({
-                channel: QRtcSignalingChannel.RtcSignal,
-                type: QRtcSignalingMsgType.Signal,
-                fromId: 'peer-1',
-                toId: 'self',
-                sessionId: 'self',
-                token: 'token-1',
-                signalType: QRtcSignalingType.Answer,
-                payload: {
-                    description: {
-                        type: 'answer',
-                        sdp: 'answer'
-                    },
-                    candidate: null
-                }
-            })
-        );
-
-        expect(mockState.peerConnections).toHaveLength(0);
-        expect(service.knownPeerIds()).toEqual([]);
+    it('ignores another recipient, self signals and missing-peer answers', async () => {
+        const fixture = createFixture();
+        await fixture.service.connectSignaler();
+        await fixture.receive({ ...offer(), toId: 'other' });
+        await fixture.receive(offer('a-self'));
+        await fixture.receive({ ...offer(), signalType: 'Answer', payload: { description: { type: 'answer', sdp: 'answer' }, candidate: null } });
+        expect(runtime.createdConnections).toHaveLength(0);
     });
 
-    it('applies inbound signaling to an existing peer even when the creation policy denies new peers', async () => {
-        const signaler = createSignaler();
-        const service = new WebRtcConnectionService(
-            signaler,
-            createConnectionInput('self')
-        ).setInboundPeerCreationPolicy(() => false);
+    it('queues legitimate early ICE until an offer supplies the remote description', async () => {
+        const fixture = createFixture();
+        await fixture.service.connectSignaler();
+        await fixture.receive({ ...offer(), signalType: 'IceCandidate', payload: { description: null, candidate: { candidate: 'ice' } } });
+        expect(fixture.nativePeer('z-peer').receivedCandidates).toEqual([]);
+        await fixture.receive(offer());
+        expect(fixture.nativePeer('z-peer').receivedCandidates).toEqual([{ candidate: 'ice' }]);
+        expect(runtime.createdConnections).toHaveLength(1);
+    });
 
-        service.ensurePeerConnectionStarted('peer-1');
-        await service.connectSignaler();
-        const connectInput = getConnectInput(signaler);
+    it.each([false, 'deny', { decision: 'deny', reason: 'not-desired' }] satisfies WebRtcConnectionService.PeerCreationDecision[])(
+        'denies inbound creation without attempts for policy %j',
+        async (decision) => {
+            const fixture = createFixture(budgetInput());
+            fixture.service.setInboundPeerCreationPolicy(() => decision);
+            await fixture.service.connectSignaler();
+            await fixture.receive(offer());
+            expect(runtime.createdConnections).toHaveLength(0);
+            expect(fixture.service.readPeerConnectionAttemptBudgetDiagnostics().consumedCount).toBe(0);
+        }
+    );
 
-        await connectInput.callbacks.onMessage(
-            'self',
-            'token-1',
-            createRtcEnvelope({
-                channel: QRtcSignalingChannel.RtcSignal,
-                type: QRtcSignalingMsgType.Signal,
-                fromId: 'peer-1',
-                toId: 'self',
-                sessionId: 'self',
-                token: 'token-1',
-                signalType: QRtcSignalingType.IceCandidate,
-                payload: {
-                    description: null,
-                    candidate: {
-                        candidate: 'ice-1'
+    it('applies outbound denial to every public creation entry and inbound offers', async () => {
+        const fixture = createFixture(budgetInput());
+        fixture.service.setOutboundDialPolicy(() => ({ decision: 'deny', reason: 'not-desired' }));
+        expect(fixture.service.ensurePeerConnectionStarted('z-peer').left).toMatchObject({ kind: 'dial-denied', reason: 'not-desired' });
+        expect(await fixture.service.ensurePeerLaneOpen('z-peer')).toMatchObject({ status: 'connect-failed' });
+        expect((await fixture.service.acceptPeerIfAbsent('z-peer', offer())).left).toMatchObject({ kind: 'dial-denied' });
+        await fixture.service.connectSignaler();
+        await fixture.receive(offer());
+        expect(runtime.createdConnections).toHaveLength(0);
+        expect(fixture.service.readPeerConnectionAttemptBudgetDiagnostics().consumedCount).toBe(0);
+    });
+
+    it('fails closed when an admission policy throws', async () => {
+        const fixture = createFixture(budgetInput());
+        fixture.service.setOutboundDialPolicy(() => {
+            throw 'policy failure';
+        });
+        expect(fixture.service.ensurePeerConnectionStarted('z-peer').left).toMatchObject({ kind: 'dial-denied', reason: 'policy-error' });
+        fixture.service.setOutboundDialPolicy();
+        fixture.service.setInboundPeerCreationPolicy(() => {
+            throw 'policy failure';
+        });
+        await fixture.service.connectSignaler();
+        await fixture.receive(offer());
+        expect(runtime.createdConnections).toHaveLength(0);
+    });
+
+    it('retains an existing peer and handles its real signaling after policies deny new peers', async () => {
+        const fixture = createFixture();
+        const first = fixture.service.ensurePeerConnectionStarted('z-peer').right;
+        fixture.nativePeer('z-peer').setConnected();
+        fixture.service.setOutboundDialPolicy(() => false).setInboundPeerCreationPolicy(() => false);
+        expect(fixture.service.ensurePeerConnectionStarted('z-peer').right).toBe(first);
+        await fixture.service.connectSignaler();
+        await fixture.receive(offer());
+        expect(fixture.nativePeer('z-peer').receivedDescriptions).toHaveLength(1);
+        await fixture.receive(offer('new-peer'));
+        expect(runtime.createdConnections).toHaveLength(1);
+    });
+
+    it.each(['failed', 'reset'] as const)('denies replacement of a %s native peer without consuming another attempt', async (state) => {
+        const fixture = createFixture(budgetInput());
+        fixture.service.ensurePeerConnectionStarted('z-peer', true);
+        makeNativePeerUnusable(fixture, state);
+        fixture.service.setOutboundDialPolicy(() => ({ decision: 'deny', reason: 'stage-layout-mismatch' }));
+
+        expect(fixture.service.ensurePeerConnectionStarted('z-peer').left).toMatchObject({ kind: 'dial-denied', reason: 'stage-layout-mismatch' });
+        expect(await fixture.service.ensurePeerLaneOpen('z-peer')).toMatchObject({ status: 'connect-failed' });
+        expect((await fixture.service.acceptPeerIfAbsent('z-peer', offer())).left).toMatchObject({ kind: 'dial-denied' });
+
+        expect(runtime.createdConnections).toHaveLength(1);
+        expect(fixture.service.knownPeerIds()).toEqual([]);
+        expect(fixture.service.readPeerConnectionAttemptBudgetDiagnostics().consumedCount).toBe(1);
+        expect(fixture.service.peerConnectionAttemptDiagnostics('z-peer')?.attempts).toBe(1);
+    });
+
+    it.each(
+        [
+            ['failed', 'inbound'],
+            ['reset', 'inbound'],
+            ['failed', 'outbound'],
+            ['reset', 'outbound']
+        ] as const
+    )('applies current %s-native %s admission to incoming offers', async (state, policy) => {
+        const fixture = createFixture(budgetInput());
+        fixture.service.ensurePeerConnectionStarted('z-peer', true);
+        const native = fixture.nativePeer('z-peer');
+        makeNativePeerUnusable(fixture, state);
+        if (policy === 'inbound') {
+            fixture.service.setInboundPeerCreationPolicy(() => false);
+        }
+        else {
+            fixture.service.setOutboundDialPolicy(() => false);
+        }
+        await fixture.service.connectSignaler();
+
+        await fixture.receive(offer());
+
+        expect(runtime.createdConnections).toHaveLength(1);
+        expect(native.receivedDescriptions).toEqual([]);
+        expect(fixture.service.knownPeerIds()).toEqual([]);
+        expect(fixture.service.readPeerConnectionAttemptBudgetDiagnostics().consumedCount).toBe(1);
+    });
+
+    it.each(['failed', 'reset'] as const)('counts replacement of an admitted %s native peer as another establishment attempt', (state) => {
+        const fixture = createFixture(budgetInput());
+        const original = fixture.service.ensurePeerConnectionStarted('z-peer', true).right;
+        makeNativePeerUnusable(fixture, state);
+
+        const replacement = fixture.service.ensurePeerConnectionStarted('z-peer', true).right;
+
+        expect(replacement?.peerId).toBe('z-peer');
+        expect(replacement).not.toBe(original);
+        expect(runtime.createdConnections).toHaveLength(2);
+        expect(fixture.service.readPeerConnectionAttemptBudgetDiagnostics().consumedCount).toBe(2);
+        expect(fixture.service.peerConnectionAttemptDiagnostics('z-peer')?.attempts).toBe(2);
+        expect(runtime.createdConnections[0].connectionState).toBe('closed');
+        makeNativePeerUnusable(fixture, state);
+        expect(fixture.service.ensurePeerConnectionStarted('z-peer').left).toMatchObject({ kind: 'connect-exhausted' });
+        expect(runtime.createdConnections).toHaveLength(2);
+    });
+
+    it('replaces an admitted failed inbound peer within the same connection limit', async () => {
+        const fixture = createFixture({ ...budgetInput(), maxPeerConnections: 1 });
+        fixture.service.ensurePeerConnectionStarted('z-peer', true);
+        makeNativePeerUnusable(fixture, 'failed');
+        await fixture.service.connectSignaler();
+
+        await fixture.receive(offer());
+
+        expect(runtime.createdConnections).toHaveLength(2);
+        expect(fixture.nativePeer('z-peer').receivedDescriptions).toEqual([{ type: 'offer', sdp: 'private-offer-sdp' }]);
+        expect(fixture.service.readPeerConnectionAttemptBudgetDiagnostics().consumedCount).toBe(2);
+    });
+
+    it.each(['new', 'connecting'] as const)('reuses a %s native peer after new creation is denied', async (state) => {
+        const fixture = createFixture(budgetInput());
+        const original = fixture.service.ensurePeerConnectionStarted('z-peer', true).right;
+        const native = fixture.nativePeer('z-peer');
+        native.connectionState = state;
+        fixture.service.setOutboundDialPolicy(() => false).setInboundPeerCreationPolicy(() => false);
+        await fixture.service.connectSignaler();
+
+        expect(fixture.service.ensurePeerConnectionStarted('z-peer').right).toBe(original);
+        await fixture.receive(offer());
+
+        expect(runtime.createdConnections).toHaveLength(1);
+        expect(native.receivedDescriptions).toHaveLength(1);
+        expect(fixture.service.readPeerConnectionAttemptBudgetDiagnostics().consumedCount).toBe(1);
+    });
+
+    it('caps new inbound peers without blocking established-peer signaling', async () => {
+        const fixture = createFixture({ ...createInput(), maxPeerConnections: 1 });
+        await fixture.service.connectSignaler();
+        await fixture.receive(offer());
+        await fixture.receive(offer('another-peer'));
+        await fixture.receive(offer());
+        expect(runtime.createdConnections).toHaveLength(1);
+        expect(fixture.nativePeer('z-peer').receivedDescriptions).toHaveLength(2);
+    });
+});
+
+describe('WebRtcConnectionService peer and lane lifecycle', () => {
+    it.each([false, true])('reuses the native peer when creation observers ensure it again (deny later dials: %s)', async (denyLaterDials) => {
+        const fixture = createFixture(budgetInput());
+        const created: QRtcPeerDto[] = [];
+        const reentered: (QRtcPeerDto | undefined)[] = [];
+        const allocationsBeforeCallbacks: number[] = [];
+        const opened = vi.fn(async () => {});
+        fixture.service.onRtcPeerLifecycleDo('reentrant', {
+            onCreated: (peer) => {
+                created.push(peer);
+                allocationsBeforeCallbacks.push(runtime.createdConnections.length);
+                peer.channel.onRtcCallbacksDo('creation-observer', { onOpen: opened });
+                if (created.length === 1) {
+                    if (denyLaterDials) {
+                        fixture.service.setOutboundDialPolicy(() => false);
                     }
+                    reentered.push(fixture.service.ensurePeerConnectionStarted(peer.peerId, true).right);
                 }
-            })
-        );
-
-        expect(mockState.peerConnections).toHaveLength(1);
-        expect(mockState.peerConnections[0].handleSignal).toHaveBeenCalledOnce();
-    });
-
-    it('creates peers once, defaults initiator mode from politeness, and cleans up on close', async () => {
-        const signaler = createSignaler();
-        const service = new WebRtcConnectionService(
-            signaler,
-            createConnectionInput('a-self')
-        );
-        const lifecycle: string[] = [];
-
-        service.onRtcPeerLifecycleDo('lifecycle', {
-            onCreated: (peer) => lifecycle.push(`created:${peer.peerId}`),
-            onDeleted: (peer) => lifecycle.push(`deleted:${peer.peerId}`)
-        });
-
-        const first = service.ensurePeerConnectionStarted('z-peer');
-        const second = service.ensurePeerConnectionStarted('z-peer');
-
-        expect((first as unknown as { then?: unknown; }).then).toBeUndefined();
-        expect(first.left).toBeUndefined();
-        expect(second.left).toBeUndefined();
-        expect(first.right).toBe(second.right);
-        expect(mockState.peerConnections).toHaveLength(1);
-        expect(mockState.dataChannels[0].connect).toHaveBeenCalledWith(false);
-        expect(mockState.mediaChannels[0].connect).toHaveBeenCalledOnce();
-        expect(lifecycle).toEqual(['created:z-peer']);
-
-        await mockState.peerConnections[0].connectCallbacks?.onClosed?.('z-peer');
-
-        expect(mockState.dataChannels[0].reset).toHaveBeenCalledOnce();
-        expect(mockState.mediaChannels[0].reset).toHaveBeenCalledOnce();
-        expect(mockState.peerConnections[0].reset).toHaveBeenCalledOnce();
-        expect(service.peerIdsWithNoReconnectableLanes()).toEqual([]);
-        expect(lifecycle).toEqual(['created:z-peer', 'deleted:z-peer']);
-        expect(service.removeRtcPeerLifecycleById('lifecycle')).toBe(true);
-        expect(service.disconnectPeer('missing')).toBe(false);
-    });
-
-    it('treats another session for the same user principal as a normal RTC peer', () => {
-        const signaler = createSignaler();
-        const service = new WebRtcConnectionService(
-            signaler,
-            createConnectionInput('alice-session-a')
-        );
-
-        const connected = service.ensurePeerConnectionStarted('alice-session-b');
-
-        expect(connected.left).toBeUndefined();
-        expect(connected.right?.peerId).toBe('alice-session-b');
-        expect(service.knownPeerIds()).toEqual(['alice-session-b']);
-        expect(mockState.peerConnections).toHaveLength(1);
-        expect(mockState.dataChannels[0].input).toMatchObject({
-            peerId: 'alice-session-b'
-        });
-    });
-
-    it('rejects same-session RTC self connections without creating a peer', async () => {
-        const signaler = createSignaler();
-        const service = new WebRtcConnectionService(
-            signaler,
-            createConnectionInput('alice-session-a')
-        );
-
-        const connected = service.ensurePeerConnectionStarted('alice-session-a');
-        const lane = await service.ensurePeerLaneOpen('alice-session-a');
-
-        expect(connected.left).toEqual({
-            kind: 'self',
-            peerId: 'alice-session-a'
-        });
-        expect(lane).toMatchObject({
-            status: 'self',
-            peerId: 'alice-session-a',
-            laneId: 'reliable'
-        });
-        expect(service.knownPeerIds()).toEqual([]);
-        expect(mockState.peerConnections).toHaveLength(0);
-    });
-
-    it('disconnects one same-principal RTC session peer without removing other session peers', () => {
-        const signaler = createSignaler();
-        const service = new WebRtcConnectionService(
-            signaler,
-            createConnectionInput('alice-session-a')
-        );
-
-        service.ensurePeerConnectionStarted('alice-session-b');
-        service.ensurePeerConnectionStarted('alice-session-c');
-
-        expect(service.knownPeerIds()).toEqual([
-            'alice-session-b',
-            'alice-session-c'
-        ]);
-        expect(service.disconnectPeer('alice-session-b')).toBe(true);
-
-        expect(service.knownPeerIds()).toEqual(['alice-session-c']);
-        expect(mockState.dataChannels[0].reset).toHaveBeenCalledOnce();
-        expect(mockState.peerConnections[0].reset).toHaveBeenCalledOnce();
-        expect(mockState.dataChannels[1].reset).not.toHaveBeenCalled();
-        expect(mockState.peerConnections[1].reset).not.toHaveBeenCalled();
-    });
-
-    it('reconnects stale data channels on an otherwise active peer', async () => {
-        const signaler = createSignaler();
-        const service = new WebRtcConnectionService(
-            signaler,
-            createConnectionInput('a-self')
-        );
-
-        const first = service.ensurePeerConnectionStarted('z-peer');
-        expect(first.left).toBeUndefined();
-        expect(service.peerIdsWithNoReconnectableLanes()).toEqual(['z-peer']);
-        expect(service.peerIdsWithNoReconnectableLanes()).toEqual(['z-peer']);
-
-        mockState.dataChannels[0].readyToConnect = true;
-        expect(service.peerIdsWithNoReconnectableLanes()).toEqual([]);
-        expect(service.peerIdsWithNoReconnectableLanes()).toEqual([]);
-
-        const second = service.ensurePeerConnectionStarted('z-peer');
-
-        expect(second.right).toBe(first.right);
-        expect(mockState.peerConnections).toHaveLength(1);
-        expect(mockState.dataChannels[0].connect).toHaveBeenCalledTimes(2);
-        expect(service.peerIdsWithNoReconnectableLanes()).toEqual(['z-peer']);
-        expect(service.peerIdsWithNoReconnectableLanes()).toEqual(['z-peer']);
-    });
-
-    it('reports known, active, lane-reconciled, and lane-ready peers separately', async () => {
-        const signaler = createSignaler();
-        const service = new WebRtcConnectionService(
-            signaler,
-            createConnectionInput('a-self')
-        );
-
-        service.ensurePeerConnectionStarted('z-peer');
-
-        expect(service.knownPeerIds()).toEqual(['z-peer']);
-        expect(service.activePeerIds()).toEqual(['z-peer']);
-        expect(service.peerIdsWithNoReconnectableLanes()).toEqual(['z-peer']);
-        expect(service.peerIdsWithNoReconnectableLanes()).toEqual(['z-peer']);
-        expect(service.readyPeerIdsForLane()).toEqual([]);
-
-        mockState.dataChannels[0].healthReadyState = 'open';
-        expect(service.readyPeerIdsForLane()).toEqual(['z-peer']);
-
-        mockState.dataChannels[0].readyToConnect = true;
-        expect(service.peerIdsWithNoReconnectableLanes()).toEqual([]);
-        expect(service.peerIdsWithNoReconnectableLanes()).toEqual([]);
-        expect(service.activePeerIds()).toEqual(['z-peer']);
-        expect(service.readyPeerIdsForLane()).toEqual(['z-peer']);
-    });
-
-    it('creates a reliable lane plus configured realtime lanes for each peer', async () => {
-        const signaler = createSignaler();
-        const realtimeFlowControl = {
-            highWatermarkBytes: 1024,
-            lowWatermarkBytes: 256,
-            overflow: 'replace-by-key' as const,
-            maxQueueItems: 8
-        };
-        const service = new WebRtcConnectionService(
-            signaler,
-            {
-                ...createConnectionInput('a-self'),
-                dataChannelLanes: [
-                    {
-                        id: 'realtime',
-                        label: 'rtc-realtime',
-                        init: {
-                            ordered: false,
-                            maxRetransmits: 0
-                        },
-                        binaryType: 'arraybuffer',
-                        flowControl: realtimeFlowControl
-                    }
-                ]
-            }
-        );
-
-        const connected = service.ensurePeerConnectionStarted('z-peer');
-
-        expect(connected.left).toBeUndefined();
-        expect(mockState.dataChannels).toHaveLength(2);
-        expect(Array.from(connected.right?.channels.keys() ?? [])).toEqual([
-            'reliable',
-            'realtime'
-        ]);
-        expect(connected.right?.channel).toBe(mockState.dataChannels[0]);
-        expect(service.readPeerChannel('z-peer')).toBe(mockState.dataChannels[0]);
-        expect(service.readPeerChannel('z-peer', 'realtime')).toBe(
-            mockState.dataChannels[1]
-        );
-        expect(mockState.dataChannels[0].input).toMatchObject({
-            peerId: 'z-peer',
-            dataChannelName: 'room'
-        });
-        expect(mockState.dataChannels[1].input).toMatchObject({
-            peerId: 'z-peer',
-            dataChannelName: 'rtc-realtime',
-            dataChannelInit: {
-                ordered: false,
-                maxRetransmits: 0
             },
-            binaryType: 'arraybuffer',
-            flowControl: realtimeFlowControl
-        });
-        expect(mockState.dataChannels[0].connect).toHaveBeenCalledWith(false);
-        expect(mockState.dataChannels[1].connect).toHaveBeenCalledWith(false);
-        expect(service.readAllPeerHealth()).toEqual([
-            {
-                peerId: 'z-peer',
-                channels: [
-                    {
-                        peerId: 'z-peer',
-                        laneId: 'reliable',
-                        channel: {
-                            peerId: 'z-peer',
-                            label: 'room',
-                            counters: {
-                                sent: 0
-                            }
-                        }
-                    },
-                    {
-                        peerId: 'z-peer',
-                        laneId: 'realtime',
-                        channel: {
-                            peerId: 'z-peer',
-                            label: 'rtc-realtime',
-                            counters: {
-                                sent: 0
-                            }
-                        }
-                    }
-                ]
-            }
-        ]);
-    });
-
-    it('reports lane readiness separately when only the realtime lane is reconnectable', async () => {
-        const signaler = createSignaler();
-        const service = new WebRtcConnectionService(
-            signaler,
-            {
-                ...createConnectionInput('a-self'),
-                dataChannelLanes: [
-                    {
-                        id: 'realtime',
-                        label: 'rtc-realtime'
-                    }
-                ]
-            }
-        );
-
-        service.ensurePeerConnectionStarted('z-peer');
-
-        mockState.dataChannels[0].healthReadyState = 'open';
-        mockState.dataChannels[1].healthReadyState = 'closed';
-        mockState.dataChannels[1].readyToConnect = true;
-
-        expect(service.activePeerIds()).toEqual(['z-peer']);
-        expect(service.peerIdsWithNoReconnectableLanes()).toEqual([]);
-        expect(service.peerIdsWithNoReconnectableLanes()).toEqual([]);
-        expect(service.readyPeerIdsForLane()).toEqual(['z-peer']);
-        expect(service.readyPeerIdsForLane('realtime')).toEqual([]);
-        expect(service.readAllPeerHealth()).toMatchObject([
-            {
-                peerId: 'z-peer',
-                channels: [
-                    {
-                        laneId: 'reliable',
-                        channel: {
-                            readyState: 'open'
-                        }
-                    },
-                    {
-                        laneId: 'realtime',
-                        channel: {
-                            readyState: 'closed'
-                        }
-                    }
-                ]
-            }
-        ]);
-    });
-
-    it('removes a stalled peer after the configured establishment timeout', async () => {
-        vi.useFakeTimers();
-        const signaler = createSignaler();
-        const service = new WebRtcConnectionService(
-            signaler,
-            {
-                ...createConnectionInput('a-self'),
-                peerEstablishmentTimeout: {
-                    enabled: true,
-                    timeoutMs: 50
-                }
-            }
-        );
-        const lifecycle: string[] = [];
-
-        service.onRtcPeerLifecycleDo('lifecycle', {
-            onCreated: (peer) => lifecycle.push(`created:${peer.peerId}`),
-            onDeleted: (peer) => lifecycle.push(`deleted:${peer.peerId}`),
-            onConnectTimeout: (_peer, event) => {
-                lifecycle.push(`timeout:${event.peerId}:${event.timeoutMs}`);
-            }
+            onDeleted: () => {}
         });
 
-        service.ensurePeerConnectionStarted('z-peer');
+        const result = fixture.service.ensurePeerConnectionStarted('z-peer', true);
 
-        expect(service.knownPeerIds()).toEqual(['z-peer']);
-
-        await vi.advanceTimersByTimeAsync(49);
-        expect(service.knownPeerIds()).toEqual(['z-peer']);
-
-        await vi.advanceTimersByTimeAsync(1);
-
-        expect(service.knownPeerIds()).toEqual([]);
-        expect(mockState.dataChannels[0].removeRtcCallbackById).toHaveBeenCalledOnce();
-        expect(mockState.dataChannels[0].reset).toHaveBeenCalledOnce();
-        expect(mockState.peerConnections[0].reset).toHaveBeenCalledOnce();
-        expect(lifecycle).toEqual([
-            'created:z-peer',
-            'timeout:z-peer:50',
-            'deleted:z-peer'
-        ]);
-
-        service.ensurePeerConnectionStarted('z-peer');
-
-        expect(mockState.peerConnections).toHaveLength(2);
-        expect(service.knownPeerIds()).toEqual(['z-peer']);
+        expect(allocationsBeforeCallbacks).toEqual([1]);
+        expect(created).toEqual([result.right]);
+        expect(reentered).toEqual([result.right]);
+        expect(fixture.service.readPeer('z-peer')).toBe(result.right);
+        expect(runtime.createdConnections).toHaveLength(1);
+        expect(fixture.service.readPeerConnectionAttemptBudgetDiagnostics().consumedCount).toBe(1);
+        const native = fixture.nativePeer('z-peer');
+        expect(native.channels).toHaveLength(1);
+        await native.channels[0].open();
+        expect(opened).toHaveBeenCalledOnce();
     });
 
-    it('keeps a peer when the establishment timeout is cleared by an open lane', async () => {
-        vi.useFakeTimers();
-        const signaler = createSignaler();
-        const service = new WebRtcConnectionService(
-            signaler,
-            {
-                ...createConnectionInput('a-self'),
-                peerEstablishmentTimeout: {
-                    enabled: true,
-                    timeoutMs: 50
+    it('does not allocate a replacement after a creation observer resets the peer and closes admission', () => {
+        const fixture = createFixture(budgetInput());
+        const denials: string[] = [];
+        fixture.service.onRtcPeerLifecycleDo('reset', {
+            onCreated: (peer) => {
+                peer.connection.reset();
+                fixture.service.setOutboundDialPolicy(() => false);
+                const result = fixture.service.ensurePeerConnectionStarted(peer.peerId, true);
+                if (result.left) {
+                    denials.push(result.left.kind);
                 }
-            }
-        );
-        const lifecycle: string[] = [];
+            },
+            onDeleted: () => {}
+        });
 
-        service.onRtcPeerLifecycleDo('lifecycle', {
-            onCreated: (peer) => lifecycle.push(`created:${peer.peerId}`),
-            onDeleted: (peer) => lifecycle.push(`deleted:${peer.peerId}`),
-            onConnectTimeout: (_peer, event) => {
-                lifecycle.push(`timeout:${event.peerId}`);
+        const result = fixture.service.ensurePeerConnectionStarted('z-peer', true);
+
+        expect(result.left?.kind).toBe('connect-failed');
+        expect(denials).toEqual(['dial-denied']);
+        expect(fixture.service.readPeer('z-peer')).toBeUndefined();
+        expect(runtime.createdConnections).toHaveLength(1);
+        expect(runtime.createdConnections[0].connectionState).toBe('closed');
+        expect(fixture.service.readPeerConnectionAttemptBudgetDiagnostics().consumedCount).toBe(1);
+    });
+
+    it('creates a peer once with default politeness and tears down actual native resources', async () => {
+        const fixture = createFixture();
+        const lifecycle: string[] = [];
+        fixture.service.onRtcPeerLifecycleDo('test', {
+            onCreated: (peer) => {
+                lifecycle.push(`created:${peer.peerId}`);
+            },
+            onDeleted: (peer) => {
+                lifecycle.push(`deleted:${peer.peerId}`);
+            }
+        });
+        const first = fixture.service.ensurePeerConnectionStarted('z-peer');
+        expect(Object.hasOwn(first, 'then')).toBe(false);
+        expect(fixture.service.ensurePeerConnectionStarted('z-peer').right).toBe(first.right);
+        const native = fixture.nativePeer('z-peer');
+        expect(native.channels).toHaveLength(0);
+        const channel = await native.receiveDataChannel('room');
+        channel.open();
+        native.close();
+        expect(fixture.service.knownPeerIds()).toEqual([]);
+        expect(channel.readyState).toBe('closed');
+        expect(first.right?.connection.status.pc).toBeUndefined();
+        expect(first.right?.media.status.state).toBe('Idle');
+        expect(lifecycle).toEqual(['created:z-peer', 'deleted:z-peer']);
+        expect(fixture.service.removeRtcPeerLifecycleById('test')).toBe(true);
+        expect(fixture.service.disconnectPeer('missing')).toBe(false);
+    });
+
+    it('completes native teardown and notifies later observers when a deletion observer throws', () => {
+        const fixture = createFixture();
+        fixture.service.ensurePeerConnectionStarted('z-peer', true);
+        const native = fixture.nativePeer('z-peer');
+        const deleted: string[] = [];
+        fixture.service.onRtcPeerLifecycleDo('broken', {
+            onCreated: () => {},
+            onDeleted: () => {
+                throw new Error('observer failed');
+            }
+        });
+        fixture.service.onRtcPeerLifecycleDo('healthy', {
+            onCreated: () => {},
+            onDeleted: (peer) => {
+                deleted.push(peer.peerId);
+            }
+        });
+        const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+        expect(fixture.service.removePeerIfPresent('z-peer')).toBe(true);
+
+        expect(fixture.service.knownPeerIds()).toEqual([]);
+        expect(native.connectionState).toBe('closed');
+        expect(deleted).toEqual(['z-peer']);
+        expect(logged).toHaveBeenCalledWith('Error calling onRtcPeerLifecycleCallbacks.onDeleted', expect.any(Error));
+    });
+
+    it('does not lose a new peer created by a deletion observer', () => {
+        const fixture = createFixture();
+        const original = fixture.service.ensurePeerConnectionStarted('z-peer', true).right;
+        const native = fixture.nativePeer('z-peer');
+        fixture.service.onRtcPeerLifecycleDo('replacement', {
+            onCreated: () => {},
+            onDeleted: () => {
+                fixture.service.removeRtcPeerLifecycleById('replacement');
+                fixture.service.ensurePeerConnectionStarted('z-peer', true);
             }
         });
 
-        service.ensurePeerConnectionStarted('z-peer');
+        fixture.service.removePeerIfPresent('z-peer');
 
-        mockState.dataChannels[0].healthReadyState = 'open';
-        mockState.dataChannels[0].rtcCallbacks?.onOpen?.();
-        await vi.advanceTimersByTimeAsync(50);
-
-        expect(service.knownPeerIds()).toEqual(['z-peer']);
-        expect(mockState.dataChannels[0].reset).not.toHaveBeenCalled();
-        expect(mockState.peerConnections[0].reset).not.toHaveBeenCalled();
-        expect(lifecycle).toEqual(['created:z-peer']);
+        expect(native.connectionState).toBe('closed');
+        expect(fixture.service.readPeer('z-peer')?.peerId).toBe('z-peer');
+        expect(fixture.service.readPeer('z-peer')).not.toBe(original);
+        expect(runtime.createdConnections).toHaveLength(2);
     });
 
-    it('exhausts repeated initial establishment attempts and cools down before retrying', async () => {
-        vi.useFakeTimers();
-        const signaler = createSignaler();
-        const service = new WebRtcConnectionService(
-            signaler,
-            {
-                ...createConnectionInput('a-self'),
-                peerEstablishmentTimeout: {
-                    enabled: true,
-                    timeoutMs: 50
-                },
-                peerConnectionAttemptBudget: {
-                    enabled: true,
-                    maxAttempts: 2,
-                    maxTotalDurationMs: 100,
-                    cooldownMs: 30
-                }
+    it('reuses an admitted replacement created while a failed peer is being removed', () => {
+        const fixture = createFixture(budgetInput());
+        fixture.service.ensurePeerConnectionStarted('z-peer', true);
+        makeNativePeerUnusable(fixture, 'failed');
+        fixture.service.onRtcPeerLifecycleDo('replacement', {
+            onCreated: () => {},
+            onDeleted: () => {
+                fixture.service.removeRtcPeerLifecycleById('replacement');
+                fixture.service.ensurePeerConnectionStarted('z-peer', true);
             }
-        );
-        const lifecycle: string[] = [];
+        });
 
-        service.onRtcPeerLifecycleDo('lifecycle', {
-            onCreated: (peer) => lifecycle.push(`created:${peer.peerId}`),
-            onDeleted: (peer) => lifecycle.push(`deleted:${peer.peerId}`),
-            onConnectTimeout: (_peer, event) => {
-                lifecycle.push(`timeout:${event.peerId}:${event.timeoutMs}`);
+        const replacement = fixture.service.ensurePeerConnectionStarted('z-peer', true);
+
+        expect(replacement.right).toBe(fixture.service.readPeer('z-peer'));
+        expect(runtime.createdConnections).toHaveLength(2);
+        expect(fixture.service.readPeerConnectionAttemptBudgetDiagnostics().consumedCount).toBe(2);
+    });
+
+    it('uses session identity for self rejection and independent same-principal peers', async () => {
+        const fixture = createFixture({ ...createInput(), sessionId: 'alice-session-a' });
+        expect(fixture.service.ensurePeerConnectionStarted('alice-session-a').left).toMatchObject({ kind: 'self' });
+        expect(await fixture.service.ensurePeerLaneOpen('alice-session-a')).toMatchObject({ status: 'self' });
+        fixture.service.ensurePeerConnectionStarted('alice-session-b');
+        fixture.service.ensurePeerConnectionStarted('alice-session-c');
+        const removed = fixture.nativePeer('alice-session-b');
+        fixture.service.disconnectPeer('alice-session-b');
+        expect(removed.connectionState).toBe('closed');
+        expect(fixture.service.knownPeerIds()).toEqual(['alice-session-c']);
+        expect(fixture.nativePeer('alice-session-c').connectionState).toBe('new');
+    });
+
+    it('reconnects only a stale channel on the existing native peer', async () => {
+        const fixture = createFixture();
+        fixture.service.ensurePeerConnectionStarted('z-peer', true);
+        const native = fixture.nativePeer('z-peer');
+        native.setConnected();
+        const channel = native.channels[0];
+        channel.open();
+        channel.close();
+        fixture.service.setOutboundDialPolicy(() => false).setInboundPeerCreationPolicy(() => false);
+        expect(fixture.service.peerIdsWithNoReconnectableLanes()).toEqual([]);
+        fixture.service.ensurePeerConnectionStarted('z-peer', true);
+        expect(runtime.createdConnections).toHaveLength(1);
+        expect(native.channels).toHaveLength(2);
+        expect(fixture.service.peerIdsWithNoReconnectableLanes()).toEqual(['z-peer']);
+    });
+
+    it('separates known, active, reconciled and ready lanes with reliable and realtime configuration', () => {
+        const fixture = createFixture({
+            ...createInput(),
+            dataChannelLanes: [{
+                id: 'realtime',
+                label: 'rtc-realtime',
+                init: { ordered: false, maxRetransmits: 0 },
+                binaryType: 'arraybuffer',
+                flowControl: { highWatermarkBytes: 1024, lowWatermarkBytes: 256, overflow: 'replace-by-key', maxQueueItems: 8 }
+            }]
+        });
+        fixture.service.ensurePeerConnectionStarted('z-peer', true);
+        const native = fixture.nativePeer('z-peer');
+        expect(native.channels.map((channel) => channel.label)).toEqual(['room', 'rtc-realtime']);
+        expect(native.channels[1]).toMatchObject({ ordered: false, maxRetransmits: 0, binaryType: 'arraybuffer' });
+        expect(fixture.service.knownPeerIds()).toEqual(['z-peer']);
+        expect(fixture.service.activePeerIds()).toEqual(['z-peer']);
+        expect(fixture.service.readyPeerIdsForLane()).toEqual([]);
+        native.channels[0].open();
+        native.channels[1].close();
+        expect(fixture.service.readyPeerIdsForLane()).toEqual(['z-peer']);
+        expect(fixture.service.readyPeerIdsForLane('realtime')).toEqual([]);
+        expect(fixture.service.peerIdsWithNoReconnectableLanes()).toEqual([]);
+        expect(fixture.service.readAllPeerHealth()).toMatchObject([{
+            peerId: 'z-peer',
+            channels: [
+                { laneId: 'reliable', channel: { readyState: 'open' } },
+                { laneId: 'realtime', channel: { state: 'Closed' } }
+            ]
+        }]);
+    });
+
+    it('waits for the requested native lane to open', async () => {
+        const fixture = createFixture();
+        const pending = fixture.service.ensurePeerLaneOpen('z-peer', 'reliable', { isInitiator: true, timeoutMs: 100 });
+        await Promise.resolve();
+        fixture.nativePeer('z-peer').channels[0].open();
+        expect(await pending).toMatchObject({ status: 'open', peerId: 'z-peer', laneId: 'reliable', channel: fixture.service.readPeerChannel('z-peer') });
+    });
+
+    it('reports missing lanes and bounded timeout without removing the peer by default', async () => {
+        vi.useFakeTimers();
+        const fixture = createFixture();
+        expect(await fixture.service.ensurePeerLaneOpen('z-peer', 'missing')).toMatchObject({ status: 'no-lane' });
+        const pending = fixture.service.ensurePeerLaneOpen('z-peer', 'reliable', { timeoutMs: 25 });
+        await vi.advanceTimersByTimeAsync(25);
+        expect(await pending).toMatchObject({ status: 'timeout' });
+        expect(fixture.service.knownPeerIds()).toEqual(['z-peer']);
+    });
+
+    it('removes native resources when explicit lane timeout cleanup is requested', async () => {
+        vi.useFakeTimers();
+        const fixture = createFixture();
+        const pending = fixture.service.ensurePeerLaneOpen('z-peer', 'reliable', { timeoutMs: 25, cleanupOnFailure: true });
+        await Promise.resolve();
+        const native = fixture.nativePeer('z-peer');
+        await vi.advanceTimersByTimeAsync(25);
+        expect(await pending).toMatchObject({ status: 'timeout' });
+        expect(native.connectionState).toBe('closed');
+        expect(fixture.service.knownPeerIds()).toEqual([]);
+    });
+
+    it('cancels an actual lane wait and prevents creation when already aborted', async () => {
+        const fixture = createFixture();
+        const controller = new AbortController();
+        const pending = fixture.service.ensurePeerLaneOpen('z-peer', 'reliable', { signal: controller.signal, timeoutMs: 100 });
+        await Promise.resolve();
+        controller.abort(new Error('stop waiting'));
+        expect(await pending).toMatchObject({ status: 'aborted' });
+        expect(await fixture.service.ensurePeerLaneOpen('other-peer', 'reliable', { signal: controller.signal })).toMatchObject({ status: 'aborted' });
+        expect(runtime.createdConnections).toHaveLength(1);
+    });
+});
+
+describe('WebRtcConnectionService establishment attempts', () => {
+    it('expires stalled peers, exhausts attempts once, and permits retry only after cooldown', async () => {
+        vi.useFakeTimers();
+        const fixture = createFixture(budgetInput());
+        const events: string[] = [];
+        fixture.service.onRtcPeerLifecycleDo('test', {
+            onCreated: () => {},
+            onDeleted: () => {},
+            onConnectTimeout: (peer) => {
+                events.push(`timeout:${peer.peerId}`);
             },
             onConnectExhausted: (event) => {
-                lifecycle.push(
-                    `exhausted:${event.peerId}:${event.attempts}:${event.retryAfterEpochMs - event.exhaustedAtEpochMs}`
-                );
+                events.push(`exhausted:${event.attempts}`);
             }
         });
-
-        expect(service.ensurePeerConnectionStarted('z-peer').right?.peerId)
-            .toBe('z-peer');
+        fixture.service.ensurePeerConnectionStarted('z-peer');
+        const first = fixture.nativePeer('z-peer');
         await vi.advanceTimersByTimeAsync(50);
-        expect(service.knownPeerIds()).toEqual([]);
-
-        expect(service.ensurePeerConnectionStarted('z-peer').right?.peerId)
-            .toBe('z-peer');
+        expect(first.connectionState).toBe('closed');
+        fixture.service.ensurePeerConnectionStarted('z-peer');
         await vi.advanceTimersByTimeAsync(50);
-        expect(service.knownPeerIds()).toEqual([]);
-
-        const exhausted = service.ensurePeerConnectionStarted('z-peer');
-
-        expect(exhausted.left).toMatchObject({
-            kind: 'connect-exhausted',
-            peerId: 'z-peer',
-            event: {
-                peerId: 'z-peer',
-                attempts: 2,
-                maxAttempts: 2,
-                maxTotalDurationMs: 100,
-                cooldownMs: 30,
-                reason: 'peer-connection-attempt-budget-exhausted'
-            }
-        });
-        expect(service.knownPeerIds()).toEqual([]);
-        expect(lifecycle).toContain('exhausted:z-peer:2:30');
-
+        expect(fixture.service.ensurePeerConnectionStarted('z-peer').left).toMatchObject({ kind: 'connect-exhausted', event: { attempts: 2 } });
         await vi.advanceTimersByTimeAsync(29);
-        expect(service.ensurePeerConnectionStarted('z-peer').left)
-            .toMatchObject({
-                kind: 'connect-exhausted',
-                peerId: 'z-peer'
-            });
-
+        expect(fixture.service.ensurePeerConnectionStarted('z-peer').left?.kind).toBe('connect-exhausted');
+        expect(events).toEqual(['timeout:z-peer', 'timeout:z-peer', 'exhausted:2']);
         await vi.advanceTimersByTimeAsync(1);
-        expect(service.ensurePeerConnectionStarted('z-peer').right?.peerId)
-            .toBe('z-peer');
-        expect(service.knownPeerIds()).toEqual(['z-peer']);
-    });
-
-    it('clears initial attempt history once a lane opens', () => {
-        vi.useFakeTimers();
-        const signaler = createSignaler();
-        const service = new WebRtcConnectionService(
-            signaler,
-            {
-                ...createConnectionInput('a-self'),
-                peerEstablishmentTimeout: {
-                    enabled: true,
-                    timeoutMs: 50
-                },
-                peerConnectionAttemptBudget: {
-                    enabled: true,
-                    maxAttempts: 1,
-                    maxTotalDurationMs: 50,
-                    cooldownMs: 30
-                }
-            }
-        );
-
-        service.ensurePeerConnectionStarted('z-peer');
-
-        expect(service.peerConnectionAttemptDiagnostics('z-peer')).toMatchObject({
-            attempts: 1,
-            peerId: 'z-peer'
-        });
-
-        mockState.dataChannels[0].healthReadyState = 'open';
-        mockState.dataChannels[0].rtcCallbacks?.onOpen?.();
-
-        expect(service.peerConnectionAttemptDiagnostics('z-peer')).toBeUndefined();
-    });
-
-    it('counts attempt-budget consumption, exhaustion, and reset evidence separately', async () => {
-        vi.useFakeTimers();
-        const signaler = createSignaler();
-        const service = new WebRtcConnectionService(
-            signaler,
-            {
-                ...createConnectionInput('a-self'),
-                peerEstablishmentTimeout: {
-                    enabled: true,
-                    timeoutMs: 50
-                },
-                peerConnectionAttemptBudget: {
-                    enabled: true,
-                    maxAttempts: 2,
-                    maxTotalDurationMs: 100,
-                    cooldownMs: 30
-                }
-            }
-        );
-
-        expect(service.readPeerConnectionAttemptBudgetDiagnostics()).toEqual({
-            consumedCount: 0,
-            resetOnSuccessCount: 0,
-            resetOnRemovalCount: 0,
-            cooldownExpiredClearCount: 0,
-            exhaustedCount: 0
-        });
-
-        service.ensurePeerConnectionStarted('z-peer');
-        await vi.advanceTimersByTimeAsync(50);
-        service.ensurePeerConnectionStarted('z-peer');
-        await vi.advanceTimersByTimeAsync(50);
-        service.ensurePeerConnectionStarted('z-peer');
-
-        expect(service.readPeerConnectionAttemptBudgetDiagnostics()).toMatchObject({
-            consumedCount: 2,
-            exhaustedCount: 1,
-            cooldownExpiredClearCount: 0
-        });
-
-        await vi.advanceTimersByTimeAsync(30);
-        service.ensurePeerConnectionStarted('z-peer');
-
-        expect(service.readPeerConnectionAttemptBudgetDiagnostics()).toMatchObject({
+        expect(fixture.service.ensurePeerConnectionStarted('z-peer').right?.peerId).toBe('z-peer');
+        expect(fixture.service.readPeerConnectionAttemptBudgetDiagnostics()).toEqual({
             consumedCount: 3,
+            exhaustedCount: 1,
             cooldownExpiredClearCount: 1,
             resetOnSuccessCount: 0,
             resetOnRemovalCount: 0
         });
-
-        service.disconnectPeer('z-peer');
-
-        expect(service.readPeerConnectionAttemptBudgetDiagnostics()).toMatchObject({
-            resetOnRemovalCount: 1,
-            resetOnSuccessCount: 0
-        });
-
-        service.ensurePeerConnectionStarted('z-peer');
-        mockState.dataChannels.at(-1)!.healthReadyState = 'open';
-        mockState.dataChannels.at(-1)!.rtcCallbacks?.onOpen?.();
-
-        expect(service.readPeerConnectionAttemptBudgetDiagnostics()).toMatchObject({
-            consumedCount: 4,
-            resetOnSuccessCount: 1,
-            resetOnRemovalCount: 1
-        });
+        fixture.service.disconnectPeer('z-peer');
+        expect(fixture.service.readPeerConnectionAttemptBudgetDiagnostics().resetOnRemovalCount).toBe(1);
     });
 
-    it('ensures a requested peer lane is open after starting the connection', async () => {
-        const signaler = createSignaler();
-        const service = new WebRtcConnectionService(
-            signaler,
-            {
-                ...createConnectionInput('a-self'),
-                dataChannelLanes: [
-                    {
-                        id: 'realtime',
-                        label: 'rtc-realtime'
-                    }
-                ]
-            }
-        );
-
-        const result = await service.ensurePeerLaneOpen(
-            'z-peer',
-            'realtime',
-            {
-                timeoutMs: 25
-            }
-        );
-
-        expect(result).toMatchObject({
-            status: 'open',
-            peerId: 'z-peer',
-            laneId: 'realtime'
-        });
-        expect(result.channel).toBe(mockState.dataChannels[1]);
-        expect(mockState.dataChannels[1].waitUntilOpen).toHaveBeenCalledWith(25);
-        expect(mockState.dataChannels[0].waitUntilOpen).not.toHaveBeenCalled();
-    });
-
-    it('reports missing and timed-out peer lanes without forcing cleanup by default', async () => {
-        const signaler = createSignaler();
-        const service = new WebRtcConnectionService(
-            signaler,
-            createConnectionInput('a-self')
-        );
-
-        await expect(service.ensurePeerLaneOpen('z-peer', 'missing'))
-            .resolves.toMatchObject({
-                status: 'no-lane',
-                peerId: 'z-peer',
-                laneId: 'missing'
-            });
-
-        mockState.dataChannels[0].waitUntilOpen.mockResolvedValueOnce(false);
-
-        await expect(
-            service.ensurePeerLaneOpen('z-peer', 'reliable', { timeoutMs: 25 })
-        ).resolves.toMatchObject({
-            status: 'timeout',
-            peerId: 'z-peer',
-            laneId: 'reliable'
-        });
-
-        expect(service.knownPeerIds()).toEqual(['z-peer']);
-        expect(mockState.dataChannels[0].reset).not.toHaveBeenCalled();
-    });
-
-    it('can clean up a peer when explicit lane establishment fails', async () => {
-        const signaler = createSignaler();
-        const service = new WebRtcConnectionService(
-            signaler,
-            createConnectionInput('a-self')
-        );
-
-        service.ensurePeerConnectionStarted('z-peer');
-        mockState.dataChannels[0].waitUntilOpen.mockResolvedValueOnce(false);
-
-        await expect(
-            service.ensurePeerLaneOpen(
-                'z-peer',
-                'reliable',
-                {
-                    timeoutMs: 25,
-                    cleanupOnFailure: true
-                }
-            )
-        ).resolves.toMatchObject({
-            status: 'timeout',
-            peerId: 'z-peer',
-            laneId: 'reliable'
-        });
-
-        expect(service.knownPeerIds()).toEqual([]);
-        expect(mockState.dataChannels[0].reset).toHaveBeenCalledOnce();
-        expect(mockState.peerConnections[0].reset).toHaveBeenCalledOnce();
-    });
-
-    it('reports aborted when lane establishment is cancelled while waiting', async () => {
-        const signaler = createSignaler();
-        const service = new WebRtcConnectionService(
-            signaler,
-            createConnectionInput('a-self')
-        );
-        const deferred = createDeferred<boolean>();
-        const controller = new AbortController();
-        service.ensurePeerConnectionStarted('z-peer');
-        mockState.dataChannels[0].waitUntilOpen.mockReturnValueOnce(deferred.promise);
-
-        const wait = service.ensurePeerLaneOpen(
-            'z-peer',
-            'reliable',
-            {
-                signal: controller.signal,
-                timeoutMs: 1_000
-            }
-        );
-        controller.abort('stop');
-
-        await expect(wait).resolves.toMatchObject({
-            status: 'aborted',
-            peerId: 'z-peer',
-            laneId: 'reliable'
-        });
-        deferred.resolve(false);
-    });
-
-    it('rejects self-connections', async () => {
-        const signaler = createSignaler();
-        const service = new WebRtcConnectionService(
-            signaler,
-            createConnectionInput('self')
-        );
-
-        expect(service.ensurePeerConnectionStarted('self')).toMatchObject({
-            left: {
-                kind: 'self',
-                peerId: 'self'
-            }
-        });
+    it('clears both establishment watchdog and attempt history when the actual lane opens', async () => {
+        vi.useFakeTimers();
+        const fixture = createFixture(budgetInput());
+        fixture.service.ensurePeerConnectionStarted('z-peer', true);
+        expect(fixture.service.peerConnectionAttemptDiagnostics('z-peer')).toMatchObject({ attempts: 1 });
+        fixture.nativePeer('z-peer').channels[0].open();
+        expect(fixture.service.peerConnectionAttemptDiagnostics('z-peer')).toBeUndefined();
+        await vi.advanceTimersByTimeAsync(50);
+        expect(fixture.service.knownPeerIds()).toEqual(['z-peer']);
+        expect(fixture.service.readPeerConnectionAttemptBudgetDiagnostics().resetOnSuccessCount).toBe(1);
     });
 });
 
-function createSignaler() {
-    const signaler = {
-        connect: vi.fn(async (_input: QRtcSignalingTransportInputDto) => {
-        }),
-        send: vi.fn(async (_payload: QRtcSignalingMessage) => {
-        })
-    };
-
-    return signaler satisfies QRtcSignalingTransport;
-}
-
-function getConnectInput(
-    signaler: ReturnType<typeof createSignaler>
-): QRtcSignalingTransportInputDto {
-    const connectInput = signaler.connect.mock.calls[0]?.[0];
-
-    if (connectInput === undefined) {
-        throw new Error('The service never connected the signaling transport.');
-    }
-
-    return connectInput;
-}
-
-function createConnectionInput(sessionId: string) {
-    return {
-        sessionId,
-        token: 'token-1',
-        dataChannelName: 'room',
-        rtcSignalingTopicId: 'rtc',
-        iceCandidates: {
-            iceServers: [],
-            expiresAtEpochMs: Date.now() + 1_000
+function makeNativePeerUnusable(fixture: NativeRtcConnectionFixture, state: 'failed' | 'reset'): void {
+    if (state === 'reset') {
+        const peer = fixture.service.readPeer('z-peer');
+        if (!peer) {
+            throw new Error('Expected the original peer');
         }
-    };
+        peer.connection.reset();
+        return;
+    }
+    const native = fixture.nativePeer('z-peer');
+    native.connectionState = 'failed';
+    native.onconnectionstatechange?.call(native, new Event('connectionstatechange'));
 }
-
-function createRtcEnvelope(message: QRtcSignalingMessage) {
-    return newALUnicastMessage(
-        message.fromId,
-        newALEventRoute('rtc', message.toId),
-        message.toId,
-        'rtc',
-        message
-    );
-}
-
-function createDeferred<T>() {
-    let resolve!: (value: T) => void;
-    let reject!: (reason?: unknown) => void;
-    const promise = new Promise<T>((resolvePromise, rejectPromise) => {
-        resolve = resolvePromise;
-        reject = rejectPromise;
-    });
-
-    return {
-        promise,
-        resolve,
-        reject
-    };
-}
-
-type MockQRtcPeerConnection = {
-    readonly status: {
-        state: string;
-        pc:
-            | {
-                connectionState: string;
-            }
-            | undefined;
-    };
-    readonly connect: ReturnType<typeof vi.fn>;
-    readonly handleSignal: ReturnType<typeof vi.fn>;
-    readonly reset: ReturnType<typeof vi.fn>;
-    readonly isOpen: ReturnType<typeof vi.fn>;
-    readonly isReadyToConnect: ReturnType<typeof vi.fn>;
-    connectCallbacks?: {
-        onConnected?: () => Promise<void>;
-        onClosed?: (peerId: string) => Promise<void>;
-    };
-};
-
-type MockQRtcDataChannel = {
-    readonly connect: ReturnType<typeof vi.fn>;
-    readonly reset: ReturnType<typeof vi.fn>;
-    readonly isReadyToConnect: ReturnType<typeof vi.fn>;
-    readonly waitUntilOpen: ReturnType<typeof vi.fn>;
-    readonly onRtcCallbacksDo: ReturnType<typeof vi.fn>;
-    readonly removeRtcCallbackById: ReturnType<typeof vi.fn>;
-    readonly readHealth: ReturnType<typeof vi.fn>;
-    readyToConnect: boolean;
-    healthReadyState?: RTCDataChannelState;
-    rtcCallbacks?: {
-        onOpen?: () => void;
-    };
-    readonly input: RtcDataChannelInputDto;
-};
-
-type MockQRtcMediaChannel = {
-    readonly connect: ReturnType<typeof vi.fn>;
-    readonly reset: ReturnType<typeof vi.fn>;
-};

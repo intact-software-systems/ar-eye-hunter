@@ -11,7 +11,7 @@ import { GroupStateInboxService } from '@shared-server/rallar-system/group-state
 import type { JsonWireObject, JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import { createTestClientStateRepository, createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
-import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
+import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 
 import { FakeRuntimeStateRepository } from '../../runtime-state/test-support/fake-runtime-state-repository.ts';
 import { createClientStatePhaseTestDriver, failNextClientStateTestOutboxWrite } from '../client-state/client-state-test-runtime.ts';

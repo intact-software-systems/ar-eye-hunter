@@ -3,8 +3,8 @@ import { EnqueuedType } from '@shared/api/api-config.ts';
 import { ResilienceDto, type DequeueResourceEntryOptions } from '@shared/queuebox/DequeueResourceEntryController.ts';
 import { QueueBoxResourceEntryRepository } from '@shared/queuebox/queue-box-types.ts';
 import { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
-import { OnMessageCallback } from '@shared/services/InboxOutboxContracts.ts';
-import { createQueueMessageReader, type QueueMessageReader } from '@shared/services/QueueMessageReader.ts';
+import { OnMessageCallback } from '@shared/services/queue-message-callbacks.ts';
+import { QueueMessageReader } from './queue-message-reader.ts';
 
 export class InboxQueueReader {
     public static readonly INBOX_ENQUEUE_TYPE = EnqueuedType.APP_INBOX;
@@ -21,10 +21,8 @@ export class InboxQueueReader {
         dequeueOptions: DequeueResourceEntryOptions = {}
     ) {
         this.inbox = inbox;
-        this.reader = createQueueMessageReader({
-            repository: inbox,
+        this.reader = new QueueMessageReader(inbox, {
             enqueueType: InboxQueueReader.INBOX_ENQUEUE_TYPE,
-            queueName: 'APP_INBOX',
             dequeueOptions
         });
     }
@@ -49,7 +47,7 @@ export class InboxQueueReader {
         return await this.reader.enqueueIf(message, enqueueIf);
     }
 
-    async dequeueInbox(typesToDequeue: Set<string>, resilience: ResilienceDto) {
+    async dequeueInbox(typesToDequeue: Set<string>, resilience: ResilienceDto): Promise<void> {
         await this.reader.dequeue(typesToDequeue, resilience);
     }
 }

@@ -7,7 +7,7 @@ import {
     isSameBlackBoxRallarSession,
     mergeBlackBoxRallarAuthenticationConfig,
     normalizeBlackBoxRallarApiBaseUrl
-} from '../../shared-test/black-box-runner/browser/rallar-browser-runtime/policy.ts';
+} from '../../shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-operation-policy.ts';
 
 describe('browser Rallar runtime lifecycle policy', () => {
     it('normalizes API and effective authentication identity deterministically', () => {

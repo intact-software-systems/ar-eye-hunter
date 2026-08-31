@@ -1,7 +1,7 @@
 import { Temporal } from '@js-temporal/polyfill';
 import { ResilienceDto } from '@shared/queuebox/DequeueResourceEntryController.ts';
 import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
-import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
+import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import type { PSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';

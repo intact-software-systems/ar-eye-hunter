@@ -1,5 +1,5 @@
 import type { RallarUnsubscribe } from '@shared-web/browser/rallar-shared-contracts.ts';
-import type { QRtcMediaPolicy } from '@shared/webrtc/QRtcPeerConnection.ts';
+import type { QRtcMediaPolicy } from '@shared/webrtc/qrtc-peer-connection.ts';
 
 export interface RallarRemoteStream {
     readonly peerId: string;

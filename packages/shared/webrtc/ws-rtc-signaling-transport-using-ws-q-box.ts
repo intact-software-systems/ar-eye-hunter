@@ -1,6 +1,6 @@
-import { ALMessage, newALEventRoute, newALUnicastMessage } from '../al-contracts/al-contract.ts';
-import { ResourceEntry } from '../queuebox/ResourceEntry.ts';
-import WsQueueBoxClientService from '../services/WsQueueBoxClientService.ts';
+import { newALEventRoute, newALUnicastMessage } from '../al-contracts/al-contract.ts';
+import { toError } from '../resilience/to-error.ts';
+import { WsQueueBoxClientService } from '../services/ws-queue-box-client-service.ts';
 import {
     QRtcSignalingMessage,
     QRtcSignalingTransport,
@@ -8,7 +8,7 @@ import {
 } from './QRtcSignalingContracts.ts';
 
 export class WsRtcSignalingTransportUsingWsQBox implements QRtcSignalingTransport {
-    private readonly id: string = 'signaling-ws-' + crypto.randomUUID().toString();
+    private readonly id: string = 'signaling-ws-' + crypto.randomUUID();
 
     public readonly qbox: WsQueueBoxClientService;
     public readonly typeId: string;
@@ -25,6 +25,12 @@ export class WsRtcSignalingTransportUsingWsQBox implements QRtcSignalingTranspor
     }
 
     connect(input: QRtcSignalingTransportInputDto): Promise<void> {
+        this.registerSocketLifecycle(input);
+        this.registerInboxReceiver(input);
+        return this.qbox.socket.connect();
+    }
+
+    private registerSocketLifecycle(input: QRtcSignalingTransportInputDto): void {
         this.qbox.socket.onWebsocketCallbacksDo(
             this.id,
             {
@@ -32,50 +38,44 @@ export class WsRtcSignalingTransportUsingWsQBox implements QRtcSignalingTranspor
                     try {
                         await input.callbacks.onOpen(input.sessionId, input.token);
                     }
-                    catch (e) {
-                        console.error('Error in onOpen handler', e);
+                    catch (error) {
+                        console.error('Error in onOpen handler', toError(error));
                     }
                 },
                 onClose: async () => {
                     try {
                         await input.callbacks.onClose(input.sessionId, input.token);
                     }
-                    catch (e) {
-                        console.error('Error in onClose handler', e);
+                    catch (error) {
+                        console.error('Error in onClose handler', toError(error));
                     }
                 },
                 onError: async (error: Event) => {
                     try {
                         await input.callbacks.onError(input.sessionId, input.token, error.toString());
                     }
-                    catch (e) {
-                        console.error('Error in onError handler', e);
+                    catch (error) {
+                        console.error('Error in onError handler', toError(error));
                     }
                 }
             }
         );
+    }
 
+    private registerInboxReceiver(input: QRtcSignalingTransportInputDto): void {
         this.qbox.onInboxMessageDo(
             this.typeId,
             {
-                onMessage: async (message: ALMessage, _: ResourceEntry) => {
+                onMessage: async (message) => {
                     try {
-                        if (message.payload.typeId !== this.typeId) {
-                            throw new Error(`Unexpected message type: ${message.payload.typeId}`);
-                        }
-
                         await input.callbacks.onMessage(input.sessionId, input.token, message);
                     }
-                    catch (e) {
-                        console.error('Error in onMessage handler', e);
+                    catch (error) {
+                        console.error('Error in onMessage handler', toError(error));
                     }
-
-                    return Promise.resolve();
                 }
             }
         );
-
-        return this.qbox.socket.connect();
     }
 
     async send(payload: QRtcSignalingMessage): Promise<void> {

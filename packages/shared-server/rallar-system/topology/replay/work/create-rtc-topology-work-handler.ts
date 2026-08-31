@@ -4,7 +4,7 @@ import { fromCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topolog
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
-import type { OnMessageCallback } from '@shared/services/InboxOutboxContracts.ts';
+import type { OnMessageCallback } from '@shared/services/queue-message-callbacks.ts';
 
 import { toRtcTopologyPublicationId } from '@shared-server/rallar-system/topology/persistence/rtc-topology-identifiers.ts';
 import type { GroupTopologyPlanningAuthority } from '@shared-server/rallar-system/topology/planning/group-topology-planning-authority.ts';
@@ -106,10 +106,10 @@ interface RtcTopologyWorkHandlerOptions {
  * fires only after the row it names is durable (product decisions 19/32,
  * the plan's post-publication boundary).
  */
-type CommittedCriterionPetition = Readonly<{
-    authority: GroupTopologyPlanningAuthority;
-    planned: RallarOverlayTopologySnapshot;
-}>;
+interface CommittedCriterionPetition {
+    readonly authority: GroupTopologyPlanningAuthority;
+    readonly planned: RallarOverlayTopologySnapshot;
+}
 
 type AcceptedRtcTopologyWork =
     | Readonly<{

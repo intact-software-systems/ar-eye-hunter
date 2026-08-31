@@ -1,6 +1,6 @@
 import { DEFAULT_RALLAR_GROUP_DIRECTOR_HEARTBEAT_TTL_MS } from '@shared/api/group-director.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
-import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
+import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 import { describe, expect, it } from 'vitest';
 import { createAppInboxTestDatabase } from '../../app-inbox/test-support/app-inbox-test-database.ts';
 

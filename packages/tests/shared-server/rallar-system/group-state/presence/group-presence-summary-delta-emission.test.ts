@@ -1,4 +1,9 @@
-import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
+
 import {
     computeGroupStateDeltaEnvelope,
     validateGroupPresenceSummaryOutboxEntries,
@@ -8,14 +13,16 @@ import {
 import { GroupPresenceSummaryWork } from '@shared-server/rallar-system/group-state/presence/group-presence-summary-worker.ts';
 import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { AppTopics } from '@shared/api/api-config.ts';
+import { validateGroupStateDeltaEnvelope } from '@shared/api/group-state-delta.ts';
 import type { GroupStateDeltaEnvelope } from '@shared/api/group-state-delta.ts';
 import type { GroupEvent } from '@shared/api/group-types.ts';
 import type { GroupPresenceSummaryWorkData } from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
-import { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
-import { describe, expect, it } from 'vitest';
+import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
+
 import { GroupBarrierRepository } from '../group-state-concurrency-test-runtime.ts';
 import { groupRef, SCOPE } from '../mutation/group-mutation-test-runtime.ts';
 import { createService } from './group-presence-test-runtime.ts';
@@ -29,8 +36,11 @@ describe('group presence summary delta emission', () => {
         expect(topicIds(result.computed.downstreamOutboxEntries)).toEqual([
             AppTopics.groupStateEvent
         ]);
-        const eventRow = result.computed.downstreamOutboxEntries[0]!;
-        expect((JSON.parse(eventRow.resource) as ALMessage).id.msgId).toContain(
+        const eventRow = result.computed.downstreamOutboxEntries[0];
+        if (eventRow === undefined) {
+            throw new Error('Expected emitted group state event row');
+        }
+        expect(decodePersistedALMessage(eventRow.resource).id.msgId).toContain(
             ':member-state:delta-envelope:'
         );
         expect(readEventRowPayload(eventRow)).toEqual(
@@ -71,7 +81,7 @@ describe('group presence summary delta emission', () => {
             const tampered: GroupPresenceSummaryComputedWork = {
                 ...computed,
                 downstreamOutboxEntries: [
-                    tamperEventRowEnvelope(computed.downstreamOutboxEntries[0]!, tamper),
+                    tamperEventRowEnvelope(computed.downstreamOutboxEntries[0], tamper),
                     ...computed.downstreamOutboxEntries.slice(1)
                 ]
             };
@@ -128,14 +138,14 @@ async function createConnectedScenario(groupId: string): Promise<ConnectedScenar
     return { runtime, groupId };
 }
 
-async function computeSummaryWork(scenario: ConnectedScenario): Promise<
-    Readonly<{
-        work: GroupPresenceSummaryWork;
-        command: GroupPresenceSummaryWorkData;
-        read: GroupPresenceSummaryWorkRead;
-        computed: GroupPresenceSummaryComputedWork;
-    }>
-> {
+interface ComputedSummaryScenario {
+    readonly work: GroupPresenceSummaryWork;
+    readonly command: GroupPresenceSummaryWorkData;
+    readonly read: GroupPresenceSummaryWorkRead;
+    readonly computed: GroupPresenceSummaryComputedWork;
+}
+
+async function computeSummaryWork(scenario: ConnectedScenario): Promise<ComputedSummaryScenario> {
     const work = new GroupPresenceSummaryWork({
         outboxQueueReader: new OutboxQueueReader(new InMemoryQueueBox()),
         recomputeDebounceMs: 0,
@@ -171,16 +181,21 @@ function topicIds(entries: readonly ResourceEntry[]): readonly string[] {
 }
 
 function readEventRowPayload(entry: ResourceEntry): GroupStateDeltaEnvelope {
-    const message = JSON.parse(entry.resource) as ALMessage;
-    return JSON.parse(message.payload.resource) as GroupStateDeltaEnvelope;
+    const message = decodePersistedALMessage(entry.resource);
+    const envelope: unknown = JSON.parse(message.payload.resource);
+    validateGroupStateDeltaEnvelope(envelope);
+    return envelope;
 }
 
 function tamperEventRowEnvelope(
-    entry: ResourceEntry,
+    entry: ResourceEntry | undefined,
     tamper: (envelope: GroupStateDeltaEnvelope) => GroupStateDeltaEnvelope
 ): ResourceEntry {
-    const message = JSON.parse(entry.resource) as ALMessage;
-    const envelope = JSON.parse(message.payload.resource) as GroupStateDeltaEnvelope;
+    if (entry === undefined) {
+        throw new Error('Expected emitted group state event row');
+    }
+    const message = decodePersistedALMessage(entry.resource);
+    const envelope = readEventRowPayload(entry);
     const tamperedMessage: ALMessage = {
         ...message,
         payload: {

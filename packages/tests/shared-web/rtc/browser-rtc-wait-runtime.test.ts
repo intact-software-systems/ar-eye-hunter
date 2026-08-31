@@ -1,8 +1,8 @@
-import { DEFAULT_RTC_DATA_CHANNEL_LANE_ID } from '@shared/services/WebRtcConnectionService.ts';
-import type { QRtcDataChannel } from '@shared/webrtc/QRtcDataChannel.ts';
+import { DEFAULT_RTC_DATA_CHANNEL_LANE_ID } from '@shared/services/web-rtc-connection-service.ts';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createDeferred } from '../browser-lifecycle-fixtures.ts';
-import { createChannelHealth, createPeerTestDouble, readRtcWaitMocks, resetRtcWaitTestRuntime, toTestDouble } from './browser-rtc-wait-test-runtime.ts';
+import { createBrowserRtcPeerTestDouble } from './browser-rtc-peer-test-double.ts';
+import { createChannelHealth, readRtcWaitMocks, resetRtcWaitTestRuntime } from './browser-rtc-wait-test-runtime.ts';
 
 const mocks = readRtcWaitMocks();
 
@@ -30,7 +30,7 @@ describe('Rallar RTC peer wait', () => {
                 return true;
             })
         };
-        const peer = createPeerTestDouble('peer-1', [['reliable', channel]]);
+        const peer = createBrowserRtcPeerTestDouble({ peerId: 'peer-1', channels: [['reliable', channel]] });
         mocks.webRtcConnectionService.knownPeerIds.mockReturnValue(['peer-1']);
         mocks.webRtcConnectionService.activePeerIds.mockReturnValue(['peer-1']);
         mocks.webRtcConnectionService.readyPeerIdsForLane.mockReturnValue(['peer-1']);
@@ -108,7 +108,7 @@ describe('Rallar RTC peer wait', () => {
         const { createRallarFacade } = await import(
             '@shared-web/browser/rallar.ts'
         );
-        const peer = createPeerTestDouble('peer-1', []);
+        const peer = createBrowserRtcPeerTestDouble({ peerId: 'peer-1', channels: [] });
         mocks.webRtcConnectionService.knownPeerIds.mockReturnValue(['peer-1']);
         mocks.webRtcConnectionService.activePeerIds.mockReturnValue(['peer-1']);
         mocks.webRtcConnectionService.readPeer.mockReturnValue(peer);
@@ -142,7 +142,7 @@ describe('Rallar RTC peer wait', () => {
                 throw new Error('A closed lane cannot be awaited');
             }
         };
-        const peer = createPeerTestDouble('peer-1', [['realtime', channel]]);
+        const peer = createBrowserRtcPeerTestDouble({ peerId: 'peer-1', channels: [['realtime', channel]] });
         mocks.webRtcConnectionService.knownPeerIds.mockReturnValue(['peer-1']);
         mocks.webRtcConnectionService.activePeerIds.mockReturnValue(['peer-1']);
         mocks.webRtcConnectionService.readPeer.mockReturnValue(peer);
@@ -178,7 +178,7 @@ describe('Rallar RTC peer wait', () => {
             ),
             waitUntilOpen: vi.fn(() => deferred.promise)
         };
-        const peer = createPeerTestDouble('peer-1', [['realtime', channel]]);
+        const peer = createBrowserRtcPeerTestDouble({ peerId: 'peer-1', channels: [['realtime', channel]] });
         mocks.webRtcConnectionService.knownPeerIds.mockReturnValue(['peer-1']);
         mocks.webRtcConnectionService.activePeerIds.mockReturnValue(['peer-1']);
         mocks.webRtcConnectionService.readPeer.mockReturnValue(peer);
@@ -256,13 +256,13 @@ describe('Rallar RTC peer wait', () => {
                 })
             )
         };
-        const peer = createPeerTestDouble('peer-1', [['realtime', channel]]);
+        const peer = createBrowserRtcPeerTestDouble({ peerId: 'peer-1', channels: [['realtime', channel]] });
         mocks.webRtcConnectionService.ensurePeerLaneOpen.mockResolvedValueOnce({
             status: 'open',
             peerId: 'peer-1',
             laneId: 'realtime',
             peer,
-            channel: toTestDouble<QRtcDataChannel>(channel)
+            channel: peer.channel
         });
         mocks.webRtcConnectionService.readPeer.mockReturnValue(peer);
         mocks.webRtcConnectionService.knownPeerIds.mockReturnValue(['peer-1']);

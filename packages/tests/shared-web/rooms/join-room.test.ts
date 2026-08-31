@@ -6,7 +6,6 @@ import {
     readRoomWorkflowMocks,
     rejectJoinWith,
     rejectLeaveWith,
-    requireRecord,
     resetRoomWorkflowTestRuntime,
     resolveJoinWith,
     resolveLeaveWith,
@@ -88,16 +87,12 @@ describe('room join operations', () => {
 
         await createRallarFacade().rooms.join('room-1', { maxAttempts: 3 });
 
-        const policies = requireRecord(
-            roomWorkflowMocks.joinStateGroup.mock.calls[0]?.[0].policies,
-            'join workflow policies'
-        );
-        const command = requireRecord(policies.command, 'join command policies');
-        const shouldRetry = command.shouldRetry;
+        const command = roomWorkflowMocks.joinStateGroup.mock.calls[0]?.[0].policies?.command;
+        const shouldRetry = command?.shouldRetry;
         if (typeof shouldRetry !== 'function') {
             throw new TypeError('Expected join workflow retry policy');
         }
-        expect(command.maxAttempts).toBe(3);
+        expect(command?.maxAttempts).toBe(3);
         expect(shouldRetry(apiHttpError(503), 1)).toBe(true);
         expect(shouldRetry(apiHttpError(429), 1)).toBe(true);
         expect(shouldRetry(apiHttpError(400), 1)).toBe(false);

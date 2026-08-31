@@ -14,22 +14,20 @@ import {
     RttMeasurementInfo
 } from '../api/api-config.ts';
 import { isSameGroupRef } from '../api/api-type-utils.ts';
-import { WebRtcOverlayMulticastManager } from '../multicast/WebRtcOverlayMulticastManager.ts';
+import { WebRtcOverlayMulticastManager } from '../multicast/web-rtc-overlay-multicast-manager.ts';
 import { ResilienceDto } from '../queuebox/DequeueResourceEntryController.ts';
 import { QueueBoxResourceEntryRepository } from '../queuebox/queue-box-types.ts';
 import { ResourceEntry } from '../queuebox/ResourceEntry.ts';
 import { toError } from '../resilience/to-error.ts';
+import { QRtcMediaPolicy } from '../webrtc/qrtc-peer-connection.ts';
 import { QRtcClientCallbacks } from '../webrtc/QRtcClientCallbacks.ts';
-import { QRtcMediaPolicy } from '../webrtc/QRtcPeerConnection.ts';
-import { OnMessageCallback } from './InboxOutboxContracts.ts';
+import { OnMessageCallback } from './queue-message-callbacks.ts';
 import { QueueBoxUtilities } from './QueueBoxUtilities.ts';
-import { QRtcPeerDto } from './WebRtcConnectionService.ts';
+import { QRtcPeerDto } from './web-rtc-connection-service.ts';
 import {
     PingResult,
-    WebRtcHeartbeatCallbacks,
-    WebRtcHeartbeatService,
-    WebRtcHeartbeatServiceInputDto
-} from './WebRtcHeartbeatService.ts';
+    WebRtcHeartbeatService
+} from './web-rtc-heartbeat-service.ts';
 
 interface WebRtcRxStreamerServiceStatus {
     localMediaStream: MediaStream | undefined;
@@ -49,7 +47,7 @@ export namespace WebRtcRxStreamerService {
         readonly sessionId: string;
         readonly inboundStores: ALInboundRuntimeStores;
         readonly nowEpochMs: () => number;
-        readonly heartbeat: Pick<WebRtcHeartbeatServiceInputDto, 'maxMissedPings' | 'pingFrequencyMsecs'>;
+        readonly heartbeat: Pick<WebRtcHeartbeatService.InputDto, 'maxMissedPings' | 'pingFrequencyMsecs'>;
     }
 }
 
@@ -289,7 +287,7 @@ export class WebRtcRxStreamerService {
         return Promise.resolve();
     }
 
-    private toRttMeasurementCallbacks(peerId: string): WebRtcHeartbeatCallbacks {
+    private toRttMeasurementCallbacks(peerId: string): WebRtcHeartbeatService.Callbacks {
         return {
             onMissedHeartbeat: (peerId: string) => {
                 console.log(`Missed heartbeat from ${peerId}.`);

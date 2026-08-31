@@ -250,7 +250,7 @@ diagnostics before treating it as a production shape.
 
 - `packages/shared/rtc/rtt-reporting-policy.ts`: shared canonical reporter,
   degree normalization, and deterministic RTT reporting peer selection.
-- `packages/shared/services/WebRtcHeartbeatService.ts`: ping/pong heartbeat and
+- `packages/shared/services/web-rtc-heartbeat-service.ts`: ping/pong heartbeat and
   RTT calculation.
 - `packages/shared/services/WebRtcRxStreamerService.ts`: per-peer heartbeat
   ownership and `RttMeasurementInfo` creation.

@@ -35,7 +35,7 @@ import {
     WsQueueBoxServerService
 } from '@shared/mod.ts';
 import { configureRttRepository } from '@shared/repository/rtt-repository.ts';
-import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
+import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 
 import { toResilienceDto } from '../api-v1-test-queue-resilience.ts';
 import { readPGliteDatabaseEpochMs, waitForPGliteQueueRow } from './pglite-app-inbox-test-runtime.ts';

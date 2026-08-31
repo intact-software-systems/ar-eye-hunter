@@ -7,8 +7,8 @@ import { ResilienceDto } from '@shared/queuebox/DequeueResourceEntryController.t
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
-import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
-import { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
+import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
+import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 import { WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 import { JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.ts';
 import { describe, expect, it } from 'vitest';

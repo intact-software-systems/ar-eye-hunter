@@ -11,8 +11,8 @@ import type { ClientInfo, OverlayInfo } from '@shared/api/api-config.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { LatestRepository } from '@shared/cache/LatestRepository.ts';
+import { WebRtcConnectionService } from '@shared/services/web-rtc-connection-service.ts';
 import { WebRtcGroupManager } from '@shared/services/web-rtc-group-manager.ts';
-import { WebRtcConnectionService } from '@shared/services/WebRtcConnectionService.ts';
 import { createTestGroup } from '../create-test-group.ts';
 
 describe('WebRtcGroupManager overlay roles', () => {

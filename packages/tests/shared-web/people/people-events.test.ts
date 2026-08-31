@@ -9,7 +9,7 @@ import {
     createPeopleEventPage,
     createPeopleRoomSnapshot,
     createPeopleSnapshot,
-    findPeopleWsCallback,
+    dispatchPeopleWsMessage,
     readPeopleEventMocks,
     resetPeopleEventTestRuntime,
     toPeopleEventMessage
@@ -34,20 +34,19 @@ describe('people events', () => {
         });
         await facade.connect();
 
-        const callback = findPeopleWsCallback();
-        await callback?.onMessage?.(
+        await dispatchPeopleWsMessage(
             toPeopleEventMessage(createPeopleEvent({ principalId: 'alice', eventId: 'client-event-1', eventType: 'session-connected' }))
         );
-        await callback?.onMessage?.(
+        await dispatchPeopleWsMessage(
             toPeopleEventMessage(createPeopleEvent({ principalId: 'alice', eventId: 'client-event-1', eventType: 'session-connected' }))
         );
-        await callback?.onMessage?.(
+        await dispatchPeopleWsMessage(
             toPeopleEventMessage(createPeopleEvent({ principalId: 'bob', eventId: 'client-event-2', eventType: 'session-connected' }))
         );
-        await callback?.onMessage?.(
+        await dispatchPeopleWsMessage(
             toPeopleEventMessage(createPeopleEvent({ principalId: 'alice', eventId: 'client-event-3', eventType: 'principal-updated' }))
         );
-        await callback?.onMessage?.(
+        await dispatchPeopleWsMessage(
             toPeopleEventMessage(
                 createPeopleEvent({
                     principalId: 'alice',
@@ -58,7 +57,7 @@ describe('people events', () => {
             )
         );
         unsubscribe();
-        await callback?.onMessage?.(
+        await dispatchPeopleWsMessage(
             toPeopleEventMessage(createPeopleEvent({ principalId: 'alice', eventId: 'client-event-5', eventType: 'session-connected' }))
         );
 
@@ -85,13 +84,12 @@ describe('people events', () => {
             events.push(clientEvent);
         }, { principalId: 'alice' });
         await facade.connect();
-        const callback = findPeopleWsCallback();
         const event = createPeopleEvent({ principalId: 'alice', eventId: 'client-event-valid', eventType: 'session-connected' });
         const { requestId: omitted, ...missingRequestId } = event;
 
         expect(omitted).not.toBeUndefined();
-        await callback?.onMessage?.(toPeopleEventMessage(missingRequestId as typeof event));
-        await callback?.onMessage?.(toPeopleEventMessage(event));
+        await dispatchPeopleWsMessage(toPeopleEventMessage(missingRequestId as typeof event));
+        await dispatchPeopleWsMessage(toPeopleEventMessage(event));
 
         expect(events).toEqual([event]);
     });
@@ -239,7 +237,7 @@ describe('people events', () => {
         await facade.connect();
 
         const result = await facade.people.replayEvents('alice');
-        await findPeopleWsCallback(true)?.onMessage?.(toPeopleEventMessage(event));
+        await dispatchPeopleWsMessage(toPeopleEventMessage(event));
 
         expect(events).toEqual([event]);
         expect(messages[0]).toMatchObject({

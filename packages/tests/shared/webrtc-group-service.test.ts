@@ -6,7 +6,7 @@ import type {
 } from '@shared/api/group-types.ts';
 import { LatestRepository } from '@shared/cache/LatestRepository.ts';
 import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
-import { WebRtcGroupService } from '@shared/services/WebRtcGroupService.ts';
+import { WebRtcGroupService } from '@shared/services/web-rtc-group-service.ts';
 import {
     afterEach,
     describe,

@@ -2,6 +2,7 @@ import type { AuthSession, LoginResponse } from '@shared/api/api-config.ts';
 import { throwRallarValidation } from '@shared/api/rallar-validation.ts';
 import type { RallarCrdtTransportStrategy } from '@shared/crdt/mod.ts';
 import { toError } from '@shared/resilience/to-error.ts';
+
 import { BlackBoxRallarAuthentication } from './black-box-rallar-authentication.ts';
 import {
     DEFAULT_LANE_ID,
@@ -12,11 +13,30 @@ import {
     resolveBlackBoxRallarTypeId,
     toBlackBoxRallarAuthenticationKey,
     toBlackBoxRallarDefaults,
-    toBlackBoxRallarOptionalNumber,
     toBlackBoxRallarSessionDiagnostic
 } from './black-box-rallar-connection-policy.ts';
 import { BlackBoxRallarConnectionState } from './black-box-rallar-connection-state.ts';
+import { BlackBoxRallarCrdtController } from './black-box-rallar-crdt-controller.ts';
+import {
+    BlackBoxRallarRuntimeDiagnostics,
+    createBlackBoxRallarConsoleDiagnostics
+} from './black-box-rallar-diagnostics.ts';
 import { BlackBoxRallarHealthReader } from './black-box-rallar-health-reader.ts';
+import type {
+    BlackBoxRallarCloseDiagnostics,
+    BlackBoxRallarConnectDiagnostics,
+    BlackBoxRallarConnectionConfig,
+    BlackBoxRallarEvent
+} from './black-box-rallar-operation-contracts.ts';
+import {
+    blackBoxRallarConnectionOperationKeyOf,
+    blackBoxRallarConnectionTargetOf,
+    blackBoxRallarRoomRefOf,
+    blackBoxRallarScopeDiagnosticsOf,
+    blackBoxRallarScopeOf,
+    decideBlackBoxRallarLifecycleRequest,
+    mergeBlackBoxRallarAuthenticationConfig
+} from './black-box-rallar-operation-policy.ts';
 import type { BlackBoxRallarRoomRefreshOptions, BlackBoxRallarRuntime } from './black-box-rallar-runtime-contract.ts';
 import {
     toBlackBoxRallarSerializedError,
@@ -26,30 +46,12 @@ import {
     createBlackBoxBrowserRallarRuntimeDependency,
     type BlackBoxBrowserRallarRuntimeDependency
 } from './browser-rallar-runtime-composition.ts';
-import { createBlackBoxRallarCrdtController } from './crdt-controller.ts';
-import { createBlackBoxRallarConsoleDiagnostics, createBlackBoxRallarRuntimeDiagnostics } from './diagnostics.ts';
-import { createBlackBoxRallarDirectorController } from './director-controller.ts';
+import { BlackBoxRallarDirectorController } from './director-controller.ts';
 import {
     createBlackBoxRallarLifecycleController,
     type BlackBoxRallarLifecycleOperationContext
 } from './lifecycle-controller.ts';
-import { createBlackBoxRallarMessagingController } from './messaging-controller.ts';
-import {
-    blackBoxRallarConnectionOperationKeyOf,
-    blackBoxRallarConnectionTargetOf,
-    blackBoxRallarRoomRefOf,
-    blackBoxRallarScopeDiagnosticsOf,
-    blackBoxRallarScopeOf,
-    decideBlackBoxRallarLifecycleRequest,
-    mergeBlackBoxRallarAuthenticationConfig
-} from './policy.ts';
-
-import type {
-    BlackBoxRallarCloseDiagnostics,
-    BlackBoxRallarConnectDiagnostics,
-    BlackBoxRallarConnectionConfig,
-    BlackBoxRallarEvent
-} from './contracts.ts';
+import { BlackBoxRallarMessagingController } from './messaging-controller.ts';
 
 export type {
     BlackBoxRallarAuthenticateDiagnostics,
@@ -86,7 +88,7 @@ export type {
     BlackBoxRallarSendInput,
     BlackBoxRallarTransport,
     BlackBoxRallarWsSendDiagnostics
-} from './contracts.ts';
+} from './black-box-rallar-operation-contracts.ts';
 
 export type {
     BlackBoxRallarRoomRefreshOptions,
@@ -105,9 +107,9 @@ interface RuntimeConnectionAttempt {
 }
 
 interface RuntimeProductControllers {
-    readonly crdt: ReturnType<typeof createBlackBoxRallarCrdtController>;
-    readonly director: ReturnType<typeof createBlackBoxRallarDirectorController>;
-    readonly messaging: ReturnType<typeof createBlackBoxRallarMessagingController>;
+    readonly crdt: BlackBoxRallarCrdtController;
+    readonly director: BlackBoxRallarDirectorController;
+    readonly messaging: BlackBoxRallarMessagingController;
 }
 interface RuntimeTransportCloseResult {
     readonly logout: boolean;
@@ -119,11 +121,14 @@ interface RuntimeClosePreparation {
     config?: BlackBoxRallarConnectionConfig;
 }
 
+export interface BlackBoxRallarRuntimeInstallationTarget {
+    __blackBoxRallar?: BlackBoxRallarRuntime;
+    __blackBoxRallarEmit?: (event: BlackBoxRallarEvent) => void | Promise<void>;
+}
+
 declare global {
-    interface Window {
-        __blackBoxRallar?: BlackBoxRallarRuntime;
-        __blackBoxRallarEmit?: (event: BlackBoxRallarEvent) => void | Promise<void>;
-    }
+    interface Window extends BlackBoxRallarRuntimeInstallationTarget {}
+    var __blackBoxRallarRestoreConsoleWarn: (() => void) | undefined;
 }
 
 interface BlackBoxRallarRuntimeInstallation {
@@ -131,13 +136,15 @@ interface BlackBoxRallarRuntimeInstallation {
     emitRuntimeLoaded(): void;
 }
 
-interface CreateBlackBoxRallarRuntimeOptions {
-    facade: BlackBoxBrowserRallarRuntimeDependency;
-    targetWindow: Pick<Window, '__blackBoxRallarEmit'>;
-    clock: {
-        now(): number;
-    };
-    delay: (ms: number) => Promise<void>;
+namespace BlackBoxRallarConnectionRuntime {
+    export interface Input {
+        facade: BlackBoxBrowserRallarRuntimeDependency;
+        targetWindow: BlackBoxRallarRuntimeInstallationTarget;
+        clock: {
+            now(): number;
+        };
+        delay: (ms: number) => Promise<void>;
+    }
 }
 
 class BlackBoxRallarConnectionRuntime {
@@ -155,12 +162,12 @@ class BlackBoxRallarConnectionRuntime {
     readonly #directorController;
     readonly #messagingController;
     readonly #consoleDiagnostics;
-    constructor(options: CreateBlackBoxRallarRuntimeOptions) {
+    constructor(options: BlackBoxRallarConnectionRuntime.Input) {
         this.#rallar = options.facade;
         this.#targetWindow = options.targetWindow;
         this.#now = options.clock.now;
         this.#wait = options.delay;
-        this.#runtimeDiagnostics = createBlackBoxRallarRuntimeDiagnostics({
+        this.#runtimeDiagnostics = new BlackBoxRallarRuntimeDiagnostics({
             now: this.#now,
             publish: (event) => this.#targetWindow.__blackBoxRallarEmit?.(event),
             onPublishError: (error) => {
@@ -200,15 +207,15 @@ class BlackBoxRallarConnectionRuntime {
             console,
             activeConfig: () => this.#connectionState.get()?.config,
             onWarning: this.#runtimeDiagnostics.emitConsoleWarning,
-            restoreExisting: this.#restoreExistingConsoleWarnPatch,
+            restoreExisting: () => globalThis.__blackBoxRallarRestoreConsoleWarn?.(),
             publishRestore: (restore) => {
-                this.#consoleWarnGlobalState().__blackBoxRallarRestoreConsoleWarn = restore;
+                globalThis.__blackBoxRallarRestoreConsoleWarn = restore;
             }
         });
     }
 
     #createProductControllers(): RuntimeProductControllers {
-        const crdt = createBlackBoxRallarCrdtController({
+        const crdt = new BlackBoxRallarCrdtController({
             generation: this.#lifecycle.generation,
             operationSignal: this.#lifecycle.operationSignal,
             isCurrent: this.#lifecycle.isCurrent,
@@ -221,7 +228,7 @@ class BlackBoxRallarConnectionRuntime {
             emit: this.#runtimeDiagnostics.emit,
             emitError: this.#runtimeDiagnostics.emitError
         });
-        const director = createBlackBoxRallarDirectorController({
+        const director = new BlackBoxRallarDirectorController({
             generation: this.#lifecycle.generation,
             isCurrent: this.#lifecycle.isCurrent,
             facade: this.#rallar,
@@ -234,7 +241,7 @@ class BlackBoxRallarConnectionRuntime {
             emit: this.#runtimeDiagnostics.emit,
             emitError: this.#runtimeDiagnostics.emitError
         });
-        const messaging = createBlackBoxRallarMessagingController({
+        const messaging = new BlackBoxRallarMessagingController({
             generation: this.#lifecycle.generation,
             isCurrent: this.#lifecycle.isCurrent,
             facade: this.#rallar,
@@ -245,7 +252,6 @@ class BlackBoxRallarConnectionRuntime {
             topicIdOf: resolveBlackBoxRallarTopicId,
             roomRefOf: blackBoxRallarRoomRefOf,
             scopeDiagnostics: blackBoxRallarScopeDiagnosticsOf,
-            toOptionalNumber: toBlackBoxRallarOptionalNumber,
             readHealth: this.#healthReader.readHealth,
             wsStatus: this.#healthReader.wsStatusFor,
             rtcStatus: this.#healthReader.rtcStatusFor,
@@ -262,16 +268,6 @@ class BlackBoxRallarConnectionRuntime {
         const defaults = toBlackBoxRallarDefaults(config);
         this.#rallar.setDefaults(defaults);
         return defaults;
-    };
-    #restoreExistingConsoleWarnPatch = (): void => {
-        this.#consoleWarnGlobalState().__blackBoxRallarRestoreConsoleWarn?.();
-    };
-    #consoleWarnGlobalState = (): typeof globalThis & {
-        __blackBoxRallarRestoreConsoleWarn?: () => void;
-    } => {
-        return globalThis as typeof globalThis & {
-            __blackBoxRallarRestoreConsoleWarn?: () => void;
-        };
     };
     #cleanupRuntimeSubscriptions = (
         runtimeState: BlackBoxRallarConnectionState.Value | undefined,
@@ -574,11 +570,21 @@ class BlackBoxRallarConnectionRuntime {
             attempt.lifecycleSubscriptions?.unsubscribeRtcLifecycle?.();
             attempt.lifecycleSubscriptions?.unsubscribeWsLifecycle?.();
             attempt.unsubscribeConsoleDiagnostics?.();
-            this.#runtimeDiagnostics.emitError(config, 'rallar.browser.connect.phase_failed', error, {
-                phase: attempt.phase
+            this.#runtimeDiagnostics.emitError({
+                config: config,
+                topic: 'rallar.browser.connect.phase_failed',
+                error: error,
+                data: {
+                    phase: attempt.phase
+                }
             });
-            this.#runtimeDiagnostics.emitError(config, 'rallar.browser.connect_failed', error, {
-                phase: attempt.phase
+            this.#runtimeDiagnostics.emitError({
+                config: config,
+                topic: 'rallar.browser.connect_failed',
+                error: error,
+                data: {
+                    phase: attempt.phase
+                }
             });
             throw error;
         }
@@ -692,16 +698,18 @@ class BlackBoxRallarConnectionRuntime {
         catch (caught) {
             const error = toError(caught);
             cleanupErrors.push(toBlackBoxRallarSerializedError(error));
-            this.#runtimeDiagnostics.emitError(config, 'rallar.browser.cleanup.unsubscribe_failed', error);
+            this.#runtimeDiagnostics.emitError({
+                config: config,
+                topic: 'rallar.browser.cleanup.unsubscribe_failed',
+                error: error
+            });
         }
 
-        for (const caught of this.#directorController.closeAll(config)) {
-            const error = toError(caught);
+        for (const error of this.#directorController.closeAll(config)) {
             cleanupErrors.push(toBlackBoxRallarSerializedError(error));
         }
 
-        for (const caught of await this.#crdtController.closeAll(config)) {
-            const error = toError(caught);
+        for (const error of await this.#crdtController.closeAll(config)) {
             cleanupErrors.push(toBlackBoxRallarSerializedError(error));
         }
 
@@ -738,10 +746,15 @@ class BlackBoxRallarConnectionRuntime {
             catch (caught) {
                 const error = toError(caught);
                 cleanupErrors.push(toBlackBoxRallarSerializedError(error));
-                this.#runtimeDiagnostics.emitError(config, 'rallar.browser.cleanup.room_leave_failed', error, {
-                    roomId: config.roomId,
-                    roomRef,
-                    scope
+                this.#runtimeDiagnostics.emitError({
+                    config: config,
+                    topic: 'rallar.browser.cleanup.room_leave_failed',
+                    error: error,
+                    data: {
+                        roomId: config.roomId,
+                        roomRef,
+                        scope
+                    }
                 });
             }
         }
@@ -824,7 +837,7 @@ class BlackBoxRallarConnectionRuntime {
         }
         catch (caught) {
             const error = toError(caught);
-            this.#runtimeDiagnostics.emitError(config, 'rallar.browser.close_failed', error);
+            this.#runtimeDiagnostics.emitError({ config: config, topic: 'rallar.browser.close_failed', error: error });
             throw error;
         }
     };
@@ -915,23 +928,19 @@ class BlackBoxRallarConnectionRuntime {
     }
 }
 
-function createBlackBoxRallarRuntimeInstallation(
-    options: CreateBlackBoxRallarRuntimeOptions
-): BlackBoxRallarRuntimeInstallation {
-    return new BlackBoxRallarConnectionRuntime(options).installation();
+export function createBlackBoxRallarRuntime(options: BlackBoxRallarConnectionRuntime.Input): BlackBoxRallarRuntime {
+    return new BlackBoxRallarConnectionRuntime(options).installation().runtime;
 }
 
-export function createBlackBoxRallarRuntime(options: CreateBlackBoxRallarRuntimeOptions): BlackBoxRallarRuntime {
-    return createBlackBoxRallarRuntimeInstallation(options).runtime;
-}
-
-export function installBlackBoxRallarRuntime(targetWindow: Window): BlackBoxRallarRuntime {
-    const installation = createBlackBoxRallarRuntimeInstallation({
+export function installBlackBoxRallarRuntime(
+    targetWindow: BlackBoxRallarRuntimeInstallationTarget
+): BlackBoxRallarRuntime {
+    const installation = new BlackBoxRallarConnectionRuntime({
         facade: createBlackBoxBrowserRallarRuntimeDependency(),
         targetWindow,
         clock: { now: Date.now },
         delay: (ms) => new Promise<void>((resolve) => setTimeout(resolve, Math.max(0, ms)))
-    });
+    }).installation();
     targetWindow.__blackBoxRallar = installation.runtime;
     installation.emitRuntimeLoaded();
     return installation.runtime;

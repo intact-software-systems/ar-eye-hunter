@@ -1,12 +1,7 @@
-import { QRtcDataChannel } from '../webrtc/QRtcDataChannel.ts';
+import { QRtcDataChannel } from '../webrtc/qrtc-data-channel.ts';
 
 export const defaultMaxMissedPings = 5;
 export const defaultPingFrequencyMsecs = 5000;
-
-interface WebRtcHeartbeatServiceStatusDto {
-    pingInterval: ReturnType<typeof setInterval> | undefined;
-    missedPings: number;
-}
 
 const pingMessageType = 'ping';
 
@@ -16,36 +11,43 @@ interface PingPayload {
     readonly ts: number;
 }
 
-export interface WebRtcHeartbeatCallbacks {
-    readonly onHeartbeat: (result: PingResult) => Promise<void>;
-    readonly onMissedHeartbeat: (peerId: string) => Promise<void>;
-}
-
 export interface PingResult {
     readonly peerSessionId: string;
     readonly rttMsecs: number;
     readonly version: number;
 }
 
-export interface WebRtcHeartbeatServiceInputDto {
-    readonly sessionId: string;
-    readonly peerSessionId: string;
-    readonly channel: QRtcDataChannel;
-    readonly maxMissedPings: number;
-    readonly pingFrequencyMsecs: number;
+export namespace WebRtcHeartbeatService {
+    export interface InputDto {
+        readonly sessionId: string;
+        readonly peerSessionId: string;
+        readonly channel: QRtcDataChannel;
+        readonly maxMissedPings: number;
+        readonly pingFrequencyMsecs: number;
+    }
+
+    export interface Callbacks {
+        readonly onHeartbeat: (result: PingResult) => Promise<void>;
+        readonly onMissedHeartbeat: (peerId: string) => Promise<void>;
+    }
+
+    export interface Status {
+        pingInterval: ReturnType<typeof setInterval> | undefined;
+        missedPings: number;
+    }
 }
 
 export class WebRtcHeartbeatService {
-    private readonly status: WebRtcHeartbeatServiceStatusDto;
+    private readonly status: WebRtcHeartbeatService.Status;
 
     private messageCallbackId: string | undefined;
-    private reportingCallbacks: WebRtcHeartbeatCallbacks | undefined;
+    private reportingCallbacks: WebRtcHeartbeatService.Callbacks | undefined;
     private versionCounter = 1;
 
-    public readonly input: WebRtcHeartbeatServiceInputDto;
+    public readonly input: WebRtcHeartbeatService.InputDto;
 
     constructor(
-        input: WebRtcHeartbeatServiceInputDto
+        input: WebRtcHeartbeatService.InputDto
     ) {
         this.input = input;
         this.status = {
@@ -54,7 +56,7 @@ export class WebRtcHeartbeatService {
         };
     }
 
-    start(callbacks: WebRtcHeartbeatCallbacks): void {
+    start(callbacks: WebRtcHeartbeatService.Callbacks): void {
         if (this.status.pingInterval) {
             return;
         }
@@ -133,7 +135,7 @@ export class WebRtcHeartbeatService {
         }
     }
 
-    private async writeHeartbeatPing(callbacks: WebRtcHeartbeatCallbacks): Promise<void> {
+    private async writeHeartbeatPing(callbacks: WebRtcHeartbeatService.Callbacks): Promise<void> {
         if (!this.input.channel.isOpen()) {
             this.stop();
             return;

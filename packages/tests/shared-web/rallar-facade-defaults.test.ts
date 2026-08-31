@@ -1,7 +1,8 @@
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
-import type { QRtcDataChannel, RtcDataChannelSendResult } from '@shared/webrtc/QRtcDataChannel.ts';
+import type { RtcDataChannelSendResult } from '@shared/webrtc/qrtc-data-channel.ts';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createGroupSnapshotFixture } from './authoritative-group-fixtures.ts';
+import { createBrowserRtcPeerTestDouble } from './rtc/browser-rtc-peer-test-double.ts';
 
 type MiddlewareModule = typeof import('@shared-web/browser/connection/initialise-browser-middleware.ts');
 type RefreshStateSnapshotsModule = typeof import('@shared-web/browser/state-read/refresh-state-snapshots.ts');
@@ -11,8 +12,8 @@ type ClientStateSnapshotsRepositoryModule = typeof import('@shared/repository/cl
 type GroupStateSnapshotsRepositoryModule = typeof import('@shared/repository/group-state-snapshots-repository.ts');
 
 const mocks = await vi.hoisted(async () => {
-    const { createApiMiddlewareTestDouble } = await import('./api-middleware-test-double.ts');
-    const ctx = createApiMiddlewareTestDouble();
+    const { createDefaultApiMiddlewareTestDouble } = await import('./api-middleware-test-double.ts');
+    const ctx = createDefaultApiMiddlewareTestDouble();
     return {
         ctx,
         webRtcConnectionService: ctx.middleware.webRtcConnectionService,
@@ -271,9 +272,7 @@ describe('Rallar facade default scope behavior', () => {
             bufferedAmount: 0
         };
         const sendJson = vi.fn(() => sendResult);
-        const gameplayChannel = toWebRtcTestDouble<QRtcDataChannel>({
-            sendJson
-        });
+        const gameplayChannel = createBrowserRtcPeerTestDouble({ peerId: 'peer-1', channels: [['gameplay', { sendJson }]] }).channel;
         mockGroupSnapshot(createGroupSnapshot('match-1', ['session-1', 'peer-1']));
         vi.mocked(
             mocks.webRtcConnectionService.ensurePeerLaneOpen
@@ -405,11 +404,4 @@ function createGroupSnapshot(
         groupId,
         sessionIds
     });
-}
-
-// QRtcDataChannel is a concrete WebRTC runtime value that cannot be instantiated in a unit test;
-// only the members the facade calls are supplied, and their shapes stay checked against the
-// production type.
-function toWebRtcTestDouble<TValue>(members: Partial<TValue>): TValue {
-    return members as TValue;
 }

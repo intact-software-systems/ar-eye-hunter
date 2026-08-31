@@ -3,14 +3,15 @@ import { newALRoute, newALUnicastMessage } from '@shared/al-contracts/al-contrac
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { Either } from '@shared/resilience/Either.ts';
-import type { OnMessageCallback } from '@shared/services/InboxOutboxContracts.ts';
+import type { OnMessageCallback } from '@shared/services/queue-message-callbacks.ts';
 import { QueueBoxUtilities } from '@shared/services/QueueBoxUtilities.ts';
-import { DEFAULT_RTC_DATA_CHANNEL_LANE_ID, type QRtcPeerDto, type WebRtcPeerConnectionLeft } from '@shared/services/WebRtcConnectionService.ts';
-import type { QRtcDataChannel, RtcDataChannelHealth } from '@shared/webrtc/QRtcDataChannel.ts';
-import type { QRtcPeerConnection } from '@shared/webrtc/QRtcPeerConnection.ts';
+import { DEFAULT_RTC_DATA_CHANNEL_LANE_ID, type QRtcPeerDto, type WebRtcConnectionService } from '@shared/services/web-rtc-connection-service.ts';
+import type { RtcDataChannelHealth } from '@shared/webrtc/qrtc-data-channel.ts';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { SimulatedNativeRtcPeerConnection } from '../../shared/native-rtc-connection-fixture.ts';
 import { createGroupSnapshotFixture } from '../authoritative-group-fixtures.ts';
 import { createDirectorGroupSnapshot } from '../director-group-snapshot-fixture.ts';
+import { createBrowserRtcPeerTestDouble } from '../rtc/browser-rtc-peer-test-double.ts';
 
 type StateEventHttpApiModule = typeof import('@shared-web/browser/state-read/state-event-http-api.ts');
 type AuthApiModule = typeof import('@shared-web/browser/auth/session-http-api.ts');
@@ -108,8 +109,8 @@ vi.mock(
 vi.mock(
     import('@shared/repository/client-state-snapshots-repository.ts'),
     (): Partial<ClientStateSnapshotsRepositoryModule> => ({
-        findClientStateSnapshotByPrincipalId: mocks.clientRepositoryMissing,
-        getAllClientStateSnapshots: mocks.clientRepositoryMissing
+        findClientStateSnapshotByPrincipalId: mocks.findClientStateSnapshotByPrincipalId,
+        getAllClientStateSnapshots: mocks.getAllClientStateSnapshots
     })
 );
 
@@ -137,32 +138,17 @@ describe('Rallar calls', () => {
             state: 'Open',
             readyState: 'open'
         });
-        const reliableChannel = toRtcTestDouble<QRtcDataChannel>({
-            readHealth: vi.fn(() => reliableHealth),
-            sendJson: vi.fn(() => ({
-                status: 'sent' as const,
-                bufferedAmount: 0
-            }))
-        });
-        const peer = toRtcTestDouble<QRtcPeerDto>({
+        const native = new SimulatedNativeRtcPeerConnection();
+        native.connectionState = 'connected';
+        const peer = createBrowserRtcPeerTestDouble({
             peerId: 'peer-1',
-            connection: toRtcTestDouble<QRtcPeerConnection>({
-                status: toRtcTestDouble<QRtcPeerConnection['status']>({
-                    state: 'Open',
-                    pc: toRtcTestDouble<RTCPeerConnection>({
-                        connectionState: 'connected'
-                    }),
-                    reconnectAttempts: 0,
-                    reconnectTimer: undefined,
-                    disconnectTimer: undefined,
-                    makingOffer: false,
-                    ignoreOffer: false,
-                    iceCandidateQueue: [],
-                    remoteStreams: new Map()
-                })
-            }),
-            channels: new Map([['reliable', reliableChannel]])
+            status: { state: 'Open', pc: native },
+            channels: [['reliable', {
+                readHealth: vi.fn(() => reliableHealth),
+                sendJson: vi.fn(() => ({ status: 'sent' as const, bufferedAmount: 0 }))
+            }]]
         });
+        const reliableChannel = peer.channel;
         mocks.webRtcConnectionService.ensurePeerLaneOpen.mockResolvedValue({
             status: 'open',
             peerId: 'peer-1',
@@ -373,9 +359,6 @@ describe('Rallar calls', () => {
     });
 });
 
-function toRtcTestDouble<TValue>(members: Partial<TValue>): TValue {
-    return members as TValue;
-}
 function resetCallTestDoubles(): void {
     vi.clearAllMocks();
     vi.useRealTimers();
@@ -386,9 +369,8 @@ function resetCallTestDoubles(): void {
 }
 
 function resetCallRepositoryAndSessionDoubles(): void {
-    mocks.clientRepositoryMissing.mockImplementation(
-        (principalId?: string): never => (principalId === undefined ? [] : undefined) as never
-    );
+    mocks.findClientStateSnapshotByPrincipalId.mockReturnValue(undefined);
+    mocks.getAllClientStateSnapshots.mockReturnValue([]);
     mockGroupRepositoryMissing();
     mocks.refreshStateSnapshots.mockResolvedValue({ clients: [], groups: [] });
     mocks.initialiseApiMiddleware.mockResolvedValue(mocks.ctx);
@@ -411,7 +393,7 @@ function resetCallRtcDoubles(): void {
     mocks.webRtcConnectionService.readyPeerIdsForLane.mockReturnValue([]);
     mocks.webRtcConnectionService.ensurePeerConnectionStarted.mockImplementation(
         (peerId) =>
-            Either.ofLeft<WebRtcPeerConnectionLeft, QRtcPeerDto>({
+            Either.ofLeft<WebRtcConnectionService.PeerConnectionLeft, QRtcPeerDto>({
                 kind: 'connect-failed',
                 peerId,
                 error: new Error('connect not mocked')
@@ -580,64 +562,5 @@ function createGroupSnapshot(
         workspaceId,
         groupId,
         sessionIds
-    });
-}
-
-function createMediaTrack(
-    id: string,
-    kind: 'audio' | 'video'
-): MediaStreamTrack {
-    const listeners = new Set<EventListenerOrEventListenerObject>();
-    let readyState: MediaStreamTrackState = 'live';
-    const track = toRtcTestDouble<MediaStreamTrack>({
-        id,
-        kind,
-        enabled: true,
-        get readyState() {
-            return readyState;
-        },
-        addEventListener: vi.fn((
-            type: string,
-            listener: EventListenerOrEventListenerObject
-        ) => {
-            if (type === 'ended') {
-                listeners.add(listener);
-            }
-        }),
-        removeEventListener: vi.fn((
-            type: string,
-            listener: EventListenerOrEventListenerObject
-        ) => {
-            if (type === 'ended') {
-                listeners.delete(listener);
-            }
-        }),
-        stop: vi.fn(() => {
-            readyState = 'ended';
-            const event = new Event('ended');
-            for (const listener of listeners) {
-                if (typeof listener === 'function') {
-                    listener(event);
-                }
-                else {
-                    listener.handleEvent(event);
-                }
-            }
-        })
-    });
-
-    return track;
-}
-
-function createMediaStream(
-    id: string,
-    tracks: readonly MediaStreamTrack[]
-): MediaStream {
-    return toRtcTestDouble<MediaStream>({
-        id,
-        active: tracks.some((track) => track.readyState !== 'ended'),
-        getTracks: vi.fn(() => [...tracks]),
-        getAudioTracks: vi.fn(() => tracks.filter((track) => track.kind === 'audio')),
-        getVideoTracks: vi.fn(() => tracks.filter((track) => track.kind === 'video'))
     });
 }

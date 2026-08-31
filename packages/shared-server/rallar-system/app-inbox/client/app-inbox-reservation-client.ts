@@ -1,6 +1,6 @@
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { EntityStatus, type Key, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
-import type { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
+import type { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 
 import type { JsonWireValue } from '../../protocol/json-wire-identity.ts';
 import { validateAppInboxCommandIdentity } from '../app-inbox-command-identity.ts';

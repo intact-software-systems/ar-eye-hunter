@@ -5,16 +5,16 @@ import { ResilienceDto } from '@shared/queuebox/DequeueResourceEntryController.t
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
-import type { OnMessageCallback } from '@shared/services/InboxOutboxContracts.ts';
-import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
-import { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
-import { describe, expect, it, vi } from 'vitest';
+import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
+import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
+import type { OnMessageCallback } from '@shared/services/queue-message-callbacks.ts';
+import { describe, expect, it } from 'vitest';
 
 describe('OutboxQueueReader', () => {
     it('dispatches app outbox messages using the APP_OUTBOX queue type', async () => {
         const queue = new InMemoryQueueBox();
         const reader = new OutboxQueueReader(queue);
-        const dispatched: Parameters<OnMessageCallback['onMessage']>[0][] = [];
+        const dispatched: ALMessage[] = [];
         const onMessage: OnMessageCallback['onMessage'] = async (dispatchedMessage) => {
             dispatched.push(dispatchedMessage);
         };
@@ -101,7 +101,7 @@ describe('OutboxQueueReader', () => {
     });
 });
 
-function createAppMessage(typeId: string, direction: string) {
+function createAppMessage(typeId: string, direction: string): ALMessage {
     return newALUntargetedMessage(
         'api-v1',
         newALRoute(`app-${direction}.work`, 'group-1', crypto.randomUUID()),

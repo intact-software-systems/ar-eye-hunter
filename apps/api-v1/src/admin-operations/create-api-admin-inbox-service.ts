@@ -1,7 +1,7 @@
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import { resourceInboxRetryExpiryAtEpochMs } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
-import type { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
-import type { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
+import type { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
+import type { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 
 import type { PSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 

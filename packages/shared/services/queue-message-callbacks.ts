@@ -1,6 +1,5 @@
 import { ALMessage } from '../al-contracts/al-contract.ts';
 import { ResourceEntry } from '../queuebox/ResourceEntry.ts';
-import { QRtcDataChannel } from '../webrtc/QRtcDataChannel.ts';
 import { JsonWebSocketClient } from '../websocket/JsonWebSocketClient.ts';
 import { JsonWebSocketServer } from '../websocket/JsonWebSocketServer.ts';
 
@@ -14,12 +13,4 @@ export interface OnWebSocketServerMessageCallback<T> {
 
 export interface OnMessageCallback {
     onMessage: (message: ALMessage, entry: ResourceEntry) => Promise<void>;
-}
-
-export interface OnOutboxWebRtcMessageCallback {
-    onMessage: (entry: ResourceEntry, webRtcChannel: QRtcDataChannel) => Promise<void>;
-}
-
-export interface OnInboxWebRtcMessageCallback {
-    onMessage: (entry: ResourceEntry, webRtcChannel: QRtcDataChannel) => Promise<void>;
 }

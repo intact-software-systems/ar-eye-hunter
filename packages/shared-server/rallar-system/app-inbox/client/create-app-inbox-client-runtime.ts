@@ -1,4 +1,4 @@
-import type { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
+import type { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 
 import type { RallarTimingSink } from '../../observability/timing.ts';
 import type { AppInboxOptions } from '../app-inbox-options.ts';

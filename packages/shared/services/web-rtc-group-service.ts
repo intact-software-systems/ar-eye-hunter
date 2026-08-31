@@ -1,4 +1,5 @@
 import { isSameGroupScope, toWebRtcGroupKey } from '@shared/api/api-type-utils.ts';
+import type { PeerId } from '../api/api-config.ts';
 import {
     readGroupId,
     readGroupMemberSessionIds,
@@ -7,21 +8,23 @@ import {
 } from '../api/group-client-views.ts';
 import type { GroupRef } from '../api/group-types.ts';
 import { ReadableKeyedValues } from '../cache/RepositoryInterfaces.ts';
-import { WebRtcConnectionService } from './WebRtcConnectionService.ts';
+import { toError } from '../resilience/to-error.ts';
+import { WebRtcConnectionService } from './web-rtc-connection-service.ts';
 
-type PeerId = string;
 type GroupUpdateSource = 'push' | 'pull';
 
-export type GroupMembershipDiff = {
-    readonly joinedPeerIds: readonly PeerId[];
-    readonly leftPeerIds: readonly PeerId[];
-};
+export namespace WebRtcGroupService {
+    export interface MembershipDiff {
+        readonly joinedPeerIds: readonly PeerId[];
+        readonly leftPeerIds: readonly PeerId[];
+    }
 
-export type WebRtcGroupServiceState = {
-    readonly groupRef: GroupRef;
-    readonly snapshot: AnyGroupPresence | undefined;
-    readonly targetPeerIds: readonly PeerId[];
-};
+    export interface State {
+        readonly groupRef: GroupRef;
+        readonly snapshot: AnyGroupPresence | undefined;
+        readonly targetPeerIds: readonly PeerId[];
+    }
+}
 
 export class WebRtcGroupService {
     private snapshot: AnyGroupPresence | undefined;
@@ -30,8 +33,8 @@ export class WebRtcGroupService {
     private readonly onStateCallbacks = new Map<
         string,
         (
-            state: WebRtcGroupServiceState,
-            diff: GroupMembershipDiff,
+            state: WebRtcGroupService.State,
+            diff: WebRtcGroupService.MembershipDiff,
             source: GroupUpdateSource
         ) => Promise<void>
     >();
@@ -54,8 +57,8 @@ export class WebRtcGroupService {
     onStateDo(
         id: string,
         callback: (
-            state: WebRtcGroupServiceState,
-            diff: GroupMembershipDiff,
+            state: WebRtcGroupService.State,
+            diff: WebRtcGroupService.MembershipDiff,
             source: GroupUpdateSource
         ) => Promise<void>
     ): WebRtcGroupService {
@@ -79,7 +82,7 @@ export class WebRtcGroupService {
         return this.computeTargetPeerIds(this.readGroup());
     }
 
-    state(): WebRtcGroupServiceState {
+    state(): WebRtcGroupService.State {
         const snapshot = this.readGroup();
         return {
             groupRef: this.groupRef,
@@ -88,7 +91,7 @@ export class WebRtcGroupService {
         };
     }
 
-    async acceptGroupUpdate(snapshot: AnyGroupPresence): Promise<GroupMembershipDiff> {
+    async acceptGroupUpdate(snapshot: AnyGroupPresence): Promise<WebRtcGroupService.MembershipDiff> {
         if (
             readGroupId(snapshot) !== this.groupRef.groupId ||
             !isSameGroupScope(snapshot.group, this.groupRef)
@@ -122,7 +125,7 @@ export class WebRtcGroupService {
         return diff;
     }
 
-    async refreshFromCache(): Promise<GroupMembershipDiff> {
+    async refreshFromCache(): Promise<WebRtcGroupService.MembershipDiff> {
         const before = this.computeTargetPeerIds(this.readGroup());
 
         this.snapshot = this.readCachedGroup('read') ??
@@ -136,7 +139,7 @@ export class WebRtcGroupService {
     }
 
     private async notify(
-        diff: GroupMembershipDiff,
+        diff: WebRtcGroupService.MembershipDiff,
         source: GroupUpdateSource
     ): Promise<void> {
         const state = this.state();
@@ -145,8 +148,8 @@ export class WebRtcGroupService {
             try {
                 await callback(state, diff, source);
             }
-            catch (error) {
-                console.error('Error in WebRtcGroupService callback', error);
+            catch (caught) {
+                console.error('Error in WebRtcGroupService callback', toError(caught));
             }
         }
     }
@@ -210,7 +213,7 @@ export class WebRtcGroupService {
     private computeDiff(
         before: readonly PeerId[],
         after: readonly PeerId[]
-    ): GroupMembershipDiff {
+    ): WebRtcGroupService.MembershipDiff {
         const beforeSet = new Set(before);
         const afterSet = new Set(after);
 

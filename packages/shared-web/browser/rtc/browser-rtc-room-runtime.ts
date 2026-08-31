@@ -12,7 +12,7 @@ import {
     resolveRtcRoomTransportState
 } from '@shared-web/browser/rtc/rtc-room-transport-status.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
-import { DEFAULT_RTC_DATA_CHANNEL_LANE_ID } from '@shared/services/WebRtcConnectionService.ts';
+import { DEFAULT_RTC_DATA_CHANNEL_LANE_ID } from '@shared/services/web-rtc-connection-service.ts';
 
 export namespace BrowserRtcRoomRuntime {
     export interface Input {

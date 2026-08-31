@@ -2,7 +2,7 @@ import { ALMessage } from '../al-contracts/al-contract.ts';
 import { ALQosNormalizationInput, planALMessageHandling } from '../al-contracts/al-policy.ts';
 import { PeerId } from '../api/api-config.ts';
 import { readGroupMemberSessionIds } from '../api/group-client-views.ts';
-import { WebRtcConnectionService } from '../services/WebRtcConnectionService.ts';
+import { WebRtcConnectionService } from '../services/web-rtc-connection-service.ts';
 import {
     OverlayMulticastDispatchPlan,
     OverlayMulticasterContext,
