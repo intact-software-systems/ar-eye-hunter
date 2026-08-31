@@ -1,10 +1,7 @@
 import { PSqlGroupStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-group-state-event-repository.ts';
 import assert from 'node:assert/strict';
 
-import {
-    createPSqlResourceInboxRepository,
-    type PSqlResourceInboxRepository
-} from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
+import { createPSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
 import { ResourceInboxResultsRepository } from '@shared-server/queuebox/postgres/resource-inbox-results-repository.ts';
 import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
@@ -21,18 +18,24 @@ import { createGroupTopologyMutationOwners } from '@shared-server/rallar-system/
 import { RtcTopologyOutboxWriter } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-writer.ts';
 import { createGroupTopologyRuntimeOwners } from '@shared-server/rallar-system/topology/runtime/create-group-topology-runtime-owners.ts';
 import { RallarRtcTopologyService } from '@shared-server/rallar-system/topology/runtime/rallar-rtc-topology-service.ts';
-import { type RuntimeStateGuardedBatch, type RuntimeStateGuardedBatchResult } from '@shared-server/runtime-state/guarded-batch/runtime-state-guarded-batch.ts';
+import { type RuntimeStateGuardedBatch } from '@shared-server/runtime-state/guarded-batch/runtime-state-guarded-batch.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
-import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import type { ClientEvent } from '@shared/api/client-types.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
+import { toError } from '@shared/resilience/to-error.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 
 import { toResilienceDto } from '../api-v1-test-queue-resilience.ts';
 import { waitForPGliteQueueRow } from './pglite-app-inbox-test-runtime.ts';
 import { withPGliteSql } from './pglite-auth-test-harness.ts';
 import { createPGliteClientEventCollisionFixture } from './pglite-client-event-collision-test-runtime.ts';
-import { requireTopologyMutationOwners, submitPGliteTopologyCommand, topologyGroupSnapshot, topologyOverrideCommand } from './pglite-topology-test-runtime.ts';
+import {
+    requireTopologyMutationOwners,
+    submitPGliteTopologyCommand,
+    topologyGroupSnapshot,
+    topologyOverrideCommand
+} from './pglite-topology-test-runtime.ts';
 
 const FUTURE_MS = Date.parse('9999-12-31T23:59:59.999Z');
 const PAST_MS = Date.parse('2000-01-01T00:00:00.000Z');
@@ -73,7 +76,7 @@ Deno.test(
                 });
             }
             catch (error) {
-                collisionError = error instanceof Error ? error : new Error(String(error));
+                collisionError = toError(error);
             }
 
             const outbox = createPSqlResourceInboxRepository(sql);
@@ -503,12 +506,11 @@ Deno.test(
         await withPGliteSql(async (sql) => {
             const repository = new PSqlRuntimeStateRepository(sql);
             await repository.insertIfAbsent('guarded-rollback', 'root', 'before', FUTURE_MS);
-            let observedResult: RuntimeStateGuardedBatchResult | undefined;
 
             await assert.rejects(
                 async () => {
                     await repository.begin(async (transactionRepository) => {
-                        observedResult = await transactionRepository.executeGuardedBatch({
+                        const observedResult = await transactionRepository.executeGuardedBatch({
                             guard: {
                                 operation: 'update',
                                 namespace: 'guarded-rollback',
@@ -534,40 +536,36 @@ Deno.test(
                                 expireAtTimestamp: FUTURE_MS
                             }]
                         });
-                        assert.deepEqual(observedResult.effects.map((effect) => effect.status), [
-                            'applied',
-                            'conflict'
-                        ]);
+                        assert.deepEqual(observedResult, {
+                            guard: {
+                                status: 'applied',
+                                operation: 'update',
+                                namespace: 'guarded-rollback',
+                                key: 'root',
+                                resultingRevision: 1
+                            },
+                            effects: [{
+                                status: 'applied',
+                                effectId: 'sibling',
+                                operation: 'insert',
+                                namespace: 'guarded-rollback',
+                                key: 'sibling',
+                                resultingRevision: 0
+                            }, {
+                                status: 'conflict',
+                                effectId: 'conflict',
+                                operation: 'update',
+                                namespace: 'guarded-rollback',
+                                key: 'missing',
+                                reason: 'condition-not-met'
+                            }]
+                        });
                         throw new Error('roll back guarded batch conflict');
                     });
                 },
                 /roll back guarded batch conflict/u
             );
 
-            assert.deepEqual(observedResult, {
-                guard: {
-                    status: 'applied',
-                    operation: 'update',
-                    namespace: 'guarded-rollback',
-                    key: 'root',
-                    resultingRevision: 1
-                },
-                effects: [{
-                    status: 'applied',
-                    effectId: 'sibling',
-                    operation: 'insert',
-                    namespace: 'guarded-rollback',
-                    key: 'sibling',
-                    resultingRevision: 0
-                }, {
-                    status: 'conflict',
-                    effectId: 'conflict',
-                    operation: 'update',
-                    namespace: 'guarded-rollback',
-                    key: 'missing',
-                    reason: 'condition-not-met'
-                }]
-            });
             const rolledBackGuard = await repository.findEntry('guarded-rollback', 'root');
             assert.equal(rolledBackGuard?.value, 'before');
             assert.equal(rolledBackGuard?.revision, 0);
@@ -795,7 +793,7 @@ Deno.test(
       order by ri_resource_id
     `;
             assert.deepEqual(
-                outboxRows.map((row) => (JSON.parse(row.ri_resource) as ALMessage).id.msgId).sort(),
+                outboxRows.map((row) => decodePersistedALMessage(row.ri_resource).id.msgId).sort(),
                 [firstReceipt.receipt.outboxIds[0], secondReceipt.receipt.outboxIds[0]].sort()
             );
         });

@@ -21,6 +21,7 @@ const inheritedConfiguration = [
     'RALLAR_BLACK_BOX_LIVE_RETENTION_SOAK',
     'RALLAR_BLACK_BOX_LIVE_RETENTION_CYCLES'
 ];
+const encoder = new TextEncoder();
 
 export interface RtcB06LiveProducerCommandInput {
     readonly baselineId: string;
@@ -36,6 +37,12 @@ export interface RtcB06ObservationDenoRuntimeInput {
     readonly runtime: RtcBaselineDenoPort;
     readonly adapters: DenoRtcBaselineAdapters;
     readonly envelope: RtcBaselineEnvelope;
+    readonly producerOutput: RtcB06ProducerOutput;
+}
+
+export interface RtcB06ProducerOutput {
+    writeStdout(bytes: Uint8Array): Promise<void>;
+    writeStderr(bytes: Uint8Array): Promise<void>;
 }
 
 export function createRtcB06ObservationDenoRuntime(
@@ -45,14 +52,7 @@ export function createRtcB06ObservationDenoRuntime(
         envelope: input.envelope,
         preflight: () => preflight(input.runtime),
         readSource: () => readRtcPerformanceObservationSource(input.adapters),
-        runLiveRtcProducer: async ({ baselineId, attempt }) => {
-            const command = createRtcB06LiveProducerCommand({ baselineId, attempt });
-            const output = await input.runtime.command(
-                command.executable,
-                command.arguments
-            );
-            return { exitStatus: output.code };
-        },
+        runLiveRtcProducer: (producer) => runRtcB06LiveProducer(input.runtime, input.producerOutput, producer),
         readFinalizedArtifacts: (baselineId) =>
             readRtcPerformanceObservationFinalizedArtifacts(input.runtime, baselineId),
         createArchive: createVerifiedRtcPerformanceObservationArchive,
@@ -60,6 +60,28 @@ export function createRtcB06ObservationDenoRuntime(
             writeRtcPerformanceObservationOutput(input.runtime, outputDirectory, archive),
         nowUtc: () => input.runtime.now().toISOString()
     };
+}
+
+export async function runRtcB06LiveProducer(
+    runtime: Pick<RtcBaselineDenoPort, 'command'>,
+    producerOutput: RtcB06ProducerOutput,
+    input: RtcB06LiveProducerCommandInput
+) {
+    const command = createRtcB06LiveProducerCommand(input);
+    const output = await runtime.command(command.executable, command.arguments);
+    if (output.code !== 0) {
+        const attempt = input.attempt;
+        await producerOutput.writeStderr(encoder.encode(
+            `RTC-B06 producer failed for ${attempt.caseId}/${attempt.intendedPhase}/${attempt.outerOrdinal} with exit status ${output.code}.\n`
+        ));
+        if (output.stdout.length > 0) {
+            await producerOutput.writeStdout(output.stdout);
+        }
+        if (output.stderr.length > 0) {
+            await producerOutput.writeStderr(output.stderr);
+        }
+    }
+    return { exitStatus: output.code };
 }
 
 export function createRtcB06LiveProducerCommand(

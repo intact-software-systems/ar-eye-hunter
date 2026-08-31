@@ -22,18 +22,17 @@ export function validateComputedGroupMutation({
     facts,
     computed
 }: ValidateComputedGroupMutationInput): void {
-    const value = computed;
     switch (computed.outcome) {
         case 'replay':
         case 'no-op':
         case 'rejected':
-            validateReceiptOutcome({ command, facts, computed, value });
+            validateReceiptOutcome({ command, facts, computed });
             return;
         case 'idempotency-conflict':
-            validateConflictOutcome(facts, computed, value);
+            validateConflictOutcome(facts, computed);
             return;
         case 'write':
-            validateWriteOutcomeKeys(value);
+            validateWriteOutcomeKeys(computed);
             validateComputedGroupMutationWrite({ command, read, facts, computed });
             return;
     }
@@ -43,18 +42,16 @@ interface ValidateReceiptOutcomeInput {
     readonly command: GroupMutationCommand;
     readonly facts: GroupMutationFacts;
     readonly computed: Extract<GroupMutationComputed, { outcome: 'replay' | 'no-op' | 'rejected'; }>;
-    readonly value: object;
 }
 
 function validateReceiptOutcome({
     command,
     facts,
-    computed,
-    value
+    computed
 }: ValidateReceiptOutcomeInput): void {
     const keys = ['outcome', 'rejectionCode', 'receipt'];
-    assertExactKeys(value, keys, 'Group mutation computed result');
-    assertRequiredKeys(value, keys, 'Group mutation computed result');
+    assertExactKeys(computed, keys, 'Group mutation computed result');
+    assertRequiredKeys(computed, keys, 'Group mutation computed result');
     validateComputedRejectionCode(computed);
     validateMutationReceipt(
         computed.receipt,
@@ -85,12 +82,11 @@ function validateComputedRejectionCode(
 
 function validateConflictOutcome(
     facts: GroupMutationFacts,
-    computed: Extract<GroupMutationComputed, { outcome: 'idempotency-conflict'; }>,
-    value: object
+    computed: Extract<GroupMutationComputed, { outcome: 'idempotency-conflict'; }>
 ): void {
     const keys = ['outcome', 'existingCommandHash', 'receivedCommandHash'];
-    assertExactKeys(value, keys, 'Group mutation computed result');
-    assertRequiredKeys(value, keys, 'Group mutation computed result');
+    assertExactKeys(computed, keys, 'Group mutation computed result');
+    assertRequiredKeys(computed, keys, 'Group mutation computed result');
     validateCommandHash(computed.existingCommandHash, 'Group mutation existingCommandHash');
     validateCommandHash(computed.receivedCommandHash, 'Group mutation receivedCommandHash');
     if (computed.receivedCommandHash !== facts.commandHash) {
@@ -98,7 +94,7 @@ function validateConflictOutcome(
     }
 }
 
-function validateWriteOutcomeKeys(value: object): void {
+function validateWriteOutcomeKeys(computed: Extract<GroupMutationComputed, { outcome: 'write'; }>): void {
     const keys = [
         'outcome',
         'guard',
@@ -114,6 +110,6 @@ function validateWriteOutcomeKeys(value: object): void {
         'plannedLayoutFence',
         'layoutTombstones'
     ];
-    assertExactKeys(value, keys, 'Group mutation computed result');
-    assertRequiredKeys(value, keys, 'Group mutation computed result');
+    assertExactKeys(computed, keys, 'Group mutation computed result');
+    assertRequiredKeys(computed, keys, 'Group mutation computed result');
 }

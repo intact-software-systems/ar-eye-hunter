@@ -1,11 +1,26 @@
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+    mkdirSync,
+    mkdtempSync,
+    readFileSync,
+    rmSync,
+    writeFileSync
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import {
+    afterEach,
+    describe,
+    expect,
+    it
+} from 'vitest';
 
 import { scanProductionSources } from '../../../scripts/repo-style-check/repository-scan.mjs';
-import { isReviewedDisposition, readReviewedDispositionContext, reviewedDispositions } from '../../../scripts/repo-style-check/reviewed-dispositions.mjs';
+import {
+    isReviewedDisposition,
+    readReviewedDispositionContext,
+    reviewedDispositions
+} from '../../../scripts/repo-style-check/reviewed-dispositions.mjs';
 
 const repoRoot = process.cwd();
 const checkerPath = path.join(repoRoot, 'scripts/check-changed-repo-style.mjs');
@@ -21,6 +36,26 @@ describe('reviewed repository style dispositions', () => {
     it('freezes exactly the approved path, rule, and symbol triples', () => {
         expect(Object.isFrozen(reviewedDispositions)).toBe(true);
         expect(reviewedDispositions).toEqual([
+            {
+                path: 'packages/shared/resilience/to-error.ts',
+                rule: 'boundary.unknown',
+                symbol: 'toError'
+            },
+            {
+                path: 'tests/playwright/rallar-black-box/live-rtc-evidence-json.ts',
+                rule: 'boundary.unknown',
+                symbol: 'normalizeJson'
+            },
+            {
+                path: 'tests/playwright/rallar-black-box/live-rtc-evidence-json.ts',
+                rule: 'boundary.unknown',
+                symbol: 'normalizeJsonValue'
+            },
+            {
+                path: 'packages/tests/repo/tests-typecheck-external-unit.test.ts',
+                rule: 'boundary.unknown',
+                symbol: 'readTestProjectIncludes'
+            },
             {
                 path: 'packages/shared-web/browser/rallar-data.ts',
                 rule: 'boundary.unknown',

@@ -339,6 +339,32 @@
     "report-rtt-pair": {
       "steps": [
         {
+          "name": "deriveRtt{i}x{j}Reporter",
+          "type": "set",
+          "output": "rtt{i}x{j}Reporter",
+          "transform": {
+            "if": {
+              "condition": {
+                "operator": "lexicallyBefore",
+                "values": [
+                  { "path": "outputs.client{i}SessionId" },
+                  { "path": "outputs.client{j}SessionId" }
+                ]
+              },
+              "then": {
+                "connection": "ws-client-{i}",
+                "sessionIdFrom": { "path": "outputs.client{i}SessionId" },
+                "sessionIdTo": { "path": "outputs.client{j}SessionId" }
+              },
+              "else": {
+                "connection": "ws-client-{j}",
+                "sessionIdFrom": { "path": "outputs.client{j}SessionId" },
+                "sessionIdTo": { "path": "outputs.client{i}SessionId" }
+              }
+            }
+          }
+        },
+        {
           "name": "deriveRtt{i}x{j}Resource",
           "type": "set",
           "output": "rtt{i}x{j}Resource",
@@ -346,11 +372,11 @@
             "concat": [
               "{\"sessionIdFrom\":\"",
               {
-                "path": "outputs.client{i}SessionId"
+                "path": "outputs.rtt{i}x{j}Reporter.sessionIdFrom"
               },
               "\",\"sessionIdTo\":\"",
               {
-                "path": "outputs.client{j}SessionId"
+                "path": "outputs.rtt{i}x{j}Reporter.sessionIdTo"
               },
               "\",\"rttMs\":42,\"createdAtEpochMs\":",
               {
@@ -363,15 +389,15 @@
         {
           "name": "reportRtt{i}x{j}",
           "type": "ws.send",
-          "connection": "ws-client-{i}",
+          "connection": "{rtt{i}x{j}Reporter.connection}",
           "request": {
             "send": {
               "id": {
                 "v": 2,
                 "msgId": "rtt-managed-burst-medium-{i}x{j}-{runId}",
                 "ts": 0,
-                "senderId": "{client{i}SessionId}",
-                "sessionId": "{client{i}SessionId}"
+                "senderId": "{rtt{i}x{j}Reporter.sessionIdFrom}",
+                "sessionId": "{rtt{i}x{j}Reporter.sessionIdFrom}"
               },
               "route": {
                 "topicId": "rtt",

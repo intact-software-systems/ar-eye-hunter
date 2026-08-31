@@ -1,4 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
 
 import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 
@@ -51,7 +55,7 @@ describe('Postgres topology frozen work', () => {
 
                 // Cycle 1: no stored row — establishment plans even while
                 // connecting (freeze is replacement suppression only).
-                await runTopologyWork(harness, dialing, 'first', atEpochMs);
+                await runTopologyWork({ harness: harness, groupSnapshot: dialing, name: 'first', atEpochMs: atEpochMs });
                 const planned = await harness.snapshots.findSnapshot(groupRef);
                 expect(planned?.state).toBe('active');
                 const storedFingerprint = await harness.executionRepository
@@ -64,7 +68,7 @@ describe('Postgres topology frozen work', () => {
                 // The enqueue-time snapshot carries the later revision; the
                 // membership-delta read deliberately preserves it.
                 const later = connectingSnapshot(topologyGroupSnapshot(groupRef), 2);
-                await runTopologyWork(harness, later, 'second', atEpochMs + 1);
+                await runTopologyWork({ harness: harness, groupSnapshot: later, name: 'second', atEpochMs: atEpochMs + 1 });
 
                 const afterFreeze = await harness.snapshots.findSnapshot(groupRef);
                 expect(afterFreeze).toEqual(planned);
@@ -140,12 +144,8 @@ function createFrozenWorkHarness(sql: PSqlSql, now: () => number): FrozenWorkHar
     };
 }
 
-async function runTopologyWork(
-    harness: FrozenWorkHarness,
-    groupSnapshot: GroupSnapshot,
-    name: string,
-    atEpochMs: number
-): Promise<void> {
+async function runTopologyWork(input: RunTopologyWorkInput): Promise<void> {
+    const { harness, groupSnapshot, name, atEpochMs } = input;
     const entry = computeRtcTopologyEntry({
         commandId: `${groupSnapshot.group.applicationId}-${name}`,
         aggregateRef: groupSnapshot.group,
@@ -203,4 +203,10 @@ function connectingSnapshot(base: GroupSnapshot, groupRevision: number): GroupSn
             snapshotVersion: groupRevision
         }
     };
+}
+interface RunTopologyWorkInput {
+    readonly harness: FrozenWorkHarness;
+    readonly groupSnapshot: GroupSnapshot;
+    readonly name: string;
+    readonly atEpochMs: number;
 }

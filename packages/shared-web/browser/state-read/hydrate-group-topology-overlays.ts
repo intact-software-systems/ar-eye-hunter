@@ -8,9 +8,9 @@ import { toOverlayInfoForSession, type RallarOverlayTopologySnapshot } from '@sh
 import { validateRallarGroupRef } from '@shared/api/rallar-validation.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
-import type { OverlayAdoptionOutcome } from '@shared/repository/overlays-repository.ts';
 import * as overlaysRepository from '@shared/repository/overlays-repository.ts';
-import type { WebRtcGroupManager } from '@shared/services/WebRtcGroupManager.ts';
+import { toError } from '@shared/resilience/to-error.ts';
+import type { WebRtcGroupManager } from '@shared/services/web-rtc-group-manager.ts';
 
 import type { ApiRequestOptions } from '../api/http-request.ts';
 import { readStateGroupTopology } from '../rtc/rtc-topology-http-api.ts';
@@ -19,7 +19,7 @@ import { emitBrowserStateReadDiagnostic } from './diagnostics.ts';
 export interface HydrateGroupTopologyOverlaysInput {
     readonly groupSnapshots: readonly GroupSnapshot[];
     readonly sessionId: string;
-    readonly webRtcGroupManager: WebRtcGroupManager;
+    readonly webRtcGroupManager: Pick<WebRtcGroupManager, 'notifyOverlayTopologyChanged'>;
     readonly scope: StateScope;
     readonly apiRequest: ApiRequestOptions;
 }
@@ -54,10 +54,11 @@ async function readThroughGroupTopology(
     const startedAtMs = Date.now();
     let outcome: GroupTopologyReadThroughOutcome;
     try {
+        const observedGroup = groupStateSnapshotsRepository.findGroupStateSnapshotByRef(groupSnapshot.group);
         const observations = readCurrentTopologyRoleObservations(
             toScopedOverlayId(groupSnapshot.group)
         );
-        const view = validateGroupTopologyManagementView(
+        const view = decodeGroupTopologyManagementView(
             await readStateGroupTopology(groupId, input.scope, input.apiRequest),
             groupId,
             input.scope
@@ -65,13 +66,9 @@ async function readThroughGroupTopology(
         const latestGroup = groupStateSnapshotsRepository.findGroupStateSnapshotByRef(
             groupSnapshot.group
         );
-        if (
-            latestGroup === undefined ||
-            !isGroupActive(latestGroup) ||
-            !isSessionInGroup(latestGroup, input.sessionId)
-        ) {
-            outcome = 'no-overlay';
-            return emitReadThroughOutcome(groupId, outcome, startedAtMs);
+        const rejection = resolveGroupHydrationRejection(latestGroup, observedGroup, input.sessionId);
+        if (rejection) {
+            return emitReadThroughOutcome(groupId, rejection, startedAtMs);
         }
 
         const hydration = hydrateCurrentTopologyRoles(view, input.sessionId, observations);
@@ -92,9 +89,23 @@ async function readThroughGroupTopology(
         // Read-through is best-effort anti-entropy: WS relay stays the correctness
         // baseline, so a failed pull must not break connect or reconnect.
         outcome = 'read-failed';
-        console.warn(`Group topology read-through ${outcome} for group ${groupId}`, error);
+        console.warn(
+            `Group topology read-through ${outcome} for group ${groupId}`,
+            toError(error)
+        );
     }
     return emitReadThroughOutcome(groupId, outcome, startedAtMs);
+}
+
+function resolveGroupHydrationRejection(
+    latestGroup: GroupSnapshot | undefined,
+    observedGroup: GroupSnapshot | undefined,
+    sessionId: string
+): 'no-overlay' | 'revision-conflict' | undefined {
+    if (!latestGroup || !isGroupActive(latestGroup) || !isSessionInGroup(latestGroup, sessionId)) {
+        return 'no-overlay';
+    }
+    return latestGroup !== observedGroup ? 'revision-conflict' : undefined;
 }
 
 function emitReadThroughOutcome(
@@ -112,8 +123,7 @@ function emitReadThroughOutcome(
     return { groupId, outcome };
 }
 
-interface ValidatedGroupTopologyView {
-    readonly groupRef: GroupRef;
+interface DecodedGroupTopologyView {
     readonly overlayId: string;
     readonly snapshot: RallarOverlayTopologySnapshot | null;
     readonly acceptedSnapshot: RallarOverlayTopologySnapshot | null;
@@ -125,11 +135,10 @@ interface CurrentTopologyRoleObservations {
     readonly accepted: OverlayInfo | undefined;
 }
 
-interface ValidateTopologyRoleSnapshotInput {
+interface DecodeTopologyRoleSnapshotInput {
     readonly value: RallarOverlayTopologySnapshot | null;
     readonly groupRef: GroupRef;
     readonly overlayId: string;
-    readonly scope: StateScope;
     readonly role: 'snapshot' | 'acceptedSnapshot';
 }
 
@@ -139,18 +148,23 @@ interface CurrentTopologyRoleHydration {
 }
 
 function hydrateCurrentTopologyRoles(
-    view: ValidatedGroupTopologyView,
+    view: DecodedGroupTopologyView,
     sessionId: string,
     observations: CurrentTopologyRoleObservations
 ): CurrentTopologyRoleHydration {
+    const current = readCurrentTopologyRoleObservations(view.overlayId);
     const plannedOutcome = view.snapshot === null
         ? undefined
+        : current.planned !== observations.planned
+        ? 'incomparable-conflict'
         : overlaysRepository.setCurrentPlannedServerOverlayById(
             view.overlayId,
             toOverlayInfoForSession(view.snapshot, sessionId)
         );
     const acceptedOutcome = view.acceptedSnapshot === null
         ? undefined
+        : current.accepted !== observations.accepted
+        ? 'incomparable-conflict'
         : overlaysRepository.setCurrentAcceptedServerOverlayById(
             view.overlayId,
             toOverlayInfoForSession(view.acceptedSnapshot, sessionId)
@@ -169,8 +183,8 @@ function hydrateCurrentTopologyRoles(
         : false;
 
     return {
-        changed: didCurrentTopologyHydrationChange(plannedOutcome) ||
-            didCurrentTopologyHydrationChange(acceptedOutcome) ||
+        changed: (plannedOutcome !== undefined && overlaysRepository.didOverlayAdoptionChange(plannedOutcome)) ||
+            (acceptedOutcome !== undefined && overlaysRepository.didOverlayAdoptionChange(acceptedOutcome)) ||
             removedPlanned ||
             removedAccepted,
         conflicted: plannedOutcome === 'incomparable-conflict' ||
@@ -183,16 +197,16 @@ function readCurrentTopologyRoleObservations(
 ): CurrentTopologyRoleObservations {
     return {
         overlayId,
-        planned: overlaysRepository.findPlannedOverlayById(overlayId),
-        accepted: overlaysRepository.findAcceptedOverlayById(overlayId)
+        planned: overlaysRepository.readablePlannedOverlayCache().read(overlayId),
+        accepted: overlaysRepository.readableAcceptedOverlayCache().read(overlayId)
     };
 }
 
-function validateGroupTopologyManagementView(
+function decodeGroupTopologyManagementView(
     value: GroupTopologyManagementView,
     requestedGroupId: string,
     scope: StateScope
-): ValidatedGroupTopologyView {
+): DecodedGroupTopologyView {
     if (typeof value !== 'object' || value === null || Array.isArray(value)) {
         throw new TypeError('Group topology view must be an object');
     }
@@ -218,32 +232,29 @@ function validateGroupTopologyManagementView(
     }
 
     return {
-        groupRef,
         overlayId,
-        snapshot: validateTopologyRoleSnapshot({
+        snapshot: decodeTopologyRoleSnapshot({
             value: value.snapshot,
             groupRef,
             overlayId,
-            scope,
             role: 'snapshot'
         }),
-        acceptedSnapshot: validateTopologyRoleSnapshot({
+        acceptedSnapshot: decodeTopologyRoleSnapshot({
             value: value.acceptedSnapshot,
             groupRef,
             overlayId,
-            scope,
             role: 'acceptedSnapshot'
         })
     };
 }
 
-function validateTopologyRoleSnapshot(
-    input: ValidateTopologyRoleSnapshotInput
+function decodeTopologyRoleSnapshot(
+    input: DecodeTopologyRoleSnapshotInput
 ): RallarOverlayTopologySnapshot | null {
     if (input.value === null) {
         return null;
     }
-    validateAuthoritativeOverlayTopologySnapshot(input.value, input.scope);
+    validateAuthoritativeOverlayTopologySnapshot(input.value, input.groupRef);
     if (
         input.value.overlayId !== input.overlayId ||
         !isSameGroupRef(input.value.groupRef, input.groupRef)
@@ -253,10 +264,4 @@ function validateTopologyRoleSnapshot(
         );
     }
     return input.value;
-}
-
-function didCurrentTopologyHydrationChange(
-    outcome: OverlayAdoptionOutcome | undefined
-): boolean {
-    return outcome !== undefined && overlaysRepository.didOverlayAdoptionChange(outcome);
 }

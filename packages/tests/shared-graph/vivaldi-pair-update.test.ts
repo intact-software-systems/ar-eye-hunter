@@ -1,7 +1,12 @@
 import { clearAllNodes, getNodeById } from '@shared-graph/repository/vivaldi-repository.ts';
 import { observeRtt } from '@shared-graph/vivaldi-service.ts';
-import { beforeEach, describe, expect, it } from 'vitest';
-import { configureTestCacheRepositories } from '../cache-repository-config.ts';
+import {
+    beforeEach,
+    describe,
+    expect,
+    it
+} from 'vitest';
+import { configureTestCacheRepositories } from '../configure-test-cache-repositories.ts';
 
 const TARGET_RTT_MS = 50;
 

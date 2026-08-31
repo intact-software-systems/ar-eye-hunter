@@ -1,22 +1,31 @@
-import { newALBroadcastMessage, newALEventRoute, newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
+import type { BrowserStateCacheLifecycle } from '@shared-web/browser/state-cache/browser-state-cache-lifecycle.ts';
+import {
+    newALBroadcastMessage,
+    newALEventRoute,
+    newALUnicastMessage
+} from '@shared/al-contracts/al-contract.ts';
 import { AppTopics } from '@shared/api/api-config.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import type { AuditStamp, ClientSnapshot } from '@shared/api/client-types.ts';
 import type { GroupStateDeltaEnvelope } from '@shared/api/group-state-delta.ts';
-import type { GroupEvent, GroupSnapshot, GroupStateCausalRevision } from '@shared/api/group-types.ts';
+import type {
+    GroupEvent,
+    GroupSnapshot,
+    GroupStateCausalRevision
+} from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import { vi } from 'vitest';
 import { createTestGroup } from '../../create-test-group.ts';
 
 export function createWebRtcGroupManager() {
     return {
-        notifyClientPresenceChanged: vi.fn(async () => undefined),
-        notifyOverlayTopologyChanged: vi.fn(async () => undefined),
-        acceptGroupUpdate: vi.fn(async () => undefined),
-        ensureAllGroupsConnected: vi.fn(async () => undefined),
-        delete: vi.fn(async () => undefined),
-        has: vi.fn(() => false)
-    };
+        notifyClientPresenceChanged: vi.fn<BrowserStateCacheLifecycle.RtcGroupPort['notifyClientPresenceChanged']>(async () => undefined),
+        notifyOverlayTopologyChanged: vi.fn<BrowserStateCacheLifecycle.RtcGroupPort['notifyOverlayTopologyChanged']>(async () => undefined),
+        acceptGroupUpdate: vi.fn<BrowserStateCacheLifecycle.RtcGroupPort['acceptGroupUpdate']>(async () => undefined),
+        ensureAllGroupsConnected: vi.fn<BrowserStateCacheLifecycle.RtcGroupPort['ensureAllGroupsConnected']>(async () => undefined),
+        delete: vi.fn<BrowserStateCacheLifecycle.RtcGroupPort['delete']>(async () => true),
+        has: vi.fn<BrowserStateCacheLifecycle.RtcGroupPort['has']>(() => false)
+    } satisfies BrowserStateCacheLifecycle.RtcGroupPort;
 }
 
 export interface CreateClientSnapshotInput {
@@ -142,24 +151,28 @@ export function createGroupSnapshot(
             invitedByPrincipalId: null,
             invitationExpiresAtEpochMs: null
         })),
-        activeSessions: sessionIds.map((sessionId) => ({
-            applicationId,
-            workspaceId,
-            groupId,
-            sessionId,
-            principalId: sessionId,
-            generationId: `generation-${snapshotVersion}`,
-            generationVersion: snapshotVersion,
-            status: 'active',
-            connectedAtEpochMs: 1,
-            lastHeartbeatAtEpochMs: snapshotVersion,
-            expiresAtEpochMs: 60_000,
-            disconnectedAtEpochMs: null,
-            disconnectReason: null
-        })),
+        activeSessions: toGroupFixtureActiveSessions(input),
         memberCount: sessionIds.length,
         onlineMemberCount: sessionIds.length
     };
+}
+
+function toGroupFixtureActiveSessions(input: CreateGroupSnapshotInput): GroupSnapshot['activeSessions'] {
+    return input.sessionIds.map((sessionId) => ({
+        applicationId: input.applicationId,
+        workspaceId: input.workspaceId,
+        groupId: input.groupId,
+        sessionId,
+        principalId: sessionId,
+        generationId: `generation-${input.snapshotVersion}`,
+        generationVersion: input.snapshotVersion,
+        status: 'active',
+        connectedAtEpochMs: 1,
+        lastHeartbeatAtEpochMs: input.snapshotVersion,
+        expiresAtEpochMs: 60_000,
+        disconnectedAtEpochMs: null,
+        disconnectReason: null
+    }));
 }
 
 export function createTopologySnapshot(
@@ -220,28 +233,11 @@ export function newCurrentStateTopologyMessage(
         group.group.groupId,
         resourceId
     );
-    return deliveryKind === 'rtc-topology-current-repair'
-        ? newALBroadcastMessage(
-            senderId,
-            route,
-            'room',
-            AppTopics.overlayTopology,
-            topology,
-            { groupRef: group.group }
-        )
-        : (() => {
-            const message = newALUnicastMessage(
-                senderId,
-                route,
-                'session-a',
-                AppTopics.overlayTopology,
-                topology
-            );
-            return {
-                ...message,
-                id: { ...message.id, sessionId: 'session-a' }
-            };
-        })();
+    if (deliveryKind === 'rtc-topology-current-repair') {
+        return newALBroadcastMessage(senderId, route, 'room', AppTopics.overlayTopology, topology, { groupRef: group.group });
+    }
+    const message = newALUnicastMessage(senderId, route, 'session-a', AppTopics.overlayTopology, topology);
+    return { ...message, id: { ...message.id, sessionId: 'session-a' } };
 }
 
 export function toCurrentTopologyMessageId(

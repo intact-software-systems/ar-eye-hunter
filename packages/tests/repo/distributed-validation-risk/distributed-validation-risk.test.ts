@@ -1,4 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
 
 import {
     classifyDistributedValidationRisk,
@@ -77,7 +81,7 @@ describe('distributed validation risk classification', () => {
         },
         {
             family: 'distributed-protocol-controller-headless',
-            path: 'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/runtime.ts'
+            path: 'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-runtime.ts'
         },
         {
             family: 'distributed-protocol-controller-headless',

@@ -1,11 +1,10 @@
 import { dirname } from 'node:path';
 
-import type { ClientInfo, OverlayInfo } from '@shared/api/api-config.ts';
-import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
+import type { ClientInfo } from '@shared/api/api-config.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { LatestRepository } from '@shared/cache/LatestRepository.ts';
-import { Either } from '@shared/resilience/Either.ts';
-import { WebRtcGroupManager } from '@shared/services/WebRtcGroupManager.ts';
+import { WebRtcGroupManager } from '@shared/services/web-rtc-group-manager.ts';
+import { WebRtcConnectionService } from '@shared/services/WebRtcConnectionService.ts';
 
 import {
     parseRtcBaselineAcceptedWorker,
@@ -82,11 +81,10 @@ export async function runWebRtcGroupManagerPeerOwners(
 ): Promise<WebRtcGroupManagerPeerOwnersResult> {
     const groupCache = new LatestRepository<string, GroupSnapshot>();
     const clientCache = new LatestRepository<string, ClientInfo>();
-    const acceptedOverlayCache = new LatestRepository<string, OverlayInfo>();
-    const rtcQBox = createRtcQBoxHarness('self');
+    const connectionService = createSimulatedConnectionService('self');
     const manager = new WebRtcGroupManager(
-        rtcQBox.service as never,
-        { groupCache, clientCache, acceptedOverlayCache }
+        connectionService,
+        { groupCache, clientCache }
     );
 
     for (let groupIndex = 0; groupIndex < input.groups; groupIndex += 1) {
@@ -95,10 +93,6 @@ export async function runWebRtcGroupManagerPeerOwners(
             return peerId;
         });
         const group = createGroupSnapshot(`group-${groupIndex}`, 1, ['self', ...peerIds]);
-        acceptedOverlayCache.set(
-            toScopedOverlayId(group.group),
-            createAcceptedOverlay(group, peerIds)
-        );
 
         await manager.getOrCreate(group.group).acceptGroupUpdate(group);
     }
@@ -114,7 +108,7 @@ export async function runWebRtcGroupManagerPeerOwners(
     for (const peerId of lookupPeerIds) {
         const ownerGroups = manager.ownerGroupsOfPeer(peerId);
         totalOwnerGroups += ownerGroups.length;
-        if (manager.isPeerDialAllowedByAnyGroup(peerId)) {
+        if (manager.isPeerOwnedByAnyGroup(peerId)) {
             ownedLookups += 1;
         }
     }
@@ -130,31 +124,14 @@ export async function runWebRtcGroupManagerPeerOwners(
     };
 }
 
-function createAcceptedOverlay(
-    group: GroupSnapshot,
-    nextHopSessionIds: readonly string[]
-): OverlayInfo {
-    return {
-        sourceGroupStateCausalRevision: group.causalRevision,
-        provenance: 'server',
-        state: 'active',
-        overlayId: toScopedOverlayId(group.group),
-        groupRef: group.group,
-        topology: 'tree',
-        name: group.group.displayName,
-        createdByClientId: 'server',
-        createdAtEpochMs: 1,
-        nextHopSessionIds,
-        degreeLimit: Math.max(1, nextHopSessionIds.length),
-        overlayVersion: 1,
-        updatedAtEpochMs: 1
-    };
-}
-
-export function runWebRtcGroupManagerPeerOwnersAcceptedSamples(input: {
+export interface WebRtcGroupManagerPeerOwnersAcceptedSamplesInput {
     readonly worker: RtcBaselineAcceptedWorker<WebRtcGroupManagerPeerOwnersInput>;
     readonly run: () => WebRtcGroupManagerPeerOwnersResult | Promise<WebRtcGroupManagerPeerOwnersResult>;
-}): Promise<RtcBaselineSampleDto[]> {
+}
+
+export function runWebRtcGroupManagerPeerOwnersAcceptedSamples(
+    input: WebRtcGroupManagerPeerOwnersAcceptedSamplesInput
+): Promise<RtcBaselineSampleDto[]> {
     return runRtcBaselineAcceptedWorker({
         worker: input.worker,
         run: input.run,
@@ -164,28 +141,31 @@ export function runWebRtcGroupManagerPeerOwnersAcceptedSamples(input: {
     });
 }
 
-function createRtcQBoxHarness(sessionId: string) {
-    const knownPeerIds = new Set<string>();
+function createSimulatedConnectionService(sessionId: string): WebRtcConnectionService {
     const connectedPeerIds = new Set<string>();
-
-    const service = {
-        input: {
-            sessionId
+    const service = new WebRtcConnectionService({ send: async () => undefined, connect: async () => undefined }, {
+        sessionId,
+        token: 'benchmark-token',
+        iceCandidates: { iceServers: [], expiresAtEpochMs: 60_000 },
+        dataChannelName: 'benchmark',
+        rtcSignalingTopicId: 'rtc'
+    });
+    service.onRtcPeerLifecycleDo('simulated-native-transport', {
+        onCreated: (peer) => {
+            peer.connection.connect = () => {
+                connectedPeerIds.add(peer.peerId);
+            };
+            for (const channel of peer.channels.values()) {
+                channel.connect = () => undefined;
+            }
         },
-        knownPeerIds: () => Array.from(knownPeerIds),
-        peerIdsWithNoReconnectableLanes: () => Array.from(connectedPeerIds),
-        ensurePeerConnectionStarted: (peerId: string) => {
-            knownPeerIds.add(peerId);
-            connectedPeerIds.add(peerId);
-            return Either.ofRight({ peerId } as never);
-        },
-        disconnectPeer: (peerId: string) => {
-            knownPeerIds.delete(peerId);
-            return connectedPeerIds.delete(peerId);
+        onDeleted: (peer) => {
+            connectedPeerIds.delete(peer.peerId);
         }
-    };
-
-    return { service };
+    });
+    // Preserve the simulated native readiness query's workload without creating browser sockets.
+    service.peerIdsWithNoReconnectableLanes = () => Array.from(connectedPeerIds);
+    return service;
 }
 
 function createGroupSnapshot(
@@ -322,12 +302,12 @@ function parseDiagnosticArguments(
     return {
         mode: 'diagnostic',
         input: {
-            groups: Number(readDiagnosticArgument(arguments_, '--groups', '1000')),
-            peersPerGroup: Number(readDiagnosticArgument(arguments_, '--peers-per-group', '10')),
-            lookups: Number(readDiagnosticArgument(arguments_, '--lookups', '1000'))
+            groups: Number(toDiagnosticArgument(arguments_, '--groups', '1000')),
+            peersPerGroup: Number(toDiagnosticArgument(arguments_, '--peers-per-group', '10')),
+            lookups: Number(toDiagnosticArgument(arguments_, '--lookups', '1000'))
         },
-        runs: Number(readDiagnosticArgument(arguments_, '--runs', '5')),
-        out: readDiagnosticArgument(
+        runs: Number(toDiagnosticArgument(arguments_, '--runs', '5')),
+        out: toDiagnosticArgument(
             arguments_,
             '--out',
             'tmp/perf/results/webrtc-group-manager-peer-owners.json'
@@ -411,7 +391,7 @@ function collectParsingIssues(
     return results.flatMap((result) => (result.ok ? [] : result.issues));
 }
 
-function readDiagnosticArgument(
+function toDiagnosticArgument(
     arguments_: readonly string[],
     name: string,
     fallback: string

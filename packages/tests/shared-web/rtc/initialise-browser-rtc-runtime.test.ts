@@ -1,5 +1,8 @@
 import '../../setup-browser-indexeddb.ts';
 
+import { decodePersistedALMessageValue } from '@shared/al-contracts/al-message-persistence-validation.ts';
+import { WebRtcConnectionService } from '@shared/services/WebRtcConnectionService.ts';
+
 import { configureBrowserALRuntimeStores } from '@shared-web/browser/al-runtime/browser-al-runtime-stores.ts';
 import { toResilienceDto } from '@shared-web/browser/resilience-config.ts';
 import { initialiseRtcOverlayMulticastManager } from '@shared-web/browser/rtc/initialise-browser-rtc-runtime.ts';
@@ -12,16 +15,19 @@ import { setAcceptedOverlayById, setPlannedOverlayById } from '@shared/repositor
 import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
 // dprint-ignore
 import {
+    afterEach,
     beforeEach,
     describe,
     expect,
-    it
+    it,
+    vi
 } from 'vitest';
 
-import { configureTestCacheRepositories } from '../../cache-repository-config.ts';
+import { configureTestCacheRepositories } from '../../configure-test-cache-repositories.ts';
 import { createGroupSnapshotFixture } from '../authoritative-group-fixtures.ts';
 
 describe('browser RTC runtime composition', () => {
+    afterEach(() => vi.restoreAllMocks());
     beforeEach(() => {
         configureTestCacheRepositories();
         configureBrowserALRuntimeStores('self');
@@ -44,17 +50,14 @@ describe('browser RTC runtime composition', () => {
             overlayId,
             overlay(group, 1, ['accepted-peer'])
         );
-        const acceptedChannel = openRtcChannel();
-        const plannedChannel = openRtcChannel();
-        const connectionService = {
-            input: { sessionId: 'self' },
-            readyPeerIdsForLane: () => ['accepted-peer', 'planned-peer'],
-            readPeer: (peerId: string) => ({
-                channel: peerId === 'accepted-peer' ? acceptedChannel : plannedChannel
-            })
-        };
+        const sentByPeerId = new Map<string, ALMessage[]>();
+        const connectionService = createRtcConnectionService(sentByPeerId);
+        for (const peerId of ['accepted-peer', 'planned-peer']) {
+            const connected = connectionService.ensurePeerConnectionStarted(peerId);
+            expect(connected.right?.peerId).toBe(peerId);
+        }
         const manager = initialiseRtcOverlayMulticastManager({
-            webRtcConnectionService: connectionService as never,
+            webRtcConnectionService: connectionService,
             qboxEngine: new InboxOutboxEngine(),
             resilience: toResilienceDto()
         });
@@ -79,29 +82,37 @@ describe('browser RTC runtime composition', () => {
         );
 
         expect(result).toMatchObject({ status: 'sent-immediate', entries: [] });
-        expect(acceptedChannel.sentMessages).toHaveLength(1);
-        expect(plannedChannel.sentMessages).toEqual([]);
-        const sent = acceptedChannel.sentMessages[0];
+        expect(sentByPeerId.get('accepted-peer')).toHaveLength(1);
+        expect(sentByPeerId.get('planned-peer')).toEqual([]);
+        const sent = sentByPeerId.get('accepted-peer')?.[0];
         expect(sent?.forwarding?.overlayId).toBe(overlayId);
         expect(sent?.forwarding?.nextHopPeerIds).toEqual(['accepted-peer']);
     });
 });
 
-interface TestRtcChannel {
-    readonly sentMessages: ALMessage[];
-    readonly send: (message: ALMessage) => Promise<void>;
-    readonly readHealth: () => { readonly readyState: 'open'; };
-}
-
-function openRtcChannel(): TestRtcChannel {
-    const sentMessages: ALMessage[] = [];
-    return {
-        sentMessages,
-        send: async (message) => {
-            sentMessages.push(message);
+function createRtcConnectionService(sentByPeerId: Map<string, ALMessage[]>): WebRtcConnectionService {
+    const service = new WebRtcConnectionService({ send: async () => undefined, connect: async () => undefined }, {
+        sessionId: 'self',
+        token: 'fixture-token',
+        iceCandidates: { iceServers: [], expiresAtEpochMs: 60_000 },
+        dataChannelName: 'test',
+        rtcSignalingTopicId: 'rtc'
+    });
+    service.onRtcPeerLifecycleDo('fixture-transport', {
+        onCreated: (peer) => {
+            const sent: ALMessage[] = [];
+            sentByPeerId.set(peer.peerId, sent);
+            vi.spyOn(peer.connection, 'connect').mockImplementation(() => undefined);
+            vi.spyOn(peer.channel, 'connect').mockImplementation(() => undefined);
+            vi.spyOn(peer.channel, 'isOpen').mockReturnValue(true);
+            vi.spyOn(peer.channel, 'readHealth').mockReturnValue({ ...peer.channel.readHealth(), readyState: 'open' });
+            vi.spyOn(peer.channel, 'send').mockImplementation(async (message) => {
+                sent.push(decodePersistedALMessageValue(message));
+            });
         },
-        readHealth: () => ({ readyState: 'open' })
-    };
+        onDeleted: () => undefined
+    });
+    return service;
 }
 
 function overlay(

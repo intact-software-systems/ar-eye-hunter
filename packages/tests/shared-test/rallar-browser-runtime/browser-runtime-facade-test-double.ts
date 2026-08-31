@@ -6,11 +6,14 @@ import type {
     BlackBoxBrowserRallarRuntimeDependency,
     BlackBoxBrowserRealtimeDependency,
     BlackBoxBrowserRoomsDependency,
-    BlackBoxBrowserRoomSessionDependency,
     BlackBoxBrowserRtcDependency,
     BlackBoxBrowserWsDependency
 } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/browser-rallar-runtime-composition.ts';
-import type { RallarMessageHandler, RallarMessagePayload, RallarMessageSendResult } from '@shared-web/browser/messages/rallar-message-contracts.ts';
+import type {
+    RallarMessageHandler,
+    RallarMessagePayload,
+    RallarMessageSendResult
+} from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type { RallarScopedOperationOptions } from '@shared-web/browser/rallar-connection-facade.ts';
 import type { RallarCrdtDocument, RallarCrdtOpenOptions } from '@shared-web/browser/rallar-crdt.ts';
 import type { RallarRealtimeHandler } from '@shared-web/browser/rallar-realtime-facade.ts';
@@ -28,12 +31,12 @@ export interface BrowserRuntimeFacadeRecords {
     restoreCount: number;
     readonly connectionAttempts: Array<Parameters<BlackBoxBrowserRallarRuntimeDependency['connect']>>;
     disconnectCount: number;
+    wsLifecycleUnsubscribeCount: number;
+    rtcLifecycleUnsubscribeCount: number;
     readonly roomStateRefreshes: Array<[GroupRef, RallarScopedOperationOptions]>;
     readonly roomJoins: Array<Parameters<BlackBoxBrowserRoomsDependency['join']>>;
     readonly roomLeaves: Array<Parameters<BlackBoxBrowserRoomsDependency['leave']>>;
     readonly roomRefreshes: Array<Parameters<BlackBoxBrowserRoomsDependency['refresh']>>;
-    readonly roomSessions: Array<Parameters<BlackBoxBrowserRoomsDependency['session']>>;
-    readonly currentRoomRefreshes: Array<Parameters<BlackBoxBrowserRoomSessionDependency['refresh']>>;
     readonly realtimeSubscriptions: Array<[
         Parameters<BlackBoxBrowserRealtimeDependency['onJson']>[0],
         RallarRealtimeHandler<never>
@@ -66,12 +69,12 @@ const records: BrowserRuntimeFacadeRecords = {
     restoreCount: 0,
     connectionAttempts: [],
     disconnectCount: 0,
+    wsLifecycleUnsubscribeCount: 0,
+    rtcLifecycleUnsubscribeCount: 0,
     roomStateRefreshes: [],
     roomJoins: [],
     roomLeaves: [],
     roomRefreshes: [],
-    roomSessions: [],
-    currentRoomRefreshes: [],
     realtimeSubscriptions: [],
     realtimeUnsubscribeCount: 0,
     realtimeSends: [],
@@ -107,7 +110,6 @@ export const facadeBehavior = {
     roomJoin: vi.fn<BlackBoxBrowserRoomsDependency['join']>(),
     roomLeave: vi.fn<BlackBoxBrowserRoomsDependency['leave']>(),
     roomRefresh: vi.fn<BlackBoxBrowserRoomsDependency['refresh']>(),
-    currentRoomRefresh: vi.fn<BlackBoxBrowserRoomSessionDependency['refresh']>(),
     realtimeHealth: vi.fn<BlackBoxBrowserRealtimeDependency['health']>(),
     realtimeSend: vi.fn<BlackBoxBrowserRealtimeDependency['sendJson']>(),
     realtimeOnJson: vi.fn<
@@ -117,6 +119,8 @@ export const facadeBehavior = {
         ) => () => void
     >(),
     rtcStatus: vi.fn<BlackBoxBrowserRtcDependency['status']>(),
+    rtcOnLifecycle: vi.fn<BlackBoxBrowserRtcDependency['onLifecycle']>(),
+    wsOnLifecycle: vi.fn<BlackBoxBrowserWsDependency['onLifecycle']>(),
     rtcDiagnostics: vi.fn<BlackBoxBrowserRtcDependency['diagnostics']>(),
     rtcMessageSend: vi.fn<BlackBoxBrowserMessagesDependency['rtc']['send']>(),
     rtcMessageOnMessage: vi.fn<
@@ -174,13 +178,6 @@ const auth: BlackBoxBrowserAuthDependency = {
     }
 };
 
-const currentRoom: BlackBoxBrowserRoomSessionDependency = {
-    refresh: async (options) => {
-        records.currentRoomRefreshes.push([options]);
-        return await facadeBehavior.currentRoomRefresh(options);
-    }
-};
-
 const rooms: BlackBoxBrowserRoomsDependency = {
     join: async (room, options) => {
         records.roomJoins.push([room, options]);
@@ -193,10 +190,6 @@ const rooms: BlackBoxBrowserRoomsDependency = {
     refresh: async (input) => {
         records.roomRefreshes.push([input]);
         return await facadeBehavior.roomRefresh(input);
-    },
-    session: (room) => {
-        records.roomSessions.push([room]);
-        return currentRoom;
     }
 };
 
@@ -251,6 +244,7 @@ const messages: BlackBoxBrowserMessagesDependency = {
 };
 
 const rtc: BlackBoxBrowserRtcDependency = {
+    onLifecycle: (listener, options) => facadeBehavior.rtcOnLifecycle(listener, options),
     status: (options) => facadeBehavior.rtcStatus(options),
     diagnostics: async (options) => {
         records.rtcDiagnosticsReads.push([options]);
@@ -259,6 +253,7 @@ const rtc: BlackBoxBrowserRtcDependency = {
 };
 
 const ws: BlackBoxBrowserWsDependency = {
+    onLifecycle: (listener, options) => facadeBehavior.wsOnLifecycle(listener, options),
     status: () => ({
         connectState: 'idle',
         readyState: 'closed',
@@ -286,6 +281,7 @@ const director: BlackBoxBrowserDirectorDependency = {
 };
 
 export const rallarFacadeTestDouble: BlackBoxBrowserRallarRuntimeDependency = {
+    readRtcMessageNacks: async () => [],
     configure: (config) => {
         records.configurationWrites.push(config);
         facadeBehavior.configure(config);
@@ -326,14 +322,29 @@ export function resetBrowserRuntimeFacadeTestDouble(): void {
     facadeBehavior.registerAndLogin.mockResolvedValue(facadeSession);
     facadeBehavior.logout.mockResolvedValue(undefined);
     facadeBehavior.restore.mockReturnValue(undefined);
-    facadeBehavior.connect.mockResolvedValue({});
+    facadeBehavior.connect.mockResolvedValue(undefined);
     facadeBehavior.disconnect.mockResolvedValue(undefined);
     facadeBehavior.roomStateRefresh.mockResolvedValue(undefined);
-    facadeBehavior.roomJoin.mockResolvedValue({});
-    facadeBehavior.roomLeave.mockResolvedValue({});
-    facadeBehavior.roomRefresh.mockResolvedValue({});
-    facadeBehavior.currentRoomRefresh.mockResolvedValue({});
+    facadeBehavior.roomJoin.mockResolvedValue(undefined);
+    facadeBehavior.roomLeave.mockResolvedValue(undefined);
+    facadeBehavior.roomRefresh.mockResolvedValue(undefined);
     facadeBehavior.realtimeHealth.mockReturnValue([]);
+    facadeBehavior.rtcOnLifecycle.mockImplementation((listener, options) => {
+        if (options?.emitCurrent) {
+            void listener({ kind: 'snapshot', atEpochMs: 123, status: rtc.status() });
+        }
+        return () => {
+            records.rtcLifecycleUnsubscribeCount += 1;
+        };
+    });
+    facadeBehavior.wsOnLifecycle.mockImplementation((listener, options) => {
+        if (options?.emitCurrent) {
+            void listener({ kind: 'snapshot', atEpochMs: 123, status: ws.status() });
+        }
+        return () => {
+            records.wsLifecycleUnsubscribeCount += 1;
+        };
+    });
     facadeBehavior.realtimeSend.mockResolvedValue([]);
     facadeBehavior.realtimeOnJson.mockReturnValue(() => undefined);
     facadeBehavior.rtcMessageSend.mockResolvedValue(defaultRtcMessageSendResult);
@@ -355,8 +366,6 @@ function clearRecords(): void {
             records.roomJoins,
             records.roomLeaves,
             records.roomRefreshes,
-            records.roomSessions,
-            records.currentRoomRefreshes,
             records.realtimeSubscriptions,
             records.realtimeSends,
             records.rtcMessageSubscriptions,
@@ -372,6 +381,8 @@ function clearRecords(): void {
     }
     records.restoreCount = 0;
     records.disconnectCount = 0;
+    records.wsLifecycleUnsubscribeCount = 0;
+    records.rtcLifecycleUnsubscribeCount = 0;
     records.realtimeUnsubscribeCount = 0;
     records.rtcMessageUnsubscribeCount = 0;
     records.wsMessageUnsubscribeCount = 0;

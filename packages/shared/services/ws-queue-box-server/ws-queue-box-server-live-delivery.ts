@@ -1,4 +1,6 @@
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
+import type { GroupSnapshot } from '../../api/group-types.ts';
+import { toError } from '../../resilience/to-error.ts';
 import type { EncodedJsonWebSocketMessage, JsonWebSocketServer } from '../../websocket/JsonWebSocketServer.ts';
 import type {
     WsServerLiveSendFailure,
@@ -16,10 +18,9 @@ export namespace WsQueueBoxServerLiveDelivery {
         readonly deliveryReporting: WsQueueBoxServerDeliveryReporting;
     }
 
-    export interface EncodedAttempt {
-        readonly encoded: EncodedJsonWebSocketMessage | null;
-        readonly failureReason: string | null;
-    }
+    export type EncodedAttempt =
+        | { readonly encoded: EncodedJsonWebSocketMessage; readonly failureReason: null; }
+        | { readonly encoded: null; readonly failureReason: string; };
 
     export interface SendAttempt {
         readonly sentCount: number;
@@ -42,8 +43,8 @@ export class WsQueueBoxServerLiveDelivery {
         return this.sendToTargetsWithResult(message).sentCount;
     }
 
-    sendToTargetsWithResult(message: ALMessage): WsServerLiveSendResult {
-        const recipients = this.#targetResolution.resolveOutboundRecipients(message);
+    sendToTargetsWithResult(message: ALMessage, authorizedRoomSnapshot?: GroupSnapshot): WsServerLiveSendResult {
+        const recipients = this.#targetResolution.resolveOutboundRecipients(message, authorizedRoomSnapshot);
         if (recipients.length === 0) {
             this.#deliveryReporting.recordDiagnostics({
                 kind: 'no-local-recipient',
@@ -54,7 +55,7 @@ export class WsQueueBoxServerLiveDelivery {
 
         const encodedAttempt = this.toEncodedAttempt(message);
         if (!encodedAttempt.encoded) {
-            return encodingFailureResult(message, recipients, encodedAttempt.failureReason!);
+            return encodingFailureResult(message, recipients, encodedAttempt.failureReason);
         }
 
         const sendAttempt = this.sendEncodedToRecipients(encodedAttempt.encoded, recipients);
@@ -91,7 +92,7 @@ export class WsQueueBoxServerLiveDelivery {
             return { encoded: this.#socket.encode(message), failureReason: null };
         }
         catch (error) {
-            const runtimeError = error instanceof Error ? error : new Error(String(error));
+            const runtimeError = toError(error);
             console.error(`Error encoding WS server message ${message.id.msgId}`, runtimeError);
             return { encoded: null, failureReason: runtimeError.message };
         }
@@ -109,7 +110,7 @@ export class WsQueueBoxServerLiveDelivery {
                 sentCount += 1;
             }
             catch (error) {
-                const runtimeError = error instanceof Error ? error : new Error(String(error));
+                const runtimeError = toError(error);
                 failures.push({
                     peerId: recipient.peerId,
                     connectionId: recipient.connectionId,
@@ -163,7 +164,7 @@ function toLiveSendResult(
     attempt: WsQueueBoxServerLiveDelivery.SendAttempt
 ): WsServerLiveSendResult {
     return {
-        status: toLiveSendStatus(recipients.length, attempt.sentCount, attempt.failures.length),
+        status: toLiveSendStatus(attempt.sentCount, attempt.failures.length),
         message,
         recipients,
         recipientCount: recipients.length,
@@ -174,13 +175,9 @@ function toLiveSendResult(
 }
 
 function toLiveSendStatus(
-    recipientCount: number,
     sentCount: number,
     failedCount: number
 ): WsServerLiveSendStatus {
-    if (recipientCount === 0) {
-        return 'no-recipients';
-    }
     if (failedCount === 0) {
         return 'sent-live';
     }

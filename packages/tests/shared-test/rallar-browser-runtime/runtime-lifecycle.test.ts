@@ -1,6 +1,17 @@
 import type { RallarRealtimeSendResult } from '@shared-web/browser/rallar-realtime-facade.ts';
-import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { facade, loadRuntime, resetFacade, topics } from './browser-rallar-runtime-test-harness.ts';
+import {
+    afterEach,
+    beforeEach,
+    expect,
+    it,
+    vi
+} from 'vitest';
+import {
+    facade,
+    loadRuntime,
+    resetFacade,
+    topics
+} from './browser-rallar-runtime-test-harness.ts';
 import { createDeferred } from './browser-runtime-lifecycle-test-fixture.ts';
 import { CrdtDocumentTestDouble } from './crdt-document-test-double.ts';
 
@@ -30,6 +41,8 @@ it('leaves rooms, logs out, and emits cleanup diagnostics on close', async () =>
     const closeResult = await runtime.close();
 
     expect(facade.records.realtimeUnsubscribeCount).toBe(1);
+    expect(facade.records.wsLifecycleUnsubscribeCount).toBe(1);
+    expect(facade.records.rtcLifecycleUnsubscribeCount).toBe(1);
     expect(facade.records.roomLeaves).toContainEqual([{
         roomId: 'room-1',
         clearCurrent: true,
@@ -40,13 +53,15 @@ it('leaves rooms, logs out, and emits cleanup diagnostics on close', async () =>
     expect(closeResult).toMatchObject({
         status: 'closed',
         roomId: 'room-1',
-        unsubscribed: 1,
+        unsubscribed: 3,
         leftRoom: true,
         logout: true,
         disconnected: false,
         cleanupErrors: []
     });
     expect(topics()).toEqual(expect.arrayContaining([
+        'rallar.browser.ws.lifecycle',
+        'rallar.browser.rtc.lifecycle',
         'rallar.browser.cleanup.started',
         'rallar.browser.cleanup.unsubscribe_completed',
         'rallar.browser.cleanup.room_leave_completed',
@@ -56,7 +71,7 @@ it('leaves rooms, logs out, and emits cleanup diagnostics on close', async () =>
 });
 
 it('does not allow an in-flight connect to commit after close starts', async () => {
-    const connection = createDeferred<object>();
+    const connection = createDeferred<void>();
     facade.behavior.connect.mockReturnValueOnce(connection.promise);
     const runtime = await loadRuntime();
     const connecting = runtime.connect({
@@ -77,7 +92,7 @@ it('does not allow an in-flight connect to commit after close starts', async () 
     await Promise.resolve();
     expect(facade.records.disconnectCount).toBe(0);
 
-    connection.resolve({});
+    connection.resolve(undefined);
     await expect(connecting).rejects.toThrow(
         'Connection was cancelled because the Rallar runtime closed.'
     );
@@ -89,7 +104,7 @@ it('does not allow an in-flight connect to commit after close starts', async () 
 });
 
 it('serializes concurrent connects that share a target but use different transports', async () => {
-    const firstConnection = createDeferred<object>();
+    const firstConnection = createDeferred<void>();
     facade.behavior.connect.mockReturnValueOnce(firstConnection.promise);
     const runtime = await loadRuntime();
     const baseConfig = {
@@ -124,7 +139,7 @@ it('serializes concurrent connects that share a target but use different transpo
     });
     expect(facade.records.connectionAttempts).toHaveLength(1);
 
-    firstConnection.resolve({});
+    firstConnection.resolve(undefined);
     await expect(realtimeConnect).resolves.toMatchObject({
         transport: 'realtime'
     });
@@ -139,7 +154,7 @@ it('serializes concurrent connects that share a target but use different transpo
 });
 
 it('serializes fresh authentication behind an in-flight connection', async () => {
-    const firstConnection = createDeferred<object>();
+    const firstConnection = createDeferred<void>();
     facade.behavior.connect.mockReturnValueOnce(firstConnection.promise);
     const runtime = await loadRuntime();
     const connecting = runtime.connect({
@@ -172,7 +187,7 @@ it('serializes fresh authentication behind an in-flight connection', async () =>
         (input) => input.apiBaseUrl === 'https://other-api.example.test'
     )).toBe(false);
 
-    firstConnection.resolve({});
+    firstConnection.resolve(undefined);
     await connecting;
     await expect(authenticating).rejects.toThrow(
         'Fresh Rallar authentication requires closing the connected black-box runtime first.'
@@ -318,4 +333,29 @@ it('forgets its connection target after a close that failed', async () => {
             password: 'other-secret'
         }
     })).resolves.toBeDefined();
+});
+
+it('preserves normalized failures from independent cleanup operations while continuing disconnect', async () => {
+    const runtime = await loadRuntime();
+    await runtime.connect({
+        connection: 'cleanup',
+        actor: 'alice',
+        roomId: 'room-1',
+        rallar: {
+            apiBaseUrl: 'https://api.example.test',
+            username: 'alice',
+            password: 'secret'
+        }
+    });
+    facade.behavior.roomLeave.mockRejectedValue('room leave rejected');
+    const healthFailure = 42;
+    facade.behavior.rtcDiagnostics.mockRejectedValue(healthFailure);
+
+    const health = await runtime.health({ includeRtcDiagnostics: true });
+    const closed = await runtime.close();
+
+    expect(health.rtcDiagnosticsError).toMatchObject({ name: 'Error', message: '42' });
+    expect(closed.cleanupErrors).toEqual([expect.objectContaining({ name: 'Error', message: 'room leave rejected' })]);
+    expect(closed).toMatchObject({ disconnected: true, leftRoom: false, unsubscribed: 3 });
+    expect(facade.records.disconnectCount).toBe(1);
 });

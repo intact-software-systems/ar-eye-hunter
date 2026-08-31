@@ -190,6 +190,12 @@ function defaultRuntime() {
         async command(executable: string, arguments_: readonly string[]) {
             return new deno.Command(executable, { args: [...arguments_] }).output();
         },
+        writeStdout: async (bytes: Uint8Array) => {
+            await deno.stdout.write(bytes);
+        },
+        writeStderr: async (bytes: Uint8Array) => {
+            await deno.stderr.write(bytes);
+        },
         now: () => new Date(),
         performanceNow: () => performance.now(),
         systemMemoryInfo: () => deno.systemMemoryInfo(),
@@ -213,7 +219,8 @@ function createDefaultRtcBaselineCliComposition(): RtcBaselineCliComposition {
     const liveRtcObservation = createRtcB06ObservationDenoRuntime({
         runtime,
         adapters,
-        envelope
+        envelope,
+        producerOutput: runtime
     });
     return {
         envelope,

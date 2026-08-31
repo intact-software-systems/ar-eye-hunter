@@ -1,4 +1,5 @@
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
+import type { GroupSnapshot } from '../../api/group-types.ts';
 import type { JsonWebSocketServer } from '../../websocket/JsonWebSocketServer.ts';
 import type { WsServerResolvedRecipient, WsServerTargetResolver } from './ws-queue-box-server-contracts.ts';
 
@@ -23,7 +24,10 @@ export class WsQueueBoxServerTargetResolution {
             connectionId;
     }
 
-    resolveOutboundRecipients(message: ALMessage): readonly WsServerResolvedRecipient[] {
+    resolveOutboundRecipients(
+        message: ALMessage,
+        authorizedRoomSnapshot?: GroupSnapshot
+    ): readonly WsServerResolvedRecipient[] {
         const targets = message.targets;
         if (!targets) {
             return [];
@@ -36,13 +40,15 @@ export class WsQueueBoxServerTargetResolution {
                 return deduplicateRecipients(
                     this.#targetResolver.resolveGroupRecipients?.(
                         targets.groupRef.groupId,
-                        message
+                        message,
+                        authorizedRoomSnapshot
                     ) ?? []
                 );
             case 'broadcast': {
                 const recipients = this.#targetResolver.resolveBroadcastRecipients?.(
                     targets.scope,
-                    message
+                    message,
+                    authorizedRoomSnapshot
                 ) ?? this.toDefaultBroadcastRecipients(targets.exceptPeerIds);
                 return deduplicateRecipients(
                     recipients.filter(
@@ -111,10 +117,6 @@ export class WsQueueBoxServerTargetResolution {
     private toDefaultBroadcastRecipients(
         exceptPeerIds?: readonly string[]
     ): readonly WsServerResolvedRecipient[] {
-        if (!(this.#socket.connections instanceof Map)) {
-            return [];
-        }
-
         return [...this.#socket.connections.values()]
             .filter((connection) => connection.isOpen && !exceptPeerIds?.includes(connection.id))
             .map((connection) => ({

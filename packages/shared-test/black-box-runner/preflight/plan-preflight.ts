@@ -1,44 +1,54 @@
 import type { JsonSchemaValidationIssue } from '../../rallar-bb-test/schema.ts';
+import { directSafeOutputTransformSpec } from '../scenario-transform/safe-output-transform.ts';
 import { validateBlackBoxRunnerScenarioRecipe } from '../schema.ts';
-type JsonRecord = Record<string, unknown>;
+import {
+    toConnectionPreflight,
+    type ConnectionPreflightStep,
+    type ConnectionSelection
+} from './to-connection-preflight.ts';
+
+interface JsonRecord {
+    [key: string]: unknown;
+}
+
 export type BlackBoxRunnerPreflightProfile = 'compat' | 'strict';
 export type BlackBoxRunnerPreflightSeverity = 'error' | 'warning';
-export type BlackBoxRunnerEnvRequirement = Readonly<{
-    variableName: string;
-    envName: string;
-    required: boolean;
-    secret: boolean;
-    hasValue: boolean;
-    hasDefault: boolean;
-    hasFallback: boolean;
-    source: 'env' | 'default' | 'fallback' | 'missing' | 'unset';
-}>;
+export interface BlackBoxRunnerEnvRequirement {
+    readonly variableName: string;
+    readonly envName: string;
+    readonly required: boolean;
+    readonly secret: boolean;
+    readonly hasValue: boolean;
+    readonly hasDefault: boolean;
+    readonly hasFallback: boolean;
+    readonly source: 'env' | 'default' | 'fallback' | 'missing' | 'unset';
+}
 
-export type BlackBoxRunnerPreflightIssue = Readonly<{
-    severity: BlackBoxRunnerPreflightSeverity;
-    code: string;
-    message: string;
-    path?: string;
-}>;
+export interface BlackBoxRunnerPreflightIssue {
+    readonly severity: BlackBoxRunnerPreflightSeverity;
+    readonly code: string;
+    readonly message: string;
+    readonly path?: string;
+}
 
-export type BlackBoxRunnerPreflightOperation = Readonly<{
-    name: string;
-    transport: string;
-    action?: string;
-    connection?: string;
-    provider?: string;
-    path?: string;
-    group?: string;
-    groupCount?: number;
-    interactionExecutionNumber?: number;
-    repeatIndex?: number;
-}>;
+export interface BlackBoxRunnerPreflightOperation {
+    readonly name: string;
+    readonly transport: string;
+    readonly action?: string;
+    readonly connection?: string;
+    readonly provider?: string;
+    readonly path?: string;
+    readonly group?: string;
+    readonly groupCount?: number;
+    readonly interactionExecutionNumber?: number;
+    readonly repeatIndex?: number;
+}
 
-export type BlackBoxRunnerPlanPreflight = Readonly<{
-    schemaVersion: 1;
-    ok: boolean;
-    profile: BlackBoxRunnerPreflightProfile;
-    summary: Readonly<{
+export interface BlackBoxRunnerPlanPreflight {
+    readonly schemaVersion: 1;
+    readonly ok: boolean;
+    readonly profile: BlackBoxRunnerPreflightProfile;
+    readonly summary: Readonly<{
         generatedOperationCount: number;
         topLevelOperationCount: number;
         parallelGroupCount: number;
@@ -48,60 +58,78 @@ export type BlackBoxRunnerPlanPreflight = Readonly<{
         postRunAssertionCount: number;
         includeCount: number;
     }>;
-    includes: Readonly<{
+    readonly includes: Readonly<{
         resolved: readonly JsonRecord[];
     }>;
-    providerModes: readonly string[];
-    liveServiceRequirements: readonly string[];
-    env: Readonly<{
+    readonly providerModes: readonly string[];
+    readonly liveServiceRequirements: readonly string[];
+    readonly env: Readonly<{
         required: readonly BlackBoxRunnerEnvRequirement[];
         missing: readonly BlackBoxRunnerEnvRequirement[];
     }>;
-    connections: Readonly<{
+    readonly connections: Readonly<{
         defined: readonly string[];
         referenced: readonly string[];
         missing: readonly string[];
     }>;
-    stepReferences: Readonly<{
+    readonly stepReferences: Readonly<{
         defined: readonly string[];
         referenced: readonly Readonly<{ name: string; path: string; }>[];
         missing: readonly Readonly<{ name: string; path: string; }>[];
     }>;
-    outputs: Readonly<{
+    readonly outputs: Readonly<{
         produced: readonly string[];
         consumed: readonly string[];
         missingConsumed: readonly string[];
     }>;
-    redactions: Readonly<{
+    readonly redactions: Readonly<{
         sources: readonly Readonly<{ kind: 'variable' | 'output'; name: string; redactAs?: string; }>[];
     }>;
-    trafficPlan?: Readonly<{
+    readonly trafficPlan?: Readonly<{
         enabled: boolean;
         replay: boolean;
         seed?: number;
         decisionCount: number;
         stepCount: number;
     }>;
-    operations: readonly BlackBoxRunnerPreflightOperation[];
-    issues: readonly BlackBoxRunnerPreflightIssue[];
-}>;
+    readonly operations: readonly BlackBoxRunnerPreflightOperation[];
+    readonly issues: readonly BlackBoxRunnerPreflightIssue[];
+}
 
-export type BlackBoxRunnerPreflightInput = Readonly<{
-    rawConfig: JsonRecord;
-    expandedConfig?: JsonRecord;
-    executableInteractions?: readonly unknown[];
-    envRequirements?: readonly BlackBoxRunnerEnvRequirement[];
-    trafficPlanArtifact?: JsonRecord;
-    profile?: BlackBoxRunnerPreflightProfile;
-    expansionError?: unknown;
-}>;
+export interface BlackBoxRunnerPreflightInput {
+    readonly rawConfig: JsonRecord;
+    readonly expandedConfig?: JsonRecord;
+    readonly executableInteractions?: readonly unknown[];
+    readonly envRequirements?: readonly BlackBoxRunnerEnvRequirement[];
+    readonly trafficPlanArtifact?: JsonRecord;
+    readonly profile?: BlackBoxRunnerPreflightProfile;
+    readonly expansionError?: unknown;
+}
 
-type Redaction = {
+interface Redaction {
     name: string;
     value: string;
-};
+}
 
-const TRANSPORT_KEYS = ['HTTP', 'MQ', 'WS', 'RTC', 'WEBRTC', 'ASSERT', 'SET', 'PARALLEL'] as const;
+export interface BlackBoxRunnerPreflightVariables {
+    readonly variables: JsonRecord;
+    readonly redactions: Redaction[];
+}
+
+interface PreflightReferenceChecks {
+    readonly missingEnv: readonly BlackBoxRunnerEnvRequirement[];
+    readonly connections: BlackBoxRunnerPlanPreflight['connections'];
+    readonly steps: BlackBoxRunnerPlanPreflight['stepReferences'];
+    readonly outputs: BlackBoxRunnerPlanPreflight['outputs'];
+}
+
+interface PreflightSizeInput {
+    readonly config: BlackBoxRunnerPreflightInput;
+    readonly operations: readonly BlackBoxRunnerPreflightOperation[];
+    readonly includeCount: number;
+}
+
+const TRANSPORT_KEYS = ['HTTP', 'MQ', 'WS', 'RTC', 'WEBRTC', 'CRDT', 'ASSERT', 'SET', 'PARALLEL'] as const;
 const RESERVED_PLACEHOLDER_ROOTS = new Set([
     'loop',
     'traffic',
@@ -112,6 +140,52 @@ const RESERVED_PLACEHOLDER_ROOTS = new Set([
     'resultsByName',
     'process'
 ]);
+
+const TRANSFORM_KEYS = new Set([
+    'path',
+    'from',
+    'outputPath',
+    'template',
+    'concat',
+    'coalesce',
+    'jsonStringify',
+    'jsonParse',
+    'urlEncode',
+    'number',
+    'string',
+    'boolean',
+    'uuid',
+    'timestamp',
+    'op',
+    'operator',
+    'type',
+    'value',
+    'input',
+    'values',
+    'format',
+    'secret',
+    'redact',
+    'redactAs',
+    'transform'
+]);
+const TRANSFORM_OPERATOR_KEYS = [
+    'path',
+    'from',
+    'outputPath',
+    'template',
+    'concat',
+    'coalesce',
+    'jsonStringify',
+    'jsonParse',
+    'urlEncode',
+    'number',
+    'string',
+    'boolean',
+    'uuid',
+    'timestamp',
+    'op',
+    'operator'
+];
 
 export function collectBlackBoxRunnerEnvRequirements(
     config: JsonRecord,
@@ -159,7 +233,7 @@ export function resolveBlackBoxRunnerVariablesForPreflight(
     rawVariables: JsonRecord = {},
     environment: Record<string, string | undefined> = {},
     secretVariables: unknown = []
-): { variables: JsonRecord; redactions: Redaction[]; } {
+): BlackBoxRunnerPreflightVariables {
     const secrets = toSecretNameSet(secretVariables);
     const variables: JsonRecord = {};
     const redactions: Redaction[] = [];
@@ -206,83 +280,33 @@ export function explainBlackBoxRunnerPlan(input: BlackBoxRunnerPreflightInput): 
     const expandedConfig = input.expandedConfig ?? rawConfig;
     const executableInteractions = input.executableInteractions ?? [];
     const operations = flattenExecutableOperations(executableInteractions);
-    const schemaValidation = validateBlackBoxRunnerScenarioRecipe(rawConfig);
     const envRequirements = input.envRequirements ?? collectBlackBoxRunnerEnvRequirements(rawConfig);
     const missingEnv = envRequirements.filter((requirement) =>
         requirement.required && requirement.source === 'missing'
     );
-    const connectionSummary = connectionPreflight(rawConfig, operations);
+    const connectionSummary = toConnectionPreflight(
+        Object.keys(asRecord(rawConfig.connections)),
+        toConnectionPreflightSteps(executableInteractions, stopsOnFailure(asRecord(expandedConfig.execution)))
+    );
     const stepReferences = stepReferencePreflight(rawConfig);
     const outputSummary = outputPreflight(rawConfig, expandedConfig, operations);
     const redactions = redactionPreflight(rawConfig);
     const includes = includePreflight(expandedConfig);
-    const strictIssues = profile === 'strict'
-        ? strictProfileIssues(rawConfig, operations)
-        : [];
-    const schemaIssues = schemaValidation.ok
-        ? []
-        : schemaValidation.errors.map(schemaIssueToPreflightIssue);
-    const expansionIssue = input.expansionError === undefined
-        ? []
-        : [{
-            severity: 'error' as const,
-            code: 'PLAN_EXPANSION_FAILED',
-            message: errorMessage(input.expansionError)
-        }];
     const issues = [
-        ...schemaIssues,
-        ...missingEnv.map((requirement) => ({
-            severity: 'error' as const,
-            code: 'MISSING_ENV',
-            message:
-                `Missing required environment variable ${requirement.envName} for variable ${requirement.variableName}.`,
-            path: `variables.${requirement.variableName}`
-        })),
-        ...connectionSummary.missing.map((connection) => ({
-            severity: 'error' as const,
-            code: 'MISSING_CONNECTION',
-            message: `Step references missing connection ${connection}.`,
-            path: 'connections'
-        })),
-        ...stepReferences.missing.map((reference) => ({
-            severity: 'error' as const,
-            code: 'MISSING_STEP_REFERENCE',
-            message: `Recipe references missing step ${reference.name}.`,
-            path: reference.path
-        })),
-        ...outputSummary.missingConsumed.map((output) => ({
-            severity: 'warning' as const,
-            code: 'MISSING_OUTPUT_REFERENCE',
-            message: `Placeholder references ${output}, but no earlier output with that name is produced.`,
-            path: 'steps'
-        })),
-        ...strictIssues,
-        ...expansionIssue
+        ...validateRecipeShape(input, operations),
+        ...validatePreflightReferences({
+            missingEnv,
+            connections: connectionSummary,
+            steps: stepReferences,
+            outputs: outputSummary
+        })
     ];
-    const parallelGroupCount = operations.filter((operation) => operation.transport === 'PARALLEL').length === 0
-        ? 0
-        : operations
-            .filter((operation) => operation.transport === 'PARALLEL')
-            .reduce((sum, operation) => sum + (operation.groupCount ?? 0), 0);
-    const estimatedArtifactJsonBytes = JSON.stringify({
-        executableInteractions,
-        trafficPlan: input.trafficPlanArtifact
-    }).length;
 
     return {
         schemaVersion: 1,
         ok: issues.every((issue) => issue.severity !== 'error'),
         profile,
-        summary: {
-            generatedOperationCount: operations.length,
-            topLevelOperationCount: executableInteractions.length,
-            parallelGroupCount,
-            estimatedArtifactResultRecords: operations.length,
-            estimatedArtifactEventRecords: Math.max(operations.length, operations.length * 2),
-            estimatedArtifactJsonBytes,
-            postRunAssertionCount: postRunAssertionCount(rawConfig),
-            includeCount: includes.resolved.length
-        },
+        summary: toPreflightSize({ config: input, operations, includeCount: includes.resolved.length }),
         includes,
         providerModes: providerModes(rawConfig, operations),
         liveServiceRequirements: liveServiceRequirements(rawConfig, operations, input.trafficPlanArtifact),
@@ -298,6 +322,69 @@ export function explainBlackBoxRunnerPlan(input: BlackBoxRunnerPreflightInput): 
         operations,
         issues
     };
+}
+
+function validatePreflightReferences(checks: PreflightReferenceChecks): readonly BlackBoxRunnerPreflightIssue[] {
+    return [
+        ...checks.missingEnv.map((requirement) => ({
+            severity: 'error' as const,
+            code: 'MISSING_ENV',
+            message:
+                `Missing required environment variable ${requirement.envName} for variable ${requirement.variableName}.`,
+            path: `variables.${requirement.variableName}`
+        })),
+        ...checks.connections.missing.map((connection) => ({
+            severity: 'error' as const,
+            code: 'MISSING_CONNECTION',
+            message: `Step references missing connection ${connection}.`,
+            path: 'connections'
+        })),
+        ...checks.steps.missing.map((reference) => ({
+            severity: 'error' as const,
+            code: 'MISSING_STEP_REFERENCE',
+            message: `Recipe references missing step ${reference.name}.`,
+            path: reference.path
+        })),
+        ...checks.outputs.missingConsumed.map((output) => ({
+            severity: 'warning' as const,
+            code: 'MISSING_OUTPUT_REFERENCE',
+            message: `Placeholder references ${output}, but no earlier output with that name is produced.`,
+            path: 'steps'
+        }))
+    ];
+}
+
+function toPreflightSize(input: PreflightSizeInput): BlackBoxRunnerPlanPreflight['summary'] {
+    return {
+        generatedOperationCount: input.operations.length,
+        topLevelOperationCount: input.config.executableInteractions?.length ?? 0,
+        parallelGroupCount: input.operations
+            .filter((operation) => operation.transport === 'PARALLEL')
+            .reduce((sum, operation) => sum + (operation.groupCount ?? 0), 0),
+        estimatedArtifactResultRecords: input.operations.length,
+        estimatedArtifactEventRecords: input.operations.length * 2,
+        estimatedArtifactJsonBytes: JSON.stringify({
+            executableInteractions: input.config.executableInteractions ?? [],
+            trafficPlan: input.config.trafficPlanArtifact
+        }).length,
+        postRunAssertionCount: postRunAssertionCount(input.config.rawConfig),
+        includeCount: input.includeCount
+    };
+}
+
+function validateRecipeShape(
+    input: BlackBoxRunnerPreflightInput,
+    operations: readonly BlackBoxRunnerPreflightOperation[]
+): readonly BlackBoxRunnerPreflightIssue[] {
+    const schema = validateBlackBoxRunnerScenarioRecipe(input.rawConfig);
+    const issues: BlackBoxRunnerPreflightIssue[] = schema.ok ? [] : schema.errors.map(schemaIssueToPreflightIssue);
+    if (input.profile === 'strict') {
+        issues.push(...strictProfileIssues(input.rawConfig, operations));
+    }
+    if (input.expansionError !== undefined) {
+        issues.push({ severity: 'error', code: 'PLAN_EXPANSION_FAILED', message: errorMessage(input.expansionError) });
+    }
+    return issues;
 }
 
 function schemaIssueToPreflightIssue(issue: JsonSchemaValidationIssue): BlackBoxRunnerPreflightIssue {
@@ -441,25 +528,6 @@ function stringValue(value: unknown): string | undefined {
 function numberValue(value: unknown): number | undefined {
     const parsed = Number(value);
     return Number.isFinite(parsed) ? parsed : undefined;
-}
-
-function connectionPreflight(
-    rawConfig: JsonRecord,
-    operations: readonly BlackBoxRunnerPreflightOperation[]
-): BlackBoxRunnerPlanPreflight['connections'] {
-    const defined = uniqueValues(Object.keys(asRecord(rawConfig.connections)));
-    const referenced = uniqueValues(
-        operations
-            .map((operation) => operation.connection)
-            .filter((connection): connection is string => Boolean(connection))
-    );
-    const definedSet = new Set(defined);
-
-    return {
-        defined,
-        referenced,
-        missing: referenced.filter((connection) => !definedSet.has(connection))
-    };
 }
 
 function stepReferencePreflight(rawConfig: JsonRecord): BlackBoxRunnerPlanPreflight['stepReferences'] {
@@ -635,55 +703,10 @@ function transformPathRoots(...values: readonly unknown[]): readonly string[] {
 }
 
 function isTransformOnlySpec(record: JsonRecord): boolean {
-    const transformKeys = new Set([
-        'path',
-        'from',
-        'outputPath',
-        'template',
-        'concat',
-        'coalesce',
-        'jsonStringify',
-        'jsonParse',
-        'urlEncode',
-        'number',
-        'string',
-        'boolean',
-        'uuid',
-        'timestamp',
-        'op',
-        'operator',
-        'type',
-        'value',
-        'input',
-        'values',
-        'format',
-        'secret',
-        'redact',
-        'redactAs',
-        'transform'
-    ]);
-    const operatorKeys = [
-        'path',
-        'from',
-        'outputPath',
-        'template',
-        'concat',
-        'coalesce',
-        'jsonStringify',
-        'jsonParse',
-        'urlEncode',
-        'number',
-        'string',
-        'boolean',
-        'uuid',
-        'timestamp',
-        'op',
-        'operator'
-    ];
     const keys = Object.keys(record);
     return keys.length > 0 &&
-        operatorKeys.some((key) => record[key] !== undefined) &&
-        keys.every((key) => transformKeys.has(key));
+        TRANSFORM_OPERATOR_KEYS.some((key) => record[key] !== undefined) &&
+        keys.every((key) => TRANSFORM_KEYS.has(key));
 }
 
 function redactionPreflight(rawConfig: JsonRecord): BlackBoxRunnerPlanPreflight['redactions'] {
@@ -799,7 +822,9 @@ function liveServiceRequirements(
     return uniqueValues(requirements);
 }
 
-function trafficPlanPreflight(artifact: JsonRecord | undefined): BlackBoxRunnerPlanPreflight['trafficPlan'] {
+function trafficPlanPreflight(
+    artifact: JsonRecord | undefined
+): BlackBoxRunnerPlanPreflight['trafficPlan'] {
     if (!artifact) {
         return undefined;
     }
@@ -868,88 +893,84 @@ function strictProfileIssues(
     rawConfig: JsonRecord,
     operations: readonly BlackBoxRunnerPreflightOperation[]
 ): readonly BlackBoxRunnerPreflightIssue[] {
-    const issues: BlackBoxRunnerPreflightIssue[] = [];
     const steps = Array.isArray(rawConfig.steps) ? rawConfig.steps.map(asRecord) : [];
-
-    steps.forEach((step, index) => {
-        const type = String(step.type || '').toLowerCase();
-        const request = asRecord(step.request);
-        const expect = asRecord(step.expect || step.response);
-        const path = `steps[${index}]`;
-
-        if (type.length > 0 && !isKnownStepType(type)) {
-            issues.push({
-                severity: 'error',
-                code: 'STRICT_UNKNOWN_STEP_TYPE',
-                message: `Unknown strict step type ${type}.`,
-                path: `${path}.type`
-            });
-        }
-
-        if (type.startsWith('set') || type.startsWith('derive')) {
-            const output = step.output ?? request.output;
-            const stateWriteEvidence = step.stateWriteEvidence ?? request.stateWriteEvidence;
-            if (output === 'stateWriteEvidence' && !isRecord(stateWriteEvidence)) {
-                issues.push({
-                    severity: 'error',
-                    code: 'STRICT_STATE_WRITE_EVIDENCE_SOURCE',
-                    message: 'Strict stateWriteEvidence must come from the persisted-state collector.',
-                    path
-                });
-            }
-            if (typeof output !== 'string') {
-                issues.push({
-                    severity: 'error',
-                    code: 'STRICT_SET_OUTPUT',
-                    message: 'Strict set steps require output.',
-                    path
-                });
-            }
-            if (
-                step.value === undefined &&
-                request.value === undefined &&
-                step.transform === undefined &&
-                request.transform === undefined &&
-                step.derive === undefined &&
-                request.derive === undefined &&
-                stateWriteEvidence === undefined
-            ) {
-                issues.push({
-                    severity: 'error',
-                    code: 'STRICT_SET_VALUE',
-                    message: 'Strict set steps require value, request.value, transform, or request.transform.',
-                    path
-                });
-            }
-        }
-
-        if (type.startsWith('assert')) {
-            const hasExpected = expect.body !== undefined ||
-                expect.expect !== undefined || expect.expected !== undefined ||
-                Array.isArray(expect.anyOf) || Array.isArray(expect.comparators);
-            if (!hasExpected) {
-                issues.push({
-                    severity: 'error',
-                    code: 'STRICT_ASSERT_EXPECTED',
-                    message: 'Strict assert steps need an expected value or expect.comparators.',
-                    path
-                });
-            }
-        }
-    });
-
-    operations
-        .filter((operation) => operation.transport === 'HTTP' && !operation.path)
-        .forEach((operation) => {
-            issues.push({
+    return [
+        ...steps.flatMap((step, index) => validateStrictStep(step, `steps[${index}]`)),
+        ...operations
+            .filter((operation) => operation.transport === 'HTTP' && !operation.path)
+            .map((operation): BlackBoxRunnerPreflightIssue => ({
                 severity: 'error',
                 code: 'STRICT_HTTP_TARGET',
                 message:
                     `Strict HTTP operation ${operation.name} requires request.path, request.url, or connection.url.`,
                 path: operation.name
-            });
-        });
+            }))
+    ];
+}
 
+function validateStrictStep(step: JsonRecord, path: string): readonly BlackBoxRunnerPreflightIssue[] {
+    const type = String(step.type || '').toLowerCase();
+    const issues: BlackBoxRunnerPreflightIssue[] = [];
+    if (type.length > 0 && !isKnownStepType(type)) {
+        issues.push({
+            severity: 'error',
+            code: 'STRICT_UNKNOWN_STEP_TYPE',
+            message: `Unknown strict step type ${type}.`,
+            path: `${path}.type`
+        });
+    }
+    if (type.startsWith('set') || type.startsWith('derive')) {
+        issues.push(...validateStrictSet(step, path));
+    }
+    if (type.startsWith('assert')) {
+        const expected = asRecord(step.expect || step.response);
+        const hasExpected = expected.body !== undefined || expected.expect !== undefined ||
+            expected.expected !== undefined || Array.isArray(expected.anyOf) || Array.isArray(expected.comparators);
+        if (!hasExpected) {
+            issues.push({
+                severity: 'error',
+                code: 'STRICT_ASSERT_EXPECTED',
+                message: 'Strict assert steps need an expected value or expect.comparators.',
+                path
+            });
+        }
+    }
+    return issues;
+}
+
+function validateStrictSet(step: JsonRecord, path: string): readonly BlackBoxRunnerPreflightIssue[] {
+    const request = asRecord(step.request);
+    const output = step.output ?? request.output;
+    const stateWriteEvidence = step.stateWriteEvidence ?? request.stateWriteEvidence;
+    const issues: BlackBoxRunnerPreflightIssue[] = [];
+    if (output === 'stateWriteEvidence' && !isRecord(stateWriteEvidence)) {
+        issues.push({
+            severity: 'error',
+            code: 'STRICT_STATE_WRITE_EVIDENCE_SOURCE',
+            message: 'Strict stateWriteEvidence must come from the persisted-state collector.',
+            path
+        });
+    }
+    if (typeof output !== 'string') {
+        issues.push({
+            severity: 'error',
+            code: 'STRICT_SET_OUTPUT',
+            message: 'Strict set steps require output.',
+            path
+        });
+    }
+    if (
+        step.value === undefined && request.value === undefined &&
+        step.transform === undefined && request.transform === undefined &&
+        step.derive === undefined && request.derive === undefined && stateWriteEvidence === undefined
+    ) {
+        issues.push({
+            severity: 'error',
+            code: 'STRICT_SET_VALUE',
+            message: 'Strict set steps require value, request.value, transform, or request.transform.',
+            path
+        });
+    }
     return issues;
 }
 
@@ -989,4 +1010,67 @@ function isKnownStepType(type: string): boolean {
 
 function errorMessage(error: unknown): string {
     return error instanceof Error ? error.message : String(error);
+}
+
+function toConnectionPreflightSteps(
+    interactions: NonNullable<BlackBoxRunnerPreflightInput['executableInteractions']>,
+    failureStops: boolean
+): ConnectionPreflightStep[] {
+    return interactions.map((interaction) => {
+        const request = executableRequest(interaction);
+        const transport = transportKey(interaction);
+        const groups = transport === 'PARALLEL' && Array.isArray(request.groups) ? request.groups : [];
+        const output = stringValue(request.output);
+        const writtenOutputs = [...Object.keys(asRecord(request.outputs)), ...(output ? [output] : [])];
+        const writesAllOutputs = writtenOutputs.some((name) => /[{}]/.test(name)) ||
+            (request.outputs !== undefined && !isRecord(request.outputs));
+        const selectionCanBeTrusted = failureStops && stopsOnFailure(request) && !writesAllOutputs;
+        return {
+            connection: stringValue(request.connection),
+            writtenOutputs,
+            writesAllOutputs,
+            selection: transport === 'SET' && selectionCanBeTrusted ? toBoundedConnectionSelection(request) : undefined,
+            groups: groups.map((group) => {
+                const steps = asRecord(group).steps;
+                return toConnectionPreflightSteps(
+                    Array.isArray(steps) ? steps : [],
+                    stopsOnFailure(request)
+                );
+            })
+        };
+    });
+}
+
+function toBoundedConnectionSelection(request: JsonRecord): ConnectionSelection | undefined {
+    const output = stringValue(request.output);
+    if (!output || Object.hasOwn(asRecord(request.outputs), output)) {
+        return undefined;
+    }
+    if (request.transform === undefined && request.outputPath) {
+        return undefined;
+    }
+    const transform = asRecord(request.transform === undefined ? request.derive : request.transform);
+    if (Object.keys(transform).length !== 1 || transform.if === undefined) {
+        return undefined;
+    }
+    const branches = asRecord(transform.if);
+    if (branches.condition === undefined) {
+        return undefined;
+    }
+    const whenTrue = toLiteralConnection(asRecord(branches.then));
+    const whenFalse = toLiteralConnection(asRecord(branches.else));
+    return whenTrue && whenFalse ? { output, connections: [...new Set([whenTrue, whenFalse])] } : undefined;
+}
+
+function toLiteralConnection(branch: JsonRecord): string | undefined {
+    if (directSafeOutputTransformSpec(branch) !== undefined) {
+        return undefined;
+    }
+    const connection = branch.connection;
+    return typeof connection === 'string' && connection.length > 0 && !/[{}]/.test(connection) ? connection : undefined;
+}
+
+function stopsOnFailure(request: JsonRecord): boolean {
+    return (request.failFast === undefined || request.failFast === true) &&
+        (request.nonBlockingFailure === undefined || request.nonBlockingFailure === false);
 }

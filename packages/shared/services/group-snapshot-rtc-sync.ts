@@ -1,13 +1,21 @@
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import { isGroupActive, isSessionInGroup } from '@shared/api/group-client-views.ts';
-import type { GroupSnapshot as GroupStateSnapshot } from '@shared/api/group-types.ts';
+import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { createAndSetBootstrapOverlays, type BootstrapOverlayPolicy } from '@shared/repository/overlay-bootstrap.ts';
 import * as overlaysRepository from '@shared/repository/overlays-repository.ts';
 import { resolveBootstrapDegree } from '@shared/rtc/bootstrap-peer-selection.ts';
-import type { WebRtcGroupManager } from '@shared/services/WebRtcGroupManager.ts';
+import type { WebRtcGroupManager } from '@shared/services/web-rtc-group-manager.ts';
 
 export interface BootstrapOverlayPolicyInput {
     readonly bootstrapDegree: number;
+}
+
+export interface GroupSnapshotRtcSyncPort
+    extends Pick<WebRtcGroupManager, 'delete' | 'has' | 'ensureAllGroupsConnected'> {
+    // Snapshot adoption waits for reconciliation, but does not read the manager's service result.
+    acceptGroupUpdate(
+        snapshot: GroupSnapshot
+    ): Promise<void | Awaited<ReturnType<WebRtcGroupManager['acceptGroupUpdate']>>>;
 }
 
 export function resolveBootstrapOverlayPolicy(
@@ -30,8 +38,8 @@ export function isSameBootstrapOverlayPolicy(
 }
 
 export async function acceptGroupSnapshotUpdate(
-    snapshot: GroupStateSnapshot,
-    webRtcGroupManager: WebRtcGroupManager,
+    snapshot: GroupSnapshot,
+    webRtcGroupManager: GroupSnapshotRtcSyncPort,
     bootstrapOverlayPolicy: BootstrapOverlayPolicy
 ): Promise<void> {
     if (!isGroupActive(snapshot)) {
@@ -64,8 +72,8 @@ export async function acceptGroupSnapshotUpdate(
 }
 
 export async function acceptGroupSnapshotRemoval(
-    snapshot: GroupStateSnapshot,
-    webRtcGroupManager: WebRtcGroupManager
+    snapshot: GroupSnapshot,
+    webRtcGroupManager: Pick<WebRtcGroupManager, 'delete'>
 ): Promise<void> {
     clearGroupOverlayRoles(snapshot);
     await waitForGroupOverlayRolesIdle();
@@ -73,7 +81,7 @@ export async function acceptGroupSnapshotRemoval(
     await webRtcGroupManager.delete(snapshot.group);
 }
 
-function clearGroupOverlayRoles(snapshot: GroupStateSnapshot): void {
+function clearGroupOverlayRoles(snapshot: GroupSnapshot): void {
     overlaysRepository.removePlannedOverlayByGroupRef(snapshot.group);
     overlaysRepository.removeAcceptedOverlayByGroupRef(snapshot.group);
 }

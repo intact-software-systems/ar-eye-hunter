@@ -11,14 +11,22 @@ import {
 import { refreshBlackBoxBrowserRoomState } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/browser-rallar-runtime-composition.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
-import type { AuditStamp, GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
+import type {
+    AuditStamp,
+    GroupRef,
+    GroupSnapshot
+} from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
-import { DEFAULT_STATE_APPLICATION_ID, DEFAULT_STATE_WORKSPACE_ID, type StateScope } from '@shared/api/state-types.ts';
+import {
+    DEFAULT_STATE_APPLICATION_ID,
+    DEFAULT_STATE_WORKSPACE_ID,
+    type StateScope
+} from '@shared/api/state-types.ts';
 import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
 import { findAcceptedOverlayById, findPlannedOverlayById } from '@shared/repository/overlays-repository.ts';
-import type { WebRtcGroupManager } from '@shared/services/WebRtcGroupManager.ts';
+import type { WebRtcGroupManager } from '@shared/services/web-rtc-group-manager.ts';
 
-import { configureTestCacheRepositories } from '../../cache-repository-config.ts';
+import { configureTestCacheRepositories } from '../../configure-test-cache-repositories.ts';
 import { createTestGroup } from '../../create-test-group.ts';
 
 const scope: StateScope = {
@@ -149,7 +157,7 @@ describe('black-box browser room-state refresh composition', () => {
     });
 });
 
-function createRefreshInput(group: GroupSnapshot) {
+function createRefreshInput(group: GroupSnapshot): Omit<Parameters<typeof refreshBlackBoxBrowserRoomState>[0], 'options'> {
     const manager = createWebRtcGroupManager();
     return {
         roomRef: group.group,
@@ -167,13 +175,13 @@ function createRefreshInput(group: GroupSnapshot) {
     } as const;
 }
 
-function createWebRtcGroupManager(): WebRtcGroupManager {
+function createWebRtcGroupManager(): Pick<WebRtcGroupManager, 'notifyOverlayTopologyChanged'> {
     return {
         notifyOverlayTopologyChanged: vi.fn(async () => undefined)
-    } as never;
+    };
 }
 
-function jsonResponse(body: object): Response {
+function jsonResponse(body: TestTopologyView): Response {
     return new Response(JSON.stringify(body), {
         status: 200,
         headers: { 'content-type': 'application/json' }

@@ -1,6 +1,6 @@
 import type { BlackBoxRallarRuntime } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-runtime-contract.ts';
+import { createBlackBoxRallarRuntime } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-runtime.ts';
 import type { BlackBoxRallarEvent } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/contracts.ts';
-import { createBlackBoxRallarRuntime } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/runtime.ts';
 import {
     facadeBehavior,
     facadeRecords,
@@ -110,7 +110,9 @@ export async function loadRuntime(): Promise<BlackBoxRallarRuntime> {
     };
     return createBlackBoxRallarRuntime({
         facade: facade.rallar,
-        targetWindow: target as Window
+        targetWindow: target,
+        clock: { now: Date.now },
+        delay: (ms) => new Promise<void>((resolve) => setTimeout(resolve, ms))
     });
 }
 

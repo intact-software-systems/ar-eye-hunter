@@ -3,7 +3,13 @@ import { createClientStateSnapshotReadThroughCache } from '@shared-server/rallar
 import { createWsServerTargetResolver } from '@shared-server/rallar-system/websocket/targets/create-ws-server-target-resolver.ts';
 import { createTestClientStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import { newALRoute, newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
-import { type AuditStamp, type ClientInstance, type ClientPrincipal, type ClientSession, type ClientSnapshot } from '@shared/api/client-types.ts';
+import {
+    type AuditStamp,
+    type ClientInstance,
+    type ClientPrincipal,
+    type ClientSession,
+    type ClientSnapshot
+} from '@shared/api/client-types.ts';
 import { DEFAULT_STATE_WORKSPACE_ID } from '@shared/api/state-types.ts';
 import {
     RALLAR_CRDT_OPERATION_VERSION,
@@ -15,10 +21,14 @@ import {
 import { ConnectionContext, JsonWebSocketServer } from '@shared/mod.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
-import { describe, expect, it } from 'vitest';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
 
 import { findCurrentClientSnapshot } from '../../../../../../apps/api-v1/src/crdt/create-api-crdt-document-authorizer.ts';
-import { configureTestCacheRepositories } from '../../../../cache-repository-config.ts';
+import { configureTestCacheRepositories } from '../../../../configure-test-cache-repositories.ts';
 import { FakeRuntimeStateRepository } from '../../../runtime-state/test-support/fake-runtime-state-repository.ts';
 
 const NOW = Date.now();
@@ -123,27 +133,7 @@ async function putSnapshot(repository: ClientStateRepository, snapshot: ClientSn
 }
 
 function clientSnapshot(): ClientSnapshot {
-    const principal: ClientPrincipal = {
-        applicationId: 'app-1',
-        workspaceId: DEFAULT_STATE_WORKSPACE_ID,
-        principalId: 'alice',
-        username: 'alice',
-        displayName: 'Alice',
-        avatarUrl: null,
-        authProvider: null,
-        externalSubjectId: null,
-        roles: [],
-        metadata: {},
-        status: 'active',
-        disabled: null,
-        deleted: null,
-        snapshotVersion: 1,
-        profileVersion: 1,
-        presenceVersion: 1,
-        created: audit(),
-        updated: audit(),
-        lastSeenAtEpochMs: NOW
-    };
+    const principal: ClientPrincipal = createAlicePrincipal();
     const instance: ClientInstance = {
         applicationId: principal.applicationId,
         workspaceId: principal.workspaceId,
@@ -226,5 +216,28 @@ function audit(): AuditStamp {
         reason: null,
         traceId: null,
         requestId: null
+    };
+}
+function createAlicePrincipal(): ClientPrincipal {
+    return {
+        applicationId: 'app-1',
+        workspaceId: DEFAULT_STATE_WORKSPACE_ID,
+        principalId: 'alice',
+        username: 'alice',
+        displayName: 'Alice',
+        avatarUrl: null,
+        authProvider: null,
+        externalSubjectId: null,
+        roles: [],
+        metadata: {},
+        status: 'active',
+        disabled: null,
+        deleted: null,
+        snapshotVersion: 1,
+        profileVersion: 1,
+        presenceVersion: 1,
+        created: audit(),
+        updated: audit(),
+        lastSeenAtEpochMs: NOW
     };
 }

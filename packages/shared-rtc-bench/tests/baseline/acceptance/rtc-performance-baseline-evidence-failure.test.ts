@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
 import { createRtcBaselineEvidenceAcceptance } from '../../../baseline/acceptance/rtc-baseline-evidence-acceptance.ts';
 import {
@@ -104,6 +104,24 @@ const causalIssue = {
     code: 'causal-not-run',
     message: 'Not run after the first workload correctness failure.'
 };
+const blockedCohortFailureRow = [
+    'failure',
+    'failure-cohort-cohort',
+    cohortOwner,
+    'failed',
+    null,
+    [
+        {
+            path: '$.identity.memberSampleIds',
+            code: 'cohort-members-unavailable',
+            message: 'Cohort assertion cannot run after a member sample failed or was causally not run.'
+        }
+    ],
+    {
+        causalFailureId: 'failure-sample-external-sample',
+        blockedMemberSampleIds: ['external-sample']
+    }
+];
 const malformedIssue = {
     path: '$.raw-result',
     code: 'invalid-json',
@@ -232,10 +250,7 @@ describe('RTC baseline failure accounting', () => {
         };
         expect(createRtcBaselineAcceptedWorkerSampleIdentity(worker, 1)).toEqual(identities[1]);
 
-        const run = vi
-            .fn<() => Promise<{ durationMs: number; }>>()
-            .mockResolvedValueOnce({ durationMs: -1 })
-            .mockResolvedValue({ durationMs: 2 });
+        const run = async () => ({ durationMs: -1 });
         const samples = await runRtcBaselineAcceptedWorkerSamples({
             worker,
             run,
@@ -256,7 +271,6 @@ describe('RTC baseline failure accounting', () => {
             })
         });
 
-        expect(run).toHaveBeenCalledTimes(1);
         expect(samples.map((sample) => [sample.identity, sample.outcome, sample.issues])).toEqual([
             [
                 identities[0],
@@ -350,6 +364,99 @@ describe('RTC baseline failure accounting', () => {
             ]
         ]);
     });
+
+    it('accounts for a predeclared cohort blocked by an earlier external failure', async () => {
+        const retentionIdentity = {
+            ...externalOwner,
+            sampleId: 'external-retention-sample',
+            caseId: 'retention-100',
+            inputKey: 'e3-memory-retention-100',
+            outerOrdinal: 2
+        } as const;
+        const retentionCohortOwner = {
+            cohortId: 'cohort',
+            workloadId: 'RTC-B06' as const,
+            memberSampleIds: [retentionIdentity.sampleId]
+        };
+        const b06Manifest = {
+            ...externalManifest,
+            outerAttempts: [
+                externalManifest.outerAttempts[1]!,
+                {
+                    ...externalManifest.outerAttempts[1]!,
+                    caseId: retentionIdentity.caseId,
+                    inputKey: retentionIdentity.inputKey,
+                    outerOrdinal: retentionIdentity.outerOrdinal,
+                    sampleIds: [retentionIdentity.sampleId]
+                }
+            ],
+            expectedCohorts: [retentionCohortOwner]
+        };
+        const { service, writes } = recordingAcceptance({
+            readManifest: async () => ({ ok: true, value: b06Manifest })
+        });
+        const result = await service.recordExternalAttempt({
+            ...externalInput,
+            producerExitStatus: 9
+        });
+        const failureId = 'failure-sample-external-sample';
+
+        expect(result).toEqual({
+            ok: false,
+            issues: [
+                {
+                    path: '$.producerExitStatus',
+                    code: 'producer-exit-status',
+                    message: 'Producer exited with status 9.'
+                }
+            ]
+        });
+        expect(persistedRows(writes)).toEqual([
+            [
+                'failure',
+                failureId,
+                externalOwner,
+                'failed',
+                null,
+                [
+                    {
+                        path: '$.producerExitStatus',
+                        code: 'producer-exit-status',
+                        message: 'Producer exited with status 9.'
+                    }
+                ],
+                { producerExitStatus: 9 }
+            ],
+            [
+                'not-run',
+                failureId,
+                retentionIdentity,
+                'not-run',
+                failureId,
+                [causalIssue],
+                null
+            ],
+            [
+                'failure',
+                'failure-cohort-cohort',
+                retentionCohortOwner,
+                'failed',
+                null,
+                [
+                    {
+                        path: '$.identity.memberSampleIds',
+                        code: 'cohort-members-unavailable',
+                        message: 'Cohort assertion cannot run after a member sample failed or was causally not run.'
+                    }
+                ],
+                {
+                    causalFailureId: failureId,
+                    blockedMemberSampleIds: [retentionIdentity.sampleId]
+                }
+            ]
+        ]);
+    });
+
     it('persists a valid prefix, invalid worker failure, and complete later-outer remainder', async () => {
         const { service, writes } = recordingAcceptance({
             readManifest: async () => ({
@@ -399,7 +506,7 @@ describe('RTC baseline failure accounting', () => {
     it.each(
         [
             ['browser', 'failure-sample-browser-sample', browserOwner, null],
-            ['external', 'failure-sample-external-sample', externalOwner, null],
+            ['external', 'failure-sample-external-sample', externalOwner, blockedCohortFailureRow],
             ['cohort', 'failure-cohort-cohort', cohortOwner, null]
         ] as const
     )(
@@ -432,12 +539,12 @@ describe('RTC baseline failure accounting', () => {
 
     it.each(
         [
-            ['capture', 'failure-sample-rtc-b01-case-input-retained-001-001', identities[0]],
-            ['browser', 'failure-sample-browser-sample', browserOwner],
-            ['external', 'failure-sample-external-sample', externalOwner],
-            ['cohort', 'failure-cohort-cohort', cohortOwner]
+            ['capture', 'failure-sample-rtc-b01-case-input-retained-001-001', identities[0], null],
+            ['browser', 'failure-sample-browser-sample', browserOwner, null],
+            ['external', 'failure-sample-external-sample', externalOwner, blockedCohortFailureRow],
+            ['cohort', 'failure-cohort-cohort', cohortOwner, null]
         ] as const
-    )('persists the exact %s reconciliation owner', async (kind, failureId, identity) => {
+    )('persists the exact %s reconciliation owner', async (kind, failureId, identity, remainder) => {
         const { service, writes } = recordingAcceptance({
             readManifest: async () => ({ ok: true, value: manifestForOperation(kind) }),
             reconcileAcceptedOperation: async () => [reconciliationIssue]
@@ -447,14 +554,16 @@ describe('RTC baseline failure accounting', () => {
             issues: [reconciliationIssue]
         });
         expect(persistedRows(writes)).toEqual([
-            ['failure', failureId, identity, 'failed', null, [reconciliationIssue], null]
+            ['failure', failureId, identity, 'failed', null, [reconciliationIssue], null],
+            ...(remainder ? [remainder] : [])
         ]);
     });
 
     it('rejects initialization reconciliation before store mutation', async () => {
-        const initializeStore = vi.fn();
         const service = acceptance({
-            initializeStore,
+            initializeStore: async () => {
+                throw new Error('Initialization must not run before reconciliation succeeds.');
+            },
             reconcileAcceptedOperation: async () => [reconciliationIssue]
         });
         expect(
@@ -466,6 +575,5 @@ describe('RTC baseline failure accounting', () => {
             ok: false,
             issues: [reconciliationIssue]
         });
-        expect(initializeStore).not.toHaveBeenCalled();
     });
 });

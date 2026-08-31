@@ -1,7 +1,13 @@
 import { createBrowserRuntimeFoundation } from '@shared-web/browser/composition/browser-runtime-composition.ts';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+    beforeEach,
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
 
-import { configureTestCacheRepositories } from '../../cache-repository-config.ts';
+import { configureTestCacheRepositories } from '../../configure-test-cache-repositories.ts';
 
 type MiddlewareModule = typeof import('@shared-web/browser/connection/initialise-browser-middleware.ts');
 type AuthModule = typeof import('@shared/api/auth.ts');
@@ -21,13 +27,14 @@ const runtime = await vi.hoisted(async () => {
 
 vi.mock(
     import('@shared-web/browser/connection/initialise-browser-middleware.ts'),
-    async (importOriginal): Promise<Partial<MiddlewareModule>> => ({
+    async (importOriginal): Promise<MiddlewareModule> => ({
         ...await importOriginal(),
         initialiseMiddleware: runtime.initialiseMiddleware
     })
 );
 
-vi.mock(import('@shared/api/auth.ts'), (): Partial<AuthModule> => ({
+vi.mock(import('@shared/api/auth.ts'), async (importOriginal): Promise<AuthModule> => ({
+    ...await importOriginal(),
     clearSession: vi.fn(),
     isLoggedIn: () => true,
     readSession: runtime.readSession,

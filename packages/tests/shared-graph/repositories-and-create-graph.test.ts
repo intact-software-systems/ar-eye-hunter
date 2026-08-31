@@ -1,13 +1,25 @@
 import { DEFAULT_GRAPH_PROP } from '@shared-graph/algo-props.ts';
 import { toGraph } from '@shared-graph/graph/create-graph.ts';
 import { VertexState, VertexType } from '@shared-graph/graph/graph-props.ts';
-import { computeIfAbsent, findGraphByRef, getAllGraphs, readableGraphCache, setGraph, setGraphs } from '@shared-graph/repository/graphs-repository.ts';
+import {
+    computeIfAbsent,
+    findGraphByRef,
+    getAllGraphs,
+    readableGraphCache,
+    setGraph,
+    setGraphs
+} from '@shared-graph/repository/graphs-repository.ts';
 import type { GraphInfoSnapshot } from '@shared-graph/shared-graph-types.ts';
 import type { RttMeasurementInfo } from '@shared/api/api-config.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import { LatestRepository } from '@shared/cache/LatestRepository.ts';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { configureTestCacheRepositories } from '../cache-repository-config.ts';
+import {
+    beforeEach,
+    describe,
+    expect,
+    it
+} from 'vitest';
+import { configureTestCacheRepositories } from '../configure-test-cache-repositories.ts';
 
 describe('shared-graph repositories and graph creation', () => {
     beforeEach(() => {
@@ -19,15 +31,15 @@ describe('shared-graph repositories and graph creation', () => {
         const rttById = new LatestRepository<string, RttMeasurementInfo>();
         rttById.set(
             'ab',
-            createRtt('peer-a', 'peer-b', 10, 1)
+            createRtt({ sessionIdFrom: 'peer-a', sessionIdTo: 'peer-b', rttMs: 10, version: 1 })
         );
         rttById.set(
             'ba',
-            createRtt('peer-b', 'peer-a', 11, 2)
+            createRtt({ sessionIdFrom: 'peer-b', sessionIdTo: 'peer-a', rttMs: 11, version: 2 })
         );
         rttById.set(
             'bc',
-            createRtt('peer-b', 'peer-c', 15, 1)
+            createRtt({ sessionIdFrom: 'peer-b', sessionIdTo: 'peer-c', rttMs: 15, version: 1 })
         );
 
         const graph = toGraph(rttById, DEFAULT_GRAPH_PROP);
@@ -60,30 +72,33 @@ describe('shared-graph repositories and graph creation', () => {
     });
 
     it('keeps the newest graph snapshots and only computes absent entries once', () => {
-        const creator = vi.fn(() => createGraphSnapshot('graph-1', 1, 100));
         const graph1 = groupRef('graph-1');
 
-        const first = computeIfAbsent(graph1, creator);
-        const second = computeIfAbsent(graph1, creator);
+        const first = computeIfAbsent(
+            graph1,
+            () => createGraphSnapshot({ groupId: 'graph-1', version: 1, createdAtEpochMs: 100 })
+        );
+        const second = computeIfAbsent(graph1, () => {
+            throw new Error('An existing graph must not require recomputation');
+        });
 
         expect(first).toBe(second);
-        expect(creator).toHaveBeenCalledTimes(1);
         expect(findGraphByRef(graph1)?.version).toBe(1);
 
         expect(
-            setGraph(createGraphSnapshot('graph-1', 0, 50))
+            setGraph(createGraphSnapshot({ groupId: 'graph-1', version: 0, createdAtEpochMs: 50 }))
         ).toBe(false);
         expect(findGraphByRef(graph1)?.version).toBe(1);
 
         expect(
-            setGraph(createGraphSnapshot('graph-1', 2, 200))
+            setGraph(createGraphSnapshot({ groupId: 'graph-1', version: 2, createdAtEpochMs: 200 }))
         ).toBe(true);
         expect(findGraphByRef(graph1)?.createdAtEpochMs).toBe(200);
 
         expect(
             setGraphs([
-                createGraphSnapshot('graph-1', 2, 200),
-                createGraphSnapshot('graph-2', 1, 300)
+                createGraphSnapshot({ groupId: 'graph-1', version: 2, createdAtEpochMs: 200 }),
+                createGraphSnapshot({ groupId: 'graph-2', version: 1, createdAtEpochMs: 300 })
             ])
         ).toBe(true);
 
@@ -95,11 +110,21 @@ describe('shared-graph repositories and graph creation', () => {
     });
 
     it('keys graph snapshots by full group ref, not only group id', () => {
-        const workspaceA = createGraphSnapshot('shared-room', 1, 100, {
-            workspaceId: 'workspace-a'
+        const workspaceA = createGraphSnapshot({
+            groupId: 'shared-room',
+            version: 1,
+            createdAtEpochMs: 100,
+            scope: {
+                workspaceId: 'workspace-a'
+            }
         });
-        const workspaceB = createGraphSnapshot('shared-room', 1, 200, {
-            workspaceId: 'workspace-b'
+        const workspaceB = createGraphSnapshot({
+            groupId: 'shared-room',
+            version: 1,
+            createdAtEpochMs: 200,
+            scope: {
+                workspaceId: 'workspace-b'
+            }
         });
 
         expect(setGraphs([workspaceA, workspaceB])).toBe(true);
@@ -110,12 +135,8 @@ describe('shared-graph repositories and graph creation', () => {
     });
 });
 
-function createRtt(
-    sessionIdFrom: string,
-    sessionIdTo: string,
-    rttMs: number,
-    version: number
-): RttMeasurementInfo {
+function createRtt(input: CreateRttInput): RttMeasurementInfo {
+    const { sessionIdFrom, sessionIdTo, rttMs, version } = input;
     return {
         sessionIdFrom,
         sessionIdTo,
@@ -125,15 +146,8 @@ function createRtt(
     };
 }
 
-function createGraphSnapshot(
-    groupId: string,
-    version: number,
-    createdAtEpochMs: number,
-    scope: Readonly<{
-        applicationId?: string;
-        workspaceId?: string;
-    }> = {}
-): GraphInfoSnapshot {
+function createGraphSnapshot(input: CreateGraphSnapshotInput): GraphInfoSnapshot {
+    const { groupId, version, createdAtEpochMs, scope = {} } = input;
     const graph = toGraph(new LatestRepository<string, RttMeasurementInfo>(), DEFAULT_GRAPH_PROP);
     const ref = groupRef(groupId, scope);
 
@@ -162,4 +176,19 @@ function groupRef(
         workspaceId: scope.workspaceId ?? 'workspace-1',
         groupId
     };
+}
+interface CreateRttInput {
+    readonly sessionIdFrom: string;
+    readonly sessionIdTo: string;
+    readonly rttMs: number;
+    readonly version: number;
+}
+interface CreateGraphSnapshotInput {
+    readonly groupId: string;
+    readonly version: number;
+    readonly createdAtEpochMs: number;
+    readonly scope?: Readonly<{
+        applicationId?: string;
+        workspaceId?: string;
+    }>;
 }

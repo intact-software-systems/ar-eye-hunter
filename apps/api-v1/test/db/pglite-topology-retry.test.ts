@@ -2,17 +2,15 @@ import { PSqlGroupStateEventRepository } from '@shared-server/rallar-system/stat
 import { Hono } from 'jsr:@hono/hono@4.11.9';
 import assert from 'node:assert/strict';
 
-import {
-    createPSqlResourceInboxRepository,
-    type PSqlResourceInboxRepository
-} from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
+import { createPSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
 import { ResourceInboxResultsRepository } from '@shared-server/queuebox/postgres/resource-inbox-results-repository.ts';
 import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
 import { type IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
 import { createGroupStateService } from '@shared-server/rallar-system/group-state/group-state-service.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
-import { hashMutationCommand, type JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
+import { requireRecord } from '@shared-server/rallar-system/protocol/exact-object-decoding.ts';
+import { decodeJsonWireValue, hashMutationCommand } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import type { GroupTopologyConfigMutationCommand } from '@shared-server/rallar-system/topology/config/mutation/group-topology-config-mutation-contracts.ts';
 import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/topology/config/persistence/group-topology-config-repository.ts';
 import { toTopologyAppInboxCommand } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-command.ts';
@@ -25,6 +23,7 @@ import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgre
 import type { GroupTopologyConfigPatch } from '@shared/api/graph-topology-management-types.ts';
 import type { Group, GroupRef } from '@shared/api/group-types.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
+import { Either } from '@shared/resilience/Either.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 
 import * as graphTopologyRoutes from '../../src/routes/graph-topology-routes.ts';
@@ -32,7 +31,12 @@ import { toResilienceDto } from '../api-v1-test-queue-resilience.ts';
 import { waitForPGliteQueueRow } from './pglite-app-inbox-test-runtime.ts';
 import { withPGliteSql } from './pglite-auth-test-harness.ts';
 import { canonicalAuditStamp } from './pglite-state-mutation-test-runtime.ts';
-import { requireTopologyMutationOwners, submitPGliteTopologyCommand, topologyConfigCommand, topologyGroupSnapshot } from './pglite-topology-test-runtime.ts';
+import {
+    requireTopologyMutationOwners,
+    submitPGliteTopologyCommand,
+    topologyConfigCommand,
+    topologyGroupSnapshot
+} from './pglite-topology-test-runtime.ts';
 
 const FUTURE_MS = Date.parse('9999-12-31T23:59:59.999Z');
 
@@ -127,7 +131,10 @@ Deno.test(
                     groupStateService: {
                         readCurrentSnapshot: (ref) => groupRepository.readSnapshot(ref)
                     },
-                    graphDiagnostics: {} as graphTopologyRoutes.GraphTopologyRouteGraphDiagnostics,
+                    graphDiagnostics: {
+                        readScopedGlobalGraphDiagnostic: () => Either.ofLeft('Graph diagnostics are unavailable in this mutation-route fixture'),
+                        readGroupGraphDiagnostic: () => Either.ofLeft('Graph diagnostics are unavailable in this mutation-route fixture')
+                    },
                     topologyQuery: topologyRuntime.query,
                     topologyPlanning: topologyRuntime.planning,
                     processTopologyAppInbox: (authSession, enqueue) => graphTopologyRoutes.processTopologyAppInbox(service, authSession, enqueue),
@@ -194,7 +201,7 @@ Deno.test(
             );
             const denied = await authorityPending;
             assert.equal(denied.status, 403);
-            const denialBody = readJsonTestRecord(await denied.json());
+            const denialBody = requireRecord(await denied.json(), 'Topology route denial response');
             assert.equal(denialBody.code, 'group-mutation-authority-denied');
             assert.deepEqual(denialBody.denial, {
                 code: 'group-mutation-authority-denied',
@@ -221,7 +228,7 @@ Deno.test(
             );
             assert.equal(conflict.status, 409);
             assert.equal(
-                Reflect.get(await conflict.json(), 'code'),
+                requireRecord(await conflict.json(), 'Topology conflict response').code,
                 'app-inbox-idempotency-conflict'
             );
 
@@ -257,20 +264,6 @@ Deno.test('PGlite AppGroup rereads lifecycle after a retryable topology conflict
         const nowEpochMs = Date.parse('2026-07-23T00:00:00.000Z');
         const runtime = new PSqlRuntimeStateRepository(sql);
         const resourceInbox = createPSqlResourceInboxRepository(sql);
-        let onFirstRetryRelease = async () => {};
-        let retryReleaseCount = 0;
-        class RetryObservedQueueBox extends PSqlQueueBox {
-            override async releaseEntries(
-                ...args: Parameters<PSqlQueueBox['releaseEntries']>
-            ): ReturnType<PSqlQueueBox['releaseEntries']> {
-                const released = await super.releaseEntries(...args);
-                if (args[1].status === EntityStatus.RETRY && retryReleaseCount++ === 0) {
-                    await onFirstRetryRelease();
-                }
-                return released;
-            }
-        }
-        const inboxReader = new InboxQueueReader(new RetryObservedQueueBox(resourceInbox));
         const authority: IssuedAuthSession = {
             clientId: 'owner',
             sessionId: 'retry-owner-session',
@@ -349,7 +342,7 @@ Deno.test('PGlite AppGroup rereads lifecycle after a retryable topology conflict
             }
             return await readTopologyConfigMutation(command);
         };
-        onFirstRetryRelease = async () => {
+        const onFirstRetryRelease = async () => {
             readsAtFirstRetryRelease = readCount;
             const current = await groupRepository.findGroupEntry(groupRef);
             assert.ok(current);
@@ -365,6 +358,19 @@ Deno.test('PGlite AppGroup rereads lifecycle after a retryable topology conflict
                 'applied'
             );
         };
+        let retryReleaseCount = 0;
+        class RetryObservedQueueBox extends PSqlQueueBox {
+            override async releaseEntries(
+                ...args: Parameters<PSqlQueueBox['releaseEntries']>
+            ): ReturnType<PSqlQueueBox['releaseEntries']> {
+                const released = await super.releaseEntries(...args);
+                if (args[1].status === EntityStatus.RETRY && retryReleaseCount++ === 0) {
+                    await onFirstRetryRelease();
+                }
+                return released;
+            }
+        }
+        const inboxReader = new InboxQueueReader(new RetryObservedQueueBox(resourceInbox));
         const appGroup = new TopologyInboxService(
             {
                 inboxQueueReader: inboxReader,
@@ -496,7 +502,7 @@ Deno.test(
             const mutation = service.configMutation;
             const preparation = await mutation.prepare({
                 command,
-                commandHash: await hashMutationCommand(command as JsonWireValue),
+                commandHash: await hashMutationCommand(decodeJsonWireValue(command, 'Topology mutation command')),
                 capturedAtEpochMs: 1_000
             });
             pauseFirstRead = true;
@@ -566,16 +572,3 @@ Deno.test(
         });
     }
 );
-
-function readJsonTestRecord(value: JsonWireValue): Readonly<Record<string, JsonWireValue>> {
-    if (!isJsonTestRecord(value)) {
-        throw new TypeError('Expected a JSON object response');
-    }
-    return value;
-}
-
-function isJsonTestRecord(
-    value: JsonWireValue
-): value is Readonly<Record<string, JsonWireValue>> {
-    return value !== null && typeof value === 'object' && !Array.isArray(value);
-}
