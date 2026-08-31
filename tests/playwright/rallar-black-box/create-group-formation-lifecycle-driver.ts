@@ -1,10 +1,7 @@
-// dprint-ignore
-import {
-    expect
-} from '@playwright/test';
+import { expect } from '@playwright/test';
 import type { RallarBlackBoxTestCommand } from '@shared-test/rallar-bb-test/types.ts';
 import type { RtcBaselineJson } from '../../../packages/shared-rtc-bench/baseline/contracts/rtc-baseline-contracts.ts';
-import type { LiveRtcControlClient } from './live-rtc-performance-evidence.ts';
+import type { LiveRtcControlClient } from './live-rtc-control-client.ts';
 
 type TransportUnderTest = 'realtime' | 'messages.rtc';
 type AgentPrefix = 'A' | 'B' | 'C';
@@ -22,7 +19,11 @@ interface CreateGroupFormationLifecycleDriverConfig {
 interface RunGroupFormationLifecycleInput {
     readonly control: LiveRtcControlPort;
     readonly runId: string;
-    readonly agents: readonly [LiveRtcControlClient.Agent, LiveRtcControlClient.Agent, LiveRtcControlClient.Agent];
+    readonly agents: readonly [
+        LiveRtcControlClient.FormationAgent,
+        LiveRtcControlClient.FormationAgent,
+        LiveRtcControlClient.FormationAgent
+    ];
     readonly transport: TransportUnderTest;
     readonly groupId: string;
     readonly suffix: string;
@@ -38,8 +39,8 @@ interface GroupFormationLifecycleRun {
 interface ReconnectFormationAgentInput {
     readonly control: LiveRtcControlPort;
     readonly runId: string;
-    readonly reconnectingAgent: LiveRtcControlClient.Agent;
-    readonly readinessAgent: LiveRtcControlClient.Agent;
+    readonly reconnectingAgent: LiveRtcControlClient.FormationAgent;
+    readonly readinessAgent: LiveRtcControlClient.FormationAgent;
     readonly transport: TransportUnderTest;
     readonly groupId: string;
     readonly suffix: string;
@@ -71,8 +72,8 @@ export interface LiveRtcControlPort extends
 interface SetupGroupMembershipInput {
     readonly control: LiveRtcControlPort;
     readonly runId: string;
-    readonly owner: LiveRtcControlClient.Agent;
-    readonly members: readonly LiveRtcControlClient.Agent[];
+    readonly owner: LiveRtcControlClient.FormationAgent;
+    readonly members: readonly LiveRtcControlClient.FormationAgent[];
     readonly groupId: string;
     readonly suffix: string;
 }
@@ -80,7 +81,7 @@ interface SetupGroupMembershipInput {
 interface ConnectFormationAgentInput {
     readonly control: LiveRtcControlPort;
     readonly runId: string;
-    readonly agent: LiveRtcControlClient.Agent;
+    readonly agent: LiveRtcControlClient.FormationAgent;
     readonly transport: TransportUnderTest;
     readonly groupId: string;
     readonly suffix: string;
@@ -98,6 +99,7 @@ interface FormationConnections {
         FormationAgentConnection
     ];
     readonly presenceCommandIds: readonly string[];
+    readonly initialPairCommandIds: readonly string[];
     readonly readinessStartedAtMs: number;
 }
 
@@ -116,13 +118,13 @@ interface EstablishGroupLifecycleInput {
 interface GroupLifecycleCommandInput {
     readonly control: LiveRtcControlPort;
     readonly runId: string;
-    readonly owner: LiveRtcControlClient.Agent;
+    readonly owner: LiveRtcControlClient.FormationAgent;
     readonly groupId: string;
     readonly suffix: string;
 }
 
 interface ActivateGroupInput extends GroupLifecycleCommandInput {
-    readonly agents: readonly [LiveRtcControlClient.Agent, LiveRtcControlClient.Agent, LiveRtcControlClient.Agent];
+    readonly agents: readonly LiveRtcControlClient.FormationAgent[];
     readonly transport: TransportUnderTest;
 }
 
@@ -193,6 +195,7 @@ async function runGroupFormationLifecycle(
         commandIds: [
             ...formationConnections.connectResults.map((result) => result.commandId),
             ...formationConnections.presenceCommandIds,
+            ...formationConnections.initialPairCommandIds,
             ...established.commandIds
         ],
         sessions,
@@ -221,17 +224,16 @@ async function establishGroupLifecycle(
         suffix: input.lifecycleSuffix,
         expectedSessionIds: Object.values(input.sessions)
     });
-    await refreshAgentRooms(input.run.agents);
+    const activateCommandId = await activateAndRefreshAcceptedLayout(config, {
+        ...input.run,
+        owner,
+        agents: input.run.agents
+    });
     const readinessDurations = await waitForFormationReadiness({
         run: input.run,
         sessions: input.sessions,
         suffix: input.lifecycleSuffix,
         startedAtMs: input.readinessStartedAtMs
-    });
-    const activateCommandId = await activateAndRefreshAcceptedLayout(config, {
-        ...input.run,
-        owner,
-        agents: input.run.agents
     });
 
     return {
@@ -268,6 +270,7 @@ async function connectFormationAgents(
         owner,
         minimumRevision: 2
     });
+    const initialPairCommandIds = await establishInitialPair(config, input, [connectA, connectB]);
     const readinessStartedAtMs = performance.now();
     const connectC = await connectFormationAgent(config, {
         ...input,
@@ -282,8 +285,38 @@ async function connectFormationAgents(
     return {
         connectResults: [connectA, connectB, connectC],
         presenceCommandIds: [...presenceA, ...presenceB, ...presenceC],
+        initialPairCommandIds,
         readinessStartedAtMs
     };
+}
+
+async function establishInitialPair(
+    config: CreateGroupFormationLifecycleDriverConfig,
+    input: RunGroupFormationLifecycleInput,
+    connections: readonly [FormationAgentConnection, FormationAgentConnection]
+): Promise<readonly string[]> {
+    const owner = input.agents[0];
+    const agents = [owner, input.agents[1]];
+    const suffix = `${input.transport.replace('.', '-')}-${input.suffix}-initial-pair`;
+    const pair = { ...input, owner, suffix };
+    const topologyCommandId = await configureMeshTopology(config, pair);
+    const lifecycleCommandIds = await enterGroupConnectionCycle(config, pair);
+    const plannedCommandIds = await waitForPlannedLayout(config, {
+        ...pair,
+        expectedSessionIds: connections.map((connection) => connection.sessionId)
+    });
+    const activationCommandId = await activateAndRefreshAcceptedLayout(config, { ...pair, agents });
+    const startedAtMs = performance.now();
+    await Promise.all(agents.map(async (agent, index) =>
+        await input.control.waitForPeerReadiness({
+            runId: input.runId,
+            agent,
+            expectedPeerIds: [connections[index === 0 ? 1 : 0].sessionId],
+            suffix,
+            startedAtMs
+        })
+    ));
+    return [topologyCommandId, ...lifecycleCommandIds, ...plannedCommandIds, activationCommandId];
 }
 
 async function connectFormationAgent(
@@ -438,22 +471,8 @@ async function activateAndRefreshAcceptedLayout(
     return commandId;
 }
 
-async function refreshAgentRooms(
-    agents: readonly [LiveRtcControlClient.Agent, LiveRtcControlClient.Agent, LiveRtcControlClient.Agent]
-): Promise<void> {
-    await Promise.all(agents.map((agent) =>
-        agent.page.evaluate(async () => {
-            const runtime = (window as Window & {
-                __blackBoxRallar?: {
-                    refreshRoom(options: { timeoutMs: number; }): Promise<void>;
-                };
-            }).__blackBoxRallar;
-            if (!runtime) {
-                throw new Error('Browser Rallar runtime is unavailable.');
-            }
-            await runtime.refreshRoom({ timeoutMs: 15_000 });
-        })
-    ));
+async function refreshAgentRooms(agents: readonly LiveRtcControlClient.FormationAgent[]): Promise<void> {
+    await Promise.all(agents.map(async (agent) => await agent.refreshRoom({ timeoutMs: 15_000 })));
 }
 
 async function waitForPlannedLayout(

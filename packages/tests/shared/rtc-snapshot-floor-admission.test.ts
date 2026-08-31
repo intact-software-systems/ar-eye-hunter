@@ -1,6 +1,16 @@
-import { newALBroadcastMessage, newALMulticastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
+import {
+    newALBroadcastMessage,
+    newALMulticastMessage,
+    type ALMessage
+} from '@shared/al-contracts/al-contract.ts';
 import { newALNackControlMessage } from '@shared/al-contracts/al-control.ts';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import {
+    afterEach,
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
 import { room, RtcEndpointFixture } from './rtc-endpoint-fixture.ts';
 const endpoints: RtcEndpointFixture[] = [];
 

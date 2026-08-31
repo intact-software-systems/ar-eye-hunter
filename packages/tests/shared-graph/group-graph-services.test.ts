@@ -10,11 +10,21 @@ import { findGraphByRef } from '@shared-graph/repository/graphs-repository.ts';
 import { clearAllNodes, hasNode } from '@shared-graph/repository/vivaldi-repository.ts';
 import { observeRtt } from '@shared-graph/vivaldi-service.ts';
 import type { ClientSession, ClientSnapshot } from '@shared/api/client-types.ts';
-import type { AuditStamp, GroupMember, GroupPresenceSession, GroupSnapshot } from '@shared/api/group-types.ts';
+import type {
+    AuditStamp,
+    GroupMember,
+    GroupPresenceSession,
+    GroupSnapshot
+} from '@shared/api/group-types.ts';
 import { setClientStateSnapshotByPrincipalId } from '@shared/repository/client-state-snapshots-repository.ts';
 import { setGroupStateSnapshot } from '@shared/repository/group-state-snapshots-repository.ts';
 import { latestRttById, setRtt } from '@shared/repository/rtt-repository.ts';
-import { beforeEach, describe, expect, it } from 'vitest';
+import {
+    beforeEach,
+    describe,
+    expect,
+    it
+} from 'vitest';
 import { configureTestCacheRepositories } from '../configure-test-cache-repositories.ts';
 import { createTestGroup } from '../create-test-group.ts';
 import { createRtt } from './helpers.ts';

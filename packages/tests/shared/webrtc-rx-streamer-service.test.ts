@@ -1,5 +1,11 @@
 import { createInMemoryALInboundRuntimeStores } from '@shared/alm/ALRuntimeStores.ts';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import {
+    afterEach,
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
 import { EmptyMediaStream, EmptyRtcTrackEvent } from './rtc-media-test-events.ts';
 
 import { LatestRepository } from '@shared/cache/LatestRepository.ts';

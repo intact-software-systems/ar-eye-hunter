@@ -13,7 +13,11 @@ import {
     setOverlayAdoptionDiagnosticsSink,
     setPlannedOverlayById
 } from '@shared/repository/overlays-repository.ts';
-import { acceptGroupSnapshotRemoval, acceptGroupSnapshotUpdate, type GroupSnapshotRtcSyncPort } from '@shared/services/group-snapshot-rtc-sync.ts';
+import {
+    acceptGroupSnapshotRemoval,
+    acceptGroupSnapshotUpdate,
+    type GroupSnapshotRtcSyncPort
+} from '@shared/services/group-snapshot-rtc-sync.ts';
 import type { WebRtcGroupManager } from '@shared/services/web-rtc-group-manager.ts';
 // dprint-ignore
 import {

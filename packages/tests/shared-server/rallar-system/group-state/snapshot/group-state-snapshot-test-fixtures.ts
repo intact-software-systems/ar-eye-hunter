@@ -1,4 +1,10 @@
-import type { AuditStamp, Group, GroupMember, GroupPresenceSession, GroupSnapshot } from '@shared/api/group-types.ts';
+import type {
+    AuditStamp,
+    Group,
+    GroupMember,
+    GroupPresenceSession,
+    GroupSnapshot
+} from '@shared/api/group-types.ts';
 import { createTestGroup } from '../../../../create-test-group.ts';
 
 interface SnapshotConstruction {

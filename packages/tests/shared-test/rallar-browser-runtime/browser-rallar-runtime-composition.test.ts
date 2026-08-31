@@ -11,9 +11,17 @@ import {
 import { refreshBlackBoxBrowserRoomState } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/browser-rallar-runtime-composition.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
-import type { AuditStamp, GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
+import type {
+    AuditStamp,
+    GroupRef,
+    GroupSnapshot
+} from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
-import { DEFAULT_STATE_APPLICATION_ID, DEFAULT_STATE_WORKSPACE_ID, type StateScope } from '@shared/api/state-types.ts';
+import {
+    DEFAULT_STATE_APPLICATION_ID,
+    DEFAULT_STATE_WORKSPACE_ID,
+    type StateScope
+} from '@shared/api/state-types.ts';
 import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
 import { findAcceptedOverlayById, findPlannedOverlayById } from '@shared/repository/overlays-repository.ts';
 import type { WebRtcGroupManager } from '@shared/services/web-rtc-group-manager.ts';

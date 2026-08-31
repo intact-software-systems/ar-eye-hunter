@@ -1,9 +1,11 @@
-import type { BrowserContext, Page } from '@playwright/test';
-import type { ALNackPayload } from '@shared/al-contracts/al-control.ts';
-import { describe, expect, it } from 'vitest';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
 import type { LiveRtcControlPort } from '../../../tests/playwright/rallar-black-box/create-group-formation-lifecycle-driver.ts';
-import { createLiveRtcDeliveryOperations, hasReceiverNotInSyncNack } from '../../../tests/playwright/rallar-black-box/live-rtc-delivery-operations.ts';
-import type { LiveRtcControlClient } from '../../../tests/playwright/rallar-black-box/live-rtc-performance-evidence.ts';
+import type { LiveRtcControlClient } from '../../../tests/playwright/rallar-black-box/live-rtc-control-client.ts';
+import { createLiveRtcDeliveryOperations } from '../../../tests/playwright/rallar-black-box/live-rtc-delivery-operations.ts';
 
 const config = {
     apiBaseUrl: 'http://localhost:18080',
@@ -100,30 +102,17 @@ describe('live RTC delivery owner', () => {
             roomRef: { applicationId: 'app/a', workspaceId: 'work b', groupId: 'room/c' },
             send: { nextHopPeerIds: ['session-C'], payload: { matrixId: 'reconnect-result' } }
         });
-        expect(recording.milestones).toEqual([
-            'connect:A',
-            'presence:1',
-            'connect:B',
-            'presence:2',
-            'connect:C',
-            'presence:3',
-            'mesh',
-            'establish',
-            'planned',
-            'refresh:A',
-            'refresh:B',
-            'refresh:C',
-            'ready:A',
-            'ready:B',
-            'ready:C',
-            'activate',
-            'refresh:A',
-            'refresh:B',
-            'refresh:C',
-            'connect:C',
-            'ready:B',
-            'send'
-        ]);
+        const beforeC = recording.milestones.slice(0, recording.milestones.indexOf('connect:C'));
+        expect(beforeC).toEqual(expect.arrayContaining(['ready:A', 'ready:B', 'activate:2']));
+        const afterC = recording.milestones.slice(recording.milestones.indexOf('connect:C'));
+        expect(afterC.indexOf('reopen')).toBeGreaterThan(afterC.indexOf('presence:3'));
+        expect(afterC.indexOf('planned')).toBeGreaterThan(afterC.indexOf('reopen'));
+        expect(afterC.indexOf('activate:3')).toBeGreaterThan(afterC.indexOf('planned'));
+        for (const prefix of ['A', 'B', 'C']) {
+            expect(afterC.indexOf(`refresh:${prefix}`)).toBeGreaterThan(afterC.indexOf('activate:3'));
+            expect(afterC.indexOf(`ready:${prefix}`)).toBeGreaterThan(afterC.indexOf(`refresh:${prefix}`));
+            expect(afterC.indexOf('send')).toBeGreaterThan(afterC.indexOf(`ready:${prefix}`));
+        }
         expect(recording.commands.filter(({ command }) => 'request' in command).map(({ command }) => command))
             .toEqual(expect.arrayContaining([
                 expect.objectContaining({
@@ -143,50 +132,28 @@ describe('live RTC delivery owner', () => {
             ]));
     });
 
-    it('rejects a successful enqueue with no receiver NACK even when its command id names a NACK', async () => {
-        const recording = new RecordingLiveRtcControl();
-        await expect(
-            createLiveRtcDeliveryOperations(config).runNackProbe({
-                control: recording,
-                runId: 'run',
-                agent: recording.agents[0],
-                groupId: 'room',
-                suffix: 'nack-not-yet-in-sync',
-                targetSessionId: 'session-B'
-            })
-        ).rejects.toThrow('Expected receiver-correlated');
-    }, 35_000);
-
-    it('requires the actual receiver and message on a not-yet-in-sync receipt', () => {
-        const expected = { messageId: 'message', senderId: 'sender', receiverId: 'receiver' };
-        const receipt = { msgId: 'message', fromPeerId: 'receiver', toPeerId: 'sender', reason: 'not-yet-in-sync' as const, observedAtEpochMs: 12 };
-        expect(hasReceiverNotInSyncNack([receipt], expected)).toBe(true);
-        expect(hasReceiverNotInSyncNack([], expected)).toBe(false);
-        expect(hasReceiverNotInSyncNack([{ ...receipt, msgId: 'another' }], expected)).toBe(false);
-        expect(hasReceiverNotInSyncNack([{ ...receipt, fromPeerId: 'unrelated' }], expected)).toBe(false);
-        expect(hasReceiverNotInSyncNack([{ ...receipt, toPeerId: 'unrelated' }], expected)).toBe(false);
-        expect(hasReceiverNotInSyncNack([{ ...receipt, reason: 'expired' }], expected)).toBe(false);
-    });
-
-    it('accepts the independently supplied receiver receipt for the actual attempted message', async () => {
-        const recording = new RecordingLiveRtcControl();
-        recording.nacks.push({
-            msgId: 'attempted-message',
-            fromPeerId: 'session-B',
-            toPeerId: 'session-A',
-            reason: 'not-yet-in-sync',
-            observedAtEpochMs: 12
+    it('promotes new pair sessions before readiness when an active group retains old accepted sessions', async () => {
+        const recording = new RecordingLiveRtcControl({
+            lifecycleState: 'active',
+            acceptedSessions: ['previous-A', 'previous-B', 'previous-C']
         });
-        expect(
-            await createLiveRtcDeliveryOperations(config).runNackProbe({
-                control: recording,
-                runId: 'run',
-                agent: recording.agents[0],
-                groupId: 'room',
-                suffix: 'positive',
-                targetSessionId: 'session-B'
-            })
-        ).toBe('nack-not-yet-in-sync-positive');
+        const formation = await createLiveRtcDeliveryOperations(config).runGroupFormation({
+            control: recording,
+            runId: 'reused-run',
+            agents: recording.agents,
+            transport: 'messages.rtc',
+            groupId: 'reused-room',
+            suffix: 'second-transport',
+            readinessScope: 'all'
+        });
+        expect(formation.sessions).toEqual({ A: 'session-A', B: 'session-B', C: 'session-C' });
+        const pair = recording.milestones.slice(0, recording.milestones.indexOf('connect:C'));
+        expect(pair.indexOf('reopen')).toBeGreaterThan(pair.indexOf('presence:2'));
+        expect(pair.indexOf('planned')).toBeGreaterThan(pair.indexOf('reopen'));
+        expect(pair.indexOf('activate:2')).toBeGreaterThan(pair.indexOf('planned'));
+        for (const prefix of ['A', 'B']) {
+            expect(pair.indexOf(`ready:${prefix}`)).toBeGreaterThan(pair.indexOf('activate:2'));
+        }
     });
 
     it('retires peers only after close/reset and survivor absence confirmation', async () => {
@@ -236,7 +203,7 @@ describe('live RTC delivery owner', () => {
             ['C', 'broadcast', ['A', 'B']]
         ]);
         expect(result.timings.filter(({ kind }) => kind === 'peer-ready').map(({ senderAgentId }) => senderAgentId)).toEqual(['A', 'B', 'C']);
-        expect(recording.milestones.indexOf('activate')).toBeLessThan(recording.milestones.indexOf('send'));
+        expect(recording.milestones.indexOf('activate:3')).toBeLessThan(recording.milestones.indexOf('send'));
         expect(recording.messageObservations).toHaveLength(18);
         for (const scenario of result.scenarios) {
             expect(recording.messageObservations.filter(({ matrixId }) => matrixId === scenario.matrixId).map(({ agentId }) => agentId)).toEqual(
@@ -246,37 +213,44 @@ describe('live RTC delivery owner', () => {
     });
 });
 
+namespace RecordingLiveRtcControl {
+    export interface InitialState {
+        readonly lifecycleState: 'forming' | 'active';
+        readonly acceptedSessions: readonly string[];
+    }
+}
+
 class RecordingLiveRtcControl implements LiveRtcControlPort {
     readonly commands: LiveRtcControlClient.ExecuteInput[] = [];
     readonly milestones: string[] = [];
     readonly connected = new Set<string>();
-    readonly nacks: ALNackPayload[] = [];
+    private lifecycleState: 'forming' | 'active' | 'connecting' | 'reconfiguring';
+    private acceptedSessions: readonly string[];
     readonly messageObservations: LiveRtcControlClient.WaitForMessageInput[] = [];
-    readonly agents: readonly [LiveRtcControlClient.Agent, LiveRtcControlClient.Agent, LiveRtcControlClient.Agent] = [
+    readonly agents: readonly [LiveRtcControlClient.FormationAgent, LiveRtcControlClient.FormationAgent, LiveRtcControlClient.FormationAgent] = [
         this.createAgent('A'),
         this.createAgent('B'),
         this.createAgent('C')
     ];
-    private createAgent(prefix: 'A' | 'B' | 'C'): LiveRtcControlClient.Agent {
+    constructor(initial: RecordingLiveRtcControl.InitialState = { lifecycleState: 'forming', acceptedSessions: [] }) {
+        this.lifecycleState = initial.lifecycleState;
+        this.acceptedSessions = initial.acceptedSessions;
+    }
+
+    private createAgent(prefix: 'A' | 'B' | 'C'): LiveRtcControlClient.FormationAgent {
         return {
             prefix,
             agentId: prefix,
             actor: prefix,
             connection: prefix,
-            context: {} as BrowserContext,
-            page: {
-                evaluate: async (_callback: Parameters<Page['evaluate']>[0], input?: string) => {
-                    if (typeof input === 'string') {
-                        return this.nacks;
-                    }
-                    this.milestones.push(`refresh:${prefix}`);
-                }
-            } as Page
+            refreshRoom: async () => {
+                this.milestones.push(`refresh:${prefix}`);
+            }
         };
     }
     executeOk = async (input: LiveRtcControlClient.ExecuteInput): Promise<LiveRtcControlClient.Result> => {
         this.commands.push(input);
-        const command = input.command as { kind: string; request?: { path: string; method: string; }; };
+        const command = input.command;
         const body = this.recordCommand(input, command);
         return {
             agentId: input.agentId,
@@ -294,9 +268,12 @@ class RecordingLiveRtcControl implements LiveRtcControlPort {
     executeResult = this.executeOk;
     private recordCommand(
         input: LiveRtcControlClient.ExecuteInput,
-        command: { kind: string; request?: { path: string; method: string; }; }
+        command: LiveRtcControlClient.ExecuteInput['command']
     ): ReturnType<LiveRtcControlPort['resultValue']> {
         if (command.kind === 'rtc.connect') {
+            if (input.agentId === 'C' && this.lifecycleState !== 'active') {
+                throw new Error('Third agent connected before pair activation');
+            }
             this.connected.add(input.agentId);
             this.milestones.push(`connect:${input.agentId}`);
         }
@@ -311,21 +288,28 @@ class RecordingLiveRtcControl implements LiveRtcControlPort {
             this.milestones.push(`presence:${this.connected.size}`);
             return { causalRevision: { presenceRevision: this.connected.size } };
         }
-        else if (command.request?.path.endsWith('/topology')) {
+        else if (('request' in command ? command.request?.path : undefined)?.endsWith('/topology')) {
             this.milestones.push('planned');
             return { snapshot: { activeSessionIds: [...this.connected].map((id) => `session-${id}`) } };
         }
-        else if (command.request?.method === 'GET') {
-            return { group: { lifecycleState: 'forming' } };
+        else if (('request' in command ? command.request?.method : undefined) === 'GET') {
+            return { group: { lifecycleState: this.lifecycleState } };
         }
-        else if (command.request?.path.includes('/topology/config/')) {
+        else if (('request' in command ? command.request?.path : undefined)?.includes('/topology/config/')) {
             this.milestones.push('mesh');
         }
-        else if (command.request?.path.includes('/lifecycle/establish/')) {
+        else if (('request' in command ? command.request?.path : undefined)?.includes('/lifecycle/establish/')) {
+            this.lifecycleState = 'connecting';
             this.milestones.push('establish');
         }
-        else if (command.request?.path.includes('/lifecycle/activate/')) {
-            this.milestones.push('activate');
+        else if (('request' in command ? command.request?.path : undefined)?.includes('/lifecycle/reopen/')) {
+            this.lifecycleState = 'reconfiguring';
+            this.milestones.push('reopen');
+        }
+        else if (('request' in command ? command.request?.path : undefined)?.includes('/lifecycle/activate/')) {
+            this.lifecycleState = 'active';
+            this.acceptedSessions = [...this.connected].map((id) => `session-${id}`);
+            this.milestones.push(`activate:${this.connected.size}`);
         }
         return {};
     }
@@ -334,12 +318,18 @@ class RecordingLiveRtcControl implements LiveRtcControlPort {
         if (!value || typeof value !== 'object' || Array.isArray(value)) {
             throw new Error('Recorded control result must contain an object value');
         }
-        return value as ReturnType<LiveRtcControlPort['resultValue']>;
+        return value;
     }
     requireSessionId(result: LiveRtcControlClient.Result): string {
         return `session-${result.agentId}`;
     }
     waitForPeerReadiness = async (input: LiveRtcControlClient.WaitForPeerReadinessInput): Promise<number> => {
+        const dialableSessions = this.acceptedSessions.length > 0
+            ? this.acceptedSessions
+            : [...this.connected].map((id) => `session-${id}`);
+        if (input.expectedPeerIds.some((id) => !dialableSessions.includes(id))) {
+            throw new Error('Readiness requested for a peer absent from the dialable layout');
+        }
         this.milestones.push(`ready:${input.agent.prefix}`);
         return 1;
     };

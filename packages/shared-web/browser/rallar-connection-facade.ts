@@ -7,7 +7,11 @@ import type {
 import type { RallarSubscriptionScope } from '@shared-web/browser/rallar-shared-contracts.ts';
 import type { RallarRoomState } from '@shared-web/browser/rooms/rallar-room-contracts.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
-import type { ApplicationId, GroupRef, WorkspaceId } from '@shared/api/group-types.ts';
+import type {
+    ApplicationId,
+    GroupRef,
+    WorkspaceId
+} from '@shared/api/group-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import type { CommandsOrchestrator, CommandsOrchestratorPolicies } from '@shared/cache/CommandsOrchestrator.ts';
 import type { WebRtcOverlayMulticastManager } from '@shared/multicast/WebRtcOverlayMulticastManager.ts';

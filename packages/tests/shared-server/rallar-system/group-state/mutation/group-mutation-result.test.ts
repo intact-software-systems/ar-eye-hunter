@@ -8,14 +8,28 @@ import { computeGroupMutation } from '@shared-server/rallar-system/group-state/m
 import { validateGroupMutationIdempotencyRecord } from '@shared-server/rallar-system/group-state/mutation/result-validation/validate-group-mutation-result.ts';
 import { validateGroupMutation } from '@shared-server/rallar-system/group-state/mutation/state-validation/validate-group-mutation.ts';
 import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
-import type { AuditStamp, GroupPresenceAdmission, GroupPresenceSummary } from '@shared/api/group-types.ts';
+import type {
+    AuditStamp,
+    GroupPresenceAdmission,
+    GroupPresenceSummary
+} from '@shared/api/group-types.ts';
 import { computeGroupPresenceSummaryEntry } from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
-import { describe, expect, it } from 'vitest';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
 import { FakeRuntimeStateRepository } from '../../../runtime-state/test-support/fake-runtime-state-repository.ts';
 import { createTestGroupStateService } from '../group-state-test-runtime.ts';
 
 import { createTestGroup } from '../../../../create-test-group.ts';
-import { groupMemberStorageKey, groupRef as runtimeGroupRef, groupStorageKey, SCOPE, storedEntry } from './group-mutation-test-runtime.ts';
+import {
+    groupMemberStorageKey,
+    groupRef as runtimeGroupRef,
+    groupStorageKey,
+    SCOPE,
+    storedEntry
+} from './group-mutation-test-runtime.ts';
 
 function createService(runtimeRepository: FakeRuntimeStateRepository, nowEpochMs: number): ReturnType<typeof createTestGroupStateService> {
     let id = 0;

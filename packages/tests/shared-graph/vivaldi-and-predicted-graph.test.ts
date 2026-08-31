@@ -7,9 +7,27 @@ import {
     VivaldiNode,
     type VivaldiNodeData
 } from '@shared-graph/graph/vivaldi.ts';
-import { clearAllNodes, getAllNodeData, getAllNodeIds, getNodeDataById, getOrCreateNode, hasNode } from '@shared-graph/repository/vivaldi-repository.ts';
-import { observeRtt, readablePredictedNodeData, toPredictedGraphFromIds, toPredictedGraphSnapshot } from '@shared-graph/vivaldi-service.ts';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+    clearAllNodes,
+    getAllNodeData,
+    getAllNodeIds,
+    getNodeDataById,
+    getOrCreateNode,
+    hasNode
+} from '@shared-graph/repository/vivaldi-repository.ts';
+import {
+    observeRtt,
+    readablePredictedNodeData,
+    toPredictedGraphFromIds,
+    toPredictedGraphSnapshot
+} from '@shared-graph/vivaldi-service.ts';
+import {
+    beforeEach,
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
 import { configureTestCacheRepositories } from '../configure-test-cache-repositories.ts';
 
 describe('shared-graph vivaldi and predicted graph behavior', () => {

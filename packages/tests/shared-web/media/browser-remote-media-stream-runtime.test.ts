@@ -1,6 +1,10 @@
 import { BrowserRemoteMediaStreamRuntime } from '@shared-web/browser/media/browser-remote-media-stream-runtime.ts';
 import type { RallarRemoteStream } from '@shared-web/browser/rallar-media-facade.ts';
-import { describe, expect, it } from 'vitest';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
 import { EmptyMediaStream, EmptyRtcTrackEvent } from '../../shared/rtc-media-test-events.ts';
 
 describe('BrowserRemoteMediaStreamRuntime', () => {

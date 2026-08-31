@@ -1,4 +1,9 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import {
+    beforeEach,
+    describe,
+    expect,
+    it
+} from 'vitest';
 
 import { captureStateSnapshotCollectionObservations, reconcileCompleteStateSnapshotCollections } from '@shared-web/browser/state-read/reconciliation.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';

@@ -1,7 +1,5 @@
-import { expect } from '@playwright/test';
-import type { ALNackPayload } from '@shared/al-contracts/al-control.ts';
-import type { RtcBaselineJson } from '../../../packages/shared-rtc-bench/baseline/contracts/rtc-baseline-contracts.ts';
-import type { BlackBoxRallarRuntime } from '../../../packages/shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-runtime-contract.ts';
+import { expect, type TestInfo } from '@playwright/test';
+import { toError } from '@shared/resilience/to-error.ts';
 import type { BlackBoxRallarSendInput } from '../../../packages/shared-test/black-box-runner/browser/rallar-browser-runtime/contracts.ts';
 import type {
     RallarBlackBoxTestRtcSendCommand,
@@ -13,7 +11,9 @@ import {
     type LiveRtcControlPort
 } from './create-group-formation-lifecycle-driver.ts';
 import { openTab } from './full-stack-helpers.ts';
-import type { LiveRtcControlClient, LiveRtcPerformanceTiming } from './live-rtc-performance-evidence.ts';
+import type { LiveRtcControlClient } from './live-rtc-control-client.ts';
+import type { LiveRtcPerformanceTiming } from './live-rtc-performance-evidence.ts';
+import { hasLiveRtcNotYetInSyncNack } from './live-rtc-wire-observation.ts';
 
 export type TransportUnderTest = 'realtime' | 'messages.rtc';
 export type AgentPrefix = 'A' | 'B' | 'C';
@@ -27,28 +27,32 @@ export interface CreateLiveRtcDeliveryOperationsConfig {
 }
 
 interface LiveRtcDeliveryRuntime extends CreateLiveRtcDeliveryOperationsConfig {
-    readonly groupFormationLifecycleDriver: ReturnType<typeof createGroupFormationLifecycleDriver>;
+    readonly groupFormationLifecycleDriver: GroupFormationLifecycleDriver;
 }
 
 interface RunWebSocketOpenSendCloseMatrixInput {
     readonly control: LiveRtcControlPort;
     readonly runId: string;
-    readonly agents: readonly LiveRtcControlClient.Agent[];
+    readonly agents: readonly LiveRtcControlClient.FormationAgent[];
     readonly groupId: string;
     readonly suffix: string;
 }
 
-interface RunDeliveryMatrixInput {
+interface RunAllDeliveryPermutationsInput {
     readonly control: LiveRtcControlPort;
     readonly runId: string;
     readonly agents: readonly [
-        LiveRtcControlClient.Agent,
-        LiveRtcControlClient.Agent,
-        LiveRtcControlClient.Agent
+        LiveRtcControlClient.FormationAgent,
+        LiveRtcControlClient.FormationAgent,
+        LiveRtcControlClient.FormationAgent
     ];
     readonly transport: TransportUnderTest;
     readonly groupId: string;
     readonly suffix: string;
+}
+
+interface RunDeliveryMatrixInput extends RunAllDeliveryPermutationsInput {
+    readonly agents: readonly [LiveRtcControlClient.Agent, LiveRtcControlClient.Agent, LiveRtcControlClient.Agent];
 }
 
 interface RunDeliveryMatrixResult {
@@ -67,18 +71,24 @@ interface RtcFailureProbeInput {
     readonly targetSessionId: string;
 }
 
+interface ReceivedNackProbeInput extends RtcFailureProbeInput {
+    readonly control: LiveRtcControlPort & Pick<LiveRtcControlClient, 'requireSentMessageId' | 'recordReceivedNack'>;
+    readonly testInfo: TestInfo;
+    readonly senderSessionId: string;
+}
+
 interface CloseAndResetAgentsInput {
     readonly control: LiveRtcControlPort;
     readonly runId: string;
-    readonly agents: readonly LiveRtcControlClient.Agent[];
+    readonly agents: readonly LiveRtcControlClient.FormationAgent[];
     readonly suffix: string;
 }
 
 interface CloseAndResetSettledAgentTrioInput extends CloseAndResetAgentsInput {
     readonly agents: readonly [
-        LiveRtcControlClient.Agent,
-        LiveRtcControlClient.Agent,
-        LiveRtcControlClient.Agent
+        LiveRtcControlClient.FormationAgent,
+        LiveRtcControlClient.FormationAgent,
+        LiveRtcControlClient.FormationAgent
     ];
     readonly sessions: Readonly<Record<AgentPrefix, string>>;
 }
@@ -90,8 +100,8 @@ export interface LiveRtcDeliveryOperations {
     sendMatrixPayload(input: SendMatrixPayloadInput): Promise<string>;
     runWebSocketOpenSendCloseMatrix(input: RunWebSocketOpenSendCloseMatrixInput): Promise<readonly string[]>;
     runDeliveryMatrix(input: RunDeliveryMatrixInput): Promise<RunDeliveryMatrixResult>;
-    runAllDeliveryPermutations(input: RunDeliveryMatrixInput): Promise<RunDeliveryMatrixResult>;
-    runNackProbe(input: RtcFailureProbeInput): Promise<string>;
+    runAllDeliveryPermutations(input: RunAllDeliveryPermutationsInput): Promise<RunDeliveryMatrixResult>;
+    runNackProbe(input: ReceivedNackProbeInput): Promise<string>;
     expectClosedTransportFailure(input: RtcFailureProbeInput): Promise<readonly string[]>;
     closeAndResetAgents(input: CloseAndResetAgentsInput): Promise<readonly string[]>;
     closeAndResetSettledAgentTrio(input: CloseAndResetSettledAgentTrioInput): Promise<readonly string[]>;
@@ -109,7 +119,7 @@ interface LiveRtcMatrixPayload {
 interface SendMatrixPayloadInput {
     readonly control: LiveRtcControlPort;
     readonly runId: string;
-    readonly sender: LiveRtcControlClient.Agent;
+    readonly sender: LiveRtcControlClient.FormationAgent;
     readonly transport: TransportUnderTest;
     readonly groupId: string;
     readonly suffix: string;
@@ -135,9 +145,9 @@ export function createLiveRtcDeliveryOperations(
         ) => await runWebSocketOpenSendCloseMatrix(runtime, input),
         runDeliveryMatrix: async (input: RunDeliveryMatrixInput) => await runDeliveryMatrix(runtime, input),
         runAllDeliveryPermutations: async (
-            input: RunDeliveryMatrixInput
+            input: RunAllDeliveryPermutationsInput
         ) => await runAllDeliveryPermutations(runtime, input),
-        runNackProbe: async (input: RtcFailureProbeInput) => await runNackProbe(runtime, input),
+        runNackProbe: async (input: ReceivedNackProbeInput) => await runNackProbe(runtime, input),
         expectClosedTransportFailure: async (
             input: RtcFailureProbeInput
         ) => await expectClosedTransportFailure(runtime, input),
@@ -158,15 +168,17 @@ function transportSlug(transport: TransportUnderTest): string {
     return transport.replace('.', '-');
 }
 
+interface SendPayloadInput {
+    readonly transport: TransportUnderTest;
+    readonly groupId: string;
+    readonly targetSessionIds?: readonly string[];
+    readonly payload: LiveRtcMatrixPayload;
+    readonly minSnapshotVersion?: number;
+}
+
 function sendPayload(
     runtime: LiveRtcDeliveryRuntime,
-    input: Readonly<{
-        transport: TransportUnderTest;
-        groupId: string;
-        targetSessionIds?: readonly string[];
-        payload: LiveRtcMatrixPayload;
-        minSnapshotVersion?: number;
-    }>
+    input: SendPayloadInput
 ): BlackBoxRallarSendInput {
     if (input.transport === 'messages.rtc') {
         return {
@@ -191,15 +203,17 @@ function sendPayload(
     };
 }
 
+interface ConfigureAgentForServerCommandsInput {
+    readonly control: LiveRtcControlPort;
+    readonly runId: string;
+    readonly agent: LiveRtcControlClient.FormationAgent;
+    readonly groupId: string;
+    readonly suffix: string;
+}
+
 async function configureAgentForServerCommands(
     runtime: LiveRtcDeliveryRuntime,
-    input: Readonly<{
-        control: LiveRtcControlPort;
-        runId: string;
-        agent: LiveRtcControlClient.Agent;
-        groupId: string;
-        suffix: string;
-    }>
+    input: ConfigureAgentForServerCommandsInput
 ): Promise<string> {
     const commandId = `configure-server-${input.agent.prefix.toLowerCase()}-${input.suffix}`;
     await input.control.executeOk({
@@ -373,7 +387,7 @@ async function runDeliveryMatrix(
 
 async function runAllDeliveryPermutations(
     runtime: LiveRtcDeliveryRuntime,
-    input: RunDeliveryMatrixInput
+    input: RunAllDeliveryPermutationsInput
 ): Promise<RunDeliveryMatrixResult> {
     const formation = await runtime.groupFormationLifecycleDriver.run({ ...input, readinessScope: 'all' });
     const slug = transportSlug(input.transport);
@@ -409,53 +423,53 @@ async function runAllDeliveryPermutations(
 
 async function runNackProbe(
     runtime: LiveRtcDeliveryRuntime,
-    input: RtcFailureProbeInput
+    input: ReceivedNackProbeInput
 ): Promise<string> {
-    const commandId = `nack-not-yet-in-sync-${input.suffix}`;
-    const result = await input.control.executeResult({
-        runId: input.runId,
-        agentId: input.agent.agentId,
-        commandId,
-        command: toNackProbeCommand(runtime, input),
-        timeoutMs: 60_000
+    await input.agent.page.evaluate(() => {
+        if (!window.__liveRtcWireObservation) {
+            throw new Error('RTC wire observer is missing.');
+        }
+        window.__liveRtcWireObservation.start();
     });
-    const sent = input.control.resultValue(result).message;
-    const envelope = jsonRecord(jsonRecord(sent).message);
-    const identity = jsonRecord(envelope.id);
-    if (typeof identity.msgId !== 'string' || typeof identity.senderId !== 'string') {
-        throw new Error('NACK probe did not return the attempted message identity.');
+    const commandId = `nack-not-yet-in-sync-${input.suffix}`;
+    try {
+        const result = await input.control.executeOk({
+            runId: input.runId,
+            agentId: input.agent.agentId,
+            commandId,
+            command: toNackProbeCommand(runtime, input),
+            timeoutMs: 60_000
+        });
+        const messageId = input.control.requireSentMessageId(result);
+        const identity = { messageId, senderSessionId: input.senderSessionId, targetSessionId: input.targetSessionId };
+        let frames: readonly string[] = [];
+        await expect.poll(async () => {
+            const received = await input.agent.page.evaluate(() => {
+                if (!window.__liveRtcWireObservation) {
+                    throw new Error('RTC wire observer is missing.');
+                }
+                return window.__liveRtcWireObservation.read();
+            });
+            frames = received.filter((frame) => hasLiveRtcNotYetInSyncNack({ ...identity, frames: [frame] }));
+            return frames.length > 0;
+        }, { timeout: 15_000, message: 'Expected a received not-yet-in-sync NACK for the probe message.' }).toBe(true);
+        await input.control.recordReceivedNack({
+            ...identity,
+            frames,
+            testInfo: input.testInfo,
+            runId: input.runId,
+            agentId: input.agent.agentId
+        });
+        return commandId;
     }
-    const expected = { messageId: identity.msgId, senderId: identity.senderId, receiverId: input.targetSessionId };
-    await expect.poll(async () => {
-        const nacks = await input.agent.page.evaluate(async (messageId) => {
-            const runtime = (window as Window & { __blackBoxRallar?: BlackBoxRallarRuntime; }).__blackBoxRallar;
-            if (!runtime) {
-                throw new Error('Browser Rallar runtime is unavailable.');
-            }
-            return await runtime.readRtcMessageNacks(messageId);
-        }, expected.messageId);
-        return hasReceiverNotInSyncNack(nacks, expected);
-    }, { timeout: 30_000, message: 'Expected receiver-correlated not-yet-in-sync receipt' }).toBe(true);
-    return commandId;
-}
-
-export interface ExpectedReceiverNack {
-    readonly messageId: string;
-    readonly senderId: string;
-    readonly receiverId: string;
-}
-
-export function hasReceiverNotInSyncNack(nacks: readonly ALNackPayload[], expected: ExpectedReceiverNack): boolean {
-    return nacks.some((nack) =>
-        nack.msgId === expected.messageId && nack.fromPeerId === expected.receiverId &&
-        nack.toPeerId === expected.senderId && nack.reason === 'not-yet-in-sync'
-    );
-}
-
-function jsonRecord(
-    value: RtcBaselineJson | undefined
-): Readonly<Record<string, RtcBaselineJson>> {
-    return typeof value === 'object' && value !== null && !Array.isArray(value) ? value : {};
+    finally {
+        try {
+            await input.agent.page.evaluate(() => window.__liveRtcWireObservation?.stop());
+        }
+        catch (cause) {
+            console.error('Failed to stop live RTC NACK wire observation', toError(cause));
+        }
+    }
 }
 
 async function expectClosedTransportFailure(
@@ -534,7 +548,7 @@ async function closeAndResetSettledAgentTrio(
 ): Promise<readonly string[]> {
     const commandIds: string[] = [];
     const closeAndReset = async (
-        agent: LiveRtcControlClient.Agent
+        agent: LiveRtcControlClient.FormationAgent
     ): Promise<void> => {
         const closeCommandId = `close-${agent.prefix.toLowerCase()}-${input.suffix}`;
         const resetCommandId = `reset-${agent.prefix.toLowerCase()}-${input.suffix}`;
@@ -580,13 +594,13 @@ async function closeAndResetSettledAgentTrio(
 }
 
 interface DeliveryCase {
-    readonly sender: LiveRtcControlClient.Agent;
-    readonly receivers: readonly LiveRtcControlClient.Agent[];
+    readonly sender: LiveRtcControlClient.FormationAgent;
+    readonly receivers: readonly LiveRtcControlClient.FormationAgent[];
     readonly deliveryMode: 'direct' | 'multicast' | 'broadcast';
     readonly matrixId: string;
 }
 interface RunDeliveryCaseInput {
-    readonly run: RunDeliveryMatrixInput;
+    readonly run: RunAllDeliveryPermutationsInput;
     readonly sessions: Readonly<Record<AgentPrefix, string>>;
     readonly deliveryCase: DeliveryCase;
 }
@@ -653,7 +667,7 @@ async function observeVisibleInbox(agent: LiveRtcControlClient.Agent, matrixId: 
     });
 }
 function toReadinessTimings(
-    input: RunDeliveryMatrixInput,
+    input: RunAllDeliveryPermutationsInput,
     formation: Awaited<ReturnType<GroupFormationLifecycleDriver['run']>>,
     readinessScope: 'owner' | 'all'
 ): LiveRtcPerformanceTiming[] {
@@ -677,7 +691,7 @@ function toReadinessTimings(
 function toWebSocketMatrixSendCommand(
     runtime: LiveRtcDeliveryRuntime,
     input: RunWebSocketOpenSendCloseMatrixInput,
-    agent: LiveRtcControlClient.Agent
+    agent: LiveRtcControlClient.FormationAgent
 ): RallarBlackBoxTestWsSendCommand {
     return {
         kind: 'ws.send',

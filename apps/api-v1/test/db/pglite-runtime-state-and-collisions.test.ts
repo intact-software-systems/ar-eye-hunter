@@ -30,7 +30,12 @@ import { toResilienceDto } from '../api-v1-test-queue-resilience.ts';
 import { waitForPGliteQueueRow } from './pglite-app-inbox-test-runtime.ts';
 import { withPGliteSql } from './pglite-auth-test-harness.ts';
 import { createPGliteClientEventCollisionFixture } from './pglite-client-event-collision-test-runtime.ts';
-import { requireTopologyMutationOwners, submitPGliteTopologyCommand, topologyGroupSnapshot, topologyOverrideCommand } from './pglite-topology-test-runtime.ts';
+import {
+    requireTopologyMutationOwners,
+    submitPGliteTopologyCommand,
+    topologyGroupSnapshot,
+    topologyOverrideCommand
+} from './pglite-topology-test-runtime.ts';
 
 const FUTURE_MS = Date.parse('9999-12-31T23:59:59.999Z');
 const PAST_MS = Date.parse('2000-01-01T00:00:00.000Z');

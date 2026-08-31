@@ -4,7 +4,11 @@ import { type AppInboxEnqueueInput } from '@shared-server/rallar-system/app-inbo
 import type { AppInboxFailure } from '@shared-server/rallar-system/app-inbox/app-inbox-failure.ts';
 import type { ClientStateWritten } from '@shared-server/rallar-system/client-state/client-state-service-contracts.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
-import type { AuditStamp, ClientEvent, ClientSnapshot } from '@shared/api/client-types.ts';
+import type {
+    AuditStamp,
+    ClientEvent,
+    ClientSnapshot
+} from '@shared/api/client-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import { Either } from '@shared/resilience/Either.ts';
 

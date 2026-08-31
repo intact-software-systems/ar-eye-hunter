@@ -1,6 +1,17 @@
-import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import {
+    afterEach,
+    beforeEach,
+    expect,
+    it,
+    vi
+} from 'vitest';
 
-import { facade, loadRuntime, resetFacade, topics } from './browser-rallar-runtime-test-harness.ts';
+import {
+    facade,
+    loadRuntime,
+    resetFacade,
+    topics
+} from './browser-rallar-runtime-test-harness.ts';
 import { CrdtDocumentTestDouble } from './crdt-document-test-double.ts';
 
 beforeEach(() => {

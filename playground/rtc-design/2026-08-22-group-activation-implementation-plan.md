@@ -1648,6 +1648,37 @@ public-surface, bundle, native PostgreSQL and state-write evidence must support 
 Published PR checks and review conversations own readiness; this document is not their
 status ledger. Merges remain manual.
 
+Native review validation also exposed an existing presence-response race in the
+state-write convergence recipe. A successful reconnect receipt can precede the
+asynchronous group-presence summary, as already decided in #112 and implemented for
+the topology-churn proof in #116. Preserve that service contract. The reconnect
+request observes success and its causal tuple; a bounded read in the same concurrent
+presence lane must observe the exact reused session's new generation before recording
+the accepted lifecycle observation. A higher presence revision alone is insufficient
+because another concurrent summary update may advance it. Preserve the generation and
+expiry assertions, four racing lanes, final convergence rounds, maintenance delay and
+existing timeout budgets; do not make the production response synchronous or rerun the
+unrepaired recipe until it happens to pass.
+
+The subsequent `main` checkpoint at `5530e8b43` changes the live-browser harness,
+not the cache-role or receiver-admission contracts. Preserve its awaited membership
+refresh after peer readiness and before measured delivery, with refresh time included
+in the shared readiness budget. Failed browser startup and cleanup must still release
+the owned contexts and leave failure-evidence writing reachable. Preserve bounded
+observation of received RTC frames and exact NACK message/peer correlation alongside
+the receiver proof and named cleanup diagnostics in this slice. The delivery-operation
+owner remains separate from scenario orchestration; do not restore obsolete source
+topology assertions or duplicate the new browser/control owners during integration.
+The pair-first proof plans and activates the pair, refreshes membership and verifies
+both peers ready before connecting the third peer. Promotion must precede readiness
+because a later transport reuses the group with its previous accepted session IDs.
+It then uses the existing reopen transition, promotes the three-member
+plan, refreshes membership and verifies three-peer readiness within the measured
+budget. Current Slice 8a dialing prefers the accepted layout, so waiting for the
+third peer before promoting the replacement would depend on a race or on Slice 8b's
+future dial policy. Establishing again from ACTIVE is not a valid transition.
+Rerun the affected live-browser and evidence tests after resolving the source conflict.
+
 **Next two PRs (I5, I20):**
 
 - **Finish existing #381 / slice 8a.** Close receiver admission, hydration races and

@@ -9,7 +9,11 @@ import type {
     BlackBoxBrowserRtcDependency,
     BlackBoxBrowserWsDependency
 } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/browser-rallar-runtime-composition.ts';
-import type { RallarMessageHandler, RallarMessagePayload, RallarMessageSendResult } from '@shared-web/browser/messages/rallar-message-contracts.ts';
+import type {
+    RallarMessageHandler,
+    RallarMessagePayload,
+    RallarMessageSendResult
+} from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type { RallarScopedOperationOptions } from '@shared-web/browser/rallar-connection-facade.ts';
 import type { RallarCrdtDocument, RallarCrdtOpenOptions } from '@shared-web/browser/rallar-crdt.ts';
 import type { RallarRealtimeHandler } from '@shared-web/browser/rallar-realtime-facade.ts';

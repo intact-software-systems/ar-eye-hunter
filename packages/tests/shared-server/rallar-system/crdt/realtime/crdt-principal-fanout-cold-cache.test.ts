@@ -3,7 +3,13 @@ import { createClientStateSnapshotReadThroughCache } from '@shared-server/rallar
 import { createWsServerTargetResolver } from '@shared-server/rallar-system/websocket/targets/create-ws-server-target-resolver.ts';
 import { createTestClientStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import { newALRoute, newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
-import { type AuditStamp, type ClientInstance, type ClientPrincipal, type ClientSession, type ClientSnapshot } from '@shared/api/client-types.ts';
+import {
+    type AuditStamp,
+    type ClientInstance,
+    type ClientPrincipal,
+    type ClientSession,
+    type ClientSnapshot
+} from '@shared/api/client-types.ts';
 import { DEFAULT_STATE_WORKSPACE_ID } from '@shared/api/state-types.ts';
 import {
     RALLAR_CRDT_OPERATION_VERSION,
@@ -15,7 +21,11 @@ import {
 import { ConnectionContext, JsonWebSocketServer } from '@shared/mod.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
-import { describe, expect, it } from 'vitest';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
 
 import { findCurrentClientSnapshot } from '../../../../../../apps/api-v1/src/crdt/create-api-crdt-document-authorizer.ts';
 import { configureTestCacheRepositories } from '../../../../configure-test-cache-repositories.ts';

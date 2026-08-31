@@ -1,6 +1,17 @@
 import type { RallarRealtimeSendResult } from '@shared-web/browser/rallar-realtime-facade.ts';
-import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { facade, loadRuntime, resetFacade, topics } from './browser-rallar-runtime-test-harness.ts';
+import {
+    afterEach,
+    beforeEach,
+    expect,
+    it,
+    vi
+} from 'vitest';
+import {
+    facade,
+    loadRuntime,
+    resetFacade,
+    topics
+} from './browser-rallar-runtime-test-harness.ts';
 import { createDeferred } from './browser-runtime-lifecycle-test-fixture.ts';
 import { CrdtDocumentTestDouble } from './crdt-document-test-double.ts';
 

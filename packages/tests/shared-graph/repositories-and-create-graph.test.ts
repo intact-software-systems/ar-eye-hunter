@@ -1,12 +1,24 @@
 import { DEFAULT_GRAPH_PROP } from '@shared-graph/algo-props.ts';
 import { toGraph } from '@shared-graph/graph/create-graph.ts';
 import { VertexState, VertexType } from '@shared-graph/graph/graph-props.ts';
-import { computeIfAbsent, findGraphByRef, getAllGraphs, readableGraphCache, setGraph, setGraphs } from '@shared-graph/repository/graphs-repository.ts';
+import {
+    computeIfAbsent,
+    findGraphByRef,
+    getAllGraphs,
+    readableGraphCache,
+    setGraph,
+    setGraphs
+} from '@shared-graph/repository/graphs-repository.ts';
 import type { GraphInfoSnapshot } from '@shared-graph/shared-graph-types.ts';
 import type { RttMeasurementInfo } from '@shared/api/api-config.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import { LatestRepository } from '@shared/cache/LatestRepository.ts';
-import { beforeEach, describe, expect, it } from 'vitest';
+import {
+    beforeEach,
+    describe,
+    expect,
+    it
+} from 'vitest';
 import { configureTestCacheRepositories } from '../configure-test-cache-repositories.ts';
 
 describe('shared-graph repositories and graph creation', () => {

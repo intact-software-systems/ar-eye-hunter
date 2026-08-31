@@ -1,4 +1,10 @@
-import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import {
+    afterEach,
+    beforeEach,
+    expect,
+    it,
+    vi
+} from 'vitest';
 
 import { configureApiClient } from '@shared-web/browser/api-client-config.ts';
 import { ApiHttpError } from '@shared-web/browser/api/http-error.ts';
@@ -8,7 +14,11 @@ import { isRallarValidationError } from '@shared/api/rallar-validation.ts';
 import { configureOverlayRepositories } from '@shared/repository/overlays-repository.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 
-import { createRoomSnapshot, resetRoomWorkflowTestRuntime, seedRoomSnapshots } from './room-workflow-test-runtime.ts';
+import {
+    createRoomSnapshot,
+    resetRoomWorkflowTestRuntime,
+    seedRoomSnapshots
+} from './room-workflow-test-runtime.ts';
 
 beforeEach(() => {
     resetRoomWorkflowTestRuntime();

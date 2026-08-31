@@ -1,11 +1,26 @@
 import { createWsServerTargetResolver } from '@shared-server/rallar-system/websocket/targets/create-ws-server-target-resolver.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import type { GroupStateDeltaEnvelope } from '@shared/api/group-state-delta.ts';
-import type { AuditStamp, GroupMember, GroupSnapshot } from '@shared/api/group-types.ts';
-import { AppTopics, ConnectionContext, JsonWebSocketServer, newALBroadcastMessage, newALEventRoute, newALMulticastMessage } from '@shared/mod.ts';
+import type {
+    AuditStamp,
+    GroupMember,
+    GroupSnapshot
+} from '@shared/api/group-types.ts';
+import {
+    AppTopics,
+    ConnectionContext,
+    JsonWebSocketServer,
+    newALBroadcastMessage,
+    newALEventRoute,
+    newALMulticastMessage
+} from '@shared/mod.ts';
 import * as clientStateSnapshotsRepository from '@shared/repository/client-state-snapshots-repository.ts';
 import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
-import { describe, expect, it } from 'vitest';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
 import { configureTestCacheRepositories } from '../../../../configure-test-cache-repositories.ts';
 import { createTestGroup } from '../../../../create-test-group.ts';
 import { createOpenTestWebSocket } from '../test-support/open-test-websocket.ts';

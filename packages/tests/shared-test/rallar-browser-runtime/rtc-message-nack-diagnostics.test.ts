@@ -3,7 +3,11 @@ import { readBlackBoxRtcMessageNacks } from '@shared-test/black-box-runner/brows
 import { deleteBrowserALRuntimeEntriesForSession } from '@shared-web/browser/al-runtime/browser-al-runtime-cleanup.ts';
 import { configureBrowserALRuntimeStores, resolveBrowserRtcOverlayALOutboundRuntimeStores } from '@shared-web/browser/al-runtime/browser-al-runtime-stores.ts';
 import { newALNackControlMessage } from '@shared/al-contracts/al-control.ts';
-import { describe, expect, it } from 'vitest';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
 import '../../setup-browser-indexeddb.ts';
 
 describe('RTC message diagnostic receipts', () => {

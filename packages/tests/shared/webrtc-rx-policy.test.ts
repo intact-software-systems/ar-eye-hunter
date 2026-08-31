@@ -1,6 +1,12 @@
 import { newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
 import { AL_CONTROL_ACK_TYPE_ID } from '@shared/al-contracts/al-control.ts';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import {
+    afterEach,
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
 import { RtcEndpointFixture } from './rtc-endpoint-fixture.ts';
 
 const endpoints: RtcEndpointFixture[] = [];

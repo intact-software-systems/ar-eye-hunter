@@ -1,4 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
 
 import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 

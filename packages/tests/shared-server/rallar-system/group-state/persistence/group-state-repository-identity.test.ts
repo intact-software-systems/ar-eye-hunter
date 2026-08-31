@@ -4,7 +4,12 @@ import { groupStateIdempotencyStorageKey } from '@shared-server/rallar-system/gr
 import type { JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import type { Group } from '@shared/api/group-types.ts';
-import { describe, expect, it, vi } from 'vitest';
+import {
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
 import { FakeRuntimeStateRepository } from '../../../runtime-state/test-support/fake-runtime-state-repository.ts';
 import { createIdentityMutationRead } from './group-state-persistence-mutation-read-fixtures.ts';
 

@@ -1,11 +1,26 @@
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+    mkdirSync,
+    mkdtempSync,
+    readFileSync,
+    rmSync,
+    writeFileSync
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import {
+    afterEach,
+    describe,
+    expect,
+    it
+} from 'vitest';
 
 import { scanProductionSources } from '../../../scripts/repo-style-check/repository-scan.mjs';
-import { isReviewedDisposition, readReviewedDispositionContext, reviewedDispositions } from '../../../scripts/repo-style-check/reviewed-dispositions.mjs';
+import {
+    isReviewedDisposition,
+    readReviewedDispositionContext,
+    reviewedDispositions
+} from '../../../scripts/repo-style-check/reviewed-dispositions.mjs';
 
 const repoRoot = process.cwd();
 const checkerPath = path.join(repoRoot, 'scripts/check-changed-repo-style.mjs');
