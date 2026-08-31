@@ -1976,6 +1976,15 @@ Instrumentation overhead may change timing. These observations do not capture th
 condition or resolve either uninstrumented PostgreSQL failure; do not repeat full profiles merely
 until one passes.
 
+A bounded in-memory probe now reproduces one concrete failure mechanism through the actual API
+authorizer, topic router and live delivery service. Durable state authorizes the same scoped message
+with the same open socket in all three cases: an absent recipient cache and a pre-presence cache
+both produce no local recipient, no frame and no queued retry; a current cache delivers the exact
+frame. These authorization/routing owners are unchanged from the pre-cutover base. This establishes
+the cache/authority mismatch as a viable mechanism, not the exact cache contents of either failed
+live run or a completed fix. Any correction must preserve current durable authorization and the
+monotonic-cache contract; a liveness-filtered authority projection is not a canonical cache observation.
+
 The performance diagnostic began before the final server closure commit, so it is not exact-commit
 publication evidence. Neither a code regression nor harmless host noise has been established.
 The prescribed order-balanced comparison requires four fresh pinned PostgreSQL containers, with
