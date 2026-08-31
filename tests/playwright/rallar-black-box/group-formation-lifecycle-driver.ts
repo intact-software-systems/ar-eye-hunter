@@ -1,10 +1,6 @@
-// dprint-ignore
-import {
-    expect,
-    type Page
-} from '@playwright/test';
-import type { GroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
+import { expect } from '@playwright/test';
 import type { RallarBlackBoxTestCommand } from '@shared-test/rallar-bb-test/types.ts';
+import type { GroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
 import type { RtcBaselineJson } from '../../../packages/shared-rtc-bench/baseline/contracts/rtc-baseline-contracts.ts';
 import type { LiveRtcControlClient } from './live-rtc-performance-evidence.ts';
 
@@ -24,7 +20,11 @@ interface CreateGroupFormationLifecycleDriverConfig {
 interface RunGroupFormationLifecycleInput {
     readonly control: GroupFormationLifecycleControl;
     readonly runId: string;
-    readonly agents: readonly [GroupFormationLifecycleAgent, GroupFormationLifecycleAgent, GroupFormationLifecycleAgent];
+    readonly agents: readonly [
+        GroupFormationLifecycleAgent,
+        GroupFormationLifecycleAgent,
+        GroupFormationLifecycleAgent
+    ];
     readonly transport: TransportUnderTest;
     readonly groupId: string;
     readonly suffix: string;
@@ -102,6 +102,11 @@ interface PublishedGroupLayout {
     readonly identity: GroupLayoutIdentity;
 }
 
+interface ActivePublishedLayout {
+    readonly sessionIds: readonly string[];
+    readonly identity: GroupLayoutIdentity;
+}
+
 interface GroupLifecycleCommandInput {
     readonly control: GroupFormationLifecycleControl;
     readonly runId: string;
@@ -111,7 +116,11 @@ interface GroupLifecycleCommandInput {
 }
 
 interface ActivateGroupInput extends GroupLifecycleCommandInput {
-    readonly agents: readonly [GroupFormationLifecycleAgent, GroupFormationLifecycleAgent, GroupFormationLifecycleAgent];
+    readonly agents: readonly [
+        GroupFormationLifecycleAgent,
+        GroupFormationLifecycleAgent,
+        GroupFormationLifecycleAgent
+    ];
     readonly transport: TransportUnderTest;
 }
 
@@ -132,12 +141,16 @@ interface WaitForFormationReadinessInput {
     readonly startedAtMs: number;
 }
 
+export interface GroupFormationLifecycleCommandInput extends LiveRtcControlClient.ExecuteInput {
+    readonly command: RallarBlackBoxTestCommand;
+}
+
 interface GroupFormationLifecycleControl {
     executeResult(
-        input: LiveRtcControlClient.ExecuteInput
+        input: GroupFormationLifecycleCommandInput
     ): Promise<LiveRtcControlClient.Result>;
     executeOk(
-        input: LiveRtcControlClient.ExecuteInput
+        input: GroupFormationLifecycleCommandInput
     ): Promise<LiveRtcControlClient.Result>;
     resultValue(
         result: LiveRtcControlClient.Result
@@ -151,7 +164,7 @@ interface GroupFormationLifecycleControl {
     ): Promise<number>;
 }
 
-interface GroupFormationLifecycleAgent {
+export interface GroupFormationLifecycleAgent {
     readonly prefix: AgentPrefix;
     readonly agentId: string;
     readonly actor: string;
@@ -449,10 +462,12 @@ async function enterGroupConnectionCycle(
 
 async function connectPublishedLayout(
     config: CreateGroupFormationLifecycleDriverConfig,
-    input: GroupLifecycleCommandInput & Readonly<{
-        expectedFormationEpoch: number;
-        expectedLayout: GroupLayoutIdentity;
-    }>
+    input:
+        & GroupLifecycleCommandInput
+        & Readonly<{
+            expectedFormationEpoch: number;
+            expectedLayout: GroupLayoutIdentity;
+        }>
 ): Promise<string> {
     const commandId = `group-connect-${input.suffix}`;
     await input.control.executeOk({
@@ -562,7 +577,9 @@ async function waitForPlannedLayout(
         plannedLayout = candidate.identity;
         return true;
     }, {
-        message: `Expected a fresh epoch ${input.expectedFormationEpoch} planned topology with ${input.expectedSessionIds.join(', ')}`,
+        message: `Expected a fresh epoch ${input.expectedFormationEpoch} planned topology with ${
+            input.expectedSessionIds.join(', ')
+        }`,
         timeout: 30_000
     }).toBe(true);
     if (!plannedLayout) {
@@ -668,7 +685,7 @@ function groupRequestPath(
 
 function readActivePublishedLayout(
     value: Readonly<Record<string, RtcBaselineJson>>
-): Readonly<{ sessionIds: readonly string[]; identity: GroupLayoutIdentity; }> | undefined {
+): ActivePublishedLayout | undefined {
     const body = jsonRecord(value.body);
     const snapshot = jsonRecord(body.snapshot);
     const sourceRevision = jsonRecord(snapshot.sourceGroupStateCausalRevision);

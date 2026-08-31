@@ -1007,13 +1007,13 @@
         }
       }
     },
-    {
-      "name": "pauseActiveDataGroup",
+        {
+            "name": "pauseAllowedDataGroup",
       "type": "http",
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/lifecycle/pause/requests/pause-data-policy-{runId}",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{allowedGroupId}/lifecycle/pause/requests/pause-data-policy-{runId}",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
@@ -1022,10 +1022,11 @@
       },
       "expect": {
         "status": 200,
-        "body": {
-          "group": {
-            "lifecycleState": "active",
-            "transportState": "halted"
+                "body": {
+                    "group": {
+                        "groupId": "{allowedGroupId}",
+                        "lifecycleState": "forming",
+                        "transportState": "halted"
           }
         }
       }
@@ -1036,7 +1037,7 @@
       "connection": "primary",
       "request": {
         "method": "PUT",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{bobSessionId}/requests/presence-bob-paused-{runId}",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{allowedGroupId}/sessions/{bobSessionId}/requests/presence-bob-paused-{runId}",
         "headers": {
           "Authorization": "{bobAuthHeader}",
           "x-client-id": "{bobClientId}"
@@ -1056,7 +1057,7 @@
       "connection": "primary",
       "request": {
         "method": "PUT",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{bobClientId}/requests/leave-paused-data-policy-{runId}",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{allowedGroupId}/members/{bobClientId}/requests/leave-paused-data-policy-{runId}",
         "headers": {
           "Authorization": "{bobAuthHeader}",
           "x-client-id": "{bobClientId}"
@@ -1083,7 +1084,7 @@
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/join/requests/rejoin-paused-data-policy-{runId}",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{allowedGroupId}/join/requests/rejoin-paused-data-policy-{runId}",
         "headers": {
           "Authorization": "{bobAuthHeader}",
           "x-client-id": "{bobClientId}"
@@ -1108,7 +1109,7 @@
       "connection": "primary",
       "request": {
         "method": "PUT",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{bobSessionId}/requests/presence-bob-paused-rejoin-{runId}",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{allowedGroupId}/sessions/{bobSessionId}/requests/presence-bob-paused-rejoin-{runId}",
         "headers": {
           "Authorization": "{bobAuthHeader}",
           "x-client-id": "{bobClientId}"
@@ -1147,7 +1148,7 @@
             "groupRef": {
               "applicationId": "{applicationId}",
               "workspaceId": "{workspaceId}",
-              "groupId": "{groupId}"
+              "groupId": "{allowedGroupId}"
             }
           },
           "delivery": {
@@ -1177,12 +1178,12 @@
       }
     },
     {
-      "name": "resumeActiveDataGroup",
+      "name": "resumeAllowedDataGroup",
       "type": "http",
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/lifecycle/resume/requests/resume-data-policy-{runId}",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{allowedGroupId}/lifecycle/resume/requests/resume-data-policy-{runId}",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
@@ -1193,7 +1194,7 @@
         "status": 200,
         "body": {
           "group": {
-            "lifecycleState": "active",
+            "lifecycleState": "forming",
             "transportState": "flowing"
           }
         }
@@ -1224,7 +1225,7 @@
             "groupRef": {
               "applicationId": "{applicationId}",
               "workspaceId": "{workspaceId}",
-              "groupId": "{groupId}"
+              "groupId": "{allowedGroupId}"
             }
           },
           "delivery": {

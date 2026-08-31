@@ -27,7 +27,6 @@ export interface MutationRouteInventoryEntry {
     readonly familyRegistrationMarker?: string;
     readonly constructionRootSourcePath?: string;
     readonly constructionRootMarker?: string;
-    readonly familyOwnerOrder?: number;
 }
 
 export const MUTATION_ROUTE_INVENTORY: readonly MutationRouteInventoryEntry[] = decodeMutationRouteInventory(MUTATION_ROUTE_INVENTORY_ROWS);
@@ -58,8 +57,7 @@ const CANONICAL_INVENTORY_FIELDS = [
     'operationDiscriminant',
     'familyRegistrationMarker',
     'constructionRootSourcePath',
-    'constructionRootMarker',
-    'familyOwnerOrder'
+    'constructionRootMarker'
 ] as const;
 
 export function validateMutationRouteInventory(
@@ -149,7 +147,7 @@ function checkRegistration(
         routePath,
         registrationMarker: item.registrationMarker,
         familyRegistrationMarker: item.familyRegistrationMarker,
-        familyPrivateOwnerNames: readCanonicalFamilyPrivateOwners(item)
+        expectedFamilyRouteCount: readCanonicalFamilyRouteCount(item)
     });
     const hasRoot = !item.familyRegistrationMarker ||
         Boolean(
@@ -169,17 +167,15 @@ function checkRegistration(
     }
 }
 
-function readCanonicalFamilyPrivateOwners(
+function readCanonicalFamilyRouteCount(
     item: MutationRouteInventoryEntry
-): readonly string[] | undefined {
+): number | undefined {
     if (!item.familyRegistrationMarker) {
         return undefined;
     }
     return MUTATION_ROUTE_INVENTORY.filter(
         (candidate) => candidate.familyRegistrationMarker === item.familyRegistrationMarker
-    )
-        .toSorted((left, right) => (left.familyOwnerOrder ?? -1) - (right.familyOwnerOrder ?? -1))
-        .map((candidate) => candidate.registrationMarker);
+    ).length;
 }
 
 function checkAstMarker({

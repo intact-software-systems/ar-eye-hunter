@@ -10,14 +10,14 @@ import {
     resolveGroupMutationTargetPrincipalId,
     resolveGroupMutationTargetSessionId
 } from '../orchestration/resolve-group-mutation-target-identity.ts';
-import type { ValidateComputedGroupMutationWriteInput } from './validate-computed-group-mutation-write.ts';
+import type { AssertComputedGroupMutationWriteInput } from './assert-computed-group-mutation-write.ts';
 
-export function validateComputedGroupMutationGuard({
+export function assertComputedGroupMutationGuard({
     command,
     read,
     facts,
     computed
-}: ValidateComputedGroupMutationWriteInput): void {
+}: AssertComputedGroupMutationWriteInput): void {
     const guard = computed.guard;
     const expectedKeys = [
         'kind',
@@ -40,23 +40,23 @@ export function validateComputedGroupMutationGuard({
         );
     }
     if (guard.kind === 'group') {
-        validateComputedGroupGuard({ command, read, guard });
+        assertComputedGroupGuard({ command, read, guard });
         return;
     }
-    validateComputedPresenceGuard({ command, read, facts, guard });
+    assertComputedPresenceGuard({ command, read, facts, guard });
 }
 
-interface ValidateComputedGroupGuardInput {
-    readonly command: ValidateComputedGroupMutationWriteInput['command'];
-    readonly read: ValidateComputedGroupMutationWriteInput['read'];
-    readonly guard: Extract<ValidateComputedGroupMutationWriteInput['computed']['guard'], { kind: 'group'; }>;
+interface AssertComputedGroupGuardInput {
+    readonly command: AssertComputedGroupMutationWriteInput['command'];
+    readonly read: AssertComputedGroupMutationWriteInput['read'];
+    readonly guard: Extract<AssertComputedGroupMutationWriteInput['computed']['guard'], { kind: 'group'; }>;
 }
 
-function validateComputedGroupGuard({
+function assertComputedGroupGuard({
     command,
     read,
     guard
-}: ValidateComputedGroupGuardInput): void {
+}: AssertComputedGroupGuardInput): void {
     if (Object.is(guard.operation, 'delete')) {
         throw new TypeError('Group mutation cannot use a group delete guard');
     }
@@ -72,19 +72,19 @@ function validateComputedGroupGuard({
     }
 }
 
-interface ValidateComputedPresenceGuardInput {
-    readonly command: ValidateComputedGroupMutationWriteInput['command'];
-    readonly read: ValidateComputedGroupMutationWriteInput['read'];
-    readonly facts: ValidateComputedGroupMutationWriteInput['facts'];
-    readonly guard: Extract<ValidateComputedGroupMutationWriteInput['computed']['guard'], { kind: 'presence'; }>;
+interface AssertComputedPresenceGuardInput {
+    readonly command: AssertComputedGroupMutationWriteInput['command'];
+    readonly read: AssertComputedGroupMutationWriteInput['read'];
+    readonly facts: AssertComputedGroupMutationWriteInput['facts'];
+    readonly guard: Extract<AssertComputedGroupMutationWriteInput['computed']['guard'], { kind: 'presence'; }>;
 }
 
-function validateComputedPresenceGuard({
+function assertComputedPresenceGuard({
     command,
     read,
     facts,
     guard
-}: ValidateComputedPresenceGuardInput): void {
+}: AssertComputedPresenceGuardInput): void {
     validatePresenceSession(
         guard.value,
         command.aggregateRef,

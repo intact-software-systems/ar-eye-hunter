@@ -1,9 +1,11 @@
+import type { GroupJoinCodeMutationWritten } from '@shared-server/rallar-system/group-state/group-state-service-contracts.ts';
 import type {
     GroupMutationCommand,
     GroupMutationFacts,
     GroupMutationRead
 } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
-import type { AuditStamp, GroupMember, GroupPresenceAdmission } from '@shared/api/group-types.ts';
+import type { RuntimeStateEntryValue } from '@shared-server/runtime-state/runtime-state-json-store.ts';
+import type { AuditStamp, Group, GroupMember, GroupPresenceAdmission } from '@shared/api/group-types.ts';
 import { createTestGroup } from '../../../create-test-group.ts';
 import type { GroupStateTestService } from './group-state-test-runtime.ts';
 import { groupMemberStorageKey, groupRef, groupStorageKey, storagePart, storedEntry } from './mutation/group-mutation-test-runtime.ts';
@@ -31,7 +33,7 @@ export function groupIdempotencyStorageKey(requestId: string): string {
     return `${groupStorageKey()}:${storagePart('request', requestId)}`;
 }
 
-export function rekey<T>(stored: ReturnType<typeof storedEntry<T>>, key: string) {
+export function rekey<T>(stored: RuntimeStateEntryValue<T>, key: string): RuntimeStateEntryValue<T> {
     return { ...stored, entry: { ...stored.entry, key } };
 }
 
@@ -54,15 +56,19 @@ export function memberFor(principalId: string): GroupMember {
 
 export function requireJoinCodeResult(
     written: Awaited<ReturnType<GroupStateTestService['rotateGroupJoinCode']>>
-) {
+): GroupJoinCodeMutationWritten {
     return written.result;
 }
 
-export function createMutationCommand(
-    overrides: Partial<GroupMutationCommand> = {}
-): GroupMutationCommand {
+export function createMutationCommand(): Extract<GroupMutationCommand, { operation: 'updateGroup'; }>;
+export function createMutationCommand<Operation extends GroupMutationCommand['operation']>(
+    overrides: GroupMutationFixtureCommand & { readonly operation: Operation; }
+): GroupMutationCommand & { readonly operation: Operation; };
+export function createMutationCommand(overrides?: GroupMutationFixtureCommand): GroupMutationCommand {
+    if (overrides !== undefined) {
+        return { aggregateRef: groupRef('pure-room'), commandId: 'pure-command', requestId: 'pure-command', ...overrides };
+    }
     return {
-        operation: 'updateGroup',
         aggregateRef: groupRef('pure-room'),
         commandId: 'pure-command',
         requestId: 'pure-command',
@@ -84,9 +90,13 @@ export function createMutationCommand(
             reason: null,
             traceId: null
         },
-        ...overrides
-    } as GroupMutationCommand;
+        operation: 'updateGroup'
+    };
 }
+
+type GroupMutationFixtureCommand<Command extends GroupMutationCommand = GroupMutationCommand> = Command extends GroupMutationCommand ?
+    Omit<Command, 'aggregateRef' | 'commandId' | 'requestId'> & Partial<Pick<Command, 'aggregateRef' | 'commandId' | 'requestId'>> :
+    never;
 
 export function auditStamp(
     atEpochMs: number,
@@ -132,10 +142,10 @@ export function createMutationRead(): GroupMutationRead {
         plannedLayoutRow: null,
         connectTriggerLatch: null,
         acceptedLayoutRow: null
-    } as GroupMutationRead;
+    };
 }
 
-function createStoredMutationGroup(audit: AuditStamp) {
+function createStoredMutationGroup(audit: AuditStamp): RuntimeStateEntryValue<Group> {
     const group = createTestGroup({
         ...groupRef('pure-room'),
         displayName: 'Before',
@@ -154,7 +164,7 @@ function createStoredMutationGroup(audit: AuditStamp) {
 
 interface MutationActorFixture {
     readonly member: GroupMember;
-    readonly entry: ReturnType<typeof storedEntry<GroupMember>>;
+    readonly entry: RuntimeStateEntryValue<GroupMember>;
 }
 
 function createMutationActor(audit: AuditStamp): MutationActorFixture {

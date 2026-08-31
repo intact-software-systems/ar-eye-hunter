@@ -1,143 +1,131 @@
-import type {
-    ConnectGroupPresenceSessionRequest,
-    DisconnectGroupPresenceSessionRequest,
-    HeartbeatGroupPresenceSessionRequest
-} from '@shared/api/state-types.ts';
-
-import {
-    assertExactKeys,
-    requireJsonSafe,
-    requireNonEmptyString,
-    requireOneOf,
-    requirePositiveSafeInteger,
-    requireRecord
-} from '../../group-state-validation-primitives.ts';
 import { GroupMutationRejectedError, type GroupMutationCommand } from '../group-mutation-contracts.ts';
+import {
+    isGroupInputRecord,
+    validateGroupInputFields,
+    validateGroupInputJson,
+    validateGroupInputKeys
+} from './group-input-validation-issues.ts';
 import { validateGroupMutationOperationInput } from './validate-group-mutation-operation-input.ts';
+
+type PresenceOperation = 'connectPresence' | 'heartbeatPresence' | 'disconnectPresence';
+
+export function assertGroupMutationRequest(operation: GroupMutationCommand['operation'], request: unknown): void {
+    let publicRequest = request;
+    if (operation === 'reconfigureGroup' && isGroupInputRecord(request) && 'expectedFormationEpoch' in request) {
+        const { expectedFormationEpoch, ...sparseRequest } = request;
+        if (
+            expectedFormationEpoch !== null &&
+            (typeof expectedFormationEpoch !== 'number' || !Number.isSafeInteger(expectedFormationEpoch) ||
+                expectedFormationEpoch < 0)
+        ) {
+            throw new TypeError('Group reconfigureGroup expectedFormationEpoch must be a non-negative safe integer');
+        }
+        publicRequest = sparseRequest;
+    }
+    const issues = validateGroupMutationRequest(operation, publicRequest);
+    if (issues.length > 0) {
+        throw issues[0];
+    }
+}
 
 export function validateGroupMutationRequest(
     operation: GroupMutationCommand['operation'],
     request: unknown
-): void {
-    requireJsonSafe(request, `Group ${operation} request`);
-    const input = requireRecord(request, `Group ${operation} request`);
-    assertExactKeys(input, GROUP_MUTATION_REQUEST_KEYS[operation], `Group ${operation} request`);
-    requireNonEmptyString(input.requestId, `Group ${operation} requestId`);
-    requireNonEmptyString(input.actorPrincipalId, `Group ${operation} actorPrincipalId`);
-    requireNonEmptyString(input.actorSessionId, `Group ${operation} actorSessionId`);
-    for (const key of ['reason', 'traceId']) {
-        if (input[key] !== undefined) {
-            requireNonEmptyString(input[key], `Group ${operation} ${key}`);
-        }
+): readonly Error[] {
+    const label = `Group ${operation} request`;
+    const jsonIssues = validateGroupInputJson(request, label);
+    if (jsonIssues.length > 0) {
+        return jsonIssues;
     }
-    if (operation === 'connectPresence') {
-        return validateGroupPresenceMutationRequest(operation, request);
+    if (!isGroupInputRecord(request)) {
+        return [new TypeError(`${label} must be an object`)];
     }
-    if (operation === 'heartbeatPresence') {
-        return validateGroupPresenceMutationRequest(operation, request);
+    const issues = [
+        ...validateGroupInputKeys(request, GROUP_MUTATION_REQUEST_KEYS[operation], label),
+        ...validateGroupInputFields(request, [
+            { key: 'requestId', kind: 'string', required: true },
+            { key: 'actorPrincipalId', kind: 'string', required: true },
+            { key: 'actorSessionId', kind: 'string', required: true },
+            { key: 'reason', kind: 'string' },
+            { key: 'traceId', kind: 'string' }
+        ], `Group ${operation}`)
+    ];
+    if (operation === 'connectPresence' || operation === 'heartbeatPresence' || operation === 'disconnectPresence') {
+        return [...issues, ...validateGroupPresenceMutationRequest(operation, request)];
     }
-    if (operation === 'disconnectPresence') {
-        return validateGroupPresenceMutationRequest(operation, request);
-    }
-    validateGroupMutationOperationInput({ operation, input });
+    return [...issues, ...validateGroupMutationOperationInput({ operation, input: request })];
 }
 
-export function validateGroupPresenceMutationRequest(
-    operation: 'connectPresence',
-    request: unknown
-): asserts request is ConnectGroupPresenceSessionRequest;
-export function validateGroupPresenceMutationRequest(
-    operation: 'heartbeatPresence',
-    request: unknown
-): asserts request is HeartbeatGroupPresenceSessionRequest;
-export function validateGroupPresenceMutationRequest(
-    operation: 'disconnectPresence',
-    request: unknown
-): asserts request is DisconnectGroupPresenceSessionRequest;
-export function validateGroupPresenceMutationRequest(
-    operation: 'connectPresence' | 'heartbeatPresence' | 'disconnectPresence',
-    request: unknown
-): void {
-    requireJsonSafe(request, `Group ${operation} request`);
-    const value = requireRecord(request, `Group ${operation} request`);
-    assertExactKeys(
-        value,
-        [
-            'requestId',
-            'actorPrincipalId',
-            'actorSessionId',
-            'reason',
-            'traceId',
-            'generationId',
-            'principalId',
-            ...(operation === 'connectPresence' ? ['connectedAtEpochMs'] : []),
-            ...(operation === 'disconnectPresence' ? ['disconnectedAtEpochMs'] : []),
-            'lastHeartbeatAtEpochMs',
-            'expiresAtEpochMs'
-        ],
-        `Group ${operation} request`
-    );
-    requireNonEmptyString(value.generationId, `Group ${operation} generationId`);
-    for (
-        const field of [
-            'requestId',
-            'actorPrincipalId',
-            'actorSessionId',
-            'reason',
-            'traceId',
-            'principalId'
-        ]
-    ) {
-        if (value[field] !== undefined) {
-            requireNonEmptyString(value[field], `Group ${operation} ${field}`);
-        }
+export function validateGroupPresenceMutationRequest(operation: PresenceOperation, request: unknown): readonly Error[] {
+    const label = `Group ${operation} request`;
+    const jsonIssues = validateGroupInputJson(request, label);
+    if (jsonIssues.length > 0) {
+        return jsonIssues;
     }
-    const timestampFields = operation === 'connectPresence'
-        ? ['connectedAtEpochMs', 'lastHeartbeatAtEpochMs', 'expiresAtEpochMs']
-        : operation === 'heartbeatPresence'
-        ? ['lastHeartbeatAtEpochMs', 'expiresAtEpochMs']
-        : ['disconnectedAtEpochMs', 'lastHeartbeatAtEpochMs', 'expiresAtEpochMs'];
-    for (const field of timestampFields) {
-        const timestamp = value[field];
-        if (
-            timestamp !== undefined &&
-            (!Number.isSafeInteger(timestamp) || (timestamp as number) <= 0)
-        ) {
-            throw new GroupMutationRejectedError(
-                `Group ${operation} ${field} must be a positive safe integer`
-            );
-        }
+    if (!isGroupInputRecord(request)) {
+        return [new TypeError(`${label} must be an object`)];
     }
-    validatePresenceTimestampOrder(operation, value);
+    const timestampFields = [
+        ...(operation === 'connectPresence' ? ['connectedAtEpochMs'] : []),
+        ...(operation === 'disconnectPresence' ? ['disconnectedAtEpochMs'] : []),
+        'lastHeartbeatAtEpochMs',
+        'expiresAtEpochMs'
+    ];
+    const identityFields = ['requestId', 'actorPrincipalId', 'actorSessionId', 'reason', 'traceId', 'principalId'];
+    const issues = [
+        ...validateGroupInputKeys(request, [...identityFields, 'generationId', ...timestampFields], label),
+        ...validateGroupInputFields(request, [
+            { key: 'generationId', kind: 'string', required: true },
+            ...identityFields.map((key) => ({ key, kind: 'string' as const }))
+        ], `Group ${operation}`)
+    ];
+    const timestampIssues = validateGroupInputFields(
+        request,
+        timestampFields.map((key) => ({ key, kind: 'positive-integer' as const })),
+        `Group ${operation}`
+    )
+        .map((issue) => new GroupMutationRejectedError(issue.message));
+    return [...issues, ...timestampIssues, ...validatePresenceTimestampOrder(operation, request)];
 }
 
 function validatePresenceTimestampOrder(
-    operation: 'connectPresence' | 'heartbeatPresence' | 'disconnectPresence',
-    value: Record<string, unknown>
-): void {
-    const heartbeatAt = value.lastHeartbeatAtEpochMs as number | undefined;
-    const expiresAt = value.expiresAtEpochMs as number | undefined;
-    if (heartbeatAt !== undefined && expiresAt !== undefined && expiresAt < heartbeatAt) {
-        throw new GroupMutationRejectedError(
-            `Group ${operation} expiresAtEpochMs must not predate lastHeartbeatAtEpochMs`
+    operation: PresenceOperation,
+    value: Readonly<Record<string, unknown>>
+): readonly GroupMutationRejectedError[] {
+    const issues: GroupMutationRejectedError[] = [];
+    const heartbeatAt = value.lastHeartbeatAtEpochMs;
+    const expiresAt = value.expiresAtEpochMs;
+    if (typeof heartbeatAt !== 'number') {
+        return issues;
+    }
+    if (typeof expiresAt === 'number' && expiresAt < heartbeatAt) {
+        issues.push(
+            new GroupMutationRejectedError(
+                `Group ${operation} expiresAtEpochMs must not predate lastHeartbeatAtEpochMs`
+            )
         );
     }
-    if (operation === 'connectPresence') {
-        const connectedAt = value.connectedAtEpochMs as number | undefined;
-        if (connectedAt !== undefined && heartbeatAt !== undefined && heartbeatAt < connectedAt) {
-            throw new GroupMutationRejectedError(
+    if (
+        operation === 'connectPresence' && typeof value.connectedAtEpochMs === 'number' &&
+        heartbeatAt < value.connectedAtEpochMs
+    ) {
+        issues.push(
+            new GroupMutationRejectedError(
                 'Group connectPresence lastHeartbeatAtEpochMs must not predate connectedAtEpochMs'
-            );
-        }
+            )
+        );
     }
-    if (operation === 'disconnectPresence') {
-        const disconnectedAt = value.disconnectedAtEpochMs as number | undefined;
-        if (disconnectedAt !== undefined && heartbeatAt !== undefined && disconnectedAt < heartbeatAt) {
-            throw new GroupMutationRejectedError(
+    if (
+        operation === 'disconnectPresence' && typeof value.disconnectedAtEpochMs === 'number' &&
+        value.disconnectedAtEpochMs < heartbeatAt
+    ) {
+        issues.push(
+            new GroupMutationRejectedError(
                 'Group disconnectPresence disconnectedAtEpochMs must not predate lastHeartbeatAtEpochMs'
-            );
-        }
+            )
+        );
     }
+    return issues;
 }
 
 export const ACTOR_INPUT_KEYS = [
@@ -187,7 +175,7 @@ const GROUP_MUTATION_REQUEST_KEYS: Readonly<Record<GroupMutationCommand['operati
     resetGroupFormation: [...MUTATION_REQUEST_KEYS],
     connectGroup: [...MUTATION_REQUEST_KEYS, 'expectedFormationEpoch', 'expectedLayout'],
     activateGroup: [...MUTATION_REQUEST_KEYS],
-    reconfigureGroup: [...MUTATION_REQUEST_KEYS, 'expectedFormationEpoch', 'landing'],
+    reconfigureGroup: [...MUTATION_REQUEST_KEYS, 'landing'],
     // Internal-only: never reaches the HTTP request validator, listed for the
     // Record's completeness. The criterion payload carries the observed rate.
     failGroupFormation: [...MUTATION_REQUEST_KEYS, 'observedRate'],

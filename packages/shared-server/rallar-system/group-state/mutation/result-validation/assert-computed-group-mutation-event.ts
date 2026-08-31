@@ -1,13 +1,13 @@
 import { validateAuthoritativeGroupEvent } from '@shared/api/authoritative-state-validation.ts';
 import type { MutationActor } from '@shared/api/mutation-actor.ts';
 
-import type { ValidateComputedGroupMutationWriteInput } from './validate-computed-group-mutation-write.ts';
+import type { AssertComputedGroupMutationWriteInput } from './assert-computed-group-mutation-write.ts';
 
-export function validateComputedGroupMutationEvent({
+export function assertComputedGroupMutationEvent({
     command,
     facts,
     computed
-}: ValidateComputedGroupMutationWriteInput): void {
+}: AssertComputedGroupMutationWriteInput): void {
     validateAuthoritativeGroupEvent(computed.event, command.aggregateRef);
     if (
         computed.event.eventId !== facts.eventId ||

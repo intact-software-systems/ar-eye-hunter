@@ -17,10 +17,10 @@ import { validateGroupExpiredStateAuthority } from '../../presence/group-expired
 import type { GroupMutationCommand, GroupMutationRead } from '../group-mutation-contracts.ts';
 import { groupMutationIdempotencyKey } from '../group-mutation-idempotency-key.ts';
 import { resolveGroupMutationReadIdentities } from '../read/resolve-group-mutation-read-identities.ts';
-import { validateGroupMutationIdempotencyRecord } from '../result-validation/validate-group-mutation-result.ts';
-import { validateGroupMutationAuthorityReads } from './validate-group-mutation-authority-reads.ts';
-import { validateGroupMutationMemberReads } from './validate-group-mutation-member-reads.ts';
-import { validateGroupMutationOperationReads } from './validate-group-mutation-operation-reads.ts';
+import { assertGroupMutationIdempotencyRecord } from '../result-validation/assert-group-mutation-result.ts';
+import { assertGroupMutationAuthorityReads } from './assert-group-mutation-authority-reads.ts';
+import { assertGroupMutationMemberReads } from './assert-group-mutation-member-reads.ts';
+import { assertGroupMutationOperationReads } from './assert-group-mutation-operation-reads.ts';
 
 const GROUP_MUTATION_READ_KEYS = [
     'idempotency',
@@ -49,16 +49,16 @@ const GROUP_MUTATION_READ_KEYS = [
     'acceptedLayoutRow'
 ] as const;
 
-export function validateGroupMutationRead(
+export function assertGroupMutationRead(
     read: GroupMutationRead,
     command: GroupMutationCommand
 ): void {
     const ref = command.aggregateRef;
-    validateReadShape(read);
-    validateStoredGroupRead(read, ref);
+    assertReadShape(read);
+    assertStoredGroupRead(read, ref);
     const identities = resolveGroupMutationReadIdentities(read, command);
-    validateGroupMutationMemberReads(read, ref, identities);
-    validateTargetPresenceRead({
+    assertGroupMutationMemberReads(read, ref, identities);
+    assertTargetPresenceRead({
         read,
         ref,
         targetSessionId: identities.targetSessionId,
@@ -72,18 +72,18 @@ export function validateGroupMutationRead(
         targetPresence: read.targetPresence,
         expiredTargetPresenceEntry: read.expiredTargetPresenceEntry
     });
-    validateGroupMutationAuthorityReads({ read, command, ref, identities });
-    validateSummaryAndIdempotencyReads(read, command, ref);
-    validateGroupMutationOperationReads(read, command);
+    assertGroupMutationAuthorityReads({ read, command, ref, identities });
+    assertSummaryAndIdempotencyReads(read, command, ref);
+    assertGroupMutationOperationReads(read, command);
 }
 
-function validateReadShape(read: GroupMutationRead): void {
+function assertReadShape(read: GroupMutationRead): void {
     requireJsonSafe(read, 'Group mutation read');
     assertExactKeys(read, GROUP_MUTATION_READ_KEYS, 'Group mutation read');
     assertRequiredKeys(read, GROUP_MUTATION_READ_KEYS, 'Group mutation read');
 }
 
-function validateStoredGroupRead(read: GroupMutationRead, ref: GroupRef): void {
+function assertStoredGroupRead(read: GroupMutationRead, ref: GroupRef): void {
     if (!read.group) {
         return;
     }
@@ -95,19 +95,19 @@ function validateStoredGroupRead(read: GroupMutationRead, ref: GroupRef): void {
     validateStoredGroup(read.group.value, ref);
 }
 
-interface ValidateTargetPresenceReadInput {
+interface AssertTargetPresenceReadInput {
     readonly read: GroupMutationRead;
     readonly ref: GroupRef;
     readonly targetSessionId: string | null;
     readonly targetPrincipalId: string | null;
 }
 
-function validateTargetPresenceRead({
+function assertTargetPresenceRead({
     read,
     ref,
     targetSessionId,
     targetPrincipalId
-}: ValidateTargetPresenceReadInput): void {
+}: AssertTargetPresenceReadInput): void {
     if (!read.targetPresence) {
         return;
     }
@@ -125,7 +125,7 @@ function validateTargetPresenceRead({
     validatePresenceSession(read.targetPresence.value, ref, 'Stored target presence');
 }
 
-function validateSummaryAndIdempotencyReads(
+function assertSummaryAndIdempotencyReads(
     read: GroupMutationRead,
     command: GroupMutationCommand,
     ref: GroupRef
@@ -150,5 +150,5 @@ function validateSummaryAndIdempotencyReads(
         'Stored group idempotency',
         groupStateIdempotencyStorageKey(ref, idempotencyKey)
     );
-    validateGroupMutationIdempotencyRecord(read.idempotency.value, ref);
+    assertGroupMutationIdempotencyRecord(read.idempotency.value, ref);
 }

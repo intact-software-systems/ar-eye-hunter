@@ -1,15 +1,15 @@
 import { jsonEquals } from '@shared/repository/state-utils.ts';
 
 import { groupMutationIdempotencyKey } from '../group-mutation-idempotency-key.ts';
-import type { ValidateComputedGroupMutationWriteInput } from './validate-computed-group-mutation-write.ts';
-import { validateGroupMutationIdempotencyRecord, validateMutationReceipt } from './validate-group-mutation-result.ts';
+import type { AssertComputedGroupMutationWriteInput } from './assert-computed-group-mutation-write.ts';
+import { assertGroupMutationIdempotencyRecord, assertMutationReceipt } from './assert-group-mutation-result.ts';
 
-export function validateComputedGroupMutationReceipt({
+export function assertComputedGroupMutationReceipt({
     command,
     facts,
     computed
-}: ValidateComputedGroupMutationWriteInput): void {
-    validateMutationReceipt(
+}: AssertComputedGroupMutationWriteInput): void {
+    assertMutationReceipt(
         computed.receipt,
         command.aggregateRef,
         'Group mutation computed receipt'
@@ -22,16 +22,16 @@ export function validateComputedGroupMutationReceipt({
     ) {
         throw new TypeError('Group mutation computed receipt differs from command');
     }
-    validateComputedIdempotency(command, computed);
+    assertComputedIdempotency(command, computed);
 }
 
-function validateComputedIdempotency(
-    command: ValidateComputedGroupMutationWriteInput['command'],
-    computed: ValidateComputedGroupMutationWriteInput['computed']
+function assertComputedIdempotency(
+    command: AssertComputedGroupMutationWriteInput['command'],
+    computed: AssertComputedGroupMutationWriteInput['computed']
 ): void {
     const idempotencyKey = groupMutationIdempotencyKey(command);
     if (computed.idempotency !== null) {
-        validateGroupMutationIdempotencyRecord(computed.idempotency, command.aggregateRef);
+        assertGroupMutationIdempotencyRecord(computed.idempotency, command.aggregateRef);
         if (
             computed.idempotency.requestId !== idempotencyKey ||
             !jsonEquals(computed.idempotency.receipt, computed.receipt)

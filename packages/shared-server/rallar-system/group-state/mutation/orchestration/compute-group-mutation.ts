@@ -8,7 +8,7 @@ import {
 import { computeGroupTransportMutation } from '../aggregate/compute-group-transport-mutation.ts';
 import { computeLifecycleTransition } from '../aggregate/compute-lifecycle-transition.ts';
 import { assertGroupMutationAuthority } from '../command-validation/assert-group-mutation-authority.ts';
-import { validateGroupMutationCommand } from '../command-validation/validate-group-mutation-command.ts';
+import { assertGroupMutationCommand } from '../command-validation/assert-group-mutation-command.ts';
 import type {
     GroupMutationCommand,
     GroupMutationComputed,
@@ -32,8 +32,8 @@ import { computeConnectGroupPresence } from '../presence/compute-connect-group-p
 import { computeDisconnectGroupPresence } from '../presence/compute-disconnect-group-presence.ts';
 import { computeHeartbeatGroupPresence } from '../presence/compute-heartbeat-group-presence.ts';
 import { probeGroupMutationIdempotency } from '../probe-group-mutation-idempotency.ts';
-import { validateGroupMutationFacts } from '../state-validation/validate-group-mutation-facts.ts';
-import { validateGroupMutationRead } from '../state-validation/validate-group-mutation-read.ts';
+import { assertGroupMutationFacts } from '../state-validation/assert-group-mutation-facts.ts';
+import { assertGroupMutationRead } from '../state-validation/assert-group-mutation-read.ts';
 
 export interface GroupMutationInput {
     readonly command: GroupMutationCommand;
@@ -43,9 +43,9 @@ export interface GroupMutationInput {
 
 export function computeGroupMutation(input: GroupMutationInput): GroupMutationComputed {
     const { command, read, facts } = input;
-    validateGroupMutationCommand(command);
-    validateGroupMutationRead(read, command);
-    validateGroupMutationFacts(facts);
+    assertGroupMutationCommand(command);
+    assertGroupMutationRead(read, command);
+    assertGroupMutationFacts(facts);
     assertGroupMutationAuthority(command, facts);
     const idempotency = probeGroupMutationIdempotency(command, read, facts.commandHash);
     if (idempotency.outcome !== 'miss') {

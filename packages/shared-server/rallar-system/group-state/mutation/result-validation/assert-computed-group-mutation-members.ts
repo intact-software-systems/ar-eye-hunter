@@ -14,21 +14,21 @@ import { validateStoredMember } from '../../persistence/validate-persisted-group
 import { validateInitialGroupPresenceSummaryCandidate } from '../../presence/group-initial-presence-summary.ts';
 import type { GroupMutationCommand, GroupMutationRead } from '../group-mutation-contracts.ts';
 import { resolveGroupMutationTargetPrincipalId } from '../orchestration/resolve-group-mutation-target-identity.ts';
-import type { ValidateComputedGroupMutationWriteInput } from './validate-computed-group-mutation-write.ts';
+import type { AssertComputedGroupMutationWriteInput } from './assert-computed-group-mutation-write.ts';
 
-export function validateComputedGroupMutationMembers(
-    input: ValidateComputedGroupMutationWriteInput
+export function assertComputedGroupMutationMembers(
+    input: AssertComputedGroupMutationWriteInput
 ): void {
-    validateComputedMembers(input);
-    validateComputedInitialPresenceSummary(input);
-    validateComputedPresenceAdmission(input);
+    assertComputedMembers(input);
+    assertComputedInitialPresenceSummary(input);
+    assertComputedPresenceAdmission(input);
 }
 
-function validateComputedMembers({
+function assertComputedMembers({
     command,
     read,
     computed
-}: ValidateComputedGroupMutationWriteInput): void {
+}: AssertComputedGroupMutationWriteInput): void {
     if (!Array.isArray(computed.members)) {
         throw new TypeError('Group mutation computed members must be an array');
     }
@@ -42,11 +42,11 @@ function validateComputedMembers({
     }
 }
 
-function validateComputedInitialPresenceSummary({
+function assertComputedInitialPresenceSummary({
     command,
     read,
     computed
-}: ValidateComputedGroupMutationWriteInput): void {
+}: AssertComputedGroupMutationWriteInput): void {
     if (computed.initialPresenceSummary === null) {
         return;
     }
@@ -60,11 +60,11 @@ function validateComputedInitialPresenceSummary({
     validatePresenceSummaryValue(computed.initialPresenceSummary.value, command.aggregateRef);
 }
 
-function validateComputedPresenceAdmission({
+function assertComputedPresenceAdmission({
     command,
     read,
     computed
-}: ValidateComputedGroupMutationWriteInput): void {
+}: AssertComputedGroupMutationWriteInput): void {
     if (computed.presenceAdmission === null) {
         return;
     }
@@ -82,7 +82,7 @@ function validateComputedPresenceAdmission({
         'Group mutation computed admission operation'
     );
     validatePresenceAdmission(admission.value, command.aggregateRef);
-    validateComputedAdmissionPredecessor(read, admission);
+    assertComputedAdmissionPredecessor(read, admission);
     const admittedPrincipalId = admission.value.principalId;
     const expectedPrincipalId = resolveGroupMutationTargetPrincipalId(command);
     if (expectedPrincipalId === null || expectedPrincipalId !== admittedPrincipalId) {
@@ -90,9 +90,9 @@ function validateComputedPresenceAdmission({
     }
 }
 
-function validateComputedAdmissionPredecessor(
+function assertComputedAdmissionPredecessor(
     read: GroupMutationRead,
-    admission: NonNullable<ValidateComputedGroupMutationWriteInput['computed']['presenceAdmission']>
+    admission: NonNullable<AssertComputedGroupMutationWriteInput['computed']['presenceAdmission']>
 ): void {
     if (admission.operation === 'update') {
         requireNonNegativeSafeInteger(

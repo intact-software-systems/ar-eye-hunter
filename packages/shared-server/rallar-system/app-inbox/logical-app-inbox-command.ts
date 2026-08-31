@@ -3,7 +3,8 @@ import { decodeAuthMutationIntent } from '../auth/mutation/decode-auth-mutation-
 import { decodeCrdtMutationCommand } from '../crdt/mutation/crdt-mutation-command-codec.ts';
 import { toDescriptorCommand } from '../group-state/group-mutation-authority.ts';
 import type { GroupMutationDescriptor } from '../group-state/group-state-service-contracts.ts';
-import { validateGroupMutationCommand } from '../group-state/mutation/command-validation/validate-group-mutation-command.ts';
+import { decodeGroupMutationDescriptor } from '../group-state/inbox/decode-group-state-inbox-authority.ts';
+import { assertGroupMutationCommand } from '../group-state/mutation/command-validation/assert-group-mutation-command.ts';
 import { encodeJsonWireValue, type JsonWireObject, type JsonWireValue } from '../protocol/json-wire-identity.ts';
 import { readRtcRttAppInboxCommand } from '../rtc-rtt/inbox/rtc-rtt-app-inbox-authority.ts';
 import {
@@ -55,14 +56,11 @@ function toStableGroupCommand(
         return undefined;
     }
     const authorized = requireLogicalJsonObject(authority, 'Logical group AppInbox authority');
-    const descriptor = requireLogicalJsonObject(
-        authorized.descriptor,
-        'Logical group AppInbox descriptor'
-    ) as GroupMutationDescriptor;
+    const descriptor = decodeGroupMutationDescriptor(authorized.descriptor);
     const command = toDescriptorCommand(descriptor, () => {
         throw new TypeError('Authenticated group mutation requestId is required');
     });
-    validateGroupMutationCommand(command);
+    assertGroupMutationCommand(command);
     if (command.operation !== expectedOperation) {
         throw new TypeError('Group mutation operation differs from AppInbox type');
     }

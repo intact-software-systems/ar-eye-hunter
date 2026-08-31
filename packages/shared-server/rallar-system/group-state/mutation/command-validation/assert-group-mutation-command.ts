@@ -13,10 +13,10 @@ import {
     isGroupTransportOperation,
     type GroupMutationCommand
 } from '../group-mutation-contracts.ts';
+import { assertLifecycleGroupMutationCommandInput } from './assert-lifecycle-group-mutation-command-input.ts';
 import { ACTOR_INPUT_KEYS } from './group-mutation-request-validation.ts';
-import { validateLifecycleGroupMutationCommandInput } from './validate-lifecycle-group-mutation-command-input.ts';
 
-export function validateGroupMutationCommand(
+export function assertGroupMutationCommand(
     command: unknown
 ): asserts command is GroupMutationCommand {
     requireJsonSafe(command, 'Group mutation command');
@@ -65,10 +65,10 @@ export function validateGroupMutationCommand(
     if (hasSession) {
         requireNonEmptyString(input.generationId, 'Group presence generationId');
     }
-    validateOperationInput(operation, input);
+    assertOperationInput(operation, input);
 }
 
-function validateOperationInput(
+function assertOperationInput(
     operation: GroupMutationCommand['operation'],
     input: Readonly<Record<string, unknown>>
 ): void {
@@ -80,7 +80,7 @@ function validateOperationInput(
     }
     if (AGGREGATE_GROUP_MUTATION_OPERATIONS.has(operation)) {
         if (isGroupLifecycleTransitionOperation(operation) || operation === 'applyPlannedLayout') {
-            validateLifecycleGroupMutationCommandInput({
+            assertLifecycleGroupMutationCommandInput({
                 operation,
                 // The enclosing command already passed requireJsonSafe before
                 // this record boundary, so lifecycle validation reads JSON-only
@@ -90,41 +90,41 @@ function validateOperationInput(
             });
             return;
         }
-        validateAggregateOperationInput(operation, input);
+        assertAggregateOperationInput(operation, input);
         return;
     }
     if (PRESENCE_GROUP_MUTATION_OPERATIONS.has(operation)) {
-        validatePresenceOperationInput(operation, input);
+        assertPresenceOperationInput(operation, input);
         return;
     }
-    validateMembershipOperationInput(operation, input);
+    assertMembershipOperationInput(operation, input);
 }
 
-function validateAggregateOperationInput(
+function assertAggregateOperationInput(
     operation: GroupMutationCommand['operation'],
     input: Readonly<Record<string, unknown>>
 ): void {
     switch (operation) {
         case 'createGroup':
-            validateNullableString(input, 'slug');
+            assertNullableString(input, 'slug');
             requireNonEmptyString(input.displayName, 'Group displayName');
-            validateNullableString(input, 'description');
+            assertNullableString(input, 'description');
             requireOneOf(input.kind, ['party', 'room', 'team', 'custom'], 'Group kind');
             requireOneOf(input.joinMode, ['invite-only', 'code', 'open'], 'Group joinMode');
-            validateNullableInteger(input, 'maxMembers', true);
-            validateNullableInteger(input, 'maxSessionsPerMember', true);
+            assertNullableInteger(input, 'maxMembers', true);
+            assertNullableInteger(input, 'maxSessionsPerMember', true);
             requireRecord(input.metadata, 'Group metadata');
             requireNonEmptyString(input.createdByPrincipalId, 'Group createdByPrincipalId');
-            validateNullableInteger(input, 'expiresAtEpochMs', true);
-            validateNullableInteger(input, 'purgeAfterEpochMs', true);
+            assertNullableInteger(input, 'expiresAtEpochMs', true);
+            assertNullableInteger(input, 'purgeAfterEpochMs', true);
             if (input.lifecyclePolicy !== undefined) {
                 requireRecord(input.lifecyclePolicy, 'Group lifecyclePolicy');
             }
             return;
         case 'updateGroup':
-            validateNullableString(input, 'slug');
-            validateNullableString(input, 'displayName');
-            validateNullableString(input, 'description');
+            assertNullableString(input, 'slug');
+            assertNullableString(input, 'displayName');
+            assertNullableString(input, 'description');
             if (input.kind !== null) {
                 requireOneOf(input.kind, ['party', 'room', 'team', 'custom'], 'Group kind');
             }
@@ -134,39 +134,39 @@ function validateAggregateOperationInput(
             if (input.joinMode !== null) {
                 requireOneOf(input.joinMode, ['invite-only', 'code', 'open'], 'Group joinMode');
             }
-            validateNullableInteger(input, 'maxMembers', true);
-            validateNullableInteger(input, 'maxSessionsPerMember', true);
+            assertNullableInteger(input, 'maxMembers', true);
+            assertNullableInteger(input, 'maxSessionsPerMember', true);
             if (input.metadata !== null) {
                 requireRecord(input.metadata, 'Group metadata');
             }
-            validateNullableInteger(input, 'expiresAtEpochMs', true);
-            validateNullableInteger(input, 'emptySinceEpochMs', true);
-            validateNullableInteger(input, 'purgeAfterEpochMs', true);
+            assertNullableInteger(input, 'expiresAtEpochMs', true);
+            assertNullableInteger(input, 'emptySinceEpochMs', true);
+            assertNullableInteger(input, 'purgeAfterEpochMs', true);
             return;
         case 'appointDirector':
             requirePositiveSafeInteger(input.heartbeatTtlMs, 'Group heartbeatTtlMs');
             return;
         case 'rotateGroupJoinCode':
-            validateNullableString(input, 'joinCode');
-            validateNullableInteger(input, 'expiresAtEpochMs', true);
+            assertNullableString(input, 'joinCode');
+            assertNullableInteger(input, 'expiresAtEpochMs', true);
             return;
         default:
             return;
     }
 }
 
-function validateMembershipOperationInput(
+function assertMembershipOperationInput(
     operation: GroupMutationCommand['operation'],
     input: Readonly<Record<string, unknown>>
 ): void {
     switch (operation) {
         case 'joinGroup':
         case 'acceptGroupInvite':
-            validateNullableString(input, 'inviteToken');
-            validateNullableString(input, 'joinCode');
+            assertNullableString(input, 'inviteToken');
+            assertNullableString(input, 'joinCode');
             return;
         case 'createGroupInvite':
-            validateNullableInteger(input, 'invitationExpiresAtEpochMs', true);
+            assertNullableInteger(input, 'invitationExpiresAtEpochMs', true);
             return;
         case 'setGroupMemberRole':
             requireOneOf(input.role, ['owner', 'admin', 'member'], 'Group role');
@@ -182,8 +182,8 @@ function validateMembershipOperationInput(
                 ['invited', 'active', 'left', 'removed', 'banned'],
                 'Group member status'
             );
-            validateNullableString(input, 'invitedByPrincipalId');
-            validateNullableInteger(input, 'invitationExpiresAtEpochMs', true);
+            assertNullableString(input, 'invitedByPrincipalId');
+            assertNullableInteger(input, 'invitationExpiresAtEpochMs', true);
             return;
         case 'revokeGroupInvite':
         case 'removeGroupMember':
@@ -196,33 +196,33 @@ function validateMembershipOperationInput(
     }
 }
 
-function validatePresenceOperationInput(
+function assertPresenceOperationInput(
     operation: GroupMutationCommand['operation'],
     input: Readonly<Record<string, unknown>>
 ): void {
     if (operation === 'connectPresence') {
         requireNonEmptyString(input.principalId, 'Group presence principalId');
-        validateNullableInteger(input, 'connectedAtEpochMs', true);
+        assertNullableInteger(input, 'connectedAtEpochMs', true);
     }
     else {
-        validateNullableString(input, 'principalId');
+        assertNullableString(input, 'principalId');
     }
     if (operation === 'disconnectPresence') {
-        validateNullableInteger(input, 'generationVersion', true);
-        validateNullableInteger(input, 'observedExpiresAtEpochMs', true);
-        validateNullableInteger(input, 'disconnectedAtEpochMs', true);
+        assertNullableInteger(input, 'generationVersion', true);
+        assertNullableInteger(input, 'observedExpiresAtEpochMs', true);
+        assertNullableInteger(input, 'disconnectedAtEpochMs', true);
     }
-    validateNullableInteger(input, 'lastHeartbeatAtEpochMs', true);
-    validateNullableInteger(input, 'expiresAtEpochMs', true);
+    assertNullableInteger(input, 'lastHeartbeatAtEpochMs', true);
+    assertNullableInteger(input, 'expiresAtEpochMs', true);
 }
 
-function validateNullableString(input: Readonly<Record<string, unknown>>, key: string): void {
+function assertNullableString(input: Readonly<Record<string, unknown>>, key: string): void {
     if (input[key] !== null) {
         requireNonEmptyString(input[key], `Group ${key}`);
     }
 }
 
-function validateNullableInteger(
+function assertNullableInteger(
     input: Readonly<Record<string, unknown>>,
     key: string,
     positive = false

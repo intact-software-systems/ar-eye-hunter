@@ -1359,14 +1359,6 @@ moved or changed test.
       "coverageRelation": "The named test mutates the live group registration expression and executes the fail-closed route-owner analyzer; the source read supplies the exact security boundary being mutated."
     },
     {
-      "id": "mutation-route-owner-analysis--uses-one-named-readonly-input-object-for-each-authorised-websock",
-      "domain": "Authoritative mutation route ownership",
-      "owner": "Rallar server maintainers",
-      "summary": "Every authoritative route resolves to one AppInbox transaction owner without a persistence bypass. Executable assertion: “uses one named readonly input object for each authorised websocket enqueue helper”.",
-      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-analysis.test.ts#uses one named readonly input object for each authorised websocket enqueue helper",
-      "coverageRelation": "The named analyzer test executes a concrete route, type, owner, or fallback mutation and requires the security audit to reject it; each source access supplies the exact mutated module or canonical comparison for that scenario."
-    },
-    {
       "id": "mutation-route-owner-crdt-reservation-materialization",
       "domain": "CRDT administrative mutation routing",
       "owner": "Rallar repository maintainers",
@@ -1418,6 +1410,22 @@ moved or changed test.
         "requiredConstraint": "The live sender remains unused for corrupt delivery-log entries.",
         "failureRationale": "Sending invalid history would deliver corrupt topology to members instead of surfacing the corruption to the replay consumer."
       }
+    },
+    {
+      "id": "group-mutation-construction-equivalent-import-binding",
+      "domain": "Authoritative group mutation route ownership",
+      "owner": "Rallar repository maintainers",
+      "summary": "An imported alias retains the same source-module family binding into authenticated routing. Executable assertion: “follows an imported family binding renamed locally at the root”.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts#follows an imported family binding renamed locally at the root",
+      "coverageRelation": "Reads the live construction root, renames the imported presence binding locally, and executes the full route inventory analyzer; genuine module binding, not local spelling, is the invariant."
+    },
+    {
+      "id": "group-mutation-construction-equivalent-private-owner-binding",
+      "domain": "Authoritative group mutation route ownership",
+      "owner": "Rallar repository maintainers",
+      "summary": "Renaming private route owners and local parameters retains authenticated route and AppInbox reachability. Executable assertion: “follows renamed private owners and independently renamed owner parameters”.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts#follows renamed private owners and independently renamed owner parameters",
+      "coverageRelation": "Reads the live presence family, independently renames its private owner and app parameter, and executes the full route inventory analyzer; dependency provenance and route ownership remain accepted without pinning private spelling."
     }
   ],
   "entries": [
@@ -2874,51 +2882,7 @@ moved or changed test.
       "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-analysis.test.ts#maps all 56 entrypoints and 52 types to real registrations and owners"
     },
     {
-      "id": "test-structure-coupling-5ac40266b15fed40",
-      "path": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-analysis.test.ts",
-      "kind": "ast-inspection",
-      "contract": "mutation-route-owner-analysis--uses-one-named-readonly-input-object-for-each-authorised-websock",
-      "disposition": "durable-boundary",
-      "boundary": "security",
-      "owner": "Rallar server maintainers",
-      "rationale": "Uses the parsed parameter nodes to distinguish one object contract from several positional parameters across both helpers.",
-      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-analysis.test.ts#uses one named readonly input object for each authorised websocket enqueue helper"
-    },
-    {
-      "id": "test-structure-coupling-7c5aa61574c59a94",
-      "path": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-analysis.test.ts",
-      "kind": "production-source-read",
-      "contract": "mutation-route-owner-analysis--uses-one-named-readonly-input-object-for-each-authorised-websock",
-      "disposition": "durable-boundary",
-      "boundary": "security",
-      "owner": "Rallar server maintainers",
-      "rationale": "Requires the authorised websocket helper to accept its first named readonly input object rather than a positional mutation tuple.",
-      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-analysis.test.ts#uses one named readonly input object for each authorised websocket enqueue helper"
-    },
-    {
-      "id": "test-structure-coupling-9f3ecb4406f3911a",
-      "path": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-analysis.test.ts",
-      "kind": "production-source-read",
-      "contract": "mutation-route-owner-analysis--uses-one-named-readonly-input-object-for-each-authorised-websock",
-      "disposition": "durable-boundary",
-      "boundary": "security",
-      "owner": "Rallar server maintainers",
-      "rationale": "Reads and parses that helper module so parameter declarations are evaluated as syntax, not brittle substring matches.",
-      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-analysis.test.ts#uses one named readonly input object for each authorised websocket enqueue helper"
-    },
-    {
-      "id": "test-structure-coupling-52beab5de7d2f568",
-      "path": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-analysis.test.ts",
-      "kind": "production-source-read",
-      "contract": "mutation-route-owner-analysis--uses-one-named-readonly-input-object-for-each-authorised-websock",
-      "disposition": "durable-boundary",
-      "boundary": "security",
-      "owner": "Rallar server maintainers",
-      "rationale": "Checks the second enqueue helper in the same module for its own named readonly input object.",
-      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-analysis.test.ts#uses one named readonly input object for each authorised websocket enqueue helper"
-    },
-    {
-      "id": "test-structure-coupling-755638c9349907da",
+      "id": "test-structure-coupling-ce59f3bf64ba0cda",
       "path": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts",
       "kind": "production-source-read",
       "contract": "group-mutation-construction--rejects-a-canonical-family-name-rebound-to-a-different-imported-",
@@ -2929,7 +2893,7 @@ moved or changed test.
       "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts#rejects a canonical family name rebound to a different imported family"
     },
     {
-      "id": "test-structure-coupling-a953d677a6a4e37d",
+      "id": "test-structure-coupling-503ee8c186f47263",
       "path": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts",
       "kind": "production-source-read",
       "contract": "group-mutation-construction--rejects-a-conditional-family-call-in-the-exported-root",
@@ -2940,7 +2904,7 @@ moved or changed test.
       "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts#rejects a conditional family call in the exported root"
     },
     {
-      "id": "test-structure-coupling-f2014ef62de286a9",
+      "id": "test-structure-coupling-cc694049a6a7199b",
       "path": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts",
       "kind": "production-source-read",
       "contract": "group-mutation-construction--rejects-a-different-app-passed-from-a-family-to-its-private-owne",
@@ -2951,7 +2915,7 @@ moved or changed test.
       "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts#rejects a different app passed from a family to its private owner"
     },
     {
-      "id": "test-structure-coupling-c7927fc092bac2c7",
+      "id": "test-structure-coupling-56c975daa7221e46",
       "path": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts",
       "kind": "production-source-read",
       "contract": "group-mutation-construction--rejects-a-duplicate-family-call-in-the-exported-root",
@@ -2962,7 +2926,7 @@ moved or changed test.
       "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts#rejects a duplicate family call in the exported root"
     },
     {
-      "id": "test-structure-coupling-503ee8c186f47263",
+      "id": "test-structure-coupling-c91e07c5b311b838",
       "path": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts",
       "kind": "production-source-read",
       "contract": "group-mutation-construction--rejects-a-family-call-after-an-exported-root-return",
@@ -2973,7 +2937,7 @@ moved or changed test.
       "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts#rejects a family call after an exported-root return"
     },
     {
-      "id": "test-structure-coupling-ee9090eba9fc708c",
+      "id": "test-structure-coupling-e0660606ecfc700b",
       "path": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts",
       "kind": "production-source-read",
       "contract": "group-mutation-construction--rejects-a-family-call-before-authorization-exists",
@@ -2984,7 +2948,7 @@ moved or changed test.
       "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts#rejects a family call before authorization exists"
     },
     {
-      "id": "test-structure-coupling-ce59f3bf64ba0cda",
+      "id": "test-structure-coupling-c7927fc092bac2c7",
       "path": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts",
       "kind": "production-source-read",
       "contract": "group-mutation-construction--rejects-a-family-removed-from-the-exported-root",
@@ -2995,7 +2959,7 @@ moved or changed test.
       "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts#rejects a family removed from the exported root"
     },
     {
-      "id": "test-structure-coupling-cc694049a6a7199b",
+      "id": "test-structure-coupling-8e81af49be0bf713",
       "path": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts",
       "kind": "production-source-read",
       "contract": "group-mutation-construction--rejects-a-missing-family-to-private-owner-argument",
@@ -3006,7 +2970,7 @@ moved or changed test.
       "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts#rejects a missing family-to-private-owner argument"
     },
     {
-      "id": "test-structure-coupling-0b58d02400285f7d",
+      "id": "test-structure-coupling-29142dfe723974a7",
       "path": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts",
       "kind": "production-source-read",
       "contract": "group-mutation-construction--rejects-an-extra-family-to-private-owner-argument",
@@ -3017,7 +2981,7 @@ moved or changed test.
       "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts#rejects an extra family-to-private-owner argument"
     },
     {
-      "id": "test-structure-coupling-227bc4333000c0c6",
+      "id": "test-structure-coupling-f2014ef62de286a9",
       "path": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts",
       "kind": "production-source-read",
       "contract": "group-mutation-construction--rejects-an-extra-root-to-family-argument",
@@ -3028,7 +2992,7 @@ moved or changed test.
       "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts#rejects an extra root-to-family argument"
     },
     {
-      "id": "test-structure-coupling-8a5a2d44c9bdcb60",
+      "id": "test-structure-coupling-a953d677a6a4e37d",
       "path": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts",
       "kind": "production-source-read",
       "contract": "group-mutation-construction--rejects-an-uninventoryed-live-private-owner-and-route-in-a-famil",
@@ -3039,7 +3003,7 @@ moved or changed test.
       "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts#rejects an uninventoryed live private owner and route in a family"
     },
     {
-      "id": "test-structure-coupling-e0660606ecfc700b",
+      "id": "test-structure-coupling-0b58d02400285f7d",
       "path": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts",
       "kind": "production-source-read",
       "contract": "group-mutation-construction--rejects-reordered-family-to-private-owner-arguments",
@@ -3050,7 +3014,7 @@ moved or changed test.
       "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts#rejects reordered family-to-private-owner arguments"
     },
     {
-      "id": "test-structure-coupling-c91e07c5b311b838",
+      "id": "test-structure-coupling-ee9090eba9fc708c",
       "path": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts",
       "kind": "production-source-read",
       "contract": "group-mutation-construction--rejects-reordered-root-to-family-arguments",
@@ -3061,7 +3025,7 @@ moved or changed test.
       "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts#rejects reordered root-to-family arguments"
     },
     {
-      "id": "test-structure-coupling-56c975daa7221e46",
+      "id": "test-structure-coupling-227bc4333000c0c6",
       "path": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts",
       "kind": "production-source-read",
       "contract": "group-mutation-construction--rejects-wrong-root-to-family-arguments",
@@ -3380,7 +3344,7 @@ moved or changed test.
       "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-registration-predicates.test.ts#rejects a group registration filter that is always false"
     },
     {
-      "id": "test-structure-coupling-c6c21e820b68b8eb",
+      "id": "test-structure-coupling-9f3ecb4406f3911a",
       "path": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-analysis.test.ts",
       "kind": "production-source-read",
       "contract": "mutation-route-owner-crdt-reservation-materialization",
@@ -3422,6 +3386,28 @@ moved or changed test.
       "owner": "Rallar server maintainers",
       "rationale": "The send-absence assertion directly proves that corruption for a missing durable reference propagates without any live delivery.",
       "semanticCoverage": "packages/tests/shared-server/rallar-system/topology/replay/consumer/rtc-topology-replay-entry-handler.test.ts#propagates corruption for a missing unexpired durable reference"
+    },
+    {
+      "id": "test-structure-coupling-755638c9349907da",
+      "path": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts",
+      "kind": "production-source-read",
+      "contract": "group-mutation-construction-equivalent-import-binding",
+      "disposition": "durable-boundary",
+      "boundary": "security",
+      "owner": "Rallar repository maintainers",
+      "rationale": "Reads the live construction root, renames the imported presence binding locally, and executes the full route inventory analyzer; genuine module binding, not local spelling, is the invariant.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts#follows an imported family binding renamed locally at the root"
+    },
+    {
+      "id": "test-structure-coupling-8a5a2d44c9bdcb60",
+      "path": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts",
+      "kind": "production-source-read",
+      "contract": "group-mutation-construction-equivalent-private-owner-binding",
+      "disposition": "durable-boundary",
+      "boundary": "security",
+      "owner": "Rallar repository maintainers",
+      "rationale": "Reads the live presence family, independently renames its private owner and app parameter, and executes the full route inventory analyzer; dependency provenance and route ownership remain accepted without pinning private spelling.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts#follows renamed private owners and independently renamed owner parameters"
     }
   ]
 }

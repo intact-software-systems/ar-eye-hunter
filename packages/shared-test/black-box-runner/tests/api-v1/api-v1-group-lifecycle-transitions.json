@@ -688,6 +688,32 @@
       }
     },
     {
+      "name": "reconfigureRejectsPublicEpochFence",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{managedGroupId}/lifecycle/reconfigure/requests/reconfigure-extra-epoch-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "expectedFormationEpoch": null,
+          "landing": "hold"
+        }
+      },
+      "expect": {
+        "status": 400,
+        "body": {
+          "type": "api-mutation-failure",
+          "version": "canonical.v2",
+          "status": 400,
+          "message": "Group reconfigureGroup request has unexpected key: expectedFormationEpoch"
+        }
+      }
+    },
+    {
       "name": "reconfigureLifecycle",
       "type": "http",
       "connection": "primary",

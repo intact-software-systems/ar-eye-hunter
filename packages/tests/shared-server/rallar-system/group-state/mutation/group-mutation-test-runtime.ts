@@ -4,6 +4,7 @@ import type {
     GroupMutationFacts,
     GroupMutationRead
 } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
+import type { GroupLifecyclePolicyRead } from '@shared-server/rallar-system/group-state/persistence/group-lifecycle-policy-repository.ts';
 import {
     type RuntimeStateGuardedBatch,
     type RuntimeStateGuardedBatchEffect,
@@ -15,6 +16,7 @@ import {
 import { validateRuntimeStateGuardedBatchResult } from '@shared-server/runtime-state/guarded-batch/validate-runtime-state-guarded-batch-result.ts';
 import { validateRuntimeStateGuardedBatch } from '@shared-server/runtime-state/guarded-batch/validate-runtime-state-guarded-batch.ts';
 import type { RuntimeStateReadBatchSelection, RuntimeStateReadBatchSelector } from '@shared-server/runtime-state/read-batch/runtime-state-read-batch.ts';
+import type { RuntimeStateEntryValue } from '@shared-server/runtime-state/runtime-state-json-store.ts';
 import type {
     RuntimeStateEntry,
     RuntimeStateOptimisticTransactionalRepositoryLike,
@@ -22,7 +24,7 @@ import type {
 } from '@shared-server/runtime-state/runtime-state-repository.ts';
 import { TestGroupStateEventStore } from '@shared-test/shared-server/test-group-state-event-store.ts';
 import { resolveGroupLifecyclePolicyPreset } from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
-import type { AuditStamp, Group, GroupEvent, GroupPresenceSession, GroupRef } from '@shared/api/group-types.ts';
+import type { AuditStamp, Group, GroupEvent, GroupMember, GroupPresenceSession, GroupRef } from '@shared/api/group-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import { createTestGroup } from '../../../../create-test-group.ts';
 import { FakeRuntimeStateRepository } from '../../../runtime-state/test-support/fake-runtime-state-repository.ts';
@@ -52,7 +54,7 @@ export function groupSessionStorageKey(sessionId: string): string {
     return `${groupStorageKey()}:${storagePart('session', sessionId)}`;
 }
 
-export function storedEntry<T>(key: string, value: T) {
+export function storedEntry<T>(key: string, value: T): RuntimeStateEntryValue<T> {
     return {
         entry: {
             key,
@@ -130,30 +132,46 @@ export function createGroupAuthorityRead(
         connectTriggerLatch: null,
         plannedLayoutRow: null,
         acceptedLayoutRow: null
-    } as GroupMutationRead;
+    };
 }
 
 export function transitionCommand(
     operation: GroupLifecycleTransitionOperation,
     actorPrincipalId = 'alice'
 ): Extract<GroupMutationCommand, { operation: GroupLifecycleTransitionOperation; }> {
-    return {
-        operation,
+    const identity = {
         aggregateRef: groupRef('pure-room'),
         commandId: 'lifecycle-command',
-        requestId: 'lifecycle-command',
-        input: {
-            actorPrincipalId,
-            actorSessionId: `${actorPrincipalId}-session`,
-            reason: null,
-            traceId: null,
-            expectedFormationEpoch: null,
-            ...(operation === 'reconfigureGroup' ? { landing: null } : {}),
-            ...(operation === 'activateGroup'
-                ? { observedRate: null, degraded: null, expectedLayout: null }
-                : {})
-        }
-    } as Extract<GroupMutationCommand, { operation: GroupLifecycleTransitionOperation; }>;
+        requestId: 'lifecycle-command'
+    };
+    const input = {
+        actorPrincipalId,
+        actorSessionId: `${actorPrincipalId}-session`,
+        reason: null,
+        traceId: null,
+        expectedFormationEpoch: null
+    };
+    switch (operation) {
+        case 'reconfigureGroup':
+            return { ...identity, operation, input: { ...input, landing: null } };
+        case 'activateGroup':
+            return { ...identity, operation, input: { ...input, observedRate: null, degraded: null, expectedLayout: null } };
+        case 'failGroupFormation':
+            return { ...identity, operation, input: { ...input, observedRate: 0, expectedLayout: null } };
+        case 'connectGroup':
+            return {
+                ...identity,
+                operation,
+                input: {
+                    ...input,
+                    expectedFormationEpoch: 1,
+                    expectedLayout: { groupRevision: 1, presenceRevision: 0, version: 1, state: 'active' },
+                    connectTriggerGeneration: null
+                }
+            };
+        default:
+            return { ...identity, operation, input };
+    }
 }
 
 export function createGroupAuthorityFacts(principalId = 'alice'): GroupMutationFacts {
@@ -184,7 +202,7 @@ export function createGroupAuthorityAuditStamp(atEpochMs: number, principalId: s
     };
 }
 
-function createGroupAuthorityActorMember(principalId: string) {
+function createGroupAuthorityActorMember(principalId: string): GroupMember {
     const audit = createGroupAuthorityAuditStamp(1_000, principalId);
     return {
         ...groupRef('pure-room'),
@@ -201,7 +219,7 @@ function createGroupAuthorityActorMember(principalId: string) {
     };
 }
 
-function toLifecyclePolicyRead(requested: NonNullable<GroupAuthorityReadOptions['policy']>) {
+function toLifecyclePolicyRead(requested: NonNullable<GroupAuthorityReadOptions['policy']>): GroupLifecyclePolicyRead {
     if (requested === 'corrupt') {
         return { status: 'corrupt' as const, reason: 'stored policy is not an object' };
     }
@@ -395,19 +413,16 @@ function createBatchReadBarrier(
     readers: number
 ): BatchReadBarrier {
     let arrivals = 0;
-    let release!: () => void;
-    const released = new Promise<void>((resolve) => {
-        release = resolve;
-    });
+    const released = Promise.withResolvers<void>();
     return {
         namespace,
         key,
         async arrive() {
             arrivals += 1;
             if (arrivals === readers) {
-                release();
+                released.resolve();
             }
-            await released;
+            await released.promise;
         },
         complete: () => arrivals >= readers
     };

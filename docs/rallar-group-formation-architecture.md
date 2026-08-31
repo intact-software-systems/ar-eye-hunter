@@ -3,7 +3,8 @@
 This document describes how a Rallar group forms: the authoritative formation lifecycle a group
 moves through, the policy document that drives it, how admission, the manager role, the activation
 criterion, and pre-activation data gating enforce that policy server-side, what the read surface
-exposes, and which black-box recipes pin each behaviour. It describes the current lifecycle cutover; the design history lives in `playground/rtc-design/`.
+exposes, and which black-box recipes verify each behaviour. The design history lives in
+`playground/rtc-design/`.
 
 The property that makes the whole layer safe to ship is this: **a group created without a
 `lifecyclePolicy` is the `optimistic` preset, which is exactly the behaviour groups had before the
@@ -118,21 +119,22 @@ never the ability to be in the group.
 ### Recipes
 
 The lifecycle recipe covers explicit plan, publication, connect and activate, plus reconfiguration
-and initiator denials. The route cutover and recipe migration are one atomic delivery; recipe
-acceptance is tracked separately while the implementation branch is in progress.
+and initiator denials. Managed scale recipes use the same publication-fenced lifecycle commands.
 
 ## The Policy Document
 
-`GroupLifecyclePolicy` (`packages/shared/api/group-lifecycle/group-lifecycle-policy.ts`) has six
-sections. Every field is required once normalized.
+`GroupLifecyclePolicy` (`packages/shared/api/group-lifecycle/group-lifecycle-policy.ts`) has formation
+and initiator choices plus six policy sections. Every field is required once normalized.
 
 | Section         | Fields                                                                                                 |
 | --------------- | ------------------------------------------------------------------------------------------------------ |
 | `formation`     | `'phased'` \| `'immediate'`                                                                            |
+| `initiator`     | `'manager'` \| `'any-member'` \| `'server-auto'`                                                        |
 | `manager`       | `selection`, `assignedPrincipalIds`, `count`, `succession`                                             |
-| `establishment` | `transports`, `initiator`, `maxConcurrentEdgeSetups`                                                   |
+| `establishment` | `transports`, `maxConcurrentEdgeSetups`, `planTrigger`, `connectTrigger`                              |
 | `activation`    | `mode`, `successRate`, `minimumViableRate`, `deadlineMs`, `maxFormationAttempts`, `strictConfirmation` |
 | `admission`     | `mode`, `untilEpochMs`, `untilMemberCount` (`null` means the window does not apply)                    |
+| `topology`      | `replanning`, `reconfigureLanding`, `debounceWindowMs`, `maxReplanWaitMs`                               |
 | `data`          | `preActivationAppData`: `'allowed'` \| `'blocked-until-active'`                                        |
 
 Two fields are carried but enforced by nothing in v1: `establishment.transports` and
@@ -535,7 +537,7 @@ evaluation" to "within about a second of crossing the threshold"; it does not re
 
 `api-v1-group-formation-criterion` pins both legs: a single-member `threshold` group auto-activates
 from the trivially ready zero-edge plan its own establishment planning pass produces, with no RTT
-evidence involved (epoch 2, `outcome: 'activated'`, rate 1); a `deadline` group with
+evidence involved (epoch 3 after plan/connect/activate, `outcome: 'activated'`, rate 1); a `deadline` group with
 `minimumViableRate: 1` and two presence-connected members fails below the floor at its 3 s deadline
 (`forming`, attempt count 1, `outcome: 'below-floor'`, rate 0); a `deadline` group with floor 0 and
 two presence-connected members activates degraded at the deadline; and a `threshold-or-deadline`
@@ -601,6 +603,8 @@ only in the authorizer's rejection log line. No HTTP route supplies `preActivati
 `data` section (normalized to `allowed`) relay during `forming`
 (`allowedSendReachesAliceWhileForming`, `defaultDataSendReachesAliceWhileForming`), and a fresh
 `room.match` send flows once the manager activates the blocked group (`activatedSendReachesAlice`).
+The allowed group remains forming throughout pause, presence/membership round trips, and resume:
+relay succeeds before halt, is absent while halted, and succeeds again after resume.
 The authorizer's absent-policy branch has no recipe pin: an absent policy creates the group
 `active`, so the gate reads it only after a `reconfigure`. `api-v1-match-preset` pins the
 lobby NACK and the post-activation flow composed with the rest of the preset;
@@ -653,6 +657,8 @@ admitted member in the payload — and `ownership-transferred` carries `fromPrin
 
 The lifecycle command segment is one of `plan`, `connect`, `activate`, `reconfigure`, `pause`,
 `resume`, `reset`, or `start`. The retired establishment URLs are not mounted.
+Reconfigure accepts omitted or null `landing` as the stored-policy default. It rejects a supplied
+`expectedFormationEpoch`: that nullable fence belongs to the internal command, not the public body.
 
 On the mutation routes, policy denials are typed `403 { type: 'api-mutation-failure', code, status }`
 with the `GroupPolicyReasonCode` (`forbidden-role`, `lifecycle-manager-unavailable`,
@@ -695,7 +701,7 @@ backend runs them in the fast loop and the Postgres CI job runs them in its base
 | `api-v1-group-manager-succession`    | assigned managers, succession on removal and on leave, the zero-manager fallback                                                                                                                                               |
 | `api-v1-group-admission-approval`    | parking, grant, decline, re-request, zero-manager recovery, epoch survival, park while active                                                                                                                                  |
 | `api-v1-group-admission-windows`     | the binding phases of capacity, deadline, and `closed`                                                                                                                                                                         |
-| `api-v1-group-data-policy`           | the data gate, the CRDT exemption, `allowed` and absent flows, post-activation flow                                                                                                                                            |
+| `api-v1-group-data-policy`           | the data gate, the CRDT exemption, `allowed` and default-group flows, post-activation flow, and the forming allowed-group transport valve                                                                                       |
 | `api-v1-match-preset`                | the composed `match` preset, including all-or-nothing failure and lobby re-opening                                                                                                                                             |
 | `api-v1-drop-in-social-preset`       | the composed `drop-in-social` preset                                                                                                                                                                                           |
 

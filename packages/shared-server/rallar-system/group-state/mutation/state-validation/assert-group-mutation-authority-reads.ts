@@ -13,29 +13,29 @@ import {
 import type { GroupMutationCommand, GroupMutationRead } from '../group-mutation-contracts.ts';
 import type { GroupMutationReadIdentities } from '../read/resolve-group-mutation-read-identities.ts';
 
-interface ValidateGroupMutationAuthorityReadsInput {
+interface AssertGroupMutationAuthorityReadsInput {
     readonly read: GroupMutationRead;
     readonly command: GroupMutationCommand;
     readonly ref: GroupRef;
     readonly identities: GroupMutationReadIdentities;
 }
 
-export function validateGroupMutationAuthorityReads({
+export function assertGroupMutationAuthorityReads({
     read,
     command,
     ref,
     identities
-}: ValidateGroupMutationAuthorityReadsInput): void {
-    validateAdmissionReads({ read, command, ref, identities });
-    validateAuthorityPresenceReads(read, ref);
+}: AssertGroupMutationAuthorityReadsInput): void {
+    assertAdmissionReads({ read, command, ref, identities });
+    assertAuthorityPresenceReads(read, ref);
 }
 
-function validateAdmissionReads({
+function assertAdmissionReads({
     read,
     command,
     ref,
     identities
-}: ValidateGroupMutationAuthorityReadsInput): void {
+}: AssertGroupMutationAuthorityReadsInput): void {
     const authorityAdmissionPrincipalId = command.operation === 'appointDirector'
         ? identities.ownerPrincipalId
         : null;
@@ -64,7 +64,7 @@ function validateAdmissionReads({
     }
 }
 
-function validateAuthorityPresenceReads(read: GroupMutationRead, ref: GroupRef): void {
+function assertAuthorityPresenceReads(read: GroupMutationRead, ref: GroupRef): void {
     if (
         !Array.isArray(read.authorityPresenceSessions) ||
         !Array.isArray(read.authorityPresenceSessionEntries)
@@ -75,7 +75,7 @@ function validateAuthorityPresenceReads(read: GroupMutationRead, ref: GroupRef):
         throw new TypeError('Authority presence sessions differ from stored entries');
     }
     const referencedAuthoritySessions = collectReferencedAuthoritySessions(read);
-    validateAuthorityPresenceEntries(read, ref, referencedAuthoritySessions);
+    assertAuthorityPresenceEntries(read, ref, referencedAuthoritySessions);
 }
 
 interface ReferencedAuthoritySession {
@@ -121,7 +121,7 @@ function collectReferencedAuthoritySessions(
     return referencedAuthoritySessions;
 }
 
-function validateAuthorityPresenceEntries(
+function assertAuthorityPresenceEntries(
     read: GroupMutationRead,
     ref: GroupRef,
     referencedAuthoritySessions: ReadonlyMap<string, ReferencedAuthoritySession>

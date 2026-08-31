@@ -11,19 +11,9 @@ import {
     requireRecord
 } from '../../group-state-validation-primitives.ts';
 
-/**
- * The wire shape of a named layout identity, shared by the request boundary
- * and the command validator so a fenced command cannot be shape-checked in
- * one place and not the other.
- */
-/**
- * The decoded request or command input the named identity rides in — a
- * boundary record whose values are still untrusted at this point.
- */
-export type ExpectedLayoutIdentityCarrier = ReturnType<typeof requireRecord>;
-
-export function validateExpectedLayoutIdentity(
-    input: ExpectedLayoutIdentityCarrier,
+/** Assert the persisted/internal command's layout identity before executing its fence. */
+export function assertExpectedLayoutIdentity(
+    input: Readonly<Record<string, unknown>>,
     label: string
 ): void {
     const record = requireRecord(input.expectedLayout, label);

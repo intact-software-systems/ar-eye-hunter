@@ -27,7 +27,7 @@ describe('GroupStateInboxService authenticated mutation descriptors', () => {
         expect([...covered].sort()).toEqual([...AUTHENTICATED_GROUP_INBOX_TYPES].sort());
 
         for (const testCase of descriptorCases) {
-            expect(toGroupMutationDescriptor(testCase.enqueue as AuthenticatedGroupMutationEnqueue), testCase.name).toEqual(testCase.descriptor);
+            expect(toGroupMutationDescriptor(testCase.enqueue), testCase.name).toEqual(testCase.descriptor);
         }
     });
 
@@ -46,49 +46,38 @@ describe('GroupStateInboxService authenticated mutation descriptors', () => {
 
 interface DescriptorCase {
     readonly name: string;
-    readonly enqueue: DescriptorEnqueue;
+    readonly enqueue: AuthenticatedGroupMutationEnqueue;
     readonly descriptor: GroupMutationDescriptor;
 }
 
-interface DescriptorEnqueue {
-    readonly type: AppInboxType;
-    readonly resourceId: string;
-    readonly contextId: string;
-    readonly senderId: string;
-    readonly data: AuthenticatedGroupMutationEnqueue['data'];
-}
-
-function descriptorCase(...input: DescriptorCaseArguments): DescriptorCase {
-    const [name, type, data, operation, request, targetPrincipalId = null, sessionId = null] = input;
-    return {
-        name,
+const descriptorCases: readonly DescriptorCase[] = [
+    {
+        name: 'create',
         enqueue: {
-            type,
-            resourceId: `${name}-resource`,
+            type: AppInboxType.GROUP_CREATE,
+            topicId: AppInboxType.GROUP_CREATE,
+            resourceId: 'create-resource',
             contextId: 'descriptor-contract',
             senderId: 'owner',
-            data
+            data: {
+                scope: SCOPE,
+                request: {
+                    groupId,
+                    displayName: 'Descriptor room',
+                    kind: 'room',
+                    joinMode: 'open',
+                    createdByPrincipalId: 'owner',
+                    ...actor,
+                    requestId: 'create'
+                }
+            }
         },
-        descriptor: { operation, scope: SCOPE, groupId, targetPrincipalId, sessionId, request }
-    };
-}
-
-type DescriptorCaseArguments = readonly [
-    name: string,
-    type: AppInboxType,
-    data: AuthenticatedGroupMutationEnqueue['data'],
-    operation: GroupMutationDescriptor['operation'],
-    request: AuthenticatedGroupMutationEnqueue['data']['request'],
-    targetPrincipalId?: string | null,
-    sessionId?: string | null
-];
-
-const descriptorCases: readonly DescriptorCase[] = [
-    descriptorCase(
-        'create',
-        AppInboxType.GROUP_CREATE,
-        {
+        descriptor: {
+            operation: 'createGroup',
             scope: SCOPE,
+            groupId,
+            targetPrincipalId: null,
+            sessionId: null,
             request: {
                 groupId,
                 displayName: 'Descriptor room',
@@ -98,304 +87,582 @@ const descriptorCases: readonly DescriptorCase[] = [
                 ...actor,
                 requestId: 'create'
             }
-        },
-        'createGroup',
-        {
-            groupId,
-            displayName: 'Descriptor room',
-            kind: 'room',
-            joinMode: 'open',
-            createdByPrincipalId: 'owner',
-            ...actor,
-            requestId: 'create'
         }
-    ),
-    descriptorCase(
-        'update',
-        AppInboxType.GROUP_UPDATE,
-        { scope: SCOPE, groupId, request: { description: 'Updated', ...actor, requestId: 'update' } },
-        'updateGroup',
-        { description: 'Updated', ...actor, requestId: 'update' }
-    ),
-    descriptorCase(
-        'appoint-director',
-        AppInboxType.GROUP_DIRECTOR_APPOINT,
-        {
-            scope: SCOPE,
-            groupId,
-            request: { ...actor, requestId: 'appoint-director' }
+    },
+    {
+        name: 'update',
+        enqueue: {
+            type: AppInboxType.GROUP_UPDATE,
+            topicId: AppInboxType.GROUP_UPDATE,
+            resourceId: 'update-resource',
+            contextId: 'descriptor-contract',
+            senderId: 'owner',
+            data: { scope: SCOPE, groupId, request: { description: 'Updated', ...actor, requestId: 'update' } }
         },
-        'appointDirector',
-        { ...actor, requestId: 'appoint-director' }
-    ),
-    descriptorCase(
-        'plan',
-        AppInboxType.GROUP_PLAN,
-        { scope: SCOPE, groupId, request: { ...actor, requestId: 'plan' } },
-        'planGroupLayout',
-        { ...actor, requestId: 'plan' }
-    ),
-    // `connect` alone names the layout it means to dial, so its causal fence
-    // must survive the descriptor untouched.
-    descriptorCase(
-        'connect',
-        AppInboxType.GROUP_CONNECT,
-        {
+        descriptor: {
+            operation: 'updateGroup',
             scope: SCOPE,
             groupId,
+            targetPrincipalId: null,
+            sessionId: null,
+            request: { description: 'Updated', ...actor, requestId: 'update' }
+        }
+    },
+    {
+        name: 'appoint-director',
+        enqueue: {
+            type: AppInboxType.GROUP_DIRECTOR_APPOINT,
+            topicId: AppInboxType.GROUP_DIRECTOR_APPOINT,
+            resourceId: 'appoint-director-resource',
+            contextId: 'descriptor-contract',
+            senderId: 'owner',
+            data: {
+                scope: SCOPE,
+                groupId,
+                request: { ...actor, requestId: 'appoint-director' }
+            }
+        },
+        descriptor: {
+            operation: 'appointDirector',
+            scope: SCOPE,
+            groupId,
+            targetPrincipalId: null,
+            sessionId: null,
+            request: { ...actor, requestId: 'appoint-director' }
+        }
+    },
+    {
+        name: 'plan',
+        enqueue: {
+            type: AppInboxType.GROUP_PLAN,
+            topicId: AppInboxType.GROUP_PLAN,
+            resourceId: 'plan-resource',
+            contextId: 'descriptor-contract',
+            senderId: 'owner',
+            data: { scope: SCOPE, groupId, request: { ...actor, requestId: 'plan' } }
+        },
+        descriptor: { operation: 'planGroupLayout', scope: SCOPE, groupId, targetPrincipalId: null, sessionId: null, request: { ...actor, requestId: 'plan' } }
+    },
+    {
+        name: 'connect',
+        enqueue: {
+            type: AppInboxType.GROUP_CONNECT,
+            topicId: AppInboxType.GROUP_CONNECT,
+            resourceId: 'connect-resource',
+            contextId: 'descriptor-contract',
+            senderId: 'owner',
+            data: {
+                scope: SCOPE,
+                groupId,
+                request: {
+                    expectedFormationEpoch: 4,
+                    expectedLayout: connectLayout,
+                    ...actor,
+                    requestId: 'connect'
+                }
+            }
+        },
+        descriptor: {
+            operation: 'connectGroup',
+            scope: SCOPE,
+            groupId,
+            targetPrincipalId: null,
+            sessionId: null,
             request: {
                 expectedFormationEpoch: 4,
                 expectedLayout: connectLayout,
                 ...actor,
                 requestId: 'connect'
             }
-        },
-        'connectGroup',
-        {
-            expectedFormationEpoch: 4,
-            expectedLayout: connectLayout,
-            ...actor,
-            requestId: 'connect'
         }
-    ),
-    descriptorCase(
-        'activate',
-        AppInboxType.GROUP_ACTIVATE,
-        { scope: SCOPE, groupId, request: { ...actor, requestId: 'activate' } },
-        'activateGroup',
-        { ...actor, requestId: 'activate' }
-    ),
-    descriptorCase(
-        'reconfigure',
-        AppInboxType.GROUP_RECONFIGURE,
-        { scope: SCOPE, groupId, request: { ...actor, requestId: 'reconfigure' } },
-        'reconfigureGroup',
-        { ...actor, requestId: 'reconfigure' }
-    ),
-    descriptorCase('join', AppInboxType.GROUP_JOIN, { scope: SCOPE, groupId, request: { ...actor, requestId: 'join' } }, 'joinGroup', {
-        ...actor,
-        requestId: 'join'
-    }),
-    descriptorCase(
-        'invite-create',
-        AppInboxType.GROUP_INVITE_CREATE,
-        {
-            scope: SCOPE,
-            groupId,
-            principalId: 'member',
-            request: { invitationExpiresAtEpochMs: 9_000, ...actor, requestId: 'invite-create' }
+    },
+    {
+        name: 'activate',
+        enqueue: {
+            type: AppInboxType.GROUP_ACTIVATE,
+            topicId: AppInboxType.GROUP_ACTIVATE,
+            resourceId: 'activate-resource',
+            contextId: 'descriptor-contract',
+            senderId: 'owner',
+            data: { scope: SCOPE, groupId, request: { ...actor, requestId: 'activate' } }
         },
-        'createGroupInvite',
-        { invitationExpiresAtEpochMs: 9_000, ...actor, requestId: 'invite-create' },
-        'member'
-    ),
-    descriptorCase(
-        'invite-revoke',
-        AppInboxType.GROUP_INVITE_REVOKE,
-        {
+        descriptor: {
+            operation: 'activateGroup',
             scope: SCOPE,
             groupId,
-            principalId: 'member',
-            request: { ...actor, requestId: 'invite-revoke' }
+            targetPrincipalId: null,
+            sessionId: null,
+            request: { ...actor, requestId: 'activate' }
+        }
+    },
+    {
+        name: 'reconfigure',
+        enqueue: {
+            type: AppInboxType.GROUP_RECONFIGURE,
+            topicId: AppInboxType.GROUP_RECONFIGURE,
+            resourceId: 'reconfigure-resource',
+            contextId: 'descriptor-contract',
+            senderId: 'owner',
+            data: { scope: SCOPE, groupId, request: { expectedFormationEpoch: null, landing: null, ...actor, requestId: 'reconfigure' } }
         },
-        'revokeGroupInvite',
-        { ...actor, requestId: 'invite-revoke' },
-        'member'
-    ),
-    descriptorCase(
-        'invite-accept',
-        AppInboxType.GROUP_INVITE_ACCEPT,
-        {
+        descriptor: {
+            operation: 'reconfigureGroup',
             scope: SCOPE,
             groupId,
-            request: { ...actor, requestId: 'invite-accept' }
+            targetPrincipalId: null,
+            sessionId: null,
+            request: { expectedFormationEpoch: null, landing: null, ...actor, requestId: 'reconfigure' }
+        }
+    },
+    {
+        name: 'join',
+        enqueue: {
+            type: AppInboxType.GROUP_JOIN,
+            topicId: AppInboxType.GROUP_JOIN,
+            resourceId: 'join-resource',
+            contextId: 'descriptor-contract',
+            senderId: 'owner',
+            data: { scope: SCOPE, groupId, request: { ...actor, requestId: 'join' } }
         },
-        'acceptGroupInvite',
-        { ...actor, requestId: 'invite-accept' }
-    ),
-    descriptorCase(
-        'admission-grant',
-        AppInboxType.GROUP_ADMISSION_GRANT,
-        {
+        descriptor: {
+            operation: 'joinGroup',
             scope: SCOPE,
             groupId,
-            principalId: 'member',
-            request: { ...actor, requestId: 'admission-grant' }
-        },
-        'grantGroupAdmission',
-        { ...actor, requestId: 'admission-grant' },
-        'member'
-    ),
-    descriptorCase(
-        'admission-decline',
-        AppInboxType.GROUP_ADMISSION_DECLINE,
-        {
-            scope: SCOPE,
-            groupId,
-            principalId: 'member',
-            request: { ...actor, requestId: 'admission-decline' }
-        },
-        'declineGroupAdmission',
-        { ...actor, requestId: 'admission-decline' },
-        'member'
-    ),
-    descriptorCase(
-        'rotate-join-code',
-        AppInboxType.GROUP_JOIN_CODE_ROTATE,
-        { scope: SCOPE, groupId, request: { ...actor, requestId: 'rotate-join-code' } },
-        'rotateGroupJoinCode',
-        { ...actor, requestId: 'rotate-join-code' }
-    ),
-    descriptorCase(
-        'member-remove',
-        AppInboxType.GROUP_MEMBER_REMOVE,
-        {
-            scope: SCOPE,
-            groupId,
-            principalId: 'member',
-            request: { ...actor, requestId: 'member-remove' }
-        },
-        'removeGroupMember',
-        { ...actor, requestId: 'member-remove' },
-        'member'
-    ),
-    descriptorCase(
-        'member-ban',
-        AppInboxType.GROUP_MEMBER_BAN,
-        {
-            scope: SCOPE,
-            groupId,
-            principalId: 'member',
-            request: { ...actor, requestId: 'member-ban' }
-        },
-        'banGroupMember',
-        { ...actor, requestId: 'member-ban' },
-        'member'
-    ),
-    descriptorCase(
-        'member-unban',
-        AppInboxType.GROUP_MEMBER_UNBAN,
-        {
-            scope: SCOPE,
-            groupId,
-            principalId: 'member',
-            request: { ...actor, requestId: 'member-unban' }
-        },
-        'unbanGroupMember',
-        { ...actor, requestId: 'member-unban' },
-        'member'
-    ),
-    descriptorCase(
-        'member-role-set',
-        AppInboxType.GROUP_MEMBER_ROLE_SET,
-        {
-            scope: SCOPE,
-            groupId,
-            principalId: 'member',
-            request: { role: 'admin', ...actor, requestId: 'member-role-set' }
-        },
-        'setGroupMemberRole',
-        { role: 'admin', ...actor, requestId: 'member-role-set' },
-        'member'
-    ),
-    descriptorCase(
-        'ownership-transfer',
-        AppInboxType.GROUP_OWNERSHIP_TRANSFER,
-        {
-            scope: SCOPE,
-            groupId,
-            request: { newOwnerPrincipalId: 'member', ...actor, requestId: 'ownership-transfer' }
-        },
-        'transferGroupOwnership',
-        { newOwnerPrincipalId: 'member', ...actor, requestId: 'ownership-transfer' },
-        'member'
-    ),
-    descriptorCase(
-        'member-upsert',
-        AppInboxType.GROUP_MEMBER_UPSERT,
-        {
-            scope: SCOPE,
-            groupId,
-            principalId: 'member',
-            request: { role: 'member', ...actor, requestId: 'member-upsert' }
-        },
-        'upsertMember',
-        { role: 'member', ...actor, requestId: 'member-upsert' },
-        'member'
-    ),
-    descriptorCase(
-        'presence-connect',
-        AppInboxType.GROUP_PRESENCE_CONNECT,
-        {
-            scope: SCOPE,
-            groupId,
-            sessionId: 'presence-session',
+            targetPrincipalId: null,
+            sessionId: null,
             request: {
-                principalId: 'member',
-                expiresAtEpochMs: 9_000,
                 ...actor,
-                requestId: 'presence-connect'
+                requestId: 'join'
+            }
+        }
+    },
+    {
+        name: 'invite-create',
+        enqueue: {
+            type: AppInboxType.GROUP_INVITE_CREATE,
+            topicId: AppInboxType.GROUP_INVITE_CREATE,
+            resourceId: 'invite-create-resource',
+            contextId: 'descriptor-contract',
+            senderId: 'owner',
+            data: {
+                scope: SCOPE,
+                groupId,
+                principalId: 'member',
+                request: { invitationExpiresAtEpochMs: 9_000, ...actor, requestId: 'invite-create' }
             }
         },
-        'connectPresence',
-        { principalId: 'member', expiresAtEpochMs: 9_000, ...actor, requestId: 'presence-connect' },
-        'member',
-        'presence-session'
-    ),
-    descriptorCase(
-        'presence-heartbeat',
-        AppInboxType.GROUP_PRESENCE_HEARTBEAT,
-        {
+        descriptor: {
+            operation: 'createGroupInvite',
             scope: SCOPE,
             groupId,
-            sessionId: 'presence-session',
-            request: { ...actor, requestId: 'presence-heartbeat' }
+            targetPrincipalId: 'member',
+            sessionId: null,
+            request: { invitationExpiresAtEpochMs: 9_000, ...actor, requestId: 'invite-create' }
+        }
+    },
+    {
+        name: 'invite-revoke',
+        enqueue: {
+            type: AppInboxType.GROUP_INVITE_REVOKE,
+            topicId: AppInboxType.GROUP_INVITE_REVOKE,
+            resourceId: 'invite-revoke-resource',
+            contextId: 'descriptor-contract',
+            senderId: 'owner',
+            data: {
+                scope: SCOPE,
+                groupId,
+                principalId: 'member',
+                request: { ...actor, requestId: 'invite-revoke' }
+            }
         },
-        'heartbeatPresence',
-        { ...actor, requestId: 'presence-heartbeat' },
-        null,
-        'presence-session'
-    ),
-    descriptorCase(
-        'presence-disconnect',
-        AppInboxType.GROUP_PRESENCE_DISCONNECT,
-        {
+        descriptor: {
+            operation: 'revokeGroupInvite',
             scope: SCOPE,
             groupId,
-            sessionId: 'presence-session',
-            request: { ...actor, requestId: 'presence-disconnect' }
+            targetPrincipalId: 'member',
+            sessionId: null,
+            request: { ...actor, requestId: 'invite-revoke' }
+        }
+    },
+    {
+        name: 'invite-accept',
+        enqueue: {
+            type: AppInboxType.GROUP_INVITE_ACCEPT,
+            topicId: AppInboxType.GROUP_INVITE_ACCEPT,
+            resourceId: 'invite-accept-resource',
+            contextId: 'descriptor-contract',
+            senderId: 'owner',
+            data: {
+                scope: SCOPE,
+                groupId,
+                request: { ...actor, requestId: 'invite-accept' }
+            }
         },
-        'disconnectPresence',
-        { ...actor, requestId: 'presence-disconnect' },
-        null,
-        'presence-session'
-    ),
-    descriptorCase(
-        'formation-start',
-        AppInboxType.GROUP_FORMATION_START,
-        { scope: SCOPE, groupId, request: { ...actor, requestId: 'formation-start' } },
-        'startGroupFormation',
-        { ...actor, requestId: 'formation-start' }
-    ),
-    descriptorCase(
-        'formation-reset',
-        AppInboxType.GROUP_FORMATION_RESET,
-        { scope: SCOPE, groupId, request: { ...actor, requestId: 'formation-reset' } },
-        'resetGroupFormation',
-        { ...actor, requestId: 'formation-reset' }
-    ),
-    descriptorCase(
-        'transport-pause',
-        AppInboxType.GROUP_TRANSPORT_PAUSE,
-        { scope: SCOPE, groupId, request: { ...actor, requestId: 'transport-pause' } },
-        'pauseGroupTransport',
-        { ...actor, requestId: 'transport-pause' }
-    ),
-    descriptorCase(
-        'transport-resume',
-        AppInboxType.GROUP_TRANSPORT_RESUME,
-        { scope: SCOPE, groupId, request: { ...actor, requestId: 'transport-resume' } },
-        'resumeGroupTransport',
-        { ...actor, requestId: 'transport-resume' }
-    )
+        descriptor: {
+            operation: 'acceptGroupInvite',
+            scope: SCOPE,
+            groupId,
+            targetPrincipalId: null,
+            sessionId: null,
+            request: { ...actor, requestId: 'invite-accept' }
+        }
+    },
+    {
+        name: 'admission-grant',
+        enqueue: {
+            type: AppInboxType.GROUP_ADMISSION_GRANT,
+            topicId: AppInboxType.GROUP_ADMISSION_GRANT,
+            resourceId: 'admission-grant-resource',
+            contextId: 'descriptor-contract',
+            senderId: 'owner',
+            data: {
+                scope: SCOPE,
+                groupId,
+                principalId: 'member',
+                request: { ...actor, requestId: 'admission-grant' }
+            }
+        },
+        descriptor: {
+            operation: 'grantGroupAdmission',
+            scope: SCOPE,
+            groupId,
+            targetPrincipalId: 'member',
+            sessionId: null,
+            request: { ...actor, requestId: 'admission-grant' }
+        }
+    },
+    {
+        name: 'admission-decline',
+        enqueue: {
+            type: AppInboxType.GROUP_ADMISSION_DECLINE,
+            topicId: AppInboxType.GROUP_ADMISSION_DECLINE,
+            resourceId: 'admission-decline-resource',
+            contextId: 'descriptor-contract',
+            senderId: 'owner',
+            data: {
+                scope: SCOPE,
+                groupId,
+                principalId: 'member',
+                request: { ...actor, requestId: 'admission-decline' }
+            }
+        },
+        descriptor: {
+            operation: 'declineGroupAdmission',
+            scope: SCOPE,
+            groupId,
+            targetPrincipalId: 'member',
+            sessionId: null,
+            request: { ...actor, requestId: 'admission-decline' }
+        }
+    },
+    {
+        name: 'rotate-join-code',
+        enqueue: {
+            type: AppInboxType.GROUP_JOIN_CODE_ROTATE,
+            topicId: AppInboxType.GROUP_JOIN_CODE_ROTATE,
+            resourceId: 'rotate-join-code-resource',
+            contextId: 'descriptor-contract',
+            senderId: 'owner',
+            data: { scope: SCOPE, groupId, request: { ...actor, requestId: 'rotate-join-code' } }
+        },
+        descriptor: {
+            operation: 'rotateGroupJoinCode',
+            scope: SCOPE,
+            groupId,
+            targetPrincipalId: null,
+            sessionId: null,
+            request: { ...actor, requestId: 'rotate-join-code' }
+        }
+    },
+    {
+        name: 'member-remove',
+        enqueue: {
+            type: AppInboxType.GROUP_MEMBER_REMOVE,
+            topicId: AppInboxType.GROUP_MEMBER_REMOVE,
+            resourceId: 'member-remove-resource',
+            contextId: 'descriptor-contract',
+            senderId: 'owner',
+            data: {
+                scope: SCOPE,
+                groupId,
+                principalId: 'member',
+                request: { ...actor, requestId: 'member-remove' }
+            }
+        },
+        descriptor: {
+            operation: 'removeGroupMember',
+            scope: SCOPE,
+            groupId,
+            targetPrincipalId: 'member',
+            sessionId: null,
+            request: { ...actor, requestId: 'member-remove' }
+        }
+    },
+    {
+        name: 'member-ban',
+        enqueue: {
+            type: AppInboxType.GROUP_MEMBER_BAN,
+            topicId: AppInboxType.GROUP_MEMBER_BAN,
+            resourceId: 'member-ban-resource',
+            contextId: 'descriptor-contract',
+            senderId: 'owner',
+            data: {
+                scope: SCOPE,
+                groupId,
+                principalId: 'member',
+                request: { ...actor, requestId: 'member-ban' }
+            }
+        },
+        descriptor: {
+            operation: 'banGroupMember',
+            scope: SCOPE,
+            groupId,
+            targetPrincipalId: 'member',
+            sessionId: null,
+            request: { ...actor, requestId: 'member-ban' }
+        }
+    },
+    {
+        name: 'member-unban',
+        enqueue: {
+            type: AppInboxType.GROUP_MEMBER_UNBAN,
+            topicId: AppInboxType.GROUP_MEMBER_UNBAN,
+            resourceId: 'member-unban-resource',
+            contextId: 'descriptor-contract',
+            senderId: 'owner',
+            data: {
+                scope: SCOPE,
+                groupId,
+                principalId: 'member',
+                request: { ...actor, requestId: 'member-unban' }
+            }
+        },
+        descriptor: {
+            operation: 'unbanGroupMember',
+            scope: SCOPE,
+            groupId,
+            targetPrincipalId: 'member',
+            sessionId: null,
+            request: { ...actor, requestId: 'member-unban' }
+        }
+    },
+    {
+        name: 'member-role-set',
+        enqueue: {
+            type: AppInboxType.GROUP_MEMBER_ROLE_SET,
+            topicId: AppInboxType.GROUP_MEMBER_ROLE_SET,
+            resourceId: 'member-role-set-resource',
+            contextId: 'descriptor-contract',
+            senderId: 'owner',
+            data: {
+                scope: SCOPE,
+                groupId,
+                principalId: 'member',
+                request: { role: 'admin', ...actor, requestId: 'member-role-set' }
+            }
+        },
+        descriptor: {
+            operation: 'setGroupMemberRole',
+            scope: SCOPE,
+            groupId,
+            targetPrincipalId: 'member',
+            sessionId: null,
+            request: { role: 'admin', ...actor, requestId: 'member-role-set' }
+        }
+    },
+    {
+        name: 'ownership-transfer',
+        enqueue: {
+            type: AppInboxType.GROUP_OWNERSHIP_TRANSFER,
+            topicId: AppInboxType.GROUP_OWNERSHIP_TRANSFER,
+            resourceId: 'ownership-transfer-resource',
+            contextId: 'descriptor-contract',
+            senderId: 'owner',
+            data: {
+                scope: SCOPE,
+                groupId,
+                request: { newOwnerPrincipalId: 'member', ...actor, requestId: 'ownership-transfer' }
+            }
+        },
+        descriptor: {
+            operation: 'transferGroupOwnership',
+            scope: SCOPE,
+            groupId,
+            targetPrincipalId: 'member',
+            sessionId: null,
+            request: { newOwnerPrincipalId: 'member', ...actor, requestId: 'ownership-transfer' }
+        }
+    },
+    {
+        name: 'member-upsert',
+        enqueue: {
+            type: AppInboxType.GROUP_MEMBER_UPSERT,
+            topicId: AppInboxType.GROUP_MEMBER_UPSERT,
+            resourceId: 'member-upsert-resource',
+            contextId: 'descriptor-contract',
+            senderId: 'owner',
+            data: {
+                scope: SCOPE,
+                groupId,
+                principalId: 'member',
+                request: { status: 'active', role: 'member', ...actor, requestId: 'member-upsert' }
+            }
+        },
+        descriptor: {
+            operation: 'upsertMember',
+            scope: SCOPE,
+            groupId,
+            targetPrincipalId: 'member',
+            sessionId: null,
+            request: { status: 'active', role: 'member', ...actor, requestId: 'member-upsert' }
+        }
+    },
+    {
+        name: 'presence-connect',
+        enqueue: {
+            type: AppInboxType.GROUP_PRESENCE_CONNECT,
+            topicId: AppInboxType.GROUP_PRESENCE_CONNECT,
+            resourceId: 'presence-connect-resource',
+            contextId: 'descriptor-contract',
+            senderId: 'owner',
+            data: {
+                scope: SCOPE,
+                groupId,
+                sessionId: 'presence-session',
+                request: { generationId: 'generation-1', principalId: 'member', expiresAtEpochMs: 9_000, ...actor, requestId: 'presence-connect' }
+            }
+        },
+        descriptor: {
+            operation: 'connectPresence',
+            scope: SCOPE,
+            groupId,
+            targetPrincipalId: 'member',
+            sessionId: 'presence-session',
+            request: { generationId: 'generation-1', principalId: 'member', expiresAtEpochMs: 9_000, ...actor, requestId: 'presence-connect' }
+        }
+    },
+    {
+        name: 'presence-heartbeat',
+        enqueue: {
+            type: AppInboxType.GROUP_PRESENCE_HEARTBEAT,
+            topicId: AppInboxType.GROUP_PRESENCE_HEARTBEAT,
+            resourceId: 'presence-heartbeat-resource',
+            contextId: 'descriptor-contract',
+            senderId: 'owner',
+            data: {
+                scope: SCOPE,
+                groupId,
+                sessionId: 'presence-session',
+                request: { generationId: 'generation-1', ...actor, requestId: 'presence-heartbeat' }
+            }
+        },
+        descriptor: {
+            operation: 'heartbeatPresence',
+            scope: SCOPE,
+            groupId,
+            targetPrincipalId: null,
+            sessionId: 'presence-session',
+            request: { generationId: 'generation-1', ...actor, requestId: 'presence-heartbeat' }
+        }
+    },
+    {
+        name: 'presence-disconnect',
+        enqueue: {
+            type: AppInboxType.GROUP_PRESENCE_DISCONNECT,
+            topicId: AppInboxType.GROUP_PRESENCE_DISCONNECT,
+            resourceId: 'presence-disconnect-resource',
+            contextId: 'descriptor-contract',
+            senderId: 'owner',
+            data: {
+                scope: SCOPE,
+                groupId,
+                sessionId: 'presence-session',
+                request: { generationId: 'generation-1', ...actor, requestId: 'presence-disconnect' }
+            }
+        },
+        descriptor: {
+            operation: 'disconnectPresence',
+            scope: SCOPE,
+            groupId,
+            targetPrincipalId: null,
+            sessionId: 'presence-session',
+            request: { generationId: 'generation-1', ...actor, requestId: 'presence-disconnect' }
+        }
+    },
+    {
+        name: 'formation-start',
+        enqueue: {
+            type: AppInboxType.GROUP_FORMATION_START,
+            topicId: AppInboxType.GROUP_FORMATION_START,
+            resourceId: 'formation-start-resource',
+            contextId: 'descriptor-contract',
+            senderId: 'owner',
+            data: { scope: SCOPE, groupId, request: { ...actor, requestId: 'formation-start' } }
+        },
+        descriptor: {
+            operation: 'startGroupFormation',
+            scope: SCOPE,
+            groupId,
+            targetPrincipalId: null,
+            sessionId: null,
+            request: { ...actor, requestId: 'formation-start' }
+        }
+    },
+    {
+        name: 'formation-reset',
+        enqueue: {
+            type: AppInboxType.GROUP_FORMATION_RESET,
+            topicId: AppInboxType.GROUP_FORMATION_RESET,
+            resourceId: 'formation-reset-resource',
+            contextId: 'descriptor-contract',
+            senderId: 'owner',
+            data: { scope: SCOPE, groupId, request: { ...actor, requestId: 'formation-reset' } }
+        },
+        descriptor: {
+            operation: 'resetGroupFormation',
+            scope: SCOPE,
+            groupId,
+            targetPrincipalId: null,
+            sessionId: null,
+            request: { ...actor, requestId: 'formation-reset' }
+        }
+    },
+    {
+        name: 'transport-pause',
+        enqueue: {
+            type: AppInboxType.GROUP_TRANSPORT_PAUSE,
+            topicId: AppInboxType.GROUP_TRANSPORT_PAUSE,
+            resourceId: 'transport-pause-resource',
+            contextId: 'descriptor-contract',
+            senderId: 'owner',
+            data: { scope: SCOPE, groupId, request: { ...actor, requestId: 'transport-pause' } }
+        },
+        descriptor: {
+            operation: 'pauseGroupTransport',
+            scope: SCOPE,
+            groupId,
+            targetPrincipalId: null,
+            sessionId: null,
+            request: { ...actor, requestId: 'transport-pause' }
+        }
+    },
+    {
+        name: 'transport-resume',
+        enqueue: {
+            type: AppInboxType.GROUP_TRANSPORT_RESUME,
+            topicId: AppInboxType.GROUP_TRANSPORT_RESUME,
+            resourceId: 'transport-resume-resource',
+            contextId: 'descriptor-contract',
+            senderId: 'owner',
+            data: { scope: SCOPE, groupId, request: { ...actor, requestId: 'transport-resume' } }
+        },
+        descriptor: {
+            operation: 'resumeGroupTransport',
+            scope: SCOPE,
+            groupId,
+            targetPrincipalId: null,
+            sessionId: null,
+            request: { ...actor, requestId: 'transport-resume' }
+        }
+    }
 ];

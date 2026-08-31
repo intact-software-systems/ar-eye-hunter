@@ -14,7 +14,6 @@ export interface MutationRouteInventoryRow {
     readonly familyRegistrationMarker?: string;
     readonly rootSource?: string;
     readonly constructionRootMarker?: string;
-    readonly familyOwnerOrder?: number;
 }
 
 export const MUTATION_ROUTE_OWNER_PATHS = {
@@ -271,8 +270,7 @@ export const MUTATION_ROUTE_INVENTORY_ROWS: readonly MutationRouteInventoryRow[]
         operationDiscriminant: 'create-group',
         familyRegistrationMarker: 'registerGroupStateMutationRoutes',
         rootSource: 'gr',
-        constructionRootMarker: 'registerGroupStateRoutes',
-        familyOwnerOrder: 0
+        constructionRootMarker: 'registerGroupStateRoutes'
     },
     {
         transport: 'HTTP',
@@ -289,8 +287,7 @@ export const MUTATION_ROUTE_INVENTORY_ROWS: readonly MutationRouteInventoryRow[]
         operationDiscriminant: 'update-group',
         familyRegistrationMarker: 'registerGroupStateMutationRoutes',
         rootSource: 'gr',
-        constructionRootMarker: 'registerGroupStateRoutes',
-        familyOwnerOrder: 1
+        constructionRootMarker: 'registerGroupStateRoutes'
     },
     {
         transport: 'HTTP',
@@ -307,8 +304,7 @@ export const MUTATION_ROUTE_INVENTORY_ROWS: readonly MutationRouteInventoryRow[]
         operationDiscriminant: 'appoint-group-director',
         familyRegistrationMarker: 'registerGroupStateMutationRoutes',
         rootSource: 'gr',
-        constructionRootMarker: 'registerGroupStateRoutes',
-        familyOwnerOrder: 2
+        constructionRootMarker: 'registerGroupStateRoutes'
     },
     {
         transport: 'HTTP',
@@ -325,8 +321,7 @@ export const MUTATION_ROUTE_INVENTORY_ROWS: readonly MutationRouteInventoryRow[]
         operationDiscriminant: 'plan-group-layout',
         familyRegistrationMarker: 'registerGroupLifecycleRoutes',
         rootSource: 'gr',
-        constructionRootMarker: 'registerGroupStateRoutes',
-        familyOwnerOrder: 0
+        constructionRootMarker: 'registerGroupStateRoutes'
     },
     {
         transport: 'HTTP',
@@ -343,8 +338,7 @@ export const MUTATION_ROUTE_INVENTORY_ROWS: readonly MutationRouteInventoryRow[]
         operationDiscriminant: 'connect-group',
         familyRegistrationMarker: 'registerGroupLifecycleRoutes',
         rootSource: 'gr',
-        constructionRootMarker: 'registerGroupStateRoutes',
-        familyOwnerOrder: 1
+        constructionRootMarker: 'registerGroupStateRoutes'
     },
     {
         transport: 'HTTP',
@@ -361,8 +355,7 @@ export const MUTATION_ROUTE_INVENTORY_ROWS: readonly MutationRouteInventoryRow[]
         operationDiscriminant: 'activate-group',
         familyRegistrationMarker: 'registerGroupLifecycleRoutes',
         rootSource: 'gr',
-        constructionRootMarker: 'registerGroupStateRoutes',
-        familyOwnerOrder: 2
+        constructionRootMarker: 'registerGroupStateRoutes'
     },
     {
         transport: 'HTTP',
@@ -379,8 +372,7 @@ export const MUTATION_ROUTE_INVENTORY_ROWS: readonly MutationRouteInventoryRow[]
         operationDiscriminant: 'reconfigure-group',
         familyRegistrationMarker: 'registerGroupLifecycleRoutes',
         rootSource: 'gr',
-        constructionRootMarker: 'registerGroupStateRoutes',
-        familyOwnerOrder: 3
+        constructionRootMarker: 'registerGroupStateRoutes'
     },
     {
         transport: 'HTTP',
@@ -397,8 +389,7 @@ export const MUTATION_ROUTE_INVENTORY_ROWS: readonly MutationRouteInventoryRow[]
         operationDiscriminant: 'pause-group-transport',
         familyRegistrationMarker: 'registerGroupLifecycleRoutes',
         rootSource: 'gr',
-        constructionRootMarker: 'registerGroupStateRoutes',
-        familyOwnerOrder: 4
+        constructionRootMarker: 'registerGroupStateRoutes'
     },
     {
         transport: 'HTTP',
@@ -415,8 +406,7 @@ export const MUTATION_ROUTE_INVENTORY_ROWS: readonly MutationRouteInventoryRow[]
         operationDiscriminant: 'resume-group-transport',
         familyRegistrationMarker: 'registerGroupLifecycleRoutes',
         rootSource: 'gr',
-        constructionRootMarker: 'registerGroupStateRoutes',
-        familyOwnerOrder: 5
+        constructionRootMarker: 'registerGroupStateRoutes'
     },
     {
         transport: 'HTTP',
@@ -433,8 +423,7 @@ export const MUTATION_ROUTE_INVENTORY_ROWS: readonly MutationRouteInventoryRow[]
         operationDiscriminant: 'reset-group-formation',
         familyRegistrationMarker: 'registerGroupLifecycleRoutes',
         rootSource: 'gr',
-        constructionRootMarker: 'registerGroupStateRoutes',
-        familyOwnerOrder: 6
+        constructionRootMarker: 'registerGroupStateRoutes'
     },
     {
         transport: 'HTTP',
@@ -451,8 +440,7 @@ export const MUTATION_ROUTE_INVENTORY_ROWS: readonly MutationRouteInventoryRow[]
         operationDiscriminant: 'start-group-formation',
         familyRegistrationMarker: 'registerGroupLifecycleRoutes',
         rootSource: 'gr',
-        constructionRootMarker: 'registerGroupStateRoutes',
-        familyOwnerOrder: 7
+        constructionRootMarker: 'registerGroupStateRoutes'
     },
     {
         transport: 'HTTP',
@@ -469,8 +457,7 @@ export const MUTATION_ROUTE_INVENTORY_ROWS: readonly MutationRouteInventoryRow[]
         operationDiscriminant: 'join-group',
         familyRegistrationMarker: 'registerGroupAdmissionRoutes',
         rootSource: 'gr',
-        constructionRootMarker: 'registerGroupStateRoutes',
-        familyOwnerOrder: 0
+        constructionRootMarker: 'registerGroupStateRoutes'
     },
     {
         transport: 'HTTP',
@@ -487,8 +474,7 @@ export const MUTATION_ROUTE_INVENTORY_ROWS: readonly MutationRouteInventoryRow[]
         operationDiscriminant: 'create-group-invite',
         familyRegistrationMarker: 'registerGroupAdmissionRoutes',
         rootSource: 'gr',
-        constructionRootMarker: 'registerGroupStateRoutes',
-        familyOwnerOrder: 3
+        constructionRootMarker: 'registerGroupStateRoutes'
     },
     {
         transport: 'HTTP',
@@ -505,8 +491,7 @@ export const MUTATION_ROUTE_INVENTORY_ROWS: readonly MutationRouteInventoryRow[]
         operationDiscriminant: 'revoke-group-invite',
         familyRegistrationMarker: 'registerGroupAdmissionRoutes',
         rootSource: 'gr',
-        constructionRootMarker: 'registerGroupStateRoutes',
-        familyOwnerOrder: 4
+        constructionRootMarker: 'registerGroupStateRoutes'
     },
     {
         transport: 'HTTP',
@@ -523,8 +508,7 @@ export const MUTATION_ROUTE_INVENTORY_ROWS: readonly MutationRouteInventoryRow[]
         operationDiscriminant: 'accept-group-invite',
         familyRegistrationMarker: 'registerGroupAdmissionRoutes',
         rootSource: 'gr',
-        constructionRootMarker: 'registerGroupStateRoutes',
-        familyOwnerOrder: 1
+        constructionRootMarker: 'registerGroupStateRoutes'
     },
     {
         transport: 'HTTP',
@@ -541,8 +525,7 @@ export const MUTATION_ROUTE_INVENTORY_ROWS: readonly MutationRouteInventoryRow[]
         operationDiscriminant: 'rotate-group-join-code',
         familyRegistrationMarker: 'registerGroupAdmissionRoutes',
         rootSource: 'gr',
-        constructionRootMarker: 'registerGroupStateRoutes',
-        familyOwnerOrder: 2
+        constructionRootMarker: 'registerGroupStateRoutes'
     },
     {
         transport: 'HTTP',
@@ -559,8 +542,7 @@ export const MUTATION_ROUTE_INVENTORY_ROWS: readonly MutationRouteInventoryRow[]
         operationDiscriminant: 'grant-group-admission',
         familyRegistrationMarker: 'registerGroupAdmissionRoutes',
         rootSource: 'gr',
-        constructionRootMarker: 'registerGroupStateRoutes',
-        familyOwnerOrder: 5
+        constructionRootMarker: 'registerGroupStateRoutes'
     },
     {
         transport: 'HTTP',
@@ -577,8 +559,7 @@ export const MUTATION_ROUTE_INVENTORY_ROWS: readonly MutationRouteInventoryRow[]
         operationDiscriminant: 'decline-group-admission',
         familyRegistrationMarker: 'registerGroupAdmissionRoutes',
         rootSource: 'gr',
-        constructionRootMarker: 'registerGroupStateRoutes',
-        familyOwnerOrder: 6
+        constructionRootMarker: 'registerGroupStateRoutes'
     },
     {
         transport: 'HTTP',
@@ -595,8 +576,7 @@ export const MUTATION_ROUTE_INVENTORY_ROWS: readonly MutationRouteInventoryRow[]
         operationDiscriminant: 'remove-group-member',
         familyRegistrationMarker: 'registerGroupMembershipRoutes',
         rootSource: 'gr',
-        constructionRootMarker: 'registerGroupStateRoutes',
-        familyOwnerOrder: 0
+        constructionRootMarker: 'registerGroupStateRoutes'
     },
     {
         transport: 'HTTP',
@@ -613,8 +593,7 @@ export const MUTATION_ROUTE_INVENTORY_ROWS: readonly MutationRouteInventoryRow[]
         operationDiscriminant: 'ban-group-member',
         familyRegistrationMarker: 'registerGroupMembershipRoutes',
         rootSource: 'gr',
-        constructionRootMarker: 'registerGroupStateRoutes',
-        familyOwnerOrder: 1
+        constructionRootMarker: 'registerGroupStateRoutes'
     },
     {
         transport: 'HTTP',
@@ -631,8 +610,7 @@ export const MUTATION_ROUTE_INVENTORY_ROWS: readonly MutationRouteInventoryRow[]
         operationDiscriminant: 'unban-group-member',
         familyRegistrationMarker: 'registerGroupMembershipRoutes',
         rootSource: 'gr',
-        constructionRootMarker: 'registerGroupStateRoutes',
-        familyOwnerOrder: 2
+        constructionRootMarker: 'registerGroupStateRoutes'
     },
     {
         transport: 'HTTP',
@@ -649,8 +627,7 @@ export const MUTATION_ROUTE_INVENTORY_ROWS: readonly MutationRouteInventoryRow[]
         operationDiscriminant: 'set-group-member-role',
         familyRegistrationMarker: 'registerGroupMembershipRoutes',
         rootSource: 'gr',
-        constructionRootMarker: 'registerGroupStateRoutes',
-        familyOwnerOrder: 3
+        constructionRootMarker: 'registerGroupStateRoutes'
     },
     {
         transport: 'HTTP',
@@ -667,8 +644,7 @@ export const MUTATION_ROUTE_INVENTORY_ROWS: readonly MutationRouteInventoryRow[]
         operationDiscriminant: 'transfer-group-ownership',
         familyRegistrationMarker: 'registerGroupMembershipRoutes',
         rootSource: 'gr',
-        constructionRootMarker: 'registerGroupStateRoutes',
-        familyOwnerOrder: 4
+        constructionRootMarker: 'registerGroupStateRoutes'
     },
     {
         transport: 'HTTP',
@@ -685,8 +661,7 @@ export const MUTATION_ROUTE_INVENTORY_ROWS: readonly MutationRouteInventoryRow[]
         operationDiscriminant: 'upsert-group-member',
         familyRegistrationMarker: 'registerGroupMembershipRoutes',
         rootSource: 'gr',
-        constructionRootMarker: 'registerGroupStateRoutes',
-        familyOwnerOrder: 5
+        constructionRootMarker: 'registerGroupStateRoutes'
     },
     {
         transport: 'HTTP',
@@ -703,8 +678,7 @@ export const MUTATION_ROUTE_INVENTORY_ROWS: readonly MutationRouteInventoryRow[]
         operationDiscriminant: 'connect-group-presence',
         familyRegistrationMarker: 'registerGroupPresenceRoutes',
         rootSource: 'gr',
-        constructionRootMarker: 'registerGroupStateRoutes',
-        familyOwnerOrder: 0
+        constructionRootMarker: 'registerGroupStateRoutes'
     },
     {
         transport: 'HTTP',
@@ -721,8 +695,7 @@ export const MUTATION_ROUTE_INVENTORY_ROWS: readonly MutationRouteInventoryRow[]
         operationDiscriminant: 'heartbeat-group-presence',
         familyRegistrationMarker: 'registerGroupPresenceRoutes',
         rootSource: 'gr',
-        constructionRootMarker: 'registerGroupStateRoutes',
-        familyOwnerOrder: 1
+        constructionRootMarker: 'registerGroupStateRoutes'
     },
     {
         transport: 'HTTP',
@@ -739,8 +712,7 @@ export const MUTATION_ROUTE_INVENTORY_ROWS: readonly MutationRouteInventoryRow[]
         operationDiscriminant: 'disconnect-group-presence',
         familyRegistrationMarker: 'registerGroupPresenceRoutes',
         rootSource: 'gr',
-        constructionRootMarker: 'registerGroupStateRoutes',
-        familyOwnerOrder: 2
+        constructionRootMarker: 'registerGroupStateRoutes'
     },
     {
         transport: 'MAINTENANCE',

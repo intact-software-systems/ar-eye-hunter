@@ -5,7 +5,7 @@ import type { GroupGuardCandidate, GroupMutationComputed, GroupMutationRead } fr
 import { requireGroup } from '../group-mutation-result.ts';
 import { findKnownMember } from '../write/compute-group-membership-write.ts';
 
-export function validateComputedRosterFacts(
+export function assertComputedRosterFacts(
     read: GroupMutationRead,
     computed: Extract<GroupMutationComputed, { outcome: 'write'; }>
 ): void {
@@ -23,17 +23,17 @@ export function validateComputedRosterFacts(
             computed.guard.operation === 'update' &&
             computed.guard.expectedRevision === read.expiredGroupEntry?.revision)
     ) {
-        validateInitialRoster(
+        assertInitialRoster(
             computed.members,
             candidate.activeMemberCount,
             candidate.ownerPrincipalId
         );
         return;
     }
-    validateUpdatedRoster({ read, guard: computed.guard, members: computed.members });
+    assertUpdatedRoster({ read, guard: computed.guard, members: computed.members });
 }
 
-function validateInitialRoster(
+function assertInitialRoster(
     members: readonly GroupMember[],
     activeMemberCount: number,
     ownerPrincipalId: string
@@ -49,13 +49,13 @@ function validateInitialRoster(
     }
 }
 
-interface ValidateUpdatedRosterInput {
+interface AssertUpdatedRosterInput {
     readonly read: GroupMutationRead;
     readonly guard: GroupGuardCandidate;
     readonly members: readonly GroupMember[];
 }
 
-function validateUpdatedRoster({ read, guard, members }: ValidateUpdatedRosterInput): void {
+function assertUpdatedRoster({ read, guard, members }: AssertUpdatedRosterInput): void {
     const current = requireGroup(read, guard.value);
     const expectedCount = computeUpdatedActiveMemberCount(
         current.value.activeMemberCount,

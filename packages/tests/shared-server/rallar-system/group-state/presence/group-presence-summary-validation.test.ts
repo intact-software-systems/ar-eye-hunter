@@ -1,4 +1,3 @@
-import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
 import { GroupPresenceSummaryWork } from '@shared-server/rallar-system/group-state/presence/group-presence-summary-worker.ts';
 import type { JsonWireObject } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
@@ -54,7 +53,7 @@ describe('group presence summary validation', () => {
             namespace: 'group-state:presence-admissions',
             corrupt: (value) => ({
                 ...value,
-                admittedSessions: admitted.value.admittedSessions
+                admittedSessions: admitted.value.admittedSessions.map((session) => ({ ...session }))
             })
         });
 

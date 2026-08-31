@@ -6,59 +6,59 @@ import type {
     GroupMutationRead
 } from '../group-mutation-contracts.ts';
 import { isGroupMutationRejectionCode } from '../group-mutation-rejection-codes.ts';
-import { validateComputedGroupMutationWrite } from './validate-computed-group-mutation-write.ts';
-import { validateCommandHash, validateMutationReceipt } from './validate-group-mutation-result.ts';
+import { assertComputedGroupMutationWrite } from './assert-computed-group-mutation-write.ts';
+import { assertCommandHash, assertMutationReceipt } from './assert-group-mutation-result.ts';
 
-export interface ValidateComputedGroupMutationInput {
+export interface AssertComputedGroupMutationInput {
     readonly command: GroupMutationCommand;
     readonly read: GroupMutationRead;
     readonly facts: GroupMutationFacts;
     readonly computed: GroupMutationComputed;
 }
 
-export function validateComputedGroupMutation({
+export function assertComputedGroupMutation({
     command,
     read,
     facts,
     computed
-}: ValidateComputedGroupMutationInput): void {
+}: AssertComputedGroupMutationInput): void {
     const value = computed;
     switch (computed.outcome) {
         case 'replay':
         case 'no-op':
         case 'rejected':
-            validateReceiptOutcome({ command, facts, computed, value });
+            assertReceiptOutcome({ command, facts, computed, value });
             return;
         case 'idempotency-conflict':
-            validateConflictOutcome(facts, computed, value);
+            assertConflictOutcome(facts, computed, value);
             return;
         case 'write':
-            validateWriteOutcomeKeys(value);
-            validateComputedGroupMutationWrite({ command, read, facts, computed });
+            assertWriteOutcomeKeys(value);
+            assertComputedGroupMutationWrite({ command, read, facts, computed });
             return;
     }
 }
 
-interface ValidateReceiptOutcomeInput {
+interface AssertReceiptOutcomeInput {
     readonly command: GroupMutationCommand;
     readonly facts: GroupMutationFacts;
     readonly computed: Extract<GroupMutationComputed, { outcome: 'replay' | 'no-op' | 'rejected'; }>;
     readonly value: object;
 }
 
-function validateReceiptOutcome({
+function assertReceiptOutcome({
     command,
     facts,
     computed,
     value
-}: ValidateReceiptOutcomeInput): void {
+}: AssertReceiptOutcomeInput): void {
     const keys = computed.outcome === 'rejected' && computed.rejectionCode === 'group-policy-denied'
         ? ['outcome', 'rejectionCode', 'receipt', 'policyDenial']
         : ['outcome', 'rejectionCode', 'receipt'];
     assertExactKeys(value, keys, 'Group mutation computed result');
     assertRequiredKeys(value, keys, 'Group mutation computed result');
-    validateComputedRejectionCode(computed);
-    validateMutationReceipt(
+    assertComputedRejectionCode(computed);
+    assertMutationReceipt(
         computed.receipt,
         command.aggregateRef,
         `Group ${command.operation} mutation computed receipt`
@@ -71,7 +71,7 @@ function validateReceiptOutcome({
     }
 }
 
-function validateComputedRejectionCode(
+function assertComputedRejectionCode(
     computed: Extract<GroupMutationComputed, { outcome: 'replay' | 'no-op' | 'rejected'; }>
 ): void {
     if (computed.outcome !== 'rejected') {
@@ -85,7 +85,7 @@ function validateComputedRejectionCode(
     }
 }
 
-function validateConflictOutcome(
+function assertConflictOutcome(
     facts: GroupMutationFacts,
     computed: Extract<GroupMutationComputed, { outcome: 'idempotency-conflict'; }>,
     value: object
@@ -93,14 +93,14 @@ function validateConflictOutcome(
     const keys = ['outcome', 'existingCommandHash', 'receivedCommandHash'];
     assertExactKeys(value, keys, 'Group mutation computed result');
     assertRequiredKeys(value, keys, 'Group mutation computed result');
-    validateCommandHash(computed.existingCommandHash, 'Group mutation existingCommandHash');
-    validateCommandHash(computed.receivedCommandHash, 'Group mutation receivedCommandHash');
+    assertCommandHash(computed.existingCommandHash, 'Group mutation existingCommandHash');
+    assertCommandHash(computed.receivedCommandHash, 'Group mutation receivedCommandHash');
     if (computed.receivedCommandHash !== facts.commandHash) {
         throw new TypeError('Group mutation conflict hash differs from facts');
     }
 }
 
-function validateWriteOutcomeKeys(value: object): void {
+function assertWriteOutcomeKeys(value: object): void {
     const keys = [
         'outcome',
         'guard',

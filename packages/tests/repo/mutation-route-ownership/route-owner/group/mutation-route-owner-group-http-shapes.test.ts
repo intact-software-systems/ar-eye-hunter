@@ -278,8 +278,8 @@ describe('group HTTP mutation route source shapes', () => {
         const source = withWrongRemoveTranslatorType();
         const mutated = spliceReplace(
             source,
-            '  const request = withActor(input);\n  validateGroupMutationRequest(\'removeGroupMember\', request);',
-            '  if (false) AppInboxType.GROUP_MEMBER_REMOVE;\n  const request = withActor(input);\n  validateGroupMutationRequest(\'removeGroupMember\', request);'
+            '  const request = withActor(input);\n  const issues = validateGroupMutationRequest(\'removeGroupMember\', request);',
+            '  if (false) AppInboxType.GROUP_MEMBER_REMOVE;\n  const request = withActor(input);\n  const issues = validateGroupMutationRequest(\'removeGroupMember\', request);'
         );
         expect(mutated).not.toBe(source);
 
@@ -292,8 +292,8 @@ describe('group HTTP mutation route source shapes', () => {
         const source = withWrongRemoveTranslatorType();
         const mutated = spliceReplace(
             source,
-            '  const request = withActor(input);\n  validateGroupMutationRequest(\'removeGroupMember\', request);',
-            '  function deadExpectedType() { return AppInboxType.GROUP_MEMBER_REMOVE; }\n  const request = withActor(input);\n  validateGroupMutationRequest(\'removeGroupMember\', request);'
+            '  const request = withActor(input);\n  const issues = validateGroupMutationRequest(\'removeGroupMember\', request);',
+            '  function deadExpectedType() { return AppInboxType.GROUP_MEMBER_REMOVE; }\n  const request = withActor(input);\n  const issues = validateGroupMutationRequest(\'removeGroupMember\', request);'
         );
         expect(mutated).not.toBe(source);
 

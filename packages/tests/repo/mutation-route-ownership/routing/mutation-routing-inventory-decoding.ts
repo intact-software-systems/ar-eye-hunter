@@ -77,7 +77,7 @@ function toMutationRouteInventoryEntry(
         !dispatchSourcePath ||
         !appInboxType ||
         (Boolean(row.familyRegistrationMarker) &&
-            (!rootSourcePath || !row.constructionRootMarker || !Number.isInteger(row.familyOwnerOrder)))
+            (!rootSourcePath || !row.constructionRootMarker))
     ) {
         throw new Error(`Invalid mutation route inventory row: ${JSON.stringify(row)}`);
     }
@@ -97,8 +97,7 @@ function toMutationRouteInventoryEntry(
         operationDiscriminant: row.operationDiscriminant,
         familyRegistrationMarker: row.familyRegistrationMarker,
         constructionRootSourcePath: rootSourcePath,
-        constructionRootMarker: row.constructionRootMarker,
-        familyOwnerOrder: row.familyOwnerOrder
+        constructionRootMarker: row.constructionRootMarker
     };
 }
 

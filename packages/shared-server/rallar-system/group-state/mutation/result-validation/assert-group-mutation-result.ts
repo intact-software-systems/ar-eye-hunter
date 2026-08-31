@@ -1,4 +1,4 @@
-import type { GroupRef } from '@shared/api/group-types.ts';
+import type { GroupRef, GroupStateCausalRevision } from '@shared/api/group-types.ts';
 
 import {
     assertExactKeys,
@@ -31,7 +31,7 @@ const MUTATION_RECEIPT_KEYS = [
     'rejection'
 ] as const;
 
-export function validateGroupMutationIdempotencyRecord(
+export function assertGroupMutationIdempotencyRecord(
     record: unknown,
     ref: GroupRef
 ): asserts record is GroupMutationIdempotencyRecord {
@@ -47,11 +47,11 @@ export function validateGroupMutationIdempotencyRecord(
         'Stored group idempotency value'
     );
     validateGroupRef(value.aggregateRef);
-    validateScopedValue(value.aggregateRef as GroupRef, ref, 'Stored group idempotency aggregateRef');
+    validateScopedValue(value.aggregateRef, ref, 'Stored group idempotency aggregateRef');
     requireNonEmptyString(value.requestId, 'Stored group idempotency requestId');
-    validateCommandHash(value.commandHash, 'Stored group idempotency commandHash');
-    validateMutationReceipt(value.receipt, ref, 'Stored group idempotency receipt');
-    const receipt = value.receipt as GroupMutationReceipt;
+    assertCommandHash(value.commandHash, 'Stored group idempotency commandHash');
+    assertMutationReceipt(value.receipt, ref, 'Stored group idempotency receipt');
+    const receipt = value.receipt;
     if (receipt.commandHash !== value.commandHash) {
         throw new TypeError('Stored group idempotency hashes differ');
     }
@@ -67,24 +67,28 @@ export function validateGroupMutationIdempotencyRecord(
     }
 }
 
-export function validateMutationReceipt(value: unknown, ref: GroupRef, label: string): void {
+export function assertMutationReceipt(
+    value: unknown,
+    ref: GroupRef,
+    label: string
+): asserts value is GroupMutationReceipt {
     const receipt = requireRecord(value, label);
     assertExactKeys(receipt, MUTATION_RECEIPT_KEYS, label);
     assertRequiredKeys(receipt, MUTATION_RECEIPT_KEYS, label);
-    validateMutationReceiptIdentity(receipt, ref, label);
-    validateMutationReceiptRevisions(receipt, label);
-    validateMutationReceiptDetails(receipt, label);
-    validateMutationReceiptOutcome(receipt, label);
+    assertMutationReceiptIdentity(receipt, ref, label);
+    assertMutationReceiptRevisions(receipt, label);
+    assertMutationReceiptDetails(receipt, label);
+    assertMutationReceiptOutcome(receipt, label);
 }
 
-function validateMutationReceiptIdentity(
+function assertMutationReceiptIdentity(
     receipt: Record<string, unknown>,
     ref: GroupRef,
     label: string
 ): void {
     requireNonEmptyString(receipt.commandId, `${label} commandId`);
     nullableNonEmptyString(receipt.requestId, `${label} requestId`);
-    validateCommandHash(receipt.commandHash, `${label} commandHash`);
+    assertCommandHash(receipt.commandHash, `${label} commandHash`);
     const aggregateRef = receipt.aggregateRef;
     validateGroupRef(aggregateRef);
     validateScopedValue(aggregateRef, ref, `${label} aggregateRef`);
@@ -92,7 +96,7 @@ function validateMutationReceiptIdentity(
     requirePositiveSafeInteger(receipt.attemptCount, `${label} attemptCount`);
 }
 
-function validateMutationReceiptRevisions(receipt: Record<string, unknown>, label: string): void {
+function assertMutationReceiptRevisions(receipt: Record<string, unknown>, label: string): void {
     if (receipt.acceptedStorageRevision !== null) {
         requireNonNegativeSafeInteger(
             receipt.acceptedStorageRevision,
@@ -107,7 +111,7 @@ function validateMutationReceiptRevisions(receipt: Record<string, unknown>, labe
     }
 }
 
-function validateMutationReceiptDetails(receipt: Record<string, unknown>, label: string): void {
+function assertMutationReceiptDetails(receipt: Record<string, unknown>, label: string): void {
     nullableNonEmptyString(receipt.eventId, `${label} eventId`);
     if (!Array.isArray(receipt.outboxIds)) {
         throw new TypeError(`${label} outboxIds is invalid`);
@@ -138,20 +142,17 @@ function validateMutationReceiptDetails(receipt: Record<string, unknown>, label:
     }
 }
 
-export function validateCommandHash(value: unknown, label: string): void {
+export function assertCommandHash(value: unknown, label: string): void {
     if (typeof value !== 'string' || !/^sha256:[0-9a-f]{64}$/.test(value)) {
         throw new TypeError(`${label} is invalid`);
     }
 }
 
-function validateMutationReceiptOutcome(receipt: Record<string, unknown>, label: string): void {
-    const causalRevision = receipt.causalRevision as {
-        readonly groupRevision: number;
-        readonly presenceRevision: number;
-    };
+function assertMutationReceiptOutcome(receipt: Record<string, unknown>, label: string): void {
+    const causalRevision = receipt.causalRevision as GroupStateCausalRevision;
     const outboxIds = receipt.outboxIds as readonly string[];
     if (receipt.outcome === 'applied') {
-        validateAppliedReceipt({ receipt, causalRevision, outboxIds, label });
+        assertAppliedReceipt({ receipt, causalRevision, outboxIds, label });
         return;
     }
     if (outboxIds.length !== 0) {
@@ -161,25 +162,25 @@ function validateMutationReceiptOutcome(receipt: Record<string, unknown>, label:
         throw new TypeError(`${label} join-code fields require an applied outcome`);
     }
     if (receipt.outcome === 'no-op') {
-        validateNoOpReceipt(receipt, label);
+        assertNoOpReceipt(receipt, label);
         return;
     }
-    validateRejectedReceipt(receipt, causalRevision, label);
+    assertRejectedReceipt(receipt, causalRevision, label);
 }
 
-interface ValidateAppliedReceiptInput {
+interface AssertAppliedReceiptInput {
     readonly receipt: Record<string, unknown>;
-    readonly causalRevision: { readonly groupRevision: number; };
+    readonly causalRevision: GroupStateCausalRevision;
     readonly outboxIds: readonly string[];
     readonly label: string;
 }
 
-function validateAppliedReceipt({
+function assertAppliedReceipt({
     receipt,
     causalRevision,
     outboxIds,
     label
-}: ValidateAppliedReceiptInput): void {
+}: AssertAppliedReceiptInput): void {
     if (receipt.acceptedStorageRevision === null) {
         throw new TypeError(`${label} acceptedStorageRevision is required when applied`);
     }
@@ -195,7 +196,7 @@ function validateAppliedReceipt({
 // Physical storage revisions and semantic group revisions are independent:
 // presence writes advance the group row as an authority fence without changing
 // the group snapshot, while reincarnation can restore a newer semantic revision.
-function validateNoOpReceipt(
+function assertNoOpReceipt(
     receipt: Record<string, unknown>,
     label: string
 ): void {
@@ -205,9 +206,9 @@ function validateNoOpReceipt(
     }
 }
 
-function validateRejectedReceipt(
+function assertRejectedReceipt(
     receipt: Record<string, unknown>,
-    causalRevision: { readonly groupRevision: number; readonly presenceRevision: number; },
+    causalRevision: GroupStateCausalRevision,
     label: string
 ): void {
     if (receipt.acceptedStorageRevision === null) {

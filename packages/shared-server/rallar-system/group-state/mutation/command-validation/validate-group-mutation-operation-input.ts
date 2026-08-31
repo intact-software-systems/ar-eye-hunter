@@ -1,258 +1,128 @@
-import type { JsonWireValue } from '../../../protocol/json-wire-identity.ts';
 import {
-    requireJsonSafe,
-    requireNonEmptyString,
-    requireNonNegativeSafeInteger,
-    requireOneOf,
-    requirePositiveSafeInteger,
-    requireRecord
-} from '../../group-state-validation-primitives.ts';
+    GROUP_LAYOUT_IDENTITY_KEYS,
+    GROUP_LAYOUT_IDENTITY_STATES
+} from '@shared/api/group-lifecycle/group-layout-identity.ts';
+import type { GroupMutationCommand } from '../group-mutation-contracts.ts';
 import {
-    isGroupLifecycleTransitionOperation,
-    isGroupTransportOperation,
-    type GroupMutationCommand,
-    type GroupTransportOperation
-} from '../group-mutation-contracts.ts';
-import { requireGroupLifecyclePolicyInputShape } from './require-group-lifecycle-policy-input-shape.ts';
-import { validateExpectedLayoutIdentity } from './validate-expected-layout-identity.ts';
+    isGroupInputRecord,
+    validateGroupInputFields,
+    validateGroupInputKeys,
+    type GroupInputFieldRule
+} from './group-input-validation-issues.ts';
+import { validateGroupLifecyclePolicyInputShape } from './validate-group-lifecycle-policy-input-shape.ts';
 
-/** One name for the decoded request record every arm below reads. */
-type OperationInputRecord = Record<string, unknown>;
-
-interface ValidateGroupMutationOperationInput {
+interface GroupMutationOperationInput {
     readonly operation: GroupMutationCommand['operation'];
-    readonly input: OperationInputRecord;
+    readonly input: Readonly<Record<string, unknown>>;
 }
 
-export function validateGroupMutationOperationInput({
-    operation,
-    input
-}: ValidateGroupMutationOperationInput): void {
-    // The valve's request carries only actor identity (product decision 25),
-    // which the shared request row already pins.
-    if (isGroupTransportOperation(operation)) {
-        return;
-    }
-    if (isAggregateOperation(operation)) {
-        validateAggregateMutationInput(operation, input);
-        return;
-    }
-    if (isPresenceOperation(operation)) {
-        return;
-    }
-    validateMembershipMutationInput(operation, input);
-}
+const GROUP_KIND: GroupInputFieldRule = {
+    key: 'kind',
+    kind: 'enum',
+    allowed: ['party', 'room', 'team', 'custom'],
+    label: 'Group kind'
+};
+const GROUP_JOIN_MODE: GroupInputFieldRule = {
+    key: 'joinMode',
+    kind: 'enum',
+    allowed: ['invite-only', 'code', 'open'],
+    label: 'Group joinMode'
+};
+const GROUP_METADATA: GroupInputFieldRule = { key: 'metadata', kind: 'object', label: 'Group metadata' };
+const GROUP_ROLE: GroupInputFieldRule = {
+    key: 'role',
+    kind: 'enum',
+    allowed: ['owner', 'admin', 'member'],
+    label: 'Group role'
+};
+const INPUT_FIELDS: Partial<Record<GroupMutationCommand['operation'], readonly GroupInputFieldRule[]>> = {
+    createGroup: [
+        { key: 'groupId', kind: 'string', required: true },
+        { key: 'slug', kind: 'string' },
+        { key: 'displayName', kind: 'string', required: true },
+        { key: 'description', kind: 'string' },
+        { ...GROUP_KIND, required: true },
+        GROUP_JOIN_MODE,
+        { key: 'maxMembers', kind: 'positive-integer' },
+        { key: 'maxSessionsPerMember', kind: 'positive-integer' },
+        GROUP_METADATA
+    ],
+    updateGroup: [
+        { key: 'slug', kind: 'string' },
+        { key: 'displayName', kind: 'string' },
+        { key: 'description', kind: 'string' },
+        GROUP_KIND,
+        { key: 'status', kind: 'enum', allowed: ['active', 'archived', 'deleted'], label: 'Group status' },
+        GROUP_JOIN_MODE,
+        { key: 'maxMembers', kind: 'positive-integer' },
+        { key: 'maxSessionsPerMember', kind: 'positive-integer' },
+        GROUP_METADATA,
+        { key: 'expiresAtEpochMs', kind: 'positive-integer' },
+        { key: 'emptySinceEpochMs', kind: 'positive-integer' },
+        { key: 'purgeAfterEpochMs', kind: 'positive-integer' }
+    ],
+    appointDirector: [{ key: 'heartbeatTtlMs', kind: 'positive-integer' }],
+    connectGroup: [{ key: 'expectedFormationEpoch', kind: 'nonnegative-integer', required: true }],
+    reconfigureGroup: [{ key: 'landing', kind: 'enum', allowed: ['apply', 'hold'], nullable: true }],
+    rotateGroupJoinCode: [{ key: 'joinCode', kind: 'string' }, { key: 'expiresAtEpochMs', kind: 'positive-integer' }],
+    joinGroup: [{ key: 'inviteToken', kind: 'string' }, { key: 'joinCode', kind: 'string' }],
+    acceptGroupInvite: [{ key: 'inviteToken', kind: 'string' }, { key: 'joinCode', kind: 'string' }],
+    createGroupInvite: [{ key: 'invitationExpiresAtEpochMs', kind: 'positive-integer' }],
+    setGroupMemberRole: [{ ...GROUP_ROLE, required: true }],
+    transferGroupOwnership: [{ key: 'newOwnerPrincipalId', kind: 'string', required: true }],
+    upsertMember: [
+        GROUP_ROLE,
+        {
+            key: 'status',
+            kind: 'enum',
+            required: true,
+            allowed: ['invited', 'active', 'left', 'removed', 'banned'],
+            label: 'Group member status'
+        },
+        { key: 'invitedByPrincipalId', kind: 'string' },
+        { key: 'invitationExpiresAtEpochMs', kind: 'positive-integer' }
+    ]
+};
 
-type AggregateOperation = Extract<
-    GroupMutationCommand['operation'],
-    | 'createGroup'
-    | 'updateGroup'
-    | 'appointDirector'
-    | 'rotateGroupJoinCode'
-    | 'reconfigureGroup'
-    | 'planGroupLayout'
-    | 'connectGroup'
-    | 'startGroupFormation'
-    | 'resetGroupFormation'
-    | 'activateGroup'
-    | 'failGroupFormation'
-    | 'applyPlannedLayout'
->;
-
-function validateAggregateMutationInput(
-    operation: AggregateOperation,
-    input: OperationInputRecord
-): void {
-    const optionalString = (key: string) => {
-        if (input[key] !== undefined) {
-            requireNonEmptyString(input[key], `Group ${operation} ${key}`);
-        }
-    };
-    const optionalPositiveInteger = (key: string) => {
-        if (input[key] !== undefined) {
-            requirePositiveSafeInteger(input[key], `Group ${operation} ${key}`);
-        }
-    };
-    if (operation === 'createGroup') {
-        validateGroupCreateInput(input, optionalString, optionalPositiveInteger);
-        return;
-    }
-    if (operation === 'updateGroup') {
-        validateGroupUpdateInput(input, optionalString, optionalPositiveInteger);
-        return;
-    }
-    if (operation === 'appointDirector') {
-        optionalPositiveInteger('heartbeatTtlMs');
-        return;
-    }
+export function validateGroupMutationOperationInput(
+    { operation, input }: GroupMutationOperationInput
+): readonly TypeError[] {
+    const issues = validateGroupInputFields(input, INPUT_FIELDS[operation] ?? [], `Group ${operation}`);
     if (operation === 'connectGroup') {
-        // The one lifecycle request that carries operation fields: `connect`
-        // names the layout it dials (product decision 32), so its fence is
-        // shape-checked at the boundary rather than only after the command
-        // is built.
-        requireNonNegativeSafeInteger(input.expectedFormationEpoch, 'Group connectGroup expectedFormationEpoch');
-        validateExpectedLayoutIdentity(input, 'Group connectGroup expectedLayout');
-        return;
+        return [...issues, ...validateExpectedLayout(input.expectedLayout)];
     }
-    if (operation === 'reconfigureGroup') {
-        if (input.landing !== undefined && input.landing !== null) {
-            requireOneOf(input.landing, ['apply', 'hold'], 'Group reconfigureGroup landing');
-        }
-        return;
+    if (operation === 'createGroup') {
+        return [
+            ...issues,
+            ...(input.lifecyclePolicy === undefined
+                ? []
+                : validateGroupLifecyclePolicyInputShape(input.lifecyclePolicy)),
+            ...validateGroupInputFields(input, [
+                { key: 'createdByPrincipalId', kind: 'string', required: true },
+                { key: 'expiresAtEpochMs', kind: 'positive-integer' },
+                { key: 'purgeAfterEpochMs', kind: 'positive-integer' }
+            ], 'Group createGroup')
+        ];
     }
-    if (isGroupLifecycleTransitionOperation(operation) || operation === 'applyPlannedLayout') {
-        // Every other lifecycle request carries only actor identity — its
-        // exact-key row excludes every operation field, so there is nothing
-        // further to validate here. The built command's fields (including
-        // the criterion fences) are owned by validateGroupMutationCommand.
-        return;
-    }
-    optionalString('joinCode');
-    optionalPositiveInteger('expiresAtEpochMs');
+    return issues;
 }
 
-function validateGroupUpdateInput(
-    input: OperationInputRecord,
-    optionalString: (key: string) => void,
-    optionalPositiveInteger: (key: string) => void
-): void {
-    optionalString('slug');
-    optionalString('displayName');
-    optionalString('description');
-    if (input.kind !== undefined) {
-        requireOneOf(input.kind, ['party', 'room', 'team', 'custom'], 'Group kind');
+function validateExpectedLayout(value: unknown): readonly TypeError[] {
+    const label = 'Group connectGroup expectedLayout';
+    if (!isGroupInputRecord(value)) {
+        return [new TypeError(`${label} must be an object`)];
     }
-    if (input.status !== undefined) {
-        requireOneOf(input.status, ['active', 'archived', 'deleted'], 'Group status');
-    }
-    if (input.joinMode !== undefined) {
-        requireOneOf(input.joinMode, ['invite-only', 'code', 'open'], 'Group joinMode');
-    }
-    optionalPositiveInteger('maxMembers');
-    optionalPositiveInteger('maxSessionsPerMember');
-    if (input.metadata !== undefined) {
-        requireRecord(input.metadata, 'Group metadata');
-    }
-    optionalPositiveInteger('expiresAtEpochMs');
-    optionalPositiveInteger('emptySinceEpochMs');
-    optionalPositiveInteger('purgeAfterEpochMs');
-}
-
-type MembershipOperation = Exclude<
-    GroupMutationCommand['operation'],
-    | AggregateOperation
-    | GroupTransportOperation
-    | 'connectPresence'
-    | 'heartbeatPresence'
-    | 'disconnectPresence'
->;
-
-function validateMembershipMutationInput(
-    operation: MembershipOperation,
-    input: OperationInputRecord
-): void {
-    const optionalString = (key: string) => {
-        if (input[key] !== undefined) {
-            requireNonEmptyString(input[key], `Group ${operation} ${key}`);
-        }
-    };
-    const optionalPositiveInteger = (key: string) => {
-        if (input[key] !== undefined) {
-            requirePositiveSafeInteger(input[key], `Group ${operation} ${key}`);
-        }
-    };
-    switch (operation) {
-        case 'joinGroup':
-        case 'acceptGroupInvite':
-            optionalString('inviteToken');
-            optionalString('joinCode');
-            return;
-        case 'createGroupInvite':
-            optionalPositiveInteger('invitationExpiresAtEpochMs');
-            return;
-        case 'setGroupMemberRole':
-            requireOneOf(input.role, ['owner', 'admin', 'member'], 'Group role');
-            return;
-        case 'transferGroupOwnership':
-            requireNonEmptyString(
-                input.newOwnerPrincipalId,
-                'Group transferGroupOwnership newOwnerPrincipalId'
-            );
-            return;
-        case 'upsertMember':
-            if (input.role !== undefined) {
-                requireOneOf(input.role, ['owner', 'admin', 'member'], 'Group role');
-            }
-            // 'pending' is deliberately absent: only the admission decision may
-            // compute it, never client input (plan decision 5.1).
-            requireOneOf(
-                input.status,
-                ['invited', 'active', 'left', 'removed', 'banned'],
-                'Group member status'
-            );
-            optionalString('invitedByPrincipalId');
-            optionalPositiveInteger('invitationExpiresAtEpochMs');
-            return;
-        case 'revokeGroupInvite':
-        case 'removeGroupMember':
-        case 'banGroupMember':
-        case 'unbanGroupMember':
-        case 'grantGroupAdmission':
-        case 'declineGroupAdmission':
-            return;
-    }
-}
-
-function isAggregateOperation(
-    operation: GroupMutationCommand['operation']
-): operation is AggregateOperation {
+    const keys = GROUP_LAYOUT_IDENTITY_KEYS;
+    const missing = keys.filter((key) => !Object.hasOwn(value, key));
+    const issues = missing.map((key) => new TypeError(`${label} is missing mandatory key: ${key}`));
     return [
-        'createGroup',
-        'updateGroup',
-        'appointDirector',
-        'rotateGroupJoinCode',
-        'reconfigureGroup',
-        'planGroupLayout',
-        'connectGroup',
-        'startGroupFormation',
-        'resetGroupFormation',
-        'activateGroup',
-        'failGroupFormation',
-        'applyPlannedLayout'
-    ].includes(operation);
-}
-
-type PresenceOperation = 'connectPresence' | 'heartbeatPresence' | 'disconnectPresence';
-
-function isPresenceOperation(
-    operation: GroupMutationCommand['operation']
-): operation is PresenceOperation {
-    return ['connectPresence', 'heartbeatPresence', 'disconnectPresence'].includes(operation);
-}
-
-function validateGroupCreateInput(
-    input: OperationInputRecord,
-    optionalString: (key: string) => void,
-    optionalPositiveInteger: (key: string) => void
-): void {
-    requireNonEmptyString(input.groupId, 'Group createGroup groupId');
-    optionalString('slug');
-    requireNonEmptyString(input.displayName, 'Group createGroup displayName');
-    optionalString('description');
-    requireOneOf(input.kind, ['party', 'room', 'team', 'custom'], 'Group kind');
-    if (input.joinMode !== undefined) {
-        requireOneOf(input.joinMode, ['invite-only', 'code', 'open'], 'Group joinMode');
-    }
-    optionalPositiveInteger('maxMembers');
-    optionalPositiveInteger('maxSessionsPerMember');
-    if (input.metadata !== undefined) {
-        requireRecord(input.metadata, 'Group metadata');
-    }
-    if (input.lifecyclePolicy !== undefined) {
-        requireJsonSafe(input.lifecyclePolicy, 'Group lifecyclePolicy');
-        requireGroupLifecyclePolicyInputShape(input.lifecyclePolicy as JsonWireValue);
-    }
-    requireNonEmptyString(input.createdByPrincipalId, 'Group createGroup createdByPrincipalId');
-    optionalPositiveInteger('expiresAtEpochMs');
-    optionalPositiveInteger('purgeAfterEpochMs');
+        ...issues,
+        ...validateGroupInputKeys(value, keys, label),
+        ...validateGroupInputFields(value, [
+            { key: 'groupRevision', kind: 'nonnegative-integer', required: true },
+            { key: 'presenceRevision', kind: 'nonnegative-integer', required: true },
+            { key: 'version', kind: 'nonnegative-integer', required: true },
+            { key: 'state', kind: 'enum', required: true, allowed: GROUP_LAYOUT_IDENTITY_STATES }
+        ], label)
+    ];
 }

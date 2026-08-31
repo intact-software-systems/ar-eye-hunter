@@ -5,9 +5,9 @@ import {
     requireOneOf
 } from '../../group-state-validation-primitives.ts';
 import type { GroupLifecycleTransitionOperation } from '../group-mutation-contracts.ts';
-import { validateExpectedLayoutIdentity } from './validate-expected-layout-identity.ts';
+import { assertExpectedLayoutIdentity } from './assert-expected-layout-identity.ts';
 
-interface ValidateLifecycleGroupMutationCommandInput {
+interface AssertLifecycleGroupMutationCommandInput {
     readonly operation: GroupLifecycleTransitionOperation | 'applyPlannedLayout';
     readonly input: JsonWireObject;
     readonly requiredInputKeys: readonly string[];
@@ -19,11 +19,11 @@ interface ValidateLifecycleGroupMutationCommandInput {
  * must name a layout. Keeping that decision here keeps the generic command
  * validator focused on envelope, ownership, and exact-key checks.
  */
-export function validateLifecycleGroupMutationCommandInput({
+export function assertLifecycleGroupMutationCommandInput({
     operation,
     input,
     requiredInputKeys
-}: ValidateLifecycleGroupMutationCommandInput): void {
+}: AssertLifecycleGroupMutationCommandInput): void {
     // A wire-decoded criterion command missing its fence keys is malformed
     // here, never a lying stale-epoch rejection deep in compute.
     assertRequiredKeys(input, requiredInputKeys, `Group ${operation} input`);
@@ -34,11 +34,11 @@ export function validateLifecycleGroupMutationCommandInput({
         throw new TypeError('Group connect trigger generation must be null or a non-empty string');
     }
     if (operation === 'connectGroup' || operation === 'applyPlannedLayout') {
-        validateRequiredLayoutFence(input, operation);
+        assertRequiredLayoutFence(input, operation);
         return;
     }
     if (operation === 'reconfigureGroup') {
-        validateNullableFormationEpoch(input, operation);
+        assertNullableFormationEpoch(input, operation);
         if (input.landing !== null) {
             requireOneOf(input.landing, ['apply', 'hold'], 'Group reconfigureGroup landing');
         }
@@ -51,22 +51,22 @@ export function validateLifecycleGroupMutationCommandInput({
         if (input.degraded !== null && typeof input.degraded !== 'boolean') {
             throw new TypeError('Group activateGroup degraded must be boolean or null');
         }
-        validateNullableFormationEpoch(input, operation);
-        validateNullableExpectedLayout(input, operation);
+        assertNullableFormationEpoch(input, operation);
+        assertNullableExpectedLayout(input, operation);
         return;
     }
     if (operation === 'failGroupFormation') {
         if (!isUnitIntervalNumber(input.observedRate)) {
             throw new TypeError('Group failGroupFormation observedRate must be within [0, 1]');
         }
-        validateNullableFormationEpoch(input, operation);
-        validateNullableExpectedLayout(input, operation);
+        assertNullableFormationEpoch(input, operation);
+        assertNullableExpectedLayout(input, operation);
         return;
     }
-    validateNullableFormationEpoch(input, operation);
+    assertNullableFormationEpoch(input, operation);
 }
 
-function validateRequiredLayoutFence(input: JsonWireObject, operation: string): void {
+function assertRequiredLayoutFence(input: JsonWireObject, operation: string): void {
     // The fences are non-null on these operations: null here is as malformed
     // as an absent key.
     requireNonNegativeSafeInteger(
@@ -76,10 +76,10 @@ function validateRequiredLayoutFence(input: JsonWireObject, operation: string): 
     if (input.expectedLayout === null) {
         throw new TypeError(`Group ${operation} expectedLayout must not be null`);
     }
-    validateNullableExpectedLayout(input, operation);
+    assertNullableExpectedLayout(input, operation);
 }
 
-function validateNullableFormationEpoch(input: JsonWireObject, operation: string): void {
+function assertNullableFormationEpoch(input: JsonWireObject, operation: string): void {
     if (input.expectedFormationEpoch !== null) {
         requireNonNegativeSafeInteger(
             input.expectedFormationEpoch,
@@ -88,11 +88,11 @@ function validateNullableFormationEpoch(input: JsonWireObject, operation: string
     }
 }
 
-function validateNullableExpectedLayout(input: JsonWireObject, operation: string): void {
+function assertNullableExpectedLayout(input: JsonWireObject, operation: string): void {
     if (input.expectedLayout === null) {
         return;
     }
-    validateExpectedLayoutIdentity(input, `Group ${operation} expectedLayout`);
+    assertExpectedLayoutIdentity(input, `Group ${operation} expectedLayout`);
 }
 
 function isUnitIntervalNumber(value: JsonWireObject[string]): value is number {

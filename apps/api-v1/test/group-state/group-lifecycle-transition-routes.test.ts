@@ -87,6 +87,43 @@ Deno.test('retired lifecycle URLs cannot enter authority', async () => {
     }
 });
 
+Deno.test('reconfigure rejects caller epoch fields before enqueue without erasing them', async () => {
+    const enqueued: AuthenticatedGroupMutationEnqueue[] = [];
+    const runtime = createGroupStateRouteTestRuntime({
+        processGroupAppInbox: captureGroupStateRouteWrite(enqueued, createGroupStateRouteSnapshot('room-1'))
+    });
+    for (const expectedFormationEpoch of [null, 0, 42, 'invalid']) {
+        const response = await postGroupStateMutation(runtime.app, `${API_BASE}/room-1/lifecycle/reconfigure`, {
+            expectedFormationEpoch,
+            requestId: `reconfigure-extra-epoch-${String(expectedFormationEpoch)}`
+        });
+        assert.equal(response.status, 400);
+        assert.equal((await response.json()).message, 'Group reconfigureGroup request has unexpected key: expectedFormationEpoch');
+    }
+    assert.deepEqual(enqueued, []);
+});
+
+Deno.test('reconfigure preserves omission and null landing with authenticated identity', async () => {
+    const enqueued: AuthenticatedGroupMutationEnqueue[] = [];
+    const runtime = createGroupStateRouteTestRuntime({
+        processGroupAppInbox: captureGroupStateRouteWrite(enqueued, createGroupStateRouteSnapshot('room-1'))
+    });
+    for (const request of [{}, { landing: null }]) {
+        const response = await postGroupStateMutation(runtime.app, `${API_BASE}/room-1/lifecycle/reconfigure`, {
+            ...request,
+            requestId: `reconfigure-default-${enqueued.length}`
+        });
+        assert.equal(response.status, 200);
+        assert.deepEqual(enqueued.at(-1)?.data.request, {
+            requestId: `reconfigure-default-${enqueued.length - 1}`,
+            actorPrincipalId: 'alice',
+            actorSessionId: 'alice-session',
+            expectedFormationEpoch: null,
+            landing: null
+        });
+    }
+});
+
 Deno.test('group lifecycle transition routes reject malformed actor fields', async () => {
     const runtime = createGroupStateRouteTestRuntime({
         processGroupAppInbox: () => Promise.reject(new Error('must not enqueue'))

@@ -3,29 +3,29 @@ import { jsonEquals } from '@shared/repository/state-utils.ts';
 import { requireJsonSafe } from '../../group-state-validation-primitives.ts';
 import { validatePresenceAdmission } from '../../persistence/validate-persisted-group-presence.ts';
 import { assertGroupMutationAuthority } from '../command-validation/assert-group-mutation-authority.ts';
-import { validateGroupMutationCommand } from '../command-validation/validate-group-mutation-command.ts';
+import { assertGroupMutationCommand } from '../command-validation/assert-group-mutation-command.ts';
 import { computeGroupMutation } from '../orchestration/compute-group-mutation.ts';
-import { validateComputedGroupMutationOutbox } from '../result-validation/validate-computed-group-mutation-outbox.ts';
+import { assertComputedGroupMutationOutbox } from '../result-validation/assert-computed-group-mutation-outbox.ts';
 import {
-    validateComputedGroupMutation,
-    type ValidateComputedGroupMutationInput
-} from '../result-validation/validate-computed-group-mutation.ts';
-import { validateComputedRosterFacts } from './validate-computed-roster-facts.ts';
-import { validateGroupMutationFacts } from './validate-group-mutation-facts.ts';
-import { validateGroupMutationRead } from './validate-group-mutation-read.ts';
+    assertComputedGroupMutation,
+    type AssertComputedGroupMutationInput
+} from '../result-validation/assert-computed-group-mutation.ts';
+import { assertComputedRosterFacts } from './assert-computed-roster-facts.ts';
+import { assertGroupMutationFacts } from './assert-group-mutation-facts.ts';
+import { assertGroupMutationRead } from './assert-group-mutation-read.ts';
 
 export function assertGroupMutation(
-    input: ValidateComputedGroupMutationInput
+    input: AssertComputedGroupMutationInput
 ): void {
-    validateGroupMutationCommand(input.command);
-    validateGroupMutationRead(input.read, input.command);
-    validateGroupMutationFacts(input.facts);
+    assertGroupMutationCommand(input.command);
+    assertGroupMutationRead(input.read, input.command);
+    assertGroupMutationFacts(input.facts);
     assertGroupMutationAuthority(input.command, input.facts);
     requireJsonSafe(
         input.computed.outcome === 'write' ? { ...input.computed, outboxEntries: [] } : input.computed,
         'Group mutation computed result'
     );
-    validateComputedGroupMutation(input);
+    assertComputedGroupMutation(input);
     const canonical = computeGroupMutation({
         command: input.command,
         read: input.read,
@@ -47,16 +47,16 @@ export function assertGroupMutation(
     assertGroupMutationWriteEffects(input);
 }
 
-function assertGroupMutationWriteEffects(input: ValidateComputedGroupMutationInput): void {
+function assertGroupMutationWriteEffects(input: AssertComputedGroupMutationInput): void {
     if (input.computed.outcome !== 'write') {
         return;
     }
     const receipt = input.computed.receipt;
-    validateComputedRosterFacts(input.read, input.computed);
+    assertComputedRosterFacts(input.read, input.computed);
     if (input.computed.presenceAdmission) {
         validatePresenceAdmission(input.computed.presenceAdmission.value);
     }
-    validateComputedGroupMutationOutbox({
+    assertComputedGroupMutationOutbox({
         command: input.command,
         read: input.read,
         facts: input.facts,

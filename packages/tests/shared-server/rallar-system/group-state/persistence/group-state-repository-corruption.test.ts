@@ -1,14 +1,10 @@
-import {
-    type GroupMutationCommand,
-    type GroupMutationFacts,
-    type GroupMutationIdempotencyRecord,
-    type GroupMutationRead
-} from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
+import { type GroupMutationIdempotencyRecord } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
 import { computeGroupMutation } from '@shared-server/rallar-system/group-state/mutation/orchestration/compute-group-mutation.ts';
 import { groupStateGroupStorageKey } from '@shared-server/rallar-system/group-state/persistence/aggregate/group-aggregate-storage-keys.ts';
 import { decodePersistedGroupMember } from '@shared-server/rallar-system/group-state/persistence/group-state-persistence-codec.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
 import { groupStateIdempotencyStorageKey } from '@shared-server/rallar-system/group-state/persistence/idempotency/group-idempotency-storage-key.ts';
+import { groupStateInsertIdempotencyDescriptor } from '@shared-server/rallar-system/group-state/persistence/idempotency/group-idempotency-write-descriptor.ts';
 import { groupStateMemberStorageKey } from '@shared-server/rallar-system/group-state/persistence/membership/group-membership-storage-key.ts';
 import {
     groupStatePresenceAdmissionStorageKey,
@@ -17,10 +13,11 @@ import {
 } from '@shared-server/rallar-system/group-state/persistence/presence/group-presence-storage-keys.ts';
 import { validatePersistedGroupMember } from '@shared-server/rallar-system/group-state/persistence/validate-persisted-group.ts';
 import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
-import type { AuditStamp, Group, GroupMember, GroupPresenceAdmission, GroupPresenceSession, GroupPresenceSummary, GroupRef } from '@shared/api/group-types.ts';
+import type { Group, GroupMember, GroupPresenceAdmission, GroupPresenceSession, GroupPresenceSummary, GroupRef } from '@shared/api/group-types.ts';
 import { describe, expect, expectTypeOf, it } from 'vitest';
 import { FakeRuntimeStateRepository } from '../../../runtime-state/test-support/fake-runtime-state-repository.ts';
-import { groupMemberStorageKey, groupRef, groupStorageKey, storedEntry } from '../mutation/group-mutation-test-runtime.ts';
+import { auditStamp, createMutationCommand, createMutationFacts, memberFor } from '../group-state-concurrency-test-fixtures.ts';
+import { groupRef } from '../mutation/group-mutation-test-runtime.ts';
 import { createCorruptionMutationRead } from './group-state-persistence-mutation-read-fixtures.ts';
 
 describe('GroupStateRepository persistence', () => {
@@ -277,13 +274,12 @@ describe('GroupStateRepository persistence', () => {
         }
     });
 
-    it('rejects a compact idempotency write whose identity differs from its slot', async () => {
-        const runtime = new FakeRuntimeStateRepository();
-        const repository = createTestGroupStateRepository(runtime);
-        const command = createMutationCommand({
+    it('rejects a guarded-batch receipt descriptor whose identity differs from its slot', () => {
+        const command = {
+            ...createMutationCommand(),
             commandId: 'receipt-write-command',
             requestId: 'receipt-write-command'
-        });
+        };
         const ref = command.aggregateRef;
         const computed = computeGroupMutation({
             command,
@@ -293,86 +289,18 @@ describe('GroupStateRepository persistence', () => {
         if (computed.outcome !== 'write' || computed.idempotency === null) {
             throw new Error('Expected an idempotent group write candidate');
         }
+        const idempotency = computed.idempotency;
 
-        await expect(
-            repository.insertIdempotentGroupMutationReceipt(ref, command.requestId!, {
-                ...computed.idempotency,
-                aggregateRef: { ...ref, groupId: 'wrong-group' }
+        expect(() =>
+            groupStateInsertIdempotencyDescriptor({
+                ref,
+                requestId: command.requestId,
+                record: {
+                    ...idempotency,
+                    aggregateRef: { ...ref, groupId: 'wrong-group' }
+                },
+                expireAtTimestamp: Number.MAX_SAFE_INTEGER
             })
-        ).rejects.toMatchObject({
-            code: 'group-state-repository-invariant-corruption'
-        });
+        ).toThrow(TypeError);
     });
 });
-
-function memberFor(principalId: string): GroupMember {
-    const audit = auditStamp(1_000, 'alice', 'seed');
-    return {
-        ...groupRef('pure-room'),
-        principalId,
-        role: 'member',
-        status: 'active',
-        invitedByPrincipalId: null,
-        invitationExpiresAtEpochMs: null,
-        left: null,
-        removed: null,
-        banned: null,
-        joined: audit,
-        updated: audit
-    };
-}
-
-function createMutationCommand(
-    overrides: Partial<GroupMutationCommand> = {}
-): GroupMutationCommand {
-    return {
-        operation: 'updateGroup',
-        aggregateRef: groupRef('pure-room'),
-        commandId: 'pure-command',
-        requestId: 'pure-command',
-        input: {
-            slug: null,
-            displayName: 'After',
-            description: null,
-            kind: null,
-            status: null,
-            joinMode: null,
-            maxMembers: null,
-            maxSessionsPerMember: null,
-            metadata: null,
-            expiresAtEpochMs: null,
-            emptySinceEpochMs: null,
-            purgeAfterEpochMs: null,
-            actorPrincipalId: 'alice',
-            actorSessionId: 'alice-session',
-            reason: null,
-            traceId: null
-        },
-        ...overrides
-    } as GroupMutationCommand;
-}
-
-function auditStamp(atEpochMs: number, principalId: string, requestId: string | null): AuditStamp {
-    return {
-        atEpochMs,
-        actor: { kind: 'principal', principalId },
-        reason: null,
-        traceId: null,
-        requestId
-    };
-}
-
-function createMutationFacts(): GroupMutationFacts {
-    return {
-        nowEpochMs: 2_000,
-        expireAtEpochMs: 253_402_300_799_999,
-        serviceId: 'group-service',
-        eventId: 'event-1',
-        commandHash: `sha256:${'a'.repeat(64)}`,
-        attemptCount: 1,
-        resolvedJoinCode: null,
-        joinCodeVerifier: null,
-        internalAuthority: 'none',
-        authenticatedAuthority: { principalId: 'alice', sessionId: 'alice-session' }
-    };
-}

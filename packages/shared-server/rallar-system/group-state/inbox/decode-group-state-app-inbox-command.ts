@@ -1,7 +1,7 @@
 import { AppInboxType } from '../../app-inbox/app-inbox-contracts.ts';
 import { requireExactKeys, requireString } from '../../protocol/exact-object-decoding.ts';
 import type { JsonWireObject, JsonWireValue } from '../../protocol/json-wire-identity.ts';
-import { validateGroupMutationRequest } from '../mutation/command-validation/group-mutation-request-validation.ts';
+import { assertGroupMutationRequest } from '../mutation/command-validation/group-mutation-request-validation.ts';
 import type { GroupMutationCommand } from '../mutation/group-mutation-contracts.ts';
 import type { AuthenticatedGroupMutationInboxType } from './group-state-inbox-contracts.ts';
 
@@ -70,16 +70,16 @@ export function decodeGroupStateAppInboxCommand(
     if (type !== AppInboxType.GROUP_CREATE) {
         requireString(command.groupId, `Group ${type} group id`);
     }
-    validatePersistedGroupMutationRequest(operation, command.request);
+    assertPersistedGroupMutationRequest(operation, command.request);
     return value;
 }
 
-function validatePersistedGroupMutationRequest(
+function assertPersistedGroupMutationRequest(
     operation: GroupMutationCommand['operation'],
     value: JsonWireValue | undefined
 ): void {
     const request = requireJsonWireObject(value, `Group ${operation} request`);
-    validateGroupMutationRequest(operation, {
+    assertGroupMutationRequest(operation, {
         ...request,
         actorPrincipalId: request.actorPrincipalId === undefined
             ? 'app-inbox-authority-principal'

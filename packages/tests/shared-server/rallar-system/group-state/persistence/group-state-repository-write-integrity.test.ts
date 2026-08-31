@@ -1,8 +1,4 @@
-import {
-    type GroupMutationCommand,
-    type GroupMutationFacts,
-    type GroupMutationRead
-} from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
+import { type GroupMutationFacts, type GroupMutationRead } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
 import { computeGroupMutation } from '@shared-server/rallar-system/group-state/mutation/orchestration/compute-group-mutation.ts';
 import { assertGroupMutation } from '@shared-server/rallar-system/group-state/mutation/state-validation/assert-group-mutation.ts';
 import { groupStateMemberStorageKey } from '@shared-server/rallar-system/group-state/persistence/membership/group-membership-storage-key.ts';
@@ -44,7 +40,7 @@ describe('convergent group and presence state', () => {
                 traceId: null,
                 role: 'admin'
             }
-        } as Partial<GroupMutationCommand>);
+        });
         const bob = memberFor('bob');
         const read: GroupMutationRead = {
             ...createMutationRead(),
@@ -113,7 +109,7 @@ describe('convergent group and presence state', () => {
                 lastHeartbeatAtEpochMs: 2_000,
                 expiresAtEpochMs: 10_000
             }
-        } as Partial<GroupMutationCommand>);
+        });
         const disconnect = createMutationCommand({
             operation: 'disconnectPresence',
             sessionId: 'alice-session',
@@ -130,7 +126,7 @@ describe('convergent group and presence state', () => {
                 lastHeartbeatAtEpochMs: null,
                 expiresAtEpochMs: null
             }
-        } as Partial<GroupMutationCommand>);
+        });
         const internalDisconnect = createMutationCommand({
             ...disconnect,
             commandId: 'cleanup-command',
@@ -141,7 +137,7 @@ describe('convergent group and presence state', () => {
                 actorPrincipalId: null,
                 actorSessionId: null
             }
-        } as Partial<GroupMutationCommand>);
+        });
         const internalFacts: GroupMutationFacts = {
             ...publicFacts,
             internalAuthority: 'session-cleanup',
@@ -294,7 +290,7 @@ describe('convergent group and presence state', () => {
                 traceId: null,
                 heartbeatTtlMs: 5_000
             }
-        } as Partial<GroupMutationCommand>);
+        });
 
         expect(() =>
             computeGroupMutation({

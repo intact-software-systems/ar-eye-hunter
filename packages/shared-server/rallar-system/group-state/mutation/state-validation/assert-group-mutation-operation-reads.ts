@@ -7,14 +7,14 @@ import {
     readsGroupLifecyclePolicy
 } from '../read/group-mutation-read-scope.ts';
 
-export function validateGroupMutationOperationReads(
+export function assertGroupMutationOperationReads(
     read: GroupMutationRead,
     command: GroupMutationCommand
 ): void {
-    validateConnectTriggerRead(read, command);
-    validateLifecyclePolicyRead(read, command);
-    validateActiveMemberPrincipalIdsRead(read, command);
-    validatePlannedLayoutIdentityRead(read, command);
+    assertConnectTriggerRead(read, command);
+    assertLifecyclePolicyRead(read, command);
+    assertActiveMemberPrincipalIdsRead(read, command);
+    assertPlannedLayoutIdentityRead(read, command);
 }
 
 /**
@@ -22,7 +22,7 @@ export function validateGroupMutationOperationReads(
  * layout-fenced commands; null stays legal there because the reader may find
  * no stored row.
  */
-function validatePlannedLayoutIdentityRead(
+function assertPlannedLayoutIdentityRead(
     read: GroupMutationRead,
     command: GroupMutationCommand
 ): void {
@@ -42,7 +42,7 @@ function validatePlannedLayoutIdentityRead(
  * consults the stored policy — the read path and this validator share one
  * owner, so a one-sided edit cannot leave the read missing or unexpected.
  */
-function validateLifecyclePolicyRead(
+function assertLifecyclePolicyRead(
     read: GroupMutationRead,
     command: GroupMutationCommand
 ): void {
@@ -67,7 +67,7 @@ function validateLifecyclePolicyRead(
  * electorate, an admission decision resolves current managers, or a
  * group-authority command resolves the manager initiator.
  */
-function validateActiveMemberPrincipalIdsRead(
+function assertActiveMemberPrincipalIdsRead(
     read: GroupMutationRead,
     command: GroupMutationCommand
 ): void {
@@ -87,7 +87,7 @@ function validateActiveMemberPrincipalIdsRead(
     }
 }
 
-function validateConnectTriggerRead(read: GroupMutationRead, command: GroupMutationCommand): void {
+function assertConnectTriggerRead(read: GroupMutationRead, command: GroupMutationCommand): void {
     const row = read.connectTriggerLatch;
     if (row === null) {
         return;

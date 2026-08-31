@@ -20,7 +20,7 @@ import {
 } from './group-state-service-contracts.ts';
 import { createTimedGroupStateService } from './group-state-service-timing.ts';
 import { assertGroupMutationAuthority } from './mutation/command-validation/assert-group-mutation-authority.ts';
-import { validateGroupMutationCommand } from './mutation/command-validation/validate-group-mutation-command.ts';
+import { assertGroupMutationCommand } from './mutation/command-validation/assert-group-mutation-command.ts';
 import type {
     GroupMutationCommand,
     GroupMutationFacts,
@@ -130,7 +130,7 @@ function createInternalMutationPreparer(
     dependencies: GroupStateServiceDependencies
 ): InternalMutationPreparer {
     return async (command, internalAuthority, atEpochMs) => {
-        validateGroupMutationCommand(command);
+        assertGroupMutationCommand(command);
         const commandHash = await hashMutationCommand(
             decodeJsonWireValue(command, 'Internal group mutation command')
         );

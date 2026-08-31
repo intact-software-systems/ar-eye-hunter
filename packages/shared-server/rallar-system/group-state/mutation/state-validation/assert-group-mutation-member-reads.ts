@@ -8,33 +8,33 @@ import { validateStoredMember } from '../../persistence/validate-persisted-group
 import type { GroupMutationRead } from '../group-mutation-contracts.ts';
 import type { GroupMutationReadIdentities } from '../read/resolve-group-mutation-read-identities.ts';
 
-export function validateGroupMutationMemberReads(
+export function assertGroupMutationMemberReads(
     read: GroupMutationRead,
     ref: GroupRef,
     identities: GroupMutationReadIdentities
 ): void {
-    validateMemberReadPair({
+    assertMemberReadPair({
         member: read.actorMember,
         stored: read.actorMemberEntry,
         ref,
         expectedPrincipalId: identities.actorPrincipalId,
         label: 'Actor member'
     });
-    validateMemberReadPair({
+    assertMemberReadPair({
         member: read.targetMember,
         stored: read.targetMemberEntry,
         ref,
         expectedPrincipalId: identities.targetPrincipalId,
         label: 'Target member'
     });
-    validateMemberReadPair({
+    assertMemberReadPair({
         member: read.authorityMember,
         stored: read.authorityMemberEntry,
         ref,
         expectedPrincipalId: identities.ownerPrincipalId,
         label: 'Authority member'
     });
-    validateMemberReadPair({
+    assertMemberReadPair({
         member: read.directorMember,
         stored: read.directorMemberEntry,
         ref,
@@ -43,7 +43,7 @@ export function validateGroupMutationMemberReads(
     });
 }
 
-interface ValidateMemberReadPairInput {
+interface AssertMemberReadPairInput {
     readonly member: GroupMember | null;
     readonly stored: RuntimeStateEntryValue<GroupMember> | null;
     readonly ref: GroupRef;
@@ -51,13 +51,13 @@ interface ValidateMemberReadPairInput {
     readonly label: string;
 }
 
-function validateMemberReadPair({
+function assertMemberReadPair({
     member,
     stored,
     ref,
     expectedPrincipalId,
     label
-}: ValidateMemberReadPairInput): void {
+}: AssertMemberReadPairInput): void {
     if ((member === null) !== (stored === null)) {
         throw new TypeError(`${label} differs from stored entry presence`);
     }

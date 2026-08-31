@@ -11,10 +11,10 @@ import {
     type GroupMutationCommand
 } from '../group-mutation-contracts.ts';
 import { isPureLeaseRenewalHeartbeat } from '../presence/compute-heartbeat-group-presence.ts';
-import type { ValidateComputedGroupMutationWriteInput } from './validate-computed-group-mutation-write.ts';
+import type { AssertComputedGroupMutationWriteInput } from './assert-computed-group-mutation-write.ts';
 
-export function validateComputedGroupMutationOutbox(
-    input: ValidateComputedGroupMutationWriteInput
+export function assertComputedGroupMutationOutbox(
+    input: AssertComputedGroupMutationWriteInput
 ): void {
     const { command, read, facts, computed } = input;
     if (!Array.isArray(computed.outboxEntries)) {
@@ -55,7 +55,7 @@ export function validateComputedGroupMutationOutbox(
 }
 
 function computeExpectedFormationFollowupEntries(
-    input: ValidateComputedGroupMutationWriteInput
+    input: AssertComputedGroupMutationWriteInput
 ): readonly ResourceEntry[] {
     const { command, read, facts, computed } = input;
     if (!isGroupLifecycleTransitionOperation(command.operation)) {

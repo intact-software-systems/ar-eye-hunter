@@ -7,7 +7,7 @@ import {
 } from '../../group-state-validation-primitives.ts';
 import { GROUP_MUTATION_INTERNAL_AUTHORITY_MODES, type GroupMutationFacts } from '../group-mutation-contracts.ts';
 
-export function validateGroupMutationFacts(facts: GroupMutationFacts): void {
+export function assertGroupMutationFacts(facts: GroupMutationFacts): void {
     requireJsonSafe(facts, 'Group mutation facts');
     assertExactKeys(
         facts,
@@ -41,15 +41,15 @@ export function validateGroupMutationFacts(facts: GroupMutationFacts): void {
     if (!(GROUP_MUTATION_INTERNAL_AUTHORITY_MODES as readonly string[]).includes(facts.internalAuthority)) {
         throw new TypeError('Group mutation internal authority is invalid');
     }
-    validateCapacityFacts(facts.capacity);
-    validateAuthenticatedAuthorityFacts(facts.authenticatedAuthority);
-    validateResolvedJoinCodePair(facts);
+    assertCapacityFacts(facts.capacity);
+    assertAuthenticatedAuthorityFacts(facts.authenticatedAuthority);
+    assertResolvedJoinCodePair(facts);
     if (facts.internalAuthority !== 'none' && facts.authenticatedAuthority !== null) {
         throw new TypeError('Internal group authority cannot also be authenticated authority');
     }
 }
 
-function validateCapacityFacts(capacity: GroupMutationFacts['capacity']): void {
+function assertCapacityFacts(capacity: GroupMutationFacts['capacity']): void {
     if (capacity === undefined) {
         return;
     }
@@ -61,7 +61,7 @@ function validateCapacityFacts(capacity: GroupMutationFacts['capacity']): void {
     requirePositiveSafeInteger(record.defaultMaxMembers, 'Group mutation capacity defaultMaxMembers');
 }
 
-function validateAuthenticatedAuthorityFacts(
+function assertAuthenticatedAuthorityFacts(
     authenticatedAuthority: GroupMutationFacts['authenticatedAuthority']
 ): void {
     if (authenticatedAuthority === null) {
@@ -83,7 +83,7 @@ function validateAuthenticatedAuthorityFacts(
     requireNonEmptyString(authority.sessionId, 'Group mutation authenticated authority sessionId');
 }
 
-function validateResolvedJoinCodePair(facts: GroupMutationFacts): void {
+function assertResolvedJoinCodePair(facts: GroupMutationFacts): void {
     if (facts.joinCodeVerifier !== null) {
         requireNonEmptyString(facts.joinCodeVerifier, 'Group mutation joinCodeVerifier');
     }

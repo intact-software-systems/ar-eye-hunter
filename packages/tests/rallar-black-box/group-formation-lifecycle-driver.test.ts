@@ -1,40 +1,14 @@
 import { describe, expect, it } from 'vitest';
 
-import { createGroupFormationLifecycleDriver } from '../../../tests/playwright/rallar-black-box/group-formation-lifecycle-driver.ts';
-import type {
-    LiveRtcControlClient
-} from '../../../tests/playwright/rallar-black-box/live-rtc-performance-evidence.ts';
 import type { RtcBaselineJson } from '../../../packages/shared-rtc-bench/baseline/contracts/rtc-baseline-contracts.ts';
+import {
+    createGroupFormationLifecycleDriver,
+    type GroupFormationLifecycleAgent,
+    type GroupFormationLifecycleCommandInput
+} from '../../../tests/playwright/rallar-black-box/group-formation-lifecycle-driver.ts';
+import type { LiveRtcControlClient } from '../../../tests/playwright/rallar-black-box/live-rtc-performance-evidence.ts';
 
-interface CommandExecution {
-    readonly agentId: string;
-    readonly commandId: string;
-    readonly command: LifecycleDriverCommand;
-}
-
-interface LifecycleDriverCommand {
-    readonly kind?: string;
-    readonly request?: LifecycleHttpRequest;
-}
-
-interface LifecycleHttpRequest {
-    readonly path?: string;
-    readonly body?: unknown;
-}
-
-interface GroupFormationTestPage {
-    evaluate(pageFunction: () => Promise<void>): Promise<void>;
-}
-
-interface GroupFormationTestAgent {
-    readonly prefix: 'A' | 'B' | 'C';
-    readonly agentId: string;
-    readonly actor: string;
-    readonly connection: string;
-    readonly page: GroupFormationTestPage;
-}
-
-function createAgent(prefix: 'A' | 'B' | 'C'): GroupFormationTestAgent {
+function createAgent(prefix: GroupFormationLifecycleAgent['prefix']): GroupFormationLifecycleAgent {
     return {
         prefix,
         agentId: `agent-${prefix.toLowerCase()}`,
@@ -46,8 +20,8 @@ function createAgent(prefix: 'A' | 'B' | 'C'): GroupFormationTestAgent {
     };
 }
 
-function lifecycleOperation(command: CommandExecution): string | undefined {
-    return command.command.request?.path?.match(/\/lifecycle\/([^/]+)\//u)?.[1];
+function lifecycleOperation(command: GroupFormationLifecycleCommandInput): string | undefined {
+    return (command.command.kind === 'http.request' ? command.command.request.path : undefined)?.match(/\/lifecycle\/([^/]+)\//u)?.[1];
 }
 
 function successfulResult(value: RtcBaselineJson): LiveRtcControlClient.Result {
@@ -65,15 +39,15 @@ function readResultValue(
 
 describe('group formation lifecycle driver', () => {
     it('waits through a removed layout until the receipt-owned active publication can connect', async () => {
-        const commands: CommandExecution[] = [];
+        const commands: GroupFormationLifecycleCommandInput[] = [];
         const topologyStates: Array<'removed' | 'active'> = ['removed', 'active'];
         const control = {
-            executeOk: async (input: CommandExecution): Promise<LiveRtcControlClient.Result> => {
+            executeOk: async (input: GroupFormationLifecycleCommandInput): Promise<LiveRtcControlClient.Result> => {
                 commands.push(input);
                 if (input.command.kind === 'rtc.connect') {
                     return successfulResult({ sessionId: `session-${input.agentId.slice(-1)}` });
                 }
-                if (input.command.request?.path?.endsWith('/groups/group')) {
+                if (input.command.kind === 'http.request' && input.command.request.path?.endsWith('/groups/group')) {
                     return successfulResult({ body: { group: { lifecycleState: 'forming' } } });
                 }
                 if (lifecycleOperation(input) === 'plan') {
@@ -86,9 +60,9 @@ describe('group formation lifecycle driver', () => {
                 }
                 return successfulResult({});
             },
-            executeResult: async (input: CommandExecution): Promise<LiveRtcControlClient.Result> => {
+            executeResult: async (input: GroupFormationLifecycleCommandInput): Promise<LiveRtcControlClient.Result> => {
                 commands.push(input);
-                if (input.command.request?.path?.endsWith('/groups/group')) {
+                if (input.command.kind === 'http.request' && input.command.request.path?.endsWith('/groups/group')) {
                     return successfulResult({ body: { causalRevision: { presenceRevision: 3 } } });
                 }
                 return successfulResult({
