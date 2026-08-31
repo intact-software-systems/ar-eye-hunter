@@ -1,6 +1,7 @@
 # Group Activation — Implementation Plan (2026-08-22)
 
-Status: **planning — re-baselined against product decisions 1–42. The product decisions are settled;
+Status: **implementation in progress — Slice 8d is in final-review correction and validation, followed by
+Slice 9a. Re-baselined against product decisions 1–42. The product decisions are settled;
 the implementation decisions record current reasoning, while ownership, decomposition, file and
 symbol inventories, dependencies and gates must be refreshed against the actual delivery head before
 the first implementation PR and whenever later changes to `main` materially affect the plan.**
@@ -1876,6 +1877,128 @@ remains the initial-formation continuation from `forming`; an unexhausted failed
 to `active` with accepted traffic intact, rather than unconditionally reconfiguring past the group's
 replanning policy. Failure landings that cannot consume retry work must not arm dead timers.
 
+Implementation self-review identified a publication/latch-creation race: selecting latches before
+the publication transaction can miss a newly committed retry intent whose initial wake ran before
+that publication. The durable handoff therefore queues one group-scoped wake atomically with each
+accepted planned publication. After commit, the worker reads awaiting intent for the current epoch;
+the actual connect still names the current planned identity and guards group, plan and latch in one
+transaction. Publication work is only a wake-up hint, never dialing authority. The exact interleaving,
+replay, rollback and reset/supersession cases remain required validation before this checkpoint closes.
+
+The recipe review also found that the existing criterion deadline case observes only a first failure
+with a one-attempt policy; it is not evidence for automatic retry. Slice 8d's recipe cutover must
+therefore exercise a genuine subsequent plan/publication/connect progression without application
+retry commands, preserving the existing criterion and deadline assertions.
+
+### Slice 8d current checkpoint — residual findings and validation
+
+The server/route cutover and its migrated consumers are committed locally, but are not yet
+published. All eight commands reach the authenticated AppInbox owner; legacy production commands
+and temporary retirement inventories are removed. Routes, OpenAPI, recipes and the live browser
+driver will publish atomically. Slice 8d remains unaccepted, with Slice 9a the next outcome.
+
+Independent task reviews support the canonical retry latch/publication handoff and its semantic
+race, rollback and replay coverage. Corrections remove the pre-connect activation fallback, require
+canonical promotion, separate pure criterion computation from policy-read I/O and runtime timing,
+and return expected lifecycle/authority denials as typed outcomes. Missing-group rejection preserves
+create-on-absence, immutable replay ordering, and the exact durable HTTP error envelope. Trusted
+corruption still fails closed. These are current-contract corrections, not expanded trigger policy
+or retained-legacy authorization.
+
+Live integration also exposed an unchanged-topology skip that finished work without petitioning
+the criterion. The corrected owner preserves the skip and stored-layout fence and petitions after
+commit. The criterion recipe now demonstrates automatic activation, a genuine second
+plan/publication/connect without application retry commands, and bounded exhaustion. It retains the
+existing deadline, backoff and observation budgets. Exhaustion still lands in `forming` in this
+slice; the canonical exhausted `dormant` landing remains an explicit Slice 11 outcome.
+
+The migrated browser driver waits for an active, receipt-revision-fenced planned row and connects
+with its exact identity. A removed row cannot pass its publication wait. Match fixtures read the
+current elected manager after planning rather than assuming the previous epoch's manager. Paused
+membership leave/rejoin removes presence, so the valve fixture restores authenticated presence
+before testing relay. These are contract-correct consumer changes, not relaxed readiness assertions.
+
+The one whole-branch review found five important and three minor issues requiring a single
+consolidated correction and one scoped re-review:
+
+- Use declared API connections in both managed formation tiers.
+- Reject the extra public reconfigure epoch field excluded by the strict schema, before internal
+  command fields are added.
+- Prove halt overrides `preActivationAppData: allowed` on the actual permissive group while
+  membership and presence remain usable.
+- Close canonical positive fixture typing and replace the seven-field positional tuple.
+- Replace private source-spelling/order/file-existence pins with semantic architecture coverage.
+- Separate expected input-validation issues from truthful trusted-invariant assertions.
+- Close concrete interface and meaningful output contracts.
+- Format affected files and remove unused imports and stale architecture wording.
+
+Every changed human-authored file must be reviewed and remediated in full. Any support file changed by
+that remediation enters closure recursively; independent untouched code remains outside closure.
+The consolidated correction is committed locally and its single scoped re-review is complete.
+Seven original findings are addressed and the formatting finding is only partially corrected.
+The review also confirms a new important analyzer defect: an unconditional throw before command
+construction still passes the live-route inventory proof.
+This is a reproduced validation-quality regression, not a demonstrated production runtime
+regression. The complete formatter also identifies four affected document/recipe files that
+remain unformatted despite the corrected TypeScript check. Both findings remain open; earlier
+scoped approvals and checker counts do not establish whole-branch standards closure.
+
+Compatibility inspection also found the affected idempotent-receipt writer had only test callers
+and no public package export or independent runtime consumer. It is removed rather than retained
+behind a new input wrapper. Receipt identity/corruption tests exercise the production guarded-batch
+descriptor and conditional insertion/read boundary instead. The live lifecycle recipe now includes
+strict rejection of the excluded public reconfigure epoch field; its unchanged later epoch assertion
+must also prove that rejected input caused no mutation.
+
+Current evidence and remaining acceptance are deliberately separate:
+
+| Boundary                             | Supported evidence                                                                                                                                                                                                                                                           | Still required                                                                                                     |
+| ------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| Lifecycle, retry and match consumers | The frozen correction passes lifecycle 37/37 and criterion 52/52 in the full memory profile. Earlier elected-manager match 52/52 and live RTC primary passed, with two configured RTC opt-in skips.                                                                          | Refresh remaining affected final-candidate integration.                                                            |
+| Permissive-policy valve              | A wrong-group receipt failed the new identity assertion; the corrected live recipe passes 45/45. The group remains `forming` through flowing → halted → flowing, membership/presence work while halted, and relay stops then resumes. Blocked-policy and CRDT checks remain. | Remaining final-profile coverage.                                                                                  |
+| Formation scale                      | Corrected declared connections pass all four formation-large recipes: managed medium 613/613 and large 3,013/3,013, with no nonblocking failures in either managed tier. Ordinary burst/churn retain configured readiness observations.                                      | Final-candidate assessment after remaining assertion/contract changes; this is a precommit correction checkpoint.  |
+| Memory and PostgreSQL profiles       | The full frozen-candidate memory profile passes 32/32 with 108 nonblocking observations and none of the checked invariant/unhandled diagnostics. The committed correction repeats the earlier PostgreSQL result: 31/32, WebSocket echo failure, cluster phase not run.       | Resolve the repeated recipient failure and complete the full PostgreSQL profile, including its cluster phase.      |
+| Medium-scale and topology replay     | Earlier fixed medium-scale passed all 2,757 interactions. Passive-C polling and replacement-process same-session hydration passed without a new mutation.                                                                                                                    | Refresh affected final-candidate gates and inspect all process diagnostics.                                        |
+| Package/application compatibility    | The correction aggregate passes 974 tests, affected types, 50 route tests and native receipt-evidence consumer checks. Earlier broad unit, Deno, build, browser E2E and memory full-stack checks passed.                                                                     | Repair the reproduced analyzer regression and complete remaining broad baseline gates.                             |
+| Formatting                           | The original three affected TypeScript failures are corrected. The complete formatter still fails on the changed architecture document and three changed recipes, plus five byte-identical untouched files independently reproduced on the clean pre-cutover base.           | Format the four affected files; report the five independent baseline failures without claiming a full-format pass. |
+| State-write performance              | The latest frozen-runtime diagnostic fails the unchanged comparator: shared throughput is 17% lower and transaction duration 57% higher, despite 6,300 accepted commands and no retry-exhaustion, atomic-completion or DBW failures.                                         | An exact-commit controlled comparison; the earlier passing candidate no longer establishes acceptance.             |
+
+The PostgreSQL failure is a room WebSocket echo with no recipients before local group-cache
+updates arrive. The unchanged recipe passes isolated three-process probes on both base and
+candidate, and in a full baseline run before unrelated later failures. This narrows the timing
+investigation but neither erases the failed candidate profile nor proves its cause. Preserve the
+original timeout and delivery assertion; no speculative routing change is justified yet.
+Diagnostic-only instrumentation captures durable authorization and cached recipient snapshots
+without changing production files. Its prefix and full-default diagnostic selections pass 4/4 and
+32/32 respectively; neither runs the cluster phase. The passing WebSocket observations show the
+cache one presence revision behind durable state while still containing the live local recipient.
+Instrumentation overhead may change timing. These observations do not capture the empty-recipient
+condition or resolve either uninstrumented PostgreSQL failure; do not repeat full profiles merely
+until one passes.
+
+The performance diagnostic began before the final server closure commit, so it is not exact-commit
+publication evidence. Neither a code regression nor harmless host noise has been established.
+The prescribed order-balanced comparison requires four fresh pinned PostgreSQL containers, with
+nine measured runs per position and no other running containers. It awaits explicit approval to
+temporarily stop only the shared development PostgreSQL container and restore it with its data
+intact. No shared development container or database has been stopped, reset or deleted; managed
+recipe runs create and clean up only their own isolated test databases.
+
+Medium-scale coalesced-outbox successor collision diagnostics also reproduce on the unchanged
+pre-cutover base while the same fixed workload passes. That establishes pre-existing behavior,
+not harmlessness. The separate owner and controlled evidence remain in
+[issue #100](https://github.com/intact-software-systems/ar-eye-hunter/issues/100#issuecomment-5471712515).
+Topology replay and live RTC likewise retain their observed runtime warnings; no warning-free
+claim is made.
+
+The single final correction wave and scoped re-review are exhausted. The next checkpoint requires
+explicit direction for a bounded additional correction of the analyzer and affected formatting,
+root-cause resolution of the repeated PostgreSQL failure, and the remaining required validation.
+Do not waive those findings or start Slice 9a on an unaccepted checkpoint. The controlled benchmark
+still needs its separate shared-container approval. Keep the PR a draft and publish the
+runtime/consumer cutover atomically only when the evidence supports it. A mergeable stacked base
+is not synchronization work and does not itself mean ready for main.
+
 ## Slice 9 — In-flight pacing
 
 Three prerequisites are missing: (1) `ensurePeerConnectionStarted` returns a right value whether or not
@@ -1948,6 +2071,13 @@ reason — the state-write reasons module throws on any unknown profile), `topol
 `formation-large`.
 
 ## Slice 11 — Automation triggers
+
+The canonical exhausted-failure landing remains an unactivated prerequisite: the current mutation
+owner uses the table's unexhausted landing and does not yet pass real exhaustion state to
+`resolveFormationFailureLanding`. Automation completion must wire this existing policy so spent
+series land in `dormant`, preserve the independent transport valve, and arm no further retry work.
+Do not mistake a bounded series remaining in `forming` during the Slice 8d vocabulary cutover for
+completion of that final product behavior.
 
 The timer work is larger than the product plan's costing. `GroupFormationTimerWork` carries
 `kind: 'deadline' | 'retry'` only; the resource id is `ft-${kind}-${formationEpoch}-${fnv1a64(contextId)}`
