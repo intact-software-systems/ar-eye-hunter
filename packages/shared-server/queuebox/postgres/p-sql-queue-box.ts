@@ -16,7 +16,8 @@ import {
     toResourceInboxFinalizationReservationOptions,
     toResourceInboxReleaseDisposition,
     toResourceInboxReservationOptions,
-    toResourceInboxWorkAdvertisementOptions
+    toResourceInboxWorkAdvertisementOptions,
+    type EnqueueOrUpdateResult
 } from '@shared/queuebox/queue-box-types.ts';
 import {
     EntityStatus,
@@ -28,6 +29,9 @@ import {
 } from '@shared/queuebox/ResourceEntry.ts';
 import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 import { RateLimiter } from '@shared/resilience/Resilience.ts';
+import { toError } from '@shared/resilience/to-error.ts';
+
+import { isAdminPruneHandlerFinalizedRelease } from '../../rallar-system/admin-operations/prune/is-admin-prune-handler-finalized-release.ts';
 import type { PSqlResourceInboxRepository } from './create-p-sql-resource-inbox-repository.ts';
 
 export class PSqlQueueBox implements QueueBoxResourceEntryRepository {
@@ -41,7 +45,7 @@ export class PSqlQueueBox implements QueueBoxResourceEntryRepository {
 
     cleanup(): void {
         void this.deleteExpired().catch((error) => {
-            console.error('Failed to cleanup expired resource_inbox rows', error);
+            console.error('Failed to cleanup expired resource_inbox rows', toError(error));
         });
     }
 
@@ -259,10 +263,10 @@ export class PSqlQueueBox implements QueueBoxResourceEntryRepository {
                         const current = await txRepo.entries.findAnyByKey(entry.key);
                         if (
                             !current || !isIdempotentHandlerFinalizedRelease(
-                                current,
-                                entry,
-                                disposition
-                            )
+                                    current,
+                                    entry,
+                                    disposition
+                                ) && !isAdminPruneHandlerFinalizedRelease(current, entry, disposition)
                         ) {
                             throw new ResourceInboxLostReservationError(
                                 entry.key,
@@ -316,14 +320,14 @@ export class PSqlQueueBox implements QueueBoxResourceEntryRepository {
     async enqueueOrUpdate(
         resourceEntry: ResourceEntry,
         updateExisting: (existing: ResourceEntry) => ResourceEntry | undefined
-    ) {
+    ): Promise<EnqueueOrUpdateResult> {
         return await this.resourceInbox.transaction(
             async (txRepo: PSqlResourceInboxRepository) => {
                 const previous = await txRepo.entries.findAnyByKey(resourceEntry.key);
                 if (!previous || isExpiredResourceEntry(previous)) {
                     await txRepo.entries.replace(resourceEntry);
                     return {
-                        action: 'inserted' as const,
+                        action: 'inserted',
                         entry: resourceEntry,
                         previous: undefined
                     };
@@ -332,7 +336,7 @@ export class PSqlQueueBox implements QueueBoxResourceEntryRepository {
                 const updated = updateExisting(previous);
                 if (!updated) {
                     return {
-                        action: 'unchanged' as const,
+                        action: 'unchanged',
                         entry: previous,
                         previous
                     };
@@ -340,7 +344,7 @@ export class PSqlQueueBox implements QueueBoxResourceEntryRepository {
 
                 await txRepo.entries.replace(updated);
                 return {
-                    action: 'updated' as const,
+                    action: 'updated',
                     entry: updated,
                     previous
                 };

@@ -1,7 +1,15 @@
-import type { QRtcPeerDto } from '@shared/services/web-rtc-connection-service.ts';
 import type { RtcDataChannelHealth } from '@shared/webrtc/qrtc-data-channel.ts';
-import type { QRtcPeerConnection } from '@shared/webrtc/qrtc-peer-connection.ts';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+    beforeEach,
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
+
+import { SimulatedNativeRtcPeerConnection } from '../../shared/native-rtc-connection-fixture.ts';
+import { EmptyMediaStream } from '../../shared/rtc-media-test-events.ts';
+import { createBrowserRtcPeerTestDouble } from '../rtc/browser-rtc-peer-test-double.ts';
 
 // The factories below annotate their return type on purpose: without it the contextual type of a
 // `vi.mock` factory is a union, and TypeScript then accepts an export name the module does not
@@ -158,32 +166,29 @@ describe('Rallar RTC diagnostics', () => {
             state: 'Open',
             readyState: 'open'
         });
-        const peer = toRtcPeerTestDouble({
+        const nativePeer = new SimulatedNativeRtcPeerConnection();
+        nativePeer.connectionState = 'connected';
+        nativePeer.iceConnectionState = 'connected';
+        const peer = createBrowserRtcPeerTestDouble({
             peerId: 'peer-1',
             status: {
                 state: 'Open',
-                pc: {
-                    connectionState: 'connected',
-                    iceConnectionState: 'connected',
-                    signalingState: 'stable'
-                },
+                pc: nativePeer,
                 reconnectAttempts: 2,
                 reconnectTimer: undefined,
                 disconnectTimer: undefined,
                 makingOffer: false,
                 ignoreOffer: false,
-                iceCandidateQueue: [{}],
-                localStream: {
-                    id: 'local-stream'
-                },
+                iceCandidateQueue: [{ candidate: 'queued-candidate' }],
+                localStream: new EmptyMediaStream('local-stream'),
                 remoteStreams: new Map([
-                    ['remote-stream', { id: 'remote-stream' }]
+                    ['remote-stream', new EmptyMediaStream('remote-stream')]
                 ])
             },
-            lanes: new Map([
-                ['reliable', vi.fn(() => reliableHealth)],
-                ['realtime', vi.fn(() => realtimeHealth)]
-            ])
+            channels: [
+                ['reliable', { readHealth: vi.fn(() => reliableHealth) }],
+                ['realtime', { readHealth: vi.fn(() => realtimeHealth) }]
+            ]
         });
         vi.mocked(mocks.webRtcConnectionService.knownPeerIds)
             .mockReturnValue(['peer-1']);
@@ -265,7 +270,20 @@ describe('Rallar RTC diagnostics', () => {
             state: 'Open',
             readyState: 'open'
         });
-        const connectionDiagnostics = createPeerConnectionDiagnostics({
+        const nativePeer = new SimulatedNativeRtcPeerConnection();
+        nativePeer.connectionState = 'connected';
+        nativePeer.iceConnectionState = 'connected';
+        nativePeer.iceGatheringState = 'complete';
+        await nativePeer.setLocalDescription({ type: 'offer', sdp: 'local-offer' });
+        await nativePeer.setRemoteDescription({ type: 'answer', sdp: 'remote-answer' });
+        vi.spyOn(nativePeer, 'getStats').mockResolvedValue(createRelayStats());
+        const peer = createBrowserRtcPeerTestDouble({
+            peerId: 'peer-1',
+            status: { state: 'Open', pc: nativePeer },
+            channels: [['reliable', { readHealth: vi.fn(() => reliableHealth) }]]
+        });
+        vi.spyOn(peer.connection, 'readDiagnostics').mockReturnValue({
+            ...peer.connection.readDiagnostics(),
             connectCallCount: 2,
             outboundOfferCount: 1,
             inboundAnswerCount: 1,
@@ -273,67 +291,6 @@ describe('Rallar RTC diagnostics', () => {
             pendingIceCandidateQueueLength: 3,
             reconnectAttemptsInFlight: 1,
             hasReconnectTimer: true
-        });
-        const stats = new Map<string, RtcStatsFixture>([
-            ['pair-1', {
-                id: 'pair-1',
-                type: 'candidate-pair',
-                state: 'succeeded',
-                nominated: true,
-                selected: true,
-                localCandidateId: 'local-1',
-                remoteCandidateId: 'remote-1',
-                currentRoundTripTime: 0.042,
-                availableOutgoingBitrate: 123_456,
-                bytesSent: 100,
-                bytesReceived: 200
-            }],
-            ['local-1', {
-                id: 'local-1',
-                type: 'local-candidate',
-                candidateType: 'relay',
-                protocol: 'udp',
-                address: '10.0.0.1',
-                port: 1234,
-                relayProtocol: 'udp',
-                networkType: 'wifi',
-                url: 'turn:turn.example.test'
-            }],
-            ['remote-1', {
-                id: 'remote-1',
-                type: 'remote-candidate',
-                candidateType: 'srflx',
-                protocol: 'udp',
-                address: '203.0.113.10',
-                port: 4321
-            }]
-        ]);
-        const getStats = vi.fn(async () => stats);
-        const readDiagnostics = vi.fn(() => connectionDiagnostics);
-        const peer = toRtcPeerTestDouble({
-            peerId: 'peer-1',
-            readDiagnostics,
-            status: {
-                state: 'Open',
-                pc: {
-                    connectionState: 'connected',
-                    iceConnectionState: 'connected',
-                    iceGatheringState: 'complete',
-                    signalingState: 'stable',
-                    localDescription: { type: 'offer' },
-                    remoteDescription: { type: 'answer' },
-                    canTrickleIceCandidates: true,
-                    getStats
-                },
-                reconnectAttempts: 0,
-                reconnectTimer: undefined,
-                disconnectTimer: undefined,
-                makingOffer: false,
-                ignoreOffer: false,
-                iceCandidateQueue: [],
-                remoteStreams: new Map()
-            },
-            lanes: new Map([['reliable', vi.fn(() => reliableHealth)]])
         });
         vi.mocked(mocks.webRtcConnectionService.knownPeerIds)
             .mockReturnValue(['peer-1']);
@@ -418,71 +375,11 @@ describe('Rallar RTC diagnostics', () => {
     });
 });
 
-type RtcPeerConnectionStatus = QRtcPeerDto['connection']['status'];
-type RtcStatsFixture = Readonly<Record<string, string | number | boolean>>;
-
-interface RtcPeerConnectionTestDoubleMembers {
-    readonly localDescription?: Pick<RTCSessionDescription, 'type'>;
-    readonly remoteDescription?: Pick<RTCSessionDescription, 'type'>;
-    readonly getStats?: () => Promise<ReadonlyMap<string, RtcStatsFixture>>;
-}
-
-type RtcPeerConnectionTestDouble =
-    & Partial<
-        Pick<
-            RTCPeerConnection,
-            | 'connectionState'
-            | 'iceConnectionState'
-            | 'iceGatheringState'
-            | 'signalingState'
-            | 'canTrickleIceCandidates'
-        >
-    >
-    & RtcPeerConnectionTestDoubleMembers;
-
-interface RtcPeerStatusTestDoubleMembers {
-    readonly pc?: RtcPeerConnectionTestDouble;
-    readonly localStream?: Pick<MediaStream, 'id'>;
-    readonly remoteStreams?: ReadonlyMap<string, Pick<MediaStream, 'id'>>;
-}
-
-type RtcPeerStatusTestDouble =
-    & Omit<Partial<RtcPeerConnectionStatus>, 'pc' | 'localStream' | 'remoteStreams'>
-    & RtcPeerStatusTestDoubleMembers;
-
 interface ChannelHealthFixtureInput {
     readonly peerId: string;
     readonly label: string;
     readonly state: string;
     readonly readyState: RTCDataChannelState;
-}
-
-interface RtcPeerTestDoubleInput {
-    readonly peerId: QRtcPeerDto['peerId'];
-    readonly status: RtcPeerStatusTestDouble;
-    readonly readDiagnostics?: () => QRtcPeerConnection.Diagnostics;
-    readonly lanes: ReadonlyMap<string, () => RtcDataChannelHealth>;
-}
-
-// A QRtcPeerDto hangs off concrete classes (QRtcPeerConnection, QRtcDataChannel) and live DOM
-// objects (RTCPeerConnection, MediaStream) that a unit test cannot construct. The RTC diagnostics
-// readers walk only the members declared above, so this is the single place where the partial peer
-// graph is asserted onto the production DTO; every member name it supplies is still checked against
-// the production types.
-function toRtcPeerTestDouble(input: RtcPeerTestDoubleInput): QRtcPeerDto {
-    return {
-        peerId: input.peerId,
-        connection: {
-            status: input.status,
-            readDiagnostics: input.readDiagnostics
-        },
-        channels: new Map(
-            Array.from(input.lanes, ([laneId, readHealth]) => [
-                laneId,
-                { readHealth }
-            ])
-        )
-    } as object as QRtcPeerDto;
 }
 
 function createChannelHealth(input: ChannelHealthFixtureInput): RtcDataChannelHealth {
@@ -492,7 +389,7 @@ function createChannelHealth(input: ChannelHealthFixtureInput): RtcDataChannelHe
         state: input.state,
         role: 'Initiator',
         readyState: input.readyState,
-        binaryType: 'arraybuffer' as const,
+        binaryType: 'arraybuffer',
         bufferedAmount: 0,
         bufferedAmountLowThreshold: 0,
         queuedItemCount: 0,
@@ -502,7 +399,7 @@ function createChannelHealth(input: ChannelHealthFixtureInput): RtcDataChannelHe
         flowControl: {
             highWatermarkBytes: 64 * 1024,
             lowWatermarkBytes: 16 * 1024,
-            overflow: 'drop-new' as const,
+            overflow: 'drop-new',
             maxQueueItems: 32
         },
         counters: {
@@ -521,45 +418,60 @@ function createChannelHealth(input: ChannelHealthFixtureInput): RtcDataChannelHe
     };
 }
 
-function createPeerConnectionDiagnostics(
-    overrides: Partial<QRtcPeerConnection.Diagnostics> = {}
-): QRtcPeerConnection.Diagnostics {
-    return {
-        connectCallCount: 0,
-        connectIgnoredCount: 0,
-        resetCount: 0,
-        closedPeerConnectionCount: 0,
-        negotiationNeededCount: 0,
-        negotiationSkippedCount: 0,
-        offerCreatedCount: 0,
-        inboundOfferCount: 0,
-        inboundAnswerCount: 0,
-        inboundIceCandidateCount: 0,
-        staleAnswerIgnoredCount: 0,
-        offerCollisionCount: 0,
-        ignoredOfferCollisionCount: 0,
-        politeOfferRollbackCount: 0,
-        outboundOfferCount: 0,
-        outboundAnswerCount: 0,
-        outboundIceCandidateCount: 0,
-        queuedIceCandidateCount: 0,
-        addedIceCandidateCount: 0,
-        flushedIceCandidateCount: 0,
-        ignoredIceCandidateForIgnoredOfferCount: 0,
-        reconnectAttemptCount: 0,
-        reconnectTimerAlreadyActiveCount: 0,
-        reconnectExhaustedCount: 0,
-        iceRestartCount: 0,
-        iceRestartSkippedConnectedCount: 0,
-        disconnectTimerScheduledCount: 0,
-        disconnectTimerAlreadyActiveCount: 0,
-        disconnectTimerClearedCount: 0,
-        disconnectTimerFiredCount: 0,
-        outboundSignalingErrorCount: 0,
-        inboundSignalingErrorCount: 0,
-        pendingIceCandidateQueueLength: 0,
-        reconnectAttemptsInFlight: 0,
-        hasReconnectTimer: false,
-        ...overrides
+interface SelectedCandidatePairStats extends RTCIceCandidatePairStats {
+    readonly selected: boolean;
+}
+
+interface CandidateStatsFixture extends RTCStats {
+    readonly candidateType: RTCIceCandidateType;
+    readonly protocol: RTCIceProtocol;
+    readonly address: string;
+    readonly port: number;
+    readonly relayProtocol?: RTCIceProtocol;
+    readonly networkType?: string;
+    readonly url?: string;
+}
+
+function createRelayStats(): RTCStatsReport {
+    const pair: SelectedCandidatePairStats = {
+        id: 'pair-1',
+        type: 'candidate-pair',
+        timestamp: 1,
+        transportId: 'transport-1',
+        state: 'succeeded',
+        nominated: true,
+        selected: true,
+        localCandidateId: 'local-1',
+        remoteCandidateId: 'remote-1',
+        currentRoundTripTime: 0.042,
+        availableOutgoingBitrate: 123_456,
+        bytesSent: 100,
+        bytesReceived: 200
     };
+    const local: CandidateStatsFixture = {
+        id: 'local-1',
+        type: 'local-candidate',
+        timestamp: 1,
+        candidateType: 'relay',
+        protocol: 'udp',
+        address: '10.0.0.1',
+        port: 1234,
+        relayProtocol: 'udp',
+        networkType: 'wifi',
+        url: 'turn:turn.example.test'
+    };
+    const remote: CandidateStatsFixture = {
+        id: 'remote-1',
+        type: 'remote-candidate',
+        timestamp: 1,
+        candidateType: 'srflx',
+        protocol: 'udp',
+        address: '203.0.113.10',
+        port: 4321
+    };
+    return new Map<string, RTCStats>([
+        [pair.id, pair],
+        [local.id, local],
+        [remote.id, remote]
+    ]);
 }

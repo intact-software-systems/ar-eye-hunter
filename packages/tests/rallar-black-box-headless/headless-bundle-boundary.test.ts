@@ -1,9 +1,17 @@
-import { buildSync, type Metafile } from 'esbuild';
-import { mkdirSync, readFileSync } from 'node:fs';
+import {
+    buildSync,
+    type Metafile
+} from 'esbuild';
+import {
+    mkdirSync,
+    readFileSync
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { brotliCompressSync, constants } from 'node:zlib';
-// dprint-ignore
+import {
+    brotliCompressSync,
+    constants
+} from 'node:zlib';
 import {
     describe,
     expect,
@@ -57,7 +65,11 @@ describe('rallar-black-box-headless bundle boundary', () => {
         // 202.944336 KiB -> 203.715820 KiB.
         // One deadline across room refresh and best-effort topology hydration
         // adds 0.284180 KiB: 203.715820 KiB -> 204.000000 KiB.
-        expect(result.brotliKiB).toBeLessThan(205);
+        // Slice 8b adds canonical signaling, connection and CRDT command validation,
+        // offset partly by unsafe-legacy removal and RTC/queue cleanup. The reviewed
+        // Slice 8a baseline 204.9267578125 KiB -> corrected 8b 207.51953125 KiB:
+        // +2655 Brotli bytes (~1.265%), with unchanged exclusions and build settings.
+        expect(result.brotliKiB).toBeLessThan(208);
     });
 });
 

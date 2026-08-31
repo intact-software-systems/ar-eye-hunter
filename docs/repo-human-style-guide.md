@@ -547,6 +547,18 @@ substring-matches human-readable finding messages. Findings owned by the module
 itself carry no symbol; a reviewed module-owner disposition records that absent
 symbol explicitly and still leaves every function-owned finding blocking.
 
+An optional `maximumMagnitude` bounds a reviewed numeric finding at its existing
+checker magnitude. Findings above that cap no longer match this disposition;
+normal base comparison still applies. Global thresholds and base-comparison
+tolerances remain unchanged. Feature-prefix findings carry the
+checker-owned `prefix:<token>` symbol so reviewing one cluster cannot suppress a
+different prefix in the same directory.
+
+Boundary dispositions review an exact owner, not every future use of `unknown`
+inside it. They intentionally do not count or certify later occurrences. Recheck
+validation, opaque-payload ownership, and domain propagation whenever that owner
+is touched; a matching disposition never authorizes a real standards violation.
+
 Dormant entries are allowed when their reviewed feature has not reached the
 branch yet. They do not suppress a similarly named finding elsewhere. Every
 unmatched finding remains blocking, including a finding with a different path,

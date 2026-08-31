@@ -88,7 +88,7 @@ export class BlackBoxRallarRuntimeDiagnostics {
             topic: warning.topic,
             transport: warning.transport,
             severity: 'warning',
-            data: { message: warning.message, args }
+            data: { message: warning.message }
         });
     };
 

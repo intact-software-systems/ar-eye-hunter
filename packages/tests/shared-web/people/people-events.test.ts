@@ -86,9 +86,13 @@ describe('people events', () => {
         await facade.connect();
         const event = createPeopleEvent({ principalId: 'alice', eventId: 'client-event-valid', eventType: 'session-connected' });
         const { requestId: omitted, ...missingRequestId } = event;
+        const message = toPeopleEventMessage(event);
 
         expect(omitted).not.toBeUndefined();
-        await dispatchPeopleWsMessage(toPeopleEventMessage(missingRequestId as typeof event));
+        await dispatchPeopleWsMessage({
+            ...message,
+            payload: { ...message.payload, resource: JSON.stringify(missingRequestId) }
+        });
         await dispatchPeopleWsMessage(toPeopleEventMessage(event));
 
         expect(events).toEqual([event]);

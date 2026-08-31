@@ -175,6 +175,407 @@ export const reviewedDispositions = Object.freeze([
             'rtc-rtt-persistence-validation.ts',
         rule: 'boundary.unknown',
         symbol: 'validateExpectedRevision'
+    }),
+    // These exact raw-input and opaque application-payload owners were reviewed
+    // through user-requested AI review. Decoders validate before domain use; opaque
+    // app data stays at the application boundary without infrastructure casts.
+    // An owner match is not proof that future uses of unknown remain valid:
+    // touched-file semantic review still applies within every listed owner.
+    Object.freeze({
+        path:
+            'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-crdt-controller.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
+    Object.freeze({
+        path: 'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-diagnostics.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
+    Object.freeze({
+        path: 'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-diagnostics.ts',
+        rule: 'boundary.unknown',
+        symbol: 'consoleWarningPart'
+    }),
+    Object.freeze({
+        path: 'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-diagnostics.ts',
+        rule: 'boundary.unknown',
+        symbol: 'classifyConsoleWarning'
+    }),
+    Object.freeze({
+        path: 'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-diagnostics.ts',
+        rule: 'boundary.unknown',
+        symbol: 'ensurePatch'
+    }),
+    Object.freeze({
+        path:
+            'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-operation-contracts.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
+    Object.freeze({
+        path:
+            'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-runtime-contract.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
+    Object.freeze({
+        path:
+            'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-command-input.ts',
+        rule: 'boundary.unknown',
+        symbol: 'isBlackBoxCommandRecord'
+    }),
+    Object.freeze({
+        path:
+            'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-command-input.ts',
+        rule: 'boundary.unknown',
+        symbol: 'decodeBlackBoxCommandString'
+    }),
+    Object.freeze({
+        path:
+            'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-command-input.ts',
+        rule: 'boundary.unknown',
+        symbol: 'decodeBlackBoxCommandNumber'
+    }),
+    Object.freeze({
+        path:
+            'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-command-input.ts',
+        rule: 'boundary.unknown',
+        symbol: 'decodeBlackBoxCommandScope'
+    }),
+    Object.freeze({
+        path:
+            'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-command-input.ts',
+        rule: 'boundary.unknown',
+        symbol: 'decodeBlackBoxCommandRoomRef'
+    }),
+    Object.freeze({
+        path:
+            'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-command-input.ts',
+        rule: 'boundary.unknown',
+        symbol: 'decodePeerIds'
+    }),
+    Object.freeze({
+        path:
+            'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-command-input.ts',
+        rule: 'boundary.unknown',
+        symbol: 'decodeAck'
+    }),
+    Object.freeze({
+        path:
+            'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-command-input.ts',
+        rule: 'boundary.unknown',
+        symbol: 'decodeMessageFields'
+    }),
+    Object.freeze({
+        path:
+            'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-command-input.ts',
+        rule: 'boundary.unknown',
+        symbol: 'isRealtimeSendEnvelope'
+    }),
+    Object.freeze({
+        path:
+            'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-command-input.ts',
+        rule: 'boundary.unknown',
+        symbol: 'decodeBlackBoxRallarSendInput'
+    }),
+    Object.freeze({
+        path:
+            'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-command-input.ts',
+        rule: 'boundary.unknown',
+        symbol: 'decodeBlackBoxRallarWsSendInput'
+    }),
+    Object.freeze({
+        path:
+            'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-connection-config.ts',
+        rule: 'boundary.unknown',
+        symbol: 'configRecord'
+    }),
+    Object.freeze({
+        path:
+            'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-connection-config.ts',
+        rule: 'boundary.unknown',
+        symbol: 'optionalString'
+    }),
+    Object.freeze({
+        path:
+            'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-connection-config.ts',
+        rule: 'boundary.unknown',
+        symbol: 'optionalNumber'
+    }),
+    Object.freeze({
+        path:
+            'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-connection-config.ts',
+        rule: 'boundary.unknown',
+        symbol: 'optionalBoolean'
+    }),
+    Object.freeze({
+        path:
+            'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-connection-config.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
+    Object.freeze({
+        path:
+            'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-connection-config.ts',
+        rule: 'boundary.unknown',
+        symbol: 'stringList'
+    }),
+    Object.freeze({
+        path:
+            'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-connection-config.ts',
+        rule: 'boundary.unknown',
+        symbol: 'registration'
+    }),
+    Object.freeze({
+        path:
+            'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-connection-config.ts',
+        rule: 'boundary.unknown',
+        symbol: 'messageSelector'
+    }),
+    Object.freeze({
+        path:
+            'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-connection-config.ts',
+        rule: 'boundary.unknown',
+        symbol: 'dataChannelInit'
+    }),
+    Object.freeze({
+        path:
+            'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-connection-config.ts',
+        rule: 'boundary.unknown',
+        symbol: 'flowControl'
+    }),
+    Object.freeze({
+        path:
+            'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-crdt-input.ts',
+        rule: 'boundary.unknown',
+        symbol: 'commandRecord'
+    }),
+    Object.freeze({
+        path:
+            'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-crdt-input.ts',
+        rule: 'boundary.unknown',
+        symbol: 'optionalString'
+    }),
+    Object.freeze({
+        path:
+            'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-crdt-input.ts',
+        rule: 'boundary.unknown',
+        symbol: 'optionalNumber'
+    }),
+    Object.freeze({
+        path:
+            'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-crdt-input.ts',
+        rule: 'boundary.unknown',
+        symbol: 'optionalBoolean'
+    }),
+    Object.freeze({
+        path:
+            'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-crdt-input.ts',
+        rule: 'boundary.unknown',
+        symbol: 'stringList'
+    }),
+    Object.freeze({
+        path:
+            'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-crdt-input.ts',
+        rule: 'boundary.unknown',
+        symbol: 'numberList'
+    }),
+    Object.freeze({
+        path:
+            'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-crdt-input.ts',
+        rule: 'boundary.unknown',
+        symbol: 'isCrdtJsonValue'
+    }),
+    Object.freeze({
+        path:
+            'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-crdt-input.ts',
+        rule: 'boundary.unknown',
+        symbol: 'optionalJsonValue'
+    }),
+    Object.freeze({
+        path:
+            'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-crdt-input.ts',
+        rule: 'boundary.unknown',
+        symbol: 'transport'
+    }),
+    Object.freeze({
+        path:
+            'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-crdt-input.ts',
+        rule: 'boundary.unknown',
+        symbol: 'scope'
+    }),
+    Object.freeze({
+        path:
+            'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-crdt-input.ts',
+        rule: 'boundary.unknown',
+        symbol: 'registration'
+    }),
+    Object.freeze({
+        path:
+            'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-crdt-input.ts',
+        rule: 'boundary.unknown',
+        symbol: 'connection'
+    }),
+    Object.freeze({
+        path:
+            'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-crdt-input.ts',
+        rule: 'boundary.unknown',
+        symbol: 'operationKind'
+    }),
+    Object.freeze({
+        path:
+            'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-crdt-input.ts',
+        rule: 'boundary.unknown',
+        symbol: 'pathKind'
+    }),
+    Object.freeze({
+        path:
+            'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-crdt-input.ts',
+        rule: 'boundary.unknown',
+        symbol: 'pathSchema'
+    }),
+    Object.freeze({
+        path:
+            'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-crdt-input.ts',
+        rule: 'boundary.unknown',
+        symbol: 'validation'
+    }),
+    Object.freeze({
+        path:
+            'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-crdt-input.ts',
+        rule: 'boundary.unknown',
+        symbol: 'encryptionKey'
+    }),
+    Object.freeze({
+        path:
+            'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-crdt-input.ts',
+        rule: 'boundary.unknown',
+        symbol: 'encryption'
+    }),
+    Object.freeze({
+        path:
+            'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-crdt-input.ts',
+        rule: 'boundary.unknown',
+        symbol: 'decodeBlackBoxRallarCrdtHandle'
+    }),
+    Object.freeze({
+        path:
+            'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-crdt-input.ts',
+        rule: 'boundary.unknown',
+        symbol: 'decodeBlackBoxRallarCrdtOpenInput'
+    }),
+    Object.freeze({
+        path:
+            'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-crdt-input.ts',
+        rule: 'boundary.unknown',
+        symbol: 'decodeBlackBoxRallarCrdtApplyInput'
+    }),
+    Object.freeze({
+        path:
+            'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-crdt-input.ts',
+        rule: 'boundary.unknown',
+        symbol: 'decodeBlackBoxRallarCrdtUndoRedoInput'
+    }),
+    Object.freeze({
+        path:
+            'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-crdt-input.ts',
+        rule: 'boundary.unknown',
+        symbol: 'syncOptions'
+    }),
+    Object.freeze({
+        path:
+            'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-crdt-input.ts',
+        rule: 'boundary.unknown',
+        symbol: 'decodeBlackBoxRallarCrdtSyncInput'
+    }),
+    Object.freeze({
+        path:
+            'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-crdt-input.ts',
+        rule: 'boundary.unknown',
+        symbol: 'waitCondition'
+    }),
+    Object.freeze({
+        path:
+            'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-crdt-input.ts',
+        rule: 'boundary.unknown',
+        symbol: 'decodeBlackBoxRallarCrdtWaitInput'
+    }),
+    Object.freeze({
+        path: 'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/director-controller.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
+    Object.freeze({
+        path: 'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/messaging-controller.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
+    Object.freeze({
+        path: 'packages/shared/webrtc/decode-rtc-signaling-message.ts',
+        rule: 'boundary.unknown',
+        symbol: 'decodeRtcSignalingPayload'
+    }),
+    Object.freeze({
+        path: 'packages/shared/webrtc/decode-rtc-signaling-message.ts',
+        rule: 'boundary.unknown',
+        symbol: 'decodeIceCandidate'
+    }),
+    Object.freeze({
+        path:
+            'packages/tests/shared-server/rallar-system/group-state/presence/group-presence-summary-delta-emission.test.ts',
+        rule: 'boundary.unknown',
+        symbol: 'readEventRowPayload'
+    }),
+    Object.freeze({
+        path: 'packages/tests/shared-server/rallar-system/group-state/presence/group-state-delta-envelope.test.ts',
+        rule: 'boundary.unknown',
+        symbol: 'readGroupStateEventRowEnvelope'
+    }),
+    Object.freeze({
+        path: 'packages/tests/shared-test/rallar-browser-runtime/director.test.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
+    Object.freeze({
+        path: 'packages/tests/shared-test/rallar-browser-runtime/director.test.ts',
+        rule: 'boundary.unknown',
+        symbol: 'configureDirectorRelayScenario'
+    }),
+    // Cohesion review kept these lifecycle/decoder owners and their directory
+    // together. Bounds describe only the reviewed signal and never change the
+    // global thresholds or authorize a refactor-or-register tier exception.
+    Object.freeze({
+        path:
+            'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-crdt-controller.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 117
+    }),
+    Object.freeze({
+        path:
+            'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-crdt-input.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 89
+    }),
+    Object.freeze({
+        path: 'packages/shared/services/web-rtc-connection-service.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 105
+    }),
+    Object.freeze({
+        path: 'packages/shared-test/black-box-runner/browser/rallar-browser-runtime',
+        rule: 'layout.directory-density',
+        symbol: 'rallar-browser-runtime',
+        maximumMagnitude: 21
+    }),
+    Object.freeze({
+        path: 'packages/shared-test/black-box-runner/browser/rallar-browser-runtime',
+        rule: 'layout.feature-prefix-cluster',
+        symbol: 'prefix:black',
+        maximumMagnitude: 12
     })
 ]);
 
@@ -204,7 +605,8 @@ export function isReviewedDisposition(repoRoot, finding, context = {}) {
         (disposition) =>
             disposition.path === findingPath &&
             disposition.rule === finding.ruleId &&
-            disposition.symbol === finding.symbol
+            disposition.symbol === finding.symbol &&
+            matchesReviewedMagnitude(disposition, finding)
     );
     if (staticallyReviewed) {
         return true;
@@ -234,4 +636,16 @@ function isCodeStyleDecision(decision) {
         Number.isSafeInteger(projection.magnitude) &&
         typeof projection.candidateHead === 'string'
     );
+}
+
+function matchesReviewedMagnitude(disposition, finding) {
+    if (disposition.maximumMagnitude === undefined) {
+        return true;
+    }
+    const magnitude = findingMagnitude(finding);
+    return Number.isSafeInteger(disposition.maximumMagnitude) &&
+        disposition.maximumMagnitude > 0 &&
+        Number.isSafeInteger(magnitude) &&
+        magnitude > 0 &&
+        magnitude <= disposition.maximumMagnitude;
 }

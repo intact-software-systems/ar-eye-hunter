@@ -1772,6 +1772,40 @@ configuration before calling the runtime, and no longer falls back from missing
 authentication support to a full connection. No verified consumer required that
 fallback. Generic application message payloads remain application-owned.
 
+Sparse CRDT validation input must preserve omission. An absent schema-version or
+operation-version allowlist must not become an explicit `undefined` field that
+overwrites the core's defaults. Prove rejection through the real CRDT core for
+both updates and snapshots, while preserving explicit overrides and empty lists.
+Console observations publish their normalized message, without retaining raw
+arguments that can be circular or non-serializable.
+
+The stricter queue boundary also exposes the administrative prune worker's old
+`all/global` target pair. New page envelopes and their domain reader use canonical
+`broadcast/all` targets. Migrate the precisely scoped persisted page envelopes
+through the existing Prisma migration path; preserve page payloads, route keys,
+receipts, aggregate progress, expiry, status and retry history. Do not widen the
+generic AL decoder or retain a runtime fallback. Deployment must stop old producers
+and readers before migration and start the new build afterward; mixed old/new
+workers are not a supported rollout for this format change. Prove actual queue
+dispatch, migration idempotence and exclusion of unrelated or malformed rows.
+The handler already completes each page atomically; generic queue release must
+recognize that exact completed reservation through a server-owned, fenced admin
+predicate. It must not weaken the shared queue's reservation or revival rules.
+
+The repository's API deployment switch is currently enabled, and its workflow
+runs migrations before replacing the running APIs. That ordering cannot perform
+this cutover safely. Keep #390 draft until the maintainer approves a concrete
+deployment pause and stop/migrate/start procedure; review authorization does not
+authorize changing production settings. No deployment setting or production data
+has been changed during this review.
+
+The headless browser guard accounts for the validated command and signaling
+boundaries: identical builds measure 204.926758 KiB for the reviewed parent and
+207.519531 KiB after the decoder corrections. Use the smallest whole-KiB ceiling,
+208 KiB, retaining the existing Brotli settings and all operator-UI dependency
+exclusions. This proportional browser cost does not change the state-write
+performance thresholds or permit weakening input validation to save bundle bytes.
+
 **Delivery decomposition:** keep these corrections in #390. The canonical RTC and
 queue owner renames cross their production, browser, server, benchmark and test
 consumers; splitting that migration would leave broken imports or require the very
@@ -1799,11 +1833,15 @@ remote release evidence are still required before #390 is marked ready.
 
 ## Slice 9 — In-flight pacing
 
-Three prerequisites are missing: (1) `ensurePeerConnectionStarted` returns a right value whether or not
-it decided to connect, so the attempt counter already counts idempotent ensures; (2) there is **no
-success callback** — the peer lifecycle callback has `onCreated`/`onDeleted`/`onConnectTimeout?`/
-`onConnectExhausted?` and nothing for established; (3) there is **no wire path for the bound** —
-`GroupSnapshot` carries no policy (**Q2**).
+Three prerequisites remain after the #390 review: (1) `ensurePeerConnectionStarted` still returns a
+right value for both a new connection and reuse, and the group manager increments its diagnostic
+attempt counter before that call; (2) the connection service's lifecycle subscription still exposes
+`onCreated`/`onDeleted`/`onConnectTimeout?`/`onConnectExhausted?`, without an established event for the
+manager; (3) there is **no wire path for the bound** — `GroupSnapshot` carries no policy (**Q2**).
+The native peer now has an `onConnected` callback, which the service uses to clear its establishment
+timer and retry budget. That per-peer retry budget already charges only new admitted connections;
+reuse and denied admission do not consume it. Slice 9 must expose the existing establishment truth
+to its manager rather than add another native success detector or undo that corrected accounting.
 
 A fourth structural gap: the reconcile pass flattens all groups into one desired-peer set, so there is
 no per-group loop for a per-group bound. **Product decision 18 answers the ownership question, and the answer is a rule rather than a
@@ -1813,7 +1851,7 @@ its bound, even if the other is idle. Put that consequence in the pacing matrix.
 arbitration is promised" describes the absence of negotiation, not the absence of a scheduling
 decision, and an earlier draft leaned on it as though it removed one.
 
-- **9a — truthful RTC lifecycle signals** (surface attempt-started, add an established callback). Dark,
+- **9a — truthful RTC lifecycle signals** (surface attempt-started and the service's established event). Dark,
   additive, independently valuable. I13 fixes the wire path: a nested member-policy object on the `Group`, carrying the resolved member-tier values with its own field validator.
 - **9b — the per-group bound, wake-on-completion, and the 6/20/50 sweep.**
 

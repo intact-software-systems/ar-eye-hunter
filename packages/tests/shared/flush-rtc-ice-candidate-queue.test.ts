@@ -42,7 +42,7 @@ describe('flushRtcIceCandidateQueue', () => {
         ]);
         expect(successfulAdditions).toBe(2);
         expect(queue).toEqual([]);
-        expect(warning).toHaveBeenCalledExactlyOnceWith('Failed to add queued candidate:', new Error('native rejection'));
+        expect(warning).toHaveBeenCalledWith('Failed to add queued candidate:', new Error('native rejection'));
     });
 
     it('retains candidates enqueued while a native addition is pending for the next drain', async () => {

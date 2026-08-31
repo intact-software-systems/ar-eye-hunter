@@ -7,6 +7,14 @@ import {
 } from 'vitest';
 
 import { BlackBoxRallarCrdtResourceController } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-crdt-resource-controller.ts';
+import { decodeBlackBoxRallarCrdtOpenInput } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-crdt-input.ts';
+import {
+    createRallarCrdtDocument,
+    rallarCrdtAddCounterOperation,
+    rallarCrdtBatch,
+    type RallarCrdtDocumentRef,
+    type RallarCrdtValidationOptions
+} from '@shared/crdt/mod.ts';
 import {
     facade,
     loadRuntime,
@@ -16,6 +24,98 @@ import { CrdtDocumentTestDouble } from './crdt-document-test-double.ts';
 
 beforeEach(resetFacade);
 afterEach(() => vi.unstubAllGlobals());
+
+const counterRef: RallarCrdtDocumentRef = {
+    applicationId: 'app',
+    workspaceId: 'workspace',
+    scope: 'app',
+    documentType: 'counter',
+    documentId: 'counter'
+};
+
+it.each([undefined, {}, { maxOperationCount: 10 }])(
+    'preserves the core schema fence with sparse validation: %j',
+    (validation) => {
+        const decoded = decodeBlackBoxRallarCrdtOpenInput({ name: 'counter', validation });
+        const source = createRallarCrdtDocument({ ref: counterRef, schemaVersion: 2, replicaId: 'source' });
+        const update = source.applyLocal(rallarCrdtBatch([rallarCrdtAddCounterOperation(['count'], 1)]));
+        const snapshot = source.snapshot();
+        const direct = createRallarCrdtDocument({ ref: counterRef, replicaId: 'direct', validation });
+        const boundary = createRallarCrdtDocument({
+            ref: counterRef,
+            replicaId: 'boundary',
+            validation: decoded.validation
+        });
+
+        expect(direct.apply(update).status).toBe('rejected');
+        expect(boundary.apply(update).status).toBe('rejected');
+        expect(() => direct.importSnapshot(snapshot)).toThrow('$.schemaVersion: Version is not supported: 2.');
+        expect(() => boundary.importSnapshot(snapshot)).toThrow('$.schemaVersion: Version is not supported: 2.');
+        expect(boundary.read()).toEqual({});
+
+        const matching = createRallarCrdtDocument({ ref: counterRef, replicaId: 'matching' });
+        const matchingUpdate = matching.applyLocal(rallarCrdtBatch([rallarCrdtAddCounterOperation(['count'], 1)]));
+        expect(boundary.apply(matchingUpdate).status).toBe('applied');
+        expect(boundary.read()).toEqual({ count: 1 });
+    }
+);
+
+it('preserves the configured core operation version when validation omits its allowlist', () => {
+    const decoded = decodeBlackBoxRallarCrdtOpenInput({ name: 'counter', validation: { maxOperationCount: 10 } });
+    const source = createRallarCrdtDocument({ ref: counterRef, operationVersion: 2, replicaId: 'source' });
+    const update = source.applyLocal(rallarCrdtBatch([rallarCrdtAddCounterOperation(['count'], 1)]));
+    const direct = createRallarCrdtDocument({
+        ref: counterRef,
+        operationVersion: 2,
+        replicaId: 'direct',
+        validation: { maxOperationCount: 10 }
+    });
+    const boundary = createRallarCrdtDocument({
+        ref: counterRef,
+        operationVersion: 2,
+        replicaId: 'boundary',
+        validation: decoded.validation
+    });
+
+    expect(direct.apply(update).status).toBe('applied');
+    expect(boundary.apply(update).status).toBe('applied');
+    expect(boundary.read()).toEqual({ count: 1 });
+});
+
+it('preserves an explicit schema allowlist that expands the core default', () => {
+    const decoded = decodeBlackBoxRallarCrdtOpenInput({
+        name: 'counter',
+        validation: { allowedSchemaVersions: [1, 2] }
+    });
+    const source = createRallarCrdtDocument({ ref: counterRef, schemaVersion: 2, replicaId: 'source' });
+    const update = source.applyLocal(rallarCrdtBatch([rallarCrdtAddCounterOperation(['count'], 1)]));
+    const boundary = createRallarCrdtDocument({ ref: counterRef, replicaId: 'boundary', validation: decoded.validation });
+
+    expect(boundary.apply(update).status).toBe('applied');
+    expect(boundary.read()).toEqual({ count: 1 });
+});
+
+const sparseValidationOptions: readonly RallarCrdtValidationOptions[] = [
+    {},
+    { maxPayloadBytes: 0 },
+    { maxOperationCount: 0 },
+    { maxParentCount: 0 },
+    { maxPathDepth: 0 },
+    { maxPathSegmentLength: 0 },
+    { maxKeyLength: 0 },
+    { maxElementIdLength: 0 },
+    { maxBlockedUpdateCount: 0 },
+    { allowedDocumentTypes: [] },
+    { allowedOperationKinds: [] },
+    { allowedSchemaVersions: [] },
+    { allowedOperationVersions: [] },
+    { pathSchema: { mode: 'strict', paths: [] } }
+];
+
+it.each(sparseValidationOptions)('preserves supplied validation fields without adding absent options: %j', (validation) => {
+    const decoded = decodeBlackBoxRallarCrdtOpenInput({ name: 'counter', validation });
+    expect(decoded.validation).toStrictEqual(validation);
+});
 
 it('releases a failed open reservation before its caller retries the handle', async () => {
     const controller = new BlackBoxRallarCrdtResourceController<object>({

@@ -24,7 +24,7 @@ import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 
 import { configureTestCacheRepositories } from '../../../../configure-test-cache-repositories.ts';
 import { FakeRuntimeStateRepository } from '../../../runtime-state/test-support/fake-runtime-state-repository.ts';
-import { createGroupStateServiceFixture } from '../../state-sync/test-support/create-group-state-service-fixture.ts';
+import { createGroupStateServiceFixture } from '../../state-sync/create-group-state-service-fixture.ts';
 import { createGroupSnapshot } from './group-state-snapshot-test-fixtures.ts';
 
 interface CacheConvergenceCommandConstruction {

@@ -1269,7 +1269,8 @@ Write routes are intentionally narrow:
   categories, currently RTC topology metrics.
 - `POST /api/admin/operations/topology/recompute` delegates to the same scoped
   topology recompute path used by group topology management.
-- `POST /api/admin/operations/maintenance/prune-expired` defaults to dry-run.
+- `POST /api/admin/operations/maintenance/prune-expired/requests/:requestId`
+  requires a caller request ID and defaults to dry-run.
   Real execution deletes only expired rows for supported categories. App-data
   pruning requires an explicit namespace and optional store name.
 - `POST /api/admin/operations/crdt/integrity`,
@@ -1289,6 +1290,50 @@ sink. These events include operation name, status, duration, admin client id,
 session id, request id, reason, and bounded target metadata; they do not include
 bearer tokens or raw operation payloads. `RALLAR_TIMING_LOGS` controls the
 default console sink.
+
+### Admin prune outbox deployment
+
+Prune pages are persisted application queue work. Their canonical AL target is
+`{ mode: "broadcast", scope: "all" }`, with topic
+`rallar.admin.prune-expired` and a normalized job ID as the route context.
+`APP_OUTBOX` reservation and the `ADMIN_PRUNE_EXPIRED` callback dispatch them to
+one page worker; these targets do not publish the page to browser sockets or RTC
+peers. The worker still checks the current admin session, expiry, page bounds,
+aggregate identity, and reservation before committing deletion.
+
+The [canonical target migration](../apps/api-v1/prisma/migrations/20260831160000_admin_prune_canonical_outbox_targets/migration.sql)
+replaces the previous `{ mode: "all", scope: "global" }` pair only on matching
+admin page envelopes. It also translates retained completed pages, which are read
+by state-write evidence tooling. It preserves the page payload string, routing
+keys, audit data, status, retry attempts, schedule, and expiry. Command hashes,
+receipts, and aggregate results remain unchanged. Malformed JSON, mismatched
+routing, and unrelated queues are not repaired. Remaining domain corruption is
+still rejected by the strict page decoder.
+
+Before merging this migration, pause or explicitly coordinate automatic
+production deployment. The existing [deployment workflow](../.github/workflows/deploy.yml),
+when enabled by `DENO_DEPLOY_ACTIONS_ENABLED`, runs Prisma migrations before
+replacing the API and Relic API deployments; it does not stop their old queue
+workers first. An ordinary merge-triggered deployment therefore does not satisfy
+this migration's cutover requirement. Changing external deployment settings is a
+separate authorized operational action.
+
+Deploy this change as a coordinated cutover:
+
+1. Stop old API writers and application queue readers on every node sharing the
+   database. Prevent new admin requests while they are stopped.
+2. Back up the database, then run the normal Prisma deployment migration
+   (`npm run db:migrate`) against that deployment's database.
+3. Start only the canonical producer/reader build, then verify a real prune
+   completes and inspect queue errors. Resume admin traffic afterwards.
+
+Do not mix old and new readers: the old domain decoder rejects canonical targets,
+and old writers would recreate obsolete envelopes after migration. Rolling back
+requires another coordinated stop and a compatible database restore or an
+explicitly reviewed reverse migration; reverting application code alone is
+unsafe. Migration does not reopen failed work or extend expired authority. An
+expired or exhausted request needs a separately authorized new request, not an
+attempt-counter or expiry reset.
 
 ### Admin Support REST
 

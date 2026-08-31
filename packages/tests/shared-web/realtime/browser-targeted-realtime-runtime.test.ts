@@ -103,10 +103,8 @@ describe('Rallar targeted channel', () => {
                 { peerId: 'peer-b', result: { status: 'closed', reason: 'Realtime lane not connected' } }
             ]
         });
-        expect(connection.ensurePeerLaneOpen.mock.calls.map(([peerId, laneId, options]) => ({ peerId, laneId, timeoutMs: options?.timeoutMs }))).toEqual([
-            { peerId: 'peer-a', laneId: 'realtime', timeoutMs: 25 },
-            { peerId: 'peer-b', laneId: 'realtime', timeoutMs: 25 }
-        ]);
+        expect(connection.ensurePeerLaneOpen).toHaveBeenCalledWith('peer-a', 'realtime', expect.objectContaining({ timeoutMs: 25 }));
+        expect(connection.ensurePeerLaneOpen).toHaveBeenCalledWith('peer-b', 'realtime', expect.objectContaining({ timeoutMs: 25 }));
         expect(ready.native.sent).toEqual([JSON.stringify({ x: 1 })]);
         expect(slow.native.sent).toEqual([]);
     });

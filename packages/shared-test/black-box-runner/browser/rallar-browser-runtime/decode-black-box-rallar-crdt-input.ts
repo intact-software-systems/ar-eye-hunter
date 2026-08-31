@@ -216,21 +216,34 @@ function validation(value: unknown): RallarCrdtValidationOptions | undefined {
         return undefined;
     }
     const record = commandRecord(value);
+    const maxPayloadBytes = optionalNumber(record.maxPayloadBytes);
+    const maxOperationCount = optionalNumber(record.maxOperationCount);
+    const maxParentCount = optionalNumber(record.maxParentCount);
+    const maxPathDepth = optionalNumber(record.maxPathDepth);
+    const maxPathSegmentLength = optionalNumber(record.maxPathSegmentLength);
+    const maxKeyLength = optionalNumber(record.maxKeyLength);
+    const maxElementIdLength = optionalNumber(record.maxElementIdLength);
+    const maxBlockedUpdateCount = optionalNumber(record.maxBlockedUpdateCount);
+    const allowedDocumentTypes = stringList(record.allowedDocumentTypes);
     const allowedOperationKinds = stringList(record.allowedOperationKinds)?.map(operationKind);
+    const allowedSchemaVersions = numberList(record.allowedSchemaVersions);
+    const allowedOperationVersions = numberList(record.allowedOperationVersions);
+    const decodedPathSchema = pathSchema(record.pathSchema);
+    // Absent validation fields must not replace the document's version defaults.
     return {
-        maxPayloadBytes: optionalNumber(record.maxPayloadBytes),
-        maxOperationCount: optionalNumber(record.maxOperationCount),
-        maxParentCount: optionalNumber(record.maxParentCount),
-        maxPathDepth: optionalNumber(record.maxPathDepth),
-        maxPathSegmentLength: optionalNumber(record.maxPathSegmentLength),
-        maxKeyLength: optionalNumber(record.maxKeyLength),
-        maxElementIdLength: optionalNumber(record.maxElementIdLength),
-        maxBlockedUpdateCount: optionalNumber(record.maxBlockedUpdateCount),
-        allowedDocumentTypes: stringList(record.allowedDocumentTypes),
-        allowedOperationKinds,
-        allowedSchemaVersions: numberList(record.allowedSchemaVersions),
-        allowedOperationVersions: numberList(record.allowedOperationVersions),
-        pathSchema: pathSchema(record.pathSchema)
+        ...(maxPayloadBytes === undefined ? {} : { maxPayloadBytes }),
+        ...(maxOperationCount === undefined ? {} : { maxOperationCount }),
+        ...(maxParentCount === undefined ? {} : { maxParentCount }),
+        ...(maxPathDepth === undefined ? {} : { maxPathDepth }),
+        ...(maxPathSegmentLength === undefined ? {} : { maxPathSegmentLength }),
+        ...(maxKeyLength === undefined ? {} : { maxKeyLength }),
+        ...(maxElementIdLength === undefined ? {} : { maxElementIdLength }),
+        ...(maxBlockedUpdateCount === undefined ? {} : { maxBlockedUpdateCount }),
+        ...(allowedDocumentTypes === undefined ? {} : { allowedDocumentTypes }),
+        ...(allowedOperationKinds === undefined ? {} : { allowedOperationKinds }),
+        ...(allowedSchemaVersions === undefined ? {} : { allowedSchemaVersions }),
+        ...(allowedOperationVersions === undefined ? {} : { allowedOperationVersions }),
+        ...(decodedPathSchema === undefined ? {} : { pathSchema: decodedPathSchema })
     };
 }
 

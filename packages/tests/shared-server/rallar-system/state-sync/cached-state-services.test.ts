@@ -16,7 +16,7 @@ import { StateSnapshotRevisionConflictError } from '@shared/repository/state-sna
 
 import { createClientStateServiceFixture } from '../client-state/create-client-state-service-fixture.ts';
 import { createGroupSnapshot } from '../group-state/snapshot/group-state-snapshot-test-fixtures.ts';
-import { createGroupStateServiceFixture } from './test-support/create-group-state-service-fixture.ts';
+import { createGroupStateServiceFixture } from './create-group-state-service-fixture.ts';
 
 describe('cached state services', () => {
     it('does not expose a direct group mutation from its durable dependency', () => {
