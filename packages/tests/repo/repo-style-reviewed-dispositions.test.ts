@@ -144,6 +144,89 @@ describe('reviewed repository style dispositions', () => {
                     'rtc-rtt-persistence-validation.ts',
                 rule: 'boundary.unknown',
                 symbol: 'validateExpectedRevision'
+            },
+            {
+                path: 'packages/shared-server/rallar-system/group-state/mutation/command-validation/' +
+                    'group-input-validation-issues.ts',
+                rule: 'boundary.unknown',
+                symbol: 'isGroupInputRecord'
+            },
+            {
+                path: 'packages/shared-server/rallar-system/group-state/mutation/command-validation/' +
+                    'group-input-validation-issues.ts',
+                rule: 'boundary.unknown',
+                symbol: 'validateGroupInputFields'
+            },
+            {
+                path: 'packages/shared-server/rallar-system/group-state/mutation/command-validation/' +
+                    'group-input-validation-issues.ts',
+                rule: 'boundary.unknown',
+                symbol: 'resolveGroupInputFieldIssue'
+            },
+            {
+                path: 'packages/shared-server/rallar-system/group-state/mutation/command-validation/' +
+                    'group-input-validation-issues.ts',
+                rule: 'boundary.unknown',
+                symbol: 'validateGroupInputJson'
+            },
+            {
+                path: 'packages/shared-server/rallar-system/group-state/mutation/command-validation/' +
+                    'group-input-validation-issues.ts',
+                rule: 'boundary.unknown',
+                symbol: undefined
+            },
+            {
+                path: 'packages/shared-server/rallar-system/group-state/mutation/command-validation/' +
+                    'validate-group-lifecycle-policy-input-shape.ts',
+                rule: 'boundary.unknown',
+                symbol: 'validateGroupLifecyclePolicyInputShape'
+            },
+            {
+                path: 'packages/shared-server/rallar-system/group-state/mutation/command-validation/' +
+                    'validate-group-lifecycle-policy-input-shape.ts',
+                rule: 'boundary.unknown',
+                symbol: 'validatePolicyObject'
+            },
+            {
+                path: 'packages/shared-server/rallar-system/group-state/mutation/command-validation/' +
+                    'validate-group-lifecycle-policy-input-shape.ts',
+                rule: 'boundary.unknown',
+                symbol: 'validatePolicyField'
+            },
+            {
+                path: 'packages/shared-server/rallar-system/group-state/mutation/command-validation/' +
+                    'validate-group-lifecycle-policy-input-shape.ts',
+                rule: 'boundary.unknown',
+                symbol: 'validateTrigger'
+            },
+            {
+                path: 'packages/shared-server/rallar-system/group-state/mutation/command-validation/' +
+                    'validate-group-lifecycle-policy-input-shape.ts',
+                rule: 'boundary.unknown',
+                symbol: 'validateNumber'
+            },
+            {
+                path: 'packages/shared-server/rallar-system/group-state/mutation/command-validation/' +
+                    'validate-group-mutation-operation-input.ts',
+                rule: 'boundary.unknown',
+                symbol: 'validateExpectedLayout'
+            },
+            {
+                path: 'packages/shared-test/black-box-runner/state-write-evidence/' +
+                    'api-v1-state-write-receipt-evidence.ts',
+                rule: 'boundary.unknown',
+                symbol: undefined
+            },
+            {
+                path: 'packages/tests/shared-server/rallar-system/group-state/persistence/' +
+                    'group-state-repository-identity.test.ts',
+                rule: 'boundary.unknown',
+                symbol: undefined
+            },
+            {
+                path: 'scripts/perf/api-v1-state-write-group-receipt-evidence.ts',
+                rule: 'boundary.unknown',
+                symbol: undefined
             }
         ]);
     });

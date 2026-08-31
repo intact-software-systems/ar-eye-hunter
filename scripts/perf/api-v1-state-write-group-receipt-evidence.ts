@@ -6,6 +6,7 @@ import { type AppInboxType } from '@shared-server/rallar-system/app-inbox/app-in
 import { toGroupAppInboxOperation } from '@shared-server/rallar-system/app-inbox/logical-app-inbox-command.ts';
 import { toDescriptorCommand } from '@shared-server/rallar-system/group-state/group-mutation-authority.ts';
 import type { GroupMutationDescriptor } from '@shared-server/rallar-system/group-state/group-state-service-contracts.ts';
+import { decodeGroupMutationDescriptor } from '@shared-server/rallar-system/group-state/inbox/decode-group-state-inbox-authority.ts';
 import {
     toGroupMutationDescriptorTargetIdentity
 } from '@shared-server/rallar-system/group-state/inbox/to-group-mutation-descriptor.ts';
@@ -166,11 +167,13 @@ function decodeScopedGroupPreparation(
     const authorityProof = asJsonWireObject(preparation.authorityProof);
     const facts = asJsonWireObject(preparation.facts);
     const descriptor = asJsonWireObject(preparation.descriptor);
+    const descriptorScope = asJsonWireObject(descriptor?.scope);
+    const descriptorRequest = asJsonWireObject(descriptor?.request);
     if (
         authorityProof?.principalId !== expectation.actorPrincipalId || typeof facts?.commandHash !== 'string' ||
         !hasExactKeys(descriptor, ['operation', 'scope', 'groupId', 'targetPrincipalId', 'sessionId', 'request']) ||
-        !hasExactKeys(asJsonWireObject(descriptor.scope), ['applicationId', 'workspaceId']) ||
-        asJsonWireObject(descriptor.request) === undefined
+        !hasExactKeys(descriptorScope, ['applicationId', 'workspaceId']) ||
+        descriptorRequest === undefined
     ) {
         return undefined;
     }
@@ -178,9 +181,7 @@ function decodeScopedGroupPreparation(
         assertGroupMutationCommand(preparation.command);
         return {
             command: preparation.command,
-            // This raw artifact boundary is checked against the complete validated command below.
-            // A sparse descriptor is legitimate here; HTTP actor enrichment is not an evidence requirement.
-            descriptor: descriptor as unknown as GroupMutationDescriptor,
+            descriptor: decodeGroupMutationDescriptor(descriptor),
             commandHash: facts.commandHash
         };
     }
