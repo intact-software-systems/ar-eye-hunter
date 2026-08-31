@@ -1935,13 +1935,13 @@ consolidated correction and one scoped re-review:
 Every changed human-authored file must be reviewed and remediated in full. Any support file changed by
 that remediation enters closure recursively; independent untouched code remains outside closure.
 The consolidated correction is committed locally and its single scoped re-review is complete.
-Seven original findings are addressed and the formatting finding is only partially corrected.
-The review also confirms a new important analyzer defect: an unconditional throw before command
+At that checkpoint, seven original findings were addressed and formatting was only partially corrected.
+The review also confirmed a new important analyzer defect: an unconditional throw before command
 construction still passes the live-route inventory proof.
 This is a reproduced validation-quality regression, not a demonstrated production runtime
-regression. The complete formatter also identifies four affected document/recipe files that
-remain unformatted despite the corrected TypeScript check. Both findings remain open; earlier
-scoped approvals and checker counts do not establish whole-branch standards closure.
+regression. The complete formatter also identified four affected document/recipe files that
+remained unformatted despite the corrected TypeScript check. These became inputs to the approved
+additional pass; earlier scoped approvals and checker counts do not establish whole-branch closure.
 
 The approved additional correction is now committed locally. The real analyzer rejects
 unconditional throwing guards, including a locally bound truthy condition, while retaining valid
@@ -1949,8 +1949,20 @@ input-dependent guards. The four affected document/recipe files are formatted; p
 equivalence preserves all workloads, targets, budgets and assertions. Current focused checks pass
 340 analyzer tests, 123 shared routing/QoS tests, 62 native route/authority tests and the maintained
 980-file test type gate. These sets overlap and are not a summed unique-test count. The one
-independent scoped re-review still determines whether the residual findings and new routing change
-meet full-file standards and safety requirements.
+independent scoped re-review approves all three corrections with no new findings. It covers all
+seventeen changed files and their recursively changed supports, including complete recipe-value
+equivalence and the current authority-to-socket boundary. Independent untouched work stays outside
+that closure. This scoped approval does not establish whole-slice acceptance.
+
+The subsequent whole-slice changed-style gate fails on sixteen boundary findings outside this
+additional correction. Fifteen are raw-data validators, persisted-evidence decoders or deliberate
+invalid persistence test inputs; their classification does not itself satisfy the automated gate.
+The benchmark receipt decoder also contains a real standards violation: a sparse raw descriptor is
+double-asserted into the domain descriptor type before conversion and the later semantic equality
+check. Sparse artifact support remains required, but that assertion is not acceptable normalization.
+The reviewed-boundary dispositions and this decoder require a focused follow-on correction; no
+checker suppression, weakened validation or legacy adapter is approved. Whole-slice closure remains
+incomplete, and no further correction wave is inferred from the already-used bounded approval.
 
 Compatibility inspection also found the affected idempotent-receipt writer had only test callers
 and no public package export or independent runtime consumer. It is removed rather than retained
@@ -1961,16 +1973,17 @@ must also prove that rejected input caused no mutation.
 
 Current evidence and remaining acceptance are deliberately separate:
 
-| Boundary                             | Supported evidence                                                                                                                                                                                                                                                                                                               | Still required                                                                                                                   |
-| ------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| Lifecycle, retry and match consumers | The frozen correction passes lifecycle 37/37 and criterion 52/52 in the full memory profile. Earlier elected-manager match 52/52 and live RTC primary passed, with two configured RTC opt-in skips.                                                                                                                              | Refresh remaining affected final-candidate integration.                                                                          |
-| Permissive-policy valve              | A wrong-group receipt failed the new identity assertion; the corrected live recipe passes 45/45. The group remains `forming` through flowing → halted → flowing, membership/presence work while halted, and relay stops then resumes. Blocked-policy and CRDT checks remain.                                                     | Remaining final-profile coverage.                                                                                                |
-| Formation scale                      | Corrected declared connections pass all four formation-large recipes: managed medium 613/613 and large 3,013/3,013, with no nonblocking failures in either managed tier. Ordinary burst/churn retain configured readiness observations.                                                                                          | Final-candidate assessment after remaining assertion/contract changes; this is a precommit correction checkpoint.                |
-| Memory and PostgreSQL profiles       | The earlier frozen-candidate memory profile passes 32/32 with 108 nonblocking observations. The additional correction passes the ordinary uninstrumented PostgreSQL profile: 32/32 default recipes and 6/6 cluster recipes, including WebSocket 12/12. Default retains 60 configured nonblocking observations; cluster has none. | Refresh the memory profile on the corrected runtime and complete the remaining affected integration gates.                       |
-| Medium-scale and topology replay     | Earlier fixed medium-scale passed all 2,757 interactions. Passive-C polling and replacement-process same-session hydration passed without a new mutation.                                                                                                                                                                        | Refresh affected final-candidate gates and inspect all process diagnostics.                                                      |
-| Package/application compatibility    | The additional correction passes focused analyzer, shared routing/QoS, native route/authority and affected type checks. Earlier broad unit, Deno, build, browser E2E and memory full-stack checks passed.                                                                                                                        | Complete remaining broad baseline gates and independent scoped review.                                                           |
-| Formatting                           | The original affected TypeScript failures and four residual document/recipe failures are corrected. The refreshed complete formatter reports only the same five byte-identical untouched failures independently reproduced on the base.                                                                                          | Full-repository formatting remains red on independent baseline files; no affected formatting finding remains in this correction. |
-| State-write performance              | The latest frozen-runtime diagnostic fails the unchanged comparator: shared throughput is 17% lower and transaction duration 57% higher, despite 6,300 accepted commands and no retry-exhaustion, atomic-completion or DBW failures.                                                                                             | An exact-commit controlled comparison; the earlier passing candidate no longer establishes acceptance.                           |
+| Boundary                             | Supported evidence                                                                                                                                                                                                                                                                                       | Still required                                                                                                                   |
+| ------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| Lifecycle, retry and match consumers | The frozen correction passes lifecycle 37/37 and criterion 52/52 in the full memory profile. Earlier elected-manager match 52/52 and live RTC primary passed, with two configured RTC opt-in skips.                                                                                                      | Refresh remaining affected final-candidate integration.                                                                          |
+| Permissive-policy valve              | A wrong-group receipt failed the new identity assertion; the corrected live recipe passes 45/45. The group remains `forming` through flowing → halted → flowing, membership/presence work while halted, and relay stops then resumes. Blocked-policy and CRDT checks remain.                             | Remaining final-profile coverage.                                                                                                |
+| Formation scale                      | Corrected declared connections pass all four formation-large recipes: managed medium 613/613 and large 3,013/3,013, with no nonblocking failures in either managed tier. Ordinary burst/churn retain configured readiness observations.                                                                  | Final-candidate assessment after remaining assertion/contract changes; this is a precommit correction checkpoint.                |
+| Memory and PostgreSQL profiles       | The additional correction passes memory 32/32 with 108 configured nonblocking observations, and ordinary uninstrumented PostgreSQL 32/32 default plus 6/6 cluster recipes. WebSocket passes 12/12 in both profiles. PostgreSQL default retains 60 configured nonblocking observations; cluster has none. | Complete remaining affected integration gates after the standards blocker is resolved.                                           |
+| Medium-scale and topology replay     | Earlier fixed medium-scale passed all 2,757 interactions. Passive-C polling and replacement-process same-session hydration passed without a new mutation.                                                                                                                                                | Refresh affected final-candidate gates and inspect all process diagnostics.                                                      |
+| Package/application compatibility    | The additional correction passes focused analyzer, shared routing/QoS, native route/authority and affected type checks. Its independent scoped re-review approves all three corrections without new findings. Earlier broad unit, Deno, build, browser E2E and memory full-stack checks passed.          | Complete remaining broad baseline gates after the separate standards blocker is resolved.                                        |
+| Formatting                           | The original affected TypeScript failures and four residual document/recipe failures are corrected. The refreshed complete formatter reports only the same five byte-identical untouched failures independently reproduced on the base.                                                                  | Full-repository formatting remains red on independent baseline files; no affected formatting finding remains in this correction. |
+| Standards and navigation             | Whole-slice structure passes with two reviewed advisory observations; all 36 test-coupling candidates are classified. All eleven legacy heuristic candidates were inspected without finding a retained retired path. The independent cold navigation probe reaches all five required landmarks.          | Resolve the sixteen changed-style findings, including the descriptor double assertion, and retain full-file closure.             |
+| State-write performance              | The latest frozen-runtime diagnostic fails the unchanged comparator: shared throughput is 17% lower and transaction duration 57% higher, despite 6,300 accepted commands and no retry-exhaustion, atomic-completion or DBW failures.                                                                     | An exact-commit controlled comparison; the earlier passing candidate no longer establishes acceptance.                           |
 
 The PostgreSQL failure is a room WebSocket echo with no recipients before local group-cache
 updates arrive. The unchanged recipe passes isolated three-process probes on both base and
@@ -2017,7 +2030,12 @@ temporarily stopping only `ar-eye-hunter-postgres` for that controlled benchmark
 the same container with its data intact. Keep it running until the measurement window is ready;
 do not reset or delete its database or volumes. No shared development container or database has
 been stopped, reset or deleted at this checkpoint; managed
-recipe runs create and clean up only their own isolated test databases.
+recipe runs create and clean up only their own isolated test databases. The benchmark window is
+held while the candidate has an unresolved standards defect; this keeps the performance gate
+pending, not waived. A newly isolated native-proof database is migrated, but its transaction and
+presence-expiry checks likewise remain unrun at this checkpoint. The independent review accepts
+the benchmark orchestration's scoped cleanup and same-container restoration checks; it has not
+executed the script or claimed a measured performance result.
 
 Medium-scale coalesced-outbox successor collision diagnostics also reproduce on the unchanged
 pre-cutover base while the same fixed workload passes. That establishes pre-existing behavior,
@@ -2026,11 +2044,12 @@ not harmlessness. The separate owner and controlled evidence remain in
 Topology replay and live RTC likewise retain their observed runtime warnings; no warning-free
 claim is made.
 
-The original final correction wave and scoped re-review are complete. The maintainer has approved
-one additional bounded, consolidated fix-and-review pass for the analyzer, affected formatting
-and reproduced cold-cache routing mechanism. Keep the direct behavioral regressions and affected
-package/API checks ahead of the remaining broad and live validation; a passing diagnostic alone
-does not close the repeated PostgreSQL failure. All acceptance gates and the no-retained-legacy
+The original final correction wave and scoped re-review are complete. The additional approved
+consolidated correction addresses the analyzer, affected formatting and reproduced cold-cache
+routing mechanism; its focused checks and both ordinary profiles pass, and its single scoped
+re-review is approved. Report the separate standards blocker instead of launching another correction wave.
+Remaining broad/live/native-PostgreSQL and controlled performance gates are held pending that
+resolution. All acceptance gates and the no-retained-legacy
 constraint remain. Do not start another correction wave or Slice 9a on an unaccepted checkpoint.
 Keep the PR a draft and publish the
 runtime/consumer cutover atomically only when the evidence supports it. A mergeable stacked base
