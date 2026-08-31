@@ -1487,7 +1487,7 @@ test.describe('full-stack live three-browser RTC matrix', () => {
                         command: { kind: 'close' },
                         timeoutMs: 15_000
                     }).catch(() => undefined);
-                    await handle.context.close();
+                    await closeLiveRtcBrowserAgentContexts([handle]);
                 }));
                 await writeAttemptEvidence({
                     context: evidenceContext,
@@ -1828,7 +1828,7 @@ test.describe('full-stack live three-browser RTC matrix', () => {
                     command: { kind: 'close' },
                     timeoutMs: 15_000
                 }).catch(() => undefined);
-                await handle.context.close();
+                await closeLiveRtcBrowserAgentContexts([handle]);
             }));
             await writeAttemptEvidence({
                 context: evidenceContext,
@@ -2033,7 +2033,7 @@ test.describe('full-stack live three-browser RTC matrix', () => {
                     command: { kind: 'close' },
                     timeoutMs: 15_000
                 }).catch(() => undefined);
-                await agent.context.close();
+                await closeLiveRtcBrowserAgentContexts([agent]);
             }));
             await writeAttemptEvidence({
                 context: evidenceContext,
