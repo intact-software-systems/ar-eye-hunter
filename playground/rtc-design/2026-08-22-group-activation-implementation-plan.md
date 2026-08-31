@@ -1651,6 +1651,17 @@ remaining live/native-PostgreSQL and controlled performance validation, and publ
 pending. Keep #381 draft and the dependent PR reviews held until the oldest PR's load-bearing
 findings are resolved; all merges remain manual.
 
+The maintainer subsequently approved fixing the review findings and continuing without another
+permission round unless a genuine blocker appears. This authorizes the missing browser RTC
+snapshot-floor admission behavior: before local delivery or forwarding, a room-scoped incoming
+message whose required snapshot version is unavailable or newer than the receiver's scoped
+snapshot is rejected with a real, correlated `not-yet-in-sync` NACK. Preserve the existing wire
+reason and transport, scope identity, accepted-message behavior and all negative-proof assertions.
+Exercise the actual receiver and sender receipt path, not an injected receipt as producer proof.
+Complete R6 and both introduced inventory regressions in the same follow-up, then independently
+review the changed-file and recursive-support closure and run the unchanged gates. This approval
+supersedes the prior bounded-wave stop; it does not waive a finding or establish readiness.
+
 ### Slice 8b start checkpoint — stacked browser dial gate (2026-08-30, PR #390)
 
 Slice 8b starts from #381's published head `ce3689693` as draft #390 on
@@ -2118,7 +2129,9 @@ changed surface and current dependency contracts, including full-file and recurs
 
 Remaining broad/live/native-PostgreSQL and controlled performance gates remain required; earlier
 green checks do not cover unpublished code or later material corrections. No legacy retention or
-gate relaxation is authorized. Keep Slice 9a outside this cleanup/review campaign. Publish the
+gate relaxation is authorized. Keep Slice 9a outside the ordered review work itself. After the newest
+PR's review and corrections finish, the maintainer now requests resuming the goal and continuing the
+plan; refresh the next two useful implementation slices at that point. Publish the
 runtime/consumer cutover atomically only when the evidence supports it, and leave the final merges
 to the maintainer one PR at a time. A mergeable stacked base is not synchronization work and does
 not itself mean ready for main; do not rebase merely for a behind status or enable auto-merge.
