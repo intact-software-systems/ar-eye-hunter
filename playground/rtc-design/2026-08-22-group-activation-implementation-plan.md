@@ -1597,6 +1597,13 @@ the delivery readiness command ran once, moved #381 out of draft, and reported t
 review-or-administrator-merge wait state. It is ready for main and remains unchanged while awaiting
 that human merge decision.
 
+The subsequent oldest-first cleanup check supersedes that readiness assessment: actual current
+`main` introduces a real conflict in the RTC manager and its tests. Preserve its canonical RTT
+reporter election, passive pong handling and transport validation together with the two cache
+roles, then complete the newly requested whole-PR review and refresh affected gates. Carry that
+material correction through #390, #391 and #396 in order; this is not behind-only synchronization.
+The maintainer will merge each PR manually after review and validation.
+
 ### Slice 8b start checkpoint — stacked browser dial gate (2026-08-30, PR #390)
 
 Slice 8b starts from #381's published head `ce3689693` as draft #390 on
@@ -2044,16 +2051,35 @@ not harmlessness. The separate owner and controlled evidence remain in
 Topology replay and live RTC likewise retain their observed runtime warnings; no warning-free
 claim is made.
 
+The receipt-boundary cleanup now decodes the canonical persisted descriptor before domain
+conversion and preserves the descriptor-to-command, hash and receipt checks. Canonical preparation
+persists both actor identities; deleting them is rejected rather than treated as valid sparse input.
+Optional request fields remain sparse. Exact reviewed-boundary dispositions classify the other
+raw-input false positives without relaxing neighboring checks. The focused 35-test gate, native
+evidence checks, affected package compilation and whole-slice changed style pass; independent
+cleanup review is pending. The five untouched formatting failures remain reported, not waived.
+
 The original final correction wave and scoped re-review are complete. The additional approved
 consolidated correction addresses the analyzer, affected formatting and reproduced cold-cache
 routing mechanism; its focused checks and both ordinary profiles pass, and its single scoped
-re-review is approved. Report the separate standards blocker instead of launching another correction wave.
-Remaining broad/live/native-PostgreSQL and controlled performance gates are held pending that
-resolution. All acceptance gates and the no-retained-legacy
-constraint remain. Do not start another correction wave or Slice 9a on an unaccepted checkpoint.
-Keep the PR a draft and publish the
-runtime/consumer cutover atomically only when the evidence supports it. A mergeable stacked base
-is not synchronization work and does not itself mean ready for main.
+re-review is approved. The maintainer has now authorized continued PR cleanup followed by complete
+reviews and corrections of the plan's unmerged stack, oldest to current. Complete the independent
+receipt-boundary cleanup review; then review the planned/accepted cache PR, browser
+dial-gate PR, room-facade PR and lifecycle-route PR in that order. Each PR is assessed on its own
+changed surface and current dependency contracts, including full-file and recursive-support closure.
+
+Remaining broad/live/native-PostgreSQL and controlled performance gates remain required; earlier
+green checks do not cover unpublished code or later material corrections. No legacy retention or
+gate relaxation is authorized. Keep Slice 9a outside this cleanup/review campaign. Publish the
+runtime/consumer cutover atomically only when the evidence supports it, and leave the final merges
+to the maintainer one PR at a time. A mergeable stacked base is not synchronization work and does
+not itself mean ready for main; do not rebase merely for a behind status or enable auto-merge.
+
+The fresh oldest-PR check finds a real conflict with current main in the group RTC manager and its
+tests. Main's canonical RTT-reporter and transport-boundary corrections must coexist with Slice 8a's
+planned-RTT/accepted-traffic role separation. Repair that conflict before its complete review and
+broad validation, then assess the material dependency change through the remaining stack. Earlier
+green checks were on the previous main integration; they do not prove this new combined behavior.
 
 ## Slice 9 — In-flight pacing
 
