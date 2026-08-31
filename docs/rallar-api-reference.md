@@ -1301,39 +1301,26 @@ one page worker; these targets do not publish the page to browser sockets or RTC
 peers. The worker still checks the current admin session, expiry, page bounds,
 aggregate identity, and reservation before committing deletion.
 
-The [canonical target migration](../apps/api-v1/prisma/migrations/20260831160000_admin_prune_canonical_outbox_targets/migration.sql)
-replaces the previous `{ mode: "all", scope: "global" }` pair only on matching
-admin page envelopes. It also translates retained completed pages, which are read
-by state-write evidence tooling. It preserves the page payload string, routing
-keys, audit data, status, retry attempts, schedule, and expiry. Command hashes,
-receipts, and aggregate results remain unchanged. Malformed JSON, mismatched
-routing, and unrelated queues are not repaired. Remaining domain corruption is
-still rejected by the strict page decoder.
+This release uses a maintainer-managed clean-database cutover. It does not migrate
+retained messages with the previous `{ mode: "all", scope: "global" }` targets,
+and it has no runtime compatibility reader. Existing database contents are not
+preserved by this deployment choice.
 
-Before merging this migration, pause or explicitly coordinate automatic
-production deployment. The existing [deployment workflow](../.github/workflows/deploy.yml),
-when enabled by `DENO_DEPLOY_ACTIONS_ENABLED`, runs Prisma migrations before
-replacing the API and Relic API deployments; it does not stop their old queue
-workers first. An ordinary merge-triggered deployment therefore does not satisfy
-this migration's cutover requirement. Changing external deployment settings is a
-separate authorized operational action.
-
-Deploy this change as a coordinated cutover:
+Coordinate the reset with deployment:
 
 1. Stop old API writers and application queue readers on every node sharing the
    database. Prevent new admin requests while they are stopped.
-2. Back up the database, then run the normal Prisma deployment migration
-   (`npm run db:migrate`) against that deployment's database.
+2. Clear the affected databases as the maintainer has chosen, then initialize
+   their schema with the existing Prisma migrations (`npm run db:migrate`).
 3. Start only the canonical producer/reader build, then verify a real prune
    completes and inspect queue errors. Resume admin traffic afterwards.
 
-Do not mix old and new readers: the old domain decoder rejects canonical targets,
-and old writers would recreate obsolete envelopes after migration. Rolling back
-requires another coordinated stop and a compatible database restore or an
-explicitly reviewed reverse migration; reverting application code alone is
-unsafe. Migration does not reopen failed work or extend expired authority. An
-expired or exhausted request needs a separately authorized new request, not an
-attempt-counter or expiry reset.
+Do not clear a database while old workers can still write to it: they can recreate
+obsolete messages after the reset. The existing [deployment workflow](../.github/workflows/deploy.yml)
+does not stop old workers or perform this reset. The maintainer must coordinate
+those operations; this change does not disable repository-wide deployment or
+automatically delete data. A rollback likewise needs a stopped-worker reset or
+compatible restore, because the old reader rejects newly written canonical pages.
 
 ### Admin Support REST
 

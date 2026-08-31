@@ -1781,23 +1781,23 @@ arguments that can be circular or non-serializable.
 
 The stricter queue boundary also exposes the administrative prune worker's old
 `all/global` target pair. New page envelopes and their domain reader use canonical
-`broadcast/all` targets. Migrate the precisely scoped persisted page envelopes
-through the existing Prisma migration path; preserve page payloads, route keys,
-receipts, aggregate progress, expiry, status and retry history. Do not widen the
-generic AL decoder or retain a runtime fallback. Deployment must stop old producers
-and readers before migration and start the new build afterward; mixed old/new
-workers are not a supported rollout for this format change. Prove actual queue
-dispatch, migration idempotence and exclusion of unrelated or malformed rows.
+`broadcast/all` targets. The maintainer chose to clear the databases for this
+cutover instead of preserving retained messages. Remove the target-translation
+migration and its dedicated tests; keep the canonical producer and strict reader
+without a runtime fallback. Stop old producers and readers before the reset,
+initialize the clean databases through the existing Prisma migrations, and start
+only the new build. Prove actual queue dispatch and rejection of noncanonical
+pages. The agent does not perform the database reset or change deployment settings.
 The handler already completes each page atomically; generic queue release must
 recognize that exact completed reservation through a server-owned, fenced admin
 predicate. It must not weaken the shared queue's reservation or revival rules.
 
-The repository's API deployment switch is currently enabled, and its workflow
-runs migrations before replacing the running APIs. That ordering cannot perform
-this cutover safely. Keep #390 draft until the maintainer approves a concrete
-deployment pause and stop/migrate/start procedure; review authorization does not
-authorize changing production settings. No deployment setting or production data
-has been changed during this review.
+The existing deployment workflow does not stop old queue workers or clear the
+databases. The maintainer owns coordination of that clean-database cutover with
+the manual merge and deployment. Clearing data while old workers remain active
+would let them recreate obsolete messages. No repository-wide deployment pause
+is part of this implementation, and no production data or setting has been changed
+during this review.
 
 The headless browser guard accounts for the validated command and signaling
 boundaries: identical builds measure 204.926758 KiB for the reviewed parent and
