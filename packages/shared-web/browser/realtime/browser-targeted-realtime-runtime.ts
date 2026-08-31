@@ -19,10 +19,16 @@ export namespace BrowserTargetedRealtimeRuntime {
         readSession(): AuthSession | undefined;
         readDefaultRoom(): string | GroupRef | undefined;
         readCurrentRoomRef(): GroupRef | undefined;
+        resolveRoomRef(room: string | GroupRef): GroupRef | undefined;
         resolveRoomTransportTarget(room: string | GroupRef): BrowserRoomTransportTarget;
         resolveLaneId(laneId?: string): string;
         sendJson<T>(input: RallarRealtimeJsonSendInput<T>): Promise<readonly RallarRealtimeSendResult[]>;
         onJson<T>(laneId: string, handler: RallarRealtimeHandler<T>): RallarUnsubscribe;
+    }
+
+    export interface Target {
+        readonly roomRef: GroupRef | undefined;
+        readonly peerIds: readonly string[];
     }
 }
 
@@ -35,30 +41,47 @@ export class BrowserTargetedRealtimeRuntime {
     }
 
     resolvePeerIds(input: RallarTargetSelector = {}): readonly string[] {
+        return this.resolveTarget(input, false).peerIds;
+    }
+
+    private resolveTarget(
+        selector: RallarTargetSelector,
+        roomScoped: boolean
+    ): BrowserTargetedRealtimeRuntime.Target {
         const sessionId = this.input.readSession()?.sessionId;
-        const explicitPeerIds = input.peerIds ?? (input.peerId ? [input.peerId] : undefined);
-        if (explicitPeerIds) {
-            return [...new Set(explicitPeerIds)].filter((peerId) => peerId !== sessionId);
-        }
-        const room = input.roomRef ?? input.roomId ?? this.input.readDefaultRoom() ??
-            this.input.readCurrentRoomRef();
+        const explicitPeerIds = selector.peerIds ?? (selector.peerId ? [selector.peerId] : undefined);
+        const room = selector.roomRef ?? selector.roomId ?? (roomScoped || explicitPeerIds === undefined
+            ? this.input.readDefaultRoom() ?? this.input.readCurrentRoomRef()
+            : undefined);
+        const selectedPeerIds = [...new Set(explicitPeerIds)].filter((peerId) => peerId !== sessionId);
         if (!room) {
-            return [];
+            return { roomRef: undefined, peerIds: selectedPeerIds };
         }
-        const target = this.input.resolveRoomTransportTarget(room);
-        return target.transportState === 'halted' ? [] : target.peerIds;
+        const roomRef = typeof room === 'string' ? this.input.resolveRoomRef(room) : room;
+        if (!roomRef) {
+            return { roomRef: undefined, peerIds: [] };
+        }
+        const authority = this.input.resolveRoomTransportTarget(roomRef);
+        return {
+            roomRef,
+            peerIds: authority.transportState === 'halted'
+                ? []
+                : (explicitPeerIds === undefined ? authority.peerIds : selectedPeerIds)
+                    .filter((peerId) => authority.peerIds.includes(peerId))
+        };
     }
 
     create<T>(
         definition: RallarTargetedChannelDefinition,
         roomScoped = false
     ): RallarTargetedChannel<T> {
-        const resolvePeerIds = this.createPeerIdResolver(definition, roomScoped);
+        const resolveTarget = this.createTargetResolver(definition, roomScoped);
         const defaultLaneId = this.input.resolveLaneId(definition.laneId);
         return {
             send: async (data, options: RallarTargetedChannelSendOptions<T> = {}) => {
                 const laneId = this.input.resolveLaneId(options.laneId ?? definition.laneId);
-                const peerIds = resolvePeerIds(options);
+                const target = resolveTarget(options);
+                const peerIds = target.peerIds;
                 if (peerIds.length === 0) {
                     return {
                         transport: 'rtc',
@@ -73,6 +96,8 @@ export class BrowserTargetedRealtimeRuntime {
                     ...definition,
                     ...options,
                     laneId,
+                    roomId: undefined,
+                    roomRef: target.roomRef,
                     peerIds,
                     data
                 });
@@ -85,39 +110,45 @@ export class BrowserTargetedRealtimeRuntime {
                 };
             },
             on: (handler) => this.input.onJson<T>(defaultLaneId, handler),
-            peerIds: resolvePeerIds
+            peerIds: (options) => resolveTarget(options).peerIds
         };
     }
 
-    private createPeerIdResolver(
+    private createTargetResolver(
         definition: RallarTargetedChannelDefinition,
         roomScoped: boolean
-    ): (options?: RallarTargetSelector) => readonly string[] {
+    ): (options?: RallarTargetSelector) => BrowserTargetedRealtimeRuntime.Target {
         const fixedMembership = definition.membership
             ? definition.membership === 'fixed'
             : !roomScoped;
-        const fixedPeerIds = fixedMembership
-            ? this.resolvePeerIds(definition)
-            : undefined;
+        const fixedTarget = fixedMembership ? this.resolveTarget(definition, roomScoped) : undefined;
         return (options: RallarTargetSelector = {}) => {
-            const selector = { ...definition, ...options };
-            const selectedPeerIds = fixedPeerIds && !hasTargetSelectorOverride(options)
-                ? fixedPeerIds
-                : this.resolvePeerIds(selector);
-            const room = selector.roomRef ?? selector.roomId ?? (
-                roomScoped
-                    ? this.input.readDefaultRoom() ?? this.input.readCurrentRoomRef()
-                    : undefined
-            );
-            if (!room) {
-                return selectedPeerIds;
+            const selector = toTargetSelector(definition, options);
+            if (fixedTarget && !hasTargetSelectorOverride(options)) {
+                return this.resolveTarget(
+                    { ...selector, roomRef: fixedTarget.roomRef, peerIds: fixedTarget.peerIds },
+                    roomScoped
+                );
             }
-            const target = this.input.resolveRoomTransportTarget(room);
-            return target.transportState === 'halted'
-                ? []
-                : selectedPeerIds.filter((peerId) => target.peerIds.includes(peerId));
+            return this.resolveTarget(selector, roomScoped);
         };
     }
+}
+
+function toTargetSelector(
+    definition: RallarTargetedChannelDefinition,
+    options: RallarTargetSelector
+): RallarTargetSelector {
+    return {
+        ...definition,
+        ...options,
+        peerIds: options.peerId !== undefined && options.peerIds === undefined
+            ? undefined
+            : options.peerIds ?? definition.peerIds,
+        roomRef: options.roomId !== undefined && options.roomRef === undefined
+            ? undefined
+            : options.roomRef ?? definition.roomRef
+    };
 }
 
 function hasTargetSelectorOverride(input: RallarTargetSelector): boolean {

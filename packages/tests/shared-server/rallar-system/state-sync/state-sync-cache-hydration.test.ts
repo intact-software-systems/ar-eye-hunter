@@ -3,8 +3,13 @@ import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import type { AuditStamp, GroupSnapshot } from '@shared/api/group-types.ts';
 import { findClientStateSnapshotByPrincipalId } from '@shared/repository/client-state-snapshots-repository.ts';
 import { findGroupStateSnapshotByRef } from '@shared/repository/group-state-snapshots-repository.ts';
-import { beforeEach, describe, expect, it } from 'vitest';
-import { configureTestCacheRepositories } from '../../../cache-repository-config.ts';
+import {
+    beforeEach,
+    describe,
+    expect,
+    it
+} from 'vitest';
+import { configureTestCacheRepositories } from '../../../configure-test-cache-repositories.ts';
 import { createTestGroup } from '../../../create-test-group.ts';
 
 describe('state sync cache hydration', () => {

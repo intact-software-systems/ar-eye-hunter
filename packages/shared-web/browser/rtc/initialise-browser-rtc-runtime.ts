@@ -4,15 +4,14 @@ import {
 } from '@shared-web/browser/al-runtime/browser-al-runtime-stores.ts';
 import { createBrowserQueueBox } from '@shared-web/browser/queuebox/browser-queuebox-persistence.ts';
 import type { ALOutboundRuntimeDiagnosticsSink } from '@shared/alm/ALOutboundMessageRuntime.ts';
-// dprint-ignore
 import type {
     ClientInfo,
     IceConfig,
     OverlayId
 } from '@shared/api/api-config.ts';
 import type { WebRtcOverlayMulticaster } from '@shared/multicast/OverlayMulticastContracts.ts';
-import { WebRtcOverlayMulticastManager } from '@shared/multicast/WebRtcOverlayMulticastManager.ts';
-import { WebRtcOverlayMulticastService } from '@shared/multicast/WebRtcOverlayMulticastService.ts';
+import { WebRtcOverlayMulticastManager } from '@shared/multicast/web-rtc-overlay-multicast-manager.ts';
+import { WebRtcOverlayMulticastService } from '@shared/multicast/web-rtc-overlay-multicast-service.ts';
 import type { ResilienceDto } from '@shared/queuebox/DequeueResourceEntryController.ts';
 import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
 import * as overlaysRepository from '@shared/repository/overlays-repository.ts';
@@ -22,10 +21,14 @@ import {
     DEFAULT_WEB_RTC_PEER_ESTABLISHMENT_TIMEOUT_POLICY,
     WebRtcConnectionService,
     type RtcDataChannelLaneConfig
-} from '@shared/services/WebRtcConnectionService.ts';
-import { WebRtcRxStreamerService } from '@shared/services/WebRtcRxStreamerService.ts';
-import type { WsQueueBoxClientService } from '@shared/services/WsQueueBoxClientService.ts';
-import { WsRtcSignalingTransportUsingWsQBox } from '@shared/webrtc/WsRtcSignalingTransportUsingWsQBox.ts';
+} from '@shared/services/web-rtc-connection-service.ts';
+import {
+    defaultMaxMissedPings,
+    defaultPingFrequencyMsecs
+} from '@shared/services/web-rtc-heartbeat-service.ts';
+import { WebRtcRxStreamerService } from '@shared/services/web-rtc-rx-streamer-service.ts';
+import type { WsQueueBoxClientService } from '@shared/services/ws-queue-box-client-service.ts';
+import { WsRtcSignalingTransportUsingWsQBox } from '@shared/webrtc/ws-rtc-signaling-transport-using-ws-q-box.ts';
 
 /** Inputs for constructing the browser RTC overlay multicast owner. */
 export interface InitialiseRtcOverlayMulticastManagerInput {
@@ -37,7 +40,7 @@ export interface InitialiseRtcOverlayMulticastManagerInput {
 
 export function initialiseRtcOverlayMulticastManager(
     input: InitialiseRtcOverlayMulticastManagerInput
-) {
+): WebRtcOverlayMulticastManager {
     const { webRtcConnectionService, qboxEngine, resilience } = input;
     const webRtcOverlayMulticastManager: WebRtcOverlayMulticastManager = new WebRtcOverlayMulticastManager(
         createBrowserQueueBox(`rtc-overlay-outbox-${webRtcConnectionService.input.sessionId}`),
@@ -89,17 +92,14 @@ export function initialiseRtcRxStreamer(
     input: InitialiseRtcRxStreamerInput
 ): WebRtcRxStreamerService {
     const { webRtcOverlayMulticastManager, qboxEngine, clientData, resilience } = input;
-    const rtcRxStreamer: WebRtcRxStreamerService = new WebRtcRxStreamerService(
-        createBrowserQueueBox(`rtc-inbox-${clientData.sessionId}`),
-        webRtcOverlayMulticastManager,
-        {
-            sessionId: clientData.sessionId
-        },
-        {
-            inboundStores: resolveBrowserRtcRxALInboundRuntimeStores(clientData.sessionId)
-        }
-    )
-        .enableDefaultCallbacks();
+    const rtcRxStreamer: WebRtcRxStreamerService = new WebRtcRxStreamerService({
+        inbox: createBrowserQueueBox(`rtc-inbox-${clientData.sessionId}`),
+        multicast: webRtcOverlayMulticastManager,
+        sessionId: clientData.sessionId,
+        inboundStores: resolveBrowserRtcRxALInboundRuntimeStores(clientData.sessionId),
+        nowEpochMs: Date.now,
+        heartbeat: { maxMissedPings: defaultMaxMissedPings, pingFrequencyMsecs: defaultPingFrequencyMsecs }
+    });
 
     qboxEngine.includeTask(
         WebRtcRxStreamerService.ENQUEUE_TYPE,
@@ -160,6 +160,12 @@ export async function initialiseRtcConnectionService(
         }
     );
 
+    const denyUntilGroupManagerReady = (): WebRtcConnectionService.PeerCreationDecision => ({
+        decision: 'deny',
+        reason: 'browser-runtime-initializing'
+    });
+    rtcQBox.setInboundPeerCreationPolicy(denyUntilGroupManagerReady);
+    rtcQBox.setOutboundDialPolicy(denyUntilGroupManagerReady);
     await rtcQBox.connectSignaler();
 
     return rtcQBox;

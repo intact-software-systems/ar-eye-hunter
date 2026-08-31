@@ -508,6 +508,38 @@
                   "expiresAtEpochMs": 9007199254740991
                 },
                 "outputs": {
+                  "reconnectGroupRevision": "body.causalRevision.groupRevision",
+                  "reconnectPresenceRevision": "body.causalRevision.presenceRevision"
+                }
+              },
+              "expect": {
+                "status": 200,
+                "body": {
+                  "causalRevision": {
+                    "groupRevision": "integer",
+                    "presenceRevision": "integer"
+                  }
+                }
+              }
+            },
+            {
+              "name": "pollReusedSessionGenerationTwo",
+              "type": "http.poll-until",
+              "connection": "apiTertiary",
+              "request": {
+                "method": "GET",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}?minGroupRevision={reconnectGroupRevision}&minPresenceRevision={reconnectPresenceRevision}",
+                "headers": {
+                  "Authorization": "{ownerAuthHeader}",
+                  "x-client-id": "{ownerClientId}"
+                },
+                "poll": {
+                  "maxAttempts": 10,
+                  "maxDurationMs": 10000,
+                  "backoffMs": 100,
+                  "backoffMultiplier": 2
+                },
+                "outputs": {
                   "acceptedLifecyclePresenceRevision": "body.causalRevision.presenceRevision",
                   "acceptedLifecycleGenerationId": "body.activeSessions.0.generationId"
                 }

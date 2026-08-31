@@ -2,6 +2,7 @@ import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade
 import type {
     RallarRealtimeHandler,
     RallarRealtimeJsonSendInput,
+    RallarRealtimeSendOptions,
     RallarRealtimeSendResult,
     RallarRoomRealtimeJsonChannel,
     RallarRoomRealtimeJsonDefaults,
@@ -24,6 +25,7 @@ export namespace BrowserRoomRealtimeRuntime {
         connect(): Promise<ApiMiddleware>;
         readDefaultRoom(): string | GroupRef | undefined;
         readCurrentRoomRef(): GroupRef | undefined;
+        resolveRoomRef(room: string | GroupRef): GroupRef | undefined;
         resolveLaneId(laneId?: string): string;
         readonly rtc: RallarRtcFacade;
         sendJson<T>(input: RallarRealtimeJsonSendInput<T>): Promise<readonly RallarRealtimeSendResult[]>;
@@ -31,7 +33,7 @@ export namespace BrowserRoomRealtimeRuntime {
     }
 
     export interface TargetInput<T> {
-        readonly room: string | GroupRef;
+        readonly roomRef: GroupRef;
         readonly laneId: string;
         readonly defaults: RallarRoomRealtimeJsonDefaults;
         readonly sendOptions: RallarRoomRealtimeJsonSendOptions<T>;
@@ -90,30 +92,34 @@ export class BrowserRoomRealtimeRuntime {
         if (!room) {
             return noRoomResult(laneId);
         }
-        const target = await this.readTarget({ room, laneId, defaults, sendOptions });
+        const roomRef = this.input.resolveRoomRef(room);
+        if (!roomRef) {
+            return { ...noRoomResult(laneId), reason: 'Cannot resolve room realtime identity.' };
+        }
+        const target = await this.readTarget({ roomRef, laneId, defaults, sendOptions });
         const unavailable = toUnavailableRoomResult(target);
         if (unavailable) {
             return unavailable;
         }
         const results = await this.input.sendJson<T>({
-            ...toRealtimeSendOptions<T>(defaults),
-            ...toRealtimeSendOptions(sendOptions),
+            ...toRealtimeSendOptions(defaults, sendOptions),
             laneId,
-            roomId: target.transportStatus.roomRef ? undefined : target.transportStatus.roomId,
-            roomRef: target.transportStatus.roomRef,
+            roomRef,
             peerIds: target.readyPeerIds,
             data
         });
+        const transportStatus = this.input.rtc.roomStatus(roomRef, { laneId });
+        const status = toRoomSendStatus(target.desiredPeerIds, target.readyPeerIds, results);
         return {
             transport: 'rtc',
-            status: toRoomSendStatus(target.desiredPeerIds, target.readyPeerIds, results),
+            status: status === 'failed' && transportStatus.rtc.state === 'halted' ? 'halted' : status,
             laneId,
-            roomId: target.transportStatus.roomId,
-            roomRef: target.transportStatus.roomRef,
+            roomId: roomRef.groupId,
+            roomRef,
             peerIds: target.readyPeerIds,
             desiredPeerIds: target.desiredPeerIds,
             readiness: target.readiness,
-            transportStatus: target.transportStatus,
+            transportStatus,
             results
         };
     }
@@ -122,7 +128,7 @@ export class BrowserRoomRealtimeRuntime {
         input: BrowserRoomRealtimeRuntime.TargetInput<T>
     ): Promise<BrowserRoomRealtimeRuntime.Target> {
         await this.input.connect();
-        let transportStatus = this.input.rtc.roomStatus(input.room, {
+        let transportStatus = this.input.rtc.roomStatus(input.roomRef, {
             laneId: input.laneId,
             minReadyPeers: input.sendOptions.minReadyPeers ?? input.defaults.minReadyPeers
         });
@@ -134,15 +140,15 @@ export class BrowserRoomRealtimeRuntime {
             readyPeerIds.length === 0 &&
             waitForReady
         ) {
-            readiness = await this.input.rtc.waitForRoomLane(input.room, input.laneId, {
+            readiness = await this.input.rtc.waitForRoomLane(input.roomRef, input.laneId, {
                 connect: input.sendOptions.connect ?? input.defaults.connect ?? true,
                 timeoutMs: input.sendOptions.waitTimeoutMs ?? input.defaults.waitTimeoutMs ??
                     input.sendOptions.openTimeoutMs ?? input.defaults.openTimeoutMs,
                 signal: input.sendOptions.signal,
-                roomRef: typeof input.room === 'string' ? undefined : input.room
+                roomRef: input.roomRef
             });
             readyPeerIds = uniquePeerIds(readiness.ready.map((ready) => ready.peerId));
-            transportStatus = this.input.rtc.roomStatus(input.room, {
+            transportStatus = this.input.rtc.roomStatus(input.roomRef, {
                 laneId: input.laneId,
                 minReadyPeers: input.sendOptions.minReadyPeers ?? input.defaults.minReadyPeers
             });
@@ -202,16 +208,16 @@ function noRoomResult(laneId: string): RallarRoomRealtimeSendResult {
 function toUnavailableRoomResult(
     target: BrowserRoomRealtimeRuntime.Target
 ): RallarRoomRealtimeSendResult | undefined {
-    const common = {
-        transport: 'rtc' as const,
+    const common: Omit<RallarRoomRealtimeSendResult, 'status'> = {
+        transport: 'rtc',
         laneId: target.laneId,
         roomId: target.transportStatus.roomId,
         roomRef: target.transportStatus.roomRef,
-        peerIds: [] as readonly string[],
+        peerIds: [],
         desiredPeerIds: target.desiredPeerIds,
         readiness: target.readiness,
         transportStatus: target.transportStatus,
-        results: [] as readonly RallarRealtimeSendResult[]
+        results: []
     };
     if (target.transportStatus.rtc.state === 'halted') {
         return {
@@ -236,16 +242,16 @@ function toUnavailableRoomResult(
     return undefined;
 }
 
-function toRealtimeSendOptions<T>(
-    options: RallarRoomRealtimeJsonSendOptions<T>
-): RallarRoomRealtimeJsonSendOptions<T> {
-    const {
-        key,
-        maxAgeMs,
-        now,
-        openTimeoutMs
-    } = options;
-    return { key, maxAgeMs, now, openTimeoutMs };
+function toRealtimeSendOptions(
+    defaults: RallarRealtimeSendOptions,
+    options: RallarRealtimeSendOptions
+): RallarRealtimeSendOptions {
+    return {
+        key: options.key ?? defaults.key,
+        maxAgeMs: options.maxAgeMs ?? defaults.maxAgeMs,
+        now: options.now ?? defaults.now,
+        openTimeoutMs: options.openTimeoutMs ?? defaults.openTimeoutMs
+    };
 }
 
 function toRoomSendStatus(

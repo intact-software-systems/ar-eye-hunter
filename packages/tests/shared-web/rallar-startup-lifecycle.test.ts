@@ -16,10 +16,10 @@ interface GroupSnapshotFixtureScope {
 }
 
 const mocks = await vi.hoisted(async () => {
-    const { createApiMiddlewareTestDouble } = await import(
+    const { createDefaultApiMiddlewareTestDouble } = await import(
         './api-middleware-test-double.ts'
     );
-    const ctx = createApiMiddlewareTestDouble();
+    const ctx = createDefaultApiMiddlewareTestDouble();
     return {
         clearSession: vi.fn<AuthModule['clearSession']>(),
         ctx,

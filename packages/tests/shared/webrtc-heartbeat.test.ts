@@ -1,5 +1,17 @@
-import { WebRtcHeartbeatService } from '@shared/services/WebRtcHeartbeatService.ts';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { WebRtcHeartbeatService, type PingResult } from '@shared/services/web-rtc-heartbeat-service.ts';
+import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest';
+import {
+    createNativeRtcConnectionFixture,
+    installNativeRtcRuntime,
+    type SimulatedNativeRtcDataChannel
+} from './native-rtc-connection-fixture.ts';
+
+interface HeartbeatRuntime {
+    readonly service: WebRtcHeartbeatService;
+    readonly channel: SimulatedNativeRtcDataChannel;
+    readonly reports: PingResult[];
+    readonly missedPeers: string[];
+}
 
 describe('WebRtcHeartbeatService', () => {
     afterEach(() => {
@@ -7,213 +19,100 @@ describe('WebRtcHeartbeatService', () => {
         vi.useRealTimers();
     });
 
-    it('sends pings, replies to remote pings, and reports RTT on pong', async () => {
-        vi.useFakeTimers();
-
-        const channel = createDataChannelHarness();
+    it('sends pings, responds to remote pings and resets the missed count on a measured pong', async () => {
+        const runtime = await createHeartbeatRuntime(3);
         let now = 1_000;
         vi.spyOn(performance, 'now').mockImplementation(() => now);
+        await vi.advanceTimersByTimeAsync(5);
+        expect(runtime.channel.sent).toEqual(['{"type":"ping","pingType":"ping","ts":1000}']);
 
-        const onHeartbeat = vi.fn(async () => {
-        });
-        const onMissedHeartbeat = vi.fn(async () => {
-        });
-        const service = new WebRtcHeartbeatService({
-            sessionId: 'self',
-            peerSessionId: 'peer-1',
-            channel: channel.channel as never,
-            maxMissedPings: 3,
-            pingFrequencyMsecs: 10
-        });
-
-        service.start({
-            onHeartbeat,
-            onMissedHeartbeat
-        });
-
-        expect(channel.messageType).toBe('ping');
-
-        await vi.advanceTimersByTimeAsync(10);
-
-        expect(channel.sentJsonStrings).toHaveLength(1);
-        expect(JSON.parse(channel.sentJsonStrings[0])).toEqual({
-            type: 'ping',
-            pingType: 'ping',
-            ts: 1_000
-        });
-
-        await channel.onMessageCallback?.onMessage({
-            type: 'ping',
-            pingType: 'ping',
-            ts: 123
-        });
-
-        expect(JSON.parse(channel.sentJsonStrings[1])).toEqual({
-            type: 'ping',
-            pingType: 'pong',
-            ts: 123
-        });
-
+        await runtime.channel.receive('{"type":"ping","pingType":"ping","ts":123}');
+        expect(runtime.channel.sent[1]).toBe('{"type":"ping","pingType":"pong","ts":123}');
         now = 1_042;
-        await channel.onMessageCallback?.onMessage({
-            type: 'ping',
-            pingType: 'pong',
-            ts: 1_000
-        });
+        await runtime.channel.receive('{"type":"ping","pingType":"pong","ts":1000}');
+        expect(runtime.reports).toEqual([{ peerSessionId: 'peer-1', rttMsecs: 42, version: 2 }]);
 
-        expect(onHeartbeat).toHaveBeenCalledOnce();
-        expect(onHeartbeat).toHaveBeenCalledWith({
-            peerSessionId: 'peer-1',
-            rttMsecs: 42,
-            version: 2
-        });
-        expect(onMissedHeartbeat).not.toHaveBeenCalled();
-        expect((service as any).status.missedPings).toBe(0);
+        await vi.advanceTimersByTimeAsync(15);
+        expect(runtime.missedPeers).toEqual([]);
+        await vi.advanceTimersByTimeAsync(5);
+        expect(runtime.missedPeers).toEqual(['peer-1']);
     });
 
-    it('triggers the missed-heartbeat callback after the configured threshold', async () => {
-        vi.useFakeTimers();
-
-        const channel = createDataChannelHarness();
-        const onMissedHeartbeat = vi.fn(async () => {
-        });
-        const service = new WebRtcHeartbeatService({
-            sessionId: 'self',
-            peerSessionId: 'peer-1',
-            channel: channel.channel as never,
-            maxMissedPings: 2,
-            pingFrequencyMsecs: 5
-        });
-
-        service.start({
-            onHeartbeat: async () => {
-            },
-            onMissedHeartbeat
-        });
-
+    it('reports a missing peer after exactly the configured unanswered ping threshold', async () => {
+        const runtime = await createHeartbeatRuntime(2);
+        await vi.advanceTimersByTimeAsync(10);
+        expect(runtime.channel.sent).toHaveLength(2);
+        expect(runtime.missedPeers).toEqual([]);
         await vi.advanceTimersByTimeAsync(5);
-        await vi.advanceTimersByTimeAsync(5);
-
-        expect(channel.sentJsonStrings).toHaveLength(2);
-        expect((service as any).status.missedPings).toBe(2);
-
-        await vi.advanceTimersByTimeAsync(5);
-
-        expect(onMissedHeartbeat).toHaveBeenCalledOnce();
-        expect(onMissedHeartbeat).toHaveBeenCalledWith('peer-1');
-        expect(channel.sentJsonStrings).toHaveLength(2);
+        expect(runtime.missedPeers).toEqual(['peer-1']);
+        expect(runtime.channel.sent).toHaveLength(2);
     });
 
-    it('stops its interval when the data channel closes', async () => {
-        vi.useFakeTimers();
-
-        const channel = createDataChannelHarness();
-        const service = new WebRtcHeartbeatService({
-            sessionId: 'self',
-            peerSessionId: 'peer-1',
-            channel: channel.channel as never,
-            maxMissedPings: 2,
-            pingFrequencyMsecs: 5
-        });
-
-        service.start({
-            onHeartbeat: async () => {
-            },
-            onMissedHeartbeat: async () => {
-            }
-        });
-
+    it('stops reporting when the native data channel closes', async () => {
+        const runtime = await createHeartbeatRuntime(2);
         await vi.advanceTimersByTimeAsync(5);
-        expect(channel.sentJsonStrings).toHaveLength(1);
-
-        channel.setOpen(false);
-        await vi.advanceTimersByTimeAsync(5);
-
-        expect(channel.sentJsonStrings).toHaveLength(1);
-        expect((service as any).status.pingInterval).toBeUndefined();
-        expect(channel.messageCallbackCount).toBe(0);
+        const sentBeforeClose = [...runtime.channel.sent];
+        await runtime.channel.close();
+        await vi.advanceTimersByTimeAsync(50);
+        expect(runtime.channel.sent).toEqual(sentBeforeClose);
+        expect(runtime.missedPeers).toEqual([]);
+        expect(vi.getTimerCount()).toBe(0);
     });
 
-    it('removes its message callback when stopped', () => {
-        const channel = createDataChannelHarness();
-        const service = new WebRtcHeartbeatService({
-            sessionId: 'self',
-            peerSessionId: 'peer-1',
-            channel: channel.channel as never,
-            maxMissedPings: 2,
-            pingFrequencyMsecs: 5
-        });
-
-        service.start({
-            onHeartbeat: async () => {
-            },
-            onMissedHeartbeat: async () => {
-            }
-        });
-
-        expect(channel.messageCallbackCount).toBe(1);
-
-        service.stop();
-
-        expect(channel.removeOnRtcMessageCallbackById).toHaveBeenCalledWith(
-            'peer-1-heartbeat'
-        );
-        expect(channel.messageCallbackCount).toBe(0);
+    it('stops periodic pings and incoming pong responses when explicitly stopped', async () => {
+        const runtime = await createHeartbeatRuntime(2);
+        runtime.service.stop();
+        await runtime.channel.receive('{"type":"ping","pingType":"ping","ts":123}');
+        await vi.advanceTimersByTimeAsync(50);
+        expect(runtime.channel.sent).toEqual([]);
+        expect(runtime.reports).toEqual([]);
+        expect(runtime.missedPeers).toEqual([]);
+        expect(vi.getTimerCount()).toBe(0);
     });
 });
 
-function createDataChannelHarness(initiallyOpen = true) {
-    let open = initiallyOpen;
-    let messageType: string | undefined;
-    let onMessageCallback:
-        | {
-            onMessage: (data: unknown) => Promise<void>;
+async function createHeartbeatRuntime(maxMissedPings: number): Promise<HeartbeatRuntime> {
+    vi.useFakeTimers();
+    const native = installNativeRtcRuntime();
+    const fixture = createNativeRtcConnectionFixture({
+        sessionId: 'self',
+        token: 'fixture-token',
+        iceCandidates: { iceServers: [], expiresAtEpochMs: 60_000 },
+        dataChannelName: 'heartbeat',
+        rtcSignalingTopicId: 'rtc'
+    }, native);
+    const connected = fixture.service.ensurePeerConnectionStarted('peer-1', true);
+    if (!connected.right) {
+        throw new Error('Heartbeat fixture failed to establish its peer');
+    }
+    const nativePeer = fixture.nativePeer('peer-1');
+    nativePeer.setConnected();
+    const channel = nativePeer.channels[0];
+    if (!channel) {
+        throw new Error('Heartbeat fixture has no native data channel');
+    }
+    await channel.open();
+    const reports: PingResult[] = [];
+    const missedPeers: string[] = [];
+    const service = new WebRtcHeartbeatService({
+        sessionId: 'self',
+        peerSessionId: 'peer-1',
+        channel: connected.right.channel,
+        maxMissedPings,
+        pingFrequencyMsecs: 5
+    });
+    onTestFinished(() => {
+        service.stop();
+        fixture.dispose();
+        native.dispose();
+    });
+    service.start({
+        onHeartbeat: async (report) => {
+            reports.push(report);
+        },
+        onMissedHeartbeat: async (peerId) => {
+            missedPeers.push(peerId);
         }
-        | undefined;
-    const callbacks = new Map<string, typeof onMessageCallback>();
-
-    const sentJsonStrings: string[] = [];
-
-    const channel = {
-        onRtcMessageDo: vi.fn(function (
-            _id: string,
-            callback: typeof onMessageCallback,
-            type: string
-        ) {
-            onMessageCallback = callback;
-            messageType = type;
-            callbacks.set(_id, callback);
-            return channel;
-        }),
-        removeOnRtcMessageCallbackById: vi.fn((id: string) => {
-            if (callbacks.get(id) === onMessageCallback) {
-                onMessageCallback = undefined;
-            }
-            return callbacks.delete(id);
-        }),
-        sendAsJsonString: vi.fn(async (data: string) => {
-            sentJsonStrings.push(data);
-        }),
-        isOpen: vi.fn(() => open)
-    };
-
-    return {
-        channel,
-        sentJsonStrings,
-        setOpen(value: boolean) {
-            open = value;
-        },
-        get messageType() {
-            return messageType;
-        },
-        get onMessageCallback() {
-            return onMessageCallback;
-        },
-        get removeOnRtcMessageCallbackById() {
-            return channel.removeOnRtcMessageCallbackById;
-        },
-        get messageCallbackCount() {
-            return callbacks.size;
-        }
-    };
+    });
+    return { service, channel, reports, missedPeers };
 }

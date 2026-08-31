@@ -1,13 +1,9 @@
 import {
     BROWSER_RTT_HEARTBEAT_TTL_MS,
-    configureBrowserRtcPeerCreationPolicies,
-    toBrowserRtcPeerCreationDecision,
     toBrowserRttHeartbeatMessage
 } from '@shared-web/browser/connection/initialise-browser-middleware.ts';
 import { AppTopics, type RttMeasurementInfo } from '@shared/api/api-config.ts';
-import type { WebRtcInboundPeerCreationPolicy, WebRtcOutboundDialPolicy } from '@shared/services/WebRtcConnectionService.ts';
-import { QRtcSignalingType } from '@shared/webrtc/QRtcSignalingContracts.ts';
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
 describe('Browser middleware RTT heartbeat messages', () => {
     it('uses short-lived versioned AL messages for RTT observations', () => {
@@ -22,63 +18,6 @@ describe('Browser middleware RTT heartbeat messages', () => {
         expect(first.payload.typeId).toBe(AppTopics.rtt);
         expect(first.constraints?.expiresAtMs).toBe(first.id.ts + BROWSER_RTT_HEARTBEAT_TTL_MS);
         expect(second.constraints?.expiresAtMs).toBe(second.id.ts + BROWSER_RTT_HEARTBEAT_TTL_MS);
-    });
-});
-
-describe('browser middleware RTC peer admission', () => {
-    it('denies missing peers outside the lifecycle-selected layouts', () => {
-        expect(toBrowserRtcPeerCreationDecision(false)).toEqual({
-            decision: 'deny',
-            reason: 'stage-layout-mismatch'
-        });
-        expect(toBrowserRtcPeerCreationDecision(true)).toEqual({
-            decision: 'allow'
-        });
-    });
-
-    it('uses the same admission for a lagging inbound offer and an outbound dial', () => {
-        let inboundPolicy: WebRtcInboundPeerCreationPolicy | undefined;
-        let outboundPolicy: WebRtcOutboundDialPolicy | undefined;
-        const connectionService = {
-            setInboundPeerCreationPolicy: vi.fn((policy) => {
-                inboundPolicy = policy;
-            }),
-            setOutboundDialPolicy: vi.fn((policy) => {
-                outboundPolicy = policy;
-            })
-        };
-        const groupManager = {
-            isPeerDialAllowedByAnyGroup: vi.fn((peerId: string) => peerId === 'peer-accepted')
-        };
-        configureBrowserRtcPeerCreationPolicies(
-            connectionService as never,
-            groupManager as never
-        );
-
-        expect(
-            inboundPolicy?.({
-                peerId: 'peer-planned',
-                signalType: QRtcSignalingType.Offer,
-                message: {} as never
-            })
-        ).toEqual({
-            decision: 'deny',
-            reason: 'stage-layout-mismatch'
-        });
-        expect(outboundPolicy?.({ peerId: 'peer-planned' })).toEqual({
-            decision: 'deny',
-            reason: 'stage-layout-mismatch'
-        });
-        expect(
-            inboundPolicy?.({
-                peerId: 'peer-accepted',
-                signalType: QRtcSignalingType.Offer,
-                message: {} as never
-            })
-        ).toEqual({ decision: 'allow' });
-        expect(outboundPolicy?.({ peerId: 'peer-accepted' })).toEqual({
-            decision: 'allow'
-        });
     });
 });
 

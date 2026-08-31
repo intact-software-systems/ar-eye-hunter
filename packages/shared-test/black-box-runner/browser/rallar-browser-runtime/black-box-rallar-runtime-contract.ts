@@ -1,3 +1,6 @@
+import type { ALAckMode } from '@shared/al-contracts/al-contract.ts';
+import type { ALNackPayload } from '@shared/al-contracts/al-control.ts';
+
 import type {
     BlackBoxRallarAuthenticateDiagnostics,
     BlackBoxRallarCloseDiagnostics,
@@ -10,7 +13,7 @@ import type {
     BlackBoxRallarSendDiagnostics,
     BlackBoxRallarSendInput,
     BlackBoxRallarWsSendDiagnostics
-} from './contracts.ts';
+} from './black-box-rallar-operation-contracts.ts';
 
 export interface BlackBoxRallarRoomRefreshOptions {
     readonly signal?: AbortSignal;
@@ -37,7 +40,7 @@ export interface BlackBoxRallarWsSendInput {
     readonly ttlHops?: number;
     readonly ttlMs?: number;
     readonly reliability?: BlackBoxRallarSendInput['reliability'];
-    readonly ack?: string;
+    readonly ack?: ALAckMode;
     readonly ownership?: BlackBoxRallarSendInput['ownership'];
 }
 
@@ -46,9 +49,10 @@ export interface BlackBoxRallarRuntime {
         config: BlackBoxRallarConnectionConfig
     ): Promise<BlackBoxRallarAuthenticateDiagnostics>;
     connect(config: BlackBoxRallarConnectionConfig): Promise<BlackBoxRallarConnectDiagnostics>;
-    send(input: BlackBoxRallarSendInput): Promise<BlackBoxRallarSendDiagnostics>;
-    sendWs(input: BlackBoxRallarWsSendInput): Promise<BlackBoxRallarWsSendDiagnostics>;
+    send(input: unknown): Promise<BlackBoxRallarSendDiagnostics>;
+    sendWs(input: unknown): Promise<BlackBoxRallarWsSendDiagnostics>;
     refreshRoom(options: BlackBoxRallarRoomRefreshOptions): Promise<void>;
+    readRtcMessageNacks(messageId: string): Promise<readonly ALNackPayload[]>;
     readonly crdt: BlackBoxRallarCrdtRuntime;
     readonly director: BlackBoxRallarDirectorRuntime;
     close(): Promise<BlackBoxRallarCloseDiagnostics>;

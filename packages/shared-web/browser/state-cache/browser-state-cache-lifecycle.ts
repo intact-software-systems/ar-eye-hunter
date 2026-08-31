@@ -1,7 +1,8 @@
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import type { ClientInfo } from '@shared/api/api-config.ts';
-import type { ClientSnapshot as ClientStateSnapshot } from '@shared/api/client-types.ts';
-import type { GroupSnapshot as GroupStateSnapshot } from '@shared/api/group-types.ts';
+import type { ClientSnapshot } from '@shared/api/client-types.ts';
+import type { GroupSnapshot } from '@shared/api/group-types.ts';
+import { toError } from '@shared/resilience/to-error.ts';
 // dprint-ignore
 import {
     DEFAULT_STATE_APPLICATION_ID,
@@ -17,10 +18,11 @@ import {
     acceptGroupSnapshotUpdate,
     isSameBootstrapOverlayPolicy,
     resolveBootstrapOverlayPolicy,
-    type BootstrapOverlayPolicyInput
+    type BootstrapOverlayPolicyInput,
+    type GroupSnapshotRtcSyncPort
 } from '@shared/services/group-snapshot-rtc-sync.ts';
-import type { OnMessageCallback } from '@shared/services/InboxOutboxContracts.ts';
-import { WebRtcGroupManager } from '@shared/services/WebRtcGroupManager.ts';
+import type { OnMessageCallback } from '@shared/services/queue-message-callbacks.ts';
+import type { WebRtcGroupManager } from '@shared/services/web-rtc-group-manager.ts';
 import { dispatchOverlayTopologyMessage } from './overlay-topology-message-dispatch.ts';
 import {
     acceptClientStateSnapshots,
@@ -31,8 +33,8 @@ import { dispatchStateEventMessage } from './state-event-message-dispatch.ts';
 import { dispatchStateSnapshotMessage } from './state-snapshot-message-dispatch.ts';
 
 export interface StateCacheChange {
-    readonly clients: readonly ClientStateSnapshot[];
-    readonly groups: readonly GroupStateSnapshot[];
+    readonly clients: readonly ClientSnapshot[];
+    readonly groups: readonly GroupSnapshot[];
 }
 
 export type StateCacheChangeListener = (
@@ -43,7 +45,7 @@ export interface StateCacheScopeOptions {
     readonly scope?: StateScope;
     readonly rereadGroupSnapshots?: (
         scope: StateScope
-    ) => Promise<readonly GroupStateSnapshot[]>;
+    ) => Promise<readonly GroupSnapshot[]>;
     readonly groupFormation?: BootstrapOverlayPolicyInput;
 }
 
@@ -54,37 +56,42 @@ export interface StateCacheInboxSource {
     ): void;
 }
 
+export interface BrowserStateCacheLifecyclePort {
+    onChange(listener: StateCacheChangeListener): () => void;
+    initialise(input: BrowserStateCacheLifecycle.InitialiseInput): void;
+    hydrate(input: BrowserStateCacheLifecycle.HydrateInput): Promise<void>;
+}
+
 export namespace BrowserStateCacheLifecycle {
+    export interface RtcGroupPort
+        extends
+            GroupSnapshotRtcSyncPort,
+            Pick<WebRtcGroupManager, 'notifyClientPresenceChanged' | 'notifyOverlayTopologyChanged'> {}
+
     export interface InitialiseInput {
         readonly inbox: StateCacheInboxSource;
-        readonly webRtcGroupManager: WebRtcGroupManager;
+        readonly webRtcGroupManager: RtcGroupPort;
         readonly clientData: ClientInfo;
         readonly options?: StateCacheScopeOptions;
     }
 
     export interface HydrateInput {
-        readonly webRtcGroupManager: WebRtcGroupManager;
+        readonly webRtcGroupManager: RtcGroupPort;
         readonly clientData: ClientInfo;
-        readonly clientSnapshots: readonly ClientStateSnapshot[];
-        readonly groupSnapshots: readonly GroupStateSnapshot[];
+        readonly clientSnapshots: readonly ClientSnapshot[];
+        readonly groupSnapshots: readonly GroupSnapshot[];
         readonly options?: StateCacheScopeOptions;
     }
 
     export interface ObserverContext {
-        readonly webRtcGroupManager: WebRtcGroupManager;
+        readonly webRtcGroupManager: RtcGroupPort;
         readonly sessionId: string;
         readonly scope: StateScope;
         readonly bootstrapOverlayPolicy: BootstrapOverlayPolicy;
         readonly rereadGroupSnapshots?: (
             scope: StateScope
-        ) => Promise<readonly GroupStateSnapshot[]>;
+        ) => Promise<readonly GroupSnapshot[]>;
     }
-}
-
-export interface BrowserStateCacheLifecyclePort {
-    onChange(listener: StateCacheChangeListener): () => void;
-    initialise(input: BrowserStateCacheLifecycle.InitialiseInput): void;
-    hydrate(input: BrowserStateCacheLifecycle.HydrateInput): Promise<void>;
 }
 
 export class BrowserStateCacheLifecycle implements BrowserStateCacheLifecyclePort {
@@ -108,12 +115,13 @@ export class BrowserStateCacheLifecycle implements BrowserStateCacheLifecyclePor
         } = input;
         const options = input.options ?? {};
         const initialScope = resolveStateCacheScope(options);
-        this.installStateRepositoryObservers(
+        this.installStateRepositoryObservers({
             webRtcGroupManager,
-            myOwnClientData,
-            initialScope,
-            options
-        );
+            sessionId: myOwnClientData.sessionId,
+            scope: initialScope,
+            bootstrapOverlayPolicy: resolveBootstrapOverlayPolicy(options.groupFormation, myOwnClientData.sessionId),
+            rereadGroupSnapshots: options.rereadGroupSnapshots
+        });
 
         webSocketQueueBox.onAllInboxMessagesDo({
             onMessage: async (message: ALMessage) => {
@@ -149,12 +157,13 @@ export class BrowserStateCacheLifecycle implements BrowserStateCacheLifecyclePor
         } = input;
         const options = input.options ?? {};
         const scope = resolveStateCacheScope(options);
-        this.installStateRepositoryObservers(
+        this.installStateRepositoryObservers({
             webRtcGroupManager,
-            clientData,
+            sessionId: clientData.sessionId,
             scope,
-            options
-        );
+            bootstrapOverlayPolicy: resolveBootstrapOverlayPolicy(options.groupFormation, clientData.sessionId),
+            rereadGroupSnapshots: options.rereadGroupSnapshots
+        });
         acceptClientStateSnapshots(clientSnapshots, scope);
         await acceptGroupStateSnapshotsOrRecompute(
             groupSnapshots,
@@ -169,35 +178,15 @@ export class BrowserStateCacheLifecycle implements BrowserStateCacheLifecyclePor
     }
 
     private installStateRepositoryObservers(
-        webRtcGroupManager: WebRtcGroupManager,
-        myOwnClientData: ClientInfo,
-        scope: StateScope,
-        options: StateCacheScopeOptions
+        next: BrowserStateCacheLifecycle.ObserverContext
     ): void {
-        const bootstrapOverlayPolicy = resolveBootstrapOverlayPolicy(
-            options.groupFormation,
-            myOwnClientData.sessionId
-        );
-        if (
-            this.hasMatchingObserverContext(
-                webRtcGroupManager,
-                myOwnClientData.sessionId,
-                scope,
-                bootstrapOverlayPolicy,
-                options.rereadGroupSnapshots
-            )
-        ) {
+        const { webRtcGroupManager, scope, sessionId, bootstrapOverlayPolicy } = next;
+        if (this.hasMatchingObserverContext(next)) {
             return;
         }
 
         this.#observersUnsubscribe?.();
-        this.#observerContext = {
-            webRtcGroupManager,
-            sessionId: myOwnClientData.sessionId,
-            scope,
-            bootstrapOverlayPolicy,
-            rereadGroupSnapshots: options.rereadGroupSnapshots
-        };
+        this.#observerContext = next;
 
         const unsubscribeClient = this.observeClientStateChanges(webRtcGroupManager);
         const unsubscribeGroup = this.observeGroupStateChanges(
@@ -210,7 +199,7 @@ export class BrowserStateCacheLifecycle implements BrowserStateCacheLifecyclePor
             unsubscribeGroup();
             if (
                 this.#observerContext?.webRtcGroupManager === webRtcGroupManager &&
-                this.#observerContext.sessionId === myOwnClientData.sessionId &&
+                this.#observerContext.sessionId === sessionId &&
                 isSameStateScope(this.#observerContext.scope, scope)
             ) {
                 this.#observerContext = undefined;
@@ -219,25 +208,21 @@ export class BrowserStateCacheLifecycle implements BrowserStateCacheLifecyclePor
     }
 
     private hasMatchingObserverContext(
-        webRtcGroupManager: WebRtcGroupManager,
-        sessionId: string,
-        scope: StateScope,
-        bootstrapOverlayPolicy: BootstrapOverlayPolicy,
-        rereadGroupSnapshots: StateCacheScopeOptions['rereadGroupSnapshots']
+        next: BrowserStateCacheLifecycle.ObserverContext
     ): boolean {
         const context = this.#observerContext;
-        return context?.webRtcGroupManager === webRtcGroupManager &&
-            context.sessionId === sessionId &&
-            isSameStateScope(context.scope, scope) &&
+        return context?.webRtcGroupManager === next.webRtcGroupManager &&
+            context.sessionId === next.sessionId &&
+            isSameStateScope(context.scope, next.scope) &&
             isSameBootstrapOverlayPolicy(
                 context.bootstrapOverlayPolicy,
-                bootstrapOverlayPolicy
+                next.bootstrapOverlayPolicy
             ) &&
-            context.rereadGroupSnapshots === rereadGroupSnapshots;
+            context.rereadGroupSnapshots === next.rereadGroupSnapshots;
     }
 
     private observeClientStateChanges(
-        webRtcGroupManager: WebRtcGroupManager
+        webRtcGroupManager: Pick<BrowserStateCacheLifecycle.RtcGroupPort, 'notifyClientPresenceChanged'>
     ): () => void {
         return clientStateSnapshotsRepository.onClientStateSnapshotChange((change) => {
             const snapshot = change.snapshot;
@@ -257,7 +242,7 @@ export class BrowserStateCacheLifecycle implements BrowserStateCacheLifecyclePor
     }
 
     private observeGroupStateChanges(
-        webRtcGroupManager: WebRtcGroupManager,
+        webRtcGroupManager: BrowserStateCacheLifecycle.RtcGroupPort,
         bootstrapOverlayPolicy: BootstrapOverlayPolicy
     ): () => void {
         return groupStateSnapshotsRepository.onGroupStateSnapshotChange((change) => {
@@ -305,7 +290,10 @@ export class BrowserStateCacheLifecycle implements BrowserStateCacheLifecyclePor
                     await listener(change);
                 }
                 catch (error) {
-                    console.error('Error notifying state cache listener', error);
+                    console.error(
+                        'Error notifying state cache listener',
+                        toError(error)
+                    );
                 }
             })
         );

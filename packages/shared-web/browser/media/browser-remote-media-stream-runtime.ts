@@ -1,12 +1,27 @@
-import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
 import type { RallarRemoteStream } from '@shared-web/browser/rallar-media-facade.ts';
 import type { RallarUnsubscribe } from '@shared-web/browser/rallar-shared-contracts.ts';
+import { toError } from '@shared/resilience/to-error.ts';
+import type { WebRtcRxStreamerService } from '@shared/services/web-rtc-rx-streamer-service.ts';
 
 const RALLAR_REMOTE_STREAM_CALLBACK_ID = 'rallar:remote-stream';
 
 export namespace BrowserRemoteMediaStreamRuntime {
+    export interface StreamSubscriptions {
+        onRemoteStreamDo(
+            id: string,
+            callback: Parameters<WebRtcRxStreamerService['onRemoteStreamDo']>[1]
+        ): void;
+        removeOnRemoteStreamCallbackById(id: string): boolean;
+    }
+
+    export interface Connection {
+        readonly middleware: {
+            readonly rtcRxStreamer: StreamSubscriptions;
+        };
+    }
+
     export interface Input {
-        readMiddleware(): ApiMiddleware | undefined;
+        readMiddleware(): Connection | undefined;
     }
 }
 
@@ -63,7 +78,7 @@ export class BrowserRemoteMediaStreamRuntime {
         this.callbackRegistered = false;
     }
 
-    public stopForDisconnect(context?: ApiMiddleware): void {
+    public stopForDisconnect(context?: BrowserRemoteMediaStreamRuntime.Connection): void {
         this.detach(context);
         this.callbackRegistered = false;
     }
@@ -74,7 +89,10 @@ export class BrowserRemoteMediaStreamRuntime {
                 await listener(remote);
             }
             catch (error) {
-                console.error('Error notifying Rallar remote stream listener', error);
+                console.error(
+                    'Error notifying Rallar remote stream listener',
+                    toError(error)
+                );
             }
         }));
     }

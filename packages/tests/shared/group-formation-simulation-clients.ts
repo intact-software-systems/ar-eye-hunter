@@ -15,10 +15,9 @@ import {
     readableAcceptedOverlayCache,
     readablePlannedOverlayCache
 } from '@shared/repository/overlays-repository.ts';
-import { Either } from '@shared/resilience/Either.ts';
-import { WebRtcGroupManager } from '@shared/services/WebRtcGroupManager.ts';
-import { vi } from 'vitest';
+import { WebRtcGroupManager } from '@shared/services/web-rtc-group-manager.ts';
 import { createTestGroup } from '../create-test-group.ts';
+import { createSimulatedRtcConnections } from './simulated-rtc-connection-service.ts';
 
 export interface SimulatedClient {
     readonly sessionId: string;
@@ -64,22 +63,10 @@ export function createSimulatedClient(
         });
     }
 
-    const knownPeerIds = new Set<string>();
-    const rtcQBox = {
-        input: { sessionId },
-        knownPeerIds: () => Array.from(knownPeerIds),
-        peerIdsWithNoReconnectableLanes: () => Array.from(knownPeerIds),
-        ensurePeerConnectionStarted: vi.fn((peerId: string) => {
-            knownPeerIds.add(peerId);
-            return Either.ofRight({ peerId } as never);
-        }),
-        disconnectPeer: vi.fn((peerId: string) => {
-            knownPeerIds.delete(peerId);
-        })
-    };
+    const { service } = createSimulatedRtcConnections(sessionId);
 
     const manager = new WebRtcGroupManager(
-        rtcQBox as never,
+        service,
         {
             groupCache,
             clientCache,
@@ -88,10 +75,8 @@ export function createSimulatedClient(
         },
         {
             maxPeerConnections: options.maxPeerConnections,
-            ...(options.overlayTransitionGraceMs === undefined
-                ? {}
-                : { overlayTransitionGraceMs: options.overlayTransitionGraceMs }),
-            ...(options.now === undefined ? {} : { now: options.now })
+            overlayTransitionGraceMs: options.overlayTransitionGraceMs,
+            now: options.now
         }
     );
 
@@ -99,7 +84,7 @@ export function createSimulatedClient(
         sessionId,
         repositoryManager,
         manager,
-        connectedPeerIds: () => knownPeerIds
+        connectedPeerIds: () => new Set(service.knownPeerIds())
     };
 }
 
@@ -176,21 +161,7 @@ export function createSimulationGroupSnapshot(
             invitedByPrincipalId: null,
             invitationExpiresAtEpochMs: null
         })),
-        activeSessions: sessionIds.map((sessionId) => ({
-            applicationId,
-            workspaceId,
-            groupId,
-            sessionId,
-            principalId: sessionId,
-            generationId: `generation-${snapshotVersion}`,
-            generationVersion: snapshotVersion,
-            status: 'active',
-            connectedAtEpochMs: 1,
-            lastHeartbeatAtEpochMs: snapshotVersion,
-            expiresAtEpochMs: 60_000,
-            disconnectedAtEpochMs: null,
-            disconnectReason: null
-        })),
+        activeSessions: createSimulationGroupSessions(groupId, snapshotVersion, sessionIds),
         memberCount: sessionIds.length,
         onlineMemberCount: sessionIds.length
     };
@@ -204,4 +175,23 @@ export function simulationAuditStamp(atEpochMs: number): AuditStamp {
         traceId: null,
         requestId: null
     };
+}
+function createSimulationGroupSessions(groupId: string, snapshotVersion: number, sessionIds: readonly string[]): GroupSnapshot['activeSessions'] {
+    const applicationId = 'app-1';
+    const workspaceId = 'workspace-1';
+    return sessionIds.map((sessionId) => ({
+        applicationId,
+        workspaceId,
+        groupId,
+        sessionId,
+        principalId: sessionId,
+        generationId: `generation-${snapshotVersion}`,
+        generationVersion: snapshotVersion,
+        status: 'active',
+        connectedAtEpochMs: 1,
+        lastHeartbeatAtEpochMs: snapshotVersion,
+        expiresAtEpochMs: 60_000,
+        disconnectedAtEpochMs: null,
+        disconnectReason: null
+    }));
 }

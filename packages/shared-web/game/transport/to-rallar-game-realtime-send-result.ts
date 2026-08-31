@@ -1,4 +1,5 @@
 import type { RallarRealtimeSendResult, RallarRoomRealtimeSendResult } from '@shared-web/browser/rallar.ts';
+
 import type { RallarGameSendResult } from './rallar-game-send-result.ts';
 
 /** Translates browser realtime outcomes into the Rallar Game result contract. */

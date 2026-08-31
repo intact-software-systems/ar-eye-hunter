@@ -9,25 +9,37 @@ import type {
     RallarRealtimeSendResult
 } from '@shared-web/browser/rallar-realtime-facade.ts';
 import type { RallarUnsubscribe } from '@shared-web/browser/rallar-shared-contracts.ts';
+import type { BrowserRoomTransportTarget } from '@shared-web/browser/rooms/room-group-state-translation.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
-import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
-import type { WebRtcPeerLaneOpenResult } from '@shared/services/WebRtcConnectionService.ts';
-import type { RtcDataChannelSendOptions, RtcDataChannelSendResult } from '@shared/webrtc/QRtcDataChannel.ts';
+import type { GroupRef } from '@shared/api/group-types.ts';
+import type { WebRtcConnectionService } from '@shared/services/web-rtc-connection-service.ts';
+import type { RtcDataChannelSendOptions, RtcDataChannelSendResult } from '@shared/webrtc/qrtc-data-channel.ts';
 
 export namespace BrowserRealtimeSendRuntime {
     export interface Input {
         connect(): Promise<ApiMiddleware>;
         readSession(): AuthSession | undefined;
         readDefaultRoom(): string | GroupRef | undefined;
-        readCurrentRoomSnapshot(): GroupSnapshot | undefined;
-        findGroupSnapshot(room: string | GroupRef): GroupSnapshot | undefined;
+        readCurrentRoomRef(): GroupRef | undefined;
+        resolveRoomTransportTarget(room: string | GroupRef): BrowserRoomTransportTarget;
+        resolveRoomRef(room: string | GroupRef): GroupRef | undefined;
         resolveLaneId(laneId?: string): string;
         resolveOpenTimeoutMs(openTimeoutMs?: number): number;
         onJson<T>(laneId: string, handler: RallarRealtimeHandler<T>): RallarUnsubscribe;
     }
 
+    export interface RoomSelection {
+        readonly scoped: boolean;
+        readonly roomRef: GroupRef | undefined;
+    }
+
+    export interface Target {
+        readonly roomRef: GroupRef | undefined;
+        readonly peerIds: readonly string[];
+    }
+
     export interface LaneInput {
-        readonly ctx: ApiMiddleware;
+        readonly context: ApiMiddleware;
         readonly peerId: string;
         readonly laneId: string;
         readonly sendOptions: RallarRealtimeSendOptions;
@@ -45,15 +57,23 @@ export class BrowserRealtimeSendRuntime {
     async sendJson<T>(
         input: RallarRealtimeJsonSendInput<T>
     ): Promise<readonly RallarRealtimeSendResult[]> {
-        const ctx = await this.input.connect();
+        const room = this.resolveRoom(input);
+        const context = await this.input.connect();
         const laneId = this.input.resolveLaneId(input.laneId);
+        const target = this.resolveTarget(input, room);
         return await Promise.all(
-            this.resolvePeerIds(input).map(async (peerId) => {
-                const laneOpen = await this.ensureLaneOpen({ ctx, peerId, laneId, sendOptions: input });
+            target.peerIds.map(async (peerId): Promise<RallarRealtimeSendResult> => {
+                const laneOpen = await this.ensureLaneOpen({ context, peerId, laneId, sendOptions: input });
                 return {
                     peerId,
                     laneId,
-                    result: laneOpen.status === 'open' && laneOpen.channel
+                    result: !this.isCurrentTarget(target, peerId)
+                        ? {
+                            status: 'closed',
+                            reason: 'Room realtime target is no longer authorized',
+                            bufferedAmount: 0
+                        }
+                        : laneOpen.status === 'open' && laneOpen.channel
                         ? laneOpen.channel.sendJson(input.data, toDataChannelSendOptions(input))
                         : toClosedSendResult()
                 };
@@ -64,15 +84,23 @@ export class BrowserRealtimeSendRuntime {
     async sendBinary(
         input: RallarRealtimeBinarySendInput
     ): Promise<readonly RallarRealtimeSendResult[]> {
-        const ctx = await this.input.connect();
+        const room = this.resolveRoom(input);
+        const context = await this.input.connect();
         const laneId = this.input.resolveLaneId(input.laneId);
+        const target = this.resolveTarget(input, room);
         return await Promise.all(
-            this.resolvePeerIds(input).map(async (peerId) => {
-                const laneOpen = await this.ensureLaneOpen({ ctx, peerId, laneId, sendOptions: input });
+            target.peerIds.map(async (peerId): Promise<RallarRealtimeSendResult> => {
+                const laneOpen = await this.ensureLaneOpen({ context, peerId, laneId, sendOptions: input });
                 return {
                     peerId,
                     laneId,
-                    result: laneOpen.status === 'open' && laneOpen.channel
+                    result: !this.isCurrentTarget(target, peerId)
+                        ? {
+                            status: 'closed',
+                            reason: 'Room realtime target is no longer authorized',
+                            bufferedAmount: 0
+                        }
+                        : laneOpen.status === 'open' && laneOpen.channel
                         ? laneOpen.channel.sendBinary(input.data, toDataChannelSendOptions(input))
                         : toClosedSendResult()
                 };
@@ -84,35 +112,64 @@ export class BrowserRealtimeSendRuntime {
         const laneId = this.input.resolveLaneId(defaults.laneId);
         return {
             send: async (data, sendOptions: RallarRealtimeJsonLaneSendOptions<T> = {}) =>
-                await this.sendJson<T>({ ...defaults, ...sendOptions, data }),
+                await this.sendJson<T>({
+                    ...defaults,
+                    ...sendOptions,
+                    roomRef: sendOptions.roomId !== undefined && sendOptions.roomRef === undefined
+                        ? undefined
+                        : sendOptions.roomRef ?? defaults.roomRef,
+                    data
+                }),
             on: (handler) => this.input.onJson<T>(laneId, handler)
         };
     }
 
-    private resolvePeerIds(input: RallarRealtimeSendOptions): readonly string[] {
-        const sessionId = this.input.readSession()?.sessionId;
-        if (input.peerIds) {
-            return [...new Set(input.peerIds)].filter((peerId) => peerId !== sessionId);
-        }
-        const defaultRoom = this.input.readDefaultRoom();
-        const room = input.roomRef
-            ? this.input.findGroupSnapshot(input.roomRef)
-            : input.roomId
-            ? this.input.findGroupSnapshot(input.roomId)
-            : defaultRoom
-            ? this.input.findGroupSnapshot(defaultRoom)
-            : this.input.readCurrentRoomSnapshot();
-        return [
-            ...new Set(
-                (room?.activeSessions ?? [])
-                    .map((activeSession) => activeSession.sessionId)
-                    .filter((peerId) => peerId !== sessionId)
-            )
-        ];
+    private resolveRoom(input: RallarRealtimeSendOptions): BrowserRealtimeSendRuntime.RoomSelection {
+        const room = input.roomRef ?? input.roomId ?? (input.peerIds === undefined
+            ? this.input.readDefaultRoom() ?? this.input.readCurrentRoomRef()
+            : undefined);
+        return {
+            scoped: room !== undefined,
+            roomRef: room === undefined ? undefined : this.input.resolveRoomRef(room)
+        };
     }
 
-    private async ensureLaneOpen(input: BrowserRealtimeSendRuntime.LaneInput): Promise<WebRtcPeerLaneOpenResult> {
-        return await input.ctx.middleware.webRtcConnectionService.ensurePeerLaneOpen(
+    private resolveTarget(
+        input: RallarRealtimeSendOptions,
+        room: BrowserRealtimeSendRuntime.RoomSelection
+    ): BrowserRealtimeSendRuntime.Target {
+        const sessionId = this.input.readSession()?.sessionId;
+        const explicitPeerIds = input.peerIds === undefined
+            ? undefined
+            : [...new Set(input.peerIds)].filter((peerId) => peerId !== sessionId);
+        const roomRef = room.roomRef;
+        if (!room.scoped) {
+            return { roomRef, peerIds: explicitPeerIds ?? [] };
+        }
+        if (!roomRef) {
+            return { roomRef, peerIds: [] };
+        }
+        const authority = this.input.resolveRoomTransportTarget(roomRef);
+        return {
+            roomRef,
+            peerIds: authority.transportState === 'halted'
+                ? []
+                : (explicitPeerIds ?? authority.peerIds).filter((peerId) => authority.peerIds.includes(peerId))
+        };
+    }
+
+    private isCurrentTarget(target: BrowserRealtimeSendRuntime.Target, peerId: string): boolean {
+        if (!target.roomRef) {
+            return true;
+        }
+        const authority = this.input.resolveRoomTransportTarget(target.roomRef);
+        return authority.transportState !== 'halted' && authority.peerIds.includes(peerId);
+    }
+
+    private async ensureLaneOpen(
+        input: BrowserRealtimeSendRuntime.LaneInput
+    ): Promise<WebRtcConnectionService.PeerLaneOpenResult> {
+        return await input.context.middleware.webRtcConnectionService.ensurePeerLaneOpen(
             input.peerId,
             input.laneId,
             { timeoutMs: this.input.resolveOpenTimeoutMs(input.sendOptions.openTimeoutMs) }

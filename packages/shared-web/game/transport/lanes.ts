@@ -1,4 +1,4 @@
-import type { RtcDataChannelLaneConfig } from '@shared/services/WebRtcConnectionService.ts';
+import type { RtcDataChannelLaneConfig } from '@shared/services/web-rtc-connection-service.ts';
 
 export interface RallarGameLaneIds {
     readonly input: string;

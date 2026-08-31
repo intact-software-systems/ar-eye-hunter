@@ -1,32 +1,30 @@
-import { execFileSync } from 'node:child_process';
-import { mkdirSync, readFileSync } from 'node:fs';
+import {
+    buildSync,
+    type Metafile
+} from 'esbuild';
+import {
+    mkdirSync,
+    readFileSync
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { brotliCompressSync, constants } from 'node:zlib';
-// dprint-ignore
+import {
+    brotliCompressSync,
+    constants
+} from 'node:zlib';
 import {
     describe,
     expect,
     it
 } from 'vitest';
 
-interface EsbuildMetafile {
-    readonly inputs: Readonly<Record<string, unknown>>;
-}
-
 interface HeadlessBundleMeasurement {
     readonly brotliKiB: number;
-    readonly metafile: EsbuildMetafile;
+    readonly metafile: Metafile;
 }
 
 const repoRoot = process.cwd();
 const outputDir = path.join(tmpdir(), 'rallar-black-box-headless-boundary-test');
-const esbuildBin = path.join(
-    repoRoot,
-    'node_modules',
-    '.bin',
-    process.platform === 'win32' ? 'esbuild.cmd' : 'esbuild'
-);
 
 describe('rallar-black-box-headless bundle boundary', () => {
     it('excludes operator UI dependencies and surfaces', () => {
@@ -67,33 +65,29 @@ describe('rallar-black-box-headless bundle boundary', () => {
         // 202.944336 KiB -> 203.715820 KiB.
         // One deadline across room refresh and best-effort topology hydration
         // adds 0.284180 KiB: 203.715820 KiB -> 204.000000 KiB.
-        expect(result.brotliKiB).toBeLessThan(205);
+        // Slice 8b adds canonical signaling, connection and CRDT command validation,
+        // offset partly by unsafe-legacy removal and RTC/queue cleanup. The reviewed
+        // Slice 8a baseline 204.9267578125 KiB -> corrected 8b 207.51953125 KiB:
+        // +2655 Brotli bytes (~1.265%), with unchanged exclusions and build settings.
+        expect(result.brotliKiB).toBeLessThan(208);
     });
 });
 
 function bundleHeadlessEntry(): HeadlessBundleMeasurement {
     mkdirSync(outputDir, { recursive: true });
     const outputPath = path.join(outputDir, 'headless-agent.boundary.min.js');
-    const metafilePath = `${outputPath}.meta.json`;
-
-    execFileSync(
-        esbuildBin,
-        [
-            'apps/rallar-black-box-headless/src/main.ts',
-            '--bundle',
-            '--minify',
-            '--format=esm',
-            '--platform=browser',
-            '--target=es2023',
-            '--tsconfig=apps/rallar-black-box-headless/tsconfig.json',
-            `--outfile=${outputPath}`,
-            `--metafile=${metafilePath}`
-        ],
-        {
-            cwd: repoRoot,
-            stdio: ['ignore', 'ignore', 'pipe']
-        }
-    );
+    const result = buildSync({
+        absWorkingDir: repoRoot,
+        entryPoints: ['apps/rallar-black-box-headless/src/main.ts'],
+        bundle: true,
+        minify: true,
+        format: 'esm',
+        platform: 'browser',
+        target: 'es2023',
+        tsconfig: 'apps/rallar-black-box-headless/tsconfig.json',
+        outfile: outputPath,
+        metafile: true
+    });
 
     const bytes = readFileSync(outputPath);
     const brotliBytes = brotliCompressSync(bytes, {
@@ -104,6 +98,6 @@ function bundleHeadlessEntry(): HeadlessBundleMeasurement {
 
     return {
         brotliKiB: brotliBytes / 1024,
-        metafile: JSON.parse(readFileSync(metafilePath, 'utf8')) as EsbuildMetafile
+        metafile: result.metafile
     };
 }

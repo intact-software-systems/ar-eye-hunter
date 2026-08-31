@@ -1,32 +1,47 @@
-import { QRtcPeerConnection } from '@shared/webrtc/QRtcPeerConnection.ts';
-import { QRtcSignalingType } from '@shared/webrtc/QRtcSignalingContracts.ts';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { getEventListeners } from 'node:events';
+import {
+    afterEach,
+    describe,
+    expect,
+    it,
+    onTestFinished,
+    vi
+} from 'vitest';
+
+import {
+    DecodedRtcSignalingMessage,
+    decodeRtcSignalingMessage
+} from '@shared/webrtc/decode-rtc-signaling-message.ts';
+import { QRtcPeerConnection } from '@shared/webrtc/qrtc-peer-connection.ts';
+import {
+    QRtcSignalingSender,
+    QRtcSignalingType
+} from '@shared/webrtc/QRtcSignalingContracts.ts';
+
+import {
+    installNativeRtcRuntime,
+    SimulatedNativeRtcPeerConnection
+} from './native-rtc-connection-fixture.ts';
+import {
+    SimulatedMediaStream,
+    SimulatedMediaTrack,
+    SimulatedNativeMediaPeerConnection,
+    SimulatedRtcTrackEvent
+} from './native-rtc-media-fixture.ts';
 
 describe('QRtcPeerConnection', () => {
     afterEach(() => {
         vi.restoreAllMocks();
         vi.unstubAllGlobals();
         vi.useRealTimers();
-        FakeRTCPeerConnection.instances.length = 0;
     });
 
     it('negotiates offers, forwards ICE candidates, and dispatches remote events', async () => {
-        vi.stubGlobal('RTCPeerConnection', FakeRTCPeerConnection);
-
-        const signaler = {
-            send: vi.fn(async () => {
-            })
-        };
-        const peer = new QRtcPeerConnection(
-            signaler as never,
-            createPeerInput(true)
-        );
+        const onConnected = vi.fn(async () => {});
+        const { peer, native, sentSignals } = createPeerFixture(true, { onConnected });
         const seenDataChannels: string[] = [];
         const seenTracks: string[] = [];
         const seenStreams: string[] = [];
-        const onConnected = vi.fn(async () => {
-        });
-
         peer.onDataChannelDo('dc', async (event) => {
             seenDataChannels.push(event.channel.label);
         });
@@ -37,61 +52,46 @@ describe('QRtcPeerConnection', () => {
             seenStreams.push(stream.id);
         });
 
-        peer.connect({
-            onConnected
-        });
+        await native.onnegotiationneeded?.call(native, new Event('negotiationneeded'));
+        await native.onicecandidate?.call(native, new NativeIceCandidateEvent('ice-1'));
+        await native.receiveDataChannel('chat');
+        await native.ontrack?.call(
+            native,
+            new SimulatedRtcTrackEvent(
+                new SimulatedMediaTrack('video'),
+                new SimulatedMediaStream('remote-1', [new SimulatedMediaTrack('audio')])
+            )
+        );
+        native.setConnected();
 
-        const pc = FakeRTCPeerConnection.instances[0];
-
-        await pc.onnegotiationneeded?.();
-        await pc.onicecandidate?.({
-            candidate: {
-                candidate: 'ice-1'
-            }
-        });
-        await pc.ondatachannel?.({
-            channel: new FakeRTCDataChannel('chat')
-        } as RTCDataChannelEvent);
-        const remoteTrackEvent: Pick<RTCTrackEvent, 'track' | 'streams'> = {
-            track: createFakeTrack('video'),
-            streams: [createFakeStream('remote-1', [createFakeTrack('audio')])]
-        };
-        await pc.ontrack?.(remoteTrackEvent as RTCTrackEvent);
-
-        pc.connectionState = 'connected';
-        pc.onconnectionstatechange?.();
-
-        expect(signaler.send).toHaveBeenNthCalledWith(1, {
-            channel: 'RtcSignal',
-            type: 'Signal',
-            fromId: 'self',
-            toId: 'peer-1',
-            sessionId: 'self',
-            token: 'token-1',
-            signalType: 'Offer',
-            payload: {
-                description: {
-                    type: 'offer',
-                    sdp: 'offer-sdp'
-                },
-                candidate: null
-            }
-        });
-        expect(signaler.send).toHaveBeenNthCalledWith(2, {
-            channel: 'RtcSignal',
-            type: 'Signal',
-            fromId: 'self',
-            toId: 'peer-1',
-            sessionId: 'self',
-            token: 'token-1',
-            signalType: 'IceCandidate',
-            payload: {
-                description: null,
-                candidate: {
-                    candidate: 'ice-1'
+        expect(sentSignals).toEqual([
+            {
+                channel: 'RtcSignal',
+                type: 'Signal',
+                fromId: 'self',
+                toId: 'peer-1',
+                sessionId: 'self',
+                token: 'token-1',
+                signalType: 'Offer',
+                payload: {
+                    description: { type: 'offer', sdp: 'offer-sdp' },
+                    candidate: null
+                }
+            },
+            {
+                channel: 'RtcSignal',
+                type: 'Signal',
+                fromId: 'self',
+                toId: 'peer-1',
+                sessionId: 'self',
+                token: 'token-1',
+                signalType: 'IceCandidate',
+                payload: {
+                    description: null,
+                    candidate: { candidate: 'ice-1' }
                 }
             }
-        });
+        ]);
         expect(seenDataChannels).toEqual(['chat']);
         expect(seenTracks).toEqual(['video']);
         expect(seenStreams).toEqual(['remote-1']);
@@ -121,66 +121,31 @@ describe('QRtcPeerConnection', () => {
     });
 
     it('queues ice candidates until a remote description exists and answers remote offers', async () => {
-        vi.stubGlobal('RTCPeerConnection', FakeRTCPeerConnection);
-
-        const signaler = {
-            send: vi.fn(async () => {
-            })
-        };
-        const peer = new QRtcPeerConnection(
-            signaler as never,
-            createPeerInput(true)
-        );
-
-        peer.connect();
-
-        const pc = FakeRTCPeerConnection.instances[0];
-
+        const { peer, native, sentSignals } = createPeerFixture(true);
         for (const candidate of ['queued-ice-1', 'queued-ice-2']) {
             await peer.handleSignal(QRtcSignalingType.IceCandidate, {
                 description: null,
-                candidate: {
-                    candidate
-                }
+                candidate: { candidate }
             });
         }
-        await (peer as any).signalingChain;
 
-        expect(pc.addIceCandidate).not.toHaveBeenCalled();
+        expect(native.receivedCandidates).toEqual([]);
         expect(peer.readDiagnostics()).toMatchObject({
             inboundIceCandidateCount: 2,
             queuedIceCandidateCount: 2,
             pendingIceCandidateQueueLength: 2
         });
-        expect((peer as any).status.iceCandidateQueue).toEqual([
-            {
-                candidate: 'queued-ice-1'
-            },
-            {
-                candidate: 'queued-ice-2'
-            }
-        ]);
 
         await peer.handleSignal(QRtcSignalingType.Offer, {
-            description: {
-                type: 'offer',
-                sdp: 'remote-offer'
-            },
+            description: { type: 'offer', sdp: 'remote-offer' },
             candidate: null
         });
-        await (peer as any).signalingChain;
 
-        expect(pc.setRemoteDescription).toHaveBeenCalledWith({
-            type: 'offer',
-            sdp: 'remote-offer'
-        });
-        expect(pc.addIceCandidate).toHaveBeenNthCalledWith(1, {
-            candidate: 'queued-ice-1'
-        });
-        expect(pc.addIceCandidate).toHaveBeenNthCalledWith(2, {
-            candidate: 'queued-ice-2'
-        });
-        expect((peer as any).status.iceCandidateQueue).toEqual([]);
+        expect(native.receivedDescriptions).toEqual([{ type: 'offer', sdp: 'remote-offer' }]);
+        expect(native.receivedCandidates).toEqual([
+            { candidate: 'queued-ice-1' },
+            { candidate: 'queued-ice-2' }
+        ]);
         expect(peer.readDiagnostics()).toMatchObject({
             inboundOfferCount: 1,
             outboundAnswerCount: 1,
@@ -188,7 +153,7 @@ describe('QRtcPeerConnection', () => {
             flushedIceCandidateCount: 2,
             pendingIceCandidateQueueLength: 0
         });
-        expect(signaler.send).toHaveBeenLastCalledWith({
+        expect(sentSignals).toEqual([{
             channel: 'RtcSignal',
             type: 'Signal',
             fromId: 'self',
@@ -197,81 +162,107 @@ describe('QRtcPeerConnection', () => {
             token: 'token-1',
             signalType: 'Answer',
             payload: {
-                description: {
-                    type: 'answer',
-                    sdp: 'answer-sdp'
-                },
+                description: { type: 'answer', sdp: 'answer-sdp' },
                 candidate: null
             }
+        }]);
+    });
+
+    it('accounts successful queued ICE against diagnostics reset during a native addition', async () => {
+        const { peer, native } = createPeerFixture(true);
+        for (const candidate of ['first', 'second']) {
+            await peer.handleSignal(QRtcSignalingType.IceCandidate, { description: null, candidate: { candidate } });
+        }
+        const additionStarted = Promise.withResolvers<void>();
+        const releaseAddition = Promise.withResolvers<void>();
+        const addIceCandidate = native.addIceCandidate.bind(native);
+        vi.spyOn(native, 'addIceCandidate').mockImplementationOnce(async (candidate) => {
+            additionStarted.resolve();
+            await releaseAddition.promise;
+            await addIceCandidate(candidate);
+        });
+        const offer = peer.handleSignal(QRtcSignalingType.Offer, {
+            description: { type: 'offer', sdp: 'remote-offer' },
+            candidate: null
+        });
+        await additionStarted.promise;
+        try {
+            peer.resetDiagnostics();
+            expect(peer.readDiagnostics().addedIceCandidateCount).toBe(0);
+        }
+        finally {
+            releaseAddition.resolve();
+            await offer;
+        }
+
+        expect(native.receivedCandidates).toEqual([{ candidate: 'first' }, { candidate: 'second' }]);
+        expect(peer.readDiagnostics()).toMatchObject({
+            inboundOfferCount: 0,
+            queuedIceCandidateCount: 0,
+            addedIceCandidateCount: 2,
+            flushedIceCandidateCount: 2,
+            pendingIceCandidateQueueLength: 0
         });
     });
 
     it('ignores stale answers without clearing negotiation collision flags', async () => {
-        vi.stubGlobal('RTCPeerConnection', FakeRTCPeerConnection);
-
-        const signaler = {
-            send: vi.fn(async () => {
-            })
-        };
-        const peer = new QRtcPeerConnection(
-            signaler as never,
-            createPeerInput(true)
-        );
-
-        peer.connect();
-
-        const pc = FakeRTCPeerConnection.instances[0];
-        pc.signalingState = 'stable';
-        (peer as any).status.makingOffer = true;
-        (peer as any).status.ignoreOffer = true;
-
-        await peer.handleSignal(QRtcSignalingType.Answer, {
-            description: {
-                type: 'answer',
-                sdp: 'stale-answer'
-            },
-            candidate: null
+        const { peer, native, sentSignals } = createPeerFixture(false);
+        const localDescriptionStarted = Promise.withResolvers<void>();
+        const releaseLocalDescription = Promise.withResolvers<void>();
+        const setLocalDescription = native.setLocalDescription.bind(native);
+        vi.spyOn(native, 'setLocalDescription').mockImplementationOnce(async (description) => {
+            localDescriptionStarted.resolve();
+            await releaseLocalDescription.promise;
+            await setLocalDescription(description);
         });
-        await (peer as any).signalingChain;
+        const negotiation = native.onnegotiationneeded?.call(native, new Event('negotiationneeded'));
+        await localDescriptionStarted.promise;
 
-        expect(pc.setRemoteDescription).not.toHaveBeenCalled();
-        expect((peer as any).status.makingOffer).toBe(true);
-        expect((peer as any).status.ignoreOffer).toBe(true);
-        expect(peer.readDiagnostics()).toMatchObject({
-            inboundAnswerCount: 1,
-            staleAnswerIgnoredCount: 1
-        });
+        try {
+            await peer.handleSignal(QRtcSignalingType.Offer, {
+                description: { type: 'offer', sdp: 'colliding-offer' },
+                candidate: null
+            });
+            await peer.handleSignal(QRtcSignalingType.Answer, {
+                description: { type: 'answer', sdp: 'stale-answer' },
+                candidate: null
+            });
+            await peer.handleSignal(QRtcSignalingType.IceCandidate, {
+                description: null,
+                candidate: { candidate: 'ignored-collision-ice' }
+            });
+            await native.onnegotiationneeded?.call(native, new Event('negotiationneeded'));
+
+            expect(native.receivedDescriptions).toEqual([]);
+            expect(native.receivedCandidates).toEqual([]);
+            expect(sentSignals).toEqual([]);
+            expect(peer.readDiagnostics()).toMatchObject({
+                inboundAnswerCount: 1,
+                staleAnswerIgnoredCount: 1,
+                ignoredOfferCollisionCount: 1,
+                ignoredIceCandidateForIgnoredOfferCount: 1,
+                pendingIceCandidateQueueLength: 0,
+                negotiationSkippedCount: 1
+            });
+        }
+        finally {
+            releaseLocalDescription.resolve();
+            await negotiation;
+        }
+        expect(sentSignals.map((message) => message.signalType)).toEqual([QRtcSignalingType.Offer]);
     });
 
     it('ignores offer collisions when impolite and retries with ICE restart on failure', async () => {
         vi.useFakeTimers();
-        vi.stubGlobal('RTCPeerConnection', FakeRTCPeerConnection);
-
-        const signaler = {
-            send: vi.fn(async () => {
-            })
-        };
-        const peer = new QRtcPeerConnection(
-            signaler as never,
-            createPeerInput(false)
-        );
-
-        peer.connect();
-
-        const pc = FakeRTCPeerConnection.instances[0];
-        (peer as any).status.makingOffer = true;
-        pc.signalingState = 'have-local-offer';
-
+        const { peer, native } = createPeerFixture(false);
+        const restartIce = vi.spyOn(native, 'restartIce');
+        await native.onnegotiationneeded?.call(native, new Event('negotiationneeded'));
         await peer.handleSignal(QRtcSignalingType.Offer, {
-            description: {
-                type: 'offer',
-                sdp: 'colliding-offer'
-            },
+            description: { type: 'offer', sdp: 'colliding-offer' },
             candidate: null
         });
-        await (peer as any).signalingChain;
 
-        expect(pc.setRemoteDescription).not.toHaveBeenCalled();
+        expect(native.receivedDescriptions).toEqual([]);
         expect(peer.readDiagnostics()).toMatchObject({
             inboundOfferCount: 1,
             offerCollisionCount: 1,
@@ -280,29 +271,34 @@ describe('QRtcPeerConnection', () => {
 
         await peer.handleReconnect();
         await peer.handleReconnect();
-        expect((peer as any).status.reconnectAttempts).toBe(1);
         expect(peer.readDiagnostics()).toMatchObject({
             reconnectAttemptCount: 1,
+            reconnectAttemptsInFlight: 1,
             reconnectTimerAlreadyActiveCount: 1,
             hasReconnectTimer: true
         });
 
-        pc.connectionState = 'failed';
+        native.connectionState = 'failed';
         await vi.advanceTimersByTimeAsync(2_000);
 
-        expect(pc.restartIce).toHaveBeenCalledOnce();
+        expect(restartIce).toHaveBeenCalledOnce();
         expect(peer.readDiagnostics()).toMatchObject({
             iceRestartCount: 1,
             iceRestartSkippedConnectedCount: 0,
             hasReconnectTimer: false
         });
 
-        (peer as any).status.reconnectAttempts = 5;
+        for (const delayMs of [4_000, 8_000, 16_000, 32_000]) {
+            await peer.handleReconnect();
+            await vi.advanceTimersByTimeAsync(delayMs);
+        }
+        expect(restartIce).toHaveBeenCalledTimes(5);
         await peer.handleReconnect();
 
-        expect(peer.status.pc).toBeUndefined();
+        expect(native.connectionState).toBe('closed');
         expect(peer.isReadyToConnect()).toBe(true);
         expect(peer.readDiagnostics()).toMatchObject({
+            reconnectAttemptCount: 5,
             reconnectExhaustedCount: 1,
             resetCount: 1,
             closedPeerConnectionCount: 1
@@ -310,52 +306,29 @@ describe('QRtcPeerConnection', () => {
     });
 
     it('cleans up peer connection handlers and listeners on reset', () => {
-        vi.stubGlobal('RTCPeerConnection', FakeRTCPeerConnection);
-
-        const peer = new QRtcPeerConnection(
-            {
-                send: vi.fn(async () => {
-                })
-            } as never,
-            createPeerInput(true)
-        );
-
-        peer.connect();
-
-        const pc = FakeRTCPeerConnection.instances[0];
-        expect(pc.listenerCount('icegatheringstatechange')).toBe(1);
+        const { peer, native } = createPeerFixture(true);
+        expect(getEventListeners(native, 'icegatheringstatechange')).toHaveLength(1);
 
         peer.reset();
 
-        expect(pc.close).toHaveBeenCalledOnce();
-        expect(pc.listenerCount('icegatheringstatechange')).toBe(0);
-        expect(pc.onnegotiationneeded).toBeNull();
-        expect(pc.onicecandidate).toBeNull();
-        expect(pc.ondatachannel).toBeNull();
-        expect(pc.ontrack).toBeNull();
-        expect(pc.oniceconnectionstatechange).toBeNull();
-        expect(pc.onsignalingstatechange).toBeNull();
-        expect(pc.onconnectionstatechange).toBeNull();
+        expect(native.connectionState).toBe('closed');
+        expect(peer.readDiagnostics().closedPeerConnectionCount).toBe(1);
+        expect(getEventListeners(native, 'icegatheringstatechange')).toHaveLength(0);
+        expect(native.onnegotiationneeded).toBeNull();
+        expect(native.onicecandidate).toBeNull();
+        expect(native.ondatachannel).toBeNull();
+        expect(native.ontrack).toBeNull();
+        expect(native.oniceconnectionstatechange).toBeNull();
+        expect(native.onsignalingstatechange).toBeNull();
+        expect(native.onconnectionstatechange).toBeNull();
     });
 
     it('coalesces repeated disconnected events into one reconnect timer', async () => {
         vi.useFakeTimers();
-        vi.stubGlobal('RTCPeerConnection', FakeRTCPeerConnection);
-
-        const peer = new QRtcPeerConnection(
-            {
-                send: vi.fn(async () => {
-                })
-            } as never,
-            createPeerInput(true)
-        );
-
-        peer.connect();
-
-        const pc = FakeRTCPeerConnection.instances[0];
-        pc.connectionState = 'disconnected';
-        pc.onconnectionstatechange?.();
-        pc.onconnectionstatechange?.();
+        const { peer, native } = createPeerFixture(true);
+        native.connectionState = 'disconnected';
+        native.onconnectionstatechange?.call(native, new Event('connectionstatechange'));
+        native.onconnectionstatechange?.call(native, new Event('connectionstatechange'));
 
         expect(peer.readDiagnostics()).toMatchObject({
             disconnectTimerScheduledCount: 1,
@@ -364,8 +337,7 @@ describe('QRtcPeerConnection', () => {
             disconnectTimerFiredCount: 0
         });
 
-        pc.connectionState = 'connected';
-        pc.onconnectionstatechange?.();
+        native.setConnected();
         await vi.advanceTimersByTimeAsync(5_000);
 
         expect(peer.readDiagnostics()).toMatchObject({
@@ -378,181 +350,76 @@ describe('QRtcPeerConnection', () => {
     });
 
     it('adds and replaces local tracks and toggles media state', async () => {
-        vi.stubGlobal('RTCPeerConnection', FakeRTCPeerConnection);
-
-        const signaler = {
-            send: vi.fn(async () => {
-            })
-        };
-        const peer = new QRtcPeerConnection(
-            signaler as never,
-            createPeerInput(true)
-        );
-
+        vi.stubGlobal('RTCPeerConnection', SimulatedNativeMediaPeerConnection);
+        const signaler: QRtcSignalingSender = { send: async () => {} };
+        const peer = new QRtcPeerConnection(signaler, createPeerInput(true));
+        onTestFinished(() => {
+            peer.reset();
+        });
         peer.connect();
+        const native = peer.status.pc;
+        if (!(native instanceof SimulatedNativeMediaPeerConnection)) {
+            throw new Error('Expected the installed native media connection');
+        }
+        const firstAudio = new SimulatedMediaTrack('audio', 'first-audio');
+        const firstVideo = new SimulatedMediaTrack('video', 'first-video');
+        const firstStream = new SimulatedMediaStream('local-1', [firstAudio, firstVideo]);
 
-        const pc = FakeRTCPeerConnection.instances[0];
-        const firstAudio = createFakeTrack('audio');
-        const firstVideo = createFakeTrack('video');
-        const firstStream = createFakeStream('local-1', [firstAudio, firstVideo]);
+        await peer.setLocalMediaStream(firstStream);
 
-        await peer.setLocalMediaStream(firstStream as never);
+        const senders = native.getSenders();
+        expect(senders.map((sender) => sender.track)).toEqual([firstAudio, firstVideo]);
+        const secondAudio = new SimulatedMediaTrack('audio', 'second-audio');
+        const secondVideo = new SimulatedMediaTrack('video', 'second-video');
+        const secondStream = new SimulatedMediaStream('local-2', [secondAudio, secondVideo]);
 
-        expect(pc.addTrack).toHaveBeenCalledTimes(2);
+        await peer.setLocalMediaStream(secondStream);
 
-        const secondAudio = createFakeTrack('audio');
-        const secondVideo = createFakeTrack('video');
-        const secondStream = createFakeStream('local-2', [
-            secondAudio,
-            secondVideo
-        ]);
-
-        await peer.setLocalMediaStream(secondStream as never);
-
-        const audioSender = peer.status.localSenders.get('audio');
-        const videoSender = peer.status.localSenders.get('video');
-
-        expect(audioSender?.replaceTrack).toHaveBeenCalledWith(secondAudio);
-        expect(videoSender?.replaceTrack).toHaveBeenCalledWith(secondVideo);
-
+        expect(native.getSenders()).toEqual(senders);
+        expect(senders.map((sender) => sender.track)).toEqual([secondAudio, secondVideo]);
         peer.setLocalAudioEnabled(false);
         peer.setLocalVideoEnabled(false);
         peer.stopLocalMedia('audio');
 
         expect(secondAudio.enabled).toBe(false);
         expect(secondVideo.enabled).toBe(false);
-        expect(secondAudio.stop).toHaveBeenCalledOnce();
-        expect(secondVideo.stop).not.toHaveBeenCalled();
+        expect(secondAudio.readyState).toBe('ended');
+        expect(secondVideo.readyState).toBe('live');
     });
 });
 
-class FakeRTCDataChannel {
-    public readonly label: string;
-
-    constructor(label: string) {
-        this.label = label;
-    }
+interface PeerConnectionFixture {
+    readonly peer: QRtcPeerConnection;
+    readonly native: SimulatedNativeRtcPeerConnection;
+    readonly sentSignals: readonly DecodedRtcSignalingMessage[];
 }
 
-class FakeRTCPeerConnection {
-    static readonly instances: FakeRTCPeerConnection[] = [];
-
-    connectionState:
-        | 'new'
-        | 'connecting'
-        | 'connected'
-        | 'disconnected'
-        | 'failed'
-        | 'closed' = 'new';
-    signalingState:
-        | 'stable'
-        | 'have-local-offer'
-        | 'have-remote-offer'
-        | 'closed' = 'stable';
-    iceConnectionState: RTCIceConnectionState = 'new';
-    iceGatheringState: RTCIceGatheringState = 'new';
-    localDescription: RTCSessionDescriptionInit | null = null;
-    remoteDescription: RTCSessionDescriptionInit | null = null;
-
-    onnegotiationneeded: (() => Promise<void>) | null = null;
-    onicecandidate:
-        | ((event: { candidate: RTCIceCandidateInit | null; }) => Promise<void>)
-        | null = null;
-    ondatachannel: ((event: RTCDataChannelEvent) => Promise<void>) | null = null;
-    ontrack: ((event: RTCTrackEvent) => Promise<void>) | null = null;
-    oniceconnectionstatechange: (() => void) | null = null;
-    onsignalingstatechange: (() => void) | null = null;
-    onconnectionstatechange: (() => void) | null = null;
-
-    readonly addTrack = vi.fn((track: MediaStreamTrack, _stream: MediaStream) => {
-        const sender = {
-            track,
-            replaceTrack: vi.fn(async (nextTrack: MediaStreamTrack) => {
-                sender.track = nextTrack;
-            }),
-            getParameters: vi.fn(() => ({})),
-            setParameters: vi.fn(async () => {
-            })
-        };
-
-        return sender as unknown as RTCRtpSender;
+function createPeerFixture(isPolite: boolean, callbacks: QRtcPeerConnection.StateCallbacks = {}): PeerConnectionFixture {
+    const runtime = installNativeRtcRuntime();
+    const sentSignals: DecodedRtcSignalingMessage[] = [];
+    const signaler: QRtcSignalingSender = {
+        send: async (message) => {
+            sentSignals.push(decodeRtcSignalingMessage(JSON.stringify(message)));
+        }
+    };
+    const peer = new QRtcPeerConnection(signaler, createPeerInput(isPolite));
+    onTestFinished(() => {
+        try {
+            peer.reset();
+        }
+        finally {
+            runtime.dispose();
+        }
     });
-    readonly addIceCandidate = vi.fn(async () => {
-    });
-    readonly restartIce = vi.fn(() => {
-    });
-    readonly close = vi.fn(() => {
-        this.connectionState = 'closed';
-    });
-    readonly setRemoteDescription = vi.fn(
-        async (description: RTCSessionDescriptionInit) => {
-            this.remoteDescription = description;
-            this.signalingState = description.type === 'offer' ? 'have-remote-offer' : 'stable';
-        }
-    );
-    readonly setLocalDescription = vi.fn(
-        async (description?: RTCSessionDescriptionInit) => {
-            if (description) {
-                this.localDescription = description;
-            }
-            else if (this.remoteDescription?.type === 'offer') {
-                this.localDescription = {
-                    type: 'answer',
-                    sdp: 'answer-sdp'
-                };
-            }
-            else {
-                this.localDescription = {
-                    type: 'offer',
-                    sdp: 'offer-sdp'
-                };
-            }
-
-            this.signalingState = this.localDescription.type === 'offer' ? 'have-local-offer' : 'stable';
-        }
-    );
-
-    private readonly listeners = new Map<string, Array<() => void>>();
-
-    constructor(_configuration: RTCConfiguration) {
-        FakeRTCPeerConnection.instances.push(this);
+    peer.connect(callbacks);
+    const native = runtime.createdConnections[0];
+    if (!native) {
+        throw new Error('Expected a native connection after connect');
     }
-
-    addEventListener(type: string, listener: () => void): void {
-        const listeners = this.listeners.get(type) ?? [];
-        listeners.push(listener);
-        this.listeners.set(type, listeners);
-    }
-
-    removeEventListener(type: string, listener: () => void): void {
-        const listeners = this.listeners.get(type);
-        if (!listeners) {
-            return;
-        }
-
-        const index = listeners.indexOf(listener);
-        if (index >= 0) {
-            listeners.splice(index, 1);
-        }
-        if (listeners.length === 0) {
-            this.listeners.delete(type);
-        }
-    }
-
-    listenerCount(type: string): number {
-        return this.listeners.get(type)?.length ?? 0;
-    }
-
-    getTransceivers(): Array<{ stop: () => void; }> {
-        return [];
-    }
-
-    createDataChannel(label: string): RTCDataChannel {
-        return new FakeRTCDataChannel(label) as never;
-    }
+    return { peer, native, sentSignals };
 }
 
-function createPeerInput(isPolite: boolean) {
+function createPeerInput(isPolite: boolean): QRtcPeerConnection.InputDto {
     return {
         sessionId: 'self',
         token: 'token-1',
@@ -565,19 +432,27 @@ function createPeerInput(isPolite: boolean) {
     };
 }
 
-function createFakeTrack(kind: 'audio' | 'video'): MediaStreamTrack {
-    return {
-        kind,
-        enabled: true,
-        stop: vi.fn()
-    } as never;
-}
+class NativeIceCandidateEvent extends Event implements RTCPeerConnectionIceEvent {
+    readonly candidate: RTCIceCandidate;
 
-function createFakeStream(id: string, tracks: MediaStreamTrack[]): MediaStream {
-    return {
-        id,
-        getTracks: () => tracks,
-        getAudioTracks: () => tracks.filter((track) => track.kind === 'audio'),
-        getVideoTracks: () => tracks.filter((track) => track.kind === 'video')
-    } as never;
+    constructor(candidate: string) {
+        super('icecandidate');
+        this.candidate = {
+            candidate,
+            address: null,
+            component: null,
+            foundation: null,
+            port: null,
+            priority: null,
+            protocol: null,
+            relatedAddress: null,
+            relatedPort: null,
+            sdpMLineIndex: null,
+            sdpMid: null,
+            tcpType: null,
+            type: null,
+            usernameFragment: null,
+            toJSON: () => ({ candidate })
+        };
+    }
 }

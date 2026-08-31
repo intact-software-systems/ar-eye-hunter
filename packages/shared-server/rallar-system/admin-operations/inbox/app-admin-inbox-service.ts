@@ -7,7 +7,7 @@ import type { AuthSession } from '@shared/api/api-config.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import { TryWithExhaustedError, TryWithPolicy, tryWithPolicy } from '@shared/resilience/TryWith.ts';
-import type { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
+import type { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 

@@ -1,6 +1,7 @@
 # Group Activation — Implementation Plan (2026-08-22)
 
-Status: **planning — re-baselined against product decisions 1–42. The product decisions are settled;
+Status: **implementation in progress — Slice 8b is under review in #390; the existing
+Slice 8c and 8d PRs follow it in review order. Re-baselined against product decisions 1–42. The product decisions are settled;
 the implementation decisions record current reasoning, while ownership, decomposition, file and
 symbol inventories, dependencies and gates must be refreshed against the actual delivery head before
 the first implementation PR and whenever later changes to `main` materially affect the plan.**
@@ -69,21 +70,21 @@ new machinery is concentrated in the browser and in slice 12**, and that is wher
 Everything else builds on something named. The anchors worth knowing, because a slice that reaches for
 a new mechanism instead of one of these should be challenged in review:
 
-| Need                               | Existing anchor                                                                               |
-| ---------------------------------- | --------------------------------------------------------------------------------------------- |
-| a new group command                | `grantGroupAdmission` (#297) and `failGroupFormation` (#282), both worked end to end          |
-| a dark, route-less command         | `failGroupFormation`, carried as `transport: 'MAINTENANCE'` in the routing-owner inventory    |
-| a caller-supplied expected value   | `computeDisconnectPresence`, and the topology reconfigure read's causal-revision compare      |
-| a compute-side 409                 | `RtcRttMutationIdempotencyConflictError`, `GroupTopologyConfigIdempotencyConflictError`       |
-| comparing layout revisions         | `compareGroupCausalRevision` → `compareOverlayTopologyCausalTuple` → `decideTopologySnapshot` |
-| retiring a layout without a delete | `removedTopologyResult` and the `state: 'removed'` tombstone every reader already filters     |
-| a second durable topology store    | `RtcTopologySnapshotRepository` parameterised by namespace, or its `childKey` idiom           |
-| cross-node damping                 | the coalesced APP_OUTBOX row and its generation CAS                                           |
-| hysteresis banding                 | `resolveTopologyKindWithHysteresis`                                                           |
-| gating peer creation               | symmetric `setInboundPeerCreationPolicy` / `setOutboundDialPolicy` seams                      |
-| two repository slots               | `configureSharedStateRepositories`, which already configures two independent tokens           |
-| a non-lifecycle group field        | `appointDirector`, `rotateGroupJoinCode`                                                      |
-| per-group durable policy           | `GroupLifecyclePolicy` with its nested sub-policies, presets, issue codes and repository      |
+| Need                               | Existing anchor                                                                                 |
+| ---------------------------------- | ----------------------------------------------------------------------------------------------- |
+| a new group command                | `grantGroupAdmission` (#297) and `failGroupFormation` (#282), both worked end to end            |
+| a dark, route-less command         | `failGroupFormation`, carried as `transport: 'MAINTENANCE'` in the routing-owner inventory      |
+| a caller-supplied expected value   | `computeDisconnectPresence`, and the topology reconfigure read's causal-revision compare        |
+| a compute-side 409                 | `RtcRttMutationIdempotencyConflictError`, `GroupTopologyConfigIdempotencyConflictError`         |
+| comparing layout revisions         | `compareGroupCausalRevision` → `compareOverlayTopologyCausalTuple` → `decideTopologySnapshot`   |
+| retiring a layout without a delete | `removedTopologyResult` and the `state: 'removed'` tombstone every reader already filters       |
+| a second durable topology store    | `RtcTopologySnapshotRepository` parameterised by namespace, or its `childKey` idiom             |
+| cross-node damping                 | the coalesced APP_OUTBOX row and its generation CAS                                             |
+| hysteresis banding                 | `resolveTopologyKindWithHysteresis`                                                             |
+| gating peer creation               | `setInboundPeerCreationPolicy` + `toBrowserRtcInboundPeerCreationDecision` (mirror it outbound) |
+| two repository slots               | `configureSharedStateRepositories`, which already configures two independent tokens             |
+| a non-lifecycle group field        | `appointDirector`, `rotateGroupJoinCode`                                                        |
+| per-group durable policy           | `GroupLifecyclePolicy` with its nested sub-policies, presets, issue codes and repository        |
 
 ## Slice 0 — Re-plan against current `main` (initial prerequisite and standing checkpoint)
 
@@ -1591,49 +1592,235 @@ source gate still pinned to the monolith, and a room test double that bypassed b
 roles. Their focused repairs restore the inventories and test ownership without adding a production
 fallback or retained-legacy entry. The final unit, Deno, build, shared-web/headless boundary, browser
 bundle, E2E, memory full-stack, live three-browser, topology-replay and fixed medium-scale gates all
-pass. #381's formation-large, topology-replay, medium-scale, CodeQL and release checks are also green;
-the delivery readiness command ran once, moved #381 out of draft, and reported the supported
-review-or-administrator-merge wait state. It is ready for main and remains unchanged while awaiting
-that human merge decision.
+pass on that earlier integration; they are not evidence for the later correction below.
 
-### Slice 8b start checkpoint — stacked browser dial gate (2026-08-30, PR #390)
+### Slice 8a review refinements — receiver admission and current-state hydration
 
-Slice 8b starts from #381's published head `ce3689693` as draft #390 on
-`codex/group-activation-browser-dial-gate`; #381 remains unchanged while it awaits its human merge
-decision.
-The implementation boundary is the one already approved above: one total stage × layout-role peer
-selection drives both missing-peer admission seams, active-session absence fallback is removed, and
-existing established peers remain usable. The first census found the current inbound `tentative`
-bookkeeping has no reader outside its own add/delete operations; unless a focused test exposes an
-independent requirement, it leaves with the touched connection-service surface instead of becoming
-retained legacy. Slice 8c facade/status work and the Slice 8d route/recipe cutover remain out of scope.
+The oldest-first review keeps Slice 8a's planned-RTT/accepted-traffic separation and
+canonical RTT reporter election, passive pongs and transport validation. The previous
+bounded-wave stop is superseded by the maintainer's instruction to fix the findings and
+continue. A prior review limit is not an acceptance waiver or a product constraint.
 
-The first TDD checkpoint is green. A 28-row lifecycle-stage × planned/accepted-presence matrix now
-proves outbound reconciliation and inbound admission select the same peers, with explicit cases for
-the reconnecting union, a lagging planned offer after activation, and suppression of a local bootstrap
-overlay during initial connecting. The shared connection service has the symmetric outbound policy
-seam at its missing-peer choke point; a denial creates nothing, while an existing peer remains usable.
-The consumerless tentative-admission set and decision member were removed rather than retained.
-Focused manager, connection-service and browser-wiring tests pass, and repository typecheck covers 972
-test files with zero debt. The broader shared/shared-web sweep passes 669 files / 4,907 tests (four
-files and nine tests skipped), and the peer-owner benchmark now installs accepted layouts so its
-measured lookup set remains representative; its owning test and Deno typecheck pass.
+Two recovered ownership facts refine the remaining implementation:
 
-The final Slice 8b local checkpoint is green at implementation head `c97d3b046`: the complete unit,
-Deno and build commands pass; shared-web public API, browser bundle and headless boundaries pass 16
-focused tests; browser bundle budgets pass; E2E passes 39 core and 210 Recipe Console tests with their
-configured skips; memory full-stack passes 7/7; and the live three-browser command passes its enabled
-scenario with two configured skips. The explicit local Postgres medium-scale profile passes 2,757
-successful operations with zero failures. #390's remote formation-large, topology-replay and
-medium-scale Postgres gates are green. Repository-structure and retained-legacy checks pass. The one
-slice-local structure finding is the existing large `WebRtcConnectionService`: review keeps its direct
-peer-lifecycle ownership because the new policy is enforced at its existing missing-peer creation
-choke point, and extracting that decision would add navigation without an independent lifecycle or
-side-effect owner. Full `format:check` still reports only five byte-identical files inherited from
-`origin/main`; all Slice 8b files are formatted. Fresh diff review and the empty #390 review/comment
-queues found no blocking issue. Publication remains intentionally draft and stacked until #381
-merges; delivery status must therefore continue to report the non-default-base stop rather than
-pretending the child is ready for main.
+- The browser's remote RTC receiver owns snapshot-floor admission. After transport
+  decoding, a room message whose `minSnapshotVersion` exceeds the exact scoped local
+  `GroupSnapshot.group.snapshotVersion` must not enter deduplication, ordering,
+  application delivery or forwarding. The receiver emits a `not-yet-in-sync` NACK
+  through the existing RTC outbox, correlated to the original message and immediate
+  sending peer. Control messages bypass this gate so a rejection cannot create a
+  rejection loop. No-floor traffic retains its existing behavior, and retrying the
+  same message after snapshot advancement remains admissible. The local outbound
+  planning path is unchanged. Injected receipts and server WebSocket rejection do not
+  prove this receiver behavior.
+- An HTTP topology read observes the current immutable group snapshot before awaiting
+  its response. If group authority changes during that await, neither role may be
+  adopted or removed from that response. Checking membership alone allows an old
+  accepted layout to be recreated after newer acceptance revoked it. Current-state
+  repair still accepts an incomparable topology observation when its group and role
+  observations remain current. Each role also captures its raw repository record,
+  including tombstones: an intervening role publication fences that role's delayed
+  non-monotonic repair even when the group object is unchanged. Null results remove
+  only the original active role observations and retain tombstone fences.
+
+The receiver constructor uses a named required input with explicit stores, clock and
+heartbeat policy. Its class identity remains public; the positional constructor and
+uninvoked receiver outbox-callback registry have no retained overload or shim. The
+consumerless receiver raw-message callback registry is also removed: it bypassed
+admission, had no corresponding peer teardown and had no verified repository caller.
+The data-channel and heartbeat callback ports remain independently required. The
+multicast manager already owns the group cache and outbound control path, so this
+receiver fix does not require changing that independent owner's constructor.
+
+The black-box runtime and live proof use required production lifecycle ports and
+canonical command/result contracts. Cleanup normalizes caught failures once and
+preserves every diagnostic in a named serializable shape. Existing source-inventory
+checks remain supplementary to real receiver, lifecycle and cleanup behavior tests;
+no package-boundary or legacy-removal check is waived.
+
+Every changed human-authored file must be reviewed and remediated in full. Every support
+file modified during remediation enters that closure recursively. Independent untouched
+code remains outside closure. Remove affected graph, single-slot and missing-port legacy;
+keep no production compatibility shim merely to preserve a coupled test.
+
+The Slice 8 gates above and condition-based gate assignment below remain acceptance requirements. In particular, real
+three-browser delivery must observe receiver-generated NACKs, and current-candidate
+public-surface, bundle, native PostgreSQL and state-write evidence must support delivery.
+Published PR checks and review conversations own readiness; this document is not their
+status ledger. Merges remain manual.
+
+Native review validation also exposed an existing presence-response race in the
+state-write convergence recipe. A successful reconnect receipt can precede the
+asynchronous group-presence summary, as already decided in #112 and implemented for
+the topology-churn proof in #116. Preserve that service contract. The reconnect
+request observes success and its causal tuple; a bounded read in the same concurrent
+presence lane must observe the exact reused session's new generation before recording
+the accepted lifecycle observation. A higher presence revision alone is insufficient
+because another concurrent summary update may advance it. Preserve the generation and
+expiry assertions, four racing lanes, final convergence rounds, maintenance delay and
+existing timeout budgets; do not make the production response synchronous or rerun the
+unrepaired recipe until it happens to pass.
+
+The subsequent `main` checkpoint at `5530e8b43` changes the live-browser harness,
+not the cache-role or receiver-admission contracts. Preserve its awaited membership
+refresh after peer readiness and before measured delivery, with refresh time included
+in the shared readiness budget. Failed browser startup and cleanup must still release
+the owned contexts and leave failure-evidence writing reachable. Preserve bounded
+observation of received RTC frames and exact NACK message/peer correlation alongside
+the receiver proof and named cleanup diagnostics in this slice. The delivery-operation
+owner remains separate from scenario orchestration; do not restore obsolete source
+topology assertions or duplicate the new browser/control owners during integration.
+The pair-first proof plans and activates the pair, refreshes membership and verifies
+both peers ready before connecting the third peer. Promotion must precede readiness
+because a later transport reuses the group with its previous accepted session IDs.
+It then uses the existing reopen transition, promotes the three-member
+plan, refreshes membership and verifies three-peer readiness within the measured
+budget. Current Slice 8a dialing prefers the accepted layout, so waiting for the
+third peer before promoting the replacement would depend on a race or on Slice 8b's
+future dial policy. Establishing again from ACTIVE is not a valid transition.
+Rerun the affected live-browser and evidence tests after resolving the source conflict.
+
+Native release validation also exposed a separate WebSocket authority/fanout
+boundary: room authorization reads current durable membership, while default live
+fanout resolves recipients from an independently populated snapshot cache. An
+authorized message can therefore have no recipients even while its sender's socket
+is live. Preserve the fresh authorization read and carry its scoped membership
+observation into the original message's default live fanout. Keep that observation
+server-side; do not rewrite AL targets, widen fixed recipient audiences or broadcast
+exclusions, reuse it for proxy-transformed targets, or change queued delivery.
+Recipient resolution must still check the exact application, workspace and group,
+current leases and open connections. Canonical cache warming is insufficient: same-tuple liveness/lease
+projections can legitimately differ from stored snapshots and are not new canonical
+observations. Prove cold-cache, older-empty-cache and renewed-lease cases through the
+actual API authorizer and live recipient path, while retaining fresh ban/deletion
+rejections. The WebSocket recipe's echo assertion and existing budget remain intact.
+
+Full-file closure removes the unused optional context arguments from the public
+`RallarServerWsRouter.route` method and its internal install adapter. The class and
+export remain unchanged; TypeScript callers now call `route(message)`. Repository
+consumer and documentation review found no independent requirement for the ignored
+arguments. This is a disclosed signature narrowing under the requested legacy
+removal, with no compatibility shim or retained-legacy exception.
+
+For the governed state-write A-B-B-A comparison, every fresh position requires
+exactly nine measured runs, one warmup and concurrency ten. The general harness's
+three-run example does not satisfy the pooling protocol. Preserve all four source
+artifacts and environment descriptors, and diagnose failed comparisons without
+selecting favorable samples or relaxing timing, resource or correctness limits.
+The complete nine-run comparison for `7e6b213` failed uncontended p99, shared
+throughput and hot throughput. Its retained artifacts remain the acceptance result.
+A separate frozen-checkout profile captured CPU, garbage collection, event-loop
+gaps and PostgreSQL waits/checkpoints; instrumented timings are diagnostic only.
+
+### Review checkpoint — slice 8b admission and consumer closure (2026-08-31, PR #390)
+
+PR #381 completed review at `7bac6e40194356cdc08da07a5890372d16cbd695` and the
+maintainer merged it into `main` as `1bee0b239`. Its final native release gate,
+three-browser live RTC proof and complete nine-run state-write A-B-B-A comparison
+passed. The earlier failed comparison remains preserved and is not overwritten by
+the later passing evidence. No agent merge or auto-merge was used.
+
+The oldest remaining PR is #390. Reapply its actual Slice 8b delta over the reviewed
+parent; do not resurrect predecessor cache, RTT or test owners from its old parent
+history. GitHub has retargeted it to `main`; repair the actual conflict before broad
+final validation. Later PRs remain unreviewed until this capability is closed.
+
+The review found four concrete admission/security defects and two evidence gaps:
+
+- A desired overlay edge alone authorized direct dialing, while reconciliation also
+  required that peer in the same scoped room's current presence. One cached peer
+  ownership computation now supplies both ownership and the layout/presence
+  intersection used by every creation policy and reconciliation. Presence in another
+  room is not authority for the selected edge. Existing established peers remain
+  reusable after admission changes.
+- A retained peer DTO could bypass admission after native failure or reset. Reuse
+  requires a live connected or in-progress native connection; a DTO alone is not
+  evidence of reusable transport. Remove unusable resources, then apply current
+  inbound or outbound admission, capacity and establishment-attempt accounting
+  before replacement allocation. Preserve attempt history across replacement.
+- The browser started the signaling transport before its group manager installed
+  admission policies. Install deny policies before connecting signaling, then replace
+  them with the lifecycle policy during normal middleware composition. A real queued
+  incoming offer during pending transport connection must allocate no native peer
+  and consume no establishment attempt; the same peer must be admissible after a
+  valid accepted layout arrives.
+- Signaling decoded unchecked payloads and logged credentials, SDP and ICE. Validate
+  the envelope and operation payload before allocation, including direct public
+  accept calls. Keep untrusted wire data at the decoder and do not retain parser
+  causes that may quote secrets. Attempt budget state has one explicit lifecycle
+  owner; no fallback connection implementation remains.
+- Replace callback-only policy tests and whole-peer mocks with real browser policy,
+  connection service and native RTC boundary effects for the complete lifecycle ×
+  planned/accepted matrix, scope isolation, initial denial and established reuse.
+- Keep the peer-owner benchmark's accepted-layout, electorate, causal-version and
+  generation fixture internally coherent. Preserve measured work and acceptance
+  constants while removing private-state benchmark/test access in affected files.
+
+The server already freezes a connecting/reconnecting plan through its canonical
+plan resolver; no second browser freeze owner or tentative-state fallback is
+justified. Full touched-file closure includes consumers reached by canonical RTC
+filename/type migrations: native channel/queue owners, browser facade fixtures,
+multicast/group owners, reusable benchmark ports and black-box command contracts.
+This is still review work for #390, not a new product slice. Remove affected dead
+exports and unsafe predecessor test doubles rather than adding compatibility shims.
+
+The recursive review also corrected queue-reader disposal, channel callback
+cleanup, persisted/network AL decoding, and raw browser command decoding. Native
+fixtures now exercise the actual RTC/WS owners; server fixtures use real state
+services and transactional persistence. The browser bridge validates connection
+configuration before calling the runtime, and no longer falls back from missing
+authentication support to a full connection. No verified consumer required that
+fallback. Generic application message payloads remain application-owned.
+
+Sparse CRDT validation input must preserve omission. An absent schema-version or
+operation-version allowlist must not become an explicit `undefined` field that
+overwrites the core's defaults. Prove rejection through the real CRDT core for
+both updates and snapshots, while preserving explicit overrides and empty lists.
+Console observations publish their normalized message, without retaining raw
+arguments that can be circular or non-serializable.
+
+The stricter queue boundary also exposes the administrative prune worker's old
+`all/global` target pair. New page envelopes and their domain reader use canonical
+`broadcast/all` targets. The maintainer chose to clear the databases for this
+cutover instead of preserving retained messages. Remove the target-translation
+migration and its dedicated tests; keep the canonical producer and strict reader
+without a runtime fallback. Stop old producers and readers before the reset,
+initialize the clean databases through the existing Prisma migrations, and start
+only the new build. Prove actual queue dispatch and rejection of noncanonical
+pages. The agent does not perform the database reset or change deployment settings.
+The handler already completes each page atomically; generic queue release must
+recognize that exact completed reservation through a server-owned, fenced admin
+predicate. It must not weaken the shared queue's reservation or revival rules.
+
+The existing deployment workflow does not stop old queue workers or clear the
+databases. The maintainer owns coordination of that clean-database cutover with
+the manual merge and deployment. Clearing data while old workers remain active
+would let them recreate obsolete messages. No repository-wide deployment pause
+is part of this implementation, and no production data or setting has been changed
+during this review.
+
+The headless browser guard accounts for the validated command and signaling
+boundaries: identical builds measure 204.926758 KiB for the reviewed parent and
+207.519531 KiB after the decoder corrections. Use the smallest whole-KiB ceiling,
+208 KiB, retaining the existing Brotli settings and all operator-UI dependency
+exclusions. This proportional browser cost does not change the state-write
+performance thresholds or permit weakening input validation to save bundle bytes.
+
+**Delivery decomposition:** keep these corrections in #390. The canonical RTC and
+queue owner renames cross their production, browser, server, benchmark and test
+consumers; splitting that migration would leave broken imports or require the very
+legacy forwarding owners this review removes. The native fixtures and decoder
+regressions are the evidence for the corrected production boundaries and belong
+with them. This is an unusually large atomic review correction, not a precedent
+for combining later product slices. The browser transport ownership table in
+`docs/rallar-convergent-state-and-rtc-topology.md` is the durable read-first map.
+Keep #391 and #396 as separate capability PRs and reassess Slice 9 only afterward.
+
+Intermediate evidence: browser admission/manager/RTT tests passed (62 assertions),
+connection-service native effects passed (31 tests), and shared/shared-web plus
+985 maintained test files typechecked before the later recursive closure edits.
+These are diagnostic checkpoints; integrated final checks, current-head review and
+remote release evidence are still required before #390 is marked ready.
 
 ### Slice 8c start checkpoint — accepted-layout room facade (2026-08-30)
 
@@ -1830,23 +2017,62 @@ confirms the authority race is closed, facade test doubles are shape-checked, th
 exact in both definitions, and no Slice 8d or retained-compatibility work leaked into the slice.
 Publication and remote validation remain before the Slice 8c checkpoint closes.
 
+### Review checkpoint — slice 8c room authority (2026-08-31, PR #391)
+
+The parent review changed native RTC and queue owners, so resolve the actual stack
+conflicts without restoring partial whole-object test casts. A room target must
+intersect the exact accepted layout with the same snapshot's active sessions:
+layout publication may lag presence removal, and a peer connection can remain
+open for another room. Keep accepted identity as the authority; presence alone
+never grants a target.
+
+Pin full room scope before asynchronous connection or lane waits. Reauthorize
+targets immediately before JSON/binary writes and before reporting room-ready
+peers after a wait. Changing default workspace, membership, accepted layout or
+halt state during an await must not redirect an operation or expose stale ready
+peers. Explicit unscoped peer APIs retain their distinct behavior.
+
+Per-send room and peer selectors override channel defaults as a unit; a default
+full room reference must not mask an explicit room ID. Omitted send options keep
+the configured expiry, replacement key and lane-open timeout. A lane that closes
+while another peer is still opening must also leave the final ready set.
+
+Derive room failure progress from actual requested-lane or connection failure,
+not the connection service's retry-eligibility query, which can include healthy
+open or connecting peers. Prove these paths with native RTC boundaries and real
+room-facade consumers. The game cleanup also checks receive scope independently
+of the shared realtime lane; a dungeon room ID alone cannot identify a game room.
+Relic motion therefore uses the app-private `relic.motion.v2` payload with a
+mandatory full `GroupRef`. Reject old or missing-scope packets, and remove the
+older world-coordinate receive fallback. All Relic clients must update together;
+there is no retained dual-protocol reader.
+Game match configuration must also choose a coherent room ID/reference pair:
+an explicit room ID cannot inherit the current reference of another room, and an
+explicit full reference determines its own room ID.
+Keep the maintainer-approved browser-facade budget unchanged while reviewing and
+validating these corrections.
+
 **Next two PRs (I5, I20):**
 
-- **PR 15 = slice 8c, stacked on #390.** Repoint the room facade and readiness/status consumers to the
-  accepted-layout ownership established by 8a/8b, add the local halt/repair/progress surface, and
-  update the two game consumers; do not pull 8d's public route or recipe cutover forward.
-- **PR 16 = slice 8d, stacked on slice 8c after its review checkpoint.** Mount the seven remaining
-  lifecycle routes with the existing `activate` path, remove both inventoried legacy route families
-  and their recipe consumers atomically, and carry both black-box profiles, medium-scale and
-  state-write gates.
+- **Finish existing #390 / slice 8b.** Source review and local validation are complete;
+  await native release checks, then mark ready for the maintainer's manual merge
+  and chosen clean-database cutover. No agent database reset or deployment pause.
+- **Review existing #391 / slice 8c.** Resolve the actual conflicts with the reviewed
+  parent, preserve its native fixtures, and verify accepted-layout room status,
+  waits and sends through their final asynchronous transport boundary. Review
+  #396 next; resume Slice 9 only after the newest existing PR completes review.
 
 ## Slice 9 — In-flight pacing
 
-Three prerequisites are missing: (1) `ensurePeerConnectionStarted` returns a right value whether or not
-it decided to connect, so the attempt counter already counts idempotent ensures; (2) there is **no
-success callback** — the peer lifecycle callback has `onCreated`/`onDeleted`/`onConnectTimeout?`/
-`onConnectExhausted?` and nothing for established; (3) there is **no wire path for the bound** —
-`GroupSnapshot` carries no policy (**Q2**).
+Three prerequisites remain after the #390 review: (1) `ensurePeerConnectionStarted` still returns a
+right value for both a new connection and reuse, and the group manager increments its diagnostic
+attempt counter before that call; (2) the connection service's lifecycle subscription still exposes
+`onCreated`/`onDeleted`/`onConnectTimeout?`/`onConnectExhausted?`, without an established event for the
+manager; (3) there is **no wire path for the bound** — `GroupSnapshot` carries no policy (**Q2**).
+The native peer now has an `onConnected` callback, which the service uses to clear its establishment
+timer and retry budget. That per-peer retry budget already charges only new admitted connections;
+reuse and denied admission do not consume it. Slice 9 must expose the existing establishment truth
+to its manager rather than add another native success detector or undo that corrected accounting.
 
 A fourth structural gap: the reconcile pass flattens all groups into one desired-peer set, so there is
 no per-group loop for a per-group bound. **Product decision 18 answers the ownership question, and the answer is a rule rather than a
@@ -1856,7 +2082,7 @@ its bound, even if the other is idle. Put that consequence in the pacing matrix.
 arbitration is promised" describes the absence of negotiation, not the absence of a scheduling
 decision, and an earlier draft leaned on it as though it removed one.
 
-- **9a — truthful RTC lifecycle signals** (surface attempt-started, add an established callback). Dark,
+- **9a — truthful RTC lifecycle signals** (surface attempt-started and the service's established event). Dark,
   additive, independently valuable. I13 fixes the wire path: a nested member-policy object on the `Group`, carrying the resolved member-tier values with its own field validator.
 - **9b — the per-group bound, wake-on-completion, and the 6/20/50 sweep.**
 

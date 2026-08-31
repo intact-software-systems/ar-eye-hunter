@@ -9,7 +9,7 @@ import type {
 } from '@shared-web/browser/rallar-rtc-facade.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { readOverlayAdoptionDiagnostics } from '@shared/repository/overlays-repository.ts';
-import { DEFAULT_RTC_DATA_CHANNEL_LANE_ID, type QRtcPeerDto } from '@shared/services/WebRtcConnectionService.ts';
+import { DEFAULT_RTC_DATA_CHANNEL_LANE_ID, type QRtcPeerDto } from '@shared/services/web-rtc-connection-service.ts';
 import { readSelectedCandidatePairDiagnostics } from './read-selected-candidate-pair-diagnostics.ts';
 
 export namespace BrowserRtcDiagnosticsRuntime {

@@ -11,7 +11,7 @@ import { GROUP_STATE_APP_INBOX_TOPIC } from '@shared-server/rallar-system/app-in
 import { createAppInboxClientRuntime } from '@shared-server/rallar-system/app-inbox/client/create-app-inbox-client-runtime.ts';
 import type { JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import { EntityStatus, toResourceEntryWithUpdatedResource } from '@shared/queuebox/ResourceEntry.ts';
-import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
+import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 
 import type { PGliteSql } from '../../src/db/pglite-sql-adapter.ts';
 

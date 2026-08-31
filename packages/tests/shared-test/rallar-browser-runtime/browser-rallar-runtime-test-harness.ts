@@ -1,6 +1,9 @@
+import type { BlackBoxRallarEvent } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-operation-contracts.ts';
 import type { BlackBoxRallarRuntime } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-runtime-contract.ts';
-import type { BlackBoxRallarEvent } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/contracts.ts';
-import { createBlackBoxRallarRuntime } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/runtime.ts';
+import {
+    createBlackBoxRallarRuntime,
+    type BlackBoxRallarRuntimeInstallationTarget
+} from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-runtime.ts';
 import {
     facadeBehavior,
     facadeRecords,
@@ -15,11 +18,6 @@ export const facade = {
     session: facadeSession,
     rallar: rallarFacadeTestDouble
 };
-
-interface TestWindow {
-    readonly __blackBoxRallar?: BlackBoxRallarRuntime;
-    __blackBoxRallarEmit?: (event: BlackBoxRallarEvent) => void;
-}
 
 export const events: BlackBoxRallarEvent[] = [];
 
@@ -103,14 +101,16 @@ export function resetFacade(): void {
 }
 
 export async function loadRuntime(): Promise<BlackBoxRallarRuntime> {
-    const target: TestWindow = {
+    const target: BlackBoxRallarRuntimeInstallationTarget = {
         __blackBoxRallarEmit: (event) => {
             events.push(event);
         }
     };
     return createBlackBoxRallarRuntime({
         facade: facade.rallar,
-        targetWindow: target as Window
+        targetWindow: target,
+        clock: { now: Date.now },
+        delay: (ms) => new Promise<void>((resolve) => setTimeout(resolve, ms))
     });
 }
 

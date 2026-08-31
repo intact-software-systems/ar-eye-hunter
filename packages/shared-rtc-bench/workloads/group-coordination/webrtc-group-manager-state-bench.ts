@@ -4,8 +4,8 @@ import type { ClientInfo } from '@shared/api/api-config.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { LatestRepository } from '@shared/cache/LatestRepository.ts';
 import type { ReadableKeyedValues } from '@shared/cache/RepositoryInterfaces.ts';
-import { Either } from '@shared/resilience/Either.ts';
-import { WebRtcGroupManager } from '@shared/services/WebRtcGroupManager.ts';
+import { WebRtcConnectionService } from '@shared/services/web-rtc-connection-service.ts';
+import { WebRtcGroupManager } from '@shared/services/web-rtc-group-manager.ts';
 
 import {
     parseRtcBaselineAcceptedWorker,
@@ -148,9 +148,9 @@ export async function runWebRtcGroupManagerState(
 ): Promise<WebRtcGroupManagerStateResult> {
     const groupCache = new LatestRepository<string, GroupSnapshot>();
     const clientCache = new CountingClientCache();
-    const rtcQBox = createRtcQBoxHarness('self');
+    const connectionService = createSimulatedConnectionService('self');
     const manager = new WebRtcGroupManager(
-        rtcQBox.service as never,
+        connectionService,
         { groupCache, clientCache }
     );
 
@@ -193,10 +193,14 @@ export async function runWebRtcGroupManagerState(
     };
 }
 
-export function runWebRtcGroupManagerStateAcceptedSamples(input: {
+export interface WebRtcGroupManagerStateAcceptedSamplesInput {
     readonly worker: RtcBaselineAcceptedWorker<WebRtcGroupManagerStateInput>;
     readonly run: () => WebRtcGroupManagerStateResult | Promise<WebRtcGroupManagerStateResult>;
-}): Promise<RtcBaselineSampleDto[]> {
+}
+
+export function runWebRtcGroupManagerStateAcceptedSamples(
+    input: WebRtcGroupManagerStateAcceptedSamplesInput
+): Promise<RtcBaselineSampleDto[]> {
     return runRtcBaselineAcceptedWorker({
         worker: input.worker,
         run: input.run,
@@ -206,30 +210,31 @@ export function runWebRtcGroupManagerStateAcceptedSamples(input: {
     });
 }
 
-function createRtcQBoxHarness(sessionId: string) {
-    const knownPeerIds = new Set<string>();
+function createSimulatedConnectionService(sessionId: string): WebRtcConnectionService {
     const connectedPeerIds = new Set<string>();
-
-    const service = {
-        input: {
-            sessionId
+    const service = new WebRtcConnectionService({ send: async () => undefined, connect: async () => undefined }, {
+        sessionId,
+        token: 'benchmark-token',
+        iceCandidates: { iceServers: [], expiresAtEpochMs: 60_000 },
+        dataChannelName: 'benchmark',
+        rtcSignalingTopicId: 'rtc'
+    });
+    service.onRtcPeerLifecycleDo('simulated-native-transport', {
+        onCreated: (peer) => {
+            peer.connection.connect = () => {
+                connectedPeerIds.add(peer.peerId);
+            };
+            for (const channel of peer.channels.values()) {
+                channel.connect = () => undefined;
+            }
         },
-        knownPeerIds: () => Array.from(knownPeerIds),
-        peerIdsWithNoReconnectableLanes: () => Array.from(connectedPeerIds),
-        ensurePeerConnectionStarted: (peerId: string) => {
-            knownPeerIds.add(peerId);
-            connectedPeerIds.add(peerId);
-            return Either.ofRight({ peerId } as never);
-        },
-        disconnectPeer: (peerId: string) => {
-            knownPeerIds.delete(peerId);
-            return connectedPeerIds.delete(peerId);
+        onDeleted: (peer) => {
+            connectedPeerIds.delete(peer.peerId);
         }
-    };
-
-    return {
-        service
-    };
+    });
+    // Preserve the simulated native readiness query's workload without creating browser sockets.
+    service.peerIdsWithNoReconnectableLanes = () => Array.from(connectedPeerIds);
+    return service;
 }
 
 function createGroupSnapshot(
@@ -366,12 +371,12 @@ function parseDiagnosticArguments(
     return {
         mode: 'diagnostic',
         input: {
-            clients: Number(readDiagnosticArgument(arguments_, '--clients', '5000')),
-            desired: Number(readDiagnosticArgument(arguments_, '--desired', '1000')),
-            lookups: Number(readDiagnosticArgument(arguments_, '--lookups', '20'))
+            clients: Number(toDiagnosticArgument(arguments_, '--clients', '5000')),
+            desired: Number(toDiagnosticArgument(arguments_, '--desired', '1000')),
+            lookups: Number(toDiagnosticArgument(arguments_, '--lookups', '20'))
         },
-        runs: Number(readDiagnosticArgument(arguments_, '--runs', '5')),
-        out: readDiagnosticArgument(
+        runs: Number(toDiagnosticArgument(arguments_, '--runs', '5')),
+        out: toDiagnosticArgument(
             arguments_,
             '--out',
             'tmp/perf/results/webrtc-group-manager-state.json'
@@ -456,7 +461,7 @@ function collectParsingIssues(
     return results.flatMap((result) => (result.ok ? [] : result.issues));
 }
 
-function readDiagnosticArgument(
+function toDiagnosticArgument(
     arguments_: readonly string[],
     name: string,
     fallback: string

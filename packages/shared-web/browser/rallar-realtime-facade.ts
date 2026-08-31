@@ -8,12 +8,12 @@ import type {
 } from '@shared-web/browser/rallar-rtc-facade.ts';
 import type { RallarOnChangeOptions, RallarUnsubscribe } from '@shared-web/browser/rallar-shared-contracts.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
-import type { RtcDataChannelLaneConfig } from '@shared/services/WebRtcConnectionService.ts';
+import type { RtcDataChannelLaneConfig } from '@shared/services/web-rtc-connection-service.ts';
 import type {
     RtcDataChannelHealth,
     RtcDataChannelSendOptions,
     RtcDataChannelSendResult
-} from '@shared/webrtc/QRtcDataChannel.ts';
+} from '@shared/webrtc/qrtc-data-channel.ts';
 
 /** Default unordered, replace-by-key lane used by the browser realtime facade. */
 export const DEFAULT_REALTIME_DATA_CHANNEL_LANE: RtcDataChannelLaneConfig = {
@@ -54,7 +54,7 @@ export interface RallarRealtimeSendResult {
     readonly result: RtcDataChannelSendResult;
 }
 
-export type RallarRealtimeJsonLaneSendOptions<T> = Omit<RallarRealtimeJsonSendInput<T>, 'data'>;
+export interface RallarRealtimeJsonLaneSendOptions<T> extends Omit<RallarRealtimeJsonSendInput<T>, 'data'> {}
 
 export interface RallarRealtimeJsonLane<T> {
     send(data: T, options?: RallarRealtimeJsonLaneSendOptions<T>): Promise<readonly RallarRealtimeSendResult[]>;
@@ -125,9 +125,8 @@ export interface RallarTargetedChannelDefinition extends RallarTargetSelector {
     readonly openTimeoutMs?: number;
 }
 
-export type RallarTargetedChannelSendOptions<T> =
-    & RallarRealtimeJsonLaneSendOptions<T>
-    & RallarTargetSelector;
+export interface RallarTargetedChannelSendOptions<T>
+    extends RallarRealtimeJsonLaneSendOptions<T>, RallarTargetSelector {}
 
 export type RallarTargetedSendStatus =
     | 'sent'

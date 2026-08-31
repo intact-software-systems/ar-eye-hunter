@@ -1,4 +1,9 @@
-import { DEFAULT_RTT_REPORTING_DEGREE_LIMIT, normalizeRttReportingDegreeLimit, selectRttReportingPeers } from '@shared/rtc/rtt-reporting-policy.ts';
+import {
+    DEFAULT_RTT_REPORTING_DEGREE_LIMIT,
+    isRtcRttCanonicalReporter,
+    normalizeRttReportingDegreeLimit,
+    selectRttReportingPeers
+} from '@shared/rtc/rtt-reporting-policy.ts';
 import { describe, expect, it } from 'vitest';
 
 describe('RTT reporting policy', () => {
@@ -8,6 +13,12 @@ describe('RTT reporting policy', () => {
         expect(normalizeRttReportingDegreeLimit(3, 5)).toBe(3);
         expect(normalizeRttReportingDegreeLimit(0, 5)).toBe(5);
         expect(normalizeRttReportingDegreeLimit(1.5, 5)).toBe(5);
+    });
+
+    it('assigns each unordered pair to the lexically first reporter', () => {
+        expect(isRtcRttCanonicalReporter('session-a', 'session-b')).toBe(true);
+        expect(isRtcRttCanonicalReporter('session-b', 'session-a')).toBe(false);
+        expect(isRtcRttCanonicalReporter('session-a', 'session-a')).toBe(false);
     });
 
     it('selects overlay next hops before bootstrap candidates', () => {

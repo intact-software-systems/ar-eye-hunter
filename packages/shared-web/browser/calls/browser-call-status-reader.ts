@@ -9,7 +9,7 @@ import type {
     RallarRtcLaneStatus,
     RallarRtcPeerStatus
 } from '@shared-web/browser/rallar-rtc-facade.ts';
-import { DEFAULT_RTC_DATA_CHANNEL_LANE_ID } from '@shared/services/WebRtcConnectionService.ts';
+import { DEFAULT_RTC_DATA_CHANNEL_LANE_ID } from '@shared/services/web-rtc-connection-service.ts';
 
 export namespace BrowserCallStatusReader {
     export interface Input {

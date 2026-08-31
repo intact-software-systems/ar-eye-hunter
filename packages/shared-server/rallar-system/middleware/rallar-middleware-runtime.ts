@@ -1,7 +1,7 @@
 import type { ResilienceDto } from '@shared/queuebox/DequeueResourceEntryController.ts';
+import type { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 import type { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
-import type { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
-import type { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
+import type { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 import type { WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 
 import type { AppAdminInboxService } from '../admin-operations/inbox/app-admin-inbox-service.ts';

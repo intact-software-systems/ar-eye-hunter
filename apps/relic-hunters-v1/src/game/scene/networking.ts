@@ -1,4 +1,5 @@
 import type { Vector3 } from '@babylonjs/core/Maths/math.vector.js';
+
 import type { RelicPublicSnapshot } from '@relic-hunters/mod.ts';
 import {
     rallar,
@@ -6,6 +7,8 @@ import {
     type RallarRoomRealtimeSendResult,
     type RallarRoomRealtimeSendStatus
 } from '@shared-web/browser/rallar.ts';
+import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
+import type { GroupRef } from '@shared/api/group-types.ts';
 import {
     RallarMotion,
     type RallarMotionAdaptiveDelay,
@@ -13,9 +16,12 @@ import {
     type RallarMotionEstimate,
     type RallarMotionEstimateMode,
     type RallarMotionKinematicsEstimator,
+    type RallarMotionSample,
     type RallarMotionSendGate,
     type RallarMotionVec3
 } from '@shared/rallar-motion/mod.ts';
+import { toError } from '@shared/resilience/to-error.ts';
+
 import {
     RELIC_MOTION_DEFAULT_DELAY_MS,
     RELIC_MOTION_FORCE_SEND_AFTER_MS,
@@ -29,45 +35,44 @@ import {
 } from './motionTuning.ts';
 import { roomWorldPosition } from './rooms.ts';
 
-export const POS_MAX_AGE_MS = 2500;
-export const RELIC_MOTION_PROTOCOL = 'relic.motion.v1';
+const POS_MAX_AGE_MS = 2500;
+export const RELIC_MOTION_PROTOCOL = 'relic.motion.v2';
 export const RELIC_MOTION_LANE_ID = 'realtime';
 export const RELIC_MOTION_OPEN_TIMEOUT_MS = 500;
-export const RELIC_MOTION_FIRST_WAIT_TIMEOUT_MS = 1000;
+const RELIC_MOTION_FIRST_WAIT_TIMEOUT_MS = 1000;
 export const RELIC_MOTION_MAX_AGE_MS = 180;
 
 export type RelicMotionPhase = 'idle' | 'walk' | 'sprint' | 'inspect';
 
-export type RelicMotionPayload = Readonly<{
-    protocol: typeof RELIC_MOTION_PROTOCOL;
-    version: 1;
-    kind: 'relic-motion';
-    pid: string;
-    roomId: string;
-    seq: number;
-    x: number;
-    y: number;
-    z: number;
-    ox: number;
-    oz: number;
-    r: number;
-    vx?: number;
-    vy?: number;
-    vz?: number;
-    vr?: number;
-    phase: RelicMotionPhase;
-    sentAtEpochMs: number;
-}>;
+export interface RelicMotionPayload {
+    readonly protocol: typeof RELIC_MOTION_PROTOCOL;
+    readonly version: 2;
+    readonly kind: 'relic-motion';
+    readonly roomRef: GroupRef;
+    readonly pid: string;
+    readonly roomId: string;
+    readonly seq: number;
+    readonly y: number;
+    readonly ox: number;
+    readonly oz: number;
+    readonly r: number;
+    readonly vx?: number;
+    readonly vy?: number;
+    readonly vz?: number;
+    readonly vr?: number;
+    readonly phase: RelicMotionPhase;
+    readonly sentAtEpochMs: number;
+}
 
-export type RelicMotionMetadata = Readonly<{
-    roomId: string;
-    senderPeerId: string;
-    playerId: string;
-    sentAtEpochMs: number;
-    phase: RelicMotionPhase;
-}>;
+export interface RelicMotionMetadata {
+    readonly roomId: string;
+    readonly senderPeerId: string;
+    readonly playerId: string;
+    readonly sentAtEpochMs: number;
+    readonly phase: RelicMotionPhase;
+}
 
-export type RelicMotionDiagnostics = {
+export interface RelicMotionDiagnostics {
     laneId: typeof RELIC_MOTION_LANE_ID;
     laneReady: boolean;
     readyPeerCount: number;
@@ -81,37 +86,49 @@ export type RelicMotionDiagnostics = {
     staleSamples: number;
     duplicateSamples: number;
     droppedSamples: number;
-};
+}
 
-export type RelicMotionRuntimeState = {
+export interface RelicMotionRuntimeState {
     buffer: RallarMotionBuffer<RelicMotionMetadata>;
     adaptiveDelay: RallarMotionAdaptiveDelay;
     sendGate: RallarMotionSendGate;
     kinematics: RallarMotionKinematicsEstimator;
     seq: { value: number; };
     laneReady: { value: boolean; };
-    readyWait: { value?: Promise<boolean>; };
-    lastReadyWaitEpochMs: { value: number; };
     diagnostics: RelicMotionDiagnostics;
-};
+}
 
-export type RelicScenePositionRuntime = Readonly<{
-    snapshot: { value?: RelicPublicSnapshot; };
-    localPlayerId: { value?: string; };
-    rtcReady: { value: boolean; };
-    roamOffset: Vector3;
-    cameraYaw: { value: number; };
-    motionPhase: { value: RelicMotionPhase; };
-    motion: RelicMotionRuntimeState;
-}>;
+export interface RelicScenePositionRuntime {
+    readonly snapshot: { value?: RelicPublicSnapshot; };
+    readonly localPlayerId: { value?: string; };
+    readonly rtcReady: { value: boolean; };
+    readonly roamOffset: Vector3;
+    readonly cameraYaw: { value: number; };
+    readonly motionPhase: { value: RelicMotionPhase; };
+    readonly motion: RelicMotionRuntimeState;
+}
+
+export interface RelicMotionMessageInput {
+    readonly runtime: RelicScenePositionRuntime;
+    readonly payload: unknown;
+    readonly senderPeerId: string;
+    readonly receivedAtEpochMs: number;
+}
 
 interface RelicLocalMotionSample {
-    readonly snapshotRoomId: string;
+    readonly roomRef: GroupRef;
     readonly playerId: string;
     readonly playerRoomId: string;
     readonly nowEpochMs: number;
     readonly position: RallarMotionVec3;
     readonly rotation: RallarMotionVec3;
+}
+
+interface RelicReceivedMotionSampleInput {
+    readonly payload: RelicMotionPayload;
+    readonly position: RallarMotionVec3;
+    readonly senderPeerId: string;
+    readonly receivedAtEpochMs: number;
 }
 
 interface WriteRelicLocalMotionInput {
@@ -151,8 +168,6 @@ export function createRelicMotionState(): RelicMotionRuntimeState {
         }),
         seq: { value: 0 },
         laneReady: { value: false },
-        readyWait: { value: undefined },
-        lastReadyWaitEpochMs: { value: 0 },
         diagnostics: {
             laneId: RELIC_MOTION_LANE_ID,
             laneReady: false,
@@ -176,25 +191,27 @@ export function subscribeRelicScenePositionUpdates(
     );
 }
 
-export function applyRelicMotionMessage(
+function applyRelicMotionMessage(
     runtime: RelicScenePositionRuntime,
     message: RallarRealtimeMessage<RelicMotionPayload>
 ): boolean {
-    return applyRelicMotionPayload(
+    return applyRelicMotionPayload({
         runtime,
-        message.data,
-        message.peerId,
-        message.receivedAtEpochMs
-    );
+        payload: message.data,
+        senderPeerId: message.peerId,
+        receivedAtEpochMs: message.receivedAtEpochMs
+    });
 }
 
 export function applyRelicMotionPayload(
-    runtime: RelicScenePositionRuntime,
-    payload: unknown,
-    senderPeerId: string,
-    receivedAtEpochMs: number
+    { runtime, payload, senderPeerId, receivedAtEpochMs }: RelicMotionMessageInput
 ): boolean {
-    if (!isRelicMotionPayload(payload)) {
+    const currentRoomRef = rallar.rooms.state().currentRoomRef;
+    if (
+        !isRelicMotionPayload(payload) || !currentRoomRef ||
+        !isSameGroupRef(payload.roomRef, currentRoomRef) ||
+        runtime.snapshot.value?.roomId !== currentRoomRef.groupId
+    ) {
         return false;
     }
     if (payload.pid === runtime.localPlayerId.value) {
@@ -214,12 +231,59 @@ export function applyRelicMotionPayload(
         return false;
     }
 
+    const sample = toRelicReceivedMotionSample({ payload, position, senderPeerId, receivedAtEpochMs });
+    const kinematics = runtime.motion.kinematics.push(sample);
+    const result = runtime.motion.buffer.push({
+        ...sample,
+        velocity: sample.velocity ?? kinematics.velocity,
+        angularVelocity: sample.angularVelocity ?? kinematics.angularVelocity
+    });
+
+    runtime.motion.adaptiveDelay.pushObservedAt(receivedAtEpochMs);
+    updatePushDiagnostics(runtime.motion.diagnostics, result.status, result.droppedSampleCount);
+    runtime.motion.diagnostics.lastSampleAgeMs = 0;
+    return result.status === 'accepted';
+}
+
+export function isRelicMotionPayload(payload: unknown): payload is RelicMotionPayload {
+    if (!isRecord(payload)) {
+        return false;
+    }
+    return payload.protocol === RELIC_MOTION_PROTOCOL &&
+        payload.version === 2 &&
+        isRecord(payload.roomRef) &&
+        typeof payload.roomRef.applicationId === 'string' &&
+        payload.roomRef.applicationId.length > 0 &&
+        typeof payload.roomRef.workspaceId === 'string' &&
+        typeof payload.roomRef.groupId === 'string' &&
+        payload.roomRef.groupId.length > 0 &&
+        payload.kind === 'relic-motion' &&
+        typeof payload.pid === 'string' &&
+        payload.pid.length > 0 &&
+        typeof payload.roomId === 'string' &&
+        payload.roomId.length > 0 &&
+        Number.isSafeInteger(payload.seq) &&
+        isFiniteNumber(payload.y) &&
+        isFiniteNumber(payload.ox) &&
+        isFiniteNumber(payload.oz) &&
+        isFiniteNumber(payload.r) &&
+        isFiniteNumber(payload.sentAtEpochMs) &&
+        isRelicMotionPhase(payload.phase) &&
+        optionalFinite(payload.vx) &&
+        optionalFinite(payload.vy) &&
+        optionalFinite(payload.vz) &&
+        optionalFinite(payload.vr);
+}
+
+function toRelicReceivedMotionSample(
+    { payload, position, senderPeerId, receivedAtEpochMs }: RelicReceivedMotionSampleInput
+): RallarMotionSample<RelicMotionMetadata> {
     const rotation: RallarMotionVec3 = [0, payload.r, 0];
     const velocity = vectorIfFinite(payload.vx, payload.vy, payload.vz);
     const angularVelocity: RallarMotionVec3 | undefined = Number.isFinite(payload.vr)
         ? [0, payload.vr ?? 0, 0]
         : undefined;
-    const sample = {
+    return {
         entityId: payload.pid,
         observedAtEpochMs: receivedAtEpochMs,
         position,
@@ -235,60 +299,18 @@ export function applyRelicMotionPayload(
         ...(velocity ? { velocity } : {}),
         ...(angularVelocity ? { angularVelocity } : {})
     };
-    const kinematics = runtime.motion.kinematics.push(sample);
-    const result = runtime.motion.buffer.push({
-        ...sample,
-        velocity: velocity ?? kinematics.velocity,
-        angularVelocity: angularVelocity ?? kinematics.angularVelocity
-    });
-
-    runtime.motion.adaptiveDelay.pushObservedAt(receivedAtEpochMs);
-    updatePushDiagnostics(runtime.motion.diagnostics, result.status, result.droppedSampleCount);
-    runtime.motion.diagnostics.lastSampleAgeMs = 0;
-    return result.status === 'accepted';
-}
-
-export function isRelicMotionPayload(payload: unknown): payload is RelicMotionPayload {
-    if (!isRecord(payload)) {
-        return false;
-    }
-    return payload.protocol === RELIC_MOTION_PROTOCOL &&
-        payload.version === 1 &&
-        payload.kind === 'relic-motion' &&
-        typeof payload.pid === 'string' &&
-        payload.pid.length > 0 &&
-        typeof payload.roomId === 'string' &&
-        payload.roomId.length > 0 &&
-        Number.isSafeInteger(payload.seq) &&
-        isFiniteNumber(payload.x) &&
-        isFiniteNumber(payload.y) &&
-        isFiniteNumber(payload.z) &&
-        isFiniteNumber(payload.ox) &&
-        isFiniteNumber(payload.oz) &&
-        isFiniteNumber(payload.r) &&
-        isFiniteNumber(payload.sentAtEpochMs) &&
-        isRelicMotionPhase(payload.phase) &&
-        optionalFinite(payload.vx) &&
-        optionalFinite(payload.vy) &&
-        optionalFinite(payload.vz) &&
-        optionalFinite(payload.vr);
 }
 
 export function resolveRelicMotionPosition(
     update: RelicMotionPayload,
-    snapshot: RelicPublicSnapshot | undefined
+    snapshot: RelicPublicSnapshot
 ): RallarMotionVec3 | undefined {
-    const room = snapshot?.map.find((candidate) => candidate.id === update.roomId);
-    if (room) {
-        const world = roomWorldPosition(room);
-        return [world.x + update.ox, update.y, world.z + update.oz];
+    const room = snapshot.map.find((candidate) => candidate.id === update.roomId);
+    if (!room) {
+        return undefined;
     }
-
-    if (isFiniteNumber(update.x) && isFiniteNumber(update.y) && isFiniteNumber(update.z)) {
-        return [update.x, update.y, update.z];
-    }
-
-    return undefined;
+    const world = roomWorldPosition(room);
+    return [world.x + update.ox, update.y, world.z + update.oz];
 }
 
 export function isRelicMotionEstimateFreshForPlayer(
@@ -347,14 +369,17 @@ export async function broadcastLocalPosition(
         runtime.motion.diagnostics.readyPeerCount = result.peerIds.length;
         runtime.motion.diagnostics.lastReadyWaitStatus = result.readiness?.status ?? result.transportStatus?.rtc.state;
         runtime.motion.diagnostics.lastSendStatus = result.status;
+        runtime.motion.diagnostics.lastSendReason = result.reason ?? decision.reason;
         if (sent) {
             runtime.motion.sendGate.recordSent(sampleForGate, nowEpochMs);
         }
     }
-    catch {
+    catch (error) {
         runtime.motion.laneReady.value = false;
         runtime.motion.diagnostics.laneReady = false;
+        runtime.motion.diagnostics.readyPeerCount = 0;
         runtime.motion.diagnostics.lastSendStatus = 'failed';
+        runtime.motion.diagnostics.lastSendReason = toError(error).message;
     }
 }
 
@@ -371,9 +396,13 @@ function resolveRelicLocalMotionSample(
     nowEpochMs: number
 ): RelicLocalMotionSample | undefined {
     const snapshot = runtime.snapshot.value;
+    const roomRef = rallar.rooms.state().currentRoomRef;
     const localPlayerId = runtime.localPlayerId.value;
     const localPlayer = snapshot?.players.find((player) => player.playerId === localPlayerId);
-    if (!snapshot || !localPlayer || localPlayer.escaped || localPlayer.defeated) {
+    if (
+        !snapshot || !roomRef || roomRef.groupId !== snapshot.roomId ||
+        !localPlayer || localPlayer.escaped || localPlayer.defeated
+    ) {
         return undefined;
     }
     const room = snapshot.map.find((candidate) => candidate.id === localPlayer.roomId);
@@ -382,7 +411,7 @@ function resolveRelicLocalMotionSample(
     }
     const world = roomWorldPosition(room);
     return {
-        snapshotRoomId: snapshot.roomId,
+        roomRef,
         playerId: localPlayer.playerId,
         playerRoomId: room.id,
         nowEpochMs,
@@ -397,19 +426,18 @@ async function writeRelicLocalMotion(
     const { runtime, sample, seq, velocity, angularVelocity } = input;
     return await rallar.realtime.room<RelicMotionPayload>({
         laneId: RELIC_MOTION_LANE_ID,
-        roomId: sample.snapshotRoomId,
+        roomRef: sample.roomRef,
         openTimeoutMs: RELIC_MOTION_OPEN_TIMEOUT_MS,
         waitTimeoutMs: RELIC_MOTION_FIRST_WAIT_TIMEOUT_MS
     }).send({
         protocol: RELIC_MOTION_PROTOCOL,
-        version: 1,
+        version: 2,
+        roomRef: sample.roomRef,
         kind: 'relic-motion',
         pid: sample.playerId,
         roomId: sample.playerRoomId,
         seq,
-        x: sample.position[0],
         y: sample.position[1],
-        z: sample.position[2],
         ox: runtime.roamOffset.x,
         oz: runtime.roamOffset.z,
         r: runtime.cameraYaw.value,
@@ -450,7 +478,11 @@ function isRelicMotionPhase(value: unknown): value is RelicMotionPhase {
         value === 'inspect';
 }
 
-function vectorIfFinite(x: unknown, y: unknown, z: unknown): RallarMotionVec3 | undefined {
+function vectorIfFinite(
+    x: number | undefined,
+    y: number | undefined,
+    z: number | undefined
+): RallarMotionVec3 | undefined {
     if (isFiniteNumber(x) && isFiniteNumber(y) && isFiniteNumber(z)) {
         return [x, y, z];
     }

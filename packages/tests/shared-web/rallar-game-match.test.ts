@@ -1,6 +1,10 @@
+import { describe, expect, it, vi, type Mock } from 'vitest';
+
+import { createRallarFacade } from '@shared-web/browser/rallar.ts';
 import type {
     RallarDirectorRelayConfig,
     RallarDirectorRelayHandle,
+    RallarDirectorRelaySendResult,
     RallarDirectorStatus,
     RallarMessage,
     RallarMessageHandler,
@@ -12,6 +16,7 @@ import type {
     RallarRealtimeMessage,
     RallarRealtimeSendResult,
     RallarRoomMember,
+    RallarRoomPresenceWaitResult,
     RallarRoomRealtimeJsonDefaults,
     RallarRoomRealtimeJsonSendOptions,
     RallarRoomRealtimeSendResult,
@@ -27,13 +32,22 @@ import type {
 } from '@shared-web/browser/rallar.ts';
 import { createRallarGameEnvelope, createRallarGameMatch } from '@shared-web/game/mod.ts';
 import type { RallarGameEnvelope, RallarGameMatchConfig, RallarGameRallarFacade } from '@shared-web/game/mod.ts';
+import type { AuthSession } from '@shared/api/api-config.ts';
+import type { ApiJsonValue } from '@shared/api/api-json-value.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
-import { describe, expect, it, vi } from 'vitest';
 
-type Input = Readonly<{ x: number; }>;
-type Intent = Readonly<{ action: string; }>;
-type Snapshot = Readonly<{ tick: number; }>;
-type Event = Readonly<{ kind: string; }>;
+interface Input {
+    readonly x: number;
+}
+interface Intent {
+    readonly action: string;
+}
+interface Snapshot {
+    readonly tick: number;
+}
+interface Event {
+    readonly kind: string;
+}
 
 const roomRef: GroupRef = {
     applicationId: 'app-1',
@@ -42,19 +56,12 @@ const roomRef: GroupRef = {
 };
 
 describe('Rallar Game match', () => {
-    it('subscribes to expected Rallar surfaces on start', async () => {
+    it('configures the director relay with the game wire topics', async () => {
         const fake = createFakeRallar();
         const match = createMatch(fake);
 
         await match.start();
 
-        expect(fake.roomChangeHandlers).toHaveLength(1);
-        expect(fake.peopleChangeHandlers).toHaveLength(1);
-        expect(fake.directorStatusHandlers).toHaveLength(1);
-        expect(fake.rtcStatusHandlers).toHaveLength(1);
-        expect(fake.wsMessageHandlers).toHaveLength(1);
-        expect(fake.realtimeJsonHandlers.get('game-input')).toHaveLength(1);
-        expect(fake.realtimeJsonHandlers.get('game-snapshot')).toHaveLength(1);
         expect(fake.relayConfig).toMatchObject({
             laneId: 'game-intent',
             topicId: 'game.topic',
@@ -394,6 +401,41 @@ describe('Rallar Game match', () => {
         }));
     });
 
+    it.each([
+        {
+            name: 'an explicit room ID outside the current room',
+            config: { roomId: 'room-explicit', roomRef: undefined },
+            expectedRoomId: 'room-explicit',
+            expectedRoomRef: undefined
+        },
+        {
+            name: 'an explicit scope over a conflicting bare room ID',
+            config: { roomId: 'room-explicit', roomRef },
+            expectedRoomId: 'room-1',
+            expectedRoomRef: roomRef
+        },
+        {
+            name: 'the current scope for a matching explicit room ID',
+            config: { roomId: 'room-1', roomRef: undefined },
+            expectedRoomId: 'room-1',
+            expectedRoomRef: roomRef
+        }
+    ])('keeps one presence identity for $name', async ({ config, expectedRoomId, expectedRoomRef }) => {
+        const fake = createFakeRallar();
+        const match = createMatch(fake, config);
+        await match.start();
+
+        const result = await match.sendPresence({ x: 7 });
+
+        expect(result).toMatchObject({ status: 'sent', transport: 'realtime' });
+        expect(fake.realtimeSendJson).toHaveBeenCalledWith(expect.objectContaining({
+            roomId: expectedRoomRef ? undefined : expectedRoomId,
+            roomRef: expectedRoomRef,
+            data: expect.objectContaining({ roomId: expectedRoomId, payload: { x: 7 } })
+        }));
+        expect(match.status()).toMatchObject({ roomId: expectedRoomId, roomRef: expectedRoomRef });
+    });
+
     it('keeps the room facade as the only presence send owner when no target is ready', async () => {
         const fake = createFakeRallar();
         fake.setRoomRealtimeSendResult({
@@ -672,9 +714,7 @@ describe('Rallar Game match', () => {
         });
         await match.start();
         match.stop();
-        fake.createRelay.mockImplementation(() => {
-            throw new Error('A stopped match cannot create a relay.');
-        });
+        fake.failOnRelayCreation();
         vi.mocked(fake.relay.sendIntent).mockImplementation(() => {
             throw new Error('A stopped match cannot send an intent.');
         });
@@ -721,7 +761,7 @@ describe('Rallar Game match', () => {
 });
 
 function createMatch(
-    fake: ReturnType<typeof createFakeRallar>,
+    fake: FakeRallar,
     overrides: Partial<RallarGameMatchConfig<Input, Intent, Snapshot, Event>> = {}
 ) {
     return createRallarGameMatch<Input, Intent, Snapshot, Event>({
@@ -753,7 +793,7 @@ function envelope<T>(
 }
 
 async function emitRelaySnapshot(
-    fake: ReturnType<typeof createFakeRallar>,
+    fake: FakeRallar,
     matchId?: string
 ): Promise<void> {
     const snapshot = envelope(
@@ -766,7 +806,7 @@ async function emitRelaySnapshot(
     await fake.relayConfig?.onSnapshot?.({
         transport: 'rtc',
         senderId: 'peer-a',
-        data: snapshot,
+        data: toTestJsonValue(snapshot) ?? null,
         envelope: {
             protocol: 'rallar.director.relay.v1',
             topicId: 'game.topic',
@@ -774,7 +814,7 @@ async function emitRelaySnapshot(
             roomId: 'room-1',
             epoch: 1,
             sentAtEpochMs: 1_002,
-            payload: snapshot
+            payload: toTestJsonValue(snapshot) ?? null
         },
         receivedAtEpochMs: 1_003
     });
@@ -793,23 +833,83 @@ interface FakeRallarOptions {
 interface FakeRallarState {
     directorStatus: RallarDirectorStatus;
     relayConfig:
-        | RallarDirectorRelayConfig<RallarGameEnvelope<Intent>, RallarGameEnvelope<Event>, RallarGameEnvelope<Snapshot>>
+        | Pick<
+            RallarDirectorRelayConfig<ApiJsonValue, ApiJsonValue>,
+            'laneId' | 'topicId' | 'intentTypeId' | 'outputTypeId' | 'snapshotTypeId' | 'syncRequestTypeId' | 'heartbeatTypeId' | 'readSnapshot' | 'onSnapshot'
+        >
         | undefined;
     relayStopped: boolean;
     realtimeSendCount: number;
     roomRealtimeSendCount: number;
     appointmentMustFail: boolean;
+    relayCreationMustFail: boolean;
     roomRealtimeSendResult: RallarRoomRealtimeSendResult | undefined;
 }
 
+interface FakeRallarHandlers {
+    readonly roomChangeHandlers: Array<RallarStateListener<RallarRoomState>>;
+    readonly peopleChangeHandlers: Array<RallarStateListener<RallarPeopleState>>;
+    readonly directorStatusHandlers: Array<(status: RallarDirectorStatus) => void | Promise<void>>;
+    readonly rtcStatusHandlers: RallarRtcStatusListener[];
+    readonly wsMessageHandlers: Array<RallarMessageHandler<ApiJsonValue>>;
+    readonly realtimeJsonHandlers: Map<string, Array<RallarRealtimeHandler<ApiJsonValue>>>;
+}
+
+interface FakeRelayPorts {
+    readonly relay: {
+        status(): RallarDirectorStatus;
+        sendIntent<T>(intent: T): Promise<RallarDirectorRelaySendResult>;
+        sendOutput<T>(output: T): Promise<RallarDirectorRelaySendResult>;
+        sendHeartbeat(): Promise<RallarDirectorRelaySendResult>;
+        sendSnapshot<T>(snapshot?: T): Promise<RallarDirectorRelaySendResult>;
+        requestSync<T>(payload?: T): Promise<RallarDirectorRelaySendResult>;
+        stop(): void;
+    };
+    readonly createRelay: RallarGameRallarFacade['director']['createRelay'];
+    readonly appoint: Mock<RallarGameRallarFacade['director']['appoint']>;
+}
+
+interface FakeRealtimePorts {
+    readonly realtimeSendJson: Mock<RallarGameRallarFacade['realtime']['sendJson']>;
+    readonly roomRealtimeSend: Mock<
+        <T>(
+            defaults: RallarRoomRealtimeJsonDefaults,
+            data: T,
+            options?: RallarRoomRealtimeJsonSendOptions<T>
+        ) => Promise<RallarRoomRealtimeSendResult>
+    >;
+}
+
+interface FakeWaitPorts {
+    readonly waitForRoomLane: Mock<RallarGameRallarFacade['rtc']['waitForRoomLane']>;
+    readonly waitForPresence: Mock<RallarGameRallarFacade['rooms']['waitForPresence']>;
+}
+
+interface FakeRallar extends FakeRallarHandlers, FakeRelayPorts, FakeRealtimePorts, FakeWaitPorts {
+    readonly wsSend: Mock<RallarGameRallarFacade['messages']['ws']['send']>;
+    readonly rallar: RallarGameRallarFacade;
+    readonly relayStopped: boolean;
+    readonly realtimeSendCount: number;
+    readonly roomRealtimeSendCount: number;
+    readonly relayConfig: FakeRallarState['relayConfig'];
+    failOnAppointment(): void;
+    failOnRelayCreation(): void;
+    setDirector(peerId: string | undefined, isFresh: boolean): void;
+    setRoomRealtimeSendResult(result: RallarRoomRealtimeSendResult | undefined): void;
+    emitDirectorStatus(): Promise<void>;
+    emitCapability(capability: { readonly peerId: string; readonly reportedAtEpochMs: number; readonly scoreBias?: number; }): Promise<void>;
+    emitRealtime(laneId: string, peerId: string, data: object): Promise<void>;
+}
+
 interface FakeRallarAssembly {
-    readonly handlers: ReturnType<typeof createFakeRallarHandlers>;
-    readonly session: ReturnType<typeof createFakeRallarSession>;
+    readonly baseFacade: RallarGameRallarFacade;
+    readonly handlers: FakeRallarHandlers;
+    readonly session: AuthSession;
     readonly roomState: RallarRoomState;
     readonly state: FakeRallarState;
-    readonly relayPorts: ReturnType<typeof createFakeRelayPorts>;
-    readonly realtimePorts: ReturnType<typeof createFakeRealtimePorts>;
-    readonly waitPorts: ReturnType<typeof createFakeWaitPorts>;
+    readonly relayPorts: FakeRelayPorts;
+    readonly realtimePorts: FakeRealtimePorts;
+    readonly waitPorts: FakeWaitPorts;
     readonly wsSend: ReturnType<typeof createFakeWsSend>;
 }
 
@@ -820,7 +920,7 @@ interface EmitFakeRealtimeInput {
     readonly data: object;
 }
 
-function createFakeRallar(options: FakeRallarOptions = {}) {
+function createFakeRallar(options: FakeRallarOptions = {}): FakeRallar {
     const handlers = createFakeRallarHandlers();
     const session = createFakeRallarSession();
     const roomState = createFakeRallarRoomState(options);
@@ -829,13 +929,17 @@ function createFakeRallar(options: FakeRallarOptions = {}) {
     const realtimePorts = createFakeRealtimePorts(state);
     const waitPorts = createFakeWaitPorts(session, roomState);
     const wsSend = createFakeWsSend();
-    const assembly = { handlers, session, roomState, state, relayPorts, realtimePorts, waitPorts, wsSend };
+    const baseFacade = createRallarFacade();
+    const assembly = { baseFacade, handlers, session, roomState, state, relayPorts, realtimePorts, waitPorts, wsSend };
     return {
         ...handlers,
         ...relayPorts,
         ...realtimePorts,
         ...waitPorts,
         wsSend,
+        failOnRelayCreation: () => {
+            state.relayCreationMustFail = true;
+        },
         failOnAppointment: () => {
             state.appointmentMustFail = true;
         },
@@ -864,18 +968,18 @@ function createFakeRallar(options: FakeRallarOptions = {}) {
     };
 }
 
-function createFakeRallarHandlers() {
+function createFakeRallarHandlers(): FakeRallarHandlers {
     return {
-        roomChangeHandlers: [] as Array<RallarStateListener<RallarRoomState>>,
-        peopleChangeHandlers: [] as Array<RallarStateListener<RallarPeopleState>>,
-        directorStatusHandlers: [] as Array<(status: RallarDirectorStatus) => void | Promise<void>>,
-        rtcStatusHandlers: [] as RallarRtcStatusListener[],
-        wsMessageHandlers: [] as Array<(message: object) => void | Promise<void>>,
-        realtimeJsonHandlers: new Map<string, Array<(message: { peerId: string; data: object; }) => void | Promise<void>>>()
+        roomChangeHandlers: [],
+        peopleChangeHandlers: [],
+        directorStatusHandlers: [],
+        rtcStatusHandlers: [],
+        wsMessageHandlers: [],
+        realtimeJsonHandlers: new Map<string, Array<RallarRealtimeHandler<ApiJsonValue>>>()
     };
 }
 
-function createFakeRallarSession() {
+function createFakeRallarSession(): AuthSession {
     return {
         clientId: 'principal-a',
         sessionId: 'peer-a',
@@ -923,11 +1027,12 @@ function createFakeRallarState(options: FakeRallarOptions): FakeRallarState {
         realtimeSendCount: 0,
         roomRealtimeSendCount: 0,
         appointmentMustFail: false,
+        relayCreationMustFail: false,
         roomRealtimeSendResult: undefined
     };
 }
 
-function createFakeRelayPorts(state: FakeRallarState) {
+function createFakeRelayPorts(state: FakeRallarState): FakeRelayPorts {
     const relay = {
         status: () => state.directorStatus,
         sendIntent: vi.fn(async <T>(_intent: T) => ({ status: 'sent' as const })),
@@ -939,12 +1044,25 @@ function createFakeRelayPorts(state: FakeRallarState) {
             state.relayStopped = true;
         })
     };
-    const createRelay = vi.fn((
-        config: RallarDirectorRelayConfig<RallarGameEnvelope<Intent>, RallarGameEnvelope<Event>, RallarGameEnvelope<Snapshot>>
-    ): RallarDirectorRelayHandle<RallarGameEnvelope<Intent>, RallarGameEnvelope<Event>, RallarGameEnvelope<Snapshot>> => {
-        state.relayConfig = config;
+    const createRelay = <TIntent, TOutput, TSnapshot = TOutput>(
+        config: RallarDirectorRelayConfig<TIntent, TOutput, TSnapshot>
+    ): RallarDirectorRelayHandle<TIntent, TOutput, TSnapshot> => {
+        if (state.relayCreationMustFail) {
+            throw new Error('Relay creation forbidden by this test.');
+        }
+        state.relayConfig = {
+            laneId: config.laneId,
+            topicId: config.topicId,
+            intentTypeId: config.intentTypeId,
+            outputTypeId: config.outputTypeId,
+            snapshotTypeId: config.snapshotTypeId,
+            syncRequestTypeId: config.syncRequestTypeId,
+            heartbeatTypeId: config.heartbeatTypeId,
+            readSnapshot: async () => toTestJsonValue(await config.readSnapshot?.()),
+            onSnapshot: config.onSnapshot as RallarDirectorRelayConfig<ApiJsonValue, ApiJsonValue>['onSnapshot']
+        };
         return relay;
-    });
+    };
     const appoint = vi.fn(async () => {
         if (state.appointmentMustFail) {
             throw new Error('Appointment was forbidden by this test.');
@@ -981,7 +1099,7 @@ function createFakeWsSend() {
     }));
 }
 
-function createFakeRealtimePorts(state: FakeRallarState) {
+function createFakeRealtimePorts(state: FakeRallarState): FakeRealtimePorts {
     const realtimeSendJson = vi.fn(
         async <T>(
             input: RallarRealtimeJsonSendInput<T>
@@ -1019,9 +1137,9 @@ function createFakeRealtimePorts(state: FakeRallarState) {
 }
 
 function createFakeWaitPorts(
-    session: ReturnType<typeof createFakeRallarSession>,
+    session: AuthSession,
     roomState: RallarRoomState
-) {
+): FakeWaitPorts {
     const waitForRoomLane = vi.fn(async (
         _room: string | GroupRef,
         laneId: string,
@@ -1049,7 +1167,7 @@ function createFakeWaitPorts(
         observedCount: 1,
         expectedCount: 1
     }));
-    const waitForPresence = vi.fn(async () => ({
+    const waitForPresence = vi.fn(async (): Promise<RallarRoomPresenceWaitResult> => ({
         status: 'ready' as const,
         roomId: 'room-1',
         roomRef,
@@ -1121,60 +1239,56 @@ function createFakeRallarFacade(input: FakeRallarAssembly): RallarGameRallarFaca
 }
 
 function createFakeRoomsFacade(input: FakeRallarAssembly): RallarGameRallarFacade['rooms'] {
-    return createPartialTestDouble<RallarGameRallarFacade['rooms']>({
+    return {
+        ...input.baseFacade.rooms,
         state: () => input.roomState,
         waitForPresence: input.waitPorts.waitForPresence,
         onChange: (handler: RallarStateListener<RallarRoomState>) => {
             input.handlers.roomChangeHandlers.push(handler);
             return () => remove(input.handlers.roomChangeHandlers, handler);
         }
-    });
+    };
 }
 
 function createFakePeopleFacade(input: FakeRallarAssembly): RallarGameRallarFacade['people'] {
-    return createPartialTestDouble<RallarGameRallarFacade['people']>({
+    return {
+        ...input.baseFacade.people,
         state: (): RallarPeopleState => ({ people: [], clients: [] }),
         onChange: (handler: RallarStateListener<RallarPeopleState>) => {
             input.handlers.peopleChangeHandlers.push(handler);
             return () => remove(input.handlers.peopleChangeHandlers, handler);
         }
-    });
+    };
 }
 
 function createFakeDirectorFacade(input: FakeRallarAssembly): RallarGameRallarFacade['director'] {
-    return createPartialTestDouble<RallarGameRallarFacade['director']>({
+    return {
+        ...input.baseFacade.director,
         status: () => input.state.directorStatus,
         onStatus: (handler: (status: RallarDirectorStatus) => void | Promise<void>) => {
             input.handlers.directorStatusHandlers.push(handler);
             return () => remove(input.handlers.directorStatusHandlers, handler);
         },
         appoint: input.relayPorts.appoint,
-        createRelay: <TIntent, TOutput, TSnapshot = TOutput>(
-            config: RallarDirectorRelayConfig<TIntent, TOutput, TSnapshot>
-        ): RallarDirectorRelayHandle<TIntent, TOutput, TSnapshot> => {
-            input.relayPorts.createRelay(
-                config as Partial<
-                    RallarDirectorRelayConfig<RallarGameEnvelope<Intent>, RallarGameEnvelope<Event>, RallarGameEnvelope<Snapshot>>
-                > as NonNullable<FakeRallarState['relayConfig']>
-            );
-            return input.relayPorts.relay;
-        }
-    });
+        createRelay: input.relayPorts.createRelay
+    };
 }
 
 function createFakeRtcFacade(input: FakeRallarAssembly): RallarGameRallarFacade['rtc'] {
-    return createPartialTestDouble<RallarGameRallarFacade['rtc']>({
+    return {
+        ...input.baseFacade.rtc,
         status: () => createFakeRtcStatus(input),
         onStatus: (handler: RallarRtcStatusListener) => {
             input.handlers.rtcStatusHandlers.push(handler);
             return () => remove(input.handlers.rtcStatusHandlers, handler);
         },
         waitForRoomLane: input.waitPorts.waitForRoomLane
-    });
+    };
 }
 
 function createFakeRealtimeFacade(input: FakeRallarAssembly): RallarGameRallarFacade['realtime'] {
-    return createPartialTestDouble<RallarGameRallarFacade['realtime']>({
+    return {
+        ...input.baseFacade.realtime,
         sendJson: input.realtimePorts.realtimeSendJson,
         room: <T>(defaults: RallarRoomRealtimeJsonDefaults = {}) => ({
             send: async (data: T, options: RallarRoomRealtimeJsonSendOptions<T> = {}) => await input.realtimePorts.roomRealtimeSend(defaults, data, options),
@@ -1187,7 +1301,7 @@ function createFakeRealtimeFacade(input: FakeRallarAssembly): RallarGameRallarFa
             handler: RallarRealtimeHandler<T>
         ) => subscribeFakeRealtime(input, laneId, handler),
         health: () => []
-    });
+    };
 }
 
 function subscribeFakeRealtime<T>(
@@ -1196,26 +1310,28 @@ function subscribeFakeRealtime<T>(
     handler: RallarRealtimeHandler<T>
 ): () => void {
     const handlers = input.handlers.realtimeJsonHandlers.get(laneId) ?? [];
-    const storedHandler = (message: { peerId: string; data: object; }) => handler(message as RallarRealtimeMessage<T>);
+    const storedHandler = handler as RallarRealtimeHandler<ApiJsonValue>;
     handlers.push(storedHandler);
     input.handlers.realtimeJsonHandlers.set(laneId, handlers);
     return () => remove(handlers, storedHandler);
 }
 
 function createFakeMessagesFacade(input: FakeRallarAssembly): RallarGameRallarFacade['messages'] {
-    return createPartialTestDouble<RallarGameRallarFacade['messages']>({
+    return {
+        ...input.baseFacade.messages,
         ws: {
+            ...input.baseFacade.messages.ws,
             send: input.wsSend,
             onMessage: <T = never>(
                 _selector: RallarMessageSelectorInput,
                 handler: RallarMessageHandler<T>
             ) => {
-                const storedHandler = (message: object) => handler(message as RallarMessage<T>);
+                const storedHandler = handler as RallarMessageHandler<ApiJsonValue>;
                 input.handlers.wsMessageHandlers.push(storedHandler);
                 return () => remove(input.handlers.wsMessageHandlers, storedHandler);
             }
         }
-    });
+    };
 }
 
 function createFakeWsFacade(input: FakeRallarAssembly): RallarGameRallarFacade['ws'] {
@@ -1242,16 +1358,37 @@ async function emitFakeCapability(
     input: FakeRallarAssembly,
     capability: Readonly<{ peerId: string; reportedAtEpochMs: number; scoreBias?: number; }>
 ): Promise<void> {
-    const message = {
+    const payload = toTestJsonValue(envelope('capability', capability.peerId, capability, 100)) ?? null;
+    const raw = {
+        id: { v: 2 as const, msgId: 'capability-message', ts: 1_100, senderId: capability.peerId },
+        route: { topicId: 'game.topic', resourceId: 'capability', contextId: 'room-1' },
+        payload: { typeId: 'game.topic.capability.v1', contentType: 'application/json' as const, resource: JSON.stringify(payload) }
+    };
+    const message: RallarMessage<ApiJsonValue> = {
+        transport: 'ws',
+        typeId: 'game.topic.capability.v1',
+        topicId: 'game.topic',
+        contextId: 'room-1',
+        resourceId: 'capability',
         senderId: capability.peerId,
-        payload: envelope('capability', capability.peerId, capability, 100)
+        payload,
+        raw,
+        receivedAtEpochMs: 1_100
     };
     await Promise.all(input.handlers.wsMessageHandlers.map((handler) => handler(message)));
 }
 
 async function emitFakeRealtime(input: EmitFakeRealtimeInput): Promise<void> {
     const handlers = input.assembly.handlers.realtimeJsonHandlers.get(input.laneId) ?? [];
-    await Promise.all(handlers.map((handler) => handler({ peerId: input.peerId, data: input.data })));
+    const data = toTestJsonValue(input.data) ?? null;
+    const message: RallarRealtimeMessage<ApiJsonValue> = {
+        peerId: input.peerId,
+        laneId: input.laneId,
+        data,
+        event: new MessageEvent('message', { data: JSON.stringify(data) }),
+        receivedAtEpochMs: 2_000
+    };
+    await Promise.all(handlers.map((handler) => handler(message)));
 }
 
 function createDirectorStatus(
@@ -1317,6 +1454,8 @@ function remove<T>(values: T[], value: T): void {
     }
 }
 
-function createPartialTestDouble<T extends object>(implementation: Partial<T>): T {
-    return implementation as T;
+function toTestJsonValue<T>(value: T): ApiJsonValue | undefined {
+    const serialized = JSON.stringify(value);
+    // The wire boundary accepts JSON; each generic callback owns its application payload contract.
+    return serialized === undefined ? undefined : JSON.parse(serialized) as ApiJsonValue;
 }

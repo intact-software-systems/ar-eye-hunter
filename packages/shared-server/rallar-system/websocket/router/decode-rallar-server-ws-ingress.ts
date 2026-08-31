@@ -1,6 +1,11 @@
-import { isRoomScopedALMessage, readALTargetGroupRef, type ALMessage } from '@shared/al-contracts/al-contract.ts';
+import {
+    isRoomScopedALMessage,
+    readALTargetGroupRef,
+    type ALMessage
+} from '@shared/al-contracts/al-contract.ts';
 import type { ALNackReason } from '@shared/al-contracts/al-control.ts';
-import type { GroupRef } from '@shared/api/group-types.ts';
+import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
+
 import { decodeJsonWireValue, type JsonWireValue } from '../../protocol/json-wire-identity.ts';
 import type {
     RallarServerWsRoomAuthorizationDecision,
@@ -19,12 +24,17 @@ export interface AuthorizeRallarServerWsIngressInput {
     readonly authorizeRoomMessage?: RallarServerWsRoomAuthorizer;
 }
 
-export interface RallarServerWsAuthorizationResult {
-    readonly authorized: boolean;
-    readonly reason?: ALNackReason;
-    readonly logMessage?: string;
-    readonly serverSnapshotVersion?: number;
-}
+export type RallarServerWsAuthorizationResult =
+    | {
+        readonly authorized: true;
+        readonly authorizedRoomSnapshot: GroupSnapshot | undefined;
+    }
+    | {
+        readonly authorized: false;
+        readonly reason: ALNackReason;
+        readonly logMessage: string;
+        readonly serverSnapshotVersion: number | undefined;
+    };
 
 export function decodeRallarServerWsIngress(
     message: ALMessage
@@ -45,13 +55,13 @@ export async function authorizeRallarServerWsIngress(
     input: AuthorizeRallarServerWsIngressInput
 ): Promise<RallarServerWsAuthorizationResult> {
     if (input.definition?.scope !== 'room' && !isRoomScopedALMessage(input.message)) {
-        return { authorized: true };
+        return { authorized: true, authorizedRoomSnapshot: undefined };
     }
     const roomId = readRallarServerWsRoomId(input.message);
     if (!roomId || !input.authorizeRoomMessage) {
-        return { authorized: false };
+        return toRoomAuthorizationResult(false, input.message);
     }
-    return normalizeRoomAuthorizationDecision(
+    return toRoomAuthorizationResult(
         await input.authorizeRoomMessage({
             message: input.message,
             definition: input.definition
@@ -62,7 +72,7 @@ export async function authorizeRallarServerWsIngress(
             senderId: input.message.id.senderId,
             topicId: input.message.route.topicId,
             typeId: input.message.payload.typeId,
-            minSnapshotVersion: readRallarServerWsMinSnapshotVersion(input.message)
+            minSnapshotVersion: resolveRallarServerWsMinSnapshotVersion(input.message)
         }),
         input.message
     );
@@ -99,28 +109,29 @@ export function readRallarServerWsRoomRef(message: ALMessage): GroupRef | undefi
         : undefined;
 }
 
-function readRallarServerWsMinSnapshotVersion(message: ALMessage): number | undefined {
+function resolveRallarServerWsMinSnapshotVersion(message: ALMessage): number | undefined {
     const targets = message.targets;
     return targets?.mode === 'multicast' || targets?.mode === 'broadcast'
         ? targets.minSnapshotVersion
         : undefined;
 }
 
-function normalizeRoomAuthorizationDecision(
+function toRoomAuthorizationResult(
     decision: RallarServerWsRoomAuthorizationDecision,
     message: ALMessage
 ): RallarServerWsAuthorizationResult {
-    if (typeof decision === 'boolean') {
-        return { authorized: decision };
+    if (decision === true) {
+        return { authorized: true, authorizedRoomSnapshot: undefined };
     }
-    if (decision.authorized) {
-        return { authorized: true };
+    if (decision !== false && decision.authorized) {
+        return { authorized: true, authorizedRoomSnapshot: decision.authorizedRoomSnapshot };
     }
+    const denial = decision === false ? undefined : decision;
     return {
         authorized: false,
-        reason: decision.reason,
-        logMessage: decision.logMessage ??
+        reason: denial?.reason ?? 'unauthorized',
+        logMessage: denial?.logMessage ??
             `Rejected unauthorised Rallar server WS topic: ${message.route.topicId}`,
-        serverSnapshotVersion: decision.serverSnapshotVersion
+        serverSnapshotVersion: denial?.serverSnapshotVersion
     };
 }

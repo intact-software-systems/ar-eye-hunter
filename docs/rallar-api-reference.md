@@ -1269,7 +1269,8 @@ Write routes are intentionally narrow:
   categories, currently RTC topology metrics.
 - `POST /api/admin/operations/topology/recompute` delegates to the same scoped
   topology recompute path used by group topology management.
-- `POST /api/admin/operations/maintenance/prune-expired` defaults to dry-run.
+- `POST /api/admin/operations/maintenance/prune-expired/requests/:requestId`
+  requires a caller request ID and defaults to dry-run.
   Real execution deletes only expired rows for supported categories. App-data
   pruning requires an explicit namespace and optional store name.
 - `POST /api/admin/operations/crdt/integrity`,
@@ -1289,6 +1290,37 @@ sink. These events include operation name, status, duration, admin client id,
 session id, request id, reason, and bounded target metadata; they do not include
 bearer tokens or raw operation payloads. `RALLAR_TIMING_LOGS` controls the
 default console sink.
+
+### Admin prune outbox deployment
+
+Prune pages are persisted application queue work. Their canonical AL target is
+`{ mode: "broadcast", scope: "all" }`, with topic
+`rallar.admin.prune-expired` and a normalized job ID as the route context.
+`APP_OUTBOX` reservation and the `ADMIN_PRUNE_EXPIRED` callback dispatch them to
+one page worker; these targets do not publish the page to browser sockets or RTC
+peers. The worker still checks the current admin session, expiry, page bounds,
+aggregate identity, and reservation before committing deletion.
+
+This release uses a maintainer-managed clean-database cutover. It does not migrate
+retained messages with the previous `{ mode: "all", scope: "global" }` targets,
+and it has no runtime compatibility reader. Existing database contents are not
+preserved by this deployment choice.
+
+Coordinate the reset with deployment:
+
+1. Stop old API writers and application queue readers on every node sharing the
+   database. Prevent new admin requests while they are stopped.
+2. Clear the affected databases as the maintainer has chosen, then initialize
+   their schema with the existing Prisma migrations (`npm run db:migrate`).
+3. Start only the canonical producer/reader build, then verify a real prune
+   completes and inspect queue errors. Resume admin traffic afterwards.
+
+Do not clear a database while old workers can still write to it: they can recreate
+obsolete messages after the reset. The existing [deployment workflow](../.github/workflows/deploy.yml)
+does not stop old workers or perform this reset. The maintainer must coordinate
+those operations; this change does not disable repository-wide deployment or
+automatically delete data. A rollback likewise needs a stopped-worker reset or
+compatible restore, because the old reader rejects newly written canonical pages.
 
 ### Admin Support REST
 

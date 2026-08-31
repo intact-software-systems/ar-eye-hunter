@@ -1,10 +1,26 @@
+import type { BlackBoxRallarConnectDiagnostics } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-operation-contracts.ts';
 import type { BlackBoxRallarRuntime } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-runtime-contract.ts';
-import type { BlackBoxRallarConnectDiagnostics } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/contracts.ts';
+import {
+    decodeBlackBoxRallarSendInput,
+    decodeBlackBoxRallarWsSendInput
+} from '@shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-command-input.ts';
 import type { RallarMessage } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
-import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { events, facade, loadRuntime, resetFacade } from './browser-rallar-runtime-test-harness.ts';
+import {
+    afterEach,
+    beforeEach,
+    expect,
+    it,
+    vi
+} from 'vitest';
+
+import {
+    events,
+    facade,
+    loadRuntime,
+    resetFacade
+} from './browser-rallar-runtime-test-harness.ts';
 
 interface ChatMessagePayload {
     readonly text: string;
@@ -27,6 +43,24 @@ beforeEach(() => {
 
 afterEach(() => {
     vi.unstubAllGlobals();
+});
+
+it('preserves opaque application payloads while decoding the command envelope', () => {
+    const payload = { nested: { arbitraryField: ['value', null] } };
+    const realtime = decodeBlackBoxRallarSendInput(payload, 'realtime');
+    const rtc = decodeBlackBoxRallarSendInput({ payload, ttlMs: '1200' }, 'messages.rtc');
+    const ws = decodeBlackBoxRallarWsSendInput({ payload, ack: 'all-logical-recipients' });
+    expect(realtime.data).toBe(payload);
+    expect(rtc.payload).toBe(payload);
+    expect(rtc.ttlMs).toBe(1200);
+    expect(ws.payload).toBe(payload);
+    expect(ws.ack).toBe('all-logical-recipients');
+});
+
+it('rejects incomplete room identity and unsupported acknowledgement modes at command ingress', () => {
+    expect(() => decodeBlackBoxRallarSendInput({ roomRef: { groupId: 'room-1' } }, 'messages.rtc'))
+        .toThrow('roomRef requires applicationId and groupId');
+    expect(() => decodeBlackBoxRallarWsSendInput({ ack: 'unsupported' })).toThrow('ack mode is invalid');
 });
 
 it('applies scoped defaults and reports the connected room reference', async () => {
@@ -131,6 +165,31 @@ it('subscribes before WebSocket sends and preserves message metadata', async () 
         scope: 'room',
         payload: { text: 'hello over ws' }
     }));
+});
+
+it('normalizes a transport failure before publishing its structured error', async () => {
+    const { runtime } = await loadConnectedMessageRuntime();
+    facade.behavior.realtimeSend.mockRejectedValue('transport rejected the send');
+    await expect(runtime.send({ data: { text: 'hello' } })).rejects.toThrow('transport rejected the send');
+    expect(events.find((event) => event.topic === 'rallar.browser.realtime.send_failed')?.error).toMatchObject({
+        name: 'Error',
+        message: 'transport rejected the send'
+    });
+});
+
+it('keeps explicit workspace routing in WebSocket diagnostics and delivery', async () => {
+    const { runtime } = await loadConnectedMessageRuntime();
+    const alternateRoom = { ...roomRef, applicationId: 'app-2', workspaceId: 'workspace-b' };
+    const result = await runtime.sendWs({
+        applicationId: 'app-2',
+        workspaceId: 'workspace-b',
+        roomRef: alternateRoom,
+        scope: 'room',
+        payload: { text: 'scoped' },
+        ack: 'receiver'
+    });
+    expect(result).toMatchObject({ applicationId: 'app-2', workspaceId: 'workspace-b', roomRef: alternateRoom });
+    expect(facade.records.wsMessageSends.at(-1)?.[0]).toMatchObject({ roomRef: alternateRoom, ack: 'receiver' });
 });
 
 it('emits received WebSocket payloads and releases their subscription on close', async () => {

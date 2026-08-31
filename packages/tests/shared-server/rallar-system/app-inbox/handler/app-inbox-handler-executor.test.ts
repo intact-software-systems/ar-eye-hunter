@@ -4,7 +4,7 @@ import type { RallarTimingEvent } from '@shared-server/rallar-system/observabili
 import type { JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 
 import { EntityStatus, toKeyAsString } from '@shared/queuebox/ResourceEntry.ts';
-import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
+import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 import { describe, expect, it } from 'vitest';
 import {
     createRegisteredHandlerHarness,

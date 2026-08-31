@@ -10,7 +10,16 @@ import { BrowserRtcStatusRuntime } from '@shared-web/browser/rtc/browser-rtc-sta
 import { BrowserRtcWaitRuntime } from '@shared-web/browser/rtc/browser-rtc-wait-runtime.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
-import { DEFAULT_RTC_DATA_CHANNEL_LANE_ID } from '@shared/services/WebRtcConnectionService.ts';
+import { DEFAULT_RTC_DATA_CHANNEL_LANE_ID } from '@shared/services/web-rtc-connection-service.ts';
+
+interface BrowserRtcRuntimes {
+    readonly status: BrowserRtcStatusRuntime;
+    readonly lifecycle: BrowserRtcLifecycleRuntime;
+    readonly wait: BrowserRtcWaitRuntime;
+    readonly rooms: BrowserRtcRoomRuntime;
+    readonly diagnostics: BrowserRtcDiagnosticsRuntime;
+    readonly recovery: BrowserRtcRecoveryRuntime;
+}
 
 export namespace BrowserRallarRtcController {
     export interface Input {
@@ -23,15 +32,6 @@ export namespace BrowserRallarRtcController {
         resolveRtcWaitTimeoutMs(timeoutMs?: number): number | undefined;
         resolveRtcConnectOnWait(connect?: boolean): boolean;
     }
-}
-
-interface BrowserRtcRuntimes {
-    readonly status: BrowserRtcStatusRuntime;
-    readonly lifecycle: BrowserRtcLifecycleRuntime;
-    readonly wait: BrowserRtcWaitRuntime;
-    readonly rooms: BrowserRtcRoomRuntime;
-    readonly diagnostics: BrowserRtcDiagnosticsRuntime;
-    readonly recovery: BrowserRtcRecoveryRuntime;
 }
 
 /** Constructs the public RTC capability from its status, lifecycle, wait, room, diagnostic, and recovery owners. */
@@ -61,6 +61,7 @@ function createBrowserRtcRuntimes(
         readMiddleware: input.readMiddleware,
         readStatus: (options) => status.read(options),
         resolveRoomTransportTarget: input.resolveRoomTransportTarget,
+        resolveRoomRef: input.resolveRoomRef,
         resolveWaitTimeoutMs: input.resolveRtcWaitTimeoutMs,
         resolveConnectOnWait: input.resolveRtcConnectOnWait
     });
@@ -104,7 +105,7 @@ function createBrowserRtcOperations(
             ),
         waitForRoomLane: async (room, laneId, options = {}) =>
             await runtimes.wait.waitForRoomLane(
-                options.roomRef ?? room,
+                room,
                 laneId,
                 options
             ),

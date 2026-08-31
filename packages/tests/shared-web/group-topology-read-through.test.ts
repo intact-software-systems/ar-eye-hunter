@@ -10,6 +10,7 @@ import {
 
 import { hydrateGroupTopologyOverlays } from '@shared-web/browser/state-read/hydrate-group-topology-overlays.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
+import type { GroupTopologyManagementView } from '@shared/api/graph-topology-management-types.ts';
 import type { AuditStamp, GroupSnapshot } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import { toOverlayInfoForSession } from '@shared/api/overlay-topology.ts';
@@ -19,14 +20,16 @@ import * as groupStateSnapshotsRepository from '@shared/repository/group-state-s
 import {
     findAcceptedOverlayById,
     findPlannedOverlayById,
+    readableAcceptedOverlayCache,
+    readablePlannedOverlayCache,
     removeAcceptedOverlayById,
     removePlannedOverlayById,
     setAcceptedOverlayById,
     setPlannedOverlayById
 } from '@shared/repository/overlays-repository.ts';
-import type { WebRtcGroupManager } from '@shared/services/WebRtcGroupManager.ts';
+import type { WebRtcGroupManager } from '@shared/services/web-rtc-group-manager.ts';
 
-import { configureTestCacheRepositories } from '../cache-repository-config.ts';
+import { configureTestCacheRepositories } from '../configure-test-cache-repositories.ts';
 import { createTestGroup } from '../create-test-group.ts';
 
 const scope: StateScope = {
@@ -143,6 +146,38 @@ describe('group topology read-through', () => {
         expect(findPlannedOverlayById(incoming.overlayId)?.overlayVersion).toBe(6);
     });
 
+    it.each(['active', 'removed'] as const)('preserves a newer %s role observation while an incomparable read is pending', async (state) => {
+        const group = createGroupSnapshot('room-a', ['session-a']);
+        groupStateSnapshotsRepository.setGroupStateSnapshot(group);
+        const response = Promise.withResolvers<Response>();
+        const requestStarted = Promise.withResolvers<void>();
+        vi.stubGlobal('fetch', () => {
+            requestStarted.resolve();
+            return response.promise;
+        });
+        const hydration = hydrateGroupTopologyOverlays({
+            groupSnapshots: [group],
+            sessionId: 'session-a',
+            webRtcGroupManager: createWebRtcGroupManager(),
+            scope,
+            apiRequest: { authSession: null }
+        });
+        await requestStarted.promise;
+        const publication: RallarOverlayTopologySnapshot = {
+            ...createTopologySnapshot(group, { groupRevision: 2, presenceRevision: 1 }, 7),
+            state,
+            nextHopsBySessionId: { 'session-a': [] }
+        };
+        setPlannedOverlayById(publication.overlayId, toOverlayInfoForSession(publication, 'session-a'));
+        setAcceptedOverlayById(publication.overlayId, toOverlayInfoForSession(publication, 'session-a'));
+        const stale = createTopologySnapshot(group, { groupRevision: 1, presenceRevision: 2 }, 6);
+        response.resolve(jsonResponse(topologyView(group, stale, stale)));
+
+        await expect(hydration).resolves.toEqual([{ groupId: 'room-a', outcome: 'revision-conflict' }]);
+        expect(readablePlannedOverlayCache().read(publication.overlayId)).toMatchObject({ overlayVersion: 7, state });
+        expect(readableAcceptedOverlayCache().read(publication.overlayId)).toMatchObject({ overlayVersion: 7, state });
+    });
+
     it('hydrates and clears the planned and accepted current-state fields independently', async () => {
         const group = createGroupSnapshot('room-a', ['session-a']);
         groupStateSnapshotsRepository.setGroupStateSnapshot(group);
@@ -177,6 +212,49 @@ describe('group topology read-through', () => {
         expect(cleared).toEqual([{ groupId: 'room-a', outcome: 'no-overlay' }]);
         expect(findPlannedOverlayById(planned.overlayId)).toBeUndefined();
         expect(findAcceptedOverlayById(accepted.overlayId)).toBeUndefined();
+    });
+
+    it('hydrates same-tuple tombstones into both roles without reviving a delayed active copy', async () => {
+        const group = createGroupSnapshot('room-a', ['session-a']);
+        groupStateSnapshotsRepository.setGroupStateSnapshot(group);
+        const active = createTopologySnapshot(group, { groupRevision: 2, presenceRevision: 2 }, 3);
+        const removed: RallarOverlayTopologySnapshot = {
+            ...active,
+            state: 'removed',
+            nextHopsBySessionId: { 'session-a': [] }
+        };
+        const responses = [active, removed, null, active];
+        vi.stubGlobal('fetch', async () => {
+            const snapshot = responses.shift();
+            if (snapshot === undefined) {
+                throw new Error('No topology response prepared');
+            }
+            return jsonResponse(topologyView(group, snapshot, snapshot));
+        });
+        const input = {
+            groupSnapshots: [group],
+            sessionId: 'session-a',
+            scope,
+            webRtcGroupManager: createWebRtcGroupManager(),
+            apiRequest: { authSession: null }
+        };
+        await hydrateGroupTopologyOverlays(input);
+        expect(findPlannedOverlayById(active.overlayId)?.state).toBe('active');
+        expect(findAcceptedOverlayById(active.overlayId)?.state).toBe('active');
+        for (
+            const delivery of [
+                { name: 'retirement', outcome: 'adopted' },
+                { name: 'absent snapshot', outcome: 'no-overlay' },
+                { name: 'delayed active', outcome: 'adopted' }
+            ]
+        ) {
+            expect(await hydrateGroupTopologyOverlays(input), delivery.name)
+                .toEqual([{ groupId: 'room-a', outcome: delivery.outcome }]);
+            expect(findPlannedOverlayById(active.overlayId)).toBeUndefined();
+            expect(findAcceptedOverlayById(active.overlayId)).toBeUndefined();
+            expect(readablePlannedOverlayCache().read(active.overlayId)?.state).toBe('removed');
+            expect(readableAcceptedOverlayCache().read(active.overlayId)?.state).toBe('removed');
+        }
     });
 
     it('preserves newer planned and accepted publications that arrive while a null read is pending', async () => {
@@ -250,6 +328,39 @@ describe('group topology read-through', () => {
         expect(topologyChangeNotified).toBe(true);
     });
 
+    it('does not restore an obsolete accepted layout after group authority changes during the read', async () => {
+        const group = createGroupSnapshot('room-a', ['session-a']);
+        groupStateSnapshotsRepository.setGroupStateSnapshot(group);
+        const accepted = createTopologySnapshot(group, { groupRevision: 1, presenceRevision: 1 }, 1);
+        setAcceptedOverlayById(accepted.overlayId, toOverlayInfoForSession(accepted, 'session-a'));
+        const response = Promise.withResolvers<Response>();
+        const requestStarted = Promise.withResolvers<void>();
+        vi.stubGlobal('fetch', () => {
+            requestStarted.resolve();
+            return response.promise;
+        });
+
+        const hydration = hydrateGroupTopologyOverlays({
+            groupSnapshots: [group],
+            sessionId: 'session-a',
+            scope,
+            webRtcGroupManager: createWebRtcGroupManager(),
+            apiRequest: { authSession: null }
+        });
+        await requestStarted.promise;
+        const newer: GroupSnapshot = {
+            ...group,
+            group: { ...group.group, snapshotVersion: group.group.snapshotVersion + 1 },
+            causalRevision: { ...group.causalRevision, groupRevision: group.causalRevision.groupRevision + 1 }
+        };
+        groupStateSnapshotsRepository.setGroupStateSnapshot(newer);
+        removeAcceptedOverlayById(accepted.overlayId);
+        response.resolve(jsonResponse(topologyView(group, null, accepted)));
+
+        await hydration;
+        expect(findAcceptedOverlayById(accepted.overlayId)).toBeUndefined();
+    });
+
     it('does not resurrect overlay roles after membership is removed while a topology read is pending', async () => {
         const group = createGroupSnapshot('room-a', ['session-a', 'session-b']);
         groupStateSnapshotsRepository.setGroupStateSnapshot(group);
@@ -296,12 +407,12 @@ describe('group topology read-through', () => {
         const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
             if (String(input).includes('/groups/room-a/')) {
                 return jsonResponse({
-                    ...topologyView(groupA, null, null) as object,
+                    ...topologyView(groupA, null, null),
                     overlayId: 'not-the-canonical-overlay-id'
                 });
             }
             return jsonResponse({
-                ...topologyView(groupB, null, null) as object,
+                ...topologyView(groupB, null, null),
                 groupRef: wrongGroupRef,
                 overlayId: toScopedOverlayId(wrongGroupRef)
             });
@@ -334,7 +445,7 @@ describe('group topology read-through', () => {
                 1
             );
             const view = {
-                ...topologyView(requestedGroup, null, null) as object,
+                ...topologyView(requestedGroup, null, null),
                 [role]: wrongSnapshot
             };
             vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(view)));
@@ -370,7 +481,7 @@ function topologyView(
     group: GroupSnapshot,
     snapshot: RallarOverlayTopologySnapshot | null,
     acceptedSnapshot: RallarOverlayTopologySnapshot | null = null
-): unknown {
+): GroupTopologyManagementView {
     return {
         groupRef: {
             applicationId: group.group.applicationId,
@@ -380,22 +491,23 @@ function topologyView(
         overlayId: toScopedOverlayId(group.group),
         snapshot,
         acceptedSnapshot,
-        config: null,
+        config: {
+            serverDefaults: { topologyKind: 'auto', degreeLimit: 5, treeMinSize: 3, meshMinSize: 8, meshParamK: 2 },
+            durable: null,
+            temporary: null,
+            requestOptions: null,
+            effective: { topologyKind: 'auto', degreeLimit: 5, treeMinSize: 3, meshMinSize: 8, meshParamK: 2 }
+        },
         pending: null
     };
 }
 
-function createWebRtcGroupManager(onTopologyChanged?: () => void): WebRtcGroupManager {
+function createWebRtcGroupManager(onTopologyChanged?: () => void): Pick<WebRtcGroupManager, 'notifyOverlayTopologyChanged'> {
     return {
-        notifyClientPresenceChanged: vi.fn(async () => undefined),
         notifyOverlayTopologyChanged: async () => {
             onTopologyChanged?.();
-        },
-        acceptGroupUpdate: vi.fn(async () => undefined),
-        ensureAllGroupsConnected: vi.fn(async () => undefined),
-        delete: vi.fn(async () => undefined),
-        has: vi.fn(() => false)
-    } as never;
+        }
+    };
 }
 
 function createGroupSnapshot(groupId: string, sessionIds: readonly string[]): GroupSnapshot {

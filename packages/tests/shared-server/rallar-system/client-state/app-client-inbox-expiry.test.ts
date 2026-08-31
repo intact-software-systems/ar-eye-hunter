@@ -1,17 +1,18 @@
-import { expect, it, vi } from 'vitest';
+import {
+    expect,
+    it,
+    vi
+} from 'vitest';
 
 import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import { createClientStateService } from '@shared-server/rallar-system/client-state/client-state-service.ts';
-import {
-    type ClientExpiredSessionsAppInboxPayload,
-    type ClientSessionConnectAppInboxPayload
-} from '@shared-server/rallar-system/client-state/inbox/app-client-inbox-contracts.ts';
+import { type ClientExpiredSessionsAppInboxPayload } from '@shared-server/rallar-system/client-state/inbox/app-client-inbox-contracts.ts';
 import { AppClientInboxService } from '@shared-server/rallar-system/client-state/inbox/app-client-inbox-service.ts';
 import { toAuthenticatedClientMutationContextId } from '@shared-server/rallar-system/client-state/inbox/authenticated-client-mutation-ingress.ts';
 import { createTestClientStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import type { ClientPrincipalRef } from '@shared/api/client-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
-import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
+import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 
 import { FakeRuntimeStateRepository } from '../../runtime-state/test-support/fake-runtime-state-repository.ts';
 import { createAppInboxTestResilience } from '../app-inbox/test-support/app-inbox-resource-fixtures.ts';
@@ -24,8 +25,8 @@ import {
     readClientExpiryTestEnqueueData,
     readClientExpiryTestEntries
 } from './app-client-inbox-expiry-fixtures.ts';
-import { createClientStateServiceStub } from './client-state-service-stub.ts';
 import { createClientStatePhaseTestDriver } from './client-state-test-runtime.ts';
+import { createClientStateServiceFixture } from './create-client-state-service-fixture.ts';
 
 const SCOPE: StateScope = { applicationId: 'ar-eye-hunter', workspaceId: 'default' };
 
@@ -93,7 +94,7 @@ it('keeps at most one active waiting client expiry entry across timestamps', asy
             resourceInboxRepository: queue,
             resourceInboxResultsRepository: results,
             database: createAppInboxTestDatabase(queue, results),
-            clientStateService: createClientStateServiceStub({ listExpiredSessionCandidates })
+            clientStateService: { ...createClientStateServiceFixture(), listExpiredSessionCandidates }
         },
         {
             serviceId: 'server-12345678'
@@ -134,7 +135,7 @@ it('durably enqueues each client expiry reconciliation tick', async () => {
             resourceInboxRepository: queue,
             resourceInboxResultsRepository: results,
             database: createAppInboxTestDatabase(queue, results),
-            clientStateService: createClientStateServiceStub({ listExpiredSessionCandidates })
+            clientStateService: { ...createClientStateServiceFixture(), listExpiredSessionCandidates }
         },
         {
             serviceId: 'server-12345678'

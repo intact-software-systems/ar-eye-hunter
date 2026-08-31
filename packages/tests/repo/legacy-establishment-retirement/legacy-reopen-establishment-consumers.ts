@@ -82,6 +82,7 @@ export const LEGACY_REOPEN_ESTABLISHMENT_CONSUMERS: readonly LegacyReopenEstabli
     { file: 'packages/shared/api/group-lifecycle/group-lifecycle-transitions.ts', occurrences: { 'reopen-establishment': 3 } },
     { file: 'packages/shared/api/group-lifecycle/resolve-formation-stage-entry.ts', occurrences: { 'reopen-establishment': 1 } },
     { file: 'packages/shared/api/group-types.ts', occurrences: { 'reopen-establishment': 1 } },
+    { file: 'packages/tests/rallar-black-box/live-rtc-delivery-operations.test.ts', occurrences: { 'lifecycle/reopen': 1 } },
     {
         file: 'packages/tests/repo/mutation-route-ownership/routing/mutation-routing-owner-inventory.ts',
         occurrences: { GROUP_ESTABLISHMENT_REOPEN: 2, ReopenGroupEstablishment: 1, 'reopen-group-establishment': 1, 'lifecycle/reopen': 1 }

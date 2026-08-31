@@ -2,7 +2,13 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 
 import { newALMulticastMessage } from '@shared/al-contracts/al-contract.ts';
-import { WebRtcOverlayMulticastService } from '@shared/multicast/WebRtcOverlayMulticastService.ts';
+import type { OverlayMulticasterContext } from '@shared/multicast/OverlayMulticastContracts.ts';
+import { WebRtcOverlayMulticastService } from '@shared/multicast/web-rtc-overlay-multicast-service.ts';
+import { toError } from '@shared/resilience/to-error.ts';
+import { WebRtcConnectionService } from '@shared/services/web-rtc-connection-service.ts';
+
+import { installRtcBenchmarkNativeRuntime } from '../native-rtc/rtc-benchmark-native-peer.ts';
+import { createDeterministicRtcTopologyGroupSnapshot } from '../topology/create-deterministic-rtc-topology-group-snapshot.ts';
 
 import {
     parseRtcBaselineAcceptedWorker,
@@ -13,6 +19,7 @@ import {
 import { parseRtcBaselineBoundedInteger } from '../../baseline/command/rtc-baseline-cli-options.ts';
 import {
     rtcBaselineIssue,
+    type RtcBaselineIssueDto,
     type RtcBaselineJson,
     type RtcBaselineResult,
     type RtcBaselineSampleDto
@@ -86,60 +93,67 @@ export function runRtcMulticastSerialization(
     run = 1
 ): RtcMulticastSerializationResult {
     const peerIds = createPeerIds(input.peers);
-    const service = new WebRtcOverlayMulticastService(
-        'group-1',
-        createConnectionService(peerIds) as never
-    );
-    const multicastMessage = newALMulticastMessage(
-        'self',
-        {
-            topicId: 'chat',
-            resourceId: `msg-${input.peers}-${input.payloadBytes}-${run}`,
-            contextId: 'group-1'
-        },
-        { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'group-1' },
-        'chat.message.v1',
-        createPayload(input.payloadBytes),
-        { qos: { durability: { algo: 'volatile' } } }
-    );
-    const overlayContext = createOverlayContext(peerIds);
+    const connections = createConnectionService(peerIds);
+    const service = new WebRtcOverlayMulticastService('group-1', connections.service);
+    try {
+        const multicastMessage = newALMulticastMessage(
+            'self',
+            {
+                topicId: 'chat',
+                resourceId: `msg-${input.peers}-${input.payloadBytes}-${run}`,
+                contextId: 'group-1'
+            },
+            { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'group-1' },
+            'chat.message.v1',
+            createPayload(input.payloadBytes),
+            { qos: { durability: { algo: 'volatile' } } }
+        );
+        const overlayContext = createOverlayContext(peerIds);
 
-    const planStartedAt = performance.now();
-    const plan = service.createOriginatingPlan(multicastMessage, overlayContext as never);
-    const planDurationMs = performance.now() - planStartedAt;
+        const planStartedAt = performance.now();
+        const plan = service.createOriginatingPlan(multicastMessage, overlayContext);
+        const planDurationMs = performance.now() - planStartedAt;
 
-    const originalSerializationStartedAt = performance.now();
-    const originalSerialized = JSON.stringify(multicastMessage);
-    const originalSerializeDurationMs = performance.now() - originalSerializationStartedAt;
+        const originalSerializationStartedAt = performance.now();
+        const originalSerialized = JSON.stringify(multicastMessage);
+        const originalSerializeDurationMs = performance.now() - originalSerializationStartedAt;
 
-    const transportSerializationStartedAt = performance.now();
-    const serializedTransportMessages = plan.transportMessages.map((message) => JSON.stringify(message));
-    const serializeDurationMs = performance.now() - transportSerializationStartedAt;
-    const uniqueSerializedMessages = new Set(serializedTransportMessages).size;
+        const transportSerializationStartedAt = performance.now();
+        const serializedTransportMessages = plan.transportMessages.map((message) => JSON.stringify(message));
+        const serializeDurationMs = performance.now() - transportSerializationStartedAt;
+        const uniqueSerializedMessages = new Set(serializedTransportMessages).size;
 
-    return {
-        peerCount: input.peers,
-        payloadBytes: input.payloadBytes,
-        planDurationMs,
-        serializeDurationMs,
-        originalSerializeDurationMs,
-        transportMessages: plan.transportMessages.length,
-        uniqueSerializedMessages,
-        totalSerializedBytes: serializedTransportMessages.reduce(
-            (total, serializedTransportMessage) => total + serializedTransportMessage.length,
-            0
-        ),
-        originalSerializedBytes: originalSerialized.length,
-        allTransportMessagesIdentical: uniqueSerializedMessages <= 1
-    };
+        return {
+            peerCount: input.peers,
+            payloadBytes: input.payloadBytes,
+            planDurationMs,
+            serializeDurationMs,
+            originalSerializeDurationMs,
+            transportMessages: plan.transportMessages.length,
+            uniqueSerializedMessages,
+            totalSerializedBytes: serializedTransportMessages.reduce(
+                (total, serializedTransportMessage) => total + serializedTransportMessage.length,
+                0
+            ),
+            originalSerializedBytes: originalSerialized.length,
+            allTransportMessagesIdentical: uniqueSerializedMessages <= 1
+        };
+    }
+    finally {
+        connections.dispose();
+    }
 }
 
-export function runRtcMulticastSerializationAcceptedSamples(input: {
+export interface RtcMulticastSerializationAcceptedSamplesInput {
     readonly worker: RtcBaselineAcceptedWorker<RtcMulticastSerializationInput>;
     readonly run: (
         innerOrdinal: number
     ) => RtcMulticastSerializationResult | Promise<RtcMulticastSerializationResult>;
-}): Promise<RtcBaselineSampleDto[]> {
+}
+
+export function runRtcMulticastSerializationAcceptedSamples(
+    input: RtcMulticastSerializationAcceptedSamplesInput
+): Promise<RtcBaselineSampleDto[]> {
     let innerOrdinal = 0;
     return runRtcBaselineAcceptedWorker({
         worker: input.worker,
@@ -220,8 +234,8 @@ function parseAcceptedCapability(
     return {
         ok: true,
         value: {
-            peers: peers.ok ? peers.value as 10 | 100 | 1000 : 10,
-            payloadBytes: payloadBytes.ok ? payloadBytes.value as 4096 | 65536 : 4096
+            peers: peers.ok ? peers.value : 10,
+            payloadBytes: payloadBytes.ok ? payloadBytes.value : 4096
         }
     };
 }
@@ -229,7 +243,7 @@ function parseAcceptedCapability(
 function validateResult(
     input: RtcMulticastSerializationInput,
     result: RtcMulticastSerializationResult
-) {
+): RtcBaselineIssueDto[] {
     const timingIssues = Object.entries({
         planDurationMs: result.planDurationMs,
         originalSerializeDurationMs: result.originalSerializeDurationMs,
@@ -278,7 +292,7 @@ function validateResult(
     ];
 }
 
-function areExactByteCounts(result: RtcMulticastSerializationResult) {
+function areExactByteCounts(result: RtcMulticastSerializationResult): boolean {
     return [result.originalSerializedBytes, result.totalSerializedBytes].every(
         Number.isSafeInteger
     ) &&
@@ -286,7 +300,7 @@ function areExactByteCounts(result: RtcMulticastSerializationResult) {
         result.totalSerializedBytes >= result.originalSerializedBytes * result.transportMessages;
 }
 
-function createIssueWhen(input: RtcMulticastValidationRule) {
+function createIssueWhen(input: RtcMulticastValidationRule): RtcBaselineIssueDto[] {
     return input.valid ? [] : [rtcBaselineIssue(input.path, input.code, input.message)];
 }
 
@@ -305,7 +319,7 @@ function toRawEvidence(result: RtcMulticastSerializationResult): RtcBaselineJson
     };
 }
 
-function createMetrics(result: RtcMulticastSerializationResult) {
+function createMetrics(result: RtcMulticastSerializationResult): RtcBaselineSampleDto['metrics'] {
     const timedMeasurements: readonly [string, number][] = [
         ['planDurationMs', result.planDurationMs],
         ['originalSerializeDurationMs', result.originalSerializeDurationMs],
@@ -314,62 +328,71 @@ function createMetrics(result: RtcMulticastSerializationResult) {
     return timedMeasurements.map(([metric, value]) => ({ metric, unit: 'ms', value }));
 }
 
-function createConnectionService(peerIds: readonly string[]) {
-    return {
-        input: { sessionId: 'self' },
-        readyPeerIdsForLane: () => [...peerIds]
-    };
+interface RtcMulticastConnectionRuntime {
+    readonly service: WebRtcConnectionService;
+    dispose(): void;
 }
 
-function createOverlayContext(peerIds: readonly string[]) {
-    const applicationId = 'app-1';
-    const workspaceId = 'workspace-1';
+function createConnectionService(peerIds: readonly string[]): RtcMulticastConnectionRuntime {
+    const nativeRuntime = installRtcBenchmarkNativeRuntime();
+    const service = new WebRtcConnectionService({ send: async () => {}, connect: async () => {} }, {
+        sessionId: 'self',
+        token: 'benchmark-token',
+        iceCandidates: { iceServers: [], expiresAtEpochMs: Date.now() + 60_000 },
+        dataChannelName: 'realtime',
+        rtcSignalingTopicId: 'rtc',
+        maxPeerConnections: peerIds.length,
+        peerEstablishmentTimeout: { enabled: false, timeoutMs: 5_000 }
+    });
+    const dispose = (): void => {
+        for (const peerId of service.knownPeerIds()) {
+            service.removePeerIfPresent(peerId);
+        }
+    };
+    try {
+        for (const peerId of peerIds) {
+            const connection = service.ensurePeerConnectionStarted(peerId, true);
+            if (!connection.right) {
+                throw new Error(`Could not construct native peer ${peerId}`);
+            }
+            const native = nativeRuntime.peers.at(-1);
+            if (!native) {
+                throw new Error(`Missing native peer ${peerId}`);
+            }
+            native.setConnected();
+            for (const channel of native.channels) {
+                channel.readyState = 'open';
+            }
+        }
+        return { service, dispose };
+    }
+    catch (caught) {
+        dispose();
+        throw toError(caught);
+    }
+    finally {
+        nativeRuntime.restore();
+    }
+}
+
+function createOverlayContext(peerIds: readonly string[]): OverlayMulticasterContext {
     const groupId = 'group-1';
-    const memberSessionIds = ['self', ...peerIds];
+    const snapshot = createDeterministicRtcTopologyGroupSnapshot(groupId, ['self', ...peerIds]);
+    const room = {
+        ...snapshot,
+        group: { ...snapshot.group, displayName: 'Group 1', metadataVersion: 1, presenceVersion: 1 }
+    };
     return {
         overlayId: groupId,
-        room: {
-            group: {
-                applicationId,
-                workspaceId,
-                groupId,
-                displayName: 'Group 1',
-                kind: 'room',
-                status: 'active',
-                joinMode: 'open',
-                metadata: {},
-                snapshotVersion: 1,
-                metadataVersion: 0,
-                rosterVersion: 1,
-                presenceVersion: 0,
-                created: { atEpochMs: 1, byPrincipalId: 'owner' },
-                updated: { atEpochMs: 1, byPrincipalId: 'owner' }
-            },
-            members: memberSessionIds.map((sessionId) => ({
-                applicationId,
-                workspaceId,
-                groupId,
-                principalId: sessionId,
-                role: 'member',
-                status: 'active',
-                joined: { atEpochMs: 1, byPrincipalId: 'owner' },
-                updated: { atEpochMs: 1, byPrincipalId: 'owner' }
-            })),
-            activeSessions: memberSessionIds.map((sessionId) => ({
-                applicationId,
-                workspaceId,
-                groupId,
-                sessionId,
-                principalId: sessionId,
-                connectedAtEpochMs: 1,
-                lastHeartbeatAtEpochMs: 1,
-                expiresAtEpochMs: 60_001
-            })),
-            memberCount: memberSessionIds.length,
-            onlineMemberCount: memberSessionIds.length
-        },
+        room,
         overlay: {
             overlayId: groupId,
+            groupRef: { applicationId: 'app-1', workspaceId: 'workspace-1', groupId },
+            topology: 'star',
+            provenance: 'server',
+            state: 'active',
+            sourceGroupStateCausalRevision: room.causalRevision,
+            degreeLimit: peerIds.length,
             name: 'Group 1',
             createdByClientId: 'owner',
             createdAtEpochMs: 1,
@@ -392,6 +415,9 @@ function createPeerIds(peerCount: number): readonly string[] {
 }
 
 async function main(arguments_: readonly string[]): Promise<void> {
+    const writeLine = console.log.bind(console);
+    console.log = () => {};
+    console.warn = () => {};
     const parsed = parseRtcMulticastSerializationArguments(arguments_);
     if (!parsed.ok) {
         throw new Error(JSON.stringify(parsed.issues));
@@ -403,7 +429,7 @@ async function main(arguments_: readonly string[]): Promise<void> {
                 worker,
                 run: (innerOrdinal) => runRtcMulticastSerialization(worker.input, innerOrdinal)
             }),
-        writeOutput: (output) => console.log(output)
+        writeOutput: (output) => writeLine(output)
     });
     if (dispatched.handled) {
         return;
@@ -436,7 +462,7 @@ async function main(arguments_: readonly string[]): Promise<void> {
     };
     mkdirSync(dirname(diagnostic.out), { recursive: true });
     writeFileSync(diagnostic.out, `${JSON.stringify(output, null, 2)}\n`);
-    console.log(JSON.stringify(output, null, 2));
+    writeLine(JSON.stringify(output, null, 2));
 }
 
 if (import.meta.main) {

@@ -11,7 +11,7 @@ import type {
 import { toAppQueueCreatedBy, toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { Either } from '@shared/resilience/Either.ts';
-import type { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
+import type { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 import { QueueBoxUtilities } from '@shared/services/QueueBoxUtilities.ts';
 
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';

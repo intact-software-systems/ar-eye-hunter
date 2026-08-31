@@ -473,11 +473,26 @@ exact topology read-through for an active local session and adopts the current
 server overlay. Top-level room and people refreshes continue to use complete
 durable collections.
 
-Group presence and client presence converge independently. RTC reconciliation
-therefore treats sessions in an accepted active group snapshot as connectable
-while the client collection catches up; an explicit session-scoped offline
-observation remains a disconnect fence. This prevents a fresh room read from
-discovering a valid peer without ever starting its RTC dial.
+Group presence and client presence converge independently. A new RTC peer needs
+both a lifecycle-selected authoritative server layout and live presence in that
+same scoped group. `connecting` selects planned, `active` and `reconfiguring`
+select accepted, and `reconnecting` selects their union. Other lifecycle states
+select none. A missing selected layout or a local bootstrap overlay grants no
+dial permission. An independent client cache cannot supply or veto that group
+permission. Existing connected or in-progress native connections remain usable
+while later presence or admission observations change; the gate controls new
+allocation. A failed or reset peer record does not grant replacement permission.
+
+Browser startup installs deny policies before connecting the signaling inbox.
+After group ownership is constructed, automatic reconciliation, direct lane
+requests, and incoming offers use the same cached group permission. Signaling
+is decoded before retry-budget consumption or native allocation. Reusable live
+peers can process subsequent signaling even when new-peer admission is denied.
+Replacement first tears down the unusable owner, then applies current admission
+and attempt accounting. Creation observers run after native allocation and before
+data/media lane startup; deletion observers run after owned teardown. Reentrant
+observers therefore see a complete lifetime boundary and cannot lose a replacement
+or allocate through a half-created peer record.
 
 Before targeted, heartbeat, or complete collection reads, browser repair
 captures the observed snapshot identity. An authoritative `404`, heartbeat
@@ -643,6 +658,18 @@ deployment boundary described by this architecture.
 - `packages/shared-server/rallar-system/queue-pubsub/` owns durable queue wake-up.
 - `apps/api-v1/src/composition/` constructs the direct owners and installs the
   HTTP and WebSocket entry points.
+
+### Browser transport ownership
+
+| Start here                                                                                                                                                                                   | Responsibility and exit                                                                       |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| [Browser RTC initialization](../packages/shared-web/browser/rtc/initialise-browser-rtc-runtime.ts)                                                                                           | Construct transport owners; install startup denial before signaling registration.             |
+| [Browser middleware initialization](../packages/shared-web/browser/connection/initialise-browser-middleware.ts)                                                                              | Connect group ownership to both public creation policies.                                     |
+| [Group manager](../packages/shared/services/web-rtc-group-manager.ts) and [dial selection](../packages/shared/services/webrtc-group-dial-policy.ts)                                          | Select lifecycle layouts, intersect same-group presence, cache permission, reconcile peers.   |
+| [Connection service](../packages/shared/services/web-rtc-connection-service.ts) and [signaling decoder](../packages/shared/webrtc/decode-rtc-signaling-message.ts)                           | Decode ingress, reuse an existing peer or apply admission and retry budget before allocation. |
+| [Native peer](../packages/shared/webrtc/qrtc-peer-connection.ts), [data lane](../packages/shared/webrtc/qrtc-data-channel.ts), [media lane](../packages/shared/webrtc/qrtc-media-channel.ts) | Own native callbacks, negotiation, queue pressure, and terminal cleanup.                      |
+| [WebSocket queue client](../packages/shared/services/ws-queue-box-client-service.ts) and [queue reader](../packages/shared/services/queue-message-reader.ts)                                 | Decode network/persisted AL envelopes before dispatch; own retry and callback lifetimes.      |
+| [Black-box runtime composition](../packages/shared-test/black-box-runner/browser/rallar-browser-runtime/browser-rallar-runtime-composition.ts)                                               | Construct the same browser owners for commands, observations, and lifecycle validation.       |
 
 ## Verification
 

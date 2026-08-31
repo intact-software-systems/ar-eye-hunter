@@ -106,9 +106,7 @@ export interface RallarRtcStatusOptions {
     readonly laneId?: string;
 }
 
-export type RallarRtcStatusSubscriptionOptions =
-    & RallarRtcStatusOptions
-    & RallarOnChangeOptions;
+export interface RallarRtcStatusSubscriptionOptions extends RallarRtcStatusOptions, RallarOnChangeOptions {}
 
 export type RallarRtcStatusListener = (
     status: RallarRtcStatus

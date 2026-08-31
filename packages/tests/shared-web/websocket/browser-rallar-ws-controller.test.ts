@@ -14,8 +14,9 @@ import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import type * as ClientStateSnapshotsRepositoryModule from '@shared/repository/client-state-snapshots-repository.ts';
 import type * as GroupStateSnapshotsRepositoryModule from '@shared/repository/group-state-snapshots-repository.ts';
 import { Either } from '@shared/resilience/Either.ts';
-import type { OnMessageCallback } from '@shared/services/InboxOutboxContracts.ts';
-import { DEFAULT_RTC_DATA_CHANNEL_LANE_ID } from '@shared/services/WebRtcConnectionService.ts';
+import type { OnMessageCallback } from '@shared/services/queue-message-callbacks.ts';
+import { DEFAULT_RTC_DATA_CHANNEL_LANE_ID } from '@shared/services/web-rtc-connection-service.ts';
+import type { RtcDataChannelHealth } from '@shared/webrtc/qrtc-data-channel.ts';
 import type { WebSocketClientCallbacks } from '@shared/websocket/JsonWebSocketClient.ts';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createGroupSnapshotFixture } from '../authoritative-group-fixtures.ts';
@@ -24,10 +25,10 @@ import { createDeferred, createMediaStream, createMediaTrack } from '../browser-
 const mocks = await vi.hoisted(async () => {
     // The shared double must be pulled in dynamically: vi.hoisted runs above the static import
     // transform, so a statically imported factory is still in its temporal dead zone here.
-    const { createApiMiddlewareTestDouble } = await import(
+    const { createDefaultApiMiddlewareTestDouble } = await import(
         '../api-middleware-test-double.ts'
     );
-    const ctx = createApiMiddlewareTestDouble();
+    const ctx = createDefaultApiMiddlewareTestDouble();
     const session = ctx.session;
     const readMissingClientStateSnapshotRepository = (): never => {
         throw new Error(
@@ -657,7 +658,7 @@ function createChannelHealth(
         state: string;
         readyState: RTCDataChannelState;
     }>
-) {
+): RtcDataChannelHealth {
     return {
         peerId: input.peerId,
         label: input.label,

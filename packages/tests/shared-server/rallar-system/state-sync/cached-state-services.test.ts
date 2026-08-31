@@ -1,20 +1,26 @@
-import { type ClientStateService } from '@shared-server/rallar-system/client-state/client-state-service-contracts.ts';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
+
 import { createCachedClientStateService } from '@shared-server/rallar-system/client-state/snapshot/cached-client-state-service.ts';
 import { createCachedGroupStateService } from '@shared-server/rallar-system/group-state/snapshot/cached-group-state-service.ts';
-import type { ClientSnapshot } from '@shared/api/client-types.ts';
-import type { AuditStamp, GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
+import type { ClientPrincipalRef, ClientSnapshot } from '@shared/api/client-types.ts';
+import type {
+    AuditStamp,
+    GroupRef,
+    GroupSnapshot
+} from '@shared/api/group-types.ts';
 import { StateSnapshotRevisionConflictError } from '@shared/repository/state-snapshot-revision.ts';
-import { describe, expect, it } from 'vitest';
-import { createTestGroup } from '../../../create-test-group.ts';
-import { createClientStateServiceStub } from '../client-state/client-state-service-stub.ts';
-import { createGroupStateServiceStub } from './test-support/group-state-service-stub.ts';
+
+import { createClientStateServiceFixture } from '../client-state/create-client-state-service-fixture.ts';
+import { createGroupSnapshot } from '../group-state/snapshot/group-state-snapshot-test-fixtures.ts';
+import { createGroupStateServiceFixture } from './create-group-state-service-fixture.ts';
 
 describe('cached state services', () => {
     it('does not expose a direct group mutation from its durable dependency', () => {
-        const durable = {
-            ...createGroupStateServiceStub(),
-            createGroup: rejectUnexpectedAsyncOperation
-        };
+        const durable = createGroupStateServiceFixture();
         const service = createCachedGroupStateService({
             durable,
             cache: {
@@ -27,9 +33,9 @@ describe('cached state services', () => {
     });
 
     it('reads current group authority durably without caching an equal-revision projection', async () => {
-        const revisioned = createGroupSnapshot(4);
+        const revisioned = createGroupSnapshot(4, []);
         const durable = {
-            ...createGroupStateServiceStub(),
+            ...createGroupStateServiceFixture(),
             readSnapshot: async (ref: GroupRef): Promise<GroupSnapshot> => {
                 expect(ref).toEqual(revisioned.group);
                 return revisioned;
@@ -49,12 +55,7 @@ describe('cached state services', () => {
     });
 
     it('does not expose direct group presence mutations', () => {
-        const durable = {
-            ...createGroupStateServiceStub(),
-            connectPresenceSession: rejectUnexpectedAsyncOperation,
-            heartbeatPresenceSession: rejectUnexpectedAsyncOperation,
-            disconnectPresenceSession: rejectUnexpectedAsyncOperation
-        };
+        const durable = createGroupStateServiceFixture();
         const service = createCachedGroupStateService({
             durable,
             cache: {
@@ -69,13 +70,13 @@ describe('cached state services', () => {
     });
 
     it('keeps explicit canonical group observation fail-closed', async () => {
-        const snapshot = createGroupSnapshot(6);
+        const snapshot = createGroupSnapshot(6, []);
         const conflict = new StateSnapshotRevisionConflictError(
             'Group',
             snapshot.group.snapshotVersion
         );
         const service = createCachedGroupStateService({
-            durable: createGroupStateServiceStub(),
+            durable: createGroupStateServiceFixture(),
             cache: {
                 findOrLoadByRef: rejectUnexpectedCacheAccess,
                 observe: () => {
@@ -90,9 +91,7 @@ describe('cached state services', () => {
     it('uses client read-through state and explicitly observes committed snapshots', async () => {
         const snapshot = createClientSnapshot(2);
         let observed: ClientSnapshot | undefined;
-        const durable = createClientStateServiceStub({
-            readSnapshot: rejectUnexpectedAsyncOperation
-        });
+        const durable = { ...createClientStateServiceFixture(), readSnapshot: rejectUnexpectedAsyncOperation };
         const service = createCachedClientStateService({
             durable,
             cache: {
@@ -114,26 +113,24 @@ describe('cached state services', () => {
     });
 
     it('reads current client authority durably without touching the cache', async () => {
-        type DurableCurrentClientReader = Readonly<{
-            readCurrentSnapshot?: ClientStateService['readSnapshot'];
-        }>;
         const snapshot = createClientSnapshot(3);
-        const durable = createClientStateServiceStub({
-            readSnapshot: async (ref): Promise<ClientSnapshot> => {
+        const durable = {
+            ...createClientStateServiceFixture(),
+            readSnapshot: async (ref: ClientPrincipalRef): Promise<ClientSnapshot> => {
                 expect(ref).toEqual(snapshot.principal);
                 return snapshot;
             }
-        });
+        };
         const service = createCachedClientStateService({
             durable,
             cache: {
                 findOrLoadByRef: rejectUnexpectedCacheAccess,
                 observe: rejectUnexpectedCacheAccess
             }
-        }) as DurableCurrentClientReader;
+        });
 
         await expect(
-            service.readCurrentSnapshot?.(snapshot.principal)
+            service.readCurrentSnapshot(snapshot.principal)
         ).resolves.toBe(snapshot);
     });
 });
@@ -144,34 +141,6 @@ function rejectUnexpectedCacheAccess(): never {
 
 function rejectUnexpectedAsyncOperation(): Promise<never> {
     return Promise.reject(new Error('Cached state service exposed an unexpected operation'));
-}
-
-function createGroupSnapshot(groupRevision: number): GroupSnapshot {
-    const audit = createAuditStamp(1);
-    return {
-        causalRevision: {
-            groupRevision,
-            presenceRevision: 1
-        },
-        group: createTestGroup({
-            applicationId: 'app-1',
-            workspaceId: 'workspace-1',
-            groupId: 'group-1',
-            displayName: 'Group 1',
-            snapshotVersion: 1,
-            metadataVersion: 1,
-            rosterVersion: 1,
-            presenceVersion: 1,
-            activeMemberCount: 0,
-            ownerPrincipalId: 'alice',
-            created: audit,
-            updated: audit
-        }),
-        members: [],
-        activeSessions: [],
-        memberCount: 0,
-        onlineMemberCount: 0
-    };
 }
 
 function createClientSnapshot(stateRevision: number): ClientSnapshot {
@@ -192,7 +161,7 @@ function createClientSnapshot(stateRevision: number): ClientSnapshot {
             deleted: null,
             roles: [],
             metadata: {},
-            snapshotVersion: 1,
+            snapshotVersion: stateRevision,
             profileVersion: 1,
             presenceVersion: 1,
             created: audit,

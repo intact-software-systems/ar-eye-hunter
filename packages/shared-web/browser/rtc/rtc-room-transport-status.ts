@@ -1,8 +1,10 @@
 import type {
     RallarRoomTransportState,
+    RallarRtcPeerStatus,
     RallarRtcRoomLaneWaitResult,
     RallarRtcRoomLaneWaitStatus,
-    RallarRtcRoomMode
+    RallarRtcRoomMode,
+    RallarRtcStatus
 } from '@shared-web/browser/rallar-rtc-facade.ts';
 import type { GroupTransportState } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 
@@ -17,6 +19,32 @@ interface RtcRoomTransportStateInput {
     readonly failedPeerCount: number;
     readonly minReadyPeers: number;
     readonly waitStatus?: RallarRtcRoomLaneWaitStatus;
+}
+
+interface RtcRoomPeerSelection {
+    readonly knownPeerIds: readonly string[];
+    readonly activePeerIds: readonly string[];
+    readonly readyPeerIds: readonly string[];
+    readonly failedPeerIds: readonly string[];
+    readonly peers: readonly RallarRtcPeerStatus[];
+}
+
+export function selectRtcRoomPeers(
+    status: RallarRtcStatus,
+    desiredPeerIds: readonly string[],
+    laneId: string
+): RtcRoomPeerSelection {
+    const desired = new Set(desiredPeerIds);
+    const peers = status.peers.filter((peer) => desired.has(peer.peerId));
+    const failedPeerIds = peers.filter((peer) => isRtcRoomPeerFailed(peer, laneId)).map((peer) => peer.peerId);
+    const failed = new Set(failedPeerIds);
+    return {
+        knownPeerIds: status.knownPeerIds.filter((peerId) => desired.has(peerId)),
+        activePeerIds: status.activePeerIds.filter((peerId) => desired.has(peerId)),
+        readyPeerIds: status.readyPeerIds.filter((peerId) => desired.has(peerId) && !failed.has(peerId)),
+        failedPeerIds,
+        peers
+    };
 }
 
 export function resolveRtcRoomTransportState(
@@ -59,6 +87,19 @@ export function resolveRtcRoomTransportState(
     }
 
     return 'idle';
+}
+
+export function isRtcRoomPeerFailed(peer: RallarRtcPeerStatus, laneId: string): boolean {
+    const connection = peer.connection;
+    if (
+        connection.state === 'Failed' || connection.state === 'Closed' ||
+        connection.connectionState === 'failed' || connection.connectionState === 'closed' ||
+        connection.iceConnectionState === 'failed'
+    ) {
+        return true;
+    }
+    const lane = peer.lanes.find((candidate) => candidate.laneId === laneId)?.channel;
+    return lane?.state === 'Failed' || lane?.state === 'Closed' || lane?.readyState === 'closed';
 }
 
 export function describeRtcRoomTransport(

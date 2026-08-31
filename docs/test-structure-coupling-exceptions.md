@@ -617,21 +617,6 @@ moved or changed test.
       }
     },
     {
-      "id": "shared-web-remote-media-attachment-lifecycle",
-      "domain": "Shared-web remote media attachment lifecycle",
-      "owner": "Shared Web maintainers",
-      "summary": "Remote-media registration waits for connection attachment. Executable assertion: “owns middleware registration from connection attach through final unsubscribe”.",
-      "semanticCoverage": "packages/tests/shared-web/media/browser-remote-media-stream-runtime.test.ts#owns middleware registration from connection attach through final unsubscribe",
-      "coverageRelation": "The named assertion executes this lifecycle and observes its owned side-effect port; the registered evidence directly proves the stated constraint.",
-      "interactionRequirement": {
-        "interactionKind": "absence",
-        "ownedPort": "RTC remote-stream middleware registration port",
-        "observableEffect": "Subscribing before attachment does not register against an unavailable connection.",
-        "requiredConstraint": "The registration port remains unused until attach supplies middleware.",
-        "failureRationale": "Early registration binds to missing or stale connection state."
-      }
-    },
-    {
       "id": "shared-web-create-room-failure-atomicity",
       "domain": "Shared-web create-and-switch room workflow",
       "owner": "Shared Web maintainers",
@@ -1378,14 +1363,14 @@ moved or changed test.
       "id": "rtc-topology-replay-single-live-send",
       "domain": "RTC topology replay live delivery",
       "owner": "Rallar server maintainers",
-      "summary": "A replayable delivery-log entry produces exactly one live WebSocket send of the immutable outbox message. Executable assertion: \u201cdelivers the exact immutable outbox message when the publication is current\u201d.",
+      "summary": "A replayable delivery-log entry produces exactly one live WebSocket send of the immutable outbox message. Executable assertion: “delivers the exact immutable outbox message when the publication is current”.",
       "semanticCoverage": "packages/tests/shared-server/rallar-system/topology/replay/consumer/rtc-topology-replay-entry-handler.test.ts#delivers the exact immutable outbox message when the publication is current",
       "coverageRelation": "The named assertion executes the replay entry handler against a current publication and observes its owned live-send port; the single-send count is the exactly-once delivery constraint of the replay protocol.",
       "interactionRequirement": {
         "interactionKind": "count",
         "ownedPort": "WS queue-box live sender (sendToTargetsWithResult)",
         "observableEffect": "One handled replay entry emits one live send carrying the durable outbox message bytes.",
-        "requiredConstraint": "Replay emits exactly one live send per handled entry \u2014 never zero, never a duplicate.",
+        "requiredConstraint": "Replay emits exactly one live send per handled entry — never zero, never a duplicate.",
         "failureRationale": "A duplicate send would double-deliver topology to members and a missing send would silently drop replayed history, both breaking the at-most-once live half of the replay protocol."
       }
     },
@@ -1393,7 +1378,7 @@ moved or changed test.
       "id": "rtc-topology-replay-suppressed-send",
       "domain": "RTC topology replay live delivery",
       "owner": "Rallar server maintainers",
-      "summary": "An expired delivery-log entry sends nothing: a retention gap is a typed result the consumer handles, never a stale delivery. Executable assertion: \u201creturns a typed retention gap without attempting a send\u201d.",
+      "summary": "An expired delivery-log entry sends nothing: a retention gap is a typed result the consumer handles, never a stale delivery. Executable assertion: “returns a typed retention gap without attempting a send”.",
       "semanticCoverage": "packages/tests/shared-server/rallar-system/topology/replay/consumer/rtc-topology-replay-entry-handler.test.ts#returns a typed retention gap without attempting a send",
       "coverageRelation": "The named assertion executes the replay entry handler on an expired entry and observes the owned live-send port; the absence of a send is the constraint that expired history never reaches members.",
       "interactionRequirement": {
@@ -1408,7 +1393,7 @@ moved or changed test.
       "id": "rtc-topology-replay-corruption-suppressed-send",
       "domain": "RTC topology replay live delivery",
       "owner": "Rallar server maintainers",
-      "summary": "A corrupt delivery-log entry sends nothing: corruption propagates to the replay consumer without reaching the socket. Executable assertion: \u201cpropagates corruption for a missing unexpired durable reference\u201d.",
+      "summary": "A corrupt delivery-log entry sends nothing: corruption propagates to the replay consumer without reaching the socket. Executable assertion: “propagates corruption for a missing unexpired durable reference”.",
       "semanticCoverage": "packages/tests/shared-server/rallar-system/topology/replay/consumer/rtc-topology-replay-entry-handler.test.ts#propagates corruption for a missing unexpired durable reference",
       "coverageRelation": "The named assertion executes the replay entry handler on a corrupt entry and observes the owned live-send port; the absence of a send is the constraint that invalid history never reaches members.",
       "interactionRequirement": {
@@ -1417,6 +1402,96 @@ moved or changed test.
         "observableEffect": "A corrupt entry throws to the consumer with zero live sends.",
         "requiredConstraint": "The live sender remains unused for corrupt delivery-log entries.",
         "failureRationale": "Sending invalid history would deliver corrupt topology to members instead of surfacing the corruption to the replay consumer."
+      }
+    },
+    {
+      "id": "rtc-connected-observer-delivery",
+      "domain": "Native RTC connection observer delivery",
+      "owner": "Rallar realtime maintainers",
+      "summary": "A native connected transition delivers one established notification while leaving the peer open.",
+      "semanticCoverage": "packages/tests/shared/qrtc-peer-connection.test.ts#negotiates offers, forwards ICE candidates, and dispatches remote events",
+      "coverageRelation": "The test drives the native connection event and observes the registered establishment callback together with open state and actual signaling outputs.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "QRtcPeerConnection establishment observer",
+        "observableEffect": "One native connected transition produces one establishment notification.",
+        "requiredConstraint": "The registered onConnected observer runs exactly once for the single connected transition.",
+        "failureRationale": "Duplicate registration or dispatch repeats subscriber connection effects even though the peer open state remains identical."
+      }
+    },
+    {
+      "id": "rtc-ice-restart-backoff-budget",
+      "domain": "Native RTC restart retry budget",
+      "owner": "Rallar realtime maintainers",
+      "summary": "Concurrent reconnect requests share one timer, and exhausted retries stop allocating native ICE restarts.",
+      "semanticCoverage": "packages/tests/shared/qrtc-peer-connection.test.ts#ignores offer collisions when impolite and retries with ICE restart on failure",
+      "coverageRelation": "The test advances the retry deadlines, observes the real native restartIce port, and verifies the peer is closed after the configured attempts.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "RTCPeerConnection.restartIce",
+        "observableEffect": "The first shared timer produces one restart and the complete retry sequence produces five before reset.",
+        "requiredConstraint": "Two concurrent retry requests produce one restart at the first deadline, with five total restarts before exhaustion.",
+        "failureRationale": "Extra native restarts exceed the retry budget and duplicate negotiation traffic; missing attempts abandon recovery early."
+      }
+    },
+    {
+      "id": "room-send-membership-admission",
+      "domain": "Room realtime membership admission before allocation",
+      "owner": "Rallar realtime maintainers",
+      "summary": "A session outside a room cannot open its peer lanes even when a ready peer is visible.",
+      "semanticCoverage": "packages/tests/shared-web/realtime/browser-room-realtime-runtime.test.ts#does not open or send for a room the current session has not joined",
+      "coverageRelation": "The room facade reads scoped membership, returns no targets, and is observed at both the lane-opening port and native data-channel send boundary.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "WebRtcConnectionService.ensurePeerLaneOpen",
+        "observableEffect": "An unauthorized room send creates no lane-opening attempt and emits no native frame.",
+        "requiredConstraint": "The connection service lane-opening port remains unused when current membership excludes the session.",
+        "failureRationale": "Returning no targets after opening a lane would still allocate unauthorized transport and consume establishment work."
+      }
+    },
+    {
+      "id": "browser-bridge-authentication-capability",
+      "domain": "Browser runtime authentication capability isolation",
+      "owner": "Shared Test maintainers",
+      "summary": "Missing authentication support fails without substituting a full runtime connection.",
+      "semanticCoverage": "packages/tests/shared-test/rallar-bb-test-browser-rallar-runtime-bridge.test.ts#rejects missing authentication capability without starting a full connection",
+      "coverageRelation": "The test calls the public bridge authentication method with a runtime lacking authentication and observes rejection plus the untouched connection port.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "Installed browser Rallar runtime connect capability",
+        "observableEffect": "An unsupported authentication request rejects without establishing a runtime session.",
+        "requiredConstraint": "The connect capability is never invoked as an authentication fallback.",
+        "failureRationale": "Opening a full connection can join rooms and allocate transports for a request that authorized authentication only."
+      }
+    },
+    {
+      "id": "browser-bridge-invalid-config-admission",
+      "domain": "Browser runtime configuration admission",
+      "owner": "Shared Test maintainers",
+      "summary": "Valid connection input reaches the installed runtime; malformed configuration is rejected before that side-effect boundary.",
+      "semanticCoverage": "packages/tests/shared-test/rallar-bb-test-browser-rallar-runtime-bridge.test.ts#validates connection configuration before calling the native runtime",
+      "coverageRelation": "One valid request and six invalid requests execute the bridge decoder; the forwarded sparse options and only one native connect call prove the boundary.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "Installed browser Rallar runtime connect capability",
+        "observableEffect": "Only the valid request reaches native runtime connection; all malformed requests reject beforehand.",
+        "requiredConstraint": "Exactly one connect call occurs across the valid request and all rejected configuration cases.",
+        "failureRationale": "Rejecting after native connection would still trigger authentication, room membership, or transport allocation with invalid options."
+      }
+    },
+    {
+      "id": "browser-ws-subscription-resource-ownership",
+      "domain": "Browser WebSocket subscription resource ownership",
+      "owner": "Shared Test maintainers",
+      "summary": "Repeated requests for one WS subscription share one resource, whose cleanup invokes its disposer once.",
+      "semanticCoverage": "packages/tests/shared-test/rallar-browser-runtime-resource-controllers.test.ts#deduplicates and disposes WS subscriptions while fencing stale leases",
+      "coverageRelation": "The resource controller receives the same subscription key twice, fences a stale lease, and is observed at subscription acquisition and disposal ports.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "WebSocket subscription acquisition and unsubscribe disposer",
+        "observableEffect": "Two ensure requests acquire one subscription, and cleanup releases that subscription once.",
+        "requiredConstraint": "The subscribe callback and its returned unsubscribe callback each run exactly once.",
+        "failureRationale": "Duplicate subscription delivers duplicate messages; skipped or duplicate disposal leaks listeners or repeats teardown side effects."
       }
     }
   ],
@@ -2555,17 +2630,6 @@ moved or changed test.
       "semanticCoverage": "packages/tests/shared-web/auth/websocket-ticket-http-api.test.ts#keeps circuit-open diagnostics ahead of the local rate limiter while open"
     },
     {
-      "id": "test-structure-coupling-a90a04906ba9c761",
-      "path": "packages/tests/shared-web/media/browser-remote-media-stream-runtime.test.ts",
-      "kind": "mock-invocation-count-or-order",
-      "contract": "shared-web-remote-media-attachment-lifecycle",
-      "disposition": "durable-boundary",
-      "boundary": "interaction",
-      "owner": "Shared Web maintainers",
-      "rationale": "The pre-attach registration absence assertion directly proves that registration remains unused until middleware attachment.",
-      "semanticCoverage": "packages/tests/shared-web/media/browser-remote-media-stream-runtime.test.ts#owns middleware registration from connection attach through final unsubscribe"
-    },
-    {
       "id": "test-structure-coupling-b501ba3cfcd7af87",
       "path": "packages/tests/shared-web/rooms/create-and-join-room.test.ts",
       "kind": "mock-invocation-count-or-order",
@@ -3422,6 +3486,94 @@ moved or changed test.
       "owner": "Rallar server maintainers",
       "rationale": "The send-absence assertion directly proves that corruption for a missing durable reference propagates without any live delivery.",
       "semanticCoverage": "packages/tests/shared-server/rallar-system/topology/replay/consumer/rtc-topology-replay-entry-handler.test.ts#propagates corruption for a missing unexpired durable reference"
+    },
+    {
+      "id": "test-structure-coupling-b3fa661d1e9850cc",
+      "path": "packages/tests/shared/qrtc-peer-connection.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "rtc-connected-observer-delivery",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar realtime maintainers",
+      "rationale": "One established callback is required for the one native connection transition; peer open state alone cannot detect duplicate observer effects.",
+      "semanticCoverage": "packages/tests/shared/qrtc-peer-connection.test.ts#negotiates offers, forwards ICE candidates, and dispatches remote events"
+    },
+    {
+      "id": "test-structure-coupling-036839b1702a8a0f",
+      "path": "packages/tests/shared/qrtc-peer-connection.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "rtc-ice-restart-backoff-budget",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar realtime maintainers",
+      "rationale": "The first retry deadline must produce one native ICE restart despite concurrent reconnect requests sharing that deadline.",
+      "semanticCoverage": "packages/tests/shared/qrtc-peer-connection.test.ts#ignores offer collisions when impolite and retries with ICE restart on failure"
+    },
+    {
+      "id": "test-structure-coupling-97e3c2ebcb7a5abc",
+      "path": "packages/tests/shared/qrtc-peer-connection.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "rtc-ice-restart-backoff-budget",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar realtime maintainers",
+      "rationale": "Five native restarts, followed by exhausted reset, proves the externally effective retry budget rather than only an internal attempt counter.",
+      "semanticCoverage": "packages/tests/shared/qrtc-peer-connection.test.ts#ignores offer collisions when impolite and retries with ICE restart on failure"
+    },
+    {
+      "id": "test-structure-coupling-298c5bb8d8655b3c",
+      "path": "packages/tests/shared-web/realtime/browser-room-realtime-runtime.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "room-send-membership-admission",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar realtime maintainers",
+      "rationale": "Absence at the lane-opening port proves membership denial precedes transport work; the empty native send capture independently proves no frame escaped.",
+      "semanticCoverage": "packages/tests/shared-web/realtime/browser-room-realtime-runtime.test.ts#does not open or send for a room the current session has not joined"
+    },
+    {
+      "id": "test-structure-coupling-e0edcf418c196587",
+      "path": "packages/tests/shared-test/rallar-bb-test-browser-rallar-runtime-bridge.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "browser-bridge-authentication-capability",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Shared Test maintainers",
+      "rationale": "A missing authentication capability must not start a full connection as a substitute, even if the bridge later rejects.",
+      "semanticCoverage": "packages/tests/shared-test/rallar-bb-test-browser-rallar-runtime-bridge.test.ts#rejects missing authentication capability without starting a full connection"
+    },
+    {
+      "id": "test-structure-coupling-7efeeba3a2a07e6e",
+      "path": "packages/tests/shared-test/rallar-bb-test-browser-rallar-runtime-bridge.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "browser-bridge-invalid-config-admission",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Shared Test maintainers",
+      "rationale": "The one allowed connect call distinguishes validation before side effects from a decoder that connects and then reports malformed input.",
+      "semanticCoverage": "packages/tests/shared-test/rallar-bb-test-browser-rallar-runtime-bridge.test.ts#validates connection configuration before calling the native runtime"
+    },
+    {
+      "id": "test-structure-coupling-9260348f27fc2039",
+      "path": "packages/tests/shared-test/rallar-browser-runtime-resource-controllers.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "browser-ws-subscription-resource-ownership",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Shared Test maintainers",
+      "rationale": "One acquisition for the repeated WS subscription key prevents duplicate message listeners and duplicate delivery.",
+      "semanticCoverage": "packages/tests/shared-test/rallar-browser-runtime-resource-controllers.test.ts#deduplicates and disposes WS subscriptions while fencing stale leases"
+    },
+    {
+      "id": "test-structure-coupling-ab8f03afb1e7940b",
+      "path": "packages/tests/shared-test/rallar-browser-runtime-resource-controllers.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "browser-ws-subscription-resource-ownership",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Shared Test maintainers",
+      "rationale": "One invocation of the acquired unsubscribe disposer proves cleanup releases the shared subscription without repeating its side effect.",
+      "semanticCoverage": "packages/tests/shared-test/rallar-browser-runtime-resource-controllers.test.ts#deduplicates and disposes WS subscriptions while fencing stale leases"
     }
   ]
 }

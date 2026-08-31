@@ -1,4 +1,6 @@
-import { QRtcDataChannel, type RtcDataChannelPayload } from '@shared/webrtc/QRtcDataChannel.ts';
+import { createRtcBenchmarkPeerConnection } from '../native-rtc/rtc-benchmark-native-peer.ts';
+
+import { QRtcDataChannel } from '@shared/webrtc/qrtc-data-channel.ts';
 
 import { runRtcBaselineAcceptedWorkerSamples } from '../../baseline/acceptance/rtc-baseline-failure-accounting.ts';
 import {
@@ -7,7 +9,9 @@ import {
 } from '../../baseline/command/rtc-baseline-cli-options.ts';
 import {
     rtcBaselineIssue,
+    type RtcBaselineIssueDto,
     type RtcBaselineJson,
+    type RtcBaselineResult,
     type RtcBaselineSampleDto,
     type RtcBaselineSampleIdentityDto
 } from '../../baseline/contracts/rtc-baseline-contracts.ts';
@@ -16,6 +20,12 @@ import { validateRtcBaselineId } from '../../baseline/contracts/rtc-baseline-val
 interface RtcDataChannelCloseRetentionInput {
     readonly queueDepth: number;
     readonly runs: number;
+}
+
+interface RtcDataChannelCloseRetentionDiagnosticArguments {
+    readonly mode: 'diagnostic';
+    readonly input: RtcDataChannelCloseRetentionInput;
+    readonly out: string;
 }
 
 interface RtcDataChannelCloseRetentionAcceptedArguments {
@@ -49,7 +59,9 @@ const acceptedNames = [
     'rtc-inner-runs'
 ];
 
-export function parseRtcDataChannelCloseRetentionArguments(arguments_: readonly string[]) {
+export function parseRtcDataChannelCloseRetentionArguments(
+    arguments_: readonly string[]
+): RtcBaselineResult<RtcDataChannelCloseRetentionDiagnosticArguments | RtcDataChannelCloseRetentionAcceptedArguments> {
     const accepted = arguments_.some((argument) => argument.startsWith('--capture='));
     const parsed = parseRtcBaselineOneTokenOptions(
         arguments_,
@@ -64,18 +76,10 @@ export function parseRtcDataChannelCloseRetentionArguments(arguments_: readonly 
 export async function runRtcDataChannelCloseRetention(
     queueDepth: number
 ): Promise<RtcDataChannelCloseRetentionResult> {
+    const peerFixture = createRtcBenchmarkPeerConnection('perf-peer');
+    const nativeChannels = peerFixture.native.channels;
     const startedAt = performance.now();
-    const nativeChannels: FakeRtcDataChannel[] = [];
-    const peerConnection = {
-        isReadyToConnect: () => true,
-        onDataChannelDo: () => peerConnection,
-        createDataChannel: (label: string) => {
-            const channel = new FakeRtcDataChannel(label);
-            nativeChannels.push(channel);
-            return channel;
-        }
-    };
-    const dataChannel = new QRtcDataChannel(peerConnection as never, {
+    const dataChannel = new QRtcDataChannel(peerFixture.peer, {
         peerId: 'perf-peer',
         dataChannelName: 'realtime',
         flowControl: {
@@ -86,39 +90,49 @@ export async function runRtcDataChannelCloseRetention(
         }
     });
 
-    dataChannel.connect(true);
-    const firstChannel = nativeChannels[0];
-    firstChannel.bufferedAmount = 1;
-    await firstChannel.emitOpen();
-    for (let index = 0; index < queueDepth; index += 1) {
-        dataChannel.sendJson({ seq: index });
-    }
-    const queuedBeforeClose = dataChannel.readHealth().queuedItemCount;
-    await firstChannel.emitClose();
-    const queuedAfterNativeClose = dataChannel.readHealth().queuedItemCount;
+    try {
+        dataChannel.connect(true);
+        const firstChannel = nativeChannels[0];
+        firstChannel.bufferedAmount = 1;
+        await firstChannel.emitOpen();
+        for (let index = 0; index < queueDepth; index += 1) {
+            dataChannel.sendJson({ seq: index });
+        }
+        const queuedBeforeClose = dataChannel.readHealth().queuedItemCount;
+        await firstChannel.emitClose();
+        const queuedAfterNativeClose = dataChannel.readHealth().queuedItemCount;
 
-    dataChannel.connect(true);
-    const replacementChannel = nativeChannels[1];
-    await replacementChannel.emitOpen();
-    replacementChannel.bufferedAmount = 0;
-    await replacementChannel.emitBufferedAmountLow();
-    const queuedAfterReconnect = dataChannel.readHealth().queuedItemCount;
-    const replacementSentCount = replacementChannel.sent.length;
-    return {
-        durationMs: performance.now() - startedAt,
-        queueDepth,
-        queuedBeforeClose,
-        queuedAfterNativeClose,
-        queuedAfterReconnect,
-        replacementSentCount,
-        staleFlushOnReconnect: replacementSentCount > 0
-    };
+        dataChannel.connect(true);
+        const replacementChannel = nativeChannels[1];
+        await replacementChannel.emitOpen();
+        replacementChannel.bufferedAmount = 0;
+        await replacementChannel.emitBufferedAmountLow();
+        const queuedAfterReconnect = dataChannel.readHealth().queuedItemCount;
+        const replacementSentCount = replacementChannel.sent.length;
+        return {
+            durationMs: performance.now() - startedAt,
+            queueDepth,
+            queuedBeforeClose,
+            queuedAfterNativeClose,
+            queuedAfterReconnect,
+            replacementSentCount,
+            staleFlushOnReconnect: replacementSentCount > 0
+        };
+    }
+    finally {
+        dataChannel.reset();
+        peerFixture.dispose();
+    }
 }
 
-export async function runRtcDataChannelCloseRetentionAcceptedSamples(input: {
+export interface RtcDataChannelCloseRetentionAcceptedSamplesInput {
     readonly worker: RtcDataChannelCloseRetentionAcceptedArguments;
     readonly run: () => Promise<RtcDataChannelCloseRetentionResult>;
-}): Promise<RtcBaselineSampleDto[]> {
+}
+
+export async function runRtcDataChannelCloseRetentionAcceptedSamples(
+    input: RtcDataChannelCloseRetentionAcceptedSamplesInput
+): Promise<RtcBaselineSampleDto[]> {
     return runRtcBaselineAcceptedWorkerSamples({
         worker: {
             ...input.worker,
@@ -132,7 +146,9 @@ export async function runRtcDataChannelCloseRetentionAcceptedSamples(input: {
     });
 }
 
-function parseDiagnosticArguments(options: Readonly<Record<string, string>>) {
+function parseDiagnosticArguments(
+    options: Readonly<Record<string, string>>
+): RtcBaselineResult<RtcDataChannelCloseRetentionDiagnosticArguments> {
     const queueDepth = parseRtcBaselineBoundedInteger(
         options['queue-items'] ?? '32',
         'queue-items',
@@ -161,7 +177,9 @@ function parseDiagnosticArguments(options: Readonly<Record<string, string>>) {
         };
 }
 
-function parseAcceptedArguments(options: Readonly<Record<string, string>>) {
+function parseAcceptedArguments(
+    options: Readonly<Record<string, string>>
+): RtcBaselineResult<RtcDataChannelCloseRetentionAcceptedArguments> {
     const queueDepth = parseRtcBaselineBoundedInteger(
         options['rtc-queue-depth'] ?? '',
         'rtc-queue-depth',
@@ -206,7 +224,7 @@ function parseAcceptedArguments(options: Readonly<Record<string, string>>) {
             value: {
                 mode: 'accepted' as const,
                 input: { queueDepth: 32, runs: 5 },
-                intendedPhase: phase as 'warmup' | 'retained',
+                intendedPhase: phase === 'warmup' ? 'warmup' : 'retained',
                 outerOrdinal: ordinal,
                 sampleIds
             }
@@ -230,7 +248,7 @@ function createSample(
     return {
         schema: 'rallar.rtc-baseline.sample.v1',
         identity,
-        outcome: result === null ? 'not-run' : issues.length === 0 ? 'passed' : 'failed',
+        outcome: classifySampleOutcome(result, issues),
         evidenceClass: 'synthetic-path',
         metrics: result === null ? [] : [{ metric: 'durationMs', unit: 'ms', value: result.durationMs }],
         rawEvidence: result === null ? null : toRawEvidence(result),
@@ -240,8 +258,8 @@ function createSample(
     };
 }
 
-function validateResult(queueDepth: number, result: RtcDataChannelCloseRetentionResult) {
-    const issues = [];
+function validateResult(queueDepth: number, result: RtcDataChannelCloseRetentionResult): RtcBaselineIssueDto[] {
+    const issues: RtcBaselineIssueDto[] = [];
     if (result.queueDepth !== queueDepth || result.queuedBeforeClose !== queueDepth) {
         issues.push(
             rtcBaselineIssue('$.rawEvidence.queuedBeforeClose', 'queue-bound-mismatch', 'Unexpected.')
@@ -332,39 +350,14 @@ async function main(): Promise<void> {
     );
 }
 
-class FakeRtcDataChannel {
-    readonly label: string;
-    readonly sent: RtcDataChannelPayload[] = [];
-    readyState: RTCDataChannelState = 'connecting';
-    bufferedAmount = 0;
-    bufferedAmountLowThreshold = 0;
-    binaryType: BinaryType = 'blob';
-    onmessage: ((event: MessageEvent) => void | Promise<void>) | null = null;
-    onopen: (() => void | Promise<void>) | null = null;
-    onclose: (() => void | Promise<void>) | null = null;
-    onerror: (() => void | Promise<void>) | null = null;
-    onbufferedamountlow: (() => void | Promise<void>) | null = null;
-
-    constructor(label: string) {
-        this.label = label;
+function classifySampleOutcome(
+    result: RtcDataChannelCloseRetentionResult | null,
+    issues: readonly RtcBaselineIssueDto[]
+): RtcBaselineSampleDto['outcome'] {
+    if (result === null) {
+        return 'not-run';
     }
-    send(data: RtcDataChannelPayload): void {
-        this.sent.push(data);
-    }
-    close(): void {
-        this.readyState = 'closed';
-    }
-    async emitOpen(): Promise<void> {
-        this.readyState = 'open';
-        await this.onopen?.();
-    }
-    async emitClose(): Promise<void> {
-        this.readyState = 'closed';
-        await this.onclose?.();
-    }
-    async emitBufferedAmountLow(): Promise<void> {
-        await this.onbufferedamountlow?.();
-    }
+    return issues.length === 0 ? 'passed' : 'failed';
 }
 
 if (import.meta.main) {

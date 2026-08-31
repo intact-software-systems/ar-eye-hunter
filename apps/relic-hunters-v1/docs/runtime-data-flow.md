@@ -164,27 +164,39 @@ fetching the authoritative relic snapshot.
 
 ## RTC Position Flow
 
-`src/game/scene/networking.ts` sends local position updates through Rallar RTC
-only when the runtime marks RTC as ready. It also subscribes to remote position
-updates and writes them into the scene runtime's `remotePositions` map. These
-updates are cosmetic live-presence signals and do not drive authoritative game
-state.
+`src/game/scene/networking.ts` publishes cosmetic avatar motion through
+`rallar.realtime.room(...).send(...)` on the `realtime` lane. The room facade
+owns accepted peer selection and readiness. Relic does not retry through a raw
+peer-targeted send. Authoritative gameplay remains in REST commands and game
+snapshots.
 
-The RTC adapter publishes world-space room coordinates plus local roam offset.
-This keeps remote avatar interpolation aligned with the Babylon room grid while
-leaving authoritative room movement in the turn-based snapshot.
+The scene checks the current group snapshot for `transportState: halted`
+before advancing its motion sequence, sampling kinematics, or checking the send
+gate. A known halt records a typed diagnostic and does no per-frame transport
+work. An attempt already in flight retains its allocated sequence number if it
+later fails or reports a halt, preserving unique sequence numbers across
+concurrent frames. Only successful or partial delivery advances the send gate.
 
-Outbound avatar position messages are explicitly routed to
-`rallar.rtc.readyPeerIds()` through `nextHopPeerIds`. Each payload carries the
-game room, the avatar's current room, absolute world coordinates, and
-room-relative offsets. Receivers prefer the room-relative form and resolve it
-against their own scene map, falling back to absolute coordinates for older
-payloads. Rallar `messages.rtc` returns `no-route` for untargeted sends, so the
-scene skips broadcasts until at least one reliable RTC lane is open and leaves
-the broadcast throttle untouched while no peer is routable. The scene ignores
-fresh-looking RTC avatar positions when their payload room no longer matches
-the player's authoritative room in the latest public snapshot; this prevents
-old cosmetic coordinates from overriding turn-based movement.
+Motion uses the app-private `relic.motion.v2` protocol with `version: 2`. Each
+payload carries a mandatory `roomRef` containing application, workspace, and
+game-room identity. Its separate `roomId` identifies the player's dungeon room.
+The sender requires that the current `roomRef` matches its game snapshot; the
+room facade receives that complete reference. Incoming JSON must match the
+protocol and complete scope, the current game snapshot, and the player's
+current dungeon room before it can enter the Rallar Motion buffer. A dungeon
+room missing from the authoritative map is rejected; there is no legacy
+absolute-coordinate fallback. Version 2 omits its unused absolute `x`/`z`
+fields and carries height plus room-relative offsets. Receivers
+resolve room-relative offsets against the local scene map, then interpolate
+and extrapolate the accepted samples for presentation.
+
+The shared realtime lane does not filter incoming packets by room. Relic's
+payload check owns that boundary and rejects other applications, workspaces,
+and game rooms even when their player and dungeon-room IDs match. Version 1,
+missing-scope, and mismatched-scope packets are dropped with no compatibility
+fallback. Clients exchanging cosmetic motion must all use the updated app;
+older clients must reload. This changes only ephemeral avatar motion, not
+persisted game snapshots or authoritative commands.
 
 ## RTC Snapshot Repair
 

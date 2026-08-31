@@ -21,7 +21,7 @@ import {
     it,
     vi
 } from 'vitest';
-import { configureTestCacheRepositories } from '../../cache-repository-config.ts';
+import { configureTestCacheRepositories } from '../../configure-test-cache-repositories.ts';
 import {
     createClientSnapshot,
     createGroupSnapshot,
@@ -75,7 +75,7 @@ describe('browser state cache lifecycle scope filtering', () => {
         });
 
         await browserStateCacheLifecycle.hydrate({
-            webRtcGroupManager: manager as never,
+            webRtcGroupManager: manager,
             clientData,
             clientSnapshots: [sameScopeClient, otherWorkspaceClient],
             groupSnapshots: [sameScopeGroup, otherWorkspaceGroup]
@@ -130,7 +130,7 @@ describe('browser state cache lifecycle scope filtering', () => {
         });
 
         await browserStateCacheLifecycle.hydrate({
-            webRtcGroupManager: manager as never,
+            webRtcGroupManager: manager,
             clientData,
             clientSnapshots: [defaultScopeClient, customScopeClient],
             groupSnapshots: [defaultScopeGroup, customScopeGroup],
@@ -184,7 +184,7 @@ describe('browser state cache lifecycle scope filtering', () => {
         const rereadGroupSnapshots = vi.fn(async () => [recovered]);
 
         await browserStateCacheLifecycle.hydrate({
-            webRtcGroupManager: manager as never,
+            webRtcGroupManager: manager,
             clientData,
             clientSnapshots: [],
             groupSnapshots: [current]
@@ -192,7 +192,7 @@ describe('browser state cache lifecycle scope filtering', () => {
         acceptUpdate.mockClear();
 
         await browserStateCacheLifecycle.hydrate({
-            webRtcGroupManager: manager as never,
+            webRtcGroupManager: manager,
             clientData,
             clientSnapshots: [],
             groupSnapshots: [incomparable],
@@ -212,12 +212,8 @@ describe('browser state cache lifecycle scope filtering', () => {
             sessionIds: ['session-b'],
             snapshotVersion: 1
         });
-        const manager = {
-            notifyClientPresenceChanged: vi.fn(async () => undefined),
-            acceptGroupUpdate: vi.fn(async () => undefined),
-            has: vi.fn((input) => input === group.group),
-            delete: vi.fn(async () => undefined)
-        };
+        const manager = createWebRtcGroupManager();
+        manager.has.mockImplementation((input) => input === group.group);
         const clientData: ClientInfo = {
             clientId: 'alice',
             sessionId: 'session-a',
@@ -225,7 +221,7 @@ describe('browser state cache lifecycle scope filtering', () => {
         };
 
         await browserStateCacheLifecycle.hydrate({
-            webRtcGroupManager: manager as never,
+            webRtcGroupManager: manager,
             clientData,
             clientSnapshots: [],
             groupSnapshots: [group],
@@ -258,12 +254,8 @@ describe('browser state cache lifecycle scope filtering', () => {
             sessionIds: ['session-b'],
             snapshotVersion: 2
         });
-        const manager = {
-            notifyClientPresenceChanged: vi.fn(async () => undefined),
-            acceptGroupUpdate: vi.fn(async () => undefined),
-            has: vi.fn(() => true),
-            delete: vi.fn(async () => undefined)
-        };
+        const manager = createWebRtcGroupManager();
+        manager.has.mockImplementation(() => true);
         const clientData: ClientInfo = {
             clientId: 'alice',
             sessionId: 'session-a',
@@ -271,7 +263,7 @@ describe('browser state cache lifecycle scope filtering', () => {
         };
 
         await browserStateCacheLifecycle.hydrate({
-            webRtcGroupManager: manager as never,
+            webRtcGroupManager: manager,
             clientData,
             clientSnapshots: [],
             groupSnapshots: [joined],
@@ -305,14 +297,8 @@ describe('browser state cache lifecycle scope filtering', () => {
             sessionIds: ['session-b'],
             snapshotVersion: 1
         });
-        const manager = {
-            notifyClientPresenceChanged: vi.fn(async () => undefined),
-            notifyOverlayTopologyChanged: vi.fn(async () => undefined),
-            acceptGroupUpdate: vi.fn(async () => undefined),
-            has: vi.fn(() => false),
-            delete: vi.fn(async () => undefined),
-            ensureAllGroupsConnected: vi.fn(async () => undefined)
-        };
+        const manager = createWebRtcGroupManager();
+        manager.has.mockImplementation(() => false);
         const clientData: ClientInfo = {
             clientId: 'alice',
             sessionId: 'session-a',
@@ -320,7 +306,7 @@ describe('browser state cache lifecycle scope filtering', () => {
         };
 
         await browserStateCacheLifecycle.hydrate({
-            webRtcGroupManager: manager as never,
+            webRtcGroupManager: manager,
             clientData,
             clientSnapshots: [],
             groupSnapshots: [directoryOnly],
@@ -345,13 +331,8 @@ describe('browser state cache lifecycle scope filtering', () => {
             sessionIds: ['session-a'],
             snapshotVersion: 1
         });
-        const manager = {
-            notifyClientPresenceChanged: vi.fn(async () => undefined),
-            notifyOverlayTopologyChanged: vi.fn(async () => undefined),
-            acceptGroupUpdate: vi.fn(async () => undefined),
-            has: vi.fn((input) => input === group.group),
-            delete: vi.fn(async () => undefined)
-        };
+        const manager = createWebRtcGroupManager();
+        manager.has.mockImplementation((input) => input === group.group);
         const clientData: ClientInfo = {
             clientId: 'alice',
             sessionId: 'session-a',
@@ -361,7 +342,7 @@ describe('browser state cache lifecycle scope filtering', () => {
         const unsubscribe = browserStateCacheLifecycle.onChange(listener);
 
         await browserStateCacheLifecycle.hydrate({
-            webRtcGroupManager: manager as never,
+            webRtcGroupManager: manager,
             clientData,
             clientSnapshots: [],
             groupSnapshots: [group],
@@ -405,7 +386,6 @@ describe('browser state cache lifecycle scope filtering', () => {
                 onMessage: (message: ALMessage) => Promise<void>;
             }) => {
                 onInboxMessage = callback.onMessage;
-                return webSocketQueueBox;
             })
         };
         const listener = vi.fn();
@@ -436,12 +416,12 @@ describe('browser state cache lifecycle scope filtering', () => {
 
         browserStateCacheLifecycle.initialise({
             inbox: webSocketQueueBox,
-            webRtcGroupManager: manager as never,
+            webRtcGroupManager: manager,
             clientData,
             options: cacheOptions
         });
         await browserStateCacheLifecycle.hydrate({
-            webRtcGroupManager: manager as never,
+            webRtcGroupManager: manager,
             clientData,
             clientSnapshots: [],
             groupSnapshots: [current],
@@ -493,7 +473,6 @@ describe('browser state cache lifecycle scope filtering', () => {
                 onMessage: (message: ALMessage) => Promise<void>;
             }) => {
                 onInboxMessage = callback.onMessage;
-                return webSocketQueueBox;
             })
         };
         const groupSnapshot = createGroupSnapshot({
@@ -531,7 +510,7 @@ describe('browser state cache lifecycle scope filtering', () => {
 
         browserStateCacheLifecycle.initialise({
             inbox: webSocketQueueBox,
-            webRtcGroupManager: manager as never,
+            webRtcGroupManager: manager,
             clientData
         });
 
@@ -609,7 +588,6 @@ describe('browser state cache lifecycle scope filtering', () => {
                 onMessage: (message: ALMessage) => Promise<void>;
             }) => {
                 onInboxMessage = callback.onMessage;
-                return webSocketQueueBox;
             })
         };
         const group = createGroupSnapshot({
@@ -627,11 +605,11 @@ describe('browser state cache lifecycle scope filtering', () => {
 
         browserStateCacheLifecycle.initialise({
             inbox: webSocketQueueBox,
-            webRtcGroupManager: manager as never,
+            webRtcGroupManager: manager,
             clientData
         });
         await browserStateCacheLifecycle.hydrate({
-            webRtcGroupManager: manager as never,
+            webRtcGroupManager: manager,
             clientData,
             clientSnapshots: [],
             groupSnapshots: [group]
@@ -705,7 +683,6 @@ describe('browser state cache lifecycle scope filtering', () => {
                     onMessage: (message: ALMessage) => Promise<void>;
                 }) => {
                     onInboxMessage = callback.onMessage;
-                    return webSocketQueueBox;
                 })
             };
             const groupSnapshot = createGroupSnapshot({
@@ -727,7 +704,7 @@ describe('browser state cache lifecycle scope filtering', () => {
             );
             browserStateCacheLifecycle.initialise({
                 inbox: webSocketQueueBox,
-                webRtcGroupManager: manager as never,
+                webRtcGroupManager: manager,
                 clientData
             });
             const receive = onInboxMessage;

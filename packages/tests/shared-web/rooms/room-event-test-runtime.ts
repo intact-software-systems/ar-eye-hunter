@@ -1,3 +1,6 @@
+import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { toResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import type { OnMessageCallback } from '@shared/services/queue-message-callbacks.ts';
 import { vi } from 'vitest';
 
 import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
@@ -23,10 +26,11 @@ export interface RoomEventFixtureInput {
 }
 
 const roomEventMocks = await vi.hoisted(async () => {
-    const { createApiMiddlewareTestDouble } = await import('../api-middleware-test-double.ts');
-    const ctx = createApiMiddlewareTestDouble();
+    const { createDefaultApiMiddlewareTestDouble } = await import('../api-middleware-test-double.ts');
+    const ctx = createDefaultApiMiddlewareTestDouble();
 
     return {
+        wsInboxCallbacks: new Map<string, OnMessageCallback>(),
         session: ctx.session,
         ctx,
         hydrateStateCache: vi.fn(async (): Promise<void> => undefined),
@@ -91,6 +95,7 @@ export function readRoomEventMocks(): typeof roomEventMocks {
 
 export function resetRoomEventTestRuntime(): void {
     vi.clearAllMocks();
+    roomEventMocks.wsInboxCallbacks.clear();
     roomEventMocks.hydrateStateCache.mockResolvedValue(undefined);
     roomEventMocks.initialiseApiMiddleware.mockResolvedValue(roomEventMocks.ctx);
     roomEventMocks.listStateGroupEvents.mockRejectedValue(new Error('group events not mocked'));
@@ -101,19 +106,19 @@ export function resetRoomEventTestRuntime(): void {
     vi.mocked(webSocketQueueBox.close).mockImplementation((code, reason) => {
         webSocketQueueBox.socket.close(code, reason);
     });
-    vi.mocked(webSocketQueueBox.onAnyInboxMessageDo).mockReturnValue(webSocketQueueBox);
-    vi.mocked(webSocketQueueBox.removeAnyInboxMessageCallback).mockReturnValue(true);
+    vi.mocked(webSocketQueueBox.onAnyInboxMessageDo).mockImplementation((id, callback) => {
+        roomEventMocks.wsInboxCallbacks.set(id, callback);
+        return webSocketQueueBox;
+    });
+    vi.mocked(webSocketQueueBox.removeAnyInboxMessageCallback).mockImplementation(
+        (id) => roomEventMocks.wsInboxCallbacks.delete(id)
+    );
     vi.mocked(webRtcConnectionService.onRtcPeerLifecycleDo).mockReturnValue(webRtcConnectionService);
 }
 
-export function findRoomWsCallback(
-    latest = false
-): { onMessage?: (message: unknown) => Promise<void>; } | undefined {
-    const calls = vi
-        .mocked(roomEventMocks.ctx.middleware.webSocketQueueBox.onAnyInboxMessageDo)
-        .mock.calls.filter(([callbackId]) => callbackId === 'rallar:ws:any-message');
-    const call = latest ? calls.at(-1) : calls[0];
-    return call?.[1] as { onMessage?: (message: unknown) => Promise<void>; } | undefined;
+export async function dispatchRoomWsMessage(message: ALMessage): Promise<void> {
+    const entry = toResourceEntry(message.payload.typeId, message);
+    await Promise.all([...roomEventMocks.wsInboxCallbacks.values()].map((callback) => callback.onMessage(message, entry)));
 }
 
 export function toRoomEventEnvelopeMessage(

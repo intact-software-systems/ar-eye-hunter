@@ -1,19 +1,28 @@
-import { QRtcPeerConnection } from '@shared/webrtc/QRtcPeerConnection.ts';
+import { QRtcPeerConnection } from '@shared/webrtc/qrtc-peer-connection.ts';
 
-import { runRtcBaselineAcceptedWorkerSamples } from '../../baseline/acceptance/rtc-baseline-failure-accounting.ts';
+import {
+    installRtcBenchmarkNativeRuntime,
+    RtcBenchmarkNativeRuntime
+} from '../native-rtc/rtc-benchmark-native-peer.ts';
+
+import {
+    runRtcBaselineAcceptedWorkerSamples,
+    type RtcBaselineAcceptedWorkerIdentityInput
+} from '../../baseline/acceptance/rtc-baseline-failure-accounting.ts';
 import {
     parseRtcBaselineBoundedInteger,
     parseRtcBaselineOneTokenOptions
 } from '../../baseline/command/rtc-baseline-cli-options.ts';
 import {
     rtcBaselineIssue,
+    type RtcBaselineIssueDto,
     type RtcBaselineJson,
+    type RtcBaselineResult,
     type RtcBaselineSampleDto,
     type RtcBaselineSampleIdentityDto
 } from '../../baseline/contracts/rtc-baseline-contracts.ts';
 import { validateRtcBaselineId } from '../../baseline/contracts/rtc-baseline-validation.ts';
 
-type Listener = (event?: Event) => void;
 interface ListenerInput {
     readonly peers: number;
     readonly runs: number;
@@ -61,7 +70,9 @@ const acceptedNames = [
     'rtc-peers'
 ];
 
-export function parseRtcPeerListenerCleanupArguments(arguments_: readonly string[]) {
+export function parseRtcPeerListenerCleanupArguments(
+    arguments_: readonly string[]
+): RtcBaselineResult<DiagnosticArguments | AcceptedArguments> {
     const accepted = arguments_.some((argument) => argument.startsWith('--capture='));
     const parsed = parseRtcBaselineOneTokenOptions(
         arguments_,
@@ -73,10 +84,14 @@ export function parseRtcPeerListenerCleanupArguments(arguments_: readonly string
     return accepted ? parseAcceptedArguments(parsed.value) : parseDiagnosticArguments(parsed.value);
 }
 
-export async function runRtcPeerListenerCleanupAcceptedSamples(input: {
+export interface RtcPeerListenerCleanupAcceptedSamplesInput {
     worker: AcceptedArguments;
     run: () => Promise<RtcPeerListenerCleanupResult>;
-}): Promise<RtcBaselineSampleDto[]> {
+}
+
+export async function runRtcPeerListenerCleanupAcceptedSamples(
+    input: RtcPeerListenerCleanupAcceptedSamplesInput
+): Promise<RtcBaselineSampleDto[]> {
     return runRtcBaselineAcceptedWorkerSamples({
         worker: acceptedWorkerIdentity(input.worker),
         run: input.run,
@@ -84,14 +99,14 @@ export async function runRtcPeerListenerCleanupAcceptedSamples(input: {
         createSample: ({ identity, result, issues }) =>
             createSample({
                 identity,
-                outcome: result === null ? 'not-run' : issues.length === 0 ? 'passed' : 'failed',
+                outcome: classifySampleOutcome(result, issues),
                 rawEvidence: result,
                 issues
             })
     });
 }
 
-function acceptedWorkerIdentity(worker: AcceptedArguments) {
+function acceptedWorkerIdentity(worker: AcceptedArguments): RtcBaselineAcceptedWorkerIdentityInput {
     return {
         ...worker,
         workloadId: 'RTC-B01' as const,
@@ -107,20 +122,19 @@ async function main(): Promise<void> {
     }
     const writeLine = console.log.bind(console);
     console.log = () => {};
-    const originalPeerConnection = globalThis.RTCPeerConnection;
-    Reflect.set(globalThis, 'RTCPeerConnection', FakeRTCPeerConnection);
+    const runtime = installRtcBenchmarkNativeRuntime();
     try {
         if (parsed.value.mode === 'accepted') {
             const samples = await runRtcPeerListenerCleanupAcceptedSamples({
                 worker: parsed.value,
-                run: async () => runListenerCleanup(parsed.value.input.peers)
+                run: async () => runListenerCleanup(parsed.value.input.peers, runtime)
             });
             writeLine(JSON.stringify(samples));
             return;
         }
         const results: BenchResult[] = [];
         for (let run = 1; run <= parsed.value.input.runs; run += 1) {
-            results.push({ run, ...runListenerCleanup(parsed.value.input.peers) });
+            results.push({ run, ...runListenerCleanup(parsed.value.input.peers, runtime) });
         }
         await Deno.writeTextFile(
             parsed.value.out,
@@ -138,12 +152,12 @@ async function main(): Promise<void> {
         writeLine(`Wrote ${parsed.value.out}`);
     }
     finally {
-        Reflect.set(globalThis, 'RTCPeerConnection', originalPeerConnection);
+        runtime.restore();
     }
 }
 
-function runListenerCleanup(peers: number): RtcPeerListenerCleanupResult {
-    FakeRTCPeerConnection.instances = [];
+function runListenerCleanup(peers: number, runtime: RtcBenchmarkNativeRuntime): RtcPeerListenerCleanupResult {
+    runtime.peers.length = 0;
     const startedAt = performance.now();
     for (let index = 0; index < peers; index += 1) {
         const peer = new QRtcPeerConnection(
@@ -160,20 +174,20 @@ function runListenerCleanup(peers: number): RtcPeerListenerCleanupResult {
         peer.reset();
     }
     const durationMs = performance.now() - startedAt;
-    const listenerCounts = FakeRTCPeerConnection.instances.map((peer) => peer.listenerCount('icegatheringstatechange'));
+    const listenerCounts = runtime.peers.map((peer) => peer.listenerCount('icegatheringstatechange'));
     return {
         durationMs,
         peerCount: peers,
         retainedIceGatheringListeners: listenerCounts.reduce((sum, count) => sum + count, 0),
         maxListenersPerPeer: Math.max(...listenerCounts),
-        unclearedHandlerSlots: FakeRTCPeerConnection.instances.reduce(
+        unclearedHandlerSlots: runtime.peers.reduce(
             (sum, peer) => sum + peer.unclearedHandlerSlotCount(),
             0
         )
     };
 }
 
-function parseDiagnosticArguments(options: Readonly<Record<string, string>>) {
+function parseDiagnosticArguments(options: Readonly<Record<string, string>>): RtcBaselineResult<DiagnosticArguments> {
     const out = options.out ?? 'tmp/perf/results/rtc-peer-listener-cleanup.json';
     const outComponents = out.split('/');
     const validOut = out.startsWith('tmp/perf/results/') &&
@@ -203,7 +217,7 @@ function parseDiagnosticArguments(options: Readonly<Record<string, string>>) {
     };
 }
 
-function parseAcceptedArguments(options: Readonly<Record<string, string>>) {
+function parseAcceptedArguments(options: Readonly<Record<string, string>>): RtcBaselineResult<AcceptedArguments> {
     const outer = parseRtcBaselineBoundedInteger(
         options['outer-ordinal'] ?? '',
         'outer-ordinal',
@@ -242,8 +256,8 @@ function parseAcceptedArguments(options: Readonly<Record<string, string>>) {
             value: {
                 mode: 'accepted' as const,
                 input: { peers: 10000, runs: 5 },
-                baselineId: options['baseline-id']!,
-                intendedPhase: phase as 'warmup' | 'retained',
+                baselineId: options['baseline-id'] ?? '',
+                intendedPhase: phase === 'warmup' ? 'warmup' : 'retained',
                 outerOrdinal: ordinal,
                 sampleIds
             }
@@ -275,8 +289,8 @@ function createSample(sampleInput: CreateRtcPeerListenerCleanupSampleInput): Rtc
     };
 }
 
-function validateResult(input: ListenerInput, result: RtcPeerListenerCleanupResult) {
-    const issues = [];
+function validateResult(input: ListenerInput, result: RtcPeerListenerCleanupResult): RtcBaselineIssueDto[] {
+    const issues: RtcBaselineIssueDto[] = [];
     if (result.peerCount !== input.peers) {
         issues.push(rtcBaselineIssue('$.rawEvidence.peerCount', 'counter-mismatch', 'Unexpected.'));
     }
@@ -304,63 +318,14 @@ function createRawEvidence(result: RtcPeerListenerCleanupResult): RtcBaselineJso
     };
 }
 
-class FakeRTCPeerConnection {
-    static instances: FakeRTCPeerConnection[] = [];
-    connectionState: RTCPeerConnectionState = 'new';
-    signalingState: RTCSignalingState = 'stable';
-    iceConnectionState: RTCIceConnectionState = 'new';
-    iceGatheringState: RTCIceGatheringState = 'new';
-    localDescription: RTCSessionDescription | null = null;
-    onnegotiationneeded: (() => Promise<void>) | null = null;
-    onicecandidate: ((event: { candidate: RTCIceCandidateInit | null; }) => Promise<void>) | null = null;
-    ondatachannel: ((event: RTCDataChannelEvent) => Promise<void>) | null = null;
-    ontrack: ((event: RTCTrackEvent) => Promise<void>) | null = null;
-    oniceconnectionstatechange: (() => void) | null = null;
-    onsignalingstatechange: (() => void) | null = null;
-    onconnectionstatechange: (() => void) | null = null;
-    private readonly listeners = new Map<string, Listener[]>();
-    constructor(_configuration: RTCConfiguration) {
-        FakeRTCPeerConnection.instances.push(this);
+function classifySampleOutcome(
+    result: RtcPeerListenerCleanupResult | null,
+    issues: readonly RtcBaselineIssueDto[]
+): RtcBaselineSampleDto['outcome'] {
+    if (result === null) {
+        return 'not-run';
     }
-    addEventListener(type: string, listener: Listener): void {
-        this.listeners.set(type, [...(this.listeners.get(type) ?? []), listener]);
-    }
-    removeEventListener(type: string, listener: Listener): void {
-        const listeners = (this.listeners.get(type) ?? []).filter((value) => value !== listener);
-        if (listeners.length === 0) {
-            this.listeners.delete(type);
-        }
-        else {
-            this.listeners.set(type, listeners);
-        }
-    }
-    listenerCount(type: string): number {
-        return this.listeners.get(type)?.length ?? 0;
-    }
-    unclearedHandlerSlotCount(): number {
-        return [
-            this.onnegotiationneeded,
-            this.onicecandidate,
-            this.ondatachannel,
-            this.ontrack,
-            this.oniceconnectionstatechange,
-            this.onsignalingstatechange,
-            this.onconnectionstatechange
-        ].filter((handler) => handler !== null).length;
-    }
-    getTransceivers(): Array<{ stop: () => void; }> {
-        return [];
-    }
-    createDataChannel(_label: string): RTCDataChannel {
-        return {} as RTCDataChannel;
-    }
-    close(): void {
-        this.connectionState = 'closed';
-    }
-    setLocalDescription(): Promise<void> {
-        this.localDescription = { type: 'offer', sdp: 'offer-sdp' } as RTCSessionDescription;
-        return Promise.resolve();
-    }
+    return issues.length === 0 ? 'passed' : 'failed';
 }
 
 if (import.meta.main) {

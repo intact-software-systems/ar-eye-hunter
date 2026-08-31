@@ -177,8 +177,7 @@ function createBrowserRealtimeChannelComposition(
         readSession,
         readDefaultRoom: input.state.resolveDefaultRoom,
         readCurrentRoomRef: () => input.state.roomStateStore.resolveCurrentRoomRef(),
-        readCurrentRoomSnapshot: () => input.state.roomStateStore.state().currentRoom,
-        findGroupSnapshot: (room: string | GroupRef) => input.state.roomStateStore.findGroupSnapshot(room),
+        resolveRoomRef: (room: string | GroupRef) => input.state.roomStateStore.resolveRoomRef(room),
         resolveRoomTransportTarget: input.state.resolveRoomTransportTarget,
         resolveLaneId: (laneId?: string) =>
             laneId ?? input.state.readDefaults()?.realtime?.laneId ?? DEFAULT_RALLAR_REALTIME_LANE_ID,

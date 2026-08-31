@@ -4,13 +4,14 @@ import { readGroupMemberSessionIds } from '@shared/api/group-client-views.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import { pairKey } from '@shared/repository/rtt-repository.ts';
-import { selectRttReportingPeers } from '@shared/rtc/rtt-reporting-policy.ts';
+import { isRtcRttCanonicalReporter, selectRttReportingPeers } from '@shared/rtc/rtt-reporting-policy.ts';
 
 export type RtcRttAcceptanceReason =
     | 'accepted'
     | 'invalid-rtt'
     | 'self-pair'
     | 'sender-mismatch'
+    | 'non-canonical-reporter'
     | 'not-reporting-edge'
     | 'no-shared-active-group'
     | 'over-degree';
@@ -63,6 +64,10 @@ export function evaluateRtcRttMeasurement(input: {
 
     if (input.alSenderId !== rtt.sessionIdFrom) {
         return rejected('sender-mismatch');
+    }
+
+    if (!isRtcRttCanonicalReporter(rtt.sessionIdFrom, rtt.sessionIdTo)) {
+        return rejected('non-canonical-reporter');
     }
 
     const sharedActiveGroups = input.candidateGroups.filter(
@@ -155,6 +160,15 @@ interface IsReportingPairForGroupInput {
 }
 
 function isReportingPairForGroup(input: IsReportingPairForGroupInput): boolean {
+    if (
+        !isRtcRttCanonicalReporter(
+            input.rtt.sessionIdFrom,
+            input.rtt.sessionIdTo
+        )
+    ) {
+        return false;
+    }
+
     const activePeerSessionIds = readGroupMemberSessionIds(input.group);
     const groupKey = toWebRtcGroupKey(input.group.group);
     const fromSelection = selectRttReportingPeers({

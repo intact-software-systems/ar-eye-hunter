@@ -1,20 +1,16 @@
-import { createTestClientStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
-import { describe, expect, it } from 'vitest';
-
-import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
-
-import type { ClientPrincipalUpsertAppInboxPayload } from '@shared-server/rallar-system/client-state/inbox/app-client-inbox-contracts.ts';
-
-import { AppClientInboxService } from '@shared-server/rallar-system/client-state/inbox/app-client-inbox-service.ts';
-
-import { computeClientMutation } from '@shared-server/rallar-system/client-state/mutation/compute/compute-client-mutation.ts';
-
-import { ClientStateRepository } from '@shared-server/rallar-system/client-state/persistence/client-state-repository.ts';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
 
 import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
-import type { ClientStateWritten } from '@shared-server/rallar-system/client-state/client-state-service-contracts.ts';
-
+import type { ClientPrincipalUpsertAppInboxPayload } from '@shared-server/rallar-system/client-state/inbox/app-client-inbox-contracts.ts';
+import { AppClientInboxService } from '@shared-server/rallar-system/client-state/inbox/app-client-inbox-service.ts';
+import { computeClientMutation } from '@shared-server/rallar-system/client-state/mutation/compute/compute-client-mutation.ts';
 import { ClientMutationIdempotencyConflictError } from '@shared-server/rallar-system/client-state/mutation/result-validation/validate-client-mutation.ts';
+import { createTestClientStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
+import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 
 import { FakeRuntimeStateRepository } from '../../runtime-state/test-support/fake-runtime-state-repository.ts';
 import { createAppInboxTestDatabase } from '../app-inbox/test-support/app-inbox-test-database.ts';
@@ -26,9 +22,18 @@ import {
     requireRightWritten
 } from './app-client-inbox-mutation-test-harness.ts';
 import { TestResourceInbox, TestResourceInboxResults } from './app-client-inbox-resource-fixtures.ts';
-
-import { emptyRead, entryValue, principalCommand, readAfterWrite, requireWrite } from './client-mutation-compute-test-fixtures.ts';
-import { AggregateBarrierRepository, createService, outboxFor } from './client-mutation-concurrency-test-runtime.ts';
+import {
+    emptyRead,
+    entryValue,
+    principalCommand,
+    readAfterWrite,
+    requireWrite
+} from './client-mutation-compute-test-fixtures.ts';
+import {
+    AggregateBarrierRepository,
+    createService,
+    outboxFor
+} from './client-mutation-concurrency-test-runtime.ts';
 import { CLIENT_MUTATION_TEST_SCOPE as SCOPE, clientMutationPrincipalRef as principalRef } from './client-mutation-validation-test-fixtures.ts';
 import { CLIENT_MUTATION_SERVICE_SCOPE, toClientPrincipalRef } from './client-state-service-test-fixtures.ts';
 import { createClientStateTestDriver } from './client-state-test-runtime.ts';
@@ -119,7 +124,12 @@ describe('client mutation AppInbox idempotency', () => {
     });
 });
 
-function createAppInboxIdempotencyHarness() {
+interface AppInboxIdempotencyHarness {
+    readonly reader: InboxQueueReader;
+    readonly service: AppClientInboxService;
+}
+
+function createAppInboxIdempotencyHarness(): AppInboxIdempotencyHarness {
     const queue = new TestResourceInbox();
     const reader = new InboxQueueReader(queue);
     const results = new TestResourceInboxResults();

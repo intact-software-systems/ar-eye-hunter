@@ -15,14 +15,14 @@ import {
 } from '@shared/repository/group-state-snapshots-repository.ts';
 import { emitOverlayAdoption, type OverlayAdoptionOutcome } from '@shared/repository/overlay-adoption-diagnostics.ts';
 import * as overlaysRepository from '@shared/repository/overlays-repository.ts';
-import type { WebRtcGroupManager } from '@shared/services/WebRtcGroupManager.ts';
+import type { WebRtcGroupManager } from '@shared/services/web-rtc-group-manager.ts';
 
 import { isRtcTopologyCurrentStateMessage } from './is-rtc-topology-current-state-message.ts';
 
 export interface AdoptOverlayTopologyInput {
     readonly topology: RallarOverlayTopologySnapshot;
     readonly sessionId: string;
-    readonly webRtcGroupManager: WebRtcGroupManager;
+    readonly webRtcGroupManager: Pick<WebRtcGroupManager, 'notifyOverlayTopologyChanged'>;
     readonly adoption: 'current-state' | 'publication';
 }
 
@@ -30,7 +30,7 @@ export interface DispatchOverlayTopologyMessageInput {
     readonly message: ALMessage;
     readonly scope: StateScope;
     readonly sessionId: string;
-    readonly webRtcGroupManager: WebRtcGroupManager;
+    readonly webRtcGroupManager: Pick<WebRtcGroupManager, 'notifyOverlayTopologyChanged'>;
 }
 
 export interface AdoptOverlayTopologyResult {

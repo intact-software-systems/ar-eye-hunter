@@ -2,7 +2,7 @@ import { newALRoute, newALUnicastMessage } from '@shared/al-contracts/al-contrac
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { Either } from '@shared/resilience/Either.ts';
-import { DEFAULT_RTC_DATA_CHANNEL_LANE_ID, type QRtcPeerDto, type WebRtcPeerConnectionLeft } from '@shared/services/WebRtcConnectionService.ts';
+import { DEFAULT_RTC_DATA_CHANNEL_LANE_ID, type QRtcPeerDto, type WebRtcConnectionService } from '@shared/services/web-rtc-connection-service.ts';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createDirectorGroupSnapshot } from '../director-group-snapshot-fixture.ts';
 
@@ -103,8 +103,8 @@ vi.mock(
 vi.mock(
     import('@shared/repository/client-state-snapshots-repository.ts'),
     (): Partial<ClientStateSnapshotsRepositoryModule> => ({
-        findClientStateSnapshotByPrincipalId: mocks.clientRepositoryMissing,
-        getAllClientStateSnapshots: mocks.clientRepositoryMissing
+        findClientStateSnapshotByPrincipalId: mocks.findClientStateSnapshotByPrincipalId,
+        getAllClientStateSnapshots: mocks.getAllClientStateSnapshots
     })
 );
 
@@ -546,9 +546,8 @@ function resetDirectorTestDoubles(): void {
 }
 
 function resetDirectorRepositoryAndSessionDoubles(): void {
-    mocks.clientRepositoryMissing.mockImplementation(
-        (principalId?: string): never => (principalId === undefined ? [] : undefined) as never
-    );
+    mocks.findClientStateSnapshotByPrincipalId.mockReturnValue(undefined);
+    mocks.getAllClientStateSnapshots.mockReturnValue([]);
     mockGroupRepositoryMissing();
     mocks.refreshStateSnapshots.mockResolvedValue({ clients: [], groups: [] });
     mocks.initialiseApiMiddleware.mockResolvedValue(mocks.ctx);
@@ -574,7 +573,7 @@ function resetDirectorRtcDoubles(): void {
     mocks.webRtcConnectionService.readyPeerIdsForLane.mockReturnValue([]);
     mocks.webRtcConnectionService.ensurePeerConnectionStarted.mockImplementation(
         (peerId) =>
-            Either.ofLeft<WebRtcPeerConnectionLeft, QRtcPeerDto>({
+            Either.ofLeft<WebRtcConnectionService.PeerConnectionLeft, QRtcPeerDto>({
                 kind: 'connect-failed',
                 peerId,
                 error: new Error('connect not mocked')

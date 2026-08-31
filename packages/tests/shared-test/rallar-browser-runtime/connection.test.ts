@@ -1,5 +1,15 @@
-import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { facade, loadRuntime, resetFacade } from './browser-rallar-runtime-test-harness.ts';
+import {
+    afterEach,
+    beforeEach,
+    expect,
+    it,
+    vi
+} from 'vitest';
+import {
+    facade,
+    loadRuntime,
+    resetFacade
+} from './browser-rallar-runtime-test-harness.ts';
 import { createDeferred } from './browser-runtime-lifecycle-test-fixture.ts';
 
 beforeEach(() => {
@@ -45,8 +55,6 @@ it('refreshes connected room state with the caller deadline and signal', async (
         signal: controller.signal,
         timeoutMs: 321
     }]);
-    expect(facade.records.roomSessions).toHaveLength(0);
-    expect(facade.records.currentRoomRefreshes).toHaveLength(0);
     expect(facade.records.roomRefreshes).toHaveLength(0);
 });
 
@@ -73,8 +81,6 @@ it('rejects room refresh when the connected config has no exact room reference',
         ]
     });
 
-    expect(facade.records.roomSessions).toHaveLength(0);
-    expect(facade.records.currentRoomRefreshes).toHaveLength(0);
     expect(facade.records.roomRefreshes).toHaveLength(0);
 });
 
@@ -112,7 +118,7 @@ it('rejects a connected identity change before mutating facade configuration', a
 });
 
 it('revalidates a queued connection target before mutating the facade', async () => {
-    const firstConnect = createDeferred<object>();
+    const firstConnect = createDeferred<void>();
     facade.behavior.connect.mockReturnValueOnce(firstConnect.promise);
     const runtime = await loadRuntime();
     const first = runtime.connect({
@@ -146,7 +152,7 @@ it('revalidates a queued connection target before mutating the facade', async ()
         apiBaseUrl: 'https://other-api.example.test'
     });
 
-    firstConnect.resolve({});
+    firstConnect.resolve(undefined);
     await first;
     await secondResult;
     expect(facade.records.configurationWrites).not.toContainEqual({

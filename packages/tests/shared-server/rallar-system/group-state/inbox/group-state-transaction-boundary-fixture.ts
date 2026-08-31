@@ -1,10 +1,4 @@
 import { Temporal } from '@js-temporal/polyfill';
-import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
-
-import type { GroupSnapshot } from '@shared/api/group-types.ts';
-import type { CreateGroupRequest } from '@shared/api/state-types.ts';
-import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
-import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 
 import { decodeAppInboxEnqueue } from '@shared-server/rallar-system/app-inbox/app-inbox-command-decoding.ts';
 import { AppInboxType, type AppInboxMessageContext } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
@@ -19,15 +13,26 @@ import { createGroupStateService } from '@shared-server/rallar-system/group-stat
 import { GroupStateInboxHandler } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-handler.ts';
 import type { GroupStateInboxDurableResult } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-result.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
+import type { GroupFormationGroupMutationEvent } from '@shared-server/rallar-system/observability/formation-metrics.ts';
+import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
+import { newALRoute, newALUntargetedMessage } from '@shared/al-contracts/al-contract.ts';
+import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
+import type { CreateGroupRequest, StateScope } from '@shared/api/state-types.ts';
+import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+
 import { FakeRuntimeStateRepository } from '../../../runtime-state/test-support/fake-runtime-state-repository.ts';
-import { createAppInboxTestDatabase, type AppInboxTestDatabaseStage } from '../../app-inbox/test-support/app-inbox-test-database.ts';
+import {
+    createAppInboxTestDatabase,
+    type AppInboxTestDatabase,
+    type AppInboxTestDatabaseStage
+} from '../../app-inbox/test-support/app-inbox-test-database.ts';
 import { authSession } from '../group-state-test-runtime.ts';
 import { TestResourceInbox, TestResourceInboxResults } from './group-state-inbox-resource-fixtures.ts';
 
 const NOW_EPOCH_MS = Date.parse('2026-08-02T00:00:00.000Z');
 const GROUP_ID = 'transaction-boundary-room';
 const REQUEST_ID = 'create-transaction-boundary-room';
-const SCOPE = { applicationId: 'ar-eye-hunter', workspaceId: 'default' };
+const SCOPE: StateScope = { applicationId: 'ar-eye-hunter', workspaceId: 'default' };
 
 export type GroupTransactionFailurePhase = 'domain-write' | AppInboxTestDatabaseStage;
 
@@ -40,12 +45,9 @@ export interface GroupStateTransactionBoundaryHarness {
     readonly outboxEntries: ReadonlyMap<string, ResourceEntry>;
     readonly reachedStages: readonly string[];
     readonly observedSnapshots: readonly GroupSnapshot[];
-    readonly formationMutationEvents: readonly Readonly<{
-        operation: string;
-        outcome: string;
-    }>[];
+    readonly formationMutationEvents: readonly GroupFormationGroupMutationEvent[];
     readonly transactionWriter: AppInboxTransactionWriter;
-    readonly groupRef: typeof SCOPE & Readonly<{ groupId: string; }>;
+    readonly groupRef: GroupRef;
     readWakeCount(): number;
 }
 
@@ -53,7 +55,7 @@ interface TransactionBoundaryStorage {
     readonly runtimeRepository: FakeRuntimeStateRepository;
     readonly queue: TestResourceInbox;
     readonly results: TestResourceInboxResults;
-    readonly database: ReturnType<typeof createAppInboxTestDatabase>;
+    readonly database: AppInboxTestDatabase;
     readonly reachedStages: string[];
     enableFailures(): void;
 }
@@ -73,35 +75,11 @@ export async function createGroupStateTransactionBoundaryHarness(
         createOwnerAuthority()
     );
     const context = await createReservedContext(storage.queue, prepared);
-    let wakeCount = 0;
-    const transactionWriter = new AppInboxTransactionWriter(
-        { database: storage.database },
-        {
-            serviceId: 'server-12345678',
-            nowEpochMs: () => NOW_EPOCH_MS
-        }
-    );
-    transactionWriter.begin(context);
-    const formationMutationEvents: Array<Readonly<{ operation: string; outcome: string; }>> = [];
-    const handler = new GroupStateInboxHandler({
-        mutationService: groupState.service,
-        prepareMutation: groupState.service.prepareMutation,
-        persistPreparation: async () => {
-            throw new Error('A reserved transaction-boundary command must already be prepared.');
-        },
-        sessionGenerationLifecycle: groupState.service.sessionGenerationLifecycle,
-        snapshotObserver: groupState.service,
-        transactionWriter,
-        wakeQueue: () => {
-            wakeCount += 1;
-        },
-        formationMetrics: (event) => {
-            formationMutationEvents.push(event);
-        }
-    });
+    const execution = createTransactionBoundaryExecution(storage, groupState);
+    execution.transactionWriter.begin(context);
     return {
         context,
-        handler,
+        ...execution,
         queue: storage.queue,
         results: storage.results,
         repository: createTestGroupStateRepository(
@@ -111,10 +89,7 @@ export async function createGroupStateTransactionBoundaryHarness(
         outboxEntries: storage.database.outboxEntries,
         reachedStages: storage.reachedStages,
         observedSnapshots: groupState.observedSnapshots,
-        formationMutationEvents,
-        transactionWriter,
-        groupRef: { ...SCOPE, groupId: GROUP_ID },
-        readWakeCount: () => wakeCount
+        groupRef: { ...SCOPE, groupId: GROUP_ID }
     };
 }
 
@@ -123,28 +98,8 @@ export async function createReconfigureGroupStateTransactionBoundaryHarness(
 ): Promise<GroupStateTransactionBoundaryHarness> {
     const storage = createTransactionBoundaryStorage(failurePhase, false);
     const groupState = await createTransactionBoundaryGroupStateService(storage);
-    let wakeCount = 0;
-    const transactionWriter = new AppInboxTransactionWriter(
-        { database: storage.database },
-        { serviceId: 'server-12345678', nowEpochMs: () => NOW_EPOCH_MS }
-    );
-    const formationMutationEvents: Array<Readonly<{ operation: string; outcome: string; }>> = [];
-    const handler = new GroupStateInboxHandler({
-        mutationService: groupState.service,
-        prepareMutation: groupState.service.prepareMutation,
-        persistPreparation: async () => {
-            throw new Error('A reserved transaction-boundary command must already be prepared.');
-        },
-        sessionGenerationLifecycle: groupState.service.sessionGenerationLifecycle,
-        snapshotObserver: groupState.service,
-        transactionWriter,
-        wakeQueue: () => {
-            wakeCount += 1;
-        },
-        formationMetrics: (event) => {
-            formationMutationEvents.push(event);
-        }
-    });
+    const execution = createTransactionBoundaryExecution(storage, groupState);
+    const { handler, transactionWriter } = execution;
     const seedPrepared = await groupState.service.prepareMutation(
         mutationDescriptor({
             operation: 'createGroup',
@@ -173,18 +128,54 @@ export async function createReconfigureGroupStateTransactionBoundaryHarness(
     storage.enableFailures();
     return {
         context,
-        handler,
+        ...execution,
         queue: storage.queue,
         results: storage.results,
         repository: createTestGroupStateRepository(storage.runtimeRepository, storage.database.groupEventStore),
         outboxEntries: storage.database.outboxEntries,
         reachedStages: storage.reachedStages,
         observedSnapshots: groupState.observedSnapshots,
-        formationMutationEvents,
-        transactionWriter,
-        groupRef: { ...SCOPE, groupId: GROUP_ID },
-        readWakeCount: () => wakeCount
+        groupRef: { ...SCOPE, groupId: GROUP_ID }
     };
+}
+
+interface TransactionBoundaryExecution {
+    readonly handler: GroupStateInboxHandler;
+    readonly transactionWriter: AppInboxTransactionWriter;
+    readonly formationMutationEvents: readonly GroupFormationGroupMutationEvent[];
+    readWakeCount(): number;
+}
+
+function createTransactionBoundaryExecution(
+    storage: TransactionBoundaryStorage,
+    groupState: TransactionBoundaryGroupStateOwner
+): TransactionBoundaryExecution {
+    let wakeCount = 0;
+    const transactionWriter = new AppInboxTransactionWriter(
+        { database: storage.database },
+        {
+            serviceId: 'server-12345678',
+            nowEpochMs: () => NOW_EPOCH_MS
+        }
+    );
+    const formationMutationEvents: GroupFormationGroupMutationEvent[] = [];
+    const handler = new GroupStateInboxHandler({
+        mutationService: groupState.service,
+        prepareMutation: groupState.service.prepareMutation,
+        persistPreparation: async () => {
+            throw new Error('A reserved transaction-boundary command must already be prepared.');
+        },
+        sessionGenerationLifecycle: groupState.service.sessionGenerationLifecycle,
+        snapshotObserver: groupState.service,
+        transactionWriter,
+        wakeQueue: () => {
+            wakeCount += 1;
+        },
+        formationMetrics: (event) => {
+            formationMutationEvents.push(event);
+        }
+    });
+    return { handler, transactionWriter, formationMutationEvents, readWakeCount: () => wakeCount };
 }
 
 function createTransactionBoundaryStorage(
@@ -267,8 +258,8 @@ function createGroupRequest(): CreateGroupRequest {
     return {
         groupId: GROUP_ID,
         displayName: 'Transaction boundary room',
-        kind: 'room' as const,
-        joinMode: 'open' as const,
+        kind: 'room',
+        joinMode: 'open',
         createdByPrincipalId: 'owner',
         actorPrincipalId: 'owner',
         actorSessionId: 'owner-session',
@@ -283,7 +274,15 @@ function createHoldLandingGroupRequest(): CreateGroupRequest {
     };
 }
 
-function reconfigureGroupRequest() {
+interface ReconfigureBoundaryRequest {
+    readonly actorPrincipalId: string;
+    readonly actorSessionId: string;
+    readonly expectedFormationEpoch: number;
+    readonly landing: null;
+    readonly requestId: string;
+}
+
+function reconfigureGroupRequest(): ReconfigureBoundaryRequest {
     return {
         actorPrincipalId: 'owner',
         actorSessionId: 'owner-session',
@@ -326,7 +325,12 @@ async function createReservedContext(
     return {
         enqueue,
         entry,
-        message: {} as never,
+        message: newALUntargetedMessage(
+            'owner',
+            newALRoute(entry.key.topicId, entry.key.contextId, entry.key.resourceId),
+            enqueue.type,
+            enqueue
+        ),
         encodeResult: (result) => encodeAppInboxResult(result, 'Group transaction test result')
     };
 }
@@ -364,7 +368,12 @@ async function createReconfigureReservedContext(
     return {
         enqueue,
         entry,
-        message: {} as never,
+        message: newALUntargetedMessage(
+            'owner',
+            newALRoute(entry.key.topicId, entry.key.contextId, entry.key.resourceId),
+            enqueue.type,
+            enqueue
+        ),
         encodeResult: (result) => encodeAppInboxResult(result, 'Group transaction test result')
     };
 }

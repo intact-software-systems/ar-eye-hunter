@@ -1,16 +1,26 @@
-import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
+
+import type {
+    GroupPresenceSummaryComputedWork,
+    GroupPresenceSummaryWorkRead
+} from '@shared-server/rallar-system/group-state/presence/group-presence-summary-effects.ts';
 import { GroupPresenceSummaryWork } from '@shared-server/rallar-system/group-state/presence/group-presence-summary-worker.ts';
 import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
-import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { validateGroupStateDeltaEnvelope } from '@shared/api/group-state-delta.ts';
 import type { GroupStateDeltaEnvelope } from '@shared/api/group-state-delta.ts';
 import type { GroupEvent, GroupRef } from '@shared/api/group-types.ts';
 import type { GroupPresenceSummaryWorkData } from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
-import { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
-import { describe, expect, it } from 'vitest';
+import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
+
 import { GroupBarrierRepository } from '../group-state-concurrency-test-runtime.ts';
+import type { GroupStateTestService } from '../group-state-test-runtime.ts';
 import { groupRef, SCOPE } from '../mutation/group-mutation-test-runtime.ts';
 import { convergeSummaryForTest, createService } from './group-presence-test-runtime.ts';
 
@@ -29,10 +39,13 @@ describe('group-state delta envelope construction', () => {
             trigger: (event) => event.eventType === 'member-joined'
         });
 
-        const envelope = readGroupStateEventRowEnvelope(computed.downstreamOutboxEntries[0]!);
+        const envelope = readGroupStateEventRowEnvelope(computed.downstreamOutboxEntries[0]);
         expect(() => validateGroupStateDeltaEnvelope(envelope)).not.toThrow();
         expect(envelope.event).toEqual(command.event);
-        expect(envelope.predecessorCausalRevision).toEqual(read.presence.current!.value.causalRevision);
+        if (read.presence.current === null) {
+            throw new Error('Expected prior presence summary');
+        }
+        expect(envelope.predecessorCausalRevision).toEqual(read.presence.current.value.causalRevision);
         expect(envelope.resultingCausalRevision).toEqual(computed.snapshot.causalRevision);
         expect(envelope.members).toEqual(
             computed.snapshot.members.filter((member) => member.principalId === 'bob')
@@ -54,7 +67,7 @@ describe('group-state delta envelope construction', () => {
         const runtime = new GroupBarrierRepository();
         const service = createService(runtime, BASE_EPOCH_MS);
         await seedGroupWithBob(service, 'delta-connect-group');
-        await connectSession(service, 'delta-connect-group', 'bob', 'bob-session');
+        await connectSession({ service, groupId: 'delta-connect-group', principalId: 'bob', sessionId: 'bob-session' });
 
         const { command, computed } = await computeSummaryWork({
             runtime,
@@ -63,7 +76,7 @@ describe('group-state delta envelope construction', () => {
             trigger: (event) => event.eventType === 'session-connected'
         });
 
-        const envelope = readGroupStateEventRowEnvelope(computed.downstreamOutboxEntries[0]!);
+        const envelope = readGroupStateEventRowEnvelope(computed.downstreamOutboxEntries[0]);
         expect(command.event.eventType).toBe('session-connected');
         expect(envelope.members).toEqual([]);
         expect(envelope.sessions).toEqual(
@@ -78,7 +91,7 @@ describe('group-state delta envelope construction', () => {
         const runtime = new GroupBarrierRepository();
         const service = createService(runtime, BASE_EPOCH_MS);
         await seedGroupWithBob(service, 'delta-noop-group');
-        await connectSession(service, 'delta-noop-group', 'bob', 'bob-session');
+        await connectSession({ service, groupId: 'delta-noop-group', principalId: 'bob', sessionId: 'bob-session' });
         await convergeSummaryForTest({
             work: createSummaryWorkService(runtime),
             runtime,
@@ -94,7 +107,7 @@ describe('group-state delta envelope construction', () => {
         });
 
         expect(computed.summary.outcome).toBe('no-op');
-        const envelope = readGroupStateEventRowEnvelope(computed.downstreamOutboxEntries[0]!);
+        const envelope = readGroupStateEventRowEnvelope(computed.downstreamOutboxEntries[0]);
         expect(envelope.predecessorCausalRevision).toEqual(envelope.resultingCausalRevision);
         expect(envelope.resultingCausalRevision).toEqual(computed.snapshot.causalRevision);
     });
@@ -116,9 +129,9 @@ async function computeShuffledScenarioEventRow(
     const service = createService(runtime, BASE_EPOCH_MS);
     await seedGroupWithBob(service, 'delta-order-group');
     for (const sessionId of connectOrder) {
-        await connectSession(service, 'delta-order-group', 'bob', sessionId);
+        await connectSession({ service, groupId: 'delta-order-group', principalId: 'bob', sessionId: sessionId });
     }
-    await connectSession(service, 'delta-order-group', 'alice', 's-trigger');
+    await connectSession({ service, groupId: 'delta-order-group', principalId: 'alice', sessionId: 's-trigger' });
     const { computed } = await computeSummaryWork({
         runtime,
         ref: groupRef('delta-order-group'),
@@ -128,11 +141,15 @@ async function computeShuffledScenarioEventRow(
             event.actor.kind !== 'service' &&
             event.actor.principalId === 'alice'
     });
-    return computed.downstreamOutboxEntries[0]!;
+    const event = computed.downstreamOutboxEntries[0];
+    if (event === undefined) {
+        throw new Error('Expected emitted group state event row');
+    }
+    return event;
 }
 
 async function seedGroupWithBob(
-    service: ReturnType<typeof createService>,
+    service: GroupStateTestService,
     groupId: string
 ): Promise<void> {
     await service.createGroup(SCOPE, {
@@ -150,12 +167,13 @@ async function seedGroupWithBob(
     });
 }
 
-async function connectSession(
-    service: ReturnType<typeof createService>,
-    groupId: string,
-    principalId: string,
-    sessionId: string
-): Promise<void> {
+interface ConnectSessionInput {
+    readonly service: GroupStateTestService;
+    readonly groupId: string;
+    readonly principalId: string;
+    readonly sessionId: string;
+}
+async function connectSession({ service, groupId, principalId, sessionId }: ConnectSessionInput): Promise<void> {
     await service.connectPresenceSession(SCOPE, groupId, sessionId, {
         principalId,
         generationId: `${sessionId}-generation`,
@@ -175,12 +193,18 @@ function createSummaryWorkService(runtime: GroupBarrierRepository): GroupPresenc
     });
 }
 
-async function computeSummaryWork(input: {
+interface SummaryWorkInput {
     readonly runtime: GroupBarrierRepository;
     readonly ref: GroupRef;
     readonly commandId: string;
     readonly trigger: (event: GroupEvent) => boolean;
-}) {
+}
+interface ComputedSummaryScenario {
+    readonly command: GroupPresenceSummaryWorkData;
+    readonly read: GroupPresenceSummaryWorkRead;
+    readonly computed: GroupPresenceSummaryComputedWork;
+}
+async function computeSummaryWork(input: SummaryWorkInput): Promise<ComputedSummaryScenario> {
     const work = createSummaryWorkService(input.runtime);
     const repository = createTestGroupStateRepository(input.runtime);
     const event = (await repository.listEvents(input.ref)).find(input.trigger);
@@ -202,7 +226,12 @@ async function computeSummaryWork(input: {
     return { command, read, computed };
 }
 
-function readGroupStateEventRowEnvelope(entry: ResourceEntry): GroupStateDeltaEnvelope {
-    const message = JSON.parse(entry.resource) as ALMessage;
-    return JSON.parse(message.payload.resource) as GroupStateDeltaEnvelope;
+function readGroupStateEventRowEnvelope(entry: ResourceEntry | undefined): GroupStateDeltaEnvelope {
+    if (entry === undefined) {
+        throw new Error('Expected emitted group state event row');
+    }
+    const message = decodePersistedALMessage(entry.resource);
+    const envelope: unknown = JSON.parse(message.payload.resource);
+    validateGroupStateDeltaEnvelope(envelope);
+    return envelope;
 }

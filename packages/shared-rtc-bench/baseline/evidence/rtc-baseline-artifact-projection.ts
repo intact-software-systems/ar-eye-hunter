@@ -172,6 +172,13 @@ export function createRtcBaselineArtifactProjector(
                 issues: failure.issues
             });
         }
+        else {
+            cohortOutcomes.push({
+                identity: failure.identity,
+                outcome: 'failed',
+                issues: failure.issues
+            });
+        }
         return successful();
     }
 

@@ -15,9 +15,9 @@ import { newALRoute, newALUntargetedMessage, type ALMessage } from '@shared/al-c
 import type { RallarCrdtAuditEvent, RallarCrdtAuditSink } from '@shared/crdt/mod.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
-import type { OnMessageCallback } from '@shared/services/InboxOutboxContracts.ts';
-import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
-import { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
+import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
+import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
+import type { OnMessageCallback } from '@shared/services/queue-message-callbacks.ts';
 
 const EVENT: RallarCrdtAuditEvent = {
     kind: 'erase',

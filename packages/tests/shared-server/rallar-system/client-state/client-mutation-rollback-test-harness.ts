@@ -1,31 +1,53 @@
-import { createTestClientStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import { expect } from 'vitest';
 
-import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
-import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
-import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
-
-import type { ClientSessionConnectAppInboxPayload } from '@shared-server/rallar-system/client-state/inbox/app-client-inbox-contracts.ts';
-
-import { AppClientInboxService } from '@shared-server/rallar-system/client-state/inbox/app-client-inbox-service.ts';
-
-import { toAuthenticatedClientMutationContextId } from '@shared-server/rallar-system/client-state/inbox/authenticated-client-mutation-ingress.ts';
-
-import { ClientStateRepository } from '@shared-server/rallar-system/client-state/persistence/client-state-repository.ts';
-
-import type { ClientStateWritten } from '@shared-server/rallar-system/client-state/client-state-service-contracts.ts';
-
+import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
+import type { AppInboxFailure } from '@shared-server/rallar-system/app-inbox/app-inbox-failure.ts';
+import type { ClientStateWritten } from '@shared-server/rallar-system/client-state/client-state-service-contracts.ts';
+import type { ClientSessionConnectAppInboxPayload } from '@shared-server/rallar-system/client-state/inbox/app-client-inbox-contracts.ts';
+import { AppClientInboxService } from '@shared-server/rallar-system/client-state/inbox/app-client-inbox-service.ts';
+import { toAuthenticatedClientMutationContextId } from '@shared-server/rallar-system/client-state/inbox/authenticated-client-mutation-ingress.ts';
+import { ClientStateRepository } from '@shared-server/rallar-system/client-state/persistence/client-state-repository.ts';
+import { createTestClientStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import { TestClientStateEventStore } from '@shared-test/shared-server/test-client-state-event-store.ts';
+import type { StateScope } from '@shared/api/state-types.ts';
+import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
+import type { Key } from '@shared/queuebox/ResourceEntry.ts';
+import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
+import type { Either } from '@shared/resilience/Either.ts';
+import { toError } from '@shared/resilience/to-error.ts';
+import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 
 import { FakeRuntimeStateRepository } from '../../runtime-state/test-support/fake-runtime-state-repository.ts';
+import type { AppInboxTestDatabase } from '../app-inbox/test-support/app-inbox-test-database.ts';
 import { createAppInboxTestDatabase } from '../app-inbox/test-support/app-inbox-test-database.ts';
 import { createAutoAuthorizingClientStateService, processAppInbox } from './app-client-inbox-mutation-test-harness.ts';
 import { TestResourceInbox, TestResourceInboxResults } from './app-client-inbox-resource-fixtures.ts';
 
-const SCOPE = { applicationId: 'ar-eye-hunter', workspaceId: 'default' } as const;
+const SCOPE: StateScope = { applicationId: 'ar-eye-hunter', workspaceId: 'default' };
 
-export async function createRollbackHarness() {
+interface RollbackHarness {
+    readonly key: Key;
+    readonly queue: TestResourceInbox;
+    readonly reader: InboxQueueReader;
+    readonly results: TestResourceInboxResults;
+    readonly service: AppClientInboxService;
+    rollbackAssertions(): number;
+}
+interface RollbackObservation {
+    assertions: number;
+}
+interface RollbackDatabaseInput {
+    readonly queue: TestResourceInbox;
+    readonly results: TestResourceInboxResults;
+    readonly runtimeRepository: FakeRuntimeStateRepository;
+    readonly eventStore: TestClientStateEventStore;
+    readonly repository: ClientStateRepository;
+    readonly key: Key;
+    readonly observation: RollbackObservation;
+}
+
+export async function createRollbackHarness(): Promise<RollbackHarness> {
     const queue = new TestResourceInbox();
     const reader = new InboxQueueReader(queue);
     const results = new TestResourceInboxResults();
@@ -42,38 +64,16 @@ export async function createRollbackHarness() {
             callerSessionId: 'alice-session'
         })
     });
-    let failOutbox = true;
-    let rollbackAssertions = 0;
-    const rollbackContext: {
-        database?: ReturnType<typeof createAppInboxTestDatabase>;
-    } = {};
-    const database = createAppInboxTestDatabase(queue, results, {
+    const observation: RollbackObservation = { assertions: 0 };
+    const database = createRollbackDatabase({
+        queue,
+        results,
         runtimeRepository,
-        clientEventStore: eventStore,
-        shouldFailOutboxWrite: () => {
-            if (!failOutbox) {
-                return false;
-            }
-            failOutbox = false;
-            return true;
-        },
-        withTransaction: async (write) => restoreEventsAfterFailure(eventStore, write),
-        onTransactionRollback: async () => {
-            const rollbackDatabase = rollbackContext.database;
-            if (rollbackDatabase === undefined) {
-                throw new Error('Rollback occurred before the test database finished construction');
-            }
-            rollbackAssertions += 1;
-            await expectRolledBackMutationState({
-                database: rollbackDatabase,
-                key,
-                queue,
-                repository,
-                results
-            });
-        }
+        eventStore,
+        repository,
+        key,
+        observation
     });
-    rollbackContext.database = database;
     const service = new AppClientInboxService(
         {
             inboxQueueReader: reader,
@@ -90,12 +90,47 @@ export async function createRollbackHarness() {
             serviceId: 'server-12345678'
         }
     );
-    return { key, queue, reader, results, service, rollbackAssertions: () => rollbackAssertions };
+    return { key, queue, reader, results, service, rollbackAssertions: () => observation.assertions };
 }
 
-type RollbackHarness = Awaited<ReturnType<typeof createRollbackHarness>>;
+function createRollbackDatabase(input: RollbackDatabaseInput): AppInboxTestDatabase {
+    let failOutbox = true;
+    const database = createAppInboxTestDatabase(input.queue, input.results, {
+        runtimeRepository: input.runtimeRepository,
+        clientEventStore: input.eventStore,
+        shouldFailOutboxWrite: () => {
+            if (!failOutbox) {
+                return false;
+            }
+            failOutbox = false;
+            return true;
+        },
+        withTransaction: async (write) => restoreEventsAfterFailure(input.eventStore, write)
+    });
+    const begin = database.begin.bind(database);
+    database.begin = async <T>(write: (transaction: PSqlSql) => Promise<T>): Promise<T> => {
+        try {
+            return await begin(write);
+        }
+        catch (caught) {
+            const error = toError(caught);
+            input.observation.assertions += 1;
+            await expectRolledBackMutationState({
+                database,
+                key: input.key,
+                queue: input.queue,
+                repository: input.repository,
+                results: input.results
+            });
+            throw error;
+        }
+    };
+    return database;
+}
 
-export function processRollbackMutation(harness: RollbackHarness) {
+export function processRollbackMutation(
+    harness: RollbackHarness
+): Promise<Either<AppInboxFailure, ClientStateWritten>> {
     const connectedAtEpochMs = Date.now();
     return processAppInbox<ClientSessionConnectAppInboxPayload>(harness.service, harness.reader, {
         type: AppInboxType.CLIENT_SESSION_CONNECT,
@@ -127,7 +162,8 @@ async function restoreEventsAfterFailure<T>(
     try {
         return await write();
     }
-    catch (error) {
+    catch (caught) {
+        const error = toError(caught);
         eventStore.events.length = 0;
         eventStore.events.push(...before);
         throw error;
@@ -135,12 +171,8 @@ async function restoreEventsAfterFailure<T>(
 }
 
 interface RolledBackMutationState {
-    readonly database: ReturnType<typeof createAppInboxTestDatabase>;
-    readonly key: {
-        readonly topicId: string;
-        readonly resourceId: string;
-        readonly contextId: string;
-    };
+    readonly database: AppInboxTestDatabase;
+    readonly key: Key;
     readonly queue: TestResourceInbox;
     readonly repository: ClientStateRepository;
     readonly results: TestResourceInboxResults;

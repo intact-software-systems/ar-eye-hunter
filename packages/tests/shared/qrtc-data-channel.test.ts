@@ -1,19 +1,38 @@
-import { QRtcDataChannel } from '@shared/webrtc/QRtcDataChannel.ts';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { QRtcDataChannel } from '@shared/webrtc/qrtc-data-channel.ts';
+import { QRtcPeerConnection } from '@shared/webrtc/qrtc-peer-connection.ts';
+
+import { installNativeRtcRuntime, NativeRtcRuntime, SimulatedNativeRtcPeerConnection } from './native-rtc-connection-fixture.ts';
+
+let runtime: NativeRtcRuntime;
+const peers: QRtcPeerConnection[] = [];
+
+beforeEach(() => {
+    runtime = installNativeRtcRuntime();
+});
+
+afterEach(() => {
+    for (const peer of peers.splice(0)) {
+        peer.reset();
+    }
+    runtime.dispose();
+    vi.restoreAllMocks();
+});
 
 describe('QRtcDataChannel', () => {
     it('creates an initiator channel, dispatches messages, and enforces send guards', async () => {
-        const peerConnection = createPeerConnectionHarness();
+        const peerConnection = createNativeDataChannelFixture();
         const dataChannel = new QRtcDataChannel(
-            peerConnection.peerConnection as never,
+            peerConnection.peerConnection,
             {
                 peerId: 'peer-1',
                 dataChannelName: 'room'
             }
         );
         const lifecycle: string[] = [];
-        const typedMessages: unknown[] = [];
-        const plainMessages: unknown[] = [];
+        const typedMessages: string[] = [];
+        const plainMessages: string[] = [];
 
         dataChannel.onRtcCallbacksDo('callbacks', {
             onOpen: async () => {
@@ -30,14 +49,14 @@ describe('QRtcDataChannel', () => {
             'typed',
             {
                 onMessage: async (message) => {
-                    typedMessages.push(message);
+                    typedMessages.push(JSON.stringify(message));
                 }
             },
             'chat'
         );
         dataChannel.onRtcMessageDo('plain', {
             onMessage: async (message) => {
-                plainMessages.push(message);
+                plainMessages.push(JSON.stringify(message));
             }
         });
 
@@ -47,53 +66,36 @@ describe('QRtcDataChannel', () => {
 
         dataChannel.connect(true);
 
-        expect(peerConnection.createDataChannel).toHaveBeenCalledWith('room');
+        expect(peerConnection.native.channels.map((channel) => channel.label)).toEqual(['room']);
         expect(dataChannel.isReadyToConnect()).toBe(false);
 
-        const createdChannel = peerConnection.createdChannels[0];
+        const createdChannel = peerConnection.native.channels[0];
         createdChannel.readyState = 'open';
-        await createdChannel.emitOpen();
+        await createdChannel.open();
 
         expect(dataChannel.isOpen()).toBe(true);
 
         await dataChannel.send({ hello: true });
         await dataChannel.sendAsJsonString('{"raw":true}');
 
-        await createdChannel.emitMessage({
-            type: 'chat',
-            body: 'typed'
-        });
-        await createdChannel.emitMessage({
-            body: 'plain'
-        });
-        await createdChannel.emitError();
-        await createdChannel.emitClose();
+        await createdChannel.receive('{"type":"chat","body":"typed"}');
+        await createdChannel.receive('{"body":"plain"}');
+        await createdChannel.fail();
+        await createdChannel.close();
 
         expect(createdChannel.sent).toEqual([
             JSON.stringify({ hello: true }),
             '{"raw":true}'
         ]);
-        expect(typedMessages).toEqual([
-            {
-                type: 'chat',
-                body: 'typed'
-            },
-            {
-                body: 'plain'
-            }
-        ]);
-        expect(plainMessages).toEqual([
-            {
-                body: 'plain'
-            }
-        ]);
+        expect(typedMessages).toEqual(['{"type":"chat","body":"typed"}', '{"body":"plain"}']);
+        expect(plainMessages).toEqual(['{"body":"plain"}']);
         expect(lifecycle).toEqual(['open', 'error', 'close']);
     });
 
     it('waits for receiver-side channels, ignores mismatched labels, and resets cleanly', async () => {
-        const peerConnection = createPeerConnectionHarness();
+        const peerConnection = createNativeDataChannelFixture();
         const dataChannel = new QRtcDataChannel(
-            peerConnection.peerConnection as never,
+            peerConnection.peerConnection,
             {
                 peerId: 'peer-1',
                 dataChannelName: 'room'
@@ -109,23 +111,16 @@ describe('QRtcDataChannel', () => {
 
         dataChannel.connect(false);
 
-        expect(peerConnection.createDataChannel).not.toHaveBeenCalled();
-        expect(peerConnection.onDataChannelCallback).toBeDefined();
+        expect(peerConnection.native.channels).toEqual([]);
 
-        const wrong = new FakeRTCDataChannel('other');
-        await peerConnection.onDataChannelCallback?.({
-            channel: wrong
-        });
+        const wrong = await peerConnection.native.receiveDataChannel('other');
 
         expect(opened).toEqual([]);
 
-        const matching = new FakeRTCDataChannel('room');
-        await peerConnection.onDataChannelCallback?.({
-            channel: matching
-        });
+        const matching = await peerConnection.native.receiveDataChannel('room');
 
         matching.readyState = 'open';
-        await matching.emitOpen();
+        await matching.open();
 
         expect(opened).toEqual(['open']);
         expect(dataChannel.removeRtcCallbackById('callbacks')).toBe(true);
@@ -133,58 +128,74 @@ describe('QRtcDataChannel', () => {
 
         dataChannel.reset();
 
-        expect(matching.close).toHaveBeenCalledOnce();
+        expect(matching.readyState).toBe('closed');
         expect(dataChannel.isReadyToConnect()).toBe(true);
     });
 
-    it('registers receiver data-channel callbacks per lane', async () => {
-        const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {
+    it('routes native receiver channels only to their matching lanes', async () => {
+        const peerConnection = createNativeDataChannelFixture();
+        const reliable = new QRtcDataChannel(peerConnection.peerConnection, {
+            peerId: 'peer-1',
+            dataChannelName: 'rtc-data-channel'
         });
-        const peerConnection = createPeerConnectionHarness();
-        const reliable = new QRtcDataChannel(
-            peerConnection.peerConnection as never,
-            {
-                peerId: 'peer-1',
-                dataChannelName: 'rtc-data-channel'
-            }
-        );
-        const realtime = new QRtcDataChannel(
-            peerConnection.peerConnection as never,
-            {
-                peerId: 'peer-1',
-                dataChannelName: 'rtc-realtime'
-            }
-        );
-
+        const realtime = new QRtcDataChannel(peerConnection.peerConnection, {
+            peerId: 'peer-1',
+            dataChannelName: 'rtc-realtime'
+        });
         reliable.connect(false);
         realtime.connect(false);
-
-        expect(Array.from(peerConnection.onDataChannelCallbacks.keys())).toEqual([
-            'peer-1:rtc-data-channel',
-            'peer-1:rtc-realtime'
-        ]);
-
-        const incoming = new FakeRTCDataChannel('rtc-realtime');
-        for (const callback of peerConnection.onDataChannelCallbacks.values()) {
-            await callback({
-                channel: incoming
-            });
-        }
+        const incoming = await peerConnection.native.receiveDataChannel('rtc-realtime');
+        await incoming.open();
 
         expect(reliable.readHealth().readyState).toBeUndefined();
-        expect(realtime.readHealth().readyState).toBe('connecting');
-        expect(consoleError).not.toHaveBeenCalledWith(
-            expect.stringContaining(
-                'Received data channel for different data channel name'
-            )
-        );
-        consoleError.mockRestore();
+        expect(realtime.isOpen()).toBe(true);
+        expect(realtime.sendJson({ lane: 'realtime' }).status).toBe('sent');
+        expect(incoming.sent).toEqual(['{"lane":"realtime"}']);
+    });
+
+    it('does not reactivate a reset receiver until it connects again', async () => {
+        const { peerConnection, native } = createNativeDataChannelFixture();
+        const channel = new QRtcDataChannel(peerConnection, { peerId: 'peer-1', dataChannelName: 'room' });
+        channel.connect(false);
+        channel.reset();
+        const ignored = await native.receiveDataChannel('room');
+        await ignored.open();
+        expect(channel.readHealth()).toMatchObject({ state: 'Idle', readyState: undefined });
+        expect(channel.sendJson({ stale: true }).status).toBe('closed');
+
+        channel.connect(false);
+        const active = await native.receiveDataChannel('room');
+        await active.open();
+        expect(channel.sendJson({ current: true }).status).toBe('sent');
+        expect(active.sent).toEqual(['{"current":true}']);
+        expect(ignored.sent).toEqual([]);
+    });
+
+    it('isolates rejected open observers and still completes other observers', async () => {
+        const { peerConnection, native } = createNativeDataChannelFixture();
+        const channel = new QRtcDataChannel(peerConnection, { peerId: 'peer-1', dataChannelName: 'room' });
+        const observed: string[] = [];
+        vi.spyOn(console, 'error').mockImplementation(() => {});
+        channel.onRtcCallbacksDo('rejected', {
+            onOpen: async () => {
+                throw new Error('Rejected open observer');
+            }
+        });
+        channel.onRtcCallbacksDo('accepted', {
+            onOpen: async () => {
+                observed.push('open');
+            }
+        });
+        channel.connect(true);
+        await native.channels[0].open();
+        expect(observed).toEqual(['open']);
+        expect(channel.isOpen()).toBe(true);
     });
 
     it('waits until a connecting channel opens', async () => {
-        const peerConnection = createPeerConnectionHarness();
+        const peerConnection = createNativeDataChannelFixture();
         const dataChannel = new QRtcDataChannel(
-            peerConnection.peerConnection as never,
+            peerConnection.peerConnection,
             {
                 peerId: 'peer-1',
                 dataChannelName: 'room'
@@ -194,8 +205,8 @@ describe('QRtcDataChannel', () => {
         dataChannel.connect(true);
 
         const wait = dataChannel.waitUntilOpen(1_000);
-        const createdChannel = peerConnection.createdChannels[0];
-        await createdChannel.emitOpen();
+        const createdChannel = peerConnection.native.channels[0];
+        await createdChannel.open();
 
         await expect(wait).resolves.toBe(true);
         expect(dataChannel.isOpen()).toBe(true);
@@ -204,9 +215,9 @@ describe('QRtcDataChannel', () => {
     it('returns false when a channel open wait times out', async () => {
         vi.useFakeTimers();
         try {
-            const peerConnection = createPeerConnectionHarness();
+            const peerConnection = createNativeDataChannelFixture();
             const dataChannel = new QRtcDataChannel(
-                peerConnection.peerConnection as never,
+                peerConnection.peerConnection,
                 {
                     peerId: 'peer-1',
                     dataChannelName: 'room'
@@ -226,9 +237,9 @@ describe('QRtcDataChannel', () => {
     });
 
     it('resolves pending open waits when reset before open', async () => {
-        const peerConnection = createPeerConnectionHarness();
+        const peerConnection = createNativeDataChannelFixture();
         const dataChannel = new QRtcDataChannel(
-            peerConnection.peerConnection as never,
+            peerConnection.peerConnection,
             {
                 peerId: 'peer-1',
                 dataChannelName: 'room'
@@ -249,9 +260,9 @@ describe('QRtcDataChannel', () => {
     });
 
     it('resolves pending open waits when a channel closes before opening', async () => {
-        const peerConnection = createPeerConnectionHarness();
+        const peerConnection = createNativeDataChannelFixture();
         const dataChannel = new QRtcDataChannel(
-            peerConnection.peerConnection as never,
+            peerConnection.peerConnection,
             {
                 peerId: 'peer-1',
                 dataChannelName: 'room'
@@ -268,9 +279,9 @@ describe('QRtcDataChannel', () => {
         dataChannel.connect(true);
 
         const wait = dataChannel.waitUntilOpen(1_000);
-        const createdChannel = peerConnection.createdChannels[0];
+        const createdChannel = peerConnection.native.channels[0];
 
-        await createdChannel.emitClose();
+        await createdChannel.close();
 
         await expect(wait).resolves.toBe(false);
         expect(lifecycle).toEqual(['close']);
@@ -283,9 +294,9 @@ describe('QRtcDataChannel', () => {
     });
 
     it('clears stale closed channel state before later reconnect attempts', async () => {
-        const peerConnection = createPeerConnectionHarness();
+        const peerConnection = createNativeDataChannelFixture();
         const dataChannel = new QRtcDataChannel(
-            peerConnection.peerConnection as never,
+            peerConnection.peerConnection,
             {
                 peerId: 'peer-1',
                 dataChannelName: 'room'
@@ -294,9 +305,9 @@ describe('QRtcDataChannel', () => {
 
         dataChannel.connect(true);
 
-        const createdChannel = peerConnection.createdChannels[0];
-        await createdChannel.emitOpen();
-        await createdChannel.emitClose();
+        const createdChannel = peerConnection.native.channels[0];
+        await createdChannel.open();
+        await createdChannel.close();
 
         expect(dataChannel.readHealth()).toMatchObject({
             state: 'Closed',
@@ -307,9 +318,9 @@ describe('QRtcDataChannel', () => {
     });
 
     it('replaces a failed initiator channel on reconnect', async () => {
-        const peerConnection = createPeerConnectionHarness();
+        const peerConnection = createNativeDataChannelFixture();
         const dataChannel = new QRtcDataChannel(
-            peerConnection.peerConnection as never,
+            peerConnection.peerConnection,
             {
                 peerId: 'peer-1',
                 dataChannelName: 'room'
@@ -318,8 +329,8 @@ describe('QRtcDataChannel', () => {
 
         dataChannel.connect(true);
 
-        const firstChannel = peerConnection.createdChannels[0];
-        await firstChannel.emitError();
+        const firstChannel = peerConnection.native.channels[0];
+        await firstChannel.fail();
 
         expect(dataChannel.readHealth()).toMatchObject({
             state: 'Failed',
@@ -331,14 +342,14 @@ describe('QRtcDataChannel', () => {
         dataChannel.connect(true);
         const wait = dataChannel.waitUntilOpen(1_000);
 
-        expect(peerConnection.createDataChannel).toHaveBeenCalledTimes(2);
+        expect(peerConnection.native.channels).toHaveLength(2);
         expect(firstChannel.onopen).toBeNull();
         expect(firstChannel.onerror).toBeNull();
 
-        const secondChannel = peerConnection.createdChannels[1];
+        const secondChannel = peerConnection.native.channels[1];
         expect(secondChannel).not.toBe(firstChannel);
 
-        await secondChannel.emitOpen();
+        await secondChannel.open();
 
         await expect(wait).resolves.toBe(true);
         expect(dataChannel.readHealth()).toMatchObject({
@@ -348,9 +359,9 @@ describe('QRtcDataChannel', () => {
     });
 
     it('replaces a closed initiator channel on reconnect', async () => {
-        const peerConnection = createPeerConnectionHarness();
+        const peerConnection = createNativeDataChannelFixture();
         const dataChannel = new QRtcDataChannel(
-            peerConnection.peerConnection as never,
+            peerConnection.peerConnection,
             {
                 peerId: 'peer-1',
                 dataChannelName: 'room'
@@ -359,19 +370,19 @@ describe('QRtcDataChannel', () => {
 
         dataChannel.connect(true);
 
-        const firstChannel = peerConnection.createdChannels[0];
-        await firstChannel.emitOpen();
-        await firstChannel.emitClose();
+        const firstChannel = peerConnection.native.channels[0];
+        await firstChannel.open();
+        await firstChannel.close();
 
         dataChannel.connect(true);
         const wait = dataChannel.waitUntilOpen(1_000);
 
-        expect(peerConnection.createDataChannel).toHaveBeenCalledTimes(2);
+        expect(peerConnection.native.channels).toHaveLength(2);
 
-        const secondChannel = peerConnection.createdChannels[1];
+        const secondChannel = peerConnection.native.channels[1];
         expect(secondChannel).not.toBe(firstChannel);
 
-        await secondChannel.emitOpen();
+        await secondChannel.open();
 
         await expect(wait).resolves.toBe(true);
         expect(dataChannel.readHealth()).toMatchObject({
@@ -381,9 +392,9 @@ describe('QRtcDataChannel', () => {
     });
 
     it('drops queued sends when a native channel closes before reconnect', async () => {
-        const peerConnection = createPeerConnectionHarness();
+        const peerConnection = createNativeDataChannelFixture();
         const dataChannel = new QRtcDataChannel(
-            peerConnection.peerConnection as never,
+            peerConnection.peerConnection,
             {
                 peerId: 'peer-1',
                 dataChannelName: 'realtime',
@@ -398,9 +409,9 @@ describe('QRtcDataChannel', () => {
 
         dataChannel.connect(true);
 
-        const firstChannel = peerConnection.createdChannels[0];
+        const firstChannel = peerConnection.native.channels[0];
         firstChannel.bufferedAmount = 2;
-        await firstChannel.emitOpen();
+        await firstChannel.open();
 
         expect(dataChannel.sendJson({ seq: 1 })).toMatchObject({
             status: 'queued'
@@ -410,7 +421,7 @@ describe('QRtcDataChannel', () => {
         });
         expect(dataChannel.readHealth().queuedItemCount).toBe(2);
 
-        await firstChannel.emitClose();
+        await firstChannel.close();
 
         expect(dataChannel.readHealth()).toMatchObject({
             state: 'Closed',
@@ -420,18 +431,18 @@ describe('QRtcDataChannel', () => {
 
         dataChannel.connect(true);
 
-        const secondChannel = peerConnection.createdChannels[1];
-        await secondChannel.emitOpen();
-        await secondChannel.emitBufferedAmountLow();
+        const secondChannel = peerConnection.native.channels[1];
+        await secondChannel.open();
+        await secondChannel.drain();
 
         expect(secondChannel.sent).toEqual([]);
         expect(dataChannel.readHealth().queuedItemCount).toBe(0);
     });
 
     it('drops queued sends when a native channel errors before reconnect', async () => {
-        const peerConnection = createPeerConnectionHarness();
+        const peerConnection = createNativeDataChannelFixture();
         const dataChannel = new QRtcDataChannel(
-            peerConnection.peerConnection as never,
+            peerConnection.peerConnection,
             {
                 peerId: 'peer-1',
                 dataChannelName: 'realtime',
@@ -446,9 +457,9 @@ describe('QRtcDataChannel', () => {
 
         dataChannel.connect(true);
 
-        const firstChannel = peerConnection.createdChannels[0];
+        const firstChannel = peerConnection.native.channels[0];
         firstChannel.bufferedAmount = 2;
-        await firstChannel.emitOpen();
+        await firstChannel.open();
 
         expect(dataChannel.sendJson({ seq: 1 })).toMatchObject({
             status: 'queued'
@@ -458,7 +469,7 @@ describe('QRtcDataChannel', () => {
         });
         expect(dataChannel.readHealth().queuedItemCount).toBe(2);
 
-        await firstChannel.emitError();
+        await firstChannel.fail();
 
         expect(dataChannel.readHealth()).toMatchObject({
             state: 'Failed',
@@ -468,18 +479,18 @@ describe('QRtcDataChannel', () => {
 
         dataChannel.connect(true);
 
-        const secondChannel = peerConnection.createdChannels[1];
-        await secondChannel.emitOpen();
-        await secondChannel.emitBufferedAmountLow();
+        const secondChannel = peerConnection.native.channels[1];
+        await secondChannel.open();
+        await secondChannel.drain();
 
         expect(secondChannel.sent).toEqual([]);
         expect(dataChannel.readHealth().queuedItemCount).toBe(0);
     });
 
     it('waits for a replacement receiver channel after the previous channel closed', async () => {
-        const peerConnection = createPeerConnectionHarness();
+        const peerConnection = createNativeDataChannelFixture();
         const dataChannel = new QRtcDataChannel(
-            peerConnection.peerConnection as never,
+            peerConnection.peerConnection,
             {
                 peerId: 'peer-1',
                 dataChannelName: 'room'
@@ -488,23 +499,17 @@ describe('QRtcDataChannel', () => {
 
         dataChannel.connect(false);
 
-        const firstChannel = new FakeRTCDataChannel('room');
-        await peerConnection.onDataChannelCallback?.({
-            channel: firstChannel
-        });
-        await firstChannel.emitOpen();
-        await firstChannel.emitClose();
+        const firstChannel = await peerConnection.native.receiveDataChannel('room');
+        await firstChannel.open();
+        await firstChannel.close();
 
         dataChannel.connect(false);
         const wait = dataChannel.waitUntilOpen(1_000);
 
-        expect(peerConnection.createDataChannel).not.toHaveBeenCalled();
+        expect(peerConnection.native.channels).toEqual([firstChannel]);
 
-        const secondChannel = new FakeRTCDataChannel('room');
-        await peerConnection.onDataChannelCallback?.({
-            channel: secondChannel
-        });
-        await secondChannel.emitOpen();
+        const secondChannel = await peerConnection.native.receiveDataChannel('room');
+        await secondChannel.open();
 
         await expect(wait).resolves.toBe(true);
         expect(dataChannel.readHealth()).toMatchObject({
@@ -514,13 +519,13 @@ describe('QRtcDataChannel', () => {
     });
 
     it('supports realtime lane options, binary sends, and replace-by-key back pressure', async () => {
-        const peerConnection = createPeerConnectionHarness();
+        const peerConnection = createNativeDataChannelFixture();
         const dataChannelInit = {
             ordered: false,
             maxRetransmits: 0
         };
         const dataChannel = new QRtcDataChannel(
-            peerConnection.peerConnection as never,
+            peerConnection.peerConnection,
             {
                 peerId: 'peer-1',
                 dataChannelName: 'realtime',
@@ -537,17 +542,14 @@ describe('QRtcDataChannel', () => {
 
         dataChannel.connect(true);
 
-        expect(peerConnection.createDataChannel).toHaveBeenCalledWith(
-            'realtime',
-            dataChannelInit
-        );
+        expect(peerConnection.native.channels[0]).toMatchObject({ label: 'realtime', ordered: false, maxRetransmits: 0 });
 
-        const createdChannel = peerConnection.createdChannels[0];
+        const createdChannel = peerConnection.native.channels[0];
         expect(createdChannel.binaryType).toBe('arraybuffer');
         expect(createdChannel.bufferedAmountLowThreshold).toBe(2);
 
         createdChannel.readyState = 'open';
-        await createdChannel.emitOpen();
+        await createdChannel.open();
         createdChannel.bufferedAmount = 10;
 
         expect(dataChannel.sendJson({ x: 1 }, { key: 'player' })).toMatchObject({
@@ -563,7 +565,7 @@ describe('QRtcDataChannel', () => {
         expect(createdChannel.sent).toEqual([]);
 
         createdChannel.bufferedAmount = 0;
-        await createdChannel.emitBufferedAmountLow();
+        await createdChannel.drain();
 
         const bytes = new Uint8Array([1, 2, 3]);
         expect(dataChannel.sendBinary(bytes)).toMatchObject({
@@ -577,9 +579,9 @@ describe('QRtcDataChannel', () => {
     });
 
     it('preserves queued order for indexed replace-by-key sends', async () => {
-        const peerConnection = createPeerConnectionHarness();
+        const peerConnection = createNativeDataChannelFixture();
         const dataChannel = new QRtcDataChannel(
-            peerConnection.peerConnection as never,
+            peerConnection.peerConnection,
             {
                 peerId: 'peer-1',
                 dataChannelName: 'realtime',
@@ -594,10 +596,10 @@ describe('QRtcDataChannel', () => {
 
         dataChannel.connect(true);
 
-        const createdChannel = peerConnection.createdChannels[0];
+        const createdChannel = peerConnection.native.channels[0];
         createdChannel.readyState = 'open';
         createdChannel.bufferedAmount = 2;
-        await createdChannel.emitOpen();
+        await createdChannel.open();
 
         expect(dataChannel.sendJson({ seq: 1 }, { key: 'a' })).toMatchObject({
             status: 'queued'
@@ -613,7 +615,7 @@ describe('QRtcDataChannel', () => {
         });
 
         createdChannel.bufferedAmount = 0;
-        await createdChannel.emitBufferedAmountLow();
+        await createdChannel.drain();
 
         expect(createdChannel.sent).toEqual([
             JSON.stringify({ seq: 1 }),
@@ -639,7 +641,7 @@ describe('QRtcDataChannel', () => {
         });
 
         createdChannel.bufferedAmount = 0;
-        await createdChannel.emitBufferedAmountLow();
+        await createdChannel.drain();
 
         expect(createdChannel.sent).toEqual([
             JSON.stringify({ seq: 1 }),
@@ -650,36 +652,39 @@ describe('QRtcDataChannel', () => {
     });
 
     it('dispatches raw messages without requiring JSON callbacks', async () => {
-        const peerConnection = createPeerConnectionHarness();
+        const peerConnection = createNativeDataChannelFixture();
         const dataChannel = new QRtcDataChannel(
-            peerConnection.peerConnection as never,
+            peerConnection.peerConnection,
             {
                 peerId: 'peer-1',
                 dataChannelName: 'room'
             }
         );
-        const rawMessages: unknown[] = [];
+        const rawMessages: string[] = [];
 
         dataChannel.onRawMessageDo('raw', {
             onMessage: async (data) => {
+                if (typeof data !== 'string') {
+                    throw new Error('Expected text at the raw receiver');
+                }
                 rawMessages.push(data);
             }
         });
 
         dataChannel.connect(true);
 
-        const createdChannel = peerConnection.createdChannels[0];
+        const createdChannel = peerConnection.native.channels[0];
         createdChannel.readyState = 'open';
-        await createdChannel.emitOpen();
-        await createdChannel.emitRawMessage('not-json');
+        await createdChannel.open();
+        await createdChannel.receive('not-json');
 
         expect(rawMessages).toEqual(['not-json']);
     });
 
     it('reports health and applies drop-new pressure policy', async () => {
-        const peerConnection = createPeerConnectionHarness();
+        const peerConnection = createNativeDataChannelFixture();
         const dataChannel = new QRtcDataChannel(
-            peerConnection.peerConnection as never,
+            peerConnection.peerConnection,
             {
                 peerId: 'peer-1',
                 dataChannelName: 'realtime',
@@ -693,10 +698,10 @@ describe('QRtcDataChannel', () => {
 
         dataChannel.connect(true);
 
-        const createdChannel = peerConnection.createdChannels[0];
+        const createdChannel = peerConnection.native.channels[0];
         createdChannel.readyState = 'open';
         createdChannel.bufferedAmount = 4;
-        await createdChannel.emitOpen();
+        await createdChannel.open();
 
         expect(dataChannel.sendJson({ x: 1 })).toMatchObject({
             status: 'dropped',
@@ -723,9 +728,9 @@ describe('QRtcDataChannel', () => {
     });
 
     it('drops stale queued sends when pressure clears', async () => {
-        const peerConnection = createPeerConnectionHarness();
+        const peerConnection = createNativeDataChannelFixture();
         const dataChannel = new QRtcDataChannel(
-            peerConnection.peerConnection as never,
+            peerConnection.peerConnection,
             {
                 peerId: 'peer-1',
                 dataChannelName: 'realtime',
@@ -740,10 +745,10 @@ describe('QRtcDataChannel', () => {
 
         dataChannel.connect(true);
 
-        const createdChannel = peerConnection.createdChannels[0];
+        const createdChannel = peerConnection.native.channels[0];
         createdChannel.readyState = 'open';
         createdChannel.bufferedAmount = 2;
-        await createdChannel.emitOpen();
+        await createdChannel.open();
 
         expect(
             dataChannel.sendJson(
@@ -758,7 +763,7 @@ describe('QRtcDataChannel', () => {
         });
 
         createdChannel.bufferedAmount = 0;
-        await createdChannel.emitBufferedAmountLow();
+        await createdChannel.drain();
 
         expect(createdChannel.sent).toEqual([]);
         expect(dataChannel.readHealth()).toMatchObject({
@@ -772,9 +777,9 @@ describe('QRtcDataChannel', () => {
     });
 
     it('drops the oldest queued item when configured to prefer newer sends', async () => {
-        const peerConnection = createPeerConnectionHarness();
+        const peerConnection = createNativeDataChannelFixture();
         const dataChannel = new QRtcDataChannel(
-            peerConnection.peerConnection as never,
+            peerConnection.peerConnection,
             {
                 peerId: 'peer-1',
                 dataChannelName: 'realtime',
@@ -789,10 +794,10 @@ describe('QRtcDataChannel', () => {
 
         dataChannel.connect(true);
 
-        const createdChannel = peerConnection.createdChannels[0];
+        const createdChannel = peerConnection.native.channels[0];
         createdChannel.readyState = 'open';
         createdChannel.bufferedAmount = 2;
-        await createdChannel.emitOpen();
+        await createdChannel.open();
 
         expect(dataChannel.sendJson({ seq: 1 })).toMatchObject({
             status: 'queued'
@@ -802,7 +807,7 @@ describe('QRtcDataChannel', () => {
         });
 
         createdChannel.bufferedAmount = 0;
-        await createdChannel.emitBufferedAmountLow();
+        await createdChannel.drain();
 
         expect(createdChannel.sent).toEqual([
             JSON.stringify({ seq: 2 })
@@ -819,96 +824,24 @@ describe('QRtcDataChannel', () => {
     });
 });
 
-class FakeRTCDataChannel {
-    readonly sent: Array<string | Blob | ArrayBuffer | ArrayBufferView<ArrayBuffer>> = [];
-    readonly close = vi.fn(() => {
-        this.readyState = 'closed';
-    });
-    readyState: 'connecting' | 'open' | 'closing' | 'closed' = 'connecting';
-    bufferedAmount = 0;
-    bufferedAmountLowThreshold = 0;
-    binaryType: BinaryType = 'blob';
-    onmessage: ((event: MessageEvent) => void | Promise<void>) | null = null;
-    onopen: (() => void | Promise<void>) | null = null;
-    onclose: (() => void | Promise<void>) | null = null;
-    onerror: (() => void | Promise<void>) | null = null;
-    onbufferedamountlow: (() => void | Promise<void>) | null = null;
-
-    public readonly label: string;
-
-    constructor(label: string) {
-        this.label = label;
-    }
-
-    send(data: string | Blob | ArrayBuffer | ArrayBufferView<ArrayBuffer>): void {
-        this.sent.push(data);
-    }
-
-    async emitOpen(): Promise<void> {
-        this.readyState = 'open';
-        await this.onopen?.();
-    }
-
-    async emitMessage(data: unknown): Promise<void> {
-        await this.onmessage?.({
-            data: JSON.stringify(data)
-        } as MessageEvent);
-    }
-
-    async emitRawMessage(data: unknown): Promise<void> {
-        await this.onmessage?.({
-            data
-        } as MessageEvent);
-    }
-
-    async emitClose(): Promise<void> {
-        this.readyState = 'closed';
-        await this.onclose?.();
-    }
-
-    async emitError(): Promise<void> {
-        this.readyState = 'closed';
-        await this.onerror?.();
-    }
-
-    async emitBufferedAmountLow(): Promise<void> {
-        await this.onbufferedamountlow?.();
-    }
+interface NativeDataChannelFixture {
+    readonly peerConnection: QRtcPeerConnection;
+    readonly native: SimulatedNativeRtcPeerConnection;
 }
 
-type FakeRTCDataChannelEvent = { channel: FakeRTCDataChannel; };
-
-function createPeerConnectionHarness() {
-    let onDataChannelCallback:
-        | ((event: FakeRTCDataChannelEvent) => Promise<void>)
-        | undefined;
-    const onDataChannelCallbacks = new Map<string, (event: FakeRTCDataChannelEvent) => Promise<void>>();
-    const createdChannels: FakeRTCDataChannel[] = [];
-
-    const peerConnection = {
-        isReadyToConnect: vi.fn(() => true),
-        onDataChannelDo: vi.fn(function (
-            id: string,
-            callback: (event: FakeRTCDataChannelEvent) => Promise<void>
-        ) {
-            onDataChannelCallbacks.set(id, callback);
-            onDataChannelCallback = callback;
-            return peerConnection;
-        }),
-        createDataChannel: vi.fn((label: string, _init?: RTCDataChannelInit) => {
-            const channel = new FakeRTCDataChannel(label);
-            createdChannels.push(channel);
-            return channel;
-        })
-    };
-
-    return {
-        peerConnection,
-        createDataChannel: peerConnection.createDataChannel,
-        createdChannels,
-        onDataChannelCallbacks,
-        get onDataChannelCallback() {
-            return onDataChannelCallback;
-        }
-    };
+function createNativeDataChannelFixture(): NativeDataChannelFixture {
+    const peerConnection = new QRtcPeerConnection({ send: async () => {} }, {
+        sessionId: 'self',
+        token: 'fixture-token',
+        peerSessionId: 'peer-1',
+        iceCandidates: { iceServers: [], expiresAtEpochMs: Date.now() + 60_000 },
+        isPolite: false
+    });
+    peerConnection.connect();
+    peers.push(peerConnection);
+    const native = peerConnection.status.pc;
+    if (!(native instanceof SimulatedNativeRtcPeerConnection)) {
+        throw new Error('Expected the installed native RTC fixture');
+    }
+    return { peerConnection, native };
 }
