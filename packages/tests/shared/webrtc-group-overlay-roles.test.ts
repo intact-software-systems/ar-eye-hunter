@@ -1,9 +1,3 @@
-import type { ClientInfo, OverlayInfo } from '@shared/api/api-config.ts';
-import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
-import type { GroupSnapshot } from '@shared/api/group-types.ts';
-import { LatestRepository } from '@shared/cache/LatestRepository.ts';
-import { Either } from '@shared/resilience/Either.ts';
-import { WebRtcGroupManager } from '@shared/services/WebRtcGroupManager.ts';
 // dprint-ignore
 import {
     describe,
@@ -11,7 +5,21 @@ import {
     it
 } from 'vitest';
 
+import type { ClientInfo, OverlayInfo } from '@shared/api/api-config.ts';
+import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
+import type { GroupSnapshot } from '@shared/api/group-types.ts';
+import { LatestRepository } from '@shared/cache/LatestRepository.ts';
+import { Either } from '@shared/resilience/Either.ts';
+import { WebRtcGroupManager } from '@shared/services/WebRtcGroupManager.ts';
 import { createTestGroup } from '../create-test-group.ts';
+
+interface RtcServiceDouble {
+    readonly input: { readonly sessionId: string; };
+    ensurePeerConnectionStarted(peerId: string): Either<never, { readonly peerId: string; }>;
+    knownPeerIds(): string[];
+    peerIdsWithNoReconnectableLanes(): string[];
+    disconnectPeer(peerId: string): void;
+}
 
 describe('WebRtcGroupManager overlay roles', () => {
     it('uses planned topology for RTT evidence and accepted topology for traffic dials', async () => {
@@ -19,11 +27,11 @@ describe('WebRtcGroupManager overlay roles', () => {
         const clientCache = new LatestRepository<string, ClientInfo>();
         const plannedOverlayCache = new LatestRepository<string, OverlayInfo>();
         const acceptedOverlayCache = new LatestRepository<string, OverlayInfo>();
-        const rtc = createRtcHarness();
-        const group = groupSnapshot();
+        const rtc = createRtcService();
+        const group = createGroupSnapshot();
         const overlayId = toScopedOverlayId(group.group);
         const manager = new WebRtcGroupManager(
-            rtc.service as never,
+            rtc as never,
             {
                 groupCache,
                 clientCache,
@@ -33,45 +41,43 @@ describe('WebRtcGroupManager overlay roles', () => {
             { maxPeerConnections: 10, overlayTransitionGraceMs: 0 }
         );
         for (const peerId of ['peer-accepted', 'peer-planned']) {
-            clientCache.set(peerId, client(peerId));
+            clientCache.set(peerId, createClientInfo(peerId));
         }
         plannedOverlayCache.set(
             overlayId,
-            overlay(group, ['peer-planned'], 2)
+            createOverlayInfo(group, ['peer-planned'], 2)
         );
         acceptedOverlayCache.set(
             overlayId,
-            overlay(group, ['peer-accepted'], 1)
+            createOverlayInfo(group, ['peer-accepted'], 1)
         );
 
         await manager.acceptGroupUpdate(group);
 
         expect(manager.rttReportingPeerIds({ degreeLimit: 1 })).toEqual(['peer-planned']);
         expect(manager.state().desiredPeerIds).toEqual(['peer-accepted']);
-        expect(rtc.service.knownPeerIds()).toEqual(['peer-accepted']);
+        expect(rtc.knownPeerIds()).toEqual(['peer-accepted']);
     });
 });
 
-function createRtcHarness() {
+function createRtcService(): RtcServiceDouble {
     const peers = new Set<string>();
     const ensurePeerConnectionStarted = (peerId: string) => {
         peers.add(peerId);
-        return Either.ofRight({ peerId } as never);
+        return Either.ofRight<never, { readonly peerId: string; }>({ peerId });
     };
     return {
-        service: {
-            input: { sessionId: 'self' },
-            ensurePeerConnectionStarted,
-            knownPeerIds: () => [...peers],
-            peerIdsWithNoReconnectableLanes: () => [] as string[],
-            disconnectPeer: (peerId: string) => {
-                peers.delete(peerId);
-            }
+        input: { sessionId: 'local' },
+        ensurePeerConnectionStarted,
+        knownPeerIds: () => [...peers],
+        peerIdsWithNoReconnectableLanes: () => [] as string[],
+        disconnectPeer: (peerId: string) => {
+            peers.delete(peerId);
         }
     };
 }
 
-function client(sessionId: string): ClientInfo {
+function createClientInfo(sessionId: string): ClientInfo {
     return {
         clientId: sessionId,
         sessionId,
@@ -79,7 +85,7 @@ function client(sessionId: string): ClientInfo {
     };
 }
 
-function groupSnapshot(): GroupSnapshot {
+function createGroupSnapshot(): GroupSnapshot {
     const group = createTestGroup({
         groupId: 'group-1',
         snapshotVersion: 1,
@@ -91,16 +97,16 @@ function groupSnapshot(): GroupSnapshot {
         group,
         members: [],
         activeSessions: [
-            activeSession('self'),
-            activeSession('peer-accepted'),
-            activeSession('peer-planned')
+            createActiveSession('local'),
+            createActiveSession('peer-accepted'),
+            createActiveSession('peer-planned')
         ],
         memberCount: 3,
         onlineMemberCount: 3
     };
 }
 
-function activeSession(sessionId: string): GroupSnapshot['activeSessions'][number] {
+function createActiveSession(sessionId: string): GroupSnapshot['activeSessions'][number] {
     return {
         applicationId: 'app-1',
         workspaceId: 'workspace-1',
@@ -118,7 +124,7 @@ function activeSession(sessionId: string): GroupSnapshot['activeSessions'][numbe
     };
 }
 
-function overlay(
+function createOverlayInfo(
     group: GroupSnapshot,
     nextHopSessionIds: readonly string[],
     overlayVersion: number
