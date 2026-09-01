@@ -16,6 +16,8 @@ import { WebRtcOverlayMulticastService } from '@shared/multicast/web-rtc-overlay
 import type { ResilienceDto } from '@shared/queuebox/DequeueResourceEntryController.ts';
 import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
 import * as overlaysRepository from '@shared/repository/overlays-repository.ts';
+import { toCircuitBreaker } from '@shared/resilience/circuit-breaker.ts';
+import { toRateLimiter } from '@shared/resilience/Resilience.ts';
 import type { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
 import {
     DEFAULT_WEB_RTC_PEER_CONNECTION_ATTEMPT_BUDGET_POLICY,
@@ -23,15 +25,14 @@ import {
     WebRtcConnectionService,
     type RtcDataChannelLaneConfig
 } from '@shared/services/web-rtc-connection-service.ts';
+import { defaultMaxMissedPings, defaultPingFrequencyMsecs } from '@shared/services/web-rtc-heartbeat-service.ts';
 import {
-    defaultMaxMissedPings,
-    defaultPingFrequencyMsecs
-} from '@shared/services/web-rtc-heartbeat-service.ts';
-import { WebRtcRxStreamerService } from '@shared/services/web-rtc-rx-streamer-service.ts';
+    createDefaultWebRtcRxStreamerService,
+    WebRtcRxStreamerService
+} from '@shared/services/web-rtc-rx-streamer-service.ts';
 import type { WsQueueBoxClientService } from '@shared/services/ws-queue-box-client-service.ts';
 import { WsRtcSignalingTransportUsingWsQBox } from '@shared/webrtc/ws-rtc-signaling-transport-using-ws-q-box.ts';
 
-/** Inputs for constructing the browser RTC overlay multicast owner. */
 export interface InitialiseRtcOverlayMulticastManagerInput {
     readonly webRtcConnectionService: WebRtcConnectionService;
     readonly qboxEngine: InboxOutboxEngine;
@@ -41,14 +42,14 @@ export interface InitialiseRtcOverlayMulticastManagerInput {
 
 export function initialiseRtcOverlayMulticastManager(
     input: InitialiseRtcOverlayMulticastManagerInput
-): WebRtcOverlayMulticastManager {
+) {
     const { webRtcConnectionService, qboxEngine, resilience } = input;
-    const webRtcOverlayMulticastManager: WebRtcOverlayMulticastManager = new WebRtcOverlayMulticastManager(
-        createBrowserQueueBox(`rtc-overlay-outbox-${webRtcConnectionService.input.sessionId}`),
-        webRtcConnectionService,
-        groupStateSnapshotsRepository.readableGroupStateSnapshotCache(),
-        overlaysRepository.readableAcceptedOverlayCache(),
-        (overlayId: OverlayId): WebRtcOverlayMulticaster =>
+    const webRtcOverlayMulticastManager = new WebRtcOverlayMulticastManager({
+        outbox: createBrowserQueueBox(`rtc-overlay-outbox-${webRtcConnectionService.input.sessionId}`),
+        connectionService: webRtcConnectionService,
+        groupCache: groupStateSnapshotsRepository.readableGroupStateSnapshotCache(),
+        overlayCache: overlaysRepository.readableAcceptedOverlayCache(),
+        multicasterFactory: (overlayId: OverlayId): WebRtcOverlayMulticaster =>
             new WebRtcOverlayMulticastService(overlayId, webRtcConnectionService),
         outboundRuntime: createDefaultALOutboundRuntimeResources({
             stores: resolveBrowserRtcOverlayALOutboundRuntimeStores(webRtcConnectionService.input.sessionId)
@@ -94,7 +95,7 @@ export function initialiseRtcRxStreamer(
     input: InitialiseRtcRxStreamerInput
 ): WebRtcRxStreamerService {
     const { webRtcOverlayMulticastManager, qboxEngine, clientData, resilience } = input;
-    const rtcRxStreamer: WebRtcRxStreamerService = new WebRtcRxStreamerService({
+    const rtcRxStreamer = createDefaultWebRtcRxStreamerService({
         inbox: createBrowserQueueBox(`rtc-inbox-${clientData.sessionId}`),
         multicast: webRtcOverlayMulticastManager,
         sessionId: clientData.sessionId,

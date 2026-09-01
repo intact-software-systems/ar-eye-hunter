@@ -16,30 +16,36 @@ import { LatestRepository } from '@shared/cache/LatestRepository.ts';
 import { WebRtcOverlayMulticastManager } from '@shared/multicast/web-rtc-overlay-multicast-manager.ts';
 import { WebRtcOverlayMulticastService } from '@shared/multicast/web-rtc-overlay-multicast-service.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
+import { toCircuitBreaker } from '@shared/resilience/circuit-breaker.ts';
+import { toRateLimiter } from '@shared/resilience/Resilience.ts';
 import { WebRtcConnectionService, type QRtcPeerDto } from '@shared/services/web-rtc-connection-service.ts';
-import { WebRtcRxStreamerService } from '@shared/services/web-rtc-rx-streamer-service.ts';
+import {
+    createDefaultWebRtcRxStreamerService,
+    WebRtcRxStreamerService
+} from '@shared/services/web-rtc-rx-streamer-service.ts';
 import { QRtcDataChannel } from '@shared/webrtc/qrtc-data-channel.ts';
 import { QRtcMediaChannel } from '@shared/webrtc/qrtc-media-channel.ts';
 import { QRtcPeerConnection } from '@shared/webrtc/qrtc-peer-connection.ts';
 import type { OnQRtcMessageCallback } from '@shared/webrtc/QRtcClientCallbacks.ts';
-import { QRtcDataChannel } from '@shared/webrtc/QRtcDataChannel.ts';
-import { QRtcMediaChannel } from '@shared/webrtc/QRtcMediaChannel.ts';
-import { QRtcPeerConnection } from '@shared/webrtc/QRtcPeerConnection.ts';
 
 import { createGroupSnapshotFixture } from '../shared-web/authoritative-group-fixtures.ts';
 
 export const room: GroupRef = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' };
 
+interface RtcMessageCallbackRegistry {
+    receive(message: ALMessage): Promise<void>;
+}
+
 export class RtcEndpointFixture {
     readonly groups = new LatestRepository<string, GroupSnapshot>();
     readonly overlays = new LatestRepository<string, OverlayInfo>();
-    readonly outbound = createInMemoryALOutboundRuntimeStores();
+    readonly outbound = createDefaultInMemoryALOutboundRuntimeStores();
     readonly delivered: ALMessage[] = [];
     readonly sent: ALMessage[] = [];
     readonly peer: QRtcPeerDto;
     readonly multicast: WebRtcOverlayMulticastManager;
     readonly streamer: WebRtcRxStreamerService;
-    readonly receive: OnQRtcMessageCallback;
+    private readonly messageCallbacks: RtcMessageCallbackRegistry;
 
     readonly sessionId: string;
 
@@ -75,7 +81,7 @@ export class RtcEndpointFixture {
             inbox: new InMemoryQueueBox(),
             multicast: this.multicast,
             sessionId,
-            inboundStores: createInMemoryALInboundRuntimeStores(),
+            inboundStores: createDefaultInMemoryALInboundRuntimeStores(),
             nowEpochMs: Date.now,
             heartbeat: { maxMissedPings: 5, pingFrequencyMsecs: 5000 }
         });
@@ -85,19 +91,14 @@ export class RtcEndpointFixture {
                 this.delivered.push(message);
             }
         });
-        const registration = vi.spyOn(this.peer.channel, 'onRtcMessageDo');
+        this.messageCallbacks = createRtcMessageCallbackRegistry(this.peer.channel);
         this.streamer.addPeer(this.peer);
-        const receive = registration.mock.calls[0]?.[1];
-        if (!receive) {
-            throw new Error('RTC receiver subscription was not registered');
-        }
-        this.receive = receive;
     }
 
     connect(remote: RtcEndpointFixture): void {
         vi.spyOn(this.peer.channel, 'send').mockImplementation(async (message) => {
             this.sent.push(decodePersistedALMessageValue(message));
-            await remote.receive.onMessage(message, new MessageEvent('message', { data: message }));
+            await remote.messageCallbacks.receive(decodePersistedALMessageValue(message));
             await remote.multicast.dequeue(WebRtcOverlayMulticastManager.OUTBOX_DEQUEUE_TYPES, toResilienceDto());
         });
     }
@@ -134,9 +135,25 @@ export class RtcEndpointFixture {
 
     close(): void {
         this.streamer.removePeer(this.peer);
-        this.streamer.stopAllHeartbeats();
+        this.streamer.dispose();
         this.multicast.dispose();
     }
+}
+
+function createRtcMessageCallbackRegistry(channel: QRtcDataChannel): RtcMessageCallbackRegistry {
+    const callbacks = new Map<string, OnQRtcMessageCallback>();
+    vi.spyOn(channel, 'onRtcMessageDo').mockImplementation((id, callback) => {
+        callbacks.set(id, callback);
+        return channel;
+    });
+    vi.spyOn(channel, 'removeOnRtcMessageCallbackById').mockImplementation((id) => callbacks.delete(id));
+    return {
+        async receive(message: ALMessage): Promise<void> {
+            for (const callback of callbacks.values()) {
+                await callback.onMessage(message, new MessageEvent('message', { data: message }));
+            }
+        }
+    };
 }
 
 function createPeer(sessionId: string, peerId: string): QRtcPeerDto {

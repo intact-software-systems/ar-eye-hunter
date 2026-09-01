@@ -1,19 +1,18 @@
 import { ALMessage } from '../al-contracts/al-contract.ts';
-import { isALControlTypeId, newALNackControlMessage } from '../al-contracts/al-control.ts';
 import {
     decodePersistedALMessage,
     decodePersistedALMessageValue
 } from '../al-contracts/al-message-persistence-validation.ts';
 import { ALMessageHandlingPlan } from '../al-contracts/al-policy.ts';
-import type { ALInboundRuntimeStores } from '../alm/ALInboundMessageRuntime.ts';
-import { ALInboundMessageRuntime } from '../alm/ALInboundMessageRuntime.ts';
-import type { ALOutboundEnqueueResult } from '../alm/ALOutboundMessageRuntime.ts';
+import type { ALInboundRuntimeStores } from '../alm/inbound/al-inbound-message-runtime.ts';
+import { ALInboundMessageRuntime } from '../alm/inbound/al-inbound-message-runtime.ts';
+import { createDefaultALInboundRuntimeResources } from '../alm/inbound/create-default-al-inbound-message-runtime.ts';
+import type { ALOutboundEnqueueResult } from '../alm/outbound/al-outbound-message-runtime.ts';
 import {
     EnqueuedType,
     PeerId,
     RttMeasurementInfo
 } from '../api/api-config.ts';
-import { isSameGroupRef } from '../api/api-type-utils.ts';
 import { WebRtcOverlayMulticastManager } from '../multicast/web-rtc-overlay-multicast-manager.ts';
 import { ResilienceDto } from '../queuebox/DequeueResourceEntryController.ts';
 import { QueueBoxResourceEntryRepository } from '../queuebox/queue-box-types.ts';
@@ -25,6 +24,8 @@ import { OnMessageCallback } from './queue-message-callbacks.ts';
 import { QueueBoxUtilities } from './QueueBoxUtilities.ts';
 import { QRtcPeerDto } from './web-rtc-connection-service.ts';
 import {
+    defaultMaxMissedPings,
+    defaultPingFrequencyMsecs,
     PingResult,
     WebRtcHeartbeatService
 } from './web-rtc-heartbeat-service.ts';
@@ -45,9 +46,21 @@ export namespace WebRtcRxStreamerService {
         readonly inbox: QueueBoxResourceEntryRepository;
         readonly multicast: WebRtcOverlayMulticastManager;
         readonly sessionId: string;
-        readonly inboundStores: ALInboundRuntimeStores;
-        readonly nowEpochMs: () => number;
-        readonly heartbeat: Pick<WebRtcHeartbeatService.InputDto, 'maxMissedPings' | 'pingFrequencyMsecs'>;
+        readonly inboundStores?: ALInboundRuntimeStores;
+        readonly nowEpochMs?: () => number;
+        readonly heartbeat?: Pick<WebRtcHeartbeatService.InputDto, 'maxMissedPings' | 'pingFrequencyMsecs'>;
+    }
+
+    export interface Dependencies {
+        readonly inbox: QueueBoxResourceEntryRepository;
+        readonly multicast: WebRtcOverlayMulticastManager;
+        readonly sessionId: string;
+        readonly inboundRuntime: ALInboundMessageRuntime.Resources;
+        readonly epochNow: () => number;
+        readonly heartbeat: {
+            readonly maxMissedPings: number;
+            readonly pingFrequencyMsecs: number;
+        };
     }
 }
 
@@ -80,28 +93,22 @@ export class WebRtcRxStreamerService {
 
     public readonly inbox: QueueBoxResourceEntryRepository;
     public readonly multicast: WebRtcOverlayMulticastManager;
-    private readonly runtime: WebRtcRxStreamerService.Input;
+    public readonly sessionId: string;
+    private readonly dependencies: WebRtcRxStreamerService.Dependencies;
 
-    constructor(
-        runtime: WebRtcRxStreamerService.Input
-    ) {
-        this.inbox = runtime.inbox;
-        this.multicast = runtime.multicast;
-        this.runtime = runtime;
+    constructor(dependencies: WebRtcRxStreamerService.Dependencies) {
+        this.dependencies = dependencies;
+        this.inbox = dependencies.inbox;
+        this.multicast = dependencies.multicast;
+        this.sessionId = dependencies.sessionId;
         this.inboundRuntime = new ALInboundMessageRuntime(
             {
-                stores: runtime.inboundStores,
-                selfPeerId: runtime.sessionId,
+                ...dependencies.inboundRuntime,
                 inbox: this.inbox,
                 planIncomingMessage: (msg, fromPeerId, runtime) => {
                     return this.multicast.planIncomingMessage(msg, fromPeerId, runtime);
                 },
                 readStoredEntry: (entry) => decodePersistedALMessage(entry.resource),
-                toInboxEntry: (msg) =>
-                    QueueBoxUtilities.toResourceEntryFromMsg(
-                        msg,
-                        WebRtcRxStreamerService.ENQUEUE_TYPE
-                    ),
                 dispatchInboxEntry: async (entry, plan) => {
                     await this.dispatchInboxEntry(entry, plan);
                 },
@@ -168,31 +175,7 @@ export class WebRtcRxStreamerService {
     }
 
     private async receivePeerMessage(peerId: PeerId, message: ALMessage): Promise<void> {
-        if (!isALControlTypeId(message.payload.typeId) && this.isBelowSnapshotFloor(message)) {
-            await this.multicast.enqueueIfAbsent(
-                newALNackControlMessage(this.runtime.sessionId, peerId, message.id.msgId, 'not-yet-in-sync')
-            );
-            return;
-        }
         await this.inboundRuntime.handleIncomingMessage(message, peerId);
-    }
-
-    private isBelowSnapshotFloor(message: ALMessage): boolean {
-        const targets = message.targets;
-        if (
-            !targets || targets.mode === 'unicast' || targets.minSnapshotVersion === undefined ||
-            (targets.mode === 'broadcast' && (targets.scope !== 'room' || !targets.groupRef))
-        ) {
-            return false;
-        }
-
-        const groupRef = targets.groupRef;
-        if (!groupRef) {
-            return false;
-        }
-        const snapshot = this.multicast.groupCache.readAllValues()
-            .find((candidate) => isSameGroupRef(candidate.group, groupRef));
-        return snapshot === undefined || snapshot.group.snapshotVersion < targets.minSnapshotVersion;
     }
 
     private async publishRemoteStream(peerId: PeerId, stream: MediaStream, event: RTCTrackEvent): Promise<void> {
@@ -225,6 +208,11 @@ export class WebRtcRxStreamerService {
             heartbeat.stop();
         }
         this.heartbeatByPeerId.clear();
+    }
+
+    dispose(): void {
+        this.inboundRuntime.dispose();
+        this.stopAllHeartbeats();
     }
 
     setRttReportingPeerIds(peerIds: readonly PeerId[]): void {
@@ -272,11 +260,11 @@ export class WebRtcRxStreamerService {
         let heartbeat = this.heartbeatByPeerId.get(peerId);
         if (!heartbeat) {
             heartbeat = new WebRtcHeartbeatService({
-                sessionId: this.runtime.sessionId,
+                sessionId: this.sessionId,
                 peerSessionId: peerId,
                 channel: dto.channel,
-                maxMissedPings: this.runtime.heartbeat.maxMissedPings,
-                pingFrequencyMsecs: this.runtime.heartbeat.pingFrequencyMsecs
+                maxMissedPings: this.dependencies.heartbeat.maxMissedPings,
+                pingFrequencyMsecs: this.dependencies.heartbeat.pingFrequencyMsecs
             });
             this.heartbeatByPeerId.set(peerId, heartbeat);
         }
@@ -305,10 +293,10 @@ export class WebRtcRxStreamerService {
         const version = Math.max(previousVersion + 1, result.version);
         this.rttVersionByPeerId.set(peerId, version);
         const rtt: RttMeasurementInfo = {
-            sessionIdFrom: this.runtime.sessionId,
+            sessionIdFrom: this.sessionId,
             sessionIdTo: peerId,
             rttMs: result.rttMsecs,
-            createdAtEpochMs: this.runtime.nowEpochMs(),
+            createdAtEpochMs: this.dependencies.epochNow(),
             version
         };
         for (const callback of this.onRttMeasurementCallbacks.values()) {
@@ -324,15 +312,15 @@ export class WebRtcRxStreamerService {
     }
 
     private toRtcMediaSubscriptionId(peerId: PeerId) {
-        return this.runtime.sessionId + '-' + peerId + '-rtc-media-remote-stream';
+        return this.sessionId + '-' + peerId + '-rtc-media-remote-stream';
     }
 
     private toRtcChannelSubscriptionId(peerId: PeerId) {
-        return this.runtime.sessionId + '-' + peerId + '-rtc-inbox';
+        return this.sessionId + '-' + peerId + '-rtc-inbox';
     }
 
     private toHeartbeatCallbackId(peerId: PeerId) {
-        return this.runtime.sessionId + '-' + peerId + '-rtc-datachannel-lifecycle';
+        return this.sessionId + '-' + peerId + '-rtc-datachannel-lifecycle';
     }
 
     private async dispatchInboxEntry(
@@ -465,4 +453,23 @@ export class WebRtcRxStreamerService {
             peer.connection.applyMediaPolicy(policy);
         }
     }
+}
+
+export function createDefaultWebRtcRxStreamerService(input: WebRtcRxStreamerService.Input): WebRtcRxStreamerService {
+    return new WebRtcRxStreamerService({
+        inbox: input.inbox,
+        multicast: input.multicast,
+        sessionId: input.sessionId,
+        inboundRuntime: createDefaultALInboundRuntimeResources({
+            stores: input.inboundStores,
+            selfPeerId: input.sessionId,
+            toInboxEntry: (message) =>
+                QueueBoxUtilities.toResourceEntryFromMsg(message, WebRtcRxStreamerService.ENQUEUE_TYPE)
+        }),
+        epochNow: input.nowEpochMs ?? Date.now,
+        heartbeat: input.heartbeat ?? {
+            maxMissedPings: defaultMaxMissedPings,
+            pingFrequencyMsecs: defaultPingFrequencyMsecs
+        }
+    });
 }

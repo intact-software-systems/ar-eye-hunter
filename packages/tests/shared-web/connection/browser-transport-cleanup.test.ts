@@ -269,8 +269,8 @@ describe('Browser transport cleanup', () => {
             effects.push('heartbeat');
             throw new Error('heartbeat already stopped');
         });
-        vi.mocked(middleware.middleware.rtcRxStreamer.stopAllHeartbeats).mockImplementation(() => {
-            effects.push('rtc-heartbeats');
+        vi.mocked(middleware.middleware.rtcRxStreamer.dispose).mockImplementation(() => {
+            effects.push('rtc-disposed');
         });
         vi.mocked(middleware.middleware.webRtcConnectionService.knownPeerIds).mockReturnValue(['peer-1']);
         vi.mocked(middleware.middleware.webRtcConnectionService.disconnectPeer).mockImplementation(() => {
@@ -327,7 +327,7 @@ describe('Browser transport cleanup', () => {
             'state-cache-attached',
             'state-cache-detached',
             'heartbeat',
-            'rtc-heartbeats',
+            'rtc-disposed',
             'rtc-peer',
             'media',
             'multicast',

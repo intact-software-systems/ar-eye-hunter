@@ -60,7 +60,6 @@ export { ALAdmissionCorruptionError, type ALAdmissionDecoder } from './alm/al-ad
 export * from './alm/al-runtime-state-stores.ts';
 export * from './alm/al-runtime-stores.ts';
 export * from './alm/ALRuntimeStoreRegistry.ts';
-export * from './alm/ALRuntimeStores.ts';
 export * from './alm/ALStoreRetention.ts';
 export * from './alm/compute-al-ordering-observation.ts';
 export * from './alm/compute-al-supersedence-observation.ts';
@@ -71,7 +70,7 @@ export * from './alm/inbound/transition-al-pending-ack.ts';
 export * from './alm/outbound/al-outbound-admission-store.ts';
 export * from './alm/outbound/al-outbound-message-runtime.ts';
 export * from './alm/outbound/create-default-al-outbound-message-runtime.ts';
-export * from './services/InboxOutboxContracts.ts';
+export * from './services/inbox-queue-reader.ts';
 export * from './services/InboxOutboxEngine.ts';
 export * from './services/outbox-queue-reader.ts';
 export * from './services/queue-message-callbacks.ts';

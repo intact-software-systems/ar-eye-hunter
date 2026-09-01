@@ -1,5 +1,8 @@
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
-import type { ALOutboundEnqueueResult, ALOutboundEnqueueStatus } from '@shared/alm/ALOutboundMessageRuntime.ts';
+import type {
+    ALOutboundEnqueueResult,
+    ALOutboundEnqueueStatus
+} from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import type { WsServerLiveSendResult } from '@shared/services/ws-queue-box-server/ws-queue-box-server-contracts.ts';
 import type { WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 import { isGroupSnapshotSessionLive } from '../../presence/snapshot-presence.ts';

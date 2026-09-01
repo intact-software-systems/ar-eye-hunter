@@ -1,4 +1,3 @@
-import { createInMemoryALInboundRuntimeStores } from '@shared/alm/ALRuntimeStores.ts';
 import {
     afterEach,
     describe,
@@ -6,20 +5,26 @@ import {
     it,
     vi
 } from 'vitest';
-import { EmptyMediaStream, EmptyRtcTrackEvent } from './rtc-media-test-events.ts';
 
 import { createDefaultALOutboundRuntimeResources } from '@shared/alm/outbound/create-default-al-outbound-message-runtime.ts';
 import { LatestRepository } from '@shared/cache/LatestRepository.ts';
 import { WebRtcOverlayMulticastManager } from '@shared/multicast/web-rtc-overlay-multicast-manager.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
-import { WebRtcConnectionService, type QRtcPeerDto } from '@shared/services/web-rtc-connection-service.ts';
-import { WebRtcRxStreamerService } from '@shared/services/web-rtc-rx-streamer-service.ts';
+import { toCircuitBreaker } from '@shared/resilience/circuit-breaker.ts';
+import { toRateLimiter } from '@shared/resilience/Resilience.ts';
+import type { QRtcPeerDto } from '@shared/services/web-rtc-connection-service.ts';
+import { createDefaultWebRtcRxStreamerService, WebRtcRxStreamerService } from '@shared/services/web-rtc-rx-streamer-service.ts';
 import { QRtcDataChannel } from '@shared/webrtc/qrtc-data-channel.ts';
 import { QRtcMediaChannel } from '@shared/webrtc/qrtc-media-channel.ts';
 import { QRtcPeerConnection, type QRtcOnRemoteStreamCallback } from '@shared/webrtc/qrtc-peer-connection.ts';
 
-interface MediaFixture {
+import { EmptyMediaStream, EmptyRtcTrackEvent } from './rtc-media-test-events.ts';
+
+interface MediaFixture extends MediaPeerFixture {
     readonly service: WebRtcRxStreamerService;
+}
+
+interface MediaPeerFixture {
     readonly peer: QRtcPeerDto;
     readonly publishRemoteStream: QRtcOnRemoteStreamCallback;
     readonly attachedStreams: MediaStream[];
@@ -131,33 +136,7 @@ function createMediaPeerFixture(): MediaPeerFixture {
     vi.spyOn(connection, 'stopLocalMedia').mockImplementation((kind) => {
         stoppedMediaKinds.push(kind);
     });
-    const connectionService = new WebRtcConnectionService(signaler, {
-        sessionId: 'self',
-        token: 'test-token',
-        iceCandidates,
-        dataChannelName: 'test',
-        rtcSignalingTopicId: 'rtc-signaling'
-    });
-    const multicast = new WebRtcOverlayMulticastManager(
-        new InMemoryQueueBox(new Map()),
-        connectionService,
-        new LatestRepository(),
-        new LatestRepository(),
-        () => {
-            throw new Error('Media control must not construct multicast messages');
-        }
-    );
-    const service = new WebRtcRxStreamerService({
-        inbox: new InMemoryQueueBox(new Map()),
-        multicast,
-        sessionId: 'self',
-        inboundStores: createInMemoryALInboundRuntimeStores(),
-        nowEpochMs: Date.now,
-        heartbeat: { maxMissedPings: 5, pingFrequencyMsecs: 5000 }
-    });
-    service.setRttReportingPeerIds([]);
     return {
-        service,
         peer: { peerId: 'peer-1', connection, channel, channels: new Map([['reliable', channel]]), media },
         publishRemoteStream,
         attachedStreams,

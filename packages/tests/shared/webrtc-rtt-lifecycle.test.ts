@@ -1,4 +1,3 @@
-import { createInMemoryALInboundRuntimeStores } from '@shared/alm/ALRuntimeStores.ts';
 import {
     afterEach,
     beforeEach,
@@ -13,8 +12,10 @@ import type { RttMeasurementInfo } from '@shared/api/api-config.ts';
 import { LatestRepository } from '@shared/cache/LatestRepository.ts';
 import { WebRtcOverlayMulticastManager } from '@shared/multicast/web-rtc-overlay-multicast-manager.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
+import { toCircuitBreaker } from '@shared/resilience/circuit-breaker.ts';
+import { toRateLimiter } from '@shared/resilience/Resilience.ts';
 import { WebRtcConnectionService, type QRtcPeerDto } from '@shared/services/web-rtc-connection-service.ts';
-import { WebRtcRxStreamerService } from '@shared/services/web-rtc-rx-streamer-service.ts';
+import { createDefaultWebRtcRxStreamerService, WebRtcRxStreamerService } from '@shared/services/web-rtc-rx-streamer-service.ts';
 import { QRtcDataChannel } from '@shared/webrtc/qrtc-data-channel.ts';
 import { QRtcMediaChannel } from '@shared/webrtc/qrtc-media-channel.ts';
 import { QRtcPeerConnection } from '@shared/webrtc/qrtc-peer-connection.ts';
@@ -190,12 +191,12 @@ function createStreamingEndpoint(sessionId: string, peerSessionId: string): Stre
         dataChannelName: 'rtc-test',
         rtcSignalingTopicId: 'rtc-signaling'
     });
-    const multicast = new WebRtcOverlayMulticastManager(
-        new InMemoryQueueBox(new Map()),
-        connectionService,
-        new LatestRepository(),
-        new LatestRepository(),
-        () => {
+    const multicast = new WebRtcOverlayMulticastManager({
+        outbox: new InMemoryQueueBox(new Map()),
+        connectionService: connectionService,
+        groupCache: new LatestRepository(),
+        overlayCache: new LatestRepository(),
+        multicasterFactory: () => {
             throw new Error('Heartbeat traffic must not enter multicast');
         },
         qosProvider: undefined,
@@ -204,6 +205,7 @@ function createStreamingEndpoint(sessionId: string, peerSessionId: string): Stre
         circuitBreaker: toCircuitBreaker(),
         rateLimiter: toRateLimiter()
     });
+    const streamer = createDefaultWebRtcRxStreamerService({ inbox: new InMemoryQueueBox(new Map()), multicast, sessionId });
     const measurements: RttMeasurementInfo[] = [];
     streamer.onRttMeasurementDo('observations', {
         onHeartbeat: async (measurement) => {

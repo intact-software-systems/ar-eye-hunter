@@ -14,7 +14,7 @@ import { LatestRepository } from '@shared/cache/LatestRepository.ts';
 import * as shared from '@shared/mod.ts';
 import { toCircuitBreaker } from '@shared/resilience/circuit-breaker.ts';
 import { toRateLimiter } from '@shared/resilience/Resilience.ts';
-import type { QRtcPeerDto } from '@shared/services/WebRtcConnectionService.ts';
+import type { QRtcPeerDto } from '@shared/services/web-rtc-connection-service.ts';
 
 import { createGroupSnapshotFixture } from '../shared-web/authoritative-group-fixtures.ts';
 

@@ -24,8 +24,8 @@ import {
     type QRtcSignalingTransport,
     type QRtcSignalingTransportCallbacks
 } from '@shared/webrtc/QRtcSignalingContracts.ts';
+import { WsRtcSignalingTransportUsingWsQBox } from '@shared/webrtc/ws-rtc-signaling-transport-using-ws-q-box.ts';
 import { WsRtcSignalingTransport } from '@shared/webrtc/WsRtcSignalingTransport.ts';
-import { WsRtcSignalingTransportUsingWsQBox } from '@shared/webrtc/WsRtcSignalingTransportUsingWsQBox.ts';
 import { JsonWebSocketClient } from '@shared/websocket/JsonWebSocketClient.ts';
 
 import { TestWebSocket } from '../websocket/test-web-socket.ts';

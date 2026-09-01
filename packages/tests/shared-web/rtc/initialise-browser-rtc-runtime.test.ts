@@ -24,7 +24,10 @@ import * as overlaysRepository from '@shared/repository/overlays-repository.ts';
 import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
 import { QueueBoxUtilities } from '@shared/services/QueueBoxUtilities.ts';
 import { WebRtcGroupManager } from '@shared/services/web-rtc-group-manager.ts';
-import { WsQueueBoxClientService } from '@shared/services/ws-queue-box-client-service.ts';
+import {
+    createDefaultWsQueueBoxClientService,
+    default as WsQueueBoxClientService
+} from '@shared/services/ws-queue-box-client-service.ts';
 import type { QRtcSignalingMessage } from '@shared/webrtc/QRtcSignalingContracts.ts';
 import { JsonWebSocketClient } from '@shared/websocket/JsonWebSocketClient.ts';
 import {
@@ -60,10 +63,12 @@ describe('browser RTC runtime composition', () => {
             networkConnectStarted.resolve();
             return networkConnect.promise;
         });
-        const queueBox = new WsQueueBoxClientService(
-            { inbox: new InMemoryQueueBox(), outbox: new InMemoryQueueBox(), socket: socket },
-            { sessionId: 'self' }
-        );
+        const queueBox = createDefaultWsQueueBoxClientService({
+            inbox: new InMemoryQueueBox(),
+            outbox: new InMemoryQueueBox(),
+            socket,
+            sessionId: 'self'
+        });
         const initializing = initialiseRtcConnectionService({
             webSocketQueueBox: queueBox,
             qboxEngine: new InboxOutboxEngine(),
